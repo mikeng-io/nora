@@ -2330,12 +2330,21 @@ async def build_dependencies(
     def _event_unit_room_ids(unit_id: str) -> tuple[str, ...]:
         return event_unit_rooms.get(unit_id, ())
 
+    # A venue's district and city come from the Geocoding API by the place id
+    # `place_info` resolved it to, with the route key (a Places id is that
+    # key's project's, and the key is restricted to Routes + Places +
+    # Geocoding). No route client, no venue area.
+    place_areas = None
+    if route_client is not None:
+        from nora.infra.geocode import GoogleGeocoder
+        place_areas = GoogleGeocoder(api_key=os.environ.get(cfg.route.api_key_env, ""))
     events = GatheringService(
         store=event_store,
         route_source=route_client,
         honcho=memory,
         ai_peer=cfg.memory.ai_peer,
         unit_room_ids=_event_unit_room_ids,
+        place_areas=place_areas,
     )
     # `media_fetch` (DEC-56) reads a stored blob back through MiMo. Its two
     # collaborators are wired together: the blob store (already built above,

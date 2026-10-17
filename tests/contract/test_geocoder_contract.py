@@ -25,11 +25,11 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-from nora.domain.ports import ReverseGeocoder
+from nora.domain.ports import PlaceArea, ReverseGeocoder
 from nora.infra import geocode
 from nora.infra.geocode import GoogleGeocoder
 from nora.infra.geocode_hkgov import HKGovGeocoder
-from nora.testing import FakeReverseGeocoder
+from nora.testing import FakeGeocodeCacheStore, FakeReverseGeocoder
 
 
 class _GoogleAdapter:
@@ -43,8 +43,17 @@ class _GoogleAdapter:
             self.requests.append(request.query.get("language", ""))
             if not self._ok:
                 return web.json_response({"status": "ZERO_RESULTS", "results": []})
-            addr = "元朗形點" if request.query.get("language") == "zh-HK" else "Yoho Mall"
-            return web.json_response({"status": "OK", "results": [{"formatted_address": addr}]})
+            zh = request.query.get("language") == "zh-HK"
+            return web.json_response({"status": "OK", "results": [{
+                "formatted_address": "元朗形點" if zh else "Yoho Mall",
+                "address_components": [
+                    {"long_name": "元朗形點" if zh else "Yoho Mall", "types": ["premise"]},
+                    {"long_name": "元朗" if zh else "Yuen Long",
+                     "types": ["neighborhood", "political"]},
+                    {"long_name": "新界" if zh else "New Territories",
+                     "types": ["administrative_area_level_1", "political"]},
+                ],
+            }]})
 
         app = web.Application()
         app.router.add_get("/geo", handler)
@@ -52,6 +61,7 @@ class _GoogleAdapter:
         await self._server.start_server()
         monkeypatch.setattr(geocode, "GEOCODE_URL", str(self._server.make_url("/geo")))
         self.geocoder = GoogleGeocoder(api_key="k")
+        self.with_store = lambda store: GoogleGeocoder(api_key="k", cache_store=store)
 
     async def stop(self) -> None:
         await self._server.close()
@@ -72,14 +82,22 @@ class _HKGovAdapter:
             if not self._ok:
                 # ArcGIS reports failure as a 200 with an error object.
                 return web.json_response({"error": {"code": 400, "message": "nope"}})
-            label = "元朗形點" if request.query.get("langCode") == "zh" else "Yoho Mall"
-            return web.json_response({"address": {"LongLabel": label}, "location": {}})
+            zh = request.query.get("langCode") == "zh"
+            return web.json_response({"address": {
+                "LongLabel": "元朗形點" if zh else "Yoho Mall",
+                "Neighborhood": "元朗" if zh else "Yuen Long",
+                "City": "新界" if zh else "New Territories",
+            }, "location": {}})
 
         app = web.Application()
         app.router.add_get("/rev", handler)
         self._server = TestServer(app)
         await self._server.start_server()
-        self.geocoder = HKGovGeocoder(service_url=str(self._server.make_url("/rev")), token="t")  # noqa: S106
+        url = str(self._server.make_url("/rev"))
+        self.geocoder = HKGovGeocoder(service_url=url, token="t")  # noqa: S106
+        self.with_store = lambda store: HKGovGeocoder(
+            service_url=url, token="t", cache_store=store,  # noqa: S106
+        )
 
     async def stop(self) -> None:
         await self._server.close()
@@ -149,6 +167,19 @@ async def test_a_stationary_coordinate_is_fetched_once_then_cached(adapter):
     b = await adapter.geocoder.address_for(lat=22.44453, lng=114.02889)   # same to 4 dp
     assert a == b == "元朗形點 / Yoho Mall"
     assert len(adapter.requests) == 2
+
+
+async def test_the_areas_of_a_coordinate_are_stored_beside_its_address(adapter):
+    """Both backends name the district and the city from their structured
+    address fields, joined «中文 / English» like the address, and the store
+    keeps them beside it: `nora.analytics` places an outing by them
+    (design/unified-memory 00 step 3a)."""
+    store = FakeGeocodeCacheStore()
+    geo = adapter.with_store(store)
+    assert await geo.address_for(lat=1.0, lng=2.0) == "元朗形點 / Yoho Mall"
+    assert await store.area_within(lat=1.0, lng=2.0, radius_m=50.0) == PlaceArea(
+        district="元朗 / Yuen Long", city="新界 / New Territories",
+    )
 
 
 async def test_a_failure_is_none_and_never_raises(geocoder):

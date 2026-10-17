@@ -46,6 +46,7 @@ from nora.domain.memory_index import (
     exact_holds,
     in_scope,
     narrowed,
+    place_named,
 )
 
 __all__ = ["DIMENSIONS", "FakeMemoryIndex", "FakeQueryEmbedder", "bag_of_words", "cosine"]
@@ -215,6 +216,15 @@ class FakeMemoryIndex:
         ]
         out.sort(key=lambda n: (-(n.at_ms or 0), n.key))
         return out[:max(0, limit)]
+
+    async def places(self, query: str, *, limit: int) -> list[IndexedNode]:
+        self._check("places")
+        found = [
+            n for n in self.nodes.values()
+            if n.kind == "place" and n.text and place_named(n.text, query)
+        ]
+        found.sort(key=lambda n: n.key)
+        return found[:max(0, limit)]
 
     async def neighbours(
         self, frontier: Sequence[tuple[str, str]], scope: MemoryScope,

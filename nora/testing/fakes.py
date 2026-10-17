@@ -97,6 +97,7 @@ from nora.domain.ports import (
     Mention,
     MessageHits,
     OutboundAttachment,
+    PlaceArea,
     PlatformIdentity,
     ReactionResult,
     Recollection,
@@ -1339,6 +1340,7 @@ class FakeGeocodeCacheStore:
 
     def __init__(self) -> None:
         self._data: dict[tuple[float, float], str] = {}
+        self._areas: dict[tuple[float, float], PlaceArea] = {}
         self.gets: list[tuple[float, float]] = []
         self.puts: list[tuple[float, float, str]] = []
 
@@ -1347,20 +1349,34 @@ class FakeGeocodeCacheStore:
         return self._data.get((lat_rounded, lng_rounded))
 
     async def put(
-        self, *, lat_rounded: float, lng_rounded: float, address: str
+        self, *, lat_rounded: float, lng_rounded: float, address: str,
+        area: PlaceArea | None = None,
     ) -> None:
         self.puts.append((lat_rounded, lng_rounded, address))
         self._data[(lat_rounded, lng_rounded)] = address
+        self._areas[(lat_rounded, lng_rounded)] = area or PlaceArea()
+
+    def _near(self, lat: float, lng: float, radius_m: float) -> list[tuple[float, float]]:
+        """Keys within `radius_m`, nearest first (ties in insertion order)."""
+        found = [
+            (haversine_distance_m(lat, lng, k[0], k[1]), i, k)
+            for i, k in enumerate(self._data)
+        ]
+        return [k for d, _, k in sorted(found, key=lambda t: (t[0], t[1])) if d <= radius_m]
 
     async def nearest_within(
         self, *, lat: float, lng: float, radius_m: float
     ) -> str | None:
-        best: tuple[float, str] | None = None
-        for (row_lat, row_lng), address in self._data.items():
-            dist = haversine_distance_m(lat, lng, row_lat, row_lng)
-            if dist <= radius_m and (best is None or dist < best[0]):
-                best = (dist, address)
-        return None if best is None else best[1]
+        near = self._near(lat, lng, radius_m)
+        return self._data[near[0]] if near else None
+
+    async def area_within(
+        self, *, lat: float, lng: float, radius_m: float
+    ) -> PlaceArea | None:
+        for key in self._near(lat, lng, radius_m):
+            if self._areas[key]:
+                return self._areas[key]
+        return None
 
 
 class FakeMediaInterpreter:

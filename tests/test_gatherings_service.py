@@ -14,6 +14,7 @@ from nora.domain.gatherings import (
     GatheringStatus,
     RSVPResponse,
 )
+from nora.domain.ports import PlaceArea
 from nora.testing.gatherings import FakeGatheringStore
 
 pytestmark = pytest.mark.asyncio
@@ -50,6 +51,7 @@ def _service(
     route_source=None,
     honcho=None,
     unit_room_ids=None,
+    place_areas=None,
 ) -> GatheringService:
     return GatheringService(
         store=store or FakeGatheringStore(),
@@ -58,7 +60,52 @@ def _service(
         ai_peer="nora",
         now=lambda: NOW,
         unit_room_ids=unit_room_ids,
+        place_areas=place_areas,
     )
+
+
+class _FakePlaceAreas:
+    """Google's place-id lookup: the area of the one id it knows, else None;
+    `asked` proves it is asked by the RESOLVED place's id."""
+
+    def __init__(self, area: PlaceArea | None) -> None:
+        self.area = area
+        self.asked: list[str] = []
+
+    async def area_of_place(self, place_id: str) -> PlaceArea | None:
+        self.asked.append(place_id)
+        return self.area if place_id == "ChIJfake123" else None
+
+
+async def test_a_resolved_venue_keeps_its_district_and_city_and_a_failed_one_none():
+    """Step 3a: the venue's areas are resolved with it, by the place id the
+    lookup answered, and stored on the event (the memory index's
+    `located_in` chain). A name that carries a coordinate is screened out
+    (R-28); a later venue that does not resolve clears them with the rest."""
+    areas = _FakePlaceAreas(PlaceArea(district="旺角 / Mong Kok", city="1.5, 2.5"))
+    store = FakeGatheringStore()
+    svc = _service(store=store, place_areas=areas)
+    ev = await svc.create_event(
+        conversation_id="signal:group-1", requester_person_id="miles",
+        title="Dinner", platform="signal",
+    )
+    updated = await svc.update_event(
+        event_id=ev.id, conversation_id="signal:group-1", venue_text="Soi 29",
+        platform="signal",
+    )
+    assert areas.asked == ["ChIJfake123"]
+    assert (updated.venue_district, updated.venue_city) == ("旺角 / Mong Kok", None)
+    assert (await svc.get_event(event_id=ev.id)).venue_district == "旺角 / Mong Kok"
+
+    unresolved = _service(
+        store=store, route_source=_FakeRouteSource({"status": "not_found"}),
+        place_areas=areas,
+    )
+    cleared = await unresolved.update_event(
+        event_id=ev.id, conversation_id="signal:group-1", venue_text="nowhere",
+        platform="signal",
+    )
+    assert (cleared.venue_district, cleared.venue_city) == (None, None)
 
 
 async def test_create_event_persists_and_returns_it():

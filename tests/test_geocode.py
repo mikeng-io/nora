@@ -10,6 +10,7 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
+from nora.domain.ports import PlaceArea
 from nora.infra import geocode
 from nora.infra.geocode import GoogleGeocoder
 from nora.testing import FakeGeocodeCacheStore
@@ -36,7 +37,26 @@ class _Google:
         # Language-specific, like the real host: `address_for` asks for zh-HK AND
         # en and joins them, so the fake answers each call in the requested
         # language to prove the join.
-        addr = "元朗形點" if request.query.get("language") == "zh-HK" else "Yoho Mall, Yuen Long"
+        zh = request.query.get("language") == "zh-HK"
+        if request.query.get("place_id"):
+            # The place-id lookup a venue's areas come from: a result whose
+            # components name a neighbourhood and Hong Kong's first-level area
+            # (no `locality`), plus a country that is neither.
+            if request.query["place_id"] != "ChIJ-venue":
+                return web.json_response({"status": "ZERO_RESULTS", "results": []})
+            return web.json_response({"status": "OK", "results": [{
+                "formatted_address": "venue",
+                "address_components": [
+                    {"long_name": "8號" if zh else "8", "types": ["street_number"]},
+                    {"long_name": "旺角" if zh else "Mong Kok",
+                     "types": ["neighborhood", "political"]},
+                    {"long_name": "九龍" if zh else "Kowloon",
+                     "types": ["administrative_area_level_1", "political"]},
+                    {"long_name": "香港" if zh else "Hong Kong",
+                     "types": ["country", "political"]},
+                ],
+            }]})
+        addr = "元朗形點" if zh else "Yoho Mall, Yuen Long"
         return web.json_response(
             {"status": "OK", "results": [{"formatted_address": addr}]}
         )
@@ -226,3 +246,17 @@ def test_real_addresses_are_never_rejected_by_the_plus_code_screen():
         ],
     }
     assert geocode._first_address(payload) == "香港新界天水圍天瑞路77號"
+
+
+async def test_a_venue_place_id_answers_its_district_and_city_in_both_languages(google):
+    """`area_of_place` asks the Geocoding API by Google's own place id (no
+    coordinate goes out), once per language, and names the neighbourhood and
+    what holds it from the components, never the street or the country."""
+    geo = GoogleGeocoder(api_key="k")
+    assert await geo.area_of_place("ChIJ-venue") == PlaceArea(
+        district="旺角 / Mong Kok", city="九龍 / Kowloon",
+    )
+    assert await geo.area_of_place("ChIJ-unknown") is None
+    google.mode = "denied"
+    assert await geo.area_of_place("ChIJ-venue") is None
+    assert await geo.area_of_place("") is None

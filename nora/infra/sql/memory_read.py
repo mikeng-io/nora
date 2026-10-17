@@ -41,11 +41,14 @@ only, and runs the hops on the same scope without it. A person narrows to nodes 
 edge's primary key) or listing them in `persons`, said in a room that lists
 them or in no room.
 
-**A hub carries no scope** (a person, room, unit, Nora or a venue's place):
+**A hub carries no scope** (a person, room, unit, Nora or a place):
 `neighbours` returns one only as a direct neighbour of an in-scope frontier
 node, and no read seeds from one. Keeping a hub off the next frontier (the
 hub rule) is the walk's, so a person node is never a bridge from one message
-to everything said by or about that person.
+to everything said by or about that person. `places` returns the place hubs
+a question names, which the walk anchors on and never returns (step 3a,
+`nora.agent.memory_search._anchors`); every node reached from one is read
+through the scope like any other.
 
 **A dangling edge drops itself**: every hop joins `memory_node` on both the
 edge's kind and id, so an edge into a hidden message or a switched-out
@@ -119,6 +122,7 @@ from nora.domain.memory_index import (
     Seed,
     exact_pattern,
     is_latin,
+    place_named,
 )
 from nora.infra.sql.memory_index import embed_counts, index_status
 from nora.infra.sql.record_query import WORD_SIMILARITY_MIN
@@ -414,6 +418,23 @@ class SqlMemoryIndex:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
         return [_node(r) for r in rows]
+
+    async def places(self, query: str, *, limit: int) -> list[IndexedNode]:
+        if not query.strip() or limit <= 0:
+            return []
+        n = MEMORY_NODE.alias("n")
+        stmt = (
+            sa.select(*_columns(n))
+            .where(n.c.kind == "place", n.c.text != "")
+            .order_by(n.c.source_id)
+        )
+        # ponytail: every named place hub is read and matched here, not in
+        # SQL (a name must be held by the question, the reverse of a seed);
+        # they are the group's venues and the districts and cities around
+        # them, hundreds. A name index if they ever grow to many thousands.
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [_node(r) for r in rows if place_named(r.text, query)][:limit]
 
     async def neighbours(
         self, frontier: Sequence[tuple[str, str]], scope: MemoryScope,

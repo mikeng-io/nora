@@ -318,6 +318,69 @@ async def test_an_event_its_people_and_its_venue_are_projected(engine):
     assert ("event", sid, "about", "person", "member-d") in await _edges(engine, "event", sid)
 
 
+async def _all_edges(engine: Any) -> set[tuple[str, str, str, str, str]]:
+    async with engine.connect() as conn:
+        rows = (await conn.execute(sa.select(
+            MEMORY_EDGE.c.src_kind, MEMORY_EDGE.c.src_id, MEMORY_EDGE.c.rel,
+            MEMORY_EDGE.c.dst_kind, MEMORY_EDGE.c.dst_id,
+        ))).all()
+    return {tuple(r) for r in rows}
+
+
+_MK = "district:旺角 / Mong Kok"
+_KLN = "city:九龍 / Kowloon"
+
+
+async def test_a_venue_is_located_in_its_district_and_city_and_goes_when_nothing_names_it(
+    engine,
+):
+    """Step 3a: the venue's stored areas become place hubs named by them and
+    a `located_in` chain venue -> district -> city. A second event at the same
+    venue with no area (resolved before 0116) leaves the chain alone. When no
+    event names the venue any more, it goes, and the district and city with
+    it: nothing else lies in them. A rebuild from empty writes exactly what
+    live projection wrote."""
+    await _said(engine)
+    store = SqlGatheringStore(engine)
+    first = await store.create(_event(
+        venue_district="旺角 / Mong Kok", venue_city="九龍 / Kowloon",
+    ))
+    second = await store.create(_event(people=(), exclude_persons=()))
+    nodes = await _nodes(engine)
+    assert (nodes[("place", _MK)].text, nodes[("place", _KLN)].text) == (
+        "旺角 / Mong Kok", "九龍 / Kowloon",
+    )
+    assert all(
+        (nodes[("place", p)].unit, nodes[("place", p)].origin_room, nodes[("place", p)].persons)
+        == (None, None, [])
+        for p in (_MK, _KLN)
+    )
+    chain = {
+        ("place", "place-1", "located_in", "place", _MK),
+        ("place", _MK, "located_in", "place", _KLN),
+    }
+    assert chain <= await _all_edges(engine)
+
+    live_nodes = {k: n.text for k, n in (await _nodes(engine)).items()}
+    live_edges = await _all_edges(engine)
+    async with engine.begin() as conn:
+        await conn.execute(sa.delete(MEMORY_EDGE))
+        await conn.execute(sa.delete(MEMORY_NODE))
+    await memory_index.rebuild(engine)
+    assert {k: n.text for k, n in (await _nodes(engine)).items()} == live_nodes
+    assert await _all_edges(engine) == live_edges
+
+    for event in (first, second):
+        await store.update(replace(
+            event, venue_place_id="place-2", venue_name="Elsewhere",
+            venue_district=None, venue_city=None,
+        ))
+    nodes = await _nodes(engine)
+    assert ("place", "place-2") in nodes
+    assert not {("place", "place-1"), ("place", _MK), ("place", _KLN)} & set(nodes)
+    assert not {e for e in await _all_edges(engine) if e[2] == "located_in"}
+
+
 async def test_an_event_with_no_unit_is_scoped_to_its_room(engine):
     """A row from before `0074` carries `unit_id = ''`: its room, not every
     unit's, and a room the Record cannot name matches no read."""

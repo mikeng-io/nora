@@ -56,6 +56,7 @@ __all__ = [
     "is_latin",
     "narrowed",
     "nothing_to_embed",
+    "place_named",
     "social_label",
 ]
 
@@ -77,7 +78,9 @@ NodeKind = Literal[
 NODE_KINDS: tuple[str, ...] = get_args(NodeKind)
 
 #: The entities: a node a hop may reach only as a direct neighbour, never
-#: fan out from. They are the only nodes allowed no
+#: fan out from (a place the question names is the one exception: the walk
+#: anchors on it, inward along `located_in`, `nora.agent.memory_search`).
+#: They are the only nodes allowed no
 #: scope of their own; every other node carries a unit, a room or a person.
 HUB_KINDS: tuple[str, ...] = ("person", "room", "unit", "nora", "place")
 
@@ -406,6 +409,22 @@ def exact_pattern(term: str) -> str:
     return f"(?<![{_WORDISH}]){re.escape(term)}(?![{_WORDISH}])"
 
 
+#: The shortest part of a place's name that counts as naming it: one Chinese
+#: character or two Latin letters name nothing (`中`, `MK`).
+_PLACE_NAME_MIN = 2
+
+
+def place_named(name: str, query: str) -> bool:
+    """Whether `query` names the place whose hub text is `name`: one of its
+    «中文 / English» parts, held as an exact reference holds (`exact_holds`:
+    a Latin part on its own, `Mong Kok` and not `Mong Kokomo`; a Chinese part
+    as a substring, `旺角` in `旺角有咩食`), in any case."""
+    return any(
+        len(part) >= _PLACE_NAME_MIN and exact_holds(part, query)
+        for part in (p.strip() for p in name.split(" / "))
+    )
+
+
 #: How a social item's kind is said (instagram-adoption/06: «a story must be
 #: SAID to be a story»).
 _SOCIAL_KIND_WORDS: Mapping[str, str] = {
@@ -544,6 +563,14 @@ class MemoryIndexRead(Protocol):
     ) -> list[IndexedNode]:
         """In-scope, non-hub nodes with an `about` edge to `person_id`, newest
         first: the exact-reference seeds of a named person."""
+        ...
+
+    async def places(self, query: str, *, limit: int) -> list[IndexedNode]:
+        """The place hubs `query` names (`place_named`): a venue, a district,
+        a city. A hub carries no scope and is never returned to a reader; a
+        named one only anchors a walk inward along `located_in`
+        (`nora.agent.memory_search.walk`), whose every other node is
+        scoped."""
         ...
 
     async def neighbours(

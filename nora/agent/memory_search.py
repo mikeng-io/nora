@@ -59,7 +59,13 @@ interval, so `places` is mostly reached from what was said during one.
   is kept only as a direct neighbour of the node that reached it (a message's
   author, an event's venue), and never put on the next frontier. Two hops
   through a person reach everything ever said about them, which is a search
-  on the person, not an expansion of the question.
+  on the person, not an expansion of the question. **Its one exception is a
+  place the question names** (step 3a, `_anchors`): «near Mong Kok» anchors
+  the walk at the Mong Kok place node and the places `located_in` it (a
+  district's venues; a city's districts and theirs), and the first hop
+  leaves from them, inward only: the event `about` a venue there, the outing
+  `located_in` it. An anchor is never returned, and each node the hops reach
+  passes the scope like any other.
 - **The listed-room rule**: an edge to person P is followed only if
   the reading room lists P and, when the node it comes from was said in a
   room, that room lists P too. Talk about Kit in a room Kit is not in is not
@@ -291,8 +297,18 @@ REL_WEIGHT: Mapping[str, float] = {
     "cites": 0.9, "attached_to": 0.9, "supersedes": 0.8, "tracks": 0.8,
     "closes_into": 0.8, "leaves_behind": 0.8, "draws_on": 0.7, "informed_by": 0.7,
     "disputes": 0.8, "feedback_on": 0.7, "about": 0.6, "during": 0.5,
-    "outcome_of": 0.6, "mentions": 0.5, "in_room": 0.3,
+    "outcome_of": 0.6, "mentions": 0.5, "in_room": 0.3, "located_in": 0.7,
 }
+
+#: A place the question names (`MemoryIndexRead.places`) anchors the walk at
+#: the relevance of a literal reference, an exact seed's 1: a named place is
+#: one, as a name or a handle is.
+PLACE_SEED_SCORE = 1.0
+#: How far a named place descends `located_in` before the hops: a city to its
+#: districts to their venues.
+PLACE_DEPTH = 2
+#: The most places that anchor one walk, the named ones and those inside them.
+PLACE_LIMIT = 10
 _DEFAULT_WEIGHT = 0.5
 
 #: Words that carry no search: the question's grammar, not its subject.
@@ -522,7 +538,7 @@ async def walk(
     person_id: str | None, hops: int, admits: Callable[[IndexedNode], bool],
     exact: Sequence[ExactTerm] = (), vector: Sequence[float] | None = None,
     model: str | None = None, unembedded: bool = False, embedded: int = 0,
-    metrics: Any = None, bridge: MemoryScope | None = None,
+    metrics: Any = None, bridge: MemoryScope | None = None, query: str = "",
 ) -> list[Hit]:
     """Seed, then expand hop by hop (module docstring). `exact` are the
     literal references, the first `PINNED_LIMIT` of them pinned; with a
@@ -541,7 +557,13 @@ async def walk(
     one: a message reaches the outing it was said during, and an episode
     has no vector of its own. The hops run on `bridge`; the caller keeps
     only the asked kinds in the answer (`MemorySearch.search`). Dates and a
-    person narrow every read of both, and only the first pass pins."""
+    person narrow every read of both, and only the first pass pins.
+
+    `query` names places (`MemoryIndexRead.places`): each named place, and
+    the places `located_in` it down `PLACE_DEPTH` levels, ANCHORS the walk
+    (`_anchors`). An anchor is never a hit and never returned; the hops
+    leave from it, so «near Mong Kok» reaches the event at a venue in Mong
+    Kok and the outing located in it, each in scope or not reached."""
     reached: dict[tuple[str, str], Hit] = {}
     # A seed scored by its cosine has the cosine's floor; a lexical seed and
     # every hop keep the walk's (an episode has no vector: a hop reaches it).
@@ -604,15 +626,19 @@ async def walk(
                 if _listed_room_rule(person_id, node, scope):
                     keep(node, PERSON_SEED_SCORE, (Step(node.kind, how="about"),), seed_floor)
     hop_scope = bridge if bridge is not None else scope
+    anchors = await _anchors(index, query, hop_scope) if query.strip() else {}
 
-    frontier = sorted(reached.values(), key=lambda h: -h.score)[:FRONTIER_WIDTH]
+    frontier = [
+        *sorted(reached.values(), key=lambda h: -h.score)[:FRONTIER_WIDTH],
+        *anchors.values(),
+    ]
     for _ in range(max(0, min(hops, HOP_CEILING))):
         if not frontier or len(reached) >= NODE_BUDGET:
             break
         found = await index.neighbours([h.node.key for h in frontier], hop_scope)
         added: list[Hit] = []
         for nb in sorted(found, key=lambda n: (n.via, n.rel, n.node.key)):
-            parent = reached.get(nb.via)
+            parent = reached.get(nb.via) or anchors.get(nb.via)
             if parent is None:
                 continue
             if nb.node.is_hub:
@@ -627,6 +653,9 @@ async def walk(
             score = parent.score * REL_WEIGHT.get(nb.rel, _DEFAULT_WEIGHT)
             step = Step(nb.node.kind, nb.rel, nb.outgoing)
             if keep(nb.node, score, (*parent.path, step)):
+                if parent.node.key in anchors and parent.node.text:
+                    # Where it is: the place the walk reached it from.
+                    reached[nb.node.key].places.add(parent.node.text)
                 added.append(reached[nb.node.key])
                 if len(reached) >= NODE_BUDGET:
                     break
@@ -634,6 +663,44 @@ async def walk(
             break  # adaptive: this hop found nothing above the floor
         frontier = sorted(added, key=lambda h: -h.score)[:FRONTIER_WIDTH]
     return list(reached.values())
+
+
+async def _anchors(
+    index: MemoryIndexRead, query: str, scope: MemoryScope,
+) -> dict[tuple[str, str], Hit]:
+    """The places `query` names, each at `PLACE_SEED_SCORE`, and the places
+    `located_in` them, `PLACE_DEPTH` levels down, each a `located_in` weight
+    below the place it lies in; at most `PLACE_LIMIT`, the named first.
+
+    The one exception to the hub rule (DEC-313, amended for step 3a): a place
+    hub is a hop's frontier here, and only INWARD, to what lies in it, never
+    out to the city around it (that would widen «Mong Kok» to all of Kowloon)
+    and never from a place a hop reached (that is a search on the place, not
+    the question's). A hub carries no scope and an anchor is never returned:
+    every node the hops reach from one passes the index's scope."""
+    named = await index.places(query, limit=PLACE_LIMIT)
+    level = [Hit(n, PLACE_SEED_SCORE, (Step(n.kind, how="named"),)) for n in named]
+    anchors = {h.node.key: h for h in level}
+    for _ in range(PLACE_DEPTH):
+        if not level or len(anchors) >= PLACE_LIMIT:
+            break
+        found = await index.neighbours([h.node.key for h in level], scope)
+        inner: list[Hit] = []
+        for nb in sorted(found, key=lambda n: (n.via, n.node.key)):
+            if (
+                nb.rel != "located_in" or nb.outgoing or nb.node.kind != "place"
+                or nb.node.key in anchors or len(anchors) >= PLACE_LIMIT
+            ):
+                continue
+            parent = anchors[nb.via]
+            hit = Hit(
+                nb.node, parent.score * REL_WEIGHT["located_in"],
+                (*parent.path, Step(nb.node.kind, nb.rel, nb.outgoing)),
+            )
+            anchors[hit.node.key] = hit
+            inner.append(hit)
+        level = inner
+    return anchors
 
 
 class MemorySearch:
@@ -721,7 +788,7 @@ class MemorySearch:
                 exact=exact_terms_of(query, names), vector=vector, model=self._model,
                 unembedded=seeding.unembedded + seeding.given_up > 0, embedded=state.embedded,
                 metrics=self._metrics,
-                bridge=bridge,
+                bridge=bridge, query=query,
             )
         except Exception as exc:  # noqa: BLE001 — fail closed: «I couldn't check»
             log.warning("memory search failed (%s)", type(exc).__name__)

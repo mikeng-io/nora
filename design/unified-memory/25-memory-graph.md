@@ -78,7 +78,7 @@ set, each with its writer:
 | `feedback_on` | `feedback` item → act (a send, a comment reply, a summons answer) | projected from the Record item ([50](50-learning-from-acts.md) §3) |
 | `depicts` | media → person | face label (step 6) |
 | `mentions` | message, social item → person, place | ingestion, from resolved handles and resolved place names only |
-| `located_in` | place → place (a restaurant → a district → a city) | code, from the place's resolved address; never a model |
+| `located_in` | place → place (a restaurant → a district → a city); an outing → its district | code, from the place's resolved address components; never a model |
 | `outcome_of` | episode → act | the Rollup builder ([50](50-learning-from-acts.md)) |
 
 **A link is never evidence** (cognition-loop/05 §3, DEC-249). A Persona line
@@ -259,6 +259,25 @@ question names:
    closed last week, or a current hygiene notice nearby, is in no store. The
    recommendation path also runs a fresh `web_search`, recorded as a tool
    result: evidence a later note may cite, never a memory node by itself.
+
+**As built (00 «Sequence» step 3a, 2026-10-17).** The areas are the
+geocoder's structured address components, joined «中文 / English» and stored
+beside each place: an event's venue takes its district and city from the
+Geocoding API by the venue's place id when the venue resolves; an outing at
+no saved place takes them from the geocode cache near its centre (R-35: an
+outing at a saved place is never placed). `project()` writes a district and
+a city hub keyed by level and name (`district:旺角 / Mong Kok`), the venue
+`located_in` its district, the district in its city, and the outing
+`located_in` its district directly (an outing has no venue node). A place
+hub nothing reaches any more goes with its `located_in` edges, so a rebuild
+equals live. The read: a place hub whose name (either language) the question
+holds as an exact reference **anchors** the walk, with the places inside it
+two levels down, at an exact seed's relevance; the first hop leaves from
+them inward only (never out to the city around a district), each step
+weighted `located_in` 0.7, and an anchor is never returned. The outing is
+reached by its own `located_in` edge, not by `during`. A place a hop
+reaches is still a hub: the anchor is the only exception to §4's hub rule
+(DEC-313, amended).
 
 ## 7. When each node and edge is written
 

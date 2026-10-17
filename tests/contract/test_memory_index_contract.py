@@ -220,6 +220,41 @@ async def test_neighbours_both_directions_hubs_kept_out_of_scope_and_dangling_dr
     }
 
 
+async def test_places_are_the_place_hubs_the_question_names_and_a_place_hub_descends(
+    load: Load,
+) -> None:
+    """Step 3a: `places` returns the place hubs whose «中文 / English» name
+    (either part) the question holds as an exact reference does, whatever
+    their scope (a hub has none), and nothing else: not a hub of another
+    kind, not a nameless place, not a name inside a longer word. From a
+    place on the frontier, `neighbours` reaches what lies in it (a contained
+    place, an in-scope outing) and not an out-of-scope one."""
+    mk = IndexedNode("place", "district:旺角 / Mong Kok", "旺角 / Mong Kok")
+    venue = IndexedNode("place", "v1", "Langham Place")
+    kit = [["presence", "kit", None]]
+    index = await load(
+        [mk, venue, IndexedNode("place", "v2", ""), IndexedNode("person", "kit"),
+         IndexedNode("place", "district:Mong", "Mong"),
+         IndexedNode("outing", "o1", "outing", 1, unit="u1", persons=("kit",), lineage=kit),
+         IndexedNode("outing", "o2", "outing", 1, unit="u2", persons=("kit",), lineage=kit)],
+        [("place", "v1", "located_in", "place", mk.source_id),
+         ("outing", "o1", "located_in", "place", mk.source_id),
+         ("outing", "o2", "located_in", "place", mk.source_id)],
+    )
+    assert [n.key for n in await index.places("dinner near mong kok?", limit=5)] == [
+        ("place", "district:Mong"), mk.key,
+    ]
+    assert [n.key for n in await index.places("旺角邊間好", limit=5)] == [mk.key]
+    assert [n.key for n in await index.places("Mongkok Langham Place", limit=5)] == [
+        venue.key,
+    ]
+    assert await index.places("", limit=5) == []
+    found = await index.neighbours([mk.key], SCOPE)
+    assert {(nb.rel, nb.outgoing, nb.node.key) for nb in found} == {
+        ("located_in", False, venue.key), ("located_in", False, ("outing", "o1")),
+    }
+
+
 async def test_state_reads_the_index_state(load: Load) -> None:
     index = await _graph(load)
     assert await index.index_state() == IndexState("complete", 0)

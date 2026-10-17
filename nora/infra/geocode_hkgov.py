@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any
 
 import aiohttp
 
-from nora.infra.geocode import CachingBilingualGeocoder
+from nora.infra.geocode import CachingBilingualGeocoder, Geocoded
 
 if TYPE_CHECKING:
     from nora.domain.ports import GeocodeCacheStore
@@ -60,7 +60,7 @@ class HKGovGeocoder(CachingBilingualGeocoder):
         self._timeout_seconds = timeout_seconds
         self._lang = {"zh": lang_zh, "en": lang_en}
 
-    async def _fetch(self, lat: float, lng: float, language: str) -> str | None:
+    async def _fetch(self, lat: float, lng: float, language: str) -> Geocoded | None:
         """One HK-gov reverse-geocode in `language`. None on any failure — a
         non-200, an ArcGIS `error` envelope, non-JSON, or a transport error — so a
         missing address is never a dropped cycle. `location` is `lng,lat` (Esri
@@ -92,7 +92,11 @@ class HKGovGeocoder(CachingBilingualGeocoder):
             # any failure is a missing address, not a dropped cycle.
             log.warning("hkgov geocode unreachable: %s", exc)
             return None
-        return _hkgov_address(payload)
+        address = _hkgov_address(payload)
+        if address is None:
+            return None
+        district, city = _hkgov_area(payload)
+        return Geocoded(address, district=district, city=city)
 
 
 def _hkgov_address(payload: Any) -> str | None:
@@ -112,3 +116,21 @@ def _hkgov_address(payload: Any) -> str | None:
         if value:
             return value
     return None
+
+
+def _hkgov_area(payload: dict[str, Any]) -> tuple[str | None, str | None]:
+    """The district and the city an Esri `reverseGeocode` address names:
+    `Neighborhood` (else `District`) and `City` (else `Region`), the
+    standard address fields. A district that is the city's own name is not
+    a district; a locator that fills none answers no area."""
+    address = payload.get("address") or {}
+
+    def first(*fields: str) -> str | None:
+        for f in fields:
+            value = str(address.get(f) or "").strip()
+            if value:
+                return value
+        return None
+
+    district, city = first("Neighborhood", "District"), first("City", "Region")
+    return (None if district == city else district), city

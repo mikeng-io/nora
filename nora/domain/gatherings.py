@@ -340,6 +340,11 @@ class Gathering:
     #: `reasoning`/`confidence` above stay for a write that states one for the
     #: whole row.
     field_meta: tuple[FieldMeta, ...] = ()
+    #: The areas the resolved venue lies in (`nora.domain.ports.PlaceArea`),
+    #: resolved with it from Google's address components (migration
+    #: `0116_place_area`); the memory index's `located_in` chain.
+    venue_district: str | None = None
+    venue_city: str | None = None
 
     def __post_init__(self) -> None:
         validate_event_field_mode(self.reasoning)
@@ -379,6 +384,9 @@ class EventRevision:
     written_by: str
     written_at: datetime
     field_meta: tuple[FieldMeta, ...] = ()
+    #: The head's venue areas, snapshotted like its other venue fields.
+    venue_district: str | None = None
+    venue_city: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

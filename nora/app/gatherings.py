@@ -22,7 +22,7 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from nora.agent.lineage import LineagePolicy, visible_sections
-from nora.agent.security import screen_and_resolve_place
+from nora.agent.security import looks_like_coordinate, scan_identifiers, screen_and_resolve_place
 from nora.domain.gatherings import (
     CITED_MESSAGE,
     RSVP,
@@ -51,6 +51,7 @@ from nora.domain.gatherings import (
 from nora.domain.gatherings import (
     StaleEventRevisionError as StaleEventRevisionError,
 )
+from nora.domain.ports import PlaceArea
 from nora.domain.reminders import (
     ensure_utc,
 )
@@ -81,6 +82,13 @@ log = logging.getLogger("nora.app.gatherings")
 
 class _RouteSource(Protocol):
     async def place_info(self, name: str) -> dict[str, Any]: ...
+
+
+class _PlaceAreas(Protocol):
+    """A resolved venue's areas by its Google place id
+    (`nora.infra.geocode.GoogleGeocoder.area_of_place`); None on a failure."""
+
+    async def area_of_place(self, place_id: str) -> PlaceArea | None: ...
 
 
 class _Honcho(Protocol):
@@ -144,9 +152,14 @@ class GatheringService:
         ai_peer: str,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
         unit_room_ids: Callable[[str], Sequence[str]] | None = None,
+        place_areas: _PlaceAreas | None = None,
     ) -> None:
         self._store = store
         self._route_source = route_source
+        # A resolved venue's district and city, by its place id
+        # (`GoogleGeocoder.area_of_place`); `None` (no Maps key) resolves
+        # venues with no area, so the memory index gives them no `located_in`.
+        self._place_areas = place_areas
         self._honcho = honcho
         self._ai_peer = ai_peer
         self._now = now
@@ -475,18 +488,46 @@ class GatheringService:
                 venue_price_level="",
                 venue_maps_url=None,
                 venue_resolved_at=None,
+                venue_district=None,
+                venue_city=None,
             )
+        place_id = resolved.get("place_id")
+        area = await self._area_of(str(place_id)) if place_id else None
         return replace(
             event,
             venue_text=venue_text,
-            venue_place_id=resolved.get("place_id"),
+            venue_place_id=place_id,
             venue_name=resolved.get("name"),
             venue_address=resolved.get("address"),
             venue_rating=resolved.get("rating"),
             venue_price_level=resolved.get("price_level", ""),
             venue_maps_url=resolved.get("maps_url"),
             venue_resolved_at=now,
+            venue_district=area.district if area else None,
+            venue_city=area.city if area else None,
         )
+
+    async def _area_of(self, place_id: str) -> PlaceArea | None:
+        """The venue's district and city, each screened on the way back the
+        way `_resolve_place` screens Google's name and address (R-28): a
+        name carrying an identifier or a coordinate is dropped, never
+        stored. Never raises: a failure resolves no area."""
+        if self._place_areas is None:
+            return None
+        try:
+            area = await self._place_areas.area_of_place(place_id)
+        except Exception:
+            log.exception("venue area lookup failed; the venue keeps no area")
+            return None
+        if area is None:
+            return None
+
+        def clean(name: str | None) -> str | None:
+            if not name or scan_identifiers(name) is not None or looks_like_coordinate(name):
+                return None
+            return name
+
+        return PlaceArea(district=clean(area.district), city=clean(area.city)) or None
 
     async def _resolve_place(
         self, text: str, *, person_names: frozenset[str] | None = None,
