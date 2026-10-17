@@ -42,9 +42,11 @@ of truth (conversational-recall/20):
 | `disputes`, `feedback_on`, `depicts` | a Record item (`persona_dispute`, `feedback`, a face label) | code, from the Record |
 
 **`cites` edges exist only for stores that store citations** (operator,
-2026-10-15): memos, lessons, events, Persona lines, and notes once the build
-gives them citations (`note_revision` has no citations column today, 00
-«Sequence» step 4). Standing stores no citations and has no `cites` edges.
+2026-10-15): memos, lessons, events, Persona lines, and notes. A note
+revision stores them in `note_revision.citations` since migration
+`0116_note_citations` (00 «Sequence» step 4, built 2026-10-17): what its body
+cites, in `memo_revision.citations`' form, and the index projects the head's
+as it does a memo's. Standing stores no citations and has no `cites` edges.
 
 **Nothing walks these edges for withdrawal** (operator, 2026-10-15). The
 retraction cascade and its `citation` edge table were deleted on 2026-10-03
@@ -71,7 +73,7 @@ set, each with its writer:
 | `attached_to` | media → message or link; link → message; a social item's medium, and its tagged place, → its social item | ingestion; the media lane for a reel read from a link (§6 step 3); the social stream's projection (§7a) |
 | `during` | message, media → episode | Rollup builder |
 | `about` | entry → entity (person, room, unit, Nora, place) | write verb |
-| `cites` | an entry that stores citations (memo, event, lesson, Persona line; a note once built; never Standing) → Record row, Rollup key or episode | write verb |
+| `cites` | an entry that stores citations (memo, event, lesson, Persona line, note; never Standing) → Record row, Rollup key or episode | write verb |
 | `supersedes` | entry → entry | write verb |
 | `tracks`, `closes_into`, `leaves_behind`, `draws_on`, `informed_by` | entry → entry: DEC-249's typed links (cognition-loop/05 §3). A note tracks an event, closes into a memo; an event leaves behind a memo; a collective's Persona, a lesson, or a `deduced` Persona line draws on a Persona line; a Standing line is informed by a Persona line or a lesson | write verb |
 | `disputes` | `persona_dispute` item → Persona line | projected from the Record item |

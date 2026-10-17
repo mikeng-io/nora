@@ -288,7 +288,7 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
 APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
     "note_revision": lambda n: {
         "id": _uuid("nr", n), "note_id": _uuid("note", 0), "body": f"body {n}",
-        "written_at": MS0 + n, "established_by": "test",
+        "written_at": MS0 + n, "established_by": "test", "citations": [],
     },
     "standing_revision": lambda n: {
         "platform": "signal", "conversation_id": "g0", "body": f"pos {n}",

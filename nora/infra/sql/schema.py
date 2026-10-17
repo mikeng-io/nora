@@ -2401,6 +2401,11 @@ NOTE_REVISION = sa.Table(
     # different authors.
     sa.Column("instruction_sha256", sa.Text),
     sa.Column("model", sa.Text),
+    # `0116_note_citations`: the ids and Rollup keys the body cites
+    # (`NoteRevision.citations`), the column the memory index projects `cites`
+    # edges from, as `memo_revision.citations`. Empty is a real state: a body
+    # whose `## Decided` and `## Open` hold no line cites nothing.
+    sa.Column("citations", pg.ARRAY(sa.Text), nullable=False),
     _recorded_at(),
     sa.CheckConstraint(
         "instruction_sha256 is null or instruction_sha256 ~ '^[0-9a-f]{64}$'",
