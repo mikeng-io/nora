@@ -108,6 +108,10 @@ def test_the_estimate_counts_draws_and_bounds_their_cost():
     assert est.line() == (
         f"estimate: 3 cases x 3 samples x 1 arm = 9 draws, ~{est.seconds / 60:.0f} min"
     )
+    # The judge's share scales with --judge-samples; at the default it is 211 s.
+    one = estimate([(1, True)], 1, judge_samples=1).seconds
+    assert estimate([(1, True)], 1, judge_samples=5).seconds > JUDGED_DRAW_SECONDS > one
+    assert estimate([(1, False)], 1, judge_samples=5).seconds == UNJUDGED_DRAW_SECONDS
 
 
 def test_the_run_that_held_the_lock_all_night_is_refused_unless_allowed():

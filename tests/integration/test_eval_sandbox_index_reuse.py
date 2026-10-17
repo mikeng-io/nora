@@ -11,6 +11,7 @@ and file here is synthetic.
 from __future__ import annotations
 
 import dataclasses
+import time
 from contextlib import AsyncExitStack
 from typing import Any
 
@@ -115,6 +116,65 @@ async def _build(source_engine: Any, url: str) -> None:
         await target.dispose()
 
 
+async def _future_line(engine: Any, body: str, at_ms: int) -> None:
+    """A line said at `at_ms`, so its node's own bound (`at_ms`) is later
+    than any wait it could have and never decides `owed_since`."""
+    from nora.domain.models import NormalizedMessage
+    from nora.infra.sql.audit import SqlRecordStore
+
+    await SqlRecordStore(engine).append(message=NormalizedMessage(
+        "signal", "g-synthetic", "group", "+10000000001", "Member A", at_ms, body, {},
+    ), person_id="member-a")
+
+
+async def _age(engine: Any, text: str, since: str) -> None:
+    async with engine.begin() as conn:
+        await conn.execute(sa.update(MEMORY_NODE).where(MEMORY_NODE.c.text == text)
+                           .values(owed_since=sa.text(f"timestamptz '{since}'")))
+
+
+async def test_the_wait_is_kept_or_restarted_as_a_build_decides(source, pg_template):
+    """A still-owed line said in the future (so its instant bounds nothing),
+    whose live node has waited since a fixed time. Its input unchanged, a
+    build keeps that wait and so must an applied image; its live input
+    changed, a build restarts the wait now and so must an applied image.
+    The branch of `_cleared_when` alone decides `owed_since` here."""
+    future = int(time.time() * 1000) + 86_400_000
+    since = "2026-01-01 00:00:00+00"
+    async with AsyncExitStack() as stack:
+        sandboxes = [await _sandbox(stack, source[0], pg_template) for _ in range(5)]
+        for _, engine in sandboxes:
+            await _future_line(engine, "a plan nobody embedded", future)
+            await _age(engine, "a plan nobody embedded", since)
+        first, kept_build, kept_applied, reset_build, reset_applied = sandboxes
+        await _build(source[1], first[0])
+        async with first[1].connect() as conn:
+            image = await memory_index.index_image(conn)
+        # The live projection said something else: the build re-projects it.
+        for _, engine in (reset_build, reset_applied):
+            async with engine.begin() as conn:
+                await conn.execute(sa.update(MEMORY_NODE)
+                                   .where(MEMORY_NODE.c.text == "a plan nobody embedded")
+                                   .values(text="an earlier draft"))
+        for applied in (kept_applied, reset_applied):
+            async with source[1].connect() as src, applied[1].begin() as dst:
+                await memory_index.apply_index_image(src, dst, image, model=MODEL)
+        for built in (kept_build, reset_build):
+            await _build(source[1], built[0])
+
+        kept = await _owed(kept_build[1])
+        assert {str(v.year) for v in kept.values()} == {"2026"} and len(kept) == 1
+        assert await _owed(kept_applied[1]) == kept
+        for engine in (reset_build[1], reset_applied[1]):
+            async with engine.connect() as conn:
+                counts = await memory_index.embed_counts(conn, MODEL, fresh_seconds=3600)
+            assert counts.fresh == 1
+        for engine in (kept_build[1], kept_applied[1]):
+            async with engine.connect() as conn:
+                assert (await memory_index.embed_counts(
+                    conn, MODEL, fresh_seconds=3600)).fresh == 0
+
+
 async def test_an_applied_image_owes_what_a_build_owes_and_since_when(source, pg_template):
     """With a node still owed a vector (edited after the instant, so nothing
     is adopted for it), an image applied to a second sandbox equals a build
@@ -197,6 +257,54 @@ async def test_another_declared_key_is_built_not_reused(source, pg_template):
         assert not b.reused
 
 
+async def _ids(engine: Any) -> list[tuple[int, str, str]]:
+    node = MEMORY_NODE.c
+    async with engine.connect() as conn:
+        return [tuple(r) for r in await conn.execute(
+            sa.select(node.id, node.kind, node.source_id).order_by(node.id)
+        )]
+
+
+async def _next_id(engine: Any) -> int:
+    """The id the next node would take, consumed in a rolled-back insert."""
+    async with engine.connect() as conn:
+        return int((await conn.execute(sa.text(
+            "SELECT nextval(pg_get_serial_sequence('memory_node', 'id'))"
+        ))).scalar_one())
+
+
+async def test_a_reused_index_numbers_its_nodes_as_a_build_does(source, pg_template):
+    """A read breaks ties on the node id (`memory_read`), so the ids are part
+    of what a reuse must equal: the same `(id, kind, source_id)` rows as a
+    build, the new ones a build writes after the live ones included, and the
+    sequence where a build leaves it for the turn's own writes. A media node
+    keyed `5:...` sorts before message `10` as text and after it by id, so
+    an order by key would renumber them."""
+    rows = [*ROWS, *((f"line {n}", ()) for n in range(8))]
+    async with AsyncExitStack() as stack:
+        first = await _sandbox(stack, source[0], pg_template, rows=rows)
+        reused = await _sandbox(stack, source[0], pg_template, rows=rows)
+        built = await _sandbox(stack, source[0], pg_template, rows=rows)
+        # The index starts empty, as a full restore's does, so every node is
+        # one the build itself numbers.
+        for _, engine in (first, reused, built):
+            async with engine.begin() as conn:
+                await conn.execute(sa.delete(MEMORY_EDGE))
+                await conn.execute(sa.delete(MEMORY_NODE))
+        assert (await _ids(reused[1])) == []
+        await _build(source[1], first[0])
+        async with first[1].connect() as conn:
+            image = await memory_index.index_image(conn)
+        async with source[1].connect() as src, reused[1].begin() as dst:
+            await memory_index.apply_index_image(src, dst, image, model=MODEL)
+        await _build(source[1], built[0])
+        ids = await _ids(built[1])
+        kinds = [k for _, k, _ in ids]
+        assert "media" in kinds and "message" in kinds
+        assert await _ids(reused[1]) == ids
+        assert await _next_id(reused[1]) == await _next_id(built[1])
+
+
 def _only_entry(cache: IndexCache) -> tuple[Any, Any]:
     [(key, built)] = list(cache._entries.items())
     return key, built
@@ -213,7 +321,7 @@ async def test_a_reused_index_still_reads_its_coverage_back(source, pg_template)
         await index_sandbox(first[0], source_url=source[0], model_id=MODEL_ID,
                             cache=cache, key=KEY)
         key, built = _only_entry(cache)
-        bare = tuple((*r[:11], None, None, 0, None, None, None) for r in built.image.nodes)
+        bare = tuple((*r[:11], None, None, 0, None, None, None, r[-1]) for r in built.image.nodes)
         cache.put(key, dataclasses.replace(
             built, image=dataclasses.replace(built.image, nodes=bare)))
         with pytest.raises(GraphIndexRefusedError, match="under its floor"):
@@ -235,7 +343,8 @@ async def test_an_applied_index_that_does_not_fit_the_sandbox_is_refused(source,
                             cache=cache, key=KEY)
         key, built = _only_entry(cache)
         [message] = [r for r in built.image.nodes if r[0] == "message"][:1]
-        ghost = (message[0], "999999", *message[2:])
+        ghost = (message[0], "999999", *message[2:-1],
+                 max(n[-1] for n in built.image.nodes) + 1)
         cache.put(key, dataclasses.replace(built, image=dataclasses.replace(
             built.image, nodes=(*built.image.nodes, ghost))))
         with pytest.raises(GraphIndexRefusedError, match="does not fit"):

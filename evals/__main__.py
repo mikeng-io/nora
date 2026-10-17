@@ -106,15 +106,18 @@ CORPUS_CLASS: dict[str, str] = {
 _PRINTS_INPUT = frozenset({"standing"})
 
 
-#: What one draw costs, in seconds, for the run budget below. MEASURED, never
-#: guessed: unjudged is the mean draw of `tool_selection --memory-index
-#: --sample 3` on the deploy host (n=259 draws, 46 s, of which a
-#: mean 15.7 s was the sandbox's index build; a repeat draw reuses that,
-#: `nora.subject.sandbox_index.IndexCache`, so 46 bounds a draw from above);
-#: judged is ~211 s a draw with the default judge samples
-#: (`.agents/skills/nora-eval`).
+#: What one draw costs, in seconds, for the run budget below. Unjudged is
+#: MEASURED on one corpus only: the mean draw of `tool_selection
+#: --memory-index --sample 3` on the deploy host (n=259 draws, 46 s, of which
+#: a mean 15.7 s was the sandbox's index build, which a repeat draw reuses,
+#: `nora.subject.sandbox_index.IndexCache`). Every other corpus and the Honcho
+#: surface are unmeasured and take the same figure. Judged is ~211 s a draw
+#: at the default judge samples (`.agents/skills/nora-eval`); the judge's
+#: share of it, 211 - 46, is split evenly per judge sample, so
+#: `--judge-samples` scales it.
 UNJUDGED_DRAW_SECONDS = 46
 JUDGED_DRAW_SECONDS = 211
+JUDGE_SAMPLE_SECONDS = (JUDGED_DRAW_SECONDS - UNJUDGED_DRAW_SECONDS) / DEFAULT_SAMPLES
 
 #: The longest run `python -m evals` starts without `--allow-long`. The deploy
 #: host has ONE eval lock (`/tmp/nora-eval.lock`), shared by every session:
@@ -142,13 +145,16 @@ class Estimate:
         )
 
 
-def estimate(selection: list[tuple[int, bool]], sample: int) -> Estimate:
+def estimate(
+    selection: list[tuple[int, bool]], sample: int, judge_samples: int = DEFAULT_SAMPLES,
+) -> Estimate:
     """`selection` is one `(cases, judged)` per corpus the run draws."""
     cases = sum(n for n, _ in selection)
-    seconds = sum(
-        n * sample * (JUDGED_DRAW_SECONDS if judged else UNJUDGED_DRAW_SECONDS)
+    judged_draw = UNJUDGED_DRAW_SECONDS + judge_samples * JUDGE_SAMPLE_SECONDS
+    seconds = round(sum(
+        n * sample * (judged_draw if judged else UNJUDGED_DRAW_SECONDS)
         for n, judged in selection
-    )
+    ))
     return Estimate(cases=cases, sample=sample, draws=cases * sample, seconds=seconds)
 
 
@@ -731,7 +737,7 @@ def main() -> int:
                     (len(selected_cases(n, only=only, memory_index=graph)),
                      bool(args.judge) and n in JUDGED_CORPORA)
                     for n in names
-                ], args.sample)
+                ], args.sample, args.judge_samples)
             except ValueError as exc:
                 print(f"refusing to run: {exc}", file=sys.stderr)
                 return 2

@@ -54,13 +54,14 @@ and applied to the next sandbox whose key matches; the key is:
   `key`: the room, the instant, the seeding path and the rows a case seeds
   itself), the source and the model, and the source's coverage;
 - MEASURED, the digest of the index live projection already wrote while the
-  sandbox was seeded (every store write projects, `memory_index`), so a seed
-  that differs in any projected row, or in an id (a lesson's uuid4), misses
-  and is built.
+  sandbox was seeded (every store write projects, `memory_index`), node ids
+  and their sequence included, so a seed that differs in any projected row,
+  or in an id (a lesson's uuid4), misses and is built.
 
 Applied, it is checked again before it counts: `rebuild(dry_run=True)` must
-project the same sources per kind as the first build and drop nothing (a
-node whose source this sandbox does not hold), or the draw is refused. Then
+count as many sources per kind as the first build walked and find no node
+whose source this sandbox does not hold (counts, not contents: the digest
+above is the content check), or the draw is refused. Then
 the coverage is read back and held to the floor, per draw, exactly as a
 build is. What a reuse writes differently from a build is wall-clock only:
 `apply_index_image` says how it re-derives `projected_at` and `owed_since`.

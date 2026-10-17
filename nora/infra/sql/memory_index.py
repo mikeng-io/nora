@@ -2234,9 +2234,10 @@ async def _adopt_owed_since(
 
 # --- an eval sandbox's index, built once and applied again ------------------
 
-#: What a build decides, per node: every column but the row id and the two
-#: wall-clock ones (`projected_at`, `owed_since`), which `apply_index_image`
-#: re-derives the way a build would. The vector rides beside them as text.
+#: What a build decides, per node: every column but the two wall-clock ones
+#: (`projected_at`, `owed_since`), which `apply_index_image` re-derives the
+#: way a build would. The vector and the row id ride after them: the id
+#: because a read breaks ties on it (`memory_read`).
 _IMAGE_NODE_COLUMNS = (
     "kind", "source_id", "unit", "origin_room", "persons", "exclude_persons", "lineage",
     "sha256", "text", "at_ms", "state", "embedding_model", "embedded_at", "embed_attempts",
@@ -2249,17 +2250,22 @@ _IMAGE_QUEUE_COLUMNS = ("kind", "source_id", "attempts", "last_error")
 @dataclass(frozen=True, slots=True)
 class IndexImage:
     """The four `memory_*` tables of one database as a build left them, minus
-    row ids and wall-clock columns, each table in a fixed order. Two
-    databases whose index a build made identically have equal images, so
-    `image_digest` is the content hash an eval reuse is proven against."""
+    wall-clock columns, each table in a fixed order, and where the node id
+    sequence stands. Two databases whose index a build made identically have
+    equal images, so `image_digest` is the content hash an eval reuse is
+    proven against."""
 
-    #: `_IMAGE_NODE_COLUMNS`, then the vector as text (None when absent).
+    #: `_IMAGE_NODE_COLUMNS`, the vector as text (None when absent), then the
+    #: row id; in id order, the order a build wrote them.
     nodes: tuple[tuple[Any, ...], ...]
     edges: tuple[tuple[Any, ...], ...]
     queue: tuple[tuple[Any, ...], ...]
     #: `memory_index_state`'s status and unprojected count, or ("never", 0).
     status: str
     unprojected: int
+    #: `memory_node`'s id sequence: (last_value, is_called), so the next node
+    #: a turn's write projects takes the id it would after a build.
+    sequence: tuple[int, bool] = (1, False)
 
 
 def image_digest(image: IndexImage) -> str:
@@ -2268,7 +2274,8 @@ def image_digest(image: IndexImage) -> str:
     import json
 
     blob = json.dumps(
-        [image.nodes, image.edges, image.queue, image.status, image.unprojected],
+        [image.nodes, image.edges, image.queue, image.status, image.unprojected,
+         image.sequence],
         sort_keys=True, default=str, separators=(",", ":"),
     )
     return hashlib.sha256(blob.encode()).hexdigest()
@@ -2280,9 +2287,9 @@ async def index_image(conn: AsyncConnection) -> IndexImage:
     nodes = tuple(sorted(
         (tuple(r) for r in await conn.execute(sa.select(
             *(node[c] for c in _IMAGE_NODE_COLUMNS),
-            sa.cast(node.embedding, sa.Text).label("vector"),
+            sa.cast(node.embedding, sa.Text).label("vector"), node.id,
         ))),
-        key=lambda r: (r[0], r[1]),
+        key=lambda r: r[-1],
     ))
     edges = tuple(sorted(tuple(r) for r in await conn.execute(
         sa.select(*(edge[c] for c in _IMAGE_EDGE_COLUMNS))
@@ -2297,7 +2304,14 @@ async def index_image(conn: AsyncConnection) -> IndexImage:
         sa.select(MEMORY_INDEX_STATE.c.status, MEMORY_INDEX_STATE.c.unprojected)
     )).first()
     status, unprojected = ("never", 0) if state is None else (str(state[0]), int(state[1]))
-    return IndexImage(nodes, edges, queued, status, unprojected)
+    # NULL until the sequence has handed out a value: (1, False), its start.
+    last = (await conn.execute(sa.text(
+        "SELECT pg_sequence_last_value(pg_get_serial_sequence('memory_node', 'id')::regclass)"
+    ))).scalar_one()
+    seq = (1, False) if last is None else (int(last), True)
+    return IndexImage(
+        nodes, edges, queued, status, unprojected, seq,
+    )
 
 
 async def apply_index_image(
@@ -2307,15 +2321,17 @@ async def apply_index_image(
     `adopt_worker_state` from `source` had run on it.
 
     For an eval sandbox (`nora.subject.sandbox_index`) whose rows are those a
-    sandbox `image` was built on already held: the caller proves that,
-    before (the index live projection wrote while seeding) and after
-    (`rebuild(dry_run=True)` drops nothing). The rows a build decides are
-    copied; the wall-clock columns are written as the build writes them. A
-    node live projection already wrote keeps its row id and its
-    `owed_since` unless its input differs from the image's (the upsert's own
-    `_cleared_when` rule); a new node is written now; then `source`'s wait
-    is adopted for every node still owed (`_adopt_owed_since`), exactly as
-    `adopt_worker_state` ends."""
+    sandbox `image` was built on already held, row ids included: the caller
+    proves that, before (the digest of the index live projection wrote while
+    seeding, ids and sequence included) and after (`rebuild(dry_run=True)`
+    counts the same sources per kind and drops nothing). The rows a build
+    decides are copied, a new node under the id the build gave it, in id
+    order, and the id sequence is left where the build left it; the
+    wall-clock columns are written as the build writes them. A node live
+    projection already wrote keeps its `owed_since` unless its input differs
+    from the image's (the upsert's own `_cleared_when` rule); a new node is
+    written now; then `source`'s wait is adopted for every node still owed
+    (`_adopt_owed_since`), exactly as `adopt_worker_state` ends."""
     node, edge = MEMORY_NODE.c, MEMORY_EDGE.c
     wanted = {(r[0], r[1]) for r in image.nodes}
     extra = [
@@ -2327,6 +2343,7 @@ async def apply_index_image(
     params = {c: sa.bindparam(f"p_{c}", type_=MEMORY_NODE.c[c].type) for c in _IMAGE_NODE_COLUMNS}
     stmt = pg_insert(MEMORY_NODE).values(
         **params,
+        id=sa.bindparam("p_id", type_=sa.BigInteger),
         embedding=sa.cast(sa.bindparam("p_vector", type_=sa.Text), HALFVEC(EMBEDDING_DIMENSIONS)),
     )
     changed = _input_changed(stmt.excluded.text, stmt.excluded.sha256)
@@ -2340,8 +2357,8 @@ async def apply_index_image(
         },
     )
     rows = [
-        {**{f"p_{c}": v for c, v in zip(_IMAGE_NODE_COLUMNS, r[:-1], strict=True)},
-         "p_vector": r[-1]}
+        {**{f"p_{c}": v for c, v in zip(_IMAGE_NODE_COLUMNS, r[:-2], strict=True)},
+         "p_vector": r[-2], "p_id": r[-1]}
         for r in image.nodes
     ]
     for i in range(0, len(rows), _CHUNK):
@@ -2365,5 +2382,9 @@ async def apply_index_image(
     await _set_state(
         target, status=image.status, started_at=now, finished_at=now,
         unprojected=image.unprojected,
+    )
+    await target.execute(
+        sa.text("SELECT setval(pg_get_serial_sequence('memory_node', 'id'), :v, :called)"),
+        {"v": image.sequence[0], "called": image.sequence[1]},
     )
     await _adopt_owed_since(source, target, model=model)
