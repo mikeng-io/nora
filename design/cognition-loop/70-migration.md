@@ -590,7 +590,8 @@ builds the shadow session under `[cognition] session_mode = "shadow"`
 shutdown; the session rides the Dreamer's model and takes its budget from
 `[dreamer.budgets.cognition]`; its read tools are the catalogue's that exist
 (`rollup_read`, `memo_read`, `character_read`, `standing_read` and
-`social_items` are not built yet); its instruction is
+`social_items` are not built yet; `social_items` is built since 2026-10-17
+as `social_read`, [15](15-map.md) §4); its instruction is
 `nora/dreamer/objectives/cognition.md`; the tool_selection corpus runs through
 `CognitionSessionRunner.probe`. Nothing has run against a live model: a
 shadow week is the measurement, and the `tool_selection_cognition` eval runs

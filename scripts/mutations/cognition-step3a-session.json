@@ -7,11 +7,11 @@
   "target": "tests/unit/test_cognition_session.py -k test_message_stimuli_in_one_room_become_one_item_bound_to_that_room"
  },
  {
-  "name": "cognition_session: social/play/rollup/time/self actually bind the home room, not the stimulus's own room",
+  "name": "cognition_session: play/rollup/time/self actually bind the home room, not the stimulus's own room",
   "file": "nora/domain/cognition_session.py",
   "old": "    return home_room",
   "new": "    return Room(stimulus.platform or home_room.platform, stimulus.conversation_id or home_room.conversation_id)",
-  "target": "tests/unit/test_cognition_session.py -k test_social_play_rollup_time_and_self_bind_the_home_room_not_a_stimulus_room"
+  "target": "tests/unit/test_cognition_session.py -k test_play_rollup_time_and_self_bind_the_home_room_not_a_stimulus_room"
  },
  {
   "name": "cognition_session: surprise actually weighs a cue above raw volume",

@@ -51,9 +51,11 @@ from nora.domain.stimuli import Stimulus
 #: look, may not write».
 COGNITION_ADAPTOR = "cognition"
 
-#: The kinds bound to the room they came from; every other kind binds the
-#: unit's home room.
-_ROOM_BOUND_KINDS: frozenset[str] = frozenset({"message"})
+#: The kinds bound to the room they name; every other kind binds the unit's
+#: home room. A message names the room it came from; a social read names a
+#: room of the unit that lists its author, the only rooms that may be shown
+#: it (`composition.social_person_rooms`), and one naming none binds home.
+_ROOM_BOUND_KINDS: frozenset[str] = frozenset({"message", "social"})
 #: The daily look ahead (DEC-303): a `time` stimulus the wake evaluator raises
 #: with each floor for a room holding an event that is coming up. Unlike the
 #: floor it names a room, and is bound to it, so the look reads and writes

@@ -96,8 +96,10 @@ handed.** Each of these was found by reading the input before the instruction
   `room` argument takes.
 
 **Every item binds one room**: the room its stimulus came from, or, for an item
-with none (a Rollup, `time`, `self`, social or play stimulus), the unit's home
-room (39 D2). That
+with none (a Rollup, `time`, `self` or play stimulus), the unit's home room
+(39 D2). A social stimulus names a room of the unit that lists its author, the
+home room when it does ([22](22-social-stream.md) §6): only such a room may be
+shown the author's items. That
 item's room-scoped reads resolve through its room (R-21), and every read
 returns only what its room may be shown ([10](10-tiers.md) §3). Which tools a
 unit-keyed session may hold at all stays decided by `UNIT_SAFE_TOOLS` and
@@ -124,7 +126,7 @@ versions injected, the config revision in force, and the model id and route
 
 | class | verbs | leaves the session how |
 |---|---|---|
-| **read** | every read tool the registry admits (`read_only_tools()`) except the live social reads ([20](20-observe.md) §2), plus the Notebook and Rollup reads of [15](15-map.md) §4: `record_query`, `rollup_read`, `event_search`, `memo_read`, `character_read`, `standing_read`, `social_items` | returns into context, filtered by the item's room |
+| **read** | every read tool the registry admits (`read_only_tools()`) except the live social reads ([20](20-observe.md) §2), plus the Notebook and Rollup reads of [15](15-map.md) §4: `record_query`, `rollup_read`, `event_search`, `memo_read`, `character_read`, `standing_read`, `social_items` (built as `social_read`, [15](15-map.md) §4) | returns into context, filtered by the item's room |
 | **write** | one family per tier: Register (`note_create`, `note_update`, `memo_write`, `memo_withdraw`, `event_propose` (status `staged` or `proposed`), `event_revise`, `event_set_status`), Standing (`standing_revise`); each takes `base_revision_id`. Character's and Lessons' verbs belong to their own adaptors ([50](50-character-and-standing.md) §6) | code validates, then commits (§3) |
 | **act** | `remind(at, room, brief)`, the one act verb; `room` is the agenda item's bound room. `remind_move(reminder_id, at, why)` and `remind_cancel(reminder_id, why)` for reminders Cognition itself wrote, never a person's | a reminder row; the fire path composes it when due |
 | **pace** | `wake_at(at, subject_rows, why)`, `wake_move(wake_id, at, why)`, `wake_cancel(wake_id, why)` | write verbs on the unit's stimulus table, not a tier: a `self` stimulus due at `at` ([20](20-observe.md) §3); nothing leaves for a room |

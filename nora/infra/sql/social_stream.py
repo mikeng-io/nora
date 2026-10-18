@@ -28,8 +28,8 @@ list read carrying its probe's counts. A probe that made a list read due does
 not advance them, so a list read that fails leaves the rise still due.
 
 **What is read is filtered here, once** (§2). Every read of items for
-perception, for a stimulus, for the Rollup's daybook or for a person's
-Character session leaves out an item
+perception, for a stimulus, for the Rollup's daybook, for a person's
+Character session or for `social_read` (`items_of`) leaves out an item
 whose person has `social = false` (`opted_out`, given at construction) and an
 item with a `gone` or `hidden` state row. The poller's own dedupe
 and marker reads are the writer's state and are not filtered.
@@ -71,6 +71,7 @@ from nora.domain.social_stream import (
     PersonSocialItem,
     PollStage,
     Reading,
+    RecordedItem,
     SocialItem,
     cursor_is_bad,
     from_us,
@@ -217,7 +218,7 @@ class Relist:
 
 
 class SqlSocialStreamStore:
-    """The stream's five tables, as twenty-one verbs."""
+    """The stream's five tables, as twenty-six verbs."""
 
     def __init__(
         self, engine: AsyncEngine, *, opted_out: frozenset[str] = frozenset(),
@@ -737,6 +738,58 @@ class SqlSocialStreamStore:
             )
         return list(reads.values())
 
+    # -- the reader: `social_read` (§6) ----------------------------------------
+
+    async def items_of(
+        self, *, persons: Sequence[str], start: datetime, end: datetime, limit: int,
+    ) -> list[RecordedItem]:
+        """One person's readable items posted in `[start, end)`, newest first,
+        at most `limit`: polled and back-filled alike, each with the readings
+        its media already have (`media_objects` title and description, in the
+        item's media order) and its current tagged place (`current_place`).
+        `persons` is every id the person's items may be recorded under, their
+        current id and each retired one. Readable is `_readable`'s: not opted
+        out, and no `gone` or `hidden` state row; a `place` row hides
+        nothing."""
+        if not persons:
+            return []
+        i = SOCIAL_ITEM
+        stmt = (
+            sa.select(
+                i.c.network, i.c.kind, i.c.collab, i.c.taken_at, i.c.expires_at,
+                # The place as the author has it now: a tag they changed shows
+                # the new place, one they removed shows none.
+                i.c.caption, current_place(i).label("location"), i.c.media_ref,
+            )
+            .where(
+                *self._readable(), i.c.person.in_(sorted(set(persons))),
+                i.c.taken_at >= start, i.c.taken_at < end,
+            )
+            .order_by(i.c.taken_at.desc(), i.c.id.desc())
+            .limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+            shas = sorted({sha for r in rows for sha in _media(r.media_ref)})
+            m = MEDIA_OBJECTS
+            readings = {
+                r.sha256: "\n".join(part for part in (r.title, r.description) if part)
+                for r in await conn.execute(
+                    sa.select(m.c.sha256, m.c.title, m.c.description)
+                    .where(m.c.sha256.in_(shas)),
+                )
+            } if shas else {}
+        return [
+            RecordedItem(
+                network=r.network, kind=r.kind, collab=r.collab, taken_at=r.taken_at,
+                expires_at=r.expires_at, caption=r.caption, location=r.location,
+                perception=tuple(
+                    readings[sha] for sha in _media(r.media_ref) if readings.get(sha)
+                ),
+            )
+            for r in rows
+        ]
+
     # -- the reader: a person's Character session (§6) -------------------------
     #
     # Positioned by `recorded_at`, which follows commit order here: the poller
@@ -899,3 +952,15 @@ class SqlSocialStreamStore:
             await conn.execute(sa.insert(BLOB_TOMBSTONE).values(
                 sha256=sha256, kind="story_frame", reason=reason, deleted_at=deleted_at,
             ))
+
+
+def readable_social_store(
+    engine: AsyncEngine, persons: Any, *, metrics: Any = None,
+) -> SqlSocialStreamStore:
+    """The social stream's store for every reader: the poller's,
+    `social_read`'s, a person's Character session's and the Rollup's. It
+    leaves out each item of a person whose `identity.toml` block sets
+    `social = false`, under their current id and every retired one
+    (`Persons.social_off_ids`). The one store built without it is the story
+    expiry's, which deletes every person's frames' bytes at their bound."""
+    return SqlSocialStreamStore(engine, opted_out=persons.social_off_ids(), metrics=metrics)
