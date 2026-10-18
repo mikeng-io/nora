@@ -2119,6 +2119,11 @@ async def build_dependencies(
         SqlPersonaStore(engine, screen=text_offence)
         if cfg.persona.enabled and cfg.persona.render else None
     )
+    # The same gate, for the writers (the dream sessions and the graph
+    # surface's `remember`): on, a persona write projects its lines into the
+    # memory index in its own transaction (45 §1, 25 §7); off is the shadow,
+    # and the shadow's lines join at the flip through `nora memory rebuild`.
+    persona_index = cfg.persona.enabled and cfg.persona.render
     # The join from a note to its room's account (DEC-207):
     # EVERY id a room is known by — `Note.established_in` holds whichever one
     # the note was born under — within the note's UNIT, since ids are unique
@@ -3027,7 +3032,7 @@ async def build_dependencies(
         memory_search=memory_search,
         # The graph surface's `remember` writes a Persona `told` line
         # (design/unified-memory/45); wired with `memory_search`, never alone.
-        persona=(SqlPersonaStore(engine, screen=text_offence)
+        persona=(SqlPersonaStore(engine, screen=text_offence, index=persona_index)
                  if memory_search is not None else None),
         # THE SWITCH (45 §5): while `[persona] render` is on, `character_read`
         # answers from the Persona accounts — the same reader the tag
@@ -4016,7 +4021,8 @@ async def build_dependencies(
             # nothing renders until the switch. Inside the culture block: it
             # reads the Character head and the rooms' cultures.
             if cfg.persona.enabled:
-                persona_store = SqlPersonaStore(engine, screen=text_offence)
+                persona_store = SqlPersonaStore(
+                    engine, screen=text_offence, index=persona_index)
                 persona_reads = SqlCharacterEvidence(engine)
                 # The person accounts' social input (45 §4): the readable
                 # store's (opted-out, gone and hidden left out there), the

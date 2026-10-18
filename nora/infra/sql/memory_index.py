@@ -191,6 +191,7 @@ from nora.infra.sql.schema import (
     MESSAGES,
     NOTE,
     NOTE_REVISION,
+    PERSONA_LINE,
     PRESENCE_STAYS,
     PRESENCE_TRIPS,
     ROLLUP_BUILD,
@@ -265,6 +266,10 @@ INDEXED_WRITES: dict[str, str] = {
     "social_item": "social",
     "social_item_state": "social",
     "social_perception": "social",
+    # A Persona line (45 §1) — projected by the store's write paths only while
+    # `[persona] render` is on; the shadow's lines join at the switch through
+    # the flip's rebuild (45 §8), never the queue, whose drain runs either way.
+    "persona_line": "persona_line",
 }
 
 _METRIC = "nora_memory_projection_total"
@@ -1158,6 +1163,114 @@ async def _project_character(conn: AsyncConnection, source_id: str) -> None:
     await _entry_edges(conn, "character", source_id, edges)
 
 
+# --- Persona (design/unified-memory/45 §1) -----------------------------------
+
+#: A persona line's episode citation, `response:<send id>`: the send's Record
+#: id, so the message's node. And its social citation, `social:<network>:<id>`.
+_PERSONA_EPISODE_CITATION = re.compile(r"response:(\d+)")
+_PERSONA_SOCIAL_CITATION = re.compile(r"social:([a-z]+):(\S+)")
+
+
+def _persona_cites(source_id: str, citations: Iterable[str]) -> list[Edge]:
+    """A persona line's citations as `cites` edges: a Record row id and a
+    `response:<send id>` both name a message; `social:<network>:<item id>`
+    names the item. A `rollup:<kind>:<subject>` citation (45 §1) is the
+    Persona spelling — the index's episode keys are its own
+    `rollup(kind|key)` form (`_cites`) — and names no node here."""
+    out = _cites("persona_line", source_id, citations, "persona_line.citations")
+    for c in dict.fromkeys(c.strip() for c in citations):
+        episode = _PERSONA_EPISODE_CITATION.fullmatch(c)
+        if episode is not None:
+            out.append((
+                "persona_line", source_id, "cites", "message", episode.group(1),
+                "persona_line.citations"))
+            continue
+        social = _PERSONA_SOCIAL_CITATION.fullmatch(c)
+        if social is not None:
+            out.append((
+                "persona_line", source_id, "cites", "social",
+                f"{social.group(1)}:{social.group(2)}", "persona_line.citations"))
+    return out
+
+
+async def _project_persona_line(conn: AsyncConnection, source_id: str) -> None:
+    """One Persona line: its text the node's, in its account's scope (the
+    account key is a culture key, `split_culture_key`), and its citations,
+    `about`, `supersedes` and `draws_on` the edges (45 §1).
+
+    Append-only means `superseded` reads off the row that names this one in
+    ITS `supersedes`, and the `supersedes` edge is written from both ends'
+    projections (the successor's own column, and this row's reverse read of
+    it), the way `_entry_edges` keeps incoming `supersedes` edges. A hidden
+    line — the subject's own dispute or «forget that» (45 §2) — has no node,
+    and neither has the line a hidden row supersedes: a forget leaves the
+    index, not only the account."""
+    row = (await conn.execute(
+        sa.select(
+            PERSONA_LINE.c.persona_key, PERSONA_LINE.c.text, PERSONA_LINE.c.state,
+            PERSONA_LINE.c.citations, PERSONA_LINE.c.draws_on, PERSONA_LINE.c.supersedes,
+            PERSONA_LINE.c.unit, PERSONA_LINE.c.exclude_persons, PERSONA_LINE.c.written_at,
+        ).where(PERSONA_LINE.c.id == source_id)
+    )).first()
+    if row is None or row.state == "hidden":
+        await _drop(conn, "persona_line", [source_id])
+        return
+    successor = (await conn.execute(
+        sa.select(PERSONA_LINE.c.id, PERSONA_LINE.c.state)
+        .where(PERSONA_LINE.c.supersedes == source_id)
+    )).first()
+    if successor is not None and successor.state == "hidden":
+        await _drop(conn, "persona_line", [source_id])
+        return
+    form, owner, person = split_culture_key(row.persona_key)
+    if form == "character" and not (owner and await _is_a_unit(conn, owner)):
+        # `_project_character`'s rule: a pre-C2b ROOM-keyed account is never
+        # indexed, and dropped if it ever was.
+        await _drop(conn, "persona_line", [source_id])
+        return
+    room = await _room_of(conn, owner) if form == "room" else None
+    if form == "room" and room is None:
+        await _drop(conn, "persona_line", [source_id])
+        return
+    persons: list[str] = []
+    about: tuple[str, str]
+    if form == "room":
+        about = ("room", str(room))
+    elif form == "unit":
+        about = ("unit", owner)
+    elif form == "nora":
+        about = ("nora", "nora")
+    else:
+        # Readable only where a room lists the person.
+        persons = [str(person)]
+        about = ("person", str(person))
+    await _upsert_node(
+        conn, kind="persona_line", source_id=source_id,
+        unit=None if form == "room" else row.unit, origin_room=room,
+        persons=persons, exclude_persons=row.exclude_persons,
+        text=row.text, at_ms=row.written_at,
+        state=("superseded" if successor is not None
+               else "live" if row.state in ("current", "disputed") else "retired"),
+    )
+    edges: list[Edge] = [
+        ("persona_line", source_id, "about", *about, "persona_line.persona_key")]
+    edges += _persona_cites(source_id, row.citations)
+    edges += [
+        ("persona_line", source_id, "draws_on", "persona_line", str(d),
+         "persona_line.draws_on")
+        for d in row.draws_on
+    ]
+    if row.supersedes is not None:
+        edges.append((
+            "persona_line", source_id, "supersedes", "persona_line",
+            str(row.supersedes), "persona_line.supersedes"))
+    if successor is not None:
+        edges.append((
+            "persona_line", str(successor.id), "supersedes", "persona_line",
+            source_id, "persona_line.supersedes"))
+    await _entry_edges(conn, "persona_line", source_id, edges)
+
+
 # --- Rollup episodes ---------------------------------------------------------
 
 
@@ -1509,6 +1622,7 @@ _PROJECTORS: dict[str, Callable[[AsyncConnection, str], Awaitable[None]]] = {
     "event": _project_event,
     "character": _project_character,
     "social": _project_social,
+    "persona_line": _project_persona_line,
     **{kind: _episode_projector(kind) for kind in _EPISODES},
 }
 
@@ -1868,6 +1982,7 @@ def _sources() -> list[tuple[str, Any, list[Any]]]:
         ("event", EVENTS.c.id, []),
         ("character", CULTURE.c.key, []),
         ("social", _social_key(), []),
+        ("persona_line", PERSONA_LINE.c.id, []),
     ]
 
 
@@ -1889,6 +2004,11 @@ def _source_of(kind: str) -> Any:
         return sa.exists().where(CULTURE.c.key == node)
     if kind == "social":
         return sa.exists().where(_social_key() == node, ~_hidden(SOCIAL_ITEM))
+    if kind == "persona_line":
+        return sa.exists().where(
+            PERSONA_LINE.c.id == sa.cast(node, pg.UUID(as_uuid=False)),
+            PERSONA_LINE.c.state != "hidden",
+        )
     table = {"note": NOTE, "memo": MEMO, "lesson": LESSON, "event": EVENTS}[kind]
     return sa.exists().where(table.c.id == sa.cast(node, pg.UUID(as_uuid=False)))
 

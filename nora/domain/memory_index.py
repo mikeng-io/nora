@@ -69,11 +69,12 @@ __all__ = [
 #: A medium of a social item is its own kind, not a `media`, because
 #: everything about an attachment is read off its message (its room, its type
 #: in `messages.media_json`, its drop with the message) and a social item has
-#: no message and no room.
+#: no message and no room. `persona_line` is one Persona account line
+#: (design/unified-memory/45 §1), keyed by its row id.
 NodeKind = Literal[
     "message", "media", "note", "memo", "event", "lesson", "character",
     "outing", "stay", "trip", "person", "room", "unit", "nora", "place",
-    "social", "social_media", "social_location",
+    "social", "social_media", "social_location", "persona_line",
 ]
 NODE_KINDS: tuple[str, ...] = get_args(NodeKind)
 
@@ -102,7 +103,7 @@ NODE_STATES: tuple[str, ...] = ("live", "retired", "superseded")
 #: feedback, also lexical only there, have no node kind yet.
 EMBEDDED_KINDS: tuple[str, ...] = (
     "message", "media", "note", "memo", "event", "lesson", "character",
-    "social", "social_media", "social_location",
+    "social", "social_media", "social_location", "persona_line",
 )
 
 #: The kinds that are one medium, keyed by the `sha256` of its bytes: an
