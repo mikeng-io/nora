@@ -153,7 +153,6 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         "unified-memory/45 §4), added with the adaptor's social input, the "
         "next build. Until then the tests read the counts back through it.",
     ),
->>>>>>> 4511902cd
     ("culture.py", "chain"): _Pin(
         "deferred_consumer",
         "The revision chain, newest first, walked through parent links. The "
