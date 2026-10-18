@@ -131,6 +131,15 @@ type timelineNode struct {
 	// leniently (placeOf): a malformed tag never fails the page, and is
 	// carried as an UNKNOWN place, never as "no tag".
 	Location json.RawMessage `json:"location"`
+	// The audience's counts (22 §5), each read leniently (countOf, flagOf):
+	// a value of the wrong type, a negative count or an absent key is
+	// unknown, never 0, and never fails the page. Who liked (`top_likers`,
+	// `facepile_top_likers`), Nora's own like (`has_liked`) and the Facebook
+	// cross-post counts (`fb_*`) are not decoded.
+	LikeCount        json.RawMessage `json:"like_count"`
+	CommentCount     json.RawMessage `json:"comment_count"`
+	MediaRepostCount json.RawMessage `json:"media_repost_count"`
+	CountsDisabled   json.RawMessage `json:"like_and_view_counts_disabled"`
 	timelineMedia
 	// CarouselMedia are a carousel's children, each of the same shape.
 	CarouselMedia []*timelineMedia `json:"carousel_media"`
@@ -323,6 +332,12 @@ func parseTimeline(ctx context.Context, raw []byte, igid domain.IGID) (domain.Ti
 			AltText:       n.AccessibilityCaption,
 		}
 		item.Location, item.LocationKnown = placeOf(n.Location)
+		item.Counts = domain.ItemCounts{
+			Likes:       countOf(n.LikeCount),
+			Comments:    countOf(n.CommentCount),
+			Reposts:     countOf(n.MediaRepostCount),
+			LikesHidden: flagOf(n.CountsDisabled),
+		}
 		// A reel is `product_type: clips` (§1a); a video posted to the feed
 		// is still a post.
 		if n.ProductType == "clips" {
@@ -342,4 +357,29 @@ func parseTimeline(ctx context.Context, raw []byte, igid domain.IGID) (domain.Ti
 		page.NextCursor = &cursor
 	}
 	return page, nil
+}
+
+// countOf is a count the node carries as a non-negative JSON integer, else
+// nil: absent, null, a string, a fraction or a negative number is unknown.
+func countOf(raw json.RawMessage) *int64 {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	var n int64
+	if json.Unmarshal(raw, &n) != nil || n < 0 {
+		return nil
+	}
+	return &n
+}
+
+// flagOf is a JSON boolean the node carries, else nil.
+func flagOf(raw json.RawMessage) *bool {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	var b bool
+	if json.Unmarshal(raw, &b) != nil {
+		return nil
+	}
+	return &b
 }

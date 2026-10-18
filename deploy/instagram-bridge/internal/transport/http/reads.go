@@ -361,6 +361,18 @@ type timelineItem struct {
 	// could not read: its place is unknown, and `location` is "" without
 	// meaning "no tag".
 	LocationKnown bool `json:"location_known"`
+	// Counts is what the item's audience did; each field null when the
+	// timeline did not carry it readably (unknown, never 0).
+	Counts itemCounts `json:"counts"`
+}
+
+// itemCounts is one item's likes, comments and reposts, and whether its
+// author hid the like count.
+type itemCounts struct {
+	Likes       *int64 `json:"likes"`
+	Comments    *int64 `json:"comments"`
+	Reposts     *int64 `json:"reposts"`
+	LikesHidden *bool  `json:"likes_hidden"`
 }
 
 // itemsBody is the 200 shape, on the list conventions `GET /accounts`
@@ -378,7 +390,7 @@ func itemsOf(p domain.TimelinePage) itemsBody {
 			MediaType: it.MediaType, Caption: it.Caption,
 			CarouselCount: it.CarouselCount, Collab: it.Collab,
 			Items: postItemsOf(it.Items), AltText: it.AltText, Location: it.Location,
-			LocationKnown: it.LocationKnown,
+			LocationKnown: it.LocationKnown, Counts: itemCounts(it.Counts),
 		})
 	}
 	return itemsBody{Items: items, NextCursor: p.NextCursor}

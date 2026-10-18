@@ -24,7 +24,13 @@
         ],
         "alt_text": "",
         "location": "",
-        "location_known": true
+        "location_known": true,
+        "counts": {
+          "likes": 31,
+          "comments": 4,
+          "reposts": 2,
+          "likes_hidden": false
+        }
       },
       {
         "code": "SynthPost02",
@@ -51,7 +57,13 @@
         ],
         "alt_text": "a photo of a plate",
         "location": "Placeholder Square",
-        "location_known": true
+        "location_known": true,
+        "counts": {
+          "likes": 12,
+          "comments": 0,
+          "reposts": null,
+          "likes_hidden": true
+        }
       }
     ],
     "next_cursor": "synthetic-cursor-1"

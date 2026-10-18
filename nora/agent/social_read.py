@@ -14,8 +14,14 @@ item but not place the person gets the item without its location.
 withheld whole, as the memory index's packet withholds one; a location that
 carries an identifier or a coordinate is dropped alone.
 
+**Counts.** A post or reel counted by the poller carries its latest likes,
+comments and reposts and when they were read («31 likes, 4 comments, read
+3h ago»; «likes hidden by the author» where the author hid them); a count
+the read did not carry is left out, never shown as 0, and an item never
+counted carries none.
+
 **Bounded.** At most `SOCIAL_READ_MAX` items and `SOCIAL_READ_CHARS`
-characters of caption, readings and location together, newest first; what
+characters of caption, readings, location and counts together, newest first; what
 did not fit is counted, so the tool can say the answer was cut. One item is
 bounded too, at `SOCIAL_ITEM_CHARS`: a carousel's readings past it are left
 out and counted on the item as `more_seen`, so one long carousel neither
@@ -32,19 +38,20 @@ from nora.agent.egress import scan_identifiers, scan_reply
 from nora.agent.lineage import entry_permits
 from nora.domain.lineage import PRESENCE, LineageEntry, RenderRoom
 from nora.domain.memory_index import social_label
-from nora.domain.prompt import stamp
-from nora.domain.social_stream import RecordedItem
+from nora.domain.prompt import age, stamp
+from nora.domain.social_stream import RecordedCounts, RecordedItem
 
 __all__ = [
-    "SOCIAL_ITEM_CHARS", "SOCIAL_READ_CHARS", "SOCIAL_READ_MAX", "location_shown",
-    "render_items",
+    "SOCIAL_ITEM_CHARS", "SOCIAL_READ_CHARS", "SOCIAL_READ_MAX", "counts_line",
+    "location_shown", "render_items",
 ]
 
 #: The most items one call returns, newest first.
 SOCIAL_READ_MAX = 20
-#: The most characters of caption, readings and location one call returns.
+#: The most characters of caption, readings, location and counts one call
+#: returns.
 SOCIAL_READ_CHARS = 6000
-#: The most characters of one item's caption, readings and location.
+#: The most characters of one item's caption, readings, location and counts.
 SOCIAL_ITEM_CHARS = SOCIAL_READ_CHARS // 2
 #: The most characters of any one caption or reading.
 _FIELD_CHARS = 800
@@ -62,6 +69,30 @@ def _ms(moment: datetime) -> int:
 def _cut(text: str) -> str:
     text = text.strip()
     return text if len(text) <= _FIELD_CHARS else text[:_FIELD_CHARS].rstrip() + "…"
+
+
+def _counted(n: int, noun: str) -> str:
+    return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
+
+
+def counts_line(counts: RecordedCounts | None, now: datetime) -> str:
+    """An item's latest counts as one line with when they were read, "" when
+    it was never counted or its latest row carries nothing to say. A count
+    the read did not carry is left out: unknown is never 0."""
+    if counts is None:
+        return ""
+    parts = []
+    if counts.likes_hidden:
+        parts.append("likes hidden by the author")
+    elif counts.likes is not None:
+        parts.append(_counted(counts.likes, "like"))
+    if counts.comments is not None:
+        parts.append(_counted(counts.comments, "comment"))
+    if counts.reposts is not None:
+        parts.append(_counted(counts.reposts, "repost"))
+    if not parts:
+        return ""
+    return f"{', '.join(parts)}, read {age(_ms(counts.read_at), now)}"
 
 
 def _fit(readings: list[str], room: int) -> tuple[list[str], int]:
@@ -99,10 +130,11 @@ def render_items(
         location = (it.location or "").strip() if place else ""
         if location and scan_reply(location) is not None:
             location = ""
+        counts = counts_line(it.counts, now)
         readings, more_seen = _fit(
-            readings, SOCIAL_ITEM_CHARS - len(caption) - len(location),
+            readings, SOCIAL_ITEM_CHARS - len(caption) - len(location) - len(counts),
         )
-        size = len(caption) + sum(len(r) for r in readings) + len(location)
+        size = len(caption) + sum(len(r) for r in readings) + len(location) + len(counts)
         # Newest first, so once one item does not fit every older one is cut
         # too: an answer with a gap in its middle would read as complete.
         if cut or (shown and spent + size > max_chars):
@@ -121,5 +153,7 @@ def render_items(
             item["more_seen"] = more_seen
         if location:
             item["location"] = location
+        if counts:
+            item["counts"] = counts
         shown.append(item)
     return shown, withheld, cut

@@ -15,6 +15,14 @@ place (`place`, NULL when the tag was removed). The current place is the
 latest `place` row's, else the recorded one (`current_places`). A `place` row
 never hides an item: only `gone` and `hidden` do (`HIDING_STATES`).
 
+**A post's or reel's counts move** (§5, `social_item_count`): every list
+read carries each item's likes, comments and reposts, and `record_counts`
+appends a row only for a recorded item whose counts differ from its latest
+row (`counts_changed`). A read that carries nothing writes nothing, and a
+count it does not carry is never compared, so a shape change upstream cannot
+write unknowns over real counts. `current_counts` is the latest row, read
+under the same rule as every other reader.
+
 **The dedupe is Postgres's.** `insert_item` is `ON CONFLICT (network, item_id)
 DO NOTHING` and answers whether the row was new, so two pollers recording the
 same frame cannot both think it is theirs, and only a new item goes on to
@@ -71,8 +79,10 @@ from nora.domain.social_stream import (
     PersonSocialItem,
     PollStage,
     Reading,
+    RecordedCounts,
     RecordedItem,
     SocialItem,
+    counts_changed,
     cursor_is_bad,
     from_us,
     to_us,
@@ -84,6 +94,7 @@ from nora.infra.sql.schema import (
     BLOB_TOMBSTONE,
     MEDIA_OBJECTS,
     SOCIAL_ITEM,
+    SOCIAL_ITEM_COUNT,
     SOCIAL_ITEM_STATE,
     SOCIAL_PERCEPTION,
     SOCIAL_POLL,
@@ -96,6 +107,9 @@ Stage = PollStage
 #: the login was halted or backed off on it.
 _UNANSWERED = ("halted", "backed_off", "error", "abandoned", "unavailable")
 
+
+#: The stages that read a page of a member's list.
+_LIST_STAGES = ("items", "backfill", "relist", "recount")
 
 #: Perception outcomes that settle an item for good.
 _SETTLED = ("ok", "nothing_found", "failed")
@@ -218,7 +232,7 @@ class Relist:
 
 
 class SqlSocialStreamStore:
-    """The stream's five tables, as twenty-six verbs."""
+    """The stream's six tables, as twenty-nine verbs."""
 
     def __init__(
         self, engine: AsyncEngine, *, opted_out: frozenset[str] = frozenset(),
@@ -329,6 +343,55 @@ class SqlSocialStreamStore:
                 .where(i.c.network == network, i.c.item_id.in_(item_ids))
             )).all()
         return {r.item_id: r.place for r in rows}
+
+    async def record_counts(
+        self, *, network: str, items: Sequence[SocialItem], read_id: str | None,
+    ) -> int:
+        """Append the counts `items` carry, one read's, for each recorded item
+        among them whose counts differ from its latest row (`counts_changed`)
+        → how many rows were written. An item not recorded, or whose read
+        carried nothing, writes none."""
+        carried = {i.item_id: i.counts for i in items if i.counts.known}
+        if not carried:
+            return 0
+        i = SOCIAL_ITEM
+        async with self._engine.begin() as conn:
+            recorded = set((await conn.execute(
+                sa.select(i.c.item_id)
+                .where(i.c.network == network, i.c.item_id.in_(sorted(carried))),
+            )).scalars())
+            latest = await _latest_counts(conn, [(network, item) for item in recorded])
+            rows = [
+                {
+                    "network": network, "item_id": item, "likes": counts.likes,
+                    "comments": counts.comments, "reposts": counts.reposts,
+                    "likes_hidden": counts.likes_hidden is True, "read_id": read_id,
+                }
+                for item, counts in sorted(carried.items())
+                if item in recorded and counts_changed(counts, latest.get((network, item)))
+            ]
+            if rows:
+                await conn.execute(sa.insert(SOCIAL_ITEM_COUNT), rows)
+        return len(rows)
+
+    async def current_counts(
+        self, *, items: Sequence[tuple[str, str]],
+    ) -> dict[tuple[str, str], RecordedCounts]:
+        """Each readable item among `items` (`(network, item_id)`) → its
+        latest counts. Readable is `_readable`'s: an item gone or hidden, or
+        of a person who opted out under any id, has none; nor has one never
+        counted."""
+        if not items:
+            return {}
+        i = SOCIAL_ITEM
+        async with self._engine.connect() as conn:
+            readable = (await conn.execute(
+                sa.select(i.c.network, i.c.item_id).where(
+                    *self._readable(),
+                    sa.tuple_(i.c.network, i.c.item_id).in_(sorted(set(items))),
+                ),
+            )).tuples().all()
+            return await _latest_counts(conn, list(readable))
 
     async def read_marker(self, *, network: str, person: str) -> int | None:
         """The probe value that led to this person's last completed story read,
@@ -535,6 +598,23 @@ class SqlSocialStreamStore:
             person: replace(out.get(person, Backfill(items=0)), items=int(counts.get(person, 0)))
             for person in listed
         }
+
+    async def last_list_reads(self, *, network: str) -> dict[str, datetime]:
+        """Per person, when a list page of theirs was last read, at any stage
+        (a list read, a back-fill, a re-walk or a recount page): what the
+        recount waits `recount_interval_hours` after (§5). A person whose list
+        was never read is absent."""
+        p = SOCIAL_POLL
+        stmt = (
+            sa.select(p.c.person, sa.func.max(p.c.recorded_at))
+            .where(
+                p.c.network == network, p.c.outcome == "read_ok",
+                p.c.stage.in_(_LIST_STAGES),
+            )
+            .group_by(p.c.person)
+        )
+        async with self._engine.connect() as conn:
+            return dict((await conn.execute(stmt)).tuples().all())
 
     async def relists(self, *, network: str) -> dict[str, Relist]:
         """Where each person with a recorded item stands in the re-walk of
@@ -750,13 +830,13 @@ class SqlSocialStreamStore:
         `persons` is every id the person's items may be recorded under, their
         current id and each retired one. Readable is `_readable`'s: not opted
         out, and no `gone` or `hidden` state row; a `place` row hides
-        nothing."""
+        nothing. Each carries its latest counts, None while never counted."""
         if not persons:
             return []
         i = SOCIAL_ITEM
         stmt = (
             sa.select(
-                i.c.network, i.c.kind, i.c.collab, i.c.taken_at, i.c.expires_at,
+                i.c.network, i.c.item_id, i.c.kind, i.c.collab, i.c.taken_at, i.c.expires_at,
                 # The place as the author has it now: a tag they changed shows
                 # the new place, one they removed shows none.
                 i.c.caption, current_place(i).label("location"), i.c.media_ref,
@@ -779,6 +859,8 @@ class SqlSocialStreamStore:
                     .where(m.c.sha256.in_(shas)),
                 )
             } if shas else {}
+            # The rows are readable already; their latest counts, if any.
+            counts = await _latest_counts(conn, [(r.network, r.item_id) for r in rows])
         return [
             RecordedItem(
                 network=r.network, kind=r.kind, collab=r.collab, taken_at=r.taken_at,
@@ -786,6 +868,7 @@ class SqlSocialStreamStore:
                 perception=tuple(
                     readings[sha] for sha in _media(r.media_ref) if readings.get(sha)
                 ),
+                counts=counts.get((r.network, r.item_id)),
             )
             for r in rows
         ]
@@ -952,6 +1035,33 @@ class SqlSocialStreamStore:
             await conn.execute(sa.insert(BLOB_TOMBSTONE).values(
                 sha256=sha256, kind="story_frame", reason=reason, deleted_at=deleted_at,
             ))
+
+
+async def _latest_counts(
+    conn: Any, items: Sequence[tuple[str, str]],
+) -> dict[tuple[str, str], RecordedCounts]:
+    """Each of `items` (`(network, item_id)`) that has a `social_item_count`
+    row → its latest. Unfiltered: a caller passes only items it may show or
+    write for."""
+    if not items:
+        return {}
+    c = SOCIAL_ITEM_COUNT
+    rows = (await conn.execute(
+        sa.select(
+            c.c.network, c.c.item_id, c.c.likes, c.c.comments, c.c.reposts,
+            c.c.likes_hidden, c.c.recorded_at,
+        )
+        .where(sa.tuple_(c.c.network, c.c.item_id).in_(sorted(set(items))))
+        .distinct(c.c.network, c.c.item_id)
+        .order_by(c.c.network, c.c.item_id, c.c.recorded_at.desc(), c.c.id.desc()),
+    )).all()
+    return {
+        (r.network, r.item_id): RecordedCounts(
+            likes=r.likes, comments=r.comments, reposts=r.reposts,
+            likes_hidden=r.likes_hidden, read_at=r.recorded_at,
+        )
+        for r in rows
+    }
 
 
 def readable_social_store(

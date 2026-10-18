@@ -1574,6 +1574,12 @@ class SocialPollConfig(BaseModel):
     what the network lists now. It reads at most `relist_pages_per_tick`
     pages a tick, one per member, after the back-fill and on its budget rule.
     0 turns it off.
+
+    The recount (§5) reads a member's first page again once
+    `recount_interval_hours` have passed since their last list read of any
+    stage, so their newest items' likes, comments and reposts are re-read
+    while they still move: after the back-fill and the re-walk, on their
+    budget rule, one page a member a tick. 0 turns it off.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -1591,6 +1597,7 @@ class SocialPollConfig(BaseModel):
     backfill_max_items: int = Field(default=50, ge=0)
     backfill_pages_per_tick: int = Field(default=2, ge=0)
     relist_pages_per_tick: int = Field(default=2, ge=0)
+    recount_interval_hours: float = Field(default=24.0, ge=0)
 
     @model_validator(mode="after")
     def _bounds_are_ordered(self) -> SocialPollConfig:

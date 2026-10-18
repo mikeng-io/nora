@@ -163,6 +163,8 @@ APPEND_ONLY: dict[str, str] = {
     "social_item_state": "recorded_at",
     # 0108_social_perception: each attempt to perceive an item's media.
     "social_perception": "recorded_at",
+    # 0119_social_item_count: a post's or reel's counts, a row where they moved.
+    "social_item_count": "recorded_at",
     # 0109_blob_tombstone: a story frame's bytes deleted at their bound.
     "blob_tombstone": "recorded_at",
     "decision_log": "recorded_at",

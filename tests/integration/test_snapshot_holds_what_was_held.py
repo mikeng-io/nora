@@ -391,6 +391,11 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "person": "ken", "units": ["friends"], "origin": "poll", "outcome": "ok",
         "calls": 1, "at": T0,
     },
+    # 0119_social_item_count: an item's counts as one read carried them.
+    "social_item_count": lambda n: {
+        "id": _uuid("sc", n), "network": "instagram", "item_id": f"item{n}",
+        "likes": n, "comments": 1, "likes_hidden": False,
+    },
     # 0109_blob_tombstone: a story frame's bytes deleted at their bound.
     "blob_tombstone": lambda n: {
         "id": _uuid("bt", n), "sha256": f"{n:064x}", "kind": "story_frame", "reason": "hard_limit",
