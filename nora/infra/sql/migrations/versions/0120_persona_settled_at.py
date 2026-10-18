@@ -21,7 +21,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0120_persona_settled_at"
-down_revision = "0118_place_area"
+down_revision = "0119_social_item_count"
 branch_labels = None
 depends_on = None
 
