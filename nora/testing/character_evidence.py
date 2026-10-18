@@ -31,6 +31,7 @@ class _Message:
     hidden: bool
     quoted_ts: int | None = None
     mentions: frozenset[str] = frozenset()
+    mention_persons: frozenset[str] = frozenset()
 
 
 class InMemoryCharacterEvidence:
@@ -134,11 +135,12 @@ class InMemoryCharacterEvidence:
         body: str = "a line", ts: int = 0, is_nora: bool = False,
         hidden: bool = False, quoted_ts: int | None = None,
         mentions: frozenset[str] = frozenset(),
+        mention_persons: frozenset[str] = frozenset(),
     ) -> None:
         self._messages.append(_Message(
             id=id, platform=platform, room=room, person_id=person_id, body=body,
             ts=ts, is_nora=is_nora, hidden=hidden, quoted_ts=quoted_ts,
-            mentions=mentions,
+            mentions=mentions, mention_persons=mention_persons,
         ))
 
     def add_tie(
@@ -210,6 +212,56 @@ class InMemoryCharacterEvidence:
                                                  person_id=m.person_id))
             for m in found[-limit:]
         ], cursor
+
+    def _mentions(
+        self, rooms: Sequence[tuple[str, str]], person_id: str, after: int,
+    ) -> list[_Message]:
+        """`SqlCharacterEvidence`'s `mentions` edges: `mention_persons` stands
+        in for the resolved edges the projector writes."""
+        wanted = set(rooms)
+        return sorted(
+            (m for m in self._messages
+             if (m.platform, m.room) in wanted and person_id in m.mention_persons
+             and m.person_id != person_id
+             and not m.is_nora and not m.hidden and m.id > after),
+            key=lambda m: m.id,
+        )
+
+    async def mentions_count(
+        self, *, rooms: Sequence[tuple[str, str]], person_id: str, after: int,
+    ) -> int:
+        return len(self._mentions(rooms, person_id, after))
+
+    async def mentions_since(
+        self, *, rooms: Sequence[tuple[str, str]], person_id: str, after: int,
+        limit: int,
+    ) -> tuple[list[RoomMessage], int]:
+        if limit <= 0:
+            return [], after
+        found = self._mentions(rooms, person_id, after)
+        cursor = found[-1].id if found else after
+        return [
+            RoomMessage(room=m.room, row=replace(_ROW, id=m.id, ts=m.ts, body=m.body,
+                                                 person_id=m.person_id))
+            for m in found[-limit:]
+        ], cursor
+
+    async def windowed(
+        self, *, rooms: Sequence[tuple[str, str]], since_ms: int, until_ms: int,
+        limit: int,
+    ) -> list[RoomMessage]:
+        """`SqlCharacterEvidence.windowed`: every visible message in `rooms`
+        with `ts` in `(since_ms, until_ms]`, hers included, oldest first, at
+        most the newest `limit`."""
+        if limit <= 0 or until_ms <= since_ms:
+            return []
+        wanted = set(rooms)
+        found = [
+            m for m in sorted(self._messages, key=lambda m: m.id)
+            if (m.platform, m.room) in wanted and not m.hidden
+            and since_ms < m.ts <= until_ms
+        ]
+        return [RoomMessage(room=m.room, row=self._row(m)) for m in found[-limit:]]
 
 
 _ROW = TranscriptRow(

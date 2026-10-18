@@ -607,6 +607,9 @@ NATIVELY_AUTHORED = {
     "character-nora",
     # A person's Persona session, in shadow (DEC-317).
     "persona-person",
+    # The hypothesis verdict judge: it grades what persona-person wrote, and is
+    # never the writer (45 §3).
+    "persona-verdict",
     # The Lessons session.
     "lessons",
     # The doctrine check: an instrument's instruction, read through

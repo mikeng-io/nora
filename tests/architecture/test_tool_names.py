@@ -72,6 +72,12 @@ VERBS: tuple[str, ...] = (
     # `run` executes a command. None names an interactive session that navigates,
     # clicks and fills, which is what the model must know it is choosing.
     "browse",
+    # `dispute` (35 §2): somebody says a remembered fact is wrong, or asks her
+    # to forget it. `update`/`revise` name a record's fields changing; here the
+    # record stands and is CONTESTED, which the model must choose on purpose:
+    # the subject's own dispute hides the line at once, anyone else's is marked
+    # for weighing, and `cancel` would read as taking the memory away.
+    "dispute",
 )
 
 

@@ -150,6 +150,9 @@ APPEND_ONLY: dict[str, str] = {
     "lesson_revision": "recorded_at",
     # 0117_persona: a Persona line; a change is a new row that supersedes it.
     "persona_line": "recorded_at",
+    # 0121_persona_dispute: a dispute of a line; what it DID to the line is a
+    # new persona_line row, so a dispute row itself never changes.
+    "persona_dispute": "recorded_at",
     # 0101_self_tension: a refused lesson and the law it pulled against.
     "self_tension": "recorded_at",
     # 0103_memos: a memo is an identity, and every change to it (a revision, a

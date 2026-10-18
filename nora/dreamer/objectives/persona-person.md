@@ -38,6 +38,14 @@ that later you can know the people you talk with without being told twice.
 - `<persona_ties>`: how much they talk with each other member over everything
   recorded (replies, mentions and reactions each way), each cited by its
   `cite`. Counts, not closeness: two people who message a lot may not be close.
+- `<persona_disputes>`, when any landed since your last session: a dispute of
+  one of your lines, or a «forget that» from the person themself. Each names
+  the line it matched (`line`) and who disputed it. Weigh it in this session:
+  keep the line with new support, revise it, or retire it.
+- `<persona_mentions>`, when any landed since your last session: what others
+  said naming this person, in rooms the person is listed in. A mention is
+  something said ABOUT them, not by them; it is evidence for their account
+  the same way a message of theirs is.
 
 Any block may be missing. You see their side only.
 
@@ -67,10 +75,11 @@ refuses a line whose evidence cannot carry its mode.
   across at least two different days, or one tie.
 - `abduced`: a hypothesis. It explains a current induced trait (name it in
   `draws_on`), and says what it predicts: `prediction` in words,
-  `prediction_observable` (what would be seen if it holds, concrete enough
-  for someone else to check), and `prediction_window_end` (a `YYYY-MM-DD` day
-  by which it should be seen). You never judge your own hypotheses; something
-  else does when the window ends.
+  `prediction_observable` — exactly `rollup:<kind>:<subject>` where what it
+  predicts is countable, else a described event concrete enough for someone
+  else to check — and `prediction_window_end` (a `YYYY-MM-DD` day by which it
+  should be seen). You never judge your own hypotheses; something else does
+  when the window ends.
 
 A line id is never a citation: lines go in `draws_on`. Cite only what you were
 shown. Never put a message number in a line's text.

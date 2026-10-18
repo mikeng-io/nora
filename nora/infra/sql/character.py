@@ -41,6 +41,7 @@ from nora.infra.sql.mobility import current_build_id
 from nora.infra.sql.schema import (
     CONSOLIDATION_WATERMARK,
     CULTURE_REVISION,
+    MEMORY_EDGE,
     MESSAGES,
     ROLLUP_RESPONSE,
     ROLLUP_TIE,
@@ -123,10 +124,98 @@ class SqlCharacterEvidence:
         out.reverse()
         return out, int(cursor or after)
 
+    _MENTIONS_JOIN = MEMORY_EDGE.join(
+        MESSAGES, MESSAGES.c.id == sa.cast(MEMORY_EDGE.c.src_id, sa.BigInteger))
+
+    def _mentions(
+        self, rooms: Sequence[tuple[str, str]], person_id: str, after: int,
+    ) -> list[Any]:
+        return [
+            _in_rooms(rooms),
+            MEMORY_EDGE.c.src_kind == "message",
+            MEMORY_EDGE.c.rel == "mentions",
+            MEMORY_EDGE.c.dst_kind == "person",
+            MEMORY_EDGE.c.dst_id == person_id,
+            MESSAGES.c.person_id != person_id,
+            MESSAGES.c.is_nora == 0,
+            MESSAGES.c.hidden_at.is_(None),
+            MESSAGES.c.id > after,
+        ]
+
+    async def mentions_count(
+        self, *, rooms: Sequence[tuple[str, str]], person_id: str, after: int,
+    ) -> int:
+        """How many messages in `rooms` mention `person_id` past Record id
+        `after` (the index's `mentions` edges, written from
+        `messages.mention_persons_json` at projection; the author and Nora
+        never count as mentioners of themselves here)."""
+        stmt = (
+            sa.select(sa.func.count())
+            .select_from(self._MENTIONS_JOIN)
+            .where(*self._mentions(rooms, person_id, after))
+        )
+        async with self._engine.connect() as conn:
+            return int((await conn.execute(stmt)).scalar_one())
+
+    async def mentions_since(
+        self, *, rooms: Sequence[tuple[str, str]], person_id: str, after: int,
+        limit: int,
+    ) -> tuple[list[RoomMessage], int]:
+        """The NEWEST `limit` of those mentions, oldest first, and the cursor:
+        the newest id among ALL of them, read or not (same shape as
+        `person_since`)."""
+        if limit <= 0:
+            return [], after
+        where = self._mentions(rooms, person_id, after)
+        stmt = (
+            transcript_select().add_columns(MESSAGES.c.conversation_id)
+            .join(MEMORY_EDGE,
+                  MESSAGES.c.id == sa.cast(MEMORY_EDGE.c.src_id, sa.BigInteger))
+            .where(*where)
+            .order_by(MESSAGES.c.id.desc()).limit(limit)
+        )
+        head = (
+            sa.select(sa.func.max(MESSAGES.c.id)).select_from(self._MENTIONS_JOIN)
+            .where(*where)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+            cursor = (await conn.execute(head)).scalar_one_or_none()
+        out = [RoomMessage(room=r.conversation_id, row=transcript_row(r)) for r in rows]
+        out.reverse()
+        return out, int(cursor or after)
+
+    async def windowed(
+        self, *, rooms: Sequence[tuple[str, str]], since_ms: int, until_ms: int,
+        limit: int,
+    ) -> list[RoomMessage]:
+        """Every visible message in `rooms` with `ts` in `(since_ms, until_ms]`,
+        oldest first, at most the NEWEST `limit`: what the Persona verdict
+        judge reads a hypothesis's prediction window by (45 §3 — «the Record
+        rows inside it»). Hers included: the observable may be an exchange, not
+        one person's lines. Past `limit` the window's OLDEST rows are dropped —
+        a ponytail ceiling: windows are days, and a window too large to read is
+        judged on what was said lately."""
+        if limit <= 0 or until_ms <= since_ms:
+            return []
+        stmt = (
+            transcript_select().add_columns(MESSAGES.c.conversation_id)
+            .where(
+                _in_rooms(rooms), MESSAGES.c.hidden_at.is_(None),
+                MESSAGES.c.ts > since_ms, MESSAGES.c.ts <= until_ms,
+            )
+            .order_by(MESSAGES.c.id.desc()).limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        out = [RoomMessage(room=r.conversation_id, row=transcript_row(r)) for r in rows]
+        out.reverse()
+        return out
+
     async def rows_by_id(self, *, ids: Sequence[int]) -> list[RoomMessage]:
         """The Record rows `ids` names that are not hidden, each with its
-        room: what a Persona session needs to check a citation an older
-        account carried (its time, speaker and room, 45 §4)."""
+        room: what a Persona session checks a citation an older account
+        carried by (its time, speaker and room, 45 §4)."""
         if not ids:
             return []
         stmt = (transcript_select().add_columns(MESSAGES.c.conversation_id)

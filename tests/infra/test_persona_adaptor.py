@@ -245,3 +245,53 @@ async def test_evidence_reads_only_rooms_that_list_them_and_episodes_they_answer
     items, cursor = await adaptor.evidence.newest(key=KEY, after=0, limit=10)
     assert [getattr(i, "send_id", None) or i.row.id for i in items] == [1, 3]
     assert cursor == 1
+
+
+async def test_mentions_are_read_with_the_messages_rendered_by_who_said_them_and_citable(env):
+    """The mentions input: a message that MENTIONS the person is handed beside
+    their own (never waking the session by itself), rendered with its author,
+    and citable like any shown message."""
+    reads = InMemoryCharacterEvidence()
+    reads.add_message(id=1, platform="signal", room="room-a", person_id="ada", ts=T0)
+    reads.add_message(id=2, platform="signal", room="room-a", person_id="bo", ts=T0 + 1,
+                      body="ada booked again", mention_persons=frozenset({"ada"}))
+    adaptor = _adaptor(env, reads=reads)
+    assert await adaptor.evidence.count(key=KEY, after=0) == 1  # their own line only
+    items, cursor = await adaptor.evidence.newest(key=KEY, after=0, limit=10)
+    assert cursor == 2
+    out = await adaptor.inputs(key=KEY, batch=items)
+    assert '<persona_mentions' in out and 'by="Bo"' in out and "ada booked again" in out
+    write, _no_change = adaptor.verbs(key=KEY)
+    told = {"op": "add", "part": "identity", "kind": "attribute", "text": "books dinners",
+            "mode": "told", "citations": ["2"], "told_by": "bo"}
+    assert await write(ops=[told]) == {"status": "ok"}
+
+
+async def test_a_dispute_wakes_the_session_and_is_weighed_with_its_message(env):
+    """The dispute input (35 §2): a dispute raised in a turn wakes the account's
+    session like a told line, renders with its claim, its raiser and the held
+    line it matched, the message it was said in is citable, and settling the
+    account (even with no change) closes it."""
+    await _told(env)
+    reads = InMemoryCharacterEvidence()
+    reads.add_message(id=77, platform="signal", room="room-a", person_id="bo",
+                      ts=T0 + DAY, body="that's wrong")
+    store = SqlPersonaStore(env, screen=lambda _t: None)
+    done = await store.record_dispute(
+        account=Account(key=KEY, entity_kind="human", unit="friends", subject="ada"),
+        disputed_by="bo", kind="dispute", claim="vegetarian", message_id=77,
+        now_ms=T0 + DAY)
+    assert (done.status, done.effect) == ("ok", "disputed")
+    adaptor = _adaptor(env, reads=reads)
+    assert await adaptor.evidence.count(key=KEY, after=0) == 5
+    out = await adaptor.inputs(key=KEY, batch=())
+    assert '<persona_disputes' in out and 'by="Bo"' in out and 'line="P1"' in out
+    assert 'said="77"' in out and "vegetarian" in out
+    write, _no_change = adaptor.verbs(key=KEY)
+    told = {"op": "add", "part": "identity", "kind": "attribute",
+            "text": "bo disputes the vegetarian line", "mode": "told",
+            "citations": ["77"], "told_by": "bo"}
+    assert await write(ops=[told]) == {"status": "ok"}
+    assert await _settle(adaptor) == 1
+    assert await store.pending_disputes(key=KEY) == 0
+    assert await adaptor.evidence.count(key=KEY, after=0) == 0

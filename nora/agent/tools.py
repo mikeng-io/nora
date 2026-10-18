@@ -1553,6 +1553,14 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                            side_effect_state="confirmed", idempotency="non_idempotent",
                            retry="never",
                            output_contract="three_state", level=2),
+    # The dispute door beside `remember_told` (35 §2): «that's wrong» or
+    # «forget that» about a remembered fact, on the graph surface only (the
+    # Persona account it rules on exists there). One write, confirmed, never
+    # retried; level 2 beside `remember`.
+    "persona_dispute": NativeTool(1,
+                                  side_effect_state="confirmed", idempotency="non_idempotent",
+                                  retry="never",
+                                  output_contract="three_state", level=2),
     # Nora's computer (DEC-243): the coding-agent
     # set (Claude Code's Bash/Read/Write/Edit, Pi's core four). Listing and
     # search go through `computer_run` (`ls`, `find`, `rg`).
@@ -4651,6 +4659,29 @@ _PERSONA_REFUSED_NOTES: Mapping[str, str] = MappingProxyType({
                    "itself, then call again.",
 })
 
+_PERSONA_DISPUTE_UNAVAILABLE: Mapping[str, str] = MappingProxyType({
+    "status": "unavailable",
+    "note": "I couldn't record that right now, so nothing was recorded. Say so.",
+})
+
+#: The `note` for each `effect` a recorded dispute carries (35 §2), and for
+#: each refusal reason the store's own judge returns.
+_PERSONA_DISPUTE_NOTES: Mapping[str, str] = MappingProxyType({
+    "hidden": "It is forgotten. Say so, and do not bring it up again.",
+    "disputed": "It is marked as disputed and I will weigh it. Meanwhile, do "
+                "not state it as fact.",
+    "recorded": "It is recorded. I could not tell which remembered fact it "
+                "was about, so ask which one if that matters.",
+})
+_PERSONA_DISPUTE_REFUSED_NOTES: Mapping[str, str] = MappingProxyType({
+    "forget_not_subject": "Nothing was recorded: only they can ask me to "
+                          "forget something about themselves. Say so.",
+    "identifier": "Nothing was recorded: it carries a number or handle I never "
+                  "keep. Say it without that, then call again.",
+    "coordinate": "Nothing was recorded: it carries a location I never keep. "
+                  "Say it without that, then call again.",
+})
+
 
 _MEMORY_BAD_KIND: Mapping[str, str] = MappingProxyType({
     "status": "unavailable",
@@ -4674,7 +4705,9 @@ _MEMORY_UNLISTED: Mapping[str, str] = MappingProxyType({
 #: alone; a profile question on the graph is `memory_search` with `person`.
 #: `remember` (the person-fact write) is on BOTH, built from one of two
 #: closures: Honcho's conclusion off the graph, a Persona `told` line on it
-#: (DEC-317). `load_transcript` reads the room's own rows
+#: (DEC-317). `persona_dispute` (35 §2's dispute door) is the graph's alone:
+#: the Persona account it rules on exists only there, and the Honcho surface
+#: has no dispute. `load_transcript` reads the room's own rows
 #: and is on both too.
 #: `who_said` is deprecated: the graph surface does without it
 #: (`memory_search` names who said each hit, `load_transcript` reads around
@@ -4682,7 +4715,7 @@ _MEMORY_UNLISTED: Mapping[str, str] = MappingProxyType({
 HONCHO_MEMORY_TOOLS: frozenset[str] = frozenset({
     "ask_memory", "search_memory", "search_memory_workspace", "who_said", "about",
 })
-GRAPH_MEMORY_TOOLS: frozenset[str] = frozenset({"memory_search"})
+GRAPH_MEMORY_TOOLS: frozenset[str] = frozenset({"memory_search", "persona_dispute"})
 #: The Dreamer adaptors whose `memory_search` reads their OWN room alone
 #: (`nora.agent.memory_search.scope_for`'s `own_room`; DEC-316). The culture fold writes one room's
 #: culture, which must
@@ -13674,6 +13707,110 @@ Args:
         return {"status": "refused", "note": _PERSONA_REFUSED_NOTES.get(
             reason, "Nothing was saved. Say you couldn't keep it, and don't say 記低咗.")}
 
+    async def persona_dispute(
+        claim: str, person: str = "",
+        kind: Literal["dispute", "forget"] = "dispute",
+    ) -> dict:
+        """Call this when somebody disputes a remembered fact, or its person asks you to forget it.
+
+It records who disputed it and what they said, against your account of that
+person. What the person themselves disputes is hidden at once; anyone else's
+dispute is marked and weighed later. Only the person themselves may ask to
+forget.
+
+Returns `status`: ok (with `effect`: hidden, disputed or recorded), refused,
+not_found, ambiguous or unavailable, with a `note` on how to report it.
+
+Args:
+    claim: What is wrong, one line, in the speaker's own words.
+    person: Whose remembered fact it is, as named here. Leave empty when it
+        is the speaker's own.
+    kind: dispute (the default: it is wrong) or forget (take it away, which
+        only the person themselves may ask)."""
+        # The dispute door (35 §2), mirroring `remember_told`: the speaker is
+        # the disputer, the named person is the account's subject, and the
+        # store rules on it in one transaction. The line the claim names is
+        # matched by code (`nora.domain.persona.match_disputed_line`), never
+        # by the model: an unmatched claim is recorded, not guessed at.
+        tagger = room.tagger
+        if tagger is None:
+            _record(metrics, "persona_dispute", "refused", reason="no_tagger")
+            return {
+                "status": "refused",
+                "note": "Nothing was recorded: I don't know who you are well "
+                        "enough to say who disputes it. Say you can't, and "
+                        "don't guess.",
+            }
+        text = claim.strip()
+        if not text:
+            _record(metrics, "persona_dispute", "refused", reason="empty")
+            return {
+                "status": "refused",
+                "note": "Nothing was recorded: say what is wrong, one line, "
+                        "then call again.",
+            }
+        if len(text) > PERSONA_LINE_MAX_CHARS:
+            _record(metrics, "persona_dispute", "refused", reason="too_long")
+            return {
+                "status": "refused",
+                "note": f"Nothing was recorded: a dispute fits in "
+                        f"{PERSONA_LINE_MAX_CHARS} characters. Say it shorter, "
+                        "then call again.",
+            }
+        cites = room.trigger_message_ids
+        unit = _unit()
+        if persona is None or lineage is None or unit is None or not cites:
+            # A wiring gap, or a turn no Record message raised: «I couldn't»,
+            # never a record.
+            _record(metrics, "persona_dispute", "unavailable", reason="unwired")
+            return dict(_PERSONA_DISPUTE_UNAVAILABLE)
+        subject = tagger
+        if person.strip():
+            view = await room.scope()
+            if not view.available:
+                _record(metrics, "persona_dispute", "unavailable", reason="roster")
+                return dict(_PERSONA_DISPUTE_UNAVAILABLE)
+            matches = view.find(person)
+            if not matches:
+                miss = _miss(person, view)
+                _record(metrics, "persona_dispute", miss["status"], candidates=0)
+                return miss
+            if len(matches) > 1:
+                _record(metrics, "persona_dispute", "ambiguous", candidates=len(matches))
+                return {
+                    "status": "ambiguous", **_asked_about(person),
+                    "could_be": [p.name for p in matches],
+                    "note": "More than one person here goes by that. Ask which one.",
+                }
+            subject = matches[0]
+        try:
+            result = await persona.record_dispute(
+                account=PersonaAccount(
+                    key=character_key(unit, subject.person_id), entity_kind="human",
+                    unit=unit, subject=subject.person_id,
+                ),
+                disputed_by=tagger.person_id, claim=text, kind=kind,
+                message_id=cites[0], now_ms=_now_ms(),
+            )
+        except Exception:
+            log.exception("persona_dispute failed")
+            _record(metrics, "persona_dispute", "unavailable")
+            return dict(_PERSONA_DISPUTE_UNAVAILABLE)
+        if result.status == "ok":
+            _record(metrics, "persona_dispute", "ok", effect=result.effect)
+            return {
+                "status": "ok", "effect": result.effect, "person": subject.name,
+                "note": _PERSONA_DISPUTE_NOTES.get(
+                    result.effect or "", "It is recorded."),
+            }
+        if result.status == "conflict":
+            _record(metrics, "persona_dispute", "unavailable", reason="conflict")
+            return dict(_PERSONA_DISPUTE_UNAVAILABLE)
+        reason = result.refusal.reason if result.refusal else "refused"
+        _record(metrics, "persona_dispute", "refused", reason=reason)
+        return {"status": "refused", "note": _PERSONA_DISPUTE_REFUSED_NOTES.get(
+            reason, "Nothing was recorded. Say you couldn't record it.")}
+
     def _held_to_schema(tool: str, body: str, *, carried: frozenset[int]) -> str | dict:
         """The tag path's body held to the note-body schema: her `[#n]`
         positions mapped to the row ids her transcript showed, then parsed
@@ -16416,7 +16553,8 @@ Args:
         _spec("memo_read", memo_read),
         _spec("note_create", note_create),
         _spec("note_update", note_update),
-        *((_spec("remember", remember_told),) if memory_retrieval is not None
+        *((_spec("remember", remember_told), _spec("persona_dispute", persona_dispute))
+          if memory_retrieval is not None
           else (_spec("remember", remember),)),
         _spec("computer_run", computer_run),
         _spec("computer_read", computer_read),

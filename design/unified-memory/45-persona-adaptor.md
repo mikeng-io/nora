@@ -12,7 +12,9 @@ DEC-317)**: `persona`, `persona_line` (migration `0117_persona`), the judge
 `nora.domain.persona.plan_write` and the one write path
 `nora.infra.sql.persona.SqlPersonaStore.persona_write`. What the build
 settled that this node left open is marked «Built» where it applies. The
-adaptor (§4's session), rendering (§5) and the gates (§6) are not built.
+adaptor (§4's session) is built since 2026-10-18 (in shadow): mentions,
+disputes and the verdict judge included. Rendering (§5) and the gates (§6)
+are not built.
 
 ## 0. This reverses "prose, no schema", deliberately
 
@@ -276,10 +278,13 @@ co-location, R-31) and the rooms' cultures. The verbs judge a write against
 the lines the session was shown and STAGE it; `commit` writes it, judged
 again in the store's transaction against the revision the session read, so
 a write landing meanwhile is a `conflict` that writes nothing, and the next
-wake reads the new account. Not built yet: the `mentions` input (the index
-has no `mentions` edges), disputes, the verdict judge, `about` over Persona,
-and the eval (§7). Each input is one item type and one block, so another
-source (a person's social items) adds without reshaping the adaptor.
+wake reads the new account. Built since: the `mentions` input (the index's
+`mentions` edges over `messages.mention_person_ids`), disputes (§2's
+`persona_dispute` turn tool and the `<persona_disputes>` block) and the
+verdict judge (the `persona-verdict` adaptor, §3). Not built yet: `about`
+over Persona, and the eval (§7). Each input is one item type and one block,
+so another source (a person's social items) adds without reshaping the
+adaptor.
 
 ## 5. Rendering
 

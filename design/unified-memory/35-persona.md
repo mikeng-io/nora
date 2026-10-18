@@ -1,6 +1,8 @@
 # Persona: identity, character and hypotheses as one account
 
-Status: **ruled by the operator 2026-10-15**, not built. Supersedes
+Status: **ruled by the operator 2026-10-15**; the person account is built
+since 2026-10-18 (45, in shadow: schema, the person adaptor, disputes, the
+verdict judge). Supersedes
 [30](30-identity-and-character.md) §2 (Identity as a fifth tier), §5 and the
 dispute rule in §7. 30's schema (§3), precedence (§4), agents as actors (§6)
 and the remember / correct flow (§7) stand, moved under Persona as below.

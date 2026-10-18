@@ -49,7 +49,7 @@ from tests.test_room_tools import GROUP, IDENTITY, MILES, NORA, TYLER, _NullStor
 #: would pass by no longer looking for it.
 MEMORY_VERBS = frozenset({
     "ask_memory", "search_memory", "search_memory_workspace", "who_said",
-    "about", "remember", "memory_search", "load_transcript",
+    "about", "remember", "memory_search", "load_transcript", "persona_dispute",
 })
 
 
@@ -66,12 +66,14 @@ EXPECTED: dict[str, dict[bool, frozenset[str]]] = {
     "tag": {
         False: frozenset({"ask_memory", "search_memory", "who_said", "about",
                           "remember", "load_transcript"}),
-        True: frozenset({"memory_search", "remember", "load_transcript"}),
+        True: frozenset({"memory_search", "remember", "persona_dispute",
+                         "load_transcript"}),
     },
     "fire": {
         False: frozenset({"ask_memory", "search_memory", "who_said", "about",
                           "remember", "load_transcript"}),
-        True: frozenset({"memory_search", "remember", "load_transcript"}),
+        True: frozenset({"memory_search", "remember", "persona_dispute",
+                         "load_transcript"}),
     },
     "cognition": {
         False: frozenset({"ask_memory", "search_memory", "search_memory_workspace",

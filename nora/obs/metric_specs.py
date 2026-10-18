@@ -1642,6 +1642,15 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "(its batch is held); abandoned the third unsettled run of one batch.",
         ("outcome",),
     ),
+    # The Persona verdict judge (45 §3): one per hypothesis judged, by verdict
+    # and by judge (code for a countable observable, the model otherwise).
+    # `unknown` is never confirmed's side: it is the observable unread (R-27).
+    _CounterSpec(
+        "nora_persona_verdict_total",
+        "Hypothesis verdicts by verdict (confirmed / refuted / expired / "
+        "unknown) and judge (code / model).",
+        ("verdict", "judge"),
+    ),
     _CounterSpec(
         "nora_lessons_session_total",
         "Lessons sessions and their writes by outcome ("

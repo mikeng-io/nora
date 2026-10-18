@@ -257,6 +257,10 @@ from nora.language.persona import (
     PersonaEvidence,
     PersonaPersonAdaptor,
 )
+from nora.language.persona_verdict import (
+    PERSONA_VERDICT_ADAPTOR_NAME,
+    PersonaVerdictAdaptor,
+)
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
 from nora.persons import DIRECT_PLATFORMS, Persons, PersonsError, load_persons
@@ -3961,6 +3965,14 @@ async def build_dependencies(
                         wake_batch=cfg.culture.person_wake_batch,
                         batch_limit=cfg.culture.person_wake_batch,
                     ),
+                    # The verdict judge (45 §3): one unit's docket of
+                    # window-closed open hypotheses, fired the tick one is due
+                    # (wake_batch 1), never by its writer.
+                    PERSONA_VERDICT_ADAPTOR_NAME: AdaptorSchedule(
+                        min_interval_seconds=cfg.culture.stale_seconds,
+                        wake_batch=1,
+                        batch_limit=cfg.culture.person_wake_batch,
+                    ),
                 }
                 dream_adaptors = (
                     *dream_adaptors,
@@ -3971,6 +3983,15 @@ async def build_dependencies(
                             wake_batch=cfg.culture.person_wake_batch,
                         ),
                         reads=persona_reads, keys=person_keys,
+                        name_of=lambda pid: (
+                            ref.name if pid and (ref := persons.by_person.get(pid)) is not None
+                            else "someone"
+                        ),
+                        clock_ms=_now_ms, metrics=metrics,
+                    ),
+                    PersonaVerdictAdaptor(
+                        store=persona_store, reads=persona_reads,
+                        rollup=SqlRollupRead(engine), keys=person_keys,
                         name_of=lambda pid: (
                             ref.name if pid and (ref := persons.by_person.get(pid)) is not None
                             else "someone"
@@ -4171,6 +4192,9 @@ async def build_dependencies(
             # The Persona session stands where the person's Character session
             # does (`PersonaPersonAdaptor.tool_room`), with the same reads.
             PERSONA_PERSON_ADAPTOR_NAME: culture_grant(),
+            # The verdict judge holds no read tool (its windows are in the
+            # prompt) and writes only through `record_verdict`; the default
+            # grant (nothing) is its ceiling, kept here by omission.
         }
         # `DreamBudgetConfig` -> `AdaptorBudget`, through the ONE named
         # converter (`_adaptor_budget` above): the same five numbers across the
@@ -4186,7 +4210,7 @@ async def build_dependencies(
         # and a few checked writes.
         if "culture" in dream_budgets:
             for name in (*CHARACTER_ADAPTOR_NAMES, LESSONS_ADAPTOR_NAME,
-                         PERSONA_PERSON_ADAPTOR_NAME):
+                         PERSONA_PERSON_ADAPTOR_NAME, PERSONA_VERDICT_ADAPTOR_NAME):
                 dream_budgets.setdefault(name, dream_budgets["culture"])
         # An adaptor with no block of its own. `budget_for` returns a freshly
         # constructed default rather than a shared constant (DEC-13 forbids a

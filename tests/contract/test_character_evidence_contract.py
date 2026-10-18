@@ -36,6 +36,13 @@ class _Evidence(Protocol):
     async def person_since(
         self, *, rooms: Any, person_id: str, after: int, limit: int,
     ) -> tuple[list[RoomMessage], int]: ...
+    async def mentions_count(self, *, rooms: Any, person_id: str, after: int) -> int: ...
+    async def mentions_since(
+        self, *, rooms: Any, person_id: str, after: int, limit: int,
+    ) -> tuple[list[RoomMessage], int]: ...
+    async def windowed(
+        self, *, rooms: Any, since_ms: int, until_ms: int, limit: int,
+    ) -> list[RoomMessage]: ...
 
 
 @pytest.fixture(scope="module")
@@ -125,6 +132,20 @@ async def test_the_read_is_the_newest_lines_oldest_first_and_the_cursor_is_the_n
     assert nothing == [] and unmoved == ids[6]
 
 
+async def test_windowed_is_every_visible_line_in_the_rooms_over_the_interval(seeded):
+    """The verdict judge's window read (45 §3): every visible message in the
+    rooms with `ts` in `(since, until]` — hers included, a hidden one never —
+    oldest first, capped at the newest `limit`."""
+    store, ids = seeded
+    got = await store.windowed(rooms=ROOMS, since_ms=1001, until_ms=1005, limit=10)
+    assert [(m.row.id, m.row.body) for m in got] == [
+        (ids[1], "b1"), (ids[2], "a2"), (ids[3], "nora")]
+    newest = await store.windowed(rooms=ROOMS, since_ms=1001, until_ms=1005, limit=2)
+    assert [m.row.id for m in newest] == [ids[2], ids[3]]
+    assert await store.windowed(rooms=[], since_ms=0, until_ms=10_000, limit=10) == []
+    assert await store.windowed(rooms=ROOMS, since_ms=1005, until_ms=1001, limit=10) == []
+
+
 async def test_rows_by_id_are_the_visible_rows_named_with_their_room(seeded):
     """What a Persona session checks an older account's citation against: the
     rows asked for, ascending, each with its room; a hidden one is gone and an
@@ -134,6 +155,81 @@ async def test_rows_by_id_are_the_visible_rows_named_with_their_room(seeded):
     assert [(m.row.id, m.room, m.row.person_id) for m in got] == [
         (ids[0], "room-a", "ada"), (ids[6], "room-b", "ada")]
     assert await store.rows_by_id(ids=[]) == []
+
+
+#: (platform, room, author, body, is_nora, hidden, mention persons), inserted
+#: in this order. Bo is the subject: ada mentions them twice (a1 in a listed
+#: room, a5 hidden), Nora's own mention never counts, ada mentioning herself
+#: never counts, and room-c is not a listed room.
+_MENTION_ROWS = [
+    ("signal", "room-a", "ada", "morning bo", False, False, frozenset({"bo"})),
+    ("signal", "room-a", "bo", "about cy", False, False, frozenset({"cy"})),
+    ("discord", "room-b", "ada", "bo again", False, False, frozenset({"bo", "cy"})),
+    ("signal", "room-a", None, "bo, ping", True, False, frozenset({"bo"})),
+    ("signal", "room-a", "ada", "hidden bo", False, True, frozenset({"bo"})),
+    ("signal", "room-c", "ada", "bo elsewhere", False, False, frozenset({"bo"})),
+    ("signal", "room-a", "ada", "about me", False, False, frozenset({"ada"})),
+]
+
+
+@pytest.fixture(params=["memory", "sql"])
+async def mentioned(request: Any) -> AsyncIterator[tuple[_Evidence, list[int]]]:
+    if request.param == "memory":
+        fake = InMemoryCharacterEvidence()
+        for i, (platform, room, person, body, nora, hidden, mp) in enumerate(
+                _MENTION_ROWS, 1):
+            fake.add_message(id=i, platform=platform, room=room, person_id=person,
+                             body=body, ts=2000 + i, is_nora=nora, hidden=hidden,
+                             mention_persons=mp)
+        yield fake, list(range(1, len(_MENTION_ROWS) + 1))
+        return
+    from nora.infra.sql.schema import MEMORY_EDGE
+
+    engine = create_sql_engine(request.getfixturevalue("_db"))
+    ids: list[int] = []
+    try:
+        async with engine.begin() as conn:
+            for i, (platform, room, person, body, nora, hidden, mp) in enumerate(
+                    _MENTION_ROWS, 1):
+                mid = int((await conn.execute(sa.insert(MESSAGES).values(
+                    platform=platform, conversation_id=room, conversation_type="group",
+                    sender_id="+85200000000", sender_name="x", ts=2000 + i, body=body,
+                    is_nora=int(nora), person_id=person,
+                    hidden_at=2_000 if hidden else None,
+                ).returning(MESSAGES.c.id))).scalar_one())
+                ids.append(mid)
+                for pid in sorted(mp):
+                    await conn.execute(sa.insert(MEMORY_EDGE).values(
+                        src_kind="message", src_id=str(mid), rel="mentions",
+                        dst_kind="person", dst_id=pid,
+                        provenance="messages.mention_persons_json",
+                    ))
+        yield SqlCharacterEvidence(engine), ids
+    finally:
+        async with engine.begin() as conn:
+            await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
+            await conn.execute(sa.text("truncate messages, memory_edge cascade"))
+        await engine.dispose()
+
+
+async def test_a_persons_mentions_are_the_index_edges_over_visible_lines_in_the_rooms(mentioned):
+    store, ids = mentioned
+    assert await store.mentions_count(rooms=ROOMS, person_id="bo", after=0) == 2
+    assert await store.mentions_count(rooms=ROOMS, person_id="bo", after=ids[0]) == 1
+    assert await store.mentions_count(rooms=ROOMS, person_id="cy", after=0) == 2
+    assert await store.mentions_count(rooms=ROOMS, person_id="ada", after=0) == 0
+    assert await store.mentions_count(rooms=[], person_id="bo", after=0) == 0
+    got, cursor = await store.mentions_since(
+        rooms=ROOMS, person_id="bo", after=0, limit=5)
+    assert [(m.row.id, m.room, m.row.body) for m in got] == [
+        (ids[0], "room-a", "morning bo"), (ids[2], "room-b", "bo again")]
+    assert cursor == ids[2]
+    newest, cursor = await store.mentions_since(
+        rooms=ROOMS, person_id="bo", after=0, limit=1)
+    assert [m.row.id for m in newest] == [ids[2]] and cursor == ids[2]
+    nothing, unmoved = await store.mentions_since(
+        rooms=ROOMS, person_id="bo", after=ids[2], limit=5)
+    assert nothing == [] and unmoved == ids[2]
 
 
 @pytest.fixture(params=["memory", "sql"])

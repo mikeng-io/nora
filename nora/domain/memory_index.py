@@ -205,10 +205,11 @@ KINDS_BY_CATEGORY: Mapping[str, tuple[str, ...]] = {
 }
 
 #: The relations that tie a node to the person a `memory_search` names: an
-#: entry `about` them, a message `authored_by` them, an attachment
-#: `shared_by` them. `mentions` and `depicts` join when something writes them;
-#: until then they would match nothing.
-PERSON_RELATIONS: tuple[str, ...] = ("about", "authored_by", "shared_by")
+#: entry `about` them, a message `authored_by` them or `mentions` of them (an
+#: @-mention resolved at ingest, 25 §2), an attachment `shared_by` them.
+#: `depicts` joins when something writes it; until then it would match
+#: nothing.
+PERSON_RELATIONS: tuple[str, ...] = ("about", "authored_by", "shared_by", "mentions")
 
 
 @dataclass(frozen=True, slots=True)

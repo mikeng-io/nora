@@ -10,7 +10,8 @@ switch (step 8). `[persona] enabled` turns the sessions on.
 list them (35 §3): `[culture] person_wake_batch` of their messages since the
 key's watermark, or `stale_seconds` with any. **Plus the stimulus wake** (45
 §4 prerequisite 4): a `told` line a turn wrote about them (`remember` on the
-graph surface) since the account's last session counts as a full batch, so
+graph surface) or a dispute of one of its lines (`persona_dispute` on the
+same surface) since the account's last session counts as a full batch, so
 the session weighs it at once.
 
 **The backfill is the first session** (35 §4): a key never run has a
@@ -24,10 +25,11 @@ its Character head is no longer handed, and the watermark is the dream
 loop's.
 
 **What it reads** (45 §4): its own held lines by handle (`P1`, ...), the
-person's new messages, the response episodes they answered, their Rollup
-ties summed over every week (never co-location: no presence, R-31), and the
-unit's room cultures. Not yet: messages that MENTION the person (the index
-writes no `mentions` edge yet) and disputes (35 §2, not built).
+person's new messages, the messages that MENTION them (the index's `mentions`
+edges, written from the resolved `messages.mention_persons_json`), the
+response episodes they answered, their Rollup ties summed over every week
+(never co-location: no presence, R-31), the disputes of its lines raised
+since it last settled (35 §2), and the unit's room cultures.
 
 **One atomic write settles the session**: `persona_write(ops)` is judged
 whole by `nora.domain.persona.plan_write` (one refused op refuses the call,
@@ -64,6 +66,7 @@ from nora.domain.persona import (
     PERSONA_OUTCOMES,
     Account,
     PersonaCitable,
+    PersonaDispute,
     PersonaLine,
     PersonaOp,
     PersonaWriteResult,
@@ -102,16 +105,21 @@ EPISODES_MAX = 12
 #: The most ties one session is handed (the most replied first).
 TIES_MAX = 8
 
-#: `inputs` holds seven sites (the account's revision, lines and pending
-#: `told` lines, the Character head, an old head's cited rows, the ties, the
-#: rooms' cultures in one gather); `commit` one write.
-PERSONA_STORE_CALLS_PER_TICK = 8
+#: The most open disputes one session weighs (the oldest first).
+DISPUTES_MAX = 10
+
+#: `inputs` holds eight sites (the account's revision, lines, pending `told`
+#: lines and open disputes, the Character head, cited rows in one read, the
+#: ties, the rooms' cultures in one gather); `commit` one write.
+PERSONA_STORE_CALLS_PER_TICK = 9
 
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("about_person", 5, "turn"),
     ("persona_lines", 10, "turn"),
     ("previous_character", 20, "turn"),
+    ("persona_disputes", 30, "turn"),
     ("persona_messages", 40, "turn"),
+    ("persona_mentions", 45, "turn"),
     ("persona_episodes", 50, "turn"),
     ("persona_ties", 60, "turn"),
 )
@@ -131,6 +139,11 @@ class _Reads(Protocol):
     ) -> int: ...
 
     async def person_since(
+        self, *, rooms: Sequence[tuple[str, str]], person_id: str, after: int,
+        limit: int,
+    ) -> tuple[list[RoomMessage], int]: ...
+
+    async def mentions_since(
         self, *, rooms: Sequence[tuple[str, str]], person_id: str, after: int,
         limit: int,
     ) -> tuple[list[RoomMessage], int]: ...
@@ -155,6 +168,12 @@ class _Persona(Protocol):
 
     async def pending_told(self, *, key: str) -> int: ...
 
+    async def pending_disputes(self, *, key: str) -> int: ...
+
+    async def open_disputes(
+        self, *, key: str, limit: int
+    ) -> tuple[PersonaDispute, ...]: ...
+
     async def persona_write(
         self, *, account: Account, ops: Sequence[PersonaOp], citable: PersonaCitable,
         now_ms: int, written_by_session: str,
@@ -170,6 +189,15 @@ def _listed(pk: PersonKey) -> list[tuple[str, str]]:
     """The `(platform, primary_id)` of the rooms that list them: their
     evidence (35 §3)."""
     return [(r.platform, r.key) for r in pk.rooms if r.key in pk.listed]
+
+
+@dataclass(frozen=True)
+class Mention:
+    """A message that MENTIONS the person, wrapped so the batch keeps it
+    apart from one they WROTE (both are `RoomMessage`): it renders in its own
+    block and is citable the same way."""
+
+    message: RoomMessage
 
 
 class PersonaEvidence:
@@ -206,17 +234,25 @@ class PersonaEvidence:
             return n
         if await self._persona.pending_told(key=key):
             return self._wake_batch
+        if await self._persona.pending_disputes(key=key):
+            return self._wake_batch
         return n
 
     async def newest(
         self, *, key: str, after: int, limit: int,
-    ) -> tuple[Sequence[RoomMessage | Episode], int]:
+    ) -> tuple[Sequence[RoomMessage | Episode | Mention], int]:
         """Their newest `limit` messages past `after` and the cursor past all of
-        them, then the newest `EPISODES_MAX` closed episodes past it that they
-        answered."""
+        them, the messages that mention them over the same span (same Record id
+        space, so one cursor: the newest id either read reached), then the
+        newest `EPISODES_MAX` closed episodes past it that they answered.
+        A mention never wakes the session (45 §4's wake is their own batch,
+        stale, or a stimulus); it is read when something else did."""
         pk = self._keys[key]
         self._held[key] = after
         messages, cursor = await self._store.person_since(
+            rooms=_listed(pk), person_id=pk.person.person_id, after=after, limit=limit,
+        )
+        mentioned, mention_cursor = await self._store.mentions_since(
             rooms=_listed(pk), person_id=pk.person.person_id, after=after, limit=limit,
         )
         found, _ = await self._store.episodes(
@@ -224,7 +260,8 @@ class PersonaEvidence:
         listed = set(pk.listed)
         theirs = [e for e in found if e.room in listed
                   and any(r.person_id == pk.person.person_id for r in e.replies)]
-        return [*messages, *theirs[-EPISODES_MAX:]], cursor
+        return [*messages, *(Mention(message=m) for m in mentioned),
+                *theirs[-EPISODES_MAX:]], max(cursor, mention_cursor)
 
 
 @dataclass(frozen=True)
@@ -331,10 +368,12 @@ class PersonaPersonAdaptor:
     async def inputs(self, *, key: str, batch: Sequence[Any]) -> str:
         """Who this is, the lines the account holds (by handle), the Character
         head until a session first settles the account, the rooms' cultures, their messages,
-        the episodes they answered and their ties. `""` when nothing is new and
-        no turn wrote a line: no model call."""
+        the messages that mention them, the episodes they answered, their ties
+        and the disputes awaiting weighing. `""` when nothing is new and
+        no turn wrote a line or a dispute: no model call."""
         pk = self._keys.get(key)
         messages = [m for m in batch if isinstance(m, RoomMessage)]
+        mentions = [m.message for m in batch if isinstance(m, Mention)]
         episodes = [e for e in batch if isinstance(e, Episode)]
         if pk is None:
             return ""
@@ -343,7 +382,8 @@ class PersonaPersonAdaptor:
         revision, settled_at = await self._persona.account_state(key=key)
         heads = await self._persona.account_heads(key=key)
         pending = await self._persona.pending_told(key=key)
-        if not (messages or episodes or pending):
+        disputes = await self._persona.open_disputes(key=key, limit=DISPUTES_MAX)
+        if not (messages or mentions or episodes or pending or disputes):
             return ""
         now = self._clock()
         person = pk.person.person_id
@@ -352,14 +392,18 @@ class PersonaPersonAdaptor:
         # turn's `told` lines do not count: they may land before it.
         first = settled_at is None
         previous = await self._culture.head(key=key) if first else None
-        old_cited: list[RoomMessage] = []
-        if previous is not None and previous.citations:
-            ids = [int(c) for c in previous.citations if c.isdigit()]
-            old_cited = await self._reads.rows_by_id(ids=ids)
+        # The rows a citation names, in one read: an old head's citations and
+        # the message each dispute was said in (both citable).
+        cited_ids = [int(c) for c in (previous.citations if previous else ()) if c.isdigit()]
+        dispute_ids = {d.message_id for d in disputes}
+        cited = (await self._reads.rows_by_id(ids=[*cited_ids, *dispute_ids])
+                 if cited_ids or dispute_ids else [])
+        old_cited = [m for m in cited if m.row.id not in dispute_ids]
         ties = (await self._reads.tie_totals(unit=pk.unit, person_id=person))[:TIES_MAX]
         cultures = await asyncio.gather(*(self._culture.head(key=r.key) for r in pk.rooms))
 
-        said: dict[int, Said] = {m.row.id: _said(m) for m in [*old_cited, *messages]}
+        said: dict[int, Said] = {m.row.id: _said(m)
+                                 for m in [*old_cited, *messages, *mentions, *cited]}
         replies: dict[int, Said] = {}
         for e in episodes:
             for r in e.replies:
@@ -386,6 +430,10 @@ class PersonaPersonAdaptor:
         labels = {r.key: r.label for r in pk.rooms}
         handles = handles_for(heads)
         handle_of = {i: h for h, i in handles.items()}
+        # A dispute names the line as it was when it matched; a state change
+        # (hidden, disputed) superseded that row, so its id still resolves.
+        handle_of.update({h.supersedes: handle_of[h.id]
+                          for h in heads if h.supersedes and h.id in handle_of})
         held = [h for h in heads if h.id in handle_of]
         parts: list[ContextBlock | None] = [
             ContextBlock(
@@ -409,10 +457,31 @@ class PersonaPersonAdaptor:
                     if old_cited else ()),
             ),
             room_cultures_block(pk.rooms, cultures, now),
+            None if not disputes else ContextBlock(
+                name="persona_disputes", **_at("persona_disputes"), body=render_elements(
+                    disputes, tag="dispute",
+                    attrs=lambda d, _i: (
+                        ("by", self._name_of(d.disputed_by)), ("kind", d.kind),
+                        ("age", age(d.written_at, now)),
+                        ("said", str(d.message_id)),
+                        ("line", handle_of.get(d.line_id or "")),
+                    ),
+                    body=lambda d: d.claim,
+                ),
+            ),
             None if not messages else ContextBlock(
                 name="persona_messages", **_at("persona_messages"), body=render_row_window(
                     messages, row_id=lambda m: m.row.id,
                     attrs=lambda m: (("room", labels.get(m.room) or "unnamed room"),
+                                     ("age", age(m.row.ts, now))),
+                    body=lambda m: m.row.body or "",
+                ),
+            ),
+            None if not mentions else ContextBlock(
+                name="persona_mentions", **_at("persona_mentions"), body=render_row_window(
+                    mentions, row_id=lambda m: m.row.id,
+                    attrs=lambda m: (("room", labels.get(m.room) or "unnamed room"),
+                                     ("by", self._name_of(m.row.person_id)),
                                      ("age", age(m.row.ts, now))),
                     body=lambda m: m.row.body or "",
                 ),
