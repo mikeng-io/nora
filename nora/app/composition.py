@@ -286,7 +286,7 @@ from .fire import (
     relay_occasion,
     reminder_occasion,
 )
-from .gatherings import GatheringService, room_event_shown
+from .gatherings import GatheringService, room_event_shown, screened_area
 from .heartbeat import HeartbeatLoop, publish_idle_gauge, recover
 from .participation import ParticipationTrigger
 from .proactive_screen import ProactiveScreen
@@ -2381,12 +2381,21 @@ async def build_dependencies(
     def _event_unit_room_ids(unit_id: str) -> tuple[str, ...]:
         return event_unit_rooms.get(unit_id, ())
 
+    # A venue's district and city come from the Geocoding API by the place id
+    # `place_info` resolved it to, with the route key (a Places id is that
+    # key's project's, and the key is restricted to Routes + Places +
+    # Geocoding). No route client, no venue area.
+    place_areas = None
+    if route_client is not None:
+        from nora.infra.geocode import GoogleGeocoder
+        place_areas = GoogleGeocoder(api_key=os.environ.get(cfg.route.api_key_env, ""))
     events = GatheringService(
         store=event_store,
         route_source=route_client,
         honcho=memory,
         ai_peer=cfg.memory.ai_peer,
         unit_room_ids=_event_unit_room_ids,
+        place_areas=place_areas,
     )
     # `media_fetch` (DEC-56) reads a stored blob back through MiMo. Its two
     # collaborators are wired together: the blob store (already built above,
@@ -4594,13 +4603,15 @@ def reverse_geocoder(
             return HKGovGeocoder(
                 service_url=cfg.presence.hkgov_geocode_url, token=hkgov_token,
                 lang_zh=cfg.presence.hkgov_lang_zh, lang_en=cfg.presence.hkgov_lang_en,
-                cache_store=cache_store,
+                cache_store=cache_store, area_screen=screened_area,
             )
         return None
     maps_key = environ.get(cfg.presence.geocode_api_key_env, "")
     if maps_key:
         from nora.infra.geocode import GoogleGeocoder
-        return GoogleGeocoder(api_key=maps_key, cache_store=cache_store)
+        return GoogleGeocoder(
+            api_key=maps_key, cache_store=cache_store, area_screen=screened_area,
+        )
     return None
 
 

@@ -38,6 +38,7 @@ def _revision_of(event: Gathering, *, parent_revision_id: UUID | None) -> EventR
         reasoning=event.reasoning, confidence=event.confidence,
         lineage=event.lineage, as_of=event.as_of, body=None,
         written_by="tag", written_at=event.created_at, field_meta=event.field_meta,
+        venue_district=event.venue_district, venue_city=event.venue_city,
     )
 
 

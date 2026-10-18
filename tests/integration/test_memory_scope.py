@@ -364,6 +364,42 @@ async def test_i_an_unscoped_place_hub_never_seeds(engine: Any, seeds: str) -> N
     assert found.hits[0].places == {"Golden Ramen House"}  # reached as a neighbour
 
 
+async def test_m_near_a_named_district_reaches_only_what_in_scope_lies_in_it(
+    engine: Any, seeds: str,
+) -> None:
+    """Step 3a (25 §6a): «near Mong Kok» names a district hub; the walk
+    descends to the venue in it and reaches the event there and the outing
+    located in the district, though no word of the question is in either.
+    Each passes the scope like any node: another unit's event at the same
+    venue is never reached, and the outing only where its person passes
+    presence: B lists both and shares location, B2 lists both and does not.
+    No place is returned."""
+    mk = ("place", "district:旺角 / Mong Kok")
+    await _node(engine, *mk, "旺角 / Mong Kok")
+    await _node(engine, "place", "venue-1", "Langham Place")
+    await _edge(engine, ("place", "venue-1"), "located_in", mk)
+    await _node(engine, "event", "ev-in", "friday plan", unit="u1")
+    await _node(engine, "event", "ev-out", "friday plan", unit="u2")
+    for ev in ("ev-in", "ev-out"):
+        await _edge(engine, ("event", ev), "about", ("place", "venue-1"))
+    outing = "u1|kit,rin|2026-09-01T19:00:00+08:00/2026-09-01T22:00:00+08:00"
+    await _node(engine, "outing", outing, "outing", unit="u1", persons=["kit", "rin"],
+                lineage=[["presence", "kit", None], ["presence", "rin", None]])
+    await _edge(engine, ("outing", outing), "located_in", mk)
+
+    found = await _search(engine, seeds=seeds, query="anything good near Mong Kok?")
+    assert _keys(found) == {("event", "ev-in"), ("outing", outing)}
+    assert found.status == _settled(seeds)
+    assert _paths(found)[("event", "ev-in")] == [
+        ("place", None, True), ("place", "located_in", False), ("event", "about", False),
+    ]
+    assert {h.node.key: h.places for h in found.hits}[("outing", outing)] == {
+        "旺角 / Mong Kok",
+    }
+    b2 = _keys(await _search(engine, seeds=seeds, query="near Mong Kok", room=_B2, embed=False))
+    assert b2 == {("event", "ev-in")}
+
+
 async def test_j_exclude_persons_is_respected(engine: Any, seeds: str) -> None:
     await _node(engine, "note", "n-1", "surprise party plan", unit="u1",
                 exclude_persons=["sam"])

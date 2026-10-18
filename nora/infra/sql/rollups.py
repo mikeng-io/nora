@@ -645,7 +645,7 @@ def _outing_values(o: Outing) -> dict[str, Any]:
     return {
         **_common(o), "persons": list(o.persons), "lat": o.lat, "lng": o.lng,
         "place_label": o.place_label, "saved_place_id": o.saved_place_id,
-        "open": int(o.open),
+        "open": int(o.open), "district": o.district, "city": o.city,
     }
 
 

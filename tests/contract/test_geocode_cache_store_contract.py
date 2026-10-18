@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import pytest
 
+from nora.domain.ports import PlaceArea
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.geocode_cache import SqlGeocodeCacheStore
 from nora.infra.sql.migrations_runner import run_migrations
@@ -73,3 +74,18 @@ async def test_nearest_within_picks_the_closer_of_two_cached_points(store):
     await store.put(lat_rounded=22.3250, lng_rounded=114.1750, address="far")
     got = await store.nearest_within(lat=22.4106, lng=114.1245, radius_m=2000.0)
     assert got == "near"
+
+
+async def test_area_within_reads_the_nearest_row_that_names_an_area(store):
+    """An outing is placed by the areas of the nearest cached geocode
+    (`nora.analytics.units`): a closer row with no area (one cached before
+    0118) is passed over, a row beyond the radius is never read, and none
+    within it is None, never a guess."""
+    area = PlaceArea(district="旺角 / Mong Kok", city="九龍 / Kowloon")
+    await store.put(lat_rounded=1.0, lng_rounded=2.0, address="no area")
+    await store.put(
+        lat_rounded=1.1, lng_rounded=2.0, address="with area", area=area,
+    )
+    assert await store.area_within(lat=1.0, lng=2.0, radius_m=20_000.0) == area
+    assert await store.area_within(lat=1.0, lng=2.0, radius_m=10.0) is None
+    assert await store.nearest_within(lat=1.0, lng=2.0, radius_m=20_000.0) == "no area"
