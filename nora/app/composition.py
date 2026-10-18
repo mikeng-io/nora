@@ -121,6 +121,7 @@ from nora.domain.culture import character_key, nora_character_key, unit_culture_
 from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.documents import DocumentStore, RoomKey
 from nora.domain.media_join import MediaJoin
+from nora.domain.memory_index import IndexState
 from nora.domain.ports import (
     BlobStore,
     ComputeBackend,
@@ -1067,6 +1068,9 @@ class Dependencies:
     persona_portal: SqlPersonaStore | None
     persona_scopes_of: Callable[[str], tuple[tuple[str, str], ...]] | None
     persona_cited: SqlCharacterEvidence | None
+    # /health's `index` block: the memory index's state and queue length
+    # (`SqlMemoryIndex.index_state`, no model fingerprint).
+    index_state: Callable[[], Awaitable[IndexState]]
     # Documents (ADR 0020): the store the portal reads, the service that publishes into
     # it (the `document_publish` tool's collaborator), and person_id -> the rooms whose
     # `persons` name them, from the CURRENT policy, for the same reason as
@@ -2166,10 +2170,13 @@ async def build_dependencies(
     # `[memory_index] enabled` (ships off): the one retrieval service, held
     # by the tag path's pre-fetch (`<recalled>`) and by the tool registry's
     # `memory_search` below, one instance for both; `None` keeps the Honcho
-    # surface and no pre-fetch.
+    # surface and no pre-fetch. The same SqlMemoryIndex answers /health's
+    # `index` block either way (the projection runs whether or not the search
+    # surface is on).
+    memory_index_reader = SqlMemoryIndex(engine)
     memory_search = (
         MemorySearch(
-            SqlMemoryIndex(engine), metrics,
+            memory_index_reader, metrics,
             # `[memory_index] embed`: dense and exact seeds, the
             # lexical seed only as the fallback; off, every answer is
             # the fallback's `partial`.
@@ -4651,6 +4658,7 @@ async def build_dependencies(
         persona_cited=(
             SqlCharacterEvidence(engine) if persona_store_reader is not None else None
         ),
+        index_state=memory_index_reader.index_state,
         documents=documents_store, document_service=document_service,
         rooms_of=functools.partial(rooms_named, allowlist),
         room_event_shown=functools.partial(room_event_shown, lineage),

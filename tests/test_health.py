@@ -275,3 +275,46 @@ async def test_health_platforms_defaults_to_the_single_adapter(client):
     the one adapter, so the block is never empty on a Signal-only deploy."""
     body = await (await client.get("/health")).json()
     assert set(body["platforms"]) == {"signal"}
+
+
+def _fake_health_app(**kw):
+    """A health app with no database in it: FakeRecordStore covers `store`."""
+    from pathlib import Path
+
+    from nora.doctrine.loader import DoctrineStore
+
+    metrics = Metrics()
+    return build_health_app(
+        adapter=SinkSender(), store=FakeRecordStore(), honcho=FakeMemoryStore(),
+        doctrine_store=DoctrineStore(Path("nora/doctrine"), canary="C", metrics=metrics),
+        metrics=metrics, started_at=0.0, llm_state=LLMState(), **kw,
+    )
+
+
+async def test_health_reports_the_memory_index_state(aiohttp_client):
+    from nora.domain.memory_index import IndexState
+
+    async def index_state():
+        return IndexState(status="complete", queue=3)
+
+    c = await aiohttp_client(_fake_health_app(index_state=index_state))
+    resp = await c.get("/health")
+    assert resp.status == 200
+    assert (await resp.json())["index"] == {"status": "complete", "queue": 3}
+
+
+async def test_an_index_read_failure_is_unavailable_and_not_unhealthy(aiohttp_client):
+    """R-27: a failed read says `unavailable`, never a guessed status; and a
+    rebuilding or unreadable index must not flap the container healthcheck."""
+    async def index_state():
+        raise RuntimeError("database gone")
+
+    c = await aiohttp_client(_fake_health_app(index_state=index_state))
+    resp = await c.get("/health")
+    assert resp.status == 200
+    assert (await resp.json())["index"] == {"status": "unavailable"}
+
+
+async def test_health_omits_the_index_block_when_unwired(aiohttp_client):
+    c = await aiohttp_client(_fake_health_app())
+    assert "index" not in await (await c.get("/health")).json()
