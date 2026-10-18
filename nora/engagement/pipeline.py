@@ -94,6 +94,7 @@ from nora.domain import audience as audience_names
 from nora.domain.culture import CultureRevision
 from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.external_files import render_file_links
+from nora.domain.persona import PersonaView
 from nora.domain.ports import (
     EngagementRequest,
     LinkPreviewSource,
@@ -465,9 +466,17 @@ class EngagementPipeline:
                 request.message.platform).resolve_identity()
             await self._run_admitted(request, identity, indicator)
 
+    def _persona_name_of(self, person_id: str) -> str:
+        """A told-by person id as a NAME for the fold's `<persona>` block
+        (45 §5): the identity index's name, "someone" when it has none (R-18 —
+        never the id itself)."""
+        ref = self._persons.by_person.get(person_id)
+        return ref.name if ref is not None else "someone"
+
     async def _debrief(
         self, *, trace: TagTrace | None, platform: str,
         culture: CultureRevision | None = None,
+        persona_room: PersonaView | None = None,
     ) -> None:
         """Hand this finished turn to the debrief stage, or do nothing at all.
 
@@ -527,6 +536,8 @@ class EngagementPipeline:
                 working_set_max_chars=wiring.working_set_max_chars,
                 now_ms=int(time.time() * 1000),
                 culture=culture,
+                persona_room=persona_room,
+                persona_name_of=self._persona_name_of,
             )
 
     async def _run_admitted(
@@ -591,6 +602,9 @@ class EngagementPipeline:
         # than a second read that could land either side of a fold. Bound
         # here, before the `try`, for `trace`'s reason.
         culture: CultureRevision | None = None
+        # The turn's Persona views under the switch (45 §5): the room's one is
+        # what the debrief folds against, handed through like `culture`.
+        personas: tuple[PersonaView, ...] = ()
         # Every log line emitted for the rest of this tag — across every stage
         # this method calls into — carries tag_id without any of them naming
         # it explicitly (nora.obs.logging's contextvar bridge).
@@ -603,6 +617,7 @@ class EngagementPipeline:
         try:
             ctx = await self._context.assemble(request=request)
             culture = ctx.culture
+            personas = ctx.personas
             # An @-mention is a placeholder plus a parallel array; left alone,
             # every name in the transcript — including Nora's own — would reach the
             # model as U+FFFC (DEC-34). Rehydrated HERE rather than at
@@ -1190,7 +1205,9 @@ class EngagementPipeline:
             #    caused by a stage reviewing a turn that already finished.
             try:
                 await self._debrief(
-                    trace=trace, platform=msg.platform, culture=culture)
+                    trace=trace, platform=msg.platform, culture=culture,
+                    persona_room=next(
+                        (v for v in personas if v.entity == "room"), None))
             except BaseException:
                 # ABSORBED, not re-raised, and `BaseException` rather than
                 # `Exception` for `debrief.run`'s own reason one level down:
