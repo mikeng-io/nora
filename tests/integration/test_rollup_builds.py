@@ -24,9 +24,11 @@ from nora.analytics.runner import CODE_VERSION, RollupRunner, Subject
 from nora.analytics.units import EventPlace, PersonScope, UnitConfig, UnitRollups
 from nora.domain.mobility import TaggedPlace
 from nora.domain.models import mentions_json
+from nora.domain.ports import PlaceArea
 from nora.domain.rollup import Citation, episode_key
 from nora.infra.sql import memory_index
 from nora.infra.sql.engine import create_sql_engine
+from nora.infra.sql.geocode_cache import SqlGeocodeCacheStore
 from nora.infra.sql.memo import SqlMemoStore
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.rollups import SqlRollupStore, UnitRooms
@@ -175,13 +177,13 @@ async def _seed(engine, mobility: SqlMobilityStore, *, polls_fail_at: int | None
                 await message(_t(0, 15), nora=True, raw='{"tag_id": "u"}')
 
 
-def _runner(engine, stimuli=None, events=None) -> RollupRunner:
+def _runner(engine, stimuli=None, events=None, areas=None) -> RollupRunner:
     rollups = SqlRollupStore(engine)
     return RollupRunner(
         mobility=SqlMobilityStore(engine), rollups=rollups, config=CFG,
         unit_rollups=UnitRollups(
             store=rollups, config=UNITS, units=(UNIT,), people=PEOPLE,
-            stimuli=stimuli, events=events, clock=lambda: 0.0,
+            stimuli=stimuli, events=events, clock=lambda: 0.0, areas=areas,
         ),
         subjects=SUBJECTS, unit_config=UNITS,
     )
@@ -804,4 +806,67 @@ async def test_a_switch_that_fails_abandons_the_build(pg_url, monkeypatch):
     async with engine.connect() as conn:
         statuses = (await conn.execute(sa.select(ROLLUP_BUILD.c.status))).scalars().all()
     assert statuses == ["abandoned"]
+    await engine.dispose()
+
+
+_MK = "district:旺角 / Mong Kok"
+_KLN = "city:九龍 / Kowloon"
+
+
+async def _cache_an_area_at_the_pub(engine) -> SqlGeocodeCacheStore:
+    cache = SqlGeocodeCacheStore(engine)
+    await cache.put(
+        lat_rounded=PUB[0], lng_rounded=PUB[1], address="Pub Street",
+        area=PlaceArea(district="旺角 / Mong Kok", city="九龍 / Kowloon"),
+    )
+    return cache
+
+
+async def test_an_outing_is_located_in_the_cached_area_of_its_place(pg_url):
+    """Step 3a: an outing at no saved place takes the district and city of
+    the nearest cached geocode, the cache its place labels come from, and the
+    index places it there: outing -> district -> city. The area is a public
+    name and never a street (the cached address is not copied)."""
+    engine = create_sql_engine(pg_url)
+    mobility = SqlMobilityStore(engine)
+    await _seed(engine, mobility)
+    cache = await _cache_an_area_at_the_pub(engine)
+    build = await _runner(engine, areas=cache).rebuild(through_ms=_WATERMARK)
+    rows = await SqlRollupStore(engine).rows(table=ROLLUP_OUTING, build_id=build)
+    assert rows and all(r["saved_place_id"] is None for r in rows)
+    assert {(r["district"], r["city"]) for r in rows} == {("旺角 / Mong Kok", "九龍 / Kowloon")}
+    keys = _outing_keys(rows)
+    assert await _edges(engine, rel="located_in") == {
+        *(("outing", k, "located_in", "place", _MK) for k in keys),
+        ("place", _MK, "located_in", "place", _KLN),
+    }
+    async with engine.connect() as conn:
+        texts = set((await conn.execute(
+            sa.select(MEMORY_NODE.c.text).where(MEMORY_NODE.c.kind == "place")
+        )).scalars())
+    assert texts == {"旺角 / Mong Kok", "九龍 / Kowloon"}
+    live = await _edges(engine, rel="located_in")
+    async with engine.begin() as conn:
+        await conn.execute(sa.delete(MEMORY_EDGE))
+        await conn.execute(sa.delete(MEMORY_NODE))
+    await memory_index.rebuild(engine)
+    assert await _edges(engine, rel="located_in") == live
+    await engine.dispose()
+
+
+async def test_an_outing_at_a_saved_place_has_no_area_even_where_one_is_cached(pg_url):
+    """R-35: a saved place's existence is the secret, so an outing there is
+    never placed, though the cache holds an area within reach (the positive
+    control) and the same outing elsewhere would be."""
+    engine = create_sql_engine(pg_url)
+    mobility = SqlMobilityStore(engine)
+    await _seed_with_outing_talk(engine, mobility)
+    cache = await _cache_an_area_at_the_pub(engine)
+    assert await cache.area_within(lat=PUB[0], lng=PUB[1], radius_m=UNITS.colocation_radius_m)
+    build = await _runner(engine, areas=cache).rebuild(through_ms=_WATERMARK)
+    rows = await SqlRollupStore(engine).rows(table=ROLLUP_OUTING, build_id=build)
+    assert rows and all(r["saved_place_id"] for r in rows)
+    assert {(r["district"], r["city"]) for r in rows} == {(None, None)}
+    assert await _edges(engine, rel="located_in") == set()
+    assert await _episode_nodes(engine, "outing")
     await engine.dispose()

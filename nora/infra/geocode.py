@@ -29,9 +29,13 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
+
+from nora.domain.ports import PlaceArea, join_bilingual
 
 if TYPE_CHECKING:
     from nora.domain.ports import GeocodeCacheStore
@@ -47,6 +51,50 @@ GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 # address is grid machinery, not something a
 # human reads aloud, so the selector treats it as a miss.
 _PLUS_CODE_IN_ADDRESS = re.compile(r"[A-Z0-9]{4}\+[A-Z0-9]{2,3}", re.IGNORECASE)
+
+# Google's address-component types for the two areas a place lies in, most
+# specific first: the neighbourhood (旺角 / Mong Kok) and what holds it (九龍 /
+# Kowloon; Hong Kong has no `locality`, so its first-level area stands in).
+_DISTRICT_TYPES = ("neighborhood", "sublocality_level_1", "sublocality")
+_CITY_TYPES = ("locality", "administrative_area_level_1")
+
+
+@dataclass(frozen=True)
+class Geocoded:
+    """One backend's answer in one language: the formatted address and the
+    areas its structured address components name (None where it names none)."""
+
+    address: str
+    district: str | None = None
+    city: str | None = None
+
+
+def joined(zh: Geocoded | None, en: Geocoded | None) -> tuple[str, PlaceArea] | None:
+    """The «中文 / English» address and areas of one coordinate's two answers;
+    None when neither language answered."""
+    address = join_bilingual(zh.address if zh else None, en.address if en else None)
+    if address is None:
+        return None
+    area = PlaceArea(
+        district=_both(zh.district if zh else None, en.district if en else None),
+        city=_both(zh.city if zh else None, en.city if en else None),
+    )
+    return address, area
+
+
+#: What may be kept of a geocoder's areas: the composition root passes
+#: `nora.app.gatherings.screened_area` (R-28: a name carrying an identifier or a
+#: coordinate is dropped). This layer cannot import that screen, so it is
+#: handed in; a geocoder built without one keeps no areas at all.
+AreaScreen = Callable[[PlaceArea], PlaceArea | None]
+
+
+def _both(zh: str | None, en: str | None) -> str | None:
+    """An area's name only when BOTH languages named it, joined. The name is
+    its hub's identity (`district:旺角 / Mong Kok`), so a one-language answer
+    would be a second hub for the same district; it is no area instead, and
+    the next geocode of the place names it whole."""
+    return join_bilingual(zh, en) if zh and zh.strip() and en and en.strip() else None
 
 
 class CachingBilingualGeocoder:
@@ -68,7 +116,10 @@ class CachingBilingualGeocoder:
     _CACHE_PRECISION = 4
     _CACHE_MAX = 512
 
-    def __init__(self, *, cache_store: GeocodeCacheStore | None = None) -> None:
+    def __init__(
+        self, *, cache_store: GeocodeCacheStore | None = None,
+        area_screen: AreaScreen | None = None,
+    ) -> None:
         # (rounded lat, rounded lng) -> address. Only successful lookups are
         # cached; a miss (None) is NOT stored, so a transient geocode outage does
         # not pin a coordinate to "no address" for the life of the process.
@@ -76,6 +127,7 @@ class CachingBilingualGeocoder:
         # The durable half: survives a restart, where the dict above does not.
         # Optional — `where_is` wires it; without it the cache is in-memory only.
         self._store = cache_store
+        self._area_screen = area_screen
 
     async def address_for(self, *, lat: float, lng: float) -> str | None:
         """The best formatted address for `lat,lng` in BOTH languages, or None.
@@ -89,6 +141,10 @@ class CachingBilingualGeocoder:
         coordinate). Two calls per NEW coordinate, but the ~11 m cache means a
         stationary member pays it once, not every cycle — and with `_store`
         wired, once per COORDINATE ever, not once per process lifetime.
+
+        The same two answers' areas (`PlaceArea`, joined the same way) are
+        stored beside the address in `_store`, where `nora.analytics` reads
+        them to place an outing; this method returns the address only.
         """
         key = (round(lat, self._CACHE_PRECISION), round(lng, self._CACHE_PRECISION))
         cached = self._cache.get(key)
@@ -106,22 +162,34 @@ class CachingBilingualGeocoder:
             if persisted is not None:
                 self._remember(key, persisted)
                 return persisted
-        zh = await self._fetch(lat, lng, "zh")
-        en = await self._fetch(lat, lng, "en")
-        if zh and en and zh != en:
-            address: str | None = f"{zh} / {en}"
-        else:
-            address = zh or en
-        if address is not None:
-            self._remember(key, address)
-            if self._store is not None:
-                try:
-                    await self._store.put(
-                        lat_rounded=key[0], lng_rounded=key[1], address=address,
-                    )
-                except Exception:
-                    log.exception("geocode_cache write failed; the address is not cached")
+        both = joined(await self._fetch(lat, lng, "zh"), await self._fetch(lat, lng, "en"))
+        if both is None:
+            return None
+        address, area = both[0], self._screened(both[1])
+        self._remember(key, address)
+        if self._store is not None:
+            try:
+                await self._store.put(
+                    lat_rounded=key[0], lng_rounded=key[1], address=address, area=area,
+                )
+            except Exception:
+                log.exception("geocode_cache write failed; the address is not cached")
         return address
+
+    async def area_for(self, *, lat: float, lng: float) -> PlaceArea | None:
+        """The areas of `lat,lng` alone, asked afresh in both languages (no
+        cache read or write): `nora memory backfill-places` places a cached
+        geocode written before its areas were kept. NEVER raises."""
+        both = joined(await self._fetch(lat, lng, "zh"), await self._fetch(lat, lng, "en"))
+        return None if both is None else self._screened(both[1])
+
+    def _screened(self, area: PlaceArea) -> PlaceArea | None:
+        """`area` as `_area_screen` keeps it; None without a screen (fail
+        closed: an unscreened name never reaches the cache) or when nothing
+        is left."""
+        if self._area_screen is None or not area:
+            return None
+        return self._area_screen(area) or None
 
     def _remember(self, key: tuple[float, float], address: str) -> None:
         if len(self._cache) >= self._CACHE_MAX:
@@ -130,7 +198,7 @@ class CachingBilingualGeocoder:
             del self._cache[next(iter(self._cache))]
         self._cache[key] = address
 
-    async def _fetch(self, lat: float, lng: float, language: str) -> str | None:
+    async def _fetch(self, lat: float, lng: float, language: str) -> Geocoded | None:
         raise NotImplementedError
 
 
@@ -145,25 +213,56 @@ class GoogleGeocoder(CachingBilingualGeocoder):
     def __init__(
         self, *, api_key: str, timeout_seconds: float = 5.0,
         cache_store: GeocodeCacheStore | None = None,
+        area_screen: AreaScreen | None = None,
     ) -> None:
-        super().__init__(cache_store=cache_store)
+        super().__init__(cache_store=cache_store, area_screen=area_screen)
         self._api_key = api_key
         self._timeout_seconds = timeout_seconds
 
-    async def _fetch(self, lat: float, lng: float, language: str) -> str | None:
+    async def _fetch(self, lat: float, lng: float, language: str) -> Geocoded | None:
         """One Google reverse-geocode in `language` (`"zh"` → Google's `zh-HK`).
         None on any failure — a non-200, a non-OK envelope status, non-JSON, or a
         transport error — so a missing address is never a dropped cycle."""
-        lang = "zh-HK" if language == "zh" else "en"
         # `result_type` is Google's own reverse-geocode filter (Geocoding API
         # request docs): it drops the pure `plus_code`-typed results. The
         # embedded-in-a-premise form still needs the pattern screen in
-        # `_first_address` — the two layers cover each other's gaps.
-        params = {
+        # `_first_result` — the two layers cover each other's gaps.
+        payload = await self._get({
             "latlng": f"{lat},{lng}",
-            "key": self._api_key,
-            "language": lang,
             "result_type": "street_address|route|premise|establishment",
+        }, language)
+        result = _first_result(payload)
+        if result is None:
+            return None
+        district, city = _area_of(result)
+        return Geocoded(
+            str(result.get("formatted_address") or "").strip(), district=district, city=city,
+        )
+
+    async def area_of_place(self, place_id: str) -> PlaceArea | None:
+        """The areas of the place Google knows by `place_id` (a venue
+        `place_info` resolved), from the Geocoding API's place-id lookup in
+        both languages, joined «中文 / English». NEVER raises; None when
+        neither answer names an area. No coordinate goes out: the id is
+        Google's own."""
+        if not place_id:
+            return None
+        answers = []
+        for language in ("zh", "en"):
+            payload = await self._get({"place_id": place_id}, language)
+            results = payload.get("results") if isinstance(payload, dict) else None
+            ok = isinstance(payload, dict) and payload.get("status") == "OK"
+            first = results[0] if ok and isinstance(results, list) and results else None
+            answers.append(_area_of(first) if isinstance(first, dict) else (None, None))
+        (zh_d, zh_c), (en_d, en_c) = answers
+        area = PlaceArea(district=_both(zh_d, en_d), city=_both(zh_c, en_c))
+        return area or None
+
+    async def _get(self, params: dict[str, str], language: str) -> Any:
+        """One Geocoding API GET in `language`; the decoded body, or None on
+        any failure."""
+        params = {
+            **params, "key": self._api_key, "language": "zh-HK" if language == "zh" else "en",
         }
         try:
             timeout = aiohttp.ClientTimeout(total=self._timeout_seconds)
@@ -176,7 +275,7 @@ class GoogleGeocoder(CachingBilingualGeocoder):
                     log.warning("geocode answered %s", response.status)
                     return None
                 try:
-                    payload = await response.json(content_type=None)
+                    return await response.json(content_type=None)
                 except (ValueError, aiohttp.ContentTypeError):
                     log.warning("geocode did not return JSON")
                     return None
@@ -187,12 +286,33 @@ class GoogleGeocoder(CachingBilingualGeocoder):
             # not a dropped cycle.
             log.warning("geocode unreachable: %s", exc)
             return None
-        return _first_address(payload)
 
 
-def _first_address(payload: Any) -> str | None:
-    """The first PLUS-CODE-FREE result's `formatted_address`, only when Google
-    reported OK.
+def _area_of(result: dict[str, Any]) -> tuple[str | None, str | None]:
+    """The district and the city one Geocoding result's `address_components`
+    name, each the first component of its most specific type
+    (`_DISTRICT_TYPES`, `_CITY_TYPES`). A district that is the city's own name
+    is not a district."""
+    components = result.get("address_components")
+    if not isinstance(components, list):
+        return None, None
+
+    def first(types: tuple[str, ...]) -> str | None:
+        for wanted in types:
+            for c in components:
+                if isinstance(c, dict) and wanted in (c.get("types") or ()):
+                    name = str(c.get("long_name") or "").strip()
+                    if name:
+                        return name
+        return None
+
+    district, city = first(_DISTRICT_TYPES), first(_CITY_TYPES)
+    return (None if district == city else district), city
+
+
+def _first_result(payload: Any) -> dict[str, Any] | None:
+    """The first PLUS-CODE-FREE result, whole (its components name the
+    areas), only when Google reported OK.
 
     A non-OK `status` (ZERO_RESULTS, OVER_QUERY_LIMIT, REQUEST_DENIED) arrives as
     a 200 with that status in the body — treat every non-OK as "no address",
@@ -219,5 +339,5 @@ def _first_address(payload: Any) -> str | None:
             continue
         address = str(result.get("formatted_address") or "").strip()
         if address and not _PLUS_CODE_IN_ADDRESS.search(address):
-            return address
+            return result
     return None

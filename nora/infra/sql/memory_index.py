@@ -25,10 +25,30 @@ and their media, and the entity hubs they point at.
 attachment's reading. Never a sender id, a sender name, a raw envelope or a
 coordinate; the person and room are edges to hub nodes, keyed by the
 roster's `person_id` and `nora.domain.rollup.room_key`. Hub nodes carry no
-text, except a venue's place node, which carries the venue's name (never its
-address or coordinates). A failure's `last_error` is the exception's CLASS
-only: a driver error's message carries the statement's parameters, which here
-are message bodies.
+text, except a place node: a venue's carries the venue's name (never its
+address or coordinates), a district's or a city's its name. A failure's
+`last_error` is the exception's CLASS only: a driver error's message carries
+the statement's parameters, which here are message bodies.
+
+**Place containment** (design/unified-memory/25-memory-graph.md §6a, 00
+«Sequence» step 3a). A place lies in a district and a district in a city:
+`located_in` edges, from the areas a geocoder's structured address
+components name (`nora.domain.ports.PlaceArea`, stored beside the place: an
+event's `venue_district`/`venue_city`, an outing's `district`/`city`). An
+event's venue hub is `located_in` its district (else its city), the district
+in its city; an outing is `located_in` its district the same way. The area
+hubs are keyed by level and name (`district:旺角 / Mong Kok`, both languages
+or no area), so a venue and an outing in the same district share one. A
+saved place is never one: an outing at a saved place carries no area (R-35,
+`nora.analytics.units`). The chain is DERIVED from the stores, never from
+the order writes land in: a venue lies in every district some event naming
+it was resolved in, a district in every city an event or a current-build
+outing pairs it with (`_venue_chains`, `_district_cities`), recomputed for
+every venue and district a write touches. A place's own `located_in` edge
+does not keep it: a venue no event names, a district nothing lies in any
+more, goes, and its edges with it (`_drop_orphan_hubs`). So a live index
+equals a rebuilt one. `nora memory backfill-places` gives the places
+resolved before `0118_place_area` their areas (`nora.app.place_backfill`).
 
 **What a Notebook node is.** One node per entry, keyed by the entry's own id
 (a culture key for a culture or Character account), holding its CURRENT
@@ -850,15 +870,33 @@ async def _project_event(conn: AsyncConnection, source_id: str) -> None:
             EVENTS.c.conversation_id, EVENTS.c.unit_id, EVENTS.c.title, EVENTS.c.when,
             EVENTS.c.created_at, EVENTS.c.status, EVENTS.c.people,
             EVENTS.c.exclude_persons, EVENTS.c.venue_text, EVENTS.c.venue_name,
-            EVENTS.c.venue_place_id, EVENT_REVISION.c.body,
+            EVENTS.c.venue_place_id, EVENTS.c.venue_district, EVENTS.c.venue_city,
+            EVENT_REVISION.c.body,
         )
         .select_from(EVENTS.outerjoin(
             EVENT_REVISION, EVENT_REVISION.c.id == EVENTS.c.head_revision_id,
         ))
         .where(EVENTS.c.id == source_id)
     )).first()
+    # The venues this event named before: a venue it leaves keeps the chain
+    # the events still naming it give it (`_venue_chains`).
+    before = set((await conn.execute(
+        sa.select(MEMORY_EDGE.c.dst_id).where(
+            MEMORY_EDGE.c.src_kind == "event", MEMORY_EDGE.c.src_id == source_id,
+            MEMORY_EDGE.c.rel == "about", MEMORY_EDGE.c.dst_kind == "place",
+        )
+    )).scalars())
+    # And the districts they lay in: this event's old area may have been the
+    # only one pairing its district with a city.
+    was_in = _districts((k, i) for k, i in (await conn.execute(
+        sa.select(MEMORY_EDGE.c.dst_kind, MEMORY_EDGE.c.dst_id).where(
+            MEMORY_EDGE.c.src_kind == "place", _among(MEMORY_EDGE.c.src_id, sorted(before)),
+            MEMORY_EDGE.c.rel == "located_in",
+        )
+    )).all())
     if row is None:
         await _drop(conn, "event", [source_id])
+        await _venue_chains(conn, before, was_in)
         return
     room = await _room_of(conn, row.conversation_id)
     # An event is read unit-wide (`SqlGatheringStore.search`). One written
@@ -898,6 +936,143 @@ async def _project_event(conn: AsyncConnection, source_id: str) -> None:
             "event", source_id, "about", "place", row.venue_place_id, "events.venue_place_id",
         ))
     await _entry_edges(conn, "event", source_id, edges)
+    await _venue_chains(
+        conn, before | ({row.venue_place_id} if row.venue_place_id else set()), was_in,
+    )
+
+
+async def _venue_chains(
+    conn: AsyncConnection, venues: Iterable[str], districts: Iterable[str] = (),
+) -> None:
+    """Each venue's `located_in`, derived from the store, never from the
+    order writes landed in: the venue lies in every district (else city)
+    some event naming it was resolved in, and each of those districts in
+    every city the stores pair it with (`_district_cities`). So a live index
+    equals a rebuilt one whichever event wrote last; a venue nothing names
+    any more has already gone with its chain (`_drop_orphan_hubs`)."""
+    wanted = sorted(venues)
+    present = list((await conn.execute(
+        sa.select(MEMORY_NODE.c.source_id).where(
+            MEMORY_NODE.c.kind == "place", _among(MEMORY_NODE.c.source_id, wanted),
+        )
+    )).scalars()) if wanted else []
+    if not present:
+        await _district_cities(conn, districts)
+        return
+    areas = (await conn.execute(
+        sa.select(EVENTS.c.venue_place_id, EVENTS.c.venue_district, EVENTS.c.venue_city)
+        .distinct()
+        .where(
+            _among(EVENTS.c.venue_place_id, present),
+            sa.or_(EVENTS.c.venue_district.isnot(None), EVENTS.c.venue_city.isnot(None)),
+        )
+    )).all()
+    ends = await _delete_edges(conn, sa.and_(
+        MEMORY_EDGE.c.src_kind == "place", _among(MEMORY_EDGE.c.src_id, present),
+        MEMORY_EDGE.c.rel == "located_in",
+    ))
+    edges: list[Edge] = []
+    touched = set(districts) | _districts(ends)
+    for venue, district, city in areas:
+        edges += await _place_in(conn, "place", venue, district, city, "events.venue_district")
+        if district:
+            touched.add(district)
+    await _insert_edges(conn, edges)
+    await _district_cities(conn, touched)
+    await _drop_orphans(conn, ends)
+
+
+_DISTRICT = "district:"
+
+
+def _districts(ends: Iterable[tuple[str, str]]) -> set[str]:
+    """The district names among hub ends an edge delete returned."""
+    return {i.removeprefix(_DISTRICT) for k, i in ends if k == "place" and i.startswith(_DISTRICT)}
+
+
+async def _district_cities(conn: AsyncConnection, districts: Iterable[str]) -> None:
+    """Each district's `located_in`, derived from the stores: every city an
+    event's venue or a current-build outing pairs it with. Usually one; two
+    where the geocoder named two (a district on a boundary), and then both,
+    so no write order decides between them."""
+    names = sorted(set(districts))
+    if not names:
+        return
+    pairs = set((await conn.execute(
+        sa.select(EVENTS.c.venue_district, EVENTS.c.venue_city).distinct().where(
+            _among(EVENTS.c.venue_district, names), EVENTS.c.venue_city.isnot(None),
+        )
+    )).all())
+    build = (await conn.execute(
+        sa.select(ROLLUP_BUILD.c.id).where(ROLLUP_BUILD.c.status == "current")
+    )).scalar_one_or_none()
+    if build is not None:
+        # ponytail: unindexed on `district`; the outings of one build are few.
+        pairs |= set((await conn.execute(
+            sa.select(ROLLUP_OUTING.c.district, ROLLUP_OUTING.c.city).distinct().where(
+                ROLLUP_OUTING.c.build_id == build,
+                _among(ROLLUP_OUTING.c.district, names), ROLLUP_OUTING.c.city.isnot(None),
+            )
+        )).all())
+    ids = [_area_id("district", n) for n in names]
+    present = set((await conn.execute(
+        sa.select(MEMORY_NODE.c.source_id).where(
+            MEMORY_NODE.c.kind == "place", _among(MEMORY_NODE.c.source_id, ids),
+        )
+    )).scalars())
+    ends = await _delete_edges(conn, sa.and_(
+        MEMORY_EDGE.c.src_kind == "place", _among(MEMORY_EDGE.c.src_id, ids),
+        MEMORY_EDGE.c.rel == "located_in",
+    ))
+    edges: list[Edge] = []
+    for district, city in sorted(pairs):
+        if _area_id("district", district) not in present:
+            continue  # nothing lies in it: no hub, no edge
+        city_id = _area_id("city", city)
+        await _area_hub(conn, city_id, city)
+        edges.append(("place", _area_id("district", district), "located_in", "place",
+                      city_id, "events.venue_city"))
+    await _insert_edges(conn, edges)
+    await _drop_orphans(conn, ends)
+
+
+def _area_id(level: str, name: str) -> str:
+    """A district's or a city's place hub id: its level and its joined name
+    (`nora.domain.ports.PlaceArea`), so a venue's district and an outing's,
+    named by the same geocoder, are one node."""
+    return f"{level}:{name}"
+
+
+async def _place_in(
+    conn: AsyncConnection, kind: str, source_id: str, district: str | None,
+    city: str | None, prov: str,
+) -> list[Edge]:
+    """The first `located_in` from `(kind, source_id)` (a venue, an outing):
+    upserts the hub of its district (else its city), by the name the
+    geocoder gave (a public name, the only text a hub carries besides a
+    venue's), and returns the edge to it for the caller, which owns it. The
+    district's own edge to its city is `_district_cities`'. No area, no edge
+    (design/unified-memory/25-memory-graph.md §6a)."""
+    if district:
+        target = _area_id("district", district)
+        await _area_hub(conn, target, district)
+    elif city:
+        target = _area_id("city", city)
+        await _area_hub(conn, target, city)
+    else:
+        return []
+    return [(kind, source_id, "located_in", "place", target, prov)]
+
+
+async def _area_hub(conn: AsyncConnection, area_id: str, name: str) -> None:
+    """A district's or city's hub, written once: its id holds its name, so
+    there is nothing to update (`_named_hub` is for a venue, whose name can
+    change under one place id)."""
+    await _held_hub(conn, "place", area_id, (
+        pg_insert(MEMORY_NODE)
+        .values(kind="place", source_id=area_id, text=name, state="live")
+        .on_conflict_do_nothing(constraint="uq_memory_node_kind_source")
+    ))
 
 
 async def _is_a_unit(conn: AsyncConnection, owner: str) -> bool:
@@ -978,6 +1153,10 @@ class _Episode(NamedTuple):
     start_ms: int
     end_ms: int
     lineage: Any
+    #: An outing's areas (`rollup_outing.district`/`city`); a stay or trip
+    #: has none.
+    district: str | None = None
+    city: str | None = None
 
 
 async def project_episodes(
@@ -1119,7 +1298,8 @@ async def _episodes(
     if kind == "outing":
         stmt = sa.select(
             table.c.unit, table.c.persons, table.c.valid_from_ms.label("start"),
-            table.c.valid_to_ms.label("end"), table.c.lineage,
+            table.c.valid_to_ms.label("end"), table.c.lineage, table.c.district,
+            table.c.city,
         )
     else:
         stmt = sa.select(
@@ -1135,7 +1315,10 @@ async def _episodes(
             unit, persons, subject = None, (r.subject_id,), r.subject_id
         key = episode_key(subject, r.start, r.end)
         if asked is None or key in asked:
-            out.setdefault(key, _Episode(kind, key, unit, persons, r.start, r.end, r.lineage))
+            out.setdefault(key, _Episode(
+                kind, key, unit, persons, r.start, r.end, r.lineage,
+                *((r.district, r.city) if kind == "outing" else ()),
+            ))
     return list(out.values())
 
 
@@ -1184,7 +1367,11 @@ async def _write_episodes(conn: AsyncConnection, build: int, found: list[_Episod
         edges += [(e.kind, e.key, "about", "person", p, prov) for p in e.persons]
         if e.kind == "outing":
             edges += await _during(conn, build, e)
+            edges += await _place_in(
+                conn, e.kind, e.key, e.district, e.city, "rollup_outing.district",
+            )
     await _insert_edges(conn, edges)
+    await _district_cities(conn, {e.district for e in found if e.district} | _districts(ends))
     await _drop_orphans(conn, ends)
 
 
@@ -1244,6 +1431,7 @@ async def _drop_episodes(conn: AsyncConnection, kind: str, keys: list[str]) -> N
     await conn.execute(sa.delete(MEMORY_NODE).where(
         MEMORY_NODE.c.kind == kind, _among(MEMORY_NODE.c.source_id, keys),
     ))
+    await _district_cities(conn, _districts(ends))
     await _drop_orphans(conn, ends)
 
 
@@ -1532,10 +1720,17 @@ async def _drop_orphans(conn: AsyncConnection, ends: Iterable[tuple[str, str]]) 
 
 
 def _touched() -> Any:
-    """Some edge starts or ends at the `memory_node` row in hand."""
+    """Some edge ends at the `memory_node` row in hand, or starts at it with
+    any relation but `located_in`. A place's own `located_in` edge (a venue
+    in its district, a district in its city) does not keep it: a place
+    nothing else reaches is not written by a rebuild from empty, and goes,
+    taking that edge with it (`_drop_orphan_hubs`)."""
     node = MEMORY_NODE
     return sa.exists().where(sa.or_(
-        sa.and_(MEMORY_EDGE.c.src_kind == node.c.kind, MEMORY_EDGE.c.src_id == node.c.source_id),
+        sa.and_(
+            MEMORY_EDGE.c.src_kind == node.c.kind, MEMORY_EDGE.c.src_id == node.c.source_id,
+            MEMORY_EDGE.c.rel != "located_in",
+        ),
         sa.and_(MEMORY_EDGE.c.dst_kind == node.c.kind, MEMORY_EDGE.c.dst_id == node.c.source_id),
     ))
 
@@ -1563,10 +1758,20 @@ async def _drop_orphan_hubs(
     )).scalars())
     if not locked:
         return 0
-    result = await conn.execute(sa.delete(MEMORY_NODE).where(
-        MEMORY_NODE.c.kind == kind, _among(MEMORY_NODE.c.source_id, locked), ~_touched(),
-    ))
-    return int(result.rowcount or 0)
+    gone = list((await conn.execute(
+        sa.delete(MEMORY_NODE).where(
+            MEMORY_NODE.c.kind == kind, _among(MEMORY_NODE.c.source_id, locked), ~_touched(),
+        ).returning(MEMORY_NODE.c.source_id)
+    )).scalars())
+    if kind == "place" and gone:
+        # Its `located_in` edges go with it, and the place they reached may
+        # now be reached by nothing: a district whose last venue went, then
+        # its city.
+        ends = await _delete_edges(conn, sa.and_(
+            MEMORY_EDGE.c.src_kind == "place", _among(MEMORY_EDGE.c.src_id, gone),
+        ))
+        await _drop_orphans(conn, ends)
+    return len(gone)
 
 
 # --- rebuild (S4) ------------------------------------------------------------

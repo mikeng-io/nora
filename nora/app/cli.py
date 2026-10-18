@@ -76,6 +76,8 @@ from nora.app.memory_routing import MemoryRoutingError, build_workspace_router
 from nora.app.participation_measures import gather as gather_measures
 from nora.app.participation_measures import measure as compute_measures
 from nora.app.pending import correlate
+from nora.app.place_backfill import backfill_places
+from nora.app.place_backfill import render as render_place_backfill
 from nora.config import Config, ConfigError, load
 from nora.domain.lessons import Lesson
 from nora.domain.media_join import MediaJoin
@@ -92,6 +94,7 @@ from nora.infra.sql import (
     snapshot_at,
 )
 from nora.infra.sql.gatherings import SqlGatheringStore
+from nora.infra.sql.geocode_cache import SqlGeocodeCacheStore
 from nora.infra.sql.lessons import SqlLessonStore
 from nora.infra.sql.media_objects import SqlMediaObjectStore
 from nora.infra.sql.reminders import SqlReminderStore
@@ -389,6 +392,26 @@ def add_subcommands(
              "than [memory_index] embedder_model",
     )
     rebuild.set_defaults(func=cmd_memory_rebuild)
+    # `memory backfill-places`: WRITES the events (through
+    # `GatheringStore.update`) and the geocode cache, and asks the geocoder,
+    # only with --apply. See `nora.app.place_backfill`.
+    places = memory_sub.add_parser(
+        "backfill-places", parents=[parent],
+        help="give event venues and cached geocodes resolved before 0118 their "
+             "district and city (a dry run unless --apply); idempotent",
+    )
+    places.add_argument(
+        "--apply", action="store_true",
+        help="ask the geocoder and write; without it nothing is asked or changed",
+    )
+    places.add_argument(
+        "--per-second", type=float, default=2.0,
+        help="at most this many lookups a second (each is one call per language)",
+    )
+    places.add_argument(
+        "--limit", type=int, default=10_000, help="at most this many rows per list",
+    )
+    places.set_defaults(func=cmd_memory_backfill_places)
 
     # `events backfill-units` (DEC-237): the THIRD command here that WRITES — unlike `memory
     # backfill`'s Honcho-only write, this one writes the `events` table
@@ -865,6 +888,34 @@ async def cmd_memory_rebuild(args: argparse.Namespace) -> int:
     for line in render_rebuild(result):
         print(line)
     return 1 if result.unprojected and not result.dry_run else 0
+
+
+async def cmd_memory_backfill_places(args: argparse.Namespace) -> int:
+    """`nora memory backfill-places [--apply] [--per-second N] [--limit N]`
+    (`nora.app.place_backfill`). A WRITABLE engine, like `events
+    backfill-units`. Venue areas come from the Geocoding API with the route
+    key, cached geocodes' from the configured reverse geocoder. Prints counts
+    only. Exit 1 when a lookup or a write failed."""
+    from nora.app.composition import reverse_geocoder
+    from nora.infra.geocode import CachingBilingualGeocoder, GoogleGeocoder
+
+    cfg = _config(args)
+    route_key = os.environ.get(cfg.route.api_key_env, "") if cfg.route.enabled else ""
+    places = GoogleGeocoder(api_key=route_key) if route_key else None
+    found = reverse_geocoder(cfg, os.environ, cache_store=None)
+    geocoder = found if isinstance(found, CachingBilingualGeocoder) else None
+    engine = create_sql_engine(_database_url(cfg))
+    try:
+        result = await backfill_places(
+            events=SqlGatheringStore(engine), cache=SqlGeocodeCacheStore(engine),
+            places=places, geocoder=geocoder,
+            apply=bool(args.apply), per_second=float(args.per_second), limit=int(args.limit),
+        )
+    finally:
+        await engine.dispose()
+    for line in render_place_backfill(result):
+        print(line)
+    return 1 if result.venues.failed or result.geocodes.failed else 0
 
 
 async def _memory_rebuild_embeddings(args: argparse.Namespace, cfg: Config) -> int:
