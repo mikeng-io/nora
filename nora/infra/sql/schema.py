@@ -4733,7 +4733,7 @@ SOCIAL_POLL = sa.Table(
     # 0111: a back-fill page's next cursor (null: the walk ended there).
     sa.Column("cursor", sa.Text),
     sa.CheckConstraint(
-        "stage IN ('probe', 'story', 'items', 'item', 'backfill', 'relist')",
+        "stage IN ('probe', 'story', 'items', 'item', 'backfill', 'relist', 'recount')",
         name="ck_social_poll_stage",
     ),
     sa.CheckConstraint(
@@ -4770,6 +4770,32 @@ SOCIAL_ITEM_STATE = sa.Table(
 IDX_SOCIAL_ITEM_STATE_ITEM = sa.Index(
     "idx_social_item_state_item", SOCIAL_ITEM_STATE.c.network, SOCIAL_ITEM_STATE.c.item_id,
     SOCIAL_ITEM_STATE.c.recorded_at,
+)
+
+# A post's or reel's counts as its author's grid shows them (0119),
+# APPEND-ONLY: a row only where they differ from the item's latest, each
+# count NULL when the read did not carry it, `likes` NULL while the author
+# hides it. `read_id` is the `social_poll` row of the read that carried them.
+SOCIAL_ITEM_COUNT = sa.Table(
+    "social_item_count",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
+              server_default=sa.text("gen_random_uuid()")),
+    sa.Column("network", sa.Text, nullable=False),
+    sa.Column("item_id", sa.Text, nullable=False),
+    sa.Column("likes", sa.BigInteger),
+    sa.Column("comments", sa.BigInteger),
+    sa.Column("reposts", sa.BigInteger),
+    sa.Column("likes_hidden", sa.Boolean, nullable=False),
+    sa.Column("read_id", pg.UUID(as_uuid=False)),
+    _recorded_at(),
+    sa.CheckConstraint(
+        "likes IS NULL OR NOT likes_hidden", name="ck_social_item_count_hidden",
+    ),
+)
+IDX_SOCIAL_ITEM_COUNT_ITEM = sa.Index(
+    "idx_social_item_count_item", SOCIAL_ITEM_COUNT.c.network, SOCIAL_ITEM_COUNT.c.item_id,
+    SOCIAL_ITEM_COUNT.c.recorded_at,
 )
 
 # One row per attempt to perceive a social item's media (0108), APPEND-ONLY:

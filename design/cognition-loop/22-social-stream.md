@@ -40,6 +40,7 @@ node.
 | one post or reel by shortcode | bridge `GET /posts/{shortcode}` | built |
 | **a list of a member's posts or reels** | bridge `GET /accounts/{igid}/items?after=&username=`, over the web app's GraphQL timeline query (§1a) | **built** (S1, 2026-10-16): live, 12 items a page, newest first, with a cursor; paging past the first page not yet read live |
 | what a timeline page carries besides its items | S1 live read-back | **every page** came back with a `field_exception` error beside its edges, in the logged-in browser too; the bridge reads the page and refuses only a page with no edges |
+| what a timeline node says about its audience | one capture of the web app's timeline answer (2026-10-17, OpenCLI's `nora` profile, the operator's own account, 12 items: 10 reels, 2 carousels) | `like_count` and `comment_count` on every node (int), `media_repost_count` on 2 of 12 (null on the rest), `like_and_view_counts_disabled` (bool, false on all 12); `view_count` null on every reel and no `play_count` or `ig_play_count` key, so a non-owner is given no view count; `top_likers` and `facepile_top_likers` name likers (never read, §5). A story frame carries no count (§1a). n=1 account |
 | whose items a member's grid holds | S1 live read-back | **collaboration posts**: 11 of one member's first 12 were owned by another account with the member as co-author. The bridge lists them with `collab: true`, and `social_item.collab` records it; an item whose owner fields disagree, or that names the member nowhere, is refused |
 | whether `latest_reel_media` equals the newest frame's `taken_at` | S0 | **equal** on the one story read (n=1): the probe value and the newest of 3 frames were the same second. §3's marker does not rely on it |
 | a frame's expiry | S0 | **per frame** on the one reel read (n=1, 3 frames): each item's `expiring_at` was its `taken_at` + 86400, and the reel's own `expiring_at` was null. The stream stores each frame's own expiry |
@@ -324,8 +325,43 @@ after insert. Everything that changes about an item is a new row elsewhere.
   account's post the person co-authored, §1), `recorded_at`.
   No unit column: a person in two units is one row, and which units may read
   it is derived from membership at read time.
+- **`social_item_count`** (operator, 2026-10-17: «counts only»): what a
+  post's or reel's audience did, as the author's grid shows it to Nora:
+  `network`, `item_id`, `likes`, `comments`, `reposts` (each NULL when the
+  read did not carry it: an absent key, an older bridge or a null field is
+  unknown, never 0), `likes_hidden` (the author turned like counts off,
+  `like_and_view_counts_disabled`; `likes` is then NULL whatever the node
+  says, because the author hid it), `read_id` and `recorded_at`. The timeline
+  read carries them (§1), so every list read, back-fill page and re-walk page
+  appends a row for each item it lists whose counts differ from its latest
+  row, with no call of its own, and a newly recorded item gets its first row
+  with it. A read whose counts are all unknown writes nothing, so an upstream
+  shape change cannot write a row of NULLs over real counts. Counts move for
+  days after an item is posted, and nothing else re-reads an old page, so a
+  **recount** (`[social.poll] recount_interval_hours`, default 24, 0 is off)
+  re-reads each member's first page (their 12 newest items) once that
+  interval has passed since their last list read of any stage, at the
+  back-fill's priority and budget rule (after it and the re-walk, one page a
+  member a tick), recording no new item, only counts and places
+  (`social_poll` stage `recount`). An item off the first page keeps its last
+  counted value: the stated limit. Never recorded: views (a non-owner is
+  given none, §1), who liked or commented (`top_likers` and the comments are
+  other accounts' names and words, outside «counts only»), Nora's own like
+  (`has_liked`), Facebook cross-post counts (`fb_like_count`,
+  `fb_comment_count`). A story frame and a single post read alone carry no
+  count and write no row.
+**Counts built (2026-10-18).** The bridge carries the four count fields;
+`InstagramSocialSource` parses unknown values without inventing zeroes, and
+`SocialPoller` records changed counts on every list page and runs the daily
+first-page recount. `social_read` shows the latest counts with their read age
+through the same readable-item and disclosure boundary as the item itself.
+The deterministic checks are `tests/infra/test_social_item_counts.py`,
+`tests/integration/test_social_poller.py` and
+`tests/unit/test_social_read_render.py`. Persona consumes this evidence with
+its adaptor build; no count is projected into the memory index.
+
 - **`social_poll`**: one row per probe and per read: `network`, `person`,
-  `stage` (`probe`, `story`, `items`, `backfill`, `relist`), `outcome` (`unchanged`,
+  `stage` (`probe`, `story`, `items`, `backfill`, `relist`, `recount`), `outcome` (`unchanged`,
   `story_due`, `items_due`, `partial`, `count_fell`, `read_ok`, `halted`,
   `backed_off`, `error`, and for a back-fill page `abandoned` when its cursor
   was judged bad and `unavailable` when the bridge answered nothing, §7), a
@@ -490,6 +526,18 @@ projector in its own transaction (§9;
   roster's one matching rule (name, first and last names, aliases) or by
   person id; two people it fits are offered each by a name only they go by,
   else their id. No item is citable from this read: the result has no id.
+- **Counts** (`social_item_count`) are read through the same readable store,
+  so an item gone or hidden, or of a person with `social = false`, has none:
+  `social_read` renders each post's and reel's latest counts with when they
+  were read («31 likes, 4 comments, read 3 h ago»; «likes hidden by the
+  author»), and none for an item never counted. Persona reads them as
+  evidence about the author once its adaptor takes a social input
+  ([unified-memory/45](../unified-memory/45-persona-adaptor.md) §4), and an
+  abduced prediction may name an item's counts as its observable, judged by
+  code from the latest row inside the window (an item never counted in the
+  window is `unknown`, never `refuted`). Not read: Character (superseded by
+  Persona), the memory index (a count is not text a search can match), and
+  the daybook (`items_posted` counts posts, not their audience).
 
 ## 7. The back-fill of past posts and reels
 
@@ -583,6 +631,7 @@ whose `media_count` read 281 in S0 is 24 pages at that size; the depth limit sto
 | S5 | **BUILT 2026-10-17** (§7): the back-fill pages each member's posts and reels from their first list read, up to 90 days or 50 items, at the lowest budget priority (after probes and due reads, at most `backfill_pages_per_tick` pages a tick and one a member, never past what the hour owes every member's probe and read); progress read off `social_poll` rows (stage `backfill`, `cursor`, migration `0112_social_backfill`); a bad cursor ends that member's back-fill. Paging past the first page not yet read live | items per member against `media_count`; `nora_social_backfill_ended_total{reason}` |
 | S6 | **BUILT 2026-10-17**: the daybook's `items_posted` counts a person's readable items by the local day of `taken_at` (`SqlSocialStreamStore.posted`, `nora.domain.rollup.daybooks`); 0 once the person's accounts have been observed that day, NULL before their first answered `social_poll`, for a person with no account and for one who opted out; a back-filled item reaches its past day on the next run, the rollup recomputing every day from the Record; `CODE_VERSION` bumped so the build in force is rebuilt | `tests/integration/test_rollup_social.py` |
 | S7 | **BUILT 2026-10-17**: `social_read`, Cognition's read of this Record (§6; [15](15-map.md) §4 has the shape): `SqlSocialStreamStore.items_of` under the store's `_readable` rule, the `social` lineage predicate for who, the `presence` predicate for a location, bounded at 20 items and 6000 characters | `tool_selection_cognition`'s three `social_read` cases, master and branch |
+| S8 | the counts (§5 `social_item_count`): the bridge decodes `like_count`, `comment_count`, `media_repost_count` and `like_and_view_counts_disabled` off the timeline node; the source passes them as unknown when absent; the poller appends a row where they differ on every list, back-fill and re-walk page, and the recount re-reads each member's first page every `recount_interval_hours`; `social_read` renders them | rows per item over a week; `nora_social_counts_recorded_total`; a count that falls back to NULL never written |
 
 S4 needs a week of S2's rows to learn from.
 

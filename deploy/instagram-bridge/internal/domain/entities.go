@@ -195,6 +195,19 @@ type TimelineItem struct {
 	// LocationKnown is false when the node carried a `location` the bridge
 	// could not read: its place is unknown, not "no tag".
 	LocationKnown bool
+	// Counts is what the item's audience did, as its grid shows it.
+	Counts ItemCounts
+}
+
+// ItemCounts is a post's or reel's counts as the timeline node carries them
+// (design/cognition-loop/22-social-stream.md §5 `social_item_count`). Each
+// field is nil when the node did not carry it readably: unknown, never 0.
+// LikesHidden is the author's `like_and_view_counts_disabled`.
+type ItemCounts struct {
+	Likes       *int64
+	Comments    *int64
+	Reposts     *int64
+	LikesHidden *bool
 }
 
 // Thread is one group thread's membership, never short and never empty.
