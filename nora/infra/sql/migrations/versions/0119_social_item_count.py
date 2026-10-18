@@ -11,10 +11,10 @@ that carried them. A `recount` row is one re-read of a member's first page
 for its counts and places. No foreign key to `social_item`, like
 `social_item_state`.
 
-Follows `0117_persona`. `uv run alembic heads` must print exactly ONE line.
+Follows `0118_place_area`. `uv run alembic heads` must print exactly ONE line.
 
 Revision ID: 0119_social_item_count
-Revises: 0117_persona
+Revises: 0118_place_area
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql as pg
 
 revision = "0119_social_item_count"
-down_revision = "0117_persona"
+down_revision = "0118_place_area"
 branch_labels = None
 depends_on = None
 
