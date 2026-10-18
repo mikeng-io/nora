@@ -4018,6 +4018,10 @@ async def build_dependencies(
             if cfg.persona.enabled:
                 persona_store = SqlPersonaStore(engine, screen=text_offence)
                 persona_reads = SqlCharacterEvidence(engine)
+                # The person accounts' social input (45 §4): the readable
+                # store's (opted-out, gone and hidden left out there), the
+                # same store the social cursor and the counts come from.
+                persona_social = readable_social_store(engine, persons)
                 dream_schedules = {
                     **dream_schedules,
                     PERSONA_PERSON_ADAPTOR_NAME: AdaptorSchedule(
@@ -4041,6 +4045,8 @@ async def build_dependencies(
                         evidence=PersonaEvidence(
                             store=persona_reads, persona=persona_store, keys=person_keys,
                             wake_batch=cfg.culture.person_wake_batch,
+                            social=persona_social,
+                            former_ids=persons.former_ids_for,
                         ),
                         reads=persona_reads, keys=person_keys,
                         name_of=lambda pid: (
@@ -4048,6 +4054,13 @@ async def build_dependencies(
                             else "someone"
                         ),
                         clock_ms=_now_ms, metrics=metrics,
+                        # The social items' render (45 §4): screened like the
+                        # Character session's, captions redacted to the author's
+                        # own handle, each reading clipped as the media reads.
+                        social=persona_social,
+                        screen=scan_identifiers,
+                        render_chars=cfg.media.comprehension_render_chars,
+                        handle_owners=persons.instagram_username_owners,
                     ),
                     PersonaVerdictAdaptor(
                         store=persona_store, reads=persona_reads,

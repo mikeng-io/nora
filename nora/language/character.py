@@ -84,7 +84,7 @@ from nora.domain.memory_index import social_label
 from nora.domain.models import PersonRef
 from nora.domain.ports import Proposal
 from nora.domain.prompt import age, escape, stamp
-from nora.domain.social_stream import PersonSocialItem, to_us
+from nora.domain.social_stream import PersonSocialItem, RecordedCounts, to_us
 from nora.language.character_session import AccountNotRecordableError, EntitySessions
 from nora.obs.metrics import Metrics
 
@@ -624,11 +624,16 @@ def _caption(text: str | None, *, person: str, owners: Owners) -> str:
 
 @dataclass(frozen=True)
 class _Shown:
-    """One item as the block renders it: redacted, screened and clipped once."""
+    """One item as the block renders it: redacted, screened and clipped once.
+
+    `counts` is the item's latest `social_item_count` row, when the session
+    reads counts (the Persona adaptor's input, 45 §4); None renders no count
+    attributes, so the Character block is unchanged."""
 
     item: PersonSocialItem
     shows: str | None
     caption: str
+    counts: RecordedCounts | None = None
 
 
 def _social_block(rows: Sequence[_Shown], now: datetime) -> ContextBlock:
@@ -638,17 +643,30 @@ def _social_block(rows: Sequence[_Shown], now: datetime) -> ContextBlock:
     handles redacted, is the content. Never its location: a person session
     holds no presence, and its account renders in rooms whose `location`
     flags differ (R-31); never its `alt_text`, nor its tagged or mentioned
-    handles, which the read does not return."""
+    handles, which the read does not return. A count is absent when the read
+    did not carry it — unknown, never 0 (`ItemCounts`'s rule) — and the
+    counts' own `counted` age says when they were read."""
     ordered = sorted(rows, key=lambda r: r.item.taken_at, reverse=True)
-    return ContextBlock(name="social_items", **_at("social_items"), body=render_elements(
-        ordered, tag="item",
-        attrs=lambda r, _i: (
+
+    def attrs(r: _Shown, _i: int) -> tuple[tuple[str, str | None], ...]:
+        counts = r.counts
+        return (
             ("cite", social_citation(r.item.network, r.item.item_id)),
             ("kind", social_label(r.item.network, r.item.kind, collab=r.item.collab)),
             ("posted", stamp(int(r.item.taken_at.timestamp() * 1000), now)),
             ("shows", r.shows),
-        ),
-        body=lambda r: r.caption,
+            ("likes", None if counts is None or counts.likes is None
+             else str(counts.likes)),
+            ("comments", None if counts is None or counts.comments is None
+             else str(counts.comments)),
+            ("reposts", None if counts is None or counts.reposts is None
+             else str(counts.reposts)),
+            ("counted", None if counts is None
+             else age(int(counts.read_at.timestamp() * 1000), now)),
+        )
+
+    return ContextBlock(name="social_items", **_at("social_items"), body=render_elements(
+        ordered, tag="item", attrs=attrs, body=lambda r: r.caption,
     ))
 
 

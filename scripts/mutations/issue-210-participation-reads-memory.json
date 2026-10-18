@@ -2,7 +2,7 @@
   {
     "name": "#210 — the people block reaches the participation prompt",
     "file": "nora/agent/prefill.py",
-    "old": "            _people_in_window_block(ctx),\n            _restamp(_notes_block(ctx, now=clock, view=view)),",
+    "old": "            None if switched else _people_in_window_block(ctx),\n            _restamp(_notes_block(ctx, now=clock, view=view)),",
     "new": "            _restamp(_notes_block(ctx, now=clock, view=view)),",
     "target": "tests/unit/test_people_in_window.py -k block_reaches_the_prompt_under_its_own_tag"
   },

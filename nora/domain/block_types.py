@@ -395,7 +395,12 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
        kind="what it is: a story frame lasts a day, a post or reel stays",
        posted="when they posted it, and how long ago",
        shows="a model's description of its picture or video, not their words; "
-             "absent when nothing has read it yet"),
+             "absent when nothing has read it yet",
+       likes="how many liked it; absent when the count was never read or the "
+             "author hides it, which does not mean nobody liked it",
+       comments="how many commented; absent when the count was never read",
+       reposts="how many reposted it; absent when the count was never read",
+       counted="when the counts were read, and how long ago"),
     _t("episodes",
        "how people responded to what you said in this group: one `episode` "
        "per message of yours that someone has responded to, or whose "

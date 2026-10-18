@@ -159,6 +159,18 @@ class CollectiveEvidence:
         return await self._store.room_since(
             rooms=[(r.platform, r.key) for r in ck.rooms], after=after, limit=limit)
 
+    # A collective has no per-source cursor to keep across runs (45 §4 is the
+    # person account's social items only), so the `_Evidence` cursor verbs are
+    # no-ops here; the watermark the loop holds is `_held`.
+    def handed(self, key: str, items: Sequence[Any]) -> None:
+        pass
+
+    def forget(self, key: str) -> None:
+        pass
+
+    def gave_up(self, key: str) -> None:
+        pass
+
 
 class PersonaCollectiveAdaptor(PersonaPersonAdaptor):
     """The same atomic Persona session, with each collective's own evidence."""
