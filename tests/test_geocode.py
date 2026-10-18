@@ -10,6 +10,7 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
+from nora.domain.ports import PlaceArea
 from nora.infra import geocode
 from nora.infra.geocode import GoogleGeocoder
 from nora.testing import FakeGeocodeCacheStore
@@ -20,14 +21,16 @@ class _Google:
     body, an `OK` result, and a request log so the memo-cache can be proven."""
 
     def __init__(self) -> None:
-        self.mode = "ok"          # ok | zero | denied | notjson
+        self.mode = "ok"          # ok | zero | denied | notjson | en_only
         self.requests: list[str] = []
 
     async def geocode(self, request: web.Request) -> web.Response:
         self.requests.append(request.query.get("latlng", ""))
         if self.mode == "notjson":
             return web.Response(text="<html>nope</html>", content_type="text/html")
-        if self.mode == "zero":
+        if self.mode == "zero" or (
+            self.mode == "en_only" and request.query.get("language") == "zh-HK"
+        ):
             return web.json_response({"status": "ZERO_RESULTS", "results": []})
         if self.mode == "denied":
             # A non-OK status still arrives as a 200 — must be read as "no
@@ -36,7 +39,26 @@ class _Google:
         # Language-specific, like the real host: `address_for` asks for zh-HK AND
         # en and joins them, so the fake answers each call in the requested
         # language to prove the join.
-        addr = "元朗形點" if request.query.get("language") == "zh-HK" else "Yoho Mall, Yuen Long"
+        zh = request.query.get("language") == "zh-HK"
+        if request.query.get("place_id"):
+            # The place-id lookup a venue's areas come from: a result whose
+            # components name a neighbourhood and Hong Kong's first-level area
+            # (no `locality`), plus a country that is neither.
+            if request.query["place_id"] != "ChIJ-venue":
+                return web.json_response({"status": "ZERO_RESULTS", "results": []})
+            return web.json_response({"status": "OK", "results": [{
+                "formatted_address": "venue",
+                "address_components": [
+                    {"long_name": "8號" if zh else "8", "types": ["street_number"]},
+                    {"long_name": "旺角" if zh else "Mong Kok",
+                     "types": ["neighborhood", "political"]},
+                    {"long_name": "九龍" if zh else "Kowloon",
+                     "types": ["administrative_area_level_1", "political"]},
+                    {"long_name": "香港" if zh else "Hong Kong",
+                     "types": ["country", "political"]},
+                ],
+            }]})
+        addr = "元朗形點" if zh else "Yoho Mall, Yuen Long"
         return web.json_response(
             {"status": "OK", "results": [{"formatted_address": addr}]}
         )
@@ -164,6 +186,13 @@ async def test_no_store_behaves_exactly_as_before(google):
 # ---- Plus Code screening --------------------------------------------------
 
 
+def _address(payload: object) -> str | None:
+    """The address `GoogleGeocoder._fetch` takes from the result
+    `_first_result` picks."""
+    result = geocode._first_result(payload)
+    return None if result is None else str(result["formatted_address"]).strip()
+
+
 def test_a_plus_code_embedded_after_cjk_is_rejected():
     """Google's zh result embeds the Plus Code directly after CJK (香港新界元朗FQQQ+QQ) — a
     word-boundary regex does not fire there, so the screen uses a boundary-free pattern."""
@@ -175,7 +204,7 @@ def test_a_plus_code_embedded_after_cjk_is_rejected():
             {"formatted_address": "香港新界元朗南生圍路", "types": ["route"]},
         ],
     }
-    assert geocode._first_address(payload) == "香港新界元朗南生圍路"
+    assert _address(payload) == "香港新界元朗南生圍路"
 
 
 def test_a_leading_plus_code_is_rejected():
@@ -191,7 +220,7 @@ def test_a_leading_plus_code_is_rejected():
     expected = (
         "Nam Sang Chi Rd, Yuen Long, New Territories, Hong Kong"
     )
-    assert geocode._first_address(payload) == expected
+    assert _address(payload) == expected
 
 
 def test_a_pure_plus_code_typed_result_is_rejected():
@@ -202,7 +231,7 @@ def test_a_pure_plus_code_typed_result_is_rejected():
             {"formatted_address": "香港石仔埗街", "types": ["route"]},
         ],
     }
-    assert geocode._first_address(payload) == "香港石仔埗街"
+    assert _address(payload) == "香港石仔埗街"
 
 
 def test_all_plus_code_results_answer_none_never_a_grid_reference():
@@ -214,7 +243,7 @@ def test_all_plus_code_results_answer_none_never_a_grid_reference():
             {"formatted_address": "7QQQQQQQ+QQ", "types": ["plus_code"]},
         ],
     }
-    assert geocode._first_address(payload) is None
+    assert _address(payload) is None
 
 
 def test_real_addresses_are_never_rejected_by_the_plus_code_screen():
@@ -225,4 +254,25 @@ def test_real_addresses_are_never_rejected_by_the_plus_code_screen():
              "types": ["establishment", "point_of_interest"]},
         ],
     }
-    assert geocode._first_address(payload) == "香港新界天水圍天瑞路77號"
+    assert _address(payload) == "香港新界天水圍天瑞路77號"
+
+
+async def test_a_venue_place_id_answers_its_district_and_city_in_both_languages(google):
+    """`area_of_place` asks the Geocoding API by Google's own place id (no
+    coordinate goes out), once per language, and names the neighbourhood and
+    what holds it from the components, never the street or the country."""
+    geo = GoogleGeocoder(api_key="k")
+    assert await geo.area_of_place("ChIJ-venue") == PlaceArea(
+        district="旺角 / Mong Kok", city="九龍 / Kowloon",
+    )
+    assert await geo.area_of_place("ChIJ-unknown") is None
+    google.mode = "denied"
+    assert await geo.area_of_place("ChIJ-venue") is None
+    assert await geo.area_of_place("") is None
+
+
+async def test_an_area_one_language_did_not_name_is_no_area(google):
+    """An area's joined name is its hub's identity, so a district only one
+    language named would be a second hub for it: it is no area at all."""
+    google.mode = "en_only"
+    assert await GoogleGeocoder(api_key="k").area_of_place("ChIJ-venue") is None

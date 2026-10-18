@@ -167,6 +167,13 @@ def offence(item: Mapping[str, object]) -> tuple[str, str] | None:
     return _offence(item)
 
 
+def text_offence(text: str) -> str | None:
+    """`offence` on one text: `"identifier"`, `"coordinate"` or `None`. The
+    Persona write's screen (`nora.infra.sql.persona.SqlPersonaStore`)."""
+    found = _offence({"text": text})
+    return None if found is None else found[0]
+
+
 def screen(
     *, adaptor: str, items: Sequence[Mapping[str, object]], metrics: Metrics
 ) -> tuple[tuple[Mapping[str, object], ...], tuple[Rejection, ...]]:

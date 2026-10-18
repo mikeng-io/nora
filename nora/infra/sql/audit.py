@@ -143,6 +143,7 @@ class SqlRecordStore:
         *,
         max_per_conversation: int = DEFAULT_MAX_PER_CONVERSATION,
         metrics: Any = None,
+        mention_persons: Any = None,
     ) -> None:
         """`metrics` is INJECTED, never imported.
 
@@ -153,10 +154,32 @@ class SqlRecordStore:
         collaborators come through `__init__`, never a module-level mutable
         singleton. The composition root passes `METRICS`; `None` means this
         store simply does not count, which is correct for unit tests.
+
+        `mention_persons` resolves one @-mentioned platform account id to its
+        person id (`Persons.resolve`'s answer, without the ref), so the row
+        stores `mention_persons_json` beside `mentions_json` and the
+        memory-index projector — pure SQL, `identity.toml` not its to read —
+        can draw `mentions` edges (25 §2). `None` stores NULL («unknown») and
+        no edges are drawn.
         """
         self._engine = engine
         self._max_per_conversation = max_per_conversation
         self._metrics = metrics
+        self._mention_persons = mention_persons
+
+    def _resolved_mentions_json(self, message: NormalizedMessage) -> str | None:
+        """`mention_persons_json` for one message or edit: the sorted person
+        ids its @-mentions resolve to, or None when that is unknown (no
+        resolver wired, or an edit the platform gave no mentions for)."""
+        if self._mention_persons is None:
+            return None
+        if message.edit_of is not None and not message.edit_of.mentions_known:
+            return None
+        resolved = {
+            pid for raw in message.mentions
+            if (pid := self._mention_persons(message.platform, raw)) is not None
+        }
+        return json.dumps(sorted(resolved))
 
     async def append(
         self,
@@ -194,6 +217,7 @@ class SqlRecordStore:
             # «no handle» and stores as NULL.
             platform_message_id=message.message_id or None,
             mentions_json=mentions_json(message.mentions),
+            mention_persons_json=self._resolved_mentions_json(message),
         ).returning(MESSAGES.c.id)
         # `RETURNING id` + `scalar_one`, not `lastrowid`: asyncpg has no
         # `lastrowid` (it is always `None`), so the id the row was assigned is
@@ -500,6 +524,7 @@ class SqlRecordStore:
             body=message.body,
             raw_json=json.dumps(message.raw),
             mentions_json=_edit_mentions_json(message),
+            mention_persons_json=self._resolved_mentions_json(message),
         )
         async with self._engine.begin() as conn:
             await conn.execute(stmt)

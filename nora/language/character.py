@@ -105,6 +105,7 @@ __all__ = [
     "PersonKey",
     "UnitEvidence",
     "UnitKey",
+    "room_cultures_block",
 ]
 
 #: The person adaptor's `name`: its watermark identity, schedule, budget and
@@ -178,6 +179,9 @@ class PersonKey:
     person: PersonRef
     rooms: tuple[CharacterRoom, ...]
     home: str
+    #: The rooms that list them (`primary_id`s): where evidence about them
+    #: counts for their Persona (design/unified-memory/35 §3).
+    listed: tuple[str, ...] = ()
 
 
 #: The most social items one person session is handed: the OLDEST not yet
@@ -420,7 +424,7 @@ class _CultureStore(Protocol):
     ) -> CultureRevision: ...
 
 
-def _room_cultures(
+def room_cultures_block(
     rooms: Sequence[CharacterRoom], heads: Sequence[CultureRevision | None],
     now: datetime, *, cites: bool = False,
 ) -> ContextBlock | None:
@@ -769,7 +773,7 @@ class CharacterPersonAdaptor(EntitySessions):
                 body=escape(previous.body),
                 attrs=(("written", age(previous.written_at, now)),),
             ),
-            _room_cultures(pk.rooms, heads, now),
+            room_cultures_block(pk.rooms, heads, now),
             ContextBlock(name="person_messages", **_at("person_messages"), body=render_row_window(
                 messages,
                 row_id=lambda m: m.row.id,
@@ -933,7 +937,7 @@ class CharacterUnitAdaptor(EntitySessions):
                 body=escape(previous.body),
                 attrs=(("written", age(previous.written_at, now)),),
             ),
-            _room_cultures(uk.rooms, heads, now, cites=True),
+            room_cultures_block(uk.rooms, heads, now, cites=True),
         ]
         return assemble([p for p in parts if p is not None], sep="\n\n")
 

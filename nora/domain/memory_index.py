@@ -56,6 +56,7 @@ __all__ = [
     "is_latin",
     "narrowed",
     "nothing_to_embed",
+    "place_named",
     "social_label",
 ]
 
@@ -77,7 +78,9 @@ NodeKind = Literal[
 NODE_KINDS: tuple[str, ...] = get_args(NodeKind)
 
 #: The entities: a node a hop may reach only as a direct neighbour, never
-#: fan out from. They are the only nodes allowed no
+#: fan out from (a place the question names is the one exception: the walk
+#: anchors on it, inward along `located_in`, `nora.agent.memory_search`).
+#: They are the only nodes allowed no
 #: scope of their own; every other node carries a unit, a room or a person.
 HUB_KINDS: tuple[str, ...] = ("person", "room", "unit", "nora", "place")
 
@@ -202,10 +205,11 @@ KINDS_BY_CATEGORY: Mapping[str, tuple[str, ...]] = {
 }
 
 #: The relations that tie a node to the person a `memory_search` names: an
-#: entry `about` them, a message `authored_by` them, an attachment
-#: `shared_by` them. `mentions` and `depicts` join when something writes them;
-#: until then they would match nothing.
-PERSON_RELATIONS: tuple[str, ...] = ("about", "authored_by", "shared_by")
+#: entry `about` them, a message `authored_by` them or `mentions` of them (an
+#: @-mention resolved at ingest, 25 §2), an attachment `shared_by` them.
+#: `depicts` joins when something writes it; until then it would match
+#: nothing.
+PERSON_RELATIONS: tuple[str, ...] = ("about", "authored_by", "shared_by", "mentions")
 
 
 @dataclass(frozen=True, slots=True)
@@ -406,6 +410,25 @@ def exact_pattern(term: str) -> str:
     return f"(?<![{_WORDISH}]){re.escape(term)}(?![{_WORDISH}])"
 
 
+#: The shortest part of a place's name that counts as naming it, by script:
+#: one Chinese character names nothing (`中`), nor do two Latin letters
+#: (`MK`, which a word like `mk2` or an initialism in passing would hold).
+_PLACE_NAME_MIN = 2
+_PLACE_NAME_MIN_LATIN = 3
+
+
+def place_named(name: str, query: str) -> bool:
+    """Whether `query` names the place whose hub text is `name`: one of its
+    «中文 / English» parts, held as an exact reference holds (`exact_holds`:
+    a Latin part on its own, `Mong Kok` and not `Mong Kokomo`; a Chinese part
+    as a substring, `旺角` in `旺角有咩食`), in any case."""
+    return any(
+        len(part) >= (_PLACE_NAME_MIN_LATIN if is_latin(part) else _PLACE_NAME_MIN)
+        and exact_holds(part, query)
+        for part in (p.strip() for p in name.split(" / "))
+    )
+
+
 #: How a social item's kind is said (instagram-adoption/06: «a story must be
 #: SAID to be a story»).
 _SOCIAL_KIND_WORDS: Mapping[str, str] = {
@@ -552,6 +575,14 @@ class MemoryIndexRead(Protocol):
         """In-scope nodes holding one of `sha256s` (the bytes of an attached
         picture, wherever it was shared before), newest first: the
         exact-reference seeds of the media a message carries."""
+        ...
+
+    async def places(self, query: str, *, limit: int) -> list[IndexedNode]:
+        """The place hubs `query` names (`place_named`): a venue, a district,
+        a city. A hub carries no scope and is never returned to a reader; a
+        named one only anchors a walk inward along `located_in`
+        (`nora.agent.memory_search.walk`), whose every other node is
+        scoped."""
         ...
 
     async def neighbours(

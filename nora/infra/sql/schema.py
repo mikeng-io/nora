@@ -203,6 +203,12 @@ MESSAGES = sa.Table(
     # of `raw_json` because that would interpret the envelope a second time,
     # per platform, in ingest.
     sa.Column("mentions_json", sa.Text),
+    # The mentions resolved to person ids (a sorted JSON array, as
+    # `mentions_json`): `identity.toml` is not the pure-SQL projector's to
+    # read, so ingest resolves and stores, and the index draws `mentions`
+    # edges from this (25 §2). NULL is «unknown»: pre-column rows, no
+    # resolver wired.
+    sa.Column("mention_persons_json", sa.Text),
     # WITHDRAWAL (migration `0075_withdrawal`): epoch ms, set when a platform
     # delete or unsend hides the message (`RecordStore.hide_message`).
     # `messages` is in `HISTORY_TABLES`, so this UPDATE is captured as a new
@@ -244,6 +250,10 @@ MESSAGE_EDIT = sa.Table(
     # is what a reply or a reaction reads the platform handle from.
     sa.Column("raw_json", sa.Text),
     sa.Column("mentions_json", sa.Text),
+    # The edit's mentions resolved to person ids, as on `messages`; NULL when
+    # this edit could not carry mentions (`_edit_mentions_json`'s rule), and
+    # the projector keeps the row's own edges then.
+    sa.Column("mention_persons_json", sa.Text),
     sa.Column(
         "created_at", sa.Text, nullable=False,
         server_default=sa.text("now()::text"),
@@ -801,6 +811,9 @@ ROLLUP_OUTING = sa.Table(
     sa.Column("place_label", sa.Text, nullable=True),
     sa.Column("saved_place_id", sa.Text, nullable=True),
     sa.Column("open", sa.Integer, nullable=False, server_default=sa.text("0")),
+    # 0118_place_area: the areas its centre lies in, never at a saved place (R-35).
+    sa.Column("district", sa.Text, nullable=True),
+    sa.Column("city", sa.Text, nullable=True),
 )
 
 #: Daybook: one person's local (Hong Kong) day in one unit. Counts of
@@ -932,6 +945,9 @@ GEOCODE_CACHE = sa.Table(
         "resolved_at", sa.DateTime(timezone=True), nullable=False,
         server_default=sa.text("now()"),
     ),
+    # 0118_place_area: the areas from the same geocode's address components.
+    sa.Column("district", sa.Text, nullable=True),
+    sa.Column("city", sa.Text, nullable=True),
 )
 
 
@@ -1703,6 +1719,9 @@ EVENTS = sa.Table(
     ),
     sa.Column("venue_maps_url", sa.Text, nullable=True),
     sa.Column("venue_resolved_at", sa.DateTime(timezone=True), nullable=True),
+    # 0118_place_area: the areas the venue lies in (`nora.domain.ports.PlaceArea`).
+    sa.Column("venue_district", sa.Text, nullable=True),
+    sa.Column("venue_city", sa.Text, nullable=True),
     sa.Column("status", sa.Text, nullable=False),
     sa.Column("reminder_id", sa.Uuid, nullable=True),
     sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
@@ -1800,6 +1819,8 @@ EVENT_REVISION = sa.Table(
         "venue_price_level", sa.Text, nullable=False, server_default=sa.text("''"),
     ),
     sa.Column("venue_maps_url", sa.Text, nullable=True),
+    sa.Column("venue_district", sa.Text, nullable=True),
+    sa.Column("venue_city", sa.Text, nullable=True),
     sa.Column(
         "people", pg.ARRAY(sa.Text), nullable=False, server_default=sa.text("'{}'"),
     ),
@@ -4836,6 +4857,9 @@ PERSONA = sa.Table(
     sa.Column("unit", sa.Text, nullable=False),
     sa.Column("revision", sa.Integer, nullable=False, server_default=sa.text("0")),
     sa.Column("updated_at", sa.BigInteger, nullable=False),
+    # When the account's own session last settled it (`apply_decay`): a
+    # turn's `told` line written after it is pending (0120).
+    sa.Column("settled_at", sa.BigInteger),
     sa.CheckConstraint("length(btrim(key)) > 0", name="ck_persona_has_a_key"),
     sa.CheckConstraint("length(btrim(unit)) > 0", name="ck_persona_has_a_unit"),
     sa.CheckConstraint(
@@ -4949,4 +4973,42 @@ IDX_PERSONA_LINE_KEY = sa.Index(
 UQ_PERSONA_LINE_SUPERSEDES = sa.Index(
     "uq_persona_line_supersedes", PERSONA_LINE.c.supersedes, unique=True,
     postgresql_where=PERSONA_LINE.c.supersedes.isnot(None),
+)
+
+# ── persona_dispute ───────────────────────────────────────────────────────────
+# A dispute of a Persona line is a Record item (35 §2, migration
+# `0121_persona_dispute`): who disputed, the claim as they put it, the message
+# they said it in, and the line the claim matched when one did. Append-only;
+# what the dispute DID to the line is a new `persona_line` row written in the
+# same transaction (`SqlPersonaStore.record_dispute`), not a column here.
+PERSONA_DISPUTE = sa.Table(
+    "persona_dispute",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=False), primary_key=True),
+    sa.Column("persona_key", sa.Text, nullable=False),
+    sa.Column("line_id", pg.UUID(as_uuid=False)),
+    sa.Column("disputed_by", sa.Text, nullable=False),
+    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("claim", sa.Text, nullable=False),
+    sa.Column("message_id", sa.BigInteger, nullable=False),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("written_at", sa.BigInteger, nullable=False),
+    _recorded_at(),
+    sa.CheckConstraint("kind IN ('dispute', 'forget')", name="ck_persona_dispute_kind"),
+    sa.CheckConstraint(
+        "length(btrim(claim)) > 0 AND length(claim) <= 300",
+        name="ck_persona_dispute_claim",
+    ),
+    sa.CheckConstraint(
+        "length(btrim(disputed_by)) > 0", name="ck_persona_dispute_who",
+    ),
+    sa.CheckConstraint(
+        "length(btrim(persona_key)) > 0", name="ck_persona_dispute_has_a_key",
+    ),
+    sa.CheckConstraint(
+        "length(btrim(unit)) > 0", name="ck_persona_dispute_has_a_unit",
+    ),
+)
+IDX_PERSONA_DISPUTE_KEY = sa.Index(
+    "idx_persona_dispute_key", PERSONA_DISPUTE.c.persona_key, PERSONA_DISPUTE.c.written_at,
 )

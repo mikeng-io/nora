@@ -192,6 +192,10 @@ Signal / Discord / WhatsApp / Instagram room
                     own account there, from her sends paired with what followed;
                     a revision citing only her own sends is refused (echo rule);
                     read back as `<self>`, first in every tag, fire and Cognition prompt
+   persona-person  (shadow, off unless `[persona] enabled`; character-person's
+                    wake, plus at once on a turn's `remember` told line) →
+                    typed Persona lines per (unit, person) through one judged
+                    `persona_write` (DEC-317), rendered nowhere until the switch
    Notes, events, Standing and Nora's own reminders are no longer adaptors
    (DEC-277, 2026-10-03): the Cognition session writes them (`[cognition]
    enabled`), with the verbs `note_retire` and `note_merge` and a

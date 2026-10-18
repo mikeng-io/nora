@@ -985,6 +985,14 @@ nora_wake_batch = 100
 # model sees; it is not a throttle.
 batch_limit = 300
 
+[persona]
+# The Persona sessions, in SHADOW (design/unified-memory/45): one Dreamer
+# session per (unit, listed person) writes typed lines nothing reads yet. Woken
+# like the person's Character session ([culture] person_wake_batch and
+# stale_seconds) and at once by a fact a turn's `remember` wrote about them.
+# Each person's first session is the backfill. Needs [dreamer] and [culture].
+enabled = false
+
 [lessons]
 # Lessons. Optional, off by default. On, one background session per unit reads
 # her messages whose response window has closed (with the replies, reactions and

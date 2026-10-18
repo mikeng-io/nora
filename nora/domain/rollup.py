@@ -381,6 +381,10 @@ class Outing:
     saved_place_id: str | None
     open: bool
     as_of_ms: int
+    #: The areas its centre lies in, from the geocode cache
+    #: (`nora.analytics.units`); never set at a saved place (R-35).
+    district: str | None = None
+    city: str | None = None
 
     @property
     def lineage(self) -> tuple[LineageEntry, ...]:

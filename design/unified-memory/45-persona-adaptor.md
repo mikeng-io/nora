@@ -12,7 +12,13 @@ DEC-317)**: `persona`, `persona_line` (migration `0117_persona`), the judge
 `nora.domain.persona.plan_write` and the one write path
 `nora.infra.sql.persona.SqlPersonaStore.persona_write`. What the build
 settled that this node left open is marked «Built» where it applies. The
-adaptor (§4's session), rendering (§5) and the gates (§6) are not built.
+adaptor (§4's session) is built since 2026-10-18 (in shadow): mentions,
+disputes and the verdict judge included. The unit, room (Culture) and Nora
+sessions are built the same day (in shadow): the person session's checked
+writer over each collective's own evidence
+(`nora/language/persona_collective.py`), the verdict judge grading a
+collective's hypotheses on its own rooms. Rendering (§5) and the gates (§6)
+are not built.
 
 ## 0. This reverses "prose, no schema", deliberately
 
@@ -259,6 +265,30 @@ op refuses the call, with each refusal's reason and handle, and nothing is
 repaired for the model (today's `check_revision` pattern). A session that
 settles nothing holds its batch, and the third time for the same batch it is
 given up (DEC-280).
+
+**Built (2026-10-17, step 6, DEC-318), and what it settled:** `PersonaPersonAdaptor`
+(`nora/language/persona.py`, objective `persona-person`) is a new adaptor
+beside `character-person`, not a rename: Character keeps rendering until the
+switch, so both run in shadow. It is off unless `[persona] enabled`. Its
+wake is Character's rule over the rooms that list the person, plus the
+stimulus: a turn's `told` line (`written_by_session = 'tag'`) written after
+the account's session last settled (`persona.settled_at`, migration
+`0120_persona_settled_at`) counts as a full batch. Every settle, a
+`persona_no_change` included, sets `settled_at`, so one told line wakes one
+session. It is handed its held lines by handle, the person's messages with
+their age, the episodes they answered (`response:<id>`), their Rollup ties
+summed over the current build (`rollup:tie:<unit>|<a>,<b>`, never
+co-location, R-31) and the rooms' cultures. The verbs judge a write against
+the lines the session was shown and STAGE it; `commit` writes it, judged
+again in the store's transaction against the revision the session read, so
+a write landing meanwhile is a `conflict` that writes nothing, and the next
+wake reads the new account. Built since: the `mentions` input (the index's
+`mentions` edges over `messages.mention_person_ids`), disputes (§2's
+`persona_dispute` turn tool and the `<persona_disputes>` block) and the
+verdict judge (the `persona-verdict` adaptor, §3). Not built yet: `about`
+over Persona, and the eval (§7). Each input is one item type and one block,
+so another source (a person's social items) adds without reshaping the
+adaptor.
 
 ## 5. Rendering
 
