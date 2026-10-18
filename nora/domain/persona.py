@@ -20,8 +20,13 @@ The reasoning-mode rules are 45 §3's table, enforced here at write time:
   `draws_on` lines), none `abduced`, every premise line current.
 - `induced` (character): at least 3 instances on at least 2 calendar days
   (HKT), or one Rollup aggregate key.
+
 - `abduced` (hypothesis): at least one current `induced` trait it explains
   (`draws_on`), a prediction, its observable and a window end still ahead.
+
+A member's social item (`social:<network>:<item id>`) is evidence about its
+author only, on the author's own account: a `deduced` premise or an `induced`
+instance (on its `taken_at` day), never what a `told` line cites.
 
 Precedence when two lines conflict (45 §3): told by the subject > told by
 someone else > deduced > induced. A writer names the conflict
@@ -148,7 +153,7 @@ PERSONA_REFUSALS = frozenset({
     "told_needs_message", "told_by_missing", "told_by_not_speaker",
     "instruction_not_subject", "told_by_unexpected",
     "deduced_premises", "premise_abduced", "premise_not_current",
-    "induced_instances", "induced_one_day",
+    "induced_instances", "induced_one_day", "social_not_author",
     "abduced_prediction", "abduced_observable", "abduced_window", "abduced_window_closed",
     "abduced_explains_nothing", "prediction_unexpected", "draws_on_unexpected",
     "same_rank", "conflict_hypothesis", "over_cap", "retire_why",
@@ -156,6 +161,8 @@ PERSONA_REFUSALS = frozenset({
 
 _EPISODE = re.compile(r"response:(\d+)")
 _ROLLUP = re.compile(r"rollup:([a-z]+):(\S+)")
+#: `social:<network>:<item id>`, `nora.domain.culture.social_citation`'s form.
+_SOCIAL = re.compile(r"social:([a-z]+):(\S+)")
 _HANDLE = re.compile(r"P\d+")
 _UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 _NUMBER = re.compile(r"(?<![\d.])\d{3,}(?![\d.])")
@@ -169,15 +176,18 @@ def rollup_citation(kind: str, subject: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class Said:
-    """One citable Record row or response episode, as the validator checks it
-    (45 §4 prerequisite 1: `Citable` widened from an id to `(ts, person, room)`).
+    """One citable Record row, response episode or social item, as the
+    validator checks it (45 §4 prerequisite 1: `Citable` widened from an id to
+    `(ts, person, room)`).
 
-    `ts` is epoch ms; `person_id` is who said it (`None` for an episode, which is
-    her send and what followed); `room` is the room's `primary_id`."""
+    `ts` is epoch ms (a social item's `taken_at`); `person_id` is who said it
+    (`None` for an episode, which is her send and what followed; a social
+    item's author); `room` is the room's `primary_id`, `None` for a social
+    item, which was published, not said in a room."""
 
     ts: int
     person_id: str | None
-    room: str
+    room: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,13 +196,15 @@ class PersonaCitable:
 
     `messages` are Record rows by id, `episodes` Rollup response episodes by
     her send's id, `rollup_keys` the aggregate keys it was shown
-    (`rollup_citation`). `listed_rooms` are the rooms the account's subject is
-    listed in: evidence about a person counts only if said in one of them (35
-    §3); `None` for an account with no such rule (a collective, Nora)."""
+    (`rollup_citation`), `social` the subject's social items it was handed, by
+    `network:item_id` (room `None`). `listed_rooms` are the rooms the account's
+    subject is listed in: evidence about a person counts only if said in one of
+    them (35 §3); `None` for an account with no such rule (a collective, Nora)."""
 
     messages: Mapping[int, Said] = field(default_factory=dict)
     episodes: Mapping[int, Said] = field(default_factory=dict)
     rollup_keys: frozenset[str] = frozenset()
+    social: Mapping[str, Said] = field(default_factory=dict)
     listed_rooms: frozenset[str] | None = None
 
 
@@ -431,16 +443,18 @@ def parse_ops(raw: object) -> tuple[tuple[PersonaOp, ...], tuple[PersonaRefusal,
 class _Evidence:
     """A line's citations, resolved against what the writer was shown."""
 
-    said: tuple[Said, ...]  # messages and episodes, with their time and room
+    said: tuple[Said, ...]  # messages, episodes and social items, with their time
     messages: tuple[tuple[int, Said], ...]
     rollup_keys: tuple[str, ...]
 
 
 def _resolve(
     citations: Sequence[str], citable: PersonaCitable, handles: Mapping[str, str],
+    *, subject: str | None,
 ) -> _Evidence | PersonaRefusal:
     said: list[Said] = []
     messages: list[tuple[int, Said]] = []
+    items: list[Said] = []
     keys: list[str] = []
     for raw in dict.fromkeys(c.strip() for c in citations):
         if _HANDLE.fullmatch(raw) or _UUID.fullmatch(raw) or raw in handles.values():
@@ -449,6 +463,7 @@ def _resolve(
                 "`draws_on`, never in `citations`")
         episode = _EPISODE.fullmatch(raw)
         rollup = _ROLLUP.fullmatch(raw)
+        social = _SOCIAL.fullmatch(raw)
         if raw.isdigit() and int(raw) in citable.messages:
             s = citable.messages[int(raw)]
             said.append(s)
@@ -458,27 +473,62 @@ def _resolve(
         elif (rollup is not None and rollup.group(1) in ROLLUP_AGGREGATE_KINDS
               and raw in citable.rollup_keys):
             keys.append(raw)
+        elif (social is not None
+              and f"{social.group(1)}:{social.group(2)}" in citable.social):
+            s = citable.social[f"{social.group(1)}:{social.group(2)}"]
+            items.append(s)
         else:
             return PersonaRefusal(
                 "unresolved_citation", f"{raw!r} is not something you were shown; cite a "
-                "message's `n`, a `response:<n>` episode or a `rollup:<kind>:<subject>` key")
+                "message's `n`, a `response:<n>` episode, a `rollup:<kind>:<subject>` key "
+                "or a `social:<network>:<item id>` item")
+    for s in items:
+        # An item has no room, so 35 §3's listed-room rule reads: it is
+        # evidence about its author alone (never a person it tags or
+        # mentions), and only where the author is listed in a room of this
+        # unit.
+        if subject is None or s.person_id != subject:
+            return PersonaRefusal(
+                "social_not_author", "a social item is evidence only about the person who "
+                "posted it; cite it on their account, never on anyone else's")
+        if not citable.listed_rooms:
+            return PersonaRefusal(
+                "unlisted_room", "this person is listed in no room of this unit, so their "
+                "social items are not evidence here")
     if citable.listed_rooms is not None:
         for s in said:
             if s.room not in citable.listed_rooms:
                 return PersonaRefusal(
                     "unlisted_room", "a citation was said in a room this person is not "
                     "listed in, so it is not evidence about them")
-    return _Evidence(said=tuple(said), messages=tuple(messages), rollup_keys=tuple(keys))
+    return _Evidence(said=tuple(said + items), messages=tuple(messages), rollup_keys=tuple(keys))
 
 
 def _hkt_day(ts_ms: int) -> date:
     return datetime.fromtimestamp(ts_ms / 1000, tz=UTC).astimezone(PERSONA_HKT).date()
 
 
+def _check_told(evidence: _Evidence, told_by: str | None) -> PersonaRefusal | None:
+    """A told line can only gain messages by the person who told it."""
+    # A social item is its author's published words, but not a message
+    # said to anyone in a room, so it is in `said` and refused here.
+    if not evidence.messages or evidence.rollup_keys or (
+        len(evidence.said) != len(evidence.messages)
+    ):
+        return PersonaRefusal("told_needs_message", "a told line cites the message it "
+                              "was said in, and nothing else")
+    if told_by is None:
+        return PersonaRefusal("told_by_missing", "say who told it (`told_by`)")
+    if any(s.person_id != told_by for _, s in evidence.messages):
+        return PersonaRefusal("told_by_not_speaker", "`told_by` is not who said the "
+                              "cited message")
+    return None
+
+
 def _check_line(
     line: PersonaLine, *, account: Account, evidence: _Evidence,
     premises: Sequence[PersonaLine], screen: Callable[[str], str | None],
-    shown_ids: frozenset[int], now_ms: int,
+    shown_ids: frozenset[int], shown_items: frozenset[str], now_ms: int,
 ) -> PersonaRefusal | None:
     """Every rule a whole line must meet, whatever op produced it."""
     collective = account.entity_kind in COLLECTIVE_ENTITY_KINDS
@@ -498,9 +548,9 @@ def _check_line(
     if len(text) > LINE_MAX_CHARS:
         return PersonaRefusal("too_long", f"one claim in at most {LINE_MAX_CHARS} "
                               f"characters; this is {len(text)}")
-    if any(int(n) in shown_ids for n in _NUMBER.findall(text)):
-        return PersonaRefusal("ids_in_text", "message numbers go in `citations`, never in "
-                              "the line's text")
+    if any(int(n) in shown_ids or n in shown_items for n in _NUMBER.findall(text)):
+        return PersonaRefusal("ids_in_text", "message and item numbers go in `citations`, "
+                              "never in the line's text")
     for value in (text, line.prediction or "", line.prediction_observable or ""):
         offence = screen(value)
         if offence is not None:
@@ -527,16 +577,9 @@ def _check_line(
         return PersonaRefusal("instruction_not_subject", "an instruction is told by "
                               "the person it is about, never by someone else or deduced")
     if line.mode == "told":
-        if not evidence.messages or evidence.rollup_keys or (
-            len(evidence.said) != len(evidence.messages)
-        ):
-            return PersonaRefusal("told_needs_message", "a told line cites the message it "
-                                  "was said in, and nothing else")
-        if line.told_by is None:
-            return PersonaRefusal("told_by_missing", "say who told it (`told_by`)")
-        if any(s.person_id != line.told_by for _, s in evidence.messages):
-            return PersonaRefusal("told_by_not_speaker", "`told_by` is not who said the "
-                                  "cited message")
+        bad = _check_told(evidence, line.told_by)
+        if bad is not None:
+            return bad
     elif line.mode == "deduced":
         if any(p.mode == "abduced" for p in premises):
             return PersonaRefusal("premise_abduced", "a hypothesis is not a premise")
@@ -595,6 +638,12 @@ def plan_write(
     handles = handles_for(heads)
     by_id = {h.id: h for h in heads}
     shown_ids = frozenset(citable.messages)
+    # An item id may be composite (a story frame's `<digits>_<digits>`): each
+    # numeric part counts on its own, as in `culture.check_revision`.
+    shown_items = frozenset(
+        part for key in citable.social
+        for part in re.findall(r"\d{3,}", key.partition(":")[2])
+    )
     refusals: list[PersonaRefusal] = []
     touched: dict[str, int] = {}
     # The simulated heads after the call: id -> line. Each op replaces entries.
@@ -645,10 +694,13 @@ def plan_write(
 
     def _stamp(citation: str) -> int:
         episode = _EPISODE.fullmatch(citation)
+        social = _SOCIAL.fullmatch(citation)
         if citation.isdigit() and int(citation) in citable.messages:
             return citable.messages[int(citation)].ts
         if episode is not None and int(episode.group(1)) in citable.episodes:
             return citable.episodes[int(episode.group(1))].ts
+        if social is not None and f"{social.group(1)}:{social.group(2)}" in citable.social:
+            return citable.social[f"{social.group(1)}:{social.group(2)}"].ts
         return now_ms  # a Rollup aggregate supports as of now
 
     for i, op in enumerate(ops):
@@ -675,10 +727,15 @@ def plan_write(
             touched[target.id] = i
             if not op.citations:
                 continue  # affirmed with no new evidence: nothing to write
-            ev = _resolve(op.citations, citable, handles)
+            ev = _resolve(op.citations, citable, handles, subject=account.subject)
             if isinstance(ev, PersonaRefusal):
                 refusals.append(replace(ev, op_index=i))
                 continue
+            if target.mode == "told":
+                bad = _check_told(ev, target.told_by)
+                if bad is not None:
+                    refusals.append(replace(bad, op_index=i))
+                    continue
             cites = tuple(dict.fromkeys((*target.citations, *op.citations)))
             count, last = support(target, ev, op.citations)
             new = successor(target, citations=cites, support_count=count,
@@ -718,7 +775,7 @@ def plan_write(
         if isinstance(prem, PersonaRefusal):
             refusals.append(prem)
             continue
-        ev = _resolve(cites, citable, handles)
+        ev = _resolve(cites, citable, handles, subject=account.subject)
         if isinstance(ev, PersonaRefusal):
             refusals.append(replace(ev, op_index=i))
             continue
@@ -747,7 +804,8 @@ def plan_write(
                 support_count=count, last_supported_at=last,
             )
         bad = _check_line(candidate, account=account, evidence=ev, premises=prem,
-                          screen=screen, shown_ids=shown_ids, now_ms=now_ms)
+                          screen=screen, shown_ids=shown_ids, shown_items=shown_items,
+                          now_ms=now_ms)
         if bad is not None:
             refusals.append(replace(bad, op_index=i))
             continue
