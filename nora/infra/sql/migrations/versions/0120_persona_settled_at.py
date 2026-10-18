@@ -7,9 +7,10 @@ session that settles with nothing to add (`persona_no_change`) inserts no
 line, so the settle has to be stored on the account or the same line wakes
 the session on every tick. NULL is a real state: never settled by a session.
 
-Follows `0117_persona`. `uv run alembic heads` must print exactly ONE line.
+Follows `0117_persona` (renumbered from 0118 at
+landing: `0118_place_area` and `0119_social_item_count` land first). `uv run alembic heads` must print exactly ONE line.
 
-Revision ID: 0118_persona_settled_at
+Revision ID: 0120_persona_settled_at
 Revises: 0117_persona
 """
 
@@ -18,7 +19,7 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0118_persona_settled_at"
+revision = "0120_persona_settled_at"
 down_revision = "0117_persona"
 branch_labels = None
 depends_on = None

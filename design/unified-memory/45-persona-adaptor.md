@@ -267,7 +267,7 @@ switch, so both run in shadow. It is off unless `[persona] enabled`. Its
 wake is Character's rule over the rooms that list the person, plus the
 stimulus: a turn's `told` line (`written_by_session = 'tag'`) written after
 the account's session last settled (`persona.settled_at`, migration
-`0118_persona_settled_at`) counts as a full batch. Every settle, a
+`0120_persona_settled_at`) counts as a full batch. Every settle, a
 `persona_no_change` included, sets `settled_at`, so one told line wakes one
 session. It is handed its held lines by handle, the person's messages with
 their age, the episodes they answered (`response:<id>`), their Rollup ties
