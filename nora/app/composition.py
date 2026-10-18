@@ -94,6 +94,7 @@ from nora.app.documents_service import DocumentService, room_label, rooms_named
 from nora.app.memory_routing import (
     MemoryRoutingError,
     build_workspace_router,
+    persona_scopes_of_person,
     workspaces_of_person,
 )
 from nora.app.oauth_keepalive import KeepaliveTiming, KeptLane, OAuthKeepalive
@@ -1059,6 +1060,13 @@ class Dependencies:
     # portal's own-memory page. A callable for `resolve_voice_room`'s reason:
     # `nora.web` never sees a `Policy`.
     workspaces_of: Callable[[str], tuple[str, ...]]
+    # The portal's Persona reads (45, the switch): the read-only store (None
+    # until `[persona] render` is on — `persona_reader` above), a person_id ->
+    # the (unit, workspace) pairs their accounts live under, and the Record
+    # read that resolves a line's message/episode citations for the page.
+    persona_portal: SqlPersonaStore | None
+    persona_scopes_of: Callable[[str], tuple[tuple[str, str], ...]] | None
+    persona_cited: SqlCharacterEvidence | None
     # Documents (ADR 0020): the store the portal reads, the service that publishes into
     # it (the `document_publish` tool's collaborator), and person_id -> the rooms whose
     # `persons` name them, from the CURRENT policy, for the same reason as
@@ -2115,10 +2123,13 @@ async def build_dependencies(
     # `[persona] render` are both on: `enabled` alone is the shadow (the
     # sessions write, nothing reads), and `render` without `enabled` has no
     # store to read. Flipping `render` back off is the whole rollback.
-    persona_reader: PersonaHeads | None = (
+    # `persona_store_reader` keeps the concrete type for the portal, whose
+    # page reads the open disputes too (`PersonaHeads` has no such read).
+    persona_store_reader = (
         SqlPersonaStore(engine, screen=text_offence)
         if cfg.persona.enabled and cfg.persona.render else None
     )
+    persona_reader: PersonaHeads | None = persona_store_reader
     # The same gate, for the writers (the dream sessions and the graph
     # surface's `remember`): on, a persona write projects its lines into the
     # memory index in its own transaction (45 §1, 25 §7); off is the shadow,
@@ -4630,6 +4641,16 @@ async def build_dependencies(
         policy=policy, assembler=assembler, ingest=ingest, engagement=engagement,
         resolve_voice_room=_voice_room_of(allowlist),
         workspaces_of=functools.partial(workspaces_of_person, allowlist),
+        # The portal's Persona reads (45): wired with the switch's reader, so
+        # the page shows the accounts exactly when the prompts do.
+        persona_portal=persona_store_reader,
+        persona_scopes_of=(
+            functools.partial(persona_scopes_of_person, allowlist)
+            if persona_store_reader is not None else None
+        ),
+        persona_cited=(
+            SqlCharacterEvidence(engine) if persona_store_reader is not None else None
+        ),
         documents=documents_store, document_service=document_service,
         rooms_of=functools.partial(rooms_named, allowlist),
         room_event_shown=functools.partial(room_event_shown, lineage),
