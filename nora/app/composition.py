@@ -23,7 +23,7 @@ from collections.abc import Awaitable, Callable, Collection, Coroutine, Mapping,
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 from zoneinfo import ZoneInfo
 
 import boto3
@@ -257,8 +257,18 @@ from nora.language.persona import (
     PersonaEvidence,
     PersonaPersonAdaptor,
 )
+from nora.language.persona_collective import (
+    PERSONA_COLLECTIVE_ADAPTOR_NAMES,
+    PERSONA_NORA_ADAPTOR_NAME,
+    PERSONA_ROOM_ADAPTOR_NAME,
+    PERSONA_UNIT_ADAPTOR_NAME,
+    CollectiveEvidence,
+    CollectiveKey,
+    PersonaCollectiveAdaptor,
+)
 from nora.language.persona_verdict import (
     PERSONA_VERDICT_ADAPTOR_NAME,
+    DocketAccount,
     PersonaVerdictAdaptor,
 )
 from nora.obs.health import LLMState
@@ -3950,6 +3960,31 @@ async def build_dependencies(
                 ),
             )
 
+            # PERSONA · COLLECTIVES' keys (45 §1's key forms): a room's
+            # account under its `primary_id`, the unit's and Nora's under the
+            # culture keys — the same key the prose head they backfill from
+            # is written under.
+            persona_room_keys = {
+                conv.primary_id: CollectiveKey(
+                    unit=conv.unit,
+                    rooms=(CharacterRoom(key=conv.primary_id, platform=conv.platform,
+                                         label=conv.label),),
+                    label=conv.label or "", description=conv.description or "",
+                )
+                for conv in allowlist.conversations if conv.primary_id and conv.unit
+            }
+            persona_unit_keys = {
+                key: CollectiveKey(unit=uk.unit, rooms=uk.rooms, label=uk.unit)
+                for key, uk in unit_keys.items()
+            }
+            persona_nora_keys = {
+                key: CollectiveKey(unit=nk.unit, rooms=nk.rooms, label="Nora")
+                for key, nk in nora_keys.items()
+            }
+            persona_collective_keys = {
+                **persona_room_keys, **persona_unit_keys, **persona_nora_keys,
+            }
+
             # PERSONA · PERSON, in shadow (design/unified-memory/45 §4): one
             # session per (unit, listed person), on the person's Character
             # wake plus a turn's `told` line; it writes `persona_line`, which
@@ -3991,13 +4026,72 @@ async def build_dependencies(
                     ),
                     PersonaVerdictAdaptor(
                         store=persona_store, reads=persona_reads,
-                        rollup=SqlRollupRead(engine), keys=person_keys,
+                        rollup=SqlRollupRead(engine),
+                        # The docket covers every account of the unit, a
+                        # collective's included: each mapped to who the judge
+                        # says it is about and the rooms its window covers.
+                        keys={
+                            **{key: DocketAccount(
+                                about=(ref.name if (ref := persons.by_person.get(
+                                    pk.person.person_id)) is not None else "someone"),
+                                rooms=tuple((r.platform, r.key) for r in pk.rooms
+                                            if r.key in pk.listed),
+                            ) for key, pk in person_keys.items()},
+                            **{key: DocketAccount(
+                                about=ck.label or key,
+                                rooms=tuple((r.platform, r.key) for r in ck.rooms),
+                            ) for key, ck in persona_collective_keys.items()},
+                        },
                         name_of=lambda pid: (
                             ref.name if pid and (ref := persons.by_person.get(pid)) is not None
                             else "someone"
                         ),
                         clock_ms=_now_ms, metrics=metrics,
                     ),
+                )
+
+            # PERSONA · COLLECTIVES, in shadow (45 §4): a room's, the unit's
+            # and Nora's own account, each woken by its own evidence — the
+            # room's messages, the rooms' culture revisions, the unit's
+            # closed response episodes.
+            if cfg.persona.enabled:
+                dream_schedules = {
+                    **dream_schedules,
+                    PERSONA_ROOM_ADAPTOR_NAME: AdaptorSchedule(
+                        min_interval_seconds=cfg.culture.stale_seconds,
+                        wake_batch=cfg.culture.wake_batch,
+                        batch_limit=cfg.culture.batch_limit,
+                    ),
+                    PERSONA_UNIT_ADAPTOR_NAME: AdaptorSchedule(
+                        min_interval_seconds=cfg.culture.stale_seconds,
+                        wake_batch=cfg.culture.unit_wake_batch,
+                        batch_limit=cfg.culture.batch_limit,
+                    ),
+                    PERSONA_NORA_ADAPTOR_NAME: AdaptorSchedule(
+                        min_interval_seconds=cfg.culture.stale_seconds,
+                        wake_batch=cfg.culture.nora_wake_batch,
+                        batch_limit=cfg.culture.nora_wake_batch,
+                    ),
+                }
+                collective_kinds: tuple[
+                    tuple[Literal["room", "unit", "nora"], Mapping[str, CollectiveKey]], ...,
+                ] = (
+                    ("room", persona_room_keys), ("unit", persona_unit_keys),
+                    ("nora", persona_nora_keys),
+                )
+                dream_adaptors = (
+                    *dream_adaptors,
+                    *(PersonaCollectiveAdaptor(
+                        kind=kind, persona=persona_store, culture=culture_store,
+                        evidence=CollectiveEvidence(
+                            store=persona_reads, keys=keys, kind=kind),
+                        reads=persona_reads, keys=keys,
+                        name_of=lambda pid: (
+                            ref.name if pid and (ref := persons.by_person.get(pid)) is not None
+                            else "someone"
+                        ),
+                        clock_ms=_now_ms, metrics=metrics,
+                    ) for kind, keys in collective_kinds),
                 )
 
         # LESSONS: one session per unit, woken by
@@ -4192,6 +4286,9 @@ async def build_dependencies(
             # The Persona session stands where the person's Character session
             # does (`PersonaPersonAdaptor.tool_room`), with the same reads.
             PERSONA_PERSON_ADAPTOR_NAME: culture_grant(),
+            # A room's Persona session holds Culture's read tools, scoped to
+            # its own room (`PersonaCollectiveAdaptor.tool_room`).
+            PERSONA_ROOM_ADAPTOR_NAME: culture_grant(),
             # The verdict judge holds no read tool (its windows are in the
             # prompt) and writes only through `record_verdict`; the default
             # grant (nothing) is its ceiling, kept here by omission.
@@ -4210,7 +4307,8 @@ async def build_dependencies(
         # and a few checked writes.
         if "culture" in dream_budgets:
             for name in (*CHARACTER_ADAPTOR_NAMES, LESSONS_ADAPTOR_NAME,
-                         PERSONA_PERSON_ADAPTOR_NAME, PERSONA_VERDICT_ADAPTOR_NAME):
+                         PERSONA_PERSON_ADAPTOR_NAME, PERSONA_VERDICT_ADAPTOR_NAME,
+                         *PERSONA_COLLECTIVE_ADAPTOR_NAMES):
                 dream_budgets.setdefault(name, dream_budgets["culture"])
         # An adaptor with no block of its own. `budget_for` returns a freshly
         # constructed default rather than a shared constant (DEC-13 forbids a

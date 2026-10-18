@@ -156,8 +156,8 @@
  {
   "name": "composition: the registry is not handed the Rollup read",
   "file": "nora/app/composition.py",
-  "old": "        rollup=SqlRollupRead(engine),\n",
-  "new": "",
+  "old": "        # the same lineage as the session's.\n        rollup=SqlRollupRead(engine),\n",
+  "new": "        # the same lineage as the session's.\n",
   "target": "tests/test_composition.py::test_the_composed_registry_holds_the_rollup_read_and_the_standing_head"
  },
  {

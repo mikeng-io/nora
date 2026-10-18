@@ -36,7 +36,6 @@ class _Evidence(Protocol):
     async def person_since(
         self, *, rooms: Any, person_id: str, after: int, limit: int,
     ) -> tuple[list[RoomMessage], int]: ...
-    async def mentions_count(self, *, rooms: Any, person_id: str, after: int) -> int: ...
     async def mentions_since(
         self, *, rooms: Any, person_id: str, after: int, limit: int,
     ) -> tuple[list[RoomMessage], int]: ...
@@ -132,6 +131,22 @@ async def test_the_read_is_the_newest_lines_oldest_first_and_the_cursor_is_the_n
     assert nothing == [] and unmoved == ids[6]
 
 
+async def test_a_rooms_evidence_is_every_visible_line_but_hers(seeded):
+    """A collective's room read (35 §1's room account): every visible line in
+    the rooms, whoever wrote it, EXCEPT hers — her own words can never support
+    a claim (the echo rule), so the session is never handed them."""
+    store, ids = seeded
+    assert await store.room_count(rooms=ROOMS, after=0) == 4
+    assert await store.room_count(rooms=ROOMS, after=ids[2]) == 1
+    assert await store.room_count(rooms=[], after=0) == 0
+    got, cursor = await store.room_since(rooms=ROOMS, after=0, limit=3)
+    assert [(m.room, m.row.body) for m in got] == [
+        ("room-a", "b1"), ("room-b", "a2"), ("room-b", "a5")]
+    assert cursor == ids[6]
+    nothing, unmoved = await store.room_since(rooms=ROOMS, after=ids[6], limit=5)
+    assert nothing == [] and unmoved == ids[6]
+
+
 async def test_windowed_is_every_visible_line_in_the_rooms_over_the_interval(seeded):
     """The verdict judge's window read (45 §3): every visible message in the
     rooms with `ts` in `(since, until]` — hers included, a hidden one never —
@@ -214,16 +229,20 @@ async def mentioned(request: Any) -> AsyncIterator[tuple[_Evidence, list[int]]]:
 
 async def test_a_persons_mentions_are_the_index_edges_over_visible_lines_in_the_rooms(mentioned):
     store, ids = mentioned
-    assert await store.mentions_count(rooms=ROOMS, person_id="bo", after=0) == 2
-    assert await store.mentions_count(rooms=ROOMS, person_id="bo", after=ids[0]) == 1
-    assert await store.mentions_count(rooms=ROOMS, person_id="cy", after=0) == 2
-    assert await store.mentions_count(rooms=ROOMS, person_id="ada", after=0) == 0
-    assert await store.mentions_count(rooms=[], person_id="bo", after=0) == 0
     got, cursor = await store.mentions_since(
         rooms=ROOMS, person_id="bo", after=0, limit=5)
     assert [(m.row.id, m.room, m.row.body) for m in got] == [
         (ids[0], "room-a", "morning bo"), (ids[2], "room-b", "bo again")]
     assert cursor == ids[2]
+    rest, cursor = await store.mentions_since(
+        rooms=ROOMS, person_id="bo", after=ids[0], limit=5)
+    assert [m.row.id for m in rest] == [ids[2]] and cursor == ids[2]
+    cy, _ = await store.mentions_since(rooms=ROOMS, person_id="cy", after=0, limit=5)
+    assert [m.row.id for m in cy] == [ids[1], ids[2]]
+    own, _ = await store.mentions_since(rooms=ROOMS, person_id="ada", after=0, limit=5)
+    assert own == []  # a self-mention is not a mention: the author never counts
+    none, _ = await store.mentions_since(rooms=[], person_id="bo", after=0, limit=5)
+    assert none == []
     newest, cursor = await store.mentions_since(
         rooms=ROOMS, person_id="bo", after=0, limit=1)
     assert [m.row.id for m in newest] == [ids[2]] and cursor == ids[2]

@@ -30,7 +30,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal, Protocol
 
-from nora.domain.blocks import BlockKey, ContextBlock, assemble, render_row_window
+from nora.domain.blocks import (
+    BlockKey,
+    ContextBlock,
+    assemble,
+    render_group,
+    render_row_window,
+)
 from nora.domain.culture import RoomMessage
 from nora.domain.errors import AccountNotRecordableError
 from nora.domain.persona import (
@@ -39,16 +45,16 @@ from nora.domain.persona import (
     countable_observable,
 )
 from nora.domain.ports import Proposal
-from nora.domain.prompt import age, escape, escape_attr
+from nora.domain.prompt import age, escape
 from nora.domain.rollup import iso
 from nora.domain.rollup_read import RollupRead, RollupReadQuery
-from nora.language.character import PersonKey
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger(__name__)
 
 __all__ = [
     "PERSONA_VERDICT_ADAPTOR_NAME",
+    "DocketAccount",
     "PersonaVerdictAdaptor",
     "PersonaVerdictEvidence",
 ]
@@ -149,6 +155,17 @@ class _Run:
     staged: tuple[_StagedVerdict, ...] | None = None
 
 
+@dataclass(frozen=True)
+class DocketAccount:
+    """What the judge needs of a hypothesis's account: who to say it is
+    about, and the rooms whose Record rows its prediction window covers —
+    already the LISTED ones (35 §3), so the read here applies no further
+    filter."""
+
+    about: str
+    rooms: tuple[tuple[str, str], ...]
+
+
 class PersonaVerdictAdaptor:
     """One unit's hypothesis docket, judged by code or by the model."""
 
@@ -165,7 +182,7 @@ class PersonaVerdictAdaptor:
 
     def __init__(
         self, *, store: _VerdictStore, reads: _Reads, rollup: _Rollup,
-        keys: Mapping[str, PersonKey], name_of: Callable[[str | None], str],
+        keys: Mapping[str, DocketAccount], name_of: Callable[[str | None], str],
         clock_ms: Callable[[], int], metrics: Metrics | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
@@ -205,9 +222,8 @@ class PersonaVerdictAdaptor:
         self._runs[key] = _Run(handles=handles)
         windows: list[str] = []
         for handle, line in handles.items():
-            pk = self._keys.get(line.persona_key)
-            rooms = ([] if pk is None
-                     else [(r.platform, r.key) for r in pk.rooms if r.key in pk.listed])
+            account = self._keys.get(line.persona_key)
+            rooms = [] if account is None else list(account.rooms)
             rows = await self._reads.windowed(
                 rooms=rooms,
                 since_ms=line.written_at,
@@ -220,17 +236,17 @@ class PersonaVerdictAdaptor:
                                  ("by", self._name_of(m.row.person_id))),
                 body=lambda m: m.row.body or "",
             )
-            windows.append(f'<for id="{handle}">\n{body}\n</for>' if body
-                           else f'<for id="{handle}"/>')
+            windows.append(render_group("for", [("id", handle)], body))
         parts = [
             ContextBlock(
                 name="persona_verdict_docket", **_at("persona_verdict_docket"),
                 body="\n".join(
-                    f'<hypothesis id="{handle}" about="{escape_attr(self._subject(line))}" '
-                    f'window_end="{iso(line.prediction_window_end or 0)}">'
-                    f"{escape(line.prediction or '')}\n"
-                    f"observable: {escape(line.prediction_observable or '')}"
-                    f"</hypothesis>"
+                    render_group("hypothesis", [
+                        ("id", handle),
+                        ("about", self._subject(line)),
+                        ("window_end", iso(line.prediction_window_end or 0)),
+                    ], f"{escape(line.prediction or '')}\n"
+                       f"observable: {escape(line.prediction_observable or '')}")
                     for handle, line in handles.items()),
             ),
             ContextBlock(
@@ -241,8 +257,8 @@ class PersonaVerdictAdaptor:
         return assemble(parts, sep="\n\n")
 
     def _subject(self, line: PersonaLine) -> str:
-        pk = self._keys.get(line.persona_key)
-        return self._name_of(pk.person.person_id) if pk is not None else "someone"
+        account = self._keys.get(line.persona_key)
+        return account.about if account is not None else "someone"
 
     # -- the verb ----------------------------------------------------------
 
@@ -257,14 +273,14 @@ class PersonaVerdictAdaptor:
         ) -> dict[str, object]:
             """Settle the hypotheses you were shown: one verdict each, in one call.
 
-Returns `status`: ok, or refused with `refusals` saying what to fix.
+            Returns `status`: ok, or refused with `refusals` saying what to fix.
 
-Args:
-    verdicts: One object per hypothesis, with `line` (its id as shown, like
-        H1) and `verdict`: confirmed (the observable occurred in the window),
-        refuted (the window shows it did not), expired (the window closed and
-        it never occurred), or unknown (you cannot tell from what you were
-        shown)."""
+            Args:
+                verdicts: One object per hypothesis, with `line` (its id as shown, like
+                    H1) and `verdict`: confirmed (the observable occurred in the window),
+                    refuted (the window shows it did not), expired (the window closed and
+                    it never occurred), or unknown (you cannot tell from what you were
+                    shown)."""
             run = self._runs.get(key)
             if run is None:
                 return {"status": "unavailable", "reason": "no_session",

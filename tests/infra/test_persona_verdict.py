@@ -25,9 +25,9 @@ from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.persona import SqlPersonaStore
 from nora.infra.sql.rollup_read import SqlRollupRead
 from nora.infra.sql.schema import ROLLUP_BUILD, ROLLUP_TIE
-from nora.language.character import CharacterRoom, PersonKey
 from nora.language.character_session import AccountNotRecordableError
 from nora.language.persona_verdict import (
+    DocketAccount,
     PersonaVerdictAdaptor,
     PersonaVerdictEvidence,
 )
@@ -39,12 +39,7 @@ T0 = 1_790_000_000_000
 NOW = datetime.fromtimestamp((T0 + 40 * DAY) / 1000, tz=UTC)
 UNIT = "friends"
 KEY = character_key(UNIT, "ada")
-KEYS = {KEY: PersonKey(
-    unit=UNIT,
-    person=SimpleNamespace(person_id="ada", name="Ada", aliases=()),
-    rooms=(CharacterRoom(key="room-a", platform="signal", label="Friends"),),
-    home="room-a", listed=("room-a",),
-)}
+KEYS = {KEY: DocketAccount(about="Ada", rooms=(("signal", "room-a"),))}
 NAMES = {"ada": "Ada", "bo": "Bo"}
 ACCOUNT = Account(key=KEY, entity_kind="human", unit=UNIT, subject="ada")
 CITABLE = PersonaCitable(

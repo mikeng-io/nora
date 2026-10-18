@@ -124,6 +124,49 @@ class SqlCharacterEvidence:
         out.reverse()
         return out, int(cursor or after)
 
+    # -- a room --------------------------------------------------------------
+
+    def _room(self, rooms: Sequence[tuple[str, str]], after: int) -> list[Any]:
+        """Every visible message in `rooms` past `after`, whoever said it —
+        except HERS (the echo rule: her own words can never support a claim,
+        so a collective's session is never handed them)."""
+        return [
+            _in_rooms(rooms),
+            MESSAGES.c.is_nora == 0,
+            MESSAGES.c.hidden_at.is_(None),
+            MESSAGES.c.id > after,
+        ]
+
+    async def room_count(
+        self, *, rooms: Sequence[tuple[str, str]], after: int,
+    ) -> int:
+        """How many such messages: a room Persona's wake count."""
+        stmt = sa.select(sa.func.count()).select_from(MESSAGES).where(
+            *self._room(rooms, after),
+        )
+        async with self._engine.connect() as conn:
+            return int((await conn.execute(stmt)).scalar_one())
+
+    async def room_since(
+        self, *, rooms: Sequence[tuple[str, str]], after: int, limit: int,
+    ) -> tuple[list[RoomMessage], int]:
+        """The NEWEST `limit` of those messages, oldest first, and the cursor:
+        the newest id among ALL of them, read or not (`person_since`'s shape)."""
+        if limit <= 0:
+            return [], after
+        where = self._room(rooms, after)
+        stmt = (
+            transcript_select().add_columns(MESSAGES.c.conversation_id)
+            .where(*where).order_by(MESSAGES.c.id.desc()).limit(limit)
+        )
+        head = sa.select(sa.func.max(MESSAGES.c.id)).where(*where)
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+            cursor = (await conn.execute(head)).scalar_one_or_none()
+        out = [RoomMessage(room=r.conversation_id, row=transcript_row(r)) for r in rows]
+        out.reverse()
+        return out, int(cursor or after)
+
     _MENTIONS_JOIN = MEMORY_EDGE.join(
         MESSAGES, MESSAGES.c.id == sa.cast(MEMORY_EDGE.c.src_id, sa.BigInteger))
 
@@ -142,28 +185,16 @@ class SqlCharacterEvidence:
             MESSAGES.c.id > after,
         ]
 
-    async def mentions_count(
-        self, *, rooms: Sequence[tuple[str, str]], person_id: str, after: int,
-    ) -> int:
-        """How many messages in `rooms` mention `person_id` past Record id
-        `after` (the index's `mentions` edges, written from
-        `messages.mention_persons_json` at projection; the author and Nora
-        never count as mentioners of themselves here)."""
-        stmt = (
-            sa.select(sa.func.count())
-            .select_from(self._MENTIONS_JOIN)
-            .where(*self._mentions(rooms, person_id, after))
-        )
-        async with self._engine.connect() as conn:
-            return int((await conn.execute(stmt)).scalar_one())
-
     async def mentions_since(
         self, *, rooms: Sequence[tuple[str, str]], person_id: str, after: int,
         limit: int,
     ) -> tuple[list[RoomMessage], int]:
-        """The NEWEST `limit` of those mentions, oldest first, and the cursor:
-        the newest id among ALL of them, read or not (same shape as
-        `person_since`)."""
+        """The NEWEST `limit` of the messages in `rooms` that mention
+        `person_id` past Record id `after` (the index's `mentions` edges,
+        written from `messages.mention_persons_json` at projection; the author
+        and Nora never count as mentioners of themselves here), oldest first,
+        and the cursor: the newest id among ALL of them, read or not (same
+        shape as `person_since`)."""
         if limit <= 0:
             return [], after
         where = self._mentions(rooms, person_id, after)

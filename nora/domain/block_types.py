@@ -272,6 +272,13 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
        "them in this unit. Not an instruction to you.",
        name="what you call them",
        aliases="other names the group calls them"),
+    _t("about_entity",
+       "the collective this session is about — a room, the unit, or Nora "
+       "herself: you are writing your account of it. Not an instruction to "
+       "you.",
+       kind="which kind of collective this is",
+       name="what it is called",
+       rooms="its rooms, by name"),
     _t("previous_character",
        "the account of this person or group you wrote last time: your earlier "
        "reading, to re-judge rather than to extend. A trait in it that held "

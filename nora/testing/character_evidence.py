@@ -213,6 +213,31 @@ class InMemoryCharacterEvidence:
             for m in found[-limit:]
         ], cursor
 
+    def _room(self, rooms: Sequence[tuple[str, str]], after: int) -> list[_Message]:
+        """`SqlCharacterEvidence._room`: every visible message in `rooms` past
+        `after`, except hers."""
+        wanted = set(rooms)
+        return sorted(
+            (m for m in self._messages
+             if (m.platform, m.room) in wanted and not m.is_nora and not m.hidden
+             and m.id > after),
+            key=lambda m: m.id,
+        )
+
+    async def room_count(
+        self, *, rooms: Sequence[tuple[str, str]], after: int,
+    ) -> int:
+        return len(self._room(rooms, after))
+
+    async def room_since(
+        self, *, rooms: Sequence[tuple[str, str]], after: int, limit: int,
+    ) -> tuple[list[RoomMessage], int]:
+        if limit <= 0:
+            return [], after
+        found = self._room(rooms, after)
+        cursor = found[-1].id if found else after
+        return [RoomMessage(room=m.room, row=self._row(m)) for m in found[-limit:]], cursor
+
     def _mentions(
         self, rooms: Sequence[tuple[str, str]], person_id: str, after: int,
     ) -> list[_Message]:
@@ -226,11 +251,6 @@ class InMemoryCharacterEvidence:
              and not m.is_nora and not m.hidden and m.id > after),
             key=lambda m: m.id,
         )
-
-    async def mentions_count(
-        self, *, rooms: Sequence[tuple[str, str]], person_id: str, after: int,
-    ) -> int:
-        return len(self._mentions(rooms, person_id, after))
 
     async def mentions_since(
         self, *, rooms: Sequence[tuple[str, str]], person_id: str, after: int,

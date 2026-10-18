@@ -16553,9 +16553,14 @@ Args:
         _spec("memo_read", memo_read),
         _spec("note_create", note_create),
         _spec("note_update", note_update),
-        *((_spec("remember", remember_told), _spec("persona_dispute", persona_dispute))
-          if memory_retrieval is not None
+        *((_spec("remember", remember_told),) if memory_retrieval is not None
           else (_spec("remember", remember),)),
+        # Built on both surfaces (no `remember`-style name collision);
+        # `on_memory_surface` keeps it off the Honcho one, and `persona=None`
+        # answers `unavailable`. The introspection build
+        # (`all_memory_surfaces`) must see it, or its catalogue line ships
+        # with no description.
+        _spec("persona_dispute", persona_dispute),
         _spec("computer_run", computer_run),
         _spec("computer_read", computer_read),
         _spec("computer_write", computer_write),

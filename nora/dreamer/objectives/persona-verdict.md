@@ -38,6 +38,7 @@ For every hypothesis, one verdict:
 
 ## How you answer
 
-One `persona_verdict` call with a verdict for EVERY hypothesis you were
-shown, each named by its `id`. Judge each on its own window's rows alone.
-When you are done, stop; your reply text is not read.
+One `persona_verdict` call, its `verdicts` holding one entry for EVERY
+hypothesis you were shown: the entry's `line` is the hypothesis's id (H1,
+...) and its `verdict` one of the four above. Judge each on its own window's
+rows alone. When you are done, stop; your reply text is not read.

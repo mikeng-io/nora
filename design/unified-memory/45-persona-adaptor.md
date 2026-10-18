@@ -13,7 +13,11 @@ DEC-317)**: `persona`, `persona_line` (migration `0117_persona`), the judge
 `nora.infra.sql.persona.SqlPersonaStore.persona_write`. What the build
 settled that this node left open is marked «Built» where it applies. The
 adaptor (§4's session) is built since 2026-10-18 (in shadow): mentions,
-disputes and the verdict judge included. Rendering (§5) and the gates (§6)
+disputes and the verdict judge included. The unit, room (Culture) and Nora
+sessions are built the same day (in shadow): the person session's checked
+writer over each collective's own evidence
+(`nora/language/persona_collective.py`), the verdict judge grading a
+collective's hypotheses on its own rooms. Rendering (§5) and the gates (§6)
 are not built.
 
 ## 0. This reverses "prose, no schema", deliberately

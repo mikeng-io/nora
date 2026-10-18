@@ -185,6 +185,21 @@ class _Culture(Protocol):
     async def head(self, *, key: str) -> CultureRevision | None: ...
 
 
+class _Evidence(Protocol):
+    """What a Persona adaptor and the dream loop need of an evidence source:
+    the count and newest read the loop wakes on, and `held`, the watermark
+    the last `newest` started after. `PersonaEvidence` for a person,
+    `persona_collective.CollectiveEvidence` for a collective."""
+
+    def held(self, key: str) -> int | None: ...
+
+    async def count(self, *, key: str, after: int) -> int: ...
+
+    async def newest(
+        self, *, key: str, after: int, limit: int,
+    ) -> tuple[Sequence[Any], int]: ...
+
+
 def _listed(pk: PersonKey) -> list[tuple[str, str]]:
     """The `(platform, primary_id)` of the rooms that list them: their
     evidence (35 §3)."""
@@ -328,7 +343,7 @@ class PersonaPersonAdaptor:
     store_calls_per_tick = PERSONA_STORE_CALLS_PER_TICK
 
     def __init__(
-        self, *, persona: _Persona, culture: _Culture, evidence: PersonaEvidence,
+        self, *, persona: _Persona, culture: _Culture, evidence: _Evidence,
         reads: _Reads, keys: Mapping[str, PersonKey],
         name_of: Callable[[str | None], str],
         clock_ms: Callable[[], int], metrics: Metrics | None = None,

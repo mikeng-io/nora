@@ -420,6 +420,14 @@ _MUST_SEE: dict[str, frozenset[str]] = {
         "self._store.due_hypotheses", "self._store.record_verdict",
         "self._reads.windowed", "self._rollup.read",
     }),
+    # A collective's Persona session (a room's, the unit's, Nora's): the
+    # account, the previous prose head and the rooms' cultures, the cited
+    # rows in; the one write out is the parent `PersonaPersonAdaptor`'s
+    # `commit`, counted there.
+    "PersonaCollectiveAdaptor": frozenset({
+        "self._persona.account_state", "self._persona.account_heads",
+        "self._culture.head", "self._reads.rows_by_id",
+    }),
     # Lessons: the held lessons in, and the horizon's retirements out. Its verbs write
     # through the book during the loop, outside `inputs`/`commit`, and are not awaited in
     # this class.
