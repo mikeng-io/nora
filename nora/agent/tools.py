@@ -5865,7 +5865,7 @@ def build_tool_specs(
             entity: room for a room's culture, person for one person's account.
             subject: The room's label, or the person's name.
         """
-        if culture is None and persona_read is None:
+        if persona_read is None and culture is None:
             _record(metrics, "character_read", "unavailable", reason="unwired")
             return {"status": "unavailable", "note": _CHARACTER_OFF}
         if lineage is None:
@@ -5958,6 +5958,12 @@ def build_tool_specs(
                     entity=entity, accounts=len(persona_accounts))
             return {"status": "ok", "entity": entity, "accounts": persona_accounts,
                     "note": _CHARACTER_PERSONA_OK}
+        if culture is None:
+            # persona_read answered above, so a miss here means NEITHER store
+            # is wired — the same unwired case as the first guard, seen from
+            # the culture path (and the narrowing mypy cannot do itself).
+            _record(metrics, "character_read", "unavailable", reason="unwired")
+            return {"status": "unavailable", "note": _CHARACTER_OFF}
         try:
             heads = await asyncio.gather(*(culture.head(key=key) for _, _, key in keyed))
         except Exception:
