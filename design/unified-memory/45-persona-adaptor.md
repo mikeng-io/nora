@@ -252,7 +252,13 @@ revision the session read its handles at, and a write against a newer one is
 a `conflict` that applies nothing. Prerequisites 1 to 3 are built:
 `PersonaCitable` maps each cited row and episode to `(ts, person, room)`,
 cites Rollup aggregates as `rollup:<kind>:<subject>` and episodes as
-`response:<id>`, and counts days in HKT. Prerequisite 4, the stimulus wake,
+`response:<id>`, and counts days in HKT. A member's social item is
+citable as `social:<network>:<item id>` (cognition-loop/22 §6), mapped to
+`(taken_at, author, no room)` and resolved only against the items the session
+was handed: evidence on its author's own account alone, and only while the
+author is listed in a room of the unit, as a `deduced` premise or an
+`induced` instance on its `taken_at` day, never what a `told` line cites; its
+id in a line's text is refused like a message number. Prerequisite 4, the stimulus wake,
 is the adaptor's (step 6).
 
 Every op is validated against §2 and §3 before any is applied. One refused
