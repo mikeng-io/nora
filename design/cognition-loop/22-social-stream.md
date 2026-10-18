@@ -350,6 +350,16 @@ after insert. Everything that changes about an item is a new row elsewhere.
   (`has_liked`), Facebook cross-post counts (`fb_like_count`,
   `fb_comment_count`). A story frame and a single post read alone carry no
   count and write no row.
+**Counts built (2026-10-18).** The bridge carries the four count fields;
+`InstagramSocialSource` parses unknown values without inventing zeroes, and
+`SocialPoller` records changed counts on every list page and runs the daily
+first-page recount. `social_read` shows the latest counts with their read age
+through the same readable-item and disclosure boundary as the item itself.
+The deterministic checks are `tests/infra/test_social_item_counts.py`,
+`tests/integration/test_social_poller.py` and
+`tests/unit/test_social_read_render.py`. Persona consumes this evidence with
+its adaptor build; no count is projected into the memory index.
+
 - **`social_poll`**: one row per probe and per read: `network`, `person`,
   `stage` (`probe`, `story`, `items`, `backfill`, `relist`, `recount`), `outcome` (`unchanged`,
   `story_due`, `items_due`, `partial`, `count_fell`, `read_ok`, `halted`,
