@@ -445,3 +445,88 @@ def test_fields_that_belong_to_another_mode_are_refused() -> None:
 def test_a_retirement_says_why_and_names_a_shown_line() -> None:
     assert _reasons(_plan([RetireOp(line="P1", why=" ")], (_line(1),))) == ["retire_why"]
     assert _reasons(_plan([RetireOp(line="P7", why="x")], (_line(1),))) == ["unknown_line"]
+
+
+# --- social items -----------------------------------------------------------------
+
+
+def _item(n: str) -> str:
+    return f"social:instagram:{n}"
+
+
+#: The subject's items 7001, 7002 and story frame 7003_8004 on two Hong Kong
+#: days; 7101..7103 on ONE Hong Kong day (two UTC days); 7201 by someone else.
+SOCIAL = replace(CITABLE, social={
+    "instagram:7001": Said(_ms(2026, 10, 8), SUBJECT, None),
+    "instagram:7002": Said(_ms(2026, 10, 9), SUBJECT, None),
+    "instagram:7003_8004": Said(_ms(2026, 10, 8, 18), SUBJECT, None),
+    "instagram:7101": Said(_ms(2026, 10, 11, 0) + 30 * 60_000, SUBJECT, None),
+    "instagram:7102": Said(_ms(2026, 10, 11, 12), SUBJECT, None),
+    "instagram:7103": Said(_ms(2026, 10, 11, 23) + 30 * 60_000, SUBJECT, None),
+    "instagram:7201": Said(_ms(2026, 10, 9), OTHER, None),
+})
+
+
+def test_social_items_are_induced_instances_counted_on_hong_kong_days() -> None:
+    two_days = (_item("7001"), _item("7002"), _item("7003_8004"))
+    plan = _plan([_induced(cites=two_days)], citable=SOCIAL)
+    assert not plan.refused
+    assert plan.inserts[0].last_supported_at == _ms(2026, 10, 9)
+    one_day = (_item("7101"), _item("7102"), _item("7103"))
+    assert _reasons(_plan([_induced(cites=one_day)], citable=SOCIAL)) == ["induced_one_day"]
+
+
+def test_a_social_item_is_a_deduced_premise() -> None:
+    assert not _plan([_deduced(cites=("101", _item("7001")))], citable=SOCIAL).refused
+    assert _reasons(_plan([_deduced(cites=(_item("7001"),))], citable=SOCIAL)) == [
+        "deduced_premises"]
+
+
+def test_a_social_item_not_handed_is_refused() -> None:
+    for cite in (_item("9999"), "social:threads:7001", _item("7001")):
+        citable = CITABLE if cite == _item("7001") else SOCIAL
+        plan = _plan([_deduced(cites=("101", cite))], citable=citable)
+        assert _reasons(plan) == ["unresolved_citation"], cite
+
+
+def test_a_social_item_is_evidence_about_its_author_only() -> None:
+    plan = _plan([_deduced(cites=("101", _item("7201")))], citable=SOCIAL)
+    assert _reasons(plan) == ["social_not_author"]
+    room_trait = AddOp(part="character", kind="trait", text="x", mode="induced",
+                       citations=(_item("7001"), _item("7002"), _item("7003_8004")))
+    assert _reasons(_plan([room_trait], account=ROOM_ACCOUNT, citable=replace(
+        SOCIAL, listed_rooms=None))) == ["social_not_author"]
+
+
+def test_a_social_item_counts_only_where_its_author_is_listed_in_the_unit() -> None:
+    op = _deduced(cites=("101", _item("7001")))
+    for listed in (frozenset(), None):
+        citable = replace(SOCIAL, listed_rooms=listed)
+        assert _reasons(_plan([op], citable=citable))[-1:] == ["unlisted_room"], listed
+
+
+def test_a_told_line_never_cites_a_social_item() -> None:
+    assert _reasons(_plan([_told(cites=(_item("7001"),))], citable=SOCIAL)) == [
+        "told_needs_message"]
+    assert _reasons(_plan([_told(cites=("101", _item("7001")))], citable=SOCIAL)) == [
+        "told_needs_message"]
+
+
+def test_social_item_numbers_stay_out_of_the_text() -> None:
+    for text in ("posted 7001", "her story 8004"):
+        assert _reasons(_plan([_told(text=text)], citable=SOCIAL)) == ["ids_in_text"], text
+
+
+def test_keeping_a_trait_on_a_social_item_supports_it_as_of_when_it_was_taken() -> None:
+    held = (_line(1, last=_ms(2026, 10, 1)),)
+    plan = _plan([KeepOp(line="P1", citations=(_item("7002"),))], held, citable=SOCIAL)
+    assert not plan.refused
+    assert plan.inserts[0].last_supported_at == _ms(2026, 10, 9)
+    assert plan.inserts[0].support_count == 2
+
+
+def test_keeping_a_told_line_never_adds_a_social_citation() -> None:
+    held = (_line(1, part="identity", kind="attribute", mode="told", told_by=SUBJECT),)
+    assert not _plan([KeepOp(line="P1", citations=("102",))], held, citable=SOCIAL).refused
+    plan = _plan([KeepOp(line="P1", citations=(_item("7001"),))], held, citable=SOCIAL)
+    assert _reasons(plan) == ["told_needs_message"]
