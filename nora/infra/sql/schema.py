@@ -801,6 +801,9 @@ ROLLUP_OUTING = sa.Table(
     sa.Column("place_label", sa.Text, nullable=True),
     sa.Column("saved_place_id", sa.Text, nullable=True),
     sa.Column("open", sa.Integer, nullable=False, server_default=sa.text("0")),
+    # 0118_place_area: the areas its centre lies in, never at a saved place (R-35).
+    sa.Column("district", sa.Text, nullable=True),
+    sa.Column("city", sa.Text, nullable=True),
 )
 
 #: Daybook: one person's local (Hong Kong) day in one unit. Counts of
@@ -932,6 +935,9 @@ GEOCODE_CACHE = sa.Table(
         "resolved_at", sa.DateTime(timezone=True), nullable=False,
         server_default=sa.text("now()"),
     ),
+    # 0118_place_area: the areas from the same geocode's address components.
+    sa.Column("district", sa.Text, nullable=True),
+    sa.Column("city", sa.Text, nullable=True),
 )
 
 
@@ -1703,6 +1709,9 @@ EVENTS = sa.Table(
     ),
     sa.Column("venue_maps_url", sa.Text, nullable=True),
     sa.Column("venue_resolved_at", sa.DateTime(timezone=True), nullable=True),
+    # 0118_place_area: the areas the venue lies in (`nora.domain.ports.PlaceArea`).
+    sa.Column("venue_district", sa.Text, nullable=True),
+    sa.Column("venue_city", sa.Text, nullable=True),
     sa.Column("status", sa.Text, nullable=False),
     sa.Column("reminder_id", sa.Uuid, nullable=True),
     sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
@@ -1800,6 +1809,8 @@ EVENT_REVISION = sa.Table(
         "venue_price_level", sa.Text, nullable=False, server_default=sa.text("''"),
     ),
     sa.Column("venue_maps_url", sa.Text, nullable=True),
+    sa.Column("venue_district", sa.Text, nullable=True),
+    sa.Column("venue_city", sa.Text, nullable=True),
     sa.Column(
         "people", pg.ARRAY(sa.Text), nullable=False, server_default=sa.text("'{}'"),
     ),

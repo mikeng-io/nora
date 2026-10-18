@@ -17,7 +17,10 @@ removing Honcho are not in this step ([00](00-intent.md) «Sequence»).
    and a saved place's existence is itself secret (R-35); geocoder addresses are
    free text; only event venues carry a place id. Step 3 projects venue place
    nodes and no `located_in` edges, so 25 §6a's "near Mong Kok" does not work
-   yet. It is a later step of its own (00 «Sequence» step 3a).
+   yet. It is a later step of its own (00 «Sequence» step 3a), **built
+   2026-10-17**: the areas come from the geocoder's structured address
+   components, stored beside each place (`events.venue_district`/
+   `venue_city`, `rollup_outing.district`/`city`, `geocode_cache`).
 3. **Stays and trips carry no unit or room**, only a subject and a build. Their
    scope is the person: readable only in rooms that list the subject, and only
    where their presence lineage passes (R-31, DEC-222), the check

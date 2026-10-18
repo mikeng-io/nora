@@ -11,11 +11,13 @@ from __future__ import annotations
 
 import logging
 import math
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nora.domain.ports import PlaceArea
 from nora.domain.presence import haversine_distance_m
 from nora.infra.sql.schema import GEOCODE_CACHE
 
@@ -48,14 +50,20 @@ class SqlGeocodeCacheStore:
         return None if row is None else str(row.address)
 
     async def put(
-        self, *, lat_rounded: float, lng_rounded: float, address: str
+        self, *, lat_rounded: float, lng_rounded: float, address: str,
+        area: PlaceArea | None = None,
     ) -> None:
+        area = area or PlaceArea()
         stmt = pg_insert(GEOCODE_CACHE).values(
             lat_rounded=lat_rounded, lng_rounded=lng_rounded, address=address,
+            district=area.district, city=area.city,
         )
         stmt = stmt.on_conflict_do_update(
             index_elements=[GEOCODE_CACHE.c.lat_rounded, GEOCODE_CACHE.c.lng_rounded],
-            set_={"address": stmt.excluded.address, "resolved_at": sa.text("now()")},
+            set_={
+                "address": stmt.excluded.address, "district": stmt.excluded.district,
+                "city": stmt.excluded.city, "resolved_at": sa.text("now()"),
+            },
         )
         try:
             async with self._engine.begin() as conn:
@@ -66,18 +74,64 @@ class SqlGeocodeCacheStore:
             # comes up, never the current answer.
             log.exception("geocode_cache write failed; the address is not cached")
 
+    async def without_area(self, *, limit: int) -> list[tuple[float, float]]:
+        """Cached coordinates whose row names no area (written before 0118),
+        oldest first: `nora memory backfill-places`' work list. Raises on a
+        read failure: a backfill that cannot read must not report «none»."""
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(
+                sa.select(GEOCODE_CACHE.c.lat_rounded, GEOCODE_CACHE.c.lng_rounded)
+                .where(GEOCODE_CACHE.c.district.is_(None), GEOCODE_CACHE.c.city.is_(None))
+                .order_by(GEOCODE_CACHE.c.resolved_at, GEOCODE_CACHE.c.lat_rounded,
+                          GEOCODE_CACHE.c.lng_rounded)
+                .limit(limit)
+            )).all()
+        return [(float(r.lat_rounded), float(r.lng_rounded)) for r in rows]
+
+    async def set_area(self, *, lat_rounded: float, lng_rounded: float, area: PlaceArea) -> bool:
+        """Write `area` onto a row that names none; the address and its
+        `resolved_at` are left as they are. False when the row is gone or
+        already names an area (a concurrent `put`), so a re-run writes
+        nothing twice. Raises on a write failure."""
+        async with self._engine.begin() as conn:
+            result = await conn.execute(
+                sa.update(GEOCODE_CACHE).where(
+                    GEOCODE_CACHE.c.lat_rounded == lat_rounded,
+                    GEOCODE_CACHE.c.lng_rounded == lng_rounded,
+                    GEOCODE_CACHE.c.district.is_(None), GEOCODE_CACHE.c.city.is_(None),
+                ).values(district=area.district, city=area.city)
+            )
+        return bool(result.rowcount)
+
     async def nearest_within(
         self, *, lat: float, lng: float, radius_m: float
     ) -> str | None:
         """The nearest cached address within `radius_m` of `(lat, lng)`, or
-        None — `nora.analytics`'s READ-ONLY label lookup (a derived place's
+        None — `nora.analytics`' READ-ONLY label lookup (a derived place's
         centroid rarely lands on the exact rounded key a `where_is` question
         resolved, so this is a radius search, not `get`'s exact-key lookup)."""
+        rows = await self._near(lat=lat, lng=lng, radius_m=radius_m)
+        return None if not rows else str(rows[0].address)
+
+    async def area_within(
+        self, *, lat: float, lng: float, radius_m: float
+    ) -> PlaceArea | None:
+        """The areas of the nearest cached row within `radius_m` that has
+        any, or None: `nora.analytics.units` places an outing by them."""
+        for row in await self._near(lat=lat, lng=lng, radius_m=radius_m):
+            area = PlaceArea(district=row.district, city=row.city)
+            if area:
+                return area
+        return None
+
+    async def _near(self, *, lat: float, lng: float, radius_m: float) -> list[Any]:
+        """Rows within `radius_m`, nearest first; empty on a read failure."""
         dlat = radius_m / _M_PER_DEG_LAT
         cos_lat = math.cos(math.radians(lat)) or 1e-9
         dlng = radius_m / (_M_PER_DEG_LAT * cos_lat)
         stmt = sa.select(
             GEOCODE_CACHE.c.lat_rounded, GEOCODE_CACHE.c.lng_rounded, GEOCODE_CACHE.c.address,
+            GEOCODE_CACHE.c.district, GEOCODE_CACHE.c.city,
         ).where(
             GEOCODE_CACHE.c.lat_rounded.between(lat - dlat, lat + dlat),
             GEOCODE_CACHE.c.lng_rounded.between(lng - dlng, lng + dlng),
@@ -87,10 +141,9 @@ class SqlGeocodeCacheStore:
                 rows = (await conn.execute(stmt)).all()
         except Exception:
             log.exception("geocode_cache radius read failed; treating as a miss")
-            return None
-        best: tuple[float, str] | None = None
-        for row in rows:
-            dist = haversine_distance_m(lat, lng, row.lat_rounded, row.lng_rounded)
-            if dist <= radius_m and (best is None or dist < best[0]):
-                best = (dist, str(row.address))
-        return None if best is None else best[1]
+            return []
+        near = [
+            (haversine_distance_m(lat, lng, r.lat_rounded, r.lng_rounded), i, r)
+            for i, r in enumerate(rows)
+        ]
+        return [r for d, _, r in sorted(near, key=lambda t: (t[0], t[1])) if d <= radius_m]

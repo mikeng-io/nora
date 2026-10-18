@@ -84,6 +84,8 @@ def _row_to_event(r: Row[Any]) -> Gathering:
             exclude_persons=tuple(r.exclude_persons or ()),
             head_revision_id=r.head_revision_id,
             field_meta=field_meta_from_json(r.field_meta),
+            venue_district=r.venue_district,
+            venue_city=r.venue_city,
         )
     )
 
@@ -113,6 +115,8 @@ def _row_to_revision(r: Row[Any]) -> EventRevision:
         written_by=r.written_by,
         written_at=r.written_at,
         field_meta=field_meta_from_json(r.field_meta),
+        venue_district=r.venue_district,
+        venue_city=r.venue_city,
     )
 
 
@@ -140,6 +144,8 @@ def _event_values(event: Gathering) -> dict[str, Any]:
         "venue_price_level": event.venue_price_level,
         "venue_maps_url": event.venue_maps_url,
         "venue_resolved_at": event.venue_resolved_at,
+        "venue_district": event.venue_district,
+        "venue_city": event.venue_city,
         "status": event.status.value,
         "reminder_id": event.reminder_id,
         "created_at": event.created_at,
@@ -172,6 +178,8 @@ def _revision_values(revision: EventRevision) -> dict[str, Any]:
         "venue_rating": revision.venue_rating,
         "venue_price_level": revision.venue_price_level,
         "venue_maps_url": revision.venue_maps_url,
+        "venue_district": revision.venue_district,
+        "venue_city": revision.venue_city,
         "people": list(revision.people),
         "reasoning": revision.reasoning,
         "confidence": revision.confidence,
@@ -197,6 +205,7 @@ def _revision_of(event: Gathering, *, parent_revision_id: UUID | None) -> EventR
         reasoning=event.reasoning, confidence=event.confidence,
         lineage=event.lineage, as_of=event.as_of, body=None,
         written_by="tag", written_at=event.created_at, field_meta=event.field_meta,
+        venue_district=event.venue_district, venue_city=event.venue_city,
     )
 
 
@@ -269,6 +278,18 @@ class SqlGatheringStore:
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
+        return [_row_to_event(r) for r in rows]
+
+    async def without_venue_area(self, *, limit: int) -> list[Gathering]:
+        """Events whose resolved venue names no area (resolved before 0118),
+        oldest first: `nora memory backfill-places`' work list."""
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(
+                sa.select(EVENTS).where(
+                    EVENTS.c.venue_place_id.isnot(None),
+                    EVENTS.c.venue_district.is_(None), EVENTS.c.venue_city.is_(None),
+                ).order_by(EVENTS.c.created_at, EVENTS.c.id).limit(limit)
+            )).all()
         return [_row_to_event(r) for r in rows]
 
     async def update(

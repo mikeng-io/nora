@@ -193,6 +193,13 @@ index and Honcho's exit are now listed in their order.
    outing places. Nothing holds a place hierarchy today, and saved places
    stay out (R-35). Until this lands, "near Mong Kok" reaches only what names
    Mong Kok.
+   **Built 2026-10-17** (migration `0118_place_area`, DEC-313 amended): an
+   event's venue takes its district and city from the Geocoding API by the
+   venue's place id; an outing at no saved place takes them from the
+   geocode cache near its centre (the cache its labels come from, never a
+   new geocoder call); `project()` writes area hubs and the `located_in`
+   chain, and a place the question names anchors the walk inward (25 §6a).
+   `nora memory backfill-places` places what was resolved before it.
 3b. **Pre-fetch** ([25](25-memory-graph.md) §5; operator, 2026-10-16), after
    step 3's acceptance run: code runs the same retrieval from the message's
    own seeds (speaker, room, referenced media and handles, the text) and

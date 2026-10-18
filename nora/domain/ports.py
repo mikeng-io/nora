@@ -1802,6 +1802,31 @@ class ReverseGeocoder(Protocol):
     async def address_for(self, *, lat: float, lng: float) -> str | None: ...
 
 
+@dataclass(frozen=True)
+class PlaceArea:
+    """The areas a place lies in, named by a geocoder's structured address
+    components and joined «中文 / English» like the address: `district` the
+    neighbourhood (旺角 / Mong Kok), `city` the locality or first-level area
+    that holds it (九龍 / Kowloon). Either may be None. Never a street, an
+    address or a coordinate: these are public names, and they become the
+    memory index's place hubs (design/unified-memory/25-memory-graph.md §6a)."""
+
+    district: str | None = None
+    city: str | None = None
+
+    def __bool__(self) -> bool:
+        return bool(self.district or self.city)
+
+
+def join_bilingual(zh: str | None, en: str | None) -> str | None:
+    """«中文 / English» when both are given and differ, else whichever is: the
+    one join every geocoder answer is stored in (an address, a district)."""
+    zh, en = (zh or "").strip() or None, (en or "").strip() or None
+    if zh and en and zh != en:
+        return f"{zh} / {en}"
+    return zh or en
+
+
 @runtime_checkable
 class GeocodeCacheStore(Protocol):
     """The durable half of `CachingBilingualGeocoder`'s cache. NEVER raises — a store failure
@@ -1816,15 +1841,23 @@ class GeocodeCacheStore(Protocol):
 
     Keyed on the SAME rounding `CachingBilingualGeocoder` uses for its
     in-memory tier, so a persisted hit and an in-process hit agree on
-    identity."""
+    identity.
+
+    `area` is the same geocode's district and city (`PlaceArea`), stored
+    beside the address; `area_within` is `nearest_within` for it, read by
+    `nora.analytics` to place an outing (design/unified-memory 00 step 3a)."""
 
     async def get(self, *, lat_rounded: float, lng_rounded: float) -> str | None: ...
     async def put(
-        self, *, lat_rounded: float, lng_rounded: float, address: str
+        self, *, lat_rounded: float, lng_rounded: float, address: str,
+        area: PlaceArea | None = None,
     ) -> None: ...
     async def nearest_within(
         self, *, lat: float, lng: float, radius_m: float
     ) -> str | None: ...
+    async def area_within(
+        self, *, lat: float, lng: float, radius_m: float
+    ) -> PlaceArea | None: ...
 
 
 @runtime_checkable
