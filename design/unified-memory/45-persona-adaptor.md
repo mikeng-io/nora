@@ -260,7 +260,7 @@ repaired for the model (today's `check_revision` pattern). A session that
 settles nothing holds its batch, and the third time for the same batch it is
 given up (DEC-280).
 
-**Built (2026-10-17, step 6), and what it settled:** `PersonaPersonAdaptor`
+**Built (2026-10-17, step 6, DEC-318), and what it settled:** `PersonaPersonAdaptor`
 (`nora/language/persona.py`, objective `persona-person`) is a new adaptor
 beside `character-person`, not a rename: Character keeps rendering until the
 switch, so both run in shadow. It is off unless `[persona] enabled`. Its
