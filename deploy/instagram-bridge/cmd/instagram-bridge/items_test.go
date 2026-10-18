@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -31,7 +32,13 @@ type itemsBody struct {
 		AltText       string  `json:"alt_text"`
 		Location      *string `json:"location"`
 		LocationKnown *bool   `json:"location_known"`
-		Items         []struct {
+		Counts        *struct {
+			Likes       *int64 `json:"likes"`
+			Comments    *int64 `json:"comments"`
+			Reposts     *int64 `json:"reposts"`
+			LikesHidden *bool  `json:"likes_hidden"`
+		} `json:"counts"`
+		Items []struct {
 			Kind            string   `json:"kind"`
 			URL             string   `json:"url"`
 			Width           int      `json:"width"`
@@ -556,5 +563,94 @@ func TestItemsAMalformedLocationIsNoLocationNotARefusedPage(t *testing.T) {
 	body := decodeItems(t, getItems(t, newTestBridge(t, f), fakeig.TimelineOwnerIGID, ""))
 	if got := body.Items[2]; got.LocationKnown == nil || !*got.LocationKnown || *got.Location != "" {
 		t.Errorf("a null location = %+v, want no tag, known", got)
+	}
+}
+
+// countsOf renders one item's counts for a comparison, "nil" for each unknown.
+func countsOf(t *testing.T, body itemsBody, i int) string {
+	t.Helper()
+	c := body.Items[i].Counts
+	if c == nil {
+		t.Fatalf("item %d carries no counts object", i)
+	}
+	show := func(n *int64) string {
+		if n == nil {
+			return "nil"
+		}
+		return strconv.FormatInt(*n, 10)
+	}
+	hidden := "nil"
+	if c.LikesHidden != nil {
+		hidden = strconv.FormatBool(*c.LikesHidden)
+	}
+	return show(c.Likes) + "/" + show(c.Comments) + "/" + show(c.Reposts) + "/" + hidden
+}
+
+// Each item carries its likes, comments and reposts and whether its author
+// hid the likes, as the node has them: a null `media_repost_count` and an
+// absent one are both unknown, never 0 (22 §5).
+func TestItemsCarryEachItemsCounts(t *testing.T) {
+	f := &fakeIG{TimelineBody: []byte(fakeig.TimelineFirstPageJSON)}
+	body := decodeItems(t, getItems(t, newTestBridge(t, f), fakeig.TimelineOwnerIGID, ""))
+	for i, want := range []string{"31/4/nil/false", "12/0/2/false", "9/1/nil/true"} {
+		if got := countsOf(t, body, i); got != want {
+			t.Errorf("item %d counts = %s, want %s", i, got, want)
+		}
+	}
+}
+
+// A count of the wrong shape is unknown on its item, never 0 and never a
+// refused page; a flag that is not a boolean is unknown too.
+func TestItemsACountOfTheWrongShapeIsUnknownNotARefusedPage(t *testing.T) {
+	const good = `"like_count": 31, "comment_count": 4,`
+	if !strings.Contains(fakeig.TimelineFirstPageJSON, good) {
+		t.Fatal("the fixture no longer carries the reel's counts this test rewrites")
+	}
+	for name, bad := range map[string]string{
+		"a string":   `"like_count": "31", "comment_count": 4,`,
+		"negative":   `"like_count": -1, "comment_count": 4,`,
+		"a fraction": `"like_count": 3.5, "comment_count": 4,`,
+		"an object":  `"like_count": {"count": 31}, "comment_count": 4,`,
+		"null":       `"like_count": null, "comment_count": 4,`,
+		"absent":     `"comment_count": 4,`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := &fakeIG{TimelineBody: []byte(strings.Replace(fakeig.TimelineFirstPageJSON, good, bad, 1))}
+			body := decodeItems(t, getItems(t, newTestBridge(t, f), fakeig.TimelineOwnerIGID, ""))
+			if len(body.Items) != 3 {
+				t.Fatalf("got %d items, want the page's 3", len(body.Items))
+			}
+			if got := countsOf(t, body, 0); got != "nil/4/nil/false" {
+				t.Errorf("counts = %s, want the likes unknown and the rest kept", got)
+			}
+		})
+	}
+	f := &fakeIG{TimelineBody: []byte(strings.Replace(fakeig.TimelineFirstPageJSON,
+		`"like_and_view_counts_disabled": false,
+      "video_duration"`, `"like_and_view_counts_disabled": "no",
+      "video_duration"`, 1))}
+	body := decodeItems(t, getItems(t, newTestBridge(t, f), fakeig.TimelineOwnerIGID, ""))
+	if got := countsOf(t, body, 0); got != "31/4/nil/nil" {
+		t.Errorf("counts = %s, want the hidden flag unknown", got)
+	}
+}
+
+// Who liked an item, Nora's own like and the Facebook cross-post counts are
+// never decoded, so none of them leaves the bridge (22 §5, «counts only»).
+func TestItemsNeverCarryWhoLikedNorasLikeOrFacebookCounts(t *testing.T) {
+	const at = `"like_count": 31, "comment_count": 4,`
+	extra := at + ` "top_likers": ["synthliker_one"], "facepile_top_likers": [{"username": "synthliker_two"}],` +
+		` "has_liked": true, "fb_like_count": 987654, "fb_comment_count": 876543,`
+	f := &fakeIG{TimelineBody: []byte(strings.Replace(fakeig.TimelineFirstPageJSON, at, extra, 1))}
+	rec := getItems(t, newTestBridge(t, f), fakeig.TimelineOwnerIGID, "")
+	decodeItems(t, rec)
+	raw := rec.Body.String()
+	for _, leak := range []string{"synthliker_one", "synthliker_two", "has_liked", "987654", "876543", "fb_"} {
+		if strings.Contains(raw, leak) {
+			t.Errorf("the items body carries %q", leak)
+		}
+	}
+	if !strings.Contains(raw, `"likes":31`) {
+		t.Error("positive control: the reel's own like count is in the body")
 	}
 }

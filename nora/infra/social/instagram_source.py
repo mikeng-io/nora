@@ -13,7 +13,10 @@ Four reads, every one a GET (nothing here can mark a story seen):
 * `list_items` → `GET /accounts/{igid}/items?after=&username=`: posts and
   reels, newest first, `collab` marking a post another account owns. Each item
   carries its own media (`items`, the shape `/posts/{shortcode}` answers) and
-  alt text, so a listed item is recorded as listed.
+  alt text, so a listed item is recorded as listed, and its `counts` (likes,
+  comments, reposts, `likes_hidden`): each one the bridge did not send, or
+  sent as anything but a non-negative integer, is unknown, and a bridge too
+  old to send `counts` lists every item's as unknown.
 * `read_item` → `GET /posts/{shortcode}`: the media of one post by its
   shortcode; the poller does not use it for listed items.
 
@@ -54,6 +57,7 @@ from ...domain.social_stream import (
     Cap,
     Failed,
     FailureKind,
+    ItemCounts,
     ItemRef,
     MediaItem,
     Page,
@@ -241,7 +245,7 @@ class InstagramSocialSource:
             network=self.network, item_id=str(pk), account=account, kind=kind,
             taken_at=taken, expires_at=None, caption=caption or None,
             alt_text=_text(row.get("alt_text")), media=media, collab=collab,
-            **_place(row),
+            counts=_counts(row.get("counts")), **_place(row),
         )
 
     async def _get(self, path: str) -> tuple[int, Any]:
@@ -319,6 +323,20 @@ def _place(row: dict[str, Any]) -> dict[str, Any]:
     if row.get("location_known") is not True:
         return {"location": None, "location_known": False}
     return {"location": published_location(row.get("location")), "location_known": True}
+
+
+def _counts(raw: Any) -> ItemCounts:
+    """A listed item's `counts` → its counts, each one unknown unless the
+    bridge sent it as a non-negative integer (`likes_hidden` as a boolean).
+    Hidden likes are None whatever was sent (`ItemCounts`)."""
+    if not isinstance(raw, dict):
+        return ItemCounts()
+    hidden = raw.get("likes_hidden")
+    return ItemCounts(
+        likes=_count(raw.get("likes")), comments=_count(raw.get("comments")),
+        reposts=_count(raw.get("reposts")),
+        likes_hidden=hidden if isinstance(hidden, bool) else None,
+    )
 
 
 def _frame(row: Any) -> StoryFrame | None:

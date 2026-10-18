@@ -186,8 +186,9 @@ ItemKind = Literal["story_frame", "post", "reel"]
 
 #: A `social_poll` row's stage: the probe, or one of the reads. `backfill` is
 #: a page of a member's history (§7): their first list read, and each page
-#: paged back from it.
-PollStage = Literal["probe", "story", "items", "item", "backfill", "relist"]
+#: paged back from it. `relist` is a page of the once-only re-walk, and
+#: `recount` a re-read of a member's first page for its counts (§5).
+PollStage = Literal["probe", "story", "items", "item", "backfill", "relist", "recount"]
 POLL_STAGES: tuple[str, ...] = get_args(PollStage)
 
 #: A `social_poll` row's outcome. A probe's is `Due.outcome`; a read is
@@ -262,6 +263,66 @@ class Member:
 
 
 @dataclass(frozen=True)
+class ItemCounts:
+    """What a post's or reel's audience did, as the author's grid shows it
+    (design/cognition-loop/22-social-stream.md §5, `social_item_count`).
+
+    Each count is None when the read did not carry it (an absent key, an
+    older bridge, a null field): unknown, never 0. `likes_hidden` is the
+    author's switch, None when unknown; while it is True, `likes` is None
+    whatever the platform sent, because the author hid it."""
+
+    likes: int | None = None
+    comments: int | None = None
+    reposts: int | None = None
+    likes_hidden: bool | None = None
+
+    def __post_init__(self) -> None:
+        if self.likes_hidden and self.likes is not None:
+            object.__setattr__(self, "likes", None)
+
+    @property
+    def known(self) -> bool:
+        """Whether the read carried anything to record: a count, or that the
+        author hid the likes. A read with nothing known writes no row."""
+        return self.likes_hidden is True or any(
+            n is not None for n in (self.likes, self.comments, self.reposts)
+        )
+
+
+@dataclass(frozen=True)
+class RecordedCounts:
+    """An item's latest `social_item_count` row as a reader is shown it, with
+    when it was read (`recorded_at`)."""
+
+    likes: int | None
+    comments: int | None
+    reposts: int | None
+    likes_hidden: bool
+    read_at: datetime
+
+
+def counts_changed(read: ItemCounts, latest: RecordedCounts | None) -> bool:
+    """Whether `read` is a new `social_item_count` row after `latest`: it
+    carries something, and a value it carries differs from the latest row's.
+    A value it does not carry is never a change, so a count that falls back
+    to unknown writes nothing on its own."""
+    if not read.known:
+        return False
+    if latest is None:
+        return True
+    if read.likes_hidden is not None and read.likes_hidden != latest.likes_hidden:
+        return True
+    return any(
+        now is not None and now != before
+        for now, before in (
+            (read.likes, latest.likes), (read.comments, latest.comments),
+            (read.reposts, latest.reposts),
+        )
+    )
+
+
+@dataclass(frozen=True)
 class SocialItem:
     """One recorded unit of a member's social output. No person: which member
     an account belongs to is the caller's. `expires_at` is set for story
@@ -285,6 +346,9 @@ class SocialItem:
     #: bridge too old to say): `location` is then None without meaning "no
     #: tag", and no place change is recorded from it.
     location_known: bool = True
+    #: What its audience did, as the read carried it; all unknown for a story
+    #: frame and a post read alone, which carry no count.
+    counts: ItemCounts = ItemCounts()
 
 
 def frame_item(*, network: str, account: str, frame: StoryFrame) -> SocialItem:
@@ -537,6 +601,8 @@ class RecordedItem:
     caption: str | None
     location: str | None
     perception: tuple[str, ...] = ()
+    #: Its latest counts, None while it was never counted.
+    counts: RecordedCounts | None = None
 
 
 # -- what Character reads (§6) ---------------------------------------------------

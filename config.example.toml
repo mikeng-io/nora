@@ -819,6 +819,7 @@ enabled = false
 # backfill_max_items = 50         # ...or this many back-filled items, whichever comes first
 # backfill_pages_per_tick = 2     # back-fill pages a tick, one per member, from what probes leave; 0 is off
 # relist_pages_per_tick = 2       # once-only re-walk pages a tick that re-check tagged places; 0 is off
+# recount_interval_hours = 24.0   # re-read a member's first page for its counts this long after their last list read; 0 is off
 
 [social.linkedin]
 # linkedin_read and linkedin_search (DEC-201): read-only LinkedIn through the same

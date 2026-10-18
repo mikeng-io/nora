@@ -264,6 +264,7 @@ ADD CONSTRAINT room_lexeme_pkey PRIMARY KEY (scope_id, canonical_form, sense);
 ADD CONSTRAINT room_portrait_pkey PRIMARY KEY (scope_id);
 ADD CONSTRAINT row_history_pkey PRIMARY KEY (id);
 ADD CONSTRAINT self_tension_pkey PRIMARY KEY (id);
+ADD CONSTRAINT social_item_count_pkey PRIMARY KEY (id);
 ADD CONSTRAINT social_item_pkey PRIMARY KEY (id);
 ADD CONSTRAINT social_item_state_pkey PRIMARY KEY (id);
 ADD CONSTRAINT social_perception_pkey PRIMARY KEY (id);
@@ -406,6 +407,7 @@ ALTER TABLE ONLY public.room_portrait
 ALTER TABLE ONLY public.row_history
 ALTER TABLE ONLY public.self_tension
 ALTER TABLE ONLY public.social_item
+ALTER TABLE ONLY public.social_item_count
 ALTER TABLE ONLY public.social_item_state
 ALTER TABLE ONLY public.social_perception
 ALTER TABLE ONLY public.social_poll
@@ -628,6 +630,7 @@ CONSTRAINT ck_self_tension_names_its_writer CHECK ((length(btrim(established_by)
 CONSTRAINT ck_self_tension_quotes_the_law CHECK ((length(btrim(doctrine_text)) > 0)),
 CONSTRAINT ck_self_tension_says_what_it_would CHECK ((length(btrim(would_have_said)) > 0)),
 CONSTRAINT ck_self_tension_source CHECK ((source = 'lesson'::text))
+CONSTRAINT ck_social_item_count_hidden CHECK (((likes IS NULL) OR (NOT likes_hidden)))
 CONSTRAINT ck_social_item_has_an_id CHECK ((length(btrim(item_id)) > 0)),
 CONSTRAINT ck_social_item_kind CHECK ((kind = ANY (ARRAY['story_frame'::text, 'post'::text, 'reel'::text, 'thread_post'::text]))),
 CONSTRAINT ck_social_item_origin CHECK ((origin = ANY (ARRAY['poll'::text, 'backfill'::text]))),
@@ -638,7 +641,7 @@ CONSTRAINT ck_social_perception_calls CHECK ((calls >= 0)),
 CONSTRAINT ck_social_perception_origin CHECK ((origin = ANY (ARRAY['poll'::text, 'backfill'::text]))),
 CONSTRAINT ck_social_perception_outcome CHECK ((outcome = ANY (ARRAY['ok'::text, 'nothing_found'::text, 'unavailable'::text, 'failed'::text, 'capped'::text])))
 CONSTRAINT ck_social_poll_outcome CHECK ((outcome = ANY (ARRAY['unchanged'::text, 'story_due'::text, 'items_due'::text, 'partial'::text, 'count_fell'::text, 'read_ok'::text, 'halted'::text, 'backed_off'::text, 'error'::text, 'abandoned'::text, 'unavailable'::text]))),
-CONSTRAINT ck_social_poll_stage CHECK ((stage = ANY (ARRAY['probe'::text, 'story'::text, 'items'::text, 'item'::text, 'backfill'::text, 'relist'::text])))
+CONSTRAINT ck_social_poll_stage CHECK ((stage = ANY (ARRAY['probe'::text, 'story'::text, 'items'::text, 'item'::text, 'backfill'::text, 'relist'::text, 'recount'::text])))
 CONSTRAINT ck_source_health_event CHECK ((event = ANY (ARRAY['poll'::text, 'transition'::text])))
 CONSTRAINT ck_stimulus_kind CHECK ((kind = ANY (ARRAY['message'::text, 'social'::text, 'play'::text, 'rollup'::text, 'time'::text, 'self'::text])))
 CONSTRAINT ck_version_announcements_state CHECK ((state = ANY (ARRAY['announcing'::text, 'done'::text, 'failed'::text])))
@@ -828,6 +831,7 @@ CREATE INDEX idx_rollup_tie_key ON public.rollup_tie USING btree (build_id, unit
 CREATE INDEX idx_row_history_key ON public.row_history USING btree (table_name, row_key, recorded_at);
 CREATE INDEX idx_row_history_table_recorded ON public.row_history USING btree (table_name, recorded_at);
 CREATE INDEX idx_self_tension_unit ON public.self_tension USING btree (unit, written_at);
+CREATE INDEX idx_social_item_count_item ON public.social_item_count USING btree (network, item_id, recorded_at);
 CREATE INDEX idx_social_item_person ON public.social_item USING btree (network, person, taken_at);
 CREATE INDEX idx_social_item_read ON public.social_item USING btree (read_id);
 CREATE INDEX idx_social_item_state_item ON public.social_item_state USING btree (network, item_id, recorded_at);
@@ -934,6 +938,7 @@ CREATE TABLE public.room_portrait (
 CREATE TABLE public.row_history (
 CREATE TABLE public.self_tension (
 CREATE TABLE public.social_item (
+CREATE TABLE public.social_item_count (
 CREATE TABLE public.social_item_state (
 CREATE TABLE public.social_perception (
 CREATE TABLE public.social_poll (
@@ -1405,6 +1410,7 @@ collab boolean DEFAULT false NOT NULL,
 colocation_ms bigint NOT NULL,
 colocation_ms bigint NOT NULL,
 comment_id text,
+comments bigint,
 completed_at timestamp with time zone,
 confidence double precision NOT NULL,
 confidence text,
@@ -1681,6 +1687,7 @@ id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
+id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
@@ -1713,6 +1720,7 @@ is_nora integer DEFAULT 0 NOT NULL,
 iso_week text NOT NULL,
 issued_at timestamp with time zone NOT NULL,
 item text CONSTRAINT signal_item_not_null NOT NULL,
+item_id text NOT NULL,
 item_id text NOT NULL,
 item_id text NOT NULL,
 item_id text NOT NULL,
@@ -1773,6 +1781,8 @@ latency_ms integer,
 latest_reel_media bigint,
 lesson_id uuid NOT NULL,
 lexeme_basis text[] DEFAULT '{}'::text[] NOT NULL,
+likes bigint,
+likes_hidden boolean NOT NULL,
 line_id uuid,
 lineage jsonb DEFAULT '[]'::jsonb NOT NULL,
 lineage jsonb DEFAULT '[]'::jsonb NOT NULL,
@@ -1863,6 +1873,7 @@ model_route text,
 name text NOT NULL,
 named_persons text[] DEFAULT '{}'::text[] NOT NULL,
 narrative text NOT NULL,
+network text NOT NULL,
 network text NOT NULL,
 network text NOT NULL,
 network text NOT NULL,
@@ -2018,6 +2029,7 @@ reactions integer NOT NULL,
 reactions_ab integer NOT NULL,
 reactions_ba integer NOT NULL,
 read_id uuid,
+read_id uuid,
 reading text NOT NULL,
 reading_digest text NOT NULL,
 reason text DEFAULT ''::text NOT NULL,
@@ -2090,6 +2102,7 @@ recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone NOT NULL,
 recurrence text DEFAULT 'none'::text NOT NULL,
 recurrence_count integer,
@@ -2110,6 +2123,7 @@ replies_ab integer NOT NULL,
 replies_ba integer NOT NULL,
 reply_comment_id text,
 reply_text text,
+reposts bigint,
 request jsonb DEFAULT '{}'::jsonb NOT NULL,
 requester_person_id text NOT NULL,
 requester_person_id text NOT NULL,

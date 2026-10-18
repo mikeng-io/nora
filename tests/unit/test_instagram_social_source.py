@@ -24,6 +24,7 @@ from nora.domain.social_stream import (
     Cap,
     Failed,
     FailureKind,
+    ItemCounts,
     ItemRef,
     Page,
     Probe,
@@ -463,3 +464,32 @@ async def test_a_place_the_bridge_could_not_read_is_unknown_not_no_tag(bridge) -
     assert [(i.location, i.location_known) for i in got.items] == [
         (None, True), ("Placeholder Square", True),
     ]
+
+
+async def test_a_listed_item_carries_its_counts_and_hidden_likes_are_none(bridge) -> None:
+    """The bridge's own fixture: the reel carries every count; the carousel's
+    author hid its likes, so the like count the bridge passed on is dropped,
+    and its reposts were not sent, so they are unknown, not 0."""
+    _, source = bridge
+    got = await source.list_items(account=_ACCOUNT, after=None)
+    assert isinstance(got, Page)
+    reel, carousel = got.items
+    assert reel.counts == ItemCounts(likes=31, comments=4, reposts=2, likes_hidden=False)
+    assert fixture("items_ok.json")["body"]["items"][1]["counts"]["likes"] == 12
+    assert carousel.counts == ItemCounts(likes=None, comments=0, reposts=None, likes_hidden=True)
+
+
+async def test_counts_a_bridge_did_not_send_or_sent_wrong_are_unknown(bridge) -> None:
+    """An older bridge sends no `counts`; a count that is not a non-negative
+    integer, and a switch that is not a boolean, are unknown, never 0."""
+    fake, source = bridge
+    fx = copy.deepcopy(fixture("items_ok.json"))
+    del fx["body"]["items"][0]["counts"]
+    fx["body"]["items"][1]["counts"] = {
+        "likes": "12", "comments": -1, "reposts": True, "likes_hidden": "yes",
+    }
+    fake.answers["items"] = fx
+    got = await source.list_items(account=_ACCOUNT, after=None)
+    assert isinstance(got, Page)
+    assert [i.counts for i in got.items] == [ItemCounts(), ItemCounts()]
+    assert not any(i.counts.known for i in got.items)

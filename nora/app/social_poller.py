@@ -61,6 +61,17 @@ page reaching past their oldest recorded item, or after `relist_max_pages`
 pages. Where each member stands is read off their `relist` rows
 (`SqlSocialStreamStore.relists`), so a restart reads no page twice.
 
+**A post's or reel's counts** (§5). Every list page (a list read, a
+back-fill page, a re-walk page) appends each listed item's likes, comments
+and reposts where they differ from its latest row
+(`SqlSocialStreamStore.record_counts`), a newly recorded item its first row,
+with no call of its own; a read that carries none writes none. Because counts
+move for days and nothing else re-reads an old page, a member whose list was
+last read `recount_interval_hours` ago (any stage) has their first page read
+again (`recount` rows), after the back-fill and the re-walk, on their budget
+rule, one page a member a tick, recording no new item, only counts and
+places. An item off the first page keeps its last counted value.
+
 **What stops it** (§4, keyed on `Failed.kind`): `halt` stops every call for
 the login until `SocialSource.healthy` says the session can read, and is
 never retried on the tick, and a cleared halt resumes on the back-off
@@ -276,7 +287,9 @@ class SocialPoller:
                 return
         if await self._backfill(roster) is not None:
             return
-        await self._relist(roster)
+        if await self._relist(roster) is not None:
+            return
+        await self._recount(roster)
 
     # -- the login -------------------------------------------------------------
 
@@ -535,6 +548,8 @@ class SocialPoller:
             await self._insert(member, item, self._clock(), origin=origin, read_id=read_id)
             self._backfill_item(origin, "recorded")
             count += 1
+        # After the inserts, so a new item's first counts are written with it.
+        await self._follow_counts(page.items, read_id=read_id)
         return count
 
     def _onward(self, page: Page, *, backfilled: int, paged: bool) -> str | None:
@@ -635,6 +650,7 @@ class SocialPoller:
         if at.cursor is None:
             recorded = 0
             await self._follow_places(page.items)
+            await self._follow_counts(page.items, read_id=read_id)
         else:
             recorded = await self._record_page(
                 member, page, origin="backfill", read_id=read_id, backfilled=at.items,
@@ -676,19 +692,35 @@ class SocialPoller:
                 network=self._network, item_id=item.item_id, place=item.location,
             )
 
-    async def _relist(self, roster: Sequence[Member]) -> None:
+    async def _follow_counts(self, items: Sequence[SocialItem], *, read_id: str) -> None:
+        """Append the counts one list page carries, for each recorded item
+        whose counts moved since its latest row (§5): no upstream call."""
+        written = await self._store.record_counts(
+            network=self._network, items=items, read_id=read_id,
+        )
+        if written:
+            self._metrics.inc(
+                "nora_social_counts_recorded_total", written, network=self._network,
+            )
+
+    def _stopped(self) -> bool:
+        """Whether the login is halted or backed off now."""
+        backed_off = self._back_off_until is not None and self._clock() < self._back_off_until
+        return bool(self._halted) or backed_off
+
+    async def _relist(self, roster: Sequence[Member]) -> SkipReason | None:
         """One re-walk page for each member whose back-fill is done and whose
         re-walk is not, least recently paged first, up to
         `relist_pages_per_tick` pages, after the back-fill and on its budget
-        rule: the lowest priority of the tick."""
+        rule. A halt or back-off ends it, as it ends the tick, and it answers
+        why."""
         cap = self._settings.relist_pages_per_tick
         if cap <= 0 or Cap.LIST_ITEMS not in self._source.capabilities:
-            return
-        backed_off = self._back_off_until is not None and self._clock() < self._back_off_until
-        if self._halted or backed_off:
+            return None
+        if self._stopped():
             # Its caller stops on the back-fill's halt or back-off; this holds
             # for any other path that leaves the login stopped.
-            return
+            return None
         standing = await self._store.backfills(network=self._network)
         walks = await self._store.relists(network=self._network)
         waiting = sorted(
@@ -702,9 +734,9 @@ class SocialPoller:
         reserve = len(roster) * (self._source.probe_cost + 1)
         for member in waiting[:cap]:
             if not self._may_read(Cap.LIST_ITEMS, "items", self._clock()):
-                return
+                return None
             if not self._afford(1 + reserve):
-                return
+                return None
             try:
                 stop = await self._relist_page(member, walks[member.person])
             except Exception:
@@ -713,7 +745,8 @@ class SocialPoller:
                 continue
             if stop is not None:
                 self._skip(stop)
-                return
+                return stop
+        return None
 
     async def _relist_page(self, member: Member, at: Relist) -> SkipReason | None:
         self._listed.add(member.person)
@@ -727,14 +760,69 @@ class SocialPoller:
                 await self._record_failure(member, "relist", "abandoned", 0)
             return stop
         await self._recovered("items")
+        read_id = str(uuid.uuid4())
         await self._follow_places(page.items)
+        await self._follow_counts(page.items, read_id=read_id)
         past = at.oldest is not None and any(i.taken_at < at.oldest for i in page.items)
         onward = (
             None if page.next_cursor is None or past
             or at.pages + 1 >= relist_max_pages(self._settings.backfill_max_items)
             else page.next_cursor
         )
-        await self._record(member, "relist", "read_ok", ms, cursor=onward)
+        await self._record(member, "relist", "read_ok", ms, cursor=onward, read_id=read_id)
+        return None
+
+    # -- the recount -------------------------------------------------------------
+
+    async def _recount(self, roster: Sequence[Member]) -> None:
+        """Each member whose list was last read, at any stage, at least
+        `recount_interval_hours` ago gets their first page read again, least
+        recently read first, one page a member a tick, after the back-fill
+        and the re-walk and on their budget rule (§5). Never on a tick the
+        login stopped on."""
+        hours = self._settings.recount_interval_hours
+        if hours <= 0 or Cap.LIST_ITEMS not in self._source.capabilities or self._stopped():
+            return
+        now = self._clock()
+        last = await self._store.last_list_reads(network=self._network)
+        waiting = sorted(
+            (m for m in roster
+             if (at := last.get(m.person)) is not None
+             and now - at >= timedelta(hours=hours) and m.person not in self._listed),
+            key=lambda m: (last[m.person], m.person),
+        )
+        # ponytail: no per-tick page cap of its own; the hour's budget and its
+        # reserve bound it, and a member's own list reads move their clock.
+        reserve = len(roster) * (self._source.probe_cost + 1)
+        for member in waiting:
+            if not self._may_read(Cap.LIST_ITEMS, "items", self._clock()):
+                return
+            if not self._afford(1 + reserve):
+                return
+            try:
+                stop = await self._recount_page(member)
+            except Exception:
+                log.exception("social recount of one member failed; the tick continues")
+                self._metrics.inc("nora_errors_total", stage="social_poller")
+                continue
+            if stop is not None:
+                self._skip(stop)
+                return
+
+    async def _recount_page(self, member: Member) -> SkipReason | None:
+        """A member's first page for its counts and places: no item is
+        recorded from it, since one new on it is the poll's, as news."""
+        self._listed.add(member.person)
+        page, ms = await self._call(
+            "recount", 1, lambda: self._source.list_items(account=member.account, after=None),
+        )
+        if isinstance(page, Failed):
+            return await self._failed(member, "recount", page, ms)
+        await self._recovered("items")
+        read_id = str(uuid.uuid4())
+        await self._follow_places(page.items)
+        await self._follow_counts(page.items, read_id=read_id)
+        await self._record(member, "recount", "read_ok", ms, read_id=read_id)
         return None
 
     async def _abandon(self, member: Member) -> None:

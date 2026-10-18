@@ -79,7 +79,7 @@
  {
   "name": "6 render: one item's readings are not bounded",
   "file": "nora/agent/social_read.py",
-  "old": "        readings, more_seen = _fit(\n            readings, SOCIAL_ITEM_CHARS - len(caption) - len(location),\n        )\n",
+  "old": "        readings, more_seen = _fit(\n            readings, SOCIAL_ITEM_CHARS - len(caption) - len(location) - len(counts),\n        )\n",
   "new": "        more_seen = 0\n",
   "target": "tests/infra/test_social_read.py::test_a_long_carousel_is_cut_to_the_item_bound_and_says_so"
  },

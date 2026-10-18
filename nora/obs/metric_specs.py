@@ -2078,6 +2078,14 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         + " / ".join(BACKFILL_ENDS) + ").",
         ("network", "reason"),
     ),
+    # A post's or reel's counts (22 §5): rows appended where they moved.
+    _CounterSpec(
+        "nora_social_counts_recorded_total",
+        "social_item_count rows appended, by network: one per listed item whose "
+        "likes, comments, reposts or hidden-likes switch differ from its latest "
+        "row, on any list, back-fill, re-walk or recount page.",
+        ("network",),
+    ),
     _CounterSpec(
         "nora_social_custody_total",
         "Media items of newly recorded social items, by network and what became "

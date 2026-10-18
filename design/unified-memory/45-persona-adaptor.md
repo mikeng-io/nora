@@ -200,6 +200,7 @@ dispute, or a told line about them by someone else.
 | **their response episodes** (how they answered Nora) | no | yes ([50](50-learning-from-acts.md)), under the same rule |
 | **their Rollup aggregates** (rhythm, ties) | no | yes, as evidence for induction |
 | open disputes and `remember` items about them | no | yes |
+| **their social items** (posts, reels and story frames: what each is, when posted, its caption and media readings, and a post's or reel's counts, [cognition-loop/22](../cognition-loop/22-social-stream.md) §5) | person Character only, at most 6 a wake (cognition-loop/22 §6) | yes, through the readable social store (opt-out and gone or hidden enforced), cited `social:<network>:<item id>`; an item has no room, so it counts as evidence in a unit that lists its author; never its place (R-31: the account renders in rooms whose `location` flags differ). The social input is added once step 6's adaptor lands |
 | the unit's room cultures | yes | yes |
 
 The mentions input is the one that matters most for Honcho parity (§6): today
