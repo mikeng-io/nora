@@ -305,7 +305,8 @@ const synthStaleQuery = `{"errors":[{"message":"PersistedQueryNotFound","code":1
 
 // synthTimelineJSON is one `PolarisProfilePostsTabContentQuery_connection`
 // page for the synthetic account: a reel and a carousel post, more after it
-// when `more` is set.
+// when `more` is set. The reel carries every count; the carousel's author hid
+// its likes, and it carries no `media_repost_count`.
 func synthTimelineJSON(more bool) string {
 	pageInfo := `{"end_cursor": null, "has_next_page": false}`
 	if more {
@@ -314,10 +315,12 @@ func synthTimelineJSON(more bool) string {
 	return `{"data":{"xdt_api__v1__feed__user_timeline_graphql_connection":{"edges":[
   {"node": {"code": "SynthReel01", "pk": "2001", "id": "2001_` + synthIGID + `", "user": {"pk": "` + synthIGID + `"}, "taken_at": 1700000300,
     "caption": {"text": "synthetic reel caption"}, "media_type": 2, "product_type": "clips",
+    "like_count": 31, "comment_count": 4, "media_repost_count": 2, "like_and_view_counts_disabled": false,
     "video_duration": 7.5, "video_versions": [{"width": 720, "height": 1280, "url": "https://instagram.fxxx1-1.fbcdn.net/v/t50/synthetic-r.mp4"}],
     "image_versions2": {"candidates": [{"width": 720, "height": 1280, "url": "https://scontent.cdninstagram.com/v/t51/synthetic-r.jpg"}]}}},
   {"node": {"code": "SynthPost02", "pk": "2002", "id": "2002_` + synthIGID + `", "user": {"pk": "` + synthIGID + `"}, "taken_at": 1700000200,
     "caption": null, "media_type": 8, "product_type": "carousel_container", "carousel_media_count": 3,
+    "like_count": 12, "comment_count": 0, "like_and_view_counts_disabled": true,
     "accessibility_caption": "a photo of a plate",
     "location": {"pk": "3002", "name": "Placeholder Square", "lat": 0.0, "lng": 0.0},
     "carousel_media": [

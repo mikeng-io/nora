@@ -37,6 +37,7 @@ from nora.config import SocialPollConfig
 from nora.domain.social_stream import (
     Failed,
     FailureKind,
+    ItemCounts,
     MediaItem,
     Page,
     Probe,
@@ -47,7 +48,12 @@ from nora.domain.social_stream import (
 from nora.infra.social.instagram_source import InstagramSocialSource
 from nora.infra.social.subjects import instagram_roster
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.schema import SOCIAL_ITEM, SOCIAL_ITEM_STATE, SOCIAL_POLL
+from nora.infra.sql.schema import (
+    SOCIAL_ITEM,
+    SOCIAL_ITEM_COUNT,
+    SOCIAL_ITEM_STATE,
+    SOCIAL_POLL,
+)
 from nora.infra.sql.social_stream import SqlSocialStreamStore
 from nora.obs.metrics import Metrics
 from nora.testing import (
@@ -122,10 +128,11 @@ class World:
         return SocialPoller(
             source=self.source, store=self.store, health=self.health,
             roster=functools.partial(instagram_roster, self.subjects),
-            # The re-walk is off unless a test asks for it: the back-fill's
-            # tests count the back-fill's own pages.
+            # The re-walk and the recount are off unless a test asks for
+            # them: the back-fill's tests count the back-fill's own pages.
             settings=SocialPollConfig(
-                enabled=True, jitter_seconds=0, **{"relist_pages_per_tick": 0, **settings},
+                enabled=True, jitter_seconds=0,
+                **{"relist_pages_per_tick": 0, "recount_interval_hours": 0, **settings},
             ),
             metrics=self.metrics, media=self.media, blobs=self.blobs,
             media_objects=self.media_objects, clock=self.clock,
@@ -173,7 +180,9 @@ async def world(_db: str) -> AsyncIterator[World]:
             # A reset, not a write: TRUNCATE is refused unless capture is off
             # (migration 0068, nora.infra.sql.history.CAPTURE_SETTING).
             await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
-            await conn.execute(sa.text("truncate social_item, social_poll, social_item_state"))
+            await conn.execute(sa.text(
+                "truncate social_item, social_poll, social_item_state, social_item_count",
+            ))
         await engine.dispose()
 
 
@@ -1428,3 +1437,201 @@ async def test_the_rewalk_reads_nothing_while_the_login_is_halted_or_backed_off(
     poller._halted = False
     await poller._relist(roster)
     assert world.source.cursors == [*before, None], "positive control: bea's first re-walk page"
+
+
+# ---- a post's or reel's counts ---------------------------------------------------
+
+
+def counted(item: SocialItem, likes: int | None, comments: int | None = None) -> SocialItem:
+    return dataclasses.replace(item, counts=ItemCounts(likes=likes, comments=comments))
+
+
+async def count_rows(world: World) -> list[tuple[str, int | None, int | None, str]]:
+    """Every `social_item_count` row, oldest first: (item, likes, comments,
+    the stage of the read it names)."""
+    c, p = SOCIAL_ITEM_COUNT, SOCIAL_POLL
+    async with world.engine.connect() as conn:
+        rows = (await conn.execute(
+            sa.select(c.c.item_id, c.c.likes, c.c.comments, p.c.stage)
+            .select_from(c.outerjoin(p, p.c.id == c.c.read_id))
+            .order_by(c.c.recorded_at, c.c.id),
+        )).all()
+    return [tuple(r) for r in rows]  # type: ignore[misc]
+
+
+def counts_recorded(world: World) -> float:
+    return world.metrics.get("nora_social_counts_recorded_total", network="instagram")
+
+
+async def test_a_list_read_records_counts_where_they_moved_and_a_new_items_first(
+    world,
+) -> None:
+    quiet(world, BEA)
+    p1 = post(world, "p1")
+    world.source.probes[ADA] = probe(posts=1)
+    world.source.pages[ADA] = Page(items=(counted(p1, 3, 1),), next_cursor=None)
+    poller = world.poller()
+    await poller.tick()
+    assert await count_rows(world) == [("p1", 3, 1, "backfill")], (
+        "the first list read: the item and its first counts, named by the read"
+    )
+
+    p2 = post(world, "p2")
+    reads = [
+        (counted(p2, 0, 0), counted(p1, 3, 1)),     # a new item; p1 unchanged
+        (counted(p2, 0, 0), counted(p1, None)),     # p1 carries nothing
+        (counted(p2, 2, 0), counted(p1, 5, None)),  # both moved
+    ]
+    for n, items in enumerate(reads, start=2):
+        world.source.probes[ADA] = probe(posts=n)
+        world.source.pages[ADA] = Page(items=items, next_cursor=None)
+        world.clock.at(hours=6 * (n - 1))
+        await poller.tick()
+    assert world.source.reads("items").count(ADA) == 4
+    assert await count_rows(world) == [
+        ("p1", 3, 1, "backfill"), ("p2", 0, 0, "items"),
+        ("p1", 5, None, "items"), ("p2", 2, 0, "items"),
+    ]
+    assert counts_recorded(world) == 4
+
+
+async def test_backfill_and_rewalk_pages_record_counts_with_no_call_of_their_own(
+    world,
+) -> None:
+    quiet(world, BEA)
+    grid(world, ADA, 20)
+
+    def recount_grid(likes: int) -> None:
+        first = world.source.pages[ADA]
+        assert isinstance(first, Page)
+        world.source.pages[ADA] = Page(
+            items=tuple(counted(i, likes) for i in first.items), next_cursor=first.next_cursor,
+        )
+        later = world.source.after[f"{ADA}-c1"]
+        assert isinstance(later, Page)
+        world.source.after[f"{ADA}-c1"] = Page(
+            items=tuple(counted(i, likes) for i in later.items), next_cursor=None,
+        )
+
+    recount_grid(1)
+    poller = world.poller()
+    await poller.tick()
+    await ticks(world, poller, 2)
+    assert world.source.cursors == [None, None, f"{ADA}-c1"], "two back-fill pages, no more"
+    rows = await count_rows(world)
+    assert len(rows) == 20 and {r[3] for r in rows} == {"backfill"}
+
+    recount_grid(2)
+    cursors = await walked(world, world.poller(relist_pages_per_tick=2))
+    assert cursors[3:] == [None, f"{ADA}-c1"], "the re-walk's two pages, nothing else"
+    relisted = [r for r in await count_rows(world) if r[3] == "relist"]
+    assert len(relisted) == 20 and all(r[1] == 2 for r in relisted)
+
+
+async def recount_world(world: World) -> SocialPoller:
+    """Ada and bea each listed once at the start, ada's one post counted at
+    3 likes; the recount on at its default interval."""
+    world.source.probes[BEA] = probe()
+    world.source.pages[BEA] = Page(items=(), next_cursor=None)
+    world.source.probes[ADA] = probe(posts=1)
+    world.source.pages[ADA] = Page(items=(counted(post(world, "p1"), 3),), next_cursor=None)
+    poller = world.poller(recount_interval_hours=24)
+    await poller.tick()
+    return poller
+
+
+async def test_the_recount_rereads_the_first_page_once_the_interval_has_passed(world) -> None:
+    poller = await recount_world(world)
+    new = post(world, "new-since")
+    world.source.pages[ADA] = Page(
+        items=(counted(new, 1), counted(post(world, "p1"), 9)), next_cursor=None,
+    )
+    for hours in (6, 12, 18, 23.5):
+        world.clock.at(hours=hours)
+        await poller.tick()
+    assert world.source.reads("items") == [ADA, BEA], "inside the interval: no list read"
+
+    world.clock.at(hours=24, minutes=1)
+    await poller.tick()
+    assert world.source.reads("items") == [ADA, BEA, ADA, BEA], "one recount page each"
+    assert world.source.cursors[2:] == [None, None], "the first page"
+    assert ("recount", "read_ok", False, False) in await world.polls("ada")
+    assert [r for r in await count_rows(world) if r[3] == "recount"] == [("p1", 9, None, "recount")]
+    assert "new-since" not in await world.items(), "a recount records no item: it is the poll's"
+
+
+async def test_the_recount_is_off_at_zero(world) -> None:
+    await recount_world(world)
+    poller = world.poller(recount_interval_hours=0)
+    world.clock.at(hours=48)
+    await poller.tick()
+    assert world.source.reads("items") == [ADA, BEA]
+
+
+async def test_a_halting_backfill_or_rewalk_page_ends_the_tick_before_any_recount(
+    world,
+) -> None:
+    """Ada is due a recount; bea's back-fill page halts the login first, and
+    on another login her re-walk page does: no recount page follows either."""
+    world.source.probes[ADA] = probe(posts=1)
+    world.source.pages[ADA] = Page(items=(counted(post(world, "p1"), 3),), next_cursor=None)
+    grid(world, BEA, 30)
+    world.source.after[f"{BEA}-c1"] = Failed(FailureKind.HALT, "needs_human")
+    poller = world.poller(recount_interval_hours=24)
+    await poller.tick()
+    world.clock.at(hours=24)
+    await poller.tick()
+    assert world.source.cursors == [None, None, f"{BEA}-c1"], "the halt, and nothing after it"
+    assert "recount" not in {stage for stage, *_ in await world.polls("ada")}
+
+
+async def test_a_halting_rewalk_page_ends_the_tick_before_any_recount(world) -> None:
+    world.source.probes[ADA] = probe(posts=1)
+    world.source.pages[ADA] = Page(items=(counted(post(world, "p1"), 3),), next_cursor=None)
+    grid(world, BEA, 13)  # two pages: the re-walk's second one is at a cursor
+    poller = world.poller(recount_interval_hours=24, relist_pages_per_tick=2)
+    await ticks(world, poller, 3)
+    assert world.source.cursors == [None, None, f"{BEA}-c1", None, None], (
+        "first pages, bea's back-fill page, then both re-walks' first pages"
+    )
+    world.source.after[f"{BEA}-c1"] = Failed(FailureKind.HALT, "needs_human")
+    world.clock.at(hours=25)
+    await poller.tick()
+    assert world.source.cursors[5:] == [f"{BEA}-c1"], "the halting re-walk page, then nothing"
+    assert "recount" not in {stage for stage, *_ in await world.polls("ada")}
+
+
+async def test_the_recount_reads_nothing_while_the_login_is_halted_or_backed_off(world) -> None:
+    poller = await recount_world(world)
+    roster = await instagram_roster(world.subjects)
+    assert roster is not None
+    world.clock.at(hours=24, minutes=1)
+    poller._listed = set()  # as at a later tick's start
+
+    poller._back_off_until = world.clock.now + timedelta(hours=1)
+    await poller._recount(roster)
+    poller._back_off_until = None
+    poller._halted = True
+    await poller._recount(roster)
+    assert world.source.reads("items") == [ADA, BEA]
+
+    poller._halted = False
+    await poller._recount(roster)
+    assert world.source.reads("items") == [ADA, BEA, ADA, BEA], "positive control"
+
+
+async def test_the_recount_takes_only_what_the_hour_leaves_after_the_reserve(world) -> None:
+    """Two members reserve a probe and a read each (6); at a budget of 7,
+    the tick's own probes (4) leave room for no recount page, and an hour
+    later, with no probe due, for one."""
+    poller = await recount_world(world)
+    world.clock.at(hours=24, minutes=1)
+    budgeted = world.poller(recount_interval_hours=24, hourly_budget=7)
+    await budgeted.tick()
+    assert world.source.reads("items") == [ADA, BEA], "the probes took what the reserve left"
+    world.clock.at(hours=25, minutes=2)
+    await budgeted.tick()
+    assert world.source.reads("items") == [ADA, BEA, ADA], (
+        "one page: the next would eat the reserve"
+    )
+    del poller
