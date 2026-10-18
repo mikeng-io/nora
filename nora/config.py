@@ -2583,6 +2583,15 @@ class PersonaConfig(BaseModel):
 
     enabled: bool = False
 
+    #: THE SWITCH (45 §5, 00 «Sequence» step 8). On, prompts read the Persona
+    #: accounts through `read_persona` and render `<persona>` blocks INSTEAD of
+    #: `<peer_card>`, `<peer_history>`, `<people_in_window>`, `<culture>`,
+    #: `<unit_culture>`, `<character>` and `<self>`. Off — the default — is the
+    #: shadow: the sessions keep writing and every prompt renders the Honcho and
+    #: prose-culture blocks it always has, so the flag is the whole rollback.
+    #: Ignored unless `enabled` is also on (no store is wired without it).
+    render: bool = False
+
 
 class LessonsConfig(BaseModel):
     """`[lessons]`: the Lessons session: one Dreamer session per unit, woken by

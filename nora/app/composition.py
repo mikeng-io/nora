@@ -67,6 +67,7 @@ from nora.app.cognition_grounding import (
     build_grounder,
     place_release,
     stay_context_reader,
+    unit_self_persona_reader,
     unit_self_reader,
 )
 from nora.app.cognition_session import CognitionSessionRunner
@@ -266,6 +267,7 @@ from nora.language.persona_collective import (
     CollectiveKey,
     PersonaCollectiveAdaptor,
 )
+from nora.language.persona_render import PersonaHeads
 from nora.language.persona_verdict import (
     PERSONA_VERDICT_ADAPTOR_NAME,
     DocketAccount,
@@ -2105,6 +2107,18 @@ async def build_dependencies(
     lessons_reader: ActiveLessons | None = (
         ActiveLessons(SqlLessonStore(engine)) if cfg.lessons.render else None
     )
+    # THE SWITCH (design/unified-memory/45 §5, 00 «Sequence» step 8): the
+    # Persona accounts' read half — one store, read-only by the Protocol the
+    # readers are typed against (`PersonaHeads` has `account_heads` and nothing
+    # else), handed to the tag assembler, the fire path, the Cognition
+    # grounder and the debrief fold. Wired only when `[persona] enabled` AND
+    # `[persona] render` are both on: `enabled` alone is the shadow (the
+    # sessions write, nothing reads), and `render` without `enabled` has no
+    # store to read. Flipping `render` back off is the whole rollback.
+    persona_reader: PersonaHeads | None = (
+        SqlPersonaStore(engine, screen=text_offence)
+        if cfg.persona.enabled and cfg.persona.render else None
+    )
     # The join from a note to its room's account (DEC-207):
     # EVERY id a room is known by — `Note.established_in` holds whichever one
     # the note was born under — within the note's UNIT, since ids are unique
@@ -2193,6 +2207,10 @@ async def build_dependencies(
         quote_window=quote_window,
         presence=presence_reader,
         culture=culture_reader,
+        # `<persona>`, the switch (45 §5): `None` until `[persona] render` is
+        # on beside `[persona] enabled`, and the same reader the fire path,
+        # the Cognition grounder and the debrief fold hold.
+        persona=persona_reader,
         # `<lessons>`: `None` while `[lessons]
         # render` is off. The same reader the fire path gets.
         lessons=lessons_reader,
@@ -3377,6 +3395,9 @@ async def build_dependencies(
             # path resolves the occasion through the policy it already holds
             # before reading (`FirePath._read_culture`).
             culture=culture_reader,
+            # THE SWITCH (45 §5): the SAME persona reader the tag assembler
+            # holds; `None` until `[persona] render` is on.
+            persona=persona_reader,
             lessons=lessons_reader,
             standing_store_timeout_seconds=cfg.standing.store_timeout_seconds,
             # The participation turn's memory reads. ONE knob set,
@@ -4489,6 +4510,10 @@ async def build_dependencies(
                 # Her own account in the unit, shown only where every room of the
                 # unit agrees on `location` (R-31; `unit_self_reader`).
                 self_account=unit_self_reader(culture_reader, allowlist),
+                # THE SWITCH (45 §5): when `[persona] render` is on, her
+                # Persona account replaces the prose one; the SAME reader the
+                # tag and fire paths hold.
+                self_persona=unit_self_persona_reader(persona_reader, allowlist),
                 metrics=metrics,
             )
 

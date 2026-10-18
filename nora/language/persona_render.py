@@ -80,7 +80,7 @@ _CLOSING_MARKER_RESERVE = len("\n[00000000 more characters not shown]")
 #: precedence, 45 §3) never render, and no terminal state does.
 _RENDERED_STATES = frozenset({"current", "disputed"})
 
-_TERMINAL_PUNCT = ("?", "？", "!", "！", "。", ".")
+_TERMINAL_PUNCT = ("?", "？", "!", "！", "。", ".")  # noqa: RUF001 — the full-width ones are sentence enders too
 
 
 class PersonaHeads(Protocol):
@@ -92,31 +92,34 @@ class PersonaHeads(Protocol):
 
 
 async def read_persona(
-    reader: PersonaHeads | None,
+    heads: Awaitable[tuple[PersonaLine, ...]] | None,
     *,
-    key: str,
     stage: str,
     platform: str,
     metrics: Metrics | None,
     timeout_seconds: float = PERSONA_READ_TIMEOUT_SECONDS,
 ) -> tuple[PersonaLine, ...] | None:
     """One account's chain heads for a prompt, or `None` — every occasion's
-    ONE Persona read, `read_culture`'s shape (DEC-207).
+    ONE Persona read, `read_culture`'s shape (DEC-207): bounded, counted,
+    fail-soft, each occasion naming its `stage`.
 
-    `None` is only "no reader" (`[persona] render` off, the shadow default)
-    or a FAILED read; the failed read is counted under
-    `nora_errors_total{stage}`, because an account that exists and could not
-    be fetched reported as «there is none» is `unavailable` substituted for
-    `nothing_found` (R-27). An account that does not exist yet is `()`, not
-    an error: nothing was written in shadow for this key, which is the
-    ordinary state before the backfill and says so by rendering no block.
+    `heads` is the caller's own `reader.account_heads(key=…)` call, or `None`
+    when there is no reader or no key (`[persona] render` off, a room outside
+    the policy). The CALLER makes the call rather than handing the reader
+    over, for `read_culture`'s reason: a store call stays on
+    `self.<collaborator>` where
+    `tests/architecture/test_dream_store_calls_are_declared.py` can count it.
+
+    `None` collapses three states the prompt cannot tell apart: no reader, no
+    key, and a failed read. Only the failed read is counted, under
+    `nora_errors_total{stage}` (R-27). An account that does not exist yet is
+    `()`, not an error: nothing was written in shadow for this key, which is
+    the ordinary state before the backfill and says so by rendering no block.
     """
-    if reader is None:
+    if heads is None:
         return None
     try:
-        return await asyncio.wait_for(
-            reader.account_heads(key=key), timeout=timeout_seconds,
-        )
+        return await asyncio.wait_for(heads, timeout=timeout_seconds)
     except Exception:
         log.exception("%s: persona read failed; continuing without it", stage)
         if metrics is not None:

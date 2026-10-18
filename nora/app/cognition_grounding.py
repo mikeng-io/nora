@@ -77,11 +77,13 @@ from nora.domain.gatherings import Gathering
 from nora.domain.memo import Memo
 from nora.domain.mobility_forecast import detect_stay_anomalies, place_words
 from nora.domain.notes import Note, likely_duplicates
+from nora.domain.persona import PersonaLine, PersonaView
 from nora.domain.record_query import RecordHit, RecordRefHit
 from nora.domain.reminders import Reminder
 from nora.domain.rollup import room_key
 from nora.domain.stimuli import Stimulus
 from nora.language.culture_render import read_culture
+from nora.language.persona_render import PersonaHeads, read_persona
 
 log = logging.getLogger("nora.app.cognition_grounding")
 
@@ -360,6 +362,49 @@ def unit_self_reader(
     return read
 
 
+def unit_self_persona_reader(
+    persona: PersonaHeads | None, policy: Any,
+) -> Callable[[str], Awaitable[tuple[PersonaLine, ...]] | None] | None:
+    """`build_grounder`'s `self_persona`: her Persona account of the unit, or
+    none — `unit_self_reader`'s gate (R-31: the session can reach any room of
+    the unit) on the switch's account (45 §5). `None` while `[persona] render`
+    is off.
+
+    The exclude filter runs HERE, on the way out: the session's audience is
+    every room of the unit, so a line whose `exclude_persons` names anyone ANY
+    room of the unit lists is dropped — and a `persons = "*"` room lists
+    nobody enumerable, so with one in the unit every excluded line is dropped
+    (the unknown side denies, as the grounder's lineage reads do).
+    """
+    if persona is None:
+        return None
+
+    async def read(unit: str) -> tuple[PersonaLine, ...]:
+        listed: set[str] = set()
+        open_room = False
+        for conv in policy.conversations:
+            if conv.unit != unit:
+                continue
+            if conv.persons is None:
+                open_room = True
+            else:
+                listed |= conv.persons
+        lines = await persona.account_heads(key=nora_character_key(unit))
+        return tuple(
+            line for line in lines
+            if line.exclude_persons == () or (
+                not open_room and not listed.intersection(line.exclude_persons)
+            )
+        )
+
+    def gated(unit: str) -> Awaitable[tuple[PersonaLine, ...]] | None:
+        if not policy.shows_self_to_unit(unit):
+            return None
+        return read(unit)
+
+    return gated
+
+
 def build_grounder(
     *,
     records: RecordRefSource,
@@ -378,6 +423,7 @@ def build_grounder(
     stay_context: Callable[[str, int], Awaitable[StayContext | None]] | None = None,
     place_release: Callable[[str, str], Awaitable[bool]] | None = None,
     self_account: Callable[[str], Awaitable[CultureRevision | None] | None] | None = None,
+    self_persona: Callable[[str], Awaitable[tuple[PersonaLine, ...]] | None] | None = None,
     metrics: Any = None,
     memo_index: Callable[[str], Awaitable[Sequence[Memo]]] | None = None,
     pending_reminds: Callable[[], Awaitable[Sequence[Reminder]]] | None = None,
@@ -554,14 +600,38 @@ def build_grounder(
         # failed read costs the `self` block and not the session.
         # Bounded and counted like the tag and fire reads (`read_culture`,
         # `stage="cognition_self"`).
-        account = await read_culture(
-            None if self_account is None else self_account(unit),
-            stage="cognition_self", platform="cognition", metrics=metrics,
-        )
+        #
+        # THE SWITCH (45 §5): with the persona reader wired (`[persona]
+        # render`), her Persona account is read instead — the prose read is
+        # not made — and renders as `<persona of="you">`. A failed persona
+        # read is counted (`stage="cognition_self_persona"`, R-27) and drops
+        # the block, never a fall back to the prose account.
+        account: CultureRevision | None = None
+        persona_view: PersonaView | None = None
+        persona_names: dict[str, str] = {}
+        if self_persona is not None:
+            lines = await read_persona(
+                self_persona(unit),
+                stage="cognition_self_persona", platform="cognition",
+                metrics=metrics,
+            )
+            if lines is not None:
+                persona_view = PersonaView(entity="self", of="you", lines=lines)
+                persona_names = {
+                    line.told_by: ref.name
+                    for line in lines if line.told_by is not None
+                    if (ref := persons.by_person.get(line.told_by)) is not None
+                }
+        else:
+            account = await read_culture(
+                None if self_account is None else self_account(unit),
+                stage="cognition_self", platform="cognition", metrics=metrics,
+            )
         return Grounding(
             records=records_out, notes=notes, memos=memos, events=tuple(events),
             rollups=rollups, socials=_social_lines(pending, claimed, persons),
             own_sends=own_sends, room_labels=labels, self_account=account,
+            self_persona=persona_view, persona_names=persona_names,
         )
 
     return ground

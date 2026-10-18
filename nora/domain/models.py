@@ -16,6 +16,7 @@ from .lineage import RenderRoom
 from .media import MediaBlob, MediaRef
 from .memo import Memo
 from .notes import Note
+from .persona import PersonaView
 from .self_presence import Presence
 from .standing import Standing
 from .subagents_context import SubagentsView
@@ -541,6 +542,16 @@ class TagContext:
     # `read_culture` keyed `nora_character_key(unit)` on the tag and fire turns.
     # `None` until the unit has one.
     self_account: CultureRevision | None = None
+    # THE SWITCH (design/unified-memory/45 §5, `[persona] render`): each entity
+    # of this turn's Persona account — self, room, unit, then the persons — read
+    # through `read_persona` and rendered as `<persona>` blocks INSTEAD of
+    # `self_account`, `culture`, `unit_culture`, `character`, `peer_card`,
+    # `tagger_card` and `people_in_window` (all of which the assembler leaves
+    # unset when it fills this). Empty on the Honcho surface and in every
+    # harness that wires no persona reader. Lines whose `exclude_persons` name
+    # a member of the rendering room are dropped by the assembler before the
+    # view is built (`PersonaView`'s docstring).
+    personas: tuple[PersonaView, ...] = ()
     # What she has learned to do differently in this unit: the bodies of its
     # active lessons, oldest first, read under `[lessons] render` on tag and
     # fire turns where `<self>` may show.
