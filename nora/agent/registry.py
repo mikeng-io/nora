@@ -66,6 +66,7 @@ from ..infra.transit import TransitClient
 from ..infra.version import VersionManifest
 from ..infra.vision import VisionCache, VisionClient
 from ..infra.vision.preprocess import VIDEO_CHUNK_SECONDS, VIDEO_MAX_CHUNKS
+from ..language.persona_render import PersonaHeads
 from .lineage import LineagePolicy
 from .links import LinkCarry
 from .mcp import McpToolGroup
@@ -290,9 +291,15 @@ class ToolRegistry:
         # The Persona write the graph surface's `remember` makes (a `told`
         # line, design/unified-memory/45). Wired with `memory_search`.
         persona: PersonaWriter | None = None,
+        # THE SWITCH (45 §5): `character_read`'s Persona source while
+        # `[persona] render` is on beside `[persona] enabled`. Wired, it
+        # answers where `culture` would, so the tool reads the accounts the
+        # prompt's `<persona>` blocks render; both `None` withholds the tool.
+        persona_read: PersonaHeads | None = None,
     ) -> None:
         self._budget_overrides = dict(budget_overrides or {})
         self._persona = persona
+        self._persona_read = persona_read
         self._external_files = external_files
         self._memory_search = memory_search
         self._record = record
@@ -314,7 +321,8 @@ class ToolRegistry:
             (frozenset() if record is not None else frozenset({"record_query"}))
             | (frozenset() if rollup is not None else frozenset({"rollup_read"}))
             | (frozenset() if standing_head is not None else frozenset({"standing_read"}))
-            | (frozenset() if culture is not None else frozenset({"character_read"}))
+            | (frozenset() if culture is not None or persona_read is not None
+               else frozenset({"character_read"}))
             | (frozenset() if social_items is not None else frozenset({"social_read"}))
             | (frozenset() if memos is not None else frozenset({"memo_read"}))
             | (frozenset() if computer is not None else COMPUTER_TOOLS)
@@ -1079,6 +1087,7 @@ class ToolRegistry:
             rollup=self._rollup,
             standing_head=self._standing_head,
             culture=self._culture,
+            persona_read=self._persona_read,
             social_items=self._social_items,
             versions=self._versions,
             giphy_source=self._giphy,

@@ -202,7 +202,7 @@ from ..domain.notes import (
 from ..domain.persona import LINE_MAX_CHARS as PERSONA_LINE_MAX_CHARS
 from ..domain.persona import Account as PersonaAccount
 from ..domain.persona import AddOp as PersonaAddOp
-from ..domain.persona import PersonaCitable, PersonaWriter
+from ..domain.persona import PersonaCitable, PersonaView, PersonaWriter
 from ..domain.persona import Said as PersonaSaid
 from ..domain.ports import (
     BrowserRunner,
@@ -267,6 +267,7 @@ from ..infra.vision.preprocess import (
     video_encode_signature,
 )
 from ..language.culture import CULTURE_ADAPTOR_NAME
+from ..language.persona_render import PersonaHeads, account_text, authored_identity
 from ..obs.logging import current_tag_id
 from ..obs.tracing import annotate, current_span_ids, span
 from .arithmetic import evaluate as evaluate_expression
@@ -3115,6 +3116,11 @@ _CHARACTER_OK = (
     "Each account is as of its own time and is one room's view. Link it by its "
     "`revision`; do not quote it as what someone said."
 )
+_CHARACTER_PERSONA_OK = (
+    "Each account is as of its own time and is this group's view of that room "
+    "or person; a (disputed) line is being weighed, not settled. Do not quote "
+    "it as what someone said."
+)
 _STANDING_WITHHELD = (
     "Some sections are not shown in this conversation. Do not read the rest "
     "as complete."
@@ -4904,6 +4910,11 @@ def build_tool_specs(
     # The Persona write (design/unified-memory/45): the graph surface's
     # `remember` writes a `told` line through it. `None` answers `unavailable`.
     persona: PersonaWriter | None = None,
+    # THE SWITCH (45 §5): wired only while `[persona] render` is on beside
+    # `[persona] enabled`, and `character_read` then answers from the Persona
+    # accounts instead of the culture store — the same accounts the prompt's
+    # `<persona>` blocks render, so the tool and the prompt cannot disagree.
+    persona_read: PersonaHeads | None = None,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -5847,14 +5858,14 @@ def build_tool_specs(
         like here.
 
         SHOULD: name a room by its label and a person as they are named here.
-        Returns each account with its `as_of` time and its `revision`. Statuses:
-        ok, nothing_found, unavailable.
+        Returns each account with its `as_of` time, and its `revision` while
+        the culture store backs it. Statuses: ok, nothing_found, unavailable.
 
         Args:
             entity: room for a room's culture, person for one person's account.
             subject: The room's label, or the person's name.
         """
-        if culture is None:
+        if culture is None and persona_read is None:
             _record(metrics, "character_read", "unavailable", reason="unwired")
             return {"status": "unavailable", "note": _CHARACTER_OFF}
         if lineage is None:
@@ -5889,15 +5900,72 @@ def build_tool_specs(
         else:
             _record(metrics, "character_read", "unavailable", reason="entity")
             return {"status": "unavailable", "note": _CHARACTER_OFF}
-        keyed = [(r, key) for r, pid in wanted if (key := account_key(r, pid)) is not None]
+        keyed = [(r, pid, key) for r, pid in wanted
+                 if (key := account_key(r, pid)) is not None]
+        if persona_read is not None:
+            # THE SWITCH (45 §5): the same resolution, the Persona accounts as
+            # the source. Lines were screened at WRITE (SqlPersonaStore's
+            # `screen`), so there is no read-time withhold here; a line whose
+            # `exclude_persons` names a member of THIS room is dropped, as the
+            # assembler drops it before the prompt's blocks.
+            try:
+                persona_heads = await asyncio.gather(
+                    *(persona_read.account_heads(key=key) for _, _, key in keyed))
+            except Exception:
+                log.exception("character_read (persona) failed")
+                _record(metrics, "character_read", "unavailable", reason="store")
+                return {"status": "unavailable", "note": _CHARACTER_OFF}
+            excluded = set(here.persons or ())
+
+            def name_of(person_id: str) -> str:
+                named = persons.by_person.get(person_id)
+                return named.name if named is not None else "someone"
+
+            persona_accounts = []
+            for (r, pid, _), lines in zip(keyed, persona_heads, strict=True):
+                of = r.label or platform_name(r.platform)
+                authored: tuple[str, ...] = ()
+                if pid is not None and pid in persons.by_person:
+                    named = persons.by_person[pid]
+                    of = named.name
+                    authored = authored_identity(
+                        name=named.name, aliases=named.aliases,
+                        platforms=tuple(sorted({
+                            platform_name(network)
+                            for (network, _), owner in persons.index.items()
+                            if owner == pid
+                        })),
+                    )
+                kept = tuple(
+                    line for line in lines
+                    if not excluded.intersection(line.exclude_persons)
+                )
+                rendered = account_text(
+                    PersonaView(entity=entity, of=of, lines=kept, authored=authored),
+                    name_of=name_of, now=now_fn(),
+                )
+                if rendered is None:
+                    continue
+                text, written = rendered
+                entry: dict = {"room": of, "account": text}
+                if written is not None:
+                    entry["as_of"] = rollup_iso(written)
+                persona_accounts.append(entry)
+            if not persona_accounts:
+                _record(metrics, "character_read", "nothing_found", entity=entity)
+                return {"status": "nothing_found", "note": _CHARACTER_NONE}
+            _record(metrics, "character_read", "ok",
+                    entity=entity, accounts=len(persona_accounts))
+            return {"status": "ok", "entity": entity, "accounts": persona_accounts,
+                    "note": _CHARACTER_PERSONA_OK}
         try:
-            heads = await asyncio.gather(*(culture.head(key=key) for _, key in keyed))
+            heads = await asyncio.gather(*(culture.head(key=key) for _, _, key in keyed))
         except Exception:
             log.exception("character_read failed")
             _record(metrics, "character_read", "unavailable", reason="store")
             return {"status": "unavailable", "note": _CHARACTER_OFF}
         held = [
-            (r, head) for (r, _), head in zip(keyed, heads, strict=True)
+            (r, head) for (r, _, _), head in zip(keyed, heads, strict=True)
             if head is not None and head.body.strip()
         ]
         # R-18 fails closed on the WHOLE reply, so an account carrying an
@@ -16798,6 +16866,7 @@ def build_tools(
     video_ref_kinds: frozenset[str] = frozenset(),
     memory_retrieval: MemorySearch | None = None,
     persona: PersonaWriter | None = None,
+    persona_read: PersonaHeads | None = None,
 ) -> list:
     """The Strands-ready form of `build_tool_specs` — `adapt()` each spec so
     the docstrings above become the tool's model-facing description/schema
@@ -16855,5 +16924,6 @@ def build_tools(
         video=video, video_ref_kinds=video_ref_kinds,
         memory_retrieval=memory_retrieval,
         persona=persona,
+        persona_read=persona_read,
     )
     return [adapt(spec) for spec in specs]

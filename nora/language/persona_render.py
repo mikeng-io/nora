@@ -46,6 +46,7 @@ __all__ = [
     "PERSONA_READ_TIMEOUT_SECONDS",
     "PERSONA_SELF_MAX_CHARS",
     "PersonaHeads",
+    "account_text",
     "authored_identity",
     "read_persona",
     "render_persona",
@@ -193,6 +194,22 @@ def _cut(body: str, room: int) -> str:
     """`body` cut to `room` characters, saying how many it dropped."""
     dropped = len(body) - room
     return body if dropped <= 0 else f"{body[:room]}\n[{dropped} more characters not shown]"
+
+
+def account_text(
+    view: PersonaView, *, name_of: Callable[[str], str], now: datetime,
+) -> tuple[str, int | None] | None:
+    """One account's sections as plain TEXT for a tool result
+    (`character_read` under the switch): `render_persona`'s body without the
+    block wrapper — a tool result is not a prompt block — capped at
+    `PERSONA_ACCOUNT_MAX_CHARS` with the cut marker, with the newest rendered
+    line's `written_at` so the result can carry its own `as_of` (an account
+    carrying no time would read as fresher than it is). `None` when the
+    account would say nothing, `render_persona`'s rule."""
+    body, written = _body(view, name_of=name_of, now_ms=int(now.timestamp() * 1000))
+    if not body:
+        return None
+    return _cut(body, PERSONA_ACCOUNT_MAX_CHARS), written
 
 
 def render_persona(

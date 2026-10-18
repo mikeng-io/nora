@@ -3029,6 +3029,10 @@ async def build_dependencies(
         # (design/unified-memory/45); wired with `memory_search`, never alone.
         persona=(SqlPersonaStore(engine, screen=text_offence)
                  if memory_search is not None else None),
+        # THE SWITCH (45 §5): while `[persona] render` is on, `character_read`
+        # answers from the Persona accounts — the same reader the tag
+        # assembler and the fire path hold, so tool and prompt cannot disagree.
+        persona_read=persona_reader,
         lineage=lineage,
         # The current Rollup build's rows and the Standing head. SELECTs, so no
         # flag. The Standing head is Dreamer-only (`DREAMER_ONLY_TOOLS`); the
