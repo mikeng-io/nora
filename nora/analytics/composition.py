@@ -236,6 +236,7 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
         store=rollups, config=unit_config, units=units, people=people,
         stimuli=SqlStimulusStore(engine), metrics=metrics,
         social=readable_social_store(engine, persons),
+        areas=geocode_cache,
     )
     runner = RollupRunner(
         mobility=mobility, rollups=rollups, config=rollup_config,

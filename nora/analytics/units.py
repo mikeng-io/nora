@@ -31,6 +31,7 @@ the same row, never raises it twice.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -38,7 +39,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
 from nora.domain.mobility import Stay
-from nora.domain.ports import StimulusStore
+from nora.domain.ports import GeocodeCacheStore, StimulusStore
 from nora.domain.presence import haversine_distance_m
 from nora.domain.rollup import (
     FOLLOW_NAMES,
@@ -47,6 +48,7 @@ from nora.domain.rollup import (
     Daybook,
     Deviation,
     HealthRow,
+    Outing,
     SocialFact,
     SocialInput,
     StaySpan,
@@ -139,8 +141,12 @@ class UnitRollups:
         stimuli: StimulusStore | None = None, events: EventPlaces | None = None,
         social: SqlSocialStreamStore | None = None,
         metrics: Any = None, clock: Callable[[], float] = time.time,
+        areas: GeocodeCacheStore | None = None,
     ) -> None:
         self._store = store
+        #: Where an outing's areas are read (the geocode cache, READ-ONLY, as
+        #: the place labels are); without it no outing has an area.
+        self._areas = areas
         #: Without it no daybook reads social items: `items_posted` stays None.
         self._social = social
         self._cfg = config
@@ -199,7 +205,7 @@ class UnitRollups:
             min_overlap_ms=int(self._cfg.colocation_min_overlap_seconds * 1000),
             as_of_ms=as_of,
         )
-        outs = outings(found)
+        outs = await self._placed(outings(found))
         books = daybooks(
             unit.unit, members, stays=stays, found=found, outings_found=outs,
             messages=messages, reactions=reactions, as_of_ms=as_of,
@@ -236,6 +242,26 @@ class UnitRollups:
                 stays=stays, books=books, anomalous=anomalous, platforms=platforms,
             )
         return UnitRun(unit=unit.unit, as_of_ms=as_of, changes=changes, stimuli=tuple(raised))
+
+    async def _placed(self, outs: Sequence[Outing]) -> list[Outing]:
+        """Each outing with the district and city of the nearest cached
+        geocode within the co-location radius of its centre, the cache
+        `nora.analytics` already labels places from (it never calls a
+        geocoder). An outing at a saved place gets none: a saved place's
+        existence is itself secret (R-35), and the memory index would make
+        its area a hop away from it. Like a label, the area is the cache as
+        this run reads it, an input outside the Record's events."""
+        if self._areas is None:
+            return list(outs)
+        placed: list[Outing] = []
+        for o in outs:
+            area = None if o.saved_place_id is not None else await self._areas.area_within(
+                lat=o.lat, lng=o.lng, radius_m=self._cfg.colocation_radius_m,
+            )
+            placed.append(o if area is None else dataclasses.replace(
+                o, district=area.district, city=area.city,
+            ))
+        return placed
 
     async def _posted(self, members: Sequence[str], mark: RecordMark) -> SocialInput:
         """`members`' social items and when their accounts were first observed,
