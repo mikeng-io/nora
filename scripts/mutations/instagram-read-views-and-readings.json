@@ -79,8 +79,8 @@
   {
     "name": "the tool stops handing media_fetch to a post or story read",
     "file": "nora/agent/tools.py",
-    "old": "                look=_instagram_look(story=read == \"story\") if read in (\"story\", \"post\") else None,",
-    "new": "                look=None,",
+    "old": "                    look=(_instagram_look(story=read == \"story\")\n                          if read in (\"story\", \"post\") else None),",
+    "new": "                    look=None,",
     "target": "tests/unit/test_instagram_read_readings.py -k what_each"
   },
   {

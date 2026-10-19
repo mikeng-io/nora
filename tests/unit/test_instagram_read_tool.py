@@ -584,14 +584,14 @@ class _NoPersons:
         return None
 
 
-def test_posts_is_in_neither_the_vocabulary_nor_the_catalogue_line():
+def test_posts_is_in_the_vocabulary_and_the_catalogue_line():
     line = next(
         ln for ln in ToolRegistry().tool_catalogue().splitlines()
         if ln.startswith("- instagram_read —")
     )
-    assert "story" in line and "profile" in line
-    assert "posts" not in line
-    assert ("instagram", "posts") not in social_read_vocabulary()["instagram_read"]
+    assert "stories" in line and "profiles" in line
+    assert "posts" in line
+    assert ("instagram", "posts") in social_read_vocabulary()["instagram_read"]
 
 
 def test_the_catalogue_line_names_every_item_and_a_share():

@@ -115,6 +115,22 @@ class PostView:
 
 
 @dataclass(frozen=True)
+class PostSummary:
+    """One timeline entry, with a readable link instead of network ids."""
+
+    link: str
+    kind: Literal["post", "reel"]
+    taken_at: int
+    caption: str | None
+    collab: bool
+
+
+@dataclass(frozen=True)
+class PostsView:
+    posts: tuple[PostSummary, ...]
+
+
+@dataclass(frozen=True)
 class StoryView:
     """A person's current story. `expires_at` is the reel's own expiry, which
     bounds every frame; each frame's posting time is on its `ItemView`."""
@@ -169,7 +185,7 @@ class SearchView:
     truncated: bool
 
 
-View = PostView | StoryView | ProfileView | SearchView
+View = PostsView | PostView | StoryView | ProfileView | SearchView
 
 
 @dataclass(frozen=True)

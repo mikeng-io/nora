@@ -75,7 +75,7 @@ def test_the_exception_list_has_exactly_the_rows_the_design_records():
     this line and a reason."""
     assert frozenset({
         ("instagram", "story"), ("instagram", "profile"), ("instagram", "search"),
-        ("instagram", "post"),
+        ("instagram", "post"), ("instagram", "posts"),
     }) == EXCEPTION_ROUTES
 
 
@@ -239,7 +239,7 @@ def test_every_row_a_backend_can_serve_says_how_its_subject_resolves():
     person = {(p, w) for p, w, k in SUBJECT_INPUTS if k == TARGET_PERSON}
     handle = {(p, w) for p, w, k in SUBJECT_INPUTS if k == TARGET_HANDLE}
     assert named == set(READ_ONLY_ALLOWLIST) | {("instagram", "search"), ("instagram", "post")}
-    assert person == {("instagram", "profile"), ("instagram", "story")}
+    assert person == {("instagram", "profile"), ("instagram", "story"), ("instagram", "posts")}
     assert handle == person
     assert not (named & person), "a bridge read took both a bare string and a person"
     # Reach is keyed on the read, and only a story has one.

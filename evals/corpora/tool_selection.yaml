@@ -695,8 +695,11 @@ cases:
     entry: tag
     expect: reply
     mention: true
-    input: Quinn最近喺IG post咗啲咩？
-    metadata: {tools: [instagram_read], not_tools: [x_read, web_search]}
+    input: Show me the recent Instagram posts from @synth.example, not their story.
+    metadata:
+      tools: [instagram_read]
+      not_tools: [instagram_search, x_read, web_fetch]
+      args_include: {instagram_read: [posts, synth.example]}
     snapshot: *room_a
 
   # Was `route_social_fetch_instagram_search` (P5): the same message, which

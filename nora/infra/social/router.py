@@ -127,6 +127,7 @@ log = logging.getLogger("nora.social.router")
 EXCEPTION_ROUTES: frozenset[tuple[str, str]] = frozenset({
     ("instagram", "story"),
     ("instagram", "profile"),
+    ("instagram", "posts"),
     # `instagram_search`: `GET /accounts?query=`. No Instagram read has two
     # backends.
     ("instagram", "search"),
@@ -181,6 +182,8 @@ SUBJECT_INPUTS: frozenset[tuple[str, str, str]] = frozenset({
     ("instagram", "search", TARGET_NAMED),
     ("instagram", "post", TARGET_NAMED),
     ("instagram", "profile", TARGET_PERSON),
+    ("instagram", "posts", TARGET_PERSON),
+    ("instagram", "posts", TARGET_HANDLE),
     ("instagram", "story", TARGET_PERSON),
     ("instagram", "profile", TARGET_HANDLE),
     ("instagram", "story", TARGET_HANDLE),
@@ -325,6 +328,7 @@ class SocialRouter(SocialProvider):
         target_kind: TargetKind = TARGET_NAMED,
         room_people: frozenset[str] | None = None,
         look: TurnLook | None = None,
+        cursor: str | None = None,
     ) -> dict[str, Any]:
         """Route one read. NEVER raises (R-5), NEVER fails over.
 
@@ -388,8 +392,12 @@ class SocialRouter(SocialProvider):
             return authorized
         # The one argument the port does not carry, handed on only to the
         # rows that read media, so no other backend ever sees it.
+        if cursor is not None and (platform, what) != ("instagram", "posts"):
+            return dict(UNAVAILABLE)
         reads_media = look is not None and (platform, what) in READS_WITH_READINGS
-        media = {"look": look} if reads_media else {}
+        media: dict[str, Any] = {"look": look} if reads_media else {}
+        if cursor is not None:
+            media["cursor"] = cursor
         try:
             return await provider.read(
                 platform=platform, what=what, target=authorized, limit=limit, **media,

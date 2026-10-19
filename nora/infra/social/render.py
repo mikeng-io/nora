@@ -37,6 +37,7 @@ from .results import clamp_chars
 from .views import (
     NOT_READ_HERE,
     ItemView,
+    PostsView,
     PostView,
     ProfileView,
     Reading,
@@ -229,6 +230,8 @@ def render(result: Result, *, max_chars: int) -> dict[str, Any]:
         return _profile(view, max_chars)
     if isinstance(view, SearchView):
         return _search(view, max_chars)
+    if isinstance(view, PostsView):
+        return _posts(view, max_chars)
     if isinstance(view, PostView):
         return _post(view, max_chars)
     if isinstance(view, StoryView):
@@ -349,6 +352,32 @@ def _accounts_text(view: SearchView) -> str:
 
 
 # ---- post ---------------------------------------------------------------------
+
+
+def _posts(view: PostsView, max_chars: int) -> dict[str, Any]:
+    """Summaries only: opening a listed link uses the existing post read."""
+    entries = []
+    budget = max_chars // max(1, len(view.posts))
+    for post in view.posts:
+        head = post.kind + _post_age(post.taken_at, int(time.time()))
+        if post.collab:
+            head += " (co-authored)"
+        blocks: list[_Block] = [[head]]
+        if post.caption:
+            blocks.append([_Prose("caption: ", post.caption, _CAPTION_MAX_CHARS)])
+        text, shortened = _lay_out(blocks, budget)
+        entries.append({
+            "link": post.link, "kind": post.kind, "taken_at": post.taken_at,
+            "text": wrap_outside_text("social_post", "instagram post", text),
+            "truncated": shortened,
+        })
+    return {
+        "status": "ok", "posts": entries,
+        "note": "Recent posts and reels, newest first except pinned posts. "
+                "These are captions, not a reading of the media. Open a post's link "
+                "with instagram_read to see it. Use next_cursor with the same subject "
+                "to continue; null means the list ended.",
+    }
 
 
 def _post(view: PostView, max_chars: int) -> dict[str, Any]:

@@ -100,7 +100,7 @@
   {
     "name": "the instagram_read when-clause is reverted to a pasted link only",
     "file": "nora/agent/tools.py",
-    "old": "        \"\"\"Show what an Instagram post or reel contains, every item, videos\n        included, or read a profile or story. Call this when somebody shares,\n        links or asks about one.\n",
+    "old": "        \"\"\"Read Instagram posts, profiles and stories, or every item, videos included,\n        in a post or reel. Call this when somebody shares, links or asks about one.\n",
     "new": "        \"\"\"Read an Instagram profile, story, post or reel, by name, handle or\n        link. Call this when somebody asks about someone's Instagram or pastes\n        an Instagram link.\n",
     "target": "tests/unit/test_instagram_read_tool.py -k catalogue_line_names_every_item"
   },
