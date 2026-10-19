@@ -1,6 +1,8 @@
 # Persona: identity, character and hypotheses as one account
 
-Status: **ruled by the operator 2026-10-15**, not built. Supersedes
+Status: **ruled by the operator 2026-10-15**; the person account is built
+since 2026-10-18 (45, in shadow: schema, the person adaptor, disputes, the
+verdict judge). Supersedes
 [30](30-identity-and-character.md) §2 (Identity as a fifth tier), §5 and the
 dispute rule in §7. 30's schema (§3), precedence (§4), agents as actors (§6)
 and the remember / correct flow (§7) stand, moved under Persona as below.
@@ -178,6 +180,14 @@ changes before then.
 
 The script is idempotent and refuses to run against a database that already
 has Persona rows, so it cannot run twice by accident.
+
+**Built (2026-10-17), for step 1:** there is no separate script. The Persona
+adaptor's first session on an account is the backfill: until a session first
+settles the account (`persona.settled_at` is NULL) it is handed the Character
+head and the rows that head cited, and never again after, which is what
+"cannot run twice" asks for, per account rather than per database. A turn's
+`told` line landing first does not skip it. Turning on `[persona] enabled`
+runs it: a key that never ran wakes on its first tick with any evidence.
 
 ## 5. A deleted message makes nobody forget (operator, 2026-10-15)
 

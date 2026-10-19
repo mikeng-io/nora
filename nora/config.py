@@ -2566,6 +2566,24 @@ class CultureConfig(BaseModel):
     batch_limit: int = Field(default=300, ge=1)
 
 
+class PersonaConfig(BaseModel):
+    """`[persona]`: the Persona sessions, in shadow (design/unified-memory/45 §4,
+    00 «Sequence» step 6). One Dreamer session per (unit, listed person), woken
+    like the person's Character session (`[culture] person_wake_batch` and
+    `stale_seconds`) and at once by a `told` line a turn wrote about them,
+    writing typed lines through `persona_write`.
+
+    **Off by default.** On, the sessions write `persona_line` and nothing reads
+    it: no prompt changes until the switch (step 8). The first session of each
+    person is the backfill (35 §4). Needs `[dreamer] enabled` and `[culture]
+    enabled` (it reads the Character head and the room cultures).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+
+
 class LessonsConfig(BaseModel):
     """`[lessons]`: the Lessons session: one Dreamer session per unit, woken by
     closed `response` episodes, writing lessons through `lesson_write` and
@@ -3881,6 +3899,8 @@ class Config(BaseModel):
     # entry and no store, so the tier is absent rather than idle.
     culture: CultureConfig = CultureConfig()
     lessons: LessonsConfig = LessonsConfig()
+    # Ships INERT (`enabled = false`): off, composition builds no adaptor.
+    persona: PersonaConfig = PersonaConfig()
     # Optional and defaulted — see `StandingConfig`. Ships INERT
     # (`enabled = false`); off, composition builds no `debrief.Wiring`, the
     # debrief stage returns without awaiting anything, and `<standing>` never

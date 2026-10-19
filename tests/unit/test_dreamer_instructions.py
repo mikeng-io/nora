@@ -605,6 +605,16 @@ NATIVELY_AUTHORED = {
     "character-unit",
     # Her own Character session.
     "character-nora",
+    # A person's Persona session, in shadow (DEC-317).
+    "persona-person",
+    # The hypothesis verdict judge: it grades what persona-person wrote, and is
+    # never the writer (45 §3).
+    "persona-verdict",
+    # The collective Persona sessions, in shadow (45 §4): a room's, the
+    # unit's, and Nora's own account.
+    "persona-room",
+    "persona-unit",
+    "persona-nora",
     # The Lessons session.
     "lessons",
     # The doctrine check: an instrument's instruction, read through

@@ -49,6 +49,7 @@ __all__ = [
     "COLLECTIVE_ENTITY_KINDS",
     "COLLECTIVE_IDENTITY_KINDS",
     "DEDUCED_MIN_PREMISES",
+    "DISPUTE_KINDS",
     "ENTITY_KINDS",
     "HELD_STATES",
     "INDUCED_MIN_DAYS",
@@ -59,6 +60,7 @@ __all__ = [
     "MODES_BY_PART",
     "PARTS",
     "PERSONA_HKT",
+    "PERSONA_OUTCOMES",
     "PERSONA_REFUSALS",
     "ROLLUP_AGGREGATE_KINDS",
     "STATES",
@@ -66,9 +68,11 @@ __all__ = [
     "VERDICTS",
     "Account",
     "AddOp",
+    "DisputeResult",
     "KeepOp",
     "NewLine",
     "PersonaCitable",
+    "PersonaDispute",
     "PersonaLine",
     "PersonaOp",
     "PersonaPlan",
@@ -78,7 +82,9 @@ __all__ = [
     "RetireOp",
     "ReviseOp",
     "Said",
+    "countable_observable",
     "handles_for",
+    "match_disputed_line",
     "parse_ops",
     "plan_write",
     "rank",
@@ -145,6 +151,17 @@ PERSONA_HKT = timezone(timedelta(hours=8), "HKT")
 #: `response` is cited per episode instead (`response:<send id>`).
 ROLLUP_AGGREGATE_KINDS = frozenset({"colocation", "outing", "daybook", "tie"})
 
+#: Every value `nora_persona_session_total{outcome}` may carry: `written` (a
+#: session's write landed rows), `kept` (it settled with none), `refused` (one
+#: call of a verb was refused), `unsettled` (it ended without settling, so the
+#: batch is held) and `abandoned` (the third unsettled run of one batch).
+PERSONA_OUTCOMES = frozenset({"written", "kept", "refused", "unsettled", "abandoned"})
+
+#: How a dispute was raised (35 §2): `dispute` («that's wrong») or `forget`
+#: («forget that»). Either from the line's subject hides the line at once; a
+#: `forget` from anyone else is refused, not weighed.
+DISPUTE_KINDS: tuple[str, ...] = ("dispute", "forget")
+
 #: Why a write was refused, as the `reason` the writer reads.
 PERSONA_REFUSALS = frozenset({
     "malformed", "unknown_line", "line_twice", "part_kind", "mode_part",
@@ -157,6 +174,7 @@ PERSONA_REFUSALS = frozenset({
     "abduced_prediction", "abduced_observable", "abduced_window", "abduced_window_closed",
     "abduced_explains_nothing", "prediction_unexpected", "draws_on_unexpected",
     "same_rank", "conflict_hypothesis", "over_cap", "retire_why",
+    "forget_not_subject", "verdict_not_open", "verdict_window_open",
 })
 
 _EPISODE = re.compile(r"response:(\d+)")
@@ -335,15 +353,55 @@ class PersonaWriteResult:
     written: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class PersonaDispute:
+    """One `persona_dispute` row (35 §2): a dispute of an account's line is a
+    Record item — who disputed, the claim as they put it, and the message they
+    said it in. `line_id` is the held line the claim matched, or `None` when
+    none matched unambiguously (the row still wakes the account's session,
+    which weighs it there)."""
+
+    id: str
+    persona_key: str
+    line_id: str | None
+    disputed_by: str
+    kind: str
+    claim: str
+    message_id: int
+    unit: str
+    written_at: int
+
+
+@dataclass(frozen=True, slots=True)
+class DisputeResult:
+    """What a `record_dispute` came to. `effect`: `hidden` (the subject's own
+    dispute or «forget that»: the line is hidden at once, 35 §2 rule 2),
+    `disputed` (anyone else's: the line is marked, awaiting weighing), or
+    `recorded` (no held line matched the claim, so only the row landed)."""
+
+    status: Literal["ok", "refused", "conflict"]
+    dispute_id: str | None = None
+    effect: Literal["hidden", "disputed", "recorded"] | None = None
+    refusal: PersonaRefusal | None = None
+
+
 class PersonaWriter(Protocol):
     """The one Persona write (`nora.infra.sql.persona.SqlPersonaStore`):
-    judged by `plan_write` inside its own transaction."""
+    judged by `plan_write` inside its own transaction, every text through the
+    store's own egress screen. `record_dispute` is the turn's other door (35
+    §2): a dispute or «forget that», matched and ruled on inside its own
+    transaction the same way."""
 
     async def persona_write(
         self, *, account: Account, ops: Sequence[PersonaOp], citable: PersonaCitable,
-        now_ms: int, written_by_session: str, screen: Callable[[str], str | None],
+        now_ms: int, written_by_session: str,
         apply_decay: bool, expected_revision: int | None = None,
     ) -> PersonaWriteResult: ...
+
+    async def record_dispute(
+        self, *, account: Account, disputed_by: str, claim: str, kind: str,
+        message_id: int, now_ms: int,
+    ) -> DisputeResult: ...
 
 
 def rank(line: PersonaLine, *, subject: str | None) -> int | None:
@@ -366,6 +424,52 @@ def handles_for(heads: Sequence[PersonaLine]) -> dict[str, str]:
     return {f"P{i}": h.id for i, h in enumerate(held, start=1)}
 
 
+#: A dispute's claim shorter than this matches a line only word for word:
+#: a short quote matches too easily, and hiding the WRONG line is worse than
+#: weighing an unmatched dispute at the next session.
+DISPUTE_MATCH_MIN_CHARS = 12
+
+
+def _normalise_claim(text: str) -> str:
+    return " ".join(text.split()).casefold()
+
+
+def match_disputed_line(claim: str, heads: Sequence[PersonaLine]) -> PersonaLine | None:
+    """The one HELD line a dispute's claim names, or None.
+
+    Exact after normalisation (case-folded, whitespace collapsed), else a
+    unique containment either way. Zero matches and several matches are both
+    None — the dispute is recorded and the account's session weighs it, and
+    no line is hidden or marked on a guess."""
+    wanted = _normalise_claim(claim)
+    if not wanted:
+        return None
+    held = [h for h in heads if h.state in HELD_STATES]
+    exact = [h for h in held if _normalise_claim(h.text) == wanted]
+    if exact:
+        return exact[0] if len(exact) == 1 else None
+    if len(wanted) < DISPUTE_MATCH_MIN_CHARS:
+        return None
+    contained = [
+        h for h in held
+        if wanted in (text := _normalise_claim(h.text)) or text in wanted
+    ]
+    return contained[0] if len(contained) == 1 else None
+
+
+def countable_observable(prediction_observable: str | None) -> str | None:
+    """The Rollup key a hypothesis's observable IS, when code can count it (45
+    §3: «a count over a Rollup key where it is countable, else a described
+    event»). The observable must be exactly one `rollup:<kind>:<subject>`
+    citation; anything prose is the judge model's, never parsed out of it."""
+    if prediction_observable is None:
+        return None
+    match = _ROLLUP.fullmatch(prediction_observable.strip())
+    if match is None or match.group(1) not in ROLLUP_AGGREGATE_KINDS:
+        return None
+    return match.group(0)
+
+
 # --- parsing ------------------------------------------------------------------
 
 
@@ -384,6 +488,19 @@ def _opt_str(value: object) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _window_end(value: object) -> int | None:
+    """A prediction window's end as a writer may give it: epoch ms, or a
+    `YYYY-MM-DD` day, which is the END of that day in HKT. Raises
+    `ValueError` on anything else, which `parse_ops` refuses as malformed."""
+    if value is None:
+        return None
+    if isinstance(value, int) or (isinstance(value, str) and value.strip().isdigit()):
+        return int(value)
+    day = date.fromisoformat(str(value).strip())
+    end = datetime.combine(day + timedelta(days=1), datetime.min.time(), PERSONA_HKT)
+    return int(end.timestamp() * 1000) - 1
 
 
 def parse_ops(raw: object) -> tuple[tuple[PersonaOp, ...], tuple[PersonaRefusal, ...]]:
@@ -406,14 +523,14 @@ def parse_ops(raw: object) -> tuple[tuple[PersonaOp, ...], tuple[PersonaRefusal,
             continue
         try:
             if kind == "add":
-                window = item.get("prediction_window_end")
+                window = _window_end(item.get("prediction_window_end"))
                 ops.append(AddOp(
                     part=str(item["part"]), kind=str(item["kind"]), text=str(item["text"]),
                     mode=str(item["mode"]), citations=citations, draws_on=draws_on,
                     told_by=_opt_str(item.get("told_by")),
                     prediction=_opt_str(item.get("prediction")),
                     prediction_observable=_opt_str(item.get("prediction_observable")),
-                    prediction_window_end=None if window is None else int(window),
+                    prediction_window_end=window,
                     conflicts_with=_opt_str(item.get("conflicts_with")),
                 ))
             elif kind == "keep":

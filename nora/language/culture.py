@@ -469,7 +469,7 @@ class CultureAdaptor(EntitySessions):
         # written by the envelope fold, while the pass read `<standing>`,
         # `where_been` and `online_now`. A revision that CONTINUED that text
         # would carry its lines forward and gain citations, and so pass the
-        # "has citations" filter of `character._room_cultures` into the person
+        # "has citations" filter of `character.room_cultures_block` into the person
         # and unit sessions, whose accounts render in rooms with different
         # `location` flags. The room is re-written from its own messages.
         if previous is not None and not previous.citations:

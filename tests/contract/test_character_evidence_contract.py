@@ -36,6 +36,12 @@ class _Evidence(Protocol):
     async def person_since(
         self, *, rooms: Any, person_id: str, after: int, limit: int,
     ) -> tuple[list[RoomMessage], int]: ...
+    async def mentions_since(
+        self, *, rooms: Any, person_id: str, after: int, limit: int,
+    ) -> tuple[list[RoomMessage], int]: ...
+    async def windowed(
+        self, *, rooms: Any, since_ms: int, until_ms: int, limit: int,
+    ) -> list[RoomMessage]: ...
 
 
 @pytest.fixture(scope="module")
@@ -123,6 +129,126 @@ async def test_the_read_is_the_newest_lines_oldest_first_and_the_cursor_is_the_n
         rooms=ROOMS, person_id="ada", after=ids[6], limit=5,
     )
     assert nothing == [] and unmoved == ids[6]
+
+
+async def test_a_rooms_evidence_is_every_visible_line_but_hers(seeded):
+    """A collective's room read (35 §1's room account): every visible line in
+    the rooms, whoever wrote it, EXCEPT hers — her own words can never support
+    a claim (the echo rule), so the session is never handed them."""
+    store, ids = seeded
+    assert await store.room_count(rooms=ROOMS, after=0) == 4
+    assert await store.room_count(rooms=ROOMS, after=ids[2]) == 1
+    assert await store.room_count(rooms=[], after=0) == 0
+    got, cursor = await store.room_since(rooms=ROOMS, after=0, limit=3)
+    assert [(m.room, m.row.body) for m in got] == [
+        ("room-a", "b1"), ("room-b", "a2"), ("room-b", "a5")]
+    assert cursor == ids[6]
+    nothing, unmoved = await store.room_since(rooms=ROOMS, after=ids[6], limit=5)
+    assert nothing == [] and unmoved == ids[6]
+
+
+async def test_windowed_is_every_visible_line_in_the_rooms_over_the_interval(seeded):
+    """The verdict judge's window read (45 §3): every visible message in the
+    rooms with `ts` in `(since, until]` — hers included, a hidden one never —
+    oldest first, capped at the newest `limit`."""
+    store, ids = seeded
+    got = await store.windowed(rooms=ROOMS, since_ms=1001, until_ms=1005, limit=10)
+    assert [(m.row.id, m.row.body) for m in got] == [
+        (ids[1], "b1"), (ids[2], "a2"), (ids[3], "nora")]
+    newest = await store.windowed(rooms=ROOMS, since_ms=1001, until_ms=1005, limit=2)
+    assert [m.row.id for m in newest] == [ids[2], ids[3]]
+    assert await store.windowed(rooms=[], since_ms=0, until_ms=10_000, limit=10) == []
+    assert await store.windowed(rooms=ROOMS, since_ms=1005, until_ms=1001, limit=10) == []
+
+
+async def test_rows_by_id_are_the_visible_rows_named_with_their_room(seeded):
+    """What a Persona session checks an older account's citation against: the
+    rows asked for, ascending, each with its room; a hidden one is gone and an
+    id nothing holds is skipped."""
+    store, ids = seeded
+    got = await store.rows_by_id(ids=[ids[6], ids[0], ids[4], 9_999_999])
+    assert [(m.row.id, m.room, m.row.person_id) for m in got] == [
+        (ids[0], "room-a", "ada"), (ids[6], "room-b", "ada")]
+    assert await store.rows_by_id(ids=[]) == []
+
+
+#: (platform, room, author, body, is_nora, hidden, mention persons), inserted
+#: in this order. Bo is the subject: ada mentions them twice (a1 in a listed
+#: room, a5 hidden), Nora's own mention never counts, ada mentioning herself
+#: never counts, and room-c is not a listed room.
+_MENTION_ROWS = [
+    ("signal", "room-a", "ada", "morning bo", False, False, frozenset({"bo"})),
+    ("signal", "room-a", "bo", "about cy", False, False, frozenset({"cy"})),
+    ("discord", "room-b", "ada", "bo again", False, False, frozenset({"bo", "cy"})),
+    ("signal", "room-a", None, "bo, ping", True, False, frozenset({"bo"})),
+    ("signal", "room-a", "ada", "hidden bo", False, True, frozenset({"bo"})),
+    ("signal", "room-c", "ada", "bo elsewhere", False, False, frozenset({"bo"})),
+    ("signal", "room-a", "ada", "about me", False, False, frozenset({"ada"})),
+]
+
+
+@pytest.fixture(params=["memory", "sql"])
+async def mentioned(request: Any) -> AsyncIterator[tuple[_Evidence, list[int]]]:
+    if request.param == "memory":
+        fake = InMemoryCharacterEvidence()
+        for i, (platform, room, person, body, nora, hidden, mp) in enumerate(
+                _MENTION_ROWS, 1):
+            fake.add_message(id=i, platform=platform, room=room, person_id=person,
+                             body=body, ts=2000 + i, is_nora=nora, hidden=hidden,
+                             mention_persons=mp)
+        yield fake, list(range(1, len(_MENTION_ROWS) + 1))
+        return
+    from nora.infra.sql.schema import MEMORY_EDGE
+
+    engine = create_sql_engine(request.getfixturevalue("_db"))
+    ids: list[int] = []
+    try:
+        async with engine.begin() as conn:
+            for i, (platform, room, person, body, nora, hidden, mp) in enumerate(
+                    _MENTION_ROWS, 1):
+                mid = int((await conn.execute(sa.insert(MESSAGES).values(
+                    platform=platform, conversation_id=room, conversation_type="group",
+                    sender_id="+85200000000", sender_name="x", ts=2000 + i, body=body,
+                    is_nora=int(nora), person_id=person,
+                    hidden_at=2_000 if hidden else None,
+                ).returning(MESSAGES.c.id))).scalar_one())
+                ids.append(mid)
+                for pid in sorted(mp):
+                    await conn.execute(sa.insert(MEMORY_EDGE).values(
+                        src_kind="message", src_id=str(mid), rel="mentions",
+                        dst_kind="person", dst_id=pid,
+                        provenance="messages.mention_persons_json",
+                    ))
+        yield SqlCharacterEvidence(engine), ids
+    finally:
+        async with engine.begin() as conn:
+            await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
+            await conn.execute(sa.text("truncate messages, memory_edge cascade"))
+        await engine.dispose()
+
+
+async def test_a_persons_mentions_are_the_index_edges_over_visible_lines_in_the_rooms(mentioned):
+    store, ids = mentioned
+    got, cursor = await store.mentions_since(
+        rooms=ROOMS, person_id="bo", after=0, limit=5)
+    assert [(m.row.id, m.room, m.row.body) for m in got] == [
+        (ids[0], "room-a", "morning bo"), (ids[2], "room-b", "bo again")]
+    assert cursor == ids[2]
+    rest, cursor = await store.mentions_since(
+        rooms=ROOMS, person_id="bo", after=ids[0], limit=5)
+    assert [m.row.id for m in rest] == [ids[2]] and cursor == ids[2]
+    cy, _ = await store.mentions_since(rooms=ROOMS, person_id="cy", after=0, limit=5)
+    assert [m.row.id for m in cy] == [ids[1], ids[2]]
+    own, _ = await store.mentions_since(rooms=ROOMS, person_id="ada", after=0, limit=5)
+    assert own == []  # a self-mention is not a mention: the author never counts
+    none, _ = await store.mentions_since(rooms=[], person_id="bo", after=0, limit=5)
+    assert none == []
+    newest, cursor = await store.mentions_since(
+        rooms=ROOMS, person_id="bo", after=0, limit=1)
+    assert [m.row.id for m in newest] == [ids[2]] and cursor == ids[2]
+    nothing, unmoved = await store.mentions_since(
+        rooms=ROOMS, person_id="bo", after=ids[2], limit=5)
+    assert nothing == [] and unmoved == ids[2]
 
 
 @pytest.fixture(params=["memory", "sql"])
@@ -435,3 +561,66 @@ async def test_the_social_cursor_starts_at_zero_moves_forward_only_and_is_its_ow
             await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
             await conn.execute(sa.text("truncate consolidation_watermark"))
         await engine.dispose()
+
+
+#: (build current?, unit, a, b, replies_ab, replies_ba, mentions_ab,
+#: mentions_ba, reactions_ab, reactions_ba); `a < b`, as the Rollup stores a pair.
+_TIES = [
+    (True, "friends", "ada", "bo", 3, 1, 1, 0, 2, 0),
+    (True, "friends", "ada", "bo", 0, 2, 4, 0, 1, 0),
+    (True, "friends", "ada", "cy", 0, 0, 0, 0, 5, 5),
+    (True, "wedding", "ada", "bo", 50, 50, 0, 0, 0, 0),
+    (False, "friends", "ada", "bo", 90, 90, 0, 0, 0, 0),
+    (True, "friends", "bo", "cy", 7, 7, 0, 0, 0, 0),
+]
+
+
+@pytest.fixture(params=["memory", "sql"])
+async def ties(request: Any) -> AsyncIterator[Any]:
+    if request.param == "memory":
+        fake = InMemoryCharacterEvidence()
+        for current, unit, a, b, *counts in _TIES:
+            fake.add_tie(unit=unit, person_a=a, person_b=b, counts=tuple(counts),
+                         current=current)
+        yield fake
+        return
+    from nora.infra.sql.schema import ROLLUP_BUILD, ROLLUP_TIE
+
+    engine = create_sql_engine(request.getfixturevalue("_db"))
+    try:
+        async with engine.begin() as conn:
+            builds = {}
+            for current in (False, True):
+                builds[current] = (await conn.execute(sa.insert(ROLLUP_BUILD).values(
+                    code_version="v", params_sha256="p",
+                    status="current" if current else "superseded",
+                ).returning(ROLLUP_BUILD.c.id))).scalar_one()
+            for week, (current, unit, a, b, ra, rb, ma, mb, xa, xb) in enumerate(_TIES):
+                await conn.execute(sa.insert(ROLLUP_TIE).values(
+                    build_id=builds[current], unit=unit, lineage=[], valid_from_ms=0,
+                    valid_to_ms=1, as_of_ms=1, person_a=a, person_b=b,
+                    iso_week=f"2026-W{week:02d}", replies_ab=ra, replies_ba=rb,
+                    mentions_ab=ma, mentions_ba=mb, reactions_ab=xa, reactions_ba=xb,
+                    colocation_ms=123_456,
+                ))
+        yield SqlCharacterEvidence(engine)
+    finally:
+        async with engine.begin() as conn:
+            await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
+            await conn.execute(sa.text("truncate rollup_tie, rollup_build cascade"))
+        await engine.dispose()
+
+
+async def test_a_persons_ties_are_summed_from_their_side_in_the_current_build(ties):
+    """Every week of a pair folds into one tie, read from the person's side
+    whichever of the pair they are; another unit, a superseded build and a
+    pair without them are not theirs; most replies first."""
+    assert await ties.tie_totals(unit="friends", person_id="ada") == [
+        ("bo", 3, 3, 5, 0, 3, 0),
+        ("cy", 0, 0, 0, 0, 5, 5),
+    ]
+    assert await ties.tie_totals(unit="friends", person_id="bo") == [
+        ("cy", 7, 7, 0, 0, 0, 0),
+        ("ada", 3, 3, 0, 5, 0, 3),
+    ]
+    assert await ties.tie_totals(unit="friends", person_id="dee") == []

@@ -362,6 +362,12 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "told_by": f"p{n}", "state": "current", "support_count": 1, "unit": "u",
         "written_at": MS0 + n, "written_by_session": "test",
     },
+    # 0121_persona_dispute: one dispute of a Persona line.
+    "persona_dispute": lambda n: {
+        "id": _uuid("pd", n), "persona_key": f"u#character:p{n}", "line_id": None,
+        "disputed_by": f"p{n}", "kind": "dispute", "claim": f"not so {n}",
+        "message_id": n + 1, "unit": "u", "written_at": MS0 + n,
+    },
     # 0103_memos (DEC-306): a kept memo, and one revision of it.
     "memo": lambda n: {
         "id": _uuid("mm", n), "unit": "friends", "platform": "signal",

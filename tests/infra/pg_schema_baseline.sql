@@ -147,6 +147,7 @@ $$;
 );
 );
 );
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -235,6 +236,7 @@ ADD CONSTRAINT note_revision_pkey PRIMARY KEY (id);
 ADD CONSTRAINT otp_attempt_pkey PRIMARY KEY (id);
 ADD CONSTRAINT otp_challenge_pkey PRIMARY KEY (challenge_id);
 ADD CONSTRAINT participation_window_state_pkey PRIMARY KEY (platform, conversation_id);
+ADD CONSTRAINT persona_dispute_pkey PRIMARY KEY (id);
 ADD CONSTRAINT persona_line_pkey PRIMARY KEY (id);
 ADD CONSTRAINT persona_pkey PRIMARY KEY (key);
 ADD CONSTRAINT pk_document_revision PRIMARY KEY (document_id, revision);
@@ -377,6 +379,7 @@ ALTER TABLE ONLY public.otp_attempt
 ALTER TABLE ONLY public.otp_challenge
 ALTER TABLE ONLY public.participation_window_state
 ALTER TABLE ONLY public.persona
+ALTER TABLE ONLY public.persona_dispute
 ALTER TABLE ONLY public.persona_line
 ALTER TABLE ONLY public.presence_corridor_speed
 ALTER TABLE ONLY public.presence_corridors
@@ -587,6 +590,11 @@ CONSTRAINT ck_otp_challenge_code_hash CHECK ((code_hash ~ '^[0-9a-f]{64}$'::text
 CONSTRAINT ck_otp_challenge_expiry CHECK ((expires_at > issued_at)),
 CONSTRAINT ck_otp_challenge_platform CHECK ((platform = ANY (ARRAY['signal'::text, 'whatsapp'::text]))),
 CONSTRAINT ck_otp_challenge_purpose CHECK ((purpose = ANY (ARRAY['sign_in'::text, 'adopt'::text])))
+CONSTRAINT ck_persona_dispute_claim CHECK (((length(btrim(claim)) > 0) AND (length(claim) <= 300))),
+CONSTRAINT ck_persona_dispute_has_a_key CHECK ((length(btrim(persona_key)) > 0)),
+CONSTRAINT ck_persona_dispute_has_a_unit CHECK ((length(btrim(unit)) > 0)),
+CONSTRAINT ck_persona_dispute_kind CHECK ((kind = ANY (ARRAY['dispute'::text, 'forget'::text]))),
+CONSTRAINT ck_persona_dispute_who CHECK ((length(btrim(disputed_by)) > 0))
 CONSTRAINT ck_persona_entity_kind CHECK ((entity_kind = ANY (ARRAY['human'::text, 'nora'::text, 'agent'::text, 'room'::text, 'unit'::text]))),
 CONSTRAINT ck_persona_has_a_key CHECK ((length(btrim(key)) > 0)),
 CONSTRAINT ck_persona_has_a_unit CHECK ((length(btrim(unit)) > 0)),
@@ -802,6 +810,7 @@ CREATE INDEX idx_note_revision_body_trgm ON public.note_revision USING gin (body
 CREATE INDEX idx_note_revision_note_id ON public.note_revision USING btree (note_id);
 CREATE INDEX idx_note_standing ON public.note USING btree (unit) WHERE (retired_at IS NULL);
 CREATE INDEX idx_otp_challenge_person ON public.otp_challenge USING btree (person_id, purpose, issued_at);
+CREATE INDEX idx_persona_dispute_key ON public.persona_dispute USING btree (persona_key, written_at);
 CREATE INDEX idx_persona_line_key ON public.persona_line USING btree (persona_key, written_at);
 CREATE INDEX idx_presence_corridors_build_subject ON public.presence_corridors USING btree (build_id, subject_id);
 CREATE INDEX idx_presence_corridors_subject ON public.presence_corridors USING btree (subject_id);
@@ -902,6 +911,7 @@ CREATE TABLE public.otp_attempt (
 CREATE TABLE public.otp_challenge (
 CREATE TABLE public.participation_window_state (
 CREATE TABLE public.persona (
+CREATE TABLE public.persona_dispute (
 CREATE TABLE public.persona_line (
 CREATE TABLE public.presence_corridor_speed (
 CREATE TABLE public.presence_corridors (
@@ -1391,6 +1401,7 @@ citations text[] NOT NULL,
 citations text[] NOT NULL,
 city text
 city text
+claim text NOT NULL,
 closing_condition text NOT NULL,
 closing_condition text,
 code_hash text NOT NULL,
@@ -1497,6 +1508,7 @@ detail text DEFAULT ''::text NOT NULL,
 detail text DEFAULT ''::text NOT NULL,
 disputed_at bigint,
 disputed_at bigint,
+disputed_by text NOT NULL,
 disputed_by text,
 disputed_by text,
 disputed_reason text,
@@ -1690,6 +1702,7 @@ id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
+id uuid NOT NULL,
 image jsonb NOT NULL,
 image_id text,
 instruction_sha256 text NOT NULL,
@@ -1719,6 +1732,7 @@ key text NOT NULL,
 kind text CONSTRAINT signal_kind_not_null NOT NULL,
 kind text DEFAULT 'miss'::text NOT NULL,
 kind text DEFAULT 'reminder'::text NOT NULL,
+kind text NOT NULL,
 kind text NOT NULL,
 kind text NOT NULL,
 kind text NOT NULL,
@@ -1770,6 +1784,7 @@ lesson_id uuid NOT NULL,
 lexeme_basis text[] DEFAULT '{}'::text[] NOT NULL,
 likes bigint,
 likes_hidden boolean NOT NULL,
+line_id uuid,
 lineage jsonb DEFAULT '[]'::jsonb NOT NULL,
 lineage jsonb DEFAULT '[]'::jsonb NOT NULL,
 lineage jsonb DEFAULT '[]'::jsonb NOT NULL,
@@ -1815,11 +1830,14 @@ media_type text NOT NULL,
 media_type text NOT NULL,
 memo_id uuid NOT NULL,
 mention_at timestamp with time zone,
+mention_persons_json text
+mention_persons_json text,
 mentioned text[] DEFAULT '{}'::text[] NOT NULL,
 mentions_ab integer NOT NULL,
 mentions_ba integer NOT NULL,
 mentions_json text,
 mentions_json text,
+message_id bigint NOT NULL,
 message_id integer NOT NULL,
 message_id integer NOT NULL,
 message_id integer NOT NULL,
@@ -1952,6 +1970,7 @@ person_id text,
 person_id text,
 person_id text,
 persona_key text NOT NULL,
+persona_key text NOT NULL,
 persons text[] DEFAULT '{}'::text[] NOT NULL,
 persons text[] NOT NULL,
 persons text[] NOT NULL,
@@ -2041,7 +2060,8 @@ recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
-recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
+recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
@@ -2169,6 +2189,7 @@ session_id bigint,
 session_id uuid,
 session_id uuid,
 set_by text NOT NULL,
+settled_at bigint,
 sha256 text NOT NULL,
 sha256 text NOT NULL,
 sha256 text NOT NULL,
@@ -2343,6 +2364,7 @@ unit text NOT NULL,
 unit text NOT NULL,
 unit text NOT NULL,
 unit text NOT NULL,
+unit text NOT NULL,
 unit text,
 unit text,
 unit_id text DEFAULT ''::text NOT NULL,
@@ -2427,6 +2449,7 @@ working_set jsonb DEFAULT '[]'::jsonb NOT NULL,
 working_set jsonb DEFAULT '[]'::jsonb NOT NULL,
 would_have_said text NOT NULL,
 writer text NOT NULL,
+written_at bigint NOT NULL,
 written_at bigint NOT NULL,
 written_at bigint NOT NULL,
 written_at bigint NOT NULL,

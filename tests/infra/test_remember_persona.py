@@ -59,7 +59,7 @@ async def store(pg_url):
     run_migrations(pg_url)
     engine = create_sql_engine(pg_url)
     try:
-        yield SqlPersonaStore(engine)
+        yield SqlPersonaStore(engine, screen=lambda _t: None)
     finally:
         await engine.dispose()
 
@@ -161,7 +161,7 @@ async def test_a_member_the_room_does_not_list_is_refused(persons: Any, store: A
     lineage = LineagePolicy(rooms=(only_miles,), _by_id={("signal", GROUP): only_miles})
     result = await _call(_remember(persons, store, lineage=lineage), content="x",
                          person="Tyler")
-    assert result["status"] == "refused"
+    assert result["status"] == "refused" and "not one of this room's members" in result["note"]
     assert await store.account_heads(key=f"{UNIT}#character:tyler_cortez") == ()
 
 
@@ -175,3 +175,90 @@ async def test_a_failing_store_is_unavailable_never_ok(persons: Any, outcome: st
     result = await _call(_remember(persons, SimpleNamespace(persona_write=persona_write)),
                          content="vegetarian")
     assert result["status"] == "unavailable" and "never say 記低咗" in result["note"]
+
+
+# --- persona_dispute (35 §2): the graph surface's dispute door -------------------
+
+
+def _dispute(persons: Any, store: Any, *, trigger: tuple[int, ...] = (41,),
+             wired: bool = True) -> Any:
+    room = Room(
+        platform="signal", conversation_id=GROUP,
+        roster_source=FakeRosterSource(groups={GROUP: (MILES, TYLER, NORA)}),
+        persons=persons, tagger=persons.by_person["miles_novak"], self_ids=NORA,
+        trigger_message_ids=trigger,
+    )
+    built = build_tools(
+        store=_NullStore(), conversation_id=GROUP, conversation_type="group",
+        persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        metrics=Metrics(), room=room, transit_source=_UNREACHABLE_TRANSIT,
+        question="", context_window=40, lineage=_LINEAGE, supplied_unit=UNIT,
+        memory_retrieval=MemorySearch(FakeMemoryIndex([]), Metrics()),
+        persona=store if wired else None,
+    )
+    return {t.tool_name: t for t in built}["persona_dispute"]
+
+
+async def test_the_subjects_own_forget_hides_the_line_at_once(persons: Any, store: Any) -> None:
+    await _call(_remember(persons, store), content="vegetarian since August")
+    result = await _call(_dispute(persons, store), claim="vegetarian since August",
+                         kind="forget")
+    assert result["status"] == "ok" and result["effect"] == "hidden"
+    [line] = await store.account_heads(key=f"{UNIT}#character:miles_novak")
+    assert line.state == "hidden"
+    [dispute] = await store.open_disputes(key=f"{UNIT}#character:miles_novak", limit=10)
+    assert (dispute.disputed_by, dispute.kind, dispute.message_id) == (
+        "miles_novak", "forget", 41)
+
+
+async def test_another_members_dispute_marks_the_line_for_weighing(
+    persons: Any, store: Any,
+) -> None:
+    await _call(_remember(persons, store), content="has a new job", person="Tyler")
+    result = await _call(_dispute(persons, store), claim="has a new job", person="Tyler")
+    assert result["status"] == "ok" and result["effect"] == "disputed"
+    [line] = await store.account_heads(key=f"{UNIT}#character:tyler_cortez")
+    assert line.state == "disputed"
+
+
+async def test_forget_by_someone_else_is_refused_and_writes_nothing(
+    persons: Any, store: Any,
+) -> None:
+    await _call(_remember(persons, store), content="has a new job", person="Tyler")
+    result = await _call(_dispute(persons, store), claim="has a new job", person="Tyler",
+                         kind="forget")
+    assert result["status"] == "refused" and "only they can ask" in result["note"]
+    [line] = await store.account_heads(key=f"{UNIT}#character:tyler_cortez")
+    assert line.state == "current"
+    assert await store.pending_disputes(key=f"{UNIT}#character:tyler_cortez") == 0
+
+
+async def test_a_claim_nothing_holds_is_recorded_and_nothing_is_marked(
+    persons: Any, store: Any,
+) -> None:
+    result = await _call(_dispute(persons, store), claim="something nobody said")
+    assert result["status"] == "ok" and result["effect"] == "recorded"
+    [dispute] = await store.open_disputes(key=f"{UNIT}#character:miles_novak", limit=10)
+    assert dispute.line_id is None
+
+
+async def test_persona_dispute_unwired_is_unavailable(persons: Any, store: Any) -> None:
+    result = await _call(_dispute(persons, store, wired=False), claim="x")
+    assert result["status"] == "unavailable"
+    assert await store.open_disputes(key=f"{UNIT}#character:miles_novak", limit=10) == ()
+
+
+async def test_persona_dispute_is_not_on_the_honcho_surface(persons: Any, store: Any) -> None:
+    room = Room(
+        platform="signal", conversation_id=GROUP,
+        roster_source=FakeRosterSource(groups={GROUP: (MILES, TYLER, NORA)}),
+        persons=persons, tagger=persons.by_person["miles_novak"], self_ids=NORA,
+        trigger_message_ids=(41,),
+    )
+    built = build_tools(
+        store=_NullStore(), conversation_id=GROUP, conversation_type="group",
+        persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        metrics=Metrics(), room=room, transit_source=_UNREACHABLE_TRANSIT,
+        question="", context_window=40, lineage=_LINEAGE, supplied_unit=UNIT,
+    )
+    assert "persona_dispute" not in {t.tool_name for t in built}

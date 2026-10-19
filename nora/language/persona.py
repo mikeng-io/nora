@@ -1,0 +1,671 @@
+"""The Persona adaptor, in shadow: one Dreamer session per (unit, person),
+writing typed lines through `persona_write` (design/unified-memory/45 §4).
+
+**Shadow** (45 §6, 00 «Sequence» step 6): it writes `persona_line` and
+nothing reads it. The Character head, `peer_card` and `peer_history` keep
+rendering, Honcho's feed keeps running, and no prompt changes until the
+switch (step 8). `[persona] enabled` turns the sessions on.
+
+**The wake** is the person's Character rule, counted over the rooms that
+list them (35 §3): `[culture] person_wake_batch` of their messages since the
+key's watermark, or `stale_seconds` with any. **Plus the stimulus wake** (45
+§4 prerequisite 4): a `told` line a turn wrote about them (`remember` on the
+graph surface) or a dispute of one of its lines (`persona_dispute` on the
+same surface) since the account's last session counts as a full batch, so
+the session weighs it at once.
+
+**The backfill is the first session** (35 §4): a key never run has a
+watermark of 0, so every listed person wakes on the first tick with their
+newest messages over the whole Record, their Rollup ties and the response
+episodes they answered. While their account holds no line, the session is
+also handed their Character head and may cite the messages it cited: the
+prose account is rewritten into at most five traits by the model, never
+converted by code. Idempotent by construction: once an account holds a line
+its Character head is no longer handed, and the watermark is the dream
+loop's.
+
+**What it reads** (45 §4): its own held lines by handle (`P1`, ...), the
+person's new messages, the messages that MENTION them (the index's `mentions`
+edges, written from the resolved `messages.mention_persons_json`), the
+response episodes they answered, their Rollup ties summed over every week
+(never co-location: no presence, R-31), the disputes of its lines raised
+since it last settled (35 §2), and the unit's room cultures.
+
+**One atomic write settles the session**: `persona_write(ops)` is judged
+whole by `nora.domain.persona.plan_write` (one refused op refuses the call,
+with every reason), lands at once, and applies the 60-day trait decay;
+`persona_no_change(why)` settles with nothing added and applies the decay.
+A session that does neither holds its batch (DEC-280's bound).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Protocol
+
+from nora.domain.blocks import (
+    BlockKey,
+    ContextBlock,
+    assemble,
+    render_elements,
+    render_group,
+    render_row_window,
+)
+from nora.domain.culture import (
+    MAX_CONSECUTIVE_REJECTIONS,
+    CultureRevision,
+    Episode,
+    RoomMessage,
+)
+from nora.domain.errors import AccountNotRecordableError
+from nora.domain.persona import (
+    PERSONA_OUTCOMES,
+    Account,
+    PersonaCitable,
+    PersonaDispute,
+    PersonaLine,
+    PersonaOp,
+    PersonaWriteResult,
+    Said,
+    handles_for,
+    parse_ops,
+    plan_write,
+    rollup_citation,
+)
+from nora.domain.ports import Proposal
+from nora.domain.prompt import age, escape
+from nora.language.character import (
+    CHARACTER_PERSON_TOOLS,
+    PersonKey,
+    room_cultures_block,
+)
+from nora.obs.metrics import Metrics
+
+log = logging.getLogger(__name__)
+
+__all__ = [
+    "PERSONA_PERSON_ADAPTOR_NAME",
+    "PersonaEvidence",
+    "PersonaPersonAdaptor",
+    "PersonaStaged",
+]
+
+#: The adaptor's `name`: its watermark identity, schedule, budget and grant
+#: key, and its objective file.
+PERSONA_PERSON_ADAPTOR_NAME = "persona-person"
+
+#: The most response episodes one session is handed (the newest they
+#: answered); the rest of what they said is in their messages.
+EPISODES_MAX = 12
+
+#: The most ties one session is handed (the most replied first).
+TIES_MAX = 8
+
+#: The most open disputes one session weighs (the oldest first).
+DISPUTES_MAX = 10
+
+#: `inputs` holds eight sites (the account's revision, lines, pending `told`
+#: lines and open disputes, the Character head, cited rows in one read, the
+#: ties, the rooms' cultures in one gather); `commit` one write.
+PERSONA_STORE_CALLS_PER_TICK = 9
+
+_BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
+    ("about_person", 5, "turn"),
+    ("persona_lines", 10, "turn"),
+    ("previous_character", 20, "turn"),
+    ("persona_disputes", 30, "turn"),
+    ("persona_messages", 40, "turn"),
+    ("persona_mentions", 45, "turn"),
+    ("persona_episodes", 50, "turn"),
+    ("persona_ties", 60, "turn"),
+)
+_ROW: dict[str, tuple[int, BlockKey]] = {name: (order, key) for name, order, key in _BLOCKS}
+
+
+def _at(name: str) -> dict[str, Any]:
+    order, key = _ROW[name]
+    return {"order": order, "key": key}
+
+
+class _Reads(Protocol):
+    """`nora.infra.sql.character.SqlCharacterEvidence`'s reads this adaptor uses."""
+
+    async def person_count(
+        self, *, rooms: Sequence[tuple[str, str]], person_id: str, after: int,
+    ) -> int: ...
+
+    async def person_since(
+        self, *, rooms: Sequence[tuple[str, str]], person_id: str, after: int,
+        limit: int,
+    ) -> tuple[list[RoomMessage], int]: ...
+
+    async def mentions_since(
+        self, *, rooms: Sequence[tuple[str, str]], person_id: str, after: int,
+        limit: int,
+    ) -> tuple[list[RoomMessage], int]: ...
+
+    async def episodes(
+        self, *, unit: str, after: int, limit: int, evidence_only: bool = ...,
+    ) -> tuple[list[Episode], int]: ...
+
+    async def rows_by_id(self, *, ids: Sequence[int]) -> list[RoomMessage]: ...
+
+    async def tie_totals(
+        self, *, unit: str, person_id: str,
+    ) -> list[tuple[str, int, int, int, int, int, int]]: ...
+
+
+class _Persona(Protocol):
+    """`nora.infra.sql.persona.SqlPersonaStore`."""
+
+    async def account_state(self, *, key: str) -> tuple[int, int | None]: ...
+
+    async def account_heads(self, *, key: str) -> tuple[PersonaLine, ...]: ...
+
+    async def pending_told(self, *, key: str) -> int: ...
+
+    async def pending_disputes(self, *, key: str) -> int: ...
+
+    async def open_disputes(
+        self, *, key: str, limit: int
+    ) -> tuple[PersonaDispute, ...]: ...
+
+    async def persona_write(
+        self, *, account: Account, ops: Sequence[PersonaOp], citable: PersonaCitable,
+        now_ms: int, written_by_session: str,
+        apply_decay: bool, expected_revision: int | None = None,
+    ) -> PersonaWriteResult: ...
+
+
+class _Culture(Protocol):
+    async def head(self, *, key: str) -> CultureRevision | None: ...
+
+
+class _Evidence(Protocol):
+    """What a Persona adaptor and the dream loop need of an evidence source:
+    the count and newest read the loop wakes on, and `held`, the watermark
+    the last `newest` started after. `PersonaEvidence` for a person,
+    `persona_collective.CollectiveEvidence` for a collective."""
+
+    def held(self, key: str) -> int | None: ...
+
+    async def count(self, *, key: str, after: int) -> int: ...
+
+    async def newest(
+        self, *, key: str, after: int, limit: int,
+    ) -> tuple[Sequence[Any], int]: ...
+
+
+def _listed(pk: PersonKey) -> list[tuple[str, str]]:
+    """The `(platform, primary_id)` of the rooms that list them: their
+    evidence (35 §3)."""
+    return [(r.platform, r.key) for r in pk.rooms if r.key in pk.listed]
+
+
+@dataclass(frozen=True)
+class Mention:
+    """A message that MENTIONS the person, wrapped so the batch keeps it
+    apart from one they WROTE (both are `RoomMessage`): it renders in its own
+    block and is citable the same way."""
+
+    message: RoomMessage
+
+
+class PersonaEvidence:
+    """The dream loop's count and read for a Persona key: the person's
+    messages in the rooms that list them past the watermark, the episodes they
+    answered past it, and the stimulus wake (a turn's `told` line).
+
+    **A source is an item type.** `newest` hands the session a mixed batch;
+    `PersonaPersonAdaptor.inputs` renders each type in its own block and adds
+    what it may cite to `PersonaCitable` (a Record row by id, an episode as
+    `response:<id>`). Another source (a person's social items) is one more
+    read here, one more type there, and one more block row: nothing else
+    changes shape."""
+
+    def __init__(
+        self, *, store: _Reads, persona: _Persona, keys: Mapping[str, PersonKey],
+        wake_batch: int,
+    ) -> None:
+        self._store = store
+        self._persona = persona
+        self._keys = keys
+        self._wake_batch = wake_batch
+        self._held: dict[str, int] = {}
+
+    def held(self, key: str) -> int | None:
+        """The watermark the last `newest` for `key` started after."""
+        return self._held.get(key)
+
+    async def count(self, *, key: str, after: int) -> int:
+        pk = self._keys[key]
+        n = await self._store.person_count(
+            rooms=_listed(pk), person_id=pk.person.person_id, after=after)
+        if n >= self._wake_batch:
+            return n
+        if await self._persona.pending_told(key=key):
+            return self._wake_batch
+        if await self._persona.pending_disputes(key=key):
+            return self._wake_batch
+        return n
+
+    async def newest(
+        self, *, key: str, after: int, limit: int,
+    ) -> tuple[Sequence[RoomMessage | Episode | Mention], int]:
+        """Their newest `limit` messages past `after` and the cursor past all of
+        them, the messages that mention them over the same span (same Record id
+        space, so one cursor: the newest id either read reached), then the
+        newest `EPISODES_MAX` closed episodes past it that they answered.
+        A mention never wakes the session (45 §4's wake is their own batch,
+        stale, or a stimulus); it is read when something else did."""
+        pk = self._keys[key]
+        self._held[key] = after
+        messages, cursor = await self._store.person_since(
+            rooms=_listed(pk), person_id=pk.person.person_id, after=after, limit=limit,
+        )
+        mentioned, mention_cursor = await self._store.mentions_since(
+            rooms=_listed(pk), person_id=pk.person.person_id, after=after, limit=limit,
+        )
+        found, _ = await self._store.episodes(
+            unit=pk.unit, after=after, limit=limit, evidence_only=True)
+        listed = set(pk.listed)
+        theirs = [e for e in found if e.room in listed
+                  and any(r.person_id == pk.person.person_id for r in e.replies)]
+        return [*messages, *(Mention(message=m) for m in mentioned),
+                *theirs[-EPISODES_MAX:]], max(cursor, mention_cursor)
+
+
+@dataclass(frozen=True)
+class PersonaStaged:
+    """What a settled session hands `commit`: the write it staged (`()` for
+    `persona_no_change`, which still applies the decay), what it may cite, and
+    the revision its handles were read at."""
+
+    account: Account
+    ops: tuple[PersonaOp, ...]
+    citable: PersonaCitable
+    revision: int
+
+
+@dataclass
+class _Run:
+    account: Account
+    citable: PersonaCitable
+    revision: int
+    heads: tuple[PersonaLine, ...]
+    batch_start: int | None
+    #: A teller's name as the session saw it -> their person id, for
+    #: `told_by` (a model names people, it never sees an id).
+    tellers: Mapping[str, str]
+    #: The settled write (`()`: no change); `None` until a verb settles it.
+    staged: tuple[PersonaOp, ...] | None = None
+
+
+def _screened_by_the_runtime(_text: str) -> str | None:
+    """The verb-time judge's screen: none, because `DreamerRuntime._screened`
+    refused any call whose arguments carry an identifier or coordinate
+    before the verb ran. The store's own screen runs again at `commit`."""
+    return None
+
+
+def _said(m: RoomMessage) -> Said:
+    return Said(ts=m.row.ts, person_id=m.row.person_id, room=m.room)
+
+
+def _line_attrs(line: PersonaLine, handle: str, now: datetime,
+                name_of: Callable[[str | None], str]) -> list[tuple[str, str | None]]:
+    return [
+        ("id", handle), ("part", line.part), ("kind", line.kind), ("mode", line.mode),
+        ("state", None if line.state == "current" else line.state),
+        ("told_by", name_of(line.told_by) if line.told_by else None),
+        ("verdict", line.verdict),
+        ("supported", age(line.last_supported_at or line.written_at, now)),
+        ("cites", str(len(line.citations))),
+    ]
+
+
+class PersonaPersonAdaptor:
+    """One person's Persona in one unit, in shadow."""
+
+    name = PERSONA_PERSON_ADAPTOR_NAME
+    key_kind = "entity"
+    uses_watermark = True
+    objective = PERSONA_PERSON_ADAPTOR_NAME
+    #: Unread: answers through `verbs`, never an envelope.
+    envelope_key = "persona"
+    #: The person session's read tools (`CHARACTER_PERSON_TOOLS`): memory on
+    #: the selected surface, `lookup_person`, `group_members`; no presence.
+    tools: frozenset[str] = CHARACTER_PERSON_TOOLS
+    store_calls_per_tick = PERSONA_STORE_CALLS_PER_TICK
+
+    def __init__(
+        self, *, persona: _Persona, culture: _Culture, evidence: _Evidence,
+        reads: _Reads, keys: Mapping[str, PersonKey],
+        name_of: Callable[[str | None], str],
+        clock_ms: Callable[[], int], metrics: Metrics | None = None,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        self._persona = persona
+        self._culture = culture
+        #: Read by the dream loop, never awaited here.
+        self.evidence = evidence
+        self._reads = reads
+        self._keys = keys
+        self._population = tuple(sorted(keys))
+        self._name_of = name_of
+        self._clock_ms = clock_ms
+        self._metrics = metrics
+        self._clock = clock or (lambda: datetime.now().astimezone())
+        self._runs: dict[str, _Run] = {}
+        # In memory, as `EntitySessions._rejections` (its ponytail applies).
+        self._rejections: dict[str, tuple[int | None, int]] = {}
+
+    def keys(self) -> Sequence[str]:
+        return self._population
+
+    def tool_room(self, key: str) -> str | None:
+        pk = self._keys.get(key)
+        return None if pk is None else pk.home
+
+    def _count(self, outcome: str, n: int = 1) -> None:
+        if outcome not in PERSONA_OUTCOMES:
+            raise ValueError(f"nora_persona_session_total{{{outcome}}} is outside its "
+                             "vocabulary")
+        if self._metrics is not None:
+            self._metrics.inc("nora_persona_session_total", float(n), outcome=outcome)
+
+    # -- inputs ------------------------------------------------------------
+
+    async def inputs(self, *, key: str, batch: Sequence[Any]) -> str:
+        """Who this is, the lines the account holds (by handle), the Character
+        head until a session first settles the account, the rooms' cultures, their messages,
+        the messages that mention them, the episodes they answered, their ties
+        and the disputes awaiting weighing. `""` when nothing is new and
+        no turn wrote a line or a dispute: no model call."""
+        pk = self._keys.get(key)
+        messages = [m for m in batch if isinstance(m, RoomMessage)]
+        mentions = [m.message for m in batch if isinstance(m, Mention)]
+        episodes = [e for e in batch if isinstance(e, Episode)]
+        if pk is None:
+            return ""
+        # The revision before the lines: a write landing between the two reads
+        # makes this session's write a `conflict`, never a write on shifted handles.
+        revision, settled_at = await self._persona.account_state(key=key)
+        heads = await self._persona.account_heads(key=key)
+        pending = await self._persona.pending_told(key=key)
+        disputes = await self._persona.open_disputes(key=key, limit=DISPUTES_MAX)
+        if not (messages or mentions or episodes or pending or disputes):
+            return ""
+        now = self._clock()
+        person = pk.person.person_id
+        # THE BACKFILL (35 §4): until a session first settles the account, it
+        # is handed the prose Character head and the rows it cited, once. A
+        # turn's `told` lines do not count: they may land before it.
+        first = settled_at is None
+        previous = await self._culture.head(key=key) if first else None
+        # The rows a citation names, in one read: an old head's citations and
+        # the message each dispute was said in (both citable).
+        cited_ids = [int(c) for c in (previous.citations if previous else ()) if c.isdigit()]
+        dispute_ids = {d.message_id for d in disputes}
+        cited = (await self._reads.rows_by_id(ids=[*cited_ids, *dispute_ids])
+                 if cited_ids or dispute_ids else [])
+        old_cited = [m for m in cited if m.row.id not in dispute_ids]
+        ties = (await self._reads.tie_totals(unit=pk.unit, person_id=person))[:TIES_MAX]
+        cultures = await asyncio.gather(*(self._culture.head(key=r.key) for r in pk.rooms))
+
+        said: dict[int, Said] = {m.row.id: _said(m)
+                                 for m in [*old_cited, *messages, *mentions, *cited]}
+        replies: dict[int, Said] = {}
+        for e in episodes:
+            for r in e.replies:
+                if r.person_id == person:
+                    said[r.id] = Said(ts=r.ts, person_id=r.person_id, room=e.room)
+                    replies.setdefault(e.send_id, said[r.id])
+        tie_keys = {other: rollup_citation("tie", f"{pk.unit}|{','.join(sorted((person, other)))}")
+                    for other, *_ in ties}
+        account = Account(key=key, entity_kind="human", unit=pk.unit, subject=person)
+        self._runs[key] = _Run(
+            account=account,
+            citable=PersonaCitable(
+                messages=said,
+                episodes={e.send_id: replies[e.send_id] for e in episodes
+                          if e.send_id in replies},
+                rollup_keys=frozenset(tie_keys.values()),
+                listed_rooms=frozenset(pk.listed),
+            ),
+            revision=revision, heads=heads,
+            batch_start=self.evidence.held(key),
+            tellers={n.casefold(): person for n in (pk.person.name, *pk.person.aliases)}
+            | {self._name_of(o).casefold(): o for o, *_ in ties},
+        )
+        labels = {r.key: r.label for r in pk.rooms}
+        handles = handles_for(heads)
+        handle_of = {i: h for h, i in handles.items()}
+        # A dispute names the line as it was when it matched; a state change
+        # (hidden, disputed) superseded that row, so its id still resolves.
+        handle_of.update({h.supersedes: handle_of[h.id]
+                          for h in heads if h.supersedes and h.id in handle_of})
+        held = [h for h in heads if h.id in handle_of]
+        parts: list[ContextBlock | None] = [
+            ContextBlock(
+                name="about_person", **_at("about_person"), body="",
+                when_empty="self_close",
+                attrs=(("name", pk.person.name),) + (
+                    (("aliases", ", ".join(pk.person.aliases)),) if pk.person.aliases else ()),
+            ),
+            None if not held else ContextBlock(
+                name="persona_lines", **_at("persona_lines"), body=render_elements(
+                    held, tag="line",
+                    attrs=lambda x, _i: _line_attrs(x, handle_of[x.id], now, self._name_of),
+                    body=lambda x: x.text,
+                ),
+            ),
+            None if previous is None else ContextBlock(
+                name="previous_character", **_at("previous_character"),
+                body=escape(previous.body),
+                attrs=(("written", age(previous.written_at, now)),) + (
+                    (("cites", ", ".join(str(m.row.id) for m in old_cited)),)
+                    if old_cited else ()),
+            ),
+            room_cultures_block(pk.rooms, cultures, now),
+            None if not disputes else ContextBlock(
+                name="persona_disputes", **_at("persona_disputes"), body=render_elements(
+                    disputes, tag="dispute",
+                    attrs=lambda d, _i: (
+                        ("by", self._name_of(d.disputed_by)), ("kind", d.kind),
+                        ("age", age(d.written_at, now)),
+                        ("said", str(d.message_id)),
+                        ("line", handle_of.get(d.line_id or "")),
+                    ),
+                    body=lambda d: d.claim,
+                ),
+            ),
+            None if not messages else ContextBlock(
+                name="persona_messages", **_at("persona_messages"), body=render_row_window(
+                    messages, row_id=lambda m: m.row.id,
+                    attrs=lambda m: (("room", labels.get(m.room) or "unnamed room"),
+                                     ("age", age(m.row.ts, now))),
+                    body=lambda m: m.row.body or "",
+                ),
+            ),
+            None if not mentions else ContextBlock(
+                name="persona_mentions", **_at("persona_mentions"), body=render_row_window(
+                    mentions, row_id=lambda m: m.row.id,
+                    attrs=lambda m: (("room", labels.get(m.room) or "unnamed room"),
+                                     ("by", self._name_of(m.row.person_id)),
+                                     ("age", age(m.row.ts, now))),
+                    body=lambda m: m.row.body or "",
+                ),
+            ),
+            None if not replies else ContextBlock(
+                name="persona_episodes", **_at("persona_episodes"),
+                body="\n".join(self._episode(e, person, labels) for e in episodes
+                               if e.send_id in replies),
+            ),
+            None if not ties else ContextBlock(
+                name="persona_ties", **_at("persona_ties"), body=render_elements(
+                    ties, tag="tie",
+                    attrs=lambda t, _i: (
+                        ("cite", tie_keys[t[0]]), ("with", self._name_of(t[0])),
+                        ("replies_to", str(t[1])), ("replied_by", str(t[2])),
+                        ("mentions", str(t[3])), ("mentioned_by", str(t[4])),
+                        ("reacts_to", str(t[5])), ("reacted_by", str(t[6])),
+                    ),
+                    body=lambda _t: None,
+                ),
+            ),
+        ]
+        return assemble([p for p in parts if p is not None], sep="\n\n")
+
+    def _episode(self, e: Episode, person: str, labels: Mapping[str, str]) -> str:
+        """One `<episode>`: her send and their replies to it, each with its id."""
+        rows = render_row_window(
+            [(e.send_id, "you", e.text), *(
+                (r.id, self._name_of(r.person_id), r.body or "")
+                for r in e.replies if r.person_id == person)],
+            row_id=lambda m: m[0], attrs=lambda m: (("from", m[1]),), body=lambda m: m[2],
+        )
+        return render_group("episode", [
+            ("n", f"response:{e.send_id}"), ("room", labels.get(e.room) or "unnamed room"),
+            ("outcome", e.outcome),
+        ], rows)
+
+    # -- the verbs ---------------------------------------------------------
+
+    def verbs(self, *, key: str) -> list[Callable[..., Awaitable[dict[str, object]]]]:
+        """`persona_write` and `persona_no_change`, bound to this run. A write
+        is judged at once against the lines the session was shown, so the
+        model reads every refusal and can fix it; what passes is STAGED, and
+        `commit` lands it, judged again inside the store's transaction (the
+        account may have moved). The runtime screens every verb's arguments
+        before it runs (`DreamerRuntime._screened`); the store screens again."""
+
+        def _over() -> dict[str, object] | None:
+            run = self._runs.get(key)
+            if run is None:
+                return {"status": "unavailable", "reason": "no_session",
+                        "detail": "this session is over; nothing was written"}
+            if run.staged is not None:
+                return {"status": "refused", "reason": "settled",
+                        "detail": "this session already settled the account; stop"}
+            return None
+
+        async def persona_write(ops: list[dict[str, Any]]) -> dict[str, object]:
+            """Change this person's account in one call: every add, keep,
+            revise and retire together. Call this once, when you know what the
+            account now holds; the whole call is refused if any op is.
+
+            Returns `status`: ok, or refused with `refusals` (each a `reason`,
+            a `detail` and the `op` index) saying what to fix before calling
+            again.
+
+            Args:
+                ops: The changes, each an object with `op`: add (part, kind,
+                    text, mode, citations, and draws_on, told_by, prediction,
+                    prediction_observable, prediction_window_end or
+                    conflicts_with where they apply), keep (line, citations),
+                    revise (line, citations, text, mode, draws_on,
+                    conflicts_with) or retire (line, why). A line is named by
+                    its `id` as shown, like P1.
+            """
+            over = _over()
+            if over is not None:
+                return over
+            run = self._runs[key]
+            named = [
+                {**op, "told_by": run.tellers.get(str(op["told_by"]).strip().casefold(),
+                                                  op["told_by"])}
+                if isinstance(op, dict) and op.get("told_by") else op
+                for op in ops
+            ] if isinstance(ops, list) else ops
+            parsed, bad = parse_ops(named)
+            if not bad:
+                bad = plan_write(
+                    account=run.account, heads=run.heads, ops=parsed, citable=run.citable,
+                    now_ms=self._clock_ms(), written_by_session="dry-run",
+                    screen=_screened_by_the_runtime, apply_decay=True,
+                ).refusals
+            if bad:
+                self._count("refused")
+                return {"status": "refused", "refusals": [
+                    {"reason": r.reason, "detail": r.detail, "op": r.op_index} for r in bad]}
+            run.staged = parsed
+            return {"status": "ok"}
+
+        async def persona_no_change(why: str) -> dict[str, object]:
+            """Close this session with nothing added. Call this when what you
+            were given adds nothing the account does not already say.
+
+            Returns `status`: ok, or refused when the session already settled.
+
+            Args:
+                why: One short sentence: why nothing changes.
+            """
+            over = _over()
+            if over is not None:
+                return over
+            self._runs[key].staged = ()
+            log.info("persona: key=%s unchanged: %s", key, why[:200])
+            return {"status": "ok"}
+
+        return [persona_write, persona_no_change]
+
+    # -- accept / commit ---------------------------------------------------
+
+    async def accept(
+        self, *, key: str, items: Sequence[Mapping[str, object]],
+    ) -> Sequence[object]:
+        """The staged write, or a refusal to spend the batch. Unsettled (no
+        verb settled the session) RAISES `AccountNotRecordableError` (the
+        watermark holds) until the `MAX_CONSECUTIVE_REJECTIONS`-th run of one
+        batch, which is counted `abandoned` and consumed (DEC-280)."""
+        run = self._runs.pop(key, None)
+        if run is None or run.staged is None:
+            log.warning("persona: key=%s ended without settling; HOLDING the watermark", key)
+            self._count("unsettled")
+            self._reject(key, None if run is None else run.batch_start)
+            return ()
+        self._rejections.pop(key, None)
+        return (PersonaStaged(account=run.account, ops=run.staged, citable=run.citable,
+                              revision=run.revision),)
+
+    def _reject(self, key: str, start: int | None) -> None:
+        previous, n = self._rejections.get(key, (start, 0))
+        n = n + 1 if previous == start else 1
+        if n < MAX_CONSECUTIVE_REJECTIONS:
+            self._rejections[key] = (start, n)
+            raise AccountNotRecordableError(f"the persona session for key={key} did not settle")
+        self._rejections.pop(key, None)
+        log.warning("persona: key=%s unsettled %d times in a row on the batch from %s; "
+                    "advancing past it", key, n, start)
+        self._count("abandoned")
+
+    async def commit(
+        self, *, key: str, proposals: Sequence[Proposal], now_ms: int,
+    ) -> int:
+        """Land the staged write: judged again in the store's transaction,
+        against the revision the session read (a write landing meanwhile is a
+        `conflict` and writes nothing; the next wake reads the new account),
+        with the 60-day trait decay. Returns the rows it wrote."""
+        written = 0
+        for proposal in proposals:
+            staged = proposal.payload
+            if not isinstance(staged, PersonaStaged):
+                raise TypeError("PersonaPersonAdaptor.commit takes its own write only")
+            result = await self._persona.persona_write(
+                account=staged.account, ops=staged.ops, citable=staged.citable,
+                now_ms=now_ms, written_by_session=proposal.established_by,
+                apply_decay=True, expected_revision=staged.revision,
+            )
+            if result.status != "ok":
+                log.warning("persona: key=%s staged write not landed: %s %s", key,
+                            result.status, [r.reason for r in result.refusals])
+                self._count("refused")
+                continue
+            written += len(result.written)
+            self._count("written" if result.written else "kept")
+        return written

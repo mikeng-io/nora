@@ -240,7 +240,9 @@ index and Honcho's exit are now listed in their order.
    `told` lines through it (operator ruling 2026-10-17).
 6. **The Persona adaptor in shadow, and the backfill** ([35](35-persona.md)
    §4, [45](45-persona-adaptor.md) §6): Persona is written under a shadow key,
-   every prompt is unchanged, Honcho's feed keeps running.
+   every prompt is unchanged, Honcho's feed keeps running. **Built 2026-10-17**
+   (`nora.language.persona`, off unless `[persona] enabled`): the backfill
+   is each account's first session, not a separate script.
 7. **The gates**: the coverage measure and the reply replay
    ([45](45-persona-adaptor.md) §6).
 8. **Switch the prompts**: `<persona>` replaces `peer_card`, `peer_history`

@@ -168,6 +168,7 @@ from nora.domain.memory_index import (
     ProjectionOutcome,
     social_label,
 )
+from nora.domain.models import parse_mentions_json
 from nora.domain.rollup import days_touched, episode_key, iso, local_date, room_key
 from nora.domain.social_stream import HIDING_STATES, PLACE_STATE
 from nora.infra.sql.schema import (
@@ -385,7 +386,8 @@ async def _project_message(conn: AsyncConnection, source_id: str) -> None:
     # Newest edit BY ARRIVAL (`id`), `nora.infra.sql.audit._latest_edit`'s
     # rule: the last edit written is the current text.
     latest = (
-        sa.select(MESSAGE_EDIT.c.id, MESSAGE_EDIT.c.body)
+        sa.select(MESSAGE_EDIT.c.id, MESSAGE_EDIT.c.body,
+                  MESSAGE_EDIT.c.mention_persons_json)
         .where(MESSAGE_EDIT.c.message_id == MESSAGES.c.id)
         .order_by(MESSAGE_EDIT.c.id.desc())
         .limit(1)
@@ -396,7 +398,9 @@ async def _project_message(conn: AsyncConnection, source_id: str) -> None:
             MESSAGES.c.platform, MESSAGES.c.conversation_id, MESSAGES.c.ts,
             MESSAGES.c.body, MESSAGES.c.is_nora, MESSAGES.c.person_id,
             MESSAGES.c.media_json, MESSAGES.c.hidden_at,
+            MESSAGES.c.mention_persons_json,
             latest.c.id.label("edit_id"), latest.c.body.label("edit_body"),
+            latest.c.mention_persons_json.label("edit_mention_persons_json"),
         )
         .select_from(MESSAGES.outerjoin(latest, sa.true()))
         .where(MESSAGES.c.id == int(source_id))
@@ -425,6 +429,20 @@ async def _project_message(conn: AsyncConnection, source_id: str) -> None:
     if author is not None:
         await _hub(conn, author[0], author[1])
         edges.append(("message", source_id, "authored_by", author[0], author[1], author[2]))
+
+    # `mentions` edges, from the person ids ingest resolved the @-mentions to
+    # (25 §2: resolved handles only, never a name read out of the text). An
+    # edit's resolved list replaces the row's; an edit that could not carry
+    # mentions (NULL, «unknown») keeps the row's. Mentioning yourself is not
+    # evidence about yourself.
+    edit_mentions = row.edit_mention_persons_json if row.edit_id is not None else None
+    mentions_raw = edit_mentions if edit_mentions is not None else row.mention_persons_json
+    mentioned = parse_mentions_json(mentions_raw) or frozenset()
+    for pid in sorted(mentioned - {row.person_id}):
+        await _hub(conn, "person", pid)
+        edges.append(
+            ("message", source_id, "mentions", "person", pid,
+             "messages.mention_persons_json"))
 
     shas = list(dict.fromkeys(shas_in(row.media_json)))
     wanted = {_attachment_id(source_id, sha): sha for sha in shas}
