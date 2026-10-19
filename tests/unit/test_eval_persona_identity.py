@@ -52,20 +52,20 @@ def test_negative_and_positive_controls_do_not_pass_identical_empty_output():
 
 def test_private_loader_preserves_other_corpora(tmp_path, monkeypatch):
     monkeypatch.delenv("NORA_EVAL_PERSONA_CASES", raising=False)
-    assert census("persona_identity").unanchored == 6
+    assert census("persona_identity").unanchored == 8
     ordinary = load_corpus("tool_selection")
     path = tmp_path / "private.yaml"
     path.write_text(yaml.safe_dump(case_file()))
     monkeypatch.setenv("NORA_EVAL_PERSONA_CASES", str(path))
     loaded = load_corpus("persona_identity")
-    assert len(loaded) == 6 and census("persona_identity").unanchored == 0
-    assert census("persona_identity").counterfactual == 6
+    assert len(loaded) == 8 and census("persona_identity").unanchored == 0
+    assert census("persona_identity").counterfactual == 8
     assert all(c.metadata["synthetic_evidence"]
                and c.metadata["private_persona_file"] for c in loaded)
     assert [(c.name, c.metadata) for c in load_corpus("tool_selection")] == [
         (c.name, c.metadata) for c in ordinary]
     path.write_text("{}")
-    with pytest.raises(ValueError, match="six registered"):
+    with pytest.raises(ValueError, match="registered"):
         load_corpus("persona_identity")
 
 
@@ -82,3 +82,23 @@ async def test_missing_private_input_and_unreadable_receipt_are_errors(monkeypat
     case = replace(case, metadata={"persona_input": {"sources": []}, "private_persona_file": True})
     outcome = await persona_identity(None, case, now_ms=1)
     assert outcome.error and outcome.meets("identity") is None
+
+
+def test_height_age_grader_requires_both_values_source_time_and_no_birthday():
+    good = receipt()
+    good["heads"] = [{**good["heads"][0], "fact_key": "attribute", "fact_value": value}
+                     for value in ({"name": "height", "value": 178, "unit": "cm"},
+                                   {"name": "age", "value": 34, "unit": "years"})]
+    assert check_identity("height_age_stated", good) == ()
+    empty = {**good, "heads": []}
+    assert check_identity("height_age_stated", empty)
+    assert check_identity("activity_not_ownership", empty) == ()
+    assert check_identity("activity_not_ownership", good)
+    for field, value in (("as_of", 99), ("citations", ("102",)),
+                         ("fact_value", {"name": "age", "value": 35, "unit": "years"})):
+        wrong = deepcopy(good)
+        wrong["heads"][1][field] = value
+        assert check_identity("height_age_stated", wrong)
+    wrong = deepcopy(good)
+    wrong["heads"].append(receipt()["heads"][0])
+    assert check_identity("height_age_stated", wrong)

@@ -137,7 +137,7 @@ def _rows(name: str) -> list[dict[str, Any]]:
     if name == "persona_identity" and os.environ.get("NORA_EVAL_PERSONA_CASES"):
         private = yaml.safe_load(Path(os.environ["NORA_EVAL_PERSONA_CASES"]).read_text())
         if not isinstance(private, dict) or set(private) != {r["name"] for r in rows}:
-            raise ValueError("private persona file must supply exactly the six registered vectors")
+            raise ValueError("private persona file must supply exactly the registered vectors")
         for row in rows:
             value = private[row["name"]]
             if (not isinstance(value, dict)

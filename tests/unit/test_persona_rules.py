@@ -564,3 +564,56 @@ def test_same_typed_birthday_revision_retains_assertion_and_grounding(text):
     assert corrected.fact_value == {"month": 5, "day": 7}
     assert corrected.as_of == CITABLE.messages[102].ts
     assert corrected.citations == ("102",)
+
+
+def test_explicit_height_roundtrips_through_real_planner_and_shared_formatter():
+    from nora.domain.persona import identity_text
+
+    op = replace(_told("I am 178 cm tall"), fact_key="attribute",
+                 fact_value={"name": "height", "value": 178, "unit": "cm"})
+    plan = _plan([op])
+    assert not plan.refusals, plan.refusals
+    [line] = plan.inserts
+    assert line.fact_value == op.fact_value
+    assert line.as_of == CITABLE.messages[101].ts
+    assert identity_text(line).startswith("height: 178 cm (asserted ")
+
+
+@pytest.mark.parametrize("value", [
+    None, {}, {"name": "height", "value": None},
+    {"name": "height", "value": {"amount": 178}},
+    {"name": "height", "value": [{"amount": 178}]},
+    {"name": "height", "value": float("nan")},
+    {"name": "height", "value": float("inf")},
+    {"name": "height", "value": ""}, {"name": "height", "value": []},
+    {"name": "height", "value": [""]},
+    {"name": "height", "value": 178, "unit": ""},
+    {"name": "height", "value": 178, "extra": "x"},
+    {"name": "", "value": 178},
+    {"name": "height" * 100, "value": 178},
+])
+def test_invalid_fallback_shapes_fail_closed(value):
+    plan = _plan([replace(_told(), fact_key="attribute", fact_value=value)])
+    assert _reasons(plan) == ["invalid_fact"]
+
+
+@pytest.mark.parametrize("name", ["birthday", " Gender ", "sex", "residence",
+                                  "food-preferences", "dietary restrictions", "attribute"])
+def test_fallback_cannot_alias_dedicated_contract(name):
+    plan = _plan([replace(_told(), fact_key="attribute",
+                         fact_value={"name": name, "value": "claim"})])
+    assert _reasons(plan) == ["invalid_fact"]
+
+
+def test_fallback_is_human_told_only_and_retains_normal_source_checks():
+    op = replace(_told(), fact_key="attribute",
+                 fact_value={"name": "height", "value": 178, "unit": "cm"})
+    assert _reasons(_plan([replace(op, mode="deduced", told_by=None,
+                                  citations=("101", "102"))])) == ["invalid_fact"]
+    assert _reasons(_plan([op], account=replace(HUMAN, entity_kind="self"))) == ["invalid_fact"]
+    assert _reasons(_plan([op], account=ROOM_ACCOUNT)) == ["part_kind"]
+    assert _reasons(_plan([replace(op, told_by=OTHER)])) == ["told_by_not_speaker"]
+    assert _reasons(_plan([replace(op, citations=("401",))])) == ["unlisted_room"]
+    third_party = _plan([replace(op, told_by=OTHER, citations=("201",))])
+    assert not third_party.refusals
+    assert third_party.inserts[0].told_by == OTHER

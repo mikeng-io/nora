@@ -35,7 +35,7 @@ the evidence establishes them; null means unknown, not today.
 Initial keys: name, role, relationship, gender, sex, birthday, residence,
 languages, occupation, dietary_restrictions, food_preferences, instruction,
 purpose and norm. The key must agree with actor/collective and the existing
-kind: attributes use the specific factual key, not a catch-all other field.
+kind: common fields use their dedicated factual key and exact typed contract.
 Do not infer gender, residence or dietary restrictions from names or silence.
 
 Scalar labels use strings; languages, dietary_restrictions and food_preferences
@@ -45,6 +45,44 @@ uses a relation and a resolved person reference or an explicitly unresolved
 name. Resolve references through the existing same-unit name boundary when
 rendering, never display raw account ids. Authored names/accounts remain
 owned by identity.toml and retain their existing precedence.
+
+### Additional human attributes (2026-10-19)
+
+A source-backed coverage audit found 32 missed rows across 26 account/field
+groups, including height, self-reported age, hobbies, capabilities and ownership.
+These are preliminary source-backed gaps, not a strict coverage or reply gate.
+Some misses (languages, instructions and workplace qualifiers) already fit the
+existing fields; the objective must preserve them beyond its examples. Private
+sources, names and account identifiers remain outside Git.
+
+Add one fallback fact_key="attribute", existing kind="attribute", for human
+Identity only. Its value is exactly {name, value, unit?}: name is a nonempty
+lowercase label with spaces/hyphens normalized to underscores; value is a
+nonempty JSON string, finite number, boolean or nonempty list of nonempty
+strings; unit is an optional nonempty source-supplied string. No null, nested
+object, object list or extra key. A normalized name matching any dedicated
+FACT_KINDS key is refused: birthday, gender, sex, residence and the other
+existing fields retain their contracts. Collective Identity is unchanged.
+
+Fallbacks require mode="told", with the existing teller, source, room and
+provenance checks. They preserve explicit self/third-party statements, never
+inferred personality. Source-reported age is age at its assertion date, not a
+calculated current age or an inferred birthday/year. Units and conversions are
+never guessed. A borrowed car or walking another person's dog establishes no
+durable ownership. Plans, conditions and uncertainty must not be qualified only
+in prose; the canonical key/value must independently carry the supported claim.
+
+One fallback covers the measured gaps without ten more enumerated field keys,
+a table, config knob, adapter or second writer. Reopen this choice only if a
+measured consumer needs a dedicated typed contract for a specific attribute.
+Existing line-length and disclosure/egress limits still apply to every label,
+value and unit through the shared formatted surface. The canonical rendering is
+"<name>: <value> <unit>" (unit omitted when absent), followed by existing assertion
+and effective times. Lists render as comma-separated values and booleans as
+true/false, never raw dictionaries or internal identifiers. The portal carries
+the fallback JSON unchanged and displays that shared formatted text; retrieval
+projection/hydration and remember retain the same structured value and time.
+No migration changes the old schema or stored history.
 
 One shared validator and formatter own these shapes. Prompt, portal and
 memory projection use the canonical formatted value, so a conflicting model
@@ -127,6 +165,8 @@ must be measured separately, not inferred from corpus collection or the gate):
 | September 1: P1 plans an October 3 wedding with Jo; later mentions only Jo's name; clock is October 12 | Historical intention only; current fiancée/marital status unknown; no invented end date or automatic spouse |
 | P1 uses an ambiguous colloquial partner label | Partner only; do not specialize to girlfriend, fiancée or wife |
 | P1 explicitly states where they live and explicitly names their spouse | Positive control: preserve the supported residence and relationship specificity |
+| May 1: P1 states height 178 cm and age 34 years; clock is October 12 | Preserve both as structured attributes with May 1 assertion/citation; no birthday or calculated current age |
+| P1 drives a borrowed car and walks a friend's dog today | No durable ownership identity from incidental activity |
 
 The existing typed `tool_selection` cases measure reply routing, not this
 Persona objective. These vectors specify the writer acceptance still owed by

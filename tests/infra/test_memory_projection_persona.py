@@ -433,3 +433,37 @@ async def test_relationship_projection_retrieval_preserves_scoped_targets(engine
     assert all(target not in str(unknown) for target in names)
     assert "untrusted prose" not in shown
     assert not await index.about("private-target", scope, limit=10)
+
+
+async def test_fallback_projection_and_hydration_share_structured_value_and_assertion(engine):
+    from datetime import UTC, datetime
+
+    from nora.agent.memory_search import Hit, Step, render_packet
+    from nora.domain.memory_index import MemoryScope
+    from nora.infra.sql.memory_read import SqlMemoryIndex
+
+    mid = await _said(engine)
+    await _unit_proven(engine)
+    value = {"name": "height", "value": 178, "unit": "cm"}
+    result = await _store(engine).persona_write(
+        account=ACCOUNT, ops=[replace(_told("conflicting prose", mid),
+                                    fact_key="attribute", fact_value=value)],
+        citable=_citable(mid), now_ms=NOW, written_by_session="test", apply_decay=False,
+    )
+    assert result.status == "ok"
+    scope = MemoryScope(units=(_UNIT,), rooms=(_ROOM,),
+        listed_here=frozenset({"member-b"}), people_here=frozenset({"member-b"}),
+        exclude_strict=False, presence_persons=frozenset(), social_off=frozenset(),
+        persona_render=True)
+    index = SqlMemoryIndex(engine)
+    [node] = await index.about("member-b", scope, limit=10)
+    assert node.identity_fact == {"key": "attribute", "value": value,
+        "as_of": _citable(mid).messages[int(mid)].ts, "valid_from": None, "valid_until": None}
+    packet, _ = render_packet([Hit(node, 1, (Step("persona_line", how="about"),))],
+        name_of=lambda _: "Kit", room_label=lambda _: "Friends",
+        now=datetime.fromtimestamp(NOW / 1000, UTC))
+    assert "height: 178 cm (asserted " in packet[0]["text"]
+    assert "conflicting prose" not in packet[0]["text"]
+    live = {k: n.text for k, n in (await _nodes(engine)).items()}
+    await memory_index.rebuild(engine)
+    assert {k: n.text for k, n in (await _nodes(engine)).items()} == live

@@ -46,6 +46,7 @@ export const PersonaLineSchema = z.object({
   told_by: z.string().nullable(),
   written_at: z.number(),
   fact_key: z.string().nullable().optional(),
+  fact_value: z.unknown().optional(),
   as_of: z.number().nullable().optional(),
   valid_from: z.number().nullable().optional(),
   valid_until: z.number().nullable().optional(),

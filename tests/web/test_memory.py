@@ -339,3 +339,21 @@ async def test_typed_relationship_names_resolve_only_inside_the_accounts_unit(sa
     text = payload[0]["persona"][0]["lines"][0]["text"]
     assert text == "relationship: friend: " + ("Ada" if same_unit else "someone")
     assert "conflicting prose" not in text
+
+
+async def test_fallback_portal_keeps_json_but_displays_shared_formatted_truth():
+    from nora.domain.persona import identity_text
+
+    key = character_key("friends", "miles")
+    value = {"name": "height", "value": 178, "unit": "cm"}
+    line = _line("height", "conflicting prose", fact_key="attribute", fact_value=value,
+                 as_of=1000)
+    payload = await build_memory_payload(
+        honcho=FakeMemoryStore(), persons=_persons(MILES), ai_peer="nora", person_id="miles",
+        persona=_Persona(heads={key: (line,)}),
+        persona_scopes_of=lambda _: (("friends", "default"),),
+    )
+    shown = payload[0]["persona"][0]["lines"][0]
+    assert shown["fact_value"] == value and shown["as_of"] == 1000
+    assert shown["text"] == identity_text(line)
+    assert shown["text"].startswith("height: 178 cm (asserted ")

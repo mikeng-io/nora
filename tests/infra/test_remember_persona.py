@@ -353,3 +353,16 @@ async def test_graph_remember_resolves_relationship_in_the_room_boundary(persons
     assert result["status"] == "ok"
     [line] = await store.account_heads(key=f"{UNIT}#character:miles_novak")
     assert line.fact_value == {"relation": "friend", "person_id": "tyler_cortez"}
+
+
+async def test_remember_fallback_preserves_structured_value_and_source(persons, store):
+    from nora.domain.persona import identity_text
+
+    value = {"name": "height", "value": 178, "unit": "cm"}
+    result = await _call(_remember(persons, store), content="I am 178 cm tall",
+                         fact_key="attribute", fact_value=value)
+    assert result["status"] == "ok"
+    [line] = await store.account_heads(key="u1#character:miles_novak")
+    assert line.fact_value == value and line.citations == ("41",)
+    assert line.mode == "told" and line.told_by == "miles_novak"
+    assert identity_text(line).startswith("height: 178 cm (asserted ")
