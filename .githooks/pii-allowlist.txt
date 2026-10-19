@@ -43,6 +43,9 @@ path-exempt scrub/replacements.txt -- the scrub's private join map (scrub/README
 symlink .claude/skills/* -- Claude Code reads the repo skills through these links to .agents/skills (AGENTS.md, Skills)
 
 binary assets/*.png -- Nora's character art (DESIGN.md)
+binary app/public/favicon.ico -- the portal's generated favicon (app/scripts/make-icons.py)
+binary app/public/icons/*.png -- the portal's generated PWA and iOS icons (app/scripts/make-icons.py)
+binary app/src/assets/art/nora-mini-icon.webp -- the portal's derived Mini Nora portrait (DESIGN.md)
 binary site/public/* -- the public site's icons and social cards
 binary site/src/assets/art/* -- the public site's art
 binary site/src/fonts/* -- subset web fonts
@@ -52,5 +55,8 @@ binary voice-lab/models/* -- wake-word model weights and listening samples
 binary voice-lab/tts-cmp/samples/* -- TTS comparison samples
 binary deploy/voice-wake/models/* -- the deployed wake-word model
 binary deploy/voice-wake/selftest/* -- the wake self-test clip
+
+value f265c1d9-066b-4632-83a7-0734a5ca9a37 -- generated icon content-credential UUID in the PNG caBX chunk, not a person or account identifier
+value K@e5.lm -- coincidental ASCII bytes inside the generated site icon's compressed PNG IDAT payload, not a mailbox
 
 value-re (852)?900001\d\d -- the scrub's pseudonym phone range (scrub/README.md): placeholders that replaced real numbers
