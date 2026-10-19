@@ -64,7 +64,7 @@ from nora.domain.culture import (
 )
 from nora.domain.errors import AccountNotRecordableError
 from nora.domain.media import placeholders_in
-from nora.domain.media_join import MediaJoin, shas_in
+from nora.domain.media_join import MediaJoin, body_with_custody_slots, shas_in
 from nora.domain.persona import (
     PERSONA_HKT,
     PERSONA_OUTCOMES,
@@ -798,7 +798,8 @@ class PersonaPersonAdaptor:
                 bodies[row.id] = raw
                 continue
             state = "available_or_partial" if row.body != raw else "unavailable"
-            rendered_media[row.id] = {handle for label, handle in placeholders_in(raw)
+            rendered_media[row.id] = {handle for label, handle in placeholders_in(
+                body_with_custody_slots(raw, row.media_json))
                                       if f"[{label} {handle}:" in (row.body or "")}
             bodies[row.id] = json.dumps({
                 "raw_caption": raw,

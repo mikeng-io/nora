@@ -641,3 +641,35 @@ def test_the_help_text_is_derived_from_the_vocabulary():
         help_text = by_name[name].help_text
         for path in JOIN_PATHS:
             assert path in help_text, f"{name} does not document {path!r}"
+
+
+async def test_legacy_slots_are_own_custody_only_and_covers_stay_suppressed():
+    from dataclasses import replace
+
+    join = _join([_obj(description="own scene"),
+                  _obj(VOICE_SHA, description="foreign scene")])
+    legacy = _row("original caption")
+    cover = replace(legacy, media_json=legacy.media_json.replace(
+        '"size": 4', '"size": 4, "role": "cover"'))
+    foreign = replace(_row("[image a3f2c1]", sha=VOICE_SHA), id=2)
+    got = await join.enrich([legacy, _row(""), cover, foreign])
+    assert got[0].body == "original caption [image a3f2c1: own scene]"
+    assert got[1].body == "[image a3f2c1: own scene]"
+    assert got[2].body == "original caption"
+    assert "own scene" not in got[3].body
+    assert "foreign scene" in got[3].body
+    assert legacy.body == "original caption"
+
+
+async def test_legacy_missing_or_screened_cache_never_invents_a_reading():
+    from dataclasses import replace
+
+    rows = [_row("caption"), _row("", sha=VOICE_SHA)]
+    for objects in ([], [_obj()], [_obj(description="call +85212345678")]):
+        got = await _join(objects).enrich(rows)
+        assert got == tuple(rows)
+    # A cache hit in a different row is no authority for a body-only handle.
+    forged = replace(_row("[image a3f2c1]"), media_json=None)
+    got = await _join([_obj(description="own scene")]).enrich([rows[0], forged])
+    assert "own scene" in got[0].body
+    assert got[1].body == forged.body

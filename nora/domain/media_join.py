@@ -41,11 +41,13 @@ from nora.domain.media import (
     CONTENT_LABELS,
     HANDLE_CHARS,
     MediaObject,
+    blobs_from_media_json,
     enrich_placeholders,
     label_agrees,
     label_from_media_type,
     media_detail,
     placeholders_in,
+    render_placeholder,
     sanitize_description,
 )
 from nora.domain.models import TranscriptRow, UnattributedRow
@@ -253,8 +255,12 @@ class MediaJoin:
         if not details:
             return tuple(rows)
         return tuple(
-            replace(row, body=enrich_placeholders(row.body or "", details))
-            if row.body else row
+            replace(row, body=enrich_placeholders(
+                body_with_custody_slots(row.body or "", row.media_json),
+                {sha[:HANDLE_CHARS]: details[sha[:HANDLE_CHARS]]
+                 for sha in shas_in(row.media_json) if sha[:HANDLE_CHARS] in details},
+            )) if any(sha[:HANDLE_CHARS] in details for sha in shas_in(row.media_json))
+            else row
             for row in rows
         )
 
@@ -306,3 +312,27 @@ def shas_in(media_json: str | None) -> tuple[str, ...]:
             if sha:
                 out.append(sha)
     return tuple(out)
+
+
+def body_with_custody_slots(body: str, media_json: str | None) -> str:
+    """Restore missing legacy attachment slots from this row's custody only.
+
+    Never infer voice/sticker semantics or a filename's type. Covers are
+    deliberately held on demand; a missing cover slot is not ours to revive.
+    The original Record body remains untouched.
+    """
+    try:
+        blobs = blobs_from_media_json(media_json)
+    except (TypeError, ValueError, OverflowError):
+        return body
+    present = {handle for _, handle in placeholders_in(body)}
+    slots = []
+    for blob in blobs:
+        sha = blob.sha256
+        if (blob.role or len(sha) != 64
+                or any(c not in "0123456789abcdef" for c in sha)
+                or blob.handle in present):
+            continue
+        slots.append(render_placeholder(label_from_media_type(blob.media_type), blob.handle))
+        present.add(blob.handle)
+    return " ".join([body, *slots]).strip() if slots else body
