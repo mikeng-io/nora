@@ -264,6 +264,11 @@ class PersonaCitable:
     rollup_keys: frozenset[str] = frozenset()
     social: Mapping[str, Said] = field(default_factory=dict)
     listed_rooms: frozenset[str] | None = None
+    # Explicit Record roots of widened non-location Rollup inputs. Persisted
+    # alongside the aggregate citation so another projection is not a witness.
+    rollup_roots: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    rollup_as_of: Mapping[str, int] = field(default_factory=dict)
+    interpretation_only: frozenset[int] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -659,6 +664,7 @@ class _Evidence:
     said: tuple[Said, ...]  # messages, episodes and social items, with their time
     messages: tuple[tuple[int, Said], ...]
     rollup_keys: tuple[str, ...]
+    unrooted_rollups: int = 0
 
 
 def _resolve(
@@ -669,7 +675,10 @@ def _resolve(
     messages: list[tuple[int, Said]] = []
     items: list[Said] = []
     keys: list[str] = []
-    for raw in dict.fromkeys(c.strip() for c in citations):
+    expanded = list(citations)
+    for cite in citations:
+        expanded.extend(citable.rollup_roots.get(cite, ()))
+    for raw in dict.fromkeys(c.strip() for c in expanded):
         if _HANDLE.fullmatch(raw) or _UUID.fullmatch(raw) or raw in handles.values():
             return PersonaRefusal(
                 "line_in_citations", f"{raw!r} is a line; a line another rests on goes in "
@@ -680,9 +689,11 @@ def _resolve(
         if raw.isdigit() and int(raw) in citable.messages:
             s = citable.messages[int(raw)]
             said.append(s)
-            messages.append((int(raw), s))
+            if int(raw) not in citable.interpretation_only:
+                messages.append((int(raw), s))
         elif episode is not None and int(episode.group(1)) in citable.episodes:
-            said.append(citable.episodes[int(episode.group(1))])
+            if raw not in citable.rollup_roots:
+                said.append(citable.episodes[int(episode.group(1))])
         elif (rollup is not None and rollup.group(1) in ROLLUP_AGGREGATE_KINDS
               and raw in citable.rollup_keys):
             keys.append(raw)
@@ -714,7 +725,8 @@ def _resolve(
                 return PersonaRefusal(
                     "unlisted_room", "a citation was said in a room this person is not "
                     "listed in, so it is not evidence about them")
-    return _Evidence(said=tuple(said + items), messages=tuple(messages), rollup_keys=tuple(keys))
+    return _Evidence(said=tuple(said + items), messages=tuple(messages), rollup_keys=tuple(keys),
+                     unrooted_rollups=sum(k not in citable.rollup_roots for k in keys))
 
 
 def _hkt_day(ts_ms: int) -> date:
@@ -829,7 +841,7 @@ def _check_line(
             return PersonaRefusal("premise_abduced", "a hypothesis is not a premise")
         if any(p.state != "current" for p in premises):
             return PersonaRefusal("premise_not_current", "every premise line must be current")
-        count = len(evidence.said) + len(evidence.rollup_keys) + len(premises)
+        count = len(evidence.said) + evidence.unrooted_rollups + len(premises)
         if count < DEDUCED_MIN_PREMISES:
             return PersonaRefusal("deduced_premises", f"a deduction rests on at least "
                                   f"{DEDUCED_MIN_PREMISES} premises; it has {count}")
@@ -932,12 +944,17 @@ def plan_write(
     ) -> tuple[int, int]:
         """`support_count` and `last_supported_at` after this evidence: a
         Rollup aggregate supports as of now, a row as of when it was said."""
+        def roots(refs: Sequence[str]) -> set[str]:
+            return {root for ref in refs for root in citable.rollup_roots.get(ref, (ref,))}
+        supplied = roots(cites)
         if old is None:
-            stamps = [s.ts for s in ev.said] + ([now_ms] if ev.rollup_keys else [])
-            return max(1, len(set(cites))), max(stamps, default=now_ms)
-        # Only evidence the line did not already rest on supports it anew:
-        # re-citing what it cited is not re-evidence (45 §2's decay).
-        fresh = set(cites) - set(old.citations)
+            return max(1, len(supplied)), max((_stamp(c) for c in supplied), default=now_ms)
+        # Expanded roots were persisted with the old aggregate. Expanding its
+        # key against TODAY's projection would falsely treat new roots as old.
+        old_roots = {c for c in old.citations if c not in citable.rollup_roots}
+        if not old_roots:
+            old_roots = roots(old.citations)  # legacy unexpanded aggregate: no guessed freshness
+        fresh = supplied - old_roots
         stamps = [_stamp(c) for c in fresh]
         stamps.append(old.last_supported_at or old.written_at)
         return old.support_count + len(fresh), max(stamps)
@@ -951,7 +968,11 @@ def plan_write(
             return citable.episodes[int(episode.group(1))].ts
         if social is not None and f"{social.group(1)}:{social.group(2)}" in citable.social:
             return citable.social[f"{social.group(1)}:{social.group(2)}"].ts
-        return now_ms  # a Rollup aggregate supports as of now
+        return citable.rollup_as_of.get(citation, now_ms)
+
+    def rooted(cites: Sequence[str]) -> tuple[str, ...]:
+        return tuple(dict.fromkeys((*cites, *(r for c in cites
+            for r in citable.rollup_roots.get(c, ())))))
 
     for i, op in enumerate(ops):
         if isinstance(op, RetireOp):
@@ -986,7 +1007,7 @@ def plan_write(
                 if bad is not None:
                     refusals.append(replace(bad, op_index=i))
                     continue
-            cites = tuple(dict.fromkeys((*target.citations, *op.citations)))
+            cites = rooted((*target.citations, *op.citations))
             count, last = support(target, ev, op.citations)
             new = successor(target, citations=cites, support_count=count, last_supported_at=last)
             inserts.append(new)
@@ -1018,7 +1039,7 @@ def plan_write(
             candidate_fields = {
                 "text": op.text.strip() if op.text is not None else old.text,
                 "mode": op.mode or old.mode,
-                "citations": tuple(dict.fromkeys(cites)),
+                "citations": rooted(cites),
                 "fact_key": op.fact_key if op.fact_key is not None else old.fact_key,
                 "fact_value": op.fact_value if op.fact_key is not None else old.fact_value,
                 "valid_from": op.valid_from if op.fact_key is not None else old.valid_from,
@@ -1060,7 +1081,7 @@ def plan_write(
                 kind=op.kind,
                 text=op.text.strip(),
                 mode=op.mode,
-                citations=tuple(dict.fromkeys(cites)),
+                citations=rooted(cites),
                 state="current",
                 unit=account.unit,
                 written_at=now_ms,

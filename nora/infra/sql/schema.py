@@ -1385,6 +1385,9 @@ CONSOLIDATION_WATERMARK = sa.Table(
     sa.Column("last_message_id", sa.BigInteger, nullable=False, server_default=sa.text("0")),
     sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False,
               server_default=sa.text("now()")),
+    # Persona source snapshots share the existing progress/settlement seam.
+    sa.Column("source_revision", sa.Text),
+    sa.Column("source_read_revision", sa.Text),
 )
 
 # A WATERMARK-FREE scheduled adaptor's own clock. It is in Postgres so it

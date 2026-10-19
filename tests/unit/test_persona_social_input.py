@@ -169,3 +169,62 @@ async def test_inputs_renders_the_items_with_counts_and_makes_them_citable() -> 
     }
     # And only the handed items move the cursor.
     assert evidence._reads[KEY].reach == 10
+
+
+async def test_chat_media_readings_reach_persona_without_becoming_sender_claims() -> None:
+    from dataclasses import replace
+
+    from nora.agent.egress import scan_identifiers
+    from nora.domain.culture import Episode, RoomMessage
+    from nora.domain.media import MediaObject
+    from nora.domain.media_join import MediaJoin
+    from nora.domain.models import DeliveryStatus, TranscriptRow
+    from nora.language.persona import Mention
+    from nora.obs.metrics import Metrics
+    from nora.testing import FakeMediaObjectStore
+
+    rows = []
+    objects = []
+    for i, (label, mime) in enumerate([
+        ("image", "image/png"), ("video", "video/mp4"), ("sticker", "image/webp"),
+        ("image", "image/png"), ("image", "image/png"),
+    ], 1):
+        sha = f"{i:06x}" + "0" * 58
+        rows.append(RoomMessage(room="room-a", row=TranscriptRow(
+            id=i, sender_id="sender", sender_name="Ada", person_id="ada", ts=T0,
+            body=f"[{label} {sha[:6]}]", is_nora=False,
+            delivery_status=DeliveryStatus.SENT, raw_json=None,
+            media_json=f'[{{"sha256":"{sha}"}}]',
+        )))
+        if i != 4:
+            objects.append(MediaObject(
+                sha256=sha, media_type=mime, size=4, source="inbound",
+                description=f"synthetic scene {i}" if i != 5 else "+85291234567",
+            ))
+    plain = replace(rows[0], row=replace(rows[0].row, id=6, body="hello", media_json=None))
+    reads = _ReadsFake()
+    adaptor = PersonaPersonAdaptor(
+        persona=_PersonaFake(), culture=InMemoryCultureStore(),
+        evidence=_evidence(reads, None), reads=reads, keys={KEY: PK},
+        name_of=lambda _pid: "Ada", clock_ms=lambda: T0, clock=lambda: NOW,
+        media_join=MediaJoin(store=FakeMediaObjectStore(objects),
+                             screen=scan_identifiers, metrics=Metrics()),
+    )
+    rendered = await adaptor.inputs(key=KEY, batch=[
+        rows[0], Mention(message=replace(rows[2], row=replace(
+            rows[2].row, person_id="bo", sender_name="Bo"))), *rows[3:], plain,
+        Episode(send_id=7, room="room-a", text="what happened?", outcome="responded",
+                reactions=0, edits=0, replies=(rows[1].row,)),
+    ])
+    assert "synthetic scene 2" in rendered.split("<persona_episodes", 1)[1]
+    assert "source_at=" in rendered.split("<persona_episodes", 1)[1]
+    assert "synthetic scene 3" in rendered.split("<persona_mentions", 1)[1]
+    for i in (1, 2, 3):
+        assert f"synthetic scene {i}" in rendered
+    assert '"raw_caption":' in rendered
+    assert '"attribution": "shared_by_author"' in rendered
+    assert '"state": "unavailable"' in rendered
+    assert "no readable media evidence" in rendered
+    assert "+85291234567" not in rendered
+    assert ">hello<" in rendered
+    assert set(adaptor._runs[KEY].citable.messages) == {1, 2, 3, 4, 5, 6}

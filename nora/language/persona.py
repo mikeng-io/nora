@@ -35,17 +35,18 @@ room cultures.
 whole by `nora.domain.persona.plan_write` (one refused op refuses the call,
 with every reason), lands at once, and applies the 60-day trait decay;
 `persona_no_change(why)` settles with nothing added and applies the decay.
-A session that does neither holds its batch (DEC-280's bound).
+A session that does neither retains its source revisions without abandonment (45 §4a).
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from nora.domain.blocks import (
     BlockKey,
@@ -57,12 +58,13 @@ from nora.domain.blocks import (
     restamp,
 )
 from nora.domain.culture import (
-    MAX_CONSECUTIVE_REJECTIONS,
     CultureRevision,
     Episode,
     RoomMessage,
 )
 from nora.domain.errors import AccountNotRecordableError
+from nora.domain.media import placeholders_in
+from nora.domain.media_join import MediaJoin, shas_in
 from nora.domain.persona import (
     PERSONA_HKT,
     PERSONA_OUTCOMES,
@@ -79,6 +81,7 @@ from nora.domain.persona import (
     plan_write,
     rollup_citation,
 )
+from nora.domain.persona_inputs import PersonSourceRevision
 from nora.domain.ports import Proposal
 from nora.domain.prompt import age, escape
 from nora.domain.social_stream import PersonSocialItem, RecordedCounts, to_us
@@ -117,11 +120,15 @@ TIES_MAX = 8
 #: The most open disputes one session weighs (the oldest first).
 DISPUTES_MAX = 10
 
-#: `inputs` holds nine sites (the account's revision, lines, pending `told`
+# Whole-source input bound; larger roots remain pending, never partly citable.
+SOURCE_BLOCK_CHARS = 20_000
+
+#: `inputs` holds ten sites (the account's revision, lines, pending `told`
 #: lines and open disputes, the Character head, cited rows in one read, the
-#: ties, the rooms' cultures in one gather, the handed items' counts);
+#: ties, the rooms' cultures in one gather, the handed items' counts, the
+#: cached media join);
 #: `commit` one write.
-PERSONA_STORE_CALLS_PER_TICK = 11
+PERSONA_STORE_CALLS_PER_TICK = 12
 
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("about_person", 5, "turn"),
@@ -133,6 +140,7 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("persona_episodes", 50, "turn"),
     ("social_items", 55, "turn"),
     ("persona_ties", 60, "turn"),
+    ("persona_source_revisions", 65, "turn"),
 )
 _ROW: dict[str, tuple[int, BlockKey]] = {name: (order, key) for name, order, key in _BLOCKS}
 
@@ -291,6 +299,21 @@ class Mention:
     message: RoomMessage
 
 
+class _SourceInputs(Protocol):
+    async def messages(self, *, key: str, rooms: Sequence[tuple[str, str]],
+                       person: str, limit: int, after: int = 0) -> list[PersonSourceRevision]: ...
+    async def media_recovery(self, *, key: str, rooms: Sequence[tuple[str, str]],
+                             person: str, initialize: bool = False) -> dict[str, int | bool]: ...
+    async def social(self, *, key: str, persons: Sequence[str],
+                     limit: int) -> list[PersonSourceRevision]: ...
+    async def register(self, *, key: str, unit: str, rooms: Sequence[tuple[str, str]],
+                       person: str, limit: int) -> list[PersonSourceRevision]: ...
+    async def rollup(self, *, key: str, unit: str, rooms: Sequence[tuple[str, str]],
+                     person: str, limit: int) -> list[PersonSourceRevision]: ...
+    async def settle(self, *, key: str, revisions: Sequence[PersonSourceRevision],
+                     attempted: Sequence[PersonSourceRevision] = ()) -> None: ...
+
+
 class PersonaEvidence:
     """The dream loop's count and read for a Persona key: the person's
     messages in the rooms that list them past the watermark, the episodes they
@@ -305,17 +328,15 @@ class PersonaEvidence:
     source is one more read here, one more type there, and one more block row:
     nothing else changes shape.
 
-    **The social items go by their own cursor**, `PersonEvidence`'s discipline
-    one adaptor over: they have no Record id, so `social_cursor` says when the
-    last item handed was recorded and when the read that handed it ran;
-    `newest` reads the OLDEST `SOCIAL_ITEMS_MAX` past it; the session says
-    which it rendered (`handed`); `settle` — which the dream loop calls only
-    after a run that is not `unavailable`, the watermark's own rule — moves
-    the cursor past those, unless the session gave up on its batch
-    (`gave_up`: kept once, consumed the second time from the same position).
-    Only items polled after the last settled read began count toward a wake,
-    and at most `SOCIAL_ITEMS_MAX`: a backlog already waiting never fires
-    sessions back to back."""
+    With `source_inputs`, owning-store snapshots use per-source revisions at
+    the same consolidation seam. Cached readings on consumed messages, social
+    enrichment/state, current Register heads and non-location Rollup changes
+    remain pending until actually rendered and durably settled. The legacy
+    message and frozen historical cursors are independent. Initial cached-media
+    recovery has its own frozen boundary, reported by `persona-history`.
+    Without that collaborator, legacy callers retain their chronological
+    social cursor; an unsettled person batch is never abandoned.
+    """
 
     def __init__(
         self,
@@ -324,6 +345,8 @@ class PersonaEvidence:
         persona: _Persona,
         keys: Mapping[str, PersonKey],
         wake_batch: int,
+        source_inputs: _SourceInputs | None = None,
+        source_timeout_seconds: float = 3.0,
         social: _PersonSocial | None = None,
         former_ids: Callable[[str], Sequence[str]] = lambda _person: (),
     ) -> None:
@@ -333,15 +356,15 @@ class PersonaEvidence:
         self._persona = persona
         self._keys = keys
         self._wake_batch = wake_batch
+        self._source_inputs = source_inputs
+        self._source_timeout = source_timeout_seconds
+        self._source_handed: dict[str, list[PersonSourceRevision]] = {}
+        self._source_selected: dict[str, list[PersonSourceRevision]] = {}
         self._social = social
         self._former_ids = former_ids
         self._held: dict[str, int] = {}
         self._history: dict[str, int] = {}
         self._reads: dict[str, _Read] = {}
-        # ponytail: in memory, as `PersonEvidence._abandoned` — a restart
-        # forgets one abandonment and a poison batch is abandoned once more
-        # before it is consumed.
-        self._abandoned: dict[str, int] = {}
 
     def held(self, key: str) -> int | None:
         """The watermark the last `newest` for `key` started after."""
@@ -351,11 +374,54 @@ class PersonaEvidence:
         """Every id their social items may be recorded under."""
         return (person_id, *self._former_ids(person_id))
 
+    async def _sources(self, key: str, limit: int, after: int) -> list[PersonSourceRevision]:
+        source = self._source_inputs
+        if source is None:
+            return []
+        pk = self._keys[key]
+        args: dict[str, Any] = {"key": key, "rooms": _listed(pk),
+                                "person": pk.person.person_id}
+        out: list[PersonSourceRevision] = []
+        readers: tuple[tuple[str, Callable[[], Awaitable[list[PersonSourceRevision]]]], ...] = (
+            ("message", lambda: source.messages(**args, limit=limit, after=after)),
+            ("social", lambda: source.social(key=key, persons=self._ids(pk.person.person_id),
+                                             limit=SOCIAL_ITEMS_MAX)),
+            ("register", lambda: source.register(**args, unit=pk.unit, limit=SOCIAL_ITEMS_MAX)),
+            ("rollup", lambda: source.rollup(**args, unit=pk.unit, limit=EPISODES_MAX)),
+        )
+        for domain, read in readers:
+            try:
+                out.extend(await asyncio.wait_for(read(), timeout=self._source_timeout))
+            except Exception:
+                # A failed domain remains pending; other readable domains can
+                # still settle. No absence token is fabricated for this read.
+                log.exception("persona source unavailable: %s", domain)
+                out.append(PersonSourceRevision(
+                    domain=cast(Any, domain), source=f"{domain}:unavailable", revision="",
+                    state="unavailable", recorded_at="unknown"))
+        return list({(r.domain, r.source): r for r in out}.values())
+
     async def count(self, *, key: str, after: int) -> int:
         pk = self._keys[key]
         boundary, progress = await self._store.history_state(key=key)
         if progress < boundary:
             return self._wake_batch
+        if self._source_inputs is not None:
+            n = len(await self._sources(key, 1, max(after, boundary)))
+            try:
+                recovery = await asyncio.wait_for(self._source_inputs.media_recovery(
+                    key=key, rooms=_listed(pk), person=pk.person.person_id, initialize=True),
+                    timeout=self._source_timeout)
+                if not recovery["initial_sweep_complete"] and recovery["unattempted_cached"]:
+                    return self._wake_batch
+            except Exception:
+                log.exception("persona cached-media recovery unavailable")
+                return max(1, n)
+            if await self._persona.pending_told(key=key) or await self._persona.pending_disputes(
+                key=key
+            ):
+                return self._wake_batch
+            return n
         n = await self._store.person_count(
             rooms=_listed(pk), person_id=pk.person.person_id, after=after)
         if n >= self._wake_batch:
@@ -378,7 +444,7 @@ class PersonaEvidence:
         key: str,
         after: int,
         limit: int,
-    ) -> tuple[Sequence[RoomMessage | Episode | Mention | PersonSocialItem], int]:
+    ) -> tuple[Sequence[Any], int]:
         """A frozen historical page until exhaustion; then recent updates.
 
         Recent updates read their newest `limit` messages past `after` and the cursor past all of
@@ -409,6 +475,13 @@ class PersonaEvidence:
             return historical_batch, after
         self._history.pop(key, None)
         after = max(after, boundary)
+        if self._source_inputs is not None:
+            self._source_handed.pop(key, None)
+            # Per-source revisions retain old messages and bounded leftovers;
+            # the frozen historical and legacy Record positions stay separate.
+            snapshots = await self._sources(key, limit, after)
+            self._source_selected[key] = snapshots
+            return snapshots, after
         messages, cursor = await self._store.person_since(
             rooms=_listed(pk), person_id=pk.person.person_id, after=after, limit=limit,
         )
@@ -439,43 +512,42 @@ class PersonaEvidence:
     def historical(self, key: str) -> bool:
         return key in self._history
 
-    def handed(self, key: str, items: Sequence[PersonSocialItem]) -> None:
+    def handed(self, key: str, items: Sequence[Any]) -> None:
         """The items the session for `key` was actually shown: the cursor
         may move past these and no further."""
+        revisions = [i for i in items if isinstance(i, PersonSourceRevision)
+                     and i.state != "unavailable" and i.revision]
+        if revisions:
+            self._source_handed[key] = revisions
+            return
         read = self._reads.get(key)
         if read is not None and items:
             read.reach = max(read.start, *(i.recorded_us for i in items))
 
     def gave_up(self, key: str) -> None:
-        """The session for `key` was abandoned without settling its account.
-        The first time from a position its items are kept for the next
-        session; the second time from the same position they are consumed."""
-        read = self._reads.get(key)
-        if read is None:
-            return
-        if self._abandoned.get(key) == read.start:
-            del self._abandoned[key]
-            return
-        self._abandoned[key] = read.start
-        read.reach = read.start
+        """Unsettled person input never advances any source domain."""
+        self.forget(key)
 
     def forget(self, key: str) -> None:
         """The session for `key` raised: the run is `unavailable`, nothing
         settles, and the same items are read again."""
         self._reads.pop(key, None)
+        self._source_handed.pop(key, None)
+        self._source_selected.pop(key, None)
 
     async def settle(self, *, key: str) -> None:
-        """The run that read `newest` for `key` was not `unavailable`: the
-        cursor moves past the items its session used, and the wake's floor to
-        when its read began."""
+        """After the account committed, acknowledge exactly the rendered snapshots.
+        Legacy social/history progress retains its existing separate domains."""
+        revisions = self._source_handed.pop(key, [])
+        attempted = self._source_selected.pop(key, [])
+        if (revisions or attempted) and self._source_inputs is not None:
+            await self._source_inputs.settle(key=key, revisions=revisions, attempted=attempted)
         history = self._history.pop(key, None)
         if history is not None:
             await self._store.advance_history(key=key, cursor=history)
         read = self._reads.pop(key, None)
         if read is None:
             return
-        if read.reach > read.start:
-            self._abandoned.pop(key, None)
         await self._store.advance_social_cursor(
             adaptor=PERSONA_PERSON_ADAPTOR_NAME, key=key, cursor=read.reach,
             read_at=read.at,
@@ -516,7 +588,8 @@ def _screened_by_the_runtime(_text: str) -> str | None:
 
 
 def _said(m: RoomMessage) -> Said:
-    return Said(ts=m.row.ts, person_id=m.row.person_id, room=m.room)
+    return Said(ts=m.row.edit.ts if m.row.edit is not None else m.row.ts,
+                person_id=m.row.person_id, room=m.room)
 
 
 def _line_attrs(line: PersonaLine, handle: str, now: datetime,
@@ -560,6 +633,7 @@ class PersonaPersonAdaptor:
         metrics: Metrics | None = None,
         clock: Callable[[], datetime] | None = None,
         render: bool = False,
+        media_join: MediaJoin | None = None,
         social: _PersonSocial | None = None,
         screen: Callable[[str], str | None] | None = None,
         render_chars: int = 0,
@@ -575,6 +649,7 @@ class PersonaPersonAdaptor:
         Instagram username a handle is (by default nobody's, so every handle
         in a caption is redacted)."""
         self._persona = persona
+        self._media_join = media_join
         self._render = render
         self._culture = culture
         #: Read by the dream loop, never awaited here.
@@ -591,8 +666,6 @@ class PersonaPersonAdaptor:
         self._render_chars = render_chars
         self._handle_owners = handle_owners
         self._runs: dict[str, _Run] = {}
-        # In memory, as `EntitySessions._rejections` (its ponytail applies).
-        self._rejections: dict[str, tuple[int | None, int]] = {}
 
     def keys(self) -> Sequence[str]:
         return self._population
@@ -618,10 +691,29 @@ class PersonaPersonAdaptor:
         awaiting weighing. `""` when nothing is new and no turn wrote a line or
         a dispute: no model call."""
         pk = self._keys.get(key)
+        revisions = [r for r in batch if isinstance(r, PersonSourceRevision)]
+        # Never cut the interior of an input: trimmed revisions stay pending.
+        # Social retains its existing smaller block budget below.
+        selected: list[PersonSourceRevision] = []
+        used: dict[str, int] = {}
+        for item_revision in revisions:
+            size = len(json.dumps({"state": item_revision.state,
+                "properties": item_revision.properties,
+                "roots": [(x.row.id, x.row.body, x.row.media_json) for x in item_revision.roots]},
+                ensure_ascii=False)) + len(item_revision.episode.text
+                                           if item_revision.episode is not None else "")
+            if used.get(item_revision.domain, 0) + size > SOURCE_BLOCK_CHARS:
+                continue
+            used[item_revision.domain] = used.get(item_revision.domain, 0) + size
+            selected.append(item_revision)
+        roots = {m.row.id: m for r in selected for m in r.roots}
         messages = [m for m in batch if isinstance(m, RoomMessage)]
+        messages.extend(roots.values())
         mentions = [m.message for m in batch if isinstance(m, Mention)]
         episodes = [e for e in batch if isinstance(e, Episode)]
+        episodes.extend(r.episode for r in selected if r.episode is not None)
         social = [m for m in batch if isinstance(m, PersonSocialItem)]
+        social.extend(r.social for r in selected if r.social is not None)
         if pk is None:
             return ""
         # The revision before the lines: a write landing between the two reads
@@ -630,7 +722,7 @@ class PersonaPersonAdaptor:
         heads = await self._persona.account_heads(key=key)
         pending = await self._persona.pending_told(key=key)
         disputes = await self._persona.open_disputes(key=key, limit=DISPUTES_MAX)
-        if not (messages or mentions or episodes or social or pending or disputes):
+        if not (messages or mentions or episodes or social or selected or pending or disputes):
             return ""
         now = self._clock()
         person = pk.person.person_id
@@ -641,8 +733,10 @@ class PersonaPersonAdaptor:
         counts = (
             await self._social.current_counts(
                 items=[(it.network, it.item_id) for it in social])
-            if social and self._social is not None else {}
+            if social and self._social is not None and not revisions else {}
         )
+        counts.update({(r.social.network, r.social.item_id): r.counts
+                       for r in selected if r.social is not None and r.counts is not None})
         shown, social_block = _within_budget([
             _Shown(
                 item=it,
@@ -656,7 +750,11 @@ class PersonaPersonAdaptor:
         ], now)
         # Only what the block carries is handed, cited, and passed by the
         # cursor (`PersonEvidence.handed`'s rule).
-        self.evidence.handed(key, [r.item for r in shown])
+        shown_items = {(r.item.network, r.item.item_id) for r in shown}
+        selected = [r for r in selected if r.social is None or
+                    (r.social.network, r.social.item_id) in shown_items]
+        if not revisions:
+            self.evidence.handed(key, [r.item for r in shown])
         # THE BACKFILL (35 §4): until a session first settles the account, it
         # is handed the prose Character head and the rows it cited, once. A
         # turn's `told` lines do not count: they may land before it.
@@ -669,7 +767,8 @@ class PersonaPersonAdaptor:
         cited = (await self._reads.rows_by_id(ids=[*cited_ids, *dispute_ids])
                  if cited_ids or dispute_ids else [])
         old_cited = [m for m in cited if m.row.id not in dispute_ids]
-        ties = (await self._reads.tie_totals(unit=pk.unit, person_id=person))[:TIES_MAX]
+        ties = ([] if revisions or self.evidence.historical(key) else
+                (await self._reads.tie_totals(unit=pk.unit, person_id=person))[:TIES_MAX])
         cultures = await asyncio.gather(
             *(
                 self._persona.room_context(key=r.key)
@@ -683,6 +782,59 @@ class PersonaPersonAdaptor:
         # words and source time, not merely a number beside old model prose.
         visible = {m.row.id: m for m in [*old_cited, *messages, *mentions, *cited]
                    if m.room in pk.listed and not m.row.is_nora}
+        # Join only the already scoped, visible source rows. The original row
+        # remains the citation and attribution; cached readings are not claims
+        # that the sender is pictured, owns an object, or has a habit.
+        source_rows = {i: m.row for i, m in visible.items()}
+        source_rows.update({r.id: r for e in episodes if e.room in pk.listed
+                            for r in e.replies if r.person_id == person})
+        joined = (await self._media_join.enrich(tuple(source_rows.values()), path="dreamer")
+                  if self._media_join is not None else tuple(source_rows.values()))
+        bodies = {}
+        rendered_media: dict[int, set[str]] = {}
+        for row in joined:
+            raw = source_rows[row.id].body or ""
+            if not shas_in(row.media_json):
+                bodies[row.id] = raw
+                continue
+            state = "available_or_partial" if row.body != raw else "unavailable"
+            rendered_media[row.id] = {handle for label, handle in placeholders_in(raw)
+                                      if f"[{label} {handle}:" in (row.body or "")}
+            bodies[row.id] = json.dumps({
+                "raw_caption": raw,
+                "cached_media_reading": {
+                    "state": state,
+                    "attribution": "shared_by_author",
+                    "text": ((row.body or "") if row.body != raw
+                             else "no readable media evidence"),
+                    "limits": ("Sharing is not evidence of identity, ownership, "
+                               "residence or habits; no biometric or gender inference."),
+                },
+            }, ensure_ascii=False)
+        if revisions:
+            # Bound the actual joined text, not raw placeholder sizes. A source
+            # is atomic under the budget and leftovers retain their revisions.
+            actual: list[PersonSourceRevision] = []
+            used = {}
+            for candidate in selected:
+                size = sum(len(bodies.get(x.row.id, "")) for x in candidate.roots)
+                size += len(candidate.episode.text if candidate.episode is not None else "")
+                if used.get(candidate.domain, 0) + size > SOURCE_BLOCK_CHARS:
+                    continue
+                used[candidate.domain] = used.get(candidate.domain, 0) + size
+                actual.append(candidate)
+            selected = actual
+            episodes = [e for e in episodes if any(
+                r.episode is e for r in selected) or e in batch]
+            rendered_ids = {x.row.id for r in selected for x in r.roots}
+            visible = {i: m for i, m in visible.items() if i in rendered_ids
+                       or i in cited_ids or i in dispute_ids}
+            acknowledged = [r for r in selected if not (
+                r.domain == "message" and r.cache_ready
+                and r.roots and any(not set(r.ready_handles).issubset(
+                    rendered_media.get(x.row.id, set())) for x in r.roots)
+            )]
+            self.evidence.handed(key, acknowledged)
         messages = [m for m in visible.values() if m.row.person_id == person]
         mentions = [m for m in visible.values() if m.row.person_id != person]
         old_cited = [m for m in old_cited if m.row.id in visible]
@@ -698,13 +850,47 @@ class PersonaPersonAdaptor:
         tie_keys = {other: rollup_citation("tie", f"{pk.unit}|{','.join(sorted((person, other)))}")
                     for other, *_ in ties}
         account = Account(key=key, entity_kind="human", unit=pk.unit, subject=person)
+        rollups: dict[str, list[PersonSourceRevision]] = {}
+        for source_revision in selected:
+            if source_revision.domain == "rollup" and source_revision.citable is not None:
+                rollups.setdefault(source_revision.citable, []).append(source_revision)
+        rollup_roots = {c: tuple(dict.fromkeys(str(x.row.id) for r in rows for x in r.roots))
+                        for c, rows in rollups.items()}
+        rollup_times = {c: max((x.row.ts for r in rows for x in r.roots), default=0)
+                        for c, rows in rollups.items()}
+        interpretation_only = set()
+        for message in visible.values():
+            caption = message.row.body or ""
+            for label, handle in placeholders_in(caption):
+                caption = caption.replace(f"[{label} {handle}]", "")
+            if shas_in(message.row.media_json) and not caption.strip():
+                interpretation_only.add(message.row.id)
+        tellers: dict[str, str] = {}
+        ambiguous: set[str] = set()
+        for author in {person, *(m.row.person_id for m in visible.values()
+                                 if m.row.person_id is not None), *(o for o, *_ in ties)}:
+            for name in ((pk.person.name, *pk.person.aliases) if author == person
+                         else (self._name_of(author),)):
+                normalized = name.casefold()
+                if normalized == "someone" or normalized in ambiguous:
+                    continue
+                if normalized in tellers and tellers[normalized] != author:
+                    ambiguous.add(normalized)
+                    tellers.pop(normalized)
+                else:
+                    tellers[normalized] = author
         self._runs[key] = _Run(
             account=account,
             citable=PersonaCitable(
-                messages=said,
+                messages=said, interpretation_only=frozenset(interpretation_only),
                 episodes={e.send_id: replies[e.send_id] for e in episodes
-                          if e.send_id in replies},
-                rollup_keys=frozenset(tie_keys.values()),
+                          if e.send_id in replies} | {
+                    int(c.split(":", 1)[1]): Said(ts=rollup_times[c], person_id=person,
+                        room=rows[0].roots[0].room) for c, rows in rollups.items()
+                    if c.startswith("response:") and rows[0].roots},
+                rollup_keys=frozenset((*tie_keys.values(), *(c for c in rollups
+                                                          if c.startswith("rollup:")))),
+                rollup_roots=rollup_roots, rollup_as_of=rollup_times,
                 # A social item is evidence about its author alone, on its
                 # `taken_at` day, in no room (45 §4; the validator's
                 # `social_not_author`/`unlisted_room` refusals).
@@ -716,8 +902,7 @@ class PersonaPersonAdaptor:
             ),
             revision=revision, heads=heads,
             batch_start=self.evidence.held(key),
-            tellers={n.casefold(): person for n in (pk.person.name, *pk.person.aliases)}
-            | {self._name_of(o).casefold(): o for o, *_ in ties},
+            tellers=tellers,
         )
         labels = {r.key: r.label for r in pk.rooms}
         identity_names = {k.person.person_id for k in self._keys.values() if k.unit == pk.unit}
@@ -738,6 +923,7 @@ class PersonaPersonAdaptor:
                 when_empty="self_close",
                 attrs=(("name", pk.person.name),
                        ("now", now.astimezone(PERSONA_HKT).isoformat()),
+                       ("unit", pk.unit),
                        ("evidence_mode",
                         "historical" if self.evidence.historical(key) else "recent"))
                 + ((("aliases", ", ".join(pk.person.aliases)),) if pk.person.aliases else ()),
@@ -796,9 +982,9 @@ class PersonaPersonAdaptor:
                         ("room", labels.get(m.room) or "unnamed room"),
                         ("age", age(m.row.ts, now)),
                         ("source_at", datetime.fromtimestamp(
-                            m.row.ts / 1000, PERSONA_HKT).isoformat()),
+                            _said(m).ts / 1000, PERSONA_HKT).isoformat()),
                     ),
-                    body=lambda m: m.row.body or "",
+                    body=lambda m: bodies[m.row.id],
                 ),
             ),
             None
@@ -814,9 +1000,9 @@ class PersonaPersonAdaptor:
                         ("by", self._name_of(m.row.person_id)),
                         ("age", age(m.row.ts, now)),
                         ("source_at", datetime.fromtimestamp(
-                            m.row.ts / 1000, PERSONA_HKT).isoformat()),
+                            _said(m).ts / 1000, PERSONA_HKT).isoformat()),
                     ),
-                    body=lambda m: m.row.body or "",
+                    body=lambda m: bodies[m.row.id],
                 ),
             ),
             None
@@ -825,7 +1011,8 @@ class PersonaPersonAdaptor:
                 name="persona_episodes",
                 **_at("persona_episodes"),
                 body="\n".join(
-                    self._episode(e, person, labels) for e in episodes if e.send_id in replies
+                    self._episode(e, person, labels, bodies)
+                    for e in episodes if e.send_id in replies
                 ),
             ),
             # The block is built by `character._within_budget`, which stamps
@@ -854,15 +1041,38 @@ class PersonaPersonAdaptor:
                 ),
             ),
         ]
+        if selected:
+            parts.append(ContextBlock(
+                name="persona_source_revisions", **_at("persona_source_revisions"),
+                body=render_elements(selected, tag="source", attrs=lambda r, _i: (
+                    ("domain", r.domain), ("handle", r.source), ("state", r.state),
+                    ("revision", r.revision), ("recorded", r.recorded_at),
+                    ("cite", r.citable),
+                ), body=lambda r: json.dumps({
+                    "roots": [str(x.row.id) for x in r.roots],
+                    "effective_from": r.effective_from, "effective_until": r.effective_until,
+                    "as_of": r.as_of, "computed": dict(r.properties), "links": r.links,
+                    "cached_reading_present": r.cache_ready, "media_state": r.media_state,
+                    "authority": ("context and links only; never cite this Register entry; "
+                                  "open/cancelled is not an occurrence")
+                    if r.domain == "register" else "Record or deterministic Rollup",
+                }, ensure_ascii=False)),
+            ))
         return assemble([p for p in parts if p is not None], sep="\n\n")
 
-    def _episode(self, e: Episode, person: str, labels: Mapping[str, str]) -> str:
+    def _episode(
+        self, e: Episode, person: str, labels: Mapping[str, str], bodies: Mapping[int, str],
+    ) -> str:
         """One `<episode>`: her send and their replies to it, each with its id."""
         rows = render_row_window(
-            [(e.send_id, "you", e.text), *(
-                (r.id, self._name_of(r.person_id), r.body or "")
+            [(e.send_id, "you", e.text, None), *(
+                (r.id, self._name_of(r.person_id), bodies.get(r.id, r.body or ""),
+                 r.ts if shas_in(r.media_json) else None)
                 for r in e.replies if r.person_id == person)],
-            row_id=lambda m: m[0], attrs=lambda m: (("from", m[1]),), body=lambda m: m[2],
+            row_id=lambda m: m[0],
+            attrs=lambda m: (("from", m[1]),) + (() if m[3] is None else (
+                ("source_at", datetime.fromtimestamp(m[3] / 1000, PERSONA_HKT).isoformat()),
+            )), body=lambda m: m[2],
         )
         return render_group("episode", [
             ("n", f"response:{e.send_id}"), ("room", labels.get(e.room) or "unnamed room"),
@@ -969,40 +1179,17 @@ class PersonaPersonAdaptor:
     ) -> Sequence[object]:
         """The staged write, or a refusal to spend the batch. Unsettled (no
         verb settled the session) RAISES `AccountNotRecordableError` (the
-        watermark holds) until the `MAX_CONSECUTIVE_REJECTIONS`-th run of one
-        recent batch, which is counted `abandoned` and consumed (DEC-280).
-        Historical pages are never abandoned."""
+        watermark holds). No person-source batch is abandoned or consumed
+        without a durable account settlement (45 §4a)."""
         run = self._runs.pop(key, None)
         if run is None or run.staged is None:
             log.warning("persona: key=%s ended without settling; HOLDING the watermark", key)
             self._count("unsettled")
-            # The social items' cursor, `CharacterPersonAdaptor.accept`'s
-            # rule: a run still under the abandonment bound RAISES and keeps
-            # them (`forget`); one that reached it is `abandoned`, and they
-            # are kept once, then consumed (`gave_up`).
-            if self.evidence.historical(key):
-                raise AccountNotRecordableError("historical page did not settle; retaining page")
-            try:
-                self._reject(key, None if run is None else run.batch_start)
-            except AccountNotRecordableError:
-                self.evidence.forget(key)
-                raise
-            self.evidence.gave_up(key)
-            return ()
-        self._rejections.pop(key, None)
+            self.evidence.forget(key)
+            raise AccountNotRecordableError(
+                "person source input did not settle; retaining revisions")
         return (PersonaStaged(account=run.account, ops=run.staged, citable=run.citable,
                               revision=run.revision),)
-
-    def _reject(self, key: str, start: int | None) -> None:
-        previous, n = self._rejections.get(key, (start, 0))
-        n = n + 1 if previous == start else 1
-        if n < MAX_CONSECUTIVE_REJECTIONS:
-            self._rejections[key] = (start, n)
-            raise AccountNotRecordableError(f"the persona session for key={key} did not settle")
-        self._rejections.pop(key, None)
-        log.warning("persona: key=%s unsettled %d times in a row on the batch from %s; "
-                    "advancing past it", key, n, start)
-        self._count("abandoned")
 
     async def commit(
         self,
