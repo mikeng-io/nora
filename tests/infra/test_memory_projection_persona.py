@@ -369,3 +369,67 @@ async def test_a_rebuild_equals_live_projection(engine):
                for k, n in (await _nodes(engine)).items()}
     assert rebuilt == live_nodes
     assert await _edges(engine, kept.written[0]) == live_edges
+
+
+async def test_relationship_projection_retrieval_preserves_scoped_targets(engine):
+    from datetime import UTC, datetime
+
+    from nora.agent.memory_search import Hit, Step, render_packet
+    from nora.domain.memory_index import MemoryFilter, MemoryScope
+    from nora.infra.sql.memory_read import SqlMemoryIndex
+
+    mid = await _said(engine)
+    await _unit_proven(engine)
+    store = _store(engine)
+    ids = []
+    for target in ("target-alice", "target-beth", "private-target"):
+        result = await store.persona_write(
+            account=ACCOUNT,
+            ops=[replace(_told("untrusted prose", mid), kind="relationship",
+                         fact_key="relationship",
+                         fact_value={"relation": "sister", "person_id": target})],
+            citable=_citable(mid), now_ms=NOW, written_by_session="test",
+            apply_decay=False,
+        )
+        assert result.status == "ok"
+        ids.extend(result.written)
+    scope = MemoryScope(
+        units=(_UNIT,), rooms=(_ROOM,),
+        listed_here=frozenset({"member-b", "target-alice", "target-beth"}),
+        people_here=frozenset({"member-b"}), exclude_strict=False,
+        presence_persons=frozenset(), social_off=frozenset(), persona_render=True,
+    )
+    index = SqlMemoryIndex(engine)
+    names = {"target-alice": "Alice", "target-beth": "Beth", "private-target": "Secret"}
+
+    def packet(nodes, name_of=lambda pid: names.get(pid, "someone")):
+        return render_packet(
+            [Hit(n, 1, (Step("persona_line", how="about"),)) for n in nodes],
+            name_of=name_of, room_label=lambda _: "Friends",
+            now=datetime.fromtimestamp(NOW / 1000, UTC),
+        )[0]
+
+    for target, sid, name in zip(
+        ("target-alice", "target-beth"), ids, ("Alice", "Beth"), strict=False,
+    ):
+        found = await index.about(target, scope, limit=10)
+        assert [n.source_id for n in found] == [sid]
+        assert f"sister: {name}" in packet(found)[0]["text"]
+        # The regular SQL person filter and lexical path agree with the edge read.
+        seeds = await index.seed(
+            ["sister"], replace(scope, only=MemoryFilter(person=target)), limit=10,
+        )
+        assert [s.node.source_id for s in seeds] == [sid]
+        assert f"sister: {name}" in packet([s.node for s in seeds])[0]["text"]
+    all_nodes = [s.node for s in await index.seed(["sister"], scope, limit=10)]
+    shown = str(packet(all_nodes))
+    assert "Alice" in shown and "Beth" in shown
+    assert "Secret" not in shown and "unknown" in shown
+    assert all(target not in shown for target in names)
+    assert all("sister: someone (unknown)" in item["text"]
+               for item in packet(all_nodes, name_of=lambda _: "someone"))
+    unknown = packet(all_nodes, name_of=str)
+    assert all("sister: someone (unknown)" in item["text"] for item in unknown)
+    assert all(target not in str(unknown) for target in names)
+    assert "untrusted prose" not in shown
+    assert not await index.about("private-target", scope, limit=10)

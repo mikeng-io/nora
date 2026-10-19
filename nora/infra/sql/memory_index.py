@@ -1260,6 +1260,11 @@ async def _project_persona_line(conn: AsyncConnection, source_id: str) -> None:
     )
     edges: list[Edge] = [
         ("persona_line", source_id, "about", *about, "persona_line.persona_key")]
+    if row.fact_key == "relationship" and isinstance(row.fact_value, dict):
+        target = row.fact_value.get("person_id")
+        if target:
+            edges.append(("persona_line", source_id, "about", "person", target,
+                          "persona_line.fact_value"))
     edges += _persona_cites(source_id, row.citations)
     edges += [
         ("persona_line", source_id, "draws_on", "persona_line", str(d),

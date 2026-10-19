@@ -162,6 +162,9 @@ class CollectiveEvidence:
         self._kind = kind
         self._render = render
         self._held: dict[str, int] = {}
+        # Culture revision counts and Persona revision sums are different clocks.
+        # Keep the legacy row for rollback; neither counter can seed the other.
+        self.watermark_name = "persona-unit:persona" if kind == "unit" and render else None
 
     def held(self, key: str) -> int | None:
         return self._held.get(key)

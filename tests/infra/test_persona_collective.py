@@ -404,3 +404,107 @@ async def test_a_collective_hypothesis_joins_the_units_docket(env):
     assert written == 1
     [head] = [h for h in await store.account_heads(key=ROOM) if h.part == "hypothesis"]
     assert head.verdict == "expired"
+
+
+async def test_unit_switch_and_rollback_keep_independent_durable_cursors(env):
+    """Real wake/inputs/commit and SQL cursors, with unequal evidence domains."""
+    from types import SimpleNamespace
+
+    from nora.app.runtime import _dream_evidence_once
+    from nora.infra.sql.language import SqlLanguageStore
+
+    class Reads(InMemoryCharacterEvidence):
+        legacy = 100
+        persona = 3
+
+        async def revision_count(self, *, keys):
+            return self.legacy
+
+        async def revisions_after(self, *, keys, after, limit):
+            return ([ROOM] if self.legacy > after else []), self.legacy
+
+        async def persona_revision_count(self, *, keys):
+            return self.persona
+
+        async def persona_revisions_after(self, *, keys, after, limit):
+            return ([ROOM] if self.persona > after else []), self.persona
+
+    reads = Reads()
+    reads.add_message(id=41, platform="signal", room=ROOM, person_id="ada", ts=T0)
+    culture = InMemoryCultureStore()
+    await culture.append(key=ROOM, body="old room context", written_at=T0,
+                         established_by="test", citations=("41",))
+    key = unit_culture_key(UNIT)
+    cursor = SqlLanguageStore(env)
+    await cursor.advance_watermark(consolidator_name="persona-unit", scope_id=key,
+                                   last_message_id=100)
+    seen = []
+
+    class Runner:
+        failed = False
+
+        async def run(self, *, adaptor, key, batch):
+            prompt = await adaptor.inputs(key=key, batch=batch)
+            assert prompt
+            seen.append(prompt)
+            if self.failed:
+                return SimpleNamespace(status="unavailable")
+            [write] = [v for v in adaptor.verbs(key=key) if v.__name__ == "persona_write"]
+            context = "new room context" if adaptor._render else "old room context"
+            result = await write(ops=[{
+                "op": "add", "part": "identity", "kind": "norm", "mode": "told",
+                "text": context, "fact_key": "norm", "fact_value": context,
+                "citations": ["41"], "told_by": "Ada",
+            }])
+            assert result["status"] == "ok", result
+            await _settle(adaptor, key)
+            return SimpleNamespace(status="ok")
+
+    runner = Runner()
+
+    async def tick(render):
+        adaptor = _adaptor(env, "unit", {key: UNIT_KEY}, reads=reads, culture=culture)
+        adaptor._render = render
+        adaptor.evidence = CollectiveEvidence(store=reads, keys={key: UNIT_KEY},
+                                              kind="unit", render=render)
+        return await _dream_evidence_once(
+            adaptor=adaptor, runtime=runner, language=cursor, metrics=Metrics(),
+            evidence=adaptor.evidence, key=key, sched=None, batch_limit=10,
+            max_age_seconds=0,
+        )
+
+    # A newly committed room account must wake even though its counter is 3 < 100.
+    store = SqlPersonaStore(env, screen=lambda _t: None)
+    await store.persona_write(
+        account=Account(key=ROOM, entity_kind="room", unit=UNIT),
+        ops=[AddOp(part="identity", kind="purpose", text="new room context",
+                   fact_key="purpose", fact_value="new room context", mode="told",
+                   citations=("41",), told_by="ada")],
+        citable=PersonaCitable(messages={41: Said(T0, "ada", ROOM)}),
+        now_ms=T0, written_by_session="test", apply_decay=False,
+    )
+    assert await tick(True) == "ok"
+    assert "new room context" in seen[-1]
+    assert any(h.fact_value == "new room context" for h in await store.account_heads(key=key))
+    assert await cursor.watermark_for(consolidator_name="persona-unit:persona", scope_id=key) == 3
+    assert await cursor.watermark_for(consolidator_name="persona-unit", scope_id=key) == 100
+    reads.persona = 1000
+    runner.failed = True
+    assert await tick(True) == "unavailable"
+    assert await cursor.watermark_for(consolidator_name="persona-unit:persona", scope_id=key) == 3
+    runner.failed = False
+    assert await tick(True) == "ok"
+    reads.legacy = 101
+    assert await tick(False) == "ok"
+    assert "old room context" in seen[-1]
+    assert any(h.fact_value == "old room context" for h in await store.account_heads(key=key))
+    assert await cursor.watermark_for(consolidator_name="persona-unit", scope_id=key) == 101
+    assert await tick(False) is None
+    assert await tick(True) is None
+    reads.legacy = 102
+    runner.failed = True
+    assert await tick(False) == "unavailable"
+    assert await cursor.watermark_for(consolidator_name="persona-unit", scope_id=key) == 101
+    runner.failed = False
+    assert await tick(False) == "ok"
+    assert await store.account_state(key=key) == (4, T0 + 5 * DAY)

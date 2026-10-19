@@ -983,9 +983,10 @@ async def _dream_evidence_once(
     and the order is the same: run, then advance only on a run that was not
     `unavailable` («the watermark advances only on success»).
     """
+    cursor_name = getattr(evidence, "watermark_name", None) or adaptor.name
     watermark = await traced_read(
         "language", "watermark_for", language.watermark_for(
-            consolidator_name=adaptor.name, scope_id=key),
+            consolidator_name=cursor_name, scope_id=key),
     )
     new = await traced_read(
         "character", "count", evidence.count(key=key, after=watermark),
@@ -994,7 +995,7 @@ async def _dream_evidence_once(
         return None
     age = await traced_read(
         "language", "watermark_age_seconds", language.watermark_age_seconds(
-            consolidator_name=adaptor.name, scope_id=key),
+            consolidator_name=cursor_name, scope_id=key),
     )
     stale_after = sched.min_interval_seconds if sched is not None else max_age_seconds
     batch = sched.wake_batch if sched is not None else None
@@ -1014,7 +1015,7 @@ async def _dream_evidence_once(
     if outcome.status == "unavailable":
         return outcome.status
     await language.advance_watermark(
-        consolidator_name=adaptor.name, scope_id=key,
+        consolidator_name=cursor_name, scope_id=key,
         last_message_id=max(cursor, watermark),
     )
     # Evidence with a second cursor (a person's social items) moves it on the
