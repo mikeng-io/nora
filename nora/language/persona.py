@@ -119,11 +119,12 @@ TIES_MAX = 8
 #: The most open disputes one session weighs (the oldest first).
 DISPUTES_MAX = 10
 
-#: `inputs` holds nine sites (the account's revision, lines, pending `told`
+#: `inputs` holds ten sites (the account's revision, lines, pending `told`
 #: lines and open disputes, the Character head, cited rows in one read, the
-#: ties, the rooms' cultures in one gather, the handed items' counts);
+#: ties, the rooms' cultures in one gather, the handed items' counts, the
+#: cached media join);
 #: `commit` one write.
-PERSONA_STORE_CALLS_PER_TICK = 11
+PERSONA_STORE_CALLS_PER_TICK = 12
 
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("about_person", 5, "turn"),
@@ -711,8 +712,8 @@ class PersonaPersonAdaptor:
                     "attribution": "shared_by_author",
                     "text": ((row.body or "") if row.body != raw
                              else "no readable media evidence"),
-                    "limits": "Sharing is not evidence of identity, ownership, residence or habits; "
-                              "no biometric or gender inference.",
+                    "limits": ("Sharing is not evidence of identity, ownership, "
+                               "residence or habits; no biometric or gender inference."),
                 },
             }, ensure_ascii=False)
         messages = [m for m in visible.values() if m.row.person_id == person]
@@ -826,7 +827,6 @@ class PersonaPersonAdaptor:
                     row_id=lambda m: m.row.id,
                     attrs=lambda m: (
                         ("room", labels.get(m.room) or "unnamed room"),
-                        ("by", self._name_of(m.row.person_id)),
                         ("age", age(m.row.ts, now)),
                         ("source_at", datetime.fromtimestamp(
                             m.row.ts / 1000, PERSONA_HKT).isoformat()),
