@@ -37,7 +37,6 @@ someone else > deduced > induced. A writer names the conflict
 
 from __future__ import annotations
 
-import json
 import math
 import re
 import uuid
@@ -1102,9 +1101,10 @@ def plan_write(
                 and all(getattr(candidate, field) == getattr(old, field) for field in (
                     "fact_key", "fact_value", "valid_from", "valid_until", "mode", "told_by"))
                 # JSON booleans and numbers are different facts (True == 1 in Python).
-                and (candidate.fact_key != "attribute" or
-                     json.dumps(candidate.fact_value, sort_keys=True)
-                     == json.dumps(old.fact_value, sort_keys=True))
+                and (candidate.fact_key != "attribute" or (
+                     isinstance(candidate.fact_value, dict) and isinstance(old.fact_value, dict)
+                     and isinstance(candidate.fact_value["value"], bool)
+                     == isinstance(old.fact_value["value"], bool)))
                 and set(candidate.draws_on) == {aliases.get(lid, lid) for lid in old.draws_on}):
             candidate = replace(
                 candidate, citations=tuple(dict.fromkeys((*old.citations, *candidate.citations))),

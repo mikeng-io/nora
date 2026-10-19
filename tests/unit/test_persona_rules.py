@@ -617,3 +617,31 @@ def test_fallback_is_human_told_only_and_retains_normal_source_checks():
     third_party = _plan([replace(op, told_by=OTHER, citations=("201",))])
     assert not third_party.refusals
     assert third_party.inserts[0].told_by == OTHER
+
+
+@pytest.mark.parametrize(("before", "after", "same"), [
+    (178, 178.0, True), (178.0, 178, True),
+    (0, -0.0, True), (-0.0, 0, True),
+    (True, 1, False), (1, True, False), (178, 179, False),
+])
+def test_fallback_revision_numeric_equality_preserves_provenance(before, after, same):
+    initial = _plan([replace(_told("measurement stated"), fact_key="attribute",
+                            fact_value={"name": "measurement", "value": before})])
+    assert not initial.refusals
+    [original] = initial.inserts
+    result = _plan([ReviseOp(
+        line="P1", text="measurement reworded", citations=("102",),
+        fact_key="attribute", fact_value={"name": "measurement", "value": after},
+    )], (original,))
+    assert not result.refusals
+    [revised] = result.inserts
+    assert revised.supersedes == original.id
+    assert revised.fact_value == {"name": "measurement", "value": after}
+    if same:
+        assert revised.as_of == original.as_of == CITABLE.messages[101].ts
+        assert revised.citations == ("101", "102")
+        assert revised.support_count == original.support_count == 1
+        assert revised.last_supported_at == original.last_supported_at
+    else:
+        assert revised.as_of == CITABLE.messages[102].ts != original.as_of
+        assert revised.citations == ("102",)
