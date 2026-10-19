@@ -23,7 +23,7 @@ from .rubric import FOLD_KINDS, RUBRIC, SOURCE_SCOPE, Criterion
 _FENCE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 
 
-def parse_json_response(raw: str):
+def parse_json_response(raw: str, *, object_sequence: bool = False):
     """One complete JSON payload, optionally inside one complete JSON fence.
 
     Reuse the judge's fence convention, but never search past surrounding prose.
@@ -36,6 +36,21 @@ def parse_json_response(raw: str):
         and text.splitlines()[-1] == "```"
     ):
         text = match.group(1)
+    if object_sequence and text.startswith("{"):
+        # Coverage previously requested one object per line. Accept only complete
+        # whitespace-separated objects; consume every byte before schema checks.
+        decoder = json.JSONDecoder()
+        objects = []
+        while text:
+            item, end = decoder.raw_decode(text)
+            if not isinstance(item, dict):
+                raise ValueError("object sequence requires objects only")
+            objects.append(item)
+            tail = text[end:]
+            if tail and not tail[0].isspace():
+                raise ValueError("objects must be separated by whitespace")
+            text = tail.lstrip()
+        return objects
     return json.loads(text)
 
 

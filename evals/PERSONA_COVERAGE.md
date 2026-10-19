@@ -131,9 +131,10 @@ retries remain zero. No partial-ID salvage is allowed.
 The observed run failed before measurement: five complete fenced JSON arrays
 were rejected by raw JSON parsing; three gateway errors exhausted 4096 tokens
 in reasoning without content. The original ERROR receipt is not reclassified.
-Coverage now accepts one complete JSON payload, optionally inside one complete
-JSON fence, while rejecting surrounding prose, malformed/truncated JSON and
-multiple payloads. All schema, ID, source and physical-identity checks still run.
+Coverage accepts the array contract and the legacy complete object sequence
+described below, optionally inside one complete JSON fence. Surrounding prose,
+malformed/truncated JSON and multiple arrays remain errors. All schema, ID,
+source and physical-identity checks still run.
 
 [GLM's official contract](https://docs.z.ai/guides/capabilities/thinking) supports
 `low` for GLM-5.3-Flash and forbids disabling thinking; its unspecified default
@@ -234,3 +235,20 @@ A derivable miss cannot be closed merely by editing a closure annotation.
 Fix and read back its canonical head through the normal authorized workflow,
 then export fresh heads against the SAME frozen denominator and judge again.
 The paired reply gate still has to follow; coverage alone never enables render.
+
+### Output contract and offline replay
+
+The judge returns one JSON array with exactly one object per input claim.
+Coverage alone also accepts complete whitespace-separated JSON objects (including
+one singleton object) for compatibility with the former contradictory “one object
+per line” instruction. A whole-payload JSON fence follows the existing strict
+fence convention. No prose, partial payload, adjacent objects without whitespace,
+or multiple arrays are accepted. All records still pass the same exact batch-ID,
+schema and eligible evidence checks; a single invalid record errors the whole
+batch. Other judges retain their existing parser behavior.
+
+Plans and new receipts bind the output contract version and rules hash alongside
+existing request constants. Replaying saved responses through a changed parser is
+an **offline diagnostic**, never a formal calibration under the new prompt. Keep
+the original input, gold, evidence pin, prompt hashes and receipt unchanged; report
+format errors separately from strict evidence failures and label disagreements.

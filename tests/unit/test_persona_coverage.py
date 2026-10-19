@@ -583,3 +583,63 @@ def test_serialized_coverage_contract_preserves_claim_and_complete_provenance():
     assert "Maintenance annotations are not evidence" in rules
     assert "not-judge-evidence" not in shown and '"closure"' not in shown
     assert '"expected"' not in shown and "adjudicated_by" not in shown
+
+
+@pytest.mark.parametrize("size,fenced", [(4, False), (2, True), (1, False)])
+def test_coverage_accepts_complete_legacy_object_sequence(size, fenced):
+    rows = census_input()["rows"][:size]
+    labels = [{"id": r["id"], "label": "covered",
+               "evidence_ids": [r["heads"][0]["id"], r["sources"][0]["id"]],
+               "why": "Invented full scoped grounding"} for r in rows]
+    raw = "\n".join(json.dumps(label, indent=2) for label in labels)
+    if fenced:
+        raw = "```json\n" + raw + "\n```"
+    assert coverage.parse_labels(raw, rows) == labels
+
+
+@pytest.mark.parametrize("mutation", [
+    "wrong_ids", "duplicate", "missing", "prose", "truncated", "arrays",
+    "trailing", "adjacent", "bad_record", "bad_evidence", "partial_fence",
+])
+def test_coverage_legacy_sequence_never_salvages_a_bad_batch(mutation):
+    rows = census_input()["rows"][:2]
+    labels = [{"id": r["id"], "label": "covered",
+               "evidence_ids": [r["heads"][0]["id"], r["sources"][0]["id"]],
+               "why": "Invented full scoped grounding"} for r in rows]
+    if mutation == "wrong_ids":
+        labels[1]["id"] = "other-batch"
+    elif mutation == "duplicate":
+        labels[1] = labels[0]
+    elif mutation == "missing":
+        labels = labels[:1]
+    elif mutation == "bad_record":
+        labels[1]["label"] = "invalid"
+    elif mutation == "bad_evidence":
+        labels[1]["evidence_ids"] = ["unavailable"]
+    raw = "\n".join(json.dumps(label) for label in labels)
+    if mutation == "prose":
+        raw = "Here are the results:\n" + raw
+    elif mutation == "truncated":
+        raw = raw[:-1]
+    elif mutation == "arrays":
+        raw = json.dumps(labels) + "\n" + json.dumps(labels)
+    elif mutation == "trailing":
+        raw += "\nDone"
+    elif mutation == "adjacent":
+        raw = "".join(json.dumps(label) for label in labels)
+    elif mutation == "partial_fence":
+        raw = "```json\n" + raw
+    with pytest.raises(ValueError):
+        coverage.parse_labels(raw, rows)
+
+
+def test_legacy_objects_are_coverage_only_and_array_prompt_is_explicit():
+    from evals.rebuilt.judge import parse_json_response
+
+    assert parse_json_response('{"id": "invented"}') == {"id": "invented"}
+    with pytest.raises(ValueError):
+        parse_json_response('{}\n{}')
+    assert "ONE JSON array" in coverage.RULES
+    assert "PER INPUT CLAIM inside that array" in coverage.RULES
+    assert "one object per line" not in coverage.RULES
+    assert coverage.plan(census_input())["rules_hash"] == coverage.digest(coverage.RULES)
