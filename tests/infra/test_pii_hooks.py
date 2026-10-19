@@ -154,6 +154,56 @@ def test_clean_commit_passes(repo):
     assert "pii staged: PASS" in out.stderr and "pii message: PASS" in out.stderr
 
 
+@pytest.mark.parametrize("staged_private", [False, True])
+def test_pre_commit_reads_staged_content_not_the_worktree(repo, staged_private):
+    clean = "value = 'clean'\n"
+    private = f"value = {NAME!r}\n"
+    repo.write("payload.py", private if staged_private else clean)
+    assert repo.git("add", "payload.py").returncode == 0
+    repo.write("payload.py", clean if staged_private else private)
+    before = repo.head()
+    out = repo.git("commit", "-q", "-m", "test: staged content")
+    if staged_private:
+        assert out.returncode != 0 and "denylist:text" in out.stderr
+        assert repo.head() == before
+        assert NAME not in out.stdout + out.stderr
+    else:
+        assert out.returncode == 0, out.stderr
+        assert repo.git("show", "HEAD:payload.py").stdout == clean
+        assert (repo.path / "payload.py").read_text() == private
+
+
+def test_pre_commit_uses_the_private_pseudonym_registry_after_the_denylist(repo, tmp_path):
+    pseudo = SY.phone("44", "spaced")
+    registry = tmp_path / "pseudonyms.txt"
+    registry.write_text(f"{pseudo}\n{PHONE}\n")
+    repo.env["NORA_PII_PSEUDONYMS"] = str(registry)
+    repo.write("payload.py", f"phone = {pseudo!r}\n")
+    out = repo.commit("test: registered pseudonym", "payload.py")
+    assert out.returncode == 0, out.stderr
+    repo.write("payload.py", f"phone = {PHONE!r}\n")
+    out = repo.commit("test: denylist precedence", "payload.py")
+    assert out.returncode != 0 and "denylist:number" in out.stderr
+    assert PHONE not in out.stdout + out.stderr
+    repo.write("payload.py", f"phone = {SY.phone('44', 'spaced')!r}\n")
+    out = repo.commit("test: unregistered shape", "payload.py")
+    assert out.returncode != 0 and "phone" in out.stderr
+
+
+def test_pre_commit_runs_in_a_linked_worktree_with_shared_hook_configuration(repo, tmp_path):
+    linked = tmp_path / "linked"
+    out = repo.git("worktree", "add", "-q", "-b", "linked", str(linked))
+    assert out.returncode == 0, out.stderr
+    other = Repo(linked, repo.env)
+    assert other.git("config", "--get", "core.hooksPath").stdout.strip() == ".githooks"
+    other.write("payload.py", f"value = {NAME!r}\n")
+    before = other.head()
+    out = other.commit("test: linked worktree", "payload.py")
+    assert out.returncode != 0 and "denylist:text" in out.stderr
+    assert other.head() == before
+    assert NAME not in out.stdout + out.stderr
+
+
 def test_payload_in_the_commit_message_is_refused(repo):
     repo.write("nora/a.py", "x = 1\n")
     out = repo.commit(f"fix: reported by {NAME}")
