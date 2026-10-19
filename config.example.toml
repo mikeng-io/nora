@@ -993,6 +993,12 @@ batch_limit = 300
 # stale_seconds) and at once by a fact a turn's `remember` wrote about them.
 # Each person's first session is the backfill. Needs [dreamer] and [culture].
 enabled = false
+# The switch (step 8): prompts render each entity's Persona account as
+# <persona> INSTEAD of the peer card/history and the prose culture/character/
+# self blocks. Off is the shadow: the sessions keep writing and prompts render
+# what they always have, so flipping this back is the whole rollback. Ignored
+# unless `enabled` is on.
+render = false
 
 [lessons]
 # Lessons. Optional, off by default. On, one background session per unit reads

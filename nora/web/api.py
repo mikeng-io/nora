@@ -57,7 +57,7 @@ from nora.web.games import (
     build_games_servers_payload,
 )
 from nora.web.gatherings import build_gathering_payload, build_gatherings_payload
-from nora.web.memory import build_memory_payload
+from nora.web.memory import CitedMessages, PersonaPortal, build_memory_payload
 from nora.web.persons import build_person_profile_payload, build_persons_roster_payload
 from nora.web.presence import (
     build_presence_history_payload,
@@ -224,10 +224,16 @@ def register_web_routes(
     blobs: BlobStore | None = None,
     room_label: Callable[[str, str], str] | None = None,
     artifacts: ComputerExportStore | None = None,
+    persona: PersonaPortal | None = None,
+    persona_scopes_of: Callable[[str], tuple[tuple[str, str], ...]] | None = None,
+    persona_cited: CitedMessages | None = None,
 ) -> None:
     app["web_store"] = store
     app["web_artifacts"] = artifacts
     app["web_workspaces_of"] = workspaces_of
+    app["web_persona"] = persona
+    app["web_persona_scopes_of"] = persona_scopes_of
+    app["web_persona_cited"] = persona_cited
     app["web_documents"] = documents
     app["web_rooms_of"] = rooms_of
     app["web_room_event_shown"] = room_event_shown
@@ -260,6 +266,8 @@ def register_web_routes(
             honcho=a["web_honcho"], persons=a["web_persons"], ai_peer=a["web_ai_peer"],
             person_id=request.query.get("personId"),
             workspaces_of=a["web_workspaces_of"],
+            persona=a["web_persona"], persona_scopes_of=a["web_persona_scopes_of"],
+            cited=a["web_persona_cited"], rooms_of=a["web_rooms_of"],
         )
         return web.json_response(body)
 

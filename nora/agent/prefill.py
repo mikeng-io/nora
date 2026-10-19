@@ -9,7 +9,8 @@ for its own injected XML, with the label replaced by the sentence.
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from ..domain.blocks import (
@@ -33,6 +34,7 @@ from ..domain.framing import (
     ContextHeader,
 )
 from ..domain.models import TagContext, TranscriptRow
+from ..domain.persona import PersonaView
 from ..domain.prompt import escape
 from ..domain.quote_window import first_by_ts
 from ..domain.self_presence import Presence
@@ -47,6 +49,7 @@ from ..language.documents_render import render_documents
 from ..language.lesson_render import render_lessons
 from ..language.memo_render import render_memos
 from ..language.note_render import render_notes
+from ..language.persona_render import render_persona, render_persona_people
 from ..language.presence_render import render_presence
 from ..language.standing_render import render_standing, render_standing_working_set
 from ..language.subagents_render import render_subagents
@@ -298,6 +301,17 @@ def _declared(rendered: Sequence[ContextBlock | None]) -> list[ContextBlock]:
         for name, order in _TAG_MESSAGE_BLOCKS
     ]
     return out
+
+
+#: The block names `<persona>` replaces when the assembler fills
+#: `TagContext.personas` (`[persona] render`, 45 §5). Their rows stay in
+#: `_BLOCKS` — the Honcho surface is the default and the flag is the whole
+#: rollback — but on a switched turn their stubs leave the declared list, so
+#: the span's `blocks_declared`/`blocks_empty` describe the prompt she got.
+_PERSONA_REPLACES = frozenset({
+    "self", "peer_card", "peer_history", "people_in_window",
+    "culture", "unit_culture", "character",
+})
 
 
 def _context_header(header: str = TAG_HEADER) -> str:
@@ -668,6 +682,60 @@ def _people_in_window_block(ctx: TagContext) -> ContextBlock | None:
     )
 
 
+def _persona_name_of(ctx: TagContext) -> Callable[[str], str]:
+    """The `told by <name>` resolver for this turn's persona blocks.
+
+    Built from the room's listed persons and the tagger — the names already in
+    this prompt, so a told line's teller joins to them by literal match. An
+    id with no name in this turn renders as "someone": a raw person id never
+    reaches a prompt (R-18), and a told line's teller is usually in the room.
+    """
+    names = {ref.person_id: ref.name for ref in ctx.room_members}
+    if ctx.tagger is not None:
+        names.setdefault(ctx.tagger.person_id, ctx.tagger.name)
+
+    def name_of(person_id: str) -> str:
+        return names.get(person_id, "someone")
+
+    return name_of
+
+
+def _persona_blocks(ctx: TagContext, *, now: datetime) -> list[ContextBlock]:
+    """The switch's blocks (45 §5): one `<persona>` per entity of the turn,
+    stamped into the rows of the blocks they replace.
+
+    Nora's own account sits at `self`'s row (first, directly after the
+    doctrine, for the same reason), the room's at `culture`'s and the unit's
+    at `unit_culture`'s, and the persons share `render_persona_people`'s one
+    budget at `peer_card`'s row — "her own past, then theirs", the table's
+    order argument. Returns [] on the Honcho surface (`ctx.personas` empty).
+    """
+    if not ctx.personas:
+        return []
+    name_of = _persona_name_of(ctx)
+    blocks: list[ContextBlock] = []
+    people: list[PersonaView] = []
+    for view in ctx.personas:
+        if view.entity == "person":
+            people.append(view)
+            continue
+        row = {"self": "self", "room": "culture", "unit": "unit_culture"}.get(
+            view.entity,
+        )
+        if row is None:
+            continue
+        block = render_persona(view, name_of=name_of, now=now)
+        if block is not None:
+            order, key = _ROW[row]
+            blocks.append(replace(block, order=order, key=key))
+    order, key = _ROW["peer_card"]
+    blocks.extend(
+        replace(b, order=order, key=key)
+        for b in render_persona_people(people, name_of=name_of, now=now)
+    )
+    return blocks
+
+
 def _recalled_block(ctx: TagContext) -> ContextBlock | None:
     """`<recalled>`: the pre-fetch's items, one JSON object a line, exactly
     as `memory_search` answers with them (`render_packet` built and cut them
@@ -949,6 +1017,10 @@ def build_prefill(
         # RENDER first, DECLARE second, ASSEMBLE third. The order the blocks
         # reach her comes from `_BLOCKS`, so a block cannot be served without
         # an entry, and an entry cannot survive a block that stopped rendering.
+        # THE SWITCH (45 §5): with `ctx.personas` filled, the seven blocks it
+        # replaces are not rendered and their stubs leave the declared list —
+        # the persona blocks take their rows (`_persona_blocks`).
+        switched = bool(ctx.personas)
         declared = _declared([
             # `ToolSurface.prompt_catalogue`: the SAME admitted set the turn's
             # tools were built from, so it cannot name a tool this turn cannot
@@ -957,18 +1029,18 @@ def build_prefill(
             # what the context assembler read.
             _block("tool_catalogue", body=catalogue) if catalogue else None,
             _room_members_block(ctx),
-            _restamp(render_self(ctx.self_account, now=clock)),
+            None if switched else _restamp(render_self(ctx.self_account, now=clock)),
             _restamp(render_lessons(ctx.lessons)),
             _restamp(_presence_block(ctx)),
-            _peer_card_block(ctx),
-            _peer_history_block(ctx),
-            _people_in_window_block(ctx),
+            None if switched else _peer_card_block(ctx),
+            None if switched else _peer_history_block(ctx),
+            None if switched else _people_in_window_block(ctx),
             _restamp(_notes_block(ctx, now=clock, view=view)),
             _restamp(render_memos(ctx.memos, tz=clock.tzinfo or UTC)),
             _restamp(_decisions_block(ctx, now=clock)),
-            _restamp(_culture_block(ctx, now=clock, view=view)),
-            _restamp(render_unit_culture(ctx.unit_culture, now=clock)),
-            _restamp(render_character(ctx.character, now=clock)),
+            None if switched else _restamp(_culture_block(ctx, now=clock, view=view)),
+            None if switched else _restamp(render_unit_culture(ctx.unit_culture, now=clock)),
+            None if switched else _restamp(render_character(ctx.character, now=clock)),
             _restamp(render_computer(ctx.computer)),
             _restamp(render_documents(ctx.documents)),
             _restamp(render_subagents(ctx.subagents)),
@@ -978,6 +1050,10 @@ def build_prefill(
             _spoken_turn_block(ctx),
             _recalled_block(ctx),
         ])
+        if switched:
+            declared = [
+                b for b in declared if b.name not in _PERSONA_REPLACES
+            ] + _persona_blocks(ctx, now=clock)
         # WHICH blocks were actually built (non-empty body, `assemble`'s own
         # test; see `_declared`'s docstring for why a block with nothing to
         # say is still DECLARED), and AT WHAT SIZE: each block's name already

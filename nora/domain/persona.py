@@ -77,6 +77,7 @@ __all__ = [
     "PersonaOp",
     "PersonaPlan",
     "PersonaRefusal",
+    "PersonaView",
     "PersonaWriteResult",
     "PersonaWriter",
     "RetireOp",
@@ -271,6 +272,27 @@ class PersonaLine:
 
 #: A row `plan_write` asks the store to insert; the same shape as a stored line.
 NewLine = PersonaLine
+
+
+@dataclass(frozen=True, slots=True)
+class PersonaView:
+    """One entity's account as a prompt renders it (45 §5): who the block is
+    of, the account's chain heads, and the AUTHORED identity lines — the
+    `identity.toml` names and accounts — which are rendered, never written
+    (45 §3: an authored line carries no mode).
+
+    `entity` is `self`, `room`, `unit` or `person`; `of` is how the block
+    names the entity (the person's name, the room's label, the unit, "you").
+    `lines` holds every chain head, whatever its state: which states render
+    is the renderer's rule, not the reader's, so a view is the same thing the
+    write path read. A line whose `exclude_persons` names somebody the
+    rendering room lists is dropped by the assembler BEFORE the view is built,
+    never by the renderer guessing."""
+
+    entity: str
+    of: str
+    lines: tuple[PersonaLine, ...] = ()
+    authored: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

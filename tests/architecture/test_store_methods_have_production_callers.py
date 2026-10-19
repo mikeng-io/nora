@@ -145,14 +145,6 @@ class _Pin(NamedTuple):
 # the artifact that gets re-derived from scratch by the next session that
 # notices one of them.
 _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
-    ("social_stream.py", "current_counts"): _Pin(
-        "deferred_consumer",
-        "A post's or reel's latest counts by item, under the readable rule. "
-        "`social_read` gets them through `items_of`; this is Persona's read "
-        "of them as evidence about the author (design/cognition-loop/22 §6, "
-        "unified-memory/45 §4), added with the adaptor's social input, the "
-        "next build. Until then the tests read the counts back through it.",
-    ),
     ("culture.py", "chain"): _Pin(
         "deferred_consumer",
         "The revision chain, newest first, walked through parent links. The "

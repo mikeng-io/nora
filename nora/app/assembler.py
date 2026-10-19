@@ -14,7 +14,7 @@ so a shared helper in the same package needs no new edge in the import graph.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime
 
 from nora.agent.lineage import LineagePolicy
@@ -27,6 +27,7 @@ from nora.domain.ports import (
     CultureReader,
     MemoryStore,
     RecordStore,
+    RosterSource,
     StandingStore,
 )
 from nora.domain.quote_window import QuoteWindow
@@ -39,6 +40,7 @@ from nora.engagement.documents_context import DocumentsContextReader
 from nora.engagement.self_presence import PresenceReader
 from nora.engagement.subagents_context import SubagentsContextReader
 from nora.language.lesson_render import ActiveLessons
+from nora.language.persona_render import PersonaHeads
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.policy import Policy
@@ -76,6 +78,9 @@ def build_assembler(
     memos: MemoStore | None = None,
     memory_search: MemorySearch | None = None,
     clock: Callable[[], datetime] | None = None,
+    persona: PersonaHeads | None = None,
+    rosters: Mapping[str, RosterSource] | None = None,
+    self_ids: frozenset[str] = frozenset(),
 ) -> TranscriptInjection:
     return TranscriptInjection(
         audit=audit, memory=memory, persons=persons,
@@ -134,4 +139,9 @@ def build_assembler(
         # The graph's one clock, so the pre-fetch dates and ranks its items
         # at the instant every other component reads.
         clock=clock,
+        # THE SWITCH (design/unified-memory/45 §5): the Persona accounts'
+        # reader. `None` until `[persona] render` is on beside `[persona]
+        # enabled`, and in every harness that wires none — the turn then
+        # renders the Honcho and prose-culture blocks it always has.
+        persona=persona, rosters=rosters, self_ids=self_ids,
     )

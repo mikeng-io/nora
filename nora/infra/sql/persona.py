@@ -11,9 +11,13 @@ row the tables carry.
 account is its chain heads, the rows nothing supersedes. `persona` changes in
 place and keeps `row_history`.
 
-# ponytail: lines are not projected into the memory index yet. 45 §1 makes
-# them index nodes, but a node is a `memory_search` hit, and shadow changes
-# no prompt (45 §6); they join the index at the switch (00 «Sequence» step 8).
+**The index (45 §1, the switch).** With `index` on (`[persona] render`),
+every write projects the rows it inserted and the rows they supersede into
+the memory index in the write's own `begin()` block (25 §7). Off is the
+shadow: the write lands, no node does, and no prompt changes. Lines written
+during the shadow join the index through the flip's `nora memory rebuild`
+(45 §8) — the projector converges on the source's current row, so a rebuild
+equals live projection.
 """
 
 from __future__ import annotations
@@ -41,6 +45,7 @@ from nora.domain.persona import (
     match_disputed_line,
     plan_write,
 )
+from nora.infra.sql import memory_index
 from nora.infra.sql.schema import PERSONA, PERSONA_DISPUTE, PERSONA_LINE
 
 __all__ = ["SqlPersonaStore", "chain_heads"]
@@ -92,12 +97,19 @@ def chain_heads(lines: Sequence[PersonaLine]) -> tuple[tuple[PersonaLine, ...], 
 
 
 class SqlPersonaStore:
-    def __init__(self, engine: AsyncEngine, *, screen: Callable[[str], str | None]) -> None:
+    def __init__(
+        self, engine: AsyncEngine, *, screen: Callable[[str], str | None],
+        index: bool = False,
+    ) -> None:
         """`screen` is the R-18/R-28 egress screen every line's texts pass
         (`nora.agent.dream_screen.text_offence` in production): held here so
-        every writer is screened the same way, and none can forget it."""
+        every writer is screened the same way, and none can forget it.
+
+        `index` is the switch (45 §5): on, every write projects its lines
+        into the memory index; off (the shadow), no write does."""
         self._engine = engine
         self._screen = screen
+        self._index = index
 
     async def account_heads(self, *, key: str) -> tuple[PersonaLine, ...]:
         """The account as it stands: every chain head, in every state."""
@@ -179,13 +191,17 @@ class SqlPersonaStore:
                     effect = ("hidden" if disputed_by == account.subject
                               else "disputed")
                     if matched.state != effect and head_row is not None:
-                        await conn.execute(sa.insert(PERSONA_LINE).values(_values(
-                            replace(
-                                matched, id=str(uuid.uuid4()), supersedes=matched.id,
-                                state=effect, written_at=now_ms,
-                                written_by_session="tag",
-                            )
-                        )))
+                        new_line = replace(
+                            matched, id=str(uuid.uuid4()), supersedes=matched.id,
+                            state=effect, written_at=now_ms,
+                            written_by_session="tag",
+                        )
+                        await conn.execute(sa.insert(PERSONA_LINE).values(_values(new_line)))
+                        if self._index:
+                            # 25 §7, in the write's own begin(): the new row,
+                            # and the row it supersedes (hidden drops both).
+                            await memory_index.project(conn, "persona_line", new_line.id)
+                            await memory_index.project(conn, "persona_line", matched.id)
                         await conn.execute(
                             sa.update(PERSONA).where(PERSONA.c.key == account.key)
                             .values(revision=head_row.revision + 1, updated_at=now_ms))
@@ -296,11 +312,17 @@ class SqlPersonaStore:
                 if (head.prediction_window_end or 0) > now_ms:
                     await trans.rollback()
                     return "refused"
-                await conn.execute(sa.insert(PERSONA_LINE).values(_values(replace(
+                new_line = replace(
                     head, id=str(uuid.uuid4()), supersedes=head.id, verdict=verdict,
                     verdict_by=verdict_by, verdict_at=now_ms, written_at=now_ms,
                     written_by_session="persona-verdict",
-                ))))
+                )
+                await conn.execute(sa.insert(PERSONA_LINE).values(_values(new_line)))
+                if self._index:
+                    # 25 §7, in the write's own begin(): the new row, and the
+                    # chain head it supersedes.
+                    await memory_index.project(conn, "persona_line", new_line.id)
+                    await memory_index.project(conn, "persona_line", head.id)
                 await conn.execute(
                     sa.update(PERSONA).where(PERSONA.c.key == key)
                     .values(revision=head_row.revision + 1, updated_at=now_ms))
@@ -372,6 +394,13 @@ class SqlPersonaStore:
             changed: dict[str, Any] = {}
             if plan.inserts:
                 await conn.execute(sa.insert(PERSONA_LINE), [_values(x) for x in plan.inserts])
+                if self._index:
+                    # 25 §7, in the write's own begin(): each inserted row, and
+                    # each row one supersedes (its node turns `superseded`).
+                    for line in plan.inserts:
+                        await memory_index.project(conn, "persona_line", line.id)
+                        if line.supersedes is not None:
+                            await memory_index.project(conn, "persona_line", line.supersedes)
                 revision += 1
                 changed = {"revision": revision, "updated_at": now_ms}
             if apply_decay:

@@ -255,6 +255,9 @@ def test_the_scan_sees_the_known_projecting_writers() -> None:
         ("nora/infra/sql/social_stream.py", "insert_item"),
         ("nora/infra/sql/social_stream.py", "record_state"),
         ("nora/infra/sql/social_stream.py", "record_perception"),
+        ("nora/infra/sql/persona.py", "record_dispute"),
+        ("nora/infra/sql/persona.py", "record_verdict"),
+        ("nora/infra/sql/persona.py", "_write"),
     } <= sites
 
 
