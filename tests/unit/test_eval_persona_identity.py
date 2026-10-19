@@ -129,3 +129,96 @@ def test_activity_grader_allows_only_source_grounded_friend(change, passes):
         observed["heads"].append(deepcopy(head))
     head.update(change)
     assert (check_identity("activity_not_ownership", observed) == ()) is passes
+
+
+def test_source_lane_loader_is_additive_and_rejects_malformed_seed(tmp_path, monkeypatch):
+    from nora.subject.persona_writer import validate_sources
+
+    path = tmp_path / "sources.yaml"
+    seeds = case_file(source_lanes=True)
+    path.write_text(yaml.safe_dump(seeds))
+    monkeypatch.setenv("NORA_EVAL_PERSONA_CASES", str(path))
+    assert len(load_corpus("persona_identity")) == 11
+    for bad in (
+        [{"body": "caption", "ts": True}],
+        [{"body": "caption", "ts": 1, "person": "somebody_else"}],
+        [{"body": "caption", "ts": 1, "attachment": {"reading": "", "late": False}}],
+        [{"body": "caption", "ts": 1, "attachment": {"reading": None, "late": True}}],
+        [{"body": "caption", "ts": 1, "attachment": {"reading": "x", "late": False,
+                                                     "source_id": "real-id"}}],
+    ):
+        with pytest.raises(ValueError):
+            validate_sources(bad, 2)
+    seeds["profile_cached"]["sources"][0]["attachment"]["wrong"] = True
+    path.write_text(yaml.safe_dump(seeds))
+    with pytest.raises(ValueError, match="attachment"):
+        load_corpus("persona_identity")
+
+
+def test_source_storage_grader_requires_qualified_value_and_exact_provenance():
+    from copy import deepcopy
+
+    good = receipt()
+    good["heads"][0].update(fact_key="food_preferences", fact_value=["vegetarian ramen"],
+                            mode="deduced", told_by=None, as_of=2, citations=("101", "102"))
+    assert check_identity("profile_cached", good) == ()
+    assert check_identity("profile_late", good) == ()
+    assert check_identity("profile_missing", good)
+    for field, value in (("fact_value", ["ramen"]), ("mode", "told"),
+                         ("as_of", 1), ("citations", ("101",)), ("told_by", "other")):
+        wrong = deepcopy(good)
+        wrong["heads"][0][field] = value
+        assert check_identity("profile_cached", wrong), field
+    good["heads"] = []
+    assert check_identity("profile_missing", good) == ()
+    assert check_identity("profile_cached", good)
+
+
+def test_v2_provenance_contract_keeps_endorsement_separate_from_media_only():
+    good = receipt()
+    good["person"] = "p"
+    good["heads"][0].update(fact_key="food_preferences", fact_value=["vegetarian ramen"],
+                            mode="deduced", told_by=None, as_of=2, citations=("101", "102"))
+    for vector in ("profile_endorsed_late", "profile_media_only_late"):
+        assert check_identity(vector, good) == ()
+        for field, value in (("fact_value", ["ramen"]), ("mode", "induced"),
+                             ("as_of", 1), ("citations", ("101",)),
+                             ("told_by", "other"), ("valid_from", 1)):
+            wrong = deepcopy(good)
+            wrong["heads"][0][field] = value
+            assert check_identity(vector, wrong), (vector, field)
+    good["heads"][0].update(mode="told", told_by="p")
+    assert check_identity("profile_endorsed_late", good) == ()
+    assert check_identity("profile_media_only_late", good)
+    good["heads"][0]["told_by"] = "other"
+    assert check_identity("profile_endorsed_late", good)
+    assert check_identity("profile_media_only_missing", good)
+    good["heads"] = []
+    assert check_identity("profile_media_only_missing", good) == ()
+    assert check_identity("profile_media_only_late", good)
+
+
+def test_v2_closed_bundle_and_missing_either_reading(tmp_path, monkeypatch):
+    from nora.subject.persona_writer import validate_sources
+
+    seeds = case_file(source_lanes_v2=True)
+    path = tmp_path / "v2.yaml"
+    monkeypatch.setenv("NORA_EVAL_PERSONA_CASES", str(path))
+    path.write_text(yaml.safe_dump(seeds))
+    assert len(load_corpus("persona_identity")) == 11
+    for omitted in (0, 1):
+        sources = deepcopy(seeds["profile_media_only_late"]["sources"])
+        for source in sources:
+            source["attachment"]["late"] = False
+        sources[omitted]["attachment"]["reading"] = None
+        validate_sources(sources, seeds["profile_media_only_missing"]["clock_ms"],
+                         vector="profile_media_only_missing")
+    for extra in ({"typo": seeds["profile_endorsed_late"]},
+                  {"profile_cached": case_file(source_lanes=True)["profile_cached"]}):
+        path.write_text(yaml.safe_dump({**seeds, **extra}))
+        with pytest.raises(ValueError, match="registered"):
+            load_corpus("persona_identity")
+    del seeds["profile_endorsed_late"]
+    path.write_text(yaml.safe_dump(seeds))
+    with pytest.raises(ValueError, match="registered"):
+        load_corpus("persona_identity")

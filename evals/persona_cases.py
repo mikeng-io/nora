@@ -19,7 +19,7 @@ def millis(date: str) -> int:
     return int(datetime.fromisoformat(date).replace(tzinfo=UTC).timestamp() * 1000)
 
 
-def case_file() -> dict:
+def case_file(*, source_lanes: bool = False, source_lanes_v2: bool = False) -> dict:
     rows = yaml.safe_load((Path(__file__).parent / "corpora/tool_selection.yaml").read_text())
     if isinstance(rows, dict):
         rows = rows["cases"]
@@ -40,15 +40,53 @@ def case_file() -> dict:
                                     "Today I drove a borrowed car and walked my friend Jo's dog.")],
         "explicit_home_spouse": [("2026-10-10", "I live in Harbor District. Jo is my spouse.")],
     }
-    return {name: {
+    result = {name: {
         "snapshot": dict(anchor), "person": "miles_novak", "clock_ms": millis("2026-10-12"),
         "sources": [{"body": body, "ts": millis(date)} for date, body in sources],
     } for name, sources in vectors.items()}
+    if source_lanes:
+        for name in ("profile_cached", "profile_missing", "profile_late"):
+            result[name] = {
+                "snapshot": dict(anchor), "person": "miles_novak",
+                "clock_ms": millis("2026-10-12"),
+                "sources": [{"body": "This is my own self-profile card; the text describes me.",
+                             "ts": millis("2026-10-10"), "attachment": {
+                                 "reading": (None if name == "profile_missing" else
+                                     ("Printed self-profile text: My usual food preference "
+                                      "is vegetarian ramen.")),
+                                 "late": name == "profile_late"}},
+                            {"body": ("The preference on that self-profile "
+                                      "is my current usual choice."),
+                             "ts": millis("2026-10-11")}],
+            }
+    if source_lanes_v2:
+        if source_lanes:
+            raise ValueError("choose one source-lane bundle")
+        from nora.subject.knowledge import _KNOWN_NAME, _KNOWN_PERSON
+
+        endorsed = case_file(source_lanes=True)["profile_late"]
+        result["profile_endorsed_late"] = endorsed
+        for name in ("profile_media_only_late", "profile_media_only_missing"):
+            result[name] = {
+                "snapshot": dict(anchor), "person": _KNOWN_PERSON,
+                "clock_ms": millis("2026-10-12"),
+                "sources": [{"body": "", "ts": millis(date), "attachment": {
+                    "reading": reading, "late": name == "profile_media_only_late"}}
+                    for date, reading in (
+                        ("2026-10-10", "Profile K7: usual food preference is vegetarian ramen."),
+                        ("2026-10-11", None if name.endswith("missing") else
+                         f"Profile registry: K7 belongs to {_KNOWN_NAME}."))],
+            }
+    return result
+
 
 
 if __name__ == "__main__":
     path = Path(sys.argv[1])
     # Refuse clobbering a private file somebody may already have adapted.
     with path.open("x") as output:
-        output.write(yaml.safe_dump(case_file(), allow_unicode=True, sort_keys=False))
+        output.write(yaml.safe_dump(
+            case_file(source_lanes="--source-lanes" in sys.argv[2:],
+                      source_lanes_v2="--source-lanes-v2" in sys.argv[2:]),
+            allow_unicode=True, sort_keys=False))
     path.chmod(0o600)

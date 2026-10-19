@@ -1,7 +1,10 @@
 """The real composed writer and SQL store, with only the provider boundary scripted."""
 import json
+import os
 import re
+from datetime import UTC, datetime
 from html import escape
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -212,5 +215,154 @@ async def test_restored_out_of_order_rows_do_not_enter_recent_writer_batch(
         assert re.findall(r'<m n="(\d+)"', shown) == ["12"]
         assert "restored background" not in shown
         assert 'evidence_mode="recent"' in shown
+    finally:
+        await _close(subject)
+
+
+@pytest.mark.parametrize("vector,exposure", [
+    ("profile_cached", "cached"), ("profile_missing", "cached"),
+    ("profile_late", "cached"), ("profile_cached", "caption_only"),
+    ("profile_endorsed_late", "cached"),
+    ("profile_media_only_late", "cached"), ("profile_media_only_late", "caption_only"),
+    ("profile_media_only_missing", "cached"), ("profile_media_only_missing_first", "cached"),
+])
+@pytest.mark.parametrize("print_only", [True, False])
+async def test_source_lane_composed_input_and_storage(
+    pg_url, tmp_path, monkeypatch, vector, exposure, print_only,
+):
+    from evals.backbone import _close
+    from evals.rebuilt.persona_identity import check_identity
+    from nora.subject import SubjectSpec, obtain
+    from nora.subject.persona_writer import run_writer
+
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    monkeypatch.setenv("NORA_EVAL_PERSONA_MEDIA_EXPOSURE", exposure)
+    v2 = vector.startswith(("profile_endorsed", "profile_media_only"))
+    missing_first = vector == "profile_media_only_missing_first"
+    if missing_first:
+        vector = "profile_media_only_missing"
+    private = case_file(source_lanes=not v2, source_lanes_v2=v2)[vector]
+    if missing_first:
+        sources = private["sources"]
+        sources[1]["attachment"]["reading"] = "Profile registry: K7 belongs to Miles."
+        sources[0]["attachment"]["reading"] = None
+    media_only = vector.startswith("profile_media_only")
+    preference_text = ("usual food preference is vegetarian ramen." if media_only else
+                       "My usual food preference is vegetarian ramen.")
+    subject = await obtain(SubjectSpec(
+        database_url=pg_url, workdir=tmp_path,
+        now=datetime.fromtimestamp(private["clock_ms"] / 1000, UTC),
+        overrides={"dreamer.enabled": True, "persona.enabled": True},
+        policy=('default = "deny"\n[[conversations]]\nplatform = "signal"\n'
+                'id = "g1"\nlabel = "g1"\npersons = ["miles_novak"]\nunit = "nora"\n'),
+    ))
+    available = not vector.endswith("missing") and exposure == "cached"
+    calls = []
+    agents = []
+
+    def create_agent(**kwargs):
+        agents.append(kwargs)
+        return kwargs
+
+    monkeypatch.setattr(factory, "create_dream_agent", create_agent)
+
+    async def invoke(agent, prompt, **kwargs):
+        calls.append(prompt)
+        assert (preference_text in prompt) == (
+            exposure == "cached" and not missing_first
+            and private["sources"][0]["attachment"]["reading"] is not None)
+        verbs = {t.tool_name: t for t in agent["tools"]}
+        if available:
+            ids = re.findall(r'<m n="(\d+)"', prompt)
+            if media_only:
+                # Both roots are actual interpretation_only sources, even though
+                # their Record author is Miles. The owning validator must refuse told.
+                for root in dict.fromkeys(ids):
+                    refused = await verbs["persona_write"](ops=[{
+                        "op": "add", "part": "identity", "kind": "attribute", "mode": "told",
+                        "text": "usually prefers vegetarian ramen", "fact_key": "food_preferences",
+                        "fact_value": ["vegetarian ramen"], "told_by": "Miles",
+                        "citations": [root],
+                    }])
+                    assert refused["status"] == "refused"
+                assert "Profile registry: K7 belongs to Miles." in prompt
+            result = await verbs["persona_write"](ops=[{
+                "op": "add", "part": "identity", "kind": "attribute", "mode": "deduced",
+                "text": "usually prefers vegetarian ramen", "fact_key": "food_preferences",
+                "fact_value": ["vegetarian ramen"], "citations": list(dict.fromkeys(ids)),
+            }])
+        else:
+            result = await verbs["persona_no_change"](why="no readable profile evidence")
+        assert result == {"status": "ok"}
+        return SimpleNamespace(stop_reason="end_turn")
+
+    monkeypatch.setattr(factory, "invoke", invoke)
+    try:
+        args = {"subject": subject, "person": "miles_novak", "sources": private["sources"],
+                "held_birthday": False, "now_ms": private["clock_ms"]}
+        receipt = await run_writer(**args, print_input=print_only)
+        if print_only:
+            assert calls == [] and agents == []
+            shown = receipt["shown"]
+            assert (preference_text in shown) == (
+                exposure == "cached" and not missing_first
+                and private["sources"][0]["attachment"]["reading"] is not None)
+            if media_only:
+                captions = re.findall(r'"raw_caption": "([^"]*)"', shown)
+                assert len(captions) == 2
+                assert all(re.fullmatch(r"\s*\[image [a-f0-9]{6}\]\s*", c) for c in captions)
+                assert set(re.findall(r'<m n="(\d+)"', shown)) == {"1", "2"}
+            assert "2026-10-10" in shown and "shared_by_author" in shown
+            assert '<about_person name="Miles" now="2026-10-12T08:00:00+08:00"' in shown
+            assert '<m n="1" room="g1"' in shown
+            evidence = Path(os.environ.get("NORA_WRITER_PROOF_DIR", str(tmp_path)))
+            evidence.mkdir(exist_ok=True)  # noqa: ASYNC240 -- offline test artifact
+            filename = f"{vector}{'-first' if missing_first else ''}-{exposure}-print.txt"
+            (evidence / filename).write_text(shown)
+            return
+        assert len(calls) == len(agents) == 1
+        assert "2026-10-10" in calls[0] and "shared_by_author" in calls[0]
+        assert ("This is my own self-profile card" in calls[0]) == (not media_only)
+        if not available:
+            assert "no readable media evidence" in calls[0]
+        assert bool(receipt["heads"]) == available
+        if exposure == "cached":
+            assert check_identity(vector, receipt) == ()
+        else:
+            assert check_identity(vector, receipt)
+        # Save synthetic actual composed inputs for the offline receipt.
+        evidence = Path(os.environ.get("NORA_WRITER_PROOF_DIR", str(tmp_path)))
+        evidence.mkdir(exist_ok=True)
+        filename = f"{vector}{'-first' if missing_first else ''}-{exposure}.txt"
+        (evidence / filename).write_text(calls[0])
+        (evidence / (filename + ".receipt.json")).write_text(json.dumps(receipt, default=str))
+    finally:
+        await _close(subject)
+
+
+async def test_v2_missing_reading_cannot_pass_with_missing_fixture_root(
+    pg_url, tmp_path, monkeypatch,
+):
+    from evals.backbone import _close
+    from nora.agent.dreamer import DreamerRuntime
+    from nora.subject import SubjectSpec, obtain
+    from nora.subject.persona_writer import run_writer
+
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    private = case_file(source_lanes_v2=True)["profile_media_only_missing"]
+    subject = await obtain(SubjectSpec(
+        database_url=pg_url, workdir=tmp_path,
+        overrides={"dreamer.enabled": True, "persona.enabled": True},
+        policy=('default = "deny"\n[[conversations]]\nplatform = "signal"\n'
+                'id = "g1"\nlabel = "g1"\npersons = ["miles_novak"]\nunit = "nora"\n'),
+    ))
+    agents = []
+    monkeypatch.setattr(factory, "create_dream_agent", lambda **kw: agents.append(kw))
+    monkeypatch.setattr(DreamerRuntime, "batch_limit_for", lambda *_: 1)
+    try:
+        with pytest.raises(ValueError, match="declared synthetic sources missing"):
+            await run_writer(subject, person="miles_novak", sources=private["sources"],
+                             held_birthday=False, print_input=False, now_ms=private["clock_ms"])
+        assert agents == []
     finally:
         await _close(subject)
