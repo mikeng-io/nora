@@ -15,6 +15,7 @@ Database scoped to the MODULE and truncated between tests (AGENTS.md).
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import dataclasses
 import functools
@@ -45,7 +46,7 @@ from nora.domain.social_stream import (
     StoryFrame,
     StorySnapshot,
 )
-from nora.infra.social.instagram_source import InstagramSocialSource
+from nora.infra.social.instagram_source import InstagramSocialSource, _when
 from nora.infra.social.subjects import instagram_roster
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import (
@@ -1753,3 +1754,222 @@ async def test_an_adaptive_probe_reserves_its_two_possible_reads_before_admissio
     assert world.probes() == [], "probe plus two reads must fit beside the three-call reserve"
     await world.poller(hourly_budget=7).tick()
     assert world.probes() == [ADA], "sufficient spare budget still permits the read"
+
+
+async def test_full_history_reopens_a_legacy_bounded_walk_and_stays_finished(world) -> None:
+    quiet(world, BEA)
+    grid(world, ADA, 80, every=timedelta(days=3))
+    bounded = world.poller()
+    await bounded.tick()
+    await ticks(world, bounded, 5)
+    assert await backfilled(world, "ada") == 30
+    # A deployed pre-full-history terminal row has no end reason. Its opaque
+    # continuation was discarded, so the safe recovery is a deduplicated walk.
+    await world.store.record_poll(
+        network="instagram", person="ada", stage="backfill", outcome="read_ok",
+    )
+    full = world.poller(backfill_full_history=True)
+    await ticks(world, full, 3)
+    await ticks(world, world.poller(backfill_full_history=True), 7)
+    assert await backfilled(world, "ada") == 80
+    assert len(await world.items()) == 80, "the re-walk must not duplicate known items"
+    async with world.engine.connect() as conn:
+        reason = (await conn.execute(
+            sa.select(SOCIAL_POLL.c.end_reason)
+            .where(SOCIAL_POLL.c.person == "ada", SOCIAL_POLL.c.stage == "backfill")
+            .order_by(SOCIAL_POLL.c.recorded_at.desc(), SOCIAL_POLL.c.id.desc()).limit(1)
+        )).scalar_one()
+    assert reason == "grid_end", "completion is durable evidence of exhausting the grid"
+    calls = len(world.source.reads("items"))
+    await ticks(world, world.poller(backfill_full_history=True), 2)
+    assert len(world.source.reads("items")) == calls, (
+        "a restart must not reopen a full completed walk"
+    )
+
+
+async def test_full_history_fetches_first_page_items_missing_from_legacy_record(world) -> None:
+    quiet(world, BEA)
+    grid(world, ADA, 20, every=timedelta(days=10))
+    await world.store.record_poll(
+        network="instagram", person="ada", stage="probe", outcome="items_due",
+    )
+    await world.store.record_poll(
+        network="instagram", person="ada", stage="items", outcome="read_ok",
+        media_count=20, total_clips_count=0, advanced_counts=True,
+    )
+    await world.store.record_poll(
+        network="instagram", person="ada", stage="backfill", outcome="read_ok",
+    )
+    poller = world.poller(backfill_full_history=True)
+    await poller.tick()
+    await ticks(world, poller, 3)
+    assert await backfilled(world, "ada") == 20, "full history includes the recovery first page"
+
+
+@pytest.mark.parametrize(
+    ("items", "every", "limit", "kept"),
+    [(20, timedelta(days=10), 50, 12), (8, timedelta(days=1), 5, 5)],
+)
+async def test_full_history_reopens_a_bounded_last_page(world, items, every, limit, kept):
+    quiet(world, BEA)
+    grid(world, ADA, items, every=every)
+    bounded = world.poller(backfill_max_items=limit)
+    await bounded.tick()
+    await ticks(world, bounded, 2)
+    assert await backfilled(world, "ada") == kept
+    await ticks(world, world.poller(backfill_full_history=True), 4)
+    assert await backfilled(world, "ada") == items, (
+        "reaching the grid end while omitting bounded items is not a full import"
+    )
+
+
+@pytest.mark.parametrize("failed_recovery", [False, True])
+async def test_full_history_recovery_leaves_fresh_first_page_posts_to_the_poll(
+    world, failed_recovery,
+):
+    quiet(world, BEA)
+    grid(world, ADA, 8)
+    await world.poller(backfill_max_items=5).tick()
+    world.clock.at(hours=2)
+    fresh = post(world, "fresh-news", age=timedelta(hours=1))
+    first = world.source.pages[ADA]
+    assert isinstance(first, Page)
+    world.source.pages[ADA] = dataclasses.replace(first, items=(fresh, *first.items))
+    world.source.probes[ADA] = probe(posts=9)
+    if failed_recovery:
+        # An attempt after publication must not redefine the historical
+        # boundary. Append a receipt at the controlled clock's time.
+        async with world.engine.begin() as conn:
+            await conn.execute(sa.insert(SOCIAL_POLL).values(
+                network="instagram", person="ada", stage="backfill", outcome="error",
+                recorded_at=world.clock(),
+            ))
+    poller = world.poller(backfill_full_history=True)
+    await poller.tick()
+    assert await backfilled(world, "ada") == 8
+    assert "fresh-news" not in await world.items(), "fresh news belongs to the next due poll"
+    world.clock.at(hours=6.1)
+    await poller.tick()
+    async with world.engine.connect() as conn:
+        origin = (await conn.execute(
+            sa.select(SOCIAL_ITEM.c.origin).where(SOCIAL_ITEM.c.item_id == "fresh-news")
+        )).scalar_one()
+    assert origin == "poll", "fresh posts must retain their stimulus and Persona wake eligibility"
+
+
+async def test_an_older_backfill_page_does_not_move_the_fresh_news_boundary(world):
+    quiet(world, BEA)
+    grid(world, ADA, 20)
+    bounded = world.poller(backfill_max_items=15)
+    await bounded.tick()
+    # Use the database clock between the actual first and older page receipts:
+    # moving the poller's test clock does not move social_poll.recorded_at.
+    await asyncio.sleep(1.05)
+    async with world.engine.connect() as conn:
+        posted = (await conn.execute(sa.select(sa.func.clock_timestamp()))).scalar_one()
+    first = world.source.pages[ADA]
+    assert isinstance(first, Page)
+    taken_at = _when(int(posted.timestamp()))
+    assert taken_at is not None
+    fresh = dataclasses.replace(post(world, "between-pages"), taken_at=taken_at)
+    world.source.pages[ADA] = dataclasses.replace(first, items=(fresh, *first.items[:-1]))
+    older = world.source.after[f"{ADA}-c1"]
+    assert isinstance(older, Page)
+    world.source.after[f"{ADA}-c1"] = dataclasses.replace(
+        older, items=(first.items[-1], *older.items),
+    )
+    world.source.probes[ADA] = probe(posts=21)
+    await asyncio.sleep(1.05)
+    await ticks(world, bounded, 1)
+    assert await backfilled(world, "ada") == 15
+    full = world.poller(backfill_full_history=True)
+    await ticks(world, full, 3)
+    assert await backfilled(world, "ada") == 20
+    assert "between-pages" not in await world.items()
+    world.clock.at(hours=6.1)
+    await full.tick()
+    async with world.engine.connect() as conn:
+        origin = (await conn.execute(
+            sa.select(SOCIAL_ITEM.c.origin).where(SOCIAL_ITEM.c.item_id == "between-pages")
+        )).scalar_one()
+    assert origin == "poll"
+
+
+async def test_a_post_published_during_custody_remains_fresh_news(world):
+    quiet(world, BEA)
+    grid(world, ADA, 8)
+    original_media = world.media
+    published = None
+
+    class PublishDuringCustody(FakeMediaSource):
+        async def fetch(self, *, ref):
+            nonlocal published
+            if published is None:
+                # Span whole source seconds on both sides of publication so
+                # a completion timestamp cannot stand in for a pre-fetch one.
+                await asyncio.sleep(1.05)
+                async with world.engine.connect() as conn:
+                    published = (await conn.execute(
+                        sa.select(sa.func.clock_timestamp())
+                    )).scalar_one()
+                taken_at = _when(int(published.timestamp()))
+                assert taken_at is not None
+                fresh = dataclasses.replace(post(world, "during-custody"), taken_at=taken_at)
+                first = world.source.pages[ADA]
+                assert isinstance(first, Page)
+                world.source.pages[ADA] = dataclasses.replace(first, items=(fresh, *first.items))
+                world.source.probes[ADA] = probe(posts=9)
+                await asyncio.sleep(1.05)
+            return await original_media.fetch(ref=ref)
+
+    world.media = PublishDuringCustody()
+    world.media.blobs = original_media.blobs
+    await world.poller(backfill_max_items=5).tick()
+    assert published is not None
+    assert "during-custody" not in await world.items(), "the fetched page predates publication"
+    async with world.engine.connect() as conn:
+        receipt = (await conn.execute(sa.select(SOCIAL_POLL.c.recorded_at).where(
+            SOCIAL_POLL.c.person == "ada", SOCIAL_POLL.c.stage == "backfill",
+        ))).scalar_one()
+    assert published < receipt, "publication occurred before the completion receipt"
+    full = world.poller(backfill_full_history=True)
+    await ticks(world, full, 1)
+    assert await backfilled(world, "ada") == 8
+    assert "during-custody" not in await world.items()
+    world.clock.at(hours=6.1)
+    await full.tick()
+    assert await world.store.polled_count(persons=["ada"], after_us=0) == 1
+
+
+async def test_full_history_requires_a_grounded_first_page_boundary(world):
+    quiet(world, BEA)
+    grid(world, ADA, 8)
+    # A success receipt without the preceding probe cannot date its fetch.
+    await world.store.record_poll(
+        network="instagram", person="ada", stage="items", outcome="read_ok",
+        media_count=8, total_clips_count=0, advanced_counts=True,
+    )
+    await world.poller(backfill_full_history=True).tick()
+    assert ADA not in world.source.reads("items")
+    standing = await world.store.backfills(network="instagram", full_history=True)
+    assert not standing["ada"].done
+    assert world.metrics.get("nora_errors_total", stage="social_poller") == 1
+
+
+async def test_recovery_reserves_the_whole_source_second_for_fresh_news(world):
+    cutoff = datetime(2026, 10, 20, 12, 0, 0, 100000, tzinfo=UTC)
+    ambiguous_at = _when(int(cutoff.timestamp()))
+    older_at = _when(int(cutoff.timestamp()) - 1)
+    assert ambiguous_at is not None and older_at is not None
+    ambiguous = dataclasses.replace(post(world, "same-second"), taken_at=ambiguous_at)
+    older = dataclasses.replace(post(world, "older-second"), taken_at=older_at)
+    roster = await instagram_roster(world.subjects)
+    assert roster is not None
+    member = next(m for m in roster if m.person == "ada")
+    await world.poller(backfill_full_history=True)._record_page(
+        member, Page(items=(ambiguous, older), next_cursor=None), origin="backfill",
+        read_id=str(uuid4()), backfilled=0, before=cutoff,
+    )
+    assert set(await world.items()) == {"older-second"}, (
+        "whole-second source timestamps cannot place this second before the probe"
+    )

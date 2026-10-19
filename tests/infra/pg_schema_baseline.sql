@@ -1544,6 +1544,7 @@ embedded_at bigint,
 embedding public.halfvec(2048),
 embedding_model text,
 emoji text NOT NULL,
+end_reason text,
 ended_ts bigint NOT NULL,
 ended_ts bigint NOT NULL,
 entity_id uuid NOT NULL
