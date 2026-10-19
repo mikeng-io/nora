@@ -169,6 +169,7 @@ from nora.domain.memory_index import (
     social_label,
 )
 from nora.domain.models import parse_mentions_json
+from nora.domain.persona import format_fact
 from nora.domain.rollup import days_touched, episode_key, iso, local_date, room_key
 from nora.domain.social_stream import HIDING_STATES, PLACE_STATE
 from nora.infra.sql.schema import (
@@ -1208,11 +1209,13 @@ async def _project_persona_line(conn: AsyncConnection, source_id: str) -> None:
     row = (await conn.execute(
         sa.select(
             PERSONA_LINE.c.persona_key, PERSONA_LINE.c.text, PERSONA_LINE.c.state,
+            PERSONA_LINE.c.part, PERSONA_LINE.c.fact_key, PERSONA_LINE.c.fact_value,
+            PERSONA_LINE.c.as_of, PERSONA_LINE.c.valid_from, PERSONA_LINE.c.valid_until,
             PERSONA_LINE.c.citations, PERSONA_LINE.c.draws_on, PERSONA_LINE.c.supersedes,
             PERSONA_LINE.c.unit, PERSONA_LINE.c.exclude_persons, PERSONA_LINE.c.written_at,
         ).where(PERSONA_LINE.c.id == source_id)
     )).first()
-    if row is None or row.state == "hidden":
+    if row is None or row.state == "hidden" or (row.part == "identity" and row.fact_key is None):
         await _drop(conn, "persona_line", [source_id])
         return
     successor = (await conn.execute(
@@ -1248,7 +1251,10 @@ async def _project_persona_line(conn: AsyncConnection, source_id: str) -> None:
         conn, kind="persona_line", source_id=source_id,
         unit=None if form == "room" else row.unit, origin_room=room,
         persons=persons, exclude_persons=row.exclude_persons,
-        text=row.text, at_ms=row.written_at,
+        text=(format_fact(row.fact_key, row.fact_value, as_of=row.as_of,
+                          valid_from=row.valid_from, valid_until=row.valid_until)
+              if row.part == "identity" else row.text),
+        at_ms=row.as_of if row.as_of is not None else row.written_at,
         state=("superseded" if successor is not None
                else "live" if row.state in ("current", "disputed") else "retired"),
     )

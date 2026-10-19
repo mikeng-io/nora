@@ -93,7 +93,8 @@ def _line(n: int, *, part="character", kind="trait", mode="induced", state="curr
 
 def _told(text="vegetarian", *, by=SUBJECT, cites=("101",), kind="attribute", **kw) -> AddOp:
     return AddOp(part="identity", kind=kind, text=text, mode="told", citations=cites,
-                 told_by=by, **kw)
+                 told_by=by, fact_key={"attribute": "occupation"}.get(kind, kind),
+                 fact_value=text, **kw)
 
 
 def _induced(cites=("101", "102", "103"), **kw) -> AddOp:
@@ -112,7 +113,7 @@ def test_a_told_line_is_identity_only() -> None:
 
 def test_an_induced_line_is_character_only() -> None:
     op = AddOp(part="identity", kind="attribute", text="x", mode="induced",
-               citations=("101", "102", "103"))
+               citations=("101", "102", "103"), fact_key="occupation", fact_value="x")
     assert _reasons(_plan([op])) == ["mode_part"]
 
 
@@ -130,7 +131,7 @@ def test_a_kind_belongs_to_its_part() -> None:
 
 def test_a_collective_holds_no_actor_kind_and_an_actor_no_collective_kind() -> None:
     room_op = AddOp(part="identity", kind="attribute", text="x", mode="deduced",
-                    citations=("101", "102"))
+                    citations=("101", "102"), fact_key="occupation", fact_value="x")
     assert _reasons(_plan([room_op], account=ROOM_ACCOUNT,
                           citable=PersonaCitable(messages=CITABLE.messages))) == ["part_kind"]
     assert _reasons(_plan([_told(kind="purpose")])) == ["part_kind"]
@@ -297,7 +298,7 @@ def test_told_by_the_subject_outranks_an_induced_trait_and_both_stay() -> None:
 def test_a_lower_rank_line_is_written_outranked() -> None:
     held = (_line(1, part="identity", kind="attribute", mode="told", told_by=SUBJECT),)
     op = AddOp(part="identity", kind="attribute", text="x", mode="deduced",
-               citations=("101", "102"), conflicts_with="P1")
+               citations=("101", "102"), conflicts_with="P1", fact_key="occupation", fact_value="x")
     plan = _plan([op], held)
     assert [x.state for x in plan.inserts] == ["outranked"]
 
@@ -385,10 +386,11 @@ def test_a_malformed_call_is_refused(raw) -> None:
 
 def test_an_instruction_is_never_deduced() -> None:
     op = AddOp(part="identity", kind="instruction", text="x", mode="deduced",
-               citations=("101", "102"))
+               citations=("101", "102"), fact_key="instruction", fact_value="x")
     assert _reasons(_plan([op])) == ["instruction_not_subject"]
     told = (_line(1, part="identity", kind="instruction", mode="told", told_by=SUBJECT),)
-    revise = ReviseOp(line="P1", citations=("101", "102"), mode="deduced")
+    revise = ReviseOp(line="P1", citations=("101", "102"), mode="deduced",
+                      fact_key="instruction", fact_value="x")
     assert _reasons(_plan([revise], told)) == ["instruction_not_subject"]
 
 

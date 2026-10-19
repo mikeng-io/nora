@@ -1,3 +1,5 @@
+import pytest
+
 from nora.domain.culture import RoomMessage, character_key
 from nora.domain.models import DeliveryStatus, PersonRef, TranscriptRow
 from nora.domain.persona import PersonaDispute, PersonaLine
@@ -321,3 +323,19 @@ async def test_without_a_persona_reader_the_payload_is_unchanged():
         {"person_id": "miles", "display_name": "Miles", "reachable": True,
          "identity": ["Name: M"], "episodes": ["x"]},
     ]
+
+
+@pytest.mark.parametrize("same_unit", [False, True])
+async def test_typed_relationship_names_resolve_only_inside_the_accounts_unit(same_unit):
+    key = character_key("friends", "miles")
+    line = _line("relation", "conflicting prose", kind="relationship", fact_key="relationship",
+                 fact_value={"relation": "friend", "person_id": "ada"})
+    payload = await build_memory_payload(
+        honcho=FakeMemoryStore(), persons=_persons(MILES, ADA), ai_peer="nora", person_id="miles",
+        persona=_Persona(heads={key: (line,)}),
+        persona_scopes_of=lambda pid: (
+            ("friends" if pid == "miles" or same_unit else "other", "default"),),
+    )
+    text = payload[0]["persona"][0]["lines"][0]["text"]
+    assert text == "relationship: friend: " + ("Ada" if same_unit else "someone")
+    assert "conflicting prose" not in text

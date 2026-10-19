@@ -40,6 +40,8 @@ members:
   - 60-build-step-3.md
   - 65-build-step-3-vectors.md
   - 70-honcho-cutover.md
+  - 75-typed-identity.md
+  - 76-typed-identity-build.md
   - 40-prior-art.md
 edges:
   - {src: 00-intent, dst: ../cognition-loop/05-data-model, rel: depends_on, provenance: asserted}
@@ -67,5 +69,7 @@ edges:
   - {src: 65-build-step-3-vectors, dst: 20-embedding-bakeoff, rel: realizes, provenance: asserted}
   - {src: 70-honcho-cutover, dst: 10-honcho-audit, rel: extends, provenance: asserted}
   - {src: 70-honcho-cutover, dst: 00-intent, rel: realizes, provenance: asserted}
+  - {src: 76-typed-identity-build, dst: 75-typed-identity, rel: realizes, provenance: asserted}
+  - {src: 75-typed-identity, dst: 45-persona-adaptor, rel: extends, provenance: asserted}
   - {src: 40-prior-art, dst: ../cognition-loop/80-prior-art, rel: extends, provenance: asserted}
 ---

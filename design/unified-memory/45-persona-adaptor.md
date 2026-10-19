@@ -1,8 +1,7 @@
 # The Persona adaptor: schema, reasoning modes, writes and curation
 
-Status: **proposed**, 2026-10-15, on the operator's rulings in
-[35](35-persona.md). Nothing is built. The decision row is written when the
-schema lands (nora-decision). **Amended 2026-10-15 (operator)** on an audit:
+Status: **built in shadow**, amended 2026-10-19 by [75](75-typed-identity.md).
+The live render switch remains subject to historical coverage and reply acceptance. **Amended 2026-10-15 (operator)** on an audit:
 line-to-line citations become links (§3), hypotheses are graded by something
 other than their writer (§3), the build's prerequisites are listed (§4),
 shadow changes no prompt (§6, §8), and the coverage gate fails closed (§6).
@@ -17,8 +16,8 @@ disputes and the verdict judge included. The unit, room (Culture) and Nora
 sessions are built the same day (in shadow, DEC-319): the person session's checked
 writer over each collective's own evidence
 (`nora/language/persona_collective.py`), the verdict judge grading a
-collective's hypotheses on its own rooms. Rendering (§5) and the gates (§6)
-are not built.
+collective's hypotheses on its own rooms. Rendering and portal/index wiring are built;
+behavioral coverage and cutover acceptance remain unrun.
 
 ## 0. This reverses "prose, no schema", deliberately
 
@@ -112,11 +111,12 @@ and `draws_on` become edges inside the write's own `begin()` block
 
 | part | kinds | cap (current lines) | decays |
 |---|---|---|---|
-| identity | `name`, `role`, `relationship`, `attribute`, `instruction` (actors); `name`, `purpose`, `norm` (collectives) | 25 | no; replaced only by a later told line or a dispute the adaptor accepts |
+| identity | `name`, `role`, `relationship`, `attribute`, `instruction` (actors); `name`, `purpose`, `norm` (collectives) | unbounded storage, bounded rendering | no; replaced only by a later told line or a dispute the adaptor accepts |
 | character | `trait` | 5 | yes: unsupported for 60 days → `retired` at the next session unless re-evidenced |
 | hypothesis | `explanation` | 3 whose window is still open | refuted → retired; confirmed stays a hypothesis |
 
-**The caps (25 / 5 / 3) and the 60-day decay are starting values** (amended
+**Identity's former 25-line storage cap is removed by 75. The character/hypothesis caps
+(5 / 3) and the 60-day decay are starting values** (amended
 2026-10-15), to be sized on data: the line counts and re-support intervals the
 shadow sessions actually produce (00 «Sequence» step 6), not these guesses.
 
@@ -380,3 +380,34 @@ head cited. The prose head keeps rendering until the switch (00 «Sequence»
 step 8), not until the first session. The Culture heads move the same way,
 with `purpose` and `norm` starting empty and `name` lines taken from Culture's
 `Names and where they came from`.
+
+
+## Typed Identity amendment, 2026-10-19
+
+[75](75-typed-identity.md) and [76](76-typed-identity-build.md) supersede the
+free-text Identity values and newest-page first-backfill behavior above.
+Nullable `fact_key`, `fact_value`, `valid_from`, `valid_until` extend
+`persona_line`; `as_of` is evidence time and `written_at` is transaction time.
+Legacy prose remains untyped until original evidence supports a typed revision.
+One shared validator/formatter serves session writes, graph `remember`, prompt,
+portal and index. Historical claims cannot replace a newer source assertion.
+There is one Persona writer per subject on the render surface: legacy Culture
+and Character model adaptors are removed from the schedule at render-on;
+render-off restores their configured lifecycle. Persona room accounts supply
+person context and unit revision wakes on the new surface.
+
+Historical recovery uses two existing consolidation-watermark rows per person
+account: `persona-person:history-boundary` freezes the Record highwater and
+`persona-person:history` records successfully handed progress. One oldest-first
+SQL own/mention union is limited after union, with ingestion's resolved mention
+list available even when graph indexing is off. Recent runtime watermarks are
+independent. No refusal, conflict or unsettled historical session consumes a
+page, including past the normal recent-session abandonment bound. A crash
+between Persona commit and cursor settlement repeats evidence, never skips it.
+
+Operator receipts: `nora memory persona-history` reports account boundary,
+progress, eligible-source counts, missing fields, untyped legacy heads and
+disputes without message text. `--key <scoped-account> --restart --apply`
+clears only that pass's two cursors; the next wake freezes a fresh boundary
+and re-evidences history without deleting claims. Without `--apply`, restart
+is a dry run. Completion proves source exhaustion, never factual parity.

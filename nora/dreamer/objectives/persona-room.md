@@ -1,7 +1,7 @@
 ---
 name: persona-room
 kind: objective
-version: 1
+version: 2
 applies_to: [persona_room_adaptor]
 description: >-
   One room's Persona, in shadow (design/unified-memory/45 §4). Reads the
@@ -39,7 +39,7 @@ are never evidence about a room.
 ## The three parts
 
 - **identity**, what the room is: `name` (what it is called), `purpose`
-  (what it is for), `norm` (a rule the room holds). At most 25.
+  (what it is for), `norm` (a rule the room holds). Identity storage has no count cap; prompt rendering stays bounded.
 - **character**, what the room is like: `trait`, one per line, something you
   would expect to see again next month on a different topic. At most 5.
 - **hypothesis**, why: `explanation` of one of its traits, which you are
@@ -98,3 +98,23 @@ in the same call.
 If nothing is new for the account, call `persona_no_change` with one sentence
 of why. Settle every time, with one or the other. When you are done, stop;
 your reply text is not read.
+
+
+Typed Identity (75): every identity add/revise supplies fact_key and fact_value.
+Keys: name, role, relationship, gender, sex, birthday, residence, languages,
+occupation, dietary_restrictions, food_preferences, instruction (actors);
+name, purpose, norm (collectives). kind remains name/role/relationship/instruction,
+attribute for the other actor fields. Scalar values are strings; languages,
+dietary_restrictions and food_preferences are string arrays. [] means explicitly
+none, absence means unknown. Birthday is {"month": 2, "day": 29}, with year only
+when evidenced. Relationship is {"relation": "friend", "unresolved_name": "Alex"};
+use person_id only when resolved by code. Never infer gender or sex from names.
+Only stable facts: an intended meal, trip or event date is not birthday,
+residence, occupation or a durable preference. Effective valid_from/valid_until
+are nullable epoch milliseconds, supplied only from explicit evidence. The
+source assertion time is computed from citations, distinct from write time.
+Historical pages are old assertions, never proof of present validity. Classify
+legacy untyped claims using original cited evidence; retire disproven claims,
+revise grounded ones into typed values, leave uncertain ones explicitly unresolved.
+No uncited memory conclusion is a settled fact. Preserve correction history by
+revising the held line; name rival claims with conflicts_with for precedence.

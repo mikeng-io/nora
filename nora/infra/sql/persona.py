@@ -31,6 +31,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nora.domain.culture import CultureRevision
 from nora.domain.persona import (
     DISPUTE_KINDS,
     VERDICTS,
@@ -42,6 +43,7 @@ from nora.domain.persona import (
     PersonaOp,
     PersonaRefusal,
     PersonaWriteResult,
+    identity_text,
     match_disputed_line,
     plan_write,
 )
@@ -53,32 +55,67 @@ __all__ = ["SqlPersonaStore", "chain_heads"]
 
 def _line(row: sa.Row[Any]) -> PersonaLine:
     return PersonaLine(
-        id=str(row.id), persona_key=row.persona_key, part=row.part, kind=row.kind,
-        text=row.text, mode=row.mode, citations=tuple(row.citations), state=row.state,
-        unit=row.unit, written_at=row.written_at, written_by_session=row.written_by_session,
-        draws_on=tuple(str(d) for d in row.draws_on), told_by=row.told_by,
-        prediction=row.prediction, prediction_observable=row.prediction_observable,
-        prediction_window_end=row.prediction_window_end, verdict=row.verdict,
-        verdict_by=row.verdict_by, verdict_at=row.verdict_at,
+        id=str(row.id),
+        persona_key=row.persona_key,
+        part=row.part,
+        kind=row.kind,
+        text=row.text,
+        mode=row.mode,
+        citations=tuple(row.citations),
+        state=row.state,
+        unit=row.unit,
+        written_at=row.written_at,
+        written_by_session=row.written_by_session,
+        draws_on=tuple(str(d) for d in row.draws_on),
+        told_by=row.told_by,
+        prediction=row.prediction,
+        prediction_observable=row.prediction_observable,
+        prediction_window_end=row.prediction_window_end,
+        verdict=row.verdict,
+        verdict_by=row.verdict_by,
+        verdict_at=row.verdict_at,
         supersedes=None if row.supersedes is None else str(row.supersedes),
-        support_count=row.support_count, last_supported_at=row.last_supported_at,
-        exclude_persons=tuple(row.exclude_persons), as_of=row.as_of,
+        support_count=row.support_count,
+        last_supported_at=row.last_supported_at,
+        exclude_persons=tuple(row.exclude_persons),
+        as_of=row.as_of,
+        fact_key=row.fact_key,
+        fact_value=row.fact_value,
+        valid_from=row.valid_from,
+        valid_until=row.valid_until,
     )
 
 
 def _values(line: PersonaLine) -> dict[str, Any]:
     return {
-        "id": line.id, "persona_key": line.persona_key, "part": line.part,
-        "kind": line.kind, "text": line.text, "mode": line.mode,
-        "citations": list(line.citations), "draws_on": list(line.draws_on),
-        "told_by": line.told_by, "prediction": line.prediction,
+        "id": line.id,
+        "persona_key": line.persona_key,
+        "part": line.part,
+        "kind": line.kind,
+        "text": line.text,
+        "mode": line.mode,
+        "citations": list(line.citations),
+        "draws_on": list(line.draws_on),
+        "told_by": line.told_by,
+        "prediction": line.prediction,
         "prediction_observable": line.prediction_observable,
-        "prediction_window_end": line.prediction_window_end, "state": line.state,
-        "verdict": line.verdict, "verdict_by": line.verdict_by, "verdict_at": line.verdict_at,
-        "supersedes": line.supersedes, "support_count": line.support_count,
-        "last_supported_at": line.last_supported_at, "unit": line.unit,
-        "exclude_persons": list(line.exclude_persons), "as_of": line.as_of,
-        "written_at": line.written_at, "written_by_session": line.written_by_session,
+        "prediction_window_end": line.prediction_window_end,
+        "state": line.state,
+        "verdict": line.verdict,
+        "verdict_by": line.verdict_by,
+        "verdict_at": line.verdict_at,
+        "supersedes": line.supersedes,
+        "support_count": line.support_count,
+        "last_supported_at": line.last_supported_at,
+        "unit": line.unit,
+        "exclude_persons": list(line.exclude_persons),
+        "as_of": line.as_of,
+        "fact_key": line.fact_key,
+        "fact_value": line.fact_value,
+        "valid_from": line.valid_from,
+        "valid_until": line.valid_until,
+        "written_at": line.written_at,
+        "written_by_session": line.written_by_session,
     }
 
 
@@ -118,6 +155,32 @@ class SqlPersonaStore:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
         return chain_heads([_line(r) for r in rows])[0]
+
+    async def room_context(self, *, key: str) -> CultureRevision | None:
+        """Room-account evidence on the new surface, using the existing context shape.
+
+        No legacy model writer is needed to refresh these inputs. Citations
+        still resolve to original Record rows in the consuming Persona session.
+        """
+        heads = await self.account_heads(key=key)
+        visible = [
+            h
+            for h in heads
+            if h.state in ("current", "disputed")
+            and h.part != "hypothesis"
+            and not h.exclude_persons
+        ]
+        texts = [identity_text(h) for h in visible]
+        if not any(texts):
+            return None
+        return CultureRevision(
+            id=key,
+            culture_key=key,
+            body="\n".join(t for t in texts if t),
+            written_at=max(h.written_at for h in visible),
+            established_by="persona",
+            citations=tuple(dict.fromkeys(c for h in visible for c in h.citations)),
+        )
 
     async def account_state(self, *, key: str) -> tuple[int, int | None]:
         """The account's revision (0 when it has never been written: what a

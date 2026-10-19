@@ -32,7 +32,7 @@ from typing import Any, Protocol
 
 from nora.domain.culture import RoomMessage, character_key
 from nora.domain.models import PersonRef
-from nora.domain.persona import PersonaDispute, PersonaLine
+from nora.domain.persona import PersonaDispute, PersonaLine, identity_text
 from nora.domain.ports import MemoryStore
 from nora.persons import Persons
 
@@ -134,7 +134,7 @@ async def build_memory_payload(
         await _attach_persona(
             entries, persona=persona, cited=cited, rooms_of=rooms_of,
             persons=persons, person_id=ref.person_id,
-            scopes=persona_scopes_of(ref.person_id),
+            scopes=persona_scopes_of(ref.person_id), scopes_of=persona_scopes_of,
             unrouted=workspaces_of is None,
         )
     return entries
@@ -172,6 +172,7 @@ async def _attach_persona(
     persons: Persons,
     person_id: str,
     scopes: tuple[tuple[str, str], ...],
+    scopes_of: Callable[[str], tuple[tuple[str, str], ...]],
     unrouted: bool,
 ) -> None:
     """Attach the caller's own Persona accounts to their entries: one account
@@ -196,9 +197,13 @@ async def _attach_persona(
         entry = entries[0] if unrouted and entries else by_workspace.get(workspace)
         if entry is None:
             continue
+        def identity_name(pid: str, current_unit: str = unit) -> str:
+            return (_name_of(persons, pid) or "someone") if any(
+                u == current_unit for u, _ in scopes_of(pid)) else "someone"
         account = await _persona_account(
             persona=persona, cited=cited, persons=persons,
             unit=unit, person_id=person_id, viewer_rooms=viewer_rooms,
+            name_of=identity_name,
         )
         if account is not None:
             entry.setdefault("persona", []).append(account)
@@ -212,6 +217,7 @@ async def _persona_account(
     unit: str,
     person_id: str,
     viewer_rooms: frozenset[str],
+    name_of: Callable[[str], str],
 ) -> dict[str, Any] | None:
     """The caller's account in one unit: every chain head with its state, the
     evidence behind each line, and the open disputes. `None` when nothing was
@@ -226,7 +232,8 @@ async def _persona_account(
     return {
         "unit": unit,
         "lines": [
-            _line_payload(line, persons=persons, rows=rows, viewer_rooms=viewer_rooms)
+            _line_payload(line, persons=persons, rows=rows, viewer_rooms=viewer_rooms,
+                          name_of=name_of)
             for line in heads
         ],
         "disputes": [_dispute_payload(d, persons=persons) for d in disputes],
@@ -267,6 +274,7 @@ def _line_payload(
     persons: Persons,
     rows: Mapping[int, RoomMessage],
     viewer_rooms: frozenset[str],
+    name_of: Callable[[str], str],
 ) -> dict[str, Any]:
     """One chain head: its state verbatim (the portal MARKS a disputed or
     hidden line rather than dropping it — correction is the point of the
@@ -275,7 +283,12 @@ def _line_payload(
     payload: dict[str, Any] = {
         "part": line.part,
         "kind": line.kind,
-        "text": line.text,
+        "text": identity_text(line, name_of=name_of)
+        or "legacy untyped: " + line.text,
+        "fact_key": line.fact_key,
+        "as_of": line.as_of,
+        "valid_from": line.valid_from,
+        "valid_until": line.valid_until,
         "mode": line.mode,
         "state": line.state,
         "told_by": _name_of(persons, line.told_by),

@@ -19,6 +19,7 @@ from nora.agent.memory_search import MemorySearch
 from nora.agent.room import Room
 from nora.agent.tools import build_tools
 from nora.domain.lineage import RoomFacts
+from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.persona import PersonaWriteResult
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
@@ -35,13 +36,30 @@ from tests.test_room_tools import (
     MILES,
     NORA,
     TYLER,
-    _call,
     _NullStore,
 )
+from tests.test_room_tools import (
+    _call as _raw_call,
+)
+
+
+async def _call(tool, **kwargs):
+    if "content" in kwargs:
+        kwargs.setdefault("fact_key", kwargs.pop("kind", "dietary_restrictions"))
+        kwargs.setdefault("fact_value", (
+            [kwargs["content"]]
+            if kwargs["fact_key"] == "dietary_restrictions"
+            else kwargs["content"]
+        ))
+    return await _raw_call(tool, **kwargs)
+
 
 UNIT = "u1"
 _FRIENDS = RoomFacts(
-    "signal", frozenset({GROUP}), UNIT, frozenset({"miles_novak", "tyler_cortez"}),
+    "signal",
+    frozenset({GROUP}),
+    UNIT,
+    frozenset({"miles_novak", "tyler_cortez"}),
     label="Friends",
 )
 _LINEAGE = LineagePolicy(rooms=(_FRIENDS,), _by_id={("signal", GROUP): _FRIENDS})
@@ -64,8 +82,14 @@ async def store(pg_url):
         await engine.dispose()
 
 
-def _remember(persons: Any, store: Any, *, trigger: tuple[int, ...] = (41,),
-              lineage: LineagePolicy = _LINEAGE, wired: bool = True) -> Any:
+def _remember(
+    persons: Any,
+    store: Any,
+    *,
+    trigger: tuple[int, ...] = (41,),
+    lineage: LineagePolicy = _LINEAGE,
+    wired: bool = True,
+) -> Any:
     room = Room(
         platform="signal", conversation_id=GROUP,
         roster_source=FakeRosterSource(groups={GROUP: (MILES, TYLER, NORA)}),
@@ -73,12 +97,34 @@ def _remember(persons: Any, store: Any, *, trigger: tuple[int, ...] = (41,),
         trigger_message_ids=trigger,
     )
     built = build_tools(
-        store=_NullStore(), conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
-        metrics=Metrics(), room=room, transit_source=_UNREACHABLE_TRANSIT,
-        question="", context_window=40, lineage=lineage, supplied_unit=UNIT,
+        store=_NullStore(),
+        conversation_id=GROUP,
+        conversation_type="group",
+        persons=persons,
+        honcho=FakeMemoryStore(),
+        deliverer=SinkSender(),
+        metrics=Metrics(),
+        room=room,
+        transit_source=_UNREACHABLE_TRANSIT,
+        question="",
+        context_window=40,
+        lineage=lineage,
+        supplied_unit=UNIT,
         memory_retrieval=MemorySearch(FakeMemoryIndex([]), Metrics()),
         persona=store if wired else None,
+        transcript=tuple(
+            TranscriptRow(
+                id=n,
+                ts=1000*n,
+                person_id="miles_novak",
+                sender_id="sender",
+                sender_name="Miles",
+                body="vegetarian",
+                is_nora=False,
+                delivery_status=DeliveryStatus.SENT,
+                raw_json=None,
+            ) for n in trigger
+        ),
     )
     return {t.tool_name: t for t in built}["remember"]
 
@@ -180,8 +226,9 @@ async def test_a_failing_store_is_unavailable_never_ok(persons: Any, outcome: st
 # --- persona_dispute (35 §2): the graph surface's dispute door -------------------
 
 
-def _dispute(persons: Any, store: Any, *, trigger: tuple[int, ...] = (41,),
-             wired: bool = True) -> Any:
+def _dispute(
+    persons: Any, store: Any, *, trigger: tuple[int, ...] = (41,), wired: bool = True
+) -> Any:
     room = Room(
         platform="signal", conversation_id=GROUP,
         roster_source=FakeRosterSource(groups={GROUP: (MILES, TYLER, NORA)}),
@@ -189,12 +236,34 @@ def _dispute(persons: Any, store: Any, *, trigger: tuple[int, ...] = (41,),
         trigger_message_ids=trigger,
     )
     built = build_tools(
-        store=_NullStore(), conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
-        metrics=Metrics(), room=room, transit_source=_UNREACHABLE_TRANSIT,
-        question="", context_window=40, lineage=_LINEAGE, supplied_unit=UNIT,
+        store=_NullStore(),
+        conversation_id=GROUP,
+        conversation_type="group",
+        persons=persons,
+        honcho=FakeMemoryStore(),
+        deliverer=SinkSender(),
+        metrics=Metrics(),
+        room=room,
+        transit_source=_UNREACHABLE_TRANSIT,
+        question="",
+        context_window=40,
+        lineage=_LINEAGE,
+        supplied_unit=UNIT,
         memory_retrieval=MemorySearch(FakeMemoryIndex([]), Metrics()),
         persona=store if wired else None,
+        transcript=(
+            TranscriptRow(
+                id=41,
+                ts=1000,
+                person_id="miles_novak",
+                sender_id="sender",
+                sender_name="Miles",
+                body="vegetarian",
+                is_nora=False,
+                delivery_status=DeliveryStatus.SENT,
+                raw_json=None,
+            ),
+        ),
     )
     return {t.tool_name: t for t in built}["persona_dispute"]
 
@@ -262,3 +331,25 @@ async def test_persona_dispute_is_not_on_the_honcho_surface(persons: Any, store:
         question="", context_window=40, lineage=_LINEAGE, supplied_unit=UNIT,
     )
     assert "persona_dispute" not in {t.tool_name for t in built}
+
+
+async def test_graph_remember_corrects_a_typed_field_and_retains_its_source_history(persons, store):
+    first = await _call(_remember(persons, store), content="I live in London",
+                        fact_key="residence", fact_value="London")
+    assert first["status"] == "ok"
+    [old] = await store.account_heads(key=f"{UNIT}#character:miles_novak")
+    second = await _call(_remember(persons, store, trigger=(42,)), content="I moved to Hong Kong",
+                         fact_key="residence", fact_value="Hong Kong", valid_from=42000)
+    assert second["status"] == "ok"
+    [head] = await store.account_heads(key=f"{UNIT}#character:miles_novak")
+    assert head.supersedes == old.id and head.fact_value == "Hong Kong"
+    assert (old.as_of, head.as_of, head.valid_from) == (41000, 42000, 42000)
+
+
+async def test_graph_remember_resolves_relationship_in_the_room_boundary(persons, store):
+    result = await _call(_remember(persons, store), content="Tyler is my friend",
+                        fact_key="relationship",
+                        fact_value={"relation": "friend", "unresolved_name": "Tyler"})
+    assert result["status"] == "ok"
+    [line] = await store.account_heads(key=f"{UNIT}#character:miles_novak")
+    assert line.fact_value == {"relation": "friend", "person_id": "tyler_cortez"}

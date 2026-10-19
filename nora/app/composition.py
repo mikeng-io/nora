@@ -3843,7 +3843,7 @@ async def build_dependencies(
         #
         # Gated on `[culture] enabled` alone — no note-tier dependency: the
         # corpus is `messages`, which every deployment has.
-        if cfg.culture.enabled:
+        if cfg.culture.enabled or cfg.persona.enabled:
             dream_schedules = {
                 **dream_schedules,
                 "culture": AdaptorSchedule(
@@ -4068,7 +4068,7 @@ async def build_dependencies(
                 dream_adaptors = (
                     *dream_adaptors,
                     PersonaPersonAdaptor(
-                        persona=persona_store, culture=culture_store,
+                        persona=persona_store, culture=culture_store, render=persona_index,
                         evidence=PersonaEvidence(
                             store=persona_reads, persona=persona_store, keys=person_keys,
                             wake_batch=cfg.culture.person_wake_batch,
@@ -4148,8 +4148,9 @@ async def build_dependencies(
                     *dream_adaptors,
                     *(PersonaCollectiveAdaptor(
                         kind=kind, persona=persona_store, culture=culture_store,
+                        render=persona_index,
                         evidence=CollectiveEvidence(
-                            store=persona_reads, keys=keys, kind=kind),
+                            store=persona_reads, keys=keys, kind=kind, render=persona_index),
                         reads=persona_reads, keys=keys,
                         name_of=lambda pid: (
                             ref.name if pid and (ref := persons.by_person.get(pid)) is not None
@@ -4158,6 +4159,13 @@ async def build_dependencies(
                         clock_ms=_now_ms, metrics=metrics,
                     ) for kind, keys in collective_kinds),
                 )
+
+        # One account writer per subject at cutover; render=false restores legacy writers.
+        if persona_index or not cfg.culture.enabled:
+            retired = {CULTURE_ADAPTOR_NAME, CHARACTER_PERSON_ADAPTOR_NAME,
+                       CHARACTER_UNIT_ADAPTOR_NAME, CHARACTER_NORA_ADAPTOR_NAME}
+            dream_adaptors = tuple(a for a in dream_adaptors if a.name not in retired)
+            dream_schedules = {k: v for k, v in dream_schedules.items() if k not in retired}
 
         # LESSONS: one session per unit, woken by
         # closed response episodes, writing through the book's checked verbs.

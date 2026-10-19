@@ -33,7 +33,7 @@ from datetime import datetime
 from typing import Protocol
 
 from ..domain.blocks import ContextBlock
-from ..domain.persona import PersonaLine, PersonaView
+from ..domain.persona import PersonaLine, PersonaView, identity_text
 from ..domain.prompt import age as _age
 from ..domain.prompt import escape
 from ..obs.metrics import Metrics
@@ -60,8 +60,8 @@ PERSONA_READ_TIMEOUT_SECONDS = 5.0
 #: The most characters ONE account's body may carry, and the most Nora's own
 #: may — `PERSON_ACCOUNT_MAX_CHARS` and `SELF_MAX_CHARS`'s values, for their
 #: argument: the block rides every model call of a turn, so the render is
-#: capped whatever the store holds (the line caps bound it only at 25·300 +
-#: 5·300 + 3·300 characters, and a cap is not a reservation).
+#: capped whatever the store holds. Identity storage is unbounded; Character
+#: and hypothesis caps remain separate, and a cap is not a reservation.
 #: ponytail: constants, not config; a knob only if a real account is cut.
 PERSONA_ACCOUNT_MAX_CHARS = 2_500
 PERSONA_SELF_MAX_CHARS = 4_000
@@ -144,14 +144,17 @@ def authored_identity(
 
 
 def _identity_text(line: PersonaLine, name_of: Callable[[str], str]) -> str:
-    text = " ".join(line.text.split())
+    text = identity_text(line, name_of=name_of)
     if line.mode == "told" and line.told_by is not None:
         text += f" (told by {name_of(line.told_by)})"
     return text
 
 
 def _body(
-    view: PersonaView, *, name_of: Callable[[str], str], now_ms: int,
+    view: PersonaView,
+    *,
+    name_of: Callable[[str], str],
+    now_ms: int,
 ) -> tuple[str, int | None]:
     """The block body and the newest rendered line's `written_at` (None when
     only authored lines render: an authored line carries no time, and a
@@ -175,6 +178,12 @@ def _body(
                 text += "?"
             questions.append(text + disputed)
         elif line.part == "identity":
+            if line.fact_key is None:
+                continue
+            if line.valid_until is not None and line.valid_until <= now_ms:
+                continue
+            if line.valid_from is not None and line.valid_from > now_ms:
+                continue
             identity.append(_identity_text(line, name_of) + disputed)
         else:
             character.append(" ".join(line.text.split()) + disputed)

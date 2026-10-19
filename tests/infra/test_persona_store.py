@@ -8,6 +8,7 @@ there. The rules themselves are `tests/unit/test_persona_rules.py`.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -52,7 +53,7 @@ async def env(pg_url):
 
 def _told(text: str, cite: str = "101") -> AddOp:
     return AddOp(part="identity", kind="attribute", text=text, mode="told",
-                 citations=(cite,), told_by=KIT)
+                 citations=(cite,), told_by=KIT, fact_key="occupation", fact_value=text)
 
 
 async def _write(env, ops, **kw):
@@ -101,11 +102,14 @@ async def test_a_write_against_a_stale_revision_is_a_conflict(env) -> None:
     assert len(await env.store.account_heads(key=ACCOUNT.key)) == 1
 
 
-async def test_the_cap_is_judged_against_the_stored_account(env) -> None:
+async def test_identity_storage_is_not_capped_at_twenty_five(env) -> None:
     for n in range(25):
-        assert (await _write(env, [_told(f"fact {n}")], now=NOW + n)).status == "ok"
-    over = await _write(env, [_told("one more")], now=NOW + 99)
-    assert [r.reason for r in over.refusals] == ["over_cap"]
+        op = replace(_told(f"fact {n}"), kind="role", fact_key="role")
+        assert (await _write(env, [op], now=NOW + n)).status == "ok"
+    op = replace(_told("one more"), kind="role", fact_key="role")
+    over = await _write(env, [op], now=NOW + 99)
+    assert over.status == "ok"
+    assert len(await env.store.account_heads(key=ACCOUNT.key)) == 26
 
 
 async def test_the_row_checks_refuse_a_bypassing_insert(env) -> None:
@@ -170,7 +174,8 @@ async def test_a_third_partys_dispute_marks_the_line_and_forget_by_another_is_re
 async def test_an_unmatched_claim_is_recorded_and_nothing_is_touched(env) -> None:
     """Zero matches and several matches are both no match: the row lands for
     the session to weigh, and no line is hidden or marked on a guess."""
-    await _write(env, [_told("vegetarian"), _told("cycles to work", "102")])
+    await _write(env, [_told("vegetarian"), replace(_told("cycles to work", "102"),
+                                                       kind="role", fact_key="role")])
     done = await env.store.record_dispute(
         account=ACCOUNT, disputed_by=KIT, kind="dispute", claim="something else entirely",
         message_id=104, now_ms=NOW + DAY)

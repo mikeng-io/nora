@@ -202,3 +202,15 @@ bring them back.
 
 The one exception is the subject's own: a dispute or "forget that" by the
 person a line is about hides that line at once (§2).
+
+
+## Typed Identity and recovery amendment, 2026-10-19
+
+[75](75-typed-identity.md) supersedes the first-session/newest-page coverage
+claim above. A first successful session does not establish historical coverage.
+Named typed Identity values share the Persona transaction with Character and
+Hypotheses. The separate frozen historical pass is resumable and explicitly
+rerunnable; old prose is retained as unresolved history rather than parsed
+into authoritative facts. See [45](45-persona-adaptor.md)'s typed amendment
+for the cursor and operator receipt commands. Cutover still requires grounded
+coverage comparison and the budgeted behavioral gates.

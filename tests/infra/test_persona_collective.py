@@ -44,13 +44,17 @@ NOW = datetime.fromtimestamp((T0 + 5 * DAY) / 1000, tz=UTC)
 UNIT = "friends"
 ROOM = "room-a"
 ROOM_KEY = CollectiveKey(
-    unit=UNIT, label="Friends",
+    unit=UNIT,
+    label="Friends",
     rooms=(CharacterRoom(key=ROOM, platform="signal", label="Friends"),),
 )
 UNIT_KEY = CollectiveKey(
-    unit=UNIT, label=UNIT,
-    rooms=(CharacterRoom(key=ROOM, platform="signal", label="Friends"),
-           CharacterRoom(key="room-b", platform="discord", label="Zone 42")),
+    unit=UNIT,
+    label=UNIT,
+    rooms=(
+        CharacterRoom(key=ROOM, platform="signal", label="Friends"),
+        CharacterRoom(key="room-b", platform="discord", label="Zone 42"),
+    ),
 )
 NORA_KEY = CollectiveKey(unit=UNIT, label="Nora", rooms=UNIT_KEY.rooms)
 NAMES = {"ada": "Ada", "bo": "Bo"}
@@ -113,6 +117,7 @@ async def _settle(adaptor: PersonaCollectiveAdaptor, key: str) -> int:
 
 # -- a room -----------------------------------------------------------------
 
+
 async def test_a_room_wakes_on_its_own_messages_and_reads_them_but_never_hers(env):
     reads = InMemoryCharacterEvidence()
     reads.add_message(id=41, platform="signal", room=ROOM, person_id="ada", ts=T0)
@@ -133,12 +138,29 @@ async def test_a_room_wakes_on_its_own_messages_and_reads_them_but_never_hers(en
     assert "wednesday works" in out
     assert "anyone up for it" not in out  # her own words are never evidence
     [write] = [v for v in adaptor.verbs(key=ROOM) if v.__name__ == "persona_write"]
-    result = await write(ops=[
-        {"op": "add", "part": "identity", "kind": "purpose", "text": "planning the weekly game",
-         "mode": "told", "citations": ["43"], "told_by": "Bo"},
-        {"op": "add", "part": "character", "kind": "trait", "text": "meets midweek",
-         "mode": "induced", "citations": ["41", "43", "44"]},
-    ])
+    result = await write(
+        ops=[
+            {
+                "op": "add",
+                "part": "identity",
+                "kind": "purpose",
+                "text": "planning the weekly game",
+                "mode": "told",
+                "citations": ["43"],
+                "told_by": "Bo",
+                "fact_key": "purpose",
+                "fact_value": "planning the weekly game",
+            },
+            {
+                "op": "add",
+                "part": "character",
+                "kind": "trait",
+                "text": "meets midweek",
+                "mode": "induced",
+                "citations": ["41", "43", "44"],
+            },
+        ]
+    )
     assert result["status"] == "ok"
     assert await _settle(adaptor, ROOM) == 2
     heads = await SqlPersonaStore(env, screen=lambda _t: None).account_heads(key=ROOM)
@@ -192,15 +214,27 @@ async def test_a_room_line_cannot_cite_her_own_message(env):
     batch, _ = await adaptor.evidence.newest(key=ROOM, after=0, limit=10)
     await adaptor.inputs(key=ROOM, batch=batch)
     [write] = [v for v in adaptor.verbs(key=ROOM) if v.__name__ == "persona_write"]
-    result = await write(ops=[
-        {"op": "add", "part": "identity", "kind": "name", "text": "the game room",
-         "mode": "told", "citations": ["42"], "told_by": "someone"},
-    ])
+    result = await write(
+        ops=[
+            {
+                "op": "add",
+                "part": "identity",
+                "kind": "name",
+                "text": "the game room",
+                "mode": "told",
+                "citations": ["42"],
+                "told_by": "someone",
+                "fact_key": "name",
+                "fact_value": "the game room",
+            },
+        ]
+    )
     assert result["status"] == "refused"
     assert result["refusals"][0]["reason"] == "unresolved_citation"
 
 
 # -- the unit ---------------------------------------------------------------
+
 
 async def test_the_unit_wakes_on_its_rooms_culture_revisions_and_cites_their_rows(env):
     reads = InMemoryCharacterEvidence()
@@ -226,10 +260,21 @@ async def test_the_unit_wakes_on_its_rooms_culture_revisions_and_cites_their_row
     assert 'cites="41, 42"' in out  # and what it rests on: the unit cites through them
     assert "wednesday again" in out  # and the row it cited, as evidence
     [write] = [v for v in adaptor.verbs(key=key) if v.__name__ == "persona_write"]
-    result = await write(ops=[
-        {"op": "add", "part": "identity", "kind": "purpose", "text": "the weekly game",
-         "mode": "told", "citations": ["41"], "told_by": "Ada"},
-    ])
+    result = await write(
+        ops=[
+            {
+                "op": "add",
+                "part": "identity",
+                "kind": "purpose",
+                "text": "the weekly game",
+                "mode": "told",
+                "citations": ["41"],
+                "told_by": "Ada",
+                "fact_key": "purpose",
+                "fact_value": "the weekly game",
+            },
+        ]
+    )
     assert result["status"] == "ok", result
     assert await _settle(adaptor, key) == 1
     heads = await SqlPersonaStore(env, screen=lambda _t: None).account_heads(key=key)
@@ -244,16 +289,27 @@ async def test_a_collective_identity_holds_no_actor_kind(env):
     batch, _ = await adaptor.evidence.newest(key=ROOM, after=0, limit=10)
     await adaptor.inputs(key=ROOM, batch=batch)
     [write] = [v for v in adaptor.verbs(key=ROOM) if v.__name__ == "persona_write"]
-    result = await write(ops=[
-        {"op": "add", "part": "identity", "kind": "instruction",
-         "text": "never plan on a friday", "mode": "told",
-         "citations": ["41"], "told_by": "Ada"},
-    ])
+    result = await write(
+        ops=[
+            {
+                "op": "add",
+                "part": "identity",
+                "kind": "instruction",
+                "text": "never plan on a friday",
+                "mode": "told",
+                "citations": ["41"],
+                "told_by": "Ada",
+                "fact_key": "instruction",
+                "fact_value": "never plan on a friday",
+            },
+        ]
+    )
     assert result["status"] == "refused"
     assert result["refusals"][0]["reason"] == "part_kind"
 
 
 # -- Nora -------------------------------------------------------------------
+
 
 async def test_nora_wakes_on_closed_episodes_and_cites_them_never_her_send(env):
     reads = InMemoryCharacterEvidence()
@@ -274,10 +330,21 @@ async def test_nora_wakes_on_closed_episodes_and_cites_them_never_her_send(env):
     assert 'n="response:41"' in out and "in!" in out
     [write] = [v for v in adaptor.verbs(key=key) if v.__name__ == "persona_write"]
     # Her send is not a citation; the episode is.
-    refused = await write(ops=[
-        {"op": "add", "part": "identity", "kind": "attribute", "text": "asks about games",
-         "mode": "told", "citations": ["41"], "told_by": "Ada"},
-    ])
+    refused = await write(
+        ops=[
+            {
+                "op": "add",
+                "part": "identity",
+                "kind": "attribute",
+                "text": "asks about games",
+                "mode": "told",
+                "citations": ["41"],
+                "told_by": "Ada",
+                "fact_key": "occupation",
+                "fact_value": "asks about games",
+            },
+        ]
+    )
     assert refused["status"] == "refused"
     ok = await write(ops=[
         {"op": "add", "part": "character", "kind": "trait", "text": "game nights land",
