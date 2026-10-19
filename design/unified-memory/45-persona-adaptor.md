@@ -466,6 +466,67 @@ and the full 179-line coverage run remains unmeasured. No further acceptance
 reruns precede integrated ingestion. This docs amendment runs no models and
 claims neither model acceptance nor runtime integration.
 
+### Non-location implementation receipt — PR #109
+
+The integrated person path uses `SqlPersonaInputs` at the existing
+`PersonaEvidence` / `PersonaPersonAdaptor` seam. It reads owning stores with
+the optional index disabled, coalesces bounded source snapshots into the same
+account session, and retains the atomic writer and independent hypothesis
+judge. A nullable acknowledged revision and a separate last-read revision on
+`consolidation_watermark` distinguish delivery from an attempt. Only rendered
+snapshots settled by the account are acknowledged. Trimmed or unreadable
+snapshots remain pending; recording an attempt merely lets other pending work
+run first and prevents a tight catch-up loop. Conflicts and unsettled person
+sessions never abandon their evidence. Historical pages remain Record-only;
+Rollups use the rooted revision path. The completed historical boundary floors
+recent scans without hiding cached readings on older messages or replaying
+settled historical plain text.
+
+- Record messages and eligible mentions include original author, assertion
+  time, source revision time and cached attachment readings. Later cached
+  readings, edits, hidden/deleted state and removed mentions reconsider their
+  original message handles. Media-only interpretations cannot ground `told`.
+- Direct network-neutral social input retains caption, readings, publication
+  time and latest counts with their read time. Later perception/count/state
+  revisions are independent of item creation time. The existing readable
+  store owns gone/hidden/opt-out eligibility. A withheld item renders no
+  caption, reading, count or citation.
+- Safe bounded Rollup projections include daybook message counts,
+  reply/mention ties and quoted response counts. Readable Record roots must
+  reproduce each computed count. Reaction/social aggregates without the
+  corresponding typed roots are omitted; direct social counts remain present.
+  Presence tables and properties, stays/trips/outings and location-bearing
+  Notebook prose are not read. Rebuild identifiers add no support or age;
+  persisted underlying message citations deduplicate overlapping projections.
+- Register notes/memos/events contribute current state, effective bounds and
+  links. Note/memo citations resolve to scoped human Record rows and supported
+  non-location Rollup roots. Untyped Notebook prose is withheld. Events do not
+  persist their exact evidence references in `field_meta`; their state/dates
+  are context only. Unresolved, hidden, own-send and held-Persona references
+  supply no independent evidence. An uncited memo cannot establish person
+  relevance from its prose.
+
+**Existing cached-media recovery is included**, not merely future completion
+notifications. A separate frozen media boundary and per-source revisions
+recover eligible cached image/video/sticker readings even when the ordinary
+message cursor and historical message pass have already passed them. Work is
+bounded and resumable across process restarts, without resetting either old
+cursor, fetching bytes or running vision. Original assertion time, author and
+message citation survive; replaying a cached SHA or rebuilding the same roots
+is not another witness. The existing `nora memory persona-history` JSONL
+receipt adds read-only `cached_media` counts: frozen boundary, eligible cached
+candidates, pending/unattempted candidates, missing cache, hidden/deleted and
+completion. Its existing restart option still concerns the historical Record
+pass. Historical source exhaustion, including an older receipt, is not media
+coverage. Cached-candidate completion excludes missing, hidden, unavailable
+and unreadable material and never proves extraction quality. Running the
+writer recovery later still spends its ordinary model calls; this build ran
+no paid acceptance or live backfill.
+
+The location ceiling above remains blocked. Deterministic input/progress
+checks are implementation evidence only: model acceptance, coverage, reply
+replay, deployment and live cached-media counts remain separate measurements.
+
 ## 5. Rendering
 
 One block per entity in the turn, replacing `peer_card`, `peer_history` and

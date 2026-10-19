@@ -165,17 +165,15 @@ async def test_a_refused_write_answers_the_rule_it_broke_and_stages_nothing(env)
     assert await SqlPersonaStore(env, screen=lambda _t: None).account_heads(key=KEY) == ()
 
 
-async def test_an_unsettled_batch_is_held_twice_then_abandoned(env):
+async def test_an_unsettled_person_batch_is_never_abandoned(env):
     metrics = Metrics()
     adaptor = _adaptor(env, metrics=metrics)
-    for _ in range(2):
+    for _ in range(5):
         await adaptor.inputs(key=KEY, batch=BATCH)
         with pytest.raises(AccountNotRecordableError):
             await _settle(adaptor)
-    await adaptor.inputs(key=KEY, batch=BATCH)
-    assert await _settle(adaptor) == 0
-    assert metrics.get("nora_persona_session_total", outcome="unsettled") == 3
-    assert metrics.get("nora_persona_session_total", outcome="abandoned") == 1
+    assert metrics.get("nora_persona_session_total", outcome="unsettled") == 5
+    assert metrics.get("nora_persona_session_total", outcome="abandoned") == 0
 
 
 async def test_a_write_landing_between_read_and_commit_writes_nothing(env):
