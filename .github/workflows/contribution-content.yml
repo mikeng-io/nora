@@ -33,6 +33,7 @@ jobs:
     permissions:
       contents: read
       checks: write
+      pull-requests: read
     steps:
       # This privileged metadata job NEVER checks out or executes PR source.
       # All title/body data is read through JSON/API, never interpolated in shell.
