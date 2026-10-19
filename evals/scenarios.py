@@ -375,6 +375,7 @@ CORPUS_ENTRY: dict[str, str] = {
     "presence": "tag",
     "standing": "standing",
     "persona_identity": "persona_identity",
+    "persona_coverage": "persona_coverage",
     "tool_reporting": "tag",
     # What she says about her OWN FORM. A tag, and judged — "did she reply"
     # says nothing about whether the reply described the mascot when asked, or
@@ -415,6 +416,7 @@ ROUTED_CORPORA = frozenset({"tool_selection", "tool_selection_cognition"})
 #: judging unconditionally (once a judge is configured) adds no second
 #: selection rule.
 JUDGED_CORPORA = frozenset({
+    "persona_coverage",
     "being_contradicted", "identity_grounding", "source_scope",
     "injections", "transcript_injection", "standing", "presence",
     # ADR 0015 §4: what she SAYS after a tool returns a status. Its opted-in

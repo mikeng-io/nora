@@ -354,6 +354,21 @@ every room of the unit for the unit's account.
    judged blind in pairs. The switch passes only if Persona is preferred in
    at least 55% of the pairs.
 
+**Coverage implementation clarifier (2026-10-19).** The existing suite's
+`persona_coverage` entry implements the frozen census above; procedure and
+private input schema: [coverage operator guide](../../evals/PERSONA_COVERAGE.md).
+`source_unresolved` is explicit semantic noncoverage when the supplied eligible
+originals cannot ground the full claim or its unit/referent. It remains in the
+frozen stable denominator; it is neither an infrastructure `error` nor permission
+to infer a derivable miss. Nonstable prelabels remain in the private ledger and
+report, without becoming invented standing facts. The thresholds above do not
+change: exactly 5% errors is ERROR, and a fresh derivable miss prevents PASS even
+if a maintenance ledger claims it was repaired. Current canonical typed facts
+and qualified authored roster identity can represent the full claim; retired
+predecessors, untyped legacy Identity and character prose cannot automatically
+count as settled typed coverage. This implements the existing gate; it records
+no coverage acceptance and does not implement the subsequent reply replay.
+
 89% of Honcho's conclusions are `explicit`, what people said, and those
 messages are in Nora's own Record. The coverage measure is how that claim is
 checked rather than assumed.

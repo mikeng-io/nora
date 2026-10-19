@@ -68,6 +68,11 @@ DEFAULT_TIMEOUT_SECONDS = 300.0
 #: a fabrication one sample caught must not be overruled by a coin flip.
 DEFAULT_SAMPLES = 3
 
+# Coverage only: GLM-5.3-Flash defaults to max reasoning; at 4096 this
+# exhausted the entire response without content. Keep the cap, request low.
+COVERAGE_MAX_TOKENS = 4096
+COVERAGE_REASONING_EFFORT = "low"
+
 
 @dataclass(frozen=True, slots=True)
 class Judgement:
@@ -105,6 +110,63 @@ class Judge:
             timeout=self.timeout_seconds,
             max_retries=0,
         )
+
+    async def coverage_batch(self, prompt: str) -> dict:
+        """One bounded structured coverage draw, on this SAME judge client.
+
+        No retries/majority can turn malformed per-line data into a pass.
+        Spend and local trace provenance are retained even on provider errors.
+        """
+        from opentelemetry import trace
+
+        from evals.backbone import (
+            _SPEND,
+            NORA_CACHED_TOKENS,
+            NORA_CALLS,
+            NORA_INPUT_TOKENS,
+            NORA_OUTPUT_TOKENS,
+            NORA_STOPS,
+            _prefill_capture,
+        )
+        _prefill_capture()
+        client = self._client()
+        spent = {NORA_CALLS: 1, NORA_INPUT_TOKENS: 0,
+                 NORA_OUTPUT_TOKENS: 0, NORA_CACHED_TOKENS: 0, NORA_STOPS: ""}
+        batch_trace = ""
+        usage_known = False
+        try:
+            with trace.get_tracer(__name__).start_as_current_span(
+                "eval.persona_coverage.batch",
+            ) as span:
+                batch_trace = format(span.get_span_context().trace_id, "032x")
+                span.set_attribute("gen_ai.request.model", self.model)
+                answer = await asyncio.wait_for(client.chat.completions.create(
+                    model=self.model, messages=[{"role": "user", "content": prompt}],
+                    temperature=0, max_tokens=COVERAGE_MAX_TOKENS,
+                    reasoning_effort=COVERAGE_REASONING_EFFORT,
+                ), self.timeout_seconds)
+                usage = answer.usage
+                usage_known = usage is not None
+                if usage is not None:
+                    spent[NORA_INPUT_TOKENS] = usage.prompt_tokens
+                    spent[NORA_OUTPUT_TOKENS] = usage.completion_tokens
+                    details = usage.prompt_tokens_details
+                    spent[NORA_CACHED_TOKENS] = (details.cached_tokens or 0) if details else 0
+                spent[NORA_STOPS] = answer.choices[0].finish_reason
+                span.set_attribute("gen_ai.response.model", answer.model)
+                if answer.choices[0].finish_reason != "stop":
+                    raise ValueError("coverage response truncated or refused")
+                return {"raw": answer.choices[0].message.content or "",
+                        "actual_model": answer.model,
+                        "response_id": answer.id,
+                        "trace_id": format(span.get_span_context().trace_id, "032x"),
+                        "spend": spent, "usage_known": usage_known}
+        except Exception as exc:  # noqa: BLE001 - the caller serializes instrument errors
+            return {"error": f"{type(exc).__name__}: {exc}",
+                    "trace_id": batch_trace, "spend": spent, "usage_known": usage_known}
+        finally:
+            _SPEND.append(spent)
+            await client.close()
 
     async def grade(
         self,
