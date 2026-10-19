@@ -1548,7 +1548,10 @@ class SocialPollConfig(BaseModel):
 
     Each tick (`tick_seconds`) probes the members not probed for
     `ceiling_hours`, oldest first, and never a member probed (answered or not)
-    within `floor_minutes`. `hourly_budget` caps the login's upstream calls in
+    within `floor_minutes`. After a week of observation, spare budget probes
+    follow local hour-of-week posting rhythm, multiplied by `activity_multiplier`
+    during current activity, with a probe and read per member reserved.
+    `hourly_budget` caps the login's upstream calls in
     any hour, a probe counted at its source's cost and a read at one, with a
     pause of up to `jitter_seconds` before each call. A rejected or
     rate-limited call backs the login off for `back_off_start_minutes`,
@@ -1587,6 +1590,7 @@ class SocialPollConfig(BaseModel):
     enabled: bool = False
     tick_seconds: float = Field(default=600.0, gt=0)
     floor_minutes: float = Field(default=30.0, gt=0)
+    activity_multiplier: float = Field(default=3.0, ge=1)
     ceiling_hours: float = Field(default=6.0, gt=0)
     hourly_budget: int = Field(default=60, ge=1)
     back_off_start_minutes: float = Field(default=15.0, gt=0)

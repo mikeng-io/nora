@@ -7,7 +7,8 @@ what it found.
 `SocialSource`, so the budget, the halt and the back-off are this object's
 state, and nothing is shared with another network's poller.
 
-**The cadence is the ceiling.** A tick probes every member whose last
+**The ceiling is guaranteed first; a learned rhythm spends spare calls.**
+A tick probes every member whose last
 answered probe is older than `ceiling_hours`, least recently probed first,
 and never a member probed (answered or not) within `floor_minutes`; a probe
 whose failure will not change on its own waits for the ceiling instead. The
@@ -107,10 +108,11 @@ import math
 import random
 import time
 import uuid
-from collections import deque
-from collections.abc import Awaitable, Callable, Sequence
+from collections import Counter, deque
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from nora.config import SocialPollConfig
 from nora.domain.media import SOCIAL_MEDIA_SOURCE, MediaObject, MediaRef, ground_media_type
@@ -187,6 +189,9 @@ class SocialPoller:
         roster: Roster,
         settings: SocialPollConfig,
         metrics: Metrics,
+        units: Mapping[str, Sequence[str]] | None = None,
+        rooms: Mapping[str, Sequence[tuple[str, str]]] | None = None,
+        timezone: str = "Asia/Hong_Kong",
         media: MediaSource | None = None,
         blobs: BlobStore | None = None,
         media_objects: MediaObjectStore | None = None,
@@ -194,6 +199,9 @@ class SocialPoller:
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         rand: Callable[[], float] = random.random,
     ) -> None:
+        self._units = units or {}
+        self._rooms = rooms or {}
+        self._timezone = ZoneInfo(timezone)
         self._source = source
         self._network = source.network
         self._store = store
@@ -285,11 +293,88 @@ class SocialPoller:
             if stop is not None:
                 self._skip(stop)
                 return
+        if await self._adaptive(roster, now) is not None:
+            return
         if await self._backfill(roster) is not None:
             return
         if await self._relist(roster) is not None:
             return
         await self._recount(roster)
+
+    async def _adaptive(self, roster: Sequence[Member], now: datetime) -> SkipReason | None:
+        """Spend spare calls on a learned rhythm after every overdue probe.
+
+        A week of answered observation is required: old backfilled posts alone
+        never make a cold account look learned. Failure to read the inputs
+        leaves the ceiling schedule in force, with no speculative extra calls.
+        """
+        reserve = len(roster) * (self._source.probe_cost + 1)
+        adaptive_cost = self._source.probe_cost + 2
+        if not self._afford(adaptive_cost + reserve):
+            return None
+        try:
+            history = await self._store.posted(
+                persons={m.person for m in roster}, through_ms=round(now.timestamp() * 1000),
+                network=self._network,
+            )
+            ranked: list[tuple[float, Member]] = []
+            for member in roster:
+                last = self._attempted.get(member.person)
+                first_ms = history.observed_from.get(member.person)
+                if last is None or first_ms is None or now - last < self._hold.get(
+                    member.person, self._floor,
+                ):
+                    continue
+                first = datetime.fromtimestamp(first_ms / 1000, tz=UTC)
+                if now - first < timedelta(days=7):
+                    continue
+                start = max(first, now - timedelta(days=28))
+                hours = Counter(
+                    (at.weekday(), at.hour)
+                    for item in history.items if item.person_id == member.person
+                    and start.timestamp() * 1000 <= item.ts <= now.timestamp() * 1000
+                    for at in [datetime.fromtimestamp(
+                        item.ts / 1000, tz=self._timezone,
+                    )]
+                )
+                # Integrate the hour-of-week bins over the actual interval;
+                # a fractional hour contributes only its observed fraction.
+                expected = 0.0
+                at = last
+                weeks = max(1.0, (now - start).total_seconds() / (7 * 86400))
+                while at < now:
+                    end = min(now, at.replace(minute=0, second=0, microsecond=0)
+                              + timedelta(hours=1))
+                    local = at.astimezone(self._timezone)
+                    expected += hours[(local.weekday(), local.hour)] / weeks \
+                        * (end - at).total_seconds() / 3600
+                    at = end
+                units = self._units.get(member.person, ())
+                rooms = tuple(room for unit in units for room in self._rooms.get(unit, ()))
+                if await self._store.social_activity(
+                    person=member.person, units=units, rooms=rooms, now=now,
+                    timezone=str(self._timezone),
+                ):
+                    expected *= self._settings.activity_multiplier
+                elapsed = (now - last).total_seconds() / 3600
+                ranked.append((max(expected, 0.01) * elapsed, member))
+        except Exception:
+            log.exception("social polling rhythm unavailable; keeping the ceiling cadence")
+            self._metrics.inc("nora_errors_total", stage="social_poller")
+            return None
+        for _, member in sorted(ranked, key=lambda row: (-row[0], row[1].person)):
+            if not self._afford(adaptive_cost + reserve):
+                break
+            try:
+                stop = await self._poll(member)
+            except Exception:
+                log.exception("adaptive social poll of one member failed; the tick continues")
+                self._metrics.inc("nora_errors_total", stage="social_poller")
+                continue
+            if stop is not None:
+                self._skip(stop)
+                return stop
+        return None
 
     # -- the login -------------------------------------------------------------
 
@@ -312,6 +397,11 @@ class SocialPoller:
             self._attempted[person] = times.attempted
             if times.answered is not None:
                 self._answered[person] = times.answered
+            if times.answered is None or times.attempted > times.answered:
+                # ponytail: the Record has the failed outcome, not its kind.
+                # Restore the conservative ceiling hold; persist failure kind
+                # if early transient retries across restarts become necessary.
+                self._hold[person] = self._ceiling
         for at, stage in calls:
             self._spent.append((at, self._source.probe_cost if stage == "probe" else 1))
         halted = False

@@ -49,6 +49,11 @@ from nora.infra.social.instagram_source import InstagramSocialSource
 from nora.infra.social.subjects import instagram_roster
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import (
+    EVENTS,
+    MESSAGES,
+    ROLLUP_BUILD,
+    ROLLUP_COLOCATION,
+    ROLLUP_OUTING,
     SOCIAL_ITEM,
     SOCIAL_ITEM_COUNT,
     SOCIAL_ITEM_STATE,
@@ -181,7 +186,8 @@ async def world(_db: str) -> AsyncIterator[World]:
             # (migration 0068, nora.infra.sql.history.CAPTURE_SETTING).
             await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
             await conn.execute(sa.text(
-                "truncate social_item, social_poll, social_item_state, social_item_count",
+                "truncate social_item, social_poll, social_item_state, social_item_count, "
+                "messages, events, rollup_build, rollup_outing, rollup_colocation cascade",
             ))
         await engine.dispose()
 
@@ -1635,3 +1641,115 @@ async def test_the_recount_takes_only_what_the_hour_leaves_after_the_reserve(wor
         "one page: the next would eat the reserve"
     )
     del poller
+
+
+async def test_learned_polling_spends_spare_budget_on_the_likeliest_member(world) -> None:
+    quiet(world, ADA, BEA)
+    poller = world.poller(hourly_budget=10)
+    await poller.tick()
+    for person, account, count in (("ada", ADA, 4), ("bea", BEA, 1)):
+        for n in range(count):
+            item = dataclasses.replace(
+                post(world, f"rhythm-{person}-{n}", account),
+                taken_at=world.clock.start + timedelta(hours=1),
+            )
+            await world.store.insert_item(
+                item, person=person, origin="backfill", seen_at=world.clock(),
+            )
+    world.clock.at(days=7)
+    await poller.tick()
+    before = len(world.probes())
+    world.clock.at(days=7, hours=1)
+    await poller.tick()
+    assert world.probes()[before:] == [ADA], "learned rank uses spare budget before ceiling"
+    world.clock.at(days=7, hours=1, minutes=10)
+    await poller.tick()
+    assert world.probes()[before:] == [ADA], "the floor and hourly reserve still hold"
+
+
+async def test_a_cold_posting_history_does_not_accelerate_polling(world) -> None:
+    quiet(world, ADA, BEA)
+    poller = world.poller()
+    await poller.tick()
+    await world.store.insert_item(
+        post(world, "old-history"), person="ada", origin="backfill", seen_at=world.clock(),
+    )
+    world.clock.at(hours=1)
+    await poller.tick()
+    assert world.probes() == [ADA, BEA], "backfilled ages are not a week of observation"
+
+
+@pytest.mark.parametrize("kind", ["message", "event", "outing", "colocation"])
+async def test_activity_boost_reads_only_the_persons_current_unit_activity(world, kind):
+    now = world.clock()
+    ms = round(now.timestamp() * 1000)
+    async with world.engine.begin() as conn:
+        if kind == "message":
+            await conn.execute(sa.insert(MESSAGES).values(
+                platform="signal", conversation_id="g1", conversation_type="group",
+                sender_id="synthetic-account", person_id="ada", ts=ms, body="hello",
+            ))
+        elif kind == "event":
+            await conn.execute(sa.insert(EVENTS).values(
+                id=uuid4(), conversation_id="g1", unit_id="friends", title="Dinner",
+                created_by="ada", people=["ada"], when=now, status="proposed", created_at=now,
+            ))
+        else:
+            build = (await conn.execute(sa.insert(ROLLUP_BUILD).values(
+                code_version="test", params_sha256="test", status="current",
+            ).returning(ROLLUP_BUILD.c.id))).scalar_one()
+            table = ROLLUP_OUTING if kind == "outing" else ROLLUP_COLOCATION
+            extra = {} if kind == "outing" else {"radius_m": 50.0, "stay_count": 2}
+            await conn.execute(sa.insert(table).values(
+                build_id=build, unit="friends", lineage={}, valid_from_ms=ms-1000,
+                valid_to_ms=ms, as_of_ms=ms, persons=["ada"], lat=0.0, lng=0.0,
+                open=1, **extra,
+            ))
+    args = {"person": "ada", "units": ("friends",), "rooms": (("signal", "g1"),),
+            "now": now, "timezone": "Asia/Hong_Kong"}
+    assert await world.store.social_activity(**args)
+    assert not await world.store.social_activity(**{**args, "person": "bea"})
+    assert not await world.store.social_activity(**{**args, "units": (), "rooms": ()})
+    assert not await SqlSocialStreamStore(
+        world.engine, opted_out=frozenset({"ada"}),
+    ).social_activity(**args)
+    async with world.engine.begin() as conn:
+        if kind == "message":
+            await conn.execute(sa.update(MESSAGES).values(hidden_at=ms))
+        elif kind == "event":
+            await conn.execute(sa.update(EVENTS).values(status="cancelled"))
+        else:
+            await conn.execute(sa.update(ROLLUP_BUILD).values(status="superseded"))
+    assert not await world.store.social_activity(**args)
+
+
+async def _warm_account(world) -> None:
+    world.subjects = FakeSocialSubjectIndex({"ada": ADA})
+    async with world.engine.begin() as conn:
+        await conn.execute(sa.insert(SOCIAL_POLL), [
+            {"network": "instagram", "person": "ada", "stage": "probe",
+             "outcome": "unchanged", "recorded_at": world.clock()-timedelta(days=8)},
+            {"network": "instagram", "person": "ada", "stage": "probe",
+             "outcome": "unchanged", "recorded_at": world.clock()-timedelta(hours=1)},
+        ])
+
+
+async def test_restarting_never_retries_an_unanswered_adaptive_probe_before_the_ceiling(world):
+    await _warm_account(world)
+    world.source.probes[ADA] = Failed(FailureKind.NOT_FOUND)
+    await world.poller().tick()
+    assert world.probes() == [ADA]
+    world.clock.at(minutes=31)
+    await world.poller().tick()
+    assert world.probes() == [ADA], "restart must not forget the permanent failure's hold"
+
+
+async def test_an_adaptive_probe_reserves_its_two_possible_reads_before_admission(world):
+    await _warm_account(world)
+    world.source.probes[ADA] = probe(marker=10, posts=2)
+    world.source.stories[ADA] = story(frame("new-frame", world.clock))
+    world.source.pages[ADA] = Page(items=(post(world, "new-post"),), next_cursor=None)
+    await world.poller(hourly_budget=5).tick()
+    assert world.probes() == [], "probe plus two reads must fit beside the three-call reserve"
+    await world.poller(hourly_budget=7).tick()
+    assert world.probes() == [ADA], "sufficient spare budget still permits the read"

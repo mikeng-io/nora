@@ -3649,6 +3649,11 @@ async def build_dependencies(
             health=SqlSourceHealthLog(engine),
             roster=functools.partial(instagram_roster, social_subjects),
             settings=cfg.social.poll, metrics=metrics,
+            units=social_person_units(allowlist),
+            rooms={unit: tuple((c.platform, rid) for c in allowlist.conversations
+                               if c.unit == unit for rid in sorted(c.ids))
+                   for unit in {c.unit for c in allowlist.conversations if c.unit}},
+            timezone=cfg.cognition.timezone,
             # The same custody every room's media goes through; `None` while
             # media custody is off, and then items are recorded without bytes.
             media=media_sources.for_platform("instagram") if media_sources else None,

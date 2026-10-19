@@ -187,6 +187,8 @@ from .results import NOTHING_FOUND, UNAVAILABLE, clamp_chars
 from .views import (
     AccountView,
     ItemView,
+    PostSummary,
+    PostsView,
     PostView,
     ProfileSocial,
     ProfileView,
@@ -200,11 +202,12 @@ log = logging.getLogger("nora.social.instagram")
 
 #: The rows this backend serves. A request for anything else reaching here is
 #: a ROUTING bug, not a user error, so it is `unavailable` (a wiring gap), is
-#: logged, and never reaches the bridge. `instagram/posts` is absent on
-#: purpose: the bridge has no route for it.
+#: logged, and never reaches the bridge. Posts use the same timeline route
+#: as the background stream, with its raw cursor kept internal to the tool.
 _SERVES: frozenset[tuple[str, str]] = frozenset({
     ("instagram", "story"),
     ("instagram", "profile"),
+    ("instagram", "posts"),
     ("instagram", "search"),
     # One post or reel, by the shortcode of a link a person pasted.
     ("instagram", "post"),
@@ -318,6 +321,7 @@ class InstagramSocialClient(SocialProvider):
     async def read(
         self, *, platform: str, what: str, target: str, limit: int,
         look: TurnLook | None = None,
+        cursor: str | None = None,
     ) -> dict[str, Any]:
         """One read. NEVER raises (R-5).
 
@@ -334,7 +338,7 @@ class InstagramSocialClient(SocialProvider):
         """
         try:
             return await self._read(
-                platform=platform, what=what, target=target, limit=limit, look=look,
+                platform=platform, what=what, target=target, limit=limit, look=look, cursor=cursor,
             )
         except Exception:
             # The never-raises backstop, identical in posture to the OpenCLI
@@ -345,10 +349,12 @@ class InstagramSocialClient(SocialProvider):
 
     async def _read(
         self, *, platform: str, what: str, target: str, limit: int,
-        look: TurnLook | None,
+        look: TurnLook | None, cursor: str | None,
     ) -> dict[str, Any]:
         if (platform, what) not in _SERVES:
             log.warning("instagram social client asked for a row it does not serve")
+            return dict(UNAVAILABLE)
+        if cursor is not None and what != "posts":
             return dict(UNAVAILABLE)
         if what == "search":
             # A search's target is FREE TEXT a person typed (a `named` input,
@@ -375,6 +381,8 @@ class InstagramSocialClient(SocialProvider):
         if not _IGID_RE.fullmatch(igid):
             log.warning("instagram social client given a target that is not an igid")
             return dict(UNAVAILABLE)
+        if what == "posts":
+            return await self._posts(igid=igid, cursor=cursor)
         if what == "story":
             return await self._story(igid=igid, limit=limit, look=look)
         return await self._profile(igid=igid)
@@ -442,6 +450,47 @@ class InstagramSocialClient(SocialProvider):
             return dict(UNAVAILABLE)
         # A profile reads no media: it is rendered, never looked at.
         return await self._answer(view, None)
+
+    async def _posts(self, *, igid: str, cursor: str | None) -> dict[str, Any]:
+        """The bridge's timeline page, curated before the tool pages it.
+
+        The upstream cursor is internal: instagram_read replaces it with a
+        subject-bound, turn-local reference before returning any result.
+        """
+        if cursor is not None and (not cursor or len(cursor) > 4096
+                                   or any(ord(c) < 32 for c in cursor)):
+            return dict(UNAVAILABLE)
+        query = "?" + urllib.parse.urlencode({"after": cursor}) if cursor else ""
+        status, payload = await self._get(f"/accounts/{igid}/items{query}")
+        if status != 200 or not isinstance(payload, dict):
+            return dict(UNAVAILABLE)
+        raw, after = payload.get("items"), payload.get("next_cursor")
+        if not isinstance(raw, list) or len(raw) > 12 or not (
+            after is None or (isinstance(after, str) and 0 < len(after) <= 4096
+            and not any(ord(c) < 32 for c in after))
+        ):
+            return dict(UNAVAILABLE)
+        posts = []
+        for row in raw:
+            if not isinstance(row, dict):
+                return dict(UNAVAILABLE)
+            code, kind, taken = row.get("code"), row.get("kind"), row.get("taken_at")
+            if not isinstance(code, str) or not SHORTCODE_RE.fullmatch(code) \
+                    or kind not in ("post", "reel") or not isinstance(taken, int) \
+                    or isinstance(taken, bool) or taken <= 0:
+                return dict(UNAVAILABLE)
+            caption = row.get("caption")
+            posts.append(PostSummary(
+                link=f"https://www.instagram.com/{'reel' if kind == 'reel' else 'p'}/{code}/",
+                kind=kind, taken_at=taken,
+                caption=caption if isinstance(caption, str) else None,
+                collab=row.get("collab") is True,
+            ))
+        if not posts and after is None:
+            return {"status": "nothing_found", "note": "The account's post list ended."}
+        out = render(Result("ok", view=PostsView(tuple(posts))), max_chars=self._content_max_chars)
+        out["next_cursor"] = after
+        return out
 
     async def _search(self, *, query: str, limit: int) -> dict[str, Any]:
         """`GET /accounts?query=` → up to `SEARCH_MAX_ACCOUNTS` accounts, in

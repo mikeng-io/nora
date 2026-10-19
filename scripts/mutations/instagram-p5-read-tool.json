@@ -135,7 +135,7 @@
   {
     "name": "a background turn (fire or Dreamer) may open a story",
     "file": "nora/agent/tools.py",
-    "old": "        if read in (\"story\", \"post\") and (fire_turn or dream_adaptor):",
+    "old": "        if read in (\"story\", \"post\", \"posts\") and (fire_turn or dream_adaptor):",
     "new": "        if False:",
     "target": "tests/unit/test_instagram_read_tool.py::test_a_story_is_never_opened_in_a_turn_nobody_asked_for"
   },
@@ -163,7 +163,7 @@
   {
     "name": "instagram_read's `what` goes back to a bare str (no enum in the schema)",
     "file": "nora/agent/tools.py",
-    "old": "        what: Literal[\"profile\", \"story\"] | None = None,",
+    "old": "        what: Literal[\"profile\", \"story\", \"posts\"] | None = None,",
     "new": "        what: str | None = None,",
     "target": "tests/unit/test_instagram_read_links.py::test_the_schema_takes_one_of_person_handle_or_link_and_an_optional_read"
   }

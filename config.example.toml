@@ -808,6 +808,7 @@ mode = "dry_run"
 # with [cognition] enabled. The day is [cognition] timezone's.
 enabled = false
 # tick_seconds = 600.0            # how often the poller looks for members due
+# activity_multiplier = 3.0       # learned posting rhythm during current activity
 # floor_minutes = 30.0            # no member probed more often than this
 # ceiling_hours = 6.0             # every member probed at least this often
 # hourly_budget = 60              # upstream calls per hour for the login (a probe costs 2)

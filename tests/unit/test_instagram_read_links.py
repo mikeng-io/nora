@@ -160,6 +160,7 @@ class FakeBridge:
     _USERNAME = re.compile(r"@?[A-Za-z0-9._]{1,30}")
 
     def __init__(self) -> None:
+        self.timeline = _fixture("items_ok.json")
         self.account = _fixture("account_ok.json")
         self.story = _fixture("story_found.json")
         self.posts: dict[str, dict] = {
@@ -199,6 +200,10 @@ class FakeBridge:
             return web.Response(status=405, text="405 method not allowed")
         if request.path == "/accounts" and "username" in request.query:
             return self._lookup(request)
+        if re.fullmatch(r"/accounts/[0-9]+/items", request.path):
+            return self._answer(
+                _fixture("items_last_page.json") if request.query.get("after") else self.timeline
+            )
         if self._STORY.fullmatch(request.path):
             return self._answer(self.story)
         if self._ACCOUNT.fullmatch(request.path):
@@ -466,7 +471,7 @@ async def test_the_post_routes_failures_map_to_their_states(world, code, status)
     assert message not in json.dumps(out)
 
 
-@pytest.mark.parametrize("what", ["profile", "story"])
+@pytest.mark.parametrize("what", ["profile", "story", "posts"])
 async def test_a_post_link_with_what_is_not_guessed_at(world, what):
     """A link whose kind contradicts `what` answers `unavailable`, and
     nothing is sent. The same link alone is read."""
@@ -697,7 +702,7 @@ async def test_url_and_link_spelling_the_same_link_agree(world, link, url, path)
 
 @pytest.mark.parametrize(
     "arg",
-    [{"handle": "example_friend"}, {"handle": "example_friend", "what": "posts"}],
+    [{"handle": "example_friend"}, {"handle": "example_friend", "what": "unsupported"}],
     ids=["no_what", "posts"],
 )
 async def test_a_handle_needs_a_read_it_can_do(world, arg):
@@ -804,10 +809,12 @@ def test_the_schema_takes_one_of_person_handle_or_link_and_an_optional_read():
         ) if s.name == "instagram_read"
     ]
     schema = adapt(spec).tool_spec["inputSchema"]["json"]
-    assert set(schema["properties"]) == {"what", "person", "handle", "link", "url"}
+    assert set(schema["properties"]) == {
+        "what", "person", "handle", "link", "url", "limit", "cursor",
+    }
     assert schema["properties"]["url"]["description"] == "same as link."
     assert not schema.get("required")
-    assert schema["properties"]["what"]["enum"] == ["profile", "story"]
+    assert schema["properties"]["what"]["enum"] == ["profile", "story", "posts"]
 
 
 # ---- a story by handle or link is scoped to THIS room -------------------------
@@ -904,7 +911,7 @@ async def test_a_profile_link_asked_for_its_story_reads_that_accounts_story(worl
 @pytest.mark.parametrize(
     ("link", "what"),
     [
-        ("https://www.instagram.com/example_friend/", "posts"),
+        ("https://www.instagram.com/example_friend/", "unsupported"),
         ("https://www.instagram.com/example_friend/", "reel"),
         # `post` IS the read a post link decides, and it is still not a value
         # `what` may take: the enum is enforced, not only compared.
@@ -936,3 +943,44 @@ async def test_a_story_ring_link_reads_the_current_story_under_the_same_checks(
     assert out["status"] == status
     story_calls = [path for _m, path in fake.calls if path.endswith("/story")]
     assert story_calls == ([f"/accounts/{igid}/story"] if igid else [])
+
+
+async def test_post_lists_page_without_losing_items_or_exposing_upstream_cursors(world):
+    fake, read = world()
+    first = await read(what="posts", person="Quinn", limit=1)
+    assert first["status"] == "ok"
+    assert len(first["posts"]) == 1
+    assert first["next_cursor"]
+    assert "synthetic-cursor-1" not in json.dumps(first)
+    _no_ids(first)
+    calls = len(fake.calls)
+    second = await read(what="posts", person="Quinn", limit=1, cursor=first["next_cursor"])
+    assert second["status"] == "ok"
+    assert second["posts"][0]["link"] != first["posts"][0]["link"]
+    assert len(fake.calls) == calls, "the tail of a fetched page is retained, not skipped"
+    third = await read(what="posts", person="Quinn", cursor=second["next_cursor"])
+    assert third["status"] == "ok"
+    assert third["next_cursor"] is None
+    assert any("after=synthetic-cursor-1" in path for _, path in fake.calls)
+
+
+async def test_post_list_cursors_cannot_cross_accounts_or_turns(world):
+    fake, read = world()
+    first = await read(what="posts", handle="example_friend", limit=1)
+    before = len(fake.calls)
+    refused = await read(what="posts", handle="some.stranger", cursor=first["next_cursor"])
+    assert refused["status"] == "unavailable"
+    assert len(fake.calls) == before
+    _, other_turn = world()
+    refused = await other_turn(what="posts", handle="example_friend", cursor=first["next_cursor"])
+    assert refused["status"] == "unavailable"
+    assert len(fake.calls) == before
+
+
+async def test_post_lists_refuse_unasked_turns_and_do_not_hide_malformed_pages(world):
+    fake, read = world(fire_turn=True)
+    assert (await read(what="posts", handle="example_friend"))["status"] == "refused"
+    assert fake.calls == []
+    fake, read = world()
+    fake.timeline = {"status": 200, "body": {"items": [{}], "next_cursor": None}}
+    assert (await read(what="posts", person="Quinn"))["status"] == "unavailable"
