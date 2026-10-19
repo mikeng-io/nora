@@ -113,6 +113,10 @@ not promote legacy prose or character traits. Claim-specific supplied Record
 candidates, cited originals and nearby original question/answer context carry
 actual author, timestamp, age, room and unit. Evidence is oldest first, newest
 last. This is bounded source evidence, not a claim that a no-hit proves absence.
+Judge prompts additionally render each source's epoch timestamp as `time_hkt`
+using the existing RFC 3339 Hong Kong time formatter. The original timestamp,
+age, text and qualifications remain unchanged; a readable source clock does not
+resolve an ambiguous referent or turn a conditional expectation into a fact.
 Sources outside eligible rooms/bounds are refused. Closure annotations are
 retained for inspection; fresh heads and eligible originals decide coverage.
 Common evidence is rendered once within each account-scoped batch.
