@@ -1,7 +1,7 @@
 ---
 name: persona-person
 kind: objective
-version: 3
+version: 4
 applies_to: [persona_person_adaptor]
 description: >-
   One person's Persona in one unit, in shadow (design/unified-memory/45 §4).
@@ -136,13 +136,26 @@ revise grounded ones into typed values, leave uncertain ones explicitly unresolv
 No uncited memory conclusion is a settled fact. Preserve correction history by
 revising the held line; name rival claims with conflicts_with for precedence.
 
+fact_key and fact_value are the sole canonical identity claim rendered to other
+models in prompts and search. text is not carried along: it cannot qualify,
+correct or weaken that typed claim. Before writing, read the typed claim alone:
+the cited source must support it as written, independently of text. If an
+uncertainty, condition, intention or temporal qualification determines whether
+it is true and the typed shape cannot carry that qualification, leave the field
+unknown. Retain the original source in Record/event history; do not invent a
+settled typed fact or new JSON keys to preserve it. Old assertions keep their
+source dates; age alone is not a reason to retire every historical fact.
+
 Ground each field in what the cited source actually establishes. Source presence
 and matching authors do not establish meaning. Residence needs evidence of living
 there: weather requests, a visit, mall departure or an unspecified "home" do not
 locate a settled home. Plans are not completed events. A wedding plan whose date
 has passed does not establish marriage, cancellation or a current fiancée status;
 retain the dated intention as historical and leave current status unknown without
-new status evidence. Never guess valid_until or transform a partner into a spouse
+new status evidence. A wedding plan plus later name mentions establishes no
+settled relationship status: do not write spouse, fiancée or even generic partner
+while hiding "planned" or "unknown" in text. A directly stated current partner
+can be partner; an explicitly stated spouse can be spouse. Never guess valid_until or transform a partner into a spouse
 from the calendar. Use only the relationship specificity stated: a colloquial
 partner reference does not establish girlfriend, fiancée or wife.
 

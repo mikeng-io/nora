@@ -48,7 +48,13 @@ owned by identity.toml and retain their existing precedence.
 
 One shared validator and formatter own these shapes. Prompt, portal and
 memory projection use the canonical formatted value, so a conflicting model
-text cannot override structured truth. Store history, not competing current
+text cannot override structured truth. The writer must therefore support the
+canonical key/value independently of prose: text is not carried to other models
+and cannot qualify a typed claim. If truth depends on a qualification the shape
+cannot carry, leave the field unknown and retain the source in Record/event
+history, without new JSON keys. A wedding plan and later name mentions do not
+support even a generic partner claim; directly stated partner/spouse facts remain
+eligible with their original assertion dates. Store history, not competing current
 singleton values: explicit changes revise/supersede with evidence; retain
 uncertain/conflicting claims through existing precedence/dispute semantics.
 
