@@ -25,6 +25,46 @@ export type Status = z.infer<typeof StatusSchema>;
 // one per Nora workspace they belong to (DEC-214), each labelled
 // `workspace`. `identity` (who they are) and `episodes` (what happened) are
 // two distinct reads and never collapse into one list.
+// `persona` is optional: only a backend running the Persona switch
+// (`[persona] render`) sends it — the caller's own account per unit, every
+// chain head with its state, the evidence behind each line, and the open
+// disputes (cognition-loop/50 §4).
+export const PersonaEvidenceSchema = z.object({
+  ref: z.string(),
+  kind: z.enum(["message", "episode", "social", "rollup", "unknown"]),
+  text: z.string().nullable().optional(),
+  said_at: z.number().optional(),
+  by: z.string().nullable().optional(),
+});
+export type PersonaEvidence = z.infer<typeof PersonaEvidenceSchema>;
+export const PersonaLineSchema = z.object({
+  part: z.enum(["identity", "character", "hypothesis"]),
+  kind: z.string(),
+  text: z.string(),
+  mode: z.string(),
+  state: z.string(),
+  told_by: z.string().nullable(),
+  written_at: z.number(),
+  evidence: z.array(PersonaEvidenceSchema),
+  prediction: z.string().nullable().optional(),
+  prediction_observable: z.string().nullable().optional(),
+  prediction_window_end: z.number().nullable().optional(),
+  verdict: z.string().nullable().optional(),
+});
+export type PersonaLine = z.infer<typeof PersonaLineSchema>;
+export const PersonaDisputeSchema = z.object({
+  kind: z.string(),
+  claim: z.string(),
+  disputed_by: z.string().nullable(),
+  written_at: z.number(),
+});
+export type PersonaDispute = z.infer<typeof PersonaDisputeSchema>;
+export const PersonaAccountSchema = z.object({
+  unit: z.string(),
+  lines: z.array(PersonaLineSchema),
+  disputes: z.array(PersonaDisputeSchema),
+});
+export type PersonaAccount = z.infer<typeof PersonaAccountSchema>;
 export const MemoryEntrySchema = z.object({
   workspace: z.string().optional(),
   person_id: z.string(),
@@ -32,6 +72,7 @@ export const MemoryEntrySchema = z.object({
   reachable: z.boolean(),
   identity: z.array(z.string()),
   episodes: z.array(z.string()),
+  persona: z.array(PersonaAccountSchema).optional(),
 });
 export type MemoryEntry = z.infer<typeof MemoryEntrySchema>;
 export const MemorySchema = z.array(MemoryEntrySchema);

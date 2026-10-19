@@ -20,12 +20,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Any, NamedTuple, Protocol
 
 from nora.agent.clock import local_now
-from nora.agent.lineage import LineagePolicy
+from nora.agent.lineage import LineagePolicy, persona_lines_for
 from nora.agent.memory_search import (
     PREFETCH_TOKENS,
     MemorySearch,
@@ -33,8 +33,14 @@ from nora.agent.memory_search import (
     render_packet,
     room_label,
 )
+from nora.agent.room import Room
 from nora.domain.computer_context import ComputerView
-from nora.domain.culture import CultureRevision, nora_character_key, unit_culture_key
+from nora.domain.culture import (
+    CultureRevision,
+    character_key,
+    nora_character_key,
+    unit_culture_key,
+)
 from nora.domain.documents_context import DocumentsView
 from nora.domain.external_files import render_file_links
 from nora.domain.lineage import RenderRoom
@@ -47,16 +53,18 @@ from nora.domain.models import (
     TranscriptRow,
 )
 from nora.domain.notes import Note
+from nora.domain.persona import PersonaView
 from nora.domain.ports import (
     CultureReader,
     EngagementRequest,
     MemoryStore,
     RecordStore,
+    RosterSource,
     StandingStore,
 )
 from nora.domain.quote_window import QuoteWindow
 from nora.domain.rollup import room_key
-from nora.domain.self_presence import Presence
+from nora.domain.self_presence import Presence, platform_name
 from nora.domain.standing import Standing
 from nora.domain.subagents_context import SubagentsView
 from nora.engagement.character_who import tag_character_people
@@ -66,6 +74,7 @@ from nora.engagement.self_presence import PresenceReader
 from nora.engagement.subagents_context import SubagentsContextReader
 from nora.language.culture_render import read_character, read_culture
 from nora.language.lesson_render import ActiveLessons, read_lessons
+from nora.language.persona_render import PersonaHeads, authored_identity, read_persona
 from nora.obs.tracing import traced_read
 from nora.persons import Persons
 from nora.policy import Policy
@@ -150,7 +159,12 @@ class TranscriptInjection:
         memos: MemoStore | None = None,
         memory_search: MemorySearch | None = None,
         clock: Callable[[], datetime] | None = None,
+        persona: PersonaHeads | None = None,
+        rosters: Mapping[str, RosterSource] | None = None,
+        self_ids: frozenset[str] = frozenset(),
     ) -> None:
+        self._rosters = rosters or {}
+        self._self_ids = self_ids
         self._audit = audit
         # `<recalled>`, the pre-fetch: the SAME retrieval service the tool
         # registry's `memory_search` holds, `None` on the Honcho surface
@@ -235,6 +249,14 @@ class TranscriptInjection:
         # raises, so it is safe inside the gather. Tag path only: the fire path
         # holds no such reader.
         self._subagents_reader = subagents
+        # THE SWITCH (45 §5): the Persona accounts' reader, wired by
+        # composition only when `[persona] render` is on. Not `None` means this
+        # turn renders `<persona>` blocks and the seven reads they replace —
+        # `_peer_card`, `_recall_tagger`, `_culture`, `_unit_culture`,
+        # `_self_account` and `_character` — are not made at all: a switched
+        # turn never pays for both surfaces, and a failed persona read is
+        # `nora_errors_total` (R-27), never a quiet fall back to the old block.
+        self._persona_reader = persona
 
     async def assemble(self, *, request: EngagementRequest) -> TagContext:
         msg = request.message
@@ -264,7 +286,7 @@ class TranscriptInjection:
         # `<presence>` is on the front of the turn like the rest because adapter
         # health must be read now, not remembered.
         (
-            ((transcript, character), card, tagger_card, standing, notes),
+            ((transcript, character, personas), card, tagger_card, standing, notes),
             presence,
             culture,
             (unit_culture, self_account, lessons),
@@ -329,6 +351,7 @@ class TranscriptInjection:
             presence=presence,
             culture=culture,
             character=character,
+            personas=personas,
             unit_culture=unit_culture,
             self_account=self_account,
             lessons=lessons,
@@ -476,6 +499,10 @@ class TranscriptInjection:
         Bounded, fail-soft and counted (`stage="tag_culture"`) by
         `read_culture`, so it is safe inside the `gather`.
         """
+        if self._persona_reader is not None:
+            # The switch (45 §5): the room's `<persona>` replaced this block;
+            # a switched turn never pays for both surfaces.
+            return None
         if self._culture_reader is None or self._policy is None:
             return None
         convo = self._policy.conversation(msg.platform, msg.conversation_id)
@@ -496,15 +523,126 @@ class TranscriptInjection:
 
     async def _recent_with_character(
         self, msg: NormalizedMessage, ref: PersonRef | None,
-    ) -> tuple[tuple[TranscriptRow, ...], tuple[tuple[str, CultureRevision], ...]]:
+    ) -> tuple[
+        tuple[TranscriptRow, ...],
+        tuple[tuple[str, CultureRevision], ...],
+        tuple[PersonaView, ...],
+    ]:
         """The transcript, then the accounts of the people in it. WHO needs the
         window's speakers, so the character read cannot start before the
         transcript; chained here it still overlaps every other read in the
         gather instead of waiting for all of them. Its own bound
         (`read_character`'s timeout) is added to the transcript's, not to the
-        whole gather's."""
+        whole gather's.
+
+        Switched (`[persona] render`): the character read is not made at all
+        and the turn's Persona accounts are read instead — the room's, the
+        unit's, hers, and every person the turn is about."""
         read = await self._recent(msg)
-        return read, await self._character(msg, ref, self._shown(read, msg))
+        shown = self._shown(read, msg)
+        if self._persona_reader is not None:
+            return read, (), await self._personas(msg, ref, shown)
+        return read, await self._character(msg, ref, shown), ()
+
+    def _platforms_of(self, person_id: str) -> tuple[str, ...]:
+        """The display names of the networks one person is reachable on, for
+        their authored identity lines — "Signal", "Discord", never a handle or
+        a number (R-18). Read off the identity index, so a renamed platform
+        cannot drift from what `resolve` matches."""
+        return tuple(sorted({
+            platform_name(platform)
+            for (platform, _), pid in self._persons.index.items()
+            if pid == person_id
+        }))
+
+    async def _personas(
+        self, msg: NormalizedMessage, ref: PersonRef | None,
+        transcript: Sequence[TranscriptRow],
+    ) -> tuple[PersonaView, ...]:
+        """The turn's Persona accounts (45 §5): hers, the room's, the unit's,
+        then one per person the turn is about (`tag_character_people`'s set,
+        the same set `<character>` rendered).
+
+        Reads share `read_persona` (bounded, fail-soft, counted under
+        `nora_errors_total{stage="tag_persona_*"}`, R-27): a failed read drops
+        THAT account's view, never the turn. A line whose `exclude_persons`
+        names a member of this room is dropped here, before the view is built
+        (`PersonaView`'s docstring) — the renderer never sees it. Views with
+        nothing to say still land in the tuple; `render_persona` emits no
+        block for them, and `ctx.personas` being non-empty is the switch, not
+        any one account's content."""
+        reader = self._persona_reader
+        if reader is None or self._policy is None:
+            return ()
+        convo = self._policy.conversation(msg.platform, msg.conversation_id)
+        if convo is None or not convo.unit:
+            return ()
+        members = self._room_members(msg)
+        target = (self._lineage or LineagePolicy.from_policy(self._policy)).render_room(
+            platform=msg.platform, conversation_id=msg.conversation_id,
+        )
+        room = Room(
+            platform=msg.platform, conversation_id=msg.conversation_id,
+            roster_source=self._rosters.get(msg.platform), persons=self._persons,
+            tagger=ref, self_ids=self._self_ids,
+        )
+
+        async def one(
+            key: str, *, entity: str, of: str, stage: str,
+            authored: tuple[str, ...] = (),
+        ) -> PersonaView | None:
+            lines = await read_persona(
+                reader.account_heads(key=key), stage=stage,
+                platform=msg.platform, metrics=self._metrics,
+            )
+            if lines is None:
+                return None
+            kept = await persona_lines_for(lines, target, room)
+            return PersonaView(entity=entity, of=of, lines=kept, authored=authored)
+
+        views: list[PersonaView] = []
+        # HERS, gated like `_self_account` (R-31): written from her sends in
+        # every room of the unit, so a room that may not see it reads nothing.
+        if self._policy.shows_self_in(msg.platform, msg.conversation_id):
+            view = await one(
+                nora_character_key(convo.unit),
+                entity="self", of="you", stage="tag_persona_self",
+            )
+            if view is not None:
+                views.append(view)
+        # THE ROOM's, keyed its `primary_id` for `_culture`'s reason (DEC-181).
+        if convo.primary_id:
+            view = await one(
+                convo.primary_id,
+                entity="room", of=convo.label or "this room",
+                stage="tag_persona_room",
+            )
+            if view is not None:
+                views.append(view)
+        # THE UNIT's, keyed like `_unit_culture`.
+        view = await one(
+            unit_culture_key(convo.unit),
+            entity="unit", of=convo.unit, stage="tag_persona_unit",
+        )
+        if view is not None:
+            views.append(view)
+        # THEIRS: every listed person this turn is about, with their authored
+        # identity lines (45 §3: rendered, never written).
+        for person in tag_character_people(
+            members, persons=self._persons, message=msg,
+            tagger=ref, transcript=transcript,
+        ):
+            view = await one(
+                character_key(convo.unit, person.person_id),
+                entity="person", of=person.name, stage="tag_persona_person",
+                authored=authored_identity(
+                    name=person.name, aliases=person.aliases,
+                    platforms=self._platforms_of(person.person_id),
+                ),
+            )
+            if view is not None:
+                views.append(view)
+        return tuple(views)
 
     def _shown(
         self, read: Sequence[TranscriptRow], msg: NormalizedMessage,
@@ -555,6 +693,8 @@ class TranscriptInjection:
         `unit_culture_key(unit)`, so it is read only in that unit's rooms.
         Bounded, fail-soft and counted (`stage="tag_unit_culture"`) by
         `read_culture`, like `_culture`."""
+        if self._persona_reader is not None:
+            return None  # the switch (45 §5): the unit's `<persona>` replaced it
         if self._culture_reader is None or self._policy is None:
             return None
         convo = self._policy.conversation(msg.platform, msg.conversation_id)
@@ -572,6 +712,8 @@ class TranscriptInjection:
         (`stage="tag_self"`) by `read_culture`, like `_unit_culture`; `None`
         when the unit has no account or the room may not show it
         (`Policy.shows_self_in`), so no `<self>` block renders."""
+        if self._persona_reader is not None:
+            return None  # the switch (45 §5): her `<persona of="you">` replaced it
         if self._culture_reader is None or self._policy is None:
             return None
         convo = self._policy.conversation(msg.platform, msg.conversation_id)
@@ -696,6 +838,8 @@ class TranscriptInjection:
         in a `gather`, where an unreachable exception stops being a thinner
         prompt and becomes four cancelled reads and a dead turn.
         """
+        if self._persona_reader is not None:
+            return ()  # the switch (45 §5): the tagger's `<persona>` replaced it
         if ref is None:
             return ()
         try:
@@ -744,6 +888,8 @@ class TranscriptInjection:
         remains the path for anything she will actually assert, and it
         reports `unavailable` honestly.
         """
+        if self._persona_reader is not None:
+            return ()  # the switch (45 §5): the tagger's `<persona>` replaced it
         if ref is None or not self._ai_peer or self._tagger_card_conclusions <= 0:
             return ()
         try:

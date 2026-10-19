@@ -32,7 +32,7 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
     """Same type, same builder, same field count as `nora/__main__.py` gets."""
     subject = await obtain(spec)
     assert isinstance(subject.deps, Dependencies)
-    assert len(dataclasses.fields(Dependencies)) == 69, (
+    assert len(dataclasses.fields(Dependencies)) == 73, (
         "Dependencies changed shape; the subject follows it automatically, but "
         "this number is here so a change is noticed rather than absorbed. "
         "38 -> 40 on 2026-09-17: `relevance_gate` and `fire_path`, the two "
@@ -107,7 +107,12 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
         "because `nora.web` never sees a lineage policy. "
         "68 -> 69: `story_expiry`, a story frame's bytes deleted at their bound, "
         "started only by `nora/__main__.py`, never by the subject, which must "
-        "not delete the deployment's bytes."
+        "not delete the deployment's bytes. "
+        "69 -> 73 on 2026-10-19, the persona prompt switch: `persona_portal` "
+        "plus `persona_scopes_of` and `persona_cited` (the portal /memory "
+        "account block: the caller's Persona heads, open disputes and the "
+        "evidence behind each line), and `index_state` (/health's "
+        "memory-index block) — all unwired until `[persona] render` is on."
     )
 
 

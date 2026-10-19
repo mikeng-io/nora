@@ -72,7 +72,7 @@ from datetime import datetime
 from typing import Any
 
 from nora.agent.guards import ReplyGuard
-from nora.agent.lineage import LineagePolicy
+from nora.agent.lineage import LineagePolicy, persona_lines_for
 from nora.agent.outbound import OutboundComposer
 from nora.agent.prefill import (
     build_prefill,
@@ -87,7 +87,12 @@ from nora.domain.blocks import RowStyle, render_rows
 from nora.domain.cognition_remind import INTENTS
 from nora.domain.compute import ComputeJob, DocumentReadBack
 from nora.domain.computer_context import ComputerView
-from nora.domain.culture import CultureRevision, nora_character_key, unit_culture_key
+from nora.domain.culture import (
+    CultureRevision,
+    character_key,
+    nora_character_key,
+    unit_culture_key,
+)
 from nora.domain.decision_log import (
     PARTICIPATION_DECISION_WRITERS,
     PROACTIVE_ACT_DECISION_WRITERS,
@@ -120,6 +125,7 @@ from nora.domain.models import (
     TranscriptRow,
 )
 from nora.domain.notes import Note
+from nora.domain.persona import PersonaView
 from nora.domain.ports import (
     DEFAULT_MEMORY_READ_TIMEOUT_SECONDS,
     CultureReader,
@@ -136,7 +142,7 @@ from nora.domain.ports import (
 from nora.domain.prompt import one_line
 from nora.domain.quote_window import QuoteWindow
 from nora.domain.reminders import Reminder
-from nora.domain.self_presence import Presence
+from nora.domain.self_presence import Presence, platform_name
 from nora.domain.standing import (
     DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
     Standing,
@@ -155,6 +161,7 @@ from nora.engagement.stages.invoke import AgentRunner
 from nora.ingest.relevance_gate import SCORE_ABSENT
 from nora.language.culture_render import read_character, read_culture
 from nora.language.lesson_render import ActiveLessons, read_lessons
+from nora.language.persona_render import PersonaHeads, authored_identity, read_persona
 from nora.obs.determination import (
     WINDOW_BODY_CHARS,
     Determination,
@@ -563,6 +570,7 @@ class FirePath:
         media_join: MediaJoin | None = None,
         quote_window: QuoteWindow | None = None,
         rosters: Mapping[str, RosterSource] | None = None,
+        self_ids: frozenset[str] = frozenset(),
         preview_source: LinkPreviewSource | None = None,
         llm_state: Any = None,
         tool_call_log_store: ToolCallLogStore | None = None,
@@ -597,6 +605,12 @@ class FirePath:
         # `<memos>` (DEC-306): the SAME store the tag path's assembler reads,
         # keyed on the unit like `notes`. `None` renders no block.
         memos: MemoStore | None = None,
+        # THE SWITCH (45 §5): the Persona accounts' reader, wired only when
+        # `[persona] render` is on. Not `None` means a fire turn renders
+        # `<persona>` blocks and none of the reads they replace — the peer
+        # card, `people_in_window`, the culture/unit/self heads and the
+        # character heads — is made at all.
+        persona: PersonaHeads | None = None,
     ) -> None:
         # `<standing>` renders on the fire path too. `build_prefill` is shared
         # and parameterised only by `header=`, so SUPPRESSING the block here
@@ -657,6 +671,9 @@ class FirePath:
         self._notes = notes
         self._memos = memos
         self._policy = policy
+        # THE SWITCH (45 §5): `None` until `[persona] render` is on — see the
+        # parameter. The reads it replaces check it and are not made.
+        self._persona_reader = persona
         # Lineage: the SAME value the
         # tag path's assembler holds (`nora.app.assembler.lineage_policy`), so
         # a fire turn's derived blocks are filtered for its room exactly as a
@@ -714,6 +731,7 @@ class FirePath:
         # all. Delivering to the wrong platform is catastrophic; failing to
         # read a roster is merely blind, and blind-but-saying-so is allowed.
         self._rosters: Mapping[str, RosterSource] = rosters or {}
+        self._persona_self_ids = self_ids
         # The link-preview fetcher, `None` unless `[preview].enabled` — see the
         # engagement pipeline's identical field for why this one defaults while
         # `deliver.build`'s `composer` does not.
@@ -860,7 +878,9 @@ class FirePath:
             transcript = await self._media_join.enrich(transcript, path="fire")
 
         card: tuple[str, ...] = ()
-        if ref is not None:
+        if ref is not None and self._persona_reader is None:
+            # (The switch: with `[persona] render` the occasion person's
+            # `<persona>` replaces the card and this read is not made.)
             try:
                 card = tuple(await self._memory.peer_card(
                     peer_id=ref.honcho_peer_id,
@@ -892,7 +912,15 @@ class FirePath:
 
         # Read AFTER the transcript, because both reads are
         # curated to the window's own text and keyed on the people in it.
-        people = await self._read_memory(occasion, transcript)
+        # The switch: with `[persona] render` the persons' `<persona>` blocks
+        # replace `<people_in_window>` and the Honcho recall is not made.
+        people = (
+            () if self._persona_reader is not None
+            else await self._read_memory(occasion, transcript)
+        )
+        # THE SWITCH (45 §5): the turn's Persona accounts, keyed like the
+        # culture reads they replace. Empty on the Honcho surface.
+        personas = await self._read_personas(occasion, ref, transcript)
 
         # CONCURRENT, for `TranscriptInjection.assemble`'s reason: these are
         # independent reads, and awaited one after another their latencies
@@ -933,6 +961,7 @@ class FirePath:
             peer_card=card,
             started_at=time.perf_counter(),
             people_in_window=people,
+            personas=personas,
             standing=standing,
             culture=culture,
             character=character,
@@ -1330,6 +1359,9 @@ class FirePath:
         Bounded, fail-soft and counted under `stage="fire_culture"` by
         `read_culture`, the one read every occasion shares.
         """
+        if self._persona_reader is not None:
+            # The switch (45 §5): the room's `<persona>` replaced this block.
+            return None
         if self._culture is None or self._policy is None:
             return None
         convo = self._policy.conversation(
@@ -1347,6 +1379,8 @@ class FirePath:
         """What this room's UNIT is like, keyed
         `unit_culture_key(unit)`: `_read_culture`'s bounds. `None` when the
         tier is off or the unit has no account."""
+        if self._persona_reader is not None:
+            return None  # the switch (45 §5): the unit's `<persona>` replaced it
         if self._culture is None or self._policy is None:
             return None
         convo = self._policy.conversation(occasion.platform, occasion.conversation_id)
@@ -1364,6 +1398,8 @@ class FirePath:
         `nora_character_key(unit)`: `_read_unit_culture`'s bounds. `None` when
         the tier is off, the unit has no account or the room may not show it
         (`Policy.shows_self_in`), so no `<self>` block renders."""
+        if self._persona_reader is not None:
+            return None  # the switch (45 §5): her `<persona of="you">` replaced it
         if self._culture is None or self._policy is None:
             return None
         convo = self._policy.conversation(occasion.platform, occasion.conversation_id)
@@ -1406,6 +1442,8 @@ class FirePath:
         (unit, person)):
         `_read_culture`'s bounds, one head per person. `()` when the tier is
         off."""
+        if self._persona_reader is not None:
+            return ()  # the switch (45 §5): their `<persona>` blocks replaced it
         if self._culture is None or self._policy is None:
             return ()
         convo = self._policy.conversation(
@@ -1422,6 +1460,98 @@ class FirePath:
             metrics=self._metrics,
             timeout_seconds=self._standing_store_timeout_seconds,
         )
+
+    async def _read_personas(
+        self, occasion: Event, ref: PersonRef | None,
+        transcript: Sequence[TranscriptRow],
+    ) -> tuple[PersonaView, ...]:
+        """The fire turn's Persona accounts (45 §5): hers, the room's, the
+        unit's, then one per person the occasion is about
+        (`fire_character_people`'s set — the window's speakers and the
+        occasion's own person, the same set `<character>` rendered).
+
+        `TranscriptInjection._personas`' shape and rules, with the fire path's
+        own timeout: `read_persona` bounds and counts each read
+        (`stage="fire_persona_*"`), a failed read drops that account's view
+        and is counted (R-27), and a line whose `exclude_persons` names a
+        member of this room is dropped before the view is built. `()` with no
+        reader wired (the Honcho surface) or a room outside the policy."""
+        if self._persona_reader is None or self._policy is None:
+            return ()
+        convo = self._policy.conversation(
+            occasion.platform, occasion.conversation_id)
+        if convo is None or not convo.unit:
+            return ()
+        reader = self._persona_reader
+        members = self._room_members(occasion)
+        target = (self._lineage or LineagePolicy.from_policy(self._policy)).render_room(
+            platform=occasion.platform, conversation_id=occasion.conversation_id,
+        )
+        room = Room(
+            platform=occasion.platform, conversation_id=occasion.conversation_id,
+            roster_source=self._rosters.get(occasion.platform), persons=self._persons,
+            tagger=ref, self_ids=self._persona_self_ids,
+        )
+
+        async def one(
+            key: str, *, entity: str, of: str, stage: str,
+            authored: tuple[str, ...] = (),
+        ) -> PersonaView | None:
+            lines = await read_persona(
+                reader.account_heads(key=key), stage=stage,
+                platform=occasion.platform, metrics=self._metrics,
+                timeout_seconds=self._standing_store_timeout_seconds,
+            )
+            if lines is None:
+                return None
+            kept = await persona_lines_for(lines, target, room)
+            return PersonaView(entity=entity, of=of, lines=kept, authored=authored)
+
+        views: list[PersonaView] = []
+        # HERS, gated like `_read_self_account` (R-31).
+        if self._policy.shows_self_in(occasion.platform, occasion.conversation_id):
+            view = await one(
+                nora_character_key(convo.unit),
+                entity="self", of="you", stage="fire_persona_self",
+            )
+            if view is not None:
+                views.append(view)
+        # THE ROOM's, keyed its `primary_id` like `_read_culture`.
+        if convo.primary_id:
+            view = await one(
+                convo.primary_id,
+                entity="room", of=convo.label or "this room",
+                stage="fire_persona_room",
+            )
+            if view is not None:
+                views.append(view)
+        # THE UNIT's, keyed like `_read_unit_culture`.
+        view = await one(
+            unit_culture_key(convo.unit),
+            entity="unit", of=convo.unit, stage="fire_persona_unit",
+        )
+        if view is not None:
+            views.append(view)
+        # THEIRS, with their authored identity lines (45 §3).
+        for person in fire_character_people(
+            members, persons=self._persons,
+            platform=occasion.platform, person=ref, transcript=transcript,
+        ):
+            view = await one(
+                character_key(convo.unit, person.person_id),
+                entity="person", of=person.name, stage="fire_persona_person",
+                authored=authored_identity(
+                    name=person.name, aliases=person.aliases,
+                    platforms=tuple(sorted({
+                        platform_name(p)
+                        for (p, _), pid in self._persons.index.items()
+                        if pid == person.person_id
+                    })),
+                ),
+            )
+            if view is not None:
+                views.append(view)
+        return tuple(views)
 
     async def _read_standing(self, occasion: Event) -> Standing | None:
         """This conversation's position, or `None`.

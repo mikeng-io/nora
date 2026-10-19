@@ -108,7 +108,7 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import tzinfo
 from typing import Any, Protocol
@@ -119,6 +119,7 @@ from nora.agent.dream_screen import screen
 from nora.domain.culture import CultureRevision
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
+from nora.domain.persona import PersonaView
 from nora.domain.ports import RecordStore, StandingStore
 from nora.domain.standing import (
     DEFAULT_WORKING_SET_MAX_CHARS,
@@ -472,6 +473,11 @@ async def run(
     media_join: MediaJoin | None = None,
     tz: tzinfo | None = None,
     culture: CultureRevision | None = None,
+    # The switch (45 §5): the room's Persona account as the TURN read it,
+    # handed through for `culture`'s own reason (the fold reads the SAME
+    # account the reply did). Set, it replaces `culture` in the fold's input.
+    persona_room: PersonaView | None = None,
+    persona_name_of: Callable[[str], str] | None = None,
     working_set_max_items: int = DEFAULT_WORKING_SET_MAX_ITEMS,
     working_set_max_chars: int = DEFAULT_WORKING_SET_MAX_CHARS,
 ) -> None:
@@ -570,8 +576,11 @@ async def run(
             trace=trace, prior=prior,
             display_name=display_name, metrics=metrics, since_rows=batch, tz=tz,
             # The room's account (DEC-207) — the one the turn itself read at
-            # its start, handed through rather than read a second time.
+            # its start, handed through rather than read a second time. Under
+            # the switch (45 §5) that account is the Persona view.
             culture=culture,
+            persona_room=persona_room,
+            persona_name_of=persona_name_of,
         )
         # ONE `wait_for` around the whole fold, the consolidate retry
         # included: the budget the slot can afford is a total, and a retry

@@ -941,3 +941,17 @@ async def test_an_exact_hit_past_the_pins_needs_the_cosine_floor() -> None:
     found = await _search(FakeMemoryIndex([*near, bare], embed_model=M), q, people=(rin,))
     assert sum(1 for h in found.hits if h.pin) == PINNED_LIMIT
     assert "bare" not in {h.node.source_id for h in found.hits}
+
+
+async def test_shared_search_hides_persona_after_render_rollback():
+    node = IndexedNode("persona_line", "p1", "ramen", NOW, unit="u1")
+    control = _note("control", "ramen")
+    index = FakeMemoryIndex([node, control])
+    for render in (True, False):
+        found = await MemorySearch(index, Metrics(), persona_render=render).search(
+            query="ramen", person_id=None, target=_target(), depth="low", now_ms=NOW,
+            social_off=(),
+        )
+        keys = {h.node.key for h in found.hits}
+        assert control.key in keys
+        assert (node.key in keys) == render

@@ -148,6 +148,7 @@ class App:
             doctrine_store=deps.doctrine_store, metrics=deps.metrics,
             started_at=started_at, llm_state=deps.llm_state,
             identity_file=self.cfg.identity_file, policy_file=self.cfg.policy_file,
+            index_state=deps.index_state,
         )
         register_web_routes(
             health_app, store=deps.audit, honcho=deps.memory, reminders=deps.reminders,
@@ -158,6 +159,9 @@ class App:
             skills_dir=deps.skills_dir, events=deps.events,
             doctrine_store=deps.doctrine_store,
             workspaces_of=deps.workspaces_of,
+            persona=deps.persona_portal,
+            persona_scopes_of=deps.persona_scopes_of,
+            persona_cited=deps.persona_cited,
             documents=deps.documents, rooms_of=deps.rooms_of,
             room_event_shown=deps.room_event_shown, blobs=deps.blobs,
             room_label=deps.room_label, artifacts=deps.artifacts,

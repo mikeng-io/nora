@@ -6,6 +6,7 @@ import { CircleAlert, Lock, Search } from "lucide-react";
 import { useMemory } from "@/lib/queries";
 import { orderEpisodes, type Episode } from "@/lib/memory";
 import { dateFormat } from "@/lib/format";
+import type { PersonaAccount, PersonaEvidence, PersonaLine } from "@/lib/api/nora";
 import { NoraAvatar } from "@/components/ui/avatar";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
 import { Skeleton, SkeletonText } from "@/components/ui/skeleton";
@@ -113,6 +114,9 @@ export function MemoryView({ compact = false }: { compact?: boolean }) {
             </PanelBody>
           )}
         </Panel>
+        {entry.persona?.map((account) => (
+          <PersonaAccountPanel key={account.unit} account={account} />
+        ))}
       </div>
 
       <Panel aria-labelledby="episodes-title">
@@ -158,6 +162,112 @@ export function MemoryView({ compact = false }: { compact?: boolean }) {
       </Panel>
     </div>
   );
+}
+
+/** One Persona account of the viewer (45, the switch): every chain head with
+ * its state, the evidence behind each line, and the open disputes — the
+ * correction surface (cognition-loop/50 §4). */
+function PersonaAccountPanel({ account }: { account: PersonaAccount }) {
+  const t = useTranslations("memory");
+  const locale = useLocale();
+  const fmt = (ms: number) =>
+    dateFormat(locale, { month: "short", day: "numeric", year: "numeric" }).format(ms);
+  const stateLabel = (state: string) =>
+    state === "current" ? null : (
+      <span className="w-fit rounded-full border border-hairline px-2 py-0.5 text-label text-ink-muted">
+        {t(`state_${state}`)}
+      </span>
+    );
+  const section = (title: string, lines: PersonaLine[]) =>
+    lines.length ? (
+      <section className="grid gap-2 px-4 py-3 sm:px-5">
+        <h3 className="text-label text-ink-muted">{title}</h3>
+        <ul className="grid gap-3">
+          {lines.map((line, i) => (
+            <li key={i} className="grid gap-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-body text-ink">{line.text}</p>
+                {stateLabel(line.state)}
+              </div>
+              {line.part === "hypothesis" && line.prediction ? (
+                <p className="text-meta text-ink-soft">
+                  {t("personaPrediction", { prediction: line.prediction })}
+                  {line.prediction_window_end
+                    ? ` ${t("personaWindow", { date: fmt(line.prediction_window_end) })}`
+                    : ""}
+                  {line.verdict && line.verdict !== "open"
+                    ? ` ${t(`verdict_${line.verdict}`)}`
+                    : ""}
+                </p>
+              ) : null}
+              {line.evidence.length ? (
+                <ul className="grid gap-0.5">
+                  {line.evidence.map((ev, j) => (
+                    <li key={j} className="text-meta text-ink-muted">
+                      <EvidenceLine evidence={ev} fmt={fmt} />
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      </section>
+    ) : null;
+  return (
+    <Panel aria-labelledby={`persona-title-${account.unit}`}>
+      <PanelHeader
+        id={`persona-title-${account.unit}`}
+        title={t("personaTitle")}
+        description={t("personaLede")}
+      />
+      <div className="grid gap-1 divide-y divide-hairline border-t border-hairline">
+        {section(t("personaIdentity"), account.lines.filter((l) => l.part === "identity"))}
+        {section(t("personaCharacter"), account.lines.filter((l) => l.part === "character"))}
+        {section(t("personaQuestions"), account.lines.filter((l) => l.part === "hypothesis"))}
+        {account.disputes.length ? (
+          <section className="grid gap-2 px-4 py-3 sm:px-5">
+            <h3 className="text-label text-ink-muted">{t("personaDisputes")}</h3>
+            <ul className="grid gap-2">
+              {account.disputes.map((d, i) => (
+                <li key={i} className="text-body text-ink-soft">
+                  {t(`dispute_${d.kind}`)} — “{d.claim}”
+                  <span className="text-meta text-ink-muted">
+                    {d.disputed_by ? ` · ${d.disputed_by}` : ""} · {fmt(d.written_at)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+      </div>
+    </Panel>
+  );
+}
+
+/** The evidence behind one line: the message or episode's text when the
+ * viewer may still see it, else an honest note about why not. */
+function EvidenceLine({
+  evidence,
+  fmt,
+}: {
+  evidence: PersonaEvidence;
+  fmt: (ms: number) => string;
+}) {
+  const t = useTranslations("memory");
+  if (evidence.text != null) {
+    return (
+      <>
+        “{evidence.text}”
+        {evidence.by ? ` — ${evidence.by}` : ""}
+        {evidence.said_at ? `, ${fmt(evidence.said_at)}` : ""}
+      </>
+    );
+  }
+  if (evidence.kind === "social") return <>{t("evidenceSocial")}</>;
+  if (evidence.kind === "rollup") return <>{t("evidenceRollup")}</>;
+  if (evidence.kind === "unknown") return <>{t("evidenceUnknown")}</>;
+  return <>{t("evidenceGone")}</>;
 }
 
 /** Episodes along one thin line: her words on blush wash (they are hers),

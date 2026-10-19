@@ -156,6 +156,11 @@ def build_offline_pipeline(
         # below: the eval subject (`nora.subject`) reconstructs a room's real
         # account at a real instant, and this harness has no store to hold one.
         culture=None,
+        # `<persona>`, the switch (45 §5) — `None`, as `culture`: no Persona
+        # store here, so the pre-switch blocks render.
+        persona=None,
+        rosters={adapter.platform: roster_source} if roster_source else {},
+        self_ids=frozenset(),
         # `<lessons>` (L5) — `None`, as `culture`: no store here, and the
         # eval subject seeds lessons through its own sandbox.
         lessons=None,
@@ -276,6 +281,7 @@ def build_offline_pipeline(
             timeout_seconds=cfg.heartbeat.timeout_seconds,
             clock=lambda: datetime.now(UTC),
             rosters={adapter.platform: roster_source} if roster_source else {},
+            self_ids=frozenset(),
             preview_source=None,
             llm_state=None,
             tool_call_log_store=None,
@@ -332,6 +338,9 @@ def build_offline_pipeline(
             # (`evals/corpora/participation.yaml`), so this seam does not supply one,
             # and a case with no account should see no block.
             culture=None,
+            # THE SWITCH (45 §5): the same `None` as `culture` — this harness
+            # has no Persona store, so the fire path reads the pre-switch tiers.
+            persona=None,
             lessons=None,
             policy=permissive_policy(),
             participation_runner=participation_runner,

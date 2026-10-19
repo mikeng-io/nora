@@ -51,6 +51,7 @@ def build_health_app(
     llm_state: LLMState,
     adapters=None,
     identity_file: str | Path | None = None, policy_file: str | Path | None = None,
+    index_state=None,
 ) -> web.Application:
     app = web.Application()
     app["adapter"] = adapter
@@ -72,6 +73,10 @@ def build_health_app(
     app["metrics"] = metrics
     app["started_at"] = started_at
     app["llm_state"] = llm_state
+    # A zero-arg callable answering the memory index's `IndexState`
+    # (`nora.infra.sql.memory_read.SqlMemoryIndex.index_state`), or None on a
+    # deployment with no index to report.
+    app["index_state"] = index_state
     # The bind-mounted, load-once config files — for the staleness canary below.
     app["config_files"] = {
         name: path for name, path in
@@ -166,6 +171,18 @@ def build_health_app(
             "doctrine_sha256": doctrine_sha256,
             "strands_version": _strands_version(),
         }
+        # The memory index's health (25): the state row's status
+        # (`never`/`building`/`complete`) and the projection queue's length —
+        # the queue holds only what is still unprojected, so its length IS
+        # the index's health. Reported, never counted toward `healthy`: a
+        # rebuild in progress must not flap the container healthcheck. A
+        # failed read says `unavailable`, never a guessed status (R-27).
+        if a["index_state"] is not None:
+            try:
+                state = await a["index_state"]()
+                body["index"] = {"status": state.status, "queue": state.queue}
+            except Exception:              # noqa: BLE001 — a health check never raises
+                body["index"] = {"status": "unavailable"}
         # Staleness canary: identity.toml/policy.toml are bind-mounted and
         # loaded ONCE at startup, and an atomic edit changes the inode so a
         # restart keeps serving the OLD file; a recreate is needed.

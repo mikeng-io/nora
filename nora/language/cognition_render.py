@@ -89,6 +89,7 @@ from nora.language.culture_render import render_self
 from nora.language.event_render import render_event_rows
 from nora.language.memo_render import memo_rows
 from nora.language.note_render import render_note_rows
+from nora.language.persona_render import render_persona
 
 #: What this prompt carries, declared as data. `render_agenda` builds its
 #: blocks from this table and walks it with `assemble`, so `order` IS the order
@@ -104,6 +105,10 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     # Her own Character · Nora for the unit first, directly
     # after the doctrine (the system prompt). No block while the unit has no account.
     ("self", 5, "turn"),
+    # THE SWITCH (45 §5): her Persona account instead of the prose `self`
+    # when `[persona] render` is on; the grounder fills one or the other,
+    # never both, so the shared order cannot collide.
+    ("persona", 5, "turn"),
     ("clock", 10, "turn"),
     ("reads", 20, "turn"),
     ("agenda", 30, "turn"),
@@ -684,15 +689,31 @@ def render_agenda(
     age; without `grounding` an item is its summary alone, which is exactly
     what the eval probe hands the model and nothing else does."""
     blocks: list[ContextBlock] = []
-    self_block = restamp(
-        render_self(
-            grounding.self_account if grounding else None,
-            now=None if now_ms is None else datetime.fromtimestamp(now_ms / 1000, tz=tz),
-        ),
-        _ROW,
-    )
-    if self_block is not None:
-        blocks.append(self_block)
+    now = None if now_ms is None else datetime.fromtimestamp(now_ms / 1000, tz=tz)
+    # THE SWITCH (45 §5): her Persona account, when the grounder read one,
+    # replaces the prose `<self>` at the same row. `persona_names` was
+    # resolved by the grounder, which holds `Persons`; this renderer does not.
+    if grounding is not None and grounding.self_persona is not None and now is not None:
+        persona_block = restamp(
+            render_persona(
+                grounding.self_persona,
+                name_of=lambda pid: grounding.persona_names.get(pid, "someone"),
+                now=now,
+            ),
+            _ROW,
+        )
+        if persona_block is not None:
+            blocks.append(persona_block)
+    else:
+        self_block = restamp(
+            render_self(
+                grounding.self_account if grounding else None,
+                now=now,
+            ),
+            _ROW,
+        )
+        if self_block is not None:
+            blocks.append(self_block)
     if now_ms is not None:
         blocks.append(restamp(ContextBlock(
             name="clock", body=escape(clock_line(now_ms, last_session_ms, tz)),

@@ -67,6 +67,7 @@ from nora.app.cognition_grounding import (
     build_grounder,
     place_release,
     stay_context_reader,
+    unit_self_persona_reader,
     unit_self_reader,
 )
 from nora.app.cognition_session import CognitionSessionRunner
@@ -93,6 +94,7 @@ from nora.app.documents_service import DocumentService, room_label, rooms_named
 from nora.app.memory_routing import (
     MemoryRoutingError,
     build_workspace_router,
+    persona_scopes_of_person,
     workspaces_of_person,
 )
 from nora.app.oauth_keepalive import KeepaliveTiming, KeptLane, OAuthKeepalive
@@ -119,6 +121,7 @@ from nora.domain.culture import character_key, nora_character_key, unit_culture_
 from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.documents import DocumentStore, RoomKey
 from nora.domain.media_join import MediaJoin
+from nora.domain.memory_index import IndexState
 from nora.domain.ports import (
     BlobStore,
     ComputeBackend,
@@ -266,6 +269,7 @@ from nora.language.persona_collective import (
     CollectiveKey,
     PersonaCollectiveAdaptor,
 )
+from nora.language.persona_render import PersonaHeads
 from nora.language.persona_verdict import (
     PERSONA_VERDICT_ADAPTOR_NAME,
     DocketAccount,
@@ -1057,6 +1061,16 @@ class Dependencies:
     # portal's own-memory page. A callable for `resolve_voice_room`'s reason:
     # `nora.web` never sees a `Policy`.
     workspaces_of: Callable[[str], tuple[str, ...]]
+    # The portal's Persona reads (45, the switch): the read-only store (None
+    # until `[persona] render` is on — `persona_reader` above), a person_id ->
+    # the (unit, workspace) pairs their accounts live under, and the Record
+    # read that resolves a line's message/episode citations for the page.
+    persona_portal: SqlPersonaStore | None
+    persona_scopes_of: Callable[[str], tuple[tuple[str, str], ...]] | None
+    persona_cited: SqlCharacterEvidence | None
+    # /health's `index` block: the memory index's state and queue length
+    # (`SqlMemoryIndex.index_state`, no model fingerprint).
+    index_state: Callable[[], Awaitable[IndexState]]
     # Documents (ADR 0020): the store the portal reads, the service that publishes into
     # it (the `document_publish` tool's collaborator), and person_id -> the rooms whose
     # `persons` name them, from the CURRENT policy, for the same reason as
@@ -2105,6 +2119,26 @@ async def build_dependencies(
     lessons_reader: ActiveLessons | None = (
         ActiveLessons(SqlLessonStore(engine)) if cfg.lessons.render else None
     )
+    # THE SWITCH (design/unified-memory/45 §5, 00 «Sequence» step 8): the
+    # Persona accounts' read half — one store, read-only by the Protocol the
+    # readers are typed against (`PersonaHeads` has `account_heads` and nothing
+    # else), handed to the tag assembler, the fire path, the Cognition
+    # grounder and the debrief fold. Wired only when `[persona] enabled` AND
+    # `[persona] render` are both on: `enabled` alone is the shadow (the
+    # sessions write, nothing reads), and `render` without `enabled` has no
+    # store to read. Flipping `render` back off is the whole rollback.
+    # `persona_store_reader` keeps the concrete type for the portal, whose
+    # page reads the open disputes too (`PersonaHeads` has no such read).
+    persona_store_reader = (
+        SqlPersonaStore(engine, screen=text_offence)
+        if cfg.persona.enabled and cfg.persona.render else None
+    )
+    persona_reader: PersonaHeads | None = persona_store_reader
+    # The same gate, for the writers (the dream sessions and the graph
+    # surface's `remember`): on, a persona write projects its lines into the
+    # memory index in its own transaction (45 §1, 25 §7); off is the shadow,
+    # and the shadow's lines join at the flip through `nora memory rebuild`.
+    persona_index = cfg.persona.enabled and cfg.persona.render
     # The join from a note to its room's account (DEC-207):
     # EVERY id a room is known by — `Note.established_in` holds whichever one
     # the note was born under — within the note's UNIT, since ids are unique
@@ -2136,10 +2170,14 @@ async def build_dependencies(
     # `[memory_index] enabled` (ships off): the one retrieval service, held
     # by the tag path's pre-fetch (`<recalled>`) and by the tool registry's
     # `memory_search` below, one instance for both; `None` keeps the Honcho
-    # surface and no pre-fetch.
+    # surface and no pre-fetch. The same SqlMemoryIndex answers /health's
+    # `index` block either way (the projection runs whether or not the search
+    # surface is on).
+    memory_index_reader = SqlMemoryIndex(engine)
     memory_search = (
         MemorySearch(
-            SqlMemoryIndex(engine), metrics,
+            memory_index_reader, metrics,
+            persona_render=cfg.persona.enabled and cfg.persona.render,
             # `[memory_index] embed`: dense and exact seeds, the
             # lexical seed only as the fallback; off, every answer is
             # the fallback's `partial`.
@@ -2161,6 +2199,7 @@ async def build_dependencies(
     assembler = build_assembler(
         cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
         memory_search=memory_search, clock=clock,
+        rosters=rosters, self_ids=registry.self_aliases(),
         # `None` while `[notes] enabled = false`. `policy=allowlist` is the
         # SAME policy.toml instance the ingest pipeline and `EngagementPipeline`
         # are given below — the assembler needs it for one thing only, naming
@@ -2193,6 +2232,10 @@ async def build_dependencies(
         quote_window=quote_window,
         presence=presence_reader,
         culture=culture_reader,
+        # `<persona>`, the switch (45 §5): `None` until `[persona] render` is
+        # on beside `[persona] enabled`, and the same reader the fire path,
+        # the Cognition grounder and the debrief fold hold.
+        persona=persona_reader,
         # `<lessons>`: `None` while `[lessons]
         # render` is off. The same reader the fire path gets.
         lessons=lessons_reader,
@@ -3009,8 +3052,12 @@ async def build_dependencies(
         memory_search=memory_search,
         # The graph surface's `remember` writes a Persona `told` line
         # (design/unified-memory/45); wired with `memory_search`, never alone.
-        persona=(SqlPersonaStore(engine, screen=text_offence)
+        persona=(SqlPersonaStore(engine, screen=text_offence, index=persona_index)
                  if memory_search is not None else None),
+        # THE SWITCH (45 §5): while `[persona] render` is on, `character_read`
+        # answers from the Persona accounts — the same reader the tag
+        # assembler and the fire path hold, so tool and prompt cannot disagree.
+        persona_read=persona_reader,
         lineage=lineage,
         # The current Rollup build's rows and the Standing head. SELECTs, so no
         # flag. The Standing head is Dreamer-only (`DREAMER_ONLY_TOOLS`); the
@@ -3325,6 +3372,7 @@ async def build_dependencies(
         fire_path = FirePath(
             persons=persons, records=audit, memory=memory,
             lineage=lineage,
+            self_ids=registry.self_aliases(),
             media_join=media_join,
             # The shared quote-window resolver (DEC-195). The SAME instance
             # `build_assembler` above holds — a fire turn reads the same
@@ -3377,6 +3425,9 @@ async def build_dependencies(
             # path resolves the occasion through the policy it already holds
             # before reading (`FirePath._read_culture`).
             culture=culture_reader,
+            # THE SWITCH (45 §5): the SAME persona reader the tag assembler
+            # holds; `None` until `[persona] render` is on.
+            persona=persona_reader,
             lessons=lessons_reader,
             standing_store_timeout_seconds=cfg.standing.store_timeout_seconds,
             # The participation turn's memory reads. ONE knob set,
@@ -3991,8 +4042,13 @@ async def build_dependencies(
             # nothing renders until the switch. Inside the culture block: it
             # reads the Character head and the rooms' cultures.
             if cfg.persona.enabled:
-                persona_store = SqlPersonaStore(engine, screen=text_offence)
+                persona_store = SqlPersonaStore(
+                    engine, screen=text_offence, index=persona_index)
                 persona_reads = SqlCharacterEvidence(engine)
+                # The person accounts' social input (45 §4): the readable
+                # store's (opted-out, gone and hidden left out there), the
+                # same store the social cursor and the counts come from.
+                persona_social = readable_social_store(engine, persons)
                 dream_schedules = {
                     **dream_schedules,
                     PERSONA_PERSON_ADAPTOR_NAME: AdaptorSchedule(
@@ -4016,6 +4072,8 @@ async def build_dependencies(
                         evidence=PersonaEvidence(
                             store=persona_reads, persona=persona_store, keys=person_keys,
                             wake_batch=cfg.culture.person_wake_batch,
+                            social=persona_social,
+                            former_ids=persons.former_ids_for,
                         ),
                         reads=persona_reads, keys=person_keys,
                         name_of=lambda pid: (
@@ -4023,6 +4081,13 @@ async def build_dependencies(
                             else "someone"
                         ),
                         clock_ms=_now_ms, metrics=metrics,
+                        # The social items' render (45 §4): screened like the
+                        # Character session's, captions redacted to the author's
+                        # own handle, each reading clipped as the media reads.
+                        social=persona_social,
+                        screen=scan_identifiers,
+                        render_chars=cfg.media.comprehension_render_chars,
+                        handle_owners=persons.instagram_username_owners,
                     ),
                     PersonaVerdictAdaptor(
                         store=persona_store, reads=persona_reads,
@@ -4489,6 +4554,10 @@ async def build_dependencies(
                 # Her own account in the unit, shown only where every room of the
                 # unit agrees on `location` (R-31; `unit_self_reader`).
                 self_account=unit_self_reader(culture_reader, allowlist),
+                # THE SWITCH (45 §5): when `[persona] render` is on, her
+                # Persona account replaces the prose one; the SAME reader the
+                # tag and fire paths hold.
+                self_persona=unit_self_persona_reader(persona_reader, allowlist),
                 metrics=metrics,
             )
 
@@ -4582,6 +4651,17 @@ async def build_dependencies(
         policy=policy, assembler=assembler, ingest=ingest, engagement=engagement,
         resolve_voice_room=_voice_room_of(allowlist),
         workspaces_of=functools.partial(workspaces_of_person, allowlist),
+        # The portal's Persona reads (45): wired with the switch's reader, so
+        # the page shows the accounts exactly when the prompts do.
+        persona_portal=persona_store_reader,
+        persona_scopes_of=(
+            functools.partial(persona_scopes_of_person, allowlist)
+            if persona_store_reader is not None else None
+        ),
+        persona_cited=(
+            SqlCharacterEvidence(engine) if persona_store_reader is not None else None
+        ),
+        index_state=memory_index_reader.index_state,
         documents=documents_store, document_service=document_service,
         rooms_of=functools.partial(rooms_named, allowlist),
         room_event_shown=functools.partial(room_event_shown, lineage),
