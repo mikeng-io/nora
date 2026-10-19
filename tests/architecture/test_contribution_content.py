@@ -293,7 +293,11 @@ def test_privileged_metadata_jobs_use_only_default_branch_code():
                 assert step["with"]["ref"] == "master"
                 assert step["with"]["persist-credentials"] is False
             assert "${{" not in step.get("run", "")
-    assert workflow["jobs"]["pr-metadata"]["permissions"] == {"contents": "read", "checks": "write"}
+    assert workflow["jobs"]["pr-metadata"]["permissions"] == {
+        "contents": "read",
+        "checks": "write",
+        "pull-requests": "read",
+    }
     assert workflow["jobs"]["issue-feedback"]["permissions"] == {
         "contents": "read",
         "issues": "write",
