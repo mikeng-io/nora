@@ -3,8 +3,8 @@
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0125_social_backfill_end"
-down_revision = "0124_typed_identity"
+revision = "0126_social_backfill_end"
+down_revision = "0125_persona_source_revision"
 branch_labels = None
 depends_on = None
 
