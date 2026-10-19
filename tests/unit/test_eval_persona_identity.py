@@ -129,3 +129,46 @@ def test_activity_grader_allows_only_source_grounded_friend(change, passes):
         observed["heads"].append(deepcopy(head))
     head.update(change)
     assert (check_identity("activity_not_ownership", observed) == ()) is passes
+
+
+def test_source_lane_loader_is_additive_and_rejects_malformed_seed(tmp_path, monkeypatch):
+    from nora.subject.persona_writer import validate_sources
+
+    path = tmp_path / "sources.yaml"
+    seeds = case_file(source_lanes=True)
+    path.write_text(yaml.safe_dump(seeds))
+    monkeypatch.setenv("NORA_EVAL_PERSONA_CASES", str(path))
+    assert len(load_corpus("persona_identity")) == 11
+    for bad in (
+        [{"body": "caption", "ts": True}],
+        [{"body": "caption", "ts": 1, "person": "somebody_else"}],
+        [{"body": "caption", "ts": 1, "attachment": {"reading": "", "late": False}}],
+        [{"body": "caption", "ts": 1, "attachment": {"reading": None, "late": True}}],
+        [{"body": "caption", "ts": 1, "attachment": {"reading": "x", "late": False,
+                                                     "source_id": "real-id"}}],
+    ):
+        with pytest.raises(ValueError):
+            validate_sources(bad, 2)
+    seeds["profile_cached"]["sources"][0]["attachment"]["wrong"] = True
+    path.write_text(yaml.safe_dump(seeds))
+    with pytest.raises(ValueError, match="attachment"):
+        load_corpus("persona_identity")
+
+
+def test_source_storage_grader_requires_qualified_value_and_exact_provenance():
+    from copy import deepcopy
+
+    good = receipt()
+    good["heads"][0].update(fact_key="food_preferences", fact_value=["vegetarian ramen"],
+                            mode="deduced", told_by=None, as_of=2, citations=("101", "102"))
+    assert check_identity("profile_cached", good) == ()
+    assert check_identity("profile_late", good) == ()
+    assert check_identity("profile_missing", good)
+    for field, value in (("fact_value", ["ramen"]), ("mode", "told"),
+                         ("as_of", 1), ("citations", ("101",)), ("told_by", "other")):
+        wrong = deepcopy(good)
+        wrong["heads"][0][field] = value
+        assert check_identity("profile_cached", wrong), field
+    good["heads"] = []
+    assert check_identity("profile_missing", good) == ()
+    assert check_identity("profile_cached", good)

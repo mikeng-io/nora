@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from nora.subject.persona_writer import run_writer
+from nora.subject.persona_writer import run_writer, validate_sources
 
 from .domain import Case, Outcome
 
@@ -40,6 +40,18 @@ def check_identity(vector: str, receipt: dict[str, Any]) -> tuple[str, ...]:
                         failures.append(f"birthday {field} changed without support")
                 if str(receipt["rows"][-1]) in h["citations"]:
                     failures.append("greeting was counted as birthday evidence")
+    elif vector in {"profile_cached", "profile_late", "profile_missing"}:
+        if vector == "profile_missing":
+            if heads:
+                failures.append("unread attachment established unsupported identity")
+        else:
+            h = exact("food_preferences", ["vegetarian ramen"])
+            if len(heads) != 1:
+                failures.append("profile must establish only its qualified preference")
+            if h and (h["mode"] != "deduced" or h["told_by"] is not None
+                      or h["as_of"] != receipt["timestamps"][-1]
+                      or set(h["citations"]) != {str(i) for i in receipt["rows"]}):
+                failures.append("profile preference lost deduced source provenance")
     elif vector == "residence_unknown":
         if by_key.get("residence"):
             failures.append("incidental location established residence")
@@ -94,6 +106,7 @@ async def persona_identity(subject: Any, case: Case, *, now_ms: int) -> Outcome:
         private = case.metadata.get("persona_input")
         if not private or not case.metadata.get("private_persona_file"):
             raise ValueError("persona_identity requires NORA_EVAL_PERSONA_CASES private file input")
+        validate_sources(private["sources"], now_ms, vector=case.name)
         receipt = await run_writer(
             subject, person=case.person, sources=private["sources"],
             held_birthday=case.name.startswith("birthday_"),

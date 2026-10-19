@@ -163,3 +163,79 @@ The domain/tool/portal code needs the normal image rebuild; the objective is
 bind-mounted and becomes live at the next pull. This document authorizes no
 pull, config change, historical write, merge or deploy. Root owns independent
 review, bounded model acceptance and subsequent append-only recovery.
+
+## Cached-source input acceptance
+
+The original eight-vector private file remains valid without changes. Generate a
+**new** private file with the optional three media vectors (never overwrite the
+original file or its receipts):
+
+```bash
+uv run python -m evals.persona_cases /tmp/persona-source-inputs.yaml --source-lanes
+export NORA_EVAL_PERSONA_CASES=/tmp/persona-source-inputs.yaml
+export NORA_EVAL_PERSONA_MEDIA_EXPOSURE=cached
+for case in profile_cached profile_missing profile_late birthday_retained; do
+  uv run python -m evals persona_identity --print-input "$case"
+done
+```
+
+This is the existing corpus, Subject, writer runtime and storage grader. The file
+must contain exactly the original eight vectors, optionally plus all three source
+vectors. Sources accept only `body`, integer `ts`, and optional `attachment` with
+exactly `reading` (nonempty synthetic cached text or null) and `late` (boolean).
+Unknown fields, arbitrary author/source IDs and malformed readings are refused.
+The anchor and roster account are still private; adapt them in the new file only.
+The invented self-profile and caption carry no real personal facts.
+
+Each attachment becomes a synthetic MediaBlob on the author's actual scoped
+Record row, through the audit store. Its placeholder uses the same blob hash.
+SqlMediaObjectStore.comprehend seeds only cached interpretation; there is no
+vision, download, byte retrieval or optional-index authority. The seed is read
+back from its owning store. `profile_missing` supplies no cached interpretation;
+its caption is still real evidence, with an explicit unavailable media block.
+Missing declared rows or an unavailable source domain are fixture ERRORs.
+
+`profile_late` first reads and settles the uncached message's actual
+SqlPersonaInputs revision, advances the consumed message and completed-history
+watermarks past that message, then writes the cached interpretation. The actual
+revision reader must re-deliver that old message after the cache changes. A second
+caption arrives afterward. The writer runs once, without a warmup model session.
+
+The positive canonical value is `food_preferences=["vegetarian ramen"]`, mode
+`deduced`, no `told_by`, both invented Record citations, and assertion time of the
+later caption. The first caption explicitly attributes the self-profile to its
+sender; the second confirms that its preference is current. The image reading
+contains the qualified preference. Neither a pictured person nor an asset implies
+identity or ownership. Missing reading must produce no current typed Identity.
+The independent storage grader reads settled chain heads, never writer prose.
+
+No runtime-ref selection seam exists here. The supported comparison is a fixed
+**exposure ablation**, not a historical release baseline: two fresh sandboxes at
+the same reviewed harness/runtime SHA, identical seeds and source, varying only
+`NORA_EVAL_PERSONA_MEDIA_EXPOSURE=caption_only` versus `cached`. The former makes a
+shallow copy of the composed adaptor with its existing optional MediaJoin absent;
+revision delivery, SQL seeds, objective and runtime remain unchanged. It never
+copies new writer logic into an old release. Root must review this limitation
+before any paid run. Capture `--print-input` for all selected cases in both arms:
+only the intended cached-reading block should expose the preference, with author,
+room, source IDs and timestamps retained. The retained-birthday control is unchanged.
+
+After root review, select at most these four cases, n=1 in each arm (at most eight
+writer invocations), sequentially under the existing eval lock, with a 30-minute
+outer bound. Use repeated `--case` only if supported by the CLI; otherwise invoke
+one case at a time with `--sample 1 --reasons --positions`. Read the actual resolved
+case budgets first; reduce selection if their time ceilings exceed 30 minutes.
+Invocations are not provider-call counts. Keep the current model/route and actual
+call/token receipts; no proxy price estimate, judge, retries or redraws. A positive
+case may FAIL in the caption-only arm; that is the exposure measurement.
+
+Offline real-Postgres tests script only the provider boundary and separately run
+no-agent render inspection. They validate the instrument, not model quality.
+Social, Register, Rollup, source-edit model quality, real cached interpretation
+accuracy and historical-release acceptance remain unmeasured by this selection.
+
+Both arms freeze the same declared Subject clock. Owning-store row-history
+`recorded` timestamps are database observation times and naturally differ across
+fresh sandbox creation; preserve them in raw receipts and exclude only that
+field in a secondary exposure comparison. Never normalize assertion time,
+revision hashes, IDs, captions or attribution to make an arm comparison pass.

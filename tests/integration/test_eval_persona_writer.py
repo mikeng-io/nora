@@ -1,7 +1,10 @@
 """The real composed writer and SQL store, with only the provider boundary scripted."""
 import json
+import os
 import re
+from datetime import UTC, datetime
 from html import escape
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -212,5 +215,88 @@ async def test_restored_out_of_order_rows_do_not_enter_recent_writer_batch(
         assert re.findall(r'<m n="(\d+)"', shown) == ["12"]
         assert "restored background" not in shown
         assert 'evidence_mode="recent"' in shown
+    finally:
+        await _close(subject)
+
+
+@pytest.mark.parametrize("vector,exposure", [
+    ("profile_cached", "cached"), ("profile_missing", "cached"),
+    ("profile_late", "cached"), ("profile_cached", "caption_only"),
+])
+@pytest.mark.parametrize("print_only", [True, False])
+async def test_source_lane_composed_input_and_storage(
+    pg_url, tmp_path, monkeypatch, vector, exposure, print_only,
+):
+    from evals.backbone import _close
+    from evals.rebuilt.persona_identity import check_identity
+    from nora.subject import SubjectSpec, obtain
+    from nora.subject.persona_writer import run_writer
+
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    monkeypatch.setenv("NORA_EVAL_PERSONA_MEDIA_EXPOSURE", exposure)
+    private = case_file(source_lanes=True)[vector]
+    subject = await obtain(SubjectSpec(
+        database_url=pg_url, workdir=tmp_path,
+        now=datetime.fromtimestamp(private["clock_ms"] / 1000, UTC),
+        overrides={"dreamer.enabled": True, "persona.enabled": True},
+        policy=('default = "deny"\n[[conversations]]\nplatform = "signal"\n'
+                'id = "g1"\nlabel = "g1"\npersons = ["miles_novak"]\nunit = "nora"\n'),
+    ))
+    available = vector != "profile_missing" and exposure == "cached"
+    calls = []
+    agents = []
+
+    def create_agent(**kwargs):
+        agents.append(kwargs)
+        return kwargs
+
+    monkeypatch.setattr(factory, "create_dream_agent", create_agent)
+
+    async def invoke(agent, prompt, **kwargs):
+        calls.append(prompt)
+        assert ("My usual food preference is vegetarian ramen." in prompt) == available
+        verbs = {t.tool_name: t for t in agent["tools"]}
+        if available:
+            ids = re.findall(r'<m n="(\d+)"', prompt)
+            result = await verbs["persona_write"](ops=[{
+                "op": "add", "part": "identity", "kind": "attribute", "mode": "deduced",
+                "text": "usually prefers vegetarian ramen", "fact_key": "food_preferences",
+                "fact_value": ["vegetarian ramen"], "citations": list(dict.fromkeys(ids)),
+            }])
+        else:
+            result = await verbs["persona_no_change"](why="no readable profile evidence")
+        assert result == {"status": "ok"}
+        return SimpleNamespace(stop_reason="end_turn")
+
+    monkeypatch.setattr(factory, "invoke", invoke)
+    try:
+        args = {"subject": subject, "person": "miles_novak", "sources": private["sources"],
+                "held_birthday": False, "now_ms": private["clock_ms"]}
+        receipt = await run_writer(**args, print_input=print_only)
+        if print_only:
+            assert calls == [] and agents == []
+            shown = receipt["shown"]
+            assert ("My usual food preference is vegetarian ramen." in shown) == available
+            assert "2026-10-10" in shown and "shared_by_author" in shown
+            assert '<about_person name="Miles" now="2026-10-12T08:00:00+08:00"' in shown
+            assert '<m n="1" room="g1"' in shown
+            evidence = Path(os.environ.get("NORA_WRITER_PROOF_DIR", str(tmp_path)))
+            evidence.mkdir(exist_ok=True)  # noqa: ASYNC240 -- offline test artifact
+            (evidence / f"{vector}-{exposure}-print.txt").write_text(shown)
+            return
+        assert len(calls) == len(agents) == 1
+        assert "2026-10-10" in calls[0] and "shared_by_author" in calls[0]
+        assert "This is my own self-profile card" in calls[0]
+        if not available:
+            assert "no readable media evidence" in calls[0]
+        assert bool(receipt["heads"]) == available
+        if exposure == "cached":
+            assert check_identity(vector, receipt) == ()
+        else:
+            assert check_identity(vector, receipt)
+        # Save synthetic actual composed inputs for the offline receipt.
+        evidence = Path(os.environ.get("NORA_WRITER_PROOF_DIR", str(tmp_path)))
+        evidence.mkdir(exist_ok=True)
+        (evidence / f"{vector}-{exposure}.txt").write_text(calls[0])
     finally:
         await _close(subject)

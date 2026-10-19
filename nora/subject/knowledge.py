@@ -360,6 +360,7 @@ async def arrive(
     now_ms: int,
     name: str = _KNOWN_NAME,
     person: str | None = None,
+    media_blobs: tuple[MediaBlob, ...] = (),
 ) -> int:
     """The line that ARRIVES — one untagged message from a member.
 
@@ -391,6 +392,7 @@ async def arrive(
             timestamp=now_ms,
             body=body,
             raw={},
+            media_blobs=media_blobs,
         ),
         person_id=person_id,
     )
