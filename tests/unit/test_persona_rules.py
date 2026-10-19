@@ -680,3 +680,35 @@ def test_quantity_contract_preserves_assertion_without_computing_age_or_birthday
     rendered = identity_text(line)
     assert "asserted 2026-10-01" in rendered
     assert "birthday" not in rendered and "current age" not in rendered
+
+
+def test_rollup_rebuild_and_alias_with_same_roots_cannot_add_support_or_refresh_age():
+    other = rollup_citation('daybook', UNIT + '|' + SUBJECT)
+    citable = replace(CITABLE, rollup_keys=frozenset({TIE, other}),
+        rollup_roots={TIE: ('101', '102'), other: ('101', '102')})
+    first = _plan([AddOp(part='character', kind='trait', text='a repeated pattern',
+        mode='induced', citations=(TIE,))], citable=citable)
+    assert not first.refused
+    line = first.inserts[0]
+    assert line.support_count == 2 and line.last_supported_at == CITABLE.messages[102].ts
+    assert line.as_of == CITABLE.messages[102].ts
+    second = _plan([KeepOp(line='P1', citations=(other, '101'))], heads=(line,), citable=citable)
+    assert not second.refused
+    assert second.inserts[0].support_count == 2
+    assert second.inserts[0].last_supported_at == line.last_supported_at
+    # A genuinely new root can support the same aggregate, once.
+    newer = replace(citable, rollup_roots={TIE: ('101', '102', '103')})
+    added = _plan([KeepOp(line='P1', citations=(TIE,))], heads=(line,), citable=newer)
+    assert added.inserts[0].support_count == 3
+    assert added.inserts[0].last_supported_at == CITABLE.messages[103].ts
+
+
+def test_same_root_through_rollup_is_not_two_deduction_premises_and_reading_is_not_told():
+    citable = replace(CITABLE, rollup_roots={TIE: ('101',)},
+                      interpretation_only=frozenset({101}))
+    deduced = _plan([_deduced(cites=('101', TIE))], citable=citable)
+    assert _reasons(deduced) == ['deduced_premises']
+    told = _plan([_told(cites=('101',))], citable=citable)
+    assert _reasons(told) == ['told_needs_message']
+    # A genuine raw statement remains eligible.
+    assert not _plan([_told(cites=('101',))]).refused

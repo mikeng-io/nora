@@ -2216,6 +2216,8 @@ source text NOT NULL,
 source_excerpt text,
 source_id text NOT NULL,
 source_id text NOT NULL,
+source_read_revision text
+source_revision text,
 source_url text,
 span_id text NOT NULL,
 spec jsonb NOT NULL,
@@ -2381,7 +2383,7 @@ updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_at timestamp with time zone DEFAULT now() NOT NULL
-updated_at timestamp with time zone DEFAULT now() NOT NULL
+updated_at timestamp with time zone DEFAULT now() NOT NULL,
 updated_at timestamp with time zone DEFAULT now() NOT NULL,
 updated_at timestamp with time zone NOT NULL,
 updated_at timestamp with time zone NOT NULL,

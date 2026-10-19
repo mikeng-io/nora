@@ -884,6 +884,7 @@ async def cmd_persona_history(args: argparse.Namespace) -> int:
     from nora.domain.persona import FACT_KINDS
     from nora.infra.sql.character import SqlCharacterEvidence
     from nora.infra.sql.persona import SqlPersonaStore
+    from nora.infra.sql.persona_inputs import SqlPersonaInputs
     from nora.infra.sql.schema import CONSOLIDATION_WATERMARK as W
 
     if args.restart and not args.key:
@@ -935,6 +936,11 @@ async def cmd_persona_history(args: argparse.Namespace) -> int:
                 "disputed": sum(h.state == "disputed" for h in heads),
                 "missing_fields": sorted(set(FACT_KINDS) - {"purpose", "norm"} - present),
                 "restart_applied": bool(args.restart and args.apply),
+                "cached_media": (await SqlPersonaInputs(engine).media_recovery(
+                    key=key, rooms=[(r.platform, r.key) for r in pk.rooms if r.key in pk.listed],
+                    person=pk.person.person_id,
+                )) if pk is not None else None,
+                "cached_media_dry_run": True,
             }))
     finally:
         await engine.dispose()
