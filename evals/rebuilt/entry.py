@@ -45,6 +45,7 @@ from nora.subject.standing_fold import fold, read_fold_turn
 
 from .domain import Case, Outcome, WorkingSetFinding
 from .fold_evidence import render_evidence, render_shown
+from .persona_coverage import persona_coverage
 from .persona_identity import persona_identity
 
 
@@ -606,6 +607,10 @@ class EntryPoint:
     #: their exact-anchor assembly and call shape.
     synthetic_sources: bool = False
 
+    #: Reads a frozen evidence census, not a writable Nora subject. The same
+    #: registered drive/Outcome contract applies; no workspace or sandbox is needed.
+    frozen_input: bool = False
+
     #: What a judge grades, when a judge is configured: `"reply"` — what she
     #: said, against the reply rubric — or `"position"` — the standing position
     #: a fold wrote, against the case's own stated property. Data here, not a
@@ -644,6 +649,7 @@ _PARTICIPATION_SUBSYSTEM = {
 #: The port's implementations, by the name a case selects. A new suite over an
 #: existing entry point adds NOTHING here; a test pins that.
 ENTRY_POINTS = {
+    "persona_coverage": EntryPoint(drive=persona_coverage, frozen_input=True),
     "gate": EntryPoint(drive=gate, config=_PARTICIPATION_SUBSYSTEM),
     "participation": EntryPoint(
         drive=participation, config=_PARTICIPATION_SUBSYSTEM, delivers_input=True,

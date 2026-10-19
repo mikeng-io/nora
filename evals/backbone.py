@@ -1428,6 +1428,25 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
     background work. A feed still running would otherwise write into a
     workspace being deleted.
     """
+    from evals.rebuilt.entry import ENTRY_POINTS
+    port = ENTRY_POINTS[spec.entry]
+    if port.frozen_input:
+        outcome = await port.drive(spec.judge, case, now_ms=0)
+        return {
+            "output": "",
+            "environment_state": [
+                EnvironmentState(name=NORA_ERROR, state=outcome.error),
+                EnvironmentState(name=NORA_ADMITTED, state=None),
+                EnvironmentState(name=NORA_SAID, state=0),
+                EnvironmentState(name=NORA_WRITTEN, state=0),
+                EnvironmentState(name=NORA_CHANGED_COUNT, state=0),
+                EnvironmentState(name=NORA_STAGED_COUNT, state=0),
+                EnvironmentState(name=NORA_JUDGED, state=outcome.judged),
+                EnvironmentState(name=NORA_CHECKS_FAILED, state=outcome.checks_failed),
+                EnvironmentState(name=NORA_POSITION, state=outcome.position),
+                EnvironmentState(name=NORA_SHOWN, state=outcome.shown),
+            ],
+        }
     async with draw_workspace(case.name or "unnamed", run_id=RUN_ID) as memory:
         # Held BEFORE the drive, so a draw that raises is still counted; its
         # delete time is filled in when the context exits.

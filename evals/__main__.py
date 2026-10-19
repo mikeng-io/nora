@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
 import signal
 import statistics
@@ -100,11 +101,12 @@ CORPUS_CLASS: dict[str, str] = {
     # cases are S5-shaped (time misread) — approximate, as this map says.
     "standing": "S6",
     "persona_identity": "S6",
+    "persona_coverage": "S6",
 }
 
 #: The entry points that honour `metadata.print_input` — render the model
 #: call's input, record it as `shown`, and call no model.
-_PRINTS_INPUT = frozenset({"standing", "persona_identity"})
+_PRINTS_INPUT = frozenset({"standing", "persona_identity", "persona_coverage"})
 
 
 #: What one draw costs, in seconds, for the run budget below. Unjudged is
@@ -551,6 +553,8 @@ def main() -> int:
             "Optional value overrides the judge model"
         ),
     )
+    ap.add_argument("--coverage-timeout", type=float, default=90.0,
+                    help="coverage wall-clock seconds per batch; plan must fit 55 minutes")
     ap.add_argument("--judge-base-url", default="http://127.0.0.1:20128/v1")
     ap.add_argument(
         "--judge-samples", type=int, default=DEFAULT_SAMPLES,
@@ -598,7 +602,27 @@ def main() -> int:
                     help="experiment-only tag exposure filter; retrieval stays unchanged")
     ap.add_argument("--context-report", type=Path,
                     help="write selector receipts and exposure sizes, without room content")
+    ap.add_argument("--coverage-export", type=Path, metavar="PRIVATE_OUTPUT",
+                    help="no-call frozen input export using readonly stores; refuses overwriting")
+    ap.add_argument("--coverage-inventory", type=Path)
+    ap.add_argument("--coverage-semantic", type=Path)
+    ap.add_argument("--coverage-recovery", type=Path)
+    ap.add_argument("--coverage-identity", type=Path)
     args = ap.parse_args()
+    if args.coverage_export:
+        from evals.persona_coverage_input import export_input
+        try:
+            if not all((args.coverage_inventory, args.coverage_semantic, args.coverage_recovery)):
+                raise ValueError("export requires --coverage-inventory/semantic/recovery paths")
+            exported = asyncio.run(export_input(
+                inventory=args.coverage_inventory, semantic=args.coverage_semantic,
+                recovery=args.coverage_recovery, identity=args.coverage_identity,
+                database_url=os.environ["DATABASE_URL"], output=args.coverage_export))
+            print(json.dumps(exported, sort_keys=True))
+            return 0
+        except (ValueError, KeyError, OSError) as exc:
+            print(f"coverage export ERROR: {exc}", file=sys.stderr)
+            return 2
 
     if args.list:
         _list_corpora()
@@ -633,6 +657,29 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
+    if "persona_coverage" in names:
+        # A frozen read-only measurement has no subject to compose, sandbox to
+        # mutate or Honcho workspace to create. It still runs the same task,
+        # Experiment, Outcome grader, spend and positions report as every entry.
+        if names != ["persona_coverage"] or args.sample != 1:
+            print("coverage requires one corpus, one frozen census draw", file=sys.stderr)
+            return 2
+        from evals.rebuilt.persona_coverage import load_input, plan
+        try:
+            doc = load_input(gold=not bool(args.print_input))
+            print("coverage plan:", json.dumps(plan(doc), sort_keys=True))
+            if args.print_input:
+                return _print_input(names[0], args.print_input, source_url="")
+            if not args.judge:
+                raise ValueError("coverage requires --judge")
+            judge = Judge(base_url=args.judge_base_url, model=args.judge,
+                          samples=1, timeout_seconds=args.coverage_timeout)
+            ok = _run_one(names[0], source_url="", judge=judge, sample=1,
+                          only=only, all_reasons=args.reasons, positions=args.positions)
+            return 0 if ok else 1
+        except (ValueError, KeyError, OSError) as exc:
+            print(f"coverage ERROR: {exc}", file=sys.stderr)
+            return 2
     try:
         source_url = source_url_for(args.source_url, Path(args.deployment_config).parent)
     except ValueError as exc:

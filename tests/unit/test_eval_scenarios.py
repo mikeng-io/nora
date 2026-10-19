@@ -243,7 +243,7 @@ def test_a_case_missing_its_identity_is_refused(tmp_path, monkeypatch, key):
 def test_every_corpus_has_a_declared_entry_point_and_judged_is_a_subset():
     assert set(CORPUS_ENTRY) >= JUDGED_CORPORA
     entries = {"tag", "participation", "gate", "dreamer", "proactive_act", "standing",
-               "persona_identity"}
+               "persona_identity", "persona_coverage"}
     assert set(CORPUS_ENTRY.values()) <= entries
 
 

@@ -53,7 +53,8 @@ Expectation = Literal[
 #: adds no code; adding a new entry point adds one adapter, which is the line
 #: this design draws rather than hides.
 Entry = Literal[
-    "gate", "participation", "tag", "dreamer", "proactive_act", "standing", "persona_identity",
+    "gate", "participation", "tag", "dreamer", "proactive_act", "standing",
+    "persona_identity", "persona_coverage",
 ]
 
 
