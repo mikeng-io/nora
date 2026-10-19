@@ -1,5 +1,130 @@
 # Changelog
 
+## [6.1.0](https://github.com/mikeng-io/nora/compare/v6.0.0...v6.1.0) (2026-10-19)
+
+
+### Features
+
+* **app:** Plans shows every event in the rooms you are in ([a15aaf3](https://github.com/mikeng-io/nora/commit/a15aaf3be7e60474e9d4ce6c2b791b1aed5421e6))
+* **character:** read and cite a member's social items as evidence about them ([52fce44](https://github.com/mikeng-io/nora/commit/52fce44fdc8e4021d65f3b7d071eebf7b217eef7))
+* **character:** read and cite a member's social items as evidence about them ([0ad9156](https://github.com/mikeng-io/nora/commit/0ad9156928e1eb18ea55b9394a6931e038d0157e))
+* **cognition:** read a person's social items, with what each shows, in Cognition ([c3fbcb0](https://github.com/mikeng-io/nora/commit/c3fbcb07566493a04dfb7f4e29c50443b7dc229c))
+* **cognition:** read a person's social items, with what each shows, in Cognition ([22e92eb](https://github.com/mikeng-io/nora/commit/22e92eb3e957dc3d15b64db3367c67ea12ab6a7d))
+* **evals:** measure the memory graph surface on each sandbox's own index with real vectors ([357f6b0](https://github.com/mikeng-io/nora/commit/357f6b04dadbc8f61a889fd31c1c4111bb5888cc))
+* **instagram-bridge:** list each post's and reel's likes, comments and reposts, and whether the author hid its likes ([13e03b6](https://github.com/mikeng-io/nora/commit/13e03b6eb80ae5fc2989049db1b87afb713c20e8))
+* **memory:** a search near a district finds the events and outings that lie in it ([08c0700](https://github.com/mikeng-io/nora/commit/08c070097ab99500f06e88eed3f294e4413b1de7))
+* **memory:** cut memory_search's answer by a token budget, a score gap and a measured dense floor ([934e7ff](https://github.com/mikeng-io/nora/commit/934e7ff45e2dbfbcfb332da972fc5446c5f4b6f5))
+* **memory:** embed index nodes with Qwen3-VL into a two-stage halfvec index (V1) ([bf089d9](https://github.com/mikeng-io/nora/commit/bf089d9531fe21590bbe5c4950c61517a4ef047e))
+* **memory:** find a social item by its tagged place where the room may hear where its author was ([83a0bda](https://github.com/mikeng-io/nora/commit/83a0bdacd9d9d2cdacdf7673d0ffeae3afee6e89))
+* **memory:** find a social item by its tagged place where the room may hear where its author was ([6042dbf](https://github.com/mikeng-io/nora/commit/6042dbf6d9d9cf3e5c5a0395ab5795426abe3671))
+* **memory:** index Instagram social items, person-scoped and opt-out at read ([52a279c](https://github.com/mikeng-io/nora/commit/52a279c26851fe6adafcdb5057c5b50b7f71e32e))
+* **memory:** memory_search reaches a note from the messages it cites ([53bbd31](https://github.com/mikeng-io/nora/commit/53bbd31e89b63f48becbb94abd3effcd3c819536))
+* **memory:** on the graph memory surface a tag turn carries what her memory holds that the message touches ([6f1b42f](https://github.com/mikeng-io/nora/commit/6f1b42fb606ea603192cd8d473c05d54580cfb84))
+* **memory:** seed ask_memory from dense vectors and pinned exact matches (V2) ([ac977ce](https://github.com/mikeng-io/nora/commit/ac977cee58c196963c3b809a0a96b0f278655525))
+* **memory:** she keeps a fact someone tells her about a person on the memory graph surface ([8b6d307](https://github.com/mikeng-io/nora/commit/8b6d307408c74755740f545729a99e49aca64ca9))
+* **persona:** a member's social item is citable evidence about its author alone, never what a told line cites ([0d13867](https://github.com/mikeng-io/nora/commit/0d13867581bba1041ed9b683bf959fe8a4dabfc2))
+* **persona:** mentions, disputes and the hypothesis verdict judge complete the person account ([ea34f4c](https://github.com/mikeng-io/nora/commit/ea34f4cfd3483c1c0d530add65f2aaf66cd4da87))
+* **persona:** the Persona adaptor writes each person's typed lines in shadow, with the backfill as its first session ([26c4758](https://github.com/mikeng-io/nora/commit/26c47587b04f5b2b128d29f730b3c459c20a4323))
+* **persona:** the room, unit and Nora Persona sessions, in shadow ([a9a0c72](https://github.com/mikeng-io/nora/commit/a9a0c72b7b5aa6f7c841074d2f8a7e0e68f697da))
+* **rollup:** count members' social items on each day of the daybook ([ac397a4](https://github.com/mikeng-io/nora/commit/ac397a439b40352b07e338bac8a1230b87b3eab2))
+* **social:** a tag the author adds, edits or removes later changes the place Nora searches ([e07cc1f](https://github.com/mikeng-io/nora/commit/e07cc1fcdea88deb9d53de0b2eedbc1eb5baabcd))
+* **social:** a tagged place follows the author, changed or removed, and the index shows the current one ([61b1c99](https://github.com/mikeng-io/nora/commit/61b1c99f5fd1eef25b56f8c301941af8ac17101e))
+* **social:** back-fill members' past posts and reels, page by page, from spare budget ([a6e16e9](https://github.com/mikeng-io/nora/commit/a6e16e924fe902d2e171cf82823072662217ff35))
+* **social:** delete a story frame's bytes a week after it expires once the memory index has embedded it ([f27e6a3](https://github.com/mikeng-io/nora/commit/f27e6a3299e9f93ce859146791c1d2f99f19fa30))
+* **social:** delete a story frame's media bytes after it expires, behind a switch ([be8ac5f](https://github.com/mikeng-io/nora/commit/be8ac5f6e84eb377a9cbfac7ba7bcf577d149b6e))
+* **social:** perceive members' social items and wake Cognition once per read ([f663470](https://github.com/mikeng-io/nora/commit/f6634702b81074780f19bab4572e1e4de2e43917))
+* **social:** poll members' Instagram stories and posts on a ceiling cadence ([b753859](https://github.com/mikeng-io/nora/commit/b753859d3fc1bb23c833ce6f59893a14c6a7212d))
+* **social:** record and re-read each post's and reel's likes, comments and reposts, and show them in social_read ([bd29d20](https://github.com/mikeng-io/nora/commit/bd29d201b56f5ba2e13b9324f414b41ed3590279))
+* **social:** record the place a post, reel or story frame is tagged with ([e9d5f55](https://github.com/mikeng-io/nora/commit/e9d5f55b60ec7fd9e8b40fed3810ba264a7ce26a))
+* **social:** the social stream's source port, Instagram adapter and Record tables ([ffc8970](https://github.com/mikeng-io/nora/commit/ffc89706e0584ef6c335fa64c47c9257d2c86996))
+* **tools:** one memory_search verb replaces ask_memory and search_memory_workspace ([72f1565](https://github.com/mikeng-io/nora/commit/72f156550d56ef4fbcf9cbdc3e1430a021b4decf))
+
+
+### Bug Fixes
+
+* **app:** every plan that is not confirmed wears its status, and a cancelled one exports as cancelled ([83e64e8](https://github.com/mikeng-io/nora/commit/83e64e8bc909807d3db1bd4c247e05672d187c03))
+* **app:** the Plans page shows plans when one of them has lapsed ([522c479](https://github.com/mikeng-io/nora/commit/522c479032b0feeb6ceb1218f6fdcbdcfb18203a))
+* **arch:** catch single-digit and glued issue numbers, and move orphaned metric comments ([3fd3da4](https://github.com/mikeng-io/nora/commit/3fd3da4e2a64ee84e4d2d7a1d4f82a9f010b0f4c))
+* **blob:** rustfs keeps bytes through their whole idle window ([120c879](https://github.com/mikeng-io/nora/commit/120c8791b9c21f8d83beb476eb79d6b4ac81d659))
+* **build:** run the bridge step when the gate cannot diff against origin/master ([bfe60d1](https://github.com/mikeng-io/nora/commit/bfe60d113003447fe4848330e5b2ad752ac0a778))
+* **character:** a social batch abandoned twice is consumed, the wake floor is the read's time, the budget holds on the rendered block, and redaction closes its gaps ([efd8c15](https://github.com/mikeng-io/nora/commit/efd8c15fcccc4e1b4c40926b901b5bc42dfd8b9f))
+* **character:** exclude an opted-out person's items under every id they were recorded under ([0f35d70](https://github.com/mikeng-io/nora/commit/0f35d7027d8e8a16517866debd8897bdcfdeeeec))
+* **character:** hand every social item once, bound the block, and redact other people's handles ([f151035](https://github.com/mikeng-io/nora/commit/f151035c953a115a60b822b9ed2615a289888940))
+* **character:** read a person's social items under their former ids too ([a8ce92a](https://github.com/mikeng-io/nora/commit/a8ce92a6f87c7d89a8f2590f40f2e207d92dfc4d))
+* **character:** redact every @ run and every Instagram link tail, failing closed ([d61ae98](https://github.com/mikeng-io/nora/commit/d61ae98aa9dcadf0dbc2172f990bca09f7683f39))
+* **character:** redact every caption handle but the author's own, whatever precedes the @ ([a8f6da5](https://github.com/mikeng-io/nora/commit/a8f6da5519adaeb5f0016659a3be438f4c083924))
+* **character:** store the social cursor in a BIGINT and redact handles after CJK or full-width @ ([5db463f](https://github.com/mikeng-io/nora/commit/5db463f5c074d8613152f2d8e83238ab584cd15d))
+* **character:** wake on new social items only, bound the block by the session's tokens, and redact handles in readings ([dfc6000](https://github.com/mikeng-io/nora/commit/dfc6000e29e28b68f2c3e22629f40c217b29d8b7))
+* **cognition:** a moved reminder that is already firing is refused, and a bracketed note id links ([b829145](https://github.com/mikeng-io/nora/commit/b829145fd24ea3322c7fe18c254a3d8e92c9afe3))
+* **cognition:** a note row names only the reminders this session can move or cancel ([4a9256a](https://github.com/mikeng-io/nora/commit/4a9256a6373be0abdafa7153e32681df1816a90a))
+* **cognition:** a proactive reminder citing a note by its shown id dies with that note ([228c610](https://github.com/mikeng-io/nora/commit/228c61046a4051431c87c828c473e4b793a47b02))
+* **cognition:** a session sees its own pending reminder on the note it is about ([73af463](https://github.com/mikeng-io/nora/commit/73af4630144fd53e5727326d9f572acff1cb2689))
+* **cognition:** no tool hands a tag turn's model a person id, and every social reader is built through one helper ([05ba135](https://github.com/mikeng-io/nora/commit/05ba135895b027a2a96f73947fe9056b0680fcbf))
+* **cognition:** social_read reads the person its agenda line names ([1895f7f](https://github.com/mikeng-io/nora/commit/1895f7f5845b6d9f5fb646c0307309d60636b883))
+* **cognition:** social_read shows the place an item is tagged with now ([331f3e8](https://github.com/mikeng-io/nora/commit/331f3e8324c7ed2683bc7142079452d010b04dc1))
+* **evals:** break stage-1 distance ties by id in the SQL two-stage arm, and kill the review's surviving mutants ([e2ac92c](https://github.com/mikeng-io/nora/commit/e2ac92c12d4dda108462404a1d7d11afa00274a9))
+* **evals:** two tool_selection routing cases stop failing on wrong expectations ([f223c0d](https://github.com/mikeng-io/nora/commit/f223c0de8c6e9746c54758abc9a875461867a15c))
+* **instagram-bridge:** list a member's collaboration posts instead of refusing the page ([463e283](https://github.com/mikeng-io/nora/commit/463e283211e5eff8bae209b2c7b150fb072164be))
+* **instagram-bridge:** read a timeline page whose edges arrive with a field_exception beside them ([f011b3b](https://github.com/mikeng-io/nora/commit/f011b3b921b2ac25c9b3c1c104e0df34343b0b8a))
+* **instagram-bridge:** read stories through the web app's GraphQL query and list a member's posts and reels ([d844eca](https://github.com/mikeng-io/nora/commit/d844eca9204c5eb498d2d9fb6beb48e864281791))
+* **instagram-bridge:** refuse a timeline item whose owner fields name different accounts ([480e2bd](https://github.com/mikeng-io/nora/commit/480e2bdd221a401264799b061bbbf30fa4104842))
+* **instagram-bridge:** restore the chan keyword the history scrub rewrote, and build the bridge in the gate ([d10702b](https://github.com/mikeng-io/nora/commit/d10702bfdcae378b6a43dff459261bc270d1aa5b))
+* **memory:** a named place's hits survive the gap cut, the budget and the scope, and every area name is screened ([5d3004f](https://github.com/mikeng-io/nora/commit/5d3004fd525acc4d3eafae497aa54c6a45cab3b9))
+* **memory:** cap pinned exact hits, case names, and read given-up nodes by their words ([c7139fa](https://github.com/mikeng-io/nora/commit/c7139fa087a27b648053ed2a5b5023f843679c5f))
+* **memory:** find a line still waiting for its vector by its words, and answer partial only on a real backlog ([d160e91](https://github.com/mikeng-io/nora/commit/d160e91c2d3901c1c707aa16478253d3ac93fe97))
+* **memory:** find an old social post memory_search matched, and end its answer only when nothing strong is left ([d38fb29](https://github.com/mikeng-io/nora/commit/d38fb29b46cfa1eb8e5d4efe46ed3a4e36c14909))
+* **memory:** keep label-only social items unembedded and never default the opt-out ([d12fa28](https://github.com/mikeng-io/nora/commit/d12fa2810859b84b2afda4506ee5474ad44c4985))
+* **memory:** keep memory_search's floor off a date-windowed question, so the line it asks about is still found ([0cc3207](https://github.com/mikeng-io/nora/commit/0cc32072fba290a8dd1c7195932853e3deb2a6dc))
+* **memory:** keep the cosine floor on seeds so a hop still reaches an episode ([9ca0e17](https://github.com/mikeng-io/nora/commit/9ca0e17b103283b626390c66c091ae17c179a37c))
+* **memory:** kinds narrow the seeds and the answer, not the hops ([e673515](https://github.com/mikeng-io/nora/commit/e673515c6fe4526e3533e0621024fcd65de900ea))
+* **memory:** measure a node's wait from when its vector became owed, and never call an unreadable node fresh ([85c6328](https://github.com/mikeng-io/nora/commit/85c6328a434c35fb0e38a862afb9548ed7b9a03c))
+* **memory:** no embedding input can wedge the worker, and the server runs the measured flags ([ebda388](https://github.com/mikeng-io/nora/commit/ebda388dd530b83f394ce2bb6701b14a4c2da4b5))
+* **memory:** send images at the size the bake-off measured, not 1920 tokens ([c781c13](https://github.com/mikeng-io/nora/commit/c781c1399d9ea403750b35dd9d5864a5d2a9d55c))
+* **memory:** the pre-fetch reads the graph's clock, is bounded and guarded, and pins at most PINNED_LIMIT pictures ([cabbf57](https://github.com/mikeng-io/nora/commit/cabbf5756ccee23678fb83ebfc38366c6952bf14))
+* **migrations:** chain the watermark BIGINT migration after the social location node as 0114 ([8cf6419](https://github.com/mikeng-io/nora/commit/8cf6419792b8abfe7d61178b7affc96cae653776))
+* **migrations:** reparent 0119_social_item_count onto the landed 0118_place_area ([4511902](https://github.com/mikeng-io/nora/commit/4511902cd216ffeaadf54e38c66cd9ebb0aaf1d1))
+* **persona:** an account the verdict keys lost is code's unknown, never the model's empty-window call ([71eca0c](https://github.com/mikeng-io/nora/commit/71eca0c8501df0e5599011b5711fc891296a31cb))
+* **rollup:** a member seen only through their posts starts no silence run ([93b1d15](https://github.com/mikeng-io/nora/commit/93b1d15ef93dba670b364ca2433fd1bf4e9270f7))
+* **social:** a bridge outage no longer ends a member's back-fill ([8dbdea4](https://github.com/mikeng-io/nora/commit/8dbdea45cd8badc57e2c945c2db2c8d90844f2a1))
+* **social:** a malformed location tag is no location, never a refused page or story ([1c7bdf3](https://github.com/mikeng-io/nora/commit/1c7bdf3c8256c7e9e0ac1e6f74dcd67e47b6b729))
+* **social:** a restart that cannot read the login's history retries instead of forgetting a halt ([d5a10f1](https://github.com/mikeng-io/nora/commit/d5a10f10b875d9dd9a5fa5ec4fd48470dcdcabf6))
+* **social:** a story read with no usable frame advances the marker, and counts advance only once their list read completes ([39fbed1](https://github.com/mikeng-io/nora/commit/39fbed140a9844859174db9d18579646660179c3))
+* **social:** an opted-out person's items stay out under every id they were recorded under ([f8a52f6](https://github.com/mikeng-io/nora/commit/f8a52f612a1c1536b29684e348dad64f85fceb6f))
+* **social:** an unreadable place is unknown, never a removed tag, and a halt stops the re-walk ([46a729e](https://github.com/mikeng-io/nora/commit/46a729ea1b7c61c924d107b33862cf2763384221))
+* **social:** keep set-aside bytes across a crash and date a tombstone before its deletion ([b339f27](https://github.com/mikeng-io/nora/commit/b339f27faf07272526819e3eed7d3097d4aa00ea))
+* **social:** keep the poller's halt, back-off and budget across a failed row and a restart ([c855d7f](https://github.com/mikeng-io/nora/commit/c855d7f57be1a29ba6e05d4dcea84dcd3737f27f))
+* **social:** raise a read's stimulus only within two days of it, and charge a video's text pass ([93ec170](https://github.com/mikeng-io/nora/commit/93ec170a58c7a1a3dce35f3e60e6cf5bc5cb45dc))
+* **social:** record listed posts and reels from the list itself, with their media ([27fd4f2](https://github.com/mikeng-io/nora/commit/27fd4f2d9b34f1096946e241e6c26fdecf24ce54))
+* **social:** renumber the back-fill migration after the memory index's 0111 ([8f92cd0](https://github.com/mikeng-io/nora/commit/8f92cd0658e71f66693feec2e89354f0341f9d20))
+* **social:** the back-fill leaves new posts to the poll and gives up a cursor that keeps failing ([7ce45a2](https://github.com/mikeng-io/nora/commit/7ce45a296488387435d7ef35d6f3ba36c45cce25))
+* **tools:** memory_search keeps a room turn in its own channel when the index is off ([f441701](https://github.com/mikeng-io/nora/commit/f441701f85a74c3b8124e83796bea3ba102b5869))
+* **tools:** memory_search says unavailable for a person this room does not list ([49d502e](https://github.com/mikeng-io/nora/commit/49d502e828bbe769d9a000733d5ce65261198a38))
+* **tools:** memory_search searches the unit only for the cognition session ([8e33c98](https://github.com/mikeng-io/nora/commit/8e33c98140ce8a8ff5ee90b89681e1849dcfc536))
+* **tools:** one source for the memory surface, culture reads its own room ([2739833](https://github.com/mikeng-io/nora/commit/27398336d82aae4172b3d580f6b957c7377ded49))
+
+
+### Security
+
+* **app:** a room's events reach a member only past the chat path's lineage and surprise checks ([17d82f3](https://github.com/mikeng-io/nora/commit/17d82f339bfd28c8ddd868b2d93acfa604cf9b50))
+
+
+### Changes
+
+* **memory:** memory_search says a span of time is record_query's, and who mentioned something accepts either read on the graph ([ebd0a64](https://github.com/mikeng-io/nora/commit/ebd0a642c8ead38d6ba0990a67c153bcfe5479da))
+* **memory:** memory_search sends a read with no topic to record_query, not a topic searched within a span ([4ea626c](https://github.com/mikeng-io/nora/commit/4ea626c44bcf9c768d4d66fe676e6d681ad1b948))
+* **memory:** the memory-graph surface holds no Honcho tool, and memory_search's budget is 8 ([1d97e54](https://github.com/mikeng-io/nora/commit/1d97e5402d5761d03c3dce7f2c6c838d5258d757))
+* **persona:** renumber settled_at migration to 0120, behind 0118_place_area and 0119_social_item_count ([e5c0ea2](https://github.com/mikeng-io/nora/commit/e5c0ea28517923ca75d7dfe096822e1bee526c25))
+* **persona:** reparent 0120_persona_settled_at onto 0118_place_area, one alembic head ([5b6089f](https://github.com/mikeng-io/nora/commit/5b6089f53706f9e8d7dbc375b1cbff73491eff23))
+* **persona:** reparent 0120_persona_settled_at onto 0119_social_item_count ([c02dfcd](https://github.com/mikeng-io/nora/commit/c02dfcd1fba992ff7ed38864e74dcd84b46e1167))
+
+
+### Doctrine
+
+* **conduct:** a plan made for now is a placeholder the real one settles ([34a53ff](https://github.com/mikeng-io/nora/commit/34a53ffcf69d75661aa4bad98efb0c68263a9312))
+* **conduct:** the placeholder line names provisional, not the bare 「先」, and keeps a leftover that costs ([b8a907c](https://github.com/mikeng-io/nora/commit/b8a907cae7449827d54d5725b78d2567dd8ec7e8))
+* **memory:** memory wording reads true on both memory surfaces ([6eb8a44](https://github.com/mikeng-io/nora/commit/6eb8a448ac01b5d283154d37134fbda309e4e94f))
+* **memory:** the speaker-fact rule is a condition, and a failed write still says so ([2922ab2](https://github.com/mikeng-io/nora/commit/2922ab2e5e76451abaa4f95673d4f72c85cc7a1d))
+
 ## [6.0.0](https://github.com/mikeng-io/nora/compare/v2.0.0...v6.0.0) (2026-10-15)
 
 
