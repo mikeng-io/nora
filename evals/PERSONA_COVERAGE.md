@@ -9,6 +9,35 @@ the coverage gate in `design/unified-memory/45-persona-adaptor.md` §6; the
 80-pair reply replay remains subsequent work. No formal coverage is claimed by
 building this instrument or by the independent synthetic writer acceptance.
 
+## Claim contract
+
+Coverage asks whether current canonical typed heads or actual authored identity
+faithfully represent the **full original frozen qualified claim**. It does not
+independently test a person's told capability when the claim itself is a reported
+attribute. Reporting mode and qualifiers must survive; an explicitly verified
+claim still requires independent evidence. Covered and derivable-missed judgments
+use the same evidence standard. Bare fields take only the weakest meaning
+entailed by the frozen claim and originals: association/observed use cannot be
+inflated into legal ownership or general ability. Explicit stronger claims are
+not weakened, unknown referents remain unresolved, and unrelated subclaims do
+not count. Friendship duration supplies no founding date; a bare quantity
+supplies no unit.
+
+The full conjunction includes any conditional or dated expectation. A represented
+stable portion alone is insufficient. Design 45's stable-fact scope is a
+population ceiling: this frozen corpus includes mixed stable/transient claims,
+so its result measures those exact original claims, not pure stable-fact recovery.
+No modifier, prelabel, exclusion, denominator or gold changes after a failure.
+This holds unless a future separately frozen corpus changes the question.
+
+Typed-head evidence IDs must include a chosen current head and **all original
+Record IDs in its citations list for at least one chosen head**, matched to the
+supplied source IDs. This provenance-completeness requirement does not itself
+prove semantic entailment of the full claim. Authored identity grounding and
+whole-batch rejection remain unchanged. Closure annotations stay in the private
+input for inspection but are not serialized into judge prompts: they are not
+proof and cannot establish coverage. Current heads already carry citation lists.
+
 ## Export and inspect without model calls
 
 Run in the branch checkout on norty, with its eval extra installed. Keep every
@@ -127,6 +156,14 @@ Export also writes a sibling `.review20.json` with the EXACT 20 existing
 reference claims, each selecting its first explicitly scoped comparison.
 These are `PENDING_ROOT_REVIEW`, with preliminary proposals clearly marked;
 `reference20-for-independent-review.json` is never promoted to gold.
+
+The current calibration is independent manual **root-agent adjudication**, not
+human review. Under operator authorization this implements the hand-labelled
+step as manual agent adjudication; it does not claim human-labelled compliance.
+The fixed references are 10 covered / 9 source_unresolved / 1 derivable_missed,
+selected by first scoped comparison, not a representative random sample. One
+miss provides little evidence of miss sensitivity. This limits acceptance even
+if calibration passes; the requirement remains 18/20 and zero errors.
 
 Root independently reviews each reference against the full scoped row in the
 input and its actual originals/qualifiers. Set each `expected` to `covered`,

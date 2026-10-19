@@ -556,3 +556,30 @@ async def test_coverage_requests_bounded_low_reasoning_without_changing_other_ju
     assert "error" not in result
     assert len(coverage.parse_labels(result["raw"], rows)) == 4
     assert coverage.plan(doc)["max_response_tokens"] == coverage.plan(doc)["planned_calls"] * 4096
+
+
+def test_serialized_coverage_contract_preserves_claim_and_complete_provenance():
+    """Render contract only: no fake verdict establishes semantic accuracy."""
+    doc = census_input()
+    row = doc["rows"][0]
+    row["claim"] = "Reports being able to juggle and expects a bicycle back if repaired"
+    row["closure"] = {"status": "REPAIRED", "annotation": "not-judge-evidence"}
+    row["heads"][0]["citations"] = ["0", "3"]
+    row["sources"].append(copy.deepcopy(doc["rows"][3]["sources"][0]))
+    shown = coverage.prompt(doc, [row])
+    rules, payload = shown.split('{"account":', 1)
+    data = json.loads('{"account":' + payload)
+    assert data["lines"][0]["claim"] == row["claim"]
+    assert data["heads"][0]["citations"] == ["0", "3"]
+    assert {s["id"] for s in data["sources"]} == {"record-0", "record-3"}
+    assert "ALL original Record\nIDs" in rules and "at least one chosen head" in rules
+    assert "Citation\ncompleteness is provenance, not semantic entailment" in rules
+    assert "Reporting mode is part of the claim" in rules
+    assert "SAME evidence standard" in rules
+    assert "reports being able to\njuggle" in rules
+    assert "has a bicycle and expects\nit back by Friday if repaired" in rules
+    assert "stable portion alone is not covered" in rules
+    assert "Read closure" not in rules
+    assert "Maintenance annotations are not evidence" in rules
+    assert "not-judge-evidence" not in shown and '"closure"' not in shown
+    assert '"expected"' not in shown and "adjudicated_by" not in shown
