@@ -509,3 +509,114 @@ async def test_response_projection_keeps_question_context_and_only_subject_reply
     assert 'another responder' not in rendered
     citable = adaptor._runs[KEY].citable
     assert set(citable.messages) == {10} and citable.episodes[9].ts == T0 + 1
+
+
+@pytest.mark.parametrize('invalid_roots', [0, 101])
+async def test_rejected_rollup_page_cannot_hide_readable_revision(env, invalid_roots):
+    from nora.infra.sql.schema import CONSOLIDATION_WATERMARK as W
+    from nora.infra.sql.schema import ROLLUP_DAYBOOK
+
+    # More than two production pages of permanently invalid candidates.
+    for i in range(invalid_roots):
+        await message(env, ident=i + 1, ts=T0 + i)
+    await message(env, ident=200, ts=T0 + 26 * 86400000 + 1000)
+    async with env.begin() as conn:
+        await conn.execute(sa.insert(ROLLUP_BUILD).values(id=1, status='current',
+            code_version='synthetic', params_sha256='a' * 64, through_ms=T0))
+        for i in range(27):
+            await conn.execute(sa.insert(ROLLUP_DAYBOOK).values(build_id=1, unit='unit',
+                valid_from_ms=T0 + i * 86400000, valid_to_ms=T0 + (i + 1) * 86400000,
+                as_of_ms=T0, lineage=[['message', None, 'signal:room-a']], person_id=PERSON,
+                local_date=f'2026-01-{i + 1:02}', stays=[], stay_ms=0, home_ms=0,
+                colocation_ms=0, outings=0, rooms={}, messages=invalid_roots if i < 26 else 1,
+                reactions=0))
+    reads, _, _, evidence, adaptor = wired(env)
+    await reads.history_state(key=KEY)
+    await reads.advance_history(key=KEY, cursor=200)
+    assert await evidence.count(key=KEY, after=200) > 0
+    batch, cursor = await evidence.newest(key=KEY, after=200, limit=100)
+    assert cursor == 200
+    assert [r.source for r in batch] == ['daybook:2026-01-27']
+    rendered = await adaptor.inputs(key=KEY, batch=batch)
+    assert 'n="200"' in rendered and 'daybook:2026-01-27' in rendered
+    await settle_account(adaptor, evidence)
+    async with env.connect() as conn:
+        assert (await conn.execute(sa.select(sa.func.count()).select_from(W).where(
+            W.c.consolidator_name == 'persona-person:source:rollup'))).scalar_one() == 1
+    _, _, _, restarted, _ = wired(env)
+    assert await restarted.count(key=KEY, after=200) == 0
+    assert (await restarted.newest(key=KEY, after=200, limit=100))[0] == []
+    # A formerly empty/incomplete candidate becomes readable without a reset.
+    await message(env, ident=201, ts=T0 + 25 * 86400000 + 1000)
+    async with env.begin() as conn:
+        await conn.execute(sa.update(ROLLUP_DAYBOOK).where(
+            ROLLUP_DAYBOOK.c.local_date == '2026-01-26').values(messages=1))
+    [revised] = await source_inputs(env).rollup(key=KEY, unit='unit', rooms=ROOMS,
+                                              person=PERSON, limit=12)
+    assert revised.source == 'daybook:2026-01-26'
+    assert [r.row.id for r in revised.roots] == [201]
+
+
+@pytest.mark.parametrize('mention', [False, True])
+@pytest.mark.parametrize('before_read', [False, True])
+async def test_preupgrade_plain_edit_discovery_is_independent_of_cache(env, mention, before_read):
+    await message(env, person='other' if mention else PERSON)
+    # Unchanged consumed plaintext is not replayed to establish new progress.
+    source = source_inputs(env)
+    assert await source.messages(key=KEY, rooms=ROOMS, person=PERSON, after=20, limit=12) == []
+
+    async def edit():
+        async with env.begin() as conn:
+            await conn.execute(sa.insert(MESSAGE_EDIT).values(message_id=10, ts=T0 + 500,
+                body='I prefer written instructions',
+                mention_persons_json=json.dumps([PERSON] if mention else [])))
+
+    if before_read:
+        await edit()
+    # Simulate initialization/read between revisions with no source watermark.
+    await source.media_recovery(key=KEY, rooms=ROOMS, person=PERSON, initialize=True)
+    if not before_read:
+        await edit()
+    [revised] = await source_inputs(env).messages(key=KEY, rooms=ROOMS, person=PERSON,
+                                                after=20, limit=12)
+    root = revised.roots[0]
+    assert root.row.id == 10 and root.row.ts == T0 and root.room == 'room-a'
+    assert root.row.person_id == ('other' if mention else PERSON)
+    assert revised.as_of == T0 + 500 and root.row.body == 'I prefer written instructions'
+    assert not revised.cache_ready
+    # Crash/restart repeats; durable exact settlement prevents unchanged replay.
+    assert await source_inputs(env).messages(key=KEY, rooms=ROOMS, person=PERSON,
+                                             after=20, limit=12) == [revised]
+    await source.settle(key=KEY, revisions=[revised])
+    assert await source_inputs(env).messages(key=KEY, rooms=ROOMS, person=PERSON,
+                                             after=20, limit=12) == []
+    assert await source.messages(key=KEY, rooms=[('signal', 'other-room')],
+                                 person=PERSON, after=20, limit=12) == []
+
+
+@pytest.mark.parametrize('withdrawal', ['removed_mention', 'hidden', 'deleted', 'pruned'])
+async def test_preupgrade_withdrawal_does_not_require_cached_source_progress(env, withdrawal):
+    from nora.infra.sql.schema import MESSAGE_DELETE
+
+    await message(env, person='other' if withdrawal == 'removed_mention' else PERSON)
+    async with env.begin() as conn:
+        if withdrawal == 'removed_mention':
+            await conn.execute(sa.update(MESSAGES).where(MESSAGES.c.id == 10).values(
+                mention_persons_json=json.dumps([PERSON])))
+            await conn.execute(sa.insert(MESSAGE_EDIT).values(message_id=10, ts=T0 + 1,
+                body='withdrawn mention content', mention_persons_json='[]'))
+        elif withdrawal == 'hidden':
+            await conn.execute(sa.update(MESSAGES).where(MESSAGES.c.id == 10).values(
+                hidden_at=T0 + 1))
+        elif withdrawal == 'deleted':
+            await conn.execute(sa.insert(MESSAGE_DELETE).values(message_id=10, ts=T0 + 1,
+                sender_id='synthetic-sender'))
+        else:
+            await conn.execute(sa.delete(MESSAGES).where(MESSAGES.c.id == 10))
+    source = source_inputs(env)
+    [row] = await source.messages(key=KEY, rooms=ROOMS, person=PERSON, after=20, limit=12)
+    assert not row.roots and row.state in ('ineligible', 'hidden', 'absent')
+    assert 'withdrawn mention content' not in repr(row)
+    await source.settle(key=KEY, revisions=[row])
+    assert await source_inputs(env).messages(key=KEY, rooms=ROOMS, person=PERSON,
+                                             after=20, limit=12) == []

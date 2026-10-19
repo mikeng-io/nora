@@ -168,7 +168,10 @@ class SqlPersonaInputs:
             m.conversation_id, (sa.literal('message:') + sa.cast(m.id, sa.Text)).label('source'),
             _revision(snapshot).label('revision'), m.hidden_at, deleted.label('deleted'),
             ready.label('cache_ready'), media.label('cached_media'),
+            sa.or_(edits.is_not(None), deleted, m.hidden_at.is_not(None)).label('changed'),
             sa.func.coalesce(eligible, False).label('eligible'),
+            sa.or_(m.person_id == person, sa.cast(m.mention_persons_json, JSONB)
+                   .contains([person])).label('originally_eligible'),
             sa.func.greatest(message_at, reading_at, edit_at).label('recorded_at'),
         ).select_from(MESSAGES.outerjoin(latest, sa.true())).where(
             _in_rooms(rooms), m.is_nora == 0)
@@ -183,9 +186,12 @@ class SqlPersonaInputs:
             W.c.scope_id == sa.literal(key + '\x1f') + q.c.source,
         )
         # Initial recovery rehands eligible EXISTING cache, without replaying
-        # every consumed plain message or resetting either history cursor.
-        stmt = sa.select(q).where(sa.or_(q.c.eligible, seen),
-            sa.or_(q.c.id > after, q.c.cache_ready, seen))
+        # every consumed plain message or resetting either history cursor. Edits
+        # and withdrawals are independent candidates, including pre-upgrade rows;
+        # their source revision, never their edit id vs Record id, deduplicates them.
+        stmt = sa.select(q).where(sa.or_(q.c.eligible, seen,
+            sa.and_(q.c.changed, q.c.originally_eligible)),
+            sa.or_(q.c.id > after, q.c.cache_ready, q.c.changed, seen))
         rows = await self._pending(key=key, domain='message', stmt=stmt, limit=limit)
         out = [PersonSourceRevision(
             domain='message', source=r.source, revision=r.revision,
@@ -210,8 +216,13 @@ class SqlPersonaInputs:
             ).where(h.table_name == 'messages', h.op == 'delete', h.superseded_at.is_(None),
                 sa.or_(sa.false(), *(sa.and_(h.image['platform'].astext == p,
                     h.image['conversation_id'].astext == room) for p, room in rooms)),
-                sa.exists().where(prior.c.consolidator_name == 'persona-person:source:message',
-                    prior.c.scope_id == sa.literal(key + '\x1f') + source))
+                sa.or_(sa.exists().where(
+                    prior.c.consolidator_name == 'persona-person:source:message',
+                    prior.c.scope_id == sa.literal(key + '\x1f') + source),
+                    sa.and_(h.image['is_nora'].astext == '0', sa.or_(
+                        h.image['person_id'].astext == person,
+                        sa.cast(h.image['mention_persons_json'].astext, JSONB)
+                        .contains([person])))))
             gone = await self._pending(key=key, domain='message', stmt=tombstones,
                                        limit=limit - len(out))
             out.extend(PersonSourceRevision(domain='message', source=r.source,
@@ -570,6 +581,22 @@ class SqlPersonaInputs:
                 (t.edits if kind == 'response' else sa.literal(0)).label('edits'),
                 root_ids.label('root_ids'), *counts, *(t[f] for f in fields),
             ).where(t.unit == unit, t.build_id == current_build_id(), predicate)
+            # Reject incomplete/oversized roots BEFORE the bounded page. They
+            # remain unacknowledged and a later readable revision is rediscovered.
+            q = stmt.subquery()
+            stmt = sa.select(q).where(
+                sa.func.cardinality(q.c.root_ids).between(1, 100),
+                sa.or_(*(q.c[f] != 0 for f in fields)),
+                *(q.c[f] == q.c['root_count_' + str(i)] for i, f in enumerate(fields)),
+            )
+            if kind == 'response':
+                stmt = stmt.where(sa.exists().where(
+                    MESSAGES.c.id == sa.cast(sa.func.split_part(q.c.source, ':', 2),
+                                             sa.BigInteger),
+                    _in_rooms(rooms), MESSAGES.c.is_nora == 1,
+                    MESSAGES.c.hidden_at.is_(None),
+                    ~sa.exists().where(MESSAGE_DELETE.c.message_id == MESSAGES.c.id),
+                ))
             rows = await self._pending(key=key, domain='rollup', stmt=stmt, limit=limit,
                                        citations=citations, include_settled=row_ids is not None)
             for r in rows:
