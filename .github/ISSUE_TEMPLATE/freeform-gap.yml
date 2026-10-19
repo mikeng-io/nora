@@ -17,10 +17,10 @@ body:
       description: Which subsystem owns this gap? (Anchors the title prefix and grep — it is recorded in the body, it is not a label.)
       options:
         - agent (tag turn / tools / agent loop)
-        - ambient-loop (standing / participation / proactive / decision log)
-        - note-tier (notes / candidates / curator / fire path)
+        - participation (ambient / proactive / decision log)
+        - notes (write / retire / merge)
         - doctrine (voice / conduct / silence / constraints / version pins)
-        - dreamer (adaptors / schedules / prompts)
+        - cognition (adaptors / schedules / prompts)
         - relevance-gate
         - discord (channels / voice / mentions / portal)
         - signal / whatsapp (platforms, signal-cli, bridges)
@@ -31,7 +31,7 @@ body:
         - memory (honcho / recall / prefill)
         - observability (tracing / logging / alerts / sentry)
         - release-and-version (release-please / build stamp / deploy)
-        - skills (skill library / size guard)
+        - skills (runtime skill library)
         - repo-hygiene (CONTRIBUTING / tests layout / gates / scripts)
         - design-only (a design bundle, no code change)
         - other (say what in the body — prefer an area above)

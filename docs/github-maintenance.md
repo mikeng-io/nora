@@ -99,3 +99,36 @@ For read-back or repair, dispatch the workflow with `kind=pr` or `kind=issue` an
 the contribution number. This workflow must first exist on master; its initial
 implementation PR is tested by the ordinary CI before merge, then dispatched to
 verify the live check after merge. Keep manual dispatch on master.
+
+## Publication readiness
+
+The private PII scrub is complete. Keep its private records outside GitHub.
+Local commit/push hooks guard new additions; their results are separate from
+GitHub's native credential scanning.
+
+Before publication, check open Dependabot alerts against the current lockfiles.
+The critical PyJWT PEM-detection advisory (GHSA-ffc3-869f-jxw9) is fixed in
+2.14.0 and later. The critical node-tar parse/decompression advisory
+(GHSA-23hp-3jrh-7fpw) is fixed in 7.5.19 and later. Nora pins patched releases;
+the voice packages override only node-pre-gyp's tar dependency until its upstream
+range accepts patched tar. Validate the native installer when changing it.
+A passing dependency check does not establish live exploitability or that every
+lower-severity advisory has been resolved.
+
+Run the activation command immediately after the owner changes visibility, then
+read back the settings and run the Security workflow. Complete the release App
+setup above before expecting unattended releases. The activation script refuses
+private repositories and does not create an App or its private key. While private
+on GitHub Free, branch protection cannot be enforced; publication or an eligible
+paid plan is an owner decision.
+
+The issue chooser offers Bug report and Feature request forms, the internal
+freeform/design-anchored forms, and a SECURITY.md link for private disclosures.
+
+Dependabot security updates are grouped per ecosystem across the manifest
+directories in `.github/dependabot.yml`. Newly configured ecosystems have routine
+version-update PRs disabled; security updates remain enabled and are not delayed
+by the monthly version-update schedule. The repository's grouped-security setting
+also covers manifests outside explicit groups. GitHub cannot combine different
+security-update ecosystems into one Dependabot PR; an integration PR can land
+several reviewed groups together when needed.

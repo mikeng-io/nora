@@ -244,7 +244,8 @@ Release Please and Dependabot PRs use their generated formats only when authored
 by the recognized bot on a branch in this repository. A fork cannot claim that
 exception. The release App identity is verified against `RELEASE_APP_ID`.
 
-Issues use the existing freeform/design-anchored fields. Incomplete issues receive
+Issues use the Bug report, Feature request, freeform or design-anchored fields.
+Public reports need a descriptive title and the fields shown in their form. Incomplete issues receive
 one advisory bot comment, updated as needed and removed when corrected. The title
 already supplies Area, so CLI/API users need not duplicate that field. Explicit
 uncertainty such as `#TBD` in decisions/dependencies remains valid. Issues are never
@@ -322,9 +323,17 @@ not a nuisance to route around.**
 
 Not-yet-built design ideas discussed in a session get **filed as a GitHub
 issue** on `mikeng-io/nora`, not left in a chat transcript or a memory file.
-Scoping, comments and status live on the issue. **File through one of the two
-issue forms** (`.github/ISSUE_TEMPLATE/`) — freeform or design-anchored, same
-two shapes as below; blank issues are disabled. The forms carry the headings so
+Scoping, comments and status live on the issue. **File through an issue form**
+(`.github/ISSUE_TEMPLATE/`); blank issues are disabled.
+
+Use **Bug report** for a reproducible problem: Description, Steps to reproduce,
+Expected behavior, Actual behavior, and Version and environment. Use **Feature
+request** for an improvement: Problem and Proposed solution. Both accept a plain
+descriptive title and need no internal design document. Never include private
+data; follow SECURITY.md for vulnerabilities.
+
+The **freeform** and **design-anchored** forms below remain available for internal
+design and implementation work. The forms carry the headings so
 the convention survives the moment nobody remembers it.
 
 **Title** — `<Area>: <the gap>`, stated as a fact about what is wrong or
@@ -370,8 +379,10 @@ the next reader will suggest folding in.
 |---|---|---|
 | `design-anchored` | the *design-anchored* form | a design document already specified this; the issue builds to spec |
 | `freeform` | the *freeform* form | the issue itself proposes the decision |
+| `bug` | the *Bug report* form | a reproducible problem |
+| `enhancement` | the *Feature request* form | a proposed improvement |
 
-These labels distinguish the two issue forms. Area stays in the title prefix
+These labels distinguish the four issue forms. Area stays in the title prefix
 and the form's Area field. Additional PR labels should have a clear triage use;
 labels and milestones on GitHub are repository metadata, not created by these
 forms. Required form fields do not replace review of the issue's substance.

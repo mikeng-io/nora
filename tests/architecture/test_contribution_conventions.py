@@ -82,6 +82,11 @@ def test_issue_templates_exist_and_blank_issues_are_disabled() -> None:
 @pytest.mark.parametrize("form_name,expected", [
     ("freeform-gap.yml", FREEFORM_HEADINGS),
     ("design-anchored.yml", DESIGN_ANCHORED_HEADINGS),
+    ("bug-report.yml", [
+        "Description", "Steps to reproduce", "Expected behavior", "Actual behavior",
+        "Version and environment",
+    ]),
+    ("feature-request.yml", ["Problem", "Proposed solution"]),
 ])
 def test_issue_form_headings_match_the_declared_shape(form_name: str, expected: list[str]) -> None:
     form = _form(form_name)
