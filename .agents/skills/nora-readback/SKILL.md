@@ -1,6 +1,6 @@
 ---
 name: nora-readback
-description: Reads back the evidence that a Nora turn, background pass, deploy or fix did what is claimed, from Langfuse traces, Prometheus counters, Postgres rows and container logs on norty. Load when a task says read back, verify it ran, check the trace, is it live, did it write, count tool calls, or measure tokens, cache or cost. Not for building, recreating or rolling back containers (nora-deploy).
+description: Reads back the evidence that a Nora turn, background pass, deploy or fix did what is claimed, from Langfuse traces, Prometheus counters, Postgres rows and container logs on nora-host. Load when a task says read back, verify it ran, check the trace, is it live, did it write, count tool calls, or measure tokens, cache or cost. Not for building, recreating or rolling back containers (nora-deploy).
 ---
 
 # nora-readback
@@ -11,7 +11,7 @@ anything, write down what a positive result would look like; a null from an
 instrument that cannot see the thing is not evidence (`AGENTS.md`, Never list).
 
 - Credentials are named by env var only; never print, copy or paste a value.
-  Run authenticated reads ON norty so the key never leaves it.
+  Run authenticated reads ON nora-host so the key never leaves it.
 - Write responses to a file, then parse the file.
 - Report each claim as: store, query, window, reading, VERIFIED / UNVERIFIED /
   FAILED.
@@ -32,13 +32,13 @@ and never arrived, recorded PASS for a day). Record `accepted` as UNVERIFIED.
 
 ## 2. Langfuse (one turn, one pass)
 
-Langfuse runs as its own compose project on norty, port 3100. The key is in
-`LANGFUSE_OTLP_HEADERS` in norty's `~/workspace/nora/.env`, shaped
+Langfuse runs as its own compose project on nora-host, port 3100. The key is in
+`LANGFUSE_OTLP_HEADERS` in nora-host's `~/workspace/nora/.env`, shaped
 `Authorization=Basic%20<base64>`; its `=` padding is URL-encoded, and without
 decoding `%3D` every call is 401 (measured 2026-09-24).
 
 ```bash
-ssh norty bash -s > lf.log 2>&1 <<'EOF'
+ssh nora-host bash -s > lf.log 2>&1 <<'EOF'
 cd ~/workspace/nora || exit 1
 B64=$(sed -n 's/^LANGFUSE_OTLP_HEADERS=Authorization=Basic%20//p' .env | sed 's/%3D/=/g')
 curl -s -H "Authorization: Basic $B64" -o /tmp/lf.json -w 'HTTP=%{http_code}\n' \
@@ -77,18 +77,18 @@ the 2026-09-24 scripts are not in the repo, rebuild them): take each
 `engagement` trace's first GENERATION `input`; export tool schemas locally
 from `ToolRegistry` specs (the trace holds only names); render the arm's
 doctrine and first check the unchanged render is byte-identical to the
-recorded one; POST to the deployed model alias on norty, one variable per arm,
+recorded one; POST to the deployed model alias on nora-host, one variable per arm,
 always with an as-recorded arm. At temperature 0.7 one turn decides nothing;
 read rates over 80 or more samples. For a labelled before/after, use nora-eval.
 
 ## 3. Prometheus (did it run)
 
-Two sources, both on norty only (the dev machine gets no answer from 9190):
+Two sources, both on nora-host only (the dev machine gets no answer from 9190):
 
 ```bash
-ssh norty 'curl -s localhost:9100/metrics | grep ^nora_dream_'       # nora; presence :9101, analytics :9103
-ssh norty 'docker inspect nora --format "{{.State.StartedAt}} restarts={{.RestartCount}}"'
-ssh norty bash -s > prom.log 2>&1 <<'EOF'
+ssh nora-host 'curl -s localhost:9100/metrics | grep ^nora_dream_'       # nora; presence :9101, analytics :9103
+ssh nora-host 'docker inspect nora --format "{{.State.StartedAt}} restarts={{.RestartCount}}"'
+ssh nora-host bash -s > prom.log 2>&1 <<'EOF'
 curl -sG 127.0.0.1:9190/api/v1/query_range -o /tmp/q.json -w 'HTTP=%{http_code}\n' \
   --data-urlencode 'query=<metric>' --data-urlencode "start=$(date -d '-14 days' +%s)" \
   --data-urlencode "end=$(date +%s)" --data-urlencode step=300
@@ -113,7 +113,7 @@ EOF
 ## 4. Postgres rows (what was written)
 
 ```bash
-ssh norty 'cd ~/workspace/nora && docker compose exec -T db psql -U nora -d nora -Atc "select count(*) from note"'
+ssh nora-host 'cd ~/workspace/nora && docker compose exec -T db psql -U nora -d nora -Atc "select count(*) from note"'
 ```
 
 - Reach the db through `docker compose exec -T db` from the project directory,
@@ -126,7 +126,7 @@ ssh norty 'cd ~/workspace/nora && docker compose exec -T db psql -U nora -d nora
 ## 5. Container logs (what a line saw)
 
 ```bash
-ssh norty bash -s > log.txt 2>&1 <<'EOF'
+ssh nora-host bash -s > log.txt 2>&1 <<'EOF'
 cd ~/workspace/nora || exit 1
 docker compose logs --no-log-prefix --since 1h nora | jq -c 'select(.severity_number >= 13) | {ts, level, logger, message}'
 EOF
@@ -141,7 +141,7 @@ EOF
 ## 6. Inside the container
 
 ```bash
-ssh norty 'cd ~/workspace/nora && docker compose exec -T nora /app/.venv/bin/python -c "from nora.config import load; ..."'
+ssh nora-host 'cd ~/workspace/nora && docker compose exec -T nora /app/.venv/bin/python -c "from nora.config import load; ..."'
 ```
 
 - Plain `python` lacks the dependencies; `uv run` installed 33 dev packages

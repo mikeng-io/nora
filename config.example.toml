@@ -1374,7 +1374,7 @@ headers_env = ""                      # env var NAME holding OTLP auth headers, 
 # `deploy/prometheus/`. See `docs/observability.md`.
 enabled = false
 dsn_env = "SENTRY_DSN"                # env var NAME holding the DSN (DEC-8), never the value; unset or empty = off, not an error
-environment = ""                      # deployment label such as "norty" or "laptop"; "" records `unknown`
+environment = ""                      # deployment label such as "server" or "laptop"; "" records `unknown`
 
 [evals]
 # The model that grades the adversarial live run (DEC-75). Must differ from

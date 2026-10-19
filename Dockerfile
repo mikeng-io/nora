@@ -13,7 +13,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir uv==0.11.18
 
-# uid/gid 1000 matches the host operator (norty) so the bind-mounted ./data directory
+# uid/gid 1000 matches the reference host operator so the bind-mounted ./data directory
 # is writable without a runtime `user:` override or a chmod dance.
 RUN groupadd --gid 1000 nora \
     && useradd --uid 1000 --gid 1000 --create-home --home-dir /home/nora \

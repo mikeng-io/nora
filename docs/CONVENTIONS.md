@@ -155,8 +155,8 @@ counting a module's responsibilities to counting its lines.
   registration, and losing it means re-linking. Nora *does* now own the daemon
   (see constraint 3); routine reads and RPC calls are ordinary, destructive
   account operations are not.
-- **Never reference the archived legacy path** (`~/.hermes/profiles/nora/`) —
-  it no longer exists; see constraint 4.
+- **Never reuse an archived legacy gateway profile path** — the legacy gateway
+  is retired; see constraint 4.
 - **Never assert a per-tag object was cleaned up by checking that an
   attribute was deleted.** `Handler._prefills`/`_guards` (the leak the
   pipelines phase exists to remove) existed precisely because tests asserted
@@ -228,12 +228,13 @@ counting a module's responsibilities to counting its lines.
 The terse rule is in `AGENTS.md` («Reaching the deployment»); this is the why.
 
 **Two machines, one direction.** Until 2026-09-07 sessions ran on the host
-itself, committing as `opsuser-dev` in the checkout the container bind-mounts.
+itself, committing directly in the checkout the container bind-mounts.
 That is the root of every «the merge deployed itself» story above: the build
 context, the doctrine mount and the editing surface were one directory. The
 fix is structural rather than procedural — the host holds a checkout that only
-a deploy moves (GitOps, Komodo owns the clone), and every session runs on the
-MacBook and reaches the host read-only over `ssh norty`.
+a deploy moves, and development sessions run on a separate machine. Host reads
+use `ssh nora-host`, the operator-configured SSH alias documented in `AGENTS.md`;
+changes use the locked deployment procedure.
 
 **Why a dedicated key and nothing else.** On 2026-09-07 the first attempt to
 reach the host from a session found four local keys, none authorised, and a
@@ -257,8 +258,8 @@ the code alone: the note create path had never run, and the two
 `note_candidate` rows were `kind = 'miss'` — `note_search`'s negative cache,
 not proposals.
 
-**Two traps found on the way.** `docker ps | grep db` matched Komodo's
-FerretDB container; `docker compose exec db` from the project directory is the
+**Two traps found on the way.** `docker ps | grep db` matched an unrelated
+database container; `docker compose exec db` from the project directory is the
 only address that cannot be wrong. And `docker compose logs nora` was empty —
 the container did not use the docker log driver — so «no dream lines in the
 log» was not evidence of anything. The metrics endpoint and the tables were.
@@ -643,11 +644,10 @@ operationally valuable text in it. Losing any of these wastes an afternoon.
    It needs **Java 25** (class file version 69). Temurin 21 fails at class load.
 
    If group state goes stale on a linked device, `sendSyncRequest` over
-   `/api/v1/rpc` asks the primary to re-send it — that is what made the
-   `Ridgeline` group appear after `listGroups` had returned `[]`.
-4. The legacy Hermes gateway is archived at
-   `/home/norty/backups/nora-legacy-profile-20260804/`. Do not reference the
-   old `~/.hermes/profiles/nora/` path.
+   `/api/v1/rpc` asks the primary to re-send it; this recovered a known group
+   after `listGroups` had returned `[]`.
+4. The legacy Hermes gateway is retired. If migrating an old installation,
+   archive its profile outside the checkout; do not reuse the old profile path.
 5. Dependencies are added with **`uv add`**, never raw pip.
 
 ## Conventions (spec §10 — the short version; see the spec for the rest)
@@ -813,7 +813,7 @@ green", and it was right:**
   `FakeMediaObjectStore` and its contract suite against
   `SqlMediaObjectStore` turned one test red **against production**: the SQL
   `search` combined words with `or_` while its own docstring said it ANDed
-  them — "birthday card miles" returned every birthday card. Fixed in the
+  them — "birthday card example-person" returned every birthday card. Fixed in the
   store. No offline test could have found it, because every offline test ran
   against a fake that invented its own semantics.
 - Three files each carried a one-method `ReverseGeocoder` fake; now

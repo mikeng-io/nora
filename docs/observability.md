@@ -59,7 +59,7 @@ and only the first is visible from inside this repo — which is why the second 
 written down here at all.
 
 ```
-  nora process                     otel-collector (norty)              stores
+  nora process                     otel-collector (nora-host)              stores
   ────────────                     ──────────────────────              ──────
   span(...)                                                        ┌─▶ Langfuse
       │                                                            │   :3100
@@ -86,7 +86,7 @@ Two consequences worth holding on to:
   attributes as arguments for exactly this reason; an attribute added by
   `annotate()` one line later is one the sampling decision was made without.
 
-**② The collector filters** (`~/workspace/otel-collector/config.yaml` on norty)
+**② The collector filters** (`~/workspace/otel-collector/config.yaml` on nora-host)
 are a second stage that this repo does not own and cannot see. Read from the
 file 2026-10-01; an earlier version of this section described a
 `service.name != "nora"` filter that is no longer there:
@@ -302,7 +302,7 @@ complementary: one is about what the *client* does, the other about how the
 
 No claim about tracing is finished until the trace has been read back. The
 Langfuse and Jaeger UIs answer from a dev machine on the LAN, but authenticated
-reads run ON the deploy host (`ssh norty`), so the key never leaves it.
+reads run ON the deploy host (`ssh nora-host`), so the key never leaves it.
 
 **Langfuse.** Credentials are the base64 blob inside `LANGFUSE_OTLP_HEADERS` in
 the deploy host's `~/workspace/nora/.env`, URL-encoded (`%20` after `Basic`,
@@ -326,7 +326,7 @@ parser gets you a *schema summary* instead of JSON.
 reach a collector at all", remembering that Jaeger holds only the spans that are
 *not* generations.
 
-**Prometheus.** `ssh norty 'curl -s localhost:9100/metrics | grep ^nora_'`.
+**Prometheus.** `ssh nora-host 'curl -s localhost:9100/metrics | grep ^nora_'`.
 Read the counter first: it tells you whether the work is happening, which
 separates "not instrumented" from "not running" before you go looking for a
 span.
@@ -542,7 +542,7 @@ the rule for that. The two computer counters are created at zero at start
 (`nora.app.computer_metrics.ComputerMetrics.prime`), because `increase()` over a
 series whose first sample is already 1 reads 0 and a rare failure after one of
 nora's 2 to 24 daily restarts (the 2026-10-02 audit: 47 starts in 4.5 days) would be invisible to the rule written for it.
-Read back: `ssh norty 'curl -s localhost:9100/metrics | grep ^nora_computer_'` shows
+Read back: `ssh nora-host 'curl -s localhost:9100/metrics | grep ^nora_computer_'` shows
 `nora_computer_up` (1 when healthy) and the zero-valued counters; with the computer
 off it shows neither.
 

@@ -1,6 +1,9 @@
 # Nora operator runbook
 
-Five scenarios an operator actually hits, each with the exact command to run.
+Operational scenarios and reference commands. SSH examples use `nora-host`, an
+alias you configure for your deployment host (see `AGENTS.md`, Reaching the
+deployment). Paths under `~/workspace/` are example installation paths; substitute
+your own. Loopback addresses refer to the host where each command runs.
 
 ## 1. "Nora is silent — is she broken or just quiet?"
 
@@ -406,7 +409,7 @@ fails the deploy does not compete for attention that is already spent.
 **Resolved 2026-10-01: Signal's age now counts the keep-alive.** `PlatformSilent`
 fired on ordinary quiet because Signal's `last_event_at` moved only on a
 message: 108 episodes in 14 days, Signal firing about 140 hours of them, each
-resolved when a message finally arrived (read back from Prometheus on norty).
+resolved when a message finally arrived (read back from Prometheus on nora-host).
 signal-cli sends a `:` comment line about every 18 seconds (5 in 90 seconds,
 probed the same day), and `SignalListener` discarded it. It now advances
 `last_event_at` without reaching `on_event`, as the WhatsApp and Instagram
@@ -527,7 +530,7 @@ collector to **token mode**:
    account (the one `LIFE360_USERNAME` names), not your own.
 2. Open DevTools, then Application → Storage → Cookies → `life360.com`, and copy
    the value of `LIFE360_AUTH_TOKEN`.
-3. On norty, add it to the deploy checkout's `.env` (never commit it):
+3. On nora-host, add it to the deploy checkout's `.env` (never commit it):
 
    ```bash
    LIFE360_AUTH_TOKEN=<the cookie value>
@@ -565,8 +568,8 @@ are separate and live with their feature.
   service's scope (usually a service added since the last sign-in).
 - **The fix for both:** on a machine with a browser, run
   `uv run python scripts/google_auth.py` with the same client, sign in as
-  `nora@67.zone`, approve every scope it lists, and put the printed token in
-  norty's `.env` as `GOOGLE_OAUTH_REFRESH_TOKEN`. Then recreate the container
+  the dedicated Google account configured for your deployment, approve every scope it lists, and put the printed token in
+  nora-host's `.env` as `GOOGLE_OAUTH_REFRESH_TOKEN`. Then recreate the container
   (nora-deploy): `.env` is read at start.
 
 ## 4d. "The cognition loop is not healthy"
@@ -1060,10 +1063,10 @@ they said *before* you mapped them into their Honcho peer — Nora never writes
 
 ```bash
 $ uv run nora groups
-ALLOWED  Ridgeline
-         id = Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34=
+ALLOWED  Example group
+         id = <group-id-from-your-signal-daemon>
          member=yes  members=3
-         policy: labelled "Ridgeline", persons = ['miles']
+         policy: labelled "Example group", persons = ['example-user']
 ```
 
 If the daemon is unreachable, `groups` exits 1 with the two commands to run;
@@ -1173,13 +1176,13 @@ tar czf ~/backups/nora-state-$(date +%Y%m%d).tar.gz -C ~/workspace/nora state da
 ```
 
 **Restore:** stop the stack, extract over `state/`, start. The account is
-identified by `state/signal-cli/data/accounts.json` plus the `892678*` files
-beside it.
+identified by `state/signal-cli/data/accounts.json` and the account-specific files
+beside it. Preserve the complete directory rather than selecting account filenames.
 
-**Existing backup:** `/home/norty/backups/signal-cli-20260805-173329/signal-cli-data.tar.gz`
-— taken *before* the 0.14.4.1 → 0.14.7 migration. signal-cli migrates its store
-schema one-way on first run of a new version, so that archive is the only way
-back to 0.14.4.1.
+**Before a signal-cli upgrade:** create and verify a backup outside the checkout,
+for example `~/backups/signal-cli-<timestamp>/signal-cli-data.tar.gz`. Store
+migrations can be one-way: a backup taken before upgrading is required to return
+to the previous version.
 
 ### Facts that cost hours to learn
 
@@ -1214,20 +1217,17 @@ back to 0.14.4.1.
     `pniAccountData.serviceId` are two different UUIDs. Wiring only `getUserStatus` —
     the obvious one-call fix — collects the wrong UUID and still looks like it worked.
     `nora/platform/signal/self_id.py` batches both calls into one POST and keeps both.
-- **Nora's Signal identity, for cross-checking a metric:** phone `+85290000100`,
-  ACI `a1000000-0000-4000-8000-000000000000`, PNI
-  `a10000ff-0000-4000-8000-0000000000ff`. Three MATCHABLE id forms, which is why
-  a healthy `nora_identity_aliases` reads 3. Her Signal username (`nora.000`,
-  which is also the wake word) is not one of them and is not collected.
+- **Cross-check identity metrics against your private configuration.** Phone,
+  ACI and PNI are three matchable identity forms, so a configured single-account
+  installation normally reports `nora_identity_aliases` as 3. Signal usernames
+  are not collected as matchable identities.
 - **Group state can go stale on a linked device.** If `listGroups` returns `[]`
-  for a group you know exists, call `sendSyncRequest` over `/api/v1/rpc` — that
-  is what made `Ridgeline` appear.
-- **The daemon is Nora's, not shared.** It was documented as "neutral and
-  shared" from the Hermes era; hermes-agent runs profiles `attest`/`bento`/
-  `default` and has no `nora` profile. signal-cli *binds* `:18080`; Nora is its
-  only client.
-- **Device 2 is named `nora`** (renamed from `HermesAgent`, 2026-08-05, via
-  `updateAccount --device-name`).
+  for a group you know exists, call `sendSyncRequest` over `/api/v1/rpc`.
+- **Use a dedicated Signal daemon.** Keep its account and device registration
+  separate from other applications, and confirm its bind address and client
+  configuration before changing it.
+- **Name the linked device clearly**, using `updateAccount --device-name`, so
+  an operator can distinguish it from other linked devices.
 - **The account is a LINKED DEVICE**, not a standalone registration. The primary
   phone can be off for normal operation — Signal delivers to each device
   independently — but Signal unlinks devices after prolonged inactivity, and
@@ -1247,7 +1247,7 @@ names below are placeholders; the real ones are on the deploy host
 
 - `nora-social-desktop.service` — `tigervncserver :2 -fg` (Xtigervnc,
   1920x1080, Openbox), VNC bound to the Tailscale interface only
-  (`-interface 100.91.183.127 -localhost=0`, port 5902, `-SecurityTypes VncAuth`:
+  (`-interface <tailscale-ip> -localhost=0`, port 5902, `-SecurityTypes VncAuth`:
   macOS Screen Sharing cannot speak TLSVnc, and Tailscale already encrypts the
   link; `-localhost=0` must come AFTER `-interface`, which otherwise resets it
   and binds loopback only). Enabled with user
@@ -1255,20 +1255,18 @@ names below are placeholders; the real ones are on the deploy host
   ONLY: nothing of the operator's runs on it.
 - `nora-social-chrome.service` — headed Chrome on `DISPLAY=:2`
   (`--ozone-platform=x11`) with its OWN data folder,
-  `--user-data-dir=/home/norty/.local/share/nora-browser
+  `--user-data-dir=/home/<deploy-user>/.local/share/nora-browser
   --profile-directory="Profile 1"`: one profile, signed into Chrome as Nora's
   own Google account, holding the Instagram, X and LinkedIn sessions and the
   OpenCLI extension. None of the operator's extensions or sites are in it. Never point it back at `~/.config/google-chrome`:
   that folder is the operator's browser, and a shared folder means a shared
   process, encryption key and "last used profile" (split 2026-10-10). The unit has `Requires=`/`After=` on the desktop
   service, so systemd already orders Chrome after `:2` exists.
-- OpenCLI 1.8.7 — installed under `~/.hermes/node`, on PATH as `opencli`;
-  daemon on `localhost:19825`. ONE daemon serves TWO Chromes, each with the
-  Browser Bridge extension: profile alias `nora` (Nora's Chrome on `:2`) and
-  `miles` (the operator's on `:4`, which another agent of his reads through).
-  `opencli profile use miles` makes the operator's the DEFAULT, so Nora's code
-  never relies on it: the bridge and the session probe pass
-  `--profile nora` on every call (`OPENCLI_PROFILE`, default `nora`), and an
+- OpenCLI — install it for the deployment user and put `opencli` on PATH;
+  daemon on `localhost:19825`. Register Nora's Chrome with the Browser Bridge
+  extension and profile alias `nora`. If other Chrome profiles share the daemon,
+  Nora must still select her own: the bridge and session probe pass
+  `--profile nora` on every call (`OPENCLI_PROFILE`, default `nora`). An
   unknown or disconnected profile fails with exit 69 rather than falling back.
   After reinstalling the extension a profile gets a new id: re-alias it with
   `opencli profile list` and `opencli profile rename <id> nora`.
@@ -1276,7 +1274,7 @@ names below are placeholders; the real ones are on the deploy host
   `deploy/social-bridge/`), the read-only HTTP seam the container calls on
   `http://host.docker.internal:19826` (the docker0 gateway — Nora's container
   is on the private `nora` compose network, not host networking). The unit
-  sets `OPENCLI_BIN=/home/norty/.local/bin/opencli` (the systemd user
+  sets `OPENCLI_BIN=/home/<deploy-user>/.local/bin/opencli` (the systemd user
   environment has no interactive PATH) and binds `127.0.0.1` + the docker0
   gateway `172.17.0.1` — loopback and docker0 are both host-internal, never a
   LAN interface, because there is no authentication on `/read`; the allowlist
@@ -1306,7 +1304,7 @@ After any Chrome restart, confirm the Browser Bridge extension reconnected with
 `opencli doctor` (below) before assuming reads will work.
 
 **Occasional visual access / login renewal:** connect a VNC viewer to
-`100.91.183.127:5902`. VNC listens on the Tailscale interface only — not LAN,
+`<tailscale-ip>:5902`. VNC listens on the Tailscale interface only — not LAN,
 not localhost — so the viewer machine must be on the tailnet. Disconnecting the
 viewer kills nothing: Xtigervnc, Chrome and OpenCLI keep running. Use this when
 a read-only probe reports `logged_in=false` for Instagram or X — log in once by
@@ -1314,11 +1312,9 @@ hand in that Chrome and the session persists in the profile. The VNC password
 lives only in the service's private configuration — never paste it into the
 repo, an issue, or a chat log.
 
-**The operator's desktop is separate.** `miles-desktop.service` (VNC `:4`,
-port 5904, same Tailscale interface, its own password file and xstartup) and
-`miles-chrome.service` (`~/.config/google-chrome`, `Default`) are the
-operator's, not Nora's: host-only units outside this repo. Nothing of Nora's
-reads them, and nothing of the operator's runs on `:2`.
+**Keep any operator desktop separate.** Use independent browser data, VNC
+displays and credentials for human browsing. Nora's services must point only at
+her dedicated display and profile.
 
 **Are the logins still alive?** `nora-session-probe.timer` (unit in
 `deploy/session-probe/`) checks Chrome's Instagram, X and LinkedIn session
@@ -1341,16 +1337,16 @@ adapter, so Threads support is unimplemented, not broken.
 ## 11. "Honcho answers anyone" — closing it without authentication (#633, DEC-259)
 
 Honcho has no authentication, and the operator ruled (2026-10-01) that it
-will not get any: the fix is **where it listens**. Measured 2026-09-30 on norty:
+will not get any: the fix is **where it listens**. Measured 2026-09-30 on nora-host:
 `honcho-api-1` published `0.0.0.0:8000`, so any container that could name the
 host (`host.docker.internal`) and anything on the LAN read and wrote Nora's
 memory with one unauthenticated `POST /v3/workspaces/list`.
 
 **Honcho is not in this repository.** Its compose project is
-`~/workspace/honcho/docker-compose.yml` on norty, and nothing here edits it.
+`~/workspace/honcho/docker-compose.yml` on nora-host, and nothing here edits it.
 What this repo holds is nora's half (the `honcho` network in
 `docker-compose.yml`, the host-side rewrite in `nora/subject/obtain.py`) and the
-probe, `deploy/honcho-closed-probe.sh`. Who reaches Honcho, read on norty
+probe, `deploy/honcho-closed-probe.sh`. Who reaches Honcho, read on nora-host
 2026-10-01:
 
 | caller | route today | after |
@@ -1368,7 +1364,7 @@ access log's source class before and after (below) is how to find one first.
 ### The order, and why it is this order
 
 Each step leaves every caller working; the door closes last. **Run from
-`~/workspace/nora` and `~/workspace/honcho` on norty. Nothing here is done by
+`~/workspace/nora` and `~/workspace/honcho` on nora-host. Nothing here is done by
 the PR merging.**
 
 ```bash
@@ -1442,7 +1438,7 @@ forward still answers, and the Docker Engine is 28 or newer. `1` is an open door
 or a shut-out caller; `2` is a probe that cannot tell; `3` is a WARN only: on an
 engine older than 28 a loopback-published port can be reached from the LAN, which
 a probe run on the host cannot see, so from a machine on the LAN
-`curl -m 4 http://<norty's LAN address>:8000/health` must fail. The same probe by hand:
+`curl -m 4 http://<deployment-host-lan-address>:8000/health` must fail. The same probe by hand:
 
 ```bash
 docker run --rm --network bridge --entrypoint curl nora:latest \

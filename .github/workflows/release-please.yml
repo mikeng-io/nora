@@ -1,10 +1,4 @@
-# Releases (DEC-314). On every push to master, release-please reads the
-# Conventional Commits merged since the last `vX.Y.Z` tag and keeps ONE open
-# release PR — "chore(master): release X.Y.Z" — with the next version and its
-# CHANGELOG.md section. Nothing is released until the operator merges that PR;
-# the merge makes the tag and the GitHub Release. Deploying stays on the host
-# (the nora-deploy skill); `scripts/build-image.sh` stamps the image from the
-# tag. The procedure is the nora-release skill.
+# Release metadata only; deployment is a separate operator procedure.
 name: release-please
 
 on:
@@ -13,8 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: release-please
@@ -23,8 +16,51 @@ concurrency:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
-      - uses: googleapis/release-please-action@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Find unreleased runtime changes
+        id: scope
+        run: python3 scripts/release_scope.py >> "$GITHUB_OUTPUT"
+      - name: Create a repository-scoped release token
+        if: vars.RELEASE_APP_ID != ''
+        id: app
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-administration: read
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
+        id: release
+        with:
+          token: ${{ steps.app.outputs.token || secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          skip-github-pull-request: ${{ steps.scope.outputs.eligible != 'true' }}
+      - name: Queue the generated release PR for merge after required checks
+        if: steps.app.outputs.token != '' && steps.release.outputs.pr != '' && !github.event.repository.private
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_PR: ${{ steps.release.outputs.pr }}
+        run: |
+          # Refuse to merge unattended until the public required-check policy exists.
+          gh api repos/"$GH_REPO"/branches/master/protection/required_status_checks \
+            --jq '.contexts | index("checks") != null' | grep -qx true
+          number=$(jq -r '.number' <<< "$RELEASE_PR")
+          sha=$(gh pr view "$number" --json headRefOid --jq .headRefOid)
+          gh pr merge "$number" --auto --merge --match-head-commit "$sha" \
+            --subject "merge: publish release (#$number)" \
+            --body "Release Please metadata; required checks gate automatic publication."
+      - name: Report manual bootstrap requirement
+        if: vars.RELEASE_APP_ID == ''
+        run: echo '::notice::Install the free release GitHub App and configure public branch protection to enable unattended releases. See docs/github-maintenance.md.'

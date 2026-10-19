@@ -33,6 +33,9 @@ jobs:
         run: >-
           uv run pytest -q
           tests/architecture/test_contribution_conventions.py
+          tests/architecture/test_public_repository_settings.py
+          tests/architecture/test_release_scope.py
+          tests/architecture/test_release_config_matches_the_repo.py
           tests/architecture/test_doc_references_resolve.py
           tests/test_architecture_doc.py tests/test_docs.py
           tests/test_boundaries.py tests/test_deploy_assets.py

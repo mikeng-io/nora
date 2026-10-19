@@ -1,7 +1,7 @@
 # deploy/session-probe — is the login still alive? (#628)
 
 The OpenCLI Chrome (`nora-social-chrome.service`, profile `Profile 1` in its
-own data folder `/home/norty/.local/share/nora-browser`, signed in as Nora's
+own data folder `~/.local/share/nora-browser`, signed in as Nora's
 own Google account) is the **single owner** of the
 Instagram, X and LinkedIn sessions. The `instagram-bridge` container is a
 **follower**: it holds a copy of Chrome's Instagram cookies in
@@ -76,9 +76,15 @@ It never logs in to anything. A dead session in Chrome needs a human in VNC.
 
 ## Install
 
+Commands use the reference checkout `~/workspace/nora`; substitute your path.
+The service template uses systemd `%h` for the deployment user's home directory
+in `ExecStart` and `Environment` values. Keep `%h` in unit files: systemd does
+not expand shell `$HOME` references in `Environment=`. Adjust the Node binary
+path to match your OpenCLI installation before enabling the service.
+
 ```bash
 mkdir -p ~/.config/systemd/user
-cp /home/norty/workspace/nora/deploy/session-probe/nora-session-probe.{service,timer} \
+cp ~/workspace/nora/deploy/session-probe/nora-session-probe.{service,timer} \
    ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now nora-session-probe.timer
@@ -87,11 +93,16 @@ journalctl --user -u nora-session-probe -n 20 --no-pager
 ```
 
 Like the social bridge, it runs the CHECKOUT's code: an edit on `master` is a
-deploy after the next run. Needs `docker` access for the `norty` user (it
-already has it) and reads `Cookies` while Chrome is running.
+deploy after the next run. Needs `docker` access for the deployment user and
+reads `Cookies` while Chrome is running.
+
+The service template explicitly sets `NORA_PROBE_CHROME_DB` to the deployment
+user's Chrome cookie database and `NORA_PROBE_BRIDGE_DIR` to its bridge state.
+Adjust these template values for your installation; they are not portable
+application defaults.
 
 Overrides (environment, all optional): `NORA_PROBE_CHROME_DB`,
-`NORA_PROBE_BRIDGE_DIR` (default `/home/norty/workspace/nora/state/instagram`),
+`NORA_PROBE_BRIDGE_DIR` (the service template sets `%h/workspace/nora/state/instagram`),
 `NORA_PROBE_BRIDGE_CONTAINER`, `NORA_PROBE_STATE_FILE`, `OPENCLI_BIN`,
 `OPENCLI_PROFILE` (default `nora`; blank refuses to start),
 `NORA_PROBE_LIVE_INTERVAL_S`.
@@ -136,5 +147,5 @@ Alerts go to the Discord review channel through `deploy/alert-bridge`
 | `sync_capped` | 3 syncs in a row did not restore the bridge; the probe stopped restarting it |
 
 **The fix for every one of them is a human login in Chrome over VNC**
-(`100.91.183.127:5902`, see `docs/runbook.md` §10). Once Chrome holds a fresh
+(`<tailscale-ip>:5902`, see `docs/runbook.md` §10). Once Chrome holds a fresh
 session, the next run syncs the bridge by itself.

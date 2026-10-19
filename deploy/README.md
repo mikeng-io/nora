@@ -76,8 +76,8 @@ project before enabling the timer on a deployment host.
 ## Historical bare-metal / systemd reference
 
 This document and the systemd unit (`deploy/nora.service`) describe a **bare-metal**
-deployment path. It is **not** what the live instance currently runs — Nora runs as a
-Docker container today (`Dockerfile` + `docker-compose.yml` at the repo root; see the
+deployment path. The reference Compose installation described above runs as a
+Docker container (`Dockerfile` + `docker-compose.yml` at the repo root; see the
 "Deployment" section of the root `README.md`). This path is kept for reference and as a
 rollback option if the container approach ever needs to be abandoned; the commands below
 (`systemctl start/stop nora`) only apply if you are actually running Nora this way.
@@ -93,7 +93,7 @@ rollback option if the container approach ever needs to be abandoned; the comman
 If a deploy misbehaves, roll back to the previous version:
 
     sudo systemctl stop nora
-    cd /home/nora/workspace/nora && git checkout <previous-tag>
+    cd <deployment-checkout> && git checkout <previous-tag>
     sudo systemctl start nora
 
 The audit database is never touched by a rollback — but schema changes are versioned
