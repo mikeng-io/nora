@@ -352,10 +352,10 @@ async def test_budget_trim_and_write_conflict_never_acknowledge_unsettled_source
 async def test_unavailable_social_is_explicit_and_does_not_block_or_ack_other_domains(env):
     from nora.infra.sql.schema import CONSOLIDATION_WATERMARK as W
 
-    await message(env)
     reads, _, source, evidence, adaptor = wired(env)
     boundary, _ = await reads.history_state(key=KEY)
     await reads.advance_history(key=KEY, cursor=boundary)
+    await message(env)  # a new arrival after the frozen history was completed
     # Real failed read, rather than a fake returning [] for every call.
     async with env.begin() as conn:
         await conn.execute(sa.text('ALTER TABLE social_item RENAME TO unavailable_social_item'))
@@ -429,3 +429,47 @@ async def test_attempted_unreadable_cache_stays_pending_without_blocking_recover
     assert 0 < await evidence.count(key=KEY, after=boundary) < 100
     assert (await source.media_recovery(key=KEY, rooms=ROOMS,
                                        person=PERSON))['initial_sweep_complete']
+
+
+async def test_historical_page_cannot_reintroduce_unrooted_withdrawn_rollup_support(env):
+    await message(env, ident=9, person='person-b', ts=T0 - 1)
+    await message(env, ident=10, body='allowed current statement')
+    await message(env, ident=11, body='withdrawn reply', quoted_ts=T0 - 1)
+    async with env.begin() as conn:
+        await conn.execute(sa.insert(ROLLUP_BUILD).values(id=1, status='current',
+            code_version='synthetic', params_sha256='a' * 64, through_ms=T0 + 10))
+        await conn.execute(sa.insert(ROLLUP_TIE).values(build_id=1, unit='unit',
+            valid_from_ms=T0, valid_to_ms=T0 + 10, as_of_ms=T0,
+            lineage=[['message', None, 'signal:room-a']], person_a=PERSON,
+            person_b='person-b', iso_week='2026-W38', replies_ab=1, replies_ba=0,
+            mentions_ab=0, mentions_ba=0, reactions_ab=0, reactions_ba=0, colocation_ms=0))
+        # A withdrawal after the build leaves the derived count in place.
+        await conn.execute(sa.update(MESSAGES).where(MESSAGES.c.id == 11)
+                           .values(hidden_at=T0 + 1))
+    reads, _, _, evidence, adaptor = wired(env)
+    batch, _ = await evidence.newest(key=KEY, after=0, limit=100)
+    assert evidence.historical(KEY)
+    rendered = await adaptor.inputs(key=KEY, batch=batch)
+    assert 'allowed current statement' in rendered and 'withdrawn reply' not in rendered
+    assert '<persona_ties ' not in rendered
+    assert adaptor._runs[KEY].citable.rollup_keys == frozenset()
+    await settle_account(adaptor, evidence)
+    assert await reads.history_state(key=KEY) == (11, 10)
+
+
+async def test_completed_history_bounds_recent_scan_without_hiding_old_cached_readings(env):
+    sha = 'e' * 64
+    await message(env, body='[image eeeeee]', media=json.dumps([{'sha256': sha}]))
+    await message(env, ident=20, body='already settled historical plain text')
+    async with env.begin() as conn:
+        await conn.execute(sa.insert(MEDIA_OBJECTS).values(sha256=sha, media_type='image/png',
+            size=1, source='inbound', created_at_ms=T0, description='existing cached scene'))
+    reads, _, _, evidence, _ = wired(env)
+    boundary, _ = await reads.history_state(key=KEY)
+    await reads.advance_history(key=KEY, cursor=boundary)
+    # The recent watermark may still lag after a completed historical pass.
+    batch, cursor = await evidence.newest(key=KEY, after=0, limit=100)
+    assert cursor == boundary
+    assert {m.row.id for r in batch for m in r.roots} == {10}
+    assert batch[0].cache_ready
+    assert await reads.history_state(key=KEY) == (boundary, boundary)

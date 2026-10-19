@@ -477,7 +477,10 @@ judge. A nullable acknowledged revision and a separate last-read revision on
 snapshots settled by the account are acknowledged. Trimmed or unreadable
 snapshots remain pending; recording an attempt merely lets other pending work
 run first and prevents a tight catch-up loop. Conflicts and unsettled person
-sessions never abandon their evidence.
+sessions never abandon their evidence. Historical pages remain Record-only;
+Rollups use the rooted revision path. The completed historical boundary floors
+recent scans without hiding cached readings on older messages or replaying
+settled historical plain text.
 
 - Record messages and eligible mentions include original author, assertion
   time, source revision time and cached attachment readings. Later cached

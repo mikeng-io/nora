@@ -407,7 +407,7 @@ class PersonaEvidence:
         if progress < boundary:
             return self._wake_batch
         if self._source_inputs is not None:
-            n = len(await self._sources(key, 1, after))
+            n = len(await self._sources(key, 1, max(after, boundary)))
             try:
                 recovery = await asyncio.wait_for(self._source_inputs.media_recovery(
                     key=key, rooms=_listed(pk), person=pk.person.person_id, initialize=True),
@@ -474,6 +474,7 @@ class PersonaEvidence:
             # Recent runtime watermark is independent until history exhausts.
             return historical_batch, after
         self._history.pop(key, None)
+        after = max(after, boundary)
         if self._source_inputs is not None:
             self._source_handed.pop(key, None)
             # Per-source revisions retain old messages and bounded leftovers;
@@ -481,7 +482,6 @@ class PersonaEvidence:
             snapshots = await self._sources(key, limit, after)
             self._source_selected[key] = snapshots
             return snapshots, after
-        after = max(after, boundary)
         messages, cursor = await self._store.person_since(
             rooms=_listed(pk), person_id=pk.person.person_id, after=after, limit=limit,
         )
@@ -765,7 +765,7 @@ class PersonaPersonAdaptor:
         cited = (await self._reads.rows_by_id(ids=[*cited_ids, *dispute_ids])
                  if cited_ids or dispute_ids else [])
         old_cited = [m for m in cited if m.row.id not in dispute_ids]
-        ties = ([] if revisions else
+        ties = ([] if revisions or self.evidence.historical(key) else
                 (await self._reads.tie_totals(unit=pk.unit, person_id=person))[:TIES_MAX])
         cultures = await asyncio.gather(
             *(
