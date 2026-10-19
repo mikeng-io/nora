@@ -27,7 +27,7 @@ Run it with an owner/admin `gh` login, after these workflows are merged. It enab
 native secret scanning/push protection, Dependabot security updates and private
 vulnerability reporting; restricts Actions to GitHub-owned actions plus the two
 named external actions; keeps workflow tokens read-only by default; requires PRs,
-resolved conversations and the CI, dependency-review and four CodeQL checks;
+resolved conversations and PR-content, CI, dependency-review and four CodeQL checks;
 blocks force pushes/deletion on master, including admins; and prevents updating
 or deleting release tags. It allows merge commits only and enables auto-merge.
 No extra human approval is required for a solo-maintained repository. The check
@@ -85,3 +85,17 @@ access details are installation-specific. Public deployment documentation descri
 the portable Compose procedure. Keep actual host inventory, account mappings,
 network addresses and private installation notes outside the repository. Releases
 do not connect to a deployment host or automatically deploy.
+
+## Contribution content checks
+
+`Contribution content` validates PR/issue metadata with default-branch code. The
+required `PR content` check is published on the actual PR head, including after
+title/body edits. Branch protection requires it after running the owner setup
+command above. Issue completeness and spelling/style suggestions are advisory.
+These use standard hosted runners and an offline spelling dictionary, with no
+paid service, model calls or production secrets. See CONTRIBUTING.md for the rules.
+
+For read-back or repair, dispatch the workflow with `kind=pr` or `kind=issue` and
+the contribution number. This workflow must first exist on master; its initial
+implementation PR is tested by the ordinary CI before merge, then dispatched to
+verify the live check after merge. Keep manual dispatch on master.
