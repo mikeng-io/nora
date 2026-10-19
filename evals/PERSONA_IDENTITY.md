@@ -2,7 +2,8 @@
 
 This is deterministic grading of the actual Persona writer, not `tool_selection`
 and not a semantic judge. A draw obtains the existing Subject, restores the normal
-snapshot background, appends declared invented sources using the roster's account,
+snapshot background, marks that restored history complete in the private sandbox,
+appends declared invented sources using the roster's account,
 seeds the held birthday via SqlPersonaStore.persona_write, and calls DreamerRuntime
 with PersonaPersonAdaptor's entity key and evidence reader. It reads
 SqlPersonaStore.account_heads, then selects current typed Identity. Predecessors
@@ -26,9 +27,27 @@ source clone and pseudonym map (the nora-eval skill gives the lock and setup):
 uv sync --extra evals
 uv run python -m evals.persona_cases /tmp/persona-identity.yaml
 export NORA_EVAL_PERSONA_CASES=/tmp/persona-identity.yaml
-uv run python -m evals persona_identity --print-input birthday_retained
-uv run python -m evals persona_identity --print-input marriage_unknown
+for case in birthday_retained birthday_corrected residence_unknown marriage_unknown partner_unspecified explicit_home_spouse; do
+  uv run python -m evals persona_identity --print-input "$case"
+done
 ```
+
+The private writer setup seeds `persona-person:history-boundary` and
+`persona-person:history` at the restored Record head through
+`SqlLanguageStore.advance_watermark` before appending any invented arrival.
+This declares an already-known background, rather than paying to backfill it.
+The production reader then selects the invented arrivals by later Record IDs;
+their original assertion timestamps remain unchanged, including dates before the
+snapshot anchor. No recent watermark or account settlement timestamp filters them.
+The held birthday retains its original citation and assertion date; the session
+clock is the private file's declared counterfactual clock.
+
+Before building an agent, the writer checks every declared synthetic row ID is
+present in the actual production-reader batch passed to the adaptor. Missing or
+unavailable evidence is ERROR with zero model calls, including negative cases.
+It runs the exact checked batch; it neither fabricates a batch nor bypasses
+production history behavior. Only this private writer entry point seeds cursors;
+normal backfill and other eval callers retain their existing behavior.
 
 `--print-input` composes the real instruction store (shared Dreamer doctrine plus
 persona-person objective) and the real adaptor input, including source dates,
@@ -58,9 +77,9 @@ git restore --source=853e8d5a -- \
 The after worktree retains those files from `126bb10f9` (the harness does not edit
 them). This composes the whole source-grounding change: retention semantics,
 objective, and clock/source-date rendering. No fake-before commit is made.
-Record each worktree HEAD, `git diff`, and tree/file hashes. Run the two offline
-inspection commands above on both arms, capture their output, and diff it before
-paying: the after input must contain the new about-person clock, source timestamps
+Record each worktree HEAD, `git diff`, and tree/file hashes. Run all six offline
+inspections above on both arms, capture their output, and diff it before
+paying: every input must contain every declared source; the after input must contain the new about-person clock, source timestamps
 and the amended objective. The input differences, not merely Git refs, prove the
 instrument sees the treatment. Both arms keep the clock-plumbing fix so the
 comparison varies the stated treatment, rather than today's machine clock.

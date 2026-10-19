@@ -5,13 +5,15 @@ from dataclasses import asdict
 from typing import Any
 
 from nora.agent.dream_screen import text_offence
-from nora.domain.culture import character_key
+from nora.domain.culture import RoomMessage, character_key
 from nora.domain.persona import Account, AddOp, PersonaCitable, Said
 from nora.infra.sql import create_sql_engine
+from nora.infra.sql.character import SqlCharacterEvidence
+from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.persona import SqlPersonaStore
 from nora.obs.tracing import current_trace_id
-from nora.subject.dreaming import dream
-from nora.subject.knowledge import arrive, last_row_id
+from nora.subject.dreaming import _samples
+from nora.subject.knowledge import arrive
 from nora.subject.obtain import Subject
 
 
@@ -43,7 +45,18 @@ async def run_writer(
         raise ValueError("private persona sources require nonempty body and timestamp <= clock")
     if [s["ts"] for s in sources] != sorted(s["ts"] for s in sources):
         raise ValueError("private persona sources must be chronological")
-    cursor = await last_row_id(subject)
+    # This private counterfactual is a post-history session. Freeze and complete
+    # the restored background BEFORE arrivals, using production's cursor rows.
+    engine = create_sql_engine(subject.database_url)
+    try:
+        cursor = await SqlCharacterEvidence(engine).message_head()
+        cursors = SqlLanguageStore(engine)
+        for name in ("persona-person:history-boundary", "persona-person:history"):
+            await cursors.advance_watermark(
+                consolidator_name=name, scope_id=key, last_message_id=cursor,
+            )
+    finally:
+        await engine.dispose()
     rows = []
     for source in sources:
         rows.append(await arrive(
@@ -69,17 +82,29 @@ async def run_writer(
                 raise ValueError(f"cannot seed held birthday: {result.refusals}")
         before = await store.account_state(key=key)
         held = await store.account_heads(key=key)
-        if print_input:
-            batch, _ = await chosen.evidence.newest(
-                key=key, after=cursor, limit=runtime.batch_limit_for(chosen.name) or 64,
+        batch, _ = await chosen.evidence.newest(
+            key=key, after=cursor, limit=runtime.batch_limit_for(chosen.name) or 64,
+        )
+        # Check the real reader's adaptor input, never prompt text: even a
+        # negative case cannot pass without every declared source as stimulus.
+        observed = {m.row.id for m in batch if isinstance(m, RoomMessage)}
+        missing = set(rows) - observed
+        if missing:
+            raise ValueError(
+                f"declared synthetic sources missing from writer input: {sorted(missing)}"
             )
+        if print_input:
             shown = await runtime.render_input(adaptor=chosen, key=key, batch=batch)
             return {"shown": shown}
-        result = await dream(subject, adaptor=chosen.name, entity_key=key, after_id=cursor)
+        ok_before = _samples(subject, "ok")
+        failed_before = _samples(subject, "unavailable")
+        result = await runtime.run(adaptor=chosen, key=key, batch=batch)
+        samples_ok = _samples(subject, "ok") - ok_before
+        samples_failed = _samples(subject, "unavailable") - failed_before
         after = await store.account_state(key=key)
         heads = await store.account_heads(key=key)
-        if (result.status == "unavailable" or result.samples_ok == 0
-                or result.samples_failed or after[1] is None or after[1] == before[1]):
+        if (result.status == "unavailable" or samples_ok == 0
+                or samples_failed or after[1] is None or after[1] == before[1]):
             raise ValueError(
                 f"writer did not settle readably: {result}; revision {before} -> {after}"
             )
@@ -88,8 +113,8 @@ async def run_writer(
             "heads": [asdict(h) for h in heads], "held": [asdict(h) for h in held],
             "rows": rows, "timestamps": [s["ts"] for s in sources],
             "revision_before": before[0], "revision_after": after[0],
-            "settled_at": after[1], "samples_ok": result.samples_ok,
-            "samples_failed": result.samples_failed, "status": result.status,
+            "settled_at": after[1], "samples_ok": samples_ok,
+            "samples_failed": samples_failed, "status": result.status,
             "budget": asdict(runtime.budget_for(chosen.name)),
             "samples_per_fire": runtime.samples_for(chosen.name),
         }
