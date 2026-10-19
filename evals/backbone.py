@@ -1344,7 +1344,7 @@ def _check_the_corpus_assertions(
     meta = case.metadata
     if outcome.error is not None or not meta:
         return outcome
-    failed: list[str] = []
+    failed: list[str] = list(outcome.checks_failed)
 
     creates = [t for kind, t in outcome.changed if kind == "create"]
     updates = [t for kind, t in outcome.changed if kind == "update"]
@@ -1490,7 +1490,15 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
         )
     room = (str(shot["platform"]), str(shot["conversation_id"]))
     before_ms = int(shot["before_ms"])
-    now = datetime.fromtimestamp(before_ms / 1000, tz=UTC)
+    clock_ms = before_ms
+    if port.synthetic_sources:
+        private = md.get("persona_input") or {}
+        if not md.get("private_persona_file") or not isinstance(private.get("clock_ms"), int):
+            raise ValueError("persona writer requires private synthetic source file and clock")
+        clock_ms = private["clock_ms"]
+        if clock_ms < before_ms:
+            raise ValueError("synthetic writer clock cannot precede the restored anchor")
+    now = datetime.fromtimestamp(clock_ms / 1000, tz=UTC)
     if spec.full_restore and os.environ.get(NO_GEOCODER_ENV):
         # The geocoder credentials are pointed at this name BECAUSE nothing
         # sets it; set, the full-restore subject would build a billed client.
@@ -1588,6 +1596,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                     source_url=spec.source_url,
                     before_ms=before_ms,
                     leave_room_for_arrival=port.delivers_input,
+                    **({"stimulus_clock_ms": clock_ms} if port.synthetic_sources else {}),
                 )
             # A case about a document she already made
             # has to make it, the production source holding none. Refused on a
@@ -1628,7 +1637,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             from nora.subject.context_filter import case_scope
 
             with case_scope(case.name):
-                outcome = await port.drive(subject, nora_case, now_ms=seeded.now_ms)
+                outcome = await port.drive(subject, nora_case, now_ms=clock_ms)
             blocks_empty = _blocks_empty(exporter)
             # BEFORE the judge: these describe what the SUBJECT spent, and a
             # judge's draws are the eval layer's own cost.
@@ -1650,6 +1659,17 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             blocks_rendered = _blocks_rendered(exporter)
             shown = shown_where(exporter.get_finished_spans())
             _SPEND.append(spend)
+            if port.synthetic_sources and outcome.position is not None:
+                receipt = json.loads(outcome.position)
+                receipt.update(
+                    run_id=RUN_ID, case=case.name,
+                    trace_ids=sorted({format(s.context.trace_id, "032x")
+                                      for s in exporter.get_finished_spans() if s.context}),
+                    model_calls=spend,
+                )
+                outcome = dataclasses.replace(
+                    outcome, position=json.dumps(receipt, ensure_ascii=False, sort_keys=True),
+                )
             outcome = _check_the_corpus_assertions(nora_case, outcome, seeded.rows)
 
             judged_why = ""
@@ -1743,7 +1763,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                 # SAME subject, SAME case, SAME now_ms — no re-`obtain()`.
                 repeat_outcome = outcome
                 for _ in range(spec.repeat - 1):
-                    repeat_outcome = await port.drive(subject, nora_case, now_ms=seeded.now_ms)
+                    repeat_outcome = await port.drive(subject, nora_case, now_ms=clock_ms)
                 repeat_state = [
                     EnvironmentState(name=NORA_ERROR_2, state=repeat_outcome.error),
                     EnvironmentState(name=NORA_WRITTEN_2, state=repeat_outcome.written),

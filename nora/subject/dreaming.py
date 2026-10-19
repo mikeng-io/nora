@@ -163,6 +163,8 @@ async def dream(
     room: tuple[str, str] | None = None,
     limit: int | None = None,
     after_ms: int | None = None,
+    entity_key: str | None = None,
+    after_id: int = 0,
 ) -> Pass:
     """One adaptor, one room, one pass. Raises `LookupError` for an unknown
     adaptor rather than running nothing and reporting `nothing_found`."""
@@ -189,6 +191,10 @@ async def dream(
     workspace = subject.unit
     platform, conversation_id = room or subject.room
     key = workspace if chosen.key_kind == "unit" else conversation_id
+    if chosen.key_kind == "entity":
+        if entity_key is None or entity_key not in tuple(chosen.keys()):
+            raise LookupError("entity adaptor requires a known entity_key")
+        key = entity_key
     before = await _notebook(subject, workspace)
     ok_before = _samples(subject, "ok")
     failed_before = _samples(subject, "unavailable")
@@ -211,7 +217,12 @@ async def dream(
     if limit is None:
         limit = runtime.batch_limit_for(chosen.name) or _FALLBACK_BATCH
     batch: list = []
-    if chosen.uses_watermark:
+    if chosen.key_kind == "entity":
+        batch, _cursor = await chosen.evidence.newest(
+            key=key, after=after_id, limit=limit,
+        )
+        batch = list(batch)
+    elif chosen.uses_watermark:
         newest = await subject.deps.audit.recent(
             conversation_id=conversation_id, limit=limit,
         )
@@ -233,7 +244,10 @@ async def dream(
     # per case and scraped by nobody — and the distinct label says something
     # true: this read was made by the eval seam.
     join: MediaJoin = subject.deps.media_join
-    batch = list(await join.enrich(batch, path="dreamer_eval")) if batch else []
+    # Entity evidence is already RoomMessage/Episode/Mention, as in the live
+    # entity driver; it is not a room TranscriptRow window.
+    if chosen.key_kind != "entity":
+        batch = list(await join.enrich(batch, path="dreamer_eval")) if batch else []
 
     outcome = await runtime.run(adaptor=chosen, key=key, batch=batch)
 

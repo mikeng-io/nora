@@ -860,6 +860,7 @@ async def sandbox_from_snapshot(
     source_url: str,
     before_ms: int,
     leave_room_for_arrival: bool = True,
+    stimulus_clock_ms: int | None = None,
 ) -> Sandboxed:
     """Seed the subject's sandbox with what Nora knew about ITS OWN room —
     the real one it was composed for — at `before_ms`, read from the source.
@@ -884,6 +885,11 @@ async def sandbox_from_snapshot(
       also exactly what a mistyped id or a moment before the room's first
       row reads as.
 
+    `stimulus_clock_ms` declares a PRIVATE synthetic-source experiment's later
+    read clock. The background is still restored only through `before_ms`;
+    nothing from the interval is invented as history. Ordinary reconstructed
+    cases omit it and retain the exact-anchor clock requirement.
+
     `leave_room_for_arrival` is `know()`'s own, forwarded: with every row
     carrying its real `ts` the reserved step is unused, but the flag still
     documents whether a line follows the window.
@@ -896,7 +902,10 @@ async def sandbox_from_snapshot(
             "itself"
         )
     clock_ms = int(subject.deps.clock().timestamp() * 1000)
-    if clock_ms != before_ms:
+    expected_clock = before_ms if stimulus_clock_ms is None else stimulus_clock_ms
+    if expected_clock < before_ms:
+        raise ValueError("a synthetic stimulus clock cannot precede the restored anchor")
+    if clock_ms != expected_clock:
         raise ValueError(
             f"the subject's clock reads {clock_ms} and the moment is "
             f"{before_ms}; compose it with SubjectSpec.now at the moment, or "

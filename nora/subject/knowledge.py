@@ -360,7 +360,7 @@ async def arrive(
     now_ms: int,
     name: str = _KNOWN_NAME,
     person: str | None = None,
-) -> None:
+) -> int:
     """The line that ARRIVES — one untagged message from a member.
 
     Separate from `know()` because it is a different fact: `know()` lays down
@@ -381,7 +381,7 @@ async def arrive(
         sender_id, person_id = _KNOWN_SENDER, _KNOWN_PERSON
     else:
         sender_id, person_id = "+8529900", None
-    await subject.deps.audit.append(
+    return await subject.deps.audit.append(
         message=NormalizedMessage(
             platform=platform,
             conversation_id=conversation_id,
