@@ -417,4 +417,6 @@ async def test_attempted_unreadable_cache_stays_pending_without_blocking_recover
         # New cached content is new delivery work, not swallowed by the attempt marker.
         await conn.execute(sa.update(MEDIA_OBJECTS).where(MEDIA_OBJECTS.c.sha256 == sha)
                            .values(description='a revised cached scene'))
-    assert await evidence.count(key=KEY, after=boundary) == 100
+    assert 0 < await evidence.count(key=KEY, after=boundary) < 100
+    assert (await source.media_recovery(key=KEY, rooms=ROOMS,
+                                       person=PERSON))['initial_sweep_complete']

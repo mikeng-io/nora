@@ -412,7 +412,7 @@ class PersonaEvidence:
                 recovery = await asyncio.wait_for(self._source_inputs.media_recovery(
                     key=key, rooms=_listed(pk), person=pk.person.person_id, initialize=True),
                     timeout=self._source_timeout)
-                if recovery["unattempted_cached"]:
+                if not recovery["initial_sweep_complete"] and recovery["unattempted_cached"]:
                     return self._wake_batch
             except Exception:
                 log.exception("persona cached-media recovery unavailable")

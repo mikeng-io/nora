@@ -235,8 +235,11 @@ class SqlPersonaInputs:
             if initialize:
                 await conn.execute(insert(W).values(consolidator_name=name, scope_id=key,
                     last_message_id=head).on_conflict_do_nothing())
-            boundary = (await conn.execute(sa.select(W.c.last_message_id).where(
-                W.c.consolidator_name == name, W.c.scope_id == key))).scalar_one_or_none()
+            boundary_row = (await conn.execute(sa.select(
+                W.c.last_message_id, W.c.source_read_revision).where(
+                W.c.consolidator_name == name, W.c.scope_id == key))).one_or_none()
+            boundary = None if boundary_row is None else boundary_row.last_message_id
+            swept = boundary_row is not None and boundary_row.source_read_revision == 'swept'
             q = self._messages(rooms=rooms, person=person).subquery()
             visible = sa.and_(q.c.eligible, q.c.hidden_at.is_(None), ~q.c.deleted)
             bounded = q.c.id <= (head if boundary is None else boundary)
@@ -253,8 +256,17 @@ class SqlPersonaInputs:
                                                q.c.media_json.is_not(None))),
                 sa.func.count().filter(sa.and_(q.c.eligible, ~visible)),
             ).select_from(joined).where(bounded))).one()
+            if initialize and not swept and row[2] == 0:
+                # Initial bounded recovery is a finite sweep, not a permanent
+                # completion-triggered model-call path. Pending unreadable work
+                # and future revisions keep ordinary per-account wake timing.
+                await conn.execute(sa.update(W).where(
+                    W.c.consolidator_name == name, W.c.scope_id == key,
+                ).values(source_read_revision='swept'))
+                swept = True
         return {"boundary": int(boundary if boundary is not None else head),
-                "frozen": boundary is not None, "eligible_cached": int(row[0]),
+                "frozen": boundary is not None, "initial_sweep_complete": swept,
+                "eligible_cached": int(row[0]),
                 "pending_cached": int(row[1]), "unattempted_cached": int(row[2]),
                 "missing_cache": int(row[3]), "hidden_or_deleted": int(row[4]),
                 "complete": boundary is not None and row[1] == 0}
