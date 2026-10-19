@@ -178,7 +178,8 @@ class InMemoryCharacterEvidence:
 
     @staticmethod
     def _row(m: _Message) -> TranscriptRow:
-        return replace(_ROW, id=m.id, ts=m.ts, body=m.body, person_id=m.person_id)
+        return replace(_ROW, id=m.id, ts=m.ts, body=m.body, person_id=m.person_id,
+                       is_nora=m.is_nora)
 
     def _person(
         self, rooms: Sequence[tuple[str, str]], person_id: str, after: int,
