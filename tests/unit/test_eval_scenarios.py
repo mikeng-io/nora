@@ -242,7 +242,8 @@ def test_a_case_missing_its_identity_is_refused(tmp_path, monkeypatch, key):
 
 def test_every_corpus_has_a_declared_entry_point_and_judged_is_a_subset():
     assert set(CORPUS_ENTRY) >= JUDGED_CORPORA
-    entries = {"tag", "participation", "gate", "dreamer", "proactive_act", "standing"}
+    entries = {"tag", "participation", "gate", "dreamer", "proactive_act", "standing",
+               "persona_identity"}
     assert set(CORPUS_ENTRY.values()) <= entries
 
 
@@ -436,7 +437,10 @@ def test_a_counterfactual_varying_an_unlisted_tier_is_refused(tmp_path, monkeypa
     # `prior` is the standing fold's position-before-the-turn, declared absent
     # for a pre-chain turn, and valid in the standing corpus only (`evals.scenarios._TIER_CORPORA`).
     with pytest.raises(
-        ValueError, match="only \\['culture', 'lessons', 'prior', 'transport'\\] may be varied",
+        ValueError, match=(
+            "only \\['culture', 'lessons', 'persona_sources', "
+            "'prior', 'transport'\\] may be varied"
+        ),
     ):
         load_all(_corpus(tmp_path, monkeypatch, body, "participation"))
 

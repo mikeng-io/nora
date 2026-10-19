@@ -4080,7 +4080,8 @@ async def build_dependencies(
                             ref.name if pid and (ref := persons.by_person.get(pid)) is not None
                             else "someone"
                         ),
-                        clock_ms=_now_ms, metrics=metrics,
+                        clock_ms=lambda: int(clock().timestamp() * 1000),
+                        clock=clock, metrics=metrics,
                         # The social items' render (45 §4): screened like the
                         # Character session's, captions redacted to the author's
                         # own handle, each reading clipped as the media reads.

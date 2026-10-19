@@ -45,14 +45,16 @@ from typing import Any, Literal
 #: pass.
 Expectation = Literal[
     "go", "no_go", "speak", "silence", "reply", "no_reply",
-    "create", "update", "none", "either", "remind", "fold",
+    "create", "update", "none", "either", "remind", "fold", "identity",
 ]
 
 #: Which entry point the input enters at. A SELECTION ON A CASE, not a branch
 #: in the runner. Adding a suite that uses one of these
 #: adds no code; adding a new entry point adds one adapter, which is the line
 #: this design draws rather than hides.
-Entry = Literal["gate", "participation", "tag", "dreamer", "proactive_act", "standing"]
+Entry = Literal[
+    "gate", "participation", "tag", "dreamer", "proactive_act", "standing", "persona_identity",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -326,6 +328,8 @@ class Outcome:
             return any(kind == expect for kind, _ in self.changed)
         if expect == "remind":
             return self.written > 0
+        if expect == "identity":
+            return True if self.position is not None else None
         if expect == "fold":
             # Nothing written is not a verdict about the position; and a
             # position no judge read has not been measured against the case's

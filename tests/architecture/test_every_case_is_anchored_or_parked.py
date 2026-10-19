@@ -48,6 +48,9 @@ FIRST_ROW_MS = 1_785_928_686_349
 #: blocked on unfinished work is not parked.
 #: Adding a name here is a decision; removing one is the seam landing.
 UNANCHORED_BY_DESIGN = {
+    # Invented vectors require private file inputs; no synthetic snapshot is invented.
+    "persona_identity": {"birthday_retained", "birthday_corrected", "residence_unknown",
+                         "marriage_unknown", "partner_unspecified", "explicit_home_spouse"},
     # Blocked on the <computer> block, a seam
     # this work owes: a correct `computer_read` turn needs to know the file
     # exists, and an anchor carries no workspace state.
@@ -164,5 +167,5 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     `census()`, never summed by hand.
     """
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 328
-    assert sum(c.active + c.parked for c in totals) == 328
+    assert sum(c.total for c in totals) == 334
+    assert sum(c.active + c.parked for c in totals) == 334

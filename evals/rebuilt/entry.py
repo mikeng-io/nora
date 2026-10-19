@@ -45,6 +45,7 @@ from nora.subject.standing_fold import fold, read_fold_turn
 
 from .domain import Case, Outcome, WorkingSetFinding
 from .fold_evidence import render_evidence, render_shown
+from .persona_identity import persona_identity
 
 
 async def gate(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
@@ -600,6 +601,11 @@ class EntryPoint:
     #: `gate` and `dreamer` are unaffected: they read and write, and never speak.
     drives_a_turn: bool = False
 
+    #: A private synthetic-source experiment declares a later stimulus clock
+    #: and records a canonical receipt. Ordinary reconstructed entries keep
+    #: their exact-anchor assembly and call shape.
+    synthetic_sources: bool = False
+
     #: What a judge grades, when a judge is configured: `"reply"` — what she
     #: said, against the reply rubric — or `"position"` — the standing position
     #: a fold wrote, against the case's own stated property. Data here, not a
@@ -651,6 +657,10 @@ ENTRY_POINTS = {
     # the corpus's business (the culture adaptor needs `[culture] enabled`). Putting an
     # adaptor's flag here would make one corpus's requirement look like the
     # entry point's.
+    "persona_identity": EntryPoint(
+        drive=persona_identity, synthetic_sources=True,
+        config={"dreamer.enabled": True, "persona.enabled": True},
+    ),
     "dreamer": EntryPoint(drive=dreamer, config={"dreamer.enabled": True}),
     # The act turn needs the FIRE PATH, which `[participation]` also builds,
     # and the note tier its row points at. NOT `[heartbeat]`: composition

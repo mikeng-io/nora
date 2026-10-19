@@ -1,0 +1,33 @@
+# Invented source-grounding contracts from unified-memory/75. No private data.
+# Sources and a real roster/room anchor are supplied ONLY by a private case file;
+# these are synthetic evidence experiments, never reconstructed historical facts.
+- name: birthday_retained
+  entry: persona_identity
+  expect: identity
+  metadata:
+    synthetic_evidence: true
+- name: birthday_corrected
+  entry: persona_identity
+  expect: identity
+  metadata:
+    synthetic_evidence: true
+- name: residence_unknown
+  entry: persona_identity
+  expect: identity
+  metadata:
+    synthetic_evidence: true
+- name: marriage_unknown
+  entry: persona_identity
+  expect: identity
+  metadata:
+    synthetic_evidence: true
+- name: partner_unspecified
+  entry: persona_identity
+  expect: identity
+  metadata:
+    synthetic_evidence: true
+- name: explicit_home_spouse
+  entry: persona_identity
+  expect: identity
+  metadata:
+    synthetic_evidence: true

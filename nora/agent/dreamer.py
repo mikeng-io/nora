@@ -1197,6 +1197,19 @@ class DreamerRuntime:
             return sched.max_items
         return MAX_ITEMS
 
+    async def render_input(self, *, adaptor: DreamAdaptor, key: str, batch: Sequence[Any]) -> str:
+        """Offline inspection through the same instruction store and adaptor.
+
+        Calls no model, builds no agent and commits nothing. The caller must
+        discard the subject afterwards: `inputs` stages the adaptor's read.
+        """
+        instructions = self._instructions.for_objective(adaptor.objective)
+        prompt = await self._bounded_store_call(
+            adaptor=adaptor, key=key, phase="inputs",
+            call=lambda: adaptor.inputs(key=key, batch=batch),
+        )
+        return instructions.text + "\n\n" + prompt
+
     async def run(
         self, *, adaptor: DreamAdaptor, key: str, batch: Sequence[TranscriptRow]
     ) -> DreamOutcome:

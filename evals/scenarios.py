@@ -22,6 +22,7 @@ THREE STATES, and the middle one is the point (`11-the-sandbox-rebuild.md`
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -72,10 +73,15 @@ COUNTERFACTUAL_KEYS = frozenset({"varies", "why"})
 #: exist before them: no real moment holds a lesson AND the situation it
 #: bears on. The varied lessons ride in `metadata.lessons` (her own
 #: words, as the live lesson reads), which no other case may state.
-COUNTERFACTUAL_TIERS = frozenset({"culture", "transport", "prior", "lessons"})
+COUNTERFACTUAL_TIERS = frozenset({
+    "culture", "transport", "prior", "lessons", "persona_sources",
+})
 #: Tiers that mean something in one corpus only. `prior` is the standing
 #: fold's; that corpus varies nothing else. `lessons` is the lessons corpus's.
-_TIER_CORPORA = {"prior": frozenset({"standing"}), "lessons": frozenset({"lessons"})}
+_TIER_CORPORA = {
+    "prior": frozenset({"standing"}), "lessons": frozenset({"lessons"}),
+    "persona_sources": frozenset({"persona_identity"}),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,7 +133,26 @@ def _rows(name: str) -> list[dict[str, Any]]:
                 "configure it (11-the-sandbox-rebuild.md §1.2)"
             )
         return list(doc.get("cases") or [])
-    return list(doc)
+    rows = list(doc)
+    if name == "persona_identity" and os.environ.get("NORA_EVAL_PERSONA_CASES"):
+        private = yaml.safe_load(Path(os.environ["NORA_EVAL_PERSONA_CASES"]).read_text())
+        if not isinstance(private, dict) or set(private) != {r["name"] for r in rows}:
+            raise ValueError("private persona file must supply exactly the six registered vectors")
+        for row in rows:
+            value = private[row["name"]]
+            if (not isinstance(value, dict)
+                    or set(value) != {"snapshot", "person", "sources", "clock_ms"}):
+                raise ValueError("private persona vector requires snapshot, roster person, sources")
+            row.update(snapshot=value["snapshot"], person=value["person"], counterfactual={
+                "varies": "persona_sources",
+                "why": "Private invented source arrivals and held birthday, at a declared clock; "
+                       "the real anchor is background only, not evidence for these facts.",
+            })
+            row["metadata"] = {**row.get("metadata", {}),
+                               "persona_input": {"sources": value["sources"],
+                                                 "clock_ms": value["clock_ms"]},
+                               "private_persona_file": True}
+    return rows
 
 
 def _check(name: str, row: dict[str, Any]) -> None:
@@ -349,6 +374,7 @@ CORPUS_ENTRY: dict[str, str] = {
     # them unasked.
     "presence": "tag",
     "standing": "standing",
+    "persona_identity": "persona_identity",
     "tool_reporting": "tag",
     # What she says about her OWN FORM. A tag, and judged — "did she reply"
     # says nothing about whether the reply described the mascot when asked, or

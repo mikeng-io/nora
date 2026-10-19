@@ -70,6 +70,22 @@ measured.** See §1.1.
 > search over its scope answers `partial`, as production does for a node its
 > worker has not reached.
 
+### Private Persona writer stimuli (2026-10-19)
+
+`persona_identity` is a synthetic source-grounding experiment, not a historical
+reconstruction or a reply-routing score. Its six committed contracts have no
+invented anchors and remain visibly unanchored without `NORA_EVAL_PERSONA_CASES`.
+The private file input supplies an existing real room/instant, a roster person,
+explicitly invented source arrivals and a declared read clock. The loader counts
+all six as `persona_sources` COUNTERFACTUAL, restricted to this corpus. The source
+snapshot is unchanged background; no private source text is committed as history.
+The subject appends the invented arrivals using the roster's actual account, and
+seeds held birthday state through the canonical append-only Persona write API.
+A later stimulus clock is explicit in `sandbox_from_snapshot`; the ordinary
+exact-anchor clock guard remains unchanged. This exception measures the six
+invented vectors requested by design/unified-memory/75, and does not license
+synthetic edits to any other anchored corpus. Procedure: `evals/PERSONA_IDENTITY.md`.
+
 ## 1. What this replaces, and why twice was not enough
 
 > **Re-baseline, throughout this document (2026-09-25):** a re-baseline is the before arm of the next confirming run, never a standalone run. See the nora-eval skill, "An eval confirms a fix; it never finds one".
