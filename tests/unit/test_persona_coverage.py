@@ -643,3 +643,18 @@ def test_legacy_objects_are_coverage_only_and_array_prompt_is_explicit():
     assert "PER INPUT CLAIM inside that array" in coverage.RULES
     assert "one object per line" not in coverage.RULES
     assert coverage.plan(census_input())["rules_hash"] == coverage.digest(coverage.RULES)
+
+
+def test_prompt_renders_source_calendar_time_without_rewriting_evidence():
+    doc = census_input()
+    row = doc["rows"][0]
+    # Invented source near UTC midnight: the calendar day must be Hong Kong's.
+    row["sources"][0].update(ts=1767198600000, body="Maybe next Friday if repaired")
+    original = copy.deepcopy(doc)
+    rendered = json.loads(coverage.prompt(doc, [row])[len(coverage.RULES) :])
+    source = rendered["sources"][0]
+    assert source["time_hkt"] == "2026-01-01T00:30:00+08:00"
+    assert source == {**row["sources"][0], "time_hkt": "2026-01-01T00:30:00+08:00"}
+    assert rendered["source_order"] == "oldest_first"
+    assert rendered["lines"][0]["claim"] == row["claim"]
+    assert doc == original

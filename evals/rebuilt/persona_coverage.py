@@ -15,6 +15,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from nora.domain.rollup import iso
+
 from .domain import Outcome
 from .grading import COVERAGE_MAX_TOKENS, COVERAGE_REASONING_EFFORT
 from .judge import parse_json_response
@@ -218,7 +220,10 @@ def prompt(doc: dict, batch: list[dict]) -> str:
             "as_of": doc["as_of"],
             "source_order": "oldest_first",
             "account": {k: account[k] for k in ("key", "unit", "person", "boundary", "rooms")},
-            "sources": sorted(sources.values(), key=lambda s: (s.get("ts", 0), s["id"])),
+            "sources": [
+                {**s, "time_hkt": iso(s["ts"])}
+                for s in sorted(sources.values(), key=lambda s: (s["ts"], s["id"]))
+            ],
             "heads": list(heads.values()),
             "authored": list(authored.values()),
             "lines": [
