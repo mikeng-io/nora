@@ -190,23 +190,25 @@ SOCIAL_ITEMS_MAX = 6
 
 #: The longest caption the block carries, in characters. A caption runs to a
 #: few thousand; the account wants what kind of thing they post, not the text.
-SOCIAL_CAPTION_CHARS = 150
+SOCIAL_CAPTION_CHARS = 125
 
 #: The longest `shows` one item carries, in characters, all its media
 #: together (each reading is first clipped to `[media]
 #: comprehension_render_chars`): a ten-picture carousel is one item.
-SOCIAL_SHOWS_CHARS = 150
+SOCIAL_SHOWS_CHARS = 120
 
 #: The most the whole rendered `<social_items>` block may be, in characters:
-#: its opening tag (its description and field notes, about 770), and per item
-#: its caption, its `shows` and its attributes (a citation, a kind, a posted
-#: time: under 140). `total_tokens` counts every model call's whole input, so
-#: the block is paid once per call: at `OUTPUT_TOKENS_PER_CHAR`'s
-#: dense-Cantonese 1.15 it is at most 3,910 tokens a call, and at
-#: `[dreamer.budgets.culture]`'s `turns = 10` at most 39,100, a third of its
-#: `total_tokens = 120000` (`tests/integration/test_character_social.py`
-#: holds both). The rest of the session (its messages, the room cultures,
-#: the instruction, its writes) keeps the other two thirds.
+#: its opening tag (its description and field notes, about 1,100 with the
+#: counts' four notes), and per item its caption, its
+#: `shows` and its attributes (a citation, a kind, a posted time: under 350
+#: together, plus under 60 of counts when the session reads them).
+#: `total_tokens` counts every model call's whole input, so the block is paid
+#: once per call: at `OUTPUT_TOKENS_PER_CHAR`'s dense-Cantonese 1.15 it is at
+#: most 3,910 tokens a call, and at `[dreamer.budgets.culture]`'s `turns = 10`
+#: at most 39,100, a third of its `total_tokens = 120000`
+#: (`tests/integration/test_character_social.py` holds both). The rest of the
+#: session (its messages, the room cultures, the instruction, its writes)
+#: keeps the other two thirds.
 # ponytail: a fixed bound; a config key once a session's token use with the
 # block is read back.
 SOCIAL_BLOCK_BUDGET_CHARS = 3_400
