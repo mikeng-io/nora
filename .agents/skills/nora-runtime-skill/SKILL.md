@@ -145,7 +145,7 @@ on the host deploys nothing and reports nothing. Read it back:
 
 ```bash
 git fetch origin master && git show origin/master:nora/skills/<name>/SKILL.md | shasum -a 256
-ssh norty 'cd ~/workspace/nora && docker compose exec -T nora sha256sum /app/nora/skills/<name>/SKILL.md'
+ssh nora-host 'cd ~/workspace/nora && docker compose exec -T nora sha256sum /app/nora/skills/<name>/SKILL.md'
 ```
 
 Check: the two hashes are equal. Different means the running image is not your

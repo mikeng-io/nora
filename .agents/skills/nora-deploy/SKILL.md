@@ -1,21 +1,21 @@
 ---
 name: nora-deploy
-description: Puts merged Nora code, doctrine or config live on norty and proves it, covering a lock that serializes deploys, deploy-checkout hygiene, rebuild and recreate, verify-deploy, config-only edits, rollback. Load when a task says deploy, ship it, make it live, rebuild, recreate, restart nora, or edit live config.toml or policy.toml. Not for reading traces, metrics or rows as evidence (nora-readback).
+description: Puts merged Nora code, doctrine or config live on nora-host and verifies it, with a lock that serializes deploys, deploy-checkout hygiene, rebuild and recreate, verify-deploy, config-only edits, rollback. Load when a task says deploy, ship it, make it live, rebuild, recreate, restart nora, or edit live config.toml or policy.toml. Not for reading traces, metrics or rows as evidence (nora-readback).
 ---
 
 # nora-deploy
 
-Nora runs on `norty`, compose project `~/workspace/nora`. Background, not
+Examples use the operator-configured SSH alias `nora-host` and reference
+Compose checkout `~/workspace/nora`; substitute your installation path. Background, not
 repeated here: `AGENTS.md` (Reaching the deployment, The three config files),
 the "Reaching the deployment" section of `docs/CONVENTIONS.md`, and
 `docs/runbook.md` sections 3 and 3b.
 
-- Run multi-line work as `ssh norty bash -s <<'EOF' ... EOF`, never a long
-  `ssh norty '...'` (Host notes).
+- Run multi-line work as `ssh nora-host bash -s <<'EOF' ... EOF`, never a long
+  `ssh nora-host '...'` (Host notes).
 - Capture every rc before reading its log: `cmd > log 2>&1; RC=$?`. Never pipe
   a step whose success matters.
 - Report each item as VERIFIED (with the reading), UNVERIFIED (why) or FAILED.
-
 ## 0. Decide what the change needs
 
 | changed | reaches the process through | needs |
@@ -35,21 +35,20 @@ the "Reaching the deployment" section of `docs/CONVENTIONS.md`, and
   fixes nothing there (2026-09-21).
 - A read through `docker compose exec` proves the FILE, not the process. A
   loaded-once file is in effect only in a container started after the edit.
-
 ## 1. The change is merged
 
 ```bash
 gh pr view <N> --json state,mergeCommit -q '.state+" "+.mergeCommit.oid'
 ```
 
-Check: `MERGED <sha>`. Keep it as `SHA`; step 3 proves norty's HEAD contains it.
+Check: `MERGED <sha>`. Keep it as `SHA`; step 3 proves nora-host's HEAD contains it.
 
 ## 2. One deployer at a time
 
 Several sessions deploy to this host. Two concurrent compose recreates on
 2026-09-24 left orphan `Created` containers and STALE services. Every deploy,
-config edit and rollback in this skill holds `/tmp/nora-deploy.lock` on norty
-through `flock` (util-linux, present on norty), and also refuses to start while
+config edit and rollback in this skill holds `/tmp/nora-deploy.lock` on nora-host
+through `flock` (install util-linux on the deployment host), and also refuses to start while
 an unlocked `docker build` or `docker compose up` is running.
 
 Every locked script runs under `LOCK='flock -o -E 75 -w 900 /tmp/nora-deploy.lock'`
@@ -58,7 +57,7 @@ Every locked script runs under `LOCK='flock -o -E 75 -w 900 /tmp/nora-deploy.loc
 ## 3. Build, recreate, verify (one locked script)
 
 ```bash
-ssh norty "SHA=$SHA ${LOCK:?set LOCK, step 2} bash -s" > deploy.log 2>&1 <<'EOF'
+ssh nora-host "SHA=$SHA ${LOCK:?set LOCK, step 2} bash -s" > deploy.log 2>&1 <<'EOF'
 set -u
 if pgrep -af 'docker( compose)? (build|up)'; then echo "UNLOCKED_DEPLOY_RUNNING"; exit 75; fi
 cd ~/workspace/nora || exit 1
@@ -130,7 +129,7 @@ the copy through the running container, and only then put it in place; a bad
 key reaches no process, and the backup comes back on any failure:
 
 ```bash
-ssh norty "${LOCK:?set LOCK, step 2} bash -s" > cfg.log 2>&1 <<'EOF'
+ssh nora-host "${LOCK:?set LOCK, step 2} bash -s" > cfg.log 2>&1 <<'EOF'
 set -u
 cd ~/workspace/nora || exit 1
 mkdir -p ~/nora-backups; B=~/nora-backups/config.toml.$(date +%Y%m%dT%H%M%S)
@@ -177,7 +176,7 @@ schema a newer deploy migrated: the script refuses and you roll FORWARD with a
 revert PR (nora-land, then step 3).
 
 ```bash
-ssh norty "${LOCK:?set LOCK, step 2} bash -s" > rollback.log 2>&1 <<'EOF'
+ssh nora-host "${LOCK:?set LOCK, step 2} bash -s" > rollback.log 2>&1 <<'EOF'
 set -u
 cd ~/workspace/nora || exit 1
 CUR=$(docker inspect -f '{{.Image}}' nora) || exit 1
@@ -201,4 +200,4 @@ and deploy it with step 3, so the checkout and the image agree again.
 
 A recreate failing with `container name "/<name>" is already in use`, zsh
 word-splitting, filtered DNS, the build network and the container's python:
-`.agents/skills/nora-deploy/reference.md`. Read it before the first `ssh norty`.
+`.agents/skills/nora-deploy/reference.md`. Read it before the first `ssh nora-host`.

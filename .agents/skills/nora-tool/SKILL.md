@@ -136,7 +136,7 @@ What the tests enforce today (checked 2026-09-24, working tree):
 
 A merged tool needs an image rebuild to be live (`nora-deploy`). Then:
 1. Confirm the running process has it:
-   `ssh norty 'cd ~/workspace/nora && docker compose exec -T nora /app/.venv/bin/python -c "from nora.agent.tools import NATIVE_TOOLS; print(NATIVE_TOOLS[\"<name>\"].level)"'`
+   `ssh nora-host 'cd ~/workspace/nora && docker compose exec -T nora /app/.venv/bin/python -c "from nora.agent.tools import NATIVE_TOOLS; print(NATIVE_TOOLS[\"<name>\"].level)"'`
 2. Find a real call in Langfuse (`nora-readback`) and read its input and result.
    Check: the live result has the status and shape your eval cases assumed. If
    it differs, the eval number does not stand; say so on the PR.

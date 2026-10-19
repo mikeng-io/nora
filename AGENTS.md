@@ -178,7 +178,7 @@ rules were written down and not read at the moment they applied.
 | when the task is | load |
 |---|---|
 | starting a change, running the gate, committing, opening or merging a PR | `nora-land` |
-| putting merged code or config live on `norty`, or checking it is live | `nora-deploy` |
+| putting merged code or config live on `nora-host`, or checking it is live | `nora-deploy` |
 | cutting a release: the release-please PR, the `vX.Y.Z` tag, the GitHub Release | `nora-release` |
 | reading a trace, a metric, a row or a log as evidence | `nora-readback` |
 | confirming a built prompt, doctrine, tool-text or routing fix with the eval suite (find the cause offline first) | `nora-eval` |
@@ -417,7 +417,10 @@ the binding used when there is no `[units]`.
 
 ## Reaching the deployment
 
-Nora runs on the `norty` host; development happens on the MacBook. The host is
+Deployment examples use the SSH alias `nora-host`; development happens locally.
+Configure that alias for your own Linux deployment host before using the commands.
+The reference checkout path is `~/workspace/nora`; substitute your installation path
+throughout the runbook and agent skills if it differs. The host is
 a **deploy target, not a dev checkout**: nothing is developed there. Sessions
 do run commands on it (deploys, eval runs, read-backs), and its checkout has
 collected commits that were never pushed, so read `git status -sb` there before
@@ -426,8 +429,18 @@ from different sessions must not overlap (`nora-deploy` takes a lock). Every
 read-back the "Never claim without reading back" rule demands is one `ssh`
 away; `nora-deploy` and `nora-readback` carry the commands.
 
-- **Key auth only.** `~/.ssh/norty` is a dedicated ed25519 key, installed once
-  with `ssh-copy-id`; `Host norty` in `~/.ssh/config` binds user, host and key.
+Configure `~/.ssh/config` with your own address, login and dedicated key:
+
+```sshconfig
+Host nora-host
+    HostName <deployment-hostname-or-address>
+    User <deploy-user>
+    IdentityFile ~/.ssh/nora-host
+    IdentitiesOnly yes
+```
+
+- **Key auth only.** `~/.ssh/nora-host` is a dedicated ed25519 key, installed once
+  with `ssh-copy-id`; `Host nora-host` in `~/.ssh/config` binds user, host and key.
   **Never `sshpass`, never a password in `.env`, in chat, or in a file a session
   reads** — a password typed into a session is transcribed into memory (this
   happened once), and `.env` is the compose environment on both machines.
@@ -435,7 +448,7 @@ away; `nora-deploy` and `nora-readback` carry the commands.
   since 2026-09-07; the worktree's copy, if any, is stale. Read the live file
   before asserting what a flag is set to.
 - **The db container is reached through compose** (`docker compose exec -T db`),
-  never by grepping `docker ps` for a name — Komodo's own databases live on the
+  never by grepping `docker ps` for a name — unrelated databases may live on the
   same host and match the same patterns.
 - **Container logs ARE on the docker log driver, since 2026-09-09** — `docker
   compose logs --no-log-prefix nora` gives JSON lines for `jq` (without the
@@ -495,8 +508,11 @@ mistake it produced (2026-08-21: eight full gate runs in one session).
 Release notes are the Conventional Commit subjects (DEC-314). release-please
 (`.github/workflows/release-please.yml`) keeps one open release PR on GitHub,
 built from the `feat`/`fix`/`security`/`perf`/`change`/`doctrine` commits merged
-since the last `vX.Y.Z` tag. Merging that PR makes the tag and the GitHub
-Release. Nothing else releases: no release fragments, no hand tags, and no
+since the last `vX.Y.Z` tag. A repository-scoped GitHub App queues that PR for
+automatic merge after required checks; merging it makes the tag and GitHub Release.
+Without the App (or while private), the manual merge path remains. Documentation
+and design alone never qualify: `scripts/release_scope.py` requires a visible
+commit changing runtime inputs. Setup: `docs/github-maintenance.md`. Nothing else releases: no release fragments, no hand tags, and no
 announcement to a room. Write each subject as a line a reader of the changelog
 can use. The `nora-release` skill has the procedure. A deploy is not a release:
 `scripts/build-image.sh` stamps whatever it builds with `git describe`.
@@ -595,15 +611,15 @@ the same commit.
 - **Never edit, commit, or merge on `master` in this checkout** — every change,
   including a one-line doc fix, starts in a worktree on its own branch and
   reaches `master` by merge, so the merge is the moment somebody decides rather
-  than a side effect of editing. **The bind-mount source is `norty`'s own
+  than a side effect of editing. **The bind-mount source is `nora-host`'s own
   checkout (`~/workspace/nora`), not this one** — read back 2026-09-08: the
   compose bind sources are relative to the compose file on the host, so a merge
-  here reaches the container only when `norty` pulls. An older topology, in
+  here reaches the container only when `nora-host` pulls. An older topology, in
   which the dev checkout WAS the bind-mount source, is what the previous
   wording described; it is superseded, and it mattered in both directions — it
   made one session sequence a deploy around a window that did not exist, and
-  read while standing on `norty` it points at the wrong machine. What is
-  unchanged: on `norty`'s checkout an edit to `nora/doctrine` IS a deploy (it
+  read while standing on `nora-host` it points at the wrong machine. What is
+  unchanged: on `nora-host`'s checkout an edit to `nora/doctrine` IS a deploy (it
   hot-reloads on mtime), and `config.toml` there is live once its services are recreated.
   **`nora/skills` is NOT** — it is `COPY`d into the image (`Dockerfile`) and the
   compose file binds only `nora/doctrine` and `nora/dreamer`, so a skill edit
@@ -709,9 +725,8 @@ earned. They are the `measure` verb pointed at our own instruments.
    **`--receive-mode=on-start` is load-bearing — never drop it** (without it the
    websocket to Signal never opens and every message is silently dropped). Needs
    **Java 25**.
-4. The legacy Hermes gateway is archived at
-   `/home/norty/backups/nora-legacy-profile-20260804/`; don't use the old
-   `~/.hermes/profiles/nora/` path.
+4. The legacy Hermes gateway is retired. If migrating an old installation,
+   archive its profile outside the checkout; do not reuse the old profile path.
 5. Dependencies via **`uv add`**, never raw pip.
 
 ## Conventions (short — full text in `docs/CONVENTIONS.md`)

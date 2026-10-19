@@ -7,11 +7,13 @@ Type=oneshot
 # Same rationale as nora-social-bridge.service: the systemd USER environment
 # has no interactive PATH, so opencli must be named explicitly and node must be
 # resolvable on PATH.
-Environment=OPENCLI_BIN=/home/norty/.local/bin/opencli
-Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/home/norty/.local/bin:/home/norty/.hermes/node/bin
+Environment="NORA_PROBE_CHROME_DB=%h/.local/share/nora-browser/Profile 1/Cookies"
+Environment=NORA_PROBE_BRIDGE_DIR=%h/workspace/nora/state/instagram
+Environment=OPENCLI_BIN=%h/.local/bin/opencli
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:%h/.local/bin:%h/.hermes/node/bin
 # Exit 1 = FAIL (an alert fired or a sync ran): the probe did its job, the unit
 # is not failed. Exit 2 = ERROR (could not measure): the unit IS failed, so
 # `systemctl --user --failed` shows an unmeasured probe.
 SuccessExitStatus=1
 TimeoutStartSec=600
-ExecStart=/home/norty/.local/bin/uv run --project /home/norty/workspace/nora python -m nora.infra.social.session_probe
+ExecStart=%h/.local/bin/uv run --project %h/workspace/nora python -m nora.infra.social.session_probe

@@ -135,3 +135,6 @@ for vulnerability reports. Maintenance is on a best-effort basis.
 
 Nora is licensed under the [MIT License](LICENSE). Third-party components retain
 their respective licenses.
+
+Repository security, release automation and the free public setup are documented
+in [GitHub maintenance](docs/github-maintenance.md).

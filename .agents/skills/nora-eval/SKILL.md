@@ -50,7 +50,7 @@ lock is shared, past an hour it blocks every other PR: `--allow-long` only if th
 
 ## Where it runs
 
-On the deploy host (`norty`), in an eval worktree, never in the deploy checkout
+On the deploy host (`nora-host`), in an eval worktree, never in the deploy checkout
 `~/workspace/nora` (a run writes `config.evaluation.toml` into the checkout root).
 Composition refuses to start anywhere else with the deployment's features on
 (`design/evaluation/11-the-sandbox-rebuild.md`, "Where the suite runs"). The
@@ -79,7 +79,7 @@ flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
    sessions both ran `tool_selection --sample 5` (434 calls an arm) and both
    slowed. Hold `/tmp/nora-eval.lock` for the run, as `nora-deploy` does its own:
    ```bash
-   ssh norty 'pgrep -af "[p]ython.*-m evals"; pgrep -af "[r]efresh_eval_clone"'
+   ssh nora-host 'pgrep -af "[p]ython.*-m evals"; pgrep -af "[r]efresh_eval_clone"'
    ```
    Check: no output, then step 7 launches under `flock -w 900 9` on the lock. A
    `LOCK_TIMEOUT` (rc 75) means another session's run is live: wait for its rc
@@ -89,7 +89,7 @@ flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
    checkout; an unpulled run measures old code and reads exactly like success
    (2026-09-22). One worktree per arm keeps the arms from sharing a tree.
    ```bash
-   ssh norty bash -s > arm.log 2>&1 <<'EOF'
+   ssh nora-host bash -s > arm.log 2>&1 <<'EOF'
    cd ~/workspace/nora-wt-eval-rebuild || exit 1   # or a fresh worktree per arm
    git fetch -q origin && git checkout -q --detach <arm-sha> || exit 1
    ~/.local/bin/uv sync --extra evals > /dev/null 2>&1; echo "SYNC_RC=$?"
@@ -140,14 +140,14 @@ flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
    root (the deployment's doctrine path is relative, so the checkout's doctrine is
    what the subject reads):
    ```bash
-   ssh norty bash -s <<'EOF'
+   ssh nora-host bash -s <<'EOF'
    exec 9>/tmp/nora-eval.lock; flock -w 900 9 || { echo "LOCK_TIMEOUT" > /tmp/eval-<arm>.rc; exit 75; }
    cd ~/workspace/nora-wt-eval-rebuild || exit 1
    set -a; . ~/workspace/nora/.env; set +a; export NORA_EVAL_PSEUDONYM_MAP=~/.config/nora/eval-pseudonyms.txt
    ~/.local/bin/uv run python -m evals relevance_gate --sample 5 \
      > /tmp/eval-<arm>.log 2>&1; echo "RC=$?" > /tmp/eval-<arm>.rc
    EOF
-   ssh norty 'cat /tmp/eval-<arm>.rc; grep -E "spend:|PASS|FAIL|ERROR|UNSTABLE" /tmp/eval-<arm>.log'
+   ssh nora-host 'cat /tmp/eval-<arm>.rc; grep -E "spend:|PASS|FAIL|ERROR|UNSTABLE" /tmp/eval-<arm>.log'
    ```
    Check: the header's `pseudonym map: N rule(s)` (#776), the rc file, then the log.
    `RC=0` means no FAIL, ERROR or UNSTABLE; `RC=1` means at least one, or a crash
@@ -164,7 +164,7 @@ flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
 
 9. **Write it into the PR body** (a `What` block, per `CONTRIBUTING.md`):
    ```
-   Eval: `python -m evals <corpus> [--case …] --sample N [--judge]`, on norty,
+   Eval: `python -m evals <corpus> [--case …] --sample N [--judge]`, on nora-host,
    source refreshed <newest_ts>, one run on the host at a time.
    | case | n | before <sha> P/F/E | after <sha> P/F/E |
    Spend: before <calls> calls, in=<…> (cached <…>), out=<…>; after <…>.

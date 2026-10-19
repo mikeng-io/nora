@@ -5,18 +5,24 @@ description: Cuts a Nora release the DEC-314 way. release-please on GitHub keeps
 
 # nora-release
 
-Read the release PR, merge it, read back the tag and Release, deploy, read
-back the stamp. Why it works this way: DEC-314 in `design/09-decision-index.md`.
+Release Please queues its generated PR for automatic merge after required checks,
+then publishes the tag and Release. Read them back; deploy separately when asked. Why it works this way: DEC-314 in `design/09-decision-index.md`.
 Releasing and deploying are separate steps: a release is a tag and a GitHub
 Release, and a deploy is a rebuilt image. A release posts nothing to any room.
 The startup upgrade note was retired along with `release-fragments/` and
 scripts/release.py.
 
-## Once, before the first release
+## Once, before enabling automatic releases
+
+Apply the public settings and install the free release App as described in
+`docs/github-maintenance.md`. Publishing the repository is a separate action.
+The SSH alias below is an operator-defined placeholder, not a host inventory.
+
+## Legacy first-release prerequisites
 
 ```bash
 gh api repos/mikeng-io/nora/actions/permissions/workflow   # can_approve_pull_request_reviews: true
-ssh norty "grep -n '^\[version\]' ~/workspace/nora/config.toml"   # must print nothing
+ssh nora-host "grep -n '^\[version\]' ~/workspace/nora/config.toml"   # must print nothing
 ```
 
 - If the setting is false, release-please cannot open its PR. Fix it under
@@ -65,7 +71,16 @@ the commits imply, and the CHANGELOG lines describe what users will see.
   (`gh release edit vX.Y.Z --notes-file …`), or fix it in the next release's
   commits.
 
-## 2. Merge it: a real merge commit, authored subject
+## 2. Automatic merge, or the manual bootstrap path
+
+See `docs/github-maintenance.md`: a repository-scoped GitHub App opens the PR so
+its checks run unattended, then queues auto-merge. Required CI/security checks and
+resolved conversations gate it. No branch-rule bypass is granted. Docs/design-only
+commits do not qualify; `scripts/release_scope.py` checks real runtime paths and
+visible commit types since the latest release. Runtime doctrine/skills count.
+
+Without the App, or while private, the manual path remains available:
+
 
 ```bash
 gh pr view <N> --json headRefOid,mergeable,files --jq '.headRefOid, .mergeable, [.files[].path]'
@@ -101,7 +116,7 @@ Deploy through `nora-deploy`. `scripts/build-image.sh` fetches tags and stamps
 the image with `git describe --tags --match 'v[0-9]*'`. Then:
 
 ```bash
-ssh norty 'docker exec nora /app/.venv/bin/python -c "import json; print(json.load(open(\"/app/nora/version.json\"))[\"version\"])"'
+ssh nora-host 'docker exec nora /app/.venv/bin/python -c "import json; print(json.load(open(\"/app/nora/version.json\"))[\"version\"])"'
 ```
 
 PASS: `vX.Y.Z` exactly. `vX.Y.Z-N-g<sha>` means the deploy checkout is N
@@ -111,7 +126,7 @@ no tag fetched).
 
 ## Never
 
-- Tag, push a tag, or publish a Release by hand, or from `norty`.
+- Tag, push a tag, or publish a Release by hand, or from `nora-host`.
 - Add release notes anywhere but commit subjects. `docs/releases/V*.md` is the
   archive of the old manual scheme, not a template.
 - Announce a release to a room. That feature is retired (DEC-314).

@@ -1,9 +1,10 @@
-# nora-deploy: host notes (norty)
+# nora-deploy: reference host notes
 
-- The login shell is zsh: an unquoted `$VAR` holding several args reaches the
-  program as one (2026-09-24). Use `bash -s` with a heredoc or `bash -c`.
-- A blocked domain resolves to `0.0.0.0` through filtered DNS and fails like a
-  refused connection (pypi.org, 2026-09-17). `getent ahosts <domain>` against
+- A host login shell may be zsh, where an unquoted `$VAR` holding several args
+  reaches the program as one. Use `bash -s` with a heredoc or `bash -c` to make
+  the command interpreter explicit.
+- On hosts with filtered DNS, a blocked domain may resolve to `0.0.0.0` and fail
+  like a refused connection. `getent ahosts <domain>` against
   `dig +short <domain> @1.1.1.1` tells them apart; the fix is the operator's.
 - Every compose `build:` sets `network: host` (operational constraint 1), so
   `docker compose build` needs no flag. `scripts/build-image.sh`, which
@@ -16,7 +17,7 @@
 When a recreate fails with `container name "/<name>" is already in use`:
 
 ```bash
-ssh norty 'docker inspect <name> --format "{{.State.Status}} {{.State.StartedAt}}"'
+ssh nora-host 'docker inspect <name> --format "{{.State.Status}} {{.State.StartedAt}}"'
 ```
 
 `created 0001-01-01T00:00:00Z` means a compose rename orphan that never
@@ -27,7 +28,7 @@ state: stop and read it. Remove only the container the error names; other
 
 ## Heredoc stdin
 
-`ssh norty bash -s <<'EOF'` feeds the script on stdin, and the docker client
+`ssh nora-host bash -s <<'EOF'` feeds the script on stdin, and the docker client
 drains stdin whenever interactive is on, which `docker compose exec` has by
 default (`-T` only drops the TTY), even when the container never reads it. The
 exec swallows the REST OF THE SCRIPT and ssh exits 0 (2026-09-25: validation
@@ -71,7 +72,7 @@ know. Revert the code that uses the table, never the file that creates it.
 
 ## Lock
 
-Every locked script runs as `ssh norty "$LOCK bash -s"` with
+Every locked script runs as `ssh nora-host "$LOCK bash -s"` with
 `LOCK='flock -o -E 75 -w 900 /tmp/nora-deploy.lock'`. `-o` closes the lock's
 descriptor before the script runs, so nothing it starts can inherit the lock:
 on 2026-10-07 an `exec 9>` lock was inherited by a long-lived `sbx` process and

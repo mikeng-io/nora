@@ -33,7 +33,7 @@ RUN gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys "${SIGNAL_CLI_KE
 
 # uid 1000 in eclipse-temurin:25-jre-noble is the base image's own `ubuntu`
 # account — we do NOT create a user here, and an earlier version of this file
-# claimed to. It works because that uid coincides with host `norty` (1000), so
+# claimed to. It works because that uid coincides with the reference host operator (1000), so
 # the bind-mounted account store stays writable. If the base image ever changes
 # its default uid this breaks silently, so it is asserted at build time below.
 RUN test "$(id -un 1000)" = "ubuntu" || (echo "uid 1000 changed in base image" && false)
