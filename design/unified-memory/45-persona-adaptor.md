@@ -297,6 +297,175 @@ over Persona, and the eval (§7). Each input is one item type and one block,
 so another source (a person's social items) adds without reshaping the
 adaptor.
 
+## 4a. Proposed person-input extension — 2026-10-20
+
+**Status: proposed, not an implementation receipt.** This is the normative
+contract for widening §4's inputs; the earlier dated build notes describe
+what already exists. It extends the existing account, not the topology.
+Persona is itself Notebook. Record and deterministic Rollup alone supply
+evidence; Register heads and held Persona lines supply context and links,
+never independent citations. There is no Notebook → Persona prose-trust
+pipeline, new warehouse, general signal framework or network-specific writer.
+
+### Source authority and current coverage
+
+| source class | authority and permitted use | existing versus extension |
+|---|---|---|
+| own messages and eligible mentions, with attached media readings | Record; preserve author, assertion time and message/attachment association. A reading describes that attachment, not the whole person; sharing or depicting something does not establish ownership, residence or a stable preference. | Messages/mentions are built. Complete chat-media input and late-reading delivery are a separate active ingestion task, not shipped by this amendment. |
+| social items: posts, reels, story frames; caption, media readings and available counts | Record, directly citable through the existing social citation. Author's publication is not a self-report of every depicted fact; counts describe audience response at their read time, not zero when unknown. | Direct person input is built: network-neutral `SocialSource` → readable `PersonSocialItem` → person writer. Keep this path; no compulsory Rollup or Register summary, and no Instagram-specific adaptor. |
+| stays, trips, outings, response episodes and aggregates (rhythm, ties) | Deterministic Rollup over Record; carry interval, current build/revision and underlying roots. An aggregate is evidence of its computed property, not a new independent witness. | Response episodes and non-location ties are built. Wider episodes/aggregates are proposed; location-bearing inputs remain blocked below. |
+| presence fixes and polls | Record, but not person-writer input. Use permitted Rollup projections only, subject to the location ceiling below. | No raw-fix input or presence tool is added. |
+| notes, memos, events | Notebook Register current heads: contextual state, effective dates, links and roots. Resolve the entry's actual citations to readable Record/Rollup before grounding a claim; never cite the entry as evidence. | Proposed person context; do not turn model-authored summaries into told facts or count them as corroboration. |
+| held Persona, room accounts and memory index | Notebook accounts are context; the index is derived/disposable discovery machinery, neither authority nor citable source. Follow a pointer to its owning store and recheck scope/state. | Existing context is retained; index availability or a graph hit does not prove source availability. |
+
+Register state matters even when it contributes no new factual support: an
+open intention, revised plan, settled memo or cancelled event must remain
+recognizable as that state. A cancellation is not evidence that an event
+happened. If a truth-determining qualification cannot fit the typed Identity
+contract ([75](75-typed-identity.md)), keep it in Record/Register context and
+leave that Identity value unknown. Entry revision time is not assertion time.
+
+### One projection and one loop
+
+Extend existing `PersonEvidence` / `PersonaEvidence` reads and typed context
+assembly, using `Grounding`'s interpret-once pattern. Each source class keeps
+its meaningful typed fields; no universal payload store is needed. Every
+rendered item must explain:
+
+- **who and where:** the scoped account's person and allowed unit, actual
+  author/observer, origin room when present, and source-specific permissions;
+  a mention in a room the person is not listed in remains ineligible;
+- **when:** source `as_of`, effective start/end or interval (unknown bounds
+  stay unknown), and recorded revision/read time separately. Old evidence
+  delivered today retains its old assertion date;
+- **what and why:** source class and handle, current state/revision,
+  Record/Rollup roots, attachment or entry links, and availability. Missing,
+  unavailable, hidden, cancelled and explicit empty are different states.
+
+This is a typed input contract, not new storage columns for every source.
+Use existing source revisions, store reads and session provenance. A Register
+head without resolvable roots may explain that an affair is open/cancelled,
+but cannot support a new Persona fact. A root withheld by scope is not
+replaced by the entry's prose. Her own earlier conclusion, even repeated in
+her recorded send or another entry, adds no independent evidence about a
+person. Resolve source authorship and deduplicate overlapping roots across
+message/attachment, social item, Rollup and Register paths. Rebuilding a
+Rollup on the same roots never increments support or refreshes evidence age;
+a changed interval/property is reconsidered without inventing corroboration.
+
+```text
+allowed Record (messages + attachments, social_item)
+      ├── deterministic Rollup (episodes / aggregates) ──┐
+      └─────────────────────────────────────────────────┤ evidence roots
+Register heads ── context/state + links ── resolve roots ┤
+held Persona / room accounts ── context only ───────────┤
+                                                      v
+existing person evidence read → typed bounded blocks → one person session
+                         Identity → Character → Hypotheses
+                                      ↓
+                 existing validated atomic persona_write / durable no_change
+                                      ↓
+                       acknowledge only rendered source revisions
+```
+
+The memory graph may locate heads/roots through existing `about`, `cites`
+and attachment links; it cannot promote a Notebook node to evidence or bridge
+an unreadable node. Preserve §3's existing `draws_on` premise validation and
+the independent hypothesis-verdict adaptor: one writer owns all three parts,
+while its judge continues to read independent eligible evidence, not writer
+prose. The graph and loop above are read/assembly changes, not new writers.
+
+### Progress, revisions and bounded work
+
+Reuse the existing wake, context-budget, staged-write and consolidation
+mechanisms. Coalesce bounded changes for the same account into its ordinary
+session; do not add one model call per signal or an unbounded catch-up wake.
+Keep historical recovery's frozen message boundary separate from recent work.
+The source progress is domain-specific, not one maximum over unrelated IDs:
+
+| domain | progress/reconsideration unit |
+|---|---|
+| messages/mentions | Existing Record cursor, plus relevant edit/deletion and attachment-reading revisions; a new perception on an old message is new delivery work. |
+| social | Existing recorded-microsecond cursor with equal-time groups intact; separately reconsider later perception, count and readable-state revisions of already delivered items. Never compare this cursor with message ids. |
+| Rollup | Current build plus changed episode/key, interval, roots and computed content; a build id alone is not fresh support. Reconsider affected items on rebuild, without replaying unchanged evidence as new. |
+| Register | Entry key plus current head revision/state and resolved root revisions, not the entry's creation time alone. |
+
+Snapshot the selected revisions for the read, render within existing budgets,
+and retain exactly which items actually reached the final model input. Only
+those items are citable and eligible for acknowledgement after a successful
+account commit, or an explicit durable `persona_no_change` for that input.
+Budget-trimmed items, unavailable reads, rejected writes, conflicts and
+unsettled sessions do not advance their source progress. A permitted absent
+result may settle as empty; a failed read cannot. Retry unavailable sources
+on later bounded wakes, without blocking other successfully read domains or
+acknowledging the unread domain. A crash after commit before acknowledgement
+may repeat evidence but must not skip it or count it twice.
+
+**This extension does not inherit §4 / social-stream §6's abandonment rule
+that eventually consumes an unsettled batch.** No retry limit may acknowledge
+unread revisions in the widened path. The implementation must reconcile that
+legacy behavior at the existing progress seam, not add a second ledger.
+Late media perception, edits, social gone/hidden/opt-out changes, Register
+cancellation and Rollup rebuilds reconsider the relevant inputs and held
+claims at normal sessions. This promises no deletion cascade, global state
+invalidation, automatic retraction or purge: [35](35-persona.md) §5 still
+holds, including retained conclusions citing a since-deleted message. Hidden
+source content is never re-rendered as fresh support.
+
+### Location privacy ceiling — unresolved and blocked
+
+§4 and [social-stream §6](../cognition-loop/22-social-stream.md) deliberately
+exclude person location: the same account renders in rooms with different
+`location` flags. **Unit membership alone does not authorize presence in
+every room.** Keep the no-person-location default. No raw coordinates,
+location tags or presence-derived durable claims are authorized here; stays
+are not evidence of residence. The index's separate gated `social_location`
+node ([25](25-memory-graph.md) §7a) remains separate and gated.
+
+Any proposed location-bearing Rollup projection must honor the existing
+presence read boundary (room location permission and live DisclosureGuard)
+end to end, including later prompt, portal and retrieval reads of derived
+Persona output. A successful read in one room cannot authorize durable output
+in another. Until that can be guaranteed, withhold location-bearing inputs
+and person outputs in this extension. Caption/perception prose can itself
+contain a place: social-stream §6 explicitly cannot separate a location
+sticker's prose today. That ceiling is not a privacy guarantee; widening
+inputs must not launder such text through a Rollup or Register summary.
+
+The open design question is how location-derived durable claims could retain
+valid per-reader presence authorization across the shared account's whole
+read path. Neither a chosen home room, unit scope nor a model instruction
+answers it. No blanket documentation approval is needed; implementation of
+this subset waits for a concrete boundary-preserving design and its negative
+read tests. This holds unless end-to-end evidence demonstrates those reads
+honor the existing presence boundary; it does not reopen the operator's
+location policy or authorize enabling lineage.
+
+### Targeted acceptance and implementation order
+
+Extend existing person-input/store tests and the existing Persona writer /
+coverage acceptance path with synthetic cases, not another model harness:
+
+| scenario | required observation |
+|---|---|
+| chat attachment perceived versus unavailable; reading arrives after the message cursor passed | Shown reading stays attached to its message/author; unavailable is explicit, never empty. Late reading is delivered once available without re-aging the assertion. |
+| post, reel and story frame directly; author opted out or item gone/hidden | All three readable kinds reach the same writer directly; disallowed items cannot supply citations or content. Counts retain read time and unknown values. |
+| changed bounded Rollup versus rebuild of the same evidence | Only relevant changes are reconsidered within budget; identical roots do not increase support or refresh age. |
+| note/memo/event repeats a held Persona conclusion; another entry links to actual roots | Repetition supplies no independent support; eligible roots resolve and may support the exact claim, with entry state kept as context. |
+| revised intention, cancelled event or settled memo | Context preserves effective window and current state; no automatic durable Identity fact or claim that a cancelled event occurred. |
+| another unit, unlisted-room mention, location-disabled room or denied presence read | No cross-boundary evidence; no durable location claim through shared Persona, Register prose or a graph neighbour. Include an allowed non-location positive control. |
+| trimmed/unread/unavailable source, write conflict and restart | Only rendered and durably settled revisions advance; retry retains unread work, domain cursors never skip one another. |
+
+First complete the separate chat-media ingestion gap without depending on its
+unmerged work. Then integrate the non-location sources against this finalized
+contract, inspect actual offline rendered inputs before any model acceptance,
+and use the existing bounded acceptance procedure. Location remains blocked
+as above. The timestamp repair merged in PR #107 improves source dates; the
+reported calibration of 16/20 with zero errors does not pass the 18/20 bar,
+and the full 179-line coverage run remains unmeasured. No further acceptance
+reruns precede integrated ingestion. This docs amendment runs no models and
+claims neither model acceptance nor runtime integration.
+
 ## 5. Rendering
 
 One block per entity in the turn, replacing `peer_card`, `peer_history` and

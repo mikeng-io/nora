@@ -64,6 +64,14 @@ does not need a new topology. It needs three changes to that one:
   migrations 0092/0093), and lines that cite it stay, citing "a message since
   deleted" ([35](35-persona.md) §5).
 
+**Person-input extension (proposed 2026-10-20):**
+[45 §4a](45-persona-adaptor.md#4a-proposed-person-input-extension--2026-10-20)
+is the single contract for wider Record/Rollup inputs and Register context
+into the one person writer. Register entries are links/context, never
+independent evidence; Persona is itself Notebook. The current exclusion of
+person location remains: unit scope does not authorize presence across rooms.
+That extension is not a receipt of shipped ingestion or model acceptance.
+
 ## Notes, memos and media are not demoted
 
 They keep their own verbs (`note_create`, `media_fetch`, `event_search`) for

@@ -149,6 +149,14 @@ The unit-wide view is right for a **collective's** Persona (the unit's
 purpose is the unit's in every room of it), which is already a unit account's
 scope.
 
+**Person-input extension (proposed 2026-10-20):**
+[45 §4a](45-persona-adaptor.md#4a-proposed-person-input-extension--2026-10-20)
+is the single contract for wider Record/Rollup inputs and Register context
+into the one person writer. Register entries are links/context, never
+independent evidence; Persona is itself Notebook. The current exclusion of
+person location remains: unit scope does not authorize presence across rooms.
+That extension is not a receipt of shipped ingestion or model acceptance.
+
 ## 4. The one-off backfill
 
 Honcho's conclusions are dropped, not exported. A one-off script, run once
