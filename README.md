@@ -1,10 +1,21 @@
 # Nora
 
-Nora is an experimental AI companion for a circle of friends. She follows
+Nora is an experimental, self-hosted AI companion for shared conversations. She follows
 conversations across Signal, Discord, WhatsApp and Instagram, remembers shared
 context, and replies through the Strands Agents SDK. Participation, reminders,
 voice and background cognition are configured separately and governed by room
 policy.
+
+[Architecture](ARCHITECTURE.md) ·
+[Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
+
+## Project status
+
+Nora is actively developed as a personal project. She combines conversational
+memory, permissioned participation, reminders, voice and background cognition.
+Capabilities depend on the services and room policy configured by each operator.
+Interfaces and deployment requirements can change; expect to provision your own
+model services, platform accounts and persistent storage.
 
 ## Start here
 
@@ -12,7 +23,8 @@ policy.
 - [Contributing](CONTRIBUTING.md): development checks and pull requests.
 - [Decisions](docs/adr/README.md) and [design index](design/09-decision-index.md):
   rationale, trade-offs and design work, including proposals not yet implemented.
-- [Operator runbook](docs/runbook.md): diagnosis, configuration and recovery.
+- [Deployment](deploy/README.md): prerequisites and the Compose lifecycle.
+- [Operator runbook](docs/runbook.md): detailed implementation and recovery notes.
 - [Agent instructions](AGENTS.md): procedures for coding agents.
 
 ## Development
@@ -56,9 +68,9 @@ a rebuild. Changes to character and constraints follow the ownership rules in
 
 ## Deployment
 
-The current deployment is Docker Compose on Norty. The application uses bridge
+The reference deployment uses Docker Compose on a Linux host. The application uses bridge
 networks; `build.network: host` is a build-time DNS workaround, not its runtime
-network mode. Host administration is through Tailscale.
+network mode. Configure administration and network access for your own environment.
 
 [Deployment](deploy/README.md) describes the current build/recreate procedure
 and a proposed pull-based GitOps replacement. Production deployment is still
@@ -69,3 +81,12 @@ including database migrations. Do not use old phase tags as rollback targets.
 Releases are managed by [release-please](.github/workflows/release-please.yml).
 A release and a deployment are separate: the image records the source revision
 and, when available, its generated version manifest.
+
+## Help and contributions
+
+Use [GitHub issues](https://github.com/mikeng-io/nora/issues) for reproducible bugs
+and focused proposals. Include the revision, relevant configuration keys and a
+minimal synthetic example. Keep credentials, personal conversations, account
+identifiers and location data out of issues, logs and screenshots. See
+[Contributing](CONTRIBUTING.md) for development checks and [Security](SECURITY.md)
+for vulnerability reports. Maintenance is on a best-effort basis.

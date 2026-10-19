@@ -2,7 +2,15 @@
 
 ## Current runtime
 
-Nora runs on Norty using the root Docker Compose project. The operator/agent
+The reference installation uses the root Docker Compose project on a Linux host.
+It assumes model/memory services, persistent storage and separately provisioned
+platform accounts. Start from `config.example.toml`, `identity.example.toml` and
+`policy.example.toml`; configure only the capabilities you intend to operate.
+The examples require operator configuration before startup. Store real config,
+credentials and platform sessions outside version control and back up persistent
+data before upgrading.
+
+The operator/agent
 procedure is [nora-deploy](../.agents/skills/nora-deploy/SKILL.md); operational
 recovery is in the [runbook](../docs/runbook.md). The procedure serializes
 changes with a host lock, builds a version-stamped image, validates live config,
@@ -30,8 +38,8 @@ cluster controller only if the runtime actually moves to a cluster.
    controlled from public contribution branches. A merge of application code
    need not promote it. Third-party service upgrades remain explicit changes.
 3. A small host-installed reconciler, invoked by a systemd timer, polls that
-   approved state using outbound access. Norty needs no new inbound route:
-   Tailscale remains the administration path. The reconciler has read-only
+   approved state using outbound access. The host needs no new inbound route;
+   administration remains on its existing private access path. The reconciler has read-only
    source/registry credentials and local Docker authority; the coding agent
    and PR jobs have neither. Install its trusted executable outside the fetched
    checkout; never execute arbitrary scripts from a desired-state revision.
@@ -63,7 +71,7 @@ production cutover require operator approval. The current verifier assumes
 `nora:latest`; it must be adapted and tested against desired digests before
 claiming this path is ready. Exercise a successful update, failed pull, invalid
 config, failed health check and compatible rollback on a disposable Compose
-project before enabling the timer on Norty.
+project before enabling the timer on a deployment host.
 
 ## Historical bare-metal / systemd reference
 
@@ -128,7 +136,7 @@ superseded here.
 ## Container-era sidecars in this tree
 
 The live deployment runs from the repo-root `docker-compose.yml`; several of
-its services are built from subtrees here (`stt/`, `drop/`, …). The newest:
+its services are built from subtrees here (`stt/`, `voice-sidecar/`, …). The newest:
 
 * **`voice-sidecar/`** — the Node audio-controller (design/voice-channel/07):
   the SOLE holder of the Discord voice connection. Joins a channel,

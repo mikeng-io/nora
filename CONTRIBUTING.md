@@ -1,5 +1,24 @@
 # Contributing to Nora
 
+## Getting started
+
+Nora is an experimental project maintained by [mikeng-io](https://github.com/mikeng-io).
+For a bug, include the revision, expected and actual behaviour, and a minimal
+synthetic reproduction. For a substantial change, discuss its scope in an issue
+before implementation. Keep discussion respectful and focused on the work.
+
+Use Python 3.12 and uv, then run `uv sync --frozen --extra evals` and the checks
+in the [README](README.md#development). Database tests need Docker; live model
+evaluations are maintained separately and need private services. Contributions
+can be developed and reviewed using synthetic data without production access.
+Follow the branch and gate conventions below for a pull request.
+
+Never include credentials, personal messages, private account identifiers,
+location histories or unredacted screenshots in a contribution. Replace them
+with synthetic examples. Report vulnerabilities through [Security](SECURITY.md).
+
+## Repository conventions
+
 Branch, commit, PR and issue conventions. `AGENTS.md` carries the rules for
 working *inside* the repo (the gate, the "Never" list, the operational
 constraints); this file carries the rules for getting work *into* it.
@@ -431,8 +450,8 @@ be taken, fix the reference, not the number.
 ## Cleanup
 
 A branch whose PR merged and whose worktree is gone is dead weight; the history
-is in `master`'s merge commits. GitHub does not auto-delete branches here, so
-this is manual:
+is in `master`'s merge commits. GitHub automatically deletes merged head branches;
+local branches and worktrees still need manual cleanup:
 
 ```bash
 git worktree list                       # what is checked out where — never delete a branch with a live worktree

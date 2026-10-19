@@ -110,7 +110,7 @@ immutable deployment must version both together.
   [observability](docs/observability.md) and the [runbook](docs/runbook.md)
   describe diagnosis.
 
-The existing agent procedure builds on Norty, validates configuration,
+The existing agent procedure builds on the deployment host, validates configuration,
 recreates services and verifies image/process state. Rollback must account for
 schema and configuration compatibility, not just retag an image.
 [Deployment](deploy/README.md) records the proposed migration to host-side
@@ -122,5 +122,5 @@ the current stack.
 `make gate` runs lint, scoped type checks, import contracts and affected tests.
 The suite includes real database/container tests; model behaviour is evaluated
 separately. A green gate proves neither production health nor the enabled
-configuration on Norty. The package-coverage check in
+configuration of a running installation. The package-coverage check in
 `tests/test_architecture_doc.py` keeps this map connected to the tree.
