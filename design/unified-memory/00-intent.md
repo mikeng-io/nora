@@ -108,6 +108,14 @@ rebuilt from the stores it reads, it is never cited, and nothing derived
 rests on it (cognition-loop/05 rule 2: only the Record and the Rollup are
 evidence). Losing it loses nothing but speed.
 
+**Person-input extension (proposed 2026-10-20):**
+[45 §4a](45-persona-adaptor.md#4a-proposed-person-input-extension--2026-10-20)
+is the single contract for wider Record/Rollup inputs and Register context
+into the one person writer. Register entries are links/context, never
+independent evidence; Persona is itself Notebook. The current exclusion of
+person location remains: unit scope does not authorize presence across rooms.
+That extension is not a receipt of shipped ingestion or model acceptance.
+
 ## The proposed shape, in three parts
 
 **1. One index and graph, one verb** (detailed in [25](25-memory-graph.md),
