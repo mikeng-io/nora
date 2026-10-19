@@ -515,3 +515,44 @@ def test_full_evidence_pin_rejects_rehashed_mutation(tmp_path, monkeypatch, gold
     monkeypatch.setenv(coverage.ENV, str(inp))
     with pytest.raises(ValueError, match="pinned census"):
         coverage.load_input(gold=gold)
+
+
+@pytest.mark.parametrize("size", [4, 2, 1])
+def test_complete_json_fence_preserves_strict_coverage_labels(size):
+    rows = census_input()["rows"][:size]
+    labels = [{"id": r["id"], "label": "covered",
+               "evidence_ids": [r["heads"][0]["id"], r["sources"][0]["id"]],
+               "why": "Invented full scoped grounding"} for r in rows]
+    assert coverage.parse_labels("```json\n" + json.dumps(labels) + "\n```", rows) == labels
+
+
+@pytest.mark.parametrize("raw", [
+    '```json\n[]\n``` trailing', 'prefix ```json\n[]\n```',
+    '```json\n[]', '```json\n[\n```', '[] []',
+    '```json\n[]\n```\n```json\n[]\n```', '```json[]```', '```json\n[]```',
+])
+def test_coverage_rejects_incomplete_or_multiple_payloads(raw):
+    with pytest.raises(ValueError):
+        coverage.parse_labels(raw, [])
+
+
+@pytest.mark.asyncio
+async def test_coverage_requests_bounded_low_reasoning_without_changing_other_judges(monkeypatch):
+    gateway = FakeGateway()
+    original = gateway.create
+
+    async def create(**request):
+        assert request["reasoning_effort"] == "low"
+        assert request["max_tokens"] == 4096
+        return await original(**request)
+
+    gateway.create = create
+    monkeypatch.setattr(Judge, "_client", lambda _: gateway)
+    doc = census_input()
+    rows = coverage.batches(doc["rows"])[0][:4]
+    result = await Judge(base_url="http://invalid", timeout_seconds=90).coverage_batch(
+        coverage.prompt(doc, rows)
+    )
+    assert "error" not in result
+    assert len(coverage.parse_labels(result["raw"], rows)) == 4
+    assert coverage.plan(doc)["max_response_tokens"] == coverage.plan(doc)["planned_calls"] * 4096

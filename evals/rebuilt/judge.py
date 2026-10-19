@@ -23,6 +23,22 @@ from .rubric import FOLD_KINDS, RUBRIC, SOURCE_SCOPE, Criterion
 _FENCE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 
 
+def parse_json_response(raw: str):
+    """One complete JSON payload, optionally inside one complete JSON fence.
+
+    Reuse the judge's fence convention, but never search past surrounding prose.
+    """
+    text = raw.strip()
+    match = _FENCE.fullmatch(text)
+    if (
+        match
+        and text.splitlines()[0].strip() in {"```json", "```"}
+        and text.splitlines()[-1] == "```"
+    ):
+        text = match.group(1)
+    return json.loads(text)
+
+
 @dataclass(frozen=True)
 class JudgeItem:
     criterion: str

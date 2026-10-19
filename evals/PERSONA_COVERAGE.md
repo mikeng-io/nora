@@ -93,7 +93,33 @@ It prints the full private input and exact calibration/measurement prompts,
 plus hashes, fixed counts, call counts, prompt characters and a conservative
 planning proxy of two characters per input token. This proxy is not measured
 usage or latency. No prompt contains expected or proposed reference labels.
-The actual output token cap is 4096 per call; no retries or partial-ID salvage.
+The response token cap remains 4096 per call (reasoning plus content), with
+`reasoning_effort="low"` on coverage calls only. The plan prints both this cap
+and its total: 24 calls permit at most 98,304 response tokens at the client
+request level. Gateway retry/fallback can consume more physical tokens; SDK
+retries remain zero. No partial-ID salvage is allowed.
+
+The observed run failed before measurement: five complete fenced JSON arrays
+were rejected by raw JSON parsing; three gateway errors exhausted 4096 tokens
+in reasoning without content. The original ERROR receipt is not reclassified.
+Coverage now accepts one complete JSON payload, optionally inside one complete
+JSON fence, while rejecting surrounding prose, malformed/truncated JSON and
+multiple payloads. All schema, ID, source and physical-identity checks still run.
+
+[GLM's official contract](https://docs.z.ai/guides/capabilities/thinking) supports
+`low` for GLM-5.3-Flash and forbids disabling thinking; its unspecified default
+is `max`. Inspected gateway OpenAI dispatch preserves explicit effort through
+OpenCode and Ollama routes. [Ollama's compatibility contract](https://docs.ollama.com/api/openai-compatibility)
+also exposes `reasoning_effort`. Low reduces requested reasoning rather than
+blindly enlarging the cap. It does not guarantee completion or calibration;
+any starvation, timeout or provider error remains an instrument ERROR. No other
+Judge grading method, model alias or gateway/runtime configuration changes.
+
+A future run requires fresh independent fix review and separate authorization.
+The existing plan remains 8 calibration + 16 measurement sequential client
+calls, 90 seconds each (36 minutes of bounded client waits), with a hard
+55-minute outer timeout. Neither client timeout nor outer timeout proves
+upstream cancellation. No redraw, relabel, resample or exclusions.
 
 ## Root review and route verification
 

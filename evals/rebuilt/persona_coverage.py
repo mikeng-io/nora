@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Any
 
 from .domain import Outcome
+from .grading import COVERAGE_MAX_TOKENS, COVERAGE_REASONING_EFFORT
+from .judge import parse_json_response
 
 ENV = "NORA_EVAL_PERSONA_COVERAGE"
 LABELS = {"covered", "derivable_missed", "source_unresolved"}
@@ -230,6 +232,9 @@ def plan(doc: dict) -> dict:
         "calibration_calls": len(batches(refs)),
         "measurement_calls": len(batches(stable_rows(doc))),
         "planned_calls": len(calls),
+        "max_response_tokens_per_call": COVERAGE_MAX_TOKENS,
+        "max_response_tokens": len(calls) * COVERAGE_MAX_TOKENS,
+        "reasoning_effort": COVERAGE_REASONING_EFFORT,
         "prompt_chars": chars,
         "input_token_estimate": math.ceil(chars / 2),
         "token_estimate_basis": "2 characters/token planning proxy, not measured usage",
@@ -238,7 +243,7 @@ def plan(doc: dict) -> dict:
 
 
 def parse_labels(raw: str, batch: list[dict]) -> list[dict]:
-    out = json.loads(raw)
+    out = parse_json_response(raw)
     wanted = {r["id"] for r in batch}
     if not isinstance(out, list) or len(out) != len(wanted) or {r.get("id") for r in out} != wanted:
         raise ValueError("judge must return exact line ID set, no missing/extra/duplicate IDs")
@@ -368,7 +373,8 @@ async def measure(doc: dict, judge: Any, *, print_input: bool = False) -> Outcom
             "id": judge.model,
             "timeout": judge.timeout_seconds,
             "temperature": 0,
-            "max_output_tokens": 4096,
+            "max_output_tokens": COVERAGE_MAX_TOKENS,
+            "reasoning_effort": COVERAGE_REASONING_EFFORT,
         },
         "calibration": None,
     }
