@@ -243,6 +243,8 @@ def test_frozen_scope_gold_and_evidence_refusals(tmp_path, monkeypatch):
             "without units",
         )
     )
+    # Restore original evidence before testing the independent readiness path.
+    doc = census_input()
     # No-call CLI must print full context even while independent review is pending.
     from evals.__main__ import main
 
@@ -291,17 +293,15 @@ async def test_unknown_or_same_actual_model_is_refused_before_client(tmp_path, m
 
 
 def pin_fixture(doc, tmp_path, monkeypatch):
-    projection = {
-        "accounts": doc["accounts"],
-        "cards": [{k: v for k, v in card.items() if k != "absence_proof"} for card in doc["cards"]],
-        "original_denominator": doc.get("original_denominator"),
-        "original_prelabels": doc.get("original_prelabels"),
-        "rows": [
-            {k: r.get(k) for k in ("id", "account_index", "claim", "claim_origin", "frozen")}
-            for r in doc["rows"]
-        ],
-        "reference_ids": [r["id"] for r in doc["references"]["rows"]],
-    }
+    projection = copy.deepcopy(doc)
+    for card in projection["cards"]:
+        card.pop("absence_proof", None)
+    for key in ("status", "adjudicated_by", "provenance"):
+        projection["references"].pop(key, None)
+    for row in projection["references"]["rows"]:
+        row.pop("expected", None)
+    for key in ("judge_id", "writer_id", "judge_actual", "writer_actual", "route_provenance"):
+        projection["models"].pop(key, None)
     manifest = {
         "schema": 1,
         "provenance": doc["provenance"],
@@ -476,3 +476,42 @@ def test_freeze_reconciles_original_sources_and_refuses_overwrite(tmp_path):
     (tmp_path / "comparisons.json").write_text("[]")
     with pytest.raises(ValueError, match="source file hash"):
         freeze_manifest(doc, tmp_path / "other.manifest.json")
+
+
+@pytest.mark.parametrize("gold", [False, True])
+@pytest.mark.parametrize("mutation", [
+    "body", "author", "role", "ts", "heads", "authored", "as_of",
+    "remove_sources", "missing_sources", "extra_row_key", "extra_top_key",
+    "reference_preliminary", "extra_model_key",
+])
+def test_full_evidence_pin_rejects_rehashed_mutation(tmp_path, monkeypatch, gold, mutation):
+    doc = census_input()
+    row = doc["rows"][-1]
+    if mutation in {"body", "author", "role", "ts"}:
+        row["sources"][0][mutation] = 999 if mutation == "ts" else "altered"
+    elif mutation == "heads":
+        row["heads"][0]["fact_value"] = ["Fabricated value"]
+    elif mutation == "authored":
+        row["authored"] = [{"id": "fabricated", "unit": "unit1", "person": "p1",
+                            "lines": ["Fabricated identity"]}]
+    elif mutation == "as_of":
+        doc["as_of"] += 1
+    elif mutation == "remove_sources":
+        row["sources"] = []
+    elif mutation == "missing_sources":
+        del row["sources"]
+    elif mutation == "extra_row_key":
+        row["unexpected"] = "changed"
+    elif mutation == "extra_top_key":
+        doc["unexpected"] = "changed"
+    elif mutation == "reference_preliminary":
+        doc["references"]["rows"][0]["preliminary"] = "changed"
+    else:
+        doc["models"]["unexpected"] = "changed"
+    doc["frozen_hash"] = coverage.digest(doc["frozen"])
+    assert len(coverage.stable_rows(doc)) == 179
+    inp = tmp_path / "mutated.json"
+    inp.write_text(json.dumps(doc))
+    monkeypatch.setenv(coverage.ENV, str(inp))
+    with pytest.raises(ValueError, match="pinned census"):
+        coverage.load_input(gold=gold)

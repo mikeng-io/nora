@@ -6,6 +6,7 @@ models; expected reference labels are read only by the calibration comparator.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import math
@@ -53,18 +54,18 @@ MANIFEST_HASH_ENV = MANIFEST_ENV + "_HASH"
 
 
 def census_projection(doc: dict) -> dict:
-    """Only immutable population fields; root adjudication/proofs stay attachable."""
-    return {
-        "accounts": doc["accounts"],
-        "cards": [{k: v for k, v in card.items() if k != "absence_proof"} for card in doc["cards"]],
-        "original_denominator": doc.get("original_denominator"),
-        "original_prelabels": doc.get("original_prelabels"),
-        "rows": [
-            {k: r.get(k) for k in ("id", "account_index", "claim", "claim_origin", "frozen")}
-            for r in doc["rows"]
-        ],
-        "reference_ids": [r["id"] for r in doc["references"]["rows"]],
-    }
+    """Bind the complete original export except exact readiness attachments."""
+    original = copy.deepcopy(doc)
+    for card in original["cards"]:
+        card.pop("absence_proof", None)
+    refs = original["references"]
+    for key in ("status", "adjudicated_by", "provenance"):
+        refs.pop(key, None)
+    for row in refs["rows"]:
+        row.pop("expected", None)
+    for key in ("judge_id", "writer_id", "judge_actual", "writer_actual", "route_provenance"):
+        original["models"].pop(key, None)
+    return original
 
 
 def census_counts(doc: dict) -> dict:

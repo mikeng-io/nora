@@ -114,8 +114,18 @@ def freeze_manifest(doc: dict, output: Path) -> dict:
             "reference_ids": [f"A{r['account_index']:02d}-{r['row_id']}" for r in refs],
         },
     }
-    if census_projection(doc) != manifest["census"]:
+    population = {
+        **{k: doc.get(k) for k in ("accounts", "original_denominator", "original_prelabels")},
+        "cards": [{k: v for k, v in c.items() if k != "absence_proof"} for c in doc["cards"]],
+        "rows": [
+            {k: r.get(k) for k in ("id", "account_index", "claim", "claim_origin", "frozen")}
+            for r in doc["rows"]
+        ],
+        "reference_ids": [r["id"] for r in doc["references"]["rows"]],
+    }
+    if population != manifest["census"]:
         raise ValueError("export differs from original source census")
+    manifest["census"] = census_projection(doc)
     validate(doc, gold=False, manifest=manifest)
     # Explicit destination, independent of input filename; never silently replace.
     fd = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
