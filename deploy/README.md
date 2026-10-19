@@ -1,4 +1,79 @@
-# Nora deployment (bare-metal / systemd)
+# Deployment
+
+## Current runtime
+
+The reference installation uses the root Docker Compose project on a Linux host.
+It assumes model/memory services, persistent storage and separately provisioned
+platform accounts. Start from `config.example.toml`, `identity.example.toml` and
+`policy.example.toml`; configure only the capabilities you intend to operate.
+The examples require operator configuration before startup. Store real config,
+credentials and platform sessions outside version control and back up persistent
+data before upgrading.
+
+The operator/agent
+procedure is [nora-deploy](../.agents/skills/nora-deploy/SKILL.md); operational
+recovery is in the [runbook](../docs/runbook.md). The procedure serializes
+changes with a host lock, builds a version-stamped image, validates live config,
+recreates `nora`, `presence` and `analytics` together, and reads back their state.
+Voice changes also coordinate the voice services. Verified images are recorded
+for recovery; old phase tags are not the current rollback mechanism.
+
+The Compose file uses bridge networks, persistent volumes and private host
+configuration. The separate `honcho_memory` network must already exist.
+Doctrine and Dreamer directories are live mounts from the deploy checkout;
+image replacement alone does not determine all running behaviour.
+
+## Proposed pull-based deployment
+
+Status: proposal only. No controller, image publisher or production schedule
+is installed by this change. Keep Compose for this single host. Revisit a
+cluster controller only if the runtime actually moves to a cluster.
+
+1. A trusted post-merge CI build tests a source revision and publishes OCI
+   images, stamped with that revision, to a registry. Record immutable image
+   digests for every changed service, including the shared Nora image and any
+   coupled voice services. PR validation gets no publication or host credentials.
+2. A reviewed desired-state change selects those digests and the matching
+   instruction/config-schema revision. Keep deployment promotion separately
+   controlled from public contribution branches. A merge of application code
+   need not promote it. Third-party service upgrades remain explicit changes.
+3. A small host-installed reconciler, invoked by a systemd timer, polls that
+   approved state using outbound access. The host needs no new inbound route;
+   administration remains on its existing private access path. The reconciler has read-only
+   source/registry credentials and local Docker authority; the coding agent
+   and PR jobs have neither. Install its trusted executable outside the fetched
+   checkout; never execute arbitrary scripts from a desired-state revision.
+4. Before changing running services, hold the existing deploy lock, validate
+   the manifest against a fixed service/registry allowlist, pull every digest,
+   validate the host config with the candidate image, and retain the last
+   successful deployment. Keep Compose project name, data paths and volumes
+   stable. Store secrets, identities, policy, account sessions and OAuth refresh
+   state on the host. Do not interpolate fetched shell or arbitrary mount paths.
+5. Remove doctrine/Dreamer live checkout mounts in the reviewed deployment
+   configuration so the image's existing copies become authoritative, or mount
+   a matching immutable instruction bundle. This requires an explicit cutover:
+   otherwise a host `git pull` can still alter behaviour outside promotion.
+6. Recreate the selected service set without building or touching unrelated
+   infrastructure, wait for its health checks, and verify running digests and
+   application health. Record success only after those checks. On failure,
+   stop promotion and report the unhealthy state; do not retry indefinitely.
+
+Rollback selects the previous successful desired state, including instructions
+and compatible configuration. Startup applies Alembic migrations: automatic
+image rollback is unsafe after an incompatible schema change. Require a
+reviewed roll-forward or an operator-led backup/restore plan in that case.
+A failed rollback remains failed and must alert the operator.
+
+Before implementation/activation, confirm registry and host architecture,
+which services the controller owns, promotion approval, backup/restore readiness
+and where failure alerts go. Host installation, credentials, access policy and
+production cutover require operator approval. The current verifier assumes
+`nora:latest`; it must be adapted and tested against desired digests before
+claiming this path is ready. Exercise a successful update, failed pull, invalid
+config, failed health check and compatible rollback on a disposable Compose
+project before enabling the timer on a deployment host.
+
+## Historical bare-metal / systemd reference
 
 This document and the systemd unit (`deploy/nora.service`) describe a **bare-metal**
 deployment path. It is **not** what the live instance currently runs — Nora runs as a
@@ -61,7 +136,7 @@ superseded here.
 ## Container-era sidecars in this tree
 
 The live deployment runs from the repo-root `docker-compose.yml`; several of
-its services are built from subtrees here (`stt/`, `drop/`, …). The newest:
+its services are built from subtrees here (`stt/`, `voice-sidecar/`, …). The newest:
 
 * **`voice-sidecar/`** — the Node audio-controller (design/voice-channel/07):
   the SOLE holder of the Discord voice connection. Joins a channel,
