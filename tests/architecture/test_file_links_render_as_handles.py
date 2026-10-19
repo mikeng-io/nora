@@ -352,6 +352,8 @@ _INPUT_EXEMPT = {
         "a RecordItem; cognition_render._words renders it",
     ("nora/infra/sql/character.py", "episodes", "text"):
         "an Episode; character and lessons render it through render_row_window",
+    ("nora/infra/sql/persona_inputs.py", "rollup", "text"):
+        "an Episode; Persona renders its question through render_row_window",
     ("nora/ingest/stages/edit_gate.py", "run", "message"):
         "a NormalizedMessage for the trigger gate, which reads no model",
     ("nora/subject/knowledge.py", "know", "message"):

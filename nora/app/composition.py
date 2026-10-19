@@ -192,6 +192,7 @@ from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.otp import SqlOtpStore
 from nora.infra.sql.participation_state import SqlParticipationStateStore
 from nora.infra.sql.persona import SqlPersonaStore
+from nora.infra.sql.persona_inputs import SqlPersonaInputs
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.reasoning_strip import SqlReasoningStripStore
 from nora.infra.sql.record_query import SqlRecordQuery
@@ -4074,9 +4075,12 @@ async def build_dependencies(
                     *dream_adaptors,
                     PersonaPersonAdaptor(
                         persona=persona_store, culture=culture_store, render=persona_index,
+                        media_join=media_join,
                         evidence=PersonaEvidence(
                             store=persona_reads, persona=persona_store, keys=person_keys,
                             wake_batch=cfg.culture.person_wake_batch,
+                            source_inputs=SqlPersonaInputs(engine, social=persona_social),
+                            source_timeout_seconds=cfg.standing.store_timeout_seconds,
                             social=persona_social,
                             former_ids=persons.former_ids_for,
                         ),

@@ -19,7 +19,9 @@ for a room, generalised); a read is what the session is handed:
 Evidence reads are SELECTs. Historical and social progress reuse the existing
 consolidation watermarks; their explicit cursor methods write no Persona claim.
 
-**Media is not joined.** A person's lines are read by this module's own SQL,
+**Media is not joined here.** Persona joins these scoped rows at its input
+renderer using the shared MediaJoin; legacy Character still reads bare handles.
+A person's lines are read by this module's own SQL,
 so a photo they posted reaches their session as its stored body, the bare
 `[image a3f2c1]` handle, not as what it showed (the media join lives above
 `nora.infra`). The session writes what a person is like from what they SAY.
