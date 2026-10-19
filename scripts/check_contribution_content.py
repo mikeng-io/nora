@@ -31,6 +31,16 @@ FREEFORM = [
     "Not in this issue",
 ]
 DESIGN = ["The gap", "What's specified (decided, not open)", "Not built", "Depends on / feeds"]
+PUBLIC_ISSUES = {
+    "bug": [
+        "Description",
+        "Steps to reproduce",
+        "Expected behavior",
+        "Actual behavior",
+        "Version and environment",
+    ],
+    "enhancement": ["Problem", "Proposed solution"],
+}
 MARKER = "<!-- nora-contribution-feedback -->"
 PLACEHOLDER = re.compile(
     r"^(?:TODO|TBD|PENDING(?:_[A-Z]+)*|\.{3}|"
@@ -39,7 +49,7 @@ PLACEHOLDER = re.compile(
 )
 
 
-def prose(text: str) -> list[str]:
+def prose(text: str, *, include_code: bool = False) -> list[str]:
     """Ignore comments and fenced examples when interpreting headings/prompts."""
     text = re.sub(r"<!--.*?(?:-->|\Z)", "", text, flags=re.S)
     lines, fence = [], ""
@@ -53,13 +63,16 @@ def prose(text: str) -> list[str]:
             continue
         if not fence:
             lines.append(line)
+        elif include_code:
+            # Keep code as content without promoting its headings to form fields.
+            lines.append("    " + line)
     return lines
 
 
-def sections(text: str, levels=(2,)) -> list[tuple[str, str]]:
+def sections(text: str, levels=(2,), *, include_code: bool = False) -> list[tuple[str, str]]:
     result = []
     heading, lines = None, []
-    for line in prose(text):
+    for line in prose(text, include_code=include_code):
         match = re.match(r"^(#{2,3})\s+(.+?)\s*#*\s*$", line)
         if match and len(match[1]) in levels:
             if heading is not None:
@@ -147,15 +160,23 @@ def pr_problems(item: dict, repository: str, release_login: str = "") -> list[st
 
 def issue_problems(item: dict) -> list[str]:
     errors = []
-    if not re.fullmatch(r"[^:\n]+: \S[^\n]*", item["title"].strip()):
+    labels = {label["name"] for label in item["labels"]} & (
+        {"freeform", "design-anchored"} | PUBLIC_ISSUES.keys()
+    )
+    public = labels & PUBLIC_ISSUES.keys()
+    if public:
+        if not substantive(item["title"]):
+            errors.append("Use a descriptive issue title.")
+    elif not re.fullmatch(r"[^:\n]+: \S[^\n]*", item["title"].strip()):
         errors.append("Use an issue title shaped `<Area>: <the gap>`.")
-    labels = {label["name"] for label in item["labels"]} & {"freeform", "design-anchored"}
     if len(labels) != 1:
-        errors.append("Choose exactly one issue shape label: `freeform` or `design-anchored`.")
+        errors.append(
+            "Choose exactly one issue form: bug, enhancement, freeform or design-anchored."
+        )
     body = item.get("body") or ""
-    mapping = dict(sections(body, levels=(2, 3)))
+    mapping = dict(sections(body, levels=(2, 3), include_code=bool(public)))
     design = "design-anchored" in labels
-    required = DESIGN if design else FREEFORM
+    required = PUBLIC_ISSUES[sorted(public)[0]] if public else (DESIGN if design else FREEFORM)
     if design:
         anchor = re.search(r"^\*\*Design:\*\* (.+)$", body, re.M)
         if not anchor or not substantive(anchor[1]):

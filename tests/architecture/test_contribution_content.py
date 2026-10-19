@@ -117,6 +117,54 @@ def issue():
     }
 
 
+@pytest.mark.parametrize(
+    "label,headings",
+    [
+        (
+            "bug",
+            [
+                "Description",
+                "Steps to reproduce",
+                "Expected behavior",
+                "Actual behavior",
+                "Version and environment",
+            ],
+        ),
+        ("enhancement", ["Problem", "Proposed solution"]),
+    ],
+)
+def test_public_issue_forms_accept_reports_without_internal_design_fields(label, headings):
+    item = {
+        "title": "A clear report from a new contributor",
+        "labels": [{"name": label}],
+        "body": "\n".join(f"### {name}\nConcrete reproduction details.\n" for name in headings),
+    }
+    assert content.issue_problems(item) == []
+    item["body"] = "\n".join(
+        f"### {name}\nConcrete reproduction details.\n" for name in headings[1:]
+    )
+    assert content.issue_problems(item)
+    item["labels"].append({"name": "freeform"})
+    assert content.issue_problems(item)
+
+
+def test_bug_reports_accept_code_and_logs_without_treating_fenced_headings_as_fields():
+    item = {
+        "title": "Sidecar cannot connect",
+        "labels": [{"name": "bug"}],
+        "body": "### Description\nThe sidecar exits immediately.\n"
+        "### Steps to reproduce\n```sh\nnode src/service.mjs\n```\n"
+        "### Expected behavior\nThe service remains available.\n"
+        "### Actual behavior\n```text\nError: connect ECONNREFUSED 127.0.0.1:4600\n```\n"
+        "### Version and environment\nNora 6.2.0, Linux, Node 22.\n",
+    }
+    assert content.issue_problems(item) == []
+    item["body"] = item["body"].replace(
+        "### Expected behavior\nThe service remains available.\n", ""
+    ).replace("node src/service.mjs", "node src/service.mjs\n### Expected behavior\nSpoofed")
+    assert any("Expected behavior" in error for error in content.issue_problems(item))
+
+
 def test_issue_web_and_cli_headings_are_supported():
     item = issue()
     assert not content.issue_problems(item)

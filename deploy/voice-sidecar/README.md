@@ -155,8 +155,9 @@ private `nora` network, and the wake gate will reach it there in stage 3.
 ## Notes
 
 - Node 22+, plain ESM JS, no build step.
-- `npm audit` may flag `tar` inside `@discordjs/opus`'s install-time
-  prebuild downloader (`node-pre-gyp`). It runs only during `npm ci`, not
-  in the sidecar's runtime path.
+- The scoped npm override keeps `@discordjs/node-pre-gyp` on patched `tar` 7.
+  This is the install-time prebuild downloader used by `@discordjs/opus`;
+  upstream still requests vulnerable `tar` 6. Remove the override when upstream
+  accepts patched tar, after verifying native installation again.
 - `recordings/` and `node_modules/` are gitignored; spike WAVs are
   verification artifacts, not retained audio.

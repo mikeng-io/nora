@@ -2,7 +2,7 @@
   "name": "nora-voice-sidecar",
   "version": "0.2.0",
   "private": true,
-  "description": "Audio-controller for Nora's Discord voice channel: sole owner of the voice connection — per-user PCM to the wake seam, TTS playback, music via ffmpeg — driven by nora over an HTTP control plane.",
+  "description": "Audio-controller for Nora's Discord voice channel: sole owner of the voice connection \u2014 per-user PCM to the wake seam, TTS playback, music via ffmpeg \u2014 driven by nora over an HTTP control plane.",
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -21,5 +21,10 @@
     "@snazzah/davey": "0.1.12",
     "discord.js": "^14.23.2",
     "prism-media": "^1.3.5"
+  },
+  "overrides": {
+    "@discordjs/node-pre-gyp": {
+      "tar": "^7.5.22"
+    }
   }
 }

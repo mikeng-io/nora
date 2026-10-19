@@ -16,5 +16,10 @@
     "@discordjs/opus": "^0.10.0",
     "@discordjs/voice": "0.19.2",
     "discord.js": "^14.23.2"
+  },
+  "overrides": {
+    "@discordjs/node-pre-gyp": {
+      "tar": "^7.5.22"
+    }
   }
 }
