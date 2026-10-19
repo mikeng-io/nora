@@ -1,7 +1,7 @@
 ---
 name: persona-person
 kind: objective
-version: 4
+version: 6
 applies_to: [persona_person_adaptor]
 description: >-
   One person's Persona in one unit, in shadow (design/unified-memory/45 §4).
@@ -166,3 +166,23 @@ actual corroboration of that same field, never a later mention of the person's
 name alone. Same-fact text revisions retain original assertion time and grounding
 and do not increment support; changed typed values/modes/effective dates require
 new evidence. Code checks provenance shape and authors, not semantic entailment.
+
+
+For other explicitly stated stable human facts, use fact_key="attribute",
+kind="attribute", mode="told", and fact_value={"name": "height", "value": 178,
+"unit": "cm"}. name is a nonempty lowercase label with spaces/hyphens normalized
+to underscores; never alias an existing dedicated key. value is a nonempty
+string, finite number, boolean or nonempty list of nonempty strings. unit is
+optional except for age and height: both require a finite numeric value (never
+boolean, string or list) and a nonempty source unit. Preserve the unit from
+actual evidence; never invent a unit for ambiguous input or guess conversions.
+No extra keys, nested objects or nulls. This covers height, self-reported age,
+hobbies, pets, vehicles, equipment, websites and capabilities without adding a
+key per topic. It is human Identity only, never inferred personality.
+Self-reported age stays the age asserted at as_of, not a calculated current age
+or an inferred birthday/year. Incidental activity does not establish durable
+ownership: driving a borrowed car or walking a friend's dog is not owning one.
+All common fields keep their dedicated keys and exact types. Preserve stated
+languages, instructions and workplace qualifiers in those fields even when
+outside the examples. The canonical full-claim rule above applies equally to
+fallback attributes: plans, conditions and uncertainty cannot hide in text.

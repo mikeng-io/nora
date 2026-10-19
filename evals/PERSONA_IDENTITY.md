@@ -9,7 +9,7 @@ with PersonaPersonAdaptor's entity key and evidence reader. It reads
 SqlPersonaStore.account_heads, then selects current typed Identity. Predecessors
 whose stored state still says current are never counted as current heads.
 
-The six invented vectors are in `design/unified-memory/75-typed-identity.md`.
+The eight invented vectors are in `design/unified-memory/75-typed-identity.md`.
 They are private-file synthetic evidence experiments, counted as COUNTERFACTUAL
 when supplied. The committed contracts remain unanchored without the private file.
 No production names, account IDs, messages or audit conclusions belong in Git.
@@ -27,7 +27,7 @@ source clone and pseudonym map (the nora-eval skill gives the lock and setup):
 uv sync --extra evals
 uv run python -m evals.persona_cases /tmp/persona-identity.yaml
 export NORA_EVAL_PERSONA_CASES=/tmp/persona-identity.yaml
-for case in birthday_retained birthday_corrected residence_unknown marriage_unknown partner_unspecified explicit_home_spouse; do
+for case in birthday_retained birthday_corrected residence_unknown marriage_unknown partner_unspecified explicit_home_spouse height_age_stated activity_not_ownership; do
   uv run python -m evals persona_identity --print-input "$case"
 done
 ```
@@ -115,3 +115,51 @@ is the conservative planning bound. No `--allow-long` without root authorization
 Canonical as_of remains the max cited source timestamp ceiling. A structurally
 valid citation is not proof of semantic support; that is precisely what these
 invented stimuli measure in the model's writer output.
+
+
+## Additional-attribute treatment
+
+The original six cases and their grading contracts remain unchanged; two new
+invented vectors combine explicit height plus source-reported age, and reject
+incidental activity as durable ownership. Use the same registered corpus, private
+case generator, production writer and deterministic grader. No model judge or
+second harness is added. Offline tests validate this instrument only; model
+acceptance for the fallback remains UNMEASURED until the root runs both arms.
+
+For this treatment, create two fresh eval worktrees at the additional-attributes
+PR head (record the actual SHA). Both retain that head's eight-case harness and
+private file. In the **before** worktree only, restore from `3c39b39c08967be8eb709422b260f0fe98aa493b`:
+
+```bash
+git restore --source=3c39b39c08967be8eb709422b260f0fe98aa493b -- \
+  nora/domain/persona.py nora/agent/tools.py \
+  nora/dreamer/objectives/persona-person.md
+```
+
+The after arm keeps those files at the PR head. Record HEAD/tree, treatment-file
+hashes and the before diff. Inspect all eight inputs with the loop above before
+spending: verify the declared source rows/dates, source height/age and composed
+objective in both inputs. Run sequentially under the existing host eval lock:
+
+```bash
+uv run python -m evals persona_identity --sample 1 --reasons --positions
+```
+
+Eight cases x one draw x two arms. No paid calls are part of the build. Root may
+select six including controls to fit its operator budget; record every selected
+case, call/spend/runtime receipt and any ERROR separately from FAIL. The generic
+CLI estimate is not a measured writer latency. Root must read the actual live
+budget privately and keep private positions/receipts outside Git.
+
+The remember name, opening paragraph and level are unchanged; argument guidance
+and the schema's fact_key enum changed. Root should measure before/after routing
+with the existing command (same two treatment arms, no model override):
+`uv run python -m evals tool_selection --sample 5 --reasons`.
+No result interpretation moved, so no new tool_reporting arm is required.
+
+The production change consists of the validator/formatter, remember signature and
+argument guidance, Persona objective, and the portal payload/schema addition.
+The domain/tool/portal code needs the normal image rebuild; the objective is
+bind-mounted and becomes live at the next pull. This document authorizes no
+pull, config change, historical write, merge or deploy. Root owns independent
+review, bounded model acceptance and subsequent append-only recovery.

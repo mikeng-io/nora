@@ -23,6 +23,10 @@ from tests.infra.test_persona_store import env as env
     ("key", "value"),
     [
         ("birthday", {"month": 2, "day": 29}),
+        ("attribute", {"name": "height", "value": 178, "unit": "cm"}),
+        ("attribute", {"name": "age", "value": 34, "unit": "years"}),
+        ("attribute", {"name": "hobbies", "value": ["cycling", "reading"]}),
+        ("attribute", {"name": "owns_car", "value": False}),
         ("gender", "woman"),
         ("sex", "female"),
         ("residence", "Hong Kong"),
@@ -78,6 +82,10 @@ async def test_typed_values_round_trip_and_override_conflicting_model_text(env, 
         ("dietary_restrictions", None),
         ("relationship", {"relation": "friend", "person_id": "p", "unresolved_name": "X"}),
         ("other", "dinner tomorrow"),
+        ("attribute", {"name": "height", "value": None}),
+        ("attribute", {"name": "height", "value": {"amount": 178}}),
+        ("attribute", {"name": "height", "value": float("nan")}),
+        ("attribute", {"name": "birthday", "value": "June 8"}),
     ],
 )
 async def test_invalid_shapes_are_refused_without_a_row(env, key, value):
@@ -473,4 +481,69 @@ async def test_gender_and_sex_require_explicit_statements_not_deductions(env, ke
         mode="deduced", citations=("101", "102"), fact_key=key, fact_value="female")])
     assert result.status == "refused"
     assert result.refusals[0].reason == "invalid_fact"
+    assert await env.store.account_heads(key=ACCOUNT.key) == ()
+
+
+async def test_fallback_revision_preserves_same_fact_and_dates_changed_fact(env):
+    value = {"name": "height", "value": 178, "unit": "cm"}
+    op = AddOp(part="identity", kind="attribute", text="height", mode="told",
+               citations=("101",), told_by=KIT, fact_key="attribute", fact_value=value)
+    assert (await _write(env, [op])).status == "ok"
+    [original] = await env.store.account_heads(key=ACCOUNT.key)
+    assert (await _write(env, [ReviseOp(line="P1", citations=("102",),
+                                      text="reworded height")], now=NOW + 1)).status == "ok"
+    [same] = await env.store.account_heads(key=ACCOUNT.key)
+    assert (same.as_of, same.support_count, same.last_supported_at) == (
+        original.as_of, original.support_count, original.last_supported_at)
+    assert same.citations == ("101", "102")
+    changed = {**value, "value": 179}
+    assert (await _write(env, [ReviseOp(line="P1", citations=("103",),
+        fact_key="attribute", fact_value=changed)], now=NOW + 2)).status == "ok"
+    [head] = await env.store.account_heads(key=ACCOUNT.key)
+    assert head.fact_value == changed and head.as_of == CITABLE.messages[103].ts
+    async with env.engine.connect() as conn:
+        rows = (await conn.execute(sa.select(PERSONA_LINE.c.fact_value)
+                                   .order_by(PERSONA_LINE.c.written_at))).scalars().all()
+    assert rows == [value, value, changed]
+
+
+@pytest.mark.parametrize("field", ["name", "value", "unit"])
+@pytest.mark.parametrize("unsafe", ["+85291234567", "22.31234, 114.12345"])
+async def test_fallback_all_components_pass_real_egress_screen(env, field, unsafe):
+    from nora.agent.dream_screen import text_offence
+    from nora.infra.sql.persona import SqlPersonaStore
+
+    env.store = SqlPersonaStore(env.engine, screen=text_offence)
+    value = {"name": "height", "value": 178, "unit": "cm", field: unsafe}
+    op = AddOp(part="identity", kind="attribute", text="safe prose", mode="told",
+               citations=("101",), told_by=KIT, fact_key="attribute", fact_value=value)
+    result = await _write(env, [op])
+    assert result.status == "refused"
+    assert result.refusals[0].reason in {"identifier", "coordinate", "invalid_fact"}
+    assert await env.store.account_heads(key=ACCOUNT.key) == ()
+
+
+async def test_boolean_and_number_are_distinct_fallback_revisions(env):
+    first = AddOp(part="identity", kind="attribute", text="explicit value", mode="told",
+                  citations=("101",), told_by=KIT, fact_key="attribute",
+                  fact_value={"name": "test_result", "value": True})
+    assert (await _write(env, [first])).status == "ok"
+    assert (await _write(env, [ReviseOp(line="P1", citations=("102",),
+        fact_key="attribute", fact_value={"name": "test_result", "value": 1})],
+        now=NOW + 1)).status == "ok"
+    [line] = await env.store.account_heads(key=ACCOUNT.key)
+    assert type(line.fact_value["value"]) is int
+    assert line.as_of == CITABLE.messages[102].ts
+
+
+async def test_numeric_value_and_unit_cannot_assemble_unscreened_coordinates(env):
+    from nora.agent.dream_screen import text_offence
+    from nora.infra.sql.persona import SqlPersonaStore
+
+    env.store = SqlPersonaStore(env.engine, screen=text_offence)
+    op = AddOp(part="identity", kind="attribute", text="safe prose", mode="told",
+               citations=("101",), told_by=KIT, fact_key="attribute",
+               fact_value={"name": "location", "value": 22.31234, "unit": ", 114.12345"})
+    result = await _write(env, [op])
+    assert result.status == "refused" and result.refusals[0].reason == "coordinate"
     assert await env.store.account_heads(key=ACCOUNT.key) == ()

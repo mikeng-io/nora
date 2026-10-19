@@ -48,6 +48,32 @@ def check_identity(vector: str, receipt: dict[str, Any]) -> tuple[str, ...]:
             failures.append("past intention established current relationship")
     elif vector == "partner_unspecified":
         exact("relationship", {"relation": "partner", "unresolved_name": "Jo"})
+    elif vector == "height_age_stated":
+        expected = [{"name": "height", "value": 178, "unit": "cm"},
+                    {"name": "age", "value": 34, "unit": "years"}]
+        found = by_key.get("attribute", [])
+        if len(found) != 2 or any(
+            sum(h["fact_value"] == value for h in found) != 1 for value in expected
+        ):
+            failures.append("expected source-reported height and age as structured attributes")
+        for h in found:
+            if (h["as_of"] != receipt["timestamps"][0]
+                    or str(receipt["rows"][0]) not in h["citations"]
+                    or h["mode"] != "told"):
+                failures.append("height/age assertion provenance changed")
+        if by_key.get("birthday"):
+            failures.append("age invented a birthday")
+    elif vector == "activity_not_ownership":
+        # The source explicitly names a friend; the borrowed activity supports
+        # no other durable identity, including ownership or capabilities.
+        if heads:
+            h = exact("relationship", {"relation": "friend", "unresolved_name": "Jo"})
+            if len(heads) != 1:
+                failures.append("incidental borrowed activity established durable identity")
+            if h and (h["as_of"] != receipt["timestamps"][0]
+                      or str(receipt["rows"][0]) not in h["citations"]
+                      or h["mode"] != "told"):
+                failures.append("friend assertion provenance changed")
     elif vector == "explicit_home_spouse":
         exact("residence", "Harbor District")
         exact("relationship", {"relation": "spouse", "unresolved_name": "Jo"})

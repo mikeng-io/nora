@@ -37,6 +37,7 @@ someone else > deduced > induced. A writer names the conflict
 
 from __future__ import annotations
 
+import math
 import re
 import uuid
 from collections.abc import Callable, Mapping, Sequence
@@ -808,8 +809,10 @@ def _check_line(
     ):
         return PersonaRefusal("prediction_unexpected", "a prediction belongs to a hypothesis")
 
-    if line.fact_key in ("gender", "sex") and line.mode != "told":
-        return PersonaRefusal("invalid_fact", "gender and sex require an explicit statement")
+    if line.fact_key == "attribute" and account.entity_kind != "human":
+        return PersonaRefusal("invalid_fact", "fallback attributes belong to humans")
+    if line.fact_key in ("gender", "sex", "attribute") and line.mode != "told":
+        return PersonaRefusal("invalid_fact", "this field requires an explicit statement")
     if line.kind == "instruction" and (
         account.subject is None or line.told_by != account.subject
     ):
@@ -1097,6 +1100,11 @@ def plan_write(
                 and op.conflicts_with is None
                 and all(getattr(candidate, field) == getattr(old, field) for field in (
                     "fact_key", "fact_value", "valid_from", "valid_until", "mode", "told_by"))
+                # JSON booleans and numbers are different facts (True == 1 in Python).
+                and (candidate.fact_key != "attribute" or (
+                     isinstance(candidate.fact_value, dict) and isinstance(old.fact_value, dict)
+                     and isinstance(candidate.fact_value["value"], bool)
+                     == isinstance(old.fact_value["value"], bool)))
                 and set(candidate.draws_on) == {aliases.get(lid, lid) for lid in old.draws_on}):
             candidate = replace(
                 candidate, citations=tuple(dict.fromkeys((*old.citations, *candidate.citations))),
@@ -1223,6 +1231,7 @@ FACT_KINDS = {
     "name": "name",
     "role": "role",
     "relationship": "relationship",
+    "attribute": "attribute",
     "gender": "attribute",
     "sex": "attribute",
     "birthday": "attribute",
@@ -1268,7 +1277,39 @@ def validate_fact(
                 raise ValueError("effective time is outside the supported calendar") from exc
     if valid_from is not None and valid_until is not None and valid_until <= valid_from:
         raise ValueError("valid_until must follow valid_from")
-    if key in _LIST_FACTS:
+    if key == "attribute":
+        if not isinstance(value, dict) or set(value) not in (
+            {"name", "value"}, {"name", "value", "unit"}
+        ):
+            raise ValueError("attribute needs name, value and optional unit only")
+        name = value["name"]
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("attribute name is a nonempty normalized label")
+        normalized = re.sub(r"[\s-]+", "_", name.strip().lower())
+        if normalized in FACT_KINDS:
+            raise ValueError("use the dedicated fact_key and its typed value")
+        if name != normalized:
+            raise ValueError("normalize attribute name to lowercase with underscores")
+        body = value["value"]
+        if normalized in {"age", "height"} and not (
+            (type(body) is int or (type(body) is float and math.isfinite(body)))
+            and isinstance(value.get("unit"), str) and value["unit"].strip()
+        ):
+            raise ValueError("age and height require a numeric value and source unit")
+        if not (
+            (isinstance(body, str) and bool(body.strip()))
+            or type(body) in (bool, int)
+            or (type(body) is float and math.isfinite(body))
+            or (isinstance(body, list) and bool(body)
+                and all(isinstance(x, str) and x.strip() for x in body))
+        ):
+            raise ValueError("attribute value is a nonempty string, finite number, boolean "
+                             "or nonempty list of nonempty strings")
+        if "unit" in value and (not isinstance(value["unit"], str) or not value["unit"].strip()):
+            raise ValueError("attribute unit is a nonempty string")
+        if len(format_fact(key, value)) > LINE_MAX_CHARS:
+            raise ValueError("formatted fact exceeds the line budget")
+    elif key in _LIST_FACTS:
         if not isinstance(value, list) or any(
             not isinstance(x, str) or not x.strip() for x in value
         ):
@@ -1307,7 +1348,14 @@ def format_fact(
     """Canonical value for every authored surface; resolved ids never render raw."""
     if key is None:
         return ""
-    if key == "birthday" and isinstance(value, dict):
+    if key == "attribute" and isinstance(value, dict):
+        key = value["name"]
+        raw = value["value"]
+        body = (", ".join(raw) if isinstance(raw, list) else
+                str(raw).lower() if isinstance(raw, bool) else str(raw))
+        if "unit" in value:
+            body += f" {value['unit']}"
+    elif key == "birthday" and isinstance(value, dict):
         year = f"{value['year']:04d}-" if "year" in value else ""
         body = f"{year}{value['month']:02d}-{value['day']:02d}"
     elif key == "relationship" and isinstance(value, dict):

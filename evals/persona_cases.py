@@ -35,6 +35,9 @@ def case_file() -> dict:
         "marriage_unknown": [("2026-09-01", "Jo and I plan to get married on October 3."),
                              ("2026-10-10", "Jo sent me a funny picture.")],
         "partner_unspecified": [("2026-10-10", "我同我另一半 Jo 去食飯。")],
+        "height_age_stated": [("2026-05-01", "I am 178 cm tall and I am 34 years old.")],
+        "activity_not_ownership": [("2026-10-10",
+                                    "Today I drove a borrowed car and walked my friend Jo's dog.")],
         "explicit_home_spouse": [("2026-10-10", "I live in Harbor District. Jo is my spouse.")],
     }
     return {name: {
