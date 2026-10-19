@@ -1570,7 +1570,10 @@ class SocialPollConfig(BaseModel):
     the grid. It reads at most `backfill_pages_per_tick` pages a tick, one per
     member, after the tick's probes and due reads, and only while what is left
     of the hour's budget still covers a probe and a read of every member. 0
-    pages turns it off.
+    pages turns it off. With `backfill_full_history`, the age and item limits
+    do not apply: every opted-in member is walked to the grid end. Old bounded
+    walks reopen once; known items are deduplicated, and a recorded grid end
+    stays done across restarts. Budgets and failure handling stay in force.
 
     The re-walk (§5) pages once through each member's recorded items after
     their back-fill is done, so each item's tagged place is compared with
@@ -1597,6 +1600,7 @@ class SocialPollConfig(BaseModel):
     back_off_max_hours: float = Field(default=6.0, gt=0)
     jitter_seconds: float = Field(default=10.0, ge=0)
     perception_daily_cap: int = Field(default=200, ge=0)
+    backfill_full_history: bool = False
     backfill_max_days: float = Field(default=90.0, gt=0)
     backfill_max_items: int = Field(default=50, ge=0)
     backfill_pages_per_tick: int = Field(default=2, ge=0)

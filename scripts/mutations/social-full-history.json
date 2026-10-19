@@ -1,0 +1,44 @@
+[
+  {
+    "name": "bounded last page falsely attests a complete grid",
+    "file": "nora/app/social_poller.py",
+    "old": "        if not self._settings.backfill_full_history \\\n                and backfilled >= self._settings.backfill_max_items:\n            end = \"max_items\"\n        elif not self._settings.backfill_full_history and page.items \\\n                and (any if paged else all)(i.taken_at < horizon for i in page.items):\n            end = \"max_days\"\n        elif page.next_cursor is None:\n            end = \"grid_end\"\n",
+    "new": "        if page.next_cursor is None:\n            end = \"grid_end\"\n        elif not self._settings.backfill_full_history \\\n                and backfilled >= self._settings.backfill_max_items:\n            end = \"max_items\"\n        elif not self._settings.backfill_full_history and page.items \\\n                and (any if paged else all)(i.taken_at < horizon for i in page.items):\n            end = \"max_days\"\n",
+    "target": "tests/integration/test_social_poller.py::test_full_history_reopens_a_bounded_last_page"
+  },
+  {
+    "name": "full recovery consumes fresh news as history",
+    "file": "nora/app/social_poller.py",
+    "old": "                before=at.probe_at if at.cursor is None else None,",
+    "new": "                before=None,",
+    "target": "tests/integration/test_social_poller.py::test_full_history_recovery_leaves_fresh_first_page_posts_to_the_poll"
+  },
+  {
+    "name": "failed recovery moves the completed-read boundary",
+    "file": "nora/infra/sql/social_stream.py",
+    "old": "                    last_at=r.recorded_at, probe_at=was.probe_at,",
+    "new": "                    last_at=r.recorded_at, probe_at=r.recorded_at,",
+    "target": "tests/integration/test_social_poller.py::test_full_history_recovery_leaves_fresh_first_page_posts_to_the_poll"
+  },
+  {
+    "name": "older backfill page moves the fresh-news boundary",
+    "file": "nora/infra/sql/social_stream.py",
+    "old": "                    probe_at=probes.get(r.person) if r.advanced_counts else was.probe_at,",
+    "new": "                    probe_at=r.recorded_at,",
+    "target": "tests/integration/test_social_poller.py::test_an_older_backfill_page_does_not_move_the_fresh_news_boundary"
+  },
+  {
+    "name": "completion receipt replaces the pre-fetch probe boundary",
+    "file": "nora/infra/sql/social_stream.py",
+    "old": "probe_at=probes.get(r.person) if r.advanced_counts else was.probe_at",
+    "new": "probe_at=r.recorded_at if r.advanced_counts else was.probe_at",
+    "target": "tests/integration/test_social_poller.py::test_a_post_published_during_custody_remains_fresh_news"
+  },
+  {
+    "name": "fractional probe swallows whole-second fresh news",
+    "file": "nora/app/social_poller.py",
+    "old": "item.taken_at >= before.replace(microsecond=0)",
+    "new": "item.taken_at > before",
+    "target": "tests/integration/test_social_poller.py::test_recovery_reserves_the_whole_source_second_for_fresh_news"
+  }
+]
