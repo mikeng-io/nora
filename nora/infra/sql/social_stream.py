@@ -72,6 +72,7 @@ from nora.domain.social_stream import (
     HIDING_STATES,
     PLACE_STATE,
     SOCIAL_READ_REF,
+    BackfillEnd,
     ByteDeletionReason,
     Counts,
     ItemState,
@@ -209,7 +210,9 @@ class Backfill:
     starts (None: the first page); `items` how many items of theirs are
     recorded `origin = backfill`; `failures` the pages that failed since the
     last page read, `rejected` those of them refused upstream; `last_at` when
-    a page was last tried (None: never)."""
+    a page was last tried (None: never). `probe_at` is the answered probe preceding
+    the last completed first-page read: a conservative publication boundary
+    before its fetch, retained across older pages and failed attempts."""
 
     items: int
     cursor: str | None = None
@@ -217,6 +220,7 @@ class Backfill:
     rejected: int = 0
     failures: int = 0
     last_at: datetime | None = None
+    probe_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -297,10 +301,11 @@ class SqlSocialStreamStore:
         total_clips_count: int | None = None, advanced_marker: bool = False,
         advanced_counts: bool = False, latency_ms: int | None = None,
         id: str | None = None, cursor: str | None = None,
+        end_reason: BackfillEnd | None = None,
     ) -> None:
         """Append one probe or read. A read passes its own `id`, the
         `read_id` its items were recorded with; a back-fill page its next
-        `cursor`, None when the walk ended on it."""
+        `cursor`, None when the walk ended on it, and its `end_reason`."""
         extra = {} if id is None else {"id": id}
         async with self._engine.begin() as conn:
             await conn.execute(sa.insert(SOCIAL_POLL).values(
@@ -308,6 +313,7 @@ class SqlSocialStreamStore:
                 latest_reel_media=latest_reel_media, media_count=media_count,
                 total_clips_count=total_clips_count, advanced_marker=advanced_marker,
                 advanced_counts=advanced_counts, latency_ms=latency_ms, cursor=cursor,
+                end_reason=end_reason,
             ))
 
     async def record_state(
@@ -574,7 +580,7 @@ class SqlSocialStreamStore:
         async with self._engine.connect() as conn:
             return [(r.recorded_at, r.stage) for r in (await conn.execute(stmt)).all()]
 
-    async def backfills(self, *, network: str) -> dict[str, Backfill]:
+    async def backfills(self, *, network: str, full_history: bool = False) -> dict[str, Backfill]:
         """Where each person's back-fill stands (§7), for every person with a
         completed list read: read off their `backfill` rows, so a restart
         resumes at the cursor the last page left and reads no page twice.
@@ -590,17 +596,20 @@ class SqlSocialStreamStore:
         themselves, so it stops even when no `abandoned` row was written. A
         halt (`halted`) is the login's or the query's, and an `unavailable`
         page the bridge's while it answered nothing: neither is the
-        cursor's."""
+        cursor's. In full-history mode, only a recorded `grid_end` or an
+        abandoned/bad cursor is done: bounded or legacy terminal pages reopen
+        from the first page, whose known items the poller deduplicates."""
         p, i = SOCIAL_POLL, SOCIAL_ITEM
-        # ponytail: every list read and back-fill row of the network, folded
+        # ponytail: every probe, list read and back-fill row of the network, folded
         # here; a list read is rare and a back-fill a handful of pages a
         # person, so a window query is not worth it yet.
         rows_stmt = (
-            sa.select(p.c.person, p.c.stage, p.c.outcome, p.c.cursor, p.c.recorded_at)
+            sa.select(p.c.person, p.c.stage, p.c.outcome, p.c.cursor, p.c.recorded_at,
+                      p.c.end_reason, p.c.advanced_counts)
             .where(
                 p.c.network == network,
                 sa.or_(
-                    p.c.stage == "backfill",
+                    p.c.stage.in_(("probe", "backfill")),
                     sa.and_(p.c.stage == "items", p.c.outcome == "read_ok"),
                 ),
             )
@@ -616,17 +625,27 @@ class SqlSocialStreamStore:
             counts = dict((await conn.execute(counts_stmt)).tuples().all())
         listed: set[str] = set()
         out: dict[str, Backfill] = {}
+        probes: dict[str, datetime] = {}
         for r in rows:
+            if r.stage == "probe":
+                if r.outcome not in _UNANSWERED:
+                    probes[r.person] = r.recorded_at
+                continue
             if r.outcome == "read_ok":
                 listed.add(r.person)
             if r.stage != "backfill":
+                was = out.get(r.person, Backfill(items=0, last_at=r.recorded_at))
+                out[r.person] = replace(was, probe_at=probes.get(r.person))
                 continue
             was = out.get(r.person, Backfill(items=0))
             if r.outcome == "abandoned":
                 out[r.person] = Backfill(items=0, done=True, last_at=r.recorded_at)
             elif r.outcome == "read_ok":
                 out[r.person] = Backfill(
-                    items=0, cursor=r.cursor, done=r.cursor is None, last_at=r.recorded_at,
+                    items=0, cursor=r.cursor,
+                    done=r.cursor is None and (not full_history or r.end_reason == "grid_end"),
+                    last_at=r.recorded_at,
+                    probe_at=probes.get(r.person) if r.advanced_counts else was.probe_at,
                 )
             else:
                 failed = r.outcome in ("error", "backed_off")
@@ -638,7 +657,7 @@ class SqlSocialStreamStore:
                         was.cursor is not None
                         and cursor_is_bad(rejected=rejected, failures=failures)
                     ),
-                    last_at=r.recorded_at,
+                    last_at=r.recorded_at, probe_at=was.probe_at,
                 )
         return {
             person: replace(out.get(person, Backfill(items=0)), items=int(counts.get(person, 0)))

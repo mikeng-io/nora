@@ -36,7 +36,9 @@ probe and a read of every member, so history never takes a call the news
 needs. A page records only items newer than `backfill_max_days` and up to
 `backfill_max_items` back-filled items in all; the walk ends there, at a page
 read at a cursor that reaches past the day limit (the first page: one wholly
-past it, since a pinned post there can be old), or at the end of the grid. Where each
+past it, since a pinned post there can be old), or at the end of the grid.
+`backfill_full_history` bypasses the age/item bounds and reopens terminal
+walks without a recorded `grid_end`, deduplicating a first-page recovery. Where each
 member stands is read off their `backfill` rows every tick
 (`SqlSocialStreamStore.backfills`), so a restart reads no page twice. A cursor
 the bridge refuses (`invalid_id`, the only request field the adapter has not
@@ -600,23 +602,28 @@ class SocialPoller:
             member, page, origin="backfill" if first else "poll", read_id=read_id,
             backfilled=0 if first else None, days=False,
         )
+        cursor, end_reason = (
+            self._onward(page, backfilled=recorded, paged=False) if first else (None, None)
+        )
         await self._record(
             member, stage, "read_ok", ms, media_count=probe.media_count,
             total_clips_count=probe.total_clips_count, advanced_counts=True,
             read_id=read_id,
-            cursor=self._onward(page, backfilled=recorded, paged=False) if first else None,
+            cursor=cursor, end_reason=end_reason,
         )
         return None
 
     async def _record_page(
         self, member: Member, page: Page, *, origin: Literal["poll", "backfill"],
         read_id: str, backfilled: int | None = None, days: bool = True,
+        before: datetime | None = None,
     ) -> int:
         """Record each new item of `page` → how many were recorded. The page
         carries each item's media: nothing is read per item. With
         `backfilled` (the person's back-filled items so far) it is a back-fill
         page: an item past the item limit, or (with `days`) older than the
-        day limit, is not recorded."""
+        day limit, is not recorded. `before` reserves newer publications for
+        the poll during a full walk's first-page recovery."""
         known = await self._store.known_items(
             network=self._network, item_ids=[i.item_id for i in page.items],
         )
@@ -625,10 +632,15 @@ class SocialPoller:
         horizon = self._clock() - timedelta(days=self._settings.backfill_max_days)
         count = 0
         for item in page.items:
+            if before is not None and item.taken_at >= before.replace(microsecond=0):
+                # Source times have whole-second precision. Reserve the
+                # entire probe second and newer publications for the poll.
+                # A fractional receipt must not consume same-second news.
+                continue
             if item.item_id in seen:
                 self._backfill_item(origin, "known")
                 continue
-            if backfilled is not None and (
+            if backfilled is not None and not self._settings.backfill_full_history and (
                 (days and item.taken_at < horizon)
                 or backfilled + count >= self._settings.backfill_max_items
             ):
@@ -642,7 +654,9 @@ class SocialPoller:
         await self._follow_counts(page.items, read_id=read_id)
         return count
 
-    def _onward(self, page: Page, *, backfilled: int, paged: bool) -> str | None:
+    def _onward(
+        self, page: Page, *, backfilled: int, paged: bool,
+    ) -> tuple[str | None, BackfillEnd | None]:
         """Where the back-fill goes on after `page`: its next cursor, or None
         when the walk ends on it (the grid ended, the item limit is reached,
         or the page reached past the day limit). A page read at a cursor
@@ -651,16 +665,20 @@ class SocialPoller:
         since a pinned post there can be old whatever follows."""
         horizon = self._clock() - timedelta(days=self._settings.backfill_max_days)
         end: BackfillEnd | None = None
-        if page.next_cursor is None:
-            end = "grid_end"
-        elif backfilled >= self._settings.backfill_max_items:
+        # A bounded terminal page can omit items too: only a walk that did
+        # not hit a bound may attest that the whole grid was captured.
+        if not self._settings.backfill_full_history \
+                and backfilled >= self._settings.backfill_max_items:
             end = "max_items"
-        elif page.items and (any if paged else all)(i.taken_at < horizon for i in page.items):
+        elif not self._settings.backfill_full_history and page.items \
+                and (any if paged else all)(i.taken_at < horizon for i in page.items):
             end = "max_days"
+        elif page.next_cursor is None:
+            end = "grid_end"
         if end is None:
-            return page.next_cursor
+            return page.next_cursor, None
         self._metrics.inc("nora_social_backfill_ended_total", network=self._network, reason=end)
-        return None
+        return None, end
 
     # -- the back-fill -----------------------------------------------------------
 
@@ -672,7 +690,9 @@ class SocialPoller:
         cap = self._settings.backfill_pages_per_tick
         if cap <= 0 or Cap.LIST_ITEMS not in self._source.capabilities:
             return None
-        standing = await self._store.backfills(network=self._network)
+        standing = await self._store.backfills(
+            network=self._network, full_history=self._settings.backfill_full_history,
+        )
         waiting = sorted(
             (m for m in roster
              if (b := standing.get(m.person)) is not None and not b.done
@@ -703,6 +723,8 @@ class SocialPoller:
         return None
 
     async def _backfill_page(self, member: Member, at: Backfill) -> SkipReason | None:
+        if self._settings.backfill_full_history and at.cursor is None and at.probe_at is None:
+            raise RuntimeError("social backfill: first-page probe boundary unavailable")
         self._listed.add(member.person)
         page, ms = await self._call(
             "backfill", 1,
@@ -734,22 +756,24 @@ class SocialPoller:
             return stop
         await self._recovered("items")
         read_id = str(uuid.uuid4())
-        # The first page read again (the person's first list read predates the
-        # back-fill) gives its cursor only: an item on it not yet recorded is
-        # new since their last list read, and is the poll's, as news.
-        if at.cursor is None:
+        # Bounded recovery reads the first page for its cursor only: new
+        # items there belong to the poll. A full walk must recover any
+        # previously omitted first-page items too; dedupe keeps known ones.
+        if at.cursor is None and not self._settings.backfill_full_history:
             recorded = 0
             await self._follow_places(page.items)
             await self._follow_counts(page.items, read_id=read_id)
         else:
             recorded = await self._record_page(
                 member, page, origin="backfill", read_id=read_id, backfilled=at.items,
+                before=at.probe_at if at.cursor is None else None,
             )
+        cursor, end_reason = self._onward(
+            page, backfilled=at.items + recorded, paged=at.cursor is not None,
+        )
         await self._record(
             member, "backfill", "read_ok", ms, read_id=read_id,
-            cursor=self._onward(
-                page, backfilled=at.items + recorded, paged=at.cursor is not None,
-            ),
+            cursor=cursor, end_reason=end_reason,
         )
         return None
 
@@ -811,7 +835,9 @@ class SocialPoller:
             # Its caller stops on the back-fill's halt or back-off; this holds
             # for any other path that leaves the login stopped.
             return None
-        standing = await self._store.backfills(network=self._network)
+        standing = await self._store.backfills(
+            network=self._network, full_history=self._settings.backfill_full_history,
+        )
         walks = await self._store.relists(network=self._network)
         waiting = sorted(
             (m for m in roster
@@ -1052,6 +1078,7 @@ class SocialPoller:
         media_count: int | None = None, total_clips_count: int | None = None,
         advanced_marker: bool = False, advanced_counts: bool = False,
         read_id: str | None = None, cursor: str | None = None,
+        end_reason: BackfillEnd | None = None,
     ) -> None:
         if probe is not None:
             latest_reel_media = probe.latest_reel_media
@@ -1061,6 +1088,7 @@ class SocialPoller:
             latest_reel_media=latest_reel_media, media_count=media_count,
             total_clips_count=total_clips_count, advanced_marker=advanced_marker,
             advanced_counts=advanced_counts, latency_ms=ms, id=read_id, cursor=cursor,
+            end_reason=end_reason,
         )
         self._metrics.inc(
             "nora_social_polls_total", network=self._network, stage=stage, outcome=outcome,

@@ -553,6 +553,41 @@ runs; past that, items are recorded unperceived and perceived on a later day.
 investigation): 12 items a page, newest first, paged by `after`. A member
 whose `media_count` read 281 in S0 is 24 pages at that size; the depth limit stops far earlier.
 
+**Full history (operator, 2026-10-20).** The live requirement is every opted-in
+member's entire accessible grid, not just the initial window below.
+`[social.poll] backfill_full_history = true` bypasses the age and item limits;
+the defaults remain the bounded mode for deployments that have not opted in.
+The existing pager, per-tick reserve, hourly request cap, login halt/backoff
+and daily perception allowance all remain in force. There is no separate
+crawler and no burst of historical-news stimuli.
+
+Each successful back-fill page now records its `end_reason` on `social_poll`
+(`0125_social_backfill_end`): `grid_end`, `max_days`, `max_items`, or NULL
+while continuing. In full-history mode an old terminal page with no reason,
+or one stopped at a bound, reopens from the first page: the old cursor was
+discarded, so it cannot safely resume at that depth. The recovery first page
+recovers previously omitted items published by the answered probe preceding
+the last completed first-page read, deduplicating known ones. The probe is
+recorded before the story/list requests and media custody, making it a
+conservative pre-fetch boundary; the completion receipt is too late. Newer first-page posts stay for the normal
+poll, preserving their stimulus and Persona wake; failed recovery attempts
+and successful older-page reads do not move this boundary. If no preceding
+probe is recorded, recovery remains incomplete and reports an error rather
+than guessing a timestamp. Instagram publishes whole-second timestamps, so
+the entire boundary second and newer publications remain the normal poll's;
+a microsecond receipt never turns a same-second fresh post into history. A recorded `grid_end` stays done across restarts. A bad
+cursor still ends the walk under the existing failure policy; this is a
+partial import, never proof that all published items were read. The profile
+count is a comparison point, not an equality guarantee: deletions, collaboration
+posts and what this login can access can differ from the count.
+
+Imported items use the existing custody, perception and index projection
+path, and are offered to Persona on normal wakes. Import completion does not
+mean perception, embedding or Persona acceptance has completed. Unified-memory
+retrieval and Persona rendering retain their separate live cutover switches.
+This replaces the depth limit only while full-history mode is enabled; a
+future measured login or storage limit would reopen that choice.
+
 **As built in S5** (`nora/app/social_poller.py`, migration
 `0112_social_backfill`, `[social.poll] backfill_max_days`, `backfill_max_items`,
 `backfill_pages_per_tick`):
