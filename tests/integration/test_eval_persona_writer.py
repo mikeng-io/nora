@@ -146,3 +146,43 @@ async def test_all_declared_sources_reach_writer_after_restored_backlog(
     assert "2026-10-12" in shown
     if vector.startswith("birthday_"):
         assert "asserted 2026-05-01" in shown
+
+
+async def test_restored_out_of_order_rows_do_not_enter_recent_writer_batch(
+    pg_url, pg_template, tmp_path, monkeypatch,
+):
+    from evals.backbone import _close
+    from nora.subject import Message, SubjectSpec, know, obtain
+    from nora.subject.persona_writer import run_writer
+    from tests.sandbox_fixtures import BEFORE_MS
+
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    subject = await obtain(SubjectSpec(
+        database_url=pg_url, workdir=tmp_path,
+        overrides={"dreamer.enabled": True, "persona.enabled": True},
+        policy=('default = "deny"\n[[conversations]]\nplatform = "signal"\n'
+                'id = "g1"\nlabel = "g1"\npersons = ["miles_novak"]\nunit = "nora"\n'),
+    ))
+    calls = []
+    monkeypatch.setattr(factory, "create_dream_agent", lambda **kw: calls.append(kw))
+    try:
+        # IDs 1..10 are newer by timestamp than restored ID 11. Seed the
+        # sandbox directly: snapshot reconstruction sorts rows by timestamp.
+        await know(subject, Knowledge(transcript=tuple(
+            Message(body=f"restored background {i}", person="miles_novak",
+                    at_ms=200 if i < 11 else 100)
+            for i in range(1, 12)
+        )), now_ms=BEFORE_MS)
+        result = await run_writer(
+            subject, person="miles_novak",
+            sources=[{"body": "invented arrival only", "ts": BEFORE_MS + 1000}],
+            held_birthday=False, print_input=True, now_ms=BEFORE_MS + 2000,
+        )
+        shown = result["shown"]
+        assert calls == []
+        assert "invented arrival only" in shown
+        assert re.findall(r'<m n="(\d+)"', shown) == ["12"]
+        assert "restored background" not in shown
+        assert 'evidence_mode="recent"' in shown
+    finally:
+        await _close(subject)

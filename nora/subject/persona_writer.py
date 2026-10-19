@@ -8,11 +8,12 @@ from nora.agent.dream_screen import text_offence
 from nora.domain.culture import RoomMessage, character_key
 from nora.domain.persona import Account, AddOp, PersonaCitable, Said
 from nora.infra.sql import create_sql_engine
+from nora.infra.sql.character import SqlCharacterEvidence
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.persona import SqlPersonaStore
 from nora.obs.tracing import current_trace_id
 from nora.subject.dreaming import _samples
-from nora.subject.knowledge import arrive, last_row_id
+from nora.subject.knowledge import arrive
 from nora.subject.obtain import Subject
 
 
@@ -44,11 +45,11 @@ async def run_writer(
         raise ValueError("private persona sources require nonempty body and timestamp <= clock")
     if [s["ts"] for s in sources] != sorted(s["ts"] for s in sources):
         raise ValueError("private persona sources must be chronological")
-    cursor = await last_row_id(subject)
     # This private counterfactual is a post-history session. Freeze and complete
     # the restored background BEFORE arrivals, using production's cursor rows.
     engine = create_sql_engine(subject.database_url)
     try:
+        cursor = await SqlCharacterEvidence(engine).message_head()
         cursors = SqlLanguageStore(engine)
         for name in ("persona-person:history-boundary", "persona-person:history"):
             await cursors.advance_watermark(
