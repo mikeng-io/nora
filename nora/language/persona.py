@@ -526,6 +526,8 @@ def _line_attrs(line: PersonaLine, handle: str, now: datetime,
         ("state", None if line.state == "current" else line.state),
         ("told_by", name_of(line.told_by) if line.told_by else None),
         ("verdict", line.verdict),
+        ("as_of", datetime.fromtimestamp(line.as_of / 1000, PERSONA_HKT).isoformat()
+         if line.as_of is not None else None),
         ("supported", age(line.last_supported_at or line.written_at, now)),
         ("cites", str(len(line.citations))),
     ]
@@ -735,6 +737,7 @@ class PersonaPersonAdaptor:
                 body="",
                 when_empty="self_close",
                 attrs=(("name", pk.person.name),
+                       ("now", now.astimezone(PERSONA_HKT).isoformat()),
                        ("evidence_mode",
                         "historical" if self.evidence.historical(key) else "recent"))
                 + ((("aliases", ", ".join(pk.person.aliases)),) if pk.person.aliases else ()),
