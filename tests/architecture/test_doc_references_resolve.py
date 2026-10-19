@@ -386,10 +386,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     },
     # The eval-layer modules live in `tests/`; these references name where the
     # code was before.
-    ("ARCHITECTURE.md", "evals/harness.py"): (
-        "re-homed into `tests/` 2026-09-18; the reference records where "
-        "it lived (design/evaluation Step 5)"
-    ),
     ("design/capability-drop/03-code-surface.md", "evals/harness.py"): (
         "re-homed into `tests/` 2026-09-18; the reference records where "
         "it lived (design/evaluation Step 5)"

@@ -2,6 +2,9 @@
 PR title: Conventional-Commit shape, `(#N, DEC-M)` appended when it closes an
 issue or lands an indexed decision. The reasoning for every heading below lives
 in CONTRIBUTING.md §Pull requests — this file is the shape, not the rules.
+Before requesting review: assign the person owning follow-through, use relevant
+existing labels, and attach a milestone only for agreed scope. Do not invent
+maintainers or releases to fill metadata.
 Trivial PRs: body may be just What + Gate on the merged tree. Delete what does
 not apply.
 -->

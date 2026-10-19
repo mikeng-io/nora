@@ -61,9 +61,45 @@ uv run python -m evals injections identity_grounding --judge
 - One run at a time on the host (`pgrep -af "[p]ython.*-m evals"` first).
   `make eval-source` drops every sandbox, so it kills a run in flight.
 - A case reads PASS or FAIL only when every draw agrees, otherwise UNSTABLE.
-  Report the draw count with the verdict; n=3 is not a rate. Draws share one
-  Honcho workspace today (#462), so they are not independent.
+  Report the draw count with the verdict; n=3 is not a rate. Each draw gets a private Honcho workspace, created and cleaned up by
+  `nora/subject/memory_workspace.py`; model draws still do not establish a
+  population error rate.
 - Every run prints its own spend; put it in the PR with the command.
+
+## Cloud development and private evaluation
+
+The proposed GitOps path would handle deployment; it would not give a cloud
+checkout the data needed for these evaluations. The current harness needs the deployment configuration,
+identity/policy and private pseudonym map, a frozen database clone, disposable
+writable case databases, model access and the services enabled by that corpus.
+Graph retrieval also needs compatible embedding state/model access. Source
+reads are read-only, but the run itself is not: it creates databases and
+private Honcho workspaces and spends model calls.
+
+A minimal next step is an isolated evaluation worker beside Norty, running the
+existing CLI from a separate checkout. An operator prepares a snapshot on a
+separate evaluation Postgres instance and supplies only the required private
+files and scoped service credentials. The existing sandbox code creates case
+and template databases beside the source, so moving just the source URL while
+keeping a production database account is not sufficient isolation. Snapshot
+refresh stays a separate operator operation: the current refresh script drops
+sandboxes and terminates their sessions. Do not run it from a cloud PR job.
+
+A trusted host-side launcher can accept an approved commit and named corpus,
+run one bounded job, and return case names, verdicts, counts and spend. Keep raw
+logs, prompts, identities and snapshot data on the private worker. Run only
+reviewed code there: a sandbox in the eval harness is not a security boundary
+against malicious Python. Public PR tests stay on disposable hosted runners
+with synthetic data and no private credentials. Restrict worker network access
+to the services needed by its selected corpus; the existing `.env` sourcing
+example is not a least-privilege worker credential design.
+
+This worker/launcher is a proposal, not an installed service. Start with one
+manual, operator-approved job on a disposable worker before adding a queue.
+Interactive access is still useful when reproducing a failure that needs raw
+traces or live service diagnosis; grant time-limited access to the evaluation
+worker when needed, separately from deployment authority. It should not imply
+cloud SSH access to Norty's production shell or Docker socket.
 
 ## What gates a change
 
