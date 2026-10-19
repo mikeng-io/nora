@@ -13694,7 +13694,9 @@ Args:
         month/day with optional year; relationship relation and unresolved_name.
         Attribute uses name (lowercase label with underscores), value (string,
         finite number, boolean or nonempty string list), optional source unit.
-        No nested objects or null. Never alias a dedicated key. Preserve language,
+        Age and height require a numeric value and source unit from actual
+        evidence; never invent units or convert them. No nested objects or null.
+        Never alias a dedicated key. Preserve language,
         instruction and workplace qualifiers in their existing typed fields.
         The typed value alone must carry the full supported claim. Age stays
         source-reported age, never an inferred birthday or calculated current age.

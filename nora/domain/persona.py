@@ -1291,6 +1291,11 @@ def validate_fact(
         if name != normalized:
             raise ValueError("normalize attribute name to lowercase with underscores")
         body = value["value"]
+        if normalized in {"age", "height"} and not (
+            (type(body) is int or (type(body) is float and math.isfinite(body)))
+            and isinstance(value.get("unit"), str) and value["unit"].strip()
+        ):
+            raise ValueError("age and height require a numeric value and source unit")
         if not (
             (isinstance(body, str) and bool(body.strip()))
             or type(body) in (bool, int)

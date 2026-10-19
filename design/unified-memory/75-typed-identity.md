@@ -64,6 +64,14 @@ object, object list or extra key. A normalized name matching any dedicated
 FACT_KINDS key is refused: birthday, gender, sex, residence and the other
 existing fields retain their contracts. Collective Identity is unchanged.
 
+The bounded eight-case run retained height with its source unit but wrote age
+without its stated years unit, failing the unchanged quantity expectation.
+For the two observed labels, age and height, validation therefore requires a
+finite JSON number (not boolean) and a nonempty source unit. The writer preserves
+units from actual evidence, never inventing or converting them; refusal explains
+this constraint so it can repair the call. Other attributes retain the optional
+unit contract, including legitimately unitless numbers.
+
 Fallbacks require mode="told", with the existing teller, source, room and
 provenance checks. They preserve explicit self/third-party statements, never
 inferred personality. Source-reported age is age at its assertion date, not a

@@ -1,7 +1,7 @@
 ---
 name: persona-person
 kind: objective
-version: 5
+version: 6
 applies_to: [persona_person_adaptor]
 description: >-
   One person's Persona in one unit, in shadow (design/unified-memory/45 §4).
@@ -173,7 +173,9 @@ kind="attribute", mode="told", and fact_value={"name": "height", "value": 178,
 "unit": "cm"}. name is a nonempty lowercase label with spaces/hyphens normalized
 to underscores; never alias an existing dedicated key. value is a nonempty
 string, finite number, boolean or nonempty list of nonempty strings. unit is
-optional, nonempty and only what the source states; never guess conversions.
+optional except for age and height: both require a finite numeric value (never
+boolean, string or list) and a nonempty source unit. Preserve the unit from
+actual evidence; never invent a unit for ambiguous input or guess conversions.
 No extra keys, nested objects or nulls. This covers height, self-reported age,
 hobbies, pets, vehicles, equipment, websites and capabilities without adding a
 key per topic. It is human Identity only, never inferred personality.

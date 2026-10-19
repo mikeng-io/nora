@@ -645,3 +645,38 @@ def test_fallback_revision_numeric_equality_preserves_provenance(before, after, 
     else:
         assert revised.as_of == CITABLE.messages[102].ts != original.as_of
         assert revised.citations == ("102",)
+
+
+@pytest.mark.parametrize("name", ["age", "height"])
+@pytest.mark.parametrize("body,unit", [
+    (34, None), (34, ""), (34, " "), (34, True),
+    (True, "years"), ("34", "years"), (["34"], "years"),
+    (float("inf"), "years"), (float("nan"), "years"),
+])
+def test_quantity_attributes_require_numeric_value_and_source_unit(name, body, unit):
+    value = {"name": name, "value": body}
+    if unit is not None:
+        value["unit"] = unit
+    plan = _plan([replace(_told(), fact_key="attribute", fact_value=value)])
+    assert _reasons(plan) == ["invalid_fact"]
+    assert "age and height require a numeric value and source unit" in plan.refusals[0].detail
+    assert not plan.inserts
+
+
+@pytest.mark.parametrize("value", [
+    {"name": "age", "value": 34, "unit": "years"},
+    {"name": "height", "value": 178.5, "unit": "cm"},
+    {"name": "shoe_size", "value": 42},
+])
+def test_quantity_contract_preserves_assertion_without_computing_age_or_birthday(value):
+    from nora.domain.persona import identity_text
+
+    plan = _plan([replace(_told(), fact_key="attribute", fact_value=value)])
+    assert not plan.refusals
+    [line] = plan.inserts
+    assert line.fact_key == "attribute" and line.fact_value == value
+    assert line.as_of == CITABLE.messages[101].ts
+    assert line.valid_from is None and line.valid_until is None
+    rendered = identity_text(line)
+    assert "asserted 2026-10-01" in rendered
+    assert "birthday" not in rendered and "current age" not in rendered
