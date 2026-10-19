@@ -4069,6 +4069,7 @@ async def build_dependencies(
                     *dream_adaptors,
                     PersonaPersonAdaptor(
                         persona=persona_store, culture=culture_store, render=persona_index,
+                        media_join=media_join,
                         evidence=PersonaEvidence(
                             store=persona_reads, persona=persona_store, keys=person_keys,
                             wake_batch=cfg.culture.person_wake_batch,

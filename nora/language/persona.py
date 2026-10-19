@@ -41,6 +41,7 @@ A session that does neither holds its batch (DEC-280's bound).
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -63,6 +64,7 @@ from nora.domain.culture import (
     RoomMessage,
 )
 from nora.domain.errors import AccountNotRecordableError
+from nora.domain.media_join import MediaJoin, shas_in
 from nora.domain.persona import (
     PERSONA_HKT,
     PERSONA_OUTCOMES,
@@ -560,6 +562,7 @@ class PersonaPersonAdaptor:
         metrics: Metrics | None = None,
         clock: Callable[[], datetime] | None = None,
         render: bool = False,
+        media_join: MediaJoin | None = None,
         social: _PersonSocial | None = None,
         screen: Callable[[str], str | None] | None = None,
         render_chars: int = 0,
@@ -575,6 +578,7 @@ class PersonaPersonAdaptor:
         Instagram username a handle is (by default nobody's, so every handle
         in a caption is redacted)."""
         self._persona = persona
+        self._media_join = media_join
         self._render = render
         self._culture = culture
         #: Read by the dream loop, never awaited here.
@@ -683,6 +687,34 @@ class PersonaPersonAdaptor:
         # words and source time, not merely a number beside old model prose.
         visible = {m.row.id: m for m in [*old_cited, *messages, *mentions, *cited]
                    if m.room in pk.listed and not m.row.is_nora}
+        # Join only the already scoped, visible source rows. The original row
+        # remains the citation and attribution; cached readings are not claims
+        # that the sender is pictured, owns an object, or has a habit.
+        source_rows = {i: m.row for i, m in visible.items()}
+        source_rows.update({r.id: r for e in episodes if e.room in pk.listed
+                            for r in e.replies if r.person_id == person})
+        # ponytail: late readings do not wake an already consumed message;
+        # completion-driven replay needs its own durable evidence cursor.
+        joined = (await self._media_join.enrich(tuple(source_rows.values()), path="dreamer")
+                  if self._media_join is not None else tuple(source_rows.values()))
+        bodies = {}
+        for row in joined:
+            raw = source_rows[row.id].body or ""
+            if not shas_in(row.media_json):
+                bodies[row.id] = raw
+                continue
+            state = "available_or_partial" if row.body != raw else "unavailable"
+            bodies[row.id] = json.dumps({
+                "raw_caption": raw,
+                "cached_media_reading": {
+                    "state": state,
+                    "attribution": "shared_by_author",
+                    "text": ((row.body or "") if row.body != raw
+                             else "no readable media evidence"),
+                    "limits": "Sharing is not evidence of identity, ownership, residence or habits; "
+                              "no biometric or gender inference.",
+                },
+            }, ensure_ascii=False)
         messages = [m for m in visible.values() if m.row.person_id == person]
         mentions = [m for m in visible.values() if m.row.person_id != person]
         old_cited = [m for m in old_cited if m.row.id in visible]
@@ -794,11 +826,12 @@ class PersonaPersonAdaptor:
                     row_id=lambda m: m.row.id,
                     attrs=lambda m: (
                         ("room", labels.get(m.room) or "unnamed room"),
+                        ("by", self._name_of(m.row.person_id)),
                         ("age", age(m.row.ts, now)),
                         ("source_at", datetime.fromtimestamp(
                             m.row.ts / 1000, PERSONA_HKT).isoformat()),
                     ),
-                    body=lambda m: m.row.body or "",
+                    body=lambda m: bodies[m.row.id],
                 ),
             ),
             None
@@ -816,7 +849,7 @@ class PersonaPersonAdaptor:
                         ("source_at", datetime.fromtimestamp(
                             m.row.ts / 1000, PERSONA_HKT).isoformat()),
                     ),
-                    body=lambda m: m.row.body or "",
+                    body=lambda m: bodies[m.row.id],
                 ),
             ),
             None
@@ -825,7 +858,8 @@ class PersonaPersonAdaptor:
                 name="persona_episodes",
                 **_at("persona_episodes"),
                 body="\n".join(
-                    self._episode(e, person, labels) for e in episodes if e.send_id in replies
+                    self._episode(e, person, labels, bodies)
+                    for e in episodes if e.send_id in replies
                 ),
             ),
             # The block is built by `character._within_budget`, which stamps
@@ -856,11 +890,13 @@ class PersonaPersonAdaptor:
         ]
         return assemble([p for p in parts if p is not None], sep="\n\n")
 
-    def _episode(self, e: Episode, person: str, labels: Mapping[str, str]) -> str:
+    def _episode(
+        self, e: Episode, person: str, labels: Mapping[str, str], bodies: Mapping[int, str],
+    ) -> str:
         """One `<episode>`: her send and their replies to it, each with its id."""
         rows = render_row_window(
             [(e.send_id, "you", e.text), *(
-                (r.id, self._name_of(r.person_id), r.body or "")
+                (r.id, self._name_of(r.person_id), bodies.get(r.id, r.body or ""))
                 for r in e.replies if r.person_id == person)],
             row_id=lambda m: m[0], attrs=lambda m: (("from", m[1]),), body=lambda m: m[2],
         )
