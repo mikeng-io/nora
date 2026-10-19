@@ -192,6 +192,28 @@ multi-PR design track stays open across incremental landings — reference it as
 "issue #N" without the keyword and let the design document's own status section
 track what remains.
 
+### PR ownership and tracking
+
+Assign a PR to the person actually responsible for following it through review;
+an author may self-assign when taking that responsibility. Request reviewers
+who have agreed to review the relevant area. Do not guess maintainers or add
+CODEOWNERS entries without confirmed ownership.
+
+Use existing relevant labels when triaging. The issue-form labels below describe
+issue shape, not a mandatory PR classification. A milestone represents an agreed
+release or project scope: attach it only when that scope includes the change.
+An unassigned, unlabelled or milestone-free draft is not a failing code check;
+resolve ownership when taking it into review, rather than assigning everyone to
+a nominal maintainer. Do not create releases or milestones just to fill fields.
+
+### Automated checks
+
+The lightweight CI workflow runs static checks and architecture/documentation
+checks on pull requests and pushes to master. It uses hosted runners, read-only
+repository permission and no production secrets. It is a fast baseline, not a
+replacement for the full affected-test gate above or live evaluations. It does
+not deploy or grant access to Norty. Action updates are grouped by Dependabot.
+
 ## Proving a fix: mutation
 
 **A fix is not done when the gate is green. It is done when reverting the exact
@@ -300,29 +322,18 @@ content on close"*, not *"Add discharge pipeline"*.
 That last section matters more than it looks: it scopes out the adjacent thing
 the next reader will suggest folding in.
 
-**Labels** — two, set by the issue forms, and nothing else:
+**Issue-shape labels** — set by the issue forms:
 
 | label | set by | means |
 |---|---|---|
 | `design-anchored` | the *design-anchored* form | a design document already specified this; the issue builds to spec |
 | `freeform` | the *freeform* form | the issue itself proposes the decision |
 
-A label's only job is to say which body shape the issue carries, set at filing
-time and never a judgement call afterwards. The historical state — measured
-2026-09-08, 11 of 44 open issues labelled, all GitHub's auto-applied default
-`enhancement` — is what happens when labels mean something: they mean nothing.
-**Area is deliberately NOT a label.** It is the title prefix (`<Area>: …`) and
-the form's Area dropdown — GitHub renders each form field under a `### <label>`
-heading, so a filed issue carries a grep-able `### Area` line in its body, and
-it cannot go stale the way a label on a closed issue does.
-The 47-open-issue backlog having no visible grouping axis (measured 2026-09-14:
-19 of 108 issues labelled across 2 values, 0 milestones) is the drift this
-section exists to stop.
+These labels distinguish the two issue forms. Area stays in the title prefix
+and the form's Area field. Additional PR labels should have a clear triage use;
+labels and milestones on GitHub are repository metadata, not created by these
+forms. Required form fields do not replace review of the issue's substance.
 
-**On private repos, the forms' `required:` marks are advisory** — GitHub only
-hard-blocks submission on public repos. The form still puts every heading on
-the page at filing time, which is the part that was missing; the title-prefix
-and body conventions above remain the contract.
 
 ## The flow: issue → branch → PR → merge
 
