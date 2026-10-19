@@ -44,6 +44,15 @@ async def env(pg_url):
         await engine.dispose()
 
 
+def source_inputs(engine, *, opted_out=()):
+    from nora.domain.models import PersonRef
+    from nora.infra.sql.social_stream import readable_social_store
+    from nora.persons import Persons
+    persons = Persons(by_person={PERSON: PersonRef(person_id=PERSON, name='Synthetic',
+        honcho_peer_id='synthetic')}, index={}, _social_off=frozenset(opted_out))
+    return SqlPersonaInputs(engine, social=readable_social_store(engine, persons))
+
+
 async def message(engine, *, ident=10, person=PERSON, room='room-a', body='a qualified intention',
                   media=None, own=False, ts=T0, quoted_ts=None):
     async with engine.begin() as conn:
@@ -59,7 +68,7 @@ async def message(engine, *, ident=10, person=PERSON, room='room-a', body='a qua
 async def test_late_cached_reading_after_cursor_and_restart_is_pending_once(env, kind):
     sha = 'a' * 64
     await message(env, body=f'[{kind} aaaaaa]', media=json.dumps([{'sha256': sha}]))
-    source = SqlPersonaInputs(env)
+    source = source_inputs(env)
     first = await source.messages(key=KEY, rooms=ROOMS, person=PERSON, limit=10)
     assert len(first) == 1 and first[0].roots[0].row.id == 10
     await source.settle(key=KEY, revisions=first)
@@ -69,12 +78,12 @@ async def test_late_cached_reading_after_cursor_and_restart_is_pending_once(env,
             sha256=sha, media_type='image/png', size=1, source='inbound', created_at_ms=T0,
             description='synthetic cached scene',
         ))
-    restarted = SqlPersonaInputs(env)
+    restarted = source_inputs(env)
     late = await restarted.messages(key=KEY, rooms=ROOMS, person=PERSON, limit=10)
     assert len(late) == 1 and late[0].revision != first[0].revision
     assert late[0].roots[0].row.ts == T0
     # No acknowledgement: another restart must retain the same work.
-    assert await SqlPersonaInputs(env).messages(
+    assert await source_inputs(env).messages(
         key=KEY, rooms=ROOMS, person=PERSON, limit=10) == late
     await restarted.settle(key=KEY, revisions=late)
     assert await restarted.messages(key=KEY, rooms=ROOMS, person=PERSON, limit=10) == []
@@ -96,7 +105,7 @@ async def test_social_late_media_counts_and_restrictions_are_rechecked(env, kind
             kind=kind, taken_at=AT, expires_at=AT, seen_at=AT, origin='poll', media_ref=sha,
             caption='synthetic caption',
         ))
-    source = SqlPersonaInputs(env)
+    source = source_inputs(env)
     first = await source.social(key=KEY, persons=[PERSON], limit=6)
     assert first[0].social.kind == kind and not first[0].social.readings[0].description
     await source.settle(key=KEY, revisions=first)
@@ -114,7 +123,7 @@ async def test_social_late_media_counts_and_restrictions_are_rechecked(env, kind
     assert late.counts.likes == 3 and late.counts.comments is None
     assert late.social.taken_at == AT
     await source.settle(key=KEY, revisions=[late])
-    [opted] = await SqlPersonaInputs(env, opted_out=[PERSON]).social(
+    [opted] = await source_inputs(env, opted_out=[PERSON]).social(
         key=KEY, persons=[PERSON], limit=6, citations=['social:synthetic:item-a'])
     assert opted.state == 'withheld' and opted.social is None and opted.counts is None
     async with env.begin() as conn:
@@ -154,7 +163,7 @@ async def test_register_states_use_actual_human_roots_without_notebook_prose(env
             created_by='test', created_at=AT, status='cancelled', people=[PERSON],
             when=AT, as_of=T0, field_meta={'title': {'reasoning': 'told', 'as_of': T0}},
         ))
-    source = SqlPersonaInputs(env)
+    source = source_inputs(env)
     batch = await source.register(key=KEY, unit='unit', rooms=ROOMS, person=PERSON, limit=6)
     assert {r.state for r in batch} == {'open', 'kept', 'cancelled'}
     assert next(r for r in batch if r.state == 'cancelled').roots == ()
@@ -186,7 +195,7 @@ async def test_rollup_rebuild_same_roots_is_unchanged_but_changed_bounds_are_pen
                 reactions_ab=0, reactions_ba=0, colocation_ms=999,
             ))
     await build(1, T0 + 10)
-    source = SqlPersonaInputs(env)
+    source = source_inputs(env)
     [first] = await source.rollup(key=KEY, unit='unit', rooms=ROOMS, person=PERSON, limit=6)
     assert dict(first.properties)['replies_ab'] == '1'
     assert 'colocation' not in repr(first) and first.roots[0].row.id == 10
@@ -234,13 +243,13 @@ async def test_initial_cached_recovery_past_old_cursor_is_bounded_and_durable(en
         honcho_peer_id='synthetic'), rooms=(CharacterRoom(key='room-a', platform='signal',
         label='Allowed'),), home='room-a', listed=('room-a',))
     persona = SqlPersonaStore(env, screen=scan_identifiers)
-    source = SqlPersonaInputs(env)
+    source = source_inputs(env)
     # Read-only receipt neither freezes nor acknowledges source recovery.
     dry = await source.media_recovery(key=KEY, rooms=ROOMS, person=PERSON)
     assert dry['eligible_cached'] == 1 and dry['pending_cached'] == 1 and not dry['frozen']
     def evidence():
         return PersonaEvidence(store=reads, persona=persona, keys={KEY: pk},
-                               wake_batch=100, source_inputs=SqlPersonaInputs(env))
+                               wake_batch=100, source_inputs=source_inputs(env))
     first = evidence()
     assert await first.count(key=KEY, after=boundary) == 100
     batch, cursor = await first.newest(key=KEY, after=boundary, limit=1)
@@ -282,7 +291,7 @@ def wired(engine):
 
     reads = SqlCharacterEvidence(engine)
     persona = SqlPersonaStore(engine, screen=lambda _: None)
-    source = SqlPersonaInputs(engine)
+    source = source_inputs(engine)
     pk = PersonKey(unit='unit', person=PersonRef(person_id=PERSON, name='Synthetic',
         honcho_peer_id='synthetic'), rooms=(CharacterRoom(key='room-a', platform='signal',
         label='Allowed'),), home='room-a', listed=('room-a',))
@@ -316,7 +325,7 @@ async def test_budget_trim_and_write_conflict_never_acknowledge_unsettled_source
     assert 'small visible intention' in rendered and 'large large' not in rendered
     assert set(adaptor._runs[KEY].citable.messages) == {11}
     await settle_account(adaptor, evidence)
-    [remaining] = await SqlPersonaInputs(env).messages(
+    [remaining] = await source_inputs(env).messages(
         key=KEY, rooms=ROOMS, person=PERSON, limit=100)
     assert remaining.roots[0].row.id == 10
     # A later account revision invalidates the staged commit; source 11's
@@ -336,7 +345,7 @@ async def test_budget_trim_and_write_conflict_never_acknowledge_unsettled_source
     assert result.status == 'ok'
     with pytest.raises(AccountNotRecordableError):
         await settle_account(adaptor, evidence)
-    pending = await SqlPersonaInputs(env).messages(key=KEY, rooms=ROOMS, person=PERSON, limit=100)
+    pending = await source_inputs(env).messages(key=KEY, rooms=ROOMS, person=PERSON, limit=100)
     assert {r.roots[0].row.id for r in pending} == {10, 11}
 
 
@@ -363,7 +372,7 @@ async def test_unavailable_social_is_explicit_and_does_not_block_or_ack_other_do
             network='synthetic', item_id='retry', person=PERSON, account='author', kind='post',
             taken_at=AT, seen_at=AT, origin='poll', caption='recovered source',
         ))
-    [retry] = await SqlPersonaInputs(env).social(key=KEY, persons=[PERSON], limit=6)
+    [retry] = await source_inputs(env).social(key=KEY, persons=[PERSON], limit=6)
     assert retry.social.caption == 'recovered source'
 
 
@@ -372,7 +381,7 @@ async def test_removed_mention_and_pruned_record_reconsider_without_rendering_co
     async with env.begin() as conn:
         await conn.execute(sa.update(MESSAGES).where(MESSAGES.c.id == 10)
                            .values(mention_persons_json=json.dumps([PERSON])))
-    source = SqlPersonaInputs(env)
+    source = source_inputs(env)
     [original] = await source.messages(key=KEY, rooms=ROOMS, person=PERSON, limit=10)
     assert original.roots[0].row.body == 'original eligible mention'
     await source.settle(key=KEY, revisions=[original])

@@ -229,6 +229,8 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         "describe", "enqueue", "get", "history", "lookup", "mark", "put", "read",
         "recent", "record", "resolve", "rsvps_for", "save", "search",
         "sweep_firing", "apply",
+        # Persona source reads share register/settle names with other owners.
+        "register", "settle",
         # `SqlDocumentStore.set_state` (DEC-255) shares the name with another store's.
         "set_state",
         # `SubagentBackend.cancel` is a `ComputeBackend` method, not a store's, and
@@ -269,7 +271,7 @@ _STORE_MODULES: frozenset[str] = frozenset(
         "media_descriptions.py", "media_objects.py", "memo.py", "memory_embed.py",
         "memory_read.py", "mobility.py",
         "music_queue.py", "music_session.py", "notes.py", "otp.py",
-        "participation_state.py", "persona.py", "presence.py",
+        "participation_state.py", "persona.py", "persona_inputs.py", "presence.py",
         "reasoning_strip.py", "record_query.py",
         "reminders.py", "revisions.py", "rollup_read.py", "rollups.py",
         "snapshot_at.py", "social_stream.py",

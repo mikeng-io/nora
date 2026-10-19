@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Collection, Sequence
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
@@ -74,10 +74,11 @@ def _stamp(value: Any) -> str:
 class SqlPersonaInputs:
     """Four bounded source reads and their existing consolidation settlement."""
 
-    def __init__(self, engine: AsyncEngine, *, opted_out: Collection[str] = (),
-                 social: SqlSocialStreamStore | None = None) -> None:
+    def __init__(self, engine: AsyncEngine, *, social: SqlSocialStreamStore | None = None) -> None:
         self._engine = engine
-        self._social = social or SqlSocialStreamStore(engine, opted_out=frozenset(opted_out))
+        # Composition supplies readable_social_store, carrying current and
+        # former opted-out ids. A missing reader is unavailable, never open.
+        self._social = social
 
     async def _pending(
         self, *, key: str, domain: str, stmt: Any, limit: int, citations: Sequence[str] = (),
@@ -274,6 +275,8 @@ class SqlPersonaInputs:
     async def social(
         self, *, key: str, persons: Sequence[str], limit: int, citations: Sequence[str] = (),
     ) -> list[PersonSourceRevision]:
+        if self._social is None:
+            raise RuntimeError("readable social store is unavailable")
         i, c = SOCIAL_ITEM.c, SOCIAL_ITEM_COUNT.c
         latest = sa.select(SOCIAL_ITEM_COUNT).where(
             c.network == i.network, c.item_id == i.item_id,

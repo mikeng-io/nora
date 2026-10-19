@@ -7,6 +7,7 @@ from typing import Any
 from nora.agent.dream_screen import text_offence
 from nora.domain.culture import RoomMessage, character_key
 from nora.domain.persona import Account, AddOp, PersonaCitable, Said
+from nora.domain.persona_inputs import PersonSourceRevision
 from nora.infra.sql import create_sql_engine
 from nora.infra.sql.character import SqlCharacterEvidence
 from nora.infra.sql.language import SqlLanguageStore
@@ -87,7 +88,9 @@ async def run_writer(
         )
         # Check the real reader's adaptor input, never prompt text: even a
         # negative case cannot pass without every declared source as stimulus.
-        observed = {m.row.id for m in batch if isinstance(m, RoomMessage)}
+        observed = {m.row.id for item in batch for m in (
+            item.roots if isinstance(item, PersonSourceRevision)
+            else (item,) if isinstance(item, RoomMessage) else ())}
         missing = set(rows) - observed
         if missing:
             raise ValueError(
