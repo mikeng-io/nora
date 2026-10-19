@@ -2,7 +2,8 @@
 
 An account is who an entity is to Nora, in three parts: **identity** (who or
 what it is), **character** (what it is like) and **hypotheses** (why it is
-like that). Each line is one free-text claim; its part, kind, reasoning mode,
+like that). Identity carries named typed values (75); other lines are prose.
+The part, kind, reasoning mode,
 citations and state are typed and checked, and what it says is not
 enumerated (45 §0: the structure is the container, the content is prose).
 
@@ -120,7 +121,13 @@ COLLECTIVE_ENTITY_KINDS = frozenset({"room", "unit"})
 #: Every state a line may be in (45 §1). `disputed` has one meaning: awaiting
 #: weighing. `outranked` is a line that lost on precedence.
 STATES: tuple[str, ...] = (
-    "current", "disputed", "outranked", "hidden", "superseded", "retired", "refuted",
+    "current",
+    "disputed",
+    "outranked",
+    "hidden",
+    "superseded",
+    "retired",
+    "refuted",
 )
 #: The states a line is HELD in: it occupies a cap slot and a writer may act
 #: on it. The rest are terminal for this writer.
@@ -135,7 +142,7 @@ LINE_MAX_CHARS = 300
 #: Current lines per part (45 §2). Starting values, to be sized on what the
 #: shadow sessions produce (00 «Sequence» step 6). For `hypothesis` the count
 #: is lines whose prediction window is still open, whatever their state.
-CAPS: Mapping[str, int] = {"identity": 25, "character": 5, "hypothesis": 3}
+CAPS: Mapping[str, int] = {"character": 5, "hypothesis": 3}
 
 #: A trait unsupported this long is retired at the next session (45 §2).
 TRAIT_DECAY_MS = 60 * 24 * 3600 * 1000
@@ -164,19 +171,50 @@ PERSONA_OUTCOMES = frozenset({"written", "kept", "refused", "unsettled", "abando
 DISPUTE_KINDS: tuple[str, ...] = ("dispute", "forget")
 
 #: Why a write was refused, as the `reason` the writer reads.
-PERSONA_REFUSALS = frozenset({
-    "malformed", "unknown_line", "line_twice", "part_kind", "mode_part",
-    "empty", "too_long", "ids_in_text", "identifier", "coordinate",
-    "uncited", "unresolved_citation", "line_in_citations", "unlisted_room",
-    "told_needs_message", "told_by_missing", "told_by_not_speaker",
-    "instruction_not_subject", "told_by_unexpected",
-    "deduced_premises", "premise_abduced", "premise_not_current",
-    "induced_instances", "induced_one_day", "social_not_author",
-    "abduced_prediction", "abduced_observable", "abduced_window", "abduced_window_closed",
-    "abduced_explains_nothing", "prediction_unexpected", "draws_on_unexpected",
-    "same_rank", "conflict_hypothesis", "over_cap", "retire_why",
-    "forget_not_subject", "verdict_not_open", "verdict_window_open",
-})
+PERSONA_REFUSALS = frozenset(
+    {
+        "malformed",
+        "unknown_line",
+        "line_twice",
+        "part_kind",
+        "mode_part",
+        "empty",
+        "too_long",
+        "ids_in_text",
+        "identifier",
+        "coordinate",
+        "uncited",
+        "unresolved_citation",
+        "line_in_citations",
+        "unlisted_room",
+        "told_needs_message",
+        "told_by_missing",
+        "told_by_not_speaker",
+        "instruction_not_subject",
+        "told_by_unexpected",
+        "deduced_premises",
+        "premise_abduced",
+        "premise_not_current",
+        "induced_instances",
+        "induced_one_day",
+        "social_not_author",
+        "abduced_prediction",
+        "abduced_observable",
+        "abduced_window",
+        "abduced_window_closed",
+        "abduced_explains_nothing",
+        "prediction_unexpected",
+        "draws_on_unexpected",
+        "same_rank",
+        "conflict_hypothesis",
+        "over_cap",
+        "retire_why",
+        "forget_not_subject",
+        "verdict_not_open",
+        "verdict_window_open",
+        "invalid_fact",
+    }
+)
 
 _EPISODE = re.compile(r"response:(\d+)")
 _ROLLUP = re.compile(r"rollup:([a-z]+):(\S+)")
@@ -268,6 +306,10 @@ class PersonaLine:
     last_supported_at: int | None = None
     exclude_persons: tuple[str, ...] = ()
     as_of: int | None = None
+    fact_key: str | None = None
+    fact_value: object = None
+    valid_from: int | None = None
+    valid_until: int | None = None
 
 
 #: A row `plan_write` asks the store to insert; the same shape as a stored line.
@@ -308,6 +350,10 @@ class AddOp:
     prediction_observable: str | None = None
     prediction_window_end: int | None = None
     conflicts_with: str | None = None
+    fact_key: str | None = None
+    fact_value: object = None
+    valid_from: int | None = None
+    valid_until: int | None = None
     op: Literal["add"] = "add"
 
 
@@ -326,6 +372,10 @@ class ReviseOp:
     draws_on: tuple[str, ...] | None = None
     mode: str | None = None
     conflicts_with: str | None = None
+    fact_key: str | None = None
+    fact_value: object = None
+    valid_from: int | None = None
+    valid_until: int | None = None
     op: Literal["revise"] = "revise"
 
 
@@ -413,6 +463,10 @@ class PersonaWriter(Protocol):
     store's own egress screen. `record_dispute` is the turn's other door (35
     §2): a dispute or «forget that», matched and ruled on inside its own
     transaction the same way."""
+
+    async def account_state(self, *, key: str) -> tuple[int, int | None]: ...
+
+    async def account_heads(self, *, key: str) -> tuple[PersonaLine, ...]: ...
 
     async def persona_write(
         self, *, account: Account, ops: Sequence[PersonaOp], citable: PersonaCitable,
@@ -540,36 +594,55 @@ def parse_ops(raw: object) -> tuple[tuple[PersonaOp, ...], tuple[PersonaRefusal,
         citations = _strs(item.get("citations"))
         draws_on = _strs(item.get("draws_on"))
         if citations is None or draws_on is None:
-            refusals.append(PersonaRefusal(
-                "malformed", "`citations` and `draws_on` are lists of strings", i))
+            refusals.append(
+                PersonaRefusal("malformed", "`citations` and `draws_on` are lists of strings", i)
+            )
             continue
         try:
             if kind == "add":
                 window = _window_end(item.get("prediction_window_end"))
-                ops.append(AddOp(
-                    part=str(item["part"]), kind=str(item["kind"]), text=str(item["text"]),
-                    mode=str(item["mode"]), citations=citations, draws_on=draws_on,
-                    told_by=_opt_str(item.get("told_by")),
-                    prediction=_opt_str(item.get("prediction")),
-                    prediction_observable=_opt_str(item.get("prediction_observable")),
-                    prediction_window_end=window,
-                    conflicts_with=_opt_str(item.get("conflicts_with")),
-                ))
+                ops.append(
+                    AddOp(
+                        part=str(item["part"]),
+                        kind=str(item["kind"]),
+                        text=str(item["text"]),
+                        mode=str(item["mode"]),
+                        citations=citations,
+                        draws_on=draws_on,
+                        told_by=_opt_str(item.get("told_by")),
+                        prediction=_opt_str(item.get("prediction")),
+                        prediction_observable=_opt_str(item.get("prediction_observable")),
+                        prediction_window_end=window,
+                        conflicts_with=_opt_str(item.get("conflicts_with")),
+                        fact_key=_opt_str(item.get("fact_key")),
+                        fact_value=item.get("fact_value"),
+                        valid_from=item.get("valid_from"),
+                        valid_until=item.get("valid_until"),
+                    )
+                )
             elif kind == "keep":
                 ops.append(KeepOp(line=str(item["line"]), citations=citations))
             elif kind == "revise":
-                ops.append(ReviseOp(
-                    line=str(item["line"]), citations=citations,
-                    text=None if item.get("text") is None else str(item["text"]),
-                    draws_on=None if item.get("draws_on") is None else draws_on,
-                    mode=_opt_str(item.get("mode")),
-                    conflicts_with=_opt_str(item.get("conflicts_with")),
-                ))
+                ops.append(
+                    ReviseOp(
+                        line=str(item["line"]),
+                        citations=citations,
+                        text=None if item.get("text") is None else str(item["text"]),
+                        draws_on=None if item.get("draws_on") is None else draws_on,
+                        mode=_opt_str(item.get("mode")),
+                        conflicts_with=_opt_str(item.get("conflicts_with")),
+                        fact_key=_opt_str(item.get("fact_key")),
+                        fact_value=item.get("fact_value"),
+                        valid_from=item.get("valid_from"),
+                        valid_until=item.get("valid_until"),
+                    )
+                )
             elif kind == "retire":
                 ops.append(RetireOp(line=str(item["line"]), why=str(item.get("why") or "")))
             else:
-                refusals.append(PersonaRefusal(
-                    "malformed", "`op` is one of add, keep, revise, retire", i))
+                refusals.append(
+                    PersonaRefusal("malformed", "`op` is one of add, keep, revise, retire", i)
+                )
         except (KeyError, TypeError, ValueError) as exc:
             refusals.append(PersonaRefusal("malformed", f"op is missing or mistypes {exc}", i))
     return tuple(ops), tuple(refusals)
@@ -665,9 +738,15 @@ def _check_told(evidence: _Evidence, told_by: str | None) -> PersonaRefusal | No
 
 
 def _check_line(
-    line: PersonaLine, *, account: Account, evidence: _Evidence,
-    premises: Sequence[PersonaLine], screen: Callable[[str], str | None],
-    shown_ids: frozenset[int], shown_items: frozenset[str], now_ms: int,
+    line: PersonaLine,
+    *,
+    account: Account,
+    evidence: _Evidence,
+    premises: Sequence[PersonaLine],
+    screen: Callable[[str], str | None],
+    shown_ids: frozenset[int],
+    shown_items: frozenset[str],
+    now_ms: int,
 ) -> PersonaRefusal | None:
     """Every rule a whole line must meet, whatever op produced it."""
     collective = account.entity_kind in COLLECTIVE_ENTITY_KINDS
@@ -687,14 +766,35 @@ def _check_line(
     if len(text) > LINE_MAX_CHARS:
         return PersonaRefusal("too_long", f"one claim in at most {LINE_MAX_CHARS} "
                               f"characters; this is {len(text)}")
+    if line.part == "identity":
+        try:
+            validate_fact(
+                line.fact_key,
+                line.fact_value,
+                kind=line.kind,
+                collective=collective,
+                valid_from=line.valid_from,
+                valid_until=line.valid_until,
+            )
+        except ValueError as exc:
+            return PersonaRefusal("invalid_fact", str(exc))
+    elif line.fact_key is not None or line.fact_value is not None:
+        return PersonaRefusal("invalid_fact", "typed facts belong to identity")
     if any(int(n) in shown_ids or n in shown_items for n in _NUMBER.findall(text)):
         return PersonaRefusal("ids_in_text", "message and item numbers go in `citations`, "
                               "never in the line's text")
-    for value in (text, line.prediction or "", line.prediction_observable or ""):
+    for value in (
+        text,
+        format_fact(line.fact_key, line.fact_value),
+        line.prediction or "",
+        line.prediction_observable or "",
+    ):
         offence = screen(value)
         if offence is not None:
-            return PersonaRefusal(offence, "the line carries an identifier or a place's "
-                                  "coordinates; say it without them")
+            return PersonaRefusal(
+                offence,
+                "the line carries an identifier or a place's coordinates; say it without them",
+            )
     if not line.citations:
         return PersonaRefusal("uncited", "cite what the line rests on")
     if line.mode != "told" and line.told_by is not None:
@@ -708,6 +808,8 @@ def _check_line(
     ):
         return PersonaRefusal("prediction_unexpected", "a prediction belongs to a hypothesis")
 
+    if line.fact_key in ("gender", "sex") and line.mode != "told":
+        return PersonaRefusal("invalid_fact", "gender and sex require an explicit statement")
     if line.kind == "instruction" and (
         account.subject is None or line.told_by != account.subject
     ):
@@ -757,9 +859,15 @@ def _check_line(
 
 
 def plan_write(
-    *, account: Account, heads: Sequence[PersonaLine], ops: Sequence[PersonaOp],
-    citable: PersonaCitable, now_ms: int, written_by_session: str,
-    screen: Callable[[str], str | None], apply_decay: bool,
+    *,
+    account: Account,
+    heads: Sequence[PersonaLine],
+    ops: Sequence[PersonaOp],
+    citable: PersonaCitable,
+    now_ms: int,
+    written_by_session: str,
+    screen: Callable[[str], str | None],
+    apply_decay: bool,
     aliases: Mapping[str, str] | None = None,
 ) -> PersonaPlan:
     """Judge one write against the account's chain heads and return what to
@@ -877,8 +985,7 @@ def plan_write(
                     continue
             cites = tuple(dict.fromkeys((*target.citations, *op.citations)))
             count, last = support(target, ev, op.citations)
-            new = successor(target, citations=cites, support_count=count,
-                            last_supported_at=last)
+            new = successor(target, citations=cites, support_count=count, last_supported_at=last)
             inserts.append(new)
             after.pop(target.id)
             after[new.id] = new
@@ -899,13 +1006,20 @@ def plan_write(
             # Unrestated premises carry over, each followed to its chain head:
             # a premise kept or revised since is the same line under a new row.
             carried = {aliases.get(lid, lid) for lid in old.draws_on}
-            draws_handles = op.draws_on if op.draws_on is not None else tuple(
-                h for h, lid in handles.items() if lid in carried)
+            draws_handles = (
+                op.draws_on
+                if op.draws_on is not None
+                else tuple(h for h, lid in handles.items() if lid in carried)
+            )
             cites = op.citations
             candidate_fields = {
                 "text": op.text.strip() if op.text is not None else old.text,
                 "mode": op.mode or old.mode,
                 "citations": tuple(dict.fromkeys(cites)),
+                "fact_key": op.fact_key if op.fact_key is not None else old.fact_key,
+                "fact_value": op.fact_value if op.fact_key is not None else old.fact_value,
+                "valid_from": op.valid_from if op.fact_key is not None else old.valid_from,
+                "valid_until": op.valid_until if op.fact_key is not None else old.valid_until,
             }
         else:
             draws_handles = op.draws_on
@@ -921,8 +1035,13 @@ def plan_write(
         count, last = support(old, ev, cites)
         if old is not None:
             candidate = successor(
-                old, draws_on=tuple(p.id for p in prem), state="current",
-                support_count=count, last_supported_at=last, **candidate_fields,
+                old,
+                draws_on=tuple(p.id for p in prem),
+                state="current",
+                as_of=max((x.ts for x in ev.said), default=None),
+                support_count=count,
+                last_supported_at=last,
+                **candidate_fields,
             )
             if candidate.mode != "told":
                 candidate = replace(candidate, told_by=None)
@@ -932,39 +1051,94 @@ def plan_write(
                 candidate = replace(candidate, state="outranked")
         elif isinstance(op, AddOp):
             candidate = PersonaLine(
-                id=str(uuid.uuid4()), persona_key=account.key, part=op.part, kind=op.kind,
-                text=op.text.strip(), mode=op.mode, citations=tuple(dict.fromkeys(cites)),
-                state="current", unit=account.unit, written_at=now_ms,
-                written_by_session=written_by_session, draws_on=tuple(p.id for p in prem),
-                told_by=op.told_by, prediction=op.prediction,
+                id=str(uuid.uuid4()),
+                persona_key=account.key,
+                part=op.part,
+                kind=op.kind,
+                text=op.text.strip(),
+                mode=op.mode,
+                citations=tuple(dict.fromkeys(cites)),
+                state="current",
+                unit=account.unit,
+                written_at=now_ms,
+                written_by_session=written_by_session,
+                draws_on=tuple(p.id for p in prem),
+                told_by=op.told_by,
+                prediction=op.prediction,
                 prediction_observable=op.prediction_observable,
                 prediction_window_end=op.prediction_window_end,
                 verdict="open" if op.mode == "abduced" else None,
-                support_count=count, last_supported_at=last,
+                support_count=count,
+                last_supported_at=last,
+                fact_key=op.fact_key,
+                fact_value=op.fact_value,
+                valid_from=op.valid_from,
+                valid_until=op.valid_until,
+                as_of=max((x.ts for x in ev.said), default=None),
             )
-        bad = _check_line(candidate, account=account, evidence=ev, premises=prem,
-                          screen=screen, shown_ids=shown_ids, shown_items=shown_items,
-                          now_ms=now_ms)
+        bad = _check_line(
+            candidate,
+            account=account,
+            evidence=ev,
+            premises=prem,
+            screen=screen,
+            shown_ids=shown_ids,
+            shown_items=shown_items,
+            now_ms=now_ms,
+        )
         if bad is not None:
             refusals.append(replace(bad, op_index=i))
             continue
+        if (old is not None and candidate.part == "identity" and old.as_of is not None
+                and candidate.as_of is not None and candidate.as_of < old.as_of):
+            refusals.append(PersonaRefusal(
+                "invalid_fact", "older evidence cannot replace a newer assertion; "
+                "add the historical claim instead", i))
+            continue
+        # The live shadow produced old claims as current facts. Keep their
+        # history, but require explicit correction rather than rival singletons.
+        if candidate.part == "identity" and candidate.fact_key in SINGLETON_FACTS:
+            rivals = [h for h in after.values() if h.state == "current"
+                      and h.id != (old.id if old is not None else None)
+                      and h.fact_key == candidate.fact_key]
+            named_rival = handles.get(op.conflicts_with or "")
+            if any(h.id != named_rival for h in rivals):
+                if all(candidate.as_of is not None and h.as_of is not None
+                       and candidate.as_of < h.as_of for h in rivals):
+                    candidate = replace(candidate, state="retired")
+                else:
+                    refusals.append(PersonaRefusal(
+                        "invalid_fact", "revise the held field or name its conflict; "
+                        "do not add competing current singleton values", i))
+                    continue
         conflict = op.conflicts_with
         if conflict is not None:
             rival = held(conflict, i)
             if isinstance(rival, PersonaRefusal):
                 refusals.append(rival)
                 continue
-            mine, theirs = (rank(candidate, subject=account.subject),
-                            rank(rival, subject=account.subject))
+            mine, theirs = (
+                rank(candidate, subject=account.subject),
+                rank(rival, subject=account.subject),
+            )
             if mine is None or theirs is None:
-                refusals.append(PersonaRefusal(
-                    "conflict_hypothesis", "a hypothesis is a question; it never conflicts "
-                    "with a fact", i))
+                refusals.append(
+                    PersonaRefusal(
+                        "conflict_hypothesis",
+                        "a hypothesis is a question; it never conflicts with a fact",
+                        i,
+                    )
+                )
                 continue
             if mine == theirs:
-                refusals.append(PersonaRefusal(
-                    "same_rank", f"{conflict} rests on the same footing; revise or retire "
-                    "it instead of adding a rival", i))
+                refusals.append(
+                    PersonaRefusal(
+                        "same_rank",
+                        f"{conflict} rests on the same footing; revise or retire "
+                        "it instead of adding a rival",
+                        i,
+                    )
+                )
                 continue
             touched[rival.id] = i
             if mine > theirs:
@@ -1024,3 +1198,132 @@ def plan_write(
     if refusals:
         return PersonaPlan(refusals=tuple(refusals))
     return PersonaPlan(inserts=tuple(inserts))
+
+
+SINGLETON_FACTS = frozenset({
+    "name", "gender", "sex", "birthday", "residence", "languages",
+    "occupation", "dietary_restrictions", "food_preferences",
+})
+
+FACT_KINDS = {
+    "name": "name",
+    "role": "role",
+    "relationship": "relationship",
+    "gender": "attribute",
+    "sex": "attribute",
+    "birthday": "attribute",
+    "residence": "attribute",
+    "languages": "attribute",
+    "occupation": "attribute",
+    "dietary_restrictions": "attribute",
+    "food_preferences": "attribute",
+    "instruction": "instruction",
+    "purpose": "purpose",
+    "norm": "norm",
+}
+_LIST_FACTS = frozenset({"languages", "dietary_restrictions", "food_preferences"})
+
+
+def validate_fact(
+    key: str | None,
+    value: object,
+    *,
+    kind: str,
+    collective: bool,
+    valid_from: int | None = None,
+    valid_until: int | None = None,
+) -> None:
+    """The single typed Identity contract. Absence is unknown; [] is explicit none.
+
+    Evidence decides whether a claim is stable, never a prose parser. Legacy
+    rows stay readable as history but new identity writes must name a value.
+    """
+    if key not in FACT_KINDS or FACT_KINDS[key] != kind:
+        raise ValueError("fact_key must name a factual field matching kind")
+    if collective and key not in COLLECTIVE_IDENTITY_KINDS:
+        raise ValueError("a collective holds name, purpose or norm")
+    if not collective and key in {"purpose", "norm"}:
+        raise ValueError("purpose and norm belong to collectives")
+    for stamp in (valid_from, valid_until):
+        if stamp is not None and (type(stamp) is not int):
+            raise ValueError("effective times are nullable epoch milliseconds")
+        if stamp is not None:
+            try:
+                datetime.fromtimestamp(stamp / 1000, UTC)
+            except (ValueError, OverflowError, OSError) as exc:
+                raise ValueError("effective time is outside the supported calendar") from exc
+    if valid_from is not None and valid_until is not None and valid_until <= valid_from:
+        raise ValueError("valid_until must follow valid_from")
+    if key in _LIST_FACTS:
+        if not isinstance(value, list) or any(
+            not isinstance(x, str) or not x.strip() for x in value
+        ):
+            raise ValueError("this field is a list of nonempty strings, [] means explicit none")
+    elif key == "birthday":
+        if (
+            not isinstance(value, dict)
+            or set(value) not in ({"month", "day"}, {"month", "day", "year"})
+            or any(type(x) is not int for x in value.values())
+        ):
+            raise ValueError("birthday is month/day and optional year, all integers")
+        try:
+            date(value.get("year", 2000), value["month"], value["day"])
+        except ValueError as exc:
+            raise ValueError("birthday must be a calendar date") from exc
+    elif key == "relationship":
+        if (
+            not isinstance(value, dict)
+            or set(value) not in ({"relation", "person_id"}, {"relation", "unresolved_name"})
+            or any(not isinstance(x, str) or not x.strip() for x in value.values())
+        ):
+            raise ValueError("relationship needs relation and person_id OR unresolved_name")
+    elif not isinstance(value, str) or not value.strip():
+        raise ValueError("this field is a nonempty string")
+    if len(format_fact(key, value).partition(": ")[2]) > LINE_MAX_CHARS:
+        raise ValueError("formatted fact exceeds the line budget")
+
+
+def format_fact(
+    key: str | None,
+    value: object,
+    *,
+    name_of: Callable[[str], str] | None = None,
+    as_of: int | None = None, valid_from: int | None = None, valid_until: int | None = None,
+) -> str:
+    """Canonical value for every authored surface; resolved ids never render raw."""
+    if key is None:
+        return ""
+    if key == "birthday" and isinstance(value, dict):
+        year = f"{value['year']:04d}-" if "year" in value else ""
+        body = f"{year}{value['month']:02d}-{value['day']:02d}"
+    elif key == "relationship" and isinstance(value, dict):
+        who = (
+            (name_of(value["person_id"]) if name_of is not None else "someone")
+            if ("person_id" in value)
+            else f"{value.get('unresolved_name', 'someone')} (unresolved)"
+        )
+        body = f"{value.get('relation', '')}: {who}"
+    elif isinstance(value, list):
+        body = ", ".join(value) if value else "none (explicit)"
+    else:
+        body = str(value)
+    text = f"{key.replace('_', ' ')}: {body}"
+    def stamp(ms: int) -> str:
+        return datetime.fromtimestamp(ms / 1000, UTC).isoformat()
+    if as_of is not None:
+        text += f" (asserted {stamp(as_of)})"
+    if valid_from is not None or valid_until is not None:
+        start = stamp(valid_from) if valid_from is not None else "unknown"
+        end = stamp(valid_until) if valid_until is not None else "unknown"
+        text += f" (effective {start} to {end})"
+    return text
+
+
+def identity_text(line: PersonaLine, *, name_of: Callable[[str], str] | None = None) -> str:
+    """Typed truth, carrying source/effective time; legacy prose is never promoted."""
+    if line.part != "identity":
+        return line.text
+    if line.fact_key is None:
+        return ""
+    return format_fact(line.fact_key, line.fact_value, name_of=name_of,
+                       as_of=line.as_of, valid_from=line.valid_from, valid_until=line.valid_until)

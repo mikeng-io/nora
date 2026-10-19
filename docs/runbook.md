@@ -1475,3 +1475,27 @@ is fine, but moving nora back before the port is open shuts it out. Nora on the
 name keeps working while the door is open, so reopening the door alone (step 2)
 is the minimal rollback if the problem is a caller of the old port.
 
+
+## Typed Persona historical recovery
+
+Keep `[persona] render = false` until source coverage and the reply gates are
+accepted. The typed migration is nullable and retains every legacy row; a
+successful old shadow session is not historical coverage. The person adaptor
+now walks bounded oldest-first pages through a frozen Record boundary using
+its existing schedule and budget, independently of recent-message updates.
+
+`nora memory persona-history` prints per-account source boundary/progress,
+eligible source counts, missing fields, untyped legacy heads and disputes,
+without message text. Completion means source exhaustion, not factual parity.
+Inspect original source messages for missing/ambiguous facts; never fill them
+from uncited memory conclusions or infer a birthday from an occasion date.
+
+To repeat an incomplete old shadow pass, use
+`nora memory persona-history --key '<unit>#character:<person>' --restart --apply`.
+Without `--apply` this is a dry run. Only the historical cursors reset; Persona
+claim history and the recent watermark remain. Failures, conflicts and
+unsettled sessions retain the page. A crash after claim commit but before
+cursor settlement repeats evidence. Runtime traces and watermark row history
+retain per-page provenance. Render-on retires legacy model writers and reads
+Persona room accounts for person/unit context; render-off restores the old
+configured writer/read surface. No legacy tables or Honcho client are removed.

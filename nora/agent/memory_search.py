@@ -940,12 +940,28 @@ def _handle(node: IndexedNode) -> str | None:
     return None
 
 
-def _shown(node: IndexedNode) -> tuple[str, str]:
+def _shown(node: IndexedNode, name_of: Callable[[str], str]) -> tuple[str, str]:
     """An item's kind as the answer says it, and its text. A social item says
     what it is, its node text's first line (`social_label`: «Instagram
     story»), and the rest is its text; a medium of one says it is a picture
     or video of the network's, and its location that it is a tagged place.
     Every other kind is its kind."""
+    if node.kind == "persona_line" and node.identity_fact is not None:
+        from nora.domain.persona import format_fact
+
+        fact = node.identity_fact
+
+        def scoped_name(pid: str) -> str:
+            if pid not in node.named_persons:
+                return "someone (unknown)"
+            name = name_of(pid)
+            return name if name and name not in ("someone", pid) else "someone (unknown)"
+
+        return node.kind, format_fact(
+            fact["key"], fact["value"],
+            name_of=scoped_name,
+            as_of=fact["as_of"], valid_from=fact["valid_from"], valid_until=fact["valid_until"],
+        )
     if node.kind == "social":
         label, _, rest = node.text.partition("\n")
         return label or "social item", rest
@@ -993,7 +1009,8 @@ def render_packet(
     # Screened WHOLE, before the cut: an identifier straddling `TEXT_CHARS`
     # would otherwise leave as a fragment the screen cannot recognise (R-18).
     # A withheld hit takes no part in the cut.
-    screened = [bool(h.node.text and scan_identifiers(h.node.text) is not None) for h in hits]
+    shown = [_shown(h.node, name_of) for h in hits]
+    screened = [bool(body and scan_identifiers(body) is not None) for _, body in shown]
     # The best relevance from each hit on, over the unpinned hits the screen
     # passes. The rank is age-decayed, so a recent weak hit can sit ahead of
     # an older strong one: the drop is read against the best still to come,
@@ -1014,7 +1031,7 @@ def render_packet(
             break
         if not h.pin:
             last = h.relevance
-        kind, body = _shown(h.node)
+        kind, body = shown[i]
         text = render_file_links(body[:TEXT_CHARS]) if body else ""
         places = sorted(p for p in h.places if scan_identifiers(p) is None)
         item: dict[str, Any] = {"kind": kind}

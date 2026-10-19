@@ -16,7 +16,8 @@ for a room, generalised); a read is what the session is handed:
   revision's id is a uuid with no order, and the chain is append-only, so the
   number of revisions a unit's rooms hold only grows and is the cursor.
 
-Every read here is a SELECT. Nothing is folded, cached or written.
+Evidence reads are SELECTs. Historical and social progress reuse the existing
+consolidation watermarks; their explicit cursor methods write no Persona claim.
 
 **Media is not joined.** A person's lines are read by this module's own SQL,
 so a photo they posted reaches their session as its stored body, the bare
@@ -43,6 +44,7 @@ from nora.infra.sql.schema import (
     CULTURE_REVISION,
     MEMORY_EDGE,
     MESSAGES,
+    PERSONA,
     ROLLUP_RESPONSE,
     ROLLUP_TIE,
 )
@@ -124,6 +126,114 @@ class SqlCharacterEvidence:
         out.reverse()
         return out, int(cursor or after)
 
+    async def history_state(self, *, key: str) -> tuple[int, int]:
+        """Freeze a pass's Record highwater once, independently of recent updates.
+
+        Two existing watermark rows hold boundary and progress. Their explicit
+        names let the CLI restart an incorrectly completed shadow pass without
+        rewriting Persona history or the normal runtime watermark.
+        """
+        t = CONSOLIDATION_WATERMARK
+        async with self._engine.begin() as conn:
+            head = sa.select(sa.func.coalesce(sa.func.max(MESSAGES.c.id), 0))
+            await conn.execute(
+                pg.insert(CONSOLIDATION_WATERMARK)
+                .values(
+                    consolidator_name="persona-person:history-boundary",
+                    scope_id=key,
+                    last_message_id=head.scalar_subquery(),
+                    updated_at=sa.func.now(),
+                )
+                .on_conflict_do_nothing()
+            )
+            rows = (
+                await conn.execute(
+                    sa.select(t.c.consolidator_name, t.c.last_message_id).where(
+                        t.c.scope_id == key,
+                        t.c.consolidator_name.in_(
+                            ["persona-person:history-boundary", "persona-person:history"]
+                        ),
+                    )
+                )
+            ).all()
+        values = {str(r.consolidator_name): int(r.last_message_id) for r in rows}
+        return int(values["persona-person:history-boundary"]), int(
+            values.get("persona-person:history", 0)
+        )
+
+    async def advance_history(self, *, key: str, cursor: int) -> None:
+        t = CONSOLIDATION_WATERMARK
+        async with self._engine.begin() as conn:
+            await conn.execute(
+                pg.insert(CONSOLIDATION_WATERMARK)
+                .values(
+                    consolidator_name="persona-person:history",
+                    scope_id=key,
+                    last_message_id=cursor,
+                    updated_at=sa.func.now(),
+                )
+                .on_conflict_do_update(
+                    index_elements=[t.c.consolidator_name, t.c.scope_id],
+                    set_={
+                        "last_message_id": sa.func.greatest(t.c.last_message_id, cursor),
+                        "updated_at": sa.func.now(),
+                    },
+                )
+            )
+
+    async def historical_counts(
+        self, *, rooms: Sequence[tuple[str, str]], person_id: str,
+        cursor: int, through: int,
+    ) -> tuple[int, int]:
+        """Receipt counts from the same eligible own/mention union as pages."""
+        eligible = sa.select(MESSAGES.c.id).where(
+            _in_rooms(rooms), MESSAGES.c.is_nora == 0, MESSAGES.c.hidden_at.is_(None),
+            MESSAGES.c.id <= through,
+            sa.or_(MESSAGES.c.person_id == person_id,
+                sa.cast(MESSAGES.c.mention_persons_json, pg.JSONB).contains([person_id])),
+        ).subquery()
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(sa.select(
+                sa.func.count(), sa.func.count().filter(eligible.c.id <= cursor)
+            ).select_from(eligible))).one()
+        return int(row[0]), int(row[1])
+
+    async def historical_page(
+        self,
+        *,
+        rooms: Sequence[tuple[str, str]],
+        person_id: str,
+        after: int,
+        through: int,
+        limit: int,
+    ) -> list[RoomMessage]:
+        """One oldest-first UNION, then one limit, never two truncated streams.
+
+        Read ingestion's resolved mention list directly: history also works
+        while graph projection is off. All eligibility/disclosure rules are
+        identical for own messages and mentions.
+        """
+        stmt = (
+            transcript_select()
+            .add_columns(MESSAGES.c.conversation_id)
+            .where(
+                _in_rooms(rooms),
+                MESSAGES.c.is_nora == 0,
+                MESSAGES.c.hidden_at.is_(None),
+                MESSAGES.c.id > after,
+                MESSAGES.c.id <= through,
+                sa.or_(
+                    MESSAGES.c.person_id == person_id,
+                    sa.cast(MESSAGES.c.mention_persons_json, pg.JSONB).contains([person_id]),
+                ),
+            )
+            .order_by(MESSAGES.c.id)
+            .limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [RoomMessage(room=r.conversation_id, row=transcript_row(r)) for r in rows]
+
     # -- a room --------------------------------------------------------------
 
     def _room(self, rooms: Sequence[tuple[str, str]], after: int) -> list[Any]:
@@ -168,7 +278,8 @@ class SqlCharacterEvidence:
         return out, int(cursor or after)
 
     _MENTIONS_JOIN = MEMORY_EDGE.join(
-        MESSAGES, MESSAGES.c.id == sa.cast(MEMORY_EDGE.c.src_id, sa.BigInteger))
+        MESSAGES, MESSAGES.c.id == sa.cast(MEMORY_EDGE.c.src_id, sa.BigInteger)
+    )
 
     def _mentions(
         self, rooms: Sequence[tuple[str, str]], person_id: str, after: int,
@@ -415,6 +526,21 @@ class SqlCharacterEvidence:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
         return [r.culture_key for r in rows], total
+
+    async def persona_revision_count(self, *, keys: Sequence[str]) -> int:
+        """Monotone account revisions, not timestamp-offset paging of line UUIDs."""
+        async with self._engine.connect() as conn:
+            return int((await conn.execute(sa.select(sa.func.coalesce(
+                sa.func.sum(PERSONA.c.revision), 0)).where(
+                    PERSONA.c.key.in_(list(keys))))).scalar_one())
+
+    async def persona_revisions_after(
+        self, *, keys: Sequence[str], after: int, limit: int,
+    ) -> tuple[list[str], int]:
+        # The consumer reads ALL current room contexts in one session; this
+        # cursor measures the snapshot, not individual line evidence.
+        total = await self.persona_revision_count(keys=keys)
+        return (list(keys), total) if total > after and limit > 0 else ([], after)
 
     # -- Nora ----------------------------------------------------------------
 

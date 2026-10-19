@@ -317,6 +317,14 @@ def add_subcommands(
         help="Honcho memory and memory index maintenance (operator only)",
     )
     memory_sub = memory.add_subparsers(dest="memory_command", required=True)
+    history = memory_sub.add_parser(
+        "persona-history", parents=[parent],
+        help="historical Persona coverage receipts; optionally restart one account's pass",
+    )
+    history.add_argument("--key", help="one scoped Persona account key")
+    history.add_argument("--restart", action="store_true")
+    history.add_argument("--apply", action="store_true")
+    history.set_defaults(func=cmd_persona_history)
     backfill = memory_sub.add_parser(
         "backfill", parents=[parent],
         help="replay one unit's recorded human messages into its own Honcho "
@@ -866,6 +874,71 @@ async def cmd_memory_backfill(args: argparse.Namespace) -> int:
     for line in render_backfill(result):
         print(line)
     return 1 if result.failed else 0
+
+
+async def cmd_persona_history(args: argparse.Namespace) -> int:
+    """No model calls. Restart clears only history cursors, retaining all claims."""
+    import sqlalchemy as sa
+
+    from nora.app.composition import character_person_keys
+    from nora.domain.persona import FACT_KINDS
+    from nora.infra.sql.character import SqlCharacterEvidence
+    from nora.infra.sql.persona import SqlPersonaStore
+    from nora.infra.sql.schema import CONSOLIDATION_WATERMARK as W
+
+    if args.restart and not args.key:
+        raise CliError("--restart requires --key")
+    cfg = _config(args)
+    engine = (create_sql_engine(_database_url(cfg)) if args.restart and args.apply
+              else create_readonly_sql_engine(_database_url(cfg)))
+    try:
+        if args.restart and args.apply:
+            async with engine.begin() as conn:
+                await conn.execute(sa.delete(W).where(W.c.scope_id == args.key,
+                    W.c.consolidator_name.in_([
+                        "persona-person:history", "persona-person:history-boundary"])))
+        async with engine.connect() as conn:
+            rows = (await conn.execute(sa.select(W).where(
+                W.c.consolidator_name.in_([
+                    "persona-person:history", "persona-person:history-boundary"])))).all()
+        by_key: dict[str, dict[str, int]] = {}
+        for row in rows:
+            by_key.setdefault(row.scope_id, {})[row.consolidator_name] = row.last_message_id
+        keys = character_person_keys(_policy(cfg), _persons(cfg))
+        for key in keys:
+            by_key.setdefault(key, {})
+        if args.key:
+            by_key = {args.key: by_key.get(args.key, {})}
+        store = SqlPersonaStore(engine, screen=lambda _: None)
+        receipts = SqlCharacterEvidence(engine)
+        for key, state in sorted(by_key.items()):
+            boundary = state.get("persona-person:history-boundary")
+            cursor = state.get("persona-person:history", 0)
+            heads = await store.account_heads(key=key)
+            pk = keys.get(key)
+            total, seen = (await receipts.historical_counts(
+                rooms=[(r.platform, r.key) for r in pk.rooms if r.key in pk.listed],
+                person_id=pk.person.person_id, cursor=cursor, through=boundary,
+            ) if pk is not None and boundary is not None else (None, None))
+            typed = [h for h in heads if h.part == "identity" and h.fact_key is not None
+                     and h.state == "current"]
+            present = {h.fact_key for h in typed}
+            print(json.dumps({
+                "key": key, "boundary": boundary, "cursor": cursor,
+                "complete": boundary is not None and cursor >= boundary,
+                "typed_current": len(typed), "eligible_sources": total, "sources_handed": seen,
+                "unresolved_relationships": sum(h.fact_key == "relationship"
+                    and isinstance(h.fact_value, dict) and "unresolved_name" in h.fact_value
+                    for h in typed),
+                "legacy_unresolved": sum(h.part == "identity" and h.fact_key is None
+                                         and h.state in ("current", "disputed") for h in heads),
+                "disputed": sum(h.state == "disputed" for h in heads),
+                "missing_fields": sorted(set(FACT_KINDS) - {"purpose", "norm"} - present),
+                "restart_applied": bool(args.restart and args.apply),
+            }))
+    finally:
+        await engine.dispose()
+    return 0
 
 
 async def cmd_memory_rebuild(args: argparse.Namespace) -> int:

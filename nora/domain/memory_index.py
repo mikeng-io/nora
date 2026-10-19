@@ -289,7 +289,7 @@ class MemoryScope:
 @dataclass(frozen=True, slots=True)
 class IndexedNode:
     """One `memory_node` row as a read returns it: a pointer and what is
-    needed to find and show it, never the item's truth."""
+    needed to find and show it, with canonical typed facts hydrated at read time."""
 
     kind: str
     source_id: str
@@ -302,6 +302,9 @@ class IndexedNode:
     lineage: Any = None
     sha256: str | None = None
     state: str = "live"
+    # Canonical typed truth is read from Persona, never reconstructed from prose.
+    identity_fact: Mapping[str, Any] | None = None
+    named_persons: frozenset[str] = frozenset()
 
     @property
     def key(self) -> tuple[str, str]:

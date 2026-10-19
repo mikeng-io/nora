@@ -51,11 +51,20 @@ def _msg(rid: int, room: str, ts: int, body: str = "a line", person: str = "ada"
 
 
 #: Three of her messages across two days in a room that lists her.
-BATCH = (_msg(41, "room-a", T0), _msg(42, "room-a", T0 + 1000),
-         _msg(43, "room-a", T0 + DAY, "booked 8pm again"))
+BATCH = (
+    _msg(41, "room-a", T0),
+    _msg(42, "room-a", T0 + 1000),
+    _msg(43, "room-a", T0 + DAY, "booked 8pm again"),
+)
 
-TRAIT = {"op": "add", "part": "character", "kind": "trait", "text": "the one who books",
-         "mode": "induced", "citations": ["41", "42", "43"]}
+TRAIT = {
+    "op": "add",
+    "part": "character",
+    "kind": "trait",
+    "text": "the one who books",
+    "mode": "induced",
+    "citations": ["41", "42", "43"],
+}
 
 
 @pytest.fixture
@@ -93,11 +102,24 @@ async def _told(engine: Any, text: str = "vegetarian", *, at: int = T0) -> None:
     """A turn's `remember`: a told line written by the tag path."""
     result = await SqlPersonaStore(engine, screen=lambda _t: None).persona_write(
         account=Account(key=KEY, entity_kind="human", unit="friends", subject="ada"),
-        ops=[AddOp(part="identity", kind="attribute", text=text, mode="told",
-                   citations=("41",), told_by="ada")],
-        citable=PersonaCitable(messages={41: Said(at, "ada", "room-a")},
-                               listed_rooms=frozenset({"room-a"})),
-        now_ms=at, written_by_session="tag", apply_decay=False,
+        ops=[
+            AddOp(
+                part="identity",
+                kind="attribute",
+                text=text,
+                mode="told",
+                citations=("41",),
+                told_by="ada",
+                fact_key="occupation",
+                fact_value=text,
+            )
+        ],
+        citable=PersonaCitable(
+            messages={41: Said(at, "ada", "room-a")}, listed_rooms=frozenset({"room-a"})
+        ),
+        now_ms=at,
+        written_by_session="tag",
+        apply_decay=False,
     )
     assert result.status == "ok"
 
@@ -162,7 +184,8 @@ async def test_a_write_landing_between_read_and_commit_writes_nothing(env):
     write, _no_change = adaptor.verbs(key=KEY)
     assert (await write(ops=[TRAIT]))["status"] == "ok"
     await _told(env, at=T0 + 2 * DAY)
-    assert await _settle(adaptor) == 0
+    with pytest.raises(AccountNotRecordableError):
+        await _settle(adaptor)
     heads = await SqlPersonaStore(env, screen=lambda _t: None).account_heads(key=KEY)
     assert [h.mode for h in heads] == ["told"]
 
@@ -180,8 +203,17 @@ async def test_a_told_by_name_is_resolved_to_the_person(env):
     adaptor = _adaptor(env)
     await adaptor.inputs(key=KEY, batch=BATCH)
     write, _no_change = adaptor.verbs(key=KEY)
-    told = {"op": "add", "part": "identity", "kind": "attribute", "text": "books dinners",
-            "mode": "told", "citations": ["43"], "told_by": "ada"}
+    told = {
+        "op": "add",
+        "part": "identity",
+        "kind": "attribute",
+        "text": "books dinners",
+        "mode": "told",
+        "citations": ["43"],
+        "told_by": "ada",
+        "fact_key": "occupation",
+        "fact_value": "books dinners",
+    }
     assert await write(ops=[{**told, "told_by": "Ada"}]) == {"status": "ok"}
     await _settle(adaptor)
     [line] = await SqlPersonaStore(env, screen=lambda _t: None).account_heads(key=KEY)
@@ -205,7 +237,6 @@ async def test_a_turns_told_line_wakes_the_session_until_it_settles(env):
     assert await adaptor.inputs(key=KEY, batch=()) == ""
     async with env.connect() as conn:
         assert (await conn.execute(sa.select(PERSONA.c.settled_at))).scalar_one() is not None
-
 
 async def test_the_first_session_is_handed_the_character_account_and_its_cited_rows(env):
     """The backfill: until a session first settles the account it reads the
@@ -241,10 +272,16 @@ async def test_evidence_reads_only_rooms_that_list_them_and_episodes_they_answer
             send_id=send_id, room=room, text="dinner?", outcome="responded",
             reactions=1, edits=0, replies=replies))
     adaptor = _adaptor(env, reads=reads)
-    assert await adaptor.evidence.count(key=KEY, after=0) == 1
+    assert await adaptor.evidence.count(key=KEY, after=0) == 5
     items, cursor = await adaptor.evidence.newest(key=KEY, after=0, limit=10)
-    assert [getattr(i, "send_id", None) or i.row.id for i in items] == [1, 3]
-    assert cursor == 1
+    assert [i.row.id for i in items] == [1]
+    assert cursor == 0  # history owns a separate cursor
+    await adaptor.evidence.settle(key=KEY)
+    # One empty history page proves exhaustion through the frozen boundary.
+    await adaptor.evidence.newest(key=KEY, after=0, limit=10)
+    await adaptor.evidence.settle(key=KEY)
+    items, _ = await adaptor.evidence.newest(key=KEY, after=0, limit=10)
+    assert [i.send_id for i in items] == [3]
 
 
 async def test_mentions_are_read_with_the_messages_rendered_by_who_said_them_and_citable(env):
@@ -256,14 +293,23 @@ async def test_mentions_are_read_with_the_messages_rendered_by_who_said_them_and
     reads.add_message(id=2, platform="signal", room="room-a", person_id="bo", ts=T0 + 1,
                       body="ada booked again", mention_persons=frozenset({"ada"}))
     adaptor = _adaptor(env, reads=reads)
-    assert await adaptor.evidence.count(key=KEY, after=0) == 1  # their own line only
+    assert await adaptor.evidence.count(key=KEY, after=0) == 5  # history wake
     items, cursor = await adaptor.evidence.newest(key=KEY, after=0, limit=10)
-    assert cursor == 2
+    assert cursor == 0  # normal recent watermark stays independent
     out = await adaptor.inputs(key=KEY, batch=items)
     assert '<persona_mentions' in out and 'by="Bo"' in out and "ada booked again" in out
     write, _no_change = adaptor.verbs(key=KEY)
-    told = {"op": "add", "part": "identity", "kind": "attribute", "text": "books dinners",
-            "mode": "told", "citations": ["2"], "told_by": "bo"}
+    told = {
+        "op": "add",
+        "part": "identity",
+        "kind": "attribute",
+        "text": "books dinners",
+        "mode": "told",
+        "citations": ["2"],
+        "told_by": "bo",
+        "fact_key": "occupation",
+        "fact_value": "books dinners",
+    }
     assert await write(ops=[told]) == {"status": "ok"}
 
 
@@ -288,10 +334,18 @@ async def test_a_dispute_wakes_the_session_and_is_weighed_with_its_message(env):
     assert '<persona_disputes' in out and 'by="Bo"' in out and 'line="P1"' in out
     assert 'said="77"' in out and "vegetarian" in out
     write, _no_change = adaptor.verbs(key=KEY)
-    told = {"op": "add", "part": "identity", "kind": "attribute",
-            "text": "bo disputes the vegetarian line", "mode": "told",
-            "citations": ["77"], "told_by": "bo"}
+    told = {
+        "op": "add",
+        "part": "identity",
+        "kind": "attribute",
+        "text": "bo disputes the vegetarian line",
+        "mode": "told",
+        "citations": ["77"],
+        "told_by": "bo",
+        "fact_key": "occupation",
+        "fact_value": "bo disputes the vegetarian line",
+    }
     assert await write(ops=[told]) == {"status": "ok"}
     assert await _settle(adaptor) == 1
     assert await store.pending_disputes(key=KEY) == 0
-    assert await adaptor.evidence.count(key=KEY, after=0) == 0
+    assert await adaptor.evidence.count(key=KEY, after=0) == 5

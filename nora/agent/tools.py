@@ -199,10 +199,20 @@ from ..domain.notes import (
     has_duplicate_open_title,
     note_handle,
 )
+from ..domain.persona import (
+    FACT_KINDS,
+    SINGLETON_FACTS,
+    PersonaCitable,
+    PersonaView,
+    PersonaWriter,
+    handles_for,
+)
 from ..domain.persona import LINE_MAX_CHARS as PERSONA_LINE_MAX_CHARS
 from ..domain.persona import Account as PersonaAccount
 from ..domain.persona import AddOp as PersonaAddOp
-from ..domain.persona import PersonaCitable, PersonaView, PersonaWriter
+from ..domain.persona import (
+    ReviseOp as PersonaReviseOp,
+)
 from ..domain.persona import Said as PersonaSaid
 from ..domain.ports import (
     BrowserRunner,
@@ -13662,28 +13672,28 @@ Args:
         }
 
     async def remember_told(
-        content: str, person: str = "",
-        kind: Literal["attribute", "name", "role", "relationship", "instruction"] = "attribute",
+        content: str,
+        fact_key: Literal["name", "role", "relationship", "gender", "sex", "birthday",
+                          "residence", "languages", "occupation", "dietary_restrictions",
+                          "food_preferences", "instruction"],
+        fact_value: str | list[str] | dict[str, Any], person: str = "",
+        valid_from: int | None = None, valid_until: int | None = None,
     ) -> dict:
-        """Record a settled fact about someone here. Call this when somebody
-tells you something about themselves or another member that is now TRUE.
+        """Save a stable personal fact when someone tells it; returns save status.
 
-The trigger word is «記低». It keeps what was told, who told it and the
-message it was said in, in your long-term memory of that person. A fact
-about the group is not this tool: your notebook keeps it after this turn,
-so say it will be kept. An open question nothing settles is `note_create`;
-something later is `remind`.
-
-Returns `status`: ok, refused, not_found, ambiguous or unavailable, with a
-`note` on how to report it.
+The trigger is «記低». MUST ground the named value in the message. Plans
+belong in notes or reminders. Unknown fields stay absent. Returns ok,
+refused, not_found, ambiguous or unavailable, with a reporting note.
 
 Args:
-    content: The fact itself, one line, in the teller's own words.
-    person: Who it is about, as named here. Leave empty when it is the
-        speaker.
-    kind: attribute (the default), name (what they are called), role,
-        relationship (to someone else) or instruction (how they want to be
-        treated, which only they can give)."""
+    content: One factual claim in the teller's words.
+    fact_key: The named personal field.
+    fact_value: String, string list (empty means explicit none), birthday
+        month/day with optional year, or relationship relation and
+        unresolved_name. Never infer a birthday from an outing date.
+    person: Who it is about; empty means the speaker.
+    valid_from: Evidence-grounded effective start, epoch milliseconds or null.
+    valid_until: Evidence-grounded effective end, epoch milliseconds or null."""
         # The graph surface's `remember` (DEC-317): the
         # Persona `told` line, through the one write path and its judge
         # (`nora.domain.persona.plan_write`). The Honcho surface keeps
@@ -13737,24 +13747,52 @@ Args:
                     "note": "More than one person here goes by that. Ask which one.",
                 }
             subject = matches[0]
+        if fact_key == "relationship" and isinstance(fact_value, dict):
+            unresolved = fact_value.get("unresolved_name")
+            if isinstance(unresolved, str):
+                scope = await room.scope()
+                matches = scope.find(unresolved) if scope.available else ()
+                if len(matches) == 1:
+                    fact_value = {"relation": fact_value.get("relation"),
+                                  "person_id": matches[0].person_id}
         now_ms = _now_ms()
         try:
             target = lineage.render_room(
                 platform=room.platform, conversation_id=bound_conversation_id)
             listed = target.room.persons if target.room is not None else None
             here = bound_conversation_id
-            said = PersonaSaid(ts=now_ms, person_id=tagger.person_id, room=here)
+            source = {r.id: r for r in (transcript or ()) if r.id in cites}
+            if set(source) != set(cites):
+                _record(metrics, "remember", "unavailable", reason="source")
+                return dict(_PERSONA_UNAVAILABLE)
+            said = {n: PersonaSaid(ts=r.ts, person_id=r.person_id, room=here)
+                    for n, r in source.items()}
+            account = PersonaAccount(
+                key=character_key(unit, subject.person_id), entity_kind="human",
+                unit=unit, subject=subject.person_id)
+            revision, _ = await persona.account_state(key=account.key)
+            heads = await persona.account_heads(key=account.key)
+            candidates = [h for h in heads if fact_key in SINGLETON_FACTS
+                          and h.part == "identity" and h.fact_key == fact_key
+                          and h.state in ("current", "disputed")]
+            old = candidates[0] if len(candidates) == 1 else None
+            handle = next((h for h, lid in handles_for(heads).items()
+                           if old is not None and lid == old.id), None)
+            cites_text = tuple(str(n) for n in cites)
+            op = (PersonaReviseOp(
+                line=handle, citations=cites_text, text=text,
+                fact_key=fact_key, fact_value=fact_value,
+                valid_from=valid_from, valid_until=valid_until,
+            ) if old is not None and handle is not None and old.mode == "told"
+                and old.told_by == tagger.person_id else PersonaAddOp(
+                    part="identity", kind=FACT_KINDS[fact_key], text=text, mode="told",
+                    fact_key=fact_key, fact_value=fact_value,
+                    valid_from=valid_from, valid_until=valid_until,
+                    citations=cites_text, told_by=tagger.person_id, conflicts_with=handle))
             result = await persona.persona_write(
-                account=PersonaAccount(
-                    key=character_key(unit, subject.person_id), entity_kind="human",
-                    unit=unit, subject=subject.person_id,
-                ),
-                ops=(PersonaAddOp(
-                    part="identity", kind=kind, text=text, mode="told",
-                    citations=tuple(str(n) for n in cites), told_by=tagger.person_id,
-                ),),
+                account=account, ops=(op,), expected_revision=revision,
                 citable=PersonaCitable(
-                    messages=dict.fromkeys(cites, said),
+                    messages=said,
                     # Evidence about a person counts only if said in a room they
                     # are listed in (35 §3); a `*` room lists nobody by name.
                     listed_rooms=(frozenset({here}) if listed is not None

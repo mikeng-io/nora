@@ -1,0 +1,114 @@
+# Typed Identity and complete historical recovery
+
+Status: implemented locally; independent review and live acceptance pending, 2026-10-19. This amends
+35 and 45 on the operator's instruction: Identity is queryable factual data,
+Character is recurring behavior, and one Persona session owns both. It does
+not authorize the live render switch before coverage and reply validation.
+
+## Evidence and scope
+
+The first live shadow backfill wrote dated intentions as current identity
+attributes. The Record retains their timestamps, but free-text attributes
+have no named value and the renderer's write age describes the new backfill,
+not the old statement. The source reader's newest-page policy advances past
+older messages without reading them. Therefore a successful session does not
+establish historical identity coverage. Production examples stay out of Git.
+
+Keep the existing unit boundary, authorship and exclusion checks, precedence,
+disputes, append-only revisions and single atomic persona_write transaction.
+No second identity database or Dreamer, no new warehouse service.
+
+## Identity contract
+
+Extend existing persona_line identity rows with fact_key (text), fact_value
+(JSONB), valid_from and valid_until (nullable epoch ms). Existing as_of is the
+source assertion/evidence time, never synthesized from backfill wall-clock
+time. Existing written_at remains transaction time; citations and told_by
+remain the evidence and its speaker. Effective dates are supplied only when
+the evidence establishes them; null means unknown, not today.
+
+Initial keys: name, role, relationship, gender, sex, birthday, residence,
+languages, occupation, dietary_restrictions, food_preferences, instruction,
+purpose and norm. The key must agree with actor/collective and the existing
+kind: attributes use the specific factual key, not a catch-all other field.
+Do not infer gender, residence or dietary restrictions from names or silence.
+
+Scalar labels use strings; languages, dietary_restrictions and food_preferences
+use arrays of strings; birthday uses month/day and optional year, validated
+as a calendar date (a recurring birthday may have no year). A relationship
+uses a relation and a resolved person reference or an explicitly unresolved
+name. Resolve references through the existing same-unit name boundary when
+rendering, never display raw account ids. Authored names/accounts remain
+owned by identity.toml and retain their existing precedence.
+
+One shared validator and formatter own these shapes. Prompt, portal and
+memory projection use the canonical formatted value, so a conflicting model
+text cannot override structured truth. Store history, not competing current
+singleton values: explicit changes revise/supersede with evidence; retain
+uncertain/conflicting claims through existing precedence/dispute semantics.
+
+Migration adds nullable fields and preserves old rows; never mechanically
+turn old prose into verified typed facts. Current legacy identity must be
+re-evidenced and classified during backfill before accepted as cutover
+coverage. Unknown facts are absent, not invented defaults. Legacy untyped
+identity is not promoted into the typed profile or graph as settled truth.
+Remove the 25-line storage cap on Identity; keep bounded rendering/retrieval.
+Character and hypothesis limits remain unchanged.
+
+## One session and lifecycle
+
+The person and collective Persona sessions continue Identity -> Character ->
+Hypotheses, then one persona_write. The independent verdict judge stays.
+The graph-surface remember path must use this same typed write contract and
+validation; do not introduce another truth writer or parse prose into facts
+with regex. Update its existing tool schema coherently and measure routing
+once the complete implementation is available. A temporary plan is Record or
+Register evidence, not a stable identity attribute. No calendar date or new
+event is fabricated when an occasion cannot be resolved.
+
+Render-off preserves the legacy path while validating. Render-on disables the
+legacy culture/character model writers. Before doing so, rewire every legacy
+input dependency: Persona person context and the unit's room-account evidence
+must read new Persona room accounts/revisions on the new surface, not wait
+for a retired Culture writer. The switch remains reversible; no client or
+legacy source tables are dropped in this change.
+
+## Historical recovery
+
+Separate the complete historical pass from normal latest-message updates.
+Use existing cursor/runtime mechanisms where possible. A bounded resumable
+pass tracks its source high-water mark and oldest-first progress per scoped
+account. Read the union of eligible own messages and mentions in chronological
+pages; advance only past items actually handed to a successfully committed
+session. Never let max of two independently truncated streams skip unseen
+messages. A failed/conflicted/unsettled run retains its page. Freeze the
+source boundary so new traffic cannot make the pass endless. Resume after
+restart; mark complete only after exhaustion. An explicit rerun must be
+possible for the already-completed but incomplete first shadow backfill.
+
+The same Persona writer folds each page into its account. Historical sources
+retain their source time and do not imply present validity. Existing source
+rows and pre-backfill identity history are retained. Do not copy uncited
+Honcho conclusions into settled facts: use the card as a gap checklist and
+trace recovered claims to original evidence. Keep missing/ambiguous sources
+as unresolved coverage, not a successful migration.
+
+## Acceptance and cutover
+
+Deterministic regressions must cover typed round trips, invalid shapes,
+unknown versus explicit empty restrictions, birthdays without an invented
+year/date, moved residence with retained history, event intentions excluded
+from stable attributes, conflicts/disputes, and source-time versus write-time.
+Exercise real SQL, shared formatter, prompt/portal/index and remember paths.
+Prove page completeness when own-message/mention streams interleave, failure,
+conflict and restart occur, and when new messages arrive beyond the boundary.
+Pin legacy-writer retirement and new unit/person input dependencies on the
+render switch. Preserve all disclosure and retrieval rollback regressions.
+
+After the full build: final gate and independent economical review, deploy
+shadow, run bounded historical recovery, and produce per-account counts and
+missing/ambiguous fact coverage without publishing private rows. Compare useful
+Honcho card facts to grounded new values and inspect source messages for every
+miss. Then run existing recall and reply gates with explicit budget/receipts.
+No switch or parity claim on a model's self-report or an incomplete pass.
+The existing Honcho post-switch hold/removal sequence still applies.

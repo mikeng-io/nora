@@ -44,6 +44,22 @@ class InMemoryCharacterEvidence:
         self._social_cursor: dict[tuple[str, str], tuple[int, int]] = {}
         self._ties: list[tuple[str, str, str, tuple[int, int, int, int, int, int], bool]] = []
 
+    async def history_state(self, *, key: str) -> tuple[int, int]:
+        if not hasattr(self, "_history"):
+            self._history = {}
+        return self._history.setdefault(key, (max((m.id for m in self._messages), default=0), 0))
+
+    async def advance_history(self, *, key: str, cursor: int) -> None:
+        boundary, _ = await self.history_state(key=key)
+        self._history[key] = boundary, cursor
+
+    async def historical_page(self, *, rooms, person_id, after, through, limit):
+        found = sorted((m for m in self._messages
+            if (m.platform, m.room) in rooms and not m.is_nora and not m.hidden
+            and after < m.id <= through
+            and (m.person_id == person_id or person_id in m.mention_persons)), key=lambda m: m.id)
+        return [RoomMessage(room=m.room, row=self._row(m)) for m in found[:limit]]
+
     def add_episode(self, *, unit: str, episode: Episode, open_: bool = False) -> None:
         """One `response` episode of the current build; `open_` is one whose
         window has not closed (never counted, never read). With

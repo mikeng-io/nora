@@ -1242,6 +1242,32 @@ cases:
     metadata: {tools: [remember], not_tools: [note_create, note_update, remind], memory_surface: graph}
     snapshot: *room_a
 
+  # Typed Identity: stable facts share the graph remember writer. Routing is
+  # measured after the complete build, not inferred from deterministic shape tests.
+  - name: route_typed_birthday_without_year
+    entry: tag
+    expect: reply
+    mention: true
+    input: 記低，我生日係二月二十九號，唔好估年份。
+    metadata: {tools: [remember], not_tools: [note_create, remind], memory_surface: graph}
+    snapshot: *room_a
+
+  - name: route_typed_languages_and_diet
+    entry: tag
+    expect: reply
+    mention: true
+    input: 記低，我講廣東話同英文，食素。
+    metadata: {tools: [remember], not_tools: [note_create, remind], memory_surface: graph}
+    snapshot: *room_a
+
+  - name: route_typed_residence_correction
+    entry: tag
+    expect: reply
+    mention: true
+    input: 記低，我已經搬離倫敦，依家住香港。
+    metadata: {tools: [remember], not_tools: [where_is, remind], memory_surface: graph}
+    snapshot: *room_a
+
   # --- memory_search (DEC-316, operator ruling 2026-10-16) ----------------------
   # `[memory_index] enabled` selects ONE memory surface: the graph's
   # (`memory_search`) or Honcho's (`ask_memory`, `search_memory`,

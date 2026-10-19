@@ -38,6 +38,9 @@ class _ReadsFake:
     def __init__(self) -> None:
         self.cursors: dict[tuple[str, str], tuple[int, int]] = {}
 
+    async def history_state(self, *, key):
+        return 0, 0
+
     async def person_count(self, *, rooms, person_id, after) -> int:
         return 0
 

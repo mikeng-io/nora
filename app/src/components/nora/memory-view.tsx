@@ -189,6 +189,9 @@ function PersonaAccountPanel({ account }: { account: PersonaAccount }) {
                 <p className="text-body text-ink">{line.text}</p>
                 {stateLabel(line.state)}
               </div>
+              <p className="text-meta text-ink-muted">
+                {fmt(line.written_at)}
+              </p>
               {line.part === "hypothesis" && line.prediction ? (
                 <p className="text-meta text-ink-soft">
                   {t("personaPrediction", { prediction: line.prediction })}

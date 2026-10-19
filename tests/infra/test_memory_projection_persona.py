@@ -12,6 +12,7 @@ Module-scoped database per `test_memory_projection_notebook.py`'s pattern
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
+from dataclasses import replace
 from typing import Any
 from uuid import uuid4
 
@@ -42,8 +43,10 @@ _ROOM = "signal:g1"
 _UNIT = "unit-a"
 NOW = 1_790_000_000_000
 ACCOUNT = Account(
-    key=character_key(_UNIT, "member-b"), entity_kind="human",
-    unit=_UNIT, subject="member-b",
+    key=character_key(_UNIT, "member-b"),
+    entity_kind="human",
+    unit=_UNIT,
+    subject="member-b",
 )
 
 
@@ -124,8 +127,16 @@ def _citable(mid: str, **kw: Any) -> PersonaCitable:
 
 
 def _told(text: str, cite: str) -> AddOp:
-    return AddOp(part="identity", kind="attribute", text=text, mode="told",
-                 citations=(cite,), told_by="member-b")
+    return AddOp(
+        part="identity",
+        kind="attribute",
+        text=text,
+        mode="told",
+        citations=(cite,),
+        told_by="member-b",
+        fact_key="occupation",
+        fact_value=text,
+    )
 
 
 async def _nodes(engine: Any) -> dict[tuple[str, str], Any]:
@@ -163,7 +174,8 @@ async def test_a_written_line_is_a_node_in_its_accounts_scope(engine):
     assert (node.unit, node.origin_room, node.persons, node.state) == (
         _UNIT, None, ["member-b"], "live",
     )
-    assert (node.text, node.at_ms) == ("cycles to work", NOW)
+    assert (node.text, node.at_ms) == (
+        "occupation: cycles to work (asserted 1970-01-01T00:00:01+00:00)", 1000)
     assert await _edges(engine, sid) == {
         ("persona_line", sid, "about", "person", "member-b"),
         ("persona_line", sid, "cites", "message", mid),
@@ -255,11 +267,23 @@ async def test_a_deduced_line_draws_on_its_premises_and_cites_a_social_item(engi
     )
     deduced = await store.persona_write(
         account=ACCOUNT,
-        ops=[AddOp(part="identity", kind="attribute", text="commutes by bike",
-                   mode="deduced", citations=(mid, "social:instagram:post1"),
-                   draws_on=("P1",))],
-        citable=citable, now_ms=NOW + 1, written_by_session="persona",
-        apply_decay=True, expected_revision=1,
+        ops=[
+            AddOp(
+                part="identity",
+                kind="role",
+                text="commutes by bike",
+                mode="deduced",
+                citations=(mid, "social:instagram:post1"),
+                draws_on=("P1",),
+                fact_key="role",
+                fact_value="commutes by bike",
+            )
+        ],
+        citable=citable,
+        now_ms=NOW + 1,
+        written_by_session="persona",
+        apply_decay=True,
+        expected_revision=1,
     )
     assert deduced.status == "ok"
     sid = deduced.written[0]
@@ -277,10 +301,22 @@ async def test_a_room_accounts_line_scopes_to_its_room(engine):
     room_account = Account(key="g1", entity_kind="room", unit=_UNIT)
     result = await store.persona_write(
         account=room_account,
-        ops=[AddOp(part="identity", kind="norm", text="plans in the open",
-                   mode="told", citations=(mid,), told_by="member-b")],
+        ops=[
+            AddOp(
+                part="identity",
+                kind="norm",
+                text="plans in the open",
+                mode="told",
+                citations=(mid,),
+                told_by="member-b",
+                fact_key="norm",
+                fact_value="plans in the open",
+            )
+        ],
         citable=PersonaCitable(messages={int(mid): Said(1000, "member-b", "g1")}),
-        now_ms=NOW, written_by_session="persona-room", apply_decay=True,
+        now_ms=NOW,
+        written_by_session="persona-room",
+        apply_decay=True,
     )
     assert result.status == "ok"
     sid = result.written[0]
@@ -314,7 +350,7 @@ async def test_a_rebuild_equals_live_projection(engine):
     )
     kept = await store.persona_write(
         account=ACCOUNT,
-        ops=[_told("runs on sundays", mid)],
+        ops=[replace(_told("runs on sundays", mid), kind="role", fact_key="role")],
         citable=_citable(mid), now_ms=NOW + 1, written_by_session="tag",
         apply_decay=False,
     )
@@ -333,3 +369,67 @@ async def test_a_rebuild_equals_live_projection(engine):
                for k, n in (await _nodes(engine)).items()}
     assert rebuilt == live_nodes
     assert await _edges(engine, kept.written[0]) == live_edges
+
+
+async def test_relationship_projection_retrieval_preserves_scoped_targets(engine):
+    from datetime import UTC, datetime
+
+    from nora.agent.memory_search import Hit, Step, render_packet
+    from nora.domain.memory_index import MemoryFilter, MemoryScope
+    from nora.infra.sql.memory_read import SqlMemoryIndex
+
+    mid = await _said(engine)
+    await _unit_proven(engine)
+    store = _store(engine)
+    ids = []
+    for target in ("target-alice", "target-beth", "private-target"):
+        result = await store.persona_write(
+            account=ACCOUNT,
+            ops=[replace(_told("untrusted prose", mid), kind="relationship",
+                         fact_key="relationship",
+                         fact_value={"relation": "sister", "person_id": target})],
+            citable=_citable(mid), now_ms=NOW, written_by_session="test",
+            apply_decay=False,
+        )
+        assert result.status == "ok"
+        ids.extend(result.written)
+    scope = MemoryScope(
+        units=(_UNIT,), rooms=(_ROOM,),
+        listed_here=frozenset({"member-b", "target-alice", "target-beth"}),
+        people_here=frozenset({"member-b"}), exclude_strict=False,
+        presence_persons=frozenset(), social_off=frozenset(), persona_render=True,
+    )
+    index = SqlMemoryIndex(engine)
+    names = {"target-alice": "Alice", "target-beth": "Beth", "private-target": "Secret"}
+
+    def packet(nodes, name_of=lambda pid: names.get(pid, "someone")):
+        return render_packet(
+            [Hit(n, 1, (Step("persona_line", how="about"),)) for n in nodes],
+            name_of=name_of, room_label=lambda _: "Friends",
+            now=datetime.fromtimestamp(NOW / 1000, UTC),
+        )[0]
+
+    for target, sid, name in zip(
+        ("target-alice", "target-beth"), ids, ("Alice", "Beth"), strict=False,
+    ):
+        found = await index.about(target, scope, limit=10)
+        assert [n.source_id for n in found] == [sid]
+        assert f"sister: {name}" in packet(found)[0]["text"]
+        # The regular SQL person filter and lexical path agree with the edge read.
+        seeds = await index.seed(
+            ["sister"], replace(scope, only=MemoryFilter(person=target)), limit=10,
+        )
+        assert [s.node.source_id for s in seeds] == [sid]
+        assert f"sister: {name}" in packet([s.node for s in seeds])[0]["text"]
+    all_nodes = [s.node for s in await index.seed(["sister"], scope, limit=10)]
+    shown = str(packet(all_nodes))
+    assert "Alice" in shown and "Beth" in shown
+    assert "Secret" not in shown and "unknown" in shown
+    assert all(target not in shown for target in names)
+    assert all("sister: someone (unknown)" in item["text"]
+               for item in packet(all_nodes, name_of=lambda _: "someone"))
+    unknown = packet(all_nodes, name_of=str)
+    assert all("sister: someone (unknown)" in item["text"] for item in unknown)
+    assert all(target not in str(unknown) for target in names)
+    assert "untrusted prose" not in shown
+    assert not await index.about("private-target", scope, limit=10)

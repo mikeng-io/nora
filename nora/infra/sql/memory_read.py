@@ -131,6 +131,7 @@ from nora.infra.sql.schema import (
     EMBEDDING_INDEXED_DIMENSIONS,
     MEMORY_EDGE,
     MEMORY_NODE,
+    PERSONA_LINE,
 )
 
 __all__ = ["DENSE_CANDIDATES", "HNSW_EF_SEARCH", "HNSW_MAX_SCAN_TUPLES", "SqlMemoryIndex"]
@@ -293,19 +294,34 @@ def _holds(text: Any, term: ExactTerm) -> sa.ColumnElement[bool]:
     return held
 
 
-def _node(r: Any) -> IndexedNode:
+def _node(r: Any, scope: MemoryScope | None = None) -> IndexedNode:
     return IndexedNode(
         kind=r.kind, source_id=r.source_id, text=r.text or "", at_ms=r.at_ms,
         unit=r.unit, origin_room=r.origin_room, persons=tuple(r.persons or ()),
         exclude_persons=tuple(r.exclude_persons or ()), lineage=r.lineage,
-        sha256=r.sha256, state=r.state,
+        sha256=r.sha256, state=r.state, identity_fact=r.identity_fact,
+        named_persons=scope.listed_here if scope is not None else frozenset(),
     )
 
 
 def _columns(n: Any) -> list[Any]:
+    p = PERSONA_LINE.c
+    fact = (
+        sa.select(sa.func.jsonb_build_object(
+            "key", p.fact_key, "value", p.fact_value, "as_of", p.as_of,
+            "valid_from", p.valid_from, "valid_until", p.valid_until,
+        ))
+        .where(n.c.kind == "persona_line", p.id == sa.cast(sa.case(
+                   (n.c.source_id.op("~")(
+                       r"^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$"
+                   ), n.c.source_id), else_=None,
+               ), pg.UUID(as_uuid=False)),
+               p.part == "identity", p.fact_key.is_not(None))
+        .correlate(n).scalar_subquery().label("identity_fact")
+    )
     return [
         n.c.kind, n.c.source_id, n.c.text, n.c.at_ms, n.c.unit, n.c.origin_room,
-        n.c.persons, n.c.exclude_persons, n.c.lineage, n.c.sha256, n.c.state,
+        n.c.persons, n.c.exclude_persons, n.c.lineage, n.c.sha256, n.c.state, fact,
     ]
 
 
@@ -348,7 +364,7 @@ class SqlMemoryIndex:
                 f"SET LOCAL pg_trgm.word_similarity_threshold = {WORD_SIMILARITY_MIN}"
             ))
             rows = (await conn.execute(stmt)).all()
-        return [Seed(_node(r), float(r.score)) for r in rows]
+        return [Seed(_node(r, scope), float(r.score)) for r in rows]
 
     async def dense(
         self, vector: Sequence[float], scope: MemoryScope, *, model: str, limit: int,
@@ -363,7 +379,7 @@ class SqlMemoryIndex:
                 f"SET LOCAL hnsw.max_scan_tuples = {HNSW_MAX_SCAN_TUPLES}"
             ))
             rows = (await conn.execute(stmt)).all()
-        return [Seed(_node(r), float(r.score)) for r in rows]
+        return [Seed(_node(r, scope), float(r.score)) for r in rows]
 
     async def exact(
         self, terms: Sequence[ExactTerm], scope: MemoryScope, *, limit: int,
@@ -394,13 +410,13 @@ class SqlMemoryIndex:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
         return [
-            Seed(_node(r), 1.0, None if r.near is None else float(r.near)) for r in rows
+            Seed(_node(r, scope), 1.0, None if r.near is None else float(r.near)) for r in rows
         ]
 
     async def about(
         self, person_id: str, scope: MemoryScope, *, limit: int,
     ) -> list[IndexedNode]:
-        if limit <= 0:
+        if limit <= 0 or person_id not in scope.listed_here:
             return []
         n = MEMORY_NODE.alias("n")
         e = MEMORY_EDGE
@@ -418,7 +434,7 @@ class SqlMemoryIndex:
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        return [_node(r) for r in rows]
+        return [_node(r, scope) for r in rows]
 
     async def media(
         self, sha256s: Sequence[str], scope: MemoryScope, *, limit: int,
@@ -435,7 +451,7 @@ class SqlMemoryIndex:
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        return [_node(r) for r in rows]
+        return [_node(r, scope) for r in rows]
 
     async def places(self, query: str, *, limit: int) -> list[IndexedNode]:
         if not query.strip() or limit <= 0:
@@ -485,7 +501,7 @@ class SqlMemoryIndex:
                 out += [
                     Neighbour(
                         via=(r.via_kind, r.via_id), rel=r.rel, outgoing=outgoing,
-                        node=_node(r),
+                        node=_node(r, scope),
                     )
                     for r in await conn.execute(stmt)
                 ]
