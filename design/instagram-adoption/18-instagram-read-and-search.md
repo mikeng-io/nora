@@ -241,6 +241,30 @@ docstring and the catalogue line until it works. A catalogue line that names
 a read she cannot do is the line she will call from (see the catalogue
 contract below).
 
+### P13 built, 2026-10-20
+
+`instagram_read(what="posts", person=... | handle=... | link=...,
+limit=5, cursor=None)` lists an account's recent posts and reels through the
+same bridge timeline endpoint the social stream uses. A profile link accepts
+`what="posts"`; individual post/reel links keep their existing whole-item read.
+Lists return caption summaries with posting time and links, not media readings;
+opening one listed link uses the existing post read. Like a post, a list is
+refused before resolution in an unasked turn. Profile resolution and the
+existing egress screens apply; this adds no account discovery or story reach.
+
+The limit is 1 to 20, bounded by the upstream page available. A smaller limit
+retains the fetched page's tail. `next_cursor` is a subject-bound reference
+inside one turn, never Instagram's raw cursor, which can contain account ids.
+A changed subject, unknown cursor or cursor from another turn is unavailable
+without a network read. The client validates the full timeline page and the
+single typed renderer wraps and bounds its summaries. This follows the
+[opaque cursor convention](https://modelcontextprotocol.io/specification/2025-06-18/server/utilities/pagination).
+
+The earlier P13 "no backend" notes are historical: the timeline mechanism
+landed with the background stream; this completes its requested tool surface.
+Deterministic integration checks are in `test_instagram_read_links.py`; routing
+acceptance and a deployed live read are separate checks.
+
 ## Typed views, one renderer, and readings (operator, 2026-09-24)
 
 **The goal.** A post's caption is a helper. It should reach Nora together

@@ -58,8 +58,9 @@ from __future__ import annotations
 
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql as pg
@@ -92,7 +93,12 @@ from nora.infra.sql.blob_refs import held_elsewhere
 from nora.infra.sql.memory_index import current_place, social_source_id
 from nora.infra.sql.schema import (
     BLOB_TOMBSTONE,
+    EVENTS,
     MEDIA_OBJECTS,
+    MESSAGES,
+    ROLLUP_BUILD,
+    ROLLUP_COLOCATION,
+    ROLLUP_OUTING,
     SOCIAL_ITEM,
     SOCIAL_ITEM_COUNT,
     SOCIAL_ITEM_STATE,
@@ -426,7 +432,9 @@ class SqlSocialStreamStore:
             row = (await conn.execute(stmt)).one_or_none()
         return Counts(row.media_count, row.total_clips_count) if row else None
 
-    async def posted(self, *, persons: Collection[str], through_ms: int) -> SocialInput:
+    async def posted(
+        self, *, persons: Collection[str], through_ms: int, network: str | None = None,
+    ) -> SocialInput:
         """What the Rollup's daybook counts for `persons`: each readable item
         recorded at or before `through_ms`, whenever it was taken (a back-filled
         item lands in its own day), and per person the first answered poll
@@ -444,6 +452,9 @@ class SqlSocialStreamStore:
             .where(p.c.person.in_(who), p.c.outcome.not_in(_UNANSWERED), p.c.recorded_at <= at)
             .group_by(p.c.person)
         )
+        if network is not None:
+            items = items.where(i.c.network == network)
+            first = first.where(p.c.network == network)
         async with self._engine.connect() as conn:
             item_rows = (await conn.execute(items)).all()
             poll_rows = (await conn.execute(first)).all()
@@ -451,6 +462,41 @@ class SqlSocialStreamStore:
             items=tuple(SocialFact(r.person, _ms(r.taken_at)) for r in item_rows),
             observed_from={person: _ms(recorded) for person, recorded in poll_rows},
         )
+
+    async def social_activity(
+        self, *, person: str, units: Sequence[str], rooms: Sequence[tuple[str, str]],
+        now: datetime, timezone: str,
+    ) -> bool:
+        """A current activity signal only, never its content or coordinates.
+
+        Unit rows read the current Rollup build. Messages are human-authored,
+        visible, in a unit room and in the past hour; events name the person
+        and today's local date and remain open. Missing sources add no boost.
+        """
+        if person in self._opted_out:
+            return False
+        m, e = MESSAGES, EVENTS
+        tz = ZoneInfo(timezone)
+        start = now.astimezone(tz).replace(hour=0, minute=0, second=0, microsecond=0)
+        event = sa.exists().where(
+            e.c.unit_id.in_(units), e.c.people.any(person),
+            e.c.status.in_(("proposed", "confirmed")), e.c.when >= start,
+            e.c.when < start + timedelta(days=1),
+        )
+        message = sa.exists().where(
+            m.c.person_id == person, m.c.is_nora == 0, m.c.hidden_at.is_(None),
+            sa.tuple_(m.c.platform, m.c.conversation_id).in_(rooms),
+            m.c.ts >= _ms(now - timedelta(hours=1)), m.c.ts <= _ms(now),
+        )
+        current = sa.select(ROLLUP_BUILD.c.id).where(ROLLUP_BUILD.c.status == "current")
+        episodes = [sa.exists().where(
+            table.c.build_id.in_(current), table.c.unit.in_(units),
+            table.c.persons.any(person), table.c.open == 1,
+            table.c.valid_from_ms <= _ms(now),
+        ) for table in (ROLLUP_OUTING, ROLLUP_COLOCATION)]
+        async with self._engine.connect() as conn:
+            return bool((await conn.execute(sa.select(sa.or_(message, event, *episodes))))
+                        .scalar_one())
 
     async def item_state(self, *, network: str, item_id: str) -> ItemState | None:
         """The item's current state, the latest row, or None when it has none."""

@@ -30,7 +30,7 @@
   {
     "name": "the asked-turn rule is dropped for posts and reels",
     "file": "nora/agent/tools.py",
-    "old": "        if read in (\"story\", \"post\") and (fire_turn or dream_adaptor):",
+    "old": "        if read in (\"story\", \"post\", \"posts\") and (fire_turn or dream_adaptor):",
     "new": "        if read == \"story\" and (fire_turn or dream_adaptor):",
     "target": "tests/unit/test_instagram_read_links.py -k background_turn"
   },
@@ -135,7 +135,7 @@
   {
     "name": "review 5: a profile link with what=story is refused as a contradiction",
     "file": "nora/agent/tools.py",
-    "old": "            if parsed.kind == \"profile\" and what == \"story\":",
+    "old": "            if parsed.kind == \"profile\" and what in (\"story\", \"posts\"):",
     "new": "            if False:",
     "target": "tests/unit/test_instagram_read_links.py -k profile_link_asked_for_its_story"
   },
