@@ -209,12 +209,16 @@ class PersonaVerdictAdaptor:
 
     async def inputs(self, *, key: str, batch: Sequence[Any]) -> str:
         """The docket's MODEL-judged hypotheses (a countable observable is
-        code's, and never reaches the model): each with its prediction, its
-        observable and its window, and the window's Record rows. `""` when the
-        docket is empty or all of it is code's: `commit` still runs."""
+        code's, and never reaches the model — nor does one whose account is no
+        longer in the keys map: its window can never be read, so it is
+        `commit`'s code `unknown`, never the model's to judge from an empty
+        window): each with its prediction, its observable and its window, and
+        the window's Record rows. `""` when none of the docket is the model's:
+        `commit` still runs."""
         due = [line for line in batch if isinstance(line, PersonaLine)]
         prose = [line for line in due
-                 if countable_observable(line.prediction_observable) is None]
+                 if countable_observable(line.prediction_observable) is None
+                 and line.persona_key in self._keys]
         if not prose:
             return ""
         now = self._clock()
@@ -222,10 +226,8 @@ class PersonaVerdictAdaptor:
         self._runs[key] = _Run(handles=handles)
         windows: list[str] = []
         for handle, line in handles.items():
-            account = self._keys.get(line.persona_key)
-            rooms = [] if account is None else list(account.rooms)
             rows = await self._reads.windowed(
-                rooms=rooms,
+                rooms=list(self._keys[line.persona_key].rooms),
                 since_ms=line.written_at,
                 until_ms=line.prediction_window_end or line.written_at,
                 limit=WINDOW_MESSAGES_MAX,
@@ -233,7 +235,10 @@ class PersonaVerdictAdaptor:
             body = render_row_window(
                 rows, row_id=lambda m: m.row.id,
                 attrs=lambda m: (("age", age(m.row.ts, now)),
-                                 ("by", self._name_of(m.row.person_id))),
+                                 # Her own rows are "you", as the episode
+                                 # blocks mark her — never `name_of(None)`.
+                                 ("by", "you" if m.row.is_nora
+                                  else self._name_of(m.row.person_id))),
                 body=lambda m: m.row.body or "",
             )
             windows.append(render_group("for", [("id", handle)], body))
@@ -257,8 +262,10 @@ class PersonaVerdictAdaptor:
         return assemble(parts, sep="\n\n")
 
     def _subject(self, line: PersonaLine) -> str:
-        account = self._keys.get(line.persona_key)
-        return account.about if account is not None else "someone"
+        """The rendered hypotheses all have accounts (`inputs` filters), so
+        this is a direct lookup, and a key that left the map mid-render fails
+        loudly rather than reading as "someone"."""
+        return self._keys[line.persona_key].about
 
     # -- the verb ----------------------------------------------------------
 

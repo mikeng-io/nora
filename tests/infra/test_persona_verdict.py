@@ -63,17 +63,18 @@ async def env(pg_url: str) -> Any:
 
 
 async def _hypothesis(env: Any, *, observable: str, window_end: int,
-                      prediction: str = "picks short games on weekdays") -> str:
+                      prediction: str = "picks short games on weekdays",
+                      account: Account = ACCOUNT, citable: PersonaCitable = CITABLE) -> str:
     """An induced trait and an abduced hypothesis on it, window closing at
     `window_end`; the hypothesis's line id."""
     premise = await env.store.persona_write(
-        account=ACCOUNT, citable=CITABLE, now_ms=T0, written_by_session="t",
+        account=account, citable=citable, now_ms=T0, written_by_session="t",
         apply_decay=False,
         ops=[AddOp(part="character", kind="trait", text="plays games most nights",
                    mode="induced", citations=("1", "2", "3"))])
     assert premise.status == "ok"
     added = await env.store.persona_write(
-        account=ACCOUNT, citable=CITABLE, now_ms=T0 + 1, written_by_session="t",
+        account=account, citable=citable, now_ms=T0 + 1, written_by_session="t",
         apply_decay=False,
         ops=[AddOp(part="hypothesis", kind="explanation", text="winding down",
                    mode="abduced", citations=("1",), draws_on=("P1",),
@@ -225,3 +226,61 @@ async def test_a_hypothesis_whose_account_rooms_are_gone_is_unknown_by_code(env)
     [head] = [h for h in await env.store.account_heads(key=KEY)
               if h.part == "hypothesis"]
     assert (head.verdict, head.verdict_by) == ("unknown", "code")
+
+
+BO_KEY = character_key(UNIT, "bo")
+BO_ACCOUNT = Account(key=BO_KEY, entity_kind="human", unit=UNIT, subject="bo")
+BO_CITABLE = PersonaCitable(
+    messages={n: Said(T0 + n * DAY, "bo", "room-a") for n in range(1, 5)},
+    listed_rooms=frozenset({"room-a"}),
+)
+
+
+async def test_an_account_less_hypothesis_never_reaches_the_model(env):
+    """A hypothesis whose account left the keys map is NOT the model's to
+    judge: it never renders (an empty window would tempt `expired`), `accept`
+    settles without it, and `commit`'s code `unknown` is what lands — beside
+    the model's verdict on its docket-mate."""
+    await _hypothesis(env, observable="a short game on a weekday evening",
+                      window_end=T0 + 30 * DAY)  # Ada's — the model's.
+    await _hypothesis(env, account=BO_ACCOUNT, citable=BO_CITABLE,
+                      prediction="they will suggest a weekday game",
+                      observable="a weekday plan is proposed",
+                      window_end=T0 + 30 * DAY)  # Bo's — the keys map lost it.
+    adaptor = _adaptor(env)  # KEYS holds Ada's account only.
+    due, _ = await adaptor.evidence.newest(key=UNIT, after=0, limit=5)
+    assert len(due) == 2
+    prompt = await adaptor.inputs(key=UNIT, batch=due)
+    assert "H1" in prompt and "H2" not in prompt
+    assert "they will suggest a weekday game" not in prompt
+    [verdict] = adaptor.verbs(key=UNIT)
+    assert await verdict(verdicts=[{"line": "H1", "verdict": "confirmed"}]) == {"status": "ok"}
+    staged = await adaptor.accept(key=UNIT, items=())
+    written = await adaptor.commit(key=UNIT, now_ms=T0 + 40 * DAY, proposals=[
+        Proposal(payload=p, instruction_sha256="a" * 64, model="flash",
+                 established_by="dream:persona-verdict:friends:1") for p in staged])
+    assert written == 2
+    [ada] = [h for h in await env.store.account_heads(key=KEY)
+             if h.part == "hypothesis"]
+    assert (ada.verdict, ada.verdict_by) == ("confirmed", "dream:persona-verdict:friends:1")
+    [bo] = [h for h in await env.store.account_heads(key=BO_KEY)
+            if h.part == "hypothesis"]
+    assert (bo.verdict, bo.verdict_by) == ("unknown", "code")
+
+
+async def test_her_own_window_rows_read_as_you(env):
+    """The window deliberately includes her sends (the observable may be an
+    exchange), and hers are marked `you` — as the episode blocks mark her —
+    never `someone`, the stranger's label."""
+    await _hypothesis(env, observable="a short game on a weekday evening",
+                      window_end=T0 + 30 * DAY)
+    reads = InMemoryCharacterEvidence()
+    reads.add_message(id=11, platform="signal", room="room-a", person_id="ada",
+                      ts=T0 + 10 * DAY, body="quick one tonight")
+    reads.add_message(id=12, platform="signal", room="room-a", person_id=None,
+                      ts=T0 + 11 * DAY, body="in for thursday?", is_nora=True)
+    adaptor = _adaptor(env, reads=reads)
+    due, _ = await adaptor.evidence.newest(key=UNIT, after=0, limit=5)
+    out = await adaptor.inputs(key=UNIT, batch=due)
+    assert 'by="you"' in out and "in for thursday?" in out
+    assert 'by="Ada"' in out and "someone" not in out
