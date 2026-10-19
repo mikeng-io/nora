@@ -807,8 +807,16 @@ class PersonaPersonAdaptor:
                     "attribution": "shared_by_author",
                     "text": ((row.body or "") if row.body != raw
                              else "no readable media evidence"),
-                    "limits": ("Sharing is not evidence of identity, ownership, "
-                               "residence or habits; no biometric or gender inference."),
+                    "limits": ("Sharing alone establishes no identity, ownership, residence "
+                               "or habits. This reading is uncertain model interpretation, "
+                               "not a self-statement by default. Readable attachment text may "
+                               "supply a deduction premise when it explicitly states the claim "
+                               "and identifies its subject, including through textual mapping "
+                               "across cited roots; preserve uncertainty and attribution. "
+                               "Told requires a human assertion or endorsement, never media "
+                               "alone. No identity, ownership, residence or habit inference "
+                               "from a pictured scene; no biometric or gender inference. "
+                               "Location policy still applies; no home inference from a photo."),
                 },
             }, ensure_ascii=False)
         if revisions:
