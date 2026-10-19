@@ -1,5 +1,30 @@
 # Changelog
 
+## [6.2.0](https://github.com/mikeng-io/nora/compare/v6.1.0...v6.2.0) (2026-10-19)
+
+
+### Features
+
+* **persona:** preserve explicitly stated additional identity attributes ([c4fce2d](https://github.com/mikeng-io/nora/commit/c4fce2da36923eacbc24627f7497ad781b185a75))
+* **persona:** retain typed identity and resume historical recovery ([534f2ae](https://github.com/mikeng-io/nora/commit/534f2ae624803fad1dbf804d99f38fae9e272d7f))
+
+
+### Bug Fixes
+
+* **evals:** bind persona coverage to its original census ([fdfe705](https://github.com/mikeng-io/nora/commit/fdfe7056df0b9ed30a1c5b2a669331d86d37ef9c))
+* **evals:** bind persona coverage to the complete original evidence ([475fc28](https://github.com/mikeng-io/nora/commit/475fc28206c18efd660e41955e79cda7fd227715))
+* **evals:** clarify coverage JSON output and accept complete legacy objects ([cb13da7](https://github.com/mikeng-io/nora/commit/cb13da7c784d076b1d614d36fe726ffb0f0226b0))
+* **evals:** coverage accepts complete JSON fences and requests low reasoning ([96d3c6e](https://github.com/mikeng-io/nora/commit/96d3c6e82bed5ef56f01ae5ad566fb30241895f5))
+* **evals:** exclude restored rows from persona writer stimuli ([01d5282](https://github.com/mikeng-io/nora/commit/01d528214205f2353257be7dbe6311ec1d7850b3))
+* **evals:** include declared evidence in persona writer sessions ([5d09b02](https://github.com/mikeng-io/nora/commit/5d09b02fecf19303cea500f655e8ec555b5613e1))
+* **evals:** render readable source times for coverage judgments ([360e857](https://github.com/mikeng-io/nora/commit/360e857cba0564e42ad5d4e2f64b4e2328622812))
+* **persona:** enforce disclosure and rendering switches on every read ([f17728b](https://github.com/mikeng-io/nora/commit/f17728bb97bdb3aca3bfc05c4b76e0a763f24d5f))
+* **persona:** keep qualified plans out of settled identity claims ([d6b4fb1](https://github.com/mikeng-io/nora/commit/d6b4fb1287ca26e4bf3cb0e5eb765e7f951a783b))
+* **persona:** preserve provenance for equivalent numeric attributes ([3caeec4](https://github.com/mikeng-io/nora/commit/3caeec432b13e125b03524de0727bf56188aad3f))
+* **persona:** preserve source units for stated age and height ([2e10094](https://github.com/mikeng-io/nora/commit/2e10094f5bb2321c48f9d4309a86e25a749f7700))
+* **persona:** preserve unit progress and resolved relationship targets ([9d310ad](https://github.com/mikeng-io/nora/commit/9d310add7371986f141f61fedd74199b1d394552))
+* **persona:** retain grounding when rewording identity facts ([316536f](https://github.com/mikeng-io/nora/commit/316536f07f2e44f80493b14fec9ed63ff7a41ac0))
+
 ## [6.1.0](https://github.com/mikeng-io/nora/compare/v6.0.0...v6.1.0) (2026-10-19)
 
 
