@@ -1,4 +1,20 @@
-# Nora
+<p align="center">
+  <img src="assets/nora-social-banner.png" alt="Mini Nora at her desk, earphones in, beside a sleeping cat." width="100%">
+</p>
+
+<h1 align="center">Nora</h1>
+
+<p align="center"><strong>Earphones in.</strong></p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-48587A?labelColor=5E5351" alt="License: MIT"></a>
+  <a href="#development"><img src="https://img.shields.io/badge/python-3.12-48587A?labelColor=5E5351" alt="Development: Python 3.12"></a>
+  <a href="#project-status"><img src="https://img.shields.io/badge/status-experimental-835E0E?labelColor=5E5351" alt="Status: experimental"></a>
+</p>
+
+<p align="center">
+  <code>conversation</code> · <code>memory</code> · <code>voice</code> · <code>cognition</code> · <code>self-hosted</code>
+</p>
 
 Nora is an experimental, self-hosted AI companion for shared conversations. She follows
 conversations across Signal, Discord, WhatsApp and Instagram, remembers shared
@@ -6,8 +22,12 @@ context, and replies through the Strands Agents SDK. Participation, reminders,
 voice and background cognition are configured separately and governed by room
 policy.
 
-[Architecture](ARCHITECTURE.md) ·
-[Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
+<p align="center">
+  <a href="ARCHITECTURE.md">Architecture</a> ·
+  <a href="CONTRIBUTING.md">Contributing</a> ·
+  <a href="deploy/README.md">Deployment</a> ·
+  <a href="SECURITY.md">Security</a>
+</p>
 
 ## Project status
 
@@ -16,6 +36,26 @@ memory, permissioned participation, reminders, voice and background cognition.
 Capabilities depend on the services and room policy configured by each operator.
 Interfaces and deployment requirements can change; expect to provision your own
 model services, platform accounts and persistent storage.
+
+## How it fits together
+
+```mermaid
+flowchart TD
+    accTitle: Nora runtime overview
+    accDescr: Messaging events are recorded, checked against policy and assembled into context for the agent. Delivery is governed. Background cognition maintains scoped state shared with context assembly.
+
+    Messages["Messaging platforms"] --> Ingest["Ingest & record"]
+    Ingest --> Context["Policy & context"]
+    Context --> Agent["Agent & tools"]
+    Agent --> Delivery["Governed delivery"]
+    Ingest --> State[("Records & scoped memory")]
+    State <--> Context
+    Cognition["Background cognition"] <--> State
+```
+
+Room policy controls admission and disclosure. Background cognition maintains
+scoped state alongside the conversational path. The [architecture map](ARCHITECTURE.md)
+describes the full runtime and its boundaries.
 
 ## Start here
 
@@ -90,3 +130,8 @@ minimal synthetic example. Keep credentials, personal conversations, account
 identifiers and location data out of issues, logs and screenshots. See
 [Contributing](CONTRIBUTING.md) for development checks and [Security](SECURITY.md)
 for vulnerability reports. Maintenance is on a best-effort basis.
+
+## License
+
+Nora is licensed under the [MIT License](LICENSE). Third-party components retain
+their respective licenses.
