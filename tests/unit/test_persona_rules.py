@@ -564,3 +564,119 @@ def test_same_typed_birthday_revision_retains_assertion_and_grounding(text):
     assert corrected.fact_value == {"month": 5, "day": 7}
     assert corrected.as_of == CITABLE.messages[102].ts
     assert corrected.citations == ("102",)
+
+
+def test_explicit_height_roundtrips_through_real_planner_and_shared_formatter():
+    from nora.domain.persona import identity_text
+
+    op = replace(_told("I am 178 cm tall"), fact_key="attribute",
+                 fact_value={"name": "height", "value": 178, "unit": "cm"})
+    plan = _plan([op])
+    assert not plan.refusals, plan.refusals
+    [line] = plan.inserts
+    assert line.fact_value == op.fact_value
+    assert line.as_of == CITABLE.messages[101].ts
+    assert identity_text(line).startswith("height: 178 cm (asserted ")
+
+
+@pytest.mark.parametrize("value", [
+    None, {}, {"name": "height", "value": None},
+    {"name": "height", "value": {"amount": 178}},
+    {"name": "height", "value": [{"amount": 178}]},
+    {"name": "height", "value": float("nan")},
+    {"name": "height", "value": float("inf")},
+    {"name": "height", "value": ""}, {"name": "height", "value": []},
+    {"name": "height", "value": [""]},
+    {"name": "height", "value": 178, "unit": ""},
+    {"name": "height", "value": 178, "extra": "x"},
+    {"name": "", "value": 178},
+    {"name": "height" * 100, "value": 178},
+])
+def test_invalid_fallback_shapes_fail_closed(value):
+    plan = _plan([replace(_told(), fact_key="attribute", fact_value=value)])
+    assert _reasons(plan) == ["invalid_fact"]
+
+
+@pytest.mark.parametrize("name", ["birthday", " Gender ", "sex", "residence",
+                                  "food-preferences", "dietary restrictions", "attribute"])
+def test_fallback_cannot_alias_dedicated_contract(name):
+    plan = _plan([replace(_told(), fact_key="attribute",
+                         fact_value={"name": name, "value": "claim"})])
+    assert _reasons(plan) == ["invalid_fact"]
+
+
+def test_fallback_is_human_told_only_and_retains_normal_source_checks():
+    op = replace(_told(), fact_key="attribute",
+                 fact_value={"name": "height", "value": 178, "unit": "cm"})
+    assert _reasons(_plan([replace(op, mode="deduced", told_by=None,
+                                  citations=("101", "102"))])) == ["invalid_fact"]
+    assert _reasons(_plan([op], account=replace(HUMAN, entity_kind="self"))) == ["invalid_fact"]
+    assert _reasons(_plan([op], account=ROOM_ACCOUNT)) == ["part_kind"]
+    assert _reasons(_plan([replace(op, told_by=OTHER)])) == ["told_by_not_speaker"]
+    assert _reasons(_plan([replace(op, citations=("401",))])) == ["unlisted_room"]
+    third_party = _plan([replace(op, told_by=OTHER, citations=("201",))])
+    assert not third_party.refusals
+    assert third_party.inserts[0].told_by == OTHER
+
+
+@pytest.mark.parametrize(("before", "after", "same"), [
+    (178, 178.0, True), (178.0, 178, True),
+    (0, -0.0, True), (-0.0, 0, True),
+    (True, 1, False), (1, True, False), (178, 179, False),
+])
+def test_fallback_revision_numeric_equality_preserves_provenance(before, after, same):
+    initial = _plan([replace(_told("measurement stated"), fact_key="attribute",
+                            fact_value={"name": "measurement", "value": before})])
+    assert not initial.refusals
+    [original] = initial.inserts
+    result = _plan([ReviseOp(
+        line="P1", text="measurement reworded", citations=("102",),
+        fact_key="attribute", fact_value={"name": "measurement", "value": after},
+    )], (original,))
+    assert not result.refusals
+    [revised] = result.inserts
+    assert revised.supersedes == original.id
+    assert revised.fact_value == {"name": "measurement", "value": after}
+    if same:
+        assert revised.as_of == original.as_of == CITABLE.messages[101].ts
+        assert revised.citations == ("101", "102")
+        assert revised.support_count == original.support_count == 1
+        assert revised.last_supported_at == original.last_supported_at
+    else:
+        assert revised.as_of == CITABLE.messages[102].ts != original.as_of
+        assert revised.citations == ("102",)
+
+
+@pytest.mark.parametrize("name", ["age", "height"])
+@pytest.mark.parametrize("body,unit", [
+    (34, None), (34, ""), (34, " "), (34, True),
+    (True, "years"), ("34", "years"), (["34"], "years"),
+    (float("inf"), "years"), (float("nan"), "years"),
+])
+def test_quantity_attributes_require_numeric_value_and_source_unit(name, body, unit):
+    value = {"name": name, "value": body}
+    if unit is not None:
+        value["unit"] = unit
+    plan = _plan([replace(_told(), fact_key="attribute", fact_value=value)])
+    assert _reasons(plan) == ["invalid_fact"]
+    assert "age and height require a numeric value and source unit" in plan.refusals[0].detail
+    assert not plan.inserts
+
+
+@pytest.mark.parametrize("value", [
+    {"name": "age", "value": 34, "unit": "years"},
+    {"name": "height", "value": 178.5, "unit": "cm"},
+    {"name": "shoe_size", "value": 42},
+])
+def test_quantity_contract_preserves_assertion_without_computing_age_or_birthday(value):
+    from nora.domain.persona import identity_text
+
+    plan = _plan([replace(_told(), fact_key="attribute", fact_value=value)])
+    assert not plan.refusals
+    [line] = plan.inserts
+    assert line.fact_key == "attribute" and line.fact_value == value
+    assert line.as_of == CITABLE.messages[101].ts
+    assert line.valid_from is None and line.valid_until is None
+    rendered = identity_text(line)
+    assert "asserted 2026-10-01" in rendered
+    assert "birthday" not in rendered and "current age" not in rendered

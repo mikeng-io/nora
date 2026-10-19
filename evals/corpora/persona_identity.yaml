@@ -31,3 +31,13 @@
   expect: identity
   metadata:
     synthetic_evidence: true
+- name: height_age_stated
+  entry: persona_identity
+  expect: identity
+  metadata:
+    synthetic_evidence: true
+- name: activity_not_ownership
+  entry: persona_identity
+  expect: identity
+  metadata:
+    synthetic_evidence: true

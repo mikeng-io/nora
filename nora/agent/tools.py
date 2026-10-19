@@ -13675,7 +13675,7 @@ Args:
         content: str,
         fact_key: Literal["name", "role", "relationship", "gender", "sex", "birthday",
                           "residence", "languages", "occupation", "dietary_restrictions",
-                          "food_preferences", "instruction"],
+                          "food_preferences", "instruction", "attribute"],
         fact_value: str | list[str] | dict[str, Any], person: str = "",
         valid_from: int | None = None, valid_until: int | None = None,
     ) -> dict:
@@ -13687,10 +13687,19 @@ refused, not_found, ambiguous or unavailable, with a reporting note.
 
 Args:
     content: One factual claim in the teller's words.
-    fact_key: The named personal field.
-    fact_value: String, string list (empty means explicit none), birthday
-        month/day with optional year, or relationship relation and
-        unresolved_name. Never infer a birthday from an outing date.
+    fact_key: Use the dedicated key for common fields; attribute for other
+        explicitly stated stable human facts.
+    fact_value: Common fields use their exact types: scalar string; languages,
+        dietary_restrictions and food_preferences string lists; birthday
+        month/day with optional year; relationship relation and unresolved_name.
+        Attribute uses name (lowercase label with underscores), value (string,
+        finite number, boolean or nonempty string list), optional source unit.
+        Age and height require a numeric value and source unit from actual
+        evidence; never invent units or convert them. No nested objects or null.
+        Never alias a dedicated key. Preserve language,
+        instruction and workplace qualifiers in their existing typed fields.
+        The typed value alone must carry the full supported claim. Age stays
+        source-reported age, never an inferred birthday or calculated current age.
     person: Who it is about; empty means the speaker.
     valid_from: Evidence-grounded effective start, epoch milliseconds or null.
     valid_until: Evidence-grounded effective end, epoch milliseconds or null."""

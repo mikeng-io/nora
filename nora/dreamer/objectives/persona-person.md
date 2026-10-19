@@ -1,7 +1,7 @@
 ---
 name: persona-person
 kind: objective
-version: 3
+version: 6
 applies_to: [persona_person_adaptor]
 description: >-
   One person's Persona in one unit, in shadow (design/unified-memory/45 §4).
@@ -136,13 +136,26 @@ revise grounded ones into typed values, leave uncertain ones explicitly unresolv
 No uncited memory conclusion is a settled fact. Preserve correction history by
 revising the held line; name rival claims with conflicts_with for precedence.
 
+fact_key and fact_value are the sole canonical identity claim rendered to other
+models in prompts and search. text is not carried along: it cannot qualify,
+correct or weaken that typed claim. Before writing, read the typed claim alone:
+the cited source must support it as written, independently of text. If an
+uncertainty, condition, intention or temporal qualification determines whether
+it is true and the typed shape cannot carry that qualification, leave the field
+unknown. Retain the original source in Record/event history; do not invent a
+settled typed fact or new JSON keys to preserve it. Old assertions keep their
+source dates; age alone is not a reason to retire every historical fact.
+
 Ground each field in what the cited source actually establishes. Source presence
 and matching authors do not establish meaning. Residence needs evidence of living
 there: weather requests, a visit, mall departure or an unspecified "home" do not
 locate a settled home. Plans are not completed events. A wedding plan whose date
 has passed does not establish marriage, cancellation or a current fiancée status;
 retain the dated intention as historical and leave current status unknown without
-new status evidence. Never guess valid_until or transform a partner into a spouse
+new status evidence. A wedding plan plus later name mentions establishes no
+settled relationship status: do not write spouse, fiancée or even generic partner
+while hiding "planned" or "unknown" in text. A directly stated current partner
+can be partner; an explicitly stated spouse can be spouse. Never guess valid_until or transform a partner into a spouse
 from the calendar. Use only the relationship specificity stated: a colloquial
 partner reference does not establish girlfriend, fiancée or wife.
 
@@ -153,3 +166,23 @@ actual corroboration of that same field, never a later mention of the person's
 name alone. Same-fact text revisions retain original assertion time and grounding
 and do not increment support; changed typed values/modes/effective dates require
 new evidence. Code checks provenance shape and authors, not semantic entailment.
+
+
+For other explicitly stated stable human facts, use fact_key="attribute",
+kind="attribute", mode="told", and fact_value={"name": "height", "value": 178,
+"unit": "cm"}. name is a nonempty lowercase label with spaces/hyphens normalized
+to underscores; never alias an existing dedicated key. value is a nonempty
+string, finite number, boolean or nonempty list of nonempty strings. unit is
+optional except for age and height: both require a finite numeric value (never
+boolean, string or list) and a nonempty source unit. Preserve the unit from
+actual evidence; never invent a unit for ambiguous input or guess conversions.
+No extra keys, nested objects or nulls. This covers height, self-reported age,
+hobbies, pets, vehicles, equipment, websites and capabilities without adding a
+key per topic. It is human Identity only, never inferred personality.
+Self-reported age stays the age asserted at as_of, not a calculated current age
+or an inferred birthday/year. Incidental activity does not establish durable
+ownership: driving a borrowed car or walking a friend's dog is not owning one.
+All common fields keep their dedicated keys and exact types. Preserve stated
+languages, instructions and workplace qualifiers in those fields even when
+outside the examples. The canonical full-claim rule above applies equally to
+fallback attributes: plans, conditions and uncertainty cannot hide in text.

@@ -298,6 +298,9 @@ def _line_payload(
             for c in line.citations
         ],
     }
+    if line.fact_key == "attribute":
+        # The fallback contains no person references; its text is still the shared formatter.
+        payload["fact_value"] = line.fact_value
     if line.part == "hypothesis":
         payload["prediction"] = line.prediction
         payload["prediction_observable"] = line.prediction_observable

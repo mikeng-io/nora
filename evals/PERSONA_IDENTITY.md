@@ -2,13 +2,14 @@
 
 This is deterministic grading of the actual Persona writer, not `tool_selection`
 and not a semantic judge. A draw obtains the existing Subject, restores the normal
-snapshot background, appends declared invented sources using the roster's account,
+snapshot background, marks that restored history complete in the private sandbox,
+appends declared invented sources using the roster's account,
 seeds the held birthday via SqlPersonaStore.persona_write, and calls DreamerRuntime
 with PersonaPersonAdaptor's entity key and evidence reader. It reads
 SqlPersonaStore.account_heads, then selects current typed Identity. Predecessors
 whose stored state still says current are never counted as current heads.
 
-The six invented vectors are in `design/unified-memory/75-typed-identity.md`.
+The eight invented vectors are in `design/unified-memory/75-typed-identity.md`.
 They are private-file synthetic evidence experiments, counted as COUNTERFACTUAL
 when supplied. The committed contracts remain unanchored without the private file.
 No production names, account IDs, messages or audit conclusions belong in Git.
@@ -26,9 +27,27 @@ source clone and pseudonym map (the nora-eval skill gives the lock and setup):
 uv sync --extra evals
 uv run python -m evals.persona_cases /tmp/persona-identity.yaml
 export NORA_EVAL_PERSONA_CASES=/tmp/persona-identity.yaml
-uv run python -m evals persona_identity --print-input birthday_retained
-uv run python -m evals persona_identity --print-input marriage_unknown
+for case in birthday_retained birthday_corrected residence_unknown marriage_unknown partner_unspecified explicit_home_spouse height_age_stated activity_not_ownership; do
+  uv run python -m evals persona_identity --print-input "$case"
+done
 ```
+
+The private writer setup seeds `persona-person:history-boundary` and
+`persona-person:history` at the restored Record head through
+`SqlLanguageStore.advance_watermark` before appending any invented arrival.
+This declares an already-known background, rather than paying to backfill it.
+The production reader then selects the invented arrivals by later Record IDs;
+their original assertion timestamps remain unchanged, including dates before the
+snapshot anchor. No recent watermark or account settlement timestamp filters them.
+The held birthday retains its original citation and assertion date; the session
+clock is the private file's declared counterfactual clock.
+
+Before building an agent, the writer checks every declared synthetic row ID is
+present in the actual production-reader batch passed to the adaptor. Missing or
+unavailable evidence is ERROR with zero model calls, including negative cases.
+It runs the exact checked batch; it neither fabricates a batch nor bypasses
+production history behavior. Only this private writer entry point seeds cursors;
+normal backfill and other eval callers retain their existing behavior.
 
 `--print-input` composes the real instruction store (shared Dreamer doctrine plus
 persona-person objective) and the real adaptor input, including source dates,
@@ -58,9 +77,9 @@ git restore --source=853e8d5a -- \
 The after worktree retains those files from `126bb10f9` (the harness does not edit
 them). This composes the whole source-grounding change: retention semantics,
 objective, and clock/source-date rendering. No fake-before commit is made.
-Record each worktree HEAD, `git diff`, and tree/file hashes. Run the two offline
-inspection commands above on both arms, capture their output, and diff it before
-paying: the after input must contain the new about-person clock, source timestamps
+Record each worktree HEAD, `git diff`, and tree/file hashes. Run all six offline
+inspections above on both arms, capture their output, and diff it before
+paying: every input must contain every declared source; the after input must contain the new about-person clock, source timestamps
 and the amended objective. The input differences, not merely Git refs, prove the
 instrument sees the treatment. Both arms keep the clock-plumbing fix so the
 comparison varies the stated treatment, rather than today's machine clock.
@@ -96,3 +115,51 @@ is the conservative planning bound. No `--allow-long` without root authorization
 Canonical as_of remains the max cited source timestamp ceiling. A structurally
 valid citation is not proof of semantic support; that is precisely what these
 invented stimuli measure in the model's writer output.
+
+
+## Additional-attribute treatment
+
+The original six cases and their grading contracts remain unchanged; two new
+invented vectors combine explicit height plus source-reported age, and reject
+incidental activity as durable ownership. Use the same registered corpus, private
+case generator, production writer and deterministic grader. No model judge or
+second harness is added. Offline tests validate this instrument only; model
+acceptance for the fallback remains UNMEASURED until the root runs both arms.
+
+For this treatment, create two fresh eval worktrees at the additional-attributes
+PR head (record the actual SHA). Both retain that head's eight-case harness and
+private file. In the **before** worktree only, restore from `3c39b39c08967be8eb709422b260f0fe98aa493b`:
+
+```bash
+git restore --source=3c39b39c08967be8eb709422b260f0fe98aa493b -- \
+  nora/domain/persona.py nora/agent/tools.py \
+  nora/dreamer/objectives/persona-person.md
+```
+
+The after arm keeps those files at the PR head. Record HEAD/tree, treatment-file
+hashes and the before diff. Inspect all eight inputs with the loop above before
+spending: verify the declared source rows/dates, source height/age and composed
+objective in both inputs. Run sequentially under the existing host eval lock:
+
+```bash
+uv run python -m evals persona_identity --sample 1 --reasons --positions
+```
+
+Eight cases x one draw x two arms. No paid calls are part of the build. Root may
+select six including controls to fit its operator budget; record every selected
+case, call/spend/runtime receipt and any ERROR separately from FAIL. The generic
+CLI estimate is not a measured writer latency. Root must read the actual live
+budget privately and keep private positions/receipts outside Git.
+
+The remember name, opening paragraph and level are unchanged; argument guidance
+and the schema's fact_key enum changed. Root should measure before/after routing
+with the existing command (same two treatment arms, no model override):
+`uv run python -m evals tool_selection --sample 5 --reasons`.
+No result interpretation moved, so no new tool_reporting arm is required.
+
+The production change consists of the validator/formatter, remember signature and
+argument guidance, Persona objective, and the portal payload/schema addition.
+The domain/tool/portal code needs the normal image rebuild; the objective is
+bind-mounted and becomes live at the next pull. This document authorizes no
+pull, config change, historical write, merge or deploy. Root owns independent
+review, bounded model acceptance and subsequent append-only recovery.
