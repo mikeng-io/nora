@@ -52,6 +52,23 @@ def check_identity(vector: str, receipt: dict[str, Any]) -> tuple[str, ...]:
                       or h["as_of"] != receipt["timestamps"][-1]
                       or set(h["citations"]) != {str(i) for i in receipt["rows"]}):
                 failures.append("profile preference lost deduced source provenance")
+    elif vector in {"profile_endorsed_late", "profile_media_only_late",
+                    "profile_media_only_missing"}:
+        if vector.endswith("missing"):
+            if heads:
+                failures.append("incomplete printed premises established unsupported identity")
+        else:
+            h = exact("food_preferences", ["vegetarian ramen"])
+            if len(heads) != 1:
+                failures.append("profile must establish only its qualified preference")
+            if h:
+                provenance_ok = h["mode"] == "deduced" and h["told_by"] is None
+                if vector == "profile_endorsed_late":
+                    provenance_ok |= (h["mode"] == "told"
+                                      and h["told_by"] == receipt["person"])
+                if (not provenance_ok or h["as_of"] != receipt["timestamps"][-1]
+                        or set(h["citations"]) != {str(i) for i in receipt["rows"]}):
+                    failures.append("v2 profile preference lost source provenance")
     elif vector == "residence_unknown":
         if by_key.get("residence"):
             failures.append("incidental location established residence")

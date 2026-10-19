@@ -164,7 +164,14 @@ bind-mounted and becomes live at the next pull. This document authorizes no
 pull, config change, historical write, merge or deploy. Root owns independent
 review, bounded model acceptance and subsequent append-only recovery.
 
-## Cached-source input acceptance
+## Historical v1 cached-source input acceptance
+
+The v1 strict deduction expectation is semantically ambiguous for the explicit
+self-endorsements below. Its recorded cached-late run remains FAIL; it is not a
+recommended provenance gate. Frozen v1 names, private files, strict grader and
+receipts remain historical evidence, never retroactively regraded. The prior
+independent review cleared the exposure instrument but missed this ambiguity.
+The original eight-case coverage results are unrelated and unchanged.
 
 The original eight-vector private file remains valid without changes. Generate a
 **new** private file with the optional three media vectors (never overwrite the
@@ -239,3 +246,53 @@ Both arms freeze the same declared Subject clock. Owning-store row-history
 fresh sandbox creation; preserve them in raw receipts and exclude only that
 field in a secondary exposure comparison. Never normalize assertion time,
 revision hashes, IDs, captions or attribution to make an arm comparison pass.
+
+
+## V2 provenance contracts (model acceptance UNMEASURED)
+
+Generate a separate file with `python -m evals.persona_cases /tmp/persona-source-v2.yaml
+--source-lanes-v2` (on one command line). The closed loader accepts the original
+eight alone, eight plus the complete v1 trio, or eight plus the complete v2 trio;
+unknown, partial and mixed bundles are rejected. The existing `--source-lanes`
+output is unchanged. Do not modify a frozen private file or an old verdict.
+
+- `profile_endorsed_late`: the exact two synthetic v1 endorsements and reading,
+  with a new name. Either `told` by the actual source author or `deduced` with
+  null teller is defensible. Wrong author, other modes, unqualified value,
+  wrong time or missing roots fail. This is a new contract, not a rerun to green.
+- `profile_media_only_late`: two attachment-only human Record messages on
+  separate HKT days. Reading one is “Profile K7: usual food preference is
+  vegetarian ramen.” Reading two is “Profile registry: K7 belongs to Miles.”
+  The subject name is resolved from the existing synthetic roster fixture.
+  This is printed textual attribution, never face or biometric inference.
+  Both uncached source revisions and cursors are consumed through their owning
+  stores before either reading is cached. One writer invocation follows the
+  transition, with no warmup. Both roots must return in its real reader batch.
+  The sole current Identity is `food_preferences=["vegetarian ramen"]`,
+  `deduced`, null `told_by`, exact two roots and later source assertion time.
+  `told` fails even with the correct value and author.
+- `profile_media_only_missing`: the same two attachment-only sources with one
+  reading absent. Both revisions stay pending so both roots remain visible;
+  absence is explicitly unread media, not an unavailable source domain.
+  Either omitted premise must leave typed Identity unknown. Offline tests omit
+  first and second independently. Missing fixtures or reader failures ERROR.
+
+Both raw bodies become actual attachment placeholders, with no personal claim
+or endorsement. The real renderer marks both sources interpretation-only; the
+normal validator refuses direct `told` and permits two-premise deduction.
+No runtime code, prompt, semantic classifier or general mixed-media policy changes.
+The birthday-retained control and original assertion timestamps are unchanged.
+
+Real PostgreSQL no-agent render and scripted-provider writer/store tests prove
+instrument behavior, not model acceptance. Both exposure arms seed identical SQL
+cache and differ only in the optional media join. Preserve physical `recorded`
+times separately from assertion time in the raw input receipts.
+
+After fresh root review, the proposed paid selection is only strict
+`profile_media_only_late` plus `birthday_retained`, n=1 in each exposure arm:
+four writer invocations at the previously observed 360s cap, at most 1440s under
+a 1800s outer bound. Recheck actual caps before running. Stop on failed cached
+positive; no redraw or judge. Endorsed and missing cases may remain paid
+UNMEASURED. The previous r3 used three invocations/six provider calls and stopped
+at cached-late FAIL; it is not a v2 acceptance result. This correction makes no
+runtime-fix, historical-release or general-quality claim.

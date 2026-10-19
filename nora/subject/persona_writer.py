@@ -23,6 +23,9 @@ from nora.subject.dreaming import _samples
 from nora.subject.knowledge import arrive
 from nora.subject.obtain import Subject
 
+SOURCE_VECTORS_V2 = ("profile_endorsed_late", "profile_media_only_late",
+                     "profile_media_only_missing")
+
 SOURCE_VECTORS = ("profile_cached", "profile_missing", "profile_late")
 
 
@@ -33,7 +36,8 @@ def validate_sources(sources: object, now_ms: int, *, vector: str | None = None)
     for source in sources:
         if (not isinstance(source, dict) or set(source) not in (
                 {"body", "ts"}, {"body", "ts", "attachment"})
-                or not isinstance(source["body"], str) or not source["body"].strip()
+                or not isinstance(source["body"], str)
+                or (not source["body"].strip() and "attachment" not in source)
                 or type(source["ts"]) is not int or source["ts"] > now_ms):
             raise ValueError("private persona sources require nonempty body and timestamp <= clock")
         if "attachment" in source:
@@ -44,10 +48,20 @@ def validate_sources(sources: object, now_ms: int, *, vector: str | None = None)
                         (not isinstance(a["reading"], str) or not a["reading"].strip()))
                     or (a["late"] and a["reading"] is None)):
                 raise ValueError("attachment requires reading (text or null) and late bool")
-    if vector in SOURCE_VECTORS:
-        if (len(sources) != 2 or "attachment" not in sources[0]
+    if vector in {"profile_media_only_late", "profile_media_only_missing"}:
+        if (len(sources) != 2 or any(s["body"] != "" or "attachment" not in s for s in sources)
+                or sources[0]["ts"] == sources[1]["ts"]
+                or any(s["attachment"]["late"] != (vector == "profile_media_only_late")
+                       for s in sources)
+                or sum(s["attachment"]["reading"] is None for s in sources)
+                   != (1 if vector.endswith("missing") else 0)):
+            raise ValueError("media-only vector requires two premises and declared readings")
+    elif vector in (*SOURCE_VECTORS, "profile_endorsed_late"):
+        if (len(sources) != 2 or any(not s["body"].strip() for s in sources)
+                or "attachment" not in sources[0]
                 or "attachment" in sources[1]
-                or sources[0]["attachment"]["late"] != (vector == "profile_late")
+                or sources[0]["attachment"]["late"] != (
+                    vector in {"profile_late", "profile_endorsed_late"})
                 or (sources[0]["attachment"]["reading"] is None) != (vector == "profile_missing")):
             raise ValueError("source vector requires declared media treatment and caption control")
     elif vector is not None and any("attachment" in source for source in sources):
@@ -101,12 +115,14 @@ async def run_writer(
     try:
         media = SqlMediaObjectStore(engine)
         inputs = SqlPersonaInputs(engine)
+        delayed = []
         for source in sources:
             attachment = source.get("attachment")
             blob = (MediaBlob(sha256=hashlib.sha256(
                 (source["body"] + str(source["ts"])).encode()).hexdigest(),
                 media_type="image/png", size=1) if attachment else None)
-            body = source["body"] + (f" [image {blob.sha256[:6]}]" if blob else "")
+            body = source["body"] + ((" " if source["body"] else "")
+                                     + f"[image {blob.sha256[:6]}]" if blob else "")
             rows.append(await arrive(subject, body, now_ms=source["ts"], person=person,
                                      media_blobs=(blob,) if blob else ()))
             if attachment and attachment["late"]:
@@ -130,12 +146,15 @@ async def run_writer(
                 if any(r.source == initial[0].source for r in pending):
                     raise ValueError("late fixture initial revision did not settle")
             if attachment and blob is not None and attachment["reading"] is not None:
-                if not await media.comprehend(sha256=blob.sha256, title="Synthetic profile",
-                        description=attachment["reading"], content="", model="eval-cached-fixture"):
-                    raise ValueError("cached reading seed unavailable")
-                obj = await media.get(sha256=blob.sha256)
-                if obj is None or obj.description != attachment["reading"]:
-                    raise ValueError("cached reading seed readback failed")
+                delayed.append((blob, attachment))
+        # Consume every uncached late source before publishing any reading.
+        for blob, attachment in delayed:
+            if not await media.comprehend(sha256=blob.sha256, title="Synthetic profile",
+                    description=attachment["reading"], content="", model="eval-cached-fixture"):
+                raise ValueError("cached reading seed unavailable")
+            obj = await media.get(sha256=blob.sha256)
+            if obj is None or obj.description != attachment["reading"]:
+                raise ValueError("cached reading seed readback failed")
     finally:
         await engine.dispose()
     engine = create_sql_engine(subject.database_url)
@@ -189,7 +208,7 @@ async def run_writer(
                 f"writer did not settle readably: {result}; revision {before} -> {after}"
             )
         return {
-            "trace_id": current_trace_id(), "exposure": exposure,
+            "trace_id": current_trace_id(), "exposure": exposure, "person": person,
             "heads": [asdict(h) for h in heads], "held": [asdict(h) for h in held],
             "rows": rows, "timestamps": [s["ts"] for s in sources],
             "revision_before": before[0], "revision_after": after[0],
