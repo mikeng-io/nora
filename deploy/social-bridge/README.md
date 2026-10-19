@@ -28,21 +28,27 @@ docker0 is host-internal (never the LAN), and it is the address
 `host.docker.internal` resolves to inside the container. Neither bind ever
 appears on a LAN interface.
 
-**It runs the CHECKOUT's code** — `uv run --project /home/norty/workspace/nora
+**It runs the CHECKOUT's code** — `uv run --project ~/workspace/nora
 python -m nora.infra.social` — so it tracks `master` the same way the running
 container's bind mounts do: an edit landing on `master` is a deploy here after
 a restart. It reads no `config.toml`; env vars only (`OPENCLI_BIN`,
 `OPENCLI_PROFILE` (default `nora`: every read names Nora's Browser Bridge
 profile, never OpenCLI's default, which is the operator's browser),
 `NORA_SOCIAL_BRIDGE_PORT`, `NORA_SOCIAL_BRIDGE_HOST`). `OPENCLI_BIN` must name
-the real binary (`/home/norty/.local/bin/opencli`) — the systemd USER service
+the real binary (the template uses `%h/.local/bin/opencli`, expanded by systemd
+to an absolute path) — the systemd USER service
 environment does not carry the interactive shell's PATH, so a bare `opencli`
 fails with `FileNotFoundError`.
 
-Install (systemd **user** service, like the desktop/Chrome units):
+Install (systemd **user** service, like the desktop/Chrome units). Commands use
+the reference checkout `~/workspace/nora`; substitute your path. The service
+template uses systemd `%h` for the deployment user's home directory, including
+`Environment=OPENCLI_BIN=%h/.local/bin/opencli`. Keep `%h` in unit files:
+systemd does not expand shell `$HOME` references in `Environment=`. Adjust the
+Node binary path to match your OpenCLI installation before enabling it:
 
 ```bash
-systemctl --user link /home/norty/workspace/nora/deploy/social-bridge/nora-social-bridge.service
+systemctl --user link ~/workspace/nora/deploy/social-bridge/nora-social-bridge.service
 systemctl --user enable --now nora-social-bridge
 curl -s http://127.0.0.1:19826/health    # {"ok": true}
 ```

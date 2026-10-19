@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          version: '0.11.18'
+          python-version: '3.12'
+          enable-cache: false
+      - run: uv sync --frozen --extra evals
+      - name: Static checks
+        run: make lint typecheck imports
+      - name: Architecture and documentation contracts
+        run: >-
+          uv run pytest -q
+          tests/architecture/test_contribution_conventions.py
+          tests/architecture/test_contribution_content.py
+          tests/architecture/test_public_repository_settings.py
+          tests/architecture/test_release_scope.py
+          tests/architecture/test_release_config_matches_the_repo.py
+          tests/architecture/test_doc_references_resolve.py
+          tests/test_architecture_doc.py tests/test_docs.py
+          tests/test_boundaries.py tests/test_deploy_assets.py

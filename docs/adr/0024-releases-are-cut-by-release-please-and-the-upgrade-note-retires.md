@@ -9,6 +9,23 @@
   semver" scheme. Retires R-42.
 - **Index:** DEC-314
 
+## Amendment: unattended publication (2026-10-19)
+
+The operator requests automatic releases for real code changes and free public
+repository features. A repository-scoped GitHub App now queues Release Please's
+PR for auto-merge after required CI/security checks. A runtime-path and commit-type
+check prevents documentation/design-only work from opening/updating a release PR;
+those directories are also excluded from release notes. Runtime doctrine and
+skills qualify because they change behavior. No deployment is triggered. The
+manual path remains while private or until the App is configured.
+
+This replaces the manual approval in original Decision 2 below. The trade-off is
+that a checked code merge can now publish without another human action. Branch
+rules and an App token (rather than bypassing checks with the workflow token)
+are required. See `../github-maintenance.md` for setup and GitHub's documented
+bot-token restrictions. Reopen this decision if an ineligible change publishes a
+version or a release PR bypasses its required checks.
+
 ## Context
 
 Read from the tree on 2026-10-16:

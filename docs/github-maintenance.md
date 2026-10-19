@@ -1,0 +1,101 @@
+# GitHub maintenance
+
+Nora uses GitHub Free features for a public repository: standard Ubuntu-hosted
+Actions runners, CodeQL, dependency review, Dependabot alerts/security updates,
+secret scanning/push protection, private vulnerability reports, branch protection
+and tag rules. No paid Advanced Security subscription, larger runner, external
+scanner subscription or deployment runner is required. Standard public runner
+minutes are free; Actions artifacts/cache and larger runners have separate billing.
+These workflows upload no custom artifacts or caches. GitGuardian is an existing
+optional integration, not a required paid dependency.
+
+References: [Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions),
+[repository security](https://docs.github.com/en/code-security/getting-started/quickstart-for-securing-your-repository),
+[dependency review](https://docs.github.com/en/code-security/concepts/supply-chain-security/dependency-review).
+
+## Activation after publication
+
+Publishing is a separate owner action. This command refuses private repositories
+and never changes visibility, enables a paid license or changes billing:
+
+```bash
+python3 scripts/configure_public_github.py
+python3 scripts/configure_public_github.py --apply
+```
+
+Run it with an owner/admin `gh` login, after these workflows are merged. It enables
+native secret scanning/push protection, Dependabot security updates and private
+vulnerability reporting; restricts Actions to GitHub-owned actions plus the two
+named external actions; keeps workflow tokens read-only by default; requires PRs,
+resolved conversations and PR-content, CI, dependency-review and four CodeQL checks;
+blocks force pushes/deletion on master, including admins; and prevents updating
+or deleting release tags. It allows merge commits only and enables auto-merge.
+No extra human approval is required for a solo-maintained repository. The check
+names are bound to the GitHub Actions App, rather than arbitrary status producers.
+The release App has no branch-rule bypass.
+
+CodeQL and dependency review deliberately skip while private, avoiding paid
+private-repository security features. After publication, manually dispatch Security
+and open a small PR to establish and verify all required check names. The existing
+fast CI still runs while private. It checks static contracts and selected tests;
+it does not run the complete suite. Keep the local full gate before landing code.
+
+Native scanning detects supported credential patterns. The completed private PII
+scrub and local identifier gate remain separate; never upload the private denylist
+to Actions. Keep outside PRs on hosted runners, with no deployment credentials or
+host access. In Actions settings, require approval for **all outside collaborators**
+before their workflows run; never give fork PR workflows write tokens or secrets.
+
+## Automatic releases
+
+Install a **free GitHub App**, restricted to this repository. Give it repository
+Contents: read/write, Pull requests: read/write and Administration: read-only.
+The last permission lets the release job verify branch protection before queuing
+a merge; it cannot change that protection. Store its App ID as Actions variable
+`RELEASE_APP_ID` and its PEM private key as Actions secret `RELEASE_APP_PRIVATE_KEY`.
+Use GitHub Settings or `gh secret set` interactively; never paste the key into an
+issue, chat, tracked file or workflow log. No personal token is needed.
+
+Release Please creates/updates the version PR. The App queues that PR for a real
+merge commit; required checks must pass before GitHub merges it. The resulting
+master run publishes the tag and GitHub Release. Installing this App does not
+permit deployment. Without the App, the existing manual release-PR workflow
+continues and prints a setup notice. Automatic merging is disabled while private
+and fails if branch protection does not require CI.
+
+Only `feat`, `fix`, `security`, `perf`, `change`, `doctrine` and `revert` commits
+with changes to runtime inputs qualify for creating/updating a release PR.
+Documentation, design, tests, CI and housekeeping alone do not. Runtime doctrine
+and runtime skills count because they change Nora's behavior. The release scope
+check reads actual changed paths since the preceding release, not just the most
+recent push; a qualifying pending change can therefore still release alongside a
+later documentation commit. Conventional Commit subjects determine semantic
+version bumps. Documentation/design directories are also excluded from release
+notes, even if a commit was accidentally given a visible type. Use `docs`/`design`
+for all such commits, including root Markdown files.
+
+The App is required for unattended PR checks: PRs created with `GITHUB_TOKEN`
+can await workflow approval, and its pushes normally do not trigger another
+workflow. [GitHub token behavior](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
+
+## Deployment documentation
+
+`nora-host` is a placeholder SSH alias defined by each operator; all paths and
+access details are installation-specific. Public deployment documentation describes
+the portable Compose procedure. Keep actual host inventory, account mappings,
+network addresses and private installation notes outside the repository. Releases
+do not connect to a deployment host or automatically deploy.
+
+## Contribution content checks
+
+`Contribution content` validates PR/issue metadata with default-branch code. The
+required `PR content` check is published on the actual PR head, including after
+title/body edits. Branch protection requires it after running the owner setup
+command above. Issue completeness and spelling/style suggestions are advisory.
+These use standard hosted runners and an offline spelling dictionary, with no
+paid service, model calls or production secrets. See CONTRIBUTING.md for the rules.
+
+For read-back or repair, dispatch the workflow with `kind=pr` or `kind=issue` and
+the contribution number. This workflow must first exist on master; its initial
+implementation PR is tested by the ordinary CI before merge, then dispatched to
+verify the live check after merge. Keep manual dispatch on master.
