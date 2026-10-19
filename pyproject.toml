@@ -1,6 +1,6 @@
 [project]
 name = "nora"
-version = "6.0.0"
+version = "6.1.0"
 description = "A private ambient Signal group agent (Strands-based)"
 requires-python = ">=3.11"
 dependencies = [
