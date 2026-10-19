@@ -807,10 +807,11 @@ class MemorySearch:
     def __init__(
         self, index: MemoryIndexRead, metrics: Any, *,
         embedder: QueryEmbedder | None = None, model: str | None = None,
-        drain_seconds: float | None = None,
+        drain_seconds: float | None = None, persona_render: bool = False,
     ) -> None:
         if (embedder is None) != (model is None):
             raise ValueError("an embedder and its model fingerprint come together")
+        self._persona_render = persona_render
         self._index = index
         self._metrics = metrics
         self._embedder = embedder
@@ -847,6 +848,7 @@ class MemorySearch:
             scope = scope_for(target, own_room=own_room, social_off=social_off)
             if scope is None:
                 return self._count("unavailable")
+            scope = replace(scope, persona_render=self._persona_render)
             only = MemoryFilter(
                 kinds=tuple(dict.fromkeys(kinds)), since_ms=since_ms, until_ms=until_ms,
                 person=person_id or None,

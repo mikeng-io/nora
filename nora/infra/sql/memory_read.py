@@ -204,6 +204,7 @@ def _in_scope(n: Any, scope: MemoryScope) -> sa.ColumnElement[bool]:
     return sa.and_(
         n.c.state == "live",
         n.c.kind.not_in(HUB_KINDS),
+        sa.or_(n.c.kind != "persona_line", sa.literal(scope.persona_render)),
         sa.or_(
             n.c.unit == sa.any_(_array(scope.units)),
             n.c.origin_room == sa.any_(_array(scope.rooms)),

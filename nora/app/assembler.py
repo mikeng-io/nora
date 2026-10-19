@@ -14,7 +14,7 @@ so a shared helper in the same package needs no new edge in the import graph.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime
 
 from nora.agent.lineage import LineagePolicy
@@ -27,6 +27,7 @@ from nora.domain.ports import (
     CultureReader,
     MemoryStore,
     RecordStore,
+    RosterSource,
     StandingStore,
 )
 from nora.domain.quote_window import QuoteWindow
@@ -78,6 +79,8 @@ def build_assembler(
     memory_search: MemorySearch | None = None,
     clock: Callable[[], datetime] | None = None,
     persona: PersonaHeads | None = None,
+    rosters: Mapping[str, RosterSource] | None = None,
+    self_ids: frozenset[str] = frozenset(),
 ) -> TranscriptInjection:
     return TranscriptInjection(
         audit=audit, memory=memory, persons=persons,
@@ -140,5 +143,5 @@ def build_assembler(
         # reader. `None` until `[persona] render` is on beside `[persona]
         # enabled`, and in every harness that wires none — the turn then
         # renders the Honcho and prose-culture blocks it always has.
-        persona=persona,
+        persona=persona, rosters=rosters, self_ids=self_ids,
     )

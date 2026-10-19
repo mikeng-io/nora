@@ -278,6 +278,8 @@ class MemoryScope:
     # Required, keyword-only and with no default: a scope that forgot the
     # opt-outs would read them all (fail open), so every builder must say.
     social_off: frozenset[str] = field(kw_only=True)
+    # Read-time rollback also hides nodes projected by an earlier live rebuild.
+    persona_render: bool = False
 
     def rooms_listing(self, person: str) -> tuple[str, ...]:
         """The scope's rooms that list `person`, for the listed-room rule."""
@@ -462,6 +464,8 @@ def in_scope(node: IndexedNode, scope: MemoryScope) -> bool:
     suite holds the two to the same answers). A hub never passes: it has no
     scope, and is reached only as a direct neighbour."""
     if node.kind in HUB_KINDS or node.state != "live":
+        return False
+    if node.kind == "persona_line" and not scope.persona_render:
         return False
     placed = (
         (node.unit is not None and node.unit in scope.units)

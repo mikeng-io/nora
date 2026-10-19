@@ -2177,6 +2177,7 @@ async def build_dependencies(
     memory_search = (
         MemorySearch(
             memory_index_reader, metrics,
+            persona_render=cfg.persona.enabled and cfg.persona.render,
             # `[memory_index] embed`: dense and exact seeds, the
             # lexical seed only as the fallback; off, every answer is
             # the fallback's `partial`.
@@ -2198,6 +2199,7 @@ async def build_dependencies(
     assembler = build_assembler(
         cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
         memory_search=memory_search, clock=clock,
+        rosters=rosters, self_ids=registry.self_aliases(),
         # `None` while `[notes] enabled = false`. `policy=allowlist` is the
         # SAME policy.toml instance the ingest pipeline and `EngagementPipeline`
         # are given below — the assembler needs it for one thing only, naming
@@ -3370,6 +3372,7 @@ async def build_dependencies(
         fire_path = FirePath(
             persons=persons, records=audit, memory=memory,
             lineage=lineage,
+            self_ids=registry.self_aliases(),
             media_join=media_join,
             # The shared quote-window resolver (DEC-195). The SAME instance
             # `build_assembler` above holds — a fire turn reads the same

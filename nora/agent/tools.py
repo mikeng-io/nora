@@ -273,7 +273,7 @@ from ..obs.tracing import annotate, current_span_ids, span
 from .arithmetic import evaluate as evaluate_expression
 from .character_read import account_key, person_named, room_named, rooms_listing
 from .egress import scan_reply
-from .lineage import LineagePolicy, entry_permits
+from .lineage import LineagePolicy, entry_permits, persona_lines_for
 
 # Re-exported, explicitly (`as`-aliased to themselves so ruff's F401 reads
 # them as intentional, not dead): `tests/test_media_fetch.py` and
@@ -5915,7 +5915,9 @@ def build_tool_specs(
                 log.exception("character_read (persona) failed")
                 _record(metrics, "character_read", "unavailable", reason="store")
                 return {"status": "unavailable", "note": _CHARACTER_OFF}
-            excluded = set(here.persons or ())
+            target = lineage.render_room(
+                platform=room.platform, conversation_id=bound_conversation_id,
+            )
 
             def name_of(person_id: str) -> str:
                 named = persons.by_person.get(person_id)
@@ -5936,10 +5938,7 @@ def build_tool_specs(
                             if owner == pid
                         })),
                     )
-                kept = tuple(
-                    line for line in lines
-                    if not excluded.intersection(line.exclude_persons)
-                )
+                kept = await persona_lines_for(lines, target, room)
                 rendered = account_text(
                     PersonaView(entity=entity, of=of, lines=kept, authored=authored),
                     name_of=name_of, now=now_fn(),

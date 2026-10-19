@@ -72,7 +72,7 @@ from datetime import datetime
 from typing import Any
 
 from nora.agent.guards import ReplyGuard
-from nora.agent.lineage import LineagePolicy
+from nora.agent.lineage import LineagePolicy, persona_lines_for
 from nora.agent.outbound import OutboundComposer
 from nora.agent.prefill import (
     build_prefill,
@@ -570,6 +570,7 @@ class FirePath:
         media_join: MediaJoin | None = None,
         quote_window: QuoteWindow | None = None,
         rosters: Mapping[str, RosterSource] | None = None,
+        self_ids: frozenset[str] = frozenset(),
         preview_source: LinkPreviewSource | None = None,
         llm_state: Any = None,
         tool_call_log_store: ToolCallLogStore | None = None,
@@ -730,6 +731,7 @@ class FirePath:
         # all. Delivering to the wrong platform is catastrophic; failing to
         # read a roster is merely blind, and blind-but-saying-so is allowed.
         self._rosters: Mapping[str, RosterSource] = rosters or {}
+        self._persona_self_ids = self_ids
         # The link-preview fetcher, `None` unless `[preview].enabled` — see the
         # engagement pipeline's identical field for why this one defaults while
         # `deliver.build`'s `composer` does not.
@@ -1482,7 +1484,14 @@ class FirePath:
             return ()
         reader = self._persona_reader
         members = self._room_members(occasion)
-        listed = {r.person_id for r in members}
+        target = (self._lineage or LineagePolicy.from_policy(self._policy)).render_room(
+            platform=occasion.platform, conversation_id=occasion.conversation_id,
+        )
+        room = Room(
+            platform=occasion.platform, conversation_id=occasion.conversation_id,
+            roster_source=self._rosters.get(occasion.platform), persons=self._persons,
+            tagger=ref, self_ids=self._persona_self_ids,
+        )
 
         async def one(
             key: str, *, entity: str, of: str, stage: str,
@@ -1495,10 +1504,7 @@ class FirePath:
             )
             if lines is None:
                 return None
-            kept = tuple(
-                line for line in lines
-                if not listed.intersection(line.exclude_persons)
-            )
+            kept = await persona_lines_for(lines, target, room)
             return PersonaView(entity=entity, of=of, lines=kept, authored=authored)
 
         views: list[PersonaView] = []

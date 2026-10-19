@@ -20,12 +20,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Any, NamedTuple, Protocol
 
 from nora.agent.clock import local_now
-from nora.agent.lineage import LineagePolicy
+from nora.agent.lineage import LineagePolicy, persona_lines_for
 from nora.agent.memory_search import (
     PREFETCH_TOKENS,
     MemorySearch,
@@ -33,6 +33,7 @@ from nora.agent.memory_search import (
     render_packet,
     room_label,
 )
+from nora.agent.room import Room
 from nora.domain.computer_context import ComputerView
 from nora.domain.culture import (
     CultureRevision,
@@ -58,6 +59,7 @@ from nora.domain.ports import (
     EngagementRequest,
     MemoryStore,
     RecordStore,
+    RosterSource,
     StandingStore,
 )
 from nora.domain.quote_window import QuoteWindow
@@ -158,7 +160,11 @@ class TranscriptInjection:
         memory_search: MemorySearch | None = None,
         clock: Callable[[], datetime] | None = None,
         persona: PersonaHeads | None = None,
+        rosters: Mapping[str, RosterSource] | None = None,
+        self_ids: frozenset[str] = frozenset(),
     ) -> None:
+        self._rosters = rosters or {}
+        self._self_ids = self_ids
         self._audit = audit
         # `<recalled>`, the pre-fetch: the SAME retrieval service the tool
         # registry's `memory_search` holds, `None` on the Honcho surface
@@ -572,7 +578,14 @@ class TranscriptInjection:
         if convo is None or not convo.unit:
             return ()
         members = self._room_members(msg)
-        listed = {r.person_id for r in members}
+        target = (self._lineage or LineagePolicy.from_policy(self._policy)).render_room(
+            platform=msg.platform, conversation_id=msg.conversation_id,
+        )
+        room = Room(
+            platform=msg.platform, conversation_id=msg.conversation_id,
+            roster_source=self._rosters.get(msg.platform), persons=self._persons,
+            tagger=ref, self_ids=self._self_ids,
+        )
 
         async def one(
             key: str, *, entity: str, of: str, stage: str,
@@ -584,10 +597,7 @@ class TranscriptInjection:
             )
             if lines is None:
                 return None
-            kept = tuple(
-                line for line in lines
-                if not listed.intersection(line.exclude_persons)
-            )
+            kept = await persona_lines_for(lines, target, room)
             return PersonaView(entity=entity, of=of, lines=kept, authored=authored)
 
         views: list[PersonaView] = []

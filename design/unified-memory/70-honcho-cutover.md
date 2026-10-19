@@ -34,7 +34,10 @@ outage still turns `healthy` false), `ensure_workspace` /
 `foreign_workspaces` at startup, workspace routing, and both eval seeding
 sites. That is the rollback: until step 9 lands, `render = false` plus a
 recreate returns every prompt to exactly the pre-switch shape, because no
-Honcho path was deleted.
+Honcho path was deleted. Retrieval also reads the switch at the existing
+scope boundary: `render = false` excludes `persona_line` from every index
+read, including prefetch and tool search, even after an earlier live rebuild.
+Rebuild may project shadow rows; projection alone never makes them readable.
 
 ## 3. The flip (operator, on `norty`)
 

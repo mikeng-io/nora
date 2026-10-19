@@ -597,3 +597,26 @@ async def test_every_read_gates_a_tagged_place_by_presence_and_keeps_its_item(
     reached = await index.neighbours([("social", "instagram:1"), ("social", "instagram:2")], SCOPE)
     assert {nb.node.key for nb in reached} == kit_place
     assert await index.neighbours([("social", "instagram:1")], NO_PRESENCE) == []
+
+
+async def test_persona_render_switch_hides_persisted_nodes_on_every_read(load: Load) -> None:
+    persona = IndexedNode("persona_line", "p1", "lantern picnic", 10, unit="u1",
+                          persons=("kit",))
+    note = IndexedNode("note", "control", "lantern picnic", 9, unit="u1", persons=("kit",))
+    index = await load([persona, note, IndexedNode("person", "kit")], [
+        ("persona_line", "p1", "about", "person", "kit"),
+        ("note", "control", "about", "person", "kit"),
+        ("note", "control", "cites", "persona_line", "p1"),
+    ], vectors={n.key: (M, _unit((0, 1.0))) for n in (persona, note)})
+    for render in (True, False, True):
+        scope = replace(SCOPE, persona_render=render)
+        want = {note.key, persona.key} if render else {note.key}
+        assert {s.node.key for s in await index.seed(["lantern"], scope, limit=10)} == want
+        assert {s.node.key for s in await index.exact(
+            [ExactTerm("lantern")], scope, limit=10)} == want
+        assert {s.node.key for s in await index.dense(
+            _unit((0, 1.0)), scope, model=M, limit=10)} == want
+        assert {n.key for n in await index.about("kit", scope, limit=10)} == want
+        found = await index.neighbours([note.key], scope)
+        assert (persona.key in {n.node.key for n in found}) == render
+        assert in_scope(persona, scope) == render

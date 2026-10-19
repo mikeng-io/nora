@@ -54,7 +54,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, tzinfo
 from typing import Any, Protocol
 
-from nora.agent.lineage import LineagePolicy, derived_view, visible_sections
+from nora.agent.lineage import LineagePolicy, derived_view, excluded, visible_sections
 from nora.agent.room import RoomView
 from nora.agent.whereis import Circle, presence_audience
 from nora.domain.blocks import speaker_name
@@ -370,32 +370,21 @@ def unit_self_persona_reader(
     the unit) on the switch's account (45 §5). `None` while `[persona] render`
     is off.
 
-    The exclude filter runs HERE, on the way out: the session's audience is
-    every room of the unit, so a line whose `exclude_persons` names anyone ANY
-    room of the unit lists is dropped — and a `persons = "*"` room lists
-    nobody enumerable, so with one in the unit every excluded line is dropped
-    (the unknown side denies, as the grounder's lineage reads do).
+    The session can reach every room of the unit but has no live roster to
+    clear an exclusion. The shared exclusion predicate therefore withholds
+    excluded lines, as the grounder's other lineage reads do.
     """
     if persona is None:
         return None
 
     async def read(unit: str) -> tuple[PersonaLine, ...]:
-        listed: set[str] = set()
-        open_room = False
-        for conv in policy.conversations:
-            if conv.unit != unit:
-                continue
-            if conv.persons is None:
-                open_room = True
-            else:
-                listed |= conv.persons
+        lineage = LineagePolicy.from_policy(policy)
+        targets = tuple(lineage.render_room(platform=c.platform, conversation_id=c.primary_id)
+                        for c in policy.conversations if c.unit == unit and c.primary_id)
         lines = await persona.account_heads(key=nora_character_key(unit))
-        return tuple(
-            line for line in lines
-            if line.exclude_persons == () or (
-                not open_room and not listed.intersection(line.exclude_persons)
-            )
-        )
+        return tuple(line for line in lines if not line.exclude_persons or (
+            targets and all(not excluded(line.exclude_persons, target) for target in targets)
+        ))
 
     def gated(unit: str) -> Awaitable[tuple[PersonaLine, ...]] | None:
         if not policy.shows_self_to_unit(unit):

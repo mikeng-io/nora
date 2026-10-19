@@ -159,6 +159,8 @@ def build_offline_pipeline(
         # `<persona>`, the switch (45 §5) — `None`, as `culture`: no Persona
         # store here, so the pre-switch blocks render.
         persona=None,
+        rosters={adapter.platform: roster_source} if roster_source else {},
+        self_ids=frozenset(),
         # `<lessons>` (L5) — `None`, as `culture`: no store here, and the
         # eval subject seeds lessons through its own sandbox.
         lessons=None,
@@ -279,6 +281,7 @@ def build_offline_pipeline(
             timeout_seconds=cfg.heartbeat.timeout_seconds,
             clock=lambda: datetime.now(UTC),
             rosters={adapter.platform: roster_source} if roster_source else {},
+            self_ids=frozenset(),
             preview_source=None,
             llm_state=None,
             tool_call_log_store=None,
