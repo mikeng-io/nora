@@ -700,7 +700,8 @@ class PersonaPersonAdaptor:
             size = len(json.dumps({"state": item_revision.state,
                 "properties": item_revision.properties,
                 "roots": [(x.row.id, x.row.body, x.row.media_json) for x in item_revision.roots]},
-                ensure_ascii=False))
+                ensure_ascii=False)) + len(item_revision.episode.text
+                                           if item_revision.episode is not None else "")
             if used.get(item_revision.domain, 0) + size > SOURCE_BLOCK_CHARS:
                 continue
             used[item_revision.domain] = used.get(item_revision.domain, 0) + size
@@ -710,6 +711,7 @@ class PersonaPersonAdaptor:
         messages.extend(roots.values())
         mentions = [m.message for m in batch if isinstance(m, Mention)]
         episodes = [e for e in batch if isinstance(e, Episode)]
+        episodes.extend(r.episode for r in selected if r.episode is not None)
         social = [m for m in batch if isinstance(m, PersonSocialItem)]
         social.extend(r.social for r in selected if r.social is not None)
         if pk is None:
@@ -816,11 +818,14 @@ class PersonaPersonAdaptor:
             used = {}
             for candidate in selected:
                 size = sum(len(bodies.get(x.row.id, "")) for x in candidate.roots)
+                size += len(candidate.episode.text if candidate.episode is not None else "")
                 if used.get(candidate.domain, 0) + size > SOURCE_BLOCK_CHARS:
                     continue
                 used[candidate.domain] = used.get(candidate.domain, 0) + size
                 actual.append(candidate)
             selected = actual
+            episodes = [e for e in episodes if any(
+                r.episode is e for r in selected) or e in batch]
             rendered_ids = {x.row.id for r in selected for x in r.roots}
             visible = {i: m for i, m in visible.items() if i in rendered_ids
                        or i in cited_ids or i in dispute_ids}

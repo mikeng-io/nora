@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from nora.domain.culture import RoomMessage
+from nora.domain.culture import Episode, RoomMessage
 from nora.domain.social_stream import PersonSocialItem, RecordedCounts
 
 
@@ -34,3 +34,4 @@ class PersonSourceRevision:
     cache_ready: bool = False
     media_state: str = "not_applicable"
     ready_handles: tuple[str, ...] = ()
+    episode: Episode | None = None

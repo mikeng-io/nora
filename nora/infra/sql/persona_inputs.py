@@ -16,7 +16,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB, aggregate_order_by, insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.culture import RoomMessage
+from nora.domain.culture import Episode, RoomMessage
 from nora.domain.notes import anchor_bounds_ms
 from nora.domain.persona_inputs import PersonSourceRevision
 from nora.domain.rollup import Citation
@@ -551,12 +551,23 @@ class SqlPersonaInputs:
             counts = [sa.select(sa.func.count()).select_from(MESSAGES).where(
                 *scope, f).scalar_subquery().label('root_count_' + str(i))
                 for i, f in enumerate(flags)]
+            context_revision: Any = sa.null()
+            if kind == 'response':
+                send = MESSAGES.alias('send_context')
+                send_edit = sa.select(sa.func.max(MESSAGE_EDIT.c.id)).where(
+                    MESSAGE_EDIT.c.message_id == send.c.id).scalar_subquery()
+                context_revision = sa.select(sa.func.jsonb_build_array(
+                    send.c.body, send.c.hidden_at, send_edit,
+                )).where(send.c.id == t.message_id).scalar_subquery()
             values = sa.func.jsonb_build_array(t.valid_from_ms, t.valid_to_ms,
-                                              *(t[f] for f in fields), roots_revision)
+                *(t[f] for f in fields), roots_revision, context_revision)
             stmt = sa.select(
                 source.label('source'), citation.label('citation'),
                 _revision(values).label('revision'),
                 t.valid_from_ms, t.valid_to_ms, t.build_id,
+                (t.outcome if kind == 'response' else sa.null()).label('outcome'),
+                (t.reactions if kind == 'response' else sa.literal(0)).label('reactions'),
+                (t.edits if kind == 'response' else sa.literal(0)).label('edits'),
                 root_ids.label('root_ids'), *counts, *(t[f] for f in fields),
             ).where(t.unit == unit, t.build_id == current_build_id(), predicate)
             rows = await self._pending(key=key, domain='rollup', stmt=stmt, limit=limit,
@@ -571,12 +582,34 @@ class SqlPersonaInputs:
                 origin = await self._roots(refs=[str(i) for i in ids], rooms=rooms)
                 if {x.row.id for x in origin} != set(ids):
                     continue  # a withdrawal between reads cannot become support
+                episode = None
+                properties = tuple((f, str(getattr(r, f))) for f in fields)
+                if kind == 'response':
+                    send_id = int(r.source.split(':', 1)[1])
+                    async with self._engine.connect() as conn:
+                        sent = (await conn.execute(transcript_select().add_columns(
+                            MESSAGES.c.conversation_id).where(_in_rooms(rooms),
+                            MESSAGES.c.id == send_id, MESSAGES.c.is_nora == 1,
+                            ~sa.exists().where(MESSAGE_DELETE.c.message_id == MESSAGES.c.id),
+                        ))).first()
+                    if sent is None:
+                        continue
+                    # The unit episode's total was checked above, but this
+                    # account receives only its subject's actual replies.
+                    origin = tuple(x for x in origin if x.row.person_id == person)
+                    if not origin:
+                        continue
+                    episode = Episode(send_id=send_id, room=sent.conversation_id,
+                        text=transcript_row(sent).body or '', outcome=r.outcome,
+                        reactions=r.reactions, edits=r.edits,
+                        replies=tuple(x.row for x in origin))
+                    properties = (('quoted_replies_by_subject', str(len(origin))),)
                 out.append(PersonSourceRevision(
                     domain='rollup', source=r.source, revision=r.revision, state='computed',
                     recorded_at=f'build:{r.build_id}', roots=origin,
                     effective_from=r.valid_from_ms, effective_until=r.valid_to_ms,
                     as_of=max(x.row.ts for x in origin),
-                    properties=tuple((f, str(getattr(r, f))) for f in fields),
+                    properties=properties, episode=episode,
                     citable=r.citation,
                 ))
                 if len(out) >= limit:

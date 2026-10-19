@@ -281,7 +281,7 @@ async def test_initial_cached_recovery_past_old_cursor_is_bounded_and_durable(en
     assert after_restart == []
 
 
-def wired(engine):
+def wired(engine, *, media_join=None):
     from nora.domain.models import PersonRef
     from nora.infra.sql.character import SqlCharacterEvidence
     from nora.infra.sql.persona import SqlPersonaStore
@@ -299,7 +299,7 @@ def wired(engine):
                               source_inputs=source, wake_batch=100)
     adaptor = PersonaPersonAdaptor(persona=persona, culture=InMemoryCultureStore(),
         evidence=evidence, reads=reads, keys={KEY: pk}, name_of=lambda _: 'Synthetic',
-        clock_ms=lambda: T0 + 1000, clock=lambda: AT)
+        clock_ms=lambda: T0 + 1000, clock=lambda: AT, media_join=media_join)
     return reads, persona, source, evidence, adaptor
 
 
@@ -473,3 +473,39 @@ async def test_completed_history_bounds_recent_scan_without_hiding_old_cached_re
     assert {m.row.id for r in batch for m in r.roots} == {10}
     assert batch[0].cache_ready
     assert await reads.history_state(key=KEY) == (boundary, boundary)
+
+
+async def test_response_projection_keeps_question_context_and_only_subject_reply_roots(env):
+    from nora.domain.media_join import MediaJoin
+    from nora.infra.sql.media_objects import SqlMediaObjectStore
+    from nora.infra.sql.schema import ROLLUP_RESPONSE
+    from nora.obs.metrics import Metrics
+
+    sha = 'f' * 64
+    await message(env, ident=9, person='nora', own=True, ts=T0 - 1,
+                  body='Which format works for you?')
+    await message(env, ident=10, body='[image ffffff]', ts=T0 + 1,
+                  quoted_ts=T0 - 1, media=json.dumps([{'sha256': sha}]))
+    await message(env, ident=11, person='person-b', ts=T0 + 2,
+                  quoted_ts=T0 - 1, body='another responder\'s unrelated words')
+    async with env.begin() as conn:
+        await conn.execute(sa.insert(MEDIA_OBJECTS).values(sha256=sha, media_type='image/png',
+            size=1, source='inbound', created_at_ms=T0, description='target cached scene'))
+        await conn.execute(sa.insert(ROLLUP_BUILD).values(id=1, status='current',
+            code_version='synthetic', params_sha256='a' * 64, through_ms=T0 + 10))
+        await conn.execute(sa.insert(ROLLUP_RESPONSE).values(build_id=1, unit='unit',
+            valid_from_ms=T0 - 1, valid_to_ms=T0 + 10, as_of_ms=T0 + 2,
+            lineage=[['message', None, 'signal:room-a']], message_id=9, platform='signal',
+            conversation_id='room-a', sent_ts=T0 - 1, replies=2, reactions=0, edits=0,
+            responders=[PERSON, 'person-b'], outcome='responded'))
+    source = source_inputs(env)
+    [reply] = await source.rollup(key=KEY, unit='unit', rooms=ROOMS, person=PERSON, limit=12)
+    assert {r.row.id for r in reply.roots} == {10}
+    assert dict(reply.properties)['quoted_replies_by_subject'] == '1'
+    _, _, _, _, adaptor = wired(env, media_join=MediaJoin(
+        store=SqlMediaObjectStore(env), screen=lambda _: None, metrics=Metrics()))
+    rendered = await adaptor.inputs(key=KEY, batch=[reply])
+    assert 'Which format works for you?' in rendered and 'target cached scene' in rendered
+    assert 'another responder' not in rendered
+    citable = adaptor._runs[KEY].citable
+    assert set(citable.messages) == {10} and citable.episodes[9].ts == T0 + 1
