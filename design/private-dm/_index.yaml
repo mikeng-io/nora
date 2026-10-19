@@ -1,0 +1,23 @@
+kind: design_index
+bundle: private-dm
+title: Private DM anchored to a person's default unit
+description: >
+  WhatsApp text DM proposal: existing unit context is readable privately,
+  while Record and learned Persona remain private to one person and anchor.
+status: proposed
+timestamp: '2026-10-20'
+governance: operator-directed
+origin: Operator discussion of one-way group-to-DM context and default units.
+docs:
+  - 00-contract.md
+  - 01-current-flow.md
+  - 02-storage.md
+  - 03-execution.md
+  - 04-build-and-acceptance.md
+open_questions: []
+implementation_status: not-built
+edges:
+  - {src: 01-current-flow, dst: 00-contract, rel: grounds, provenance: inspected-source}
+  - {src: 02-storage, dst: 00-contract, rel: realizes, provenance: proposed}
+  - {src: 03-execution, dst: 02-storage, rel: depends_on, provenance: proposed}
+  - {src: 04-build-and-acceptance, dst: 03-execution, rel: verifies, provenance: proposed}
