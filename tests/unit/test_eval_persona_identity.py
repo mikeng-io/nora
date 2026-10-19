@@ -102,3 +102,30 @@ def test_height_age_grader_requires_both_values_source_time_and_no_birthday():
     wrong = deepcopy(good)
     wrong["heads"].append(receipt()["heads"][0])
     assert check_identity("height_age_stated", wrong)
+
+
+@pytest.mark.parametrize(("change", "passes"), [
+    ({}, True),
+    ({"empty": True}, True),
+    ({"fact_key": "attribute", "fact_value": {"name": "car", "value": "owned"}}, False),
+    ({"fact_key": "attribute", "fact_value": {"name": "dog", "value": "owned"}}, False),
+    ({"as_of": 2}, False),
+    ({"citations": ("102",)}, False),
+    ({"fact_value": {"relation": "spouse", "unresolved_name": "Jo"}}, False),
+    ({"fact_value": {"relation": "friend", "unresolved_name": "Sam"}}, False),
+    ({"mode": "inferred"}, False),
+    ({"duplicate": True}, False),
+    ({"valid_from": 1}, False),
+    ({"valid_until": 2}, False),
+])
+def test_activity_grader_allows_only_source_grounded_friend(change, passes):
+    observed = receipt()
+    head = observed["heads"][0]
+    head.update(fact_key="relationship", fact_value={"relation": "friend", "unresolved_name": "Jo"})
+    change = dict(change)
+    if change.pop("empty", False):
+        observed["heads"] = []
+    if change.pop("duplicate", False):
+        observed["heads"].append(deepcopy(head))
+    head.update(change)
+    assert (check_identity("activity_not_ownership", observed) == ()) is passes
