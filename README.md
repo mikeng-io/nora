@@ -2,6 +2,10 @@
   <img src="assets/nora-social-banner.png" alt="Mini Nora at her desk, earphones in, beside a sleeping cat." width="100%">
 </p>
 
+<p align="center">
+  <img src="assets/nora-mini-icon.png" alt="Mini Nora wearing her grey hoodie and wired earphones" width="128">
+</p>
+
 <h1 align="center">Nora</h1>
 
 <p align="center"><strong>Earphones in.</strong></p>
