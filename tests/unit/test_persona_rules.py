@@ -532,3 +532,35 @@ def test_keeping_a_told_line_never_adds_a_social_citation() -> None:
     assert not _plan([KeepOp(line="P1", citations=("102",))], held, citable=SOCIAL).refused
     plan = _plan([KeepOp(line="P1", citations=(_item("7001"),))], held, citable=SOCIAL)
     assert _reasons(plan) == ["told_needs_message"]
+
+
+@pytest.mark.parametrize("text", [None, "birthday stated in spring"])
+def test_same_typed_birthday_revision_retains_assertion_and_grounding(text):
+    # t1: "My birthday is May 6". t2: "Happy birthday!" to somebody else.
+    # Said intentionally carries provenance only: the planner cannot judge meaning.
+    [original] = _plan([AddOp(
+        part="identity", kind="attribute", mode="told", text="birthday May 6",
+        citations=("101",), told_by=SUBJECT,
+        fact_key="birthday", fact_value={"month": 5, "day": 6},
+    )]).inserts
+    result = _plan([ReviseOp(
+        line="P1", text=text, citations=("102",),
+        fact_key="birthday", fact_value={"month": 5, "day": 6},
+    )], (original,))
+    assert not result.refusals
+    [reworded] = result.inserts
+    assert reworded.supersedes == original.id
+    assert reworded.citations == ("101", "102")
+    assert reworded.as_of == original.as_of == CITABLE.messages[101].ts
+    assert reworded.support_count == original.support_count == 1
+    assert reworded.last_supported_at == original.last_supported_at
+    # A real correction at t2 still replaces the value and assertion time.
+    changed = _plan([ReviseOp(
+        line="P1", citations=("102",), fact_key="birthday",
+        fact_value={"month": 5, "day": 7},
+    )], (original,))
+    assert not changed.refusals
+    [corrected] = changed.inserts
+    assert corrected.fact_value == {"month": 5, "day": 7}
+    assert corrected.as_of == CITABLE.messages[102].ts
+    assert corrected.citations == ("102",)

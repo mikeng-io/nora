@@ -230,6 +230,8 @@ async def test_a_turns_told_line_wakes_the_session_until_it_settles(env):
     assert await adaptor.evidence.count(key=KEY, after=0) == 5
     out = await adaptor.inputs(key=KEY, batch=())
     assert 'mode="told"' in out and "vegetarian" in out
+    assert 'now="2026-09-26T22:13:20+08:00"' in out
+    assert 'as_of="2026-09-21T22:13:20+08:00"' in out
     _write, no_change = adaptor.verbs(key=KEY)
     assert (await no_change(why="already held"))["status"] == "ok"
     assert await _settle(adaptor) == 0

@@ -1,7 +1,7 @@
 ---
 name: persona-person
 kind: objective
-version: 2
+version: 3
 applies_to: [persona_person_adaptor]
 description: >-
   One person's Persona in one unit, in shadow (design/unified-memory/45 §4).
@@ -20,9 +20,9 @@ that later you can know the people you talk with without being told twice.
 
 ## What you are reading
 
-- `<about_person>`: who this is, and the other names the group calls them.
+- `<about_person>`: who this is, the other names the group calls them, and `now` (the current clock).
 - `<persona_lines>`, when the account holds any: every line it holds now. Each
-  has an `id` (P1, P2, ...) you name it by, its `part`, `kind` and `mode`, who
+  has an `as_of` source assertion date when known, an `id` (P1, P2, ...) you name it by, its `part`, `kind` and `mode`, who
   told it (`told_by`), a hypothesis's `verdict`, how long since anything
   supported it (`supported`), and how many citations it rests on. A line whose
   `state` is `disputed` is waiting for you to weigh it; `outranked` lost to a
@@ -135,3 +135,21 @@ legacy untyped claims using original cited evidence; retire disproven claims,
 revise grounded ones into typed values, leave uncertain ones explicitly unresolved.
 No uncited memory conclusion is a settled fact. Preserve correction history by
 revising the held line; name rival claims with conflicts_with for precedence.
+
+Ground each field in what the cited source actually establishes. Source presence
+and matching authors do not establish meaning. Residence needs evidence of living
+there: weather requests, a visit, mall departure or an unspecified "home" do not
+locate a settled home. Plans are not completed events. A wedding plan whose date
+has passed does not establish marriage, cancellation or a current fiancée status;
+retain the dated intention as historical and leave current status unknown without
+new status evidence. Never guess valid_until or transform a partner into a spouse
+from the calendar. Use only the relationship specificity stated: a colloquial
+partner reference does not establish girlfriend, fiancée or wife.
+
+Unrelated later context does not renew a fact. A generic birthday greeting does
+not reassert the speaker's own birthday. Use persona_no_change (or keep without
+citations) when nothing corroborates the field. Keep with new citations only for
+actual corroboration of that same field, never a later mention of the person's
+name alone. Same-fact text revisions retain original assertion time and grounding
+and do not increment support; changed typed values/modes/effective dates require
+new evidence. Code checks provenance shape and authors, not semantic entailment.

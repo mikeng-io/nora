@@ -1089,6 +1089,20 @@ def plan_write(
         if bad is not None:
             refusals.append(replace(bad, op_index=i))
             continue
+        # Rewording a typed fact is not another assertion of it. Preserve its
+        # grounding and support; actual corroboration belongs in an explicit keep.
+        # Premise/state changes still take the normal evidence-bearing path.
+        if (old is not None and old.part == "identity" and old.fact_key is not None
+                and old.state == candidate.state == "current"
+                and op.conflicts_with is None
+                and all(getattr(candidate, field) == getattr(old, field) for field in (
+                    "fact_key", "fact_value", "valid_from", "valid_until", "mode", "told_by"))
+                and set(candidate.draws_on) == {aliases.get(lid, lid) for lid in old.draws_on}):
+            candidate = replace(
+                candidate, citations=tuple(dict.fromkeys((*old.citations, *candidate.citations))),
+                as_of=old.as_of, support_count=old.support_count,
+                last_supported_at=old.last_supported_at,
+            )
         if (old is not None and candidate.part == "identity" and old.as_of is not None
                 and candidate.as_of is not None and candidate.as_of < old.as_of):
             refusals.append(PersonaRefusal(

@@ -23,7 +23,12 @@ No second identity database or Dreamer, no new warehouse service.
 Extend existing persona_line identity rows with fact_key (text), fact_value
 (JSONB), valid_from and valid_until (nullable epoch ms). Existing as_of is the
 source assertion/evidence time, never synthesized from backfill wall-clock
-time. Existing written_at remains transaction time; citations and told_by
+time. A current typed fact revised without changing value, key, mode, teller,
+effective bounds or premises retains its original as_of and support metadata;
+its successor unions citations rather than discarding original grounding. This
+also applies to text rewording. Explicit keep may add actual corroboration;
+semantic entailment remains the writer's job, not an author-presence check.
+Existing written_at remains transaction time; citations and told_by
 remain the evidence and its speaker. Effective dates are supplied only when
 the evidence establishes them; null means unknown, not today.
 
@@ -104,6 +109,22 @@ Prove page completeness when own-message/mention streams interleave, failure,
 conflict and restart occur, and when new messages arrive beyond the boundary.
 Pin legacy-writer retirement and new unit/person input dependencies on the
 render switch. Preserve all disclosure and retrieval rollback regressions.
+
+Synthetic source-grounding acceptance vectors (invented sources; model behavior
+must be measured separately, not inferred from corpus collection or the gate):
+
+| Sources / held state | Required result |
+|---|---|
+| May 1: P1 explicitly says birthday is June 8; May 9: P1 offers an undated birthday greeting to someone else | Retain June 8 with May 1 assertion/support; no new corroboration from the greeting |
+| Same held birthday; May 9: P1 explicitly corrects it to June 9 | Revise the value with the correction's source time |
+| Regional weather requests, mall departure, and an unspecified home origin | Residence remains unknown; no settled-home inference |
+| September 1: P1 plans an October 3 wedding with Jo; later mentions only Jo's name; clock is October 12 | Historical intention only; current fiancée/marital status unknown; no invented end date or automatic spouse |
+| P1 uses an ambiguous colloquial partner label | Partner only; do not specialize to girlfriend, fiancée or wife |
+| P1 explicitly states where they live and explicitly names their spouse | Positive control: preserve the supported residence and relationship specificity |
+
+The existing typed `tool_selection` cases measure reply routing, not this
+Persona objective. These vectors specify the writer acceptance still owed by
+the bounded whole-change model run; no separate model harness is introduced.
 
 After the full build: final gate and independent economical review, deploy
 shadow, run bounded historical recovery, and produce per-account counts and
