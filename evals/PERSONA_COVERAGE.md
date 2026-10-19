@@ -22,10 +22,14 @@ credentials through the normal private environment setup.
 ```bash
 uv sync --extra evals
 uv run python -m evals --coverage-export /tmp/persona-coverage-input.json \
+  --coverage-manifest /tmp/persona-coverage-census.manifest.private.json \
   --coverage-inventory /tmp/persona-honcho-coverage-r1 \
   --coverage-semantic /tmp/persona-honcho-semantic-r1 \
   --coverage-recovery /tmp/persona-attributes-deploy-recovery \
   --coverage-identity /home/norty/workspace/nora/identity.toml
+# Root retains the exporter-reported manifest_hash independently of editable input.
+export NORA_EVAL_PERSONA_COVERAGE_MANIFEST=/tmp/persona-coverage-census.manifest.private.json
+export NORA_EVAL_PERSONA_COVERAGE_MANIFEST_HASH=<exporter-reported-manifest_hash>
 export NORA_EVAL_PERSONA_COVERAGE=/tmp/persona-coverage-input.json
 uv run python -m evals persona_coverage --print-input frozen_coverage \
   > /tmp/persona-coverage-render.private.json
@@ -39,6 +43,37 @@ rows, including 140 stable card and 39 stable explicit comparisons. Zero
 exclusions are permitted. Every row retains its original row ID, scope,
 prelabel and original source metadata. All nonstable rows stay visible in the
 input, receipt and plan's prelabel counts, outside the stable-fact thresholds.
+
+Before adjudication, root freezes a separate private manifest. Export re-reads
+and hashes the original source files, reconstructs every scoped row, original
+claim, prelabel, kind, scope and reference ID from their original roster,
+comparisons and prelabels, and compares them with the export. The manifest holds
+this projection, counts and source hashes. It is created exclusively at the
+explicit destination with mode 0400; changing an input filename never replaces
+it. Keep its reported canonical JSON hash in root's independent run instructions.
+Every load and measurement (including pending-gold print preflight) requires the
+manifest path AND hash from the environment and compares the exact projection.
+Rehashing an edited input cannot change this independently retained expectation.
+The receipt records the manifest path/hash. This prevents accidental/post-hoc
+census edits under an independently pinned source; it is not filesystem security
+against an operator who can replace both the manifest and its external pin.
+
+To pin an ALREADY exported original without touching live stores or resampling,
+run from the directory where its source provenance paths resolve (including the
+original relative identity path):
+
+```bash
+uv run python -m evals \
+  --coverage-freeze-input /tmp/persona-coverage-eval-build/input.json \
+  --coverage-manifest /tmp/persona-coverage-census.manifest.private.json
+```
+
+This also verifies every original source-file hash and refuses any existing
+manifest destination. Copy the original input to a new private adjudication file;
+attach only the root reference labels/provenance, model routes and card absence
+proofs there. Preserve reference IDs/order and all immutable population fields.
+Use the SAME manifest path and independently retained hash for that new input.
+Do not regenerate the pin from an edited adjudication file.
 
 The input contains hashes of the original denominator, roster, prelabels,
 comparisons, source search, original context, closure ledger and optional

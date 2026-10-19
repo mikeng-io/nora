@@ -288,3 +288,191 @@ async def test_unknown_or_same_actual_model_is_refused_before_client(tmp_path, m
         doc["models"]["judge_actual"] = actual
         with pytest.raises(ValueError, match="model"):
             await coverage.measure(doc, Judge(base_url="http://invalid", timeout_seconds=90))
+
+
+def pin_fixture(doc, tmp_path, monkeypatch):
+    projection = {
+        "accounts": doc["accounts"],
+        "cards": [{k: v for k, v in card.items() if k != "absence_proof"} for card in doc["cards"]],
+        "original_denominator": doc.get("original_denominator"),
+        "original_prelabels": doc.get("original_prelabels"),
+        "rows": [
+            {k: r.get(k) for k in ("id", "account_index", "claim", "claim_origin", "frozen")}
+            for r in doc["rows"]
+        ],
+        "reference_ids": [r["id"] for r in doc["references"]["rows"]],
+    }
+    manifest = {
+        "schema": 1,
+        "provenance": doc["provenance"],
+        "census": projection,
+        "counts": {
+            "all_rows": 179,
+            "prelabels": {coverage.STABLE: 179},
+            "stable_kinds": {"card": 140, "explicit": 39},
+        },
+    }
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps(manifest))
+    path.chmod(0o400)
+    monkeypatch.setenv("NORA_EVAL_PERSONA_COVERAGE_MANIFEST", str(path))
+    monkeypatch.setenv("NORA_EVAL_PERSONA_COVERAGE_MANIFEST_HASH", coverage.digest(manifest))
+    return path
+
+
+@pytest.fixture(autouse=True)
+def trusted_census(tmp_path, monkeypatch):
+    pin_fixture(census_input(), tmp_path, monkeypatch)
+
+
+@pytest.mark.parametrize("gold", [False, True])
+@pytest.mark.parametrize("mutation", ["remove", "prelabel", "unit", "claim", "id"])
+def test_load_rejects_rehashed_census_mutation(tmp_path, monkeypatch, gold, mutation):
+    doc = census_input()
+    row = doc["rows"][-1]  # outside the twenty references
+    if mutation == "remove":
+        doc["rows"].pop()
+    elif mutation == "prelabel":
+        row["frozen"]["prelabel"] = "nonstable"
+    elif mutation == "unit":
+        # Consistent one-in/one-out scope change, with all counts unchanged.
+        row["account_index"] = 0
+        row["frozen"].update(account_index=0, scope=doc["accounts"][0]["key"])
+        row["sources"] = copy.deepcopy(doc["rows"][0]["sources"])
+        row["heads"] = copy.deepcopy(doc["rows"][0]["heads"])
+    elif mutation == "claim":
+        row["claim"] = "A different claim"
+    else:
+        row["id"] = "replacement-id"
+    doc["frozen"] = [r["frozen"] for r in doc["rows"]]
+    doc["frozen_hash"] = coverage.digest(doc["frozen"])
+    inp = tmp_path / "renamed-adjudicated.json"
+    inp.write_text(json.dumps(doc))
+    monkeypatch.setenv(coverage.ENV, str(inp))
+    monkeypatch.setattr(Judge, "_client", lambda _: pytest.fail("preflight called model"))
+    with pytest.raises(ValueError, match="pinned census"):
+        coverage.load_input(gold=gold)
+    from evals.__main__ import main
+
+    argv = ["evals", "persona_coverage"]
+    argv += ["--judge"] if gold else ["--print-input", "frozen_coverage"]
+    monkeypatch.setattr("sys.argv", argv)
+    assert main() == 2
+
+
+def test_pin_required_and_root_attachments_allowed(tmp_path, monkeypatch):
+    doc = census_input()
+    doc["cards"] = [{"status": 404}]
+    private = tmp_path / "card-pin"
+    private.mkdir()
+    pin_fixture(doc, private, monkeypatch)
+    doc["models"]["route_provenance"] = "root physical route proof"
+    doc["references"]["provenance"] = "root adjudication proof"
+    doc["cards"] = [
+        {
+            "status": 404,
+            "absence_proof": {
+                "snapshot_hash": "independent",
+                "peer_exists": False,
+                "card_exists": False,
+                "explicit_population": 0,
+            },
+        }
+    ]
+    inp = tmp_path / "attached.json"
+    inp.write_text(json.dumps(doc))
+    monkeypatch.setenv(coverage.ENV, str(inp))
+    assert coverage.load_input() == doc
+    monkeypatch.delenv("NORA_EVAL_PERSONA_COVERAGE_MANIFEST_HASH")
+    with pytest.raises(ValueError, match="manifest"):
+        coverage.load_input(gold=False)
+
+
+def test_manifest_hash_permissions_and_read_errors(tmp_path, monkeypatch):
+    path = tmp_path / "manifest.json"
+    path.chmod(0o600)
+    with pytest.raises(ValueError, match="read-only"):
+        coverage.validate(census_input(), gold=False)
+    path.chmod(0o400)
+    monkeypatch.setenv(coverage.MANIFEST_HASH_ENV, "wrong-independent-pin")
+    with pytest.raises(ValueError, match="hash mismatch"):
+        coverage.validate(census_input(), gold=False)
+    path.unlink()
+    with pytest.raises(FileNotFoundError):
+        coverage.validate(census_input(), gold=False)
+
+
+def test_freeze_reconciles_original_sources_and_refuses_overwrite(tmp_path):
+    import hashlib
+
+    from evals.persona_coverage_input import freeze_manifest
+
+    doc = census_input()
+    roster = []
+    for account in doc["accounts"]:
+        account["watermarks"] = [
+            {
+                "consolidator_name": "persona-person:history-boundary",
+                "last_message_id": account["boundary"],
+            }
+        ]
+        roster.append({**account, "rooms": [{"key": r} for r in account["rooms"]]})
+        del roster[-1]["boundary"]
+    denominator = {"invented": "original population"}
+    denominator_raw = json.dumps(denominator).encode()
+    pre = {
+        "denominator_hash": hashlib.sha256(denominator_raw).hexdigest(),
+        "timestamp": 100,
+        "rows": [],
+    }
+    comparisons = []
+    for row in doc["rows"]:
+        f = row["frozen"]
+        p = {
+            "row_id": f["row_id"],
+            "kind": f["kind"],
+            "semantic_label": f["prelabel"],
+            "excluded": False,
+            "text": row["claim"],
+        }
+        pre["rows"].append(p)
+        comparisons.append({"account_index": row["account_index"], "row_id": f["row_id"]})
+        f["original"] = p
+        row["id"] = f"A{row['account_index']:02d}-{f['row_id']}"
+        row["claim_origin"] = {
+            "kind": f["kind"],
+            "row_id": f["row_id"],
+            "conclusion_id": None,
+            "snapshot_time": 100,
+            "prelabel_is_truth": False,
+        }
+    doc["references"]["rows"] = [{"id": r["id"]} for r in doc["rows"][:20]]
+    files = {
+        "DENOMINATOR-DB-FROZEN.json": denominator,
+        "prelabels.json": pre,
+        "roster.json": {"accounts": roster},
+        "cards.json": doc["cards"],
+        "comparisons.json": comparisons,
+        "reference20-for-independent-review.json": {
+            "rows": [{"comparisons": [c]} for c in comparisons[:20]]
+        },
+    }
+    doc["provenance"] = {}
+    for name, value in files.items():
+        path = tmp_path / name
+        path.write_text(json.dumps(value))
+        doc["provenance"][str(path)] = hashlib.sha256(path.read_bytes()).hexdigest()
+    doc.update(original_denominator=denominator, original_prelabels=pre)
+    doc["frozen_hash"] = coverage.digest(doc["frozen"])
+    manifest = tmp_path / "original.manifest.json"
+    pin = freeze_manifest(doc, manifest)
+    assert pin["all_rows"] == 179 and manifest.stat().st_mode & 0o777 == 0o400
+    with pytest.raises(FileExistsError):
+        freeze_manifest(copy.deepcopy(doc), manifest)
+    changed = copy.deepcopy(doc)
+    changed["rows"].pop()
+    with pytest.raises(ValueError, match="original source census"):
+        freeze_manifest(changed, tmp_path / "renamed.manifest.json")
+    (tmp_path / "comparisons.json").write_text("[]")
+    with pytest.raises(ValueError, match="source file hash"):
+        freeze_manifest(doc, tmp_path / "other.manifest.json")

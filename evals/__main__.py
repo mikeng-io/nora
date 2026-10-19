@@ -608,16 +608,36 @@ def main() -> int:
     ap.add_argument("--coverage-semantic", type=Path)
     ap.add_argument("--coverage-recovery", type=Path)
     ap.add_argument("--coverage-identity", type=Path)
+    ap.add_argument("--coverage-freeze-input", type=Path,
+                    help="no-call pin of ORIGINAL export reconciled to original source files")
+    ap.add_argument("--coverage-manifest", type=Path,
+                    help="exclusive private manifest destination; never derived from input name")
     args = ap.parse_args()
+    if args.coverage_freeze_input:
+        from evals.persona_coverage_input import freeze_manifest
+        try:
+            if not args.coverage_manifest:
+                raise ValueError("freeze requires --coverage-manifest")
+            print(json.dumps(freeze_manifest(
+                json.loads(args.coverage_freeze_input.read_text()), args.coverage_manifest)))
+            return 0
+        except (ValueError, KeyError, OSError) as exc:
+            print(f"coverage freeze ERROR: {exc}", file=sys.stderr)
+            return 2
     if args.coverage_export:
         from evals.persona_coverage_input import export_input
         try:
-            if not all((args.coverage_inventory, args.coverage_semantic, args.coverage_recovery)):
-                raise ValueError("export requires --coverage-inventory/semantic/recovery paths")
+            if not all((args.coverage_inventory, args.coverage_semantic, args.coverage_recovery,
+                        args.coverage_manifest)):
+                raise ValueError(
+                    "export requires --coverage-inventory/semantic/recovery "
+                    "and --coverage-manifest paths"
+                )
             exported = asyncio.run(export_input(
                 inventory=args.coverage_inventory, semantic=args.coverage_semantic,
                 recovery=args.coverage_recovery, identity=args.coverage_identity,
-                database_url=os.environ["DATABASE_URL"], output=args.coverage_export))
+                database_url=os.environ["DATABASE_URL"], output=args.coverage_export,
+                manifest=args.coverage_manifest))
             print(json.dumps(exported, sort_keys=True))
             return 0
         except (ValueError, KeyError, OSError) as exc:

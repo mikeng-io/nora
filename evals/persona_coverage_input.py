@@ -12,7 +12,14 @@ import os
 from datetime import UTC, datetime
 from pathlib import Path
 
-from evals.rebuilt.persona_coverage import STABLE, digest, plan, validate
+from evals.rebuilt.persona_coverage import (
+    STABLE,
+    census_counts,
+    census_projection,
+    digest,
+    plan,
+    validate,
+)
 
 
 def read_json(path: Path):
@@ -25,6 +32,104 @@ def write_private(path: Path, value: dict) -> None:
         json.dump(value, stream, ensure_ascii=False, sort_keys=True)
 
 
+def freeze_manifest(doc: dict, output: Path) -> dict:
+    """Root runs once on ORIGINAL export, before attaching any adjudication.
+
+    Re-derive population from original source bytes, never from editable copies.
+    Filesystem ownership is operational trust, not cryptographic access control.
+    """
+    import hashlib
+
+    provenance = doc["provenance"]
+    sources = {}
+    for name, expected in provenance.items():
+        path = Path(name)
+        raw = path.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != expected:
+            raise ValueError("original source file hash mismatch")
+        sources[path.name] = json.loads(raw) if path.suffix == ".json" else None
+    pre = sources["prelabels.json"]
+    denominator = sources["DENOMINATOR-DB-FROZEN.json"]
+    denominator_hash = next(
+        v for k, v in provenance.items() if Path(k).name == "DENOMINATOR-DB-FROZEN.json"
+    )
+    if (
+        pre["denominator_hash"] != denominator_hash
+        or doc["original_prelabels"] != pre
+        or doc["original_denominator"] != denominator
+    ):
+        raise ValueError("original frozen denominator/prelabels mismatch")
+    accounts = []
+    for account in sources["roster.json"]["accounts"]:
+        boundary = next(
+            w["last_message_id"]
+            for w in account["watermarks"]
+            if w["consolidator_name"] == "persona-person:history-boundary"
+        )
+        accounts.append(
+            {**account, "boundary": boundary, "rooms": [r["key"] for r in account["rooms"]]}
+        )
+    prelabels = {r["row_id"]: r for r in pre["rows"]}
+    rows = []
+    for comparison in sources["comparisons.json"]:
+        idx, row_id = comparison["account_index"], comparison["row_id"]
+        p = prelabels[row_id]
+        rows.append(
+            {
+                "id": f"A{idx:02d}-{row_id}",
+                "account_index": idx,
+                "claim": p["text"],
+                "claim_origin": {
+                    "kind": p["kind"],
+                    "row_id": row_id,
+                    "conclusion_id": p.get("conclusion_id"),
+                    "snapshot_time": pre["timestamp"],
+                    "prelabel_is_truth": False,
+                },
+                "frozen": {
+                    "row_id": row_id,
+                    "account_index": idx,
+                    "scope": accounts[idx]["key"],
+                    "kind": p["kind"],
+                    "prelabel": p["semantic_label"],
+                    "excluded": p["excluded"],
+                    "original": p,
+                },
+            }
+        )
+    refs = [r["comparisons"][0] for r in sources["reference20-for-independent-review.json"]["rows"]]
+    manifest = {
+        "schema": 1,
+        "provenance": provenance,
+        "counts": census_counts(doc),
+        "census": {
+            "accounts": accounts,
+            "cards": [
+                {k: v for k, v in card.items() if k != "absence_proof"}
+                for card in sources["cards.json"]
+            ],
+            "original_denominator": denominator,
+            "original_prelabels": pre,
+            "rows": rows,
+            "reference_ids": [f"A{r['account_index']:02d}-{r['row_id']}" for r in refs],
+        },
+    }
+    if census_projection(doc) != manifest["census"]:
+        raise ValueError("export differs from original source census")
+    validate(doc, gold=False, manifest=manifest)
+    # Explicit destination, independent of input filename; never silently replace.
+    fd = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
+    os.fchmod(fd, 0o400)
+    with os.fdopen(fd, "w") as stream:
+        json.dump(manifest, stream, ensure_ascii=False, sort_keys=True)
+    return {
+        "manifest": str(output),
+        "manifest_hash": digest(manifest),
+        "all_rows": len(rows),
+        "stable_rows": sum(r["frozen"]["prelabel"] == STABLE for r in rows),
+    }
+
+
 async def export_input(
     *,
     inventory: Path,
@@ -33,6 +138,7 @@ async def export_input(
     identity: Path | None,
     database_url: str,
     output: Path,
+    manifest: Path,
 ) -> dict:
     import hashlib
 
@@ -204,7 +310,6 @@ async def export_input(
         },
         "closure_ledger": closure,
     }
-    validate(doc, gold=False)
     # Specific source population acceptance: never silently export a partial audit.
     if (len(prelabels), len(rows), len([r for r in rows if r["frozen"]["prelabel"] == STABLE])) != (
         561,
@@ -212,6 +317,7 @@ async def export_input(
         179,
     ):
         raise ValueError("frozen source population changed; expected 561/879/179")
+    pin = freeze_manifest(doc, manifest)
     write_private(output, doc)
     write_private(output.with_suffix(".review20.json"), doc["references"])
-    return plan(doc)
+    return {**plan(doc), **pin}

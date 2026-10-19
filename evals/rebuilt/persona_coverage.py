@@ -48,6 +48,53 @@ def digest(value: Any) -> str:
     ).hexdigest()
 
 
+MANIFEST_ENV = ENV + "_MANIFEST"
+MANIFEST_HASH_ENV = MANIFEST_ENV + "_HASH"
+
+
+def census_projection(doc: dict) -> dict:
+    """Only immutable population fields; root adjudication/proofs stay attachable."""
+    return {
+        "accounts": doc["accounts"],
+        "cards": [{k: v for k, v in card.items() if k != "absence_proof"} for card in doc["cards"]],
+        "original_denominator": doc.get("original_denominator"),
+        "original_prelabels": doc.get("original_prelabels"),
+        "rows": [
+            {k: r.get(k) for k in ("id", "account_index", "claim", "claim_origin", "frozen")}
+            for r in doc["rows"]
+        ],
+        "reference_ids": [r["id"] for r in doc["references"]["rows"]],
+    }
+
+
+def census_counts(doc: dict) -> dict:
+    return {
+        "all_rows": len(doc["rows"]),
+        "prelabels": dict(Counter(r["frozen"]["prelabel"] for r in doc["rows"])),
+        "stable_kinds": dict(Counter(r["frozen"]["kind"] for r in stable_rows(doc))),
+    }
+
+
+def validate_census(doc: dict, manifest: dict | None = None) -> None:
+    if manifest is None:
+        path, expected = os.environ.get(MANIFEST_ENV), os.environ.get(MANIFEST_HASH_ENV)
+        if not path or not expected:
+            raise ValueError("requires independently pinned manifest path and hash")
+        p = Path(path)
+        if p.stat().st_mode & 0o377:
+            raise ValueError("manifest must be private and read-only (0400)")
+        manifest = json.loads(p.read_text())
+        if digest(manifest) != expected:
+            raise ValueError("pinned census manifest hash mismatch")
+    if (
+        manifest.get("schema") != 1
+        or manifest.get("provenance") != doc["provenance"]
+        or manifest.get("census") != census_projection(doc)
+        or manifest.get("counts") != census_counts(doc)
+    ):
+        raise ValueError("input differs from independently pinned census")
+
+
 def batches(rows: list[dict]) -> list[list[dict]]:
     groups: dict[int, list[dict]] = {}
     for row in rows:
@@ -55,9 +102,10 @@ def batches(rows: list[dict]) -> list[list[dict]]:
     return [group[i : i + 16] for group in groups.values() for i in range(0, len(group), 16)]
 
 
-def validate(doc: dict, *, gold: bool = True) -> None:
+def validate(doc: dict, *, gold: bool = True, manifest: dict | None = None) -> None:
     if doc.get("schema") != 1 or not doc.get("as_of") or not doc.get("provenance"):
         raise ValueError("coverage requires schema/as_of/provenance")
+    validate_census(doc, manifest)
     rows, accounts = doc["rows"], doc["accounts"]
     if not rows or not accounts or len({r["id"] for r in rows}) != len(rows):
         raise ValueError("empty/duplicate denominator")
@@ -266,6 +314,7 @@ def aggregate(doc: dict, labels: list[dict]) -> dict:
 
 
 async def measure(doc: dict, judge: Any, *, print_input: bool = False) -> Outcome:
+    validate(doc, gold=not print_input)
     estimate = plan(doc)
     if print_input:
         by_id = {r["id"]: r for r in doc["rows"]}
@@ -282,7 +331,6 @@ async def measure(doc: dict, judge: Any, *, print_input: bool = False) -> Outcom
             ),
             error="print-input: no model called",
         )
-    validate(doc)
     if judge is None:
         raise ValueError("coverage requires configured Judge")
     route = doc.get("models", {})
@@ -309,6 +357,8 @@ async def measure(doc: dict, judge: Any, *, print_input: bool = False) -> Outcom
         )
     receipt: dict[str, Any] = {
         "plan": estimate,
+        "manifest": os.environ[MANIFEST_ENV],
+        "manifest_hash": os.environ[MANIFEST_HASH_ENV],
         "models": route,
         "batches": [],
         "all_rows": doc["rows"],
