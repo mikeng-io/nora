@@ -175,10 +175,11 @@ async def test_chat_media_readings_reach_persona_without_becoming_sender_claims(
     from dataclasses import replace
 
     from nora.agent.egress import scan_identifiers
-    from nora.domain.culture import RoomMessage
+    from nora.domain.culture import Episode, RoomMessage
     from nora.domain.media import MediaObject
     from nora.domain.media_join import MediaJoin
     from nora.domain.models import DeliveryStatus, TranscriptRow
+    from nora.language.persona import Mention
     from nora.obs.metrics import Metrics
     from nora.testing import FakeMediaObjectStore
 
@@ -209,7 +210,15 @@ async def test_chat_media_readings_reach_persona_without_becoming_sender_claims(
         media_join=MediaJoin(store=FakeMediaObjectStore(objects),
                              screen=scan_identifiers, metrics=Metrics()),
     )
-    rendered = await adaptor.inputs(key=KEY, batch=[*rows, plain])
+    rendered = await adaptor.inputs(key=KEY, batch=[
+        rows[0], Mention(message=replace(rows[2], row=replace(
+            rows[2].row, person_id="bo", sender_name="Bo"))), *rows[3:], plain,
+        Episode(send_id=7, room="room-a", text="what happened?", outcome="responded",
+                reactions=0, edits=0, replies=(rows[1].row,)),
+    ])
+    assert "synthetic scene 2" in rendered.split("<persona_episodes", 1)[1]
+    assert "source_at=" in rendered.split("<persona_episodes", 1)[1]
+    assert "synthetic scene 3" in rendered.split("<persona_mentions", 1)[1]
     for i in (1, 2, 3):
         assert f"synthetic scene {i}" in rendered
     assert '"raw_caption":' in rendered

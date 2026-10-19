@@ -895,10 +895,14 @@ class PersonaPersonAdaptor:
     ) -> str:
         """One `<episode>`: her send and their replies to it, each with its id."""
         rows = render_row_window(
-            [(e.send_id, "you", e.text), *(
-                (r.id, self._name_of(r.person_id), bodies.get(r.id, r.body or ""))
+            [(e.send_id, "you", e.text, None), *(
+                (r.id, self._name_of(r.person_id), bodies.get(r.id, r.body or ""),
+                 r.ts if shas_in(r.media_json) else None)
                 for r in e.replies if r.person_id == person)],
-            row_id=lambda m: m[0], attrs=lambda m: (("from", m[1]),), body=lambda m: m[2],
+            row_id=lambda m: m[0],
+            attrs=lambda m: (("from", m[1]),) + (() if m[3] is None else (
+                ("source_at", datetime.fromtimestamp(m[3] / 1000, PERSONA_HKT).isoformat()),
+            )), body=lambda m: m[2],
         )
         return render_group("episode", [
             ("n", f"response:{e.send_id}"), ("room", labels.get(e.room) or "unnamed room"),
