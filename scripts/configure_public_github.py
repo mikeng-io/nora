@@ -12,6 +12,7 @@ import shutil
 import subprocess
 
 REQUIRED = [
+    "PR content",
     "checks",
     "dependency-review",
     "CodeQL (python)",

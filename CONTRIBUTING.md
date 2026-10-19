@@ -231,7 +231,30 @@ The lightweight CI workflow runs static checks and architecture/documentation
 checks on pull requests and pushes to master. It uses hosted runners, read-only
 repository permission and no production secrets. It is a fast baseline, not a
 replacement for the full affected-test gate above or live evaluations. It does
-not deploy or grant access to Norty. Action updates are grouped by Dependabot.
+not deploy or grant access to a deployment host. Action updates are grouped by Dependabot.
+
+The `Contribution content` workflow checks live PR titles and bodies on opening,
+editing, new commits and label changes. Its `PR content` check is attached to the
+current PR head and is required by the public branch-protection setup. Titles
+reuse the commit checker; bodies require populated `What` and `Gate on the merged
+tree` sections, template heading order and no unfilled prompts. Comments and fenced
+examples are ignored. This checks structure, not the truth of a claimed gate result.
+
+Release Please and Dependabot PRs use their generated formats only when authored
+by the recognized bot on a branch in this repository. A fork cannot claim that
+exception. The release App identity is verified against `RELEASE_APP_ID`.
+
+Issues use the existing freeform/design-anchored fields. Incomplete issues receive
+one advisory bot comment, updated as needed and removed when corrected. The title
+already supplies Area, so CLI/API users need not duplicate that field. Explicit
+uncertainty such as `#TBD` in decisions/dependencies remains valid. Issues are never
+automatically closed or locked by this check.
+
+Common spelling mistakes (pinned local codespell) and long lines/trailing whitespace
+produce advisory suggestions only. English-only writing and automatic grammar
+judgements are not enforced. No text is sent to an external language service.
+The privileged metadata jobs execute only reviewed `master` code, never PR source,
+and never interpolate contribution text into shell commands.
 
 ## Proving a fix: mutation
 
