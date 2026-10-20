@@ -53,7 +53,7 @@ jobs:
             npm run wiki:update --prefix docs-site
           fi
         env:
-          NODE_OPTIONS: ${{ inputs.diagnostics && '--import=./docs-site/scripts/provider-diagnostics.mjs' || '' }}
+          NODE_OPTIONS: '--import=./docs-site/scripts/provider-compat.mjs'
           OPENWIKI_PROVIDER_DIAGNOSTICS: ${{ inputs.diagnostics && 'true' || 'false' }}
           OPENWIKI_UPDATE_REQUEST: ${{ inputs.request }}
           OPENWIKI_PROVIDER: openai-compatible

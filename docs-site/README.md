@@ -54,6 +54,14 @@ It also reports malformed argument-JSON counts, repeated-ID booleans/counts
 without the IDs, and closed tool/error classifications when tool invocation
 throws. These observations do not change responses, retry tools or repair calls.
 
+Native generation preloads `provider-compat.mjs`. Ollama's JSON chat-completion
+responses receive a fresh completion ID before LangGraph consumes them: reused
+provider IDs otherwise replace earlier assistant messages in the conversation.
+Tool-call IDs, content and arguments remain intact; other providers and SSE
+responses are unchanged. This shim covers the current non-streaming CI setup.
+Optional diagnostics still observe the original response before normalization.
+See [Ollama's small completion-ID pool](https://github.com/ollama/ollama/issues/18655).
+
 Configuration:
 
 - Secret `OPENWIKI_API_KEY`: Ollama Cloud key, never committed or printed.
