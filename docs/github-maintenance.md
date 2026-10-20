@@ -56,6 +56,13 @@ a merge; it cannot change that protection. Store its App ID as Actions variable
 Use GitHub Settings or `gh secret set` interactively; never paste the key into an
 issue, chat, tracked file or workflow log. No personal token is needed.
 
+Also pin the App bot's numeric GitHub **user** ID as Actions variable
+`RELEASE_APP_BOT_USER_ID` for contribution metadata checks. Verify the App ID
+and slug in its owner settings, then read `gh api 'users/APP-SLUG[bot]' --jq .id`.
+This is a separate identifier from the App ID. The metadata job checks the live
+PR author's user ID; it receives no App key or installation token. Private Apps
+cannot be discovered through `/apps/{slug}` using that job's repository token.
+
 Release Please creates/updates the version PR. The App queues that PR for a real
 merge commit; required checks must pass before GitHub merges it. The resulting
 master run publishes the tag and GitHub Release. Installing this App does not

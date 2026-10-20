@@ -299,14 +299,40 @@ def test_issue_feedback_updates_once_and_clears_only_its_own_comment_after_corre
     assert [x["id"] for x in github.comments] == [1]
 
 
-def test_api_failure_is_published_as_failure_not_a_pass(monkeypatch):
+@pytest.mark.parametrize(
+    "case",
+    [
+        "valid", "renamed", "unconfigured", "wrong-id", "missing-id",
+        "human", "fork", "branch", "label", "body",
+    ],
+)
+def test_private_release_bot_uses_the_pinned_user_identity(monkeypatch, case):
     item = release_pr()
-    item["user"]["login"] = "release-app[bot]"
+    item["user"] = {"login": "release-app[bot]", "type": "Bot", "id": 456}
+    monkeypatch.setenv("RELEASE_APP_BOT_USER_ID", "456")
+    monkeypatch.delenv("RELEASE_APP_ID", raising=False)
+    if case == "renamed":
+        item["user"]["login"] = "renamed-app[bot]"
+    elif case == "unconfigured":
+        monkeypatch.delenv("RELEASE_APP_BOT_USER_ID")
+    elif case == "wrong-id":
+        item["user"]["id"] = 789
+    elif case == "missing-id":
+        del item["user"]["id"]
+    elif case == "human":
+        item["user"]["type"] = "User"
+    elif case == "fork":
+        item["head"]["repo"]["full_name"] = "attacker/fork"
+    elif case == "branch":
+        item["head"]["ref"] = "ordinary-branch"
+    elif case == "label":
+        item["labels"] = []
+    elif case == "body":
+        item["body"] = "TBD"
     github = GitHub(item)
-    monkeypatch.setenv("RELEASE_APP_ID", "123")
-    with pytest.raises(AssertionError, match="unexpected API call"):
-        content.check_pr(github, "owner/repo", 104)
-    assert github.calls[-1][2]["conclusion"] == "failure"
+    valid = case in {"valid", "renamed"}
+    assert content.check_pr(github, "owner/repo", 104) == (0 if valid else 1)
+    assert github.calls[-1][2]["conclusion"] == ("success" if valid else "failure")
 
 
 def test_issue_field_constants_follow_the_existing_form_contract():
@@ -346,6 +372,9 @@ def test_privileged_metadata_jobs_use_only_default_branch_code():
         "checks": "write",
         "pull-requests": "read",
     }
+    metadata = workflow["jobs"]["pr-metadata"]["steps"][1]
+    assert metadata["env"]["RELEASE_APP_BOT_USER_ID"] == "${{ vars.RELEASE_APP_BOT_USER_ID }}"
+    assert "RELEASE_APP_ID" not in metadata["env"]
     assert workflow["jobs"]["issue-feedback"]["permissions"] == {
         "contents": "read",
         "issues": "write",
