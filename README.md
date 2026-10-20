@@ -140,8 +140,9 @@ networks; `build.network: host` is a build-time DNS workaround, not its runtime
 network mode. Configure administration and network access for your own environment.
 
 [Deployment](deploy/README.md) describes the current build/recreate procedure
-and a proposed pull-based GitOps replacement. Production deployment is still
-operator/agent-driven; merging a PR does not install a deployment controller.
+and an off-by-default Komodo release deployment path. Production deployment is
+still operator/agent-driven until its installation and cutover are verified;
+merging a PR does not install a deployment controller.
 The [runbook](docs/runbook.md) carries health checks and rollback constraints,
 including database migrations. Do not use old phase tags as rollback targets.
 

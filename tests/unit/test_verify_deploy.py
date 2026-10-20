@@ -41,3 +41,22 @@ def test_a_crash_loop_fails_the_deploy_even_when_read_while_running(monkeypatch,
     monkeypatch.setattr(vd, "containers_for", lambda image: [_row(**state)])
     monkeypatch.setattr(vd.time, "sleep", lambda s: None)
     assert vd.main(["--settle", "0", "--healthy-timeout", "0"]) == code
+
+
+def test_digest_readback_keeps_missing_and_stale_services_in_denominator(monkeypatch):
+    vd = _load()
+    expected = dict.fromkeys(('nora', 'presence', 'analytics'), 'sha256:new')
+    rows = [dict(_row(), service='nora'),
+            dict(_row(name='presence', image_id='old'), service='presence')]
+    # The old image reference MUST NOT exclude presence from the reading.
+    monkeypatch.setattr(vd, '_docker', lambda *a: __import__('json').dumps([
+        {'Name': '/' + r['name'], 'Image': r['image_id'], 'RestartCount': 0,
+         'Config': {'Image': 'old', 'Labels': {'com.docker.compose.project': 'nora',
+                    'com.docker.compose.service': r['service']}},
+         'State': {'Running': True, 'Health': {'Status': 'healthy'}}} for r in rows
+    ]) if a[0] == 'container' else 'nora\npresence')
+    actual = vd.containers_for_services('nora', set(expected))
+    assert {r['service'] for r in actual} == {'nora', 'presence'}
+    assert vd.service_errors(actual, expected) == [
+        'analytics: expected exactly one container, found 0',
+        'presence: image differs from release']

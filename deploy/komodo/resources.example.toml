@@ -1,0 +1,48 @@
+# Import a PRIVATE, operator-filled copy through Komodo Resource Sync.
+# Keep this sync/manual resource management separate from the deployments branch.
+# /srv/nora-runtime is a placeholder: use the EXISTING runtime root, not a new empty directory.
+[[stack]]
+name = "nora-releases"
+[stack.config]
+server = "YOUR_EXISTING_SERVER"
+project_name = "nora"
+repo = "mikeng-io/nora"
+branch = "deployments"
+file_paths = ["compose.json"]
+# Configure existing read-only Git and registry accounts separately if private.
+git_account = ""
+registry_provider = "ghcr.io"
+registry_account = ""
+run_build = false
+auto_pull = false
+auto_update = false
+poll_for_updates = false
+destroy_before_deploy = false
+webhook_enabled = false
+send_alerts = true
+# Discovery includes inactive profiles. Remove site here when enabling --site.
+# Remove embedder only if that separately managed infrastructure profile is running.
+ignore_services = ["site", "embedder"]
+env_file_path = ".komodo.env"
+environment = "NORA_RUNTIME_ROOT=/srv/nora-runtime"
+additional_env_files = [{ path = "/srv/nora-runtime/.env", track = false }]
+config_files = [{ path = "release.json", requires = "Redeploy" }]
+# Wrapper ignores the supplied up selection and applies only its installed owned cohort.
+# Add --site only on installations where the public site is already enabled.
+compose_cmd_wrapper = "python3 /etc/komodo/nora-deploy/komodo_deploy.py --runtime-root /srv/nora-runtime --project nora -- [[COMPOSE_COMMAND]]"
+compose_cmd_wrapper_include = ["config", "up"]
+
+[[procedure]]
+name = "nora-release-poll"
+[procedure.config]
+schedule_format = "Cron"
+schedule = "0 */10 * * * *"
+schedule_enabled = false
+schedule_alert = false
+failure_alert = true
+webhook_enabled = false
+[[procedure.config.stage]]
+name = "Deploy changed release"
+executions = [
+  { execution.type = "DeployStackIfChanged", execution.params.stack = "nora-releases" },
+]

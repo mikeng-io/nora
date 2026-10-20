@@ -1,0 +1,11 @@
+# Apply to the private Komodo Compose project after building Periphery.Dockerfile.
+# Preserve the existing Periphery settings and key volumes from its base Compose.
+# NORA_RUNTIME_ROOT must be the existing runtime directory, not a fresh directory.
+services:
+  periphery:
+    image: nora-komodo-periphery:2.3.3-python
+    volumes:
+      - "${NORA_RUNTIME_ROOT:?}:${NORA_RUNTIME_ROOT:?}:ro"
+      # Same host inode, not merely the same pathname in a different namespace.
+      # Create once as the deploy operator if absent; never replace/delete it.
+      - /tmp/nora-deploy.lock:/tmp/nora-deploy.lock
