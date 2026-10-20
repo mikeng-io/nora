@@ -229,8 +229,9 @@ itself. The work goes to three lanes:
   line, not into the diff. It still checks its own work, but that is the
   minority of the run. The orchestrator guards it, reading the diff for
   scope creep and anything reckless, and the review lane does the checking.
-- **Name Kimi's model on every run.** Without `-m`, `kimi` runs its
-  `default_model` (`kimi-for-coding`, K2.8 Preview), not K3. The T3 ACP
+- **Name Kimi's model on every run.** `-m` pins it, so a changed
+  `default_model` in `~/.kimi-code/config.toml` cannot swap the reviewer
+  silently (`~/.kimi/` is a legacy install the CLI does not read). The T3 ACP
   provider (`acpRegistry_kimi_cli`) returned an empty turn on 2026-10-21; use
   the CLI until a `delegate_task` smoke test returns text.
 - **Kimi is told it is read-only, and that is measured, not trusted**: `-p`
