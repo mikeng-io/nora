@@ -468,7 +468,7 @@ how long it thinks. Start at the row's level and move it on evidence:
    imagery, 3D): palette, type, shape, motion. Read it before touching `app/`
    styling or anything she looks like.
 9. `docs/observability.md`, `docs/eval-sop.md`, `docs/runbook.md` — how to
-   instruments, behavioural measurement and operations. Read the one the task touches.
+   instrument, measure behaviour, and operate her. Read the one the task touches.
 
 Historical paths and deprecated tiers: `docs/CONVENTIONS.md` «Historical reading references».
 

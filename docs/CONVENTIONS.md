@@ -279,7 +279,7 @@ mistake it produced (2026-08-21: eight full gate runs in one session).
   duplicate checks now live in `nora-decision`, including origin/master and
   open PRs. The old check needed a trailing `\|` so sub-lettered rules
   (`R-6b`, `R-10c`) were not read as their
-  parent number and the check reports 8 duplicates that are not. 2026-08-23: a
+  parent number, and the old check reported 8 duplicates that were not. 2026-08-23: a
   REAL duplicate — two rows numbered R-29 — sat on master for 15 days, reported
   and backlogged by the session that found it, because the check that should
   have caught it cried wolf seven times. A noisy gate is a disabled gate.
