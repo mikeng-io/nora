@@ -1,0 +1,482 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:439e24ac5f7624779a0567155c0f232755d6e98d49fe9c1ab1a4b87397c7208e",
+  "claims": [
+    {
+      "id": "claim_dbb5528c34ea4f0892ec1ed45ba0f3cd",
+      "statement": "`nora.domain.ports.PlatformAdapter` declares exactly `platform`, `resolve_identity`, `listen`, `send`, `react` and `health`, and deliberately has no `parse()`: a port-level parse would force every adapter to pretend its transport is dict-shaped, so parsers stay per-adapter and are tested against their own transport shape.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/ports.py#L33-L36",
+          "version": "repo-lines-v1:sha256:306f8e74d29871d8866ee50d02729b5896d1bf0f770bc65143305d030a898669:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDA4NzY5ODc5NjdkYzA2ZDgyYzQ1NTlhNGNlODcyNThkNDIyOGZjYjk5YjZhZDA1OGViZjlmMDg3OWU3ZGU0YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDhkY2QzODc3YTQyMjQ0ZDFlYWQyNTZmYTVlZDI1ZjE3YTIwM2E0MzlhM2MxMDgyMmI1MTFjYjY5M2U4M2EyZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTMyNTQwYTY2Y2JjM2VjZmRkMDRjOWQ1Mjc2YWNiZjZiZjI1ZGNiZmVlMTVkZTJhMjlmNTkxOGM2M2FkYjA0NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOGQ5ZDYzODJlZDI0MzMwMzI0ZDJkNzQ5NWU1YWUwZmUxNTZkZjhhZmJjYWNjMTE4N2EwY2E3NGM1NGE3YzkwMSJ9"
+        },
+        {
+          "resource": "repo://nora/domain/ports.py#L632-L696",
+          "version": "repo-lines-v1:sha256:cb8cf945140bc1d337d293d56e95151d8f40eb5f4de943c5e9b9d9d1baf575be:eyJzZWxlY3RlZExpbmVDb3VudCI6NjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwMzA2OWQzZjMyN2IwY2ZkMWQwODcyNzRlYzI3NTY1ODU0ZDg1MmIzMjI1NTNkMzkwMmM4OWY1M2YwMDBlZGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE3NmEyMDNlMGRlZjlmNTk3YzQwODczZmNkM2EzNjI5MmZiOWIxOWNiZDA5YTI4NGQyYzE4NDUxNTU3ODY0ODMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU5MjM0NTE3NWVhM2NjZWZmY2FiYWNiNDBhZmUzZTRjNGM1MjAwOTA5NzUyYjA2MzkwZDVkMGQxZjFjZTViYjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQzYzYyNWY5MWRmYjhlNGMzZDFlYjFjN2NjNDU3NWNjOGE1NWJhOGE2N2E4ZmM1MjA1MjYwYTBiZDgyYTgyYjIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_73e0ac8a07eb46bf934844a4930a9b6a",
+      "statement": "`PlatformAdapter.send`'s `mentions`, `styles` and `preview` are the only defaulted parameters on the send path, deliberately, so a platform without those concepts ignores them and every failure upstream degrades to the plain message rather than to a refusal, which also lets a new adapter satisfy the port on the day it is written.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/ports.py#L649-L678",
+          "version": "repo-lines-v1:sha256:66799d251b8b0b176941936f4453cc4794ba3f16d66174c571a5aef543f1d26e:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyZDYwMDU2ZjMxNTU3MzRiODAyNjQ3ODA2ZTZmYmI3MWFlOTFkYTk0NTY4ODc3OTkwZDllYTAyM2M4Y2M0OGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEwZjg4NTgxMzc5MzM1Y2I1ODYwYTE5ZmFkOGQxYzJlMWM1MzY1OTY5YWRkZjIxNWU5OWJhMDNjYTdkYzQ0ODYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNhOGRlM2QzM2UxZmNlNTllZmIzNTE4MTJmZDExNTQxOWY3OGY5MjljOGRkMzUyNzlmMjA1NGZkN2JjZjNhYWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRiY2NlODBhN2E0Y2JjYjA2NzFkMTkyYWMzOTk4YjAwOTBlNjJkNjBiYWMzZmVjMzBiMmJlOTAxNGUyZGY5M2QifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_808a5a69dcd14eed8fa9ea6e6adf4938",
+      "statement": "`SendResult` is a record rather than a bool so a rate limit can carry a retry delay, and `ReactionResult` carries `supported` beside `ok` so \"this platform has no reactions\" stays distinguishable from \"the reaction failed\".",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/ports.py#L220-L231",
+          "version": "repo-lines-v1:sha256:f637fc15d0609fc918a3d3c923f807b6033abfb2a3f55cddad550800d7e0bcf3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MGY2OTE0MDU5Mzc4YTI4MmM0ZWU0Y2EwZTIzYTg4NTMxYzIyZDlmNjMyMDY0MDlmZDhlNWZhMWM4YTMxYTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIyZjZhMTRlYjI0NWQyNjNkMzQ0NzQ1MmE1YmRjMjIwYzE1ZDhhZDA2YjgzZjI2ODNlMDFjMWFhYjM4ZjdhN2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        },
+        {
+          "resource": "repo://nora/domain/ports.py#L23-L27",
+          "version": "repo-lines-v1:sha256:82627d9e087dc04435a22f88a398252c03356dcfc4d2c53b1d48adea53ce453a:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmM0YTZlMTM4YjkzMTI3YjYwODczZmJlMzdhNDI5YWRhNDAzZmU2NTk5OTA0YjdmYjU2MjQxNzY4NTM5MWJmZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTc0NWJmNGU3NTAwMzFmMjY4ZmM1ZTQwZWQyOGYzYTVhN2JmMjg2YjYxNzEyMTdmMmJhOTkxN2JiYWYyMDkyYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGI5MTk3NjVlODZmMzJmNDMzZmIwMmY3ZTdhNDdlZDkwNTc4M2E0N2Q3ZWI4OTI1ZmQyNWUxZDBmNzliM2FmOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWEyOTI1MTZjNjlmYWU0ZjcxNzdiZjAyZGFhMzNjZTgwMzdhMDlhYmExMTY5ZmE4OGI0ZTYxMmU0ODIwMmQzOCJ9"
+        },
+        {
+          "resource": "repo://nora/domain/ports.py#L284-L290",
+          "version": "repo-lines-v1:sha256:6be8678094687350c1295d73a117d90b0847705316f4fa8ca4b7b5b3efaa0d09:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjY5YTEzOTc1YzI1NmVjODMyMGUyMDE2MDgzYzk2ZGY2MzdjYTNkMzViZWJkZTIzMTRiZWUzYTQ3MTFiNTZjYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDQxMGIwZTUzNTg4OWEwMDNmM2IzNGMzNTBkYmY3ZDZiN2VmNjE3Nzc0MDE0NmZiYzQ4YjNiMzhkMjgyMGI1NyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzQyOTUyZjQyZDBmNTVmYTM1ZDNlNDNmMjQyY2QyODlmMWZiYTA0MzhjOTI2OGU4ODU3ZGVlNDgxOTIxZWVlYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzBjZTNmMjRhYjQ3YzJmNWE5ZDMzN2YzNzdlZDg1NzNmYTU2NTg0MDc2NDAyZjFhZjA1NGEzZGVkNjE5NDYyZiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_fa99e770f07842599b04bfef2647a503",
+      "statement": "`react()` lives on the adapter port rather than a separate capability protocol, and `nora.engagement.stages.indicate` tolerates an adapter with no `react` attribute at all via `getattr`, counting it `unsupported` and never crashing on it.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/ports.py#L38-L51",
+          "version": "repo-lines-v1:sha256:e3ae916ab9c8a0abfc1f94be62103149f3c37d6a3d1a304278062fe40e189372:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMzMzFiYjE2YjVhYTY3MDZiZWZlNTdiN2I1OWIxNzAxYmU5OTEzZGI1YzgzMDNlYzkyZGFmMDIzMTJhYjUxZGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ3MjBlNmMxZDY0YzNkOTkzOWFjODZlNTRmMmYyYjZhNmIzODk3YmFhNjNjMDhmZjE0NmVlOTIzMzZlY2Q5ZmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM2ODljMjVkOTdiZWI2ZDA4NTQ0YjNlZWFlMmQ4MWI2ODlhNDFiNzk1MDA1Mzk4ZjIxY2YwY2FlYzYzNjAzOGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU2N2RhMGY2NGYzZTllNWNjZTVjYzhhOTVhMTkxYWY5MDdmZDI1ZTA2ZDExODhiYWRiZWZlMmRlZDk4ZGZmMmEifQ"
+        },
+        {
+          "resource": "repo://nora/engagement/stages/indicate.py#L163-L194",
+          "version": "repo-lines-v1:sha256:37382e9f95a841fd2a58361fede0d8fb4084051b1584cff96f7a30de24fb09cb:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiYmFiODU3OTg4YTg0MTZjOTA0NjA4Nzk5ZjNiNzZjNmVkMjQ4MGU0YTMwMTUzOTUxODE4ZmIxYTE4NTVmZmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVjZjY2MGQ2OTAwMzk4NzdmMDcwOTY4ZmQwMzhiNzA4MTFhMjMwODg1MThkZThlZmI5NzM5YjE5YjEzOGY0MWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM2NDNjMzYwMjMwNGVkMTBmYmFhODhjZWRkNDBkOWRmMzg2ZTI2MTkyMjE0ZGFhYmNlZjllNTBiNmNiMmI1OTgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_93cf2d222f124044b4764c7aa2752564",
+      "statement": "`AdapterRegistry.from_config` builds each enabled platform inside its own `if platforms.<x>.enabled:` block and resolves that adapter's identity inline before registering it, raising `AdapterRegistryError` (re-raised as `StartupError` by composition) because R-12 admits a tag by testing membership in a resolved `PlatformIdentity.aliases`, so an adapter that cannot say who Nora is could let her trigger herself.",
+      "evidence": [
+        {
+          "resource": "repo://nora/engagement/stages/admission.py#L74-L87",
+          "version": "repo-lines-v1:sha256:6b9799695c67f342d2299b7b39ccd5c29207688e0f337f8bda53da0de57ede04:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYyMjcxNmRjYTRkNjM4MGUzY2VjYWZhOTg0NjBhZDJkODNkNWNiNWNjZDhkYTIwNWQ3ZjczMTlkZWZjOWFmMDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE5NzlhMDVkNDE5ZTk5ODE5NzMwOTcxN2FkOTcyODVlZDQwNDU4NWExMDM2MjJkNDViMjAyYTExMDc4M2VkZWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUyNDQzNmNjODI1MGM2OTdhZTNkOTkxYzY2MTA0YTkwMTU5MTQwNTFkNWVhMmM4OWU1MjA0NzAxMTg4NjkxMzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5MDkzOWY0ZGJhZWMwYmRiNDFjYzA3ODM4YjgxYzgwYTIxYWY1ZWFiYTBjNWI3ZDBmNzQ0ZjQxN2QwYWViN2UifQ"
+        },
+        {
+          "resource": "repo://nora/platform/registry.py#L1-L37",
+          "version": "repo-lines-v1:sha256:d5f038eddfbf36e575308243f0bde6eff03c6ae674b57dbfe2152b4b5d2c9138:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkMTI2OWE4ZjJmODI2MjEyZTJhNThlYzQ4NzkxZWM5M2U4OTEwOTdlYTIzZjJkNWFlYzYyNGI1ZjJjNGYzZTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/platform/registry.py#L208-L278",
+          "version": "repo-lines-v1:sha256:3c068f46f8aebd92431a17b751f2c4bf1e2d82335485e5b7387f0351c08e31da:eyJzZWxlY3RlZExpbmVDb3VudCI6NzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0MzFiYWY5YTQ5YzgwZmNlY2M0NDFhNGY4MTE5OTJjOWNhNjQ0MjBiODEzMDgyN2YzZmUzMzY3MzZmZDdmZTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM3Y2ZkNThiNjkxNTY3OWY3ZTkzZTQzMDA0NjY3Y2I1MTkzOGE3YjkyMzI5YWFiMTgxMDllMzJiZWRkNzcwNzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE0N2M1ZGE1NDVmMTJlMjBjZTQyYzcxYjQ3ZjI3NTkzNWRjMzY3Nzk5YTIyYzYyZTkzN2RmZjhjMGI0MWIwY2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ2NzliYWUzMTNhODE4ODMyYTNlODg4MjIxYjlkYjcxM2Y0N2RmNjFlNGI1YmQ5OTE3NWEzNGZlYzFmNTExN2EifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d74cfaccdf6848df8a657e4b0517ed5a",
+      "statement": "`AdapterRegistry` is a frozen lookup table built once at startup: it performs no I/O itself and stores adapters typed as the `PlatformAdapter` port, so a caller reading through it never needs to know which concrete adapter it got.",
+      "evidence": [
+        {
+          "resource": "repo://nora/platform/registry.py#L129-L160",
+          "version": "repo-lines-v1:sha256:0e15d336a71bfe6c4a70be29c243ff051e8f5bd949e090fee9d713217e5432ad:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZkMGIxNWY0NDExYmU5ZDUyZWY1Y2ZhMGQyNzk1MmQ1N2RhZWRkM2FjNTY2OTYzYWZkMzdjMzFkYzhkZTI5NzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYxODA3ZTFjZmEzMzE1OTk3ZDEzMzBlZjcxM2MxOWJmZTlmMjI1MTZhZDBiMWNhMDA3ZWI2ZDhlNDlmYWFlZWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJlMThiZjc4YjVlZjJjNTE2MjMyYzg1ZjM3ZjU1NjQyZmQxMGFjM2E2YjU4MGY0YTVlMWUzYTkyMmI0YWRjNDkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_962ec627f7204d8d9aa9fefe9fc2aa4b",
+      "statement": "`AdapterRegistry.self_aliases()` is a union of every resolved identity's aliases and is what `MentionPolicy`/`ReplyToNoraPolicy` test, while R-12's self-tag check deliberately stays per-platform and reads `identity_for(message.platform)`; the overlapping bare-digit id spaces mean a cross-platform false positive could engage a turn that did not tag Nora but could never miss one or resolve a person to the wrong `person_id`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/engagement/stages/admission.py#L85-L85",
+          "version": "repo-lines-v1:sha256:e83b80f2af773fabf0915bd387cdc6ad1b7731be03e65f48114bc0061a0b5a85:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTgzYjgwZjJhZjc3M2ZhYmYwOTE1YmQzODdjZGM2YWQxYjc3MzFiZTAzZTY1ZjQ4MTE0YmMwMDYxYTBiNWE4NSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTgzYjgwZjJhZjc3M2ZhYmYwOTE1YmQzODdjZGM2YWQxYjc3MzFiZTAzZTY1ZjQ4MTE0YmMwMDYxYTBiNWE4NSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYmU3MzljNDkxNWY1ZjYzYTI1Y2JmNjMyOGRmNjFmYmEzZWM1OTZkMWE4MzVmZTM3YTk1YmJkMmYwNDUyNDM2NiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmFiODEwMmIzMmQ5NDk2M2JiZDMxNDA1ODJiYjQ0M2IzNDJiNzE1MzBhYzdiYjYyNjg3MTE5N2I5MGU2OWJmZSJ9"
+        },
+        {
+          "resource": "repo://nora/platform/registry.py#L315-L354",
+          "version": "repo-lines-v1:sha256:a8f8410c8a8e5eb6af9f84638937613606780b678b161d06f819b9a763aa26bd:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRhNWM2NmUwNzdlYmRlNTAxNDZjYjA2MDVhYWE0NmEyMTQyZjM1OGQ5ZTYzNGQzN2I3MDg0Y2JiN2EwMTgwYTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJmYzQ1MDY3YTJiNmQ4MjBhOWJkNDA4ZTE3YTRhMDBmNWMwN2Q3ZWVlOTJhODkxNTZhOTJjM2JkZWM3MWFiOTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQzMGIyYWMwZTQxYWZiNmUxMDRkY2FhN2Q1NDFlZDgwNzM2ZWMyZTBlZDdjNmE4ZTc4MDlmMzIzZTRjNGZjNjkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_97b62ce9ac66428d8ab8468df319212c",
+      "statement": "Instagram is the single exception to fail-fast identity resolution: a failed `resolve_identity` degrades the adapter and registers it with no entry in the registry's `identities` mapping, and that omission is load-bearing because a placeholder identity would inject a placeholder value into the alias set the mention and reply-to policies test; the exception is explicitly not extended to WhatsApp.",
+      "evidence": [
+        {
+          "resource": "repo://nora/platform/registry.py#L18-L37",
+          "version": "repo-lines-v1:sha256:17c6cf87fc4a22e0fcba96460cde39e38783f677cbd9eb4ce6141af15bc6f1d9:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ2YjQ3NTY0OWE2MWE2NThmYmU3MDU0ZjgwYTFiODNhZDc3YjY1YTE0MGY3Njk1MzlhMzVlMDVjMjdiMzg1YzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFkODMzNWM0Njg0NWRjM2FkYjNiMzJkM2I3MTQyYjMwYzc1ZDI3ODE0MzNjMmZhOTg1ODJhOWNhOGY1ZGY5ZTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/platform/registry.py#L280-L307",
+          "version": "repo-lines-v1:sha256:a7809a565f8d017b298d9ab53de36517c6ca486ffe3c6f87f33d8b266123528a:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzNjMxMGU3NTI3NWNmZWI2MzliNTljZTA0MjVkMzRlZWZjMzFhZGM2YmJlZTA5NThjZGE2YTg2NmIyNDY0ZDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIwZDQ2MmQwMTM4NTE3M2Q2OTg3Y2QzZjM2N2VlOGI2YjJjMzJlN2RkNTdlM2ZiNDRlMGJmZTk2N2JhNTg2YjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYzNjg1NWNlNTQzNmZjZmMxNTFjNTIxNjk5Yzk0MDhjNGE1NjIzOWIwOGQ4MTZlZjE2OGViMWQxODYwMzMwNzkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjExYTIyMTMzNTIyZTE0MzY1OWFhNTA3Yzk1ZTJiMTlkZTc5YTc1MTgwNDI1OGFkYWZjOTc4ZTJkNTVlMmQ3Y2YifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_815d775892614dde9c05ae2ff571171b",
+      "statement": "A degraded Instagram adapter sends and reacts nothing without an HTTP call (a refusal that is not retryable, and `react` answers `supported=False`), never opens its event stream and never returns from `listen()`, logs one startup ERROR line, and reports `degraded=True` with the reason as `detail` from `health()`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/platform/instagram/adapter.py#L113-L173",
+          "version": "repo-lines-v1:sha256:94192202b13cb38c7d7992963ba631d833454ebaaf57400847df165d2240ce45:eyJzZWxlY3RlZExpbmVDb3VudCI6NjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljOWI2MmVmMmFjN2JkYmY1YThmMmM3ODc4ZjQ2ZjdlYjhmMDUyMjY4OGM5OTJmMDA4NmZhMTM3NzcyNDEyOWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjliOTYwY2FmMzkxMjU4YjBiMGY3MGI2YzE1MDc4MTU3OTAwNjlhY2JkMWU3MWU1NmZjMDdlMmQyNjI1OTQyMWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhY2FiYzFmYjEyOGY4YjhlZDFhZTBhNzQyNjI2NWEzNzc2OTBlNGY1M2Y0YTFkZWI0MGQ4ZWI2N2UzZGQzNDcifQ"
+        },
+        {
+          "resource": "repo://nora/platform/instagram/adapter.py#L201-L271",
+          "version": "repo-lines-v1:sha256:a7c6267fb2771e0f678cb3569d1ffbd08180d01b187282c85135bada64abae82:eyJzZWxlY3RlZExpbmVDb3VudCI6NzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljMmI3MmUyZDE3MDEzZmFjZWJjOTAwM2U3NDI5MDQwMmVkNWYwOWM0NGE0ODlhYzExZWQ3ODcyOGMzZGVjMTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNlZWM3YjY1MjU5OGNiOGNkN2FkZmE2NWRlNmJiNGQ4MWIyNzcwMTdhOTU2OTdmODYyZjdhMDRjMmEyNjQ3YTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://nora/platform/instagram/adapter.py#L9-L41",
+          "version": "repo-lines-v1:sha256:e9c9737dff3c6135a42518cf6b4173ad61447b1fda3d5c4d478e13126169ab08:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMzMjYwMjA3Yzc2NTdhN2U0NTgwYTVhMGM1ZmRmYWQ4ZWQ5OTI0ZGI3NTE5ZGVhNTQyZDg1ZmNjNjY3MTZlMTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAwMTI3MzUzZWM1NGM4YzY5ZjBkMzEyODQwYzY0NTg2YWZjODZhM2IzYjliZTQ5MWVkN2EyZTZmYmRjYjIyNTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e9b0a60fa0694f52b1486d1745b42185",
+      "statement": "Instagram degradation has two independent sources: the startup half is latched until restart, while the runtime half tracks the listener's heartbeat-reported session state, so a session checkpointed after boot is reported degraded and one that recovers stops being reported degraded without a restart.",
+      "evidence": [
+        {
+          "resource": "repo://nora/platform/instagram/adapter.py#L91-L111",
+          "version": "repo-lines-v1:sha256:dbff7bd7f174732aa9618a0e18705f0bb688818cf4a69b16d1350cf79a4717fa:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzZDAwY2YyNzA5NjRkNDRhMTNkZmFjODc1MmIwOWZjYzQzNWIwZjE5YjMxNmFiY2Y4MWE3YWE2NGJiMTIyZDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlYWFhYzdiOTVkNzAzNWMyYTEyY2RjNzMyZTc4YzA3MGQwMDQ4ZDA5Y2I1YzgyNmIxZjdkNmVlZWIxZjY1ZTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY0Njk0NjE4YWU0YTE2MWE5NjA2MmEyNjY2MDRkOTI2ZWU1ZDg0YWEzY2Y5NDAwZjY1MWQ5NWZmNzNhYTBhMjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNkNGRlYjg1ODRiNjAzODc3MTMwOWY5Y2FjN2EzOWJmNTY5ODc4NTQ1OTYyMDk1YTVhMWEyZWNkZmQ3NWFlNjkifQ"
+        },
+        {
+          "resource": "repo://nora/platform/instagram/listener.py#L150-L173",
+          "version": "repo-lines-v1:sha256:63d3ed36cc01ad091d92c4b721aae3e20ef589ae44d22b50bb02130fe16322b7:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE3NWI4NzBhNjQ0NDcyMmQ3OWMzMTdiZmNkMzQ5OWRkZTYwYWY5MTlmOTVhNWE0ZDViMjQ4ZTI5OTFlMTliODciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU4NWJlNTQzNTMzZDBmNTU0ZTFkNjNkMTE1ZTliYzZiZTNkZmFjMmNjMzQ0ZWYzODYxMDE5ZGM5YjIyNTMzNTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY5YjU5ZDBlYTI5ODVmNDBkNWVjOGRiMGQ0Yzc0MjU5YTQ5NDRmNjJjNDA1MDg3ZTk0YzFhYTNiYWEzMTJjZTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_cdaca817fd784a47abd49f109f5bd5ba",
+      "statement": "Signal resolves identity in two steps: an account derivation that is fatal (the configured override is load-bearing because signal-cli's HTTP surface exposes no route or RPC that reveals the pinned account) and a typed-identifier enrichment that never raises, publishing `nora_identity_aliases{platform}` on every path and incrementing `nora_identity_enrichment_degraded_total{platform,reason}` per failure while falling back to the primary alone.",
+      "evidence": [
+        {
+          "resource": "repo://nora/platform/signal/account.py#L1-L73",
+          "version": "repo-lines-v1:sha256:1e2c088207a9eeb3a4bb982795d47e215aed32abedbf5e264d2f1a6fa53aa9be:eyJzZWxlY3RlZExpbmVDb3VudCI6NzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZmM2ViYzZhMmM4NzEwNjhiODQ5YmU3YTdiMDYyN2I0MWU5ODY1NDM0MjMwZTc0MzUxOWZkNzNlNDMyZWJkNmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY3ZTE4NzY1NGQ5MTU5MjA5NWI2ODgyNWNmMDI1OTg5MzBlZDgwMzE1MmM4ZGM3N2E3YzJiYmZmOTBhMzYzMjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQyNGVhZjAyYzE3MzBmYjkzZDQ2ZjhiMzdhMzAwZDAxNzJjZWU4YTlmY2FkN2I5YjFiZmU1ODNhOTgzZDM4YjUifQ"
+        },
+        {
+          "resource": "repo://nora/platform/signal/self_id.py#L158-L200",
+          "version": "repo-lines-v1:sha256:369b0e13aa1e345f51063dcd0eb1bdf2a63393e3ff41b5474e422c2f38b7af36:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRjNmU3YTFmMGRkODU1MzY4MTgxMTE5MThmMjQ2MGE0MTIxNWEzMTFlYjRmNTM0MjE5YzFkMjgzZjVmNTcxMjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5YzcxNDk3Y2ZjODJlNmZlMGZmZmYwYjA2MjM2NWVmNDk3MTUzODhhNjU0N2I5N2ExMzAwZjdlZWEyOGYwMmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3MDE0OWUwNjlhZDY3ZWNjZjQ3MzY0NmZmMWM3NTAwNTBkMzI5ZDExMDAxOGRjNTc2Njg3OGVhZmExZDYwN2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA3YWZlYTEzZmMzYmZhMzViOWYwOTIzZDczMjA2MTY4ZWFiZjBjZWY3Y2ZlOTAxMWZlMWFmNzliOGE2OGRkOTgifQ"
+        },
+        {
+          "resource": "repo://nora/platform/signal/self_id.py#L35-L44",
+          "version": "repo-lines-v1:sha256:1651e7c25ea73458b223d0a02010aa88c4258e5845e2c3544ffa58daba331a4d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRkMTcxMDYwNzg3Zjc4ZjdmZjM2ZDA4MWY4YWVkMmMxZDlmYzdmMGViMjI0ZGZkOGRkN2FhZGY4ZjVjMjljM2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg4NmQ3ZjVhMjA0NDQ5Mzk4ZTI3NjA2YmE0ZmI5N2ZiZWZhMzM4MjczNWQ0ZmM3NzcyMGU3N2YzOTFiMmY2ODYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_778f1d4d695a463fb86406a284a7815e",
+      "statement": "Identity memoization differs by platform on purpose: Signal caches success-or-degraded alike so `/health` polls never re-hit the daemon, while Discord, WhatsApp and Instagram cache success only, because a half-paired bridge or a checkpointed bridge that answers 200 with a cached self block would otherwise produce an identity that reads as fully healthy while every send fails.",
+      "evidence": [
+        {
+          "resource": "repo://nora/platform/instagram/adapter.py#L134-L149",
+          "version": "repo-lines-v1:sha256:eccb1bfba9d54ee6184696a1231f5a4c2f4d0283624871fe14e7c4a2c1f6664e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxOTJkMjJmZTQxMDdjNDZiMzg4MTA3YTE3OWQ2Yzc2Y2ZiZmE4ZGFmZDMxMGE0NWM3MTZjNGFmM2NmOWEzNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZkZGRiNTg0MDUxYmRmMWJiYmQ3OTE4ZmE4YmU4MmRiZDBlOGQ4NmNlMzc4YjVmNzA0NTQ4NTcwZGI1MDkwNTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU0MjY3YWFmZjBiYTk4NDAxNmQxYzBmN2VlODk3OGZhMDVlYmNjZDcxNTgwMzM4ZWZiNmE1M2E2MjY5OTIyOGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUwYWJjMDFhMGViNzk2MWVlYWFkYzdjMzhjYzUwN2FiNmFiY2YyZDg2ZDJlMTM3YTAyYzFmOTBhMmI2NjYxN2MifQ"
+        },
+        {
+          "resource": "repo://nora/platform/signal/adapter.py#L48-L70",
+          "version": "repo-lines-v1:sha256:8ab84c95c5eb06aab86704b4afb9af8a9c6c387cd78566641d1112b557e8f967:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxOTJkMjJmZTQxMDdjNDZiMzg4MTA3YTE3OWQ2Yzc2Y2ZiZmE4ZGFmZDMxMGE0NWM3MTZjNGFmM2NmOWEzNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZkZGRiNTg0MDUxYmRmMWJiYmQ3OTE4ZmE4YmU4MmRiZDBlOGQ4NmNlMzc4YjVmNzA0NTQ4NTcwZGI1MDkwNTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjViNjVkM2ZjNjY1NTdmMjZhOTdiZWNlNjM2ZGExMjg4MGEzNzFjNzNhMGMyMWEzZTA4Y2QzNTczMzAyNGNlYjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUwYWJjMDFhMGViNzk2MWVlYWFkYzdjMzhjYzUwN2FiNmFiY2YyZDg2ZDJlMTM3YTAyYzFmOTBhMmI2NjYxN2MifQ"
+        },
+        {
+          "resource": "repo://nora/platform/whatsapp/adapter.py#L47-L59",
+          "version": "repo-lines-v1:sha256:bc53fe49f6b7cd5d4d056113748c38beb930f968804238a16af6bbde03659885:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxOTJkMjJmZTQxMDdjNDZiMzg4MTA3YTE3OWQ2Yzc2Y2ZiZmE4ZGFmZDMxMGE0NWM3MTZjNGFmM2NmOWEzNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZkZGRiNTg0MDUxYmRmMWJiYmQ3OTE4ZmE4YmU4MmRiZDBlOGQ4NmNlMzc4YjVmNzA0NTQ4NTcwZGI1MDkwNTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc0ZmNhOGYyMTZkYTJhYjM5ZjRkNzVlMDMzNjQyNTAxMjcxMzI1OThiY2Y1MmIwMjU0ZDI2MDM5ODlhNGRlZGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUwYWJjMDFhMGViNzk2MWVlYWFkYzdjMzhjYzUwN2FiNmFiY2YyZDg2ZDJlMTM3YTAyYzFmOTBhMmI2NjYxN2MifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1f31ac539132465e93d28576cd010d80",
+      "statement": "Discord's identity comes from one authenticated REST call that returns the bot's snowflake (the only identifier recorded) plus a display handle read off the same response; the username is never an identity because an owner can rename the application at any time.",
+      "evidence": [
+        {
+          "resource": "repo://nora/platform/discord/self_id.py#L50-L82",
+          "version": "repo-lines-v1:sha256:139b58cffffc311ab5d2343feca126565af09a9e0b73c9ca460f033c7f078412:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhYWI1ZTM4ZjQ1YThjZmJlN2RjNDdkNmY5YzgxNDhkNTI1NzNiZDU1Zjk1MGZkMTRmNTYxNGU5YWMwYzcyNWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4MDQ4MjExMzBlNjQwOWZkMmE1NTQ5ODU1Y2U3ZGY3YmUzYzE0NjBmMGQ2YjM2ODVjZDI4MTgwNTQxM2Y2YTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg0ZTMzMGNmMjQ1ZGYzODZkZDAyOTA2ZTAzMjFmMTMwNjg2MTQyMjQ0M2MzZjMzZjY4OWI4NjljMmNlYzFlMTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_96341a1f86d34ae0b7699dbb4d2cc6a1",
+      "statement": "WhatsApp's identity comes from one bridge call returning the bot's phone and, when reported, its lid, and a failure is a startup error rather than a counted partial answer because the bridge answers in one body or not at all.",
+      "evidence": [
+        {
+          "resource": "repo://nora/platform/whatsapp/self_id.py#L1-L60",
+          "version": "repo-lines-v1:sha256:e90dcb3dd1a3be3c511f682fdc66571d63131b4a94237018c6da196e33d63ad5:eyJzZWxlY3RlZExpbmVDb3VudCI6NjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1OTM5MDE1NjA1MTk5NzNhYzE4ZWZlYjllOTk0NTY0ODZiN2M5Yzg2NTUxOGFlNGE0YWMzOWFiZTc3YzY3NjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRkODZmZmJmOGIwM2RkM2E1ZGU0YmU3NDQ5MDdhZDI5OTE4N2FmOGU5MWI5NzkwNTcxZDJjMmU2MDcyNGIyY2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f9985d88852b43278b262f7762ca7c55",
+      "statement": "Instagram's identity is read from the bridge's health route and refuses any session state that is not exactly `authenticated`, because a checkpointed bridge still answers 200 with a cached self block and an adapter resolving identity from it would register as healthy and then fail every send.",
+      "evidence": [
+        {
+          "resource": "repo://nora/platform/instagram/self_id.py#L30-L116",
+          "version": "repo-lines-v1:sha256:30ceed0db3eea6a29fbde8119ff22ecc0b0d2c581ca263017bcc15606bc9c0d7:eyJzZWxlY3RlZExpbmVDb3VudCI6ODcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg3YzMzMzcwODA2ZTg0MjBjMWE0ZTVjMDQ2ZTIzNzc4YjM1ZjYzMGQxNGRiMjBkZWQxMDY5YmNiZjJlMzdjYjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE5MWE5ZjQyN2E4YmVlNmVmYzBmNWU5M2ZhMjUyZTdkOTc4NWRlZWEwNjExZDkxODIxMWI5ZDMyNTk3MDNkNWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjljNzFlZmQ1NzM5ZDlmOTNmMDlhZDRkMDU1ZjQ0OWE1MDJhM2ZjNzcwMzRhNDA2NjIxY2JmOTQ4MTViNTAxOGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ0YzU0NTZjODc1YjA2NDM1NTI3MjQzOTM2MzAyZDU2MGVmNDA3Mzg3NDY4NTNlNTZkOTg1NzhhZDY0MzU0ZTQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_63f1caa1698341689241f686276a2599",
+      "statement": "`AdapterHealth.degraded` is a third state rather than a spelling of `connected=False`: a disconnected adapter is expected to heal on its own, while a degraded one is present, registered and structurally unable to act until a human intervenes, and `detail` carries the stated reason.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/ports.py#L466-L490",
+          "version": "repo-lines-v1:sha256:8df565c65d276def52ef64950d132b138e9cc968919f84aa43b0a79c294d910d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY2ZDhiNzQ1OTM1OTMxYjRhM2I0M2JmNjdhZjMwNzg2ZDBmZmI1MjgxZTUyM2UzMDI1ZGQ2MmZlYzk5ZmE0ZTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZiNTA0OTUyN2RmMTRhYTRkYzhhZTE3NzZiMjI4NmQ0NDUxYmI5YjhhYjQzZTU2N2M0YzM3ODkxYjg5OWM0ZmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_bd35f4d6d64a4fcf902b0ec6bdac648b",
+      "statement": "Nora's `/health` publishes one entry per enabled platform with connected/degraded/detail/last-event-age and the resolved account, records a platform whose `health()` raised as disconnected rather than omitting it, and deliberately does not treat a degraded platform as Nora being unhealthy — a 503 would fail the container healthcheck and take the other platforms down with it.",
+      "evidence": [
+        {
+          "resource": "repo://nora/obs/health.py#L111-L140",
+          "version": "repo-lines-v1:sha256:88e45a52cc0e612d8e5466114cfa8d793571f0d5d0fc79299383190467d9d58c:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMwNWJiNWY2OTBhZTE5MDZmZmUwMDkxZjY2NDk2OTgxMDE3YzczNTczN2QxZGRjMGUxYjYwNmUwNzdlMGMwMDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlZGY2ZTQ2ZWI0Y2VkMjk1ZTgxY2NlYzc4NmJmNTE2MjQ4ZjFjNTg3Y2VhYjQxMGFiM2VlMjNiODY5NTVlMTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjllMTQ0M2M1ODJjOTAwODE5MDIyMWE1NzdjYzBmNDFhMTRjN2E3ZDMyNTEzZTI3OTk0ZThjNDhjOGQ5MTE5YzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZmMzkzNDYzZTljYzk4NWRkYjk5Y2Y2ZDMwNWI4N2E2MTMxZjNlZThiYTJkNTk4OWY3ZGY2YmNlOGI4MDJmYWUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_09686711aaa1479a8592c950fa31ebf6",
+      "statement": "`nora.app.source_health` records adapter health as five states per transition (`up`, `stale`, `degraded`, `down`, `unknown`) using the same 900-second staleness threshold the platform-silent alert fires on, so \"every source was healthy for this interval\" is a query and a raising `health()` reads as «could not check» rather than «down».",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/source_health.py#L9-L63",
+          "version": "repo-lines-v1:sha256:b2bcbc95fb668ee108d9f77e576db8364efee88fa1b7cc67f89b0dd0aa1d196c:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkNTViNWI1ZWEyYmJlZDQwYjJiMThkYTA2M2U4M2U3YjJhOWI3MDU5Yjk3M2UwOGFiNmFmNjcwNGQwM2FkZmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMzNDBhNzhmZjM3YjY0ZmEzYzZjZTkzNGFjMDMxMDAzNmI0MThhNzdhNDI1NzdlNWFlODZkYjczMDBlZDJlN2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ0OGZjNmQxZTRlZjY2ZDk4YmRhMWNmMjMwMjkzMjk1NGZlMzYzMWU4MDlmMGFhNGFiYjgyNDg3YTdjOGNiMGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU4ZGYxMzk3MGJiYzE4NWNkZGZmZmFiNTE5M2I5ZDczZGE0MGI3NTZhZDYxY2Y4MDQzY2JkODBmYmRhNmI2NjIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ac390471460c4d48ae81d8a9357f71cd",
+      "statement": "Adapter supervision is one task per platform with capped exponential backoff and a per-platform restart counter, so a failing `listen()` is scoped to its own platform's health instead of taking down the process or another platform; because a supervisor only backs off on exceptions, a `listen()` that returns becomes a hot loop, which is why Discord builds a fresh client per attempt and a degraded Instagram adapter blocks forever.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/runtime.py#L312-L350",
+          "version": "repo-lines-v1:sha256:82fa45404e0429928cefda58f1ecf196d59e97aed9b11ab2331f17a2a8b3ab18:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkwZmNhZDg3ODUwOGI5ZThjODA5NGY1ZDdjOTJmMzZmNjUzZGE1ZTExMmU4ZTNhNjY4Zjg5NDgzMWI2NjE4MTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlmNTdiNzBlOTA4MDdlMTUyNzA3OTBiZTg4YjhmNDYwYzlkODkwYmY4MTg1MmNiMTJhZWQ2NzAyY2JlM2U3OWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ4YjVkNjVmZjg1YTIwOGRiMDMwYzg5Njk2NTAxMzA5ZjdiMTA5M2MyMDY0MmVhOGQ4OGVhZDYzOGE5ZDU5NjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNhYzM5ZDU1YjFjNDA5YWVlN2MzMThhZThmZWU0ZjEyOWVlODM1OWViMjczNjU3NWJlYmI4MDcxN2E1Mzk2OWQifQ"
+        },
+        {
+          "resource": "repo://nora/platform/discord/adapter.py#L97-L107",
+          "version": "repo-lines-v1:sha256:f2f5f782dc9d90c1084edff6e250ef8abdf76f896b2fef93263703221da661c9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRhNjYxZmJhMmMzZDUxMTA4MmE3MzA0ZjIyYWQ1ZjJkOTQxNzRhMmE3YzRjZDY3ODNlYjIzZGQ3Zjc4MzdmOTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY5YjllMjUzYzFjMjJiNWRkNDNlZjkxYTNjYjk3ZjA1ZDEwYTZhOWQyOTgwMDUwOWFlM2NmYjI5ZGUyMzc3ZjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAyMGEyNmFlMWI1NWFkMGY0ZmRhMzg0MGNkMjZkNGNjZjcwOTYwNDE0MmY0NGU2NDdkZWYwNzAxZDMzNTVmMzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE0YzQzMGNiNmM3ZTljNzM0MDg1NmE0YTUzOGZhMDM5Mjk3ZjQ5ZTY2MjdhZGEwOWRkY2E5NDM2NzQ1NDNmNDkifQ"
+        },
+        {
+          "resource": "repo://nora/platform/instagram/adapter.py#L161-L166",
+          "version": "repo-lines-v1:sha256:5e0d21fbb6dfeec09ac59003eccd24f8f1e663e8e8195f6632d979ded96a9d06:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGVhZTY2YjY3YjYyMzY4Y2IzNzdjZjBlMTFhNTE2YmU5MTEyN2ExMzFlNzFmYzI3OTVhYmQyM2YyMTM1NGVmNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNmYwYTk0MTVkOWViMTM1M2IzYzljNzUzNDk0NWMxY2UyNGVjYjIxN2E0MDJkY2Y2N2IzNWE3OTVhNTExNTExMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGRhODI4MDdlNDJkNjI0Y2Y2Njg4NzMzNjRhMDc3MDk2OTQwMzg2OTk0NWUxM2Q3NTgyZTNmNDhmM2VkMjc1MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzgzMzg5Nzk0NGJhMDBmNWNhZTI0NWEyNTA4YzRhOGMzZTcyYjhiMDk1YzVlZjFhOWMyMWUxZjAwZmQzNThiMiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_70a444245d824d89b9efec3869ba34ca",
+      "statement": "`MediaSource` is a port separate from `PlatformAdapter`, bound to one platform and required never to raise, because fetching bytes is not part of the send/receive/react lifecycle and `MediaBytes` must carry the difference between \"could not fetch\" and \"fetched nothing\"; `MediaSourceRegistry.for_platform` makes \"this platform has no fetcher\" a countable value instead of a wrong call.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/ports.py#L1265-L1271",
+          "version": "repo-lines-v1:sha256:f5d7c80dc76c52361a20bc13953accd0937a86a1ca01ae701ac9795d400a1948:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzAzMDY5ZDNmMzI3YjBjZmQxZDA4NzI3NGVjMjc1NjU4NTRkODUyYjMyMjU1M2QzOTAyYzg5ZjUzZjAwMGVkYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTI0NzIyNzBmOGRmYWE2YTliMDRjNzgxNjIxZmM4YTExYTEwMzhjZjEzNWZiMjIyYTMzNTlkOTRlYTZmNTc5MCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzAzMTE5NTgzY2NmN2E1MTYxNTA1MTY4YTNkYTZmOGNiNjg0OGYyMDhhNDQ3NTMyMTMzOTk1Y2E1ZWIyMmZiZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWE5MDc1N2EwNDIwYmIwZDE5ZWQwODAxYzg2ZmRmZDc0MzQwMzI2MzM3ZmQzMDQ1OTdiZDI4MGMyMDNjMDhhMiJ9"
+        },
+        {
+          "resource": "repo://nora/domain/ports.py#L140-L147",
+          "version": "repo-lines-v1:sha256:69071bcb849c2d1db952374ff43113cb154ac768102a22de37a4f421582e1b37:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTkzZDljMWQxNzgyNmU1MTc3OWE2Mzk2NDYxOTQ2ZDM3N2E4NzQyZGFiNmYzNWM2NTE1ZTNmOTdjYTE4ODY5NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDAwZDI5ZjE0NjI4OTZmN2ExY2IzNmIwMTU2MTVmNDljMGFkMWNkMTliYWFhNGM3MDE5MzlhYjkwOGE5ZjUxNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTExM2M3MWNkNzQ4NmVhNTM3MmJkMWVlMjUzMzQ5YmZmZjYwYmQ2ZWZjYzNlZjI0MDE1ZTQ1MjdmOWVmYjkwOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmJiYjViYTBhZTY2NmNhYmMxODdmNTczMDgxNDIwMzlhMjI4ODQ2ZjRlZDA3MTI0NTBlMjgxYjA4OGM2NGQ4OCJ9"
+        },
+        {
+          "resource": "repo://nora/platform/registry.py#L366-L380",
+          "version": "repo-lines-v1:sha256:b8212b491ba4a730613bc4e66ba0329d9cd553617a46ea5860fd70f69149c15f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlZTgyNzcyYjE0YjA5YjllMmQyMTNmN2FmNjZiMjBhM2UwMGRiZDViNDgzYzYzODI5M2U0MDZhN2RkNmIwNDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZiYTExNjQzOGY1ODkxMzkyNzJmYjk4NmU0ZjFmZGQyMTNjM2NkZDZmOGU1OGEzY2VkNDAzNTMwMGE0ODM0MzYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc0ZjhkNGVkMDMzMzVhYzViN2RkODM2NzcwZTI2MTA3NDEyMzAxOTQ3OTgwMzBhMzcxNmEyMjlhOGUxOTFlZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9026329b15d24ed7b8dade65605a6170",
+      "statement": "WhatsApp records the fact of media with no platform handle and has no `MediaSource`, so the ingest media stage counts its attachments `not_supported`; the registry is built unconditionally for Signal, Discord and Instagram because a fetcher for a platform producing no messages costs nothing and gating it would make custody depend on two settings.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/composition.py#L4991-L5013",
+          "version": "repo-lines-v1:sha256:c01a8504509994d926eecf982ea23a94ec9cc819dda0c76bf8ef8bcc92fd2691:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI3NWM1M2M2NzgwNGZjN2IzZjJjYWI2NzI4ZjY4ZDE4ZWYxMDRjY2RkZjZhNzRhMGUwMDljOGYwNGE3OTdmOGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRmNjUwYmM4MjdjNzBkNGE1NTU0ZjVmZDlmNGM4ZGU1ODI3ZTAyYjNkNDM3ZGFlMjhmZGZkODI5NDEzMDI4YWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVjNzk3ZTc1MDFkN2RhYTEyZDYxNDgyZGFmOWFhMmFhZTVjNzBlYWI3MjhkMjY5ODEzMjg3NjIyYjU4NmNkMzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI5NjhjNDNlZGQwOTBiZGVmMTNiZWQ3YjhjZWFlZjk2MWY5ZTBmZmY4ZWQ1ZDM2MTU4ZTE2Yjc3YmQzNTZmYWUifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/stages/media.py#L142-L149",
+          "version": "repo-lines-v1:sha256:989172a69d4b4a9bbd44bdfb26671ef7463cd0878ab079a63730b3cf14b9a487:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzk5ZTdlOTc3MzM3OTc2ODI4MTNjOWYyMmIyYjhjMWQxNjU5ODJlMmJiNGZkNzRlMGUwMmJjYjZmMjhmMjkwOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMGMyZjA4Yzk5N2ZjNDg5N2E2YmQxZTg3MTYwMjkyNDU1ZTFhY2ZiNGJhNDYzMGExZmQ1YzYwODczNDFjNmFmMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjIwZjY0NTMzNGY2YzY0MWMzYmUwYmUzYjZjM2VlYThkMDk4Mjk1ZWQzYzE0ZmQ4NzNlMDMyYmE1YjJhZDFhMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjY3MWE1NWViZTA4ODA5YTQ3YmRjMjE0ODliYWZmYmQ4ODM0OGUzOGU1MjgwZjhmMzYxMTFhYzA4Yzg4NzkzOSJ9"
+        },
+        {
+          "resource": "repo://nora/platform/whatsapp/parser.py#L52-L70",
+          "version": "repo-lines-v1:sha256:5e30e9a993a8370ec3f7da503b25dcaa166a4776407573605d4ac3215fe0be46:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE5ZTU3MmZlYThkZDFjNTU2MjE1ZTY5YzNkNjJjNzNiYjE4MjcyNGUyMTYxMWJmZTgxNTMyZjNmOGIxYjZhZTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIyNDE5MzYwYzU5OTgxMzMxNmNmY2IxNGY3N2Q1NTJiYzVlNjViNDQ3NTU3NTAxYTQwZWMxZGQwZTc1ZDU3MzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVlZDBiMGE4YTFhMDdkYzI3NmE0YTQ4YjYwM2ZmNmYyY2MwZmNiYmFmNDA0Yzc3MzU5Y2ZhMzRiMDIyMThmODgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fc946c1f07c1496c9c2a2379760e7952",
+      "statement": "Each platform's media fetcher resolves a different handle: Signal fetches signal-cli's own attachment id over the JSON-RPC endpoint it already uses (avoiding a second mount of the daemon's filesystem), Discord derives sticker URLs from id and format and allowlists attachment hosts before opening a socket, and Instagram treats the event's signed CDN URL as the handle and allowlists hosts by leading-dot suffix.",
+      "evidence": [
+        {
+          "resource": "repo://nora/platform/discord/media.py#L1-L30",
+          "version": "repo-lines-v1:sha256:f10d95a16bd6380719d93516b0de101fdaf7a4b9b8a694f18bf522a957a83b62:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjYjM1ODEyYmU5Mzg2YmZkNDM5MzY4NWIwYTJlMmM3Mjg3ODg2NmIyNGJiMzA1NmFhNmViNzViZTc3MjRlMGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/platform/instagram/media.py#L1-L38",
+          "version": "repo-lines-v1:sha256:7fa3d23265f9fad4768bcf3fcbb10a4b7a781c241c1f7924dd303ce4135463e0:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1MmU4NmU1ZGI0OWY0NzRiYzEyMmM3ZmQ2YTFkMDRmOTM3ZmE5NTNiMDQ0NDNiY2M2OWVhYzE3NWIwMWFhNzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/platform/signal/media.py#L1-L35",
+          "version": "repo-lines-v1:sha256:d5d59ec985b51674dadfde50b12e424036777e23ea4facc031df9bbcadd055d0:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUwODU3MGQ5YzFlOTRlMGJhMGU0N2U2NWY4NGU5Y2RlM2FjYzY1MzE1ODgwMjAwYTU1ZGYwMGI3YzE4MzM1OWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ece2622960134c44a8abbc2485d87388",
+      "statement": "Parse-and-drop happens inside each adapter's `listen()`, which calls its own parser and only forwards a non-`None` `NormalizedMessage` to `on_message`, so `nora.ingest` never receives a raw platform event.",
+      "evidence": [
+        {
+          "resource": "repo://nora/platform/signal/adapter.py#L72-L89",
+          "version": "repo-lines-v1:sha256:2b7bf94c8869eebc48220e33c928647b8484fd2eb48a5ff3b22a089d5048e5ac:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRhZjU3YzhhZGI4ZGE0Nzg3MWMyYzYyYTNhYTYzZGFjYzM3MGE0YTk4MjE5NDZmMWExMjgwNDYyOWMwMWZmMzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkNzE3Y2FhYzgyYTY2NmQ5MmIxYTE4OWI4OTYzM2VkMTNjNTdmNTkyNWY1N2YyOGY1OWU3MWYzN2YwYTIwYzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk0Yjc4NTJjNmY3YjUxMWMwNWUyNzRlYzFiMjRkMTBkNDU5NjE1YzhkNDViNGFkOWE5MGNiOGQ1ODE3ZGMxMDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM3YTk3ZmEzNzRkMDNkYTY4ZWU1N2ViOGNjOWQ4ZWY1ZmIwZDFhMmJjMDRiMmM0NTNhYjY1NTk5YTg3ODM1MGUifQ"
+        },
+        {
+          "resource": "repo://nora/platform/whatsapp/adapter.py#L61-L76",
+          "version": "repo-lines-v1:sha256:7e36d6200171ef607521a254c941d0311e9d7c2420ac627c3c3f5d8f50385cad:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRhZjU3YzhhZGI4ZGE0Nzg3MWMyYzYyYTNhYTYzZGFjYzM3MGE0YTk4MjE5NDZmMWExMjgwNDYyOWMwMWZmMzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkNzE3Y2FhYzgyYTY2NmQ5MmIxYTE4OWI4OTYzM2VkMTNjNTdmNTkyNWY1N2YyOGY1OWU3MWYzN2YwYTIwYzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk0Yjc4NTJjNmY3YjUxMWMwNWUyNzRlYzFiMjRkMTBkNDU5NjE1YzhkNDViNGFkOWE5MGNiOGQ1ODE3ZGMxMDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM3YTk3ZmEzNzRkMDNkYTY4ZWU1N2ViOGNjOWQ4ZWY1ZmIwZDFhMmJjMDRiMmM0NTNhYjY1NTk5YTg3ODM1MGUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_281db0a12ecc493198fa0f5754f31c99",
+      "statement": "All four parsers converge on one normalization contract in which mentions are a separate set of id forms, a quote is a pointer rather than a copy of the parent text, media records what the platform said without downloading, `message_id` carries the platform's own handle (empty on Signal), and a reaction or delete arrives as a `Touch` on a message rather than as a message row.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/models.py#L148-L217",
+          "version": "repo-lines-v1:sha256:9fe20b3559b63adc1ec7f3b168e185cac34dbeaf20e84c74f1e96c85f6f11e5c:eyJzZWxlY3RlZExpbmVDb3VudCI6NzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQwMTdjODFhNjJhNjgyNjA3NGFkZWNhYzkzNDdhZmRkMmE5OWI5N2RlMmQzZTdkYWIxN2E4NTg5ZmY2MDFiN2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhmMWU4OTNlMDYzMzcxNzM5NjU3ODA5ZDA5NTNjZjcwN2FmMDQ1ZTQ0NTlhMGY4YjQ4NzU0NWU2OGFmMDViZjkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5b4a96e35bcc4e5ca239d6e2eff10aa0",
+      "statement": "Discord's adapter builds a fresh, single-use client and listener per `listen()` attempt and serializes inbound events per channel with an `asyncio.Lock`, so an edit cannot be ingested concurrently with the new message it edits and be dropped as an orphan, without serializing unrelated channels.",
+      "evidence": [
+        {
+          "resource": "repo://nora/platform/discord/adapter.py#L201-L243",
+          "version": "repo-lines-v1:sha256:ac8f41adfddfdd2b2dd33b54e7de366bcbdb83a72abf067346cb27c2a7c20332:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjExNmM5ZWIzZjE5N2FiMjFhOTMzMWE4NzU3NWE3NjczZTY3YzJhMGFmOGM1ZmJlYTMzNDY5NWYxZmM3NDcxYjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhZTk4NGYzYzI5NWM4ZTI3MmIzZTA2YjhjMGIwNzlhNTZjMmJhNzY1NTMyNzY1NzZiMjkzNWU0MTRiYzJhZjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMzZjlhMzZjZmI0M2UyNmMwNDZjNjhmZjhiNjYzOTM4YzJlYzZjMzVmMTZmMDNkMWUwNGYwOTg1MGY4NjljZDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM0YTVjMDY4NDdjNzQ4NWY3Y2EzNzRmYzFlYzdmN2JkMzY0NTMyNWFmOTEyNmJiZjJhZDg5YWEzNTg3YzJkNDcifQ"
+        },
+        {
+          "resource": "repo://nora/platform/discord/adapter.py#L97-L113",
+          "version": "repo-lines-v1:sha256:ded9cbe7c7514f7c95d576e77b642e5d4821d301c6646c866bbc898ea8f5f3c6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRhNjYxZmJhMmMzZDUxMTA4MmE3MzA0ZjIyYWQ1ZjJkOTQxNzRhMmE3YzRjZDY3ODNlYjIzZGQ3Zjc4MzdmOTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQwMjQzZDI3NDg5ZGRiZjBkNjZhNzBjM2M0NTM1MjcyM2ZkNzMwMWJiM2YwMzYxNTFjYzllYjcxYmMzMTIyZTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAyMGEyNmFlMWI1NWFkMGY0ZmRhMzg0MGNkMjZkNGNjZjcwOTYwNDE0MmY0NGU2NDdkZWYwNzAxZDMzNTVmMzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ3NzU4YzdhNjMyYWVhN2NjMDQzZTE1MWVjZDczM2M3M2M5ZThlNDAwNjIxZTE5YTk3NTdhMjk5YWNiNThjNTMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_23f9efec94974700970424a9d2a55f86",
+      "statement": "A `summons` event from the instagram-bridge is handed to a `SummonsSink` and never reaches ingest, because it is not a room message; the ordinary message event the bridge sends beside it is the room's copy.",
+      "evidence": [
+        {
+          "resource": "repo://nora/platform/instagram/adapter.py#L179-L199",
+          "version": "repo-lines-v1:sha256:7a436e6219616eb980803bef709dfaa705b28b2b41e53a500e06db7d53fe0e78:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ0NmIxMzQzMjQ0YmE1OTlkMDQwYjc5YWNjNGQxYzc1OWNlYzNkNzMyZTM2OWQ5N2Y5MWYzYTk4YjMzNmMyYzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc0OWQ4YTRiYWM2N2I4MmU5ZWI2Y2ZlMjQ0YmZkZDc4ZGM5YzBjZTYxZGRkMWRhM2NjMzE3M2YzOWI4OTg3ZWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRkZmI3OThkYmQ5ZmNhMTU3NDgyNjI3YmNlNThlODhiZmQyOWZmMjJmZmIxY2IyZjAyOTU4N2FiZTcyMDU2MzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM3YTk3ZmEzNzRkMDNkYTY4ZWU1N2ViOGNjOWQ4ZWY1ZmIwZDFhMmJjMDRiMmM0NTNhYjY1NTk5YTg3ODM1MGUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ce5559c7b7d0448f90510f7be5953483",
+      "statement": "`build_dependencies` treats the adapter registry as a fatal ordered startup step, converting `AdapterRegistryError` into `StartupError`, and refuses to start a registry with no `signal` entry even though the registry itself tolerates zero enabled platforms, because the rest of the composition has no code path that runs without an adapter.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/composition.py#L1893-L1913",
+          "version": "repo-lines-v1:sha256:28a22c83aed5bc6fb3bfb6ce438429306cd1bf73f3a6f344bffc5ae7e6a9b272:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkYTVjNjZlMTdiMTQ1Mzk3ODM0YjhjODU0ZGM0MTkzZTIxMjUxODBhODk5NmExNGMzMTg4MzMyNmIyZWZiY2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAyNGFmMzJkYjZmNTg0MDViYjkyMmJkOTRiZTAzNGEzZGQ1ODIzZGNjNzlmNmYwODkzMWVhZjVlMzE5YjMwOGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlhMzNhZTUxYTg3M2ZlMzY2YzVlNTk0Mzg4YTY5ODRlZjM3NTZjNjQwOTViNjY0YWFmZjA2MTM3YzhmYTRmNGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE0YjE5ZDVjZWJjZTRhZDFmNzRlZTk1ZGM3MjJiYmViZTMwNTU5MDJlODI1YzhlZDM1MmUxNmEyNTAyN2UyNjIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f9c3036a8f474c76a4e743bbaad870e0",
+      "statement": "Three of the four transports hold their session out of process: signal-cli, the whatsapp-bridge and the instagram-bridge each run in their own container on a private network that publishes nothing, mounting their session state on a volume kept outside the directory Nora bind-mounts because she must not read transport credentials.",
+      "evidence": [
+        {
+          "resource": "repo://docker-compose.yml#L10-L40",
+          "version": "repo-lines-v1:sha256:da44c55754b93b4ccd078359f6f304047c1069988795b9c22b0d59e961296cac:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZjYzkxMzE0N2UzMGM4OGM0ZDJiNjZiNzRlZGY5MTc4MGY5OGY1MjA4M2Y1ZjJjMWMxY2UxYjhiNTdhZTBkM2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhhOWI0ZTFmM2I3ZjMxNjVkNDQ4ZjA1NmE0M2E1MzMyOWUwMmM2ZTk0YWNkZTExZTdlNjNmYzkwMzFiNjIwMmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFhZDQ5ZGJlMTBjYzAyNjFkOTEzZGE1MTljZGVlNmEzMmU2MmI0MzE3ODAwOWU0OWQwZGFjMzQ2Mzc3YmY4YzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJlOTZkODg5ZDRjYzZmOWRmY2ZiMmVkZDE3NDFhMDU0NjY2OWQ5MmFkZDI0YTViY2E3ZDQ2M2VkOWY2MzhlMTMifQ"
+        },
+        {
+          "resource": "repo://docker-compose.yml#L122-L153",
+          "version": "repo-lines-v1:sha256:491b33ac09256162402503a311a7a1a88c97c37decb356d1f63516c671e2ffff:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE4MTI1NzZhNTcyMjljYTZhZGI3YWUwOTFjNDZlZWYxZGJmNjZkZjM0ZTVmNTkxYjBjMzZlZTM0ZjUzY2NjNTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNmY2I3ZTM3NmVjMmM3ZDBiNzI5OTBkY2E4MTE0NTQzZDI3ZTU0YjQzMTk3MzE1ZmI2ODAyZmNkODZmNThiNzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYxMjJlMzlmNDE2Zjc3YTg3YmY4ZDA0ZGJkNzRjMjFmNmMzZmYxNWFjZTdjYjg1MTZkN2EwNDgzNjg4YjRmNTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJkOWYxNDhjOWE0MGM4NDUwNDIyNmUxZmMyNDU0NWJiN2YxOWNhN2I2ZGMyYjE3N2ZkNDAwMzc4NjdiZWE2YzUifQ"
+        },
+        {
+          "resource": "repo://docker-compose.yml#L71-L106",
+          "version": "repo-lines-v1:sha256:cd0a4ba41ca9657f530fbd83ef944f202ea7d8973345d158144aa7640b0e6059:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIwMTE4OGM5ZDU4YzZmOGQ3YTc1N2E3MzM0MDJlMjU5ODk3Y2MzYmVlN2FiNDMxYmE4Nzc4Y2IwNjliZmY4YTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFhODdmMjY5OThlYmI5NzJhYjliOGU2NzUzNzUyYzUwZWQxNmVjOTNjNmM3NTg0Njg5ZjMxY2MxZjU2ZWNiMGUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYxMjJlMzlmNDE2Zjc3YTg3YmY4ZDA0ZGJkNzRjMjFmNmMzZmYxNWFjZTdjYjg1MTZkN2EwNDgzNjg4YjRmNTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUzNTQ3MTBhYmU2MGU1OTVhNWI0ZmE1NTg5NTAzODlkMDA4NWYzYjk3MDhhZGExZjU5ZmU2MmU1NjViMWU2NzkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_aa463c4073f54e31990035b7b9ae0fbf",
+      "statement": "Each bridge's container healthcheck proves only that its HTTP layer serves and cannot prove the platform socket is alive; the instagram-bridge's health route answers success while a session is checkpointed on purpose, because a challenge is a normal operating state and restarting fixes nothing, so the real socket-death detector is Nora's per-platform last-event age.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/instagram-bridge/compose.fragment.yml#L89-L101",
+          "version": "repo-lines-v1:sha256:cde635c6c3029be881564b8cd89c1b96548b868cc570a6f1467b0291e8a0d342:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE3MWRiNGU4NzVlYjlhNmFmMTQ1NTYzMDU4NjE5NmY3NDIyMjMxMjhiMzYyNTgwMDk4NDlhNjhmODAyY2NmOWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1YTBmY2NhZmRlNTdiMmY2YWI1NGQ2M2NhMzhiNTdmMzA0OTY0ZDI2NTAwMTQ1Zjg5Y2VmZmFlOTMwNGJhYzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNiMWQ1YTQ4MTQ2ZjNiY2Q1ODMyYjY1NWM1YjAwNzdiYzY1MTE3MDYwNzI2ZmRhZDU3YjllNTliYWI2MWUyNjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdkZjY3ZTI5ZmI5MjBmNDA3ZDRlODk2ZmZlOGFiNTdjYTAzYzQ1NDQyNjRmYzI3YWY2MjM3ODg2NGUwMzZlZmEifQ"
+        },
+        {
+          "resource": "repo://docker-compose.yml#L107-L113",
+          "version": "repo-lines-v1:sha256:c6013441c6d6083a1e0eac7ef9a3d05b2f2f7473ab05c677de658324e2c86903:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTcxZGI0ZTg3NWViOWE2YWYxNDU1NjMwNTg2MTk2Zjc0MjIyMzEyOGIzNjI1ODAwOTg0OWE2OGY4MDJjY2Y5YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjA0MjY1ZjE3MGEzYTVhOGM3MzdlZjI4NDRkNzU0YmYxY2U1ZjU2OWE0ODM4MjAxYTNjMWZlYmI2NTdhNDFhOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjdkNzBjMjk3OTVjYzNjMGM4ZTlkM2VlY2U4OTA0YzgxYTQ1MWY0NmQzMjY4MjUxODUwOTQ4YWM4ZjE0MzZiZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2VkODkzNzhmYWQzZDIzMmUwOTg2NmE4ZmNhOTI3NjAzNjgzOGM5ZDhiNGZiODU1OTM1NzM4NDRmODdhOTFlNSJ9"
+        },
+        {
+          "resource": "repo://docker-compose.yml#L174-L186",
+          "version": "repo-lines-v1:sha256:cde635c6c3029be881564b8cd89c1b96548b868cc570a6f1467b0291e8a0d342:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE3MWRiNGU4NzVlYjlhNmFmMTQ1NTYzMDU4NjE5NmY3NDIyMjMxMjhiMzYyNTgwMDk4NDlhNjhmODAyY2NmOWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1YTBmY2NhZmRlNTdiMmY2YWI1NGQ2M2NhMzhiNTdmMzA0OTY0ZDI2NTAwMTQ1Zjg5Y2VmZmFlOTMwNGJhYzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNiMWQ1YTQ4MTQ2ZjNiY2Q1ODMyYjY1NWM1YjAwNzdiYzY1MTE3MDYwNzI2ZmRhZDU3YjllNTliYWI2MWUyNjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdkZjY3ZTI5ZmI5MjBmNDA3ZDRlODk2ZmZlOGFiNTdjYTAzYzQ1NDQyNjRmYzI3YWY2MjM3ODg2NGUwMzZlZmEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0b2dffeadc82448fba53e93683a75ae8",
+      "statement": "The instagram-bridge's single public write is switch-gated rather than unconditionally enabled: it is off unless the deployment sets exactly `on`, is rate-capped and spaced before any platform call, and latches off across restarts once the platform answers with an action block.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/instagram-bridge/compose.fragment.yml#L54-L77",
+          "version": "repo-lines-v1:sha256:f976e7483bb8f782c0ab329332bbb3e92955928e5ff1bfe4d531dfae4b9afc8b:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBmMjkxM2VkYTUwY2E4ZjFiOTdjZjg1Yzc3NDljZDNkZWQ5MDFiYTRmNDY0YzU5ZmZhNTE4NWVlODE1N2MwNTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY1MDdmMmI0OTUyODk1YTM1Y2YyY2Y5ZGVkNTJjZTIyNTNkOGU5YjNhODgyZDZmNGUyMjc3ZWRlMzNlZGIyNzciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk0MTI5N2YyOGJhYTY4ODliNTQ1ODY1OTc1MjY2ODFlODYwMmFjOTc1NjE5ZTRkNWZkMjg3OTFiYTljYjBhNDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhhMzc0M2Q4NmQ3NmEwNzM4ZmIyNjcwYzM5ZDNhOGU4ZDNkMTk5MGVhNDg0NmY2MzFkYzA0N2Y0NDFkY2U0M2QifQ"
+        },
+        {
+          "resource": "repo://docker-compose.yml#L161-L167",
+          "version": "repo-lines-v1:sha256:7fc0744eba7e81540a6a9e4640c08a7da59b1f085bd6fef0298c1c10a5ccc4fe:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjU1YTI3NzE4YWUxM2VlOTRiYTAzZjViYTdiZWU5NWJhZTYwNjlhYzJiOWVhYTViMmYzOTBiOTMzMDFmOGRiYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODliMjQyMjk3ODlmMzZmNmZjZTRhODEzZjM3OTI0MGMwMmJkMzYyM2U1MWUzNGZiNzQyNzg0MDQ2ZjRmMTA3ZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTQxMjk3ZjI4YmFhNjg4OWI1NDU4NjU5NzUyNjY4MWU4NjAyYWM5NzU2MTllNGQ1ZmQyODc5MWJhOWNiMGE0MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTMzNWUyODA3YTg5ZWFkMmFlZGI4NmJiMzkxZWQzMWRiMDg5ZGUyZjhhN2FhM2I2MTkxZjQ1NTNlYTAxODRhMCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_96285537b93344ff8efc81d75a66a571",
+      "statement": "Discord has no bridge: its bot token is resolved from an environment variable by the composition root and threaded to the adapter, so no session state exists on disk for that platform.",
+      "evidence": [
+        {
+          "resource": "repo://config.example.toml#L26-L28",
+          "version": "repo-lines-v1:sha256:d11ff0637990ce18659e01822cd310a872bccd0a29797eb457fd7b947de57ec2:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTJlYTgwZWFjNDZlYThmOGEyMDdjOTk3NjFkM2ZkMWZjZTEwODY3NTZmZTMwNDIxMTg3NDdmZTNkODRjNjU2YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiM2ZlNjM3NWEzN2Q4YjlmMzVhYjIwNjA4ZGU5NzMzNTE5ZjBkZWM2NjM3NmI5YTkyZThjZDdjY2VmYWJkNTUxNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDQ2Mjc3ZTQyMGY5Y2FmMTk5MWZiOTdiOGJkMDRjOTRmYmQ5MjIxNzQ5YTc5OWVmZWU5MDU2Y2VmODY0ZTAyMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWM2YzNkMTljMjRjZWVlOTg0MmQ5NjYzYmQ1NzFmYjU4ZWY3ZDFlYWFiYzM1OTdhNGQ3MjJmZTM3ZjRjODBmYiJ9"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L1725-L1729",
+          "version": "repo-lines-v1:sha256:e79675740515252230951e3b75f7e5cd19d03ccd4278a2838477f4773005e71a:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDNlYzY0M2FlYTVjMjhiNGIxMWQwOThlOTE3NzE0NDUxYzA0MWExODVmMzZkMTRjMjA3ZDg5NjQyZjE1MDBiYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzhmMzhmNDQ2MmRjOTEyZTY0MjFjZmEwNGJmZmY4YmU2YTFhZjc0MDA0OTdmYWNkYzc4MTQ5NDFiN2ViOGE4NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGY1ZWI4ZDRlMzM3OWIzYjczY2VkM2VjNDIxYTUxZTMzOWQ2ZGM1N2RiYTllNDQ2ZmNjOTMzM2QyYWY1ZTdmMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzZiOTRmYTRkOTU1YmU1MWVkNTMzMDcyM2RmYWI5M2YwOGU1OWE3NWI4Mjk5ZmY5NjM0ODhlODU0MGQ4N2RmZSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_8b2cfc74221643258a96ac0c70daeed0",
+      "statement": "The port contract is verified as real rather than aspirational: `tests/contract/test_port_conformance.py` asserts that all four concrete adapters satisfy `PlatformAdapter`, including an Instagram adapter in its degraded state.",
+      "evidence": [
+        {
+          "resource": "repo://tests/contract/test_port_conformance.py#L86-L121",
+          "version": "repo-lines-v1:sha256:93403613b67089d11a4a33b03acc95af2a0e383dcf032c68f5c612461c996408:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFlZDcxM2RmNTY3MzYwOWNkNjAwMTFiM2YzYmI0MzE0Mzg1NjZkYWNhMTJkMjNmNDAyMzk3ZGE1NzNjNTY0MzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY1MGIzYzBlZTQyZmNhNzExMDgyOGRiYmI3N2YwMjliZWVjMGFhMzY2ZjUwZjlkOTZhM2IyZDAwMGI4YTcxODUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZiOWVjZTRkMWY3MjEwZDRjMWZjYjU4YjYzNDQyNDAxMWQzN2I1NTlkNTViNDMxMmJiNzg0OTc4ZGI1NjEyMDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM5ZDUxNjllNDIzZGIzODk0ZDk1OGM1OTFjNDk4MTIzNGM2Y2IyOTUzMWMyOWJkMDZiY2ZkYzk0NWU5ZTdiZjYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_09abc51c83094dc18d387d5b91ddb389",
+      "statement": "`tests/unit/test_instagram_degradation.py` pins the degradation contract end to end: a checkpointed bridge still lets the registry build, a degraded adapter neither sends nor reacts against a bridge that would accept, a degraded `listen()` never returns, and a session checkpointed after startup degrades the live adapter.",
+      "evidence": [
+        {
+          "resource": "repo://tests/unit/test_instagram_degradation.py#L1-L17",
+          "version": "repo-lines-v1:sha256:6e75f63e77785023642e75c9b68d7390a6457f5af42058741e0df3b1027b0f79:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE2ZTI3YmFjMTY4MTY4ZjJhY2M5ZWQ0NzBiMjNiMDEwNWUwNTQ4YTliYTg3NWNhMjI1ZTkyOTdiOTkyNzQ1ZjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_instagram_degradation.py#L115-L282",
+          "version": "repo-lines-v1:sha256:d1a4a8e1322ccc4734a0e22227b00dbb54d4652796d06567c6e3d856685b2e50:eyJzZWxlY3RlZExpbmVDb3VudCI6MTY4LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIyMWY0YzFhZWE1ZWVhZWRiY2U1MTNmYmIwMjIzOTNhNDY0NjM5NGIwNjBlNDY5MTczN2Y1YjY4MmRhZjg0NmFlIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJhOWM1MDI3NDhhOWQ4OGVkMjk0OTc5ZmE2MGNiYTJhNzIxNjAxNDM3Yjk5ODA5YjZhOWJhZjE1M2E5MGI4NmRhIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIzODQ4OWNiMWM1NTFhNzMzYjhhNWY4MDQ1Y2Y1MmQ2OTIyYWIxYWNhNWMwNmFmMmIwMTcwZDAwMTczMmQzNWE1IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MCwiZm9sbG93aW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1In0"
+        }
+      ]
+    },
+    {
+      "id": "claim_02bdedbf1a7c49aab90bfac821195243",
+      "statement": "`own_handle()` is not on the adapter port: Discord caches it from the identity call and Instagram reads it live per call, and it is display text for presence only, never entering `PlatformIdentity` and therefore never becoming a mention id.",
+      "evidence": [
+        {
+          "resource": "repo://nora/platform/discord/adapter.py#L131-L142",
+          "version": "repo-lines-v1:sha256:9971dc454ccd253ce11d66cdc4aa5fcb229f232d345efd4aebf6308027e8c050:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3NGVmMzNjZGI2OWZiN2FkMjFhYTFmODUyZTc5NWNkNDQ5MWFkNjAyMjdlZTgyZGE1OTEwMjI5ZGIyZTkxYzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU4NDA2MGViOGYzYjc4MmE2ZjNhNjA2Yjc4NzYwZDZkNmY2NDlkNjMxYjc2OWY1M2ZjNmU3ZWJhODc2ZTIzNzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk0Yjc4NTJjNmY3YjUxMWMwNWUyNzRlYzFiMjRkMTBkNDU5NjE1YzhkNDViNGFkOWE5MGNiOGQ1ODE3ZGMxMDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUwYWJjMDFhMGViNzk2MWVlYWFkYzdjMzhjYzUwN2FiNmFiY2YyZDg2ZDJlMTM3YTAyYzFmOTBhMmI2NjYxN2MifQ"
+        },
+        {
+          "resource": "repo://nora/platform/instagram/adapter.py#L252-L261",
+          "version": "repo-lines-v1:sha256:f733bc5e5a76ce35d3892c8446dffa5c2c93ce9d5fa5979295b348bc43f535f3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3NGVmMzNjZGI2OWZiN2FkMjFhYTFmODUyZTc5NWNkNDQ5MWFkNjAyMjdlZTgyZGE1OTEwMjI5ZGIyZTkxYzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwMzhlOGQ2NzBiZmJkZjU5NGJmYjcxMWY4YjUyYTE1MWIyNDQwNzg3YTE2MGQwNWYxMjJiNjRkOTM4MzdjYWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBlNjViN2FkMGU4MDY3MTI5NDhkMzZmZTg5ZGU0NjI4NjIwZTFhZDYxZjc1MzRjYzBjNWEwZWM1NzRmYmRhOGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNlZjRmNTkzYTRmYTcwN2EzN2RkZmMyYzBmNTBlZWE1YTNmYWNiNGE3NGFmZTEzYTZkODFjOGZkZjJjZWMxMmQifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-20T05:37:18.064Z"
+  }
+}

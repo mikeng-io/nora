@@ -1,0 +1,346 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:1e1f3a98b124354e4b13888033badbe8d8b3e294dc2736ddba5c5a35d59a18f9",
+  "claims": [
+    {
+      "id": "claim_598c103804c040238c28b4739e655094",
+      "statement": "A sub-agent job's payload is split into `SubagentBrief` (what Nora wrote: objective, title, the settled decisions each with who decided, workspace-relative inputs, document ids to revise, deliverable) and `SubagentLaunch` (facts code adds and a model never chooses: job id, room, requester, launching tag id, time, timezone, folder); the brief is the launch payload and is what the job row keeps in full.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/subagent.py#L1-L16",
+          "version": "repo-lines-v1:sha256:86fbf04619e5af157e923eb4aad6498ee220b39eacee8ca6bb2e5eb9c85ddf09:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZkOTU4M2QwMGYxYjFlMzNjNzM4M2VmNTUxMGNjMTY3ZmFhZWI3NTA1ZWU3NWI4OTViMmIxMjZjNTc2YWMzYTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/domain/subagent.py#L65-L139",
+          "version": "repo-lines-v1:sha256:4f17c7ddd3fc43dcf4701642be1a1db5ae573f26eb39d9103684301d1c98a990:eyJzZWxlY3RlZExpbmVDb3VudCI6NzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU0ZDU0MzVjNjlkYTBhOGNjZWU4MWNjOTZmYjU4OWM2N2U1ZWUyZWM3ZDgxNWZjNzU2NmVkZmRiYzA5YTA0YmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMyMjgzMjRhMjQ5YTNmYmRjYzZkZjY1MTMzZDQwM2ZkZTE3NDJjN2E0YmVlMmU0Y2FmZDRjZjFiNTk5ZGM3MzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b93d4730404d4d35b7b9c7ef56728dc8",
+      "statement": "One function, `workspace_path`, is the workspace-containment rule for a brief's inputs (relative, not absolute, no `..`), and it is applied twice: `subagent_create` refuses a bad input as `bad_arguments` before anything is launched, and the runner re-applies it and fails the job `bad_inputs` before the model runs.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/subagent_desk.py#L372-L393",
+          "version": "repo-lines-v1:sha256:aa9f9583a694b4c53a29d4829c8cb946e7983c302a4de63a8cc712a1aaa9718d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhmNWMzZjE4ZjY3ZjlhNDg2YWVjNmYwNDUwYTE4ZGI5ZjZkZDgzMjY4OTcyNzlhYzNmMjBhYjUwNDY2NWU5YTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1MTIyZDNlYjdmZTA0NDM5YjJmYmJkZDU2MGZmZTc1OWM1OTFiZmNkYzhhYmY2YzNmOWFmMWViYWUyOTMwZmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYyNjA3OGVmOWUwMTEyOGQwMDJhMGQ0MzFkZTNkZDY1MzExM2EwN2YwOGE4ZjhkZGI4NDlhNzg5MjgwMmNhNTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI3ZmE0ZjhlNTU4YzZlNjA3ZjA3OGEzYjQ0Y2RmZjI2ZmNhNTY3ZmEzM2RjZmY5ZmI3YmUzMGNlZWY5NzcxYmUifQ"
+        },
+        {
+          "resource": "repo://nora/app/subagent_runner.py#L156-L162",
+          "version": "repo-lines-v1:sha256:4ba853dd389869ba4f0ef9c8bac03e5129f8e7b1c6e1f59fafd97fcb407ec9ec:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDBlYmNjZGNiYzk5NmI1ZTA0NmYxMmExODQ0NjNiZjgwY2QyZWViYjVhMmNhMGJhNGY3ODg4YmRlMjZkZWJlMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTQ2N2ViNWY4YzhhNDExNzM0ODNjOTk1Mjk3ZmNmZDlhMzQ2ZmYyZjU4OWVjMmI2NDY0MjBjMjk3ZTA3ODBmMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNmIyMmNlYTk3NmQ1YjM5OWMzYzQyZGMyMGE4NTRkMzgwNGMwYjNiMzA3MmE2MTNmZTMzNDkyNjRkODVlMjQxMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjYxNDUzOWRjZTAzMjBiOTQ3ODY0NzNkOWU2MWFhYTliYTE3YWMzNDlkMWJhOGRjODI0MDA0NGVjMzkyMzY4OCJ9"
+        },
+        {
+          "resource": "repo://nora/domain/subagent.py#L52-L62",
+          "version": "repo-lines-v1:sha256:3b700ab165473cf3ff275a58b41156a60f68c9116bdf59bc11b81f74fb67caa5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUzNmJkOTQxYjU2NDk2YmZjOWI0M2ZjZDVjZDk2OGJmMGI2N2ViOTA2N2I5ZDFlNDI3Mjc2ZWM5NzQzYTRmNzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRhNzRlNzkzMGI5M2NlMTYyYzIwZDhhZmI1ZGY0NTgxZjliNWMxMTQ5YzU4Y2E4ZjY3NmYzMzNkNGI1MmE0ZDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYxODcxNzk0OTllNjY3NGY2NDQ0N2NhYzJmYzQ1MGM0MTNmMGRjZDNhYzFmZmM4MDM3MjhhOWViYzMwNmIzMjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_035cc528f2104429854ed36bdf7d21f4",
+      "statement": "`SubagentDesk.create` launches the worker first and then writes the job row, returning the row id to the model at once; when the row cannot be written it cancels the orphaned worker and answers `unavailable` / `row_not_written`, so no worker runs that could not be delivered or listed.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/subagent_desk.py#L149-L222",
+          "version": "repo-lines-v1:sha256:9d694d8cea681a0e939147ee9c393fc718852dc6aa77ef1088cda3120fb9ee4f:eyJzZWxlY3RlZExpbmVDb3VudCI6NzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5YTNmODA0NzRhZGYwYjhhOWY2N2ExYzM4MDk4NzU3N2M1ZTFlYjg1Y2YxOWVhYjg3YmMxYzNiOWUyYzFjYWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5ZjU5ZTIxN2QwYTJlZjk0ZTlhYmZjODg0MzViNWJlZDhlZmI2OTcyM2U1Mjk5ZmIxNDUwOTllMzM1ZGNhMDAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE0Nzg2MjE3YWNiNzQ5MWYwMDFlMWQzM2JkNzQ0NmI4ZTVlNmFlNjk0ZTYxNzk0MDJmN2IwYWVlOTRkODNhMmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk1NzFlYzJhZTY2ZWI3MmJiNGRlMGQ2OTg3NGVjZmZlZGRlNTI4ZjllYTE2YjZmYzM5ODhkYTIwNDVjZGU1YjIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2f5cca51503a4aa2807c22be60380880",
+      "statement": "Only one job is started per tag turn per room: the desk remembers the first created job under `(tag_id, platform, conversation_id)` and a second `create` in that turn returns it with `repeated=True`, while a refused or failed first attempt records nothing so the next attempt can start.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/subagent_desk.py#L133-L176",
+          "version": "repo-lines-v1:sha256:da694e26b830edcd5919c8a87887931fe63642e7f5d6edf88403e4acfff9f8e6:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYxYmUwODFjZTFiYzZkNGU0OGFjODcxOTNjYjNmOTRmMThkYTJlOTljN2NkZDMxMzQwZDBlZDg4NjAwNWVmMmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2MGM0M2NhOTYzZTJlNzk2ZjUyMjU1OTc4ODI2YmNhNDczNmNhZTc4MDM4YTkzNGQzZDEwM2VjZDAzY2QxZWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ5ZDFmOTM3OWEyYjEyMTI3NGIzOTVlYTg5MWFhODY4ZDNiZjkzY2I5NjVmMjIyNmE0OTNhMWZjNmI1ODkwMWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI1YTQ4MTIyYjFkZjJiOGNhNjE1NTMxOTU3OGZlOTk4YjkyMmRhOTc1M2Y0YjBkYjU5ZGRlMWUxOGY1NjVkMzgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1c15567aadb14b8692e542fc51d95a4b",
+      "statement": "Every desk method takes the room from the launching turn and checks every row it returns or changes against that room, so a job id belonging to another room behaves exactly as an unknown id and its existence is never revealed.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/subagent_desk.py#L1-L17",
+          "version": "repo-lines-v1:sha256:5b5469722a1d9c45a3a43dd0fc6789176a080a1f9891b08fd7500a18b84f66c3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2YzUyNDlkMTc0YTNhN2I0ZTFlOTU5YWFkMmI0Njg5OTdhMTZiNjgxZDllOTMyYTRiNzU4ZDI5ZTY5NDZkNjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/agent/subagent_desk.py#L276-L286",
+          "version": "repo-lines-v1:sha256:ad36a07e096faaf1184868ea224d18b5e59e96ca0d5ad5e3ba694e29893f06e3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjViMTFlM2VjMmY3YjZjNDVkZjllOWFhMzRjZGJiMGU1YTM4ZDk0ZjRjYTM5ZGFkYmY5YjM5MzlkMzIyNTMxMDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlmYjU1ZjZlZDBkNmVkZmJmZWRlZGUwYTFlYTU2YjRmOTliZWQyYzY5YjAyZDcxNTRjODNkMGRiM2QzMmFjZmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVjNmMyNjI3ZmMwYTI0ZDY3MmZiZGIwYWQwNzQxZTNjYmU3NmU1ZDU1YTg0ZjlhNjZhNjhhNmJlZGYwNGJmZWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJhNzU2MWIxYWUwMTAwZWRkZmZkNWQxNTg5OGRjNGJiMjlkMzU3M2RiZjYwOGM1MTAzMzBmYWI0Mzk4MGMyMDgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7b996e90bb7b4ad6b92f7bb9b07b6b34",
+      "statement": "The backend owns the in-memory job lifecycle: `launch` starts one asyncio task running the runner and returns an id at once, `poll` answers from memory, `cancel` cancels the task and marks the job `cancelled` once per job, an unknown id polls `FAILED` / `lost`, and finished jobs are pruned from memory after `FINISHED_TTL_SECONDS` while the row keeps them; `launch` never raises, and a job is never resumed because that would mean saving the worker's conversation.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/subagent_backend.py#L1-L14",
+          "version": "repo-lines-v1:sha256:afbe0f5692aeb212135d6a5a39e45461718c5126390e0641c818b17d118c7ea1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUxMTVmM2M1N2M0YWUzMGY4MmFhMjJiYjg2NjNmMjA1NGQ4ZmU4N2Y1OTJlNDUzNTNlOWMxZTc0NWJlOTZmZDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/app/subagent_backend.py#L82-L203",
+          "version": "repo-lines-v1:sha256:420258fbcd792cc9ff8cb19f75b365e030ca800d327a2ae93f1dedb01b8dcb79:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIyLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIwMWUzYWFkNTBmMGJjNWFhN2VmZjZjNDJlZThmYzE4MTg5NDFjMWMwYjhlMGVkNzlhNmFmOTE0NWJmN2FjY2U1IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJhMGFiOTZiN2ZmMWZlMWI4MGRiMGU4N2JkN2I1ZjdiNGRlZjJjNDgxZTQwNjFlNjM1YjRmZmMzMGVmYTU0MzFjIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI3NjRkYWE5ZDRlZjk4ODhkNGRhZmQwYTFlNzJlMWY2YTJkYzlkY2U0MTY5ZGY1YTNiMTNjMjUzMGY4YmY5NGU0IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MCwiZm9sbG93aW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1In0"
+        }
+      ]
+    },
+    {
+      "id": "claim_8e989bd6df0f4925932e17c72e70c6d2",
+      "statement": "The worker's tools are a closed allowlist derived as `(read_only_tools() - NOT_LOOKUPS) | ACTS`, built through the same registry surface a tag turn uses with the recorded requester as tagger and no deliverer, and `build` refuses a surface that holds anything on the `NEVER` list or outside the grant, so a worker can act on the computer and publish documents but can never speak, schedule, remember, change a document's state, or start another worker.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/subagent_tools.py#L1-L95",
+          "version": "repo-lines-v1:sha256:36829cba02f753f5054f759566b4e6797ab62538321ce511ce790b647cddfe26:eyJzZWxlY3RlZExpbmVDb3VudCI6OTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhM2M1Mzc3YzJiMTNmODMwNjgwZTUxZjIzMTY4MTc0NGY4YzhkNzkwM2VhM2VmNjQ2MDk5YWFmZTNkMmUzNzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ5NmE5N2UwY2VjNzc2YzlmM2Y5ZjY2OTg5YmYwNGMwZjJmZTA4M2FiYTY3MTczMTM3MGI0MmQxNzgwMGE0N2UifQ"
+        },
+        {
+          "resource": "repo://nora/agent/subagent_tools.py#L149-L176",
+          "version": "repo-lines-v1:sha256:8116f71f4532359d8e6bae229a505732ca070a869d33f08bc40197279cea5dac:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYyYjhjZjU2ZDIyNTM0ZDI0NzkxNzRkZmRkZWU3YThjMDg5N2QxYTVhNjVjNmRlNWJlYTMzNDNmMzZhZjJmNWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY3ZTY4NjY5MTQyYmY2OGY1OWQ0NTY0NTcyNjg3NTMwOWU3N2YyMWNhNmQzMDBlNmE0OGJkYjA0YjkzZmFiN2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJjYmNlMjE2NDQxMDdhMTBkMTJmMjYwNGVlODFiN2Q0NzJjNzA2NGQ5MTUyNzg2YTYxZTdiODBjMTM0MDVlZDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_11e2816bffca4fdc81af03d4405dd912",
+      "statement": "The worker's guard has no call ceiling of any kind (`per_tool_ceilings=False`, every tool budget 0, no memory or pass-wide budget) so it keeps only the unknown-tool veto, the undeclared-argument veto and the result size cap; its bounds are turns, total tokens, output tokens and one wall clock from `[dreamer.budgets.subagent]`, which the config refuses to load with a per-tool key or without the block when `[subagent]` is enabled, and the numbers are never written into the prompt.",
+      "evidence": [
+        {
+          "resource": "repo://config.example.toml#L1200-L1208",
+          "version": "repo-lines-v1:sha256:c3cdf13aa3cd6d95ba3c08bbbd0aac536f6a70509e23baa1f7e2c405125d4f79:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTBmMGZiODE3MGI3N2NlMWY3NTY5Y2E2ZjE0ZThlYjMyZmVhYTQ2MDUyMzE1NmQ3ZDA1NDQ4ODA5ZmY0MmFlZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTMyOGU3Njk0NmExY2EyYjE1ZDJkOTYxOTY3NDdkNDY4N2I3MDM2NzE4NzU5MmRlYThhM2QzYjM3YTYzMTBlNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTdiODRiZWY2NzNhODE2NTZjODUyMzBmZTQ5MjFlMDc5YjFkM2U4ZjU1NzU4MTBmODllYjM0ZWEzYzk2NmM2MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDQ4YTY0OTk2ZWJhMjQ5OTJhZWQ4YzExOTQ0OWNlMzM5YmZiMmMwYTBmZjhkNjA0NzA2MDk1ZjRjNDhjYmYwNSJ9"
+        },
+        {
+          "resource": "repo://nora/app/subagent_runner.py#L1-L23",
+          "version": "repo-lines-v1:sha256:88231307ce18115bf211cc76b9744a246380fe95127d8b10ff53ee7582b6c817:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQwZmNlNmZkMWFjYTA4ZTg3YmM0ZWJlYmIwYTI2MWYzNWQ1OWExNmIwOThhNDdlODlmZGVkOTMyNGI3OGM5Y2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhZjkyNGYyNWU0MjExN2IyZGFkYmI4ZmFlZWQyZmQxZDA2ZjVkYmViNWZlYjk4ZjgyZTljOTE2ZDdhNjAyNDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdhYmZlNmM1NDc4M2U4MDU1ZTNmZGJhOThjNTRiMTM1YzdmZTdlOTVkNTZkZDg3Zjk1MzUxZTQ1ZGUwMGZiOTQifQ"
+        },
+        {
+          "resource": "repo://nora/app/subagent_runner.py#L238-L277",
+          "version": "repo-lines-v1:sha256:7434df31dbf0e2d9cd5efc00a6a152dd7bc756dd49dc5f82122e084f33803b0b:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyYTgyOTkwMTdiMTIyM2MyMTE4OGFhNzQ4NzNkOGM4MWU0ODVlMjlkZjc3OGM0MWMxYzBmZjkwMjM0ZDI0MzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA4OGZhYjBmNzQwZTI0ZTNiYThjMjIwNzYwNzc0MWE1ZTI1YzIwNWJjNzJlZDQ4NDM1ZjgzMzBlYjIyNDNiZTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L4328-L4364",
+          "version": "repo-lines-v1:sha256:823317c9e0ce71620ff46e5d2d86157ab042e95c6209d8ae2a703fc38db65df7:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlZjFjZGQwZjU3NDMzY2U1MDc3OTA3MjJlMmY1MWQ5NzM1NmNiZmZhN2IyNGRkN2NhMTM0NDgzMmQ0ZTUyNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyYWIwOTBiY2QxNjIwZmE2MmVhZWUxNTdhNzRmY2E2MzVhYTI5ZTEyY2JmZmQ2MThiNTc5MmQ4N2JjMDNhM2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU4MDUzNzAyYzBjYmFkNWY2NmIyMzk4NTg2OTJmMzE1NGUwZTU3NDVjZGM2ODY1ZDBkMTgwODlmYmMwYTMxNTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgxNjk4NjVlZGE5MTg5MjZmNDdlY2ExOTZhZmJmYWFhOGI1MzNlNTBjMWMwMjFhM2JkOWUzZWRlNTliYzYwZDkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e688a682d0d544e184ae40157ee271f5",
+      "statement": "A stop at a loop bound or at the wall clock ends the job `failed` with that reason and never as a normal finish, because the loop returns from a limit stop without raising; an expired clock is `timeout`, an inner `TimeoutError` is `error`, a reply cut at max_tokens is `limit_max_tokens`, and an empty final text is `no_report`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/subagent_runner.py#L186-L219",
+          "version": "repo-lines-v1:sha256:2c362279870fc144fe684865ccecc55772729b71336486c07cc5f8acb28f3e05:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1NjljYjA5MjgwZWUwNzgxOTQ1ZTQ4ZDQwNDFiZDJkZmFhZTY5MWFkMmVhYmY1ZDNjYmEwODQ2YzcyMTZjYWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcyMjAwYTNlZDNjYWM2NzQyOTE2ZDcyYzdhNzc5OTU0OTI0Yzk2ZTMxZmQ4NDkwODdiODRlZDJkYWMyY2JiNTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJiNTBmOGVjNWZjOGYyOTQxMzFkMDg0YjJhMThhZDNhNTk3MDBlZTA1NWM3MjM4ZDlkNjllOGFlYzM3MzQyNzYifQ"
+        },
+        {
+          "resource": "repo://nora/domain/stimuli.py#L259-L266",
+          "version": "repo-lines-v1:sha256:33b89b8ab703e883f5f91cada88904f43dc38baadb44c4e99e02198bed5a0024:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGNlMzZkZWNjODU2ZGZkNTk2NjE2NDc4ODAzMzAxODdiYWRmYTkyYWFhMDgzZjlkMTNhOTFjZTZmZTJlMWI5OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmFmYmEwNTI3YzM5NTNjNGI2ZTBlNWI1NzM5YmE4MzYxMmY4MDUzYmNkYzk0NjY3MzAxOTNjZDFkNTkwYjQwOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWM3YjVkMjFiMTI3ZTA0MmJlMWU3MDA2ZmRjNTE4YWFmYjNmZTliODczMjg0NTVhOThiOTYzZGViNjIxZGJhYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODM0ODgyYzk5ODM5MTg1YjMxOThmNDg4NmExNTAzNWY2NjlhZDRlMzY0NWI0ZWVkNzA1NmIwMjAyM2FiNGQyMCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_8b990de1570242e4b83c06fdd348ff6c",
+      "statement": "A job's outcome vocabulary is one tuple (`FAILURE_REASONS`, extended by `done` and `cancelled` into `SUBAGENT_OUTCOMES`) so the `nora_subagent_jobs_total{outcome}` labels cannot name a reason the code cannot produce, and `lost` is deliberately not the worker's to write: boot recovery writes it for a row whose in-memory handle did not survive a restart.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/subagent_backend.py#L121-L124",
+          "version": "repo-lines-v1:sha256:0c887da87b5454b08edd0517e5627a4e776596e5d1b6e46feb32f596ec2d609f:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmI2MGE1MzU5MWVlODA0NjYwMWMxYzQ1ZTcyMTUwMjExM2ZiOGYwMDZmM2E3ZWNjNjQ0MjViZjcxNWJkZjUyNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTkwOWE1M2E2MThkMDI4ZTFkMzAwMGMwYTdhYmNlZWNiZTVmYjM3ZjRlNTExZWZlNDY2NDNmYWQ2ZTY2ODcyZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTRiNGYxNjQ5ZGFjMzA2NmE4Y2RkOGE5ODRjN2Q0MDZiZTY0OTZlOGE3NGE2NzUxMjA2NGZlYjQ4ODVkNjE0ZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjFmMzI4ZTI3MjcyM2NkY2M0OTJjZmQ0MjIwMjU4MTNjYTZlYWVkNDM3Yzc3ZGY5YTkzZTBjNWUzNTY0MGRlZiJ9"
+        },
+        {
+          "resource": "repo://nora/domain/subagent.py#L39-L49",
+          "version": "repo-lines-v1:sha256:f04822cbae59bed6c67565f6caf549add3e632121308db5e85a5b4fc87ed1843:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwMGZkOWY5ZjczY2UxZTA4NzYyMzA4ZWNhMTNjMmZlYjg4YTQ1OTEwOTUyMmMzYzBjYjdmZWM1MjMxODk0YWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzNzEyNTQwYjdjOTc2MzhmODZhOGZlNzQ1YzViOTc0NzhhYzllNTM5MGYyYzM5N2ZmNjg5NDdhZjAyZGRlMjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjExNTA0ZDliOGI4YTE1ZDA3Mzc2NWIxMzc3YWJlOTZlYTFjZjhjOGY1ZTFjMGEzODc5ZDM3ZTgyZjY5NzcxOTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY0OWJhN2JkNTVhZWQ5ZjBhYTRjY2M5ZTZmMzFiZDc1NmY4NTVlYzQ0YjRkODIwOGYwNjllZjUwNmU0OTJhZDYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_52a0f08a9922468d87f40bda5a642b57",
+      "statement": "A worker's document ids come only from `document_publish` results that returned `ok`, recorded in order and once each by the progress hook that registers after the guard; the final report is prose and never contributes ids, and kept files likewise count only on a successful `computer_export` to `keep`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/subagent_progress.py#L1-L24",
+          "version": "repo-lines-v1:sha256:681cad2f9237edcb10a07a9452cd7f8b2a63912b1bb0ea297d1289c92ba8eed5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjMjlhZDNjMmNkMzJjMDk0M2Y5ZDUwMzkwZTc1NjFkM2NlMTRiNGY4YWYzY2Y4NWUyODVkMTI5MmZmMWNmMWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4YTAwMDBkNzEyZGY0ZmQ5ZWUzNGQyNWNmZGVlN2U5NjE4MmQyNzExZjczYTc0YTdiZjQ4NWY5YThmNTljM2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhYWY3NjM3Y2I2ZTdlNWRiODVkNjM0Mjc0NjAxNGRmMDQxY2NkNTU4YTkyMGIyOWViNmFjNzE5ZDdiYWY1YzIifQ"
+        },
+        {
+          "resource": "repo://nora/agent/subagent_progress.py#L178-L205",
+          "version": "repo-lines-v1:sha256:654020b1c4ce1e2dae2bd592d48fd02bf994fdbde0035b6a23baa1f6547db2cd:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc4ZTA5YzlhZGIwOGQzZTY5NGJmYzM0OWU2ZTUxMjJiMWFkNzFhNWM1OWY4MTQxOTM0NTFhMjdiMWY1MTQ2MTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkzMzFkNzE3ZjFkZWJiMTE2MzIzMmQ0ZjRjMzViYTc5MzVlZTBjYzNlNDExMTA0MjE1YzRlNTQ5MGM2Yjc4MzYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFlNDAxNDdjYWIyMTUwOWY0ZjBhYzI3OGNkZjRjMTg1MDhmMzljOTUxYTk1YWJjZDU3ZDE1ZDE1MWFkNmVhMzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_subagent_worker.py#L333-L358",
+          "version": "repo-lines-v1:sha256:a9c4c750be6e48f0dc932fc79c9c6a19c8281df8492bc8f3af54ffbaf1710e7b:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2MGI4Yzg3OTJiNjhlMTQ2Nzg2ZjU5MDMxNmIzN2E3NDBkMmY3OGU2ZjBlNWRiNWZiMWQ1ZjQ1ZThlMTkxZTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3YjJlNjgwNzM3YTM5NGEzNmJmZDY4ZWVmYmU5ZjJjZWEyYzZjMzVkMWU2NDZlMGI2YmFiZDNlNGVjZjcyOGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIwOGRlZDlkYzYzZjI1NTQ5NWVhNWVmMjI3YWE2ZWJmY2U4ZDUzY2IwN2ZiM2YyMGI5MjMwNDAyZmJkYTA2NGQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_30c55a6c4a9a4bf1a22aecf94d40f353",
+      "statement": "A job's checkpoint is the worker's own four capped lists replaced whole on every `checkpoint_update` call and persisted to the job row matched by `backend_job_id` (an update that arrives before the row exists stays in memory and is counted), while `Outputs` — published document ids, kept files, rounds — is derived only from tool results so a checkpoint that names a document nobody published produces no output line.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/subagent_progress.py#L116-L137",
+          "version": "repo-lines-v1:sha256:79e40f875e596fc45e58288dd8ba86a4a68e763e0c343aae4adf91941c4e61be:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5NzAzZTYzYzY1ZWQ4NmFkMmE4MGM3NThkMDY4Y2E0ODUyN2I0MTExMTFlMzFhZGUwMTU4ZGQyOGI5ZTE2MDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlMGNlNWUyY2I0M2FiMTFkMGY2YjMxMjQ0MDAwMDlmM2ViYjlkZmUyYWE0NGQyMWMwYjZhNjlhMzBjMjQ3NzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY0ODNmZWRmZmY3NDc2M2E2YTNiMzcwNGEwMjQ0ODAzM2RjOWU2OWUwOGMyYmI0ODVlNDdmMTk5NDc5ZTIxNDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA5ODI3ODAwMTMzMDY1ODZiZjY5MzY4NzEwNDAzZmVkODBjZmQ5YzgyNmViMGJlZjcwNmVjMjg4NDQxYmZlNWEifQ"
+        },
+        {
+          "resource": "repo://nora/app/subagent_backend.py#L95-L104",
+          "version": "repo-lines-v1:sha256:e5704bfb905902d4a8bd5fffc417de0ca54e6cbb624c03f56ddb6573d97a8a95:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzMDIwNDdkOTFhY2E2ODljZjE1YTI1MWNjNzczMzBiNWU1MDJlNzFmMDhmMjhmYjc0OTgwMDkyYWIzMTBkMTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0NWVmYWUzMThjMzNmMDIxY2RiYjc4MWE0MTczNzdiMmM4NWMwYzMzNWFkMTMxZjJhNjI0MzRiMTdkNmI1MTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVhODI5ZjdjZTVhN2RkNDdlNTYyNDM1MGRlN2E3YmY3Y2JmMTMyMDIxNTI1YmVkZDk1OGM5NWYyOGI1Y2YwZGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI4MWFjOTJlZjlmMTAwOGNkNzAzNGIzMjNjM2RhMzYzNTY5N2NhMzZiNDhkZjQ4MGU3MmY4NGY0YTIxZGRkMTcifQ"
+        },
+        {
+          "resource": "repo://nora/domain/checkpoint.py#L1-L19",
+          "version": "repo-lines-v1:sha256:7db1396c79a4283b38f370e005dd2598c042efcaef0c15fd45e073ff6fc8a2ff:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhhYTU1YjM1ZGNmY2RlZDNlYTcyM2FiN2NiNjVhNjdmNzhjMDU0ZjZmMGM3OGFlNjJjMjJiYTdiYTY3ZGZjODIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/language/checkpoint_render.py#L1-L25",
+          "version": "repo-lines-v1:sha256:4ca7a1949c7ceb3046708fab36b2dda378ca01e2d4742904fcc87fe252c6c6bd:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZjMTNkNzkzZWFkNzBmYWNjMDc4N2NkOTQzZjM5YTZmZDFlYjlhZDMwYWFhODdiM2JlZmY5OTNhMTcwYTBiMTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_20cc70a26366414f8b05e1e4f470fdc7",
+      "statement": "The room reads the `<subagents>` block rebuilt from room-filtered job rows on every tag turn: running lines carry live progress from backend memory with `progress_known=False` when no worker can answer, a pending row whose worker has ended is `ended` rather than `running`, only a controlled `failure_reason` reaches the block (never the free-text `error`), and finished jobs are shown for 24 hours, five at a time.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/subagents_context.py#L20-L79",
+          "version": "repo-lines-v1:sha256:1682423b0268405fedc496636421eba741854f61dc45993081e606a9da82ddc7:eyJzZWxlY3RlZExpbmVDb3VudCI6NjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2MzEwYzAxYTJkZWNhNjc1ZTgwNmU2NTQ5NzQwZDY0ZTY3YzhiMmY3YzJkNWRlMDcyMTBhZTEyNGU2ZGIyZDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxNTEwYmI2YTdjMzFlYjM1MDBmOWI1YmYzM2M1OWYzZmViMWQ2NDI1MGRjMTc2NmNlZWU1Njc0MThmZDI3YTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk2MjM5NDNjYWE3ODRiMWQxODA5MDdiN2ZjMjI4ODUwMDM2Mzk3NTljNjA5M2UwYzY3N2Q5Y2VmZGNjMjMzNmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        },
+        {
+          "resource": "repo://nora/engagement/subagents_context.py#L1-L20",
+          "version": "repo-lines-v1:sha256:931100dd9a5d054974f5d5054837169684f4b9127136bcb377a63fe1ec8d43ec:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwMWJkOGZhOTNkZTkyZThjMTMwM2U2ZGIzMWJmMWQyN2JjMDliZDVhOWU5NGJlNzJmMTliN2Q0NDEyOTU2OTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/engagement/subagents_context.py#L99-L159",
+          "version": "repo-lines-v1:sha256:1f7f8d82a46e817b550e24090c38add313de6a14b5391082ae76746ccbb1868d:eyJzZWxlY3RlZExpbmVDb3VudCI6NjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVhYTJjMDJhNTJkNmQ0NzY5ZTBjYjQyZGVhMTY0ZDkzZTY2NDBjMGU2MmRmOWZkMDcyZDFlYjdlNDY0ZTVhMmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRjMDM3MDZmZDI2NzliMWRiMDRmNTkxZjA0Y2M5ZDRkMDE0ZDdmNjRiZGQzOWRjNWJmYTY4MzVjYTU1MjI1N2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIxYjJmMzI0NTE2YmJkNWExZjY3OGJkYWVjNGFhMmQ2ODMyNzY3OGZjOTAxOWIyODg1MmNiOWJlN2EyZjI1NDcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ee193946daeb466aabe24a9cecf0f198",
+      "statement": "Each terminal row state has exactly one writer: the poller marks the row `DONE` when the delivery spoke and `FAILED` otherwise, writing the report, document ids, trace id and final checkpoint; `subagent_cancel` claims the row and marks it `CANCELLED` even if the worker would not stop; and boot recovery fails surviving `PENDING` rows (whose handle lived in memory) and every `FIRING` row `lost`, returning them so the requester can be told «I lost track of it» rather than that the job failed.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/subagent_desk.py#L255-L274",
+          "version": "repo-lines-v1:sha256:76d25a48801cd5b5af4da7993543217fd9bf6650bf9e08878131d5d094ecebc8:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyMDc4MzkyZmZlOTM1MTNhNGNlYzA2MjQ2ODZhOTcyM2Y4MzgxYjM4YTNjNjBmYWQ0NmYzYjEwYTc2NjVlN2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMyNTM3YzVjMmJlZmRiZGY0Y2VmNjRlM2NlZjk2ODEzZDAzMjg3ZTg3YWI5NGI3M2IwNjYyYzc0NGVlY2NlNTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFhYjc0YjczYTZiOTI3MTViNWZiMWM1ZjdmODIzNzQwMjJiYTliNDM4NWQ1YzY1NGUzMTE1ZjRkMDVmMjZlMTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ0NDAwODU5MDIzZmM3ZDY0ZmYyYjMxNDNkZjkxZDRmYWY0M2NhYjJlNjE4YWUxMDgyZWNkMWZjMzRkZjllNTQifQ"
+        },
+        {
+          "resource": "repo://nora/app/compute_poller.py#L201-L253",
+          "version": "repo-lines-v1:sha256:251e01bcc5d4b88db3f36dc7c90e4bc13282194574c9b5f865c45fdbe2c7e6bd:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY4ZWVkZTI4NzEwNzE4MmIzMTAzOTljMGU1OTQyZGE0NDU4ODY4ZTMzNjU2YzRhZjk5YjZjMjNkMjlkNzk0OGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAwZGQ0YTQ1MTgyY2IxYWRlYzEyZDcwOGE1ZGQyZTViZTIzZDRkNDA3YWM4ZDk5MDBiNmM5ZDNiZjBkNDI5ZTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ0MjBhMGMzOWYzMjc2ODQyOWMyMmE3NDNlNjVkNmJiMjQxNTU2NDA5ZTJlN2IzZTQ4MzRjYjM2OTBmYWRjZTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdmZjJmMWEwNDdmNjU2Y2MxYzY2M2Q1MzQyZGU3ODJmM2ZiMWM3YTBjYWExMjIzZDhjNDEzYmY4MDJhMmU2MmIifQ"
+        },
+        {
+          "resource": "repo://nora/app/compute_poller.py#L266-L320",
+          "version": "repo-lines-v1:sha256:768f9376e900885f015ea601a015d071f3b35cb67d8ad88b9b469a9082096068:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcxNzA4N2I1ZjMwYjJhNjlkN2JkNWRmMTA3NGI5N2Q2NzdkNDgyZDAyN2IxNjUzZTUyNmNmYTJlNjI0MDRhNTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJlMDA0MTI5ZjQzODA1ZmY1MzI5OTYzZjM3YThlZjY4ZmZmYjQ2OTFlOTE1MWExMTcwNWI0ZTc3ZGNiMzQ4MTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRlZTIxMWU5OWU4N2VhMjYyNGI2NGY0ZmI3NTRmZTE4ZDE5M2NmYjNhZmY5YWU1YzY5ZWYxNWE4YTQ5N2Y0ZjgifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/compute_jobs.py#L188-L200",
+          "version": "repo-lines-v1:sha256:f7090551dfdc257ca5f01a77edd2be624d551595cc8296f8b9df0537b7fa8ac3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjViMTk5MDI5MDgyMDlmMTg3M2IxMDllMzljMDE0YzlkNzBlNGJiMDJjNTEyOGU0M2MzMDJkOTYwZWVlZjYxYWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFiMTc4YzQ0Nzk1NmE3NWM3YzYwNTFiNzZjZjliZDk1NjE0ZTFiODM0YmQ3Yjc4NjViZDYwNDdiOTYxNGUwMGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA2ZDE5NDIxN2M2NmZlNzg5NzkyYTdjOWRmYWM3YTRmNDMwMDYxZjI1MGVlYWQzN2ZlNWUyODc3MzdhZmVlZjAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_bdc448d370b24e96b8652c299546c133",
+      "statement": "Before Nora is told anything about a finished job, the poller reads back each document id the result named through the document store in the job's own room: a document that reads contributes a title and a link, and one that does not is reported missing and never linked.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/compute_poller.py#L116-L136",
+          "version": "repo-lines-v1:sha256:e42fc30a4dfc74c25079fa0a4e5c74c5c626a89cade8db22a03a446d0be8c62d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmY2Q2MTU4MTg4YjJkZDUwZjFkNDU4NThkYmU2YjFjNWYxZmViMmYwMjQ2N2NhZjBjZGU0Mjk1YTFhZTYxODAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyNTkyYjI0ZGIwOTQyYjc1ZmY0ZDFmODRlZjc2ZjE1ZmUxMmIyNmQxY2Y1MzE3ZDYzNGZlYTU1MWIwNzkwZDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg1NDZhNWUyYjYxNzYyYmY2OWFmMmYyNjEyZDQwOWFkN2E2YmM1OTQ3YTAyYjExY2YxMmUyN2M5ZTI1ZWJhYzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE4N2EyZTYwNDE0OTM4ODU4MzBiYzA4NzFhY2U2NjI5M2Y1OWYyY2ZiYzIxMzljZjJlNzMzNzQ3NTExYzAzYmMifQ"
+        },
+        {
+          "resource": "repo://nora/app/compute_poller.py#L229-L236",
+          "version": "repo-lines-v1:sha256:4a10ed9b01456b93e01dc90c06fc66a8da899edec712f4f7b7b275d83c697120:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYmVjNzFlMTI5YjMwODUwNTAyMjY5ZDI3OTljOGQ2NjM3OWExYzI4MzBjNjBmMDk4ODkxYjM2ZDA1MWJiMDhkNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjViNTBlYjdiZmQ1NWU1MGM0NjBlMGNlOWE5MDc0MGM2MzY3ZmEzMmRlNGFiZmQwOTlmYWFlYWUyMzlmZjFiOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiY2EzOGEwMmM5MjhkZTAxMGVmZGVkMTE5NWFhYjQxOTZkNWU3Njg3NTAxOWZhMDI4ZmM1MjZkMmZlYWY5ZGIyMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzlhOGE2YzNjYjE1NmE3MzU4NGFiY2U1NDZmMTY5ZmUwMWZmYTI4N2JhZjQwZmMwM2UzZWNmM2EyM2M3OTkwZCJ9"
+        },
+        {
+          "resource": "repo://nora/app/fire.py#L349-L406",
+          "version": "repo-lines-v1:sha256:3d46ce9adf6a1c3da2e349d327c09208c5ddce93356921ddb3ed0d4550455c06:eyJzZWxlY3RlZExpbmVDb3VudCI6NTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRiNWQ0NDIwYTJkYzUxZGE3MmUxM2YyNTk4M2VmMjFkYWE3YTdkMzJlNTljMmI4MjdkMjUxNjFjMjJkZjJkMjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhhMDg0YTU2YzdlNGRhYTMyZmJiY2NmZTI1ZmFlNmM3ODYwY2U4NjAxYTgzZWMyYTJhZjU0ZmE2ZTlmZmNjNjkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4b438a8ddcc2413f9b3fc1ff88b54890",
+      "statement": "`DocumentService.publish` is the one path a model-written document takes into the store, and its order is: check the bytes, resolve every `Image` media code within this room to exactly one picture and rewrite it to that picture's full sha256, ground any Map's places, check the rewritten document again, then create a document or append a revision against the base revision.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/documents_service.py#L1-L36",
+          "version": "repo-lines-v1:sha256:ed25988e9e44555b346ac9889f96543b1a0c73599d440271c5901e8812e00766:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVjMDVmYmEwMjJmMzY5ZDgwMjQ1OWM4YmEzZmM1MTJkZDk5NDQ5MWY0ODdlZTNkNTljZTM2Y2U3MjZiY2RkZGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/app/documents_service.py#L603-L735",
+          "version": "repo-lines-v1:sha256:0d42ef8a17f8c7f503c620e1f046193bf3ccf7b7de92e0a9c9d4c394fcef495f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMzLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI3M2ViMTZmODU4Y2RjMWZiOWU1OGZmYjk5N2RmZjg1ZDUyZjkxN2E1MzA2MjhkZmRjYWZiMjMxMjc4ODc1MTkxIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJjODYzN2I3NmFjNzVkYzliYmY5Nzk0MGU2ZWU2ZDE3ZjRmNTQ3NTQwNGQ5Njk3OTI4N2MxZjY3YThhMGVmZGIzIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIyMDViNDdhOGRkZmQ4Y2I4Nzk2MGE0YTk2ZDY4NTk2ZjA1ZjJiMTdiZGNjNTg3NGE0ZTJhYzUyNDc2NGI0OWRkIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI4MWViMWMzZDU0OTQ4MDE1M2QxNjFiMDE1YjU1ZmI4ODVkZTIxYzEzY2Y5MjYwMDVjOGQ2ZDc0NTRmZDgxNDlkIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_0a67e223a7244c12ae5aedf005a0f136",
+      "statement": "The second `check_document` call is what makes «what is stored is what was judged» true: media resolution and map grounding both rewrite the spec, so the canonical form, hash and search text must be computed on the rewritten document, a refusal after rewriting is the writer's to fix, and a checker error is `unavailable`, never a pass.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/documents_service.py#L637-L688",
+          "version": "repo-lines-v1:sha256:261bddd7b01708aab91d304769209e3bff607132a968662c3f99b5e4bc319874:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlY2M0MDkyMTI3NGY2ZGUwZTA3ZTkyMTkyODZkMTM1YzIxNGQxMjdlYjdiNDhmN2Q4MDE3MzQzZDFjNDNkNWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIzMzI3YmNkM2JjNGM3MTY2NTU0OGU1NzIxYTZmOTNkNGEyNzkxMDcxNTYzYjJhMWM3ZDZhOTAxOWQ4MzEyNzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNjZTEwMDAwOWY2NDYzZDEzNTA4ZmE1MTBlMTFiMjIwNjA5ZTJjZjA3ZTQxYzQyZWMzMzY2YzUyNDQ4Yjg3ZWQifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_documents_service.py#L343-L349",
+          "version": "repo-lines-v1:sha256:3a60dbd3192732848a387a55e9bfaf0ff83786d0fdf011fb1581c21019a89515:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTRlMGVkMjAwM2M0ZGRjMjFkOTlkZGY1MjljNDEzYTU3NDMwODI3YmY4OGM2N2Q3OTkwM2M5MTI5ODc3ZGVhOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjVmOTBkMTg5OWI1NzlhMzAyYWM2NWQ5MzhiZDhkMWE1NjljNDgxMzFkNGY0YmIzZTYwMjQ1ZmMzNjQ3MjhlYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiN2MxNjk1OTMwZGE3ZmI1OTM3NDZhMWIyMmViMWVhNjQzMDEzMTY4ZGZiMjBmZmZkMjkzMzg0MDg3Y2M4MzdiZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTg2YmY2YjA2ZTQwNTc0NTcwZWZiMzc2MTJjYjQ5NmI1ZDEwNzA2OWQyOTRiYWJmODkxYWMzZmU4OGUwOTBjNCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_a256f1f957274f638e4069bb8dd6c908",
+      "statement": "A media code that matches no picture in the room is refused `media_unknown` and one that matches more than one is refused `media_ambiguous` with a hint to use a longer code — the service never picks — and a media row with no room on it never resolves, so the rule fails closed.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/documents_service.py#L16-L24",
+          "version": "repo-lines-v1:sha256:56f7eef9221a32efc278952a01ce2cd7f4c31e46cfe83f8b85f9eb25f4948e6d:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDQ1ZWZlMmE5ZDQ4ZTRkZWU2MmI0NjU2OWIwYjhlMDgwN2ZiMmZjYThmYjNlMjMwMzMzN2ZmNGQwOWZjMjBlYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDQ1OGE2NzlmZjlmMTNlNjlhNDRiY2QyYjU1MjgwYzVlNDU4NTcyYTE3MTIxMzY2ZTUxMDRhZmFmYmM5YjdjYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWRmMzA5MzMzZWI0MzNmYmJmMzk4ZjYwMzQ4YWQ0NGY3NTdmOGI4NTE4MzQyYWY2M2I0MDQ5YTBmNjE1NDNlMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGFiYjI2MmI1N2RmZGNiMWQ3NjJkM2ZiMjc4MDE4YzY3MzczMzgwNDllYWFmMDQ0Yjc5Yjc4NTRkNmFhOTA5MCJ9"
+        },
+        {
+          "resource": "repo://nora/app/documents_service.py#L261-L305",
+          "version": "repo-lines-v1:sha256:b7f1f910e822569db1c346495ac827ac856cf49b004cb90e85a0b937c6826ecb:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUzZDNlMzJkN2IzZjA4M2ZjMTc1Y2Y5YzNkMjNkMTYxZjJiZGI1YjNhNTMzZDg5OWFlMjMwYTdlMGVlY2NiZDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxZGMxZjU1NWI1ZThjNjNhODdkYTIzN2U4ODRmN2IxNGZjYjIzMmRiZjc5ZDYxN2EzMWQ5YmFjY2RhODA3ZjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI2YzBiMTQyNmE2MDk5YTlkYmEzOWEwOTE2ZjM2MTVhMThjNDViZWQ1NWFjYTI5MjJlYzEyMmQ0ZDM0NmQwMGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI1ODI1M2FiYWNjOGEzYmEyMDk3MjdhYWMxNDg3N2JhY2ExMTY3YTg3ZmYzZDM4ODUwOWZlYTdiNDcxZjA3ZjAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_85a1e6ca7d3443ebb069f5a03e882995",
+      "statement": "The document store never updates in place: `documents` is the identity written once, `document_revision` holds one full snapshot per revision with the current document being the highest revision, and revision writers collide on `(document_id, revision)` so the loser gets `conflict` and must re-read; a revision of a document that is not `active` is refused.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/documents.py#L1-L35",
+          "version": "repo-lines-v1:sha256:b78c3ed155eb8a79993f3a61e6b18b3ce63fd82b5678866c084ff8d5d56aa91c:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM2MGFhMmYyMmE3MGM5NzZlN2IwMWJhYTBlMTJkYTQ2MzZkZDlhYzFmYzA4OTc4NDk4MjM4MzRiYzg2NTMyNWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fa3d532b586641e38caf57a88ea96362",
+      "statement": "The document checker never raises and keeps three outcomes apart — `ok`, `refused` with findings, and `error` for a failure of the checker itself which no caller may read as `ok` — and on success it computes once what the rest of the system reads: the title, the search text, the canonical serialisation and its sha256.",
+      "evidence": [
+        {
+          "resource": "repo://nora/documents/check.py#L1-L32",
+          "version": "repo-lines-v1:sha256:19f0f28612e222253931ac8406d3d19915ae84ea5edd4aa07a84339638a43774:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI3YzRiODU5ODJhNTg0MTgwNTkzOTc0MDVkYTRhZjgxYzFhODk4NDBkYWYyNzdhMzZmNzkxMDQ3YmZhNGM4ODgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/documents/check.py#L699-L740",
+          "version": "repo-lines-v1:sha256:c44a9b1a3f79f3e798f37ac0dfaa47311b84d1309a934a85e471ef1c2f4164a5:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI1NTgxYmY2NDNiNDU1OGFiMDcyZDM3MWZjODI1Y2JjYzMxZTlhNTE2M2UzNGU3ZDIwZGZmN2ZlZmJlZjgyNjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI3YzZiOWNjMzcxZDBlNTFlZGRhZTQyYjlhOTViMzE1Mjg0MTI4YzNlNTcwYWFkZDA5MTdmNzBmMTQ4YzJlN2EiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_96c8c7260633428fac4bb7f012b74d4a",
+      "statement": "A document is a JSON spec over a closed component catalog from which the JSON Schema, the catalog prompt and the accept/refuse corpus are generated, with nesting capped at 8 and the document at 500 nodes, and it renders inside the portal on the portal's own origin beside the session cookie — which is why the schema and the checker are treated as security boundaries rather than style checks.",
+      "evidence": [
+        {
+          "resource": "repo://docs/adr/0020-documents-are-json-specs-the-portal-renders.md#L35-L71",
+          "version": "repo-lines-v1:sha256:19552b7123d8c16f3f2d40476c8e76b636f985771b6c782057f842245fc68ae5:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkM2RiYzRlN2U3Y2JlNWRkYzg5MWIwODA3MTJmNjM1MWM5NGI3MjhlYzhiZDg1NTZmNDYxMmIwNzBkMjdiNDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlZWY4ODk4OGRhZjQ5OTIxNzYzNTZlZmY2YzFlNjY5ZWYwZmZiNzI5NThmYzVkZTliMzAxOGJiMmYyZmFlNDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUyZjYyYTQ1YzM3OGZjMmI5YTVmOTQ0ZjJhNmFkYzYyZjYyZTA3N2Q2NDU5NjY3NTNiNjhhOTg0YTM3YTU0ZmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA0YjBkNmM1NzhiMTA4NjBjNGQ5YjM1MjVlYWNhMjdiMzdkMWE1ODEyMGQ3MTJiYWFlM2YxNDhlYjNmN2IxYzAifQ"
+        },
+        {
+          "resource": "repo://nora/documents/__init__.py#L1-L15",
+          "version": "repo-lines-v1:sha256:bc547629d692a4026a2cd49c0b60c89e6cfc0fddfd43343f5afa5c3a2f015c82:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIyNDQ1YmQwYzgyMDM5OGRmNTQ4OWZiN2E4ZjhmZDA2MGZhNDI4NjEzM2E5ZGNhZmJmYzQ0ZjQxZjQ0NGQ1MzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRlMjVkNGEyMGMyZjBkNTBlOTVlY2RkODg0ODliY2M4NzQzNDE4ZGIwZTQzYzY0NDg4NDJjZGZmMDAyZmM0MjIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3ff7a56eca094d098e177b8158b44877",
+      "statement": "A document's link carries its 12-hex handle rather than its UUID because egress blocks any UUID at every exit, and the handle is resolved only among the documents the viewer may read, so it is an address and not a secret; a new id is drawn so its handle collides with nothing the room can already read in any state.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/documents_service.py#L564-L595",
+          "version": "repo-lines-v1:sha256:8d98f0594ea6fc1d68c1ff14d40cbd7dc286e7552a7633fedf6df2e36dd353a3:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQzY2M4M2ZlMWM5OWUxMGM5ZDYzZWY1MjEyMjUwNmUyOGFiYmMzMzdkMWEzNDIyZTdiMjE0OGQ1OWQ2NGYxNTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRmZGU1MjlmMjgzNTIxODM0MWYwZGFiZDhkMDNhMWYzOGJkOTliYjlhMWRhMzgyMDZlNjlhZjM4MjMwNTg0ZTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ3NjdhMTQ1NjJjNzBmY2Q1ODdkMGZjMWNkODBhMDEyYjEyOWU5ZjI4OGRkNzlmMTJlNzNjNDA2YTUxNjFjMWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU4NWVlNDJkOTA0NWJjNDIyY2ZlN2E1NmNiNjBiMWMyNDRmZmMyMGMyYWE5ZWVlMWJmMGEzNTk2ODkxZTMwYjMifQ"
+        },
+        {
+          "resource": "repo://nora/domain/documents.py#L56-L77",
+          "version": "repo-lines-v1:sha256:a6c7e76cbe3117cc46ed5c04ebc20f7b458ffcf78c1f4eff350ac103d18bb40e:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZiYzBiNzQ2MjM2YmRjMWFhNjQzMmQ2OTZjMzEyMDhiYWUzNzY0MTM1NTAxMTAwMzQyMTkzMWMwZDcxODRiNDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1NDQxNGMzZDRmOGZkNDRlNDJmNGU1ZjI3NWQzZDM5NGM2OGRlMDJkZjEwNjRiMjRjMjQyZDY1ZmMzNmViMjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY0MWY1YzhiNDlhYjAyYjVlNjY3NWE2NTM0ZjJmMDUyMWNjZmY0MDhhNDhhOTIyYmQwYTBmYzA3MmIwNzUzMTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhYWQyNzgzNjVlM2QxNzFjZjEzOGYzMmE1Njc2MTJlNDY3NmJmMmI3ZTJkYjk0N2VkNDY2NWExYmIyNWEwMjMifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-20T05:37:18.064Z"
+  }
+}

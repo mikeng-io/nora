@@ -1,0 +1,368 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:76efb132e704a4020b520488ead1a3c14c24c299654bfaf1a5e5f1425b596aa3",
+  "claims": [
+    {
+      "id": "claim_81026a0d94eb4a6ebb7304eb267ce8f8",
+      "statement": "Every unprompted turn is produced by one implementation split in two: `HeartbeatLoop` owns when a row comes due, whether policy still allows it, where the turn may run (the conversation slot) and what the row then says, while `FirePath` owns the turn itself — the synthetic TagContext, the prompt, the model call, the delivery and the outcome string the caller records.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/fire.py#L1-L27",
+          "version": "repo-lines-v1:sha256:3bdeb4c1a3bddeb3d46d345b37f3e51c4c8beb183bb43959a8f34fe1516daf09:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdhZmIxMTNjZmQxNDE3YWM0ODUyZDE4ZTAxZTJhMzA5MzAxMmYyNDk4NzQ3Y2EwZGE0YTc4N2QwMDhmOTI3MzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0YWMwNTg3Y2RmZTI3NDBlYTE5MzRjMTA1ZWRmM2MxMjEwNTE5ODg2OWNkYTYxODFjYTljYzUwYTVlZDE3ZmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVkZjhhOGJkYzk0OWNhYTdmODllZWRlMjBhN2Y2NThhMDI2NjU2ODNiZDYxOTcxNzJjMTYzN2Y4ZTdmN2JlNjIifQ"
+        },
+        {
+          "resource": "repo://nora/app/heartbeat.py#L1-L23",
+          "version": "repo-lines-v1:sha256:f9c9854113a1ac7d342e26ddd0a591f3c7d0d75d1c9e94cb08142710ad9e69e6:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5NjYzMWY2ZjBiOTJjM2I3NGVjYjI5MDc5NGQ1N2UyNGMxNGVhYzUxZGRiZjY5ZTY3MzJjMGZiYzAzYjE3NjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMyZDgyODFhYmJiYjY1NmU4YWUwYjk1ZDBmZGJjMzAxNmJkNTgzZGE2NWQwMGM2OGIxOTMyYzJhNTEzMTJkNmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFjMTBjZDg1MjYxYTU0MDgzYjliODFmMWM0MzMyZWNhNTRjNTYzYzQ0OWY0MzA1MTMzZWE1ZGYwYzY4ZWY4YjAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_66f0a7cb02c34e3081b014fa52301e69",
+      "statement": "The occasions differ only by their `Event`: a frozen domain value carrying the conversation, `person_id` as whose authority the turn runs under (`None` meaning held on nobody's behalf), the words put to her in `body`, and a `header` callable rendered against the resolved `PersonRef` and the turn's instant, because those are the parts only the turn knows.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/events.py#L32-L77",
+          "version": "repo-lines-v1:sha256:9afd31d1dfea944f9c6ecfb0683c2acd80cd26972dc5a4ceecd848f79fc3cddd:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4OGIyNmRmZGU3MjMyZTliZDAxOWE4YjcyYjQ4MjFmZDAwZjE2ZjM1OTgwOTQzOGZmYzhhNGRhYjdiZjA0MDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVmNmU4MWI0ZWVjM2JjYjU1Y2NkYjI2NTFiMDNiYmVjNTUwZWFhYTU0YjlmZmM5MmIwMGMzZDJlYzNmYmMxYmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUzYzc2NjM1YjkwZWRjMjNjMjU5MTNiM2MzMWQ2OWQxNzM1NWY1NzdmYWNmZTVhZjZiZDVjZjI2MTQ2ODVkNzMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5e232b9d3f984e2cbf00a2f1399d0023",
+      "statement": "`FirePath.run(rows)` is the heartbeat's reminder-shaped adapter: it dispatches on `rows[0].kind` through the event registry, and an unregistered kind raises before `speak` so the tick's guard resolves the claimed rows `FAILED`/`failed_error` rather than rendering a malformed sentence or leaving them `FIRING` for boot recovery.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/composition.py#L3403-L3417",
+          "version": "repo-lines-v1:sha256:584c12574177fb8b4153c01399d9bfacc39ac1336235dfb12b651087ab5da5be:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5ZTUxYTQxZDMxYjFhOThlYzZkODQyYjQzMDQ4ZGZhYWFkMTA5NDcxMTM2YTIyOWY4YmZlNjUyMjViNGRkYTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwOTNkY2UwMmZhM2U1YzBiOGMxYzg2YWM2N2U4NzYzZTNhMjQ5YWFhZDAxZjlhOGVkZTJkNjcyNzE1MGJkNzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZmMGQxODNjZGZlYTVkZTZlZDEwZjdhNTc1MzIwNDRhNTYxODQ4MTY5NGE1Mjk1NjNmNzY4MTQ1ZDA4ZDZmOGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAyMWMyNjk4MDM5MTJkZTk0ZTYxMjg5NDFjMzE5M2RjYjg0MjMxODgyZTNlY2MxNjA2OGFlMTY1YmMxM2MxZGMifQ"
+        },
+        {
+          "resource": "repo://nora/app/fire.py#L1587-L1618",
+          "version": "repo-lines-v1:sha256:b548d380fed3d6a04c236dd23e9a9b56641bb2f7eeb6a26adde308067ee0a392:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0ZDMwOGVjZDIxNzdhMmIzYzBiNTIyNmE1N2ZhOTZhNDM4MjNlMjY1YzRhMTkwZTgyMDNhNWMxZTUzNTA2ZWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlMWRlMzE2YzA4YzJiMTM3ZDE0OWI3M2UwOTU3NTUxYTc3MTk1MzJjZTljMzBhYTExZmM3OGU1NmJkZWZlZDEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI2YzBiMTQyNmE2MDk5YTlkYmEzOWEwOTE2ZjM2MTVhMThjNDViZWQ1NWFjYTI5MjJlYzEyMmQ0ZDM0NmQwMGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhOTI4ZTcxZTU0ZmU0MjBlNTBmY2E3NmVmNDM3MTNjYTU1MjNkOWI4NzYxMjA4YmQxZWM4YjAwZGI5Njk0Y2UifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_05cbb25d958d4e55b04f9ca162c92b2f",
+      "statement": "The fire-time policy re-check is per ROW rather than per conversation because `policy.toml` is read once at startup and a row may be thirty days old; a revoked row is resolved `FAILED` with `outcome=\"failed_policy\"`, never retried, and R-5 keeps the failure out of the room so the counter is its only trace.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/heartbeat.py#L25-L33",
+          "version": "repo-lines-v1:sha256:650763d5193a127e320e2c8c4a437a3696c2971bee585c4370bfd29787000a3a:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNWJhMzQyY2FhNjM4NTkzODFhNDgwODI4Y2FkMWU4OGJhZWE2NzU5MTU0YWE4ZWYxMDRiNTU4OThhNWQ2YTMxNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTBkZTFkNDI4MjBlODZmZjEzNTI4OGM0YjY2NWRjODZmM2E4ZTQ4NDNmMjE2Yjc0OGYwMTY2ZmIxZjgxMzc4ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGRjNjlkMzNhZjhjNWYyYjk3ODY3NzUzYzgzMTNhNTVmOTU5MWM3ZTEzZDkzMTY0NDg3OGRiMGViMDJmNzA3MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmEwNWM2NWIyMDk1ZjhlNjMwNmUzMGRiZTFlMDAwYjg2ZDRjZWY1ODc1ZDBkNTY0MGJlYmE0YTIyZDhmOTRhOSJ9"
+        },
+        {
+          "resource": "repo://nora/app/heartbeat.py#L257-L312",
+          "version": "repo-lines-v1:sha256:ddb63278ccbdbef64d21ae36f330d7565d3be6c3e30b3536bfa7e01cdb0ac35c:eyJzZWxlY3RlZExpbmVDb3VudCI6NTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0YzA5MDYwOTMwMzdmZTFhNzUwNzM5NDY2MzlmYjhlOTY3OTFmZjY0MDlkZDlhNjVhOGFlYzMwMmFmZGIyYTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkxNDczNWEzMzM2N2MxYTNmMWNkZTU1ZDdkZWI3MWQ2YWExNTIyYTdiNGZjOWFhOGE3Yzg1ZjJlYzMxODgxNDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAyZDYwOTdmYjEzYTc0M2ExODJkYzk2YmMzZjY1N2QxY2I3MDlmOWE5OWMzMzAwNzljMmM5NGVlNTQzODlmNzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRjMjhhODVlMzgzNDBiOWE5NDEzZTZmNDNiNzFkYmExZDlhNTI1Mjc2Y2NiMGVhNzI5OGIxZmVlZWY1OTQxMzMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5b60ac4ab6c24e2c89e0ec683f4f3b57",
+      "statement": "A `kind=\"proactive\"` row is screened by a different grant than `is_allowed`, because its owner is Nora's reserved `ai_peer` id which nobody in `identity.toml` can be: `ProactiveScreen.refusal` asks the room's `proactive` flag and the state of the note the row was linked to, and it is fail-closed — a note it cannot read or a unit it cannot resolve yields `FAILED`/`failed_error`, a retired note or tag-path revision past the linked one yields `CANCELLED`/`cancelled_note_*`, and no model is called for a refused row.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/heartbeat.py#L270-L297",
+          "version": "repo-lines-v1:sha256:8f48b81af4ff94484489399fe4c7aab7c75b02da4dda4bf0eb9451c3486bdfd0:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwNjNmNWU5MzNjYWM1NTBlYjkxNzMzMGRjY2M5YjgzZjdlN2M1ODBjNjkyMjI5MGI1ZTkwN2QxZWVhNTE3YzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlkOGE5ZTljMzI1MjgyMGM2NWE4MTY1MjBiOGRiNDkzMjI4MDg0OWVjOGM3ZDJlYjYyNzJhZmRmZWJlMDU5YzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM1ZWRjODU3NGNhNjZkMWQ3YTY5ZmQ1MzU3MjQ4N2IxODc2YjU1MTMzZGU0NDViM2VkYzQyNDJjZjkyYmVkM2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY4OGM3Nzg0ZWNkYzMxYTdhYTM2MmY4ZTRkN2I2MWYzNWEwYjU0NmFhNGFmZGE1ZDM3OTJiNzg3MTE5NjAwZDkifQ"
+        },
+        {
+          "resource": "repo://nora/app/proactive_screen.py#L1-L44",
+          "version": "repo-lines-v1:sha256:0e2df1875c88580ae1d6ac37b1926f52899ddf7799fcf6bde5710fdb84ad3d52:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJlZjE2NmU0NWMxZjI4NGI1NzE3OTZhMDZiMmI3MDZhZGJjM2IyZjk5ZmQzOWY2Yzk2YzNhZjg4NTdmZWYwZGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/app/proactive_screen.py#L110-L177",
+          "version": "repo-lines-v1:sha256:532be2dee118b8a05cdc5d054a8359629322bf7431210c472e421022c55514e1:eyJzZWxlY3RlZExpbmVDb3VudCI6NjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIzMTkzZDE2YmEzMzhjZDAzODY0YTRiMzc4YmEzNWRiNGFjMjRhYzM4ODU1MWNlMGRlOTFiYzJlMTk1Yjc2NDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVhM2M4Y2IyMThhZjYxYWY0ZDMyMmMxM2E4NzBmZGYwNmU2N2NhOGRmOTkzYWU0YmE1YmY0ZDYwM2YwNTdiZTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU1NmZlZWU5NDJjZjA1MTM5NjA3NmFkY2IwNDlkZjY3YjIwYWJmOTViZDc4YTdhZjVlMzhiM2Q4MTk5MDNhNjEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_246a7e3c50dc4206a16ea70fb150c8bb",
+      "statement": "The tick takes the conversation's slot with `try_acquire` and neither queues nor sheds: a held slot means nothing is claimed and nothing is written, so the row simply stays `PENDING` with no `fired_at` and no terminal state, the deferral is counted on `nora_heartbeat_deferrals_total` (per turn, per tick) because a deferral is the one way a reminder goes hours late while every other signal reads healthy, and the next tick re-finds the same row through `due()`'s query.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/heartbeat.py#L223-L255",
+          "version": "repo-lines-v1:sha256:e7fb96511caf3e16c7821de2b6bcea2d65b72912752d219f7cb19df770724324:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRiNzI4NzM5NzM0ZWRlM2E5Y2FiY2U5NTgxNzUzY2NiMDMzODdkZjJjZTU5MGNkNDJmZWQyZTY3MGE5YmU3M2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAwZGQ0YTQ1MTgyY2IxYWRlYzEyZDcwOGE1ZGQyZTViZTIzZDRkNDA3YWM4ZDk5MDBiNmM5ZDNiZjBkNDI5ZTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlkNzc5ZDdiYjdkZmNkYTA3ZGE1ZjA0OGIwNTgwYWUwMzg3M2VjNjYwODdhNGVhNzAwNjliYmFjMTNlNDdmYWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRkZDRiYjc3NDMwMjc4MWY3YTI0MzExODlkYmZiYzkzMDliMWVjNmNhZWM2N2YwZmYyZWFlYzgxNTM5MTJmMzcifQ"
+        },
+        {
+          "resource": "repo://nora/app/heartbeat.py#L35-L41",
+          "version": "repo-lines-v1:sha256:7a36dd9ba585c5964a4a17dac6707ba5fd87d11cef7f4d570c2a2cc04c72d5b1:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDE2ZWJlZjk1OGQwNjY1NTc1MjQ2NzVlODNkOWQyN2QzN2YyNTZiODI5ZmU0NmQxMDNlYjg3MDFiMTM5ZDJhNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiY2RmODlkZDAzYzU4YzE4YmMzYTZlNWEwYzFlZmZjNjk3ZmQwMWYxZDA2NDU0MTMyNDgxNzYzOGJhNzEzNDVhNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDc4ZDliM2FhMzQxZWFkNWVhOWQ4MzE2YjIxODZhOWQ2NTA1YWU3ODc4NTM2NjRkYmUxNWJlZGEyZmZiNTVkNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOGUwZTYwOGZhOGJiNzFkMjgxNDkzZWNhOTliZDFlZDlhNjdlNDljYjhjMTJhZmVhYjY0ZTg0MTk5NzYxMDExMiJ9"
+        },
+        {
+          "resource": "repo://nora/domain/reminders.py#L658-L672",
+          "version": "repo-lines-v1:sha256:e76d745cef451728500017176bf1cfa0be624feec670e272caa33b1cdb584dc9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg4NjAxZjQxNGRhOGIwOTVkMjg5N2Q2ZDQzYWQ3YTA4NWRlZGUzMTAwNzNhMDRmOWY0ODkzMTYzMmUyODg4MmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2MjBkODVkZTRlZDdhYjgwMjFiNGE4ZGQ0ZmExNWVjNTE5MjVjZGZjY2RlMTgwNTg5NWE0YzhhM2MzYmE0OGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA5MDlkNjY0NDNiNzdkZGFhZjVmYWJkZmEyMTg5MjZmMjM4NDljMzM2NmZkODQ3OWVjYjZkODkxYzcyYjliMTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJjYTcyNGNhMTY0MjYyODQ2MjMzNzM2ZWRjYzc0ZTMzNWY2ZTM3OWIyYjQwODhmMmE5ZTU5MWRjMTIzMjczZmIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1c0af9cf261149e59c831516da0efdd0",
+      "statement": "The other occasions answer \"slot busy\" differently on purpose: the compute poller leaves the job `PENDING` and counts `outcome=\"deferred\"`, the relay refuses to the model with `status=\"unavailable\"` and a sentence saying it did not go, and the participation trigger skips the window entirely because its watermark already closed it.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/relay.py#L272-L282",
+          "version": "repo-lines-v1:sha256:7fbfda82966b59efc92c1758aff5b37e71bd758f5834221c47e24524292c658a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5N2QzYTExNjM1NjljNTFiYjMxZGU2ZWQ5MTY5MzhlNGU5NmMxNmQ4MjA4ZjY4MWEzOWQ1N2FkOWY3MzdlNWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MjJjNDJjZDE5YzZkMDNkODA4YzQ1MjcyMDU1MjgyNWI3ZWExYzViNDkxYjIxODUxMWNhYzc0MTVjZjlkOWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE0YmM5YTFmOTIyMzhmYjI4Yzg4OWM2Yjk2YTIzMzQ4MjAxOTNhZGZkM2JmNWIzMTgzMjNiNTU5YWYyMzRlMDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg2Y2JkNDYxMjkxMjc0NGJiZGQ5MTYwMmRmYjBlMTc3ZDQ5NDU0ZGM5MjExMzc2MWViNTI3YTMzYTZhNGMyYTgifQ"
+        },
+        {
+          "resource": "repo://nora/app/compute_poller.py#L215-L219",
+          "version": "repo-lines-v1:sha256:900998df6f548d8e9a26bd9643225754bb49f0b964fe7098297e7134287e7317:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGNjYzVkMDg4NGU0MWY4NjY1NzAzMmQ0OWNlOWNhY2I2ODBkZTBhOGEyYmQyNWZiYTFlN2EzYjg2ZjAxNjNiNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWU3YmNkMzZlZjUzYjQ0NTIzZTY1ZTk4ZDE5NDQ5OTNlMGZmMTc0NmY1NTM2YzFhNTExNzQ2ZjNlMDFlNzU2ZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzViZmI4ODllMzQ1YjYzM2JiNGQ4OWIyMjIyMjJlNmNkYmQ4Y2ViZjU4YmI0ZjA4OGE0MGQ3NGIyN2FhM2NlNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWUyNjRhM2NjMzFjZTNhYjBlNzY4NzY2OTY3ZjExNWZmYTRmYzAyZmYyODE3NjMzNWJlMTkwMTM5MjZkMDhmNSJ9"
+        },
+        {
+          "resource": "repo://nora/app/participation.py#L241-L249",
+          "version": "repo-lines-v1:sha256:28322c9b6b59a92f8f91fe5f2a81f24163d8a203e3ac12193e8ff712bcd49f75:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzk5ODg1MjdhNWUwMzk2NTNiY2E5MDhjODJhM2Q0OGUwMDc2ZTdmYTNkZGNhZGU4YTVkZWM2YzNhMmYwZDM5NSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWQ4YTllOWMzMjUyODIwYzY1YTgxNjUyMGI4ZGI0OTMyMjgwODQ5ZWM4YzdkMmViNjI3MmFmZGZlYmUwNTljMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWI4ZGZjMWM4ZGEzMzFjODA3MmQ0NzhjODgxMjY3ZTJkMWZiYmUwNjExZTc2MDJjYzE0NTc0NmQ3Y2IxMTk4NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmZiOGQxMjgwNzFlYjEyOWQyNDI1OGFlMDQwNTczNTQxMjEwOTY5ZTIzZDZiNTg4NjQ0MDY5YzM1MjVkODA3MCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_6c1411dc49e941e488e5dc09dce8f259",
+      "statement": "Rows pass `PENDING → FIRING` through a compare-and-set `claim` before the turn runs, which is what makes delivery at-most-once (a crash leaves them `FIRING` and boot recovery fails them rather than re-sending), and for a recurring row the successor is minted inside that same claim so a crash mid-fire cannot silently end a series.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/heartbeat.py#L314-L370",
+          "version": "repo-lines-v1:sha256:f640460a663d52260948b4e76cd96d5c1c1e2a521b978b806620e4664082b530:eyJzZWxlY3RlZExpbmVDb3VudCI6NTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJkYjUwN2M3Y2FiNmFlZWZiOGYyOTEwMWQ3MGE4YWU0MWQ2MWFkMzgxZWVmMmU5MzhiMmM2N2I5NDc0NWVkNWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1ZDJiZmZjYTE4MmEyNTM5ZGI2OGZjYjNhOTE0NzNmYzdiMzFhOWNiMGI0NzY4MTJiMjE5YjllZGM5ZThkZjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBlNzNmZTEzNTAxNzY2ZjczNDJhMTRhYTQ3YTRkZGY0MTc2MzYwMDUxNjczMDZmYzQ3ODk2NzU3Y2I3MzQ4NTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM1MjAyMzI4Njk0OTI4ODViM2RkNmIwODJmNmZhYzlhNDY2ZjM4MzNlOTEwN2EyOTIyYWM4OTE3MjNjNDczYmQifQ"
+        },
+        {
+          "resource": "repo://nora/domain/reminders.py#L721-L760",
+          "version": "repo-lines-v1:sha256:ca66b56c0eef249abbcebe17a345dd7c525f52c28154f660e309e94b2157c9c9:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5OTM4YjM5MjM1MmY4ZGMyNTEyYjg1MTg3NWUzOGZkMjAwOGVlMjcxYzU5ZjgyMTA2NWY4MWRlNzNlODFiN2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2MjBkODVkZTRlZDdhYjgwMjFiNGE4ZGQ0ZmExNWVjNTE5MjVjZGZjY2RlMTgwNTg5NWE0YzhhM2MzYmE0OGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFlMmI0NzA4ZjE0NWE3MDE5YmU1MjdhZDgzNTMyNGRkZTM0MzAwY2VjOThhOTg3ZGRkZmZhYjAxNTgyNTNhNWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM2OTEwMjRhZDdkMTMwMWUzYzQ4OTZiZmRiMjgzOTdlZmIzNjU4MmUxMzcyNGI4OWQ2NGFhNGQyNGQ3ZWQ3YTMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c0f2f5e0c87a4899b2284977bff84ed7",
+      "statement": "A row's terminal state is derived from the outcome string rather than from whether the turn raised — only `sent` and `silent` are `DONE` — and `fired_at` is stamped on every terminal write, including a row that never spoke, because it records when the tick handled the row.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/heartbeat.py#L394-L421",
+          "version": "repo-lines-v1:sha256:403c3866e36d8bb6c5eff8951149e9407b50472a80988beaae353f689d576b15:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUzZDNlMzJkN2IzZjA4M2ZjMTc1Y2Y5YzNkMjNkMTYxZjJiZGI1YjNhNTMzZDg5OWFlMjMwYTdlMGVlY2NiZDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImExODIxNTFkNTQ1YjQzNDdhMTEyZWNmMDU5NjcwMWFkYzMyNGE5ZWIwODNjNzFlMTU0YzBkOTY2Yzk5YmI2MjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRlYjAzYjEzYTJkM2E3M2Q1YWQxMzA2ZDFiYmMwMTc2OGQ0Mjk2MGNlMmI2ZmI2NWNmMDg3YTUyZWNkYzc2NjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwMzkyZjJlMzFjNzRiMDBmZGQyNDIyNGIxOGNkNzcxM2QxNWM3NjZlYWE2NmIzOGFlMjk2MjAzOTM2MTAyMjEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ce6e8955640f4a6fbfe63a8a01e69632",
+      "statement": "Boot recovery is asymmetric because the two row kinds mean different things: `heartbeat.recover` is a module-level function called unconditionally that sweeps `FIRING` reminders to `FAILED`, while `compute_poller.recover` sweeps both `FIRING` and `PENDING` jobs (a pending job is a handle into an in-process registry) and RETURNS them so each requester can still be told.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/compute_poller.py#L266-L321",
+          "version": "repo-lines-v1:sha256:4b522175755ce3950c7255915a7b522d1a2715abc799b10efa76a23253ed7696:eyJzZWxlY3RlZExpbmVDb3VudCI6NTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcxNzA4N2I1ZjMwYjJhNjlkN2JkNWRmMTA3NGI5N2Q2NzdkNDgyZDAyN2IxNjUzZTUyNmNmYTJlNjI0MDRhNTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRlZTIxMWU5OWU4N2VhMjYyNGI2NGY0ZmI3NTRmZTE4ZDE5M2NmYjNhZmY5YWU1YzY5ZWYxNWE4YTQ5N2Y0ZjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJlMDA0MTI5ZjQzODA1ZmY1MzI5OTYzZjM3YThlZjY4ZmZmYjQ2OTFlOTE1MWExMTcwNWI0ZTc3ZGNiMzQ4MTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://nora/app/heartbeat.py#L484-L514",
+          "version": "repo-lines-v1:sha256:be35d48f025e8ee1054b9864b05e056eeae71f4a03bb7d431dde40d7c9f0d213:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0ZTRmYmM0YzMyNDMxOGJhMjNlZDQ5ZGZhMmEyODY0MWM5MTMxYzhhOTBjMWNiNDE2YmFkMzkzMjA2NDhkZDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRlZTIxMWU5OWU4N2VhMjYyNGI2NGY0ZmI3NTRmZTE4ZDE5M2NmYjNhZmY5YWU1YzY5ZWYxNWE4YTQ5N2Y0ZjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d5bf06bb058546c7adbb9051aa4056bc",
+      "statement": "The fire path deliberately refuses the tag pipeline's `admission.run`, `audit_stage`, `memory_feed_stage`, `indicate.begin`, `ContextAssembler.assemble`, `invoke.run` and `deliver.check_outcome`, and each refusal prevents a named failure: debounce/window consumption and newest-arrival shedding, an audit or memory row for a message nobody sent, a fabricated reaction target, the blank-sender cascade, and a `bool` outcome that cannot distinguish `failed_timeout` from `failed_error`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/fire.py#L29-L44",
+          "version": "repo-lines-v1:sha256:b6ccd91a0ee2c814056c594b78df7abd588cddce157a3925059543d0c648f56e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQzMmM5NDE5NTAyNzg2MzMzMDhhMjNhNWIxOTZjOTc5YmFhMzU4NzkzNjg5ZjM0Nzg4NzY4MmNkNzQwNTUxNzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZkNTU3OGZhMDYwNWE5YzVlNjFjZjNlZmRlOWYxYTEyMDNjNWEzN2Y5NDJhZWIwYjY2MTcyOTgyYTlkOTUwYmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM2MjUyZjg3M2MxNDAyMzE1ZDVlMzQ2NTY2MDU1ODBmMDUxYjVjMzIyMzU4MDkwYzhhMTAzMTc4MmY1MWYzOWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU5MDc3YjEyODU5MDU4ODhkYTZhMzJhNTgyZDBlZGVmM2JkNGU2OWI1MDRjN2M0ODY3Yzc2MTAwYzIzMWEzNjcifQ"
+        },
+        {
+          "resource": "repo://nora/engagement/stages/invoke.py#L136-L148",
+          "version": "repo-lines-v1:sha256:a309fe05e40b5b1910d5f7d6078cb79a9ec24d0c70bb75b4cf5fc4c991d23a0d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJlYmMyMjVkZmI2NTU5ODUyY2IzMzVlOTlkMDljNDQxMmM3NTg5MjI5NTMyNzA1YjQyZGU2NmQ0ZGU2YWU3MTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJjMjUzNDM5OGI3ZTM0MTY0YmU5YmMyZGQ2OThkZDI3M2FkZWFmMjJhZmIyZWU2OTk4OTI4Y2ZiMDFlZDVmMDQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA4NmVkNDU4NmUyNWVmZmZjNmUwM2JiMmNmYjRmYTI5ZTJlYTA1YmQ1NzE3MzczOTVhNjRhY2JlMmMwZTQxMDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE1NDA4MzcwYmVhMmFhOGRmNjlkYzI3M2RjZjRmNmVhMzM2MzE0NTVmYThkYjQ2ZWU3NWVmZTFmOGZjY2FhMTgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f1473694adc1411eac1367ce0c935956",
+      "statement": "`build_context` takes the tagger and `sender_name` from the occasion's `person_id` through `Persons.by_person`, never from the synthetic message's deliberately blank `sender_id`, which would otherwise produce an empty peer card, an UNAVAILABLE room scope, refusing memory reads and a `tagger is None` refusal on every fire turn while every gate read green.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/fire.py#L792-L830",
+          "version": "repo-lines-v1:sha256:d038a52d2068a32b22840b312901b0f66f42e7d50f8fc7824e3962c73b24c73f:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIyNWFmOWFhZTVjZTYyNDk0OGMyNTBmMjMxNGI4NTFlMDNhMzkyYWI2ZWYxOGQyMGFhZDA4Yjg0MmNjZTIwMWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwZGUyNTg3MTk2MTQ5MjYwNzFjOGZiMTlmZDg2NjE1MDU1NWYxYjAxMzU0ZjhjZDE2MDNhMTA5YTdkZGFlNDAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhlMjdkZjA2MTQyYmZjMWU4N2U2Mzk0ZDRjMzg4MzA4OTZjYmQwMTU1MjRjNWIzOTM1YWEzYTkxYTMxYWQ1OTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE4MGJlMjk2YTBlYzE5MWU3MzNkMmQ1MDc0ZWNkMTI2NTUwZTA1MjQzOWNmMGQxM2FjNTk1YjNmNDU3YjlmNTIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3241d43913ec456fb188fa331ce82a20",
+      "statement": "An occasion with `person_id=None` accepts `tagger is None` as deliberate and `_turn` skips the unmapped-person refusal only for such an occasion, so a participation or proactive turn is not refused on a rule about a grant it never had; an occasion that DOES name someone still answers `failed_policy` when that person has left `identity.toml`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/fire.py#L1794-L1814",
+          "version": "repo-lines-v1:sha256:93c678a99614d6fb3dc62eb2b85b9a1801c5b1f0d7fea139bcbdbb75f04760e1:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1NjljYjA5MjgwZWUwNzgxOTQ1ZTQ4ZDQwNDFiZDJkZmFhZTY5MWFkMmVhYmY1ZDNjYmEwODQ2YzcyMTZjYWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI0OTc0Mjg2NWQ3N2Y2MjdmN2U1M2UzYzRiOGRmZGY2YTkxM2IxNDZmZWQ3NzAyYjEwY2FhYzU4Mzc1YjlhZjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY0NjgwYjMxOGM0MDU1MmE3N2QzOWUxZmVjZWE4Y2NlOGQ5YjNkN2VkNDhjNDU4YjliN2ZmZTE4MzZhYzI5ZTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_32261f2a13d8486584e3af31e4286b98",
+      "statement": "`speak` opens exactly one root span per turn, named for the occasion kind and marked as a generation, carrying the conversation, an always-present `nora.shadow` and relevance-gate pair, and `nora.outcome` annotated on the way out — because nobody is waiting on an unprompted turn, so a silent failure has no human to notice it.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/fire.py#L1669-L1722",
+          "version": "repo-lines-v1:sha256:10ab1d68b6dcb243827df7ee8196fd96785f6c427bbf999e0d8da14e9a9dd9f2:eyJzZWxlY3RlZExpbmVDb3VudCI6NTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1NjljYjA5MjgwZWUwNzgxOTQ1ZTQ4ZDQwNDFiZDJkZmFhZTY5MWFkMmVhYmY1ZDNjYmEwODQ2YzcyMTZjYWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ2NWEwMWI3MjUyZjYyNzk1NGEwZjU5YzliM2MwMjgzYWJjNmMyYWFhZTAyMjBiMmMxYjFiM2U4NjhhNzkxZWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk0MGNhYzc4NDc4ZTU5MTE3NWUwN2M1YjYxZmIwMGFlODQzZDAxZjQ0N2MyOGM4MzcwOWIzY2Q2M2QyNTg5NGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVjYzczNzJkNjMxYWNkOTBjNjk2ZGQ1ZGEyNTEwNzhhYjg4ZGRjZTNjNzhiNGYxMWY4OGIzY2VlZDkyOTA4ZTIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9ec34f637ea24015b84e3920d0df0030",
+      "statement": "Doctrine is read per occasion at its own audience — `heartbeat` for a reminder, a result or a relay, `participation` and `proactive` for the two occasions permitted to decline — because the tag audience would carry silence rules that are false here, and the same label charges every series the turn moves to that loop rather than to the tag path's budget.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/fire.py#L1779-L1793",
+          "version": "repo-lines-v1:sha256:338199666bf4682c72e622a5e7d9717eb67b11a5dfba00f67f0ece4b797f27f0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwODNjZmU4ODc4ZjBmYTM1ODRiNjU3YjM0M2ZhMGI0MDE3ZWQ4ZTBhYjk1YWRiYTczMzYxNDViYTUwZTMxNWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc2ZDU3MWY2NmZhZWQ5YTUwZDZmZGZhN2YyNmQ0NjNhYjMyMzQ1NTRjYmJhNjNlMDllYmNhMGY2ZDEwMjkwYTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBjMmJhZjc0NDUzODhhODEzMTYzOTBlY2RmZjRkNjQ5ZThjN2E5NzJiMzVhMGY3ZWY3YzQ4Mjg5NDIzN2NhMDYifQ"
+        },
+        {
+          "resource": "repo://nora/app/fire.py#L55-L59",
+          "version": "repo-lines-v1:sha256:2743c6cbef9afcc6c31cf3892c46ab4a069e7e04d47e7c881f2447f41bfd3222:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzNlMDlmMzZiODhiMmU0MGI0ZjU4YmM1NjYyZDFlYTVhY2ZkYTJkMWY2N2ZlMTk5YjMxZTA0NjkyZjEwZWE0OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDA2NWRmMmExMjdjMTc4YzA4OWQ3ZmZiYmNiMjM1N2ZmNDZlYzRlYTI0ZDNlYzY3ZGI0ZmU3YjBiMDE3NjIzNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjNlODQwYmM5NDY5M2U0MzU4OGJkZDFjNmRmMzlhODM3Y2JkY2IwNzk0NTE3ZDhiN2E0Zjc2MzQ3ZDkwMzY5MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWFhZjc2MzdjYjZlN2U1ZGI4NWQ2MzQyNzQ2MDE0ZGYwNDFjY2Q1NThhOTIwYjI5ZWI2YWM3MTlkN2JhZjVjMiJ9"
+        },
+        {
+          "resource": "repo://nora/domain/audience.py#L26-L44",
+          "version": "repo-lines-v1:sha256:ae5c4b6ca27ff4197e26cc05fc321c6a6076aae4912cf31e92a1a22531312548:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA2NmQyMWU1OTc0NzJlNjA4NWE3MGM3N2QwZTliMTFjMTg5MzdlOTc2ZDUxMmFiN2U5ZmNlMjAyMDI5YTY0YjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA4MjViZmEwM2MyMTBiMWQ5MDJlZGRjMGE3MDE3Mjg4MmQ4YzVlYmE2N2M5ZGJkZjczZDNlZjBkYjY5YjMxNmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc1YTMzYzkzNjgyNzdjNDM3MGVhOTk3ZDMyNzVlMWI3ZTYxMTM4ODM1ZjVhNjNhNGI2YjY4MDRkNjdmMTA1MjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM0MDM2NTRlZGY2Mjg2NzI2M2E4MGJkZTE2YjBlOTQ0MDhjZjY2Yzg3NWU5Y2Q2YWZlZTU3ZGRlOTU5MjAxNGUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_bff7a9eae818467c9947ae8278a15472",
+      "statement": "`SILENT` is returned only when nothing was delivered AND the occasion is participation or proactive; `_state_for` maps it to `DONE`; `_invoke` counts it on the occasion's own silence series rather than `nora_silent_failures_total`, and only when the invocation completed and the stop reason is not one of the budget caps, so a capped turn still reads as an ordinary silent failure.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/fire.py#L199-L246",
+          "version": "repo-lines-v1:sha256:061ce77c1ce3e1cfc02cb4f1bb7efc662036b4af309b15e108e25b80267e0bcf:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY4YTRkOGFhOTZiZjI5YTlmOGU3MzU5MjY3MTBmNTQ5OWY1MGExMTNkMzA0NWM3YmJiMTQxOTE4ZWZjMGY2ZDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliMTMzYjEzN2RmYjZlYTNkMDk2YjUwMWYxODQ1MjI3MTZhNjVlMWQ5NjRkYTFlMmRjYzYxZTZhZjJmNTA4NWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNjOTQxYmVlNWRkMWRlZTBkNTU0MTNiNGFlOGMwMmMzMmU5NmQ2NzBiY2Q0NTI0MDI3ZGRhZjI5ZTAyNzE4YjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFmMWM4MmE1OWRlM2RiZTVmMjVjMGVkYjZmOTBkNzJhNjU1MmY0NzEzNmY0M2NjZDJhYjFhMDAwZmM5NzY4MWUifQ"
+        },
+        {
+          "resource": "repo://nora/app/fire.py#L2005-L2067",
+          "version": "repo-lines-v1:sha256:4dad7a72621191cdd09ded34c28f68e1e5f180b5860e55a2c5a0111c7e57e0cc:eyJzZWxlY3RlZExpbmVDb3VudCI6NjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkzM2FkNTQ2MmM2MjczYmVjYjNlOTZmYTE1ODQwMzZlY2RiYjYzOTEwYjU5ZDZlMGQyNmY4MTc1NjZjNTE4OWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIxNDM5MWRmZWI3NWZiZmJlOWRhMGEwZDU4MmNlMjU5MjJlM2U3ZjE5M2E0Y2Q1YjRjZDJmZWMzNmYwNzk4NjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYxMmRkMWM5YTlmMjQwODYyMjhkMTM3MjdkZWE2NmY1ZTVjOTc0MjY3MjVjMzNjM2RlMjExMjY2YzQyZmMxMWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNkMzhkNGZiM2M0ZTg1M2EzY2VhYWViODMxZDgzN2M4ZWU3NmRlNmQ1MDcyYzRhNzEzNGE0MzdmZjljZDc5NzgifQ"
+        },
+        {
+          "resource": "repo://nora/app/fire.py#L2304-L2337",
+          "version": "repo-lines-v1:sha256:d962dfef7c8daa4eae0251785a587667966adb8e1294f0c070f02767c61b2b61:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlhNGQ3Yjk4ZmE0MDFlOTAzYTRiNjk4MzA4OTI4ZThhOTYxMjBlMmQyNzAxYjE0NzMzMDVhZjMzYjJkYTI5ZDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlZDlmYzM4OTViOWNmNjNkNGUzNDAzZmJkMTk4NjFiOWIwMzYzMWNlMTE5YWJjZmNmMGEwYjk5ZTgwNjE3YjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY1OTMyOTk1NTViZjU4YTQzM2E5ZmI4OGRlNjgxZmUyY2YzZWQ4MmI2NDg3YmQ5YTRhZjhlOGZkNjI2MDVmZTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI5N2QzNjRlYzcxYWU2OGI1YjdiZDY4ZjAyNjhmMjVkY2FkNTRkNDY1NDRmNjM0ZTQxZTEyYzg4ZmIzMTdmNWQifQ"
+        },
+        {
+          "resource": "repo://nora/app/heartbeat.py#L407-L421",
+          "version": "repo-lines-v1:sha256:c7f1b84041f5b3a1c87d19c8219b23f415114b460c7fd9b9e33940bd19d0e388:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjZTlkZDQ4ZTViMzdiZGNhZDNiZDQ5MWYxOGZkZjA4YzkyMWY4YjY3ZDE0N2I4NmJlZGUzZWZhNDQ4MGQyYzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImExODIxNTFkNTQ1YjQzNDdhMTEyZWNmMDU5NjcwMWFkYzMyNGE5ZWIwODNjNzFlMTU0YzBkOTY2Yzk5YmI2MjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRjMTNhN2NiYWNkNmExMTlkN2RhY2ViOThiZDUwZWY2NDYwYTFjZGViMmZhNzYxYjdjMzBlZDdhYWNiNzI5NmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwMzkyZjJlMzFjNzRiMDBmZGQyNDIyNGIxOGNkNzcxM2QxNWM3NjZlYWE2NmIzOGFlMjk2MjAzOTM2MTAyMjEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2843cddc21b44af9840823d89da9d938",
+      "statement": "A determination reaches three sinks from one method: the determination log takes participation and proactive alike, the shadow mirror takes participation only and while wired forces `send_permitted=False` so the turn never live-sends, and the shared decision-log row carries the code-derived disposition (`spoke`/`held_shadow`/`held_cooldown`/`declined`) and never her words.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/fire.py#L1661-L1668",
+          "version": "repo-lines-v1:sha256:c33caff603fc0749c629e349f98b6e07042826fa3194de8efd71e554d2127d77:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjYwMDVkZmYxMThjYTgwMDNlZjA2ZjM1Mjk0NDBhZDg1MzRjNTBkZjkwNzA4OWVlY2RkOTBiYWU4NDcyNzJjYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTJjZDU5MWRlOGY5ZWJjMzMyNjhmY2Q5MzNmNWQ5MWFmMDY1ZWU2OGJkZWNiYmYxNTdhYWMzZjJhMTQ1YWUxZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjM1NzAwMDg0MmEyMjhiZDMzNmE5OTYyZWE1NGJmMzdiZTI2OTUwMWYwNDJkYWI2MTFhOGJmY2NiNjI2Y2I5MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWIzMTBkMDRhMDM3NjM5YmE2MGIyYmJkNDliOWJlZDBhMzE2YWM1YzM1ZjkxNjllNzQxNDZlNDhjYmQwZmY0ZCJ9"
+        },
+        {
+          "resource": "repo://nora/app/fire.py#L2339-L2421",
+          "version": "repo-lines-v1:sha256:81bcf509a46651476c38c83a0cc629e35029a20aa4181c65647b7552c7e9c614:eyJzZWxlY3RlZExpbmVDb3VudCI6ODMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjMDViYzM3NmU2Mzc4NjNkOTljYjA5OTMxYjVmYzAyZjE0ZjAwNDc2MGNiNzJmMDI0Y2IyY2MyNGE2Y2JhYTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZiYjc4OGUzYWE2NWIzMDkxNmE3YjNiMWQ0YmI1NmRmNTUzMTY4NjdmZGM2MjA4MGQ2OGFlNWI5MzQ4OTJkYTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY3ODNhNTcxZjk3Y2JkY2UwNTcxMWNkZWRiYzlkN2VlODFjZGI2Nzk5NDEyZDFlYWZlNTFkODk2NTRjY2RiODcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e367ebebcce64798b5fb3d4da897f357",
+      "statement": "The relay occasions a fire turn rather than sending: it holds `FirePath.speak` and no adapter, because calling `adapter.send` itself would bypass R-2's latch, R-4, R-6's leak scan, R-18's egress scan and A9's audit-first write in one step, leaving a delivered message with no row in the destination room's transcript.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/relay.py#L265-L303",
+          "version": "repo-lines-v1:sha256:6cff069fd96621d5924b597d642a73d118ead424eec2b87d0a0c64e1d24af2a8:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkyNDljZmVjMjQ3NWRlY2NhY2Y1YzY3NmEyNGRhNDQxZTEyNDEyZDczZGYwMDc2N2JmMTUxZWJiYTU4YjU2NzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MjJjNDJjZDE5YzZkMDNkODA4YzQ1MjcyMDU1MjgyNWI3ZWExYzViNDkxYjIxODUxMWNhYzc0MTVjZjlkOWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA5MTIwOTk3YmIwOTc5MzNmNTc4NGFkN2RlODFkYzhjOTUwMzEwNDMwYTY2OGQ5Y2U1ZmNkNjQyYWFkZTQxMTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI3NDM4Y2EwNDdkYzE1MmNjMzA3ODRkYWI5MTgzY2E1ZDFlZmYwN2EzOTc0YmY2YWZkN2E2ODQ4ODljYTU3MzMifQ"
+        },
+        {
+          "resource": "repo://nora/agent/relay.py#L49-L55",
+          "version": "repo-lines-v1:sha256:3853cb1e27843bad6629342d219f8bd917895fa13b109115d60d9f342922380a:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDZjMjE5Y2JkOTAxZWE0YTY4MjE2Zjg1MjgzN2ExN2E2MWQxNWFhZTg1M2Q0OTI3ODI5NjU4MDZlNWU3MjQzOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjJkMzAyMjY5N2VhYTM4ZmVhYTE3MmI4NTc2ZTFiYWZlOWJjZDNiZjI4ZjIyNjc2NzIzYzI1MmU0ZWYzNmQyYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODg4MjI5NmE2ODgzNGUxN2JlNjMwYzUzY2MzZjZjYmRhMDQ3MDlhNzliNmVmMWViYTVkOTc4YTM2NjExYWRiZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNWI3ZGQyNjQwMTZiYzJhNjgxNzE2NTgyMjMyMGY1ZGU3NGFhNGYyNjI4N2RiOTA2YTJhMjRhNTE4NmExMmI4MiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_06b9506d31db40cd99332d43f1cd6d04",
+      "statement": "`relay_occasion` runs the destination turn under the REQUESTER's `person_id`, so the destination's message is authorised by somebody `policy.is_allowed` has already cleared for that room and the fire-time policy re-check applies to them as it does to a reminder's owner; the attribution `\"{name}: {text}\"` is built by code so a model cannot be talked out of naming who asked.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/relay.py#L232-L241",
+          "version": "repo-lines-v1:sha256:73d4070681977653a35b545e0edf160cd8fcb9a526999a866ec858af77c09334:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJjZGZlYmU0ODBmNGIxM2JlYTMyNGRlNWE1ZDAyYjYzNjQzODNkM2JiNDcyZmY0ZTYzMzRkYjczNTA4MzVhYzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg5MThjMGU5YTJlMGNmOTZkOGNkMTU0OTU4OGMyYzRkODcwM2U3ODNlY2M1NTRjZGFjYWFmZTI0MTFhYzJmYjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIxYjg3MzRhZDljOWJmYmVhYThhMmNlMjQxZGEyZDUwYTkwOGMwZGUxMjQxNTRlZDVlNzE5ZjYzOWI0MWJmZDUifQ"
+        },
+        {
+          "resource": "repo://nora/app/fire.py#L423-L437",
+          "version": "repo-lines-v1:sha256:8c2e3f7669f8bafb5868aa3ef9c121ac2b399d929553e84a9fc4083fbb3b61fb:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc0NjhhZjczNzZmMGJiYWM5ODljYzY3ZjE2MTU1ZWVmMmRlZmViNjUyMWJiNjA2YjhiZGUzMmE4NGMxMjQwYjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ2MDdjODRhNWQxNWY0ZjQ1NzViMDBkNTFmNDJjM2RhOWEwYmJlMDk5Y2M3MDgwYjBiMzQ5ZGFhMjFiMjYyNGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyYmExM2QwMzRmNDMxODBiNGRmMWJkMTk4NTI4ZWUzMjcxNGVkYTU0ZmNjOWQzYmMyZTY1ZDFlYjE2ZDEzMTYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4a3cc6e6d44f498e9dfa1c42eb958f16",
+      "statement": "A finished compute job has no `due_at`, so `ComputeJobPoller` (not the heartbeat) delivers it through `fire_path.speak`: it takes the room's slot before fetching or claiming, leaves the job `PENDING` with `outcome=\"deferred\"` when the slot is held, and writes `DONE` only when `speak` answered `SENT`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/compute_poller.py#L1-L5",
+          "version": "repo-lines-v1:sha256:23eb00709c5793e07a7afc6ed561799e0d9ef2c84b725e2326537633e5e18554:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDgyMDdmYjU0MTkzMTFlNGMyM2MxZTQ0ODkyOTYyNWViZWEzNTRiYzRkMjFiMWYwN2EyNWRhZDk3ZjNlNTVjMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTMwM2VjZGQ0YTRkMTBmMTljNzNmZDQyZmQxMjQzN2ZkMzM1NGE4MjY4MTYwNWRhNTI1NWE5N2EzOTA2OGRiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTViNmU4NzA2YjQzMDQ3ZjJhNmRiNjdmMTMyNjM4NTk1NjA0ZTY3ZjM2OTY2ODc2Y2UwMTU4ZjAwNTNlNmJkMSJ9"
+        },
+        {
+          "resource": "repo://nora/app/compute_poller.py#L201-L253",
+          "version": "repo-lines-v1:sha256:251e01bcc5d4b88db3f36dc7c90e4bc13282194574c9b5f865c45fdbe2c7e6bd:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY4ZWVkZTI4NzEwNzE4MmIzMTAzOTljMGU1OTQyZGE0NDU4ODY4ZTMzNjU2YzRhZjk5YjZjMjNkMjlkNzk0OGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAwZGQ0YTQ1MTgyY2IxYWRlYzEyZDcwOGE1ZGQyZTViZTIzZDRkNDA3YWM4ZDk5MDBiNmM5ZDNiZjBkNDI5ZTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ0MjBhMGMzOWYzMjc2ODQyOWMyMmE3NDNlNjVkNmJiMjQxNTU2NDA5ZTJlN2IzZTQ4MzRjYjM2OTBmYWRjZTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdmZjJmMWEwNDdmNjU2Y2MxYzY2M2Q1MzQyZGU3ODJmM2ZiMWM3YTBjYWExMjIzZDhjNDEzYmY4MDJhMmU2MmIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_02abe3139a7e4698bce9440a55d750af",
+      "statement": "A job lost across a restart is spoken as `unavailable`, never as failed: boot recovery cannot know whether the container finished, so `lost_job_occasion` closes the open promise with «I lost track of it» — the only statement that is true — rather than a claim about a container nobody looked at.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/compute_poller.py#L287-L292",
+          "version": "repo-lines-v1:sha256:c283f6e6c0cb31526f1bfcc9f9711ece05e277ef0efe3a548419ed38c1843e62:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDY3NzdiYzEwMjZhM2NkYTQ1ODJjZGE2YjJlZGVhMjY2OWU0NDYxMjE1MzUxYTgzYTk3MjY3NDg4YjU4M2ExZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDhkODRlYmRkYzkzZTBjNjdkMTU5ODU2Y2NlY2JmY2M1ZTA2Y2ZiNmEwNDJmMjUwMjQ2NDMxYmM2M2EyYmY1NCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGZjZDVjZTA5N2E4ZTkwZGUyZDJhYTg4ZjhlNDkwNmMwZThiM2FiOWU2ZjhlOThhY2E0ODNiOTc1OGRiMDlkMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWQ2ZWI3ZjdlNzQyMjAyYmJiNGFhYmUyYjUwZDUxNTBkYmY5OGUwYWFhYTQ0NTI1YmFhMDc2YTk0OWIxNzY4YSJ9"
+        },
+        {
+          "resource": "repo://nora/app/fire.py#L440-L463",
+          "version": "repo-lines-v1:sha256:460556d478f11c096212b0b4c286384c55b9ebe817c01fa3f93b9ec0569a7ad5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0OTc2MjVlYWY4NDQ5YzYyMWNhNTVkMzc1MWNlM2Y2MzdiM2EzOWM1NDA2ZDFkNWFjZjUwNTVkNjhkZWNkODQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJlZDBjNjZkOTJiMmZlYTFkMGY1NWQ4YTY5MzlmMDUzNmViOTgyMmNmMTA4M2JjOWE3ZWVkYzMzZjEyNDdhYTYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f5373dcaefaf423794ead0732274b8cc",
+      "statement": "Sharing one send path is enforced structurally rather than by review: an architecture test pins `Deliverer` as the only caller of `PlatformAdapter.send`, `deliver.build` as the only construction site (with a no-default `audience`), and an explicit allowlist of modules permitted to call `deliver.build` — the tag pipeline and the fire path, plus the later staging summons and fixed-template OTP amendments — so a new way to speak must be built through this path, not beside it.",
+      "evidence": [
+        {
+          "resource": "repo://nora/engagement/stages/deliver.py#L40-L64",
+          "version": "repo-lines-v1:sha256:dbaa9c152b9ffc8e9ed1a67a336af8a74a63c0ad45dd5bad73848f5888d15133:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI2ZmJhZTBiOTFkNDRmYzBkNDlmNWRlNjkxZGE2ZmM0MzFmMjYwMTM0YmY3MzFlMGUyMWY3NjQ4MDk0MzM0Y2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE4YTg0Y2E0NTZkMzAxM2E3MDgyYjZjOGFlMDkwZjVkMmYxZmQ1OWMwZDY3ZjM1MTg3ZDQwYzg5ODMxNmY4ZmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ1OWZhZjYyYTk3MDljNDYyNjZiYzY4NDNiYTU5MzYxZTUwMGIxYzUxYjE0ZjIzNTFlNTcyMDYzODQzMTIwNzkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM3ODJiMmY2MzRlNDM3ODQzMDRmYjA5NDAxNTJiZTMzMTBiY2NjYmE1NWJlZmRiNzgzOWEzYzhjYzM5YzYzMzgifQ"
+        },
+        {
+          "resource": "repo://tests/architecture/test_only_two_paths_can_send.py#L15-L71",
+          "version": "repo-lines-v1:sha256:524ab0b14c5a98e272749c89d0a48fc99a317b78f70582af42d946340a5925ff:eyJzZWxlY3RlZExpbmVDb3VudCI6NTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0ZjAxYmRiMjkzZDAyMjFhNDRiNTEzZDczMjVlMGQ4ODZiMjg3ZWIyZGM3NGM5ZGE3NjU0NzE3YmE2ZDY4YjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY1ODNlNTcyZDYxMTQ0NmMzODg5NzI1Y2RlMTczMjgyYWEyYzgwMGMwOTQ5NzMxODA5NzVkMWI1ZGEwZDcwZmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY3MzM3NDljYmU5NWE4MTdkMTk1MDIyNzlmOGE2NmFjOGVlZmE1ODhhZDA5YWVmZWI3YWIxZTA0OWI4MjVhZDIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8f6e0450bcf342b491f9257f4a5b7a7c",
+      "statement": "Adding an occasion needs a factory registered in the composition root's `event_registry` (only when a due `Reminder` row produces it) and a typed header in `nora/domain/framing.FIRE_HEADERS`; that table is exhaustive — an architecture test refuses a kind with no header, a kind headed twice, and a header written inline at a construction site — so no new sender, stage list or guard set is involved.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/composition.py#L3403-L3417",
+          "version": "repo-lines-v1:sha256:584c12574177fb8b4153c01399d9bfacc39ac1336235dfb12b651087ab5da5be:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5ZTUxYTQxZDMxYjFhOThlYzZkODQyYjQzMDQ4ZGZhYWFkMTA5NDcxMTM2YTIyOWY4YmZlNjUyMjViNGRkYTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwOTNkY2UwMmZhM2U1YzBiOGMxYzg2YWM2N2U4NzYzZTNhMjQ5YWFhZDAxZjlhOGVkZTJkNjcyNzE1MGJkNzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZmMGQxODNjZGZlYTVkZTZlZDEwZjdhNTc1MzIwNDRhNTYxODQ4MTY5NGE1Mjk1NjNmNzY4MTQ1ZDA4ZDZmOGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAyMWMyNjk4MDM5MTJkZTk0ZTYxMjg5NDFjMzE5M2RjYjg0MjMxODgyZTNlY2MxNjA2OGFlMTY1YmMxM2MxZGMifQ"
+        },
+        {
+          "resource": "repo://nora/domain/framing.py#L405-L416",
+          "version": "repo-lines-v1:sha256:9f6217cc6cd9e0fd381e645343fb3c6f8ddd692793e5906c148f070f4bad24e4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJlOWQwOGY2NjI1MmU3YTRkMzkzM2Q0YjdhZDBiOTU5NTg4ZDZjODI4NTNmOTg0M2E4N2MxNGFkZWRkNTg4ZDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzZGYyYWNmMDZlOGMzZjAzYzcxMzVjNmU4YWM1YTljYTU0MzJhYmUwNmE3NGFjYTBmZGQ5YTUzYTAwOGY5ODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYzYTQ3MWMwZDdlMzI0ZGU5M2Y1OTlhZDMyZmI3ZGFiMDViY2NjMjlkYjUxZTJlNzE1ZDM2MWU3YTgyM2Q4ZjQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a9436ebcb39249c08e79036c67e54659",
+      "statement": "What an occasion re-reads is occasion-specific by decision: memory (peer card, people-in-window) is read only by the participation turn, and the shared decision log only by the two occasions weighing whether to take an unoffered floor, unit-scoped rather than room-scoped because a proactive row fires into the unit's home room while the thread may be on another platform.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/fire.py#L1031-L1050",
+          "version": "repo-lines-v1:sha256:48e6fd7442f1c2b3c419fd87ea0092bfbe66201f43f43a8adc093b6cd66ea6d5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlZmY3MTYwYWUwMWUyZGUzNWUyNzU0OTQ2YTIxOWFlYmQzNDA0OGMyOTg2YzZmMjM4YzEwNmJmOWYzODRhNjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMTA0YTQ3ZjIwOTNkMDE1N2JiZmFkZTViNDkxNGVhMWYwMTM5ZmI0MzgyZDdlZGNjMWI1OTc2MzcyYzExMGUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMwYzNmZTgxN2JjMzI0NTI2NzRmNDUxMjVkNmI3YjU4Y2U5NGI4NmZmMTA3NWFlMGVmN2IzNWJkNWZiOTVhYjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQwYWY3NDA3ZGU1NjMxYmY5ZWU5YjRmMWU4MzY3MDRjYjYwMWMyYWE5MDk0OTIxNzE4YTkyYzdiMGI4OGE4ZTcifQ"
+        },
+        {
+          "resource": "repo://nora/app/fire.py#L1174-L1195",
+          "version": "repo-lines-v1:sha256:a2704d958d0c6530199c40392ebbbaa26356beb7a7c648a0563575a10b55f4ed:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM0NGI2YmUwOWUxN2Q2ZTU2M2E3NGFhMDQyZTRiYzVjNTQ5YTdiZTQ1NzQ2ZjExYjFlMTQ0ZDFhMGM2OTEyMzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQxZjA1MDg2Y2MzMjE0YTE4YmIzODFmNzE3ZjYwODM4YWMwMzI3MGYwMDk4MTU5NTM5YTNhYWIxOTcyMGQxZjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgxYzE0MjYyNzg5NTBiZjIzMjdkOGM4ZDM2OGI5NGRlM2NkNzY5NjE4YTVlMzc1OGEwMDljOTlhOWI4Njk3N2QifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_94297f202bad44659c26292a1572aa32",
+      "statement": "The stages the fire path does reuse are reused for stated reasons: `MentionRenderer.rehydrate` (or every @-mention reaches the model as U+FFFC), `build_prefill`/`build_tag_message` (or R-13/R-13b escaping is pinned only by the tag path's tests), `deliver.build`+`Deliverer` (the only caller of `adapter.send`, so R-2, R-4, R-6, R-18 and the audit-first write all still apply) and `feedback.run` (a fire turn is still something she said, so omitting it makes her memory of her own speech incomplete).",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/fire.py#L1822-L1838",
+          "version": "repo-lines-v1:sha256:c01340eb942b932c3e8377a4e15bb9aa68e20f9f47d921771c787badea805a96:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3MDBiNzYxMDc1YzczYzhlNDcwYWI5YmQyY2QxZDBiZDA2N2UyNWZiYzRkMjZkMjM1ZTU2M2Y2MmY3ZDU4MmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFhNDc0ODVjZjk3MjQyMzIyMGIzNjU0MGMwZTU1OWMzNjNmNmQ4ZWZhYmUzNGU2ZWJlYzliNDkxYzA4ZDIwMjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRhY2QwOTZmNDc2MmQxYTFhOWM2ZjMxYjJmNDRjZGQ0YzNmMzMyOWE1NmUzZmIxZDdkNmNjOThhYjg4YjJjZTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEzYzY4YThmYWMzNWEwYjlmZDFmOGYxNzljMGUyZThiNzg0NGE5N2JjMTkzMGQ5YWQ3MzM4M2MyYzI1ZTYxNGYifQ"
+        },
+        {
+          "resource": "repo://nora/app/fire.py#L2690-L2716",
+          "version": "repo-lines-v1:sha256:8da5ea33c38581e838bf3fe019ac627f60278a7d07cd0b29f01fa1f8e52d9041:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRhYjlhZDZhNzI2ODgyZjNlOWI3MmNkMGNmNWRlNDQ0MTMxYjM4OWE5NmM0Zjg3OWY0NjVlMmRlMTFlYmYyYTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNjODJhMmY5MDNjMzA5NjM4MzE1MmU4MzcxNjQ5MGEzMGJkMjM4YzYwOWI4YWI1MjNiMmUyNGNlNmIzYzkxNWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ5YzZlNTllOTVjYmU3ZWYyNDU1NmZiNDg3ZmNhZTg2MWEyNDEwZTJiNzQ0NDc5ZTU2NzUyZDJmNmE0NmE3MWQifQ"
+        },
+        {
+          "resource": "repo://nora/app/fire.py#L46-L53",
+          "version": "repo-lines-v1:sha256:b9c352c9ed55c8206e85c868463c493f98f92be729a785fe5f8642822a11da37:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOWM5YTFmMzBmNzJmMDcwMWFiYTZlODYyNmVkMjU1NGYwYjlmNmMwZTVkOTA1MTJmMjI1ZjM4MGNjNDdhYWNmYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzhlOTJmMTJjYzcyMTdhZDE2MmQ5MDJkZjQ4Y2RhMTAyOWVjZThiNmU2ZDBiNjJkOGMwMmFhYmYxZjUyNmNkZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODlhZDljNDRmN2QxMGM2NTMzMTIzZjA0NDc4ODg4MTY1NGUxMzU4NjU0OGUzY2VkMDNkNDI3ZWViMGFiNTZiOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDJlNjQ5NmFhYjEyNTE2N2Q4ZWRmZDQwMzNlNDg3ODcwNjdjYzAwOWYwMDc5OWMwM2U5YjgwMjZhYTc5ZGY1ZCJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-20T05:37:18.064Z"
+  }
+}

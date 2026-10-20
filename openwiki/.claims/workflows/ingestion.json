@@ -1,0 +1,514 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:2d5d5554846185ae0bcb59e5d8ae33fb04f672c39c3f9f9eec50bde6fce60bb1",
+  "claims": [
+    {
+      "id": "claim_b3abeebca00640efa34e6997923b8ed8",
+      "statement": "`Dispatcher.on_message` is the ingest entry point for already-parsed messages: it awaits `IngestPipeline.run` inline, returns immediately when the result carries no message or no decision, notes a `relevance_gate` candidate with `ParticipationTrigger` instead of admitting it, and otherwise spawns an `EngagementRequest` into `EngagementPipeline.run`; it lives in `nora.app` because `nora.ingest` and `nora.engagement` are sibling packages that may not import each other.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/dispatch.py#L1-L11",
+          "version": "repo-lines-v1:sha256:02839966a1708ff4d5e9438169e37968291c1023283ea07ced5889aaffa3a215:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1ZDA5MjhkZGEwOWVhYmFjMjczODZlOTliOTA4M2VjZmFhNjk5ZmExZmEwNjk0OWQxYWIxMDczOWYzMTBlMTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/app/dispatch.py#L67-L84",
+          "version": "repo-lines-v1:sha256:5d75e47845787b76e580f250b278ebc5a9641bf0a7c482274afe82060c05c734:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJjYzZhM2E0MDkxNWM0NjFkOTI1YTA2YWU3NzJhNDg4Nzg2OGFmNTYzOTAyN2FiYzY5YTVmZDVmYTVmZDk3YjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjYWUxMjc4ZTIyYzg4ZDI3NmRjOTIxNWI4OTUzMTY4NzRkYjMxOTEyMzg0ZmQyODNjMDU3ZTgxNTM3MzYyYzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEzNThkNmMzZDMzODk2YTU1NzJjNDkxZDVmY2ZhMTcyZTIxMzZhYjhiMzI4NzMxMGE5ZjAwZWM2MDBjOGM4ODQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5cf8a0ab1f5d4cd7a11a37ce0a81041f",
+      "statement": "Parsing and normalization happen inside each platform adapter's `listen()` loop, not in ingest: `PlatformAdapter` deliberately has no `parse()`, and an adapter drops any event that parses to `None` (Signal: a DM, a sync message, a self-send, an empty body; WhatsApp: a non-message event, `from_me`, a broadcast JID, an empty turn) before `on_message` is ever called.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L8-L13",
+          "version": "repo-lines-v1:sha256:8432b38c73dd3fbb99b6a2d205d3994baaa180b20a489cbc015aafa625368678:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzFlNTBkZjIyYTc2MTFkMGMxNTE1MTE4MzE1MTFmNGViNTNmMzI0OTYyMDgyMDMyYWEyOTEzNmI2M2U2NzYwZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjBkZDM5MzdmYzQ2M2VjYTgyM2QwN2QyZDFmZjc0MDIxZGI5ODY4MGJiN2M4NDRkNDU3ZTc4YTg0MmU2M2Y5NyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTc2YmRiMDcyMzc0YzVkNDM0ZWE2MTc4NTYxODExNDBmNjFjNmQxYjJmY2MwYmRkZjg5MjljZDg2NjMyMDlmMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDcyNGRmODQ2NjM2MWU5YmNiNWMyYjkwNWZmZGJlOTZkY2FmOGRmMzk2OTA1MmI0MzljZTA1ZTVmZjU0OTRjZSJ9"
+        },
+        {
+          "resource": "repo://nora/platform/signal/adapter.py#L72-L89",
+          "version": "repo-lines-v1:sha256:2b7bf94c8869eebc48220e33c928647b8484fd2eb48a5ff3b22a089d5048e5ac:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRhZjU3YzhhZGI4ZGE0Nzg3MWMyYzYyYTNhYTYzZGFjYzM3MGE0YTk4MjE5NDZmMWExMjgwNDYyOWMwMWZmMzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkNzE3Y2FhYzgyYTY2NmQ5MmIxYTE4OWI4OTYzM2VkMTNjNTdmNTkyNWY1N2YyOGY1OWU3MWYzN2YwYTIwYzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk0Yjc4NTJjNmY3YjUxMWMwNWUyNzRlYzFiMjRkMTBkNDU5NjE1YzhkNDViNGFkOWE5MGNiOGQ1ODE3ZGMxMDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM3YTk3ZmEzNzRkMDNkYTY4ZWU1N2ViOGNjOWQ4ZWY1ZmIwZDFhMmJjMDRiMmM0NTNhYjY1NTk5YTg3ODM1MGUifQ"
+        },
+        {
+          "resource": "repo://nora/platform/whatsapp/adapter.py#L61-L76",
+          "version": "repo-lines-v1:sha256:7e36d6200171ef607521a254c941d0311e9d7c2420ac627c3c3f5d8f50385cad:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRhZjU3YzhhZGI4ZGE0Nzg3MWMyYzYyYTNhYTYzZGFjYzM3MGE0YTk4MjE5NDZmMWExMjgwNDYyOWMwMWZmMzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkNzE3Y2FhYzgyYTY2NmQ5MmIxYTE4OWI4OTYzM2VkMTNjNTdmNTkyNWY1N2YyOGY1OWU3MWYzN2YwYTIwYzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk0Yjc4NTJjNmY3YjUxMWMwNWUyNzRlYzFiMjRkMTBkNDU5NjE1YzhkNDViNGFkOWE5MGNiOGQ1ODE3ZGMxMDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM3YTk3ZmEzNzRkMDNkYTY4ZWU1N2ViOGNjOWQ4ZWY1ZmIwZDFhMmJjMDRiMmM0NTNhYjY1NTk5YTg3ODM1MGUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7d448a3b87a1467ba1c74ac60a62e5c6",
+      "statement": "`IngestPipeline` only sequences stage calls and assembles `IngestResult`; every branch belongs to the stage that owns it under `nora/ingest/stages/`, where each module exposes exactly one public `async def run(...)`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L1-L6",
+          "version": "repo-lines-v1:sha256:2fdaf555a7529c5019d17e0567809fd2f3989279bd10661e734ea0d95e770ddd:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjJiMDg0MmQ2OTIyZDdhYzMwZTBjYzA5ODc0OGVhNTJmNWEwODc5Nzg3YTczM2Y1Yzk1ZTg0Yzc2MDI1NGJmNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTYyOWViMDIyMWUxYTI3MmY1MTg0NTMyNTM2MGRlYjA0OTUyYTcyNGQzYmJhZmZmYjYyOWM2ZjI2MjVlMTU5YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmNlMzM4M2ZkNTczNjQ5MDUxMTAwYzYxOTg5NTA4ZDIwOTEwNTA2MzZlMWVlYzllZWNlZmMxN2VmYWZkNGI3YyJ9"
+        },
+        {
+          "resource": "repo://nora/ingest/stages/__init__.py#L1-L13",
+          "version": "repo-lines-v1:sha256:0c6d79b297990589af9c3b05b3aa417d9df8dcd33ae2599b1a8799d9ae0251e8:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4ZDBlMmM2YjFlNWZjMGEyYjIxZDIxNDMwMDdmZDE3NzkzY2RlYjY4Mjk0NDc4MGQzMzM4N2JlZTBlNGEzOGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgyZWQxNTI1NTNjNTViNjlkMjc0MGVmOTU4MTExZWU1MjgzYWMxYzU3OGVkMWFjODJjY2I0YzI2OWQ1MWNjYjcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_704b1dc301a94601828fe216e90fa7b4",
+      "statement": "The ordinary-message stage order is fixed: room scope, identity, media custody, external file links, quote target, the audit write, the stimulus, the spawned Honcho feed, the engage gate, then the sender gate — with custody before the record and the stimulus immediately after it.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L300-L345",
+          "version": "repo-lines-v1:sha256:1532e1a4cb9ecef2fe6687a51fe8c4694db2c173f799c4cb6c840589690356c2:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJjY2NmMjU1NGNmNzYyMGE0NDY0MzFkZDA3YTk3NDY3MmQ3OTc3YzVhNWE0ZTQzZjY0MTZjODMzZjE0OTQ3MWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEzMDgxNTY1YzQ1M2M2NmVjOWU5NTU1YTc2YTRhMjg0OTE4M2MzMjE4YWFlYzY2ZjQ4OTBjZGVhMTI4MDhjYmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVlZjJhYmRkZGQ0NTJmNmMxZjU4MGViODJhZDIyMzNjN2U3YjQ0MmE5OTAxOTk4MmZlZWU2NmNhY2VhYjllYjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkzZDg4MTE5NTljYmZiN2VlYTZhODJhOGYxNjk5Mjg2YmJlZmM5YTczYmIyYmU2MmZkYjkxNDc5NzQzZjFiYjgifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L351-L437",
+          "version": "repo-lines-v1:sha256:cd29609f9732fdcb0c054accdbe0cd5809582bce8c4b4ab8da500199172530df:eyJzZWxlY3RlZExpbmVDb3VudCI6ODcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZjZjgyYWI1NDQ1YzQ1M2QzMDA5MTVhNGFhNjFhZWY0NWNhMzljYTIyOWEzM2YwM2Y4ZmE1N2E1ZGQ3OGRkYWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZjYjAxNGNhYTdmNWI5ZjY5NTdkNDE0OGIzMGIwYzYwMzU0ZTk5YTFmMzkzMzU3ZjU0YjBhNTIzNDNhYmFmZGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg5NDZmN2VmNmUyZTA4MTAzYzY4OGRiZGI5MTQyMTJhYWU1MjE0MWJhNDA0MmY1NDc3OGVkZTQxOWQ2NWNiNDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYzZWZlYTEyZGMwMzg5ZTIxMGIxZGZhMTQ1YmFmZjc1Mjc3ZmMwNTcwYTQzZWI2NTdjYTY0YjQ1YTI4ODQ1MTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c4c10eceae434e04899a3993ad157fcc",
+      "statement": "The room gate runs before any write, so a conversation the operator has not allowlisted (or a DM from somebody absent from `identity.toml`) leaves no audit row at all, and the refusal is counted on `nora_denied_conversations_total`; the sender half of the grant is enforced later, after the audit, so an unrecognised sender in an allowed room stays discoverable via `nora persons pending`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L415-L435",
+          "version": "repo-lines-v1:sha256:63b0b0fba96533e0dd5308fb7e0985e57540683f6a8967ca4018cfeb93f2c630:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4NGEzOWMyMzIwMzY0ZWVkZTI1YThlZTJlYTJlYjZhOWEwZWRlYjM3ODVhODAyZDdhNjY2NTRlZjc0ODQ4MjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk0YTJlOGYxYWIyMzJiYjFmN2Q4NDgwOTY0MTEwM2MwMzFiMTUyMjVjYzFjYTY0ZGFiZjNlNDJhM2NkNmI3MGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAxY2ZhOWM0MDg0MDY3MzVmMDhjZTRmOTMyNGVlOWM3NzUyZTQ4ZGQwZDFiNTU5N2ZkNDczNTc3OTM1MjYxZmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNkMTk0NDk0ODA4ZWNiNTlmMDNiYzFlOWI0ZDU0ZWU0MTJlMTg0MjE4ODZhN2Q4NWRkMTY3YTRmZjVlOWJmNDIifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/stages/scope.py#L1-L33",
+          "version": "repo-lines-v1:sha256:6c4bd134b929460e888e4cca99dd3acb60e84403b9b195bd7ba99168b78cac14:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM4NGFlN2M5OGM2NzU2OGNjN2NiODgzMzhjODFmNTlhNjdlYjc4ZGI3NjU3NDJkNjU3NWI5ZTM2N2Y2MDM4NzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRjMTk2ZTU4YmIxODI4M2I3NWMyOTVmYTFkZTQ1ZDBhN2U5OTdhMzA3NGY4M2Q1MTdkNGY3ZjYzZTE3NzdlNzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhYWY3NjM3Y2I2ZTdlNWRiODVkNjM0Mjc0NjAxNGRmMDQxY2NkNTU4YTkyMGIyOWViNmFjNzE5ZDdiYWY1YzIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_629684e3bd3a408a862eb98d5ddc5c76",
+      "statement": "A failed audit write drops the message instead of raising: `stages/audit.py` catches the exception, logs it, increments `nora_errors_total{stage=\"ambient\"}`, and returns `None`, because ingest runs on the listener's await path and a raise would stop ingest for every conversation on that adapter.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L380-L386",
+          "version": "repo-lines-v1:sha256:b622459fe41d7c1dd1e24ff196eada86ac47879c88db985755cd32113cf5abd0:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDFlYmEwYTlkOGUxZDJhMjQ0NzBlYmVkMTY3MWQ0MzJkMjkyNzdmOTc3YTQ2ODhlMjFjMDVmMGQ5YjQzNjg0YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZWM4ZmU2NWRhZTQzZDljYzdiY2U2MWU4ZjVjZDM3ODM1OTVlNGIxNGU2ZjFlYTk3MGViNzU4ZTlhYjFjZTYyZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTE4MjJkMGFlN2YxM2NhMzY5ZDc4MjA1NzhiYWFmOTA2MThmMWZkOGEzNDJmYTAyY2UwNTg4ZjA3ZGI3ODYzZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODYwYzdmZWQxZTkxMjJhMmNjZWM2ZmI1ZjJiYzY2YmNiNmE5MzlmYTQ2NGFmZDA4ZGMwNzA2NDVmOTA1YTRmNSJ9"
+        },
+        {
+          "resource": "repo://nora/ingest/stages/audit.py#L1-L41",
+          "version": "repo-lines-v1:sha256:49e6843e6d0b0b47f382c316b22f2e3f2e6c2c55ca436468eb03aab64ade7f64:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVjYTNhYTA1ZjRkZmRiZDU2NmE5OGFkNzZjZjJkNDVmNzkzYjc1ZjgyNzkyZDM5M2NmMDhhODQ0YzY4NTZjMTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlN2M5NTdiY2I0NGZiNjczYzk4YjAwNTBhNzVkMzgwODJkYjgxZDkxOGRlMzEzYTNmMDdjMTIzNTMwNmQ3ZWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_db1ac67eba4a40b681906a3fed6405fb",
+      "statement": "Identity resolution runs before the audit write so the resolved `person_id` lands in that single INSERT — `Persons.resolve` is two dict lookups on a startup-built frozen mapping, so nothing fallible moves ahead of the record, and a second UPDATE per message would contend for the single WAL writer. An unmapped sender is an expected outcome that resolves to `None`, ingest continues, and it is counted on `nora_unmapped_senders_total`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L337-L350",
+          "version": "repo-lines-v1:sha256:53bbd613305b6f1a326404595ad811f187e62223ac2c66852e47f50a27b5adab:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ2NDViZmYzYzc3MTMwZTA4MGI0NGE4MDhlNzU5ZjYzODQxODcwYThhNGJjYjM1ZmQ3NDMzYjczYzNjZDYyYjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkNzU2ODA1MzAwY2QyYWUwNWRkMDFlNzI4ZDExZGViMTQzMjZmNjFhZTA3MDBmZDQ5ZThhMDQ0NGUwMTg0ZjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYTY0NjU2ZTRhM2ZmZjUyYWMwOGI3ZDE2NmM2MzRkOTA0N2Y0NDI1MWM1MmVlYWQ5YjM2ZjIzYTMxNTNkOWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIwNjlmMjczMTYxM2Q3NTYwMjc0NjcyODRjYTY3NDc4YzExZDE1ODIwNDM4ZjBiMDU4NDg5NzUwMGExZDBjYWUifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/stages/identity.py#L1-L59",
+          "version": "repo-lines-v1:sha256:a970376903c729de17d8557a38de408ee35f25fb7e56c014096ad1a61245265b:eyJzZWxlY3RlZExpbmVDb3VudCI6NTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYyMjJkZmFhYzc4ODRkNmJlNjA1M2M1MmUzNDJiMjI1YWY4ODJmZmE0NGJjZTJhMmQwOWQ0MDhhYTIzOTM1N2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEyM2VmM2I2YjM4Njc3MjZjZDZlOGJmMTJjMTEyYmUzMjcwY2RmOWI1YjQ1MTQ4ZGZmMGExNDk1NjFlNTczMWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://nora/persons.py#L1-L17",
+          "version": "repo-lines-v1:sha256:1ac10c11639a4817b12eedd7e971b12e5bc34d8e0d7f0891195b9f56aeb3b6f1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE5OThjZjY0N2U2ZmZhZDU2YjgxMWY1NzY0OTM0ZTRjMTRjYzMwODliMWRiZGU5NzRiNWI2YmUxMmMzNmZkZTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0af7f5d319d94f8d8cd525d19a76c6ff",
+      "statement": "Media custody runs inline ahead of the audit write so the body's handle and the blob backing it are committed by one INSERT; spawning the copy would write a promise of custody before the bytes existed, which is the A9 violation the stage exists to prevent.",
+      "evidence": [
+        {
+          "resource": "repo://nora/infra/sql/audit.py#L204-L231",
+          "version": "repo-lines-v1:sha256:3aad7754eaef20e2885dd6956fdbec8f869c6acfffd5d2a1143c8f587801e6ed:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE4MGNmZDRkMjc1MmRhZTA2OTkyYTRiNTAxYzFlNTAxZWE3NDRjMTc0NzI4OTY0YzI0ZTg4ZWY1Njk4YjE5ZDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFjMTk3Yzc1NDJhODQxZWMzZDNlZTY3Y2U4YWE4MGY0MzAzMTQyNTI4MDUxNjlkM2IwNWJlOTM4OWUyMWExZDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBiNDAwY2QzN2IzY2IwMjRjODdiZDgxZDFiYzJhZDgzN2MxYjFhZDBmMzZiZjJhN2U1NjczZjlmNTdhN2EzYjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyNGYxYzQ4N2MwMzI1OWMyZTIxMmRmODQxMmI3MWQzMzkyM2VlOTQ4NWFiYjhlNjVmNGE2MDRlNDkwNDY4OGUifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/stages/media.py#L1-L33",
+          "version": "repo-lines-v1:sha256:c3d55a0aa0d9b3f5006ef0d957062c4e72c8da1ee54e9c399d7b3d88a6dc0e81:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjYjIwM2I1Y2JiZmUwMjE1MGQ1ZDk5NjViYWM1ZGEyYTk4MWE0OGJmMDM5OTEyODA5MWE3YjI2MzIyZjJhNWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM1OGM5Zjg3M2E1ZTZkYmIwOTJjNTU4MzY2ZGI4MDkzM2FlMzlmOWIyYjAzNGNkODgwOTc1MGFkOGJhNTY1YTYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4b762bfea4ca4cd291108dacbfdd37ad",
+      "statement": "Media custody is a wiring state, not a content branch: with `media_sources` or `blobs` absent every attachment is counted `nora_media_custody_total{status=\"not_configured\"}` and the message is still recorded with a bare placeholder, while custody wired without a fetcher for that platform counts `not_supported` — two distinct operator problems with two labels.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/composition.py#L4940-L4990",
+          "version": "repo-lines-v1:sha256:d2c6c2a5acd8d73c66514b78235bc9741992a204130bf43255ecd09a1160d807:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI0MmU4OWMwNzJhZTMyYzQxODljNjkyMmZmMWMwOTliZWJlYTEzNjYxZWY2OGNiZTE3YmM1MmY1ZjkxYmJjZjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2Yzk4ZDk5NjdiNDA2YjM1Zjk2NTU3NWZmNjVkM2VkYTJkZmEyNWU3ODNmMWU0ZmZlZDU5NzQ2YjlkYzFiMWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc3ODdjNjA2NzJhNmZmM2IyNGY3ODEzMWU1N2U4YjVlMGZmZGFlYzliMDFiNGM4NDA1MDYyOTNjODM3NjIzYjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg4YTMxMTRjYTg4ODE5MTQyOGUwN2U5ODAxZWE4YjVhZTJiMmM4MjVjYjllNTM0YmZjNTY2ZTQzYWRiNzVkYTIifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/stages/media.py#L97-L149",
+          "version": "repo-lines-v1:sha256:e3a1c8325acc8f9d3e8d82ea439b7480d65525fcf04441add31d1c8505a44687:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRiNDVhZWIzOGE5MjA5N2UxYjU5YzRlZmE5OGFhNzY4ODk5ZTExMjcwNTZjODVmY2RiNDVkZTYwY2VhYzIwZTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjMmYwOGM5OTdmYzQ4OTdhNmJkMWU4NzE2MDI5MjQ1NWUxYWNmYjRiYTQ2MzBhMWZkNWM2MDg3MzQxYzZhZjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNkNTFmMzgxZmY1ZTdkZWZkYzJlMzIwYmFhN2U1ZmQyMDIzZjNhMDg0NmJmZTk1YjkyYjU3ZTUwNmIzNjI5MzkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI2NzFhNTVlYmUwODgwOWE0N2JkYzIxNDg5YmFmZmJkODgzNDhlMzhlNTI4MGY4ZjM2MTExYWMwOGM4ODc5MzkifQ"
+        },
+        {
+          "resource": "repo://nora/platform/registry.py#L366-L380",
+          "version": "repo-lines-v1:sha256:b8212b491ba4a730613bc4e66ba0329d9cd553617a46ea5860fd70f69149c15f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlZTgyNzcyYjE0YjA5YjllMmQyMTNmN2FmNjZiMjBhM2UwMGRiZDViNDgzYzYzODI5M2U0MDZhN2RkNmIwNDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZiYTExNjQzOGY1ODkxMzkyNzJmYjk4NmU0ZjFmZGQyMTNjM2NkZDZmOGU1OGEzY2VkNDAzNTMwMGE0ODM0MzYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc0ZjhkNGVkMDMzMzVhYzViN2RkODM2NzcwZTI2MTA3NDEyMzAxOTQ3OTgwMzBhMzcxNmEyMjlhOGUxOTFlZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_758996cf02a74ef3886bbdd95bd04ac0",
+      "statement": "Voice-note transcription is a separate wiring state from custody: when a `transcriber` is supplied, voice notes only are transcribed inline during custody and the transcript is written to `media_objects.content` (joined at render, not baked into the body), with the outcome counted on `nora_speech_transcriptions_total`; a failed transcription keeps the bare handle rather than dropping the note or inventing words.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L212-L217",
+          "version": "repo-lines-v1:sha256:372a805b8970ad581a40ce8dd7cf4b9d950f1ddd1c3cb8c89dd27737ce32c7ed:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTE0OTJiYTg5YmE3OGVkYjRmYzAzODkzMzY3MTkzMmFmYWEzZjY5YmVjMTMzZDE3YjBiZTEyMmRkODNkMzk5ZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTJjOGNhNmNhMTYwNjIzODlkY2RhMTFkZmVlN2YwYTY4YzFhYTIzNTQ1YzE5NTY1MDI0NDQ0OGJjNTY0YTRhYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzNjYWZhOTVkMTlhMjUzNDA4YTlmYjY2OGUwYzA5OTgxNmNjMzExODE5YWU1ZmQ2ZDBjOTYyODFlNzk0MTdiNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzQ0ODY0NWZjMWVmZDMzYTg2ZmFlYTllOTExOGVkNDRhMmZmYmQ2NTU4Njk2NmViZWYzNzgzZTcwNjYzYWJlMSJ9"
+        },
+        {
+          "resource": "repo://nora/ingest/stages/media.py#L185-L226",
+          "version": "repo-lines-v1:sha256:7aa4595cdb8a021609ab88370e88f0a0380d242a9d739f905e5df27b3d1f129f:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU0MTg5ZmNjNmFjNzNhMDJjNTZjMzI0ODQxZmFkMWI2MzI2MTQ4YWEwZWEwYWZjNDg3ZWQ5NDhkMDE2YmU0YjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQwMDEwNWUwYTY4NTIxYzNkMzMyNjE1MzkwZTg1OWUzOWNmMjQxMjc0YTdkNzgxZDE5NmEzYWRhMDdiMTBmZDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY4N2VlYTQ3NWY1OTM2MDEwZDk1MDEyMGM2NzgyOWY3Y2RlNWRiZjc4NDc4MTAxYWY5OTY1YjNjMjllMzQyZmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMxZjIxNjJlN2ZhY2JmMDQ4OTY2NjVhNmM5MDUyZDEzNmNkYTg4Y2Q4YmQ3ZDYxZmFiNjc5MTg1Y2Q2OGMyNTAifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/stages/media.py#L289-L312",
+          "version": "repo-lines-v1:sha256:d76a02585c81de4665311f8bb890e8f3ad070e77b76631304b0310aad1c03c7f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ5Zjc2YWY4Y2Q2NmFkOWZlZDBkNTk2MTlhOTI0YmM3ZjM2YTBkNTZiODhhOTMzMjAwODZlMDI5ZDEyNjc1MDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYxN2ZhZDE5OTI0ZjA0NmIyNzE0YmY3MzE5NmU0YzRjZDhkYjY5NjlkMWFiZWJlOWU4NTkwYTY5YmM5NDJlZmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVhNDQyODZmOGIwMmNiYTQzNDQ2NmVkMzlmZDJjNjU3NDI1ODRiZTJkMmM5MjgzODlmNTJjNzdjZDI3ZWI3MTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUwZmY4ZTkwNWU2MjYyZDJiNWU0ZGY1YWNjODRlNmY1OTZmNzMwMzVhMzMxYzQzOWMzMjc0NmI2OTE3MjhiOTcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_676827b507414dbf8278c74dc691b74b",
+      "statement": "Media comprehension is a third, spawned wiring state: when a `MediaComprehension` is supplied, each held blob with a handle is scheduled for one model read off the ingest path, landing title/description/content in `media_objects` and feeding Honcho under the sender's peer, with three outcomes `ok` / `nothing_found` / `unavailable`; with it absent every attachment keeps its bare handle and nothing is model-read, but the synchronously captured voice transcript is still written.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/comprehension.py#L1-L51",
+          "version": "repo-lines-v1:sha256:1916b6d4452d34004db8213d2157531f1c9d97f44ee822b716191a04ba1e4862:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxMDE0MDVhOWE1OTUyNDJmNWI0ZjViOWMwYzk5YTM3NmY1ODY5ZjgxMjAxN2ExZDljYWU3NmNhYmVlNWMzZDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L202-L211",
+          "version": "repo-lines-v1:sha256:f1c8459441e340d74578dfcfed5288d79fea0e57903a86c2dc3b7281099ed3ba:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJlZmE3ZGI2MTQ2MDdjZjE3OTIzMzY5MjE5YTQ0YzUzZGFlZjEwZDFhODhjZWNjNmRkMmYxODRiN2NkZjkzZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI1NmFlYTQ4ZDJhY2RiYjMwOGQ2ZTc2OWU3NjlmNzdhZmQ3MTA4ZDcxNDk1ODBlMjZjNzY5Mjc4MWEzZDIxMjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJkMTI3ODY2YWY1ZGM4NjkwYzc1ZWQwMmVlN2Q1OGU1NWZlZGMzNzFkNmYzMmFiYTIxZWYwY2JjZDlhM2NlMzUifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/stages/media.py#L316-L340",
+          "version": "repo-lines-v1:sha256:5bd2561c4f969ec6ac9acaf2b7288e9c6b3d5260a14d37c77f68642804253ba4:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBkM2Y5Y2NlZTY3MjViY2IyZWY3NmYyMjVmMmNkMjBjMDBlMjhhMjM2M2M3YzU4YTYwZmEyM2RlZThlNTU4ZGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUwZmY4ZTkwNWU2MjYyZDJiNWU0ZGY1YWNjODRlNmY1OTZmNzMwMzVhMzMxYzQzOWMzMjc0NmI2OTE3MjhiOTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI2ZTMyNDViYzc5M2VhOTZiMGY2YjFmMTI1Mjg3YzdlYzA1NmUwNTgxNTQ1YjcwZGIxNWFkZTVlOTQwNWNkZmMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fbc9e81cac4e4b50962ef760a3931fdd",
+      "statement": "The ingest body carries only a closed-set label and a content hash per attachment; a description or transcript is stored in `media_objects` and selected by each consumer at render time, which is why the `scan_identifiers` egress screen runs on every render rather than once at store time.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/stages/media.py#L316-L340",
+          "version": "repo-lines-v1:sha256:5bd2561c4f969ec6ac9acaf2b7288e9c6b3d5260a14d37c77f68642804253ba4:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBkM2Y5Y2NlZTY3MjViY2IyZWY3NmYyMjVmMmNkMjBjMDBlMjhhMjM2M2M3YzU4YTYwZmEyM2RlZThlNTU4ZGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUwZmY4ZTkwNWU2MjYyZDJiNWU0ZGY1YWNjODRlNmY1OTZmNzMwMzVhMzMxYzQzOWMzMjc0NmI2OTE3MjhiOTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI2ZTMyNDViYzc5M2VhOTZiMGY2YjFmMTI1Mjg3YzdlYzA1NmUwNTgxNTQ1YjcwZGIxNWFkZTVlOTQwNWNkZmMifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/stages/media.py#L34-L47",
+          "version": "repo-lines-v1:sha256:b010cf8e8921893734a25e3a9e898384f06390e6d5f7439729b31fcc383ae73b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlkY2ZmYTEyNWRiNGFmOWQ0M2E1MmU1ODhkNDE5ZjIxZGQ4MDNhYWU2NTRiZDEwNDI4ZjlkNDIzZWM0NzFhZDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3NmYyMmUxZDdhYzQzNTBlNzNhYjg4ZWU0Njk2MjI3NTdkZWY3YjBhZTFkZTFjYjhlODRlM2IxYmRmMWZmODAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY3MDAzZmQ1M2VhMGIzODM1MzU2MDlkMWU5YTVjNzQyMjVjZmNjMGNlMzdmMDQ2MTg5ZjJmZDc0MDQ1NWVjYzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImExNzJjZmM2NWNjN2NiY2NhYzlhNDg3ODM3NWQzNmM0M2Q5ODYzMzBiNGJkNTJmMjJkOGFiZWEwYzI1M2JmMzIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_eb75a381197d43ee961f8058828cb842",
+      "statement": "Shared file links become `ExternalFileRef`s in the record with no network call and no configuration: `stages/external_files.py` only reads the body, and the refs land in `messages.external_files_json` in the same INSERT as the row.",
+      "evidence": [
+        {
+          "resource": "repo://nora/infra/sql/audit.py#L213-L214",
+          "version": "repo-lines-v1:sha256:7e64b48da6a619ad384e98fd9a7ea5a1f4ffaa615cf976b903000d3f46a7f62e:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTdlNDUwNzNmNDdkNDE4ODM2OWZmNzNjNGI1YmE1NjYxNTg5MTg1NTg2ZjJiY2VjOGYzZTViZmZlNzQxYWM0YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiY2MwNjVkMWFjMjFmYzBlODdmYjVkMjEyYzJhYzA3OWY2ZmYyNGE2YmQ2MDg1ZmQ0OWUzOTlhYzkxYzU4MGU1YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTlmY2U1YWZiZjQ2ZGQ0MmM3ZGYzNjEwYzUxOWM1NzI5NTRhNjE4N2E3ZjI2ZjNjZDYzZGJhODg0NTdkY2IyZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDg5YTIzNWY3YWVmNTk2ZDU4NWFkYTVkYTYyM2I4YjMxNzljNzViZDU0MTYyMGM2ZmY1MGRmN2ZlZDZhOTQ2NiJ9"
+        },
+        {
+          "resource": "repo://nora/ingest/stages/external_files.py#L1-L34",
+          "version": "repo-lines-v1:sha256:068f6ca42a2f1e4f08b0b7816c38b3a670161bc02b1e422e330e5d6d6fc33b69:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBkNjlkMGE1NDhiYWIzNzM0NjBlYTk3ODFiNGM2YjA3MmU1Njk5MmY2ZDhkNTY1ZTkxZDFjMzU4MGRlYjM0MjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2NzYzNWFmZTAwMTBmMTk5YTc3OGUyYTU0NjE2ZjNiNGE5ZDg5MDNmN2IxZmIwOWQzYmJmZGU1ODQ0NDk0OTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c01ae89dbfeb40c69d3a5bef53077db1",
+      "statement": "`stages/quote_target.py` rewrites a Signal reply's `quoted_ts` from the timestamp of the revision the replier saw to the original message's `ts` before the audit write, so every downstream reader resolves the parent; it runs on Signal only, an exact match always wins, and a failed lookup leaves the quote as sent rather than dropping the message.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/stages/quote_target.py#L1-L45",
+          "version": "repo-lines-v1:sha256:af4eaf711e6e0e651f78f2090a054078c1d49233eaf016f8b487c7734caedf9e:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzZWE0NzdlN2JkYWNlMzllOWYwM2Q5YmM5M2VhOTA0YWVmYmEyNjliNTk2MjRiYTgyMTYzNzc4NzU1MWRiYWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM2OGRhMDc2YmI5NTJjMDUwYTlmZWFmNjAxNDBmZmQ4ZTA4MjdjNGIwMTA4NWJhMDFlZGM4ZDYyNjkxZGMwNGUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fcec9ebaaacc48838d2dbfe568853a0d",
+      "statement": "The Honcho feed is spawned, never awaited, and skipped entirely for an unmapped sender; file links are fed as handles rather than URLs, and an edit is fed as a framed correction quoting the version it first said so the deriver reads it as a change rather than a second statement.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/stages/memory_feed.py#L1-L77",
+          "version": "repo-lines-v1:sha256:a14c531655dafca5d14041a930491444e4260cd9187732cb93cc8eebf05cb333:eyJzZWxlY3RlZExpbmVDb3VudCI6NzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwYjQzZmIyZDkzMGViZWY2NTYzZGJiNDM0ZWNlYjNkOWUwMDI2ZjExYjVlZjViZTRhMTY3ZGZhZDE0NjBlNzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE4N2RmZDQ4NjE1YmFiZTEzMzU0ZDUyNTAzOTBmOWQwYTY2ODhhNDY3ODBhOWFlYjM2NmY5NWI0YjEyNjdkNjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_955de7ad26144f15a83b11b836da8b44",
+      "statement": "The engage gate degrades closed: any exception from `EngagePolicy.should_engage` is logged, counted `nora_errors_total{stage=\"engage_gate\"}`, and becomes `EngageDecision(engage=False, reason=\"policy_error\")` rather than propagating and taking the listener down over a classifier outage.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/stages/gate.py#L1-L27",
+          "version": "repo-lines-v1:sha256:1ff38271a7ce7f8b1bc54ac217e526d60db377510bc4a6e530389b82e7dc61aa:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMxZDMwMzM1NGQ2NDUwNmQ0OWYyODZjODcxOGFiMTg4ZGI1NWMyZmNjM2Y3MDZjOWRiNDBmYmJkYWQwMjZlMzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjNjBlMTQ5MDk2MjljZTI2MDExN2Q1YzQzNGVkODI4ZDJlZGFjYjM2ZmE1MDk2MjYwOTJiODA4ZDNkYzEyZDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c77446b97a454674b29d609cd94c88ed",
+      "statement": "`IngestOutcome` is a closed `Literal` of sixteen values that derives the `nora_ingest_outcomes_total` label vocabulary via `get_args`, treats an exception as not-an-ending because the span already stamps the exception type, and logs but still records an undeclared outcome because mypy does not reach `nora/ingest`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L134-L155",
+          "version": "repo-lines-v1:sha256:868901b9729ebcf49b71ea1e5c969eff6ea027091e8a33218b195741b371df0d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmMDlkNTE3NTc5YWMyYzZiMmZkNzVhZGQzYTZjNWU3NWI2Yjc5ODIwNmMwNWIyODliMmQ3NDQzMjM4Mjc0ZGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRkMmRkOTY0NWJhZjQ2NGExODI0YTA3YzNmOTU2MTViZWY5YTZkMDAyZDZlM2FiNWIzNTYzNWExNDAxMTUzZGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFiZmY0YWEzNjBhNDQ3MDUzYjM3ZGM1MmMzZWQ4MjNjZThmM2E1ZTA1ZTM5MTk0YzZmZmFkNzA3YjkwZmQ2MmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L66-L105",
+          "version": "repo-lines-v1:sha256:ed24e390a085b9b9f9613a575dd1f1d610236a7c1dcec2e2bba45010ee0ee4a7:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI3YTEyMzM2YzE5NTgxZmQwMzRmZGEzYzY3YTUwMWJkYjc3MjRhM2ZjZjJkM2NjODcxNGZjZDYzNDRmYjYzZjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViMTMyODNmNjM4N2MyMThlNDg5MTYxNTZmNTIzZjc2MGRjMjZlZTk1OTM3ZTAyMDU4ZjU2MmM5OGQzZDk1ODIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRiOTYyZGU2OTI2YmM4MGNmZjAwOGI4ODViZmU2MmRjMDkxYjZlYTE5OTYyYzYzYTViMmIzZDE2Yzc5NDA0ZWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUwYmU2ODg3NTI1M2IyNGE3NDc5MjFhMDA0YTVhODg3ZjAyMzVmNzNkNzBkM2QwY2IyZWM5OGNmZmJlNDYzMWYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_53f498f86aae40d2b94dafa018692f00",
+      "statement": "The outcome counter is the live reporting instrument and the span attribute is latent by design: an ingest contains no model call, so the ingest trace is declared `plumbing` at span start and dropped by the sampler, while `nora_ingest_outcomes_total{platform, conversation_type, outcome}` carries what it would have said.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L108-L132",
+          "version": "repo-lines-v1:sha256:f340473d15fe84ee98cf0aac5b1081d42b54f28379c0413f9c1c6ffba26a83ed:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg3YTIwMDY1ZTc2OGVlODQyOWIzODg5MDY4OWEwZjg5NWIxNzNjNmM1ODYyMTFlNjk1NzM5N2MyYzcwYTViNmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM4OGU1MzMwOTkyYWZkODIwZmQxNjFjMGIzYWI3YzAzNzg0MDAxZTQ3NWE4YjMwMTZmMzUyOTQ4ZTQ1NjE4ZTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkzMzQ2YjMzNTgwYmEzNWUxNTJkZDk4YjRiOGVmODNlN2MyNDE4MGRmZTY4YTQ1MjQzNGQyNjkzYWQwMDkyM2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgyOGViNzkwODlmMmE3ZDU4NmQ0MTEyZTEwN2UxY2U1YTM3OGNiOTI4MDNkODdmYTE3Y2IyY2U0MTk5ODQ4NzMifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L264-L282",
+          "version": "repo-lines-v1:sha256:3d38981f9f10a31f146ec690e901203e3fa554f9ca9e7f3c405a84d390eb005b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxNWM3NjdmNjFlMWZiNzBkZDEwNGJiMWRkNjVmYmI1OWM5YTg3NGNjOGRjYmRiYjNhNTQ4MzE1YmY2OWM5ODkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk1YTYzNDgyMWE5YTJmYjIwNTE4ZjIyMWZjYjRmYjllMjQ1YjQ3ZGRlM2U5YmRlZDRjN2E2NDBiZDVhZDE0ODgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMwYTU3MDU4ZjBhZTExNTVhYjQ1ODFhZGIwOTJlOGM4ODIyMmI2MjkyOTNkM2RlNDNkYzNmMjU5YjEwYzYwN2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIyMGFmZjU1YzAwODBiNDQ1OThjNGU3YjVkOGQ2Yjc0ZDlkZGI0MDcxNWVkMDhmMDBlZGExNmFmNzM4OTgzNmIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_08f265ce808c4a46ace8787f6f03399c",
+      "statement": "The ingest root span carries only room-scoped or structural facts — `nora.platform`, `nora.conversation_id`, `nora.conversation_type`, `nora.attachments`, plus a `nora.person_known` bool and the gate's `nora.engage_reason` — never a sender id, display name, message body or coordinate.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L246-L282",
+          "version": "repo-lines-v1:sha256:04999b30b3a1c76d8374825a0b9b3eb73c2456fbeb87170587af9d59a3a1db8c:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJjYjdlYjRjMDdjNTljNjk2YzI3Y2NmODRlYmQwMGVlMGU1ZjlmYzgzOWM1MTkwNmQwOTZiNzcxYTAxOGMwYjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk1YTYzNDgyMWE5YTJmYjIwNTE4ZjIyMWZjYjRmYjllMjQ1YjQ3ZGRlM2U5YmRlZDRjN2E2NDBiZDVhZDE0ODgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFlM2QxOGRmNjM4MWVkZjlmM2I0Yzg2NWFkZDY0NTFkYTFmZjJkM2I3MGY5OTc3N2IwZmEyZmRjMGI0MDdhMmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIyMGFmZjU1YzAwODBiNDQ1OThjNGU3YjVkOGQ2Yjc0ZDlkZGI0MDcxNWVkMDhmMDBlZGExNmFmNzM4OTgzNmIifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L345-L350",
+          "version": "repo-lines-v1:sha256:f985d4f62c92248160cccf6b1aaadf88ccaeb333019b82d01cc7975dc217cba1:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTMwODE1NjVjNDUzYzY2ZWM5ZTk1NTVhNzZhNGEyODQ5MTgzYzMyMThhYWVjNjZmNDg5MGNkZWExMjgwOGNiZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiN2Q3NTY4MDUzMDBjZDJhZTA1ZGQwMWU3MjhkMTFkZWIxNDMyNmY2MWFlMDcwMGZkNDllOGEwNDQ0ZTAxODRmNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDRkYWE5MTlhYjA0N2YyNGYwMjVkMDc2YzRhYjBkYTExYWQ1NTk4MDdkYWYxOTg3OTNlOWM1MzJkOTUyMThlMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjA2OWYyNzMxNjEzZDc1NjAyNzQ2NzI4NGNhNjc0NzhjMTFkMTU4MjA0MzhmMGIwNTg0ODk3NTAwYTFkMGNhZSJ9"
+        },
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L407-L413",
+          "version": "repo-lines-v1:sha256:f7d334ac82eea862e1b7dde18e2173546ca9305cbfe8eb166f56ea6611ee5b8e:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiY2JiYWYzNzRmYjQxZGE3YTk2MGIxMjhkZTJkMjFkOGI0MjAxZDc0ODQ1YjJhMjNiYjI4Mzc0ODc4NWQ5NjdkZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiN2JhMjEyZTMxNDZmOTM3ZmI4YjRhNDQyMzU5N2EwM2UzYzgzZTU3MzkzYTY5ZGM3MzgzMzg1NWUzOTAzN2Y4MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTI0ODdhNGRlZDRhZTRjYmFmZDY0MDVjN2ZjN2ZkNTNkMDllYzk1NDFlYTJmNDllYzc3ZTIyZGM5NTI0Zjc3ZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzA4M2Q0ZDFhMTE3MWZjMDJlOTk3NDU1YWYzNGE3YzdmMWMyZmM1ZmY2ZTYwZjRhYTM1MGNlMWVhNTZjNjZiMyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_424dd43eef7e49e9868e61e858229976",
+      "statement": "Neither half of the observation reporting is load-bearing: `annotate` is guarded inside `nora.obs.tracing`, and the counter increment in `_outcome` is wrapped in its own try/except, because an ingest runs on the listener's await path and an exception from an observation would stop ingest for every conversation on the adapter.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L126-L155",
+          "version": "repo-lines-v1:sha256:67d7be0db779e5b1f4eb61741237d77e5e1a0093a04d8e712e4ce59707db6503:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZhOGM0YTlkNjdiYTFhZDE3ZWMwMDhkZDE2NDUxMDY3NWE4NTZlYzE2ZTYyNjU1NTRjMTZkMGRlMmM5NTg1MjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRkMmRkOTY0NWJhZjQ2NGExODI0YTA3YzNmOTU2MTViZWY5YTZkMDAyZDZlM2FiNWIzNTYzNWExNDAxMTUzZGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQwZmExNTc4Y2M5ZGFiOWQ1NzNhZWVjYzVkY2UyOGNlNWE1MGY5ZDhhZTIwNmU0ZjIwMzgxZTAzOWNiYjBiN2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_ingest_pipeline.py#L916-L975",
+          "version": "repo-lines-v1:sha256:7f907edf5cfa29d237279f9c0ff9003bc86065099e94cbe786c5eeed25a72d70:eyJzZWxlY3RlZExpbmVDb3VudCI6NjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMyZmQ4ZTllNWYwYmQ3MWZmZGNiY2YzMTVlNzY4NDlkN2Q4NjEyNjBkMTcxZThlNWJlMjRhYTExOTEzOTU3OGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVjNTM5ZGU5NDJhYjE5MTJhZDdiZjM3NzJkZDgyMWMxZDk5MDkwMjIyYWUwNDZmODdiOWVhYTY2MzVjMjA0NDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU3NWEzNzZiOTc4MDA0ZmFkMDA3MWQ3ZGI0YTkxNDBiMGFkOThlYjNhZDZiOGRhNGM3Y2NmYzQ3YTRlYzU5NmIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7557c5ee3ede41f28cd26aa562937cd7",
+      "statement": "`IngestResult.message` is `None` in exactly two message-path cases — the room is not allowlisted, or the audit write failed — plus every branch that writes no message at all; a message that got past the audit is always paired with a decision, even for an unmapped sender or a policy error.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L15-L21",
+          "version": "repo-lines-v1:sha256:eefc064066769b5844941a9916369441ab0a5d3bdab19f29beb6ebf5d7182514:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGE5NWQ5ZTliMTdiM2ExODllNWY0M2E4ZjNhYzAyMzM1OWQ5YjIxZWFlODYwZDA4ZjU5ODM0ZjFlMmNhZjdjZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzkyMjUyOTRiOTQ5MmNjY2M3Y2E5NWFhMzI5ZGRjN2NmODg0NWZiYjMxZGRiZDQ5NjMxMjhiNzJlYjNjMDIzYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzMzMWNhZWM5MGUyOTkzNGE2NmMyNGI0MGViODczYTRiODU0MTEwNDMwNDQ3MWU0MTY1ZDQ0NTcxZGYwYWRiOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWFhZjc2MzdjYjZlN2U1ZGI4NWQ2MzQyNzQ2MDE0ZGYwNDFjY2Q1NThhOTIwYjI5ZWI2YWM3MTlkN2JhZjVjMiJ9"
+        },
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L309-L313",
+          "version": "repo-lines-v1:sha256:aad3061a3f28777fffcc2bd64a63747ac9ff1ef44cbb02db753a59f364a90cc1:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMGNiYTA0OTlmNDljNWM4YzZhYWFlMTczM2I1YzU5NWE0YWUzNmE2ODg2ZjQ2NWUzZmFhOWE1M2IzNWRhMzYzOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZWM4ZmU2NWRhZTQzZDljYzdiY2U2MWU4ZjVjZDM3ODM1OTVlNGIxNGU2ZjFlYTk3MGViNzU4ZTlhYjFjZTYyZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzY3MjQ0ZGQ3ZTYxNjYzNDhmNTQwZDJlOGRkMzI4Y2EzYjE4MWY3YWVjZDY1ZmExYjM3YzQwOGUyMDU0OWIxZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDIxNWJjNjFlYTExZTQ1ODVmZjRiMTdmMDcwYjc1NzY0ZjgyYWE3NDRkOGE0OWVjOWMwYjZlMDg3NDQ1ODNkZCJ9"
+        },
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L384-L386",
+          "version": "repo-lines-v1:sha256:5d8f545e46070370d4962e78664746693bf1194a7792752b50ebdf6952307d7c:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODFmMjU4NWMzMjZhYmRhMTFiOGQ1YmRiYTBjNzZiMjZiMjNmMDgwOGUxMzBlZGI4ZjUzZTNmYjkzZjYxZTE1MyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZWM4ZmU2NWRhZTQzZDljYzdiY2U2MWU4ZjVjZDM3ODM1OTVlNGIxNGU2ZjFlYTk3MGViNzU4ZTlhYjFjZTYyZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZmI1MzlhMGNjNWZlNDAzMzQwNzI2NWU0ZmI2ZmNmMzZiOGNhYmU3OTI5ODk0NGFkZmJlYzE5YzcxY2I1MDRlMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODYwYzdmZWQxZTkxMjJhMmNjZWM2ZmI1ZjJiYzY2YmNiNmE5MzlmYTQ2NGFmZDA4ZGMwNzA2NDVmOTA1YTRmNSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_f11e6b0ce5ff46738bba93324d2b8878",
+      "statement": "An edit takes its own path immediately after the room gate: `stages/edit_target.py` answers found / `edit_orphaned` / `edit_stale` / `edit_refused` before anything is written, treating a withdrawn (hidden) original as orphaned, and comparing authorship on the platform id first and the resolved person second.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L315-L329",
+          "version": "repo-lines-v1:sha256:d4619bfb58d3dfd7c873acea70167eab18364cf6c7707d40814a2d9589fde93b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMzOWM3OTQ4NzlhOGNiNmMwMDg1MGVjNGMxZmQzN2VkMmY3NGRhZjA3NmVlNjE0M2UxODU4NThmNDY5ZGYyNmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEwNTE5MjVmYjA2MGVlN2FmNzZjNjg1Njg2NWE1ZGQ1MmYzOWExOGRlYWQ2Y2E5ZDY1MTg3NTdkZDhhNjIzM2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFiNDlmNDhlYjg5MTYzMDJiNDMzNTM1MDQ1MWRkNzRkOGQ1Njg3MWRhNjNkMjU5ZWVlMmQ3NGI4NjM1M2RmOGIifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/stages/edit_target.py#L1-L41",
+          "version": "repo-lines-v1:sha256:5ba4eac5a7569e115450c7b5881684d3f1cc0899cbca03be12fdfea9a6f856b9:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg2Yzg4ZDdmNDcyZmJiNzIyNzZkYWM1YzVjOGY3ZjBlNWFkYWE0YWVmM2I4YmU1MDQ3MjU1ZTgwNjNiNjhlOTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_212827a27b6e48d6883af5e20602f476",
+      "statement": "An edit's attachments are given back the handles Nora already holds instead of being re-fetched, and custody only runs when the positional match cannot be trusted (differing counts, or a bare placeholder gap in the original).",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L460-L472",
+          "version": "repo-lines-v1:sha256:7430d100f9485a05368320aa28a8c5d70fef5632b42245be6d0aaec1cdb416a3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmMGZiMTljOGU5NmIxNDJkYjc2ZTNhN2JhOWYxZmU4ODI2OWI0ZGNiMGE2MGZlMTQ4Y2NkY2M4N2UwNmMyZGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMzZGYwNDE0ZWUwMTIxZTBhNGVkNTc5YWFkOTkwNzE2ZWExOTljOTI3YmVmMzA0OTU5Mjg1OTBlZGZiMmMyODQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU3YzczMmQ4NjA1YmUzOTQzNGM2NDgzZWE5ZjAzNjhlNDhkN2M1YmRjYWZhNDE1ODBhZGMzNjE5ZWFmZWJiYmYifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/stages/edit_media.py#L1-L57",
+          "version": "repo-lines-v1:sha256:a3cafbf7b3573ac649c24c42577942bedc22a13f365638c5435c7b800e25ba16:eyJzZWxlY3RlZExpbmVDb3VudCI6NTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE3YjNmNzlkOTA5ZTk4YzY3MGY0MjUxYTYyNDIxZTA2MDljOTc1NDYyODQ5YTZjYTNjOTY3NTFiNTk0MWIzODQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM2MDA4OTY2MzhkN2M1NDI2Y2RhNGEyZjYyNzA2YjJmYmQwNzg1ODY0Mjg2YWI2YzU4MGJmMDA4ZTJjMzJlZGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1afe0c8cf63e47c19bf502b07043ac23",
+      "statement": "`stages/edit_record.py` decides \"unchanged\" on the post-custody text and mentions, so a Discord link-preview update or a bridge redelivery is not mistaken for an edit; an unchanged-but-newer edit is still written (a Signal client addresses its next edit by that timestamp) while only a true duplicate writes nothing, and a failed write drops the edit without raising.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L473-L479",
+          "version": "repo-lines-v1:sha256:446228a6597388eebcaca38ee02d91e71263d7e13760516950cfac7de9351c47:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzEyNDE2NDU0ODU0NWViMzJlNjhmZTQ1ODc2MDA0MzE1ODUzMmYwZDYwODAyOTAyNWUyNDNlYWY4YWNiMTRlMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZWM4ZmU2NWRhZTQzZDljYzdiY2U2MWU4ZjVjZDM3ODM1OTVlNGIxNGU2ZjFlYTk3MGViNzU4ZTlhYjFjZTYyZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODYxZWYyMWRhNTViYTBhNGM4ZDA5MmI3YTk5NTdkMGJmY2IyZTBiNzgyNmZmZTIyNDY2MTUzZTdjYTE0ODU5YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDI0MzU5OWE4NTk0ZDhhOGZhYzY5ZGM3N2VhMjE4MDJlNjEwNTk1MmM0NDNmZmY2NDM0Y2I3NjYxYjkyMGVkMyJ9"
+        },
+        {
+          "resource": "repo://nora/ingest/stages/edit_record.py#L1-L66",
+          "version": "repo-lines-v1:sha256:9ce8aac5b0d7cedec3f04e7929e55b4c66dcf446cea17ab879781376b97546ff:eyJzZWxlY3RlZExpbmVDb3VudCI6NjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5MjFiYTU5NmFlZDhhNjQzM2NjZGQ4MzU5ZjM3YjYyNDFkZjEzNDYyNGFkNTViMGViYWE1M2FhMzNhMmM5OGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYxNDE4ZDQxMmM0NGEyMTRlNjZiMmNmNjAyYWJjYThmMGZlZmM1NDU4MjIzZjk3ZGU2YzcwMTg0ZjA1OTJiYmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_92513b75157d4656b33d007bd4e53e30",
+      "statement": "`stages/edit_gate.py` runs the engage policy twice — on the edit and on the version it replaced — and engages only when the first says yes and the second says no, so an added @-mention is a turn while a typo fix on an already-tagged message is not; it clears `relevance_gate` unconditionally because an edit is not new room activity.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L494-L506",
+          "version": "repo-lines-v1:sha256:6c43977e071a9592d3f03f80b4e241aff715ef88b9bba78ef58068467ed9a6c3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiYWEyNTM0NWUyNDVmNjlmZjE5N2ZmZmIzNjUwNWEzYmZlMjgwMDQwNTVhYzA5NThiZDI2MTRiNWI3NDRiMWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcxZDRjNzE4MDBiYjNjMTcyMDJhYjhmNDI1NTgyMDFhODI0NGYxOGZhYmQ3Zjk2YzNkZDQ5NjUzMTdkZjM2MzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJlYmNjYjYzYmQwNzg5NTA5MGU5ZTNiZGY5NTQ1MjIxNGY4ZTUyMDMxNDQ3ZWE0MGUwNDFkMjJlNzJiN2RlY2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBiNjgwNzc3YTUyNDFjODZhMmZmMjA1YjljNTgwZmE4YWQ5MzQ1OGVlMDliMTRjMzE1MzZhYTg0ODZjODRjNGUifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/stages/edit_gate.py#L1-L62",
+          "version": "repo-lines-v1:sha256:41d558ac67e9748036ad7fa83e98f651501f895adf156b4a50c2526fdf74904e:eyJzZWxlY3RlZExpbmVDb3VudCI6NjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI4YzI1NjRiNjIyNTlhOWE0NWVmZTMwZWVmYzBiMzJiNDZjZDgxZDQxNDNjNWVkNjNlYWVjM2UzZjIwOTQzMDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmZDU2YzRlZjBjZDNiMjc3ZTI4ZTcwZTg1ODY2ODE0YjYwNGMyYzBkMDgzYjgwYTc5YWExMGM3ZjcwOTZkZmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_be7113610ca0437a83e4f2b1f4bd3e41",
+      "statement": "A turn opened by an edit is answered as the ORIGINAL message — its timestamp and its platform message handle — because that is the message the room sees and what a reaction or threaded reply must point at.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L439-L453",
+          "version": "repo-lines-v1:sha256:1cec04dc19b85935b86bf9ffc775b682daf9b458d3686810c67731ed381cf1c1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkODJlMWE4NjViZTQxYTQ4NjJiOWJiOWE0N2FiYTJmMWE2ZWE1ZWY1OWY1YWE5MDEwOTA1Njk1NmFmYzcwN2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc0ZGFkZGE3OGQyYWI0ZmViZmU5ODhhNDAwYjU2NjVmM2I1MDAyNzg0YmY2MjI4NzM3MmZjNjI4ZThiNWM5NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNkMTk0NDk0ODA4ZWNiNTlmMDNiYzFlOWI0ZDU0ZWU0MTJlMTg0MjE4ODZhN2Q4NWRkMTY3YTRmZjVlOWJmNDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFhODAyODQxMjJmMTcxMWNmNjkzNTE2ZDg4YTZhNDViZjNiMmEzMTgzMjYxYzdiNWZiMmJjMDk3ZTQ5NWE4NmIifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L507-L511",
+          "version": "repo-lines-v1:sha256:3eaa5e585b3da4f686040e4d18749b30b1a85c21c8d8ccc0f78d668ccbda4794:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNmE4NmRlZWJiZmUxNTJjMzMyYzM2MmZkMzNlMzdmMDFjNGE4ODU3MTQ5NGIwOWMyZmEwOWU2ZWE1YTU2OTMzZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTViOTEyNTkwODhiM2RiMmJmNzAxMWVjMDU4ZWU4MWY3ODc4YmM5ZTA0ZWYxZTI1MWFmZDhiYzFkNTc4MWFlNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzgwZTYwMGY5NmUzYjIxMDJmOWJiZjIxMjA3MDM3YjQzNzNkNjkzOWVlYTdiNjc1NTJmNTE3NTgwMDQ0NmJmZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTM1YzlhY2FlZDhmZGU5OTljNDhiOWQ1OGIzZDMzZmFkNDc0YjhmMWQ3M2YyZGNmYTA5MzAxMjNmOTQwYTRmNSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_c0d707d0ed8846d89a77589215870133",
+      "statement": "A reaction or a delete becomes no `messages` row, no transcript line, no Honcho feed and no turn: `stages/touch.py` finds the target, records the item beside it in `message_reaction` / `message_delete`, hides the target on a delete, refuses an author-only (Signal) delete naming somebody else's message, and drops an orphan without a target on record.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L331-L335",
+          "version": "repo-lines-v1:sha256:bf2687d68cc82844dfdc17043b20eeafd1556eac3061dc341a527ff97ffebcf9:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiY2ZiOTk2ZjI4MTUxYWZhMGI5MzA4OTQ2ZTc5ZGVkNTc4OTVkMzVjZjUxNGI3OGNmYTI2ZmY0NGZkZmM4MzcyNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTE4ZTRkYjgzNzZjZDg0MzljOTQwN2NmMTBjYzc5N2MwN2Y2OTdlMTdjZmNhMzI2YTgxOTFlZDQzMzRhZGU2MiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjZiOTI3NTgwN2Y2NWU2YzM1YTIwMWI5NTY0NjcwODY3MjVlZDU5M2NhM2I0YmQyM2VhMWFhMDRkZmY2OWQ2NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzg1MWQzNGQwNzI5N2Q5YjVjMjYwMThmOGRiZGRiOThjOWM3MGNlNTJkMjU2NTczZGE2NmRjMGRmYWJhYWJiNiJ9"
+        },
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L513-L532",
+          "version": "repo-lines-v1:sha256:aa336792e4c11f20e7fdc6c2ccdb81a06cabc09247a629310edc50b00a0b1e9d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4ZGVkNzY1ODdlMjMyMDU3YmU1NGNkYzVkYTg5ODM1ODEzZDBkMzg1MTJlNDk1MzRiMmM0NWYwZTA5NWM5MzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5YjIxMmNhMGUyZWRlZWM0NGJkMjVhZjg3ZmNkNzUxYzUzZDM0YjNhODg2MzI4NDU1Y2IwYWMwNDI5NGY0ZjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVmMjYxODVlYTYxMjMyZDQzZTYxOTY5YTM2YjhmNDEzMzRlMzQ4YTY4MGU4MjY5MWQ2Y2I0ZjBiMjFlNjYyYWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/stages/touch.py#L1-L137",
+          "version": "repo-lines-v1:sha256:80dea41f7de7ec48b1eceb671f1db63f3e873ea235e8e7dc74a249e9887b8254:eyJzZWxlY3RlZExpbmVDb3VudCI6MTM3LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIyNTJlYzBkNTgwNWQwMDhmYmU4NTZiMzUxYTliMDY5OGI4ZTE1Njc3OGZhMmYyMzM5NTEwZTU3OGQ5NzZhNDg1IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIwMWJhNDcxOWM4MGI2ZmU5MTFiMDkxYTdjMDUxMjRiNjRlZWVjZTk2NGUwOWMwNThlZjhmOTgwNWRhY2E1NDZiIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MCwicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJiMzU1NTQ2MzE0ZTE5MGZhMDA0MDYyY2E4ZThiMjkyYzZhOThjOWVmMzUzODc5YWRmMmQyYzkxOThlOGJiOWNjIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_bdd8b925fdef4397a7dd10d79a751ae4",
+      "statement": "The stimulus stage appends exactly one row per recorded person-authored item — message, changed edit, reaction, delete — after the Record write it names, with `ref` pointing at `<table>:<row_id>` and cues attached; Nora's own items raise none, and a reply to her message inside `reply_quiet_seconds` is recorded with `waits` so it never starts a wake by itself.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/stimuli.py#L112-L130",
+          "version": "repo-lines-v1:sha256:41189999fbe931fe64e7fb36e943361255ea1cde8961e12ee00a8ac38647dbad:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVmY2MzNDJjZjAxNGM5ZGY2YWFkZGYxOWExNDEwNjEyMmVlNTNlYTk5N2RlMTdhOTM3ZmZlYTMwOWJkOGM4MDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg3YzZlNjlkZWE4NmM0MmQ2MmE3MjU0YWZhYzRjMDFmNjJmYmQyZDVhODBlNzIzMWZhZWIzNzI1MjFlODE2ZjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/stages/stimulus.py#L1-L33",
+          "version": "repo-lines-v1:sha256:d27a9ba5868f8ece447f2a03c5a3e1c7870fc89d6f5d94490977765b177893a6:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4NzVjNDI0NWU1NzYwNTFjOWFlMWY4YmE1MjVlZGEzODFlMDg5YWUwYTYyYjE0NTc1OWMxODBkZDkzYjJhMzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/stages/stimulus.py#L51-L167",
+          "version": "repo-lines-v1:sha256:70a06ac0fccb62575c1c332b266def6648bfbf666f72a25a7932c73f584aebcd:eyJzZWxlY3RlZExpbmVDb3VudCI6MTE3LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI5YjdkNWZkM2ZmMTE3MTI1ZDZhMjE4MzkzNjU2NzlhMzhlOTA2ZmZkMDY1MjM1OGI0MmY4ZTgzMzA2YWZjYTg0IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJhMWJlZThlN2QyMDc4MzU3NWE3NGM5NWFiODI1MjE2MTAyODhhNTlhMjkzNzlkYmE2YTRkMGI3NDJjNTUyMjg2IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI3ZmEwNTUxZTQ0Y2FlZDNjNTlmMTkwM2JiZDY3N2E0MjFkZjhhZDVkMmZlZjAzYzc0OGUwYzEzOGEzMWEyYTVhIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MCwiZm9sbG93aW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1In0"
+        }
+      ]
+    },
+    {
+      "id": "claim_f85237b2da7f433ebca156698206a4fa",
+      "statement": "The stimulus stage is off unless `[cognition] enabled` wires it: with `stimulus_wiring = None` nothing is written and the stage's span is never opened, and even when wired the whole body is guarded with a timeout so a failure costs lateness only, never the already-recorded item.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/composition.py#L2568-L2594",
+          "version": "repo-lines-v1:sha256:19f2758b553a7c9a3c37a5549d410b5fe01d388b786694ff50ea0417d731d31f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM0MmZjMTZmMTE2MjA0ODBiODU5OTlkYzAyYzA2Zjg4OWY1NWEzMTFhN2FmN2QwMTcyNDI1YTg3Yzg1YjhlYmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMwYTg4MzA4MzhkNThjMjEwNDgwNTdlOTliZjY3YzNjNzc2NTNkM2Q3NDEwYTYyMjNlZGFkZDFiNGI3ZDUwZTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFlN2M0Nzk4YjQyZjE0ODJiZGJmNDA2MmI1ZjdlMTgwM2VlYTQ0NGY3ZjZhZWIwYWQ3YTUwNzJhYTZkODc5MzgifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L387-L396",
+          "version": "repo-lines-v1:sha256:507e1945fbfe70c33caf3937436390e62199054e6bee0a01d3d9102f1d011100:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjczMWY3YmZhMTE2ZmVlN2EzNTU2MDRiOGZkN2JiYTcxMWM1ZTcxOTMzYTk3ZDdlNzZmODRiZDYxNGViOGNjOTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxMDM0ODFjNTdkMGYwZGMwZjc2Y2QyY2M4YjM2MDRjNGU4Mjk2ZGE0MTIyYWRkMTllODE3NDVkYzdlMzMxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVkOGY1NDVlNDYwNzAzNzBkNDk2MmU3ODY2NDc0NjY5M2JmMTE5NGE3NzkyNzUyYjUwZWJkZjY5NTIzMDdkN2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMxOGUzNTEyOWZmMTNkZTlkNDliNGRkNzllMGY1N2M4ZDk1ZTU5ODNmYzhjZDRhZDQzYTczM2E4ZjQ3OTU4ZTQifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/stages/stimulus.py#L100-L128",
+          "version": "repo-lines-v1:sha256:1930872c4db07793b731cb7c097163956b7d47158c781ec433633989e970ed53:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlOGNjNDhkOTZiODMxZmEzNjdlZTcwMTIyYzM2YTNhOTc1YjRiMmM4YWU0ZDA2ZDg0NGY1ZDg5YTU0NzU5MWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlN2M5NTdiY2I0NGZiNjczYzk4YjAwNTBhNzVkMzgwODJkYjgxZDkxOGRlMzEzYTNmMDdjMTIzNTMwNmQ3ZWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3MDE0OWUwNjlhZDY3ZWNjZjQ3MzY0NmZmMWM3NTAwNTBkMzI5ZDExMDAxOGRjNTc2Njg3OGVhZmExZDYwN2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI4NGEyZjAwOGQyZTQ0MTIzMGEzZDY4YzJmZWJiNzQzMzRmYmNiY2RmYWJhOGVmMGE3YjhlMDVmMDczMTU3MmUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_59f3a4ee41b1462d9662391b994c9223",
+      "statement": "`nora_messages_total` is incremented once per message and once per edit, while a reaction or a delete is counted only on `nora_ingest_outcomes_total` because neither is a message.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L296-L301",
+          "version": "repo-lines-v1:sha256:4b6fdf0480de81d7f0c3ff9320b6f7d7f4617cd911d72c0b088ec202fcdec84e:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWJkYWQzOThmYTBiYjBjZDg4ZmY4ZTg1YTM1ZjQxY2QwZTczOGY1NDE2NDMwY2UwZmY4MzA4NmE5NmY2YTA1MCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNGVlYWEyYzRhMzA0ZDBkNmUzNWI5NjA5MTkwYzU4ZmNmYjM1NTkzNjY5MjY0YjNiM2QzMzVhMTlkYzg0OWVlZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2NkNzIxZGMwM2Q4ZTg2ZTkwNDA2NGNlYTI5NDc4MDU1ZThmZjRiNGU2ZmVjYTRjYzRhNGRjZjQ1MTE0ZTdjNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTcxNGU1MjA1OThkMmRiZmVhMGYxYmRlNmFiN2Y4NmVmYzYxZWMwMGIyYWJjMjlhMGQzZjI2ZWQ1MDdkMTI0OCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_1157ebe9988e4efd9983c3203c0164ec",
+      "statement": "The outcome vocabulary is pinned in both directions by tests that read `get_args` off `IngestOutcome` and the rendered counter rather than a hand-copied list, and a further test asserts that none of the counter's three labels can carry an identifier, with a positive control proving the screen fires on a phone number.",
+      "evidence": [
+        {
+          "resource": "repo://tests/unit/test_ingest_pipeline.py#L789-L833",
+          "version": "repo-lines-v1:sha256:e31074bbe5b8a40bcf2f4f56b7cca0227ff92fee0b2ec5fd69c274010db48213:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY0YzNlMTcyYTkxZmQzZDdiZGYxYmVlMTdhMWVkMDIzNDg2YTNkODI4NGM2Mjk5OGM5MmJiYzdjZTc3MGRmZDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM4MmRlMWRmZTg1M2U2NzljNmQzOTRmMjNhNTZlMzhhMjg0NjkyOTk1M2MxMTMwYTM5M2NhMmFiNTlhM2FlOWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNmMzdjNDQ1NzZiOTllOWI3YzNlZTZiMjhkMWNmOTI1ZGZjNTA1Zjk2MGU5NGU5N2E1ZDUwYzM2Y2NmZWU2OGYifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_ingest_pipeline.py#L855-L891",
+          "version": "repo-lines-v1:sha256:11a4e87455614962f1d7f702244e156ef4574924b3d42b1db668bce9f75967d3:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxNTBlN2MyM2U1YzFmY2NlZDUzNjM3ZWE5ODY5NDMxZGZmYWZlNWYyMzczY2YxMzZjMWVlNThkNzljYTFhMTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdmZTcyYmFlZGFkYzE3YzkzNjg2NWY3NDMxODQyYTI4ZmI1Y2FmNTkzZWRiMTc3Nzk3ODljOWM3OGU5OTE3ZTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc5Y2VmMDg0MzljMTg5YWM4ZWE5NzQwYzI1MTE3MDdkOWI4MzlhNGQ5NTdmYzlhNDU0OWI1NTRhYjUyMWM3N2YifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5076a83819f04432a6187b11f11ed781",
+      "statement": "The integration harness reproduces production's parse-then-dispatch boundary rather than bypassing it: `_HandlerView.on_event` calls `parse_event`, drops a `None` result, and then calls `Dispatcher.on_message`, because `IngestPipeline` accepts no raw dicts.",
+      "evidence": [
+        {
+          "resource": "repo://tests/integration/harness.py#L120-L155",
+          "version": "repo-lines-v1:sha256:4b2f49d7df6072c18a19c3bae7fb4da413e924cd8221175977010d92c292821f:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg1ZWNiNThiNDAzYTFjNTQxYzliZWIwNDUwYWJhZGZmOTc5YjA1NDA2N2MzMGQyYjE5ZjE0YTVmZWY5NGZkYWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgyZTZlYzk2YWMxYWE3YzAxNDRlZGE2Y2Y5ZWQ2MWI3MjExMTM2ZjYyOWY1MjI2MDhhM2YzZDVmZTgzZjVlNDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkwOTViZmZhNTBhZTQ3ZTBkNDEyNjRkYjc0ZTIxYzY0NzJiYjJlNjk0ZjgyM2MyMWRiOGZkZTI2YWUxMWZlM2UifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_67c47b33d0fb449ca93cb3619f02859c",
+      "statement": "The message path is not the only ingest path that reaches an engagement gate: a changed edit runs `edit_gate` and the sender gate, counts `edit_engaged` or `edit_recorded`, and returns an `IngestResult` whose `message` is the ORIGINAL message (its timestamp and platform message id, `answered_as`) paired with the decision, so `Dispatcher.on_message` can spawn a turn for an edit; only the touch path's endings, the refused/orphaned/stale edit targets and the unchanged-edit endings return `IngestResult(message=None, decision=None)`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/dispatch.py#L67-L84",
+          "version": "repo-lines-v1:sha256:5d75e47845787b76e580f250b278ebc5a9641bf0a7c482274afe82060c05c734:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJjYzZhM2E0MDkxNWM0NjFkOTI1YTA2YWU3NzJhNDg4Nzg2OGFmNTYzOTAyN2FiYzY5YTVmZDVmYTVmZDk3YjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjYWUxMjc4ZTIyYzg4ZDI3NmRjOTIxNWI4OTUzMTY4NzRkYjMxOTEyMzg0ZmQyODNjMDU3ZTgxNTM3MzYyYzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEzNThkNmMzZDMzODk2YTU1NzJjNDkxZDVmY2ZhMTcyZTIxMzZhYjhiMzI4NzMxMGE5ZjAwZWM2MDBjOGM4ODQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L318-L335",
+          "version": "repo-lines-v1:sha256:2d5216fe1592ffebfb137682dcc2ec85b77efe008c1f0907002fa6146d0262bc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwMjQ4MTNkZTNkOWZiMDhjNTczZjllNTRmNmI0ZWFiYmY5ZDMxNmU5MDQyMmE5NDViMGU3N2VmZjhmM2FmYWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImExOGU0ZGI4Mzc2Y2Q4NDM5Yzk0MDdjZjEwY2M3OTdjMDdmNjk3ZTE3Y2ZjYTMyNmE4MTkxZWQ0MzM0YWRlNjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVmZDIyOWE1ZDRjMWI1MDM0ZjJmMTJlYTk5Zjk4ODZiNWY0NTQ4ZDA1ZmY2YjI0MDE0MjZkOWM3NTUwMTFkMDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc4NTFkMzRkMDcyOTdkOWI1YzI2MDE4ZjhkYmRkYjk4YzljNzBjZTUyZDI1NjU3M2RhNjZkYzBkZmFiYWFiYjYifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L477-L511",
+          "version": "repo-lines-v1:sha256:ef19b2d52383eb7118e26799418281d7ba71b04d7269c5e82ac1a8bbea22ace1:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU4NjlkYzJhZGFkNGE0YzdlNDZmNzE0NDJlOTE0ZDM2ODc2MzdkYmMxYTJjMWY2ZGY3YTIxMmE4NzA1YzQyMDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1YjkxMjU5MDg4YjNkYjJiZjcwMTFlYzA1OGVlODFmNzg3OGJjOWUwNGVmMWUyNTFhZmQ4YmMxZDU3ODFhZTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc0NzQ0YWRlMGUxMDY3ZDQ3MzBhZTVhZjNjMTE3NTNiYzU2NWE4YWNjMGU2NGRkNmRkYzFhNDIyYTUzOTBjNDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzNWM5YWNhZWQ4ZmRlOTk5YzQ4YjlkNThiM2QzM2ZhZDQ3NGI4ZjFkNzNmMmRjZmEwOTMwMTIzZjk0MGE0ZjUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4570baaa09894ce4911cd240917ddd6d",
+      "statement": "The pipeline maps two distinct `edit_record` results onto the single outcome label `edit_unchanged`: `recorded_unchanged` (a newer style-only edit, which does write one `message_edit` row so the next edit's timestamp chain survives, but raises no stimulus, feeds no Honcho correction and opens no turn) and `edit_unchanged` (a true duplicate, which writes nothing), so a non-zero count on that label does not mean the room saw no change, nor that nothing was written.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L473-L479",
+          "version": "repo-lines-v1:sha256:446228a6597388eebcaca38ee02d91e71263d7e13760516950cfac7de9351c47:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzEyNDE2NDU0ODU0NWViMzJlNjhmZTQ1ODc2MDA0MzE1ODUzMmYwZDYwODAyOTAyNWUyNDNlYWY4YWNiMTRlMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZWM4ZmU2NWRhZTQzZDljYzdiY2U2MWU4ZjVjZDM3ODM1OTVlNGIxNGU2ZjFlYTk3MGViNzU4ZTlhYjFjZTYyZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODYxZWYyMWRhNTViYTBhNGM4ZDA5MmI3YTk5NTdkMGJmY2IyZTBiNzgyNmZmZTIyNDY2MTUzZTdjYTE0ODU5YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDI0MzU5OWE4NTk0ZDhhOGZhYzY5ZGM3N2VhMjE4MDJlNjEwNTk1MmM0NDNmZmY2NDM0Y2I3NjYxYjkyMGVkMyJ9"
+        },
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L86-L91",
+          "version": "repo-lines-v1:sha256:a207e22c78b08ced17a198066cde7b447b052aae1b2c341c314fab27736f4d35:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjRkZTU4Y2UwNTRmNjcwYTgxMzM3MGQ5OWMxMTRhMjNhOTk2YjczMDNmYjcwZjUxNjljMjJmNTYzYWRiN2QyOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzM2MGYxM2YzYzk0YzdiODdkZDg3ZWIxYWEzNTUwNGYwZDlmMmQ2NzVlMjYxYWIwYzcxNDgwOTc0YTk0ODE5NyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNmMwNzFkZTRiNzgyNGQ3MWM2ZTQzNzZiYzg1NTJkYzdiMTUxMjUxMGRlMWYxZTAyNTc1OWNlNWQ0MWNjMWFhNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjQ0ODdlMjhlM2JmOWE2Njg5NjRjMGYyMzhkOTZmMzBlZmFmZTdhYmY4M2ZhZmI3Y2MwNmU1YjNlODIyNTQ4NyJ9"
+        },
+        {
+          "resource": "repo://nora/ingest/stages/edit_record.py#L40-L66",
+          "version": "repo-lines-v1:sha256:7c4a9d4f7fb40d52798aec997878b00ce3e9b2e34eb99ab0a8c486e648559e46:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZkZTY2Mjk1MGE2MGU4ZjAzNGU0Y2RlNTZjYjdhMjVmMjU5YjNkNzAzOTRjYjBhMzJjYTZiMjY5NjlhMzgwMjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYxNDE4ZDQxMmM0NGEyMTRlNjZiMmNmNjAyYWJjYThmMGZlZmM1NDU4MjIzZjk3ZGU2YzcwMTg0ZjA1OTJiYmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYwNDRiYzgxNTAzNWNiZjg5YjI0ZjQyZDNjNTY3ZjZhZjlhYzU4NzM1ODJkMThjMTNlMDk4YzY0YmU2MWE5Y2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-20T13:47:41.518Z"
+  }
+}

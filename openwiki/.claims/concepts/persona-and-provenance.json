@@ -1,0 +1,508 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:66121e6a0a0247016f3f8135a5cf04d7824064ddd6562acceb4234b302675c73",
+  "claims": [
+    {
+      "id": "claim_f07f38ba5e5f44d5bf530d6311ec32bd",
+      "statement": "Persona keeps one account row per entity in `persona` (key, entity_kind, unit, a `revision` bumped by every committed write, and `settled_at`) and its lines in the append-only `persona_line` table, where the account is the chain heads (rows nothing supersedes) and a change is a new row whose `supersedes` names its predecessor.",
+      "evidence": [
+        {
+          "resource": "repo://nora/infra/sql/persona.py#L1-L21",
+          "version": "repo-lines-v1:sha256:a46160d12846e5442a0401a1c862413c9947294b0be9e537d3419a4928ce0eb4:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVmYTI3YzU4ZDYzM2EzOWIwZmM1MzExMTg4MjlmOTU2ZmU1ZjgyNmM4ZGZkMWJlOTM5YWI4YWZlMTA5NzIwODgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/schema.py#L4869-L4900",
+          "version": "repo-lines-v1:sha256:827d0856aef6c6f3f584ccad04cf272a4e4d4471bb883658cd5be259b2f06aee:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc5OTlmY2M1NmQyOGM5NmQzMjk5NzM3M2E2NmRhNDA2ZWU3NDY2NDk2Yjg5ZjBmYzYxMjU1NzIzNmRkNjc0NzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhZmJhMDUyN2MzOTUzYzRiNmUwZTViNTczOWJhODM2MTJmODA1M2JjZGM5NDY2NzMwMTkzY2QxZDU5MGI0MDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE5OGIwNjNkOWI0N2U2NTM3OTYyNTU3MmNjZTE5NzY2OWQ1NzY3ZTEyYzE4YmUwNzU2NTJiOGNkOTgxY2U4ZDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNkOWVhMDdjY2EwYzViYTE2ZjE3NGRiYTRiN2I2YTcwOTU0NDA5ZDRiM2Y0M2Y3MTUyYTljZTcwNjU2YzhiMzcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9408cd92d2fb4422941255a3c5f58f38",
+      "statement": "A partial unique index `uq_persona_line_supersedes` allows a line to be superseded at most once, so a forked chain is unrepresentable and two writers replacing the same line cannot both land; the loser's IntegrityError is reported as a `conflict`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/infra/sql/persona.py#L407-L416",
+          "version": "repo-lines-v1:sha256:d6d2eec76aa56e37372baa54d98a6f1cb5256d89ca309b52ef0bf141858d197c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1NjljYjA5MjgwZWUwNzgxOTQ1ZTQ4ZDQwNDFiZDJkZmFhZTY5MWFkMmVhYmY1ZDNjYmEwODQ2YzcyMTZjYWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzNzJiZTI3MDU3YmQ1ZDg3NjhjODAxOTQ2NjFkOGEzOTU5ZGU0ZWFiMmU0NGYyMTNjZDRmMDUxMjZkNDkwZmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI5ODMyY2FjNTY5NjliNzg0YTliMWVlMWUzYmVmNmNiMGNhNWJiODIyNmUyNzEzOTA3YmFjMTNkNzNmNTMwNjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgzY2MyMzQzNWMyZjQ4NjRmMDAyMDRlMzkzN2UzMmRmNjY0YTUzMDM5ZmZkNDJjNDM0NGJjYWIyM2JmYTNiYWEifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/schema.py#L5004-L5010",
+          "version": "repo-lines-v1:sha256:1c6108dddaa7de4b1a967df558cc5f7bf0b7970c674d0a537897aaea2c5b635b:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTg1MWNkY2MyNmZhNjU2NDM5YjllZDA4ZTc0YmZhNmZhYmNjMDBjOTk2NjVlNTY1NjM5NzVjNjc4MTE5OTZkOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmFmYmEwNTI3YzM5NTNjNGI2ZTBlNWI1NzM5YmE4MzYxMmY4MDUzYmNkYzk0NjY3MzAxOTNjZDFkNTkwYjQwOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjAzNjUzODc2NjVkNzY0NjNmMDE0ZWFkMDk4ZWJkYTdlZDY0NjZjMWYwZmI3OTcxMzMxYWE0ZTU0NDdjYTBmMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMGY0MDY3NzBkMjVkMzRmMmM3NWNjNzZhODBlOGNjOGJkMzU0ZDYyYTQzYzU2MmY5NzljMmE3MWVmODRiMWE3MSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_585e78d2c8a14db0b318e91f00cff10b",
+      "statement": "A line has one of three parts — identity, character, hypothesis — with a closed kind set per part (actor identity: name, role, relationship, attribute, instruction; collective identity: name, purpose, norm; character: trait; hypothesis: explanation) and a closed mode-per-part table (identity told/deduced, character deduced/induced, hypothesis abduced), mirrored by `persona_line` CHECK constraints so a bypassing insert cannot store what the judge refuses.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/persona.py#L97-L120",
+          "version": "repo-lines-v1:sha256:27fa7b80e5d1c0a5d26b5117c484fd94d28931d80c6decfc020c92bbe00191a0:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZkMTQ0NjMxM2RjNjIzNTgxY2VkMjA5NGY5YWE1MTc2OGYzMTM3ZWQ2YjJiNTFmNjRkZWVhMjM3OTE1N2M2ZDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY5ZmI0NWNhMjFjMWVmYTUzNTMzNWUwZjVkZWY2NmQxYWRjMWZiMTkzZDRjZjhlMzk5NzY0N2M1OTRjMThiNmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJjNjUxZmQ1MzNiMWExODRiNmQ1ZjY4YjUyZmE0YWE4MGVlZGI3NGU1OTBjZTI0MDNjZWY0ZTA2ZWRkMDdlMjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiMTBiZWYzNjM1MjY5MGIxY2ZiMWQ3NDZiZmExNDM3N2VkMzFmYjIyNTEzMWIyN2I0YTllNzI4M2I2ZDlhMWYifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/schema.py#L4936-L4950",
+          "version": "repo-lines-v1:sha256:a3431732d1da7d608600d5fe7a33dc7f17215eee55dc16fe175a793b11eb449c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE5M2Q1ZDZhMjMyZjVmYzU4YmE4YjVkODUzYzEyZTA0ZjM3OGQ5YjBjYTEwMTVkYWU3YzhkNWNmMmYwNTgxY2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwMmM0MTRiNTRjZjg2ZGZiNGY5MGRmZTdkN2JkYmZhNjY2YjdkZGRkMzJmMTI4NmYyMzBhNWI1MzI0MTgxOGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFjMjJjNTA2YTU3ODBiYWMyYWE3NGM5YTEzNDFhOTFkNjE4YmIwZWQzMjJkNzEyNzI1YjczM2NiYmM2NWEyYjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk3ZjNiY2NmZDg5M2I3MzU0ZmE4MTU0Y2UwN2MwZDdkMDM4ZjYzMWFiOWJjY2RhMDkwNzkyMDM2MWI4NDVhOWUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_94f1dc4f82be4390b488a2d8a3db1638",
+      "statement": "Each reasoning mode carries an evidence floor enforced at write time: `told` must cite only the message(s) it was said in with `told_by` equal to their speaker and an `instruction` must be told by its subject; `deduced` needs at least two premises (citations plus `draws_on` lines) that are all current and none `abduced`; `induced` needs at least three instances on at least two Hong Kong calendar days or one Rollup aggregate key; `abduced` needs at least one current induced trait it explains, a prediction, an observable and a window end still ahead of now.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/persona.py#L151-L157",
+          "version": "repo-lines-v1:sha256:22eec3444935fca43a24961a4b9d9cfeffabb1dd0c2d49bf15b853f593e87247:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGU5MGMwN2M0NTUzNjJjNmZmNWMxNGUzZGQ1MjEyYmEzMTgwYzAyNDNhZWE1OThlNTgwZDY1NDY2M2ZmMjY3YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiN2IwMGFkYzI0MmYzZmU4MmMxODMzMjAyMTY1NDJiMGUwZjFhMGMxMGZlOTFiNTVkY2FhZDE3Y2RhODFiYjIxNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNWNkOGYzZTY5ZmU0ZjViY2Q2YzI0Zjk2NDU2YjRjODZkMmVmYjc2NTJlN2Q3NTMzMjNkZjk3OTlkYTdmOGMxZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOGU5YTk5NzBkNDZmNDBhZmY5MDU1ZWVmOTRkOTJiYTZhNTZlMWIwMDJmYWY2YmU2YzY2MjVlYTgzZWEyMmM2MCJ9"
+        },
+        {
+          "resource": "repo://nora/domain/persona.py#L736-L873",
+          "version": "repo-lines-v1:sha256:4fc61d97332f06b7818c75f62d3ee3a3c7c9406c56c18648de11d68f5cef98c0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTM4LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJhMjk4YTg2ZGQ5NGJkMWU1MWI1MWM0OGZmYTcwNGI5ZTUzMTlmMDg0NTU1MDViYjg5MmY2ODkxYjQ1ZTE4NDY3IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0ODk2MDBhNzNkMmUwMmYzNTJiOTBmZWYxZDhkNjM4MTFiYTRhOGVlMGMxYmVhYTdhZTQ2NThmMzZhYTJlMTk4IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI1MjE5Y2I2YmIxZjQ2NmExNTNkYmZhNTIxODA2NWFjZWVkYWYwNWJiOWI3YTM2OGJjYTljNjhhMWY3M2I1N2FhIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI2NTg5M2E0ODViMTc1MGZhYmYzZjllY2FjZTQ5ZGFhZGFjYzE3ZDA5ZmIyMDJhOGU2YzFiZjE0Y2FhOWI1ZWFhIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_a5147c8f438641a69fb52a04290ee72a",
+      "statement": "`nora.domain.persona.plan_write` is the single judge for persona writes: it judges every op against the account's chain heads and what the writer was shown and returns either the exact rows to insert or every refusal (reason from the closed `PERSONA_REFUSALS` vocabulary, a detail, and the op index), so one refused op refuses the whole call and nothing is repaired for the writer.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/persona.py#L1199-L1243",
+          "version": "repo-lines-v1:sha256:ba5cd11bacf13784498b966f34628544ac7fbfaf85208c57926557b4934eca58:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjYTgwZTFlNWQ0OTcwMGJjZGI5MjEyMmM0NzZmODk2NzNmNWJiMzJhZDgxZDY4MzA1ZDkyOTUxMGUyNGM1OTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc2OTA1MTQ0NzVlOWNiYjgwYzAwOGFkNmRiZTE0ZGQyMjRlOTFiODA2ODczZWViMzUyY2ZhNTZlNzI2MzI4N2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMxOTllM2M0NzY2YzliZjE3YmNkOWE3ZjdkMTg5NTVmMzIxMzZkNDFiMDc4Yjk2MDhkZjQ5NTk1YmI2YWQ0MzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFjNmY3ZjVhZGE5YTkzMDI3YTYzZjhhYThiZGQ4Yjk5ZDRlNTFiNTUyZWU0YjgxOWY3MzgzYmY5NjQxMWE4MTMifQ"
+        },
+        {
+          "resource": "repo://nora/domain/persona.py#L174-L218",
+          "version": "repo-lines-v1:sha256:663b18237a19075063486cf49c71077b101bce4190cd30664e9493ff8a5d8312:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI4NDMyODZmZDVhZmZhZTU4NmZhZDZiN2IyZmU3MGIyZjMzNzUzNDQ5NTQwMmM1YWI5OWQ1Njc1ZDI4MzhlODciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhZmJhMDUyN2MzOTUzYzRiNmUwZTViNTczOWJhODM2MTJmODA1M2JjZGM5NDY2NzMwMTkzY2QxZDU5MGI0MDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIzMzgxN2RmNzNlNDMxNmEwZmYwMjM5ZWZhNzgzMmJhM2Y0MDc4MzAxZmE4MjFhYWQ3MjgyZDNjZWFmNDQzMjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg1ZDNhOTA1NmI5NDA0OGJmMzg4YWFmNjhmM2IxMmVhOTIxZmU5MDMyMDZlNWYzNGJhYmQ1ODAzY2Q3YzliNDIifQ"
+        },
+        {
+          "resource": "repo://nora/domain/persona.py#L876-L900",
+          "version": "repo-lines-v1:sha256:643746545b46ca1a0fdccd1ca530d0bb80f538031eb1d07c2b99f5ab8600b01e:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIwNDgwNmFiNGYwZjQ0YWQzMjFlYmE1YzFmYjNjNjE2OGUyYWE2YTY1MWZiYzk4MjIwOTdkNTRhODYzMGRjMTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwMThlMTgwMDVkYjEzNmVhOGNjZjkxZDNhMzFhOTY0OGRiYmUxYTY0ZTc0ZWYwMTJjZmQ5YjI1M2RjNzVjYWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3MDE0OWUwNjlhZDY3ZWNjZjQ3MzY0NmZmMWM3NTAwNTBkMzI5ZDExMDAxOGRjNTc2Njg3OGVhZmExZDYwN2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ0NGFiMmI3OGZjMGFjOGE3OGZiOWI0ZDY1MDM1MWE5MGVkMGExNzVmNjIzNmJjNGZiZDcwZWQ2ODYwNmIxN2EifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_262516c5fe4f4437836d775823f7781e",
+      "statement": "`SqlPersonaStore._write` runs the judge inside the write's own transaction: it inserts-or-locks the account row, reads every line and reduces it to chain heads plus aliases, calls `plan_write` with the store's screen, rolls back entirely on refusal, and only then inserts the planned rows, bumps `revision` and stamps `settled_at` when the call is a session settling the account.",
+      "evidence": [
+        {
+          "resource": "repo://nora/infra/sql/persona.py#L122-L134",
+          "version": "repo-lines-v1:sha256:f0b69ffc4579c8165c39096c983b7cda5d4e7fece5c3a45f7bef14fb6c43c23e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc0ZDFiMDc5NjlhZmE0YjZkYzBmNjIxZTVjMzJjNTczNGIyOWM1NmJlNTkwYzU5ZTQ3MDBlNTVhOGQ2ZWY3ZjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmYmQwMDkzMTRiYzI3MDg0MTY3MzRhMDJhZTVmZjM5YTFlNDhhMDUwYmU5MWY0M2IyZmFhOTIwMDJjNjJiZmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMDRjZTIwYmE5Y2RiODUwYjgxOTgyMzQ4OWNmNzdkYjdjNWI5ODI1ZGQ1MWMzZGE1NDhlODYwOTQyOTg0NzUifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/persona.py#L418-L478",
+          "version": "repo-lines-v1:sha256:6624a081c222f8f0116dd53ea9a4f7b9e600e25a4b3c2294f8c7d0d1b3038951:eyJzZWxlY3RlZExpbmVDb3VudCI6NjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFkMTgyZDlmMTgxODYwM2MzOTdkNzljNTcwZmI5MzY3ODMxYWFlMzBiYTEzNjE1YTA1NDU0ZmE3MWU5NWNkZWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViNGFhZjM2N2MxOTlkNTYxMDI0OGI1NmNjNjk0NTRmZDMzNGExMTAxYjc1ZTlkMmI5YjViOWM2MjBlODBkMzciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQzNDFhNGEwZmUwYWVjYjIzOGZiZDQ1MzE2MjRhZDRhOWUzNjFjZWYzYjEwNGRhMzYxNjFkZTE3NDcxM2E0NTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_59c39b310ddd4d2581d7d81bf1685bba",
+      "statement": "A session's write is additionally guarded by `expected_revision`: the session reads the account revision before its lines, and a write against a newer revision is a `conflict` that changes nothing and leaves the next wake to read the new account.",
+      "evidence": [
+        {
+          "resource": "repo://nora/infra/sql/persona.py#L439-L441",
+          "version": "repo-lines-v1:sha256:8e95bfe46def533c74b2624c45f3350cb053b426b31d92b318cb4bd3dfed5fb2:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTg0NmM1MjZmMjdmOGVkNjViMzkxZjAxNTM1NTI0N2M3NWVlMjg1NTg2ZjM4ZjAxOGUzYzg3Y2M5OGZkZmExMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiM2YxNjA0ZjMzY2JjMTQ3YjAxYmI4ZTI5NGVmMjZhMmI5OTJjNTRjYjBjNzYzNWFkZmQ1ZGYzOTNjMWUxZDQ5NSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiN2ZiZGMzZmIwNThlMmJhNjZjYWIzMjBjYjU0NjU1ZDczNmIzY2Y2NWY1MDE0NzEzOGQwMjkyNTY2Y2U3MDM3YyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTUzNTkxNjgxZmE0OTNhZTE1ZmE4NTgyODBmMTExMTA3ZGI4YjZkYmY1MTMwZmRjZmYwMTBiMjY0NThiNmI5MSJ9"
+        },
+        {
+          "resource": "repo://nora/language/persona.py#L1224-L1237",
+          "version": "repo-lines-v1:sha256:83e48d956bbef1e4f9651597398f7deeaf4c3315fc9b63f1ad42bddb8c158985:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwMjY3ZWNlZTE5MTlhZjQ3MWYyMzg2MmQyODBjOTQ5N2RlODAwY2ViOTU4YTU5MWYzYzFiMWQzMzdjMTEwMDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNiYWUwOTY0Zjg1MjU4ZDg0OTZiNTNhZWIyNTRhODEwNjAzNTMyNWE4N2UwYTcyMTk3OGYyMDdhMjU1OTI1NzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVhMDQ3MDBkOWY4MmQ5NzA4MGRjMzZmOTcyMDMwZmM4ZjdhYmIwMTZjYjJmYjJmMjNjYjY3YWRiZTAxMTM0ZjcifQ"
+        },
+        {
+          "resource": "repo://nora/language/persona.py#L729-L732",
+          "version": "repo-lines-v1:sha256:6703056aaf15febe2a891625ebc1697b488a7a6163fc8a7ad778990a4f3c9a95:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWMxODVjYTI3MTM3ZTI4MDFlZTQ2ZDhjMmJlMjM1OTQxM2EwMGRjYTkyYzZiOGY1YTVjMDU5N2I5MzU0MDM5YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWUzYTEyMjk0MTdiMmZkOWM5YzM1MGEzOGM0ZjcwNjk1ZTA2YzI3MzhkODNiZWZkOWIwNzMyZjdmZDE0M2NhNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNWZkODk0YjhhMjYxMGNjZjg3YjQ1ZWYzNmViYzY0ZjMxMWJkYWIyYTMxNGY5OWFjNGE2ZmIxNzJlMjgzZDBkYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTFjZTliYWRjMWQwMjk1MDg4YjNkZTYwMzA5NWI1MTNmNzVhNzI4ZTg2NTI5NDJhMjZkMWU3MWRiYmVjZDQ0YSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_b045b8b1bae14ce49a7eae4584f6d680",
+      "statement": "Citations are resolved against a `PersonaCitable` that code builds from what the prompt showed the writer, accepting only a Record message id, a `response:<send id>` episode, a `rollup:<kind>:<subject>` aggregate key or a `social:<network>:<item id>` item; anything else is `unresolved_citation`, a line id in `citations` is `line_in_citations` (premises belong in `draws_on`), and message or item numbers in a line's text are `ids_in_text`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/persona.py#L670-L729",
+          "version": "repo-lines-v1:sha256:33ce3226e74ae16a01f0fd8750a9ec237474727bf8f2ed975bf0f0c15891edab:eyJzZWxlY3RlZExpbmVDb3VudCI6NjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwODYxMmMzMzg4OWU0NjZhNjFlMzgzNDg4ZjA1YTllODZiNThiM2EwYzA5N2Q5MWMzOTg4NGRiNmVjOTVkNTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIwZWU4YmFkYzkzNjk2MTAzOTViYWRmMTQ1NDk1OWVlMWJlOWIyNGQ0MGY3OGY2NzliYzc5MTllMzUzYTVjZTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRmNjRjMDZiODViOGY2Y2E4NzI4ODVhMTk0ZmE3NDYxMGFkYTIyMmUwNTBiZmY3YTJjM2VlZGU0YTczZjZiM2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhhMTAzMjc0OWRjZDZkYjg5ZDQ3MGJiNGRiMTFiMmM4MTkzMmViOTUzNjQwYmZhODdhYTgzYmY5MzAzMGY5OWMifQ"
+        },
+        {
+          "resource": "repo://nora/domain/persona.py#L796-L811",
+          "version": "repo-lines-v1:sha256:03a104b0d5d9aed4a43ce29e2569ab2c4e005de87c52f92bb68ea5f65eb6830a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxNjczODM4NzFmMTdlZjYzZTk0YjM5MjA1NzEyN2QzOTg1ODYyYWRiYjlhNmI3Y2Q2ZWY3MTRiMzYxNjhmNDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhYWNhNTQ1ZmY4YWE1MDBhYmVhZTk3YzkyZTNkZmFiYThkMjNlYzc5MzM0ZTMxNjk0OTM5YTgwNzIzOTQ2ODQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzYjQ4ZjQxYjYwYjA2NDdmMzQwZTcyNmZhZDQzYTgwYWM0ZWI1MzJhODAxODBiMzc5YmMyMDk0MzAzNTE2MWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgyODk2ZWRmMjhkZTRmZDE5MDIxMzFkMWJjZWM5MjQ5MWNlNzc3OTI3MjMwODJmNTE0YmQ2OWIxMGFhZTNhNDIifQ"
+        },
+        {
+          "resource": "repo://nora/language/persona.py#L861-L925",
+          "version": "repo-lines-v1:sha256:ad2f6b670ce229ad6c3a3b70bfd43eeb960f3b1132df8ab0fb34c818e2814ff1:eyJzZWxlY3RlZExpbmVDb3VudCI6NjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM4M2ZkNjU0YTg1NDczOGMwNjk0ZGQ0MzA2MDNjMzY2MjNiYmJmODUwZDBkOTNjOWJhY2E3ZDU3YTE2OTNiYTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIxNmQzZTY2MzFlZjYzNjc2Mzg1MWJiOTQ2YzM3ODdlODBhN2RiNzVjZjk1ZTQ2MWJkNWJmODg2ODJhMzY3Y2EiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc5OTA5ZTFmNTA4OWM3MjNkZmM2MjA5YjI5M2JhZTQyNDc2YTFmZTNlMDQzYzA5ZWJmN2FhNTQ4YzZiNWJmNzUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_155356620fba4e65be84282850c6e652",
+      "statement": "Evidence about a person counts only if it was said in a room that lists them (`unlisted_room`), and a social item is evidence about its author alone — refused as `social_not_author` on anyone else's account and never citable by a `told` line, since it is published words rather than a message said in a room.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/tools.py#L13862-L13868",
+          "version": "repo-lines-v1:sha256:68061594c7bdba3c1a165aee29134b3fc3b82ee04e101a09a697f190be5703f1:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzFmZjMzNTRjMDc4ZGI3ZDE5Y2U2NzljYTA1ZWJmNjBiOWM4ODIwMGQ5ODZlNzEzMDU1OTE1MTI4OGFkN2Q1MSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjBkOWY3MzRiZTVhYTAzOTM1YzQ5OWI3MTQxMTM1NWNlZmFjMmEyYmY1Nzk4OWUxMjQ2ZDM1YTczNTJjN2U5YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMmIwOTk4MTQ2YmM2NzIzMjc3YTEyOGY2NGM0NTlmZDMwNDBmYjM5OWI5MTExNWU5MzlmZDI0MDcyZjlhMjMxZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTZhZDY5MTJiZmI3MmZkZDViOTNjNGFkYTQxNjM5ZWNlZjJkODE3M2I1NzEyNzg3YjNhMWQxMTE5NWNjMGRlOSJ9"
+        },
+        {
+          "resource": "repo://nora/domain/persona.py#L709-L727",
+          "version": "repo-lines-v1:sha256:593e24726f7d728897ebec6ae756ce4bbf5e6a87edeaef4c81e6fd44a607f54e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFhODI3OTQ1MzY2ZWNkYmFlNjJjOWMwYmQzOTUxOTExNDA1ZGU4YjNmYWQwN2E0ZmE1ODJkMWUxZDZmMjA2NTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZhN2VkN2Y1YjdiZmViNDk2YmNhNzIxYmFhNWFmNjlhMGJmZWZhYjBiNzZhM2U4ZjViZWUxYjNiMjM5YTgzY2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQwODg2NjAyZjZkMDJhNjhiODc4N2E2MTdiNTEzNGE2YmJjMTk0NThlODc5OTA3MDMxYzA0Y2Y1ZjdiYzNmYzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJjNWQ2NTg3MjA2MTNkYzI5MWZmNzk0NTEyMGUxYzgyMjNjMGI2MzY4NjFkY2JkZmU0NGU0MDBlNTc1Mjk1ZTAifQ"
+        },
+        {
+          "resource": "repo://nora/domain/persona.py#L736-L750",
+          "version": "repo-lines-v1:sha256:cd956bd5ba67699f62f6774a28ebceee68e524de8556a171ac86961a971e2ed3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyOThhODZkZDk0YmQxZTUxYjUxYzQ4ZmZhNzA0YjllNTMxOWYwODQ1NTUwNWJiODkyZjY4OTFiNDVlMTg0NjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTYwMGE3M2QyZTAyZjM1MmI5MGZlZjFkOGQ2MzgxMWJhNGE4ZWUwYzFiZWFhN2FlNDY1OGYzNmFhMmUxOTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUyMTljYjZiYjFmNDY2YTE1M2RiZmE1MjE4MDY1YWNlZWRhZjA1YmI5YjdhMzY4YmNhOWM2OGExZjczYjU3YWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYzMzMwZjQxMDE1YWM5MjEzZmZjOGYxNzgwYTRkYTRmYWY1M2RjMTkxZjJkMGE4YzgwYWJlMmVhMGI2MjQzZWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_27965e805027433ba82001fd98d2402b",
+      "statement": "Every persona line's text, formatted fact, prediction and observable passes the R-18/R-28 egress screen: `SqlPersonaStore` holds `text_offence` so no writer can skip it, and `DreamerRuntime` screens a verb's arguments before the verb runs, returning a refusal with the reason instead of dropping the call.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/dreamer.py#L1680-L1709",
+          "version": "repo-lines-v1:sha256:751f878d1d210b5e76f9e5a384ed143e872b453fd238ceabe4718ee098820ee4:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZkNTk1ODNmNWVjZjA4OTRmYjRmMGY1ZjUxMDY5MzRhMDc5NmVmMjEzZDk2NjgwMTM2NDY4MDI0NWE3MGEyNDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBkNTUxOGMwZWZlM2E2ZmFkZWQwYWUwZDdlYTM3YTQwZTA5YTRmYzY4ODU3YWU5NTA2MmFlMzRjMzA0ZTA3ZmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhiNDZlODU2OGUyZjQxZTM4NTExNThkNDk1N2RhMDIwNmI3NzIzNWY1Yzk2Nzk3ZjhhZTc5OTIwNmM4YTYxNWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY5YWU3MDM3MTc0OWJlYWExZWEyZGM5YmU2M2I3YWQ0NGRlYmZiZjUxNWRiYzdjMTRmMTJmZTBlMzEyOWQzYjUifQ"
+        },
+        {
+          "resource": "repo://nora/domain/persona.py#L799-L810",
+          "version": "repo-lines-v1:sha256:118633df7821004ad075dee080d12e1974932d4c8a13c87d4457b004af44b76b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZmYTk5MDVmNmMxMTE4ZTlkYzJiNjQ2NDk2NzkzNmM2NjBhZDAzZTdhMjU5MTU1MzU1NDI3ZDUzMjJkODEyYzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIxODFjM2ZiZGY0YWJjZDZjZjVhMGNmOTlhYWVmODg5YjE2YTFjZDJhYTExYTk1NWIzZjQwMmUxMDY4ZTIyNDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEzNTdhNjkxZTEyMTdmYTE2MTg4NGU3MDlmYTQ2NDk2MTlhZTIxZmIyYzk5ODNmMDQ3MDU1NThhMmFiYWRmMWQifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/persona.py#L136-L149",
+          "version": "repo-lines-v1:sha256:7da842c9fa06e60e691d107dbbb24412f18a6812fc54d9a661070e3e2c799c1f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiZTUzYWRlMjY5ZGJhZmE1MjFmOGFiMDY5MWU0ODhkMjA3ODZiODgxMWJhYTc4YTc5YzZhMzQyYjMxYjY0ZDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljMWMyZTA0ODllNmQ5Y2Y4NTZiZDFjMjYzMDhlNWVmYjI2NGNhNWM4ZjNjYzE5YmE0ZmNiY2E2ZjFmN2JkNWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIyNWEyZTJiOTI1N2QwNjkwOTQ1YzY1MDRjNjA4MjU5OWU3ZDAzODQxODdmOTQzNjkwOTQwOTg3NWZkZjZlNDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA1NDJhMjY2MzA5NmI1OWY5ZDYyMmEzODc0NWRkMzQxMTYyYTRiMzFhMWNhNTVhMjUxZjFhNzhhYmRkODQxNDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1d4e7b840e43446c97fbf71b9c5e5a4b",
+      "statement": "Conflict precedence is decided by code after the writer names the conflict: told by the subject (3) outranks told by someone else (2), then deduced (1), then induced (0), a hypothesis has no rank, the loser becomes `outranked` as a new row while both lines stay, an equal-footing conflict is refused `same_rank`, a hypothesis party is refused `conflict_hypothesis`, and rewording an `outranked` line without a named conflict keeps it outranked.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/persona.py#L1072-L1075",
+          "version": "repo-lines-v1:sha256:461951b8d78c2c47b7c31d84015b872e94c60e5543fb8ffd80cd912efdda0b61:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjk4NGUyNGIxZTNkNTE2N2YzOWU3ZTU5YWMyOTRmYzFlOWNjMThlMzlmNDE5NThhMjJhMjE4NzUyZWZlZGM2MiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWY1NTQ4MzJiNTBhMzJmYzdjYmE2ZDM0ODRlOTEzNzlkYzcwZTI0ZDZjMTlhOTlmYmYzYzJhODk1MWRiZGQzNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGQ0OGVjZWRhMTNiNjRmNjA1ZmYxOTM4Y2Y0ZTBjZjUyNWE5NWEzMDhkZjgxODJjMDE3Y2YzOWU2NjkxMjQ0OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiN2VjYTRiNTNiNjYyODZmOTZjOWIxMmUzNDI3MjlmMTdiNjkxNTEwMTBiZDcyMmM2NzZkODkzMmExZTU5NWMxNyJ9"
+        },
+        {
+          "resource": "repo://nora/domain/persona.py#L1157-L1197",
+          "version": "repo-lines-v1:sha256:670d5a1529b694d161127a9053f9175c23a5ccea37ad06ee8f76c03a7faa5a61:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZhODNmNTgyMmJiNGUxZGM2Zjk1NTE5ODRiMDk2ZGZiZWQ5NDU2NDY2NGJlODNhZGRmMWMyMmViN2U4NzQ1Y2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5ODg3ZDg4M2FlNWRhNGNhZjA3MjBmMDQ1MGQwZmYxZjhkYTZhMzNjODc4MjNkNWIyNTQ4NDRmYTk0YTZkYzYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFmNzEyNmY0YzM5NzZjN2FhNTM3OWRjNTgzZGJhMTM2OGQ5ZjdiMjdiOTIzYzg3ZDJlMWNjNjQyNDI4ZDdiZDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMwNGY5MGI1YzkyMjc3MTRiYmIxNjA4NGEyYzU5NTgxOTAxN2ZiNjZhYzZkMmVmNTY5MDVmNmQ5OWYzYjNkZDUifQ"
+        },
+        {
+          "resource": "repo://nora/domain/persona.py#L489-L497",
+          "version": "repo-lines-v1:sha256:e7ff3d9b1558ff9cae67462c1014696bea82f82b1471489bb6aee23bd4215004:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDM3MDkxNTJiODlmY2ExMDc5OTI2MWYzY2Q3NDc2ZmY5ZDczOGZhZTE0N2FlNGRlMThiMzVlN2Q1MWEwNmUwZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOThmYWZhYWQ5MWE2NGU1MDdkN2QxN2FkZDI0NGM2MWRjY2VhNjQzYmY0ZWM1OWM2YTFmMDU0MTg5NzY2YTczZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjUzMDAwZDViZDMzMDAwYjY1ODFiMmViODM2MmJkMTUwYWU5ZTQ0MGE0YTIzNTM2ZTMwNmQwOGFlNTI4ZWNjMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGI5YjIyYzkzYjZiMTE4ZGJmZDE1YjI4MDM2NGViNjU4YzIzNTU1MTcxMGJhMjMxZmYzZjVjODQ5MDM5YjFhOCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_d54d1895f3bb444996936dd827f038a4",
+      "statement": "Writers act on handles, never ids: `handles_for` assigns `P1`, `P2`, … to the held lines (states `current`, `disputed`, `outranked`) in part order then oldest first, deterministically, so the reader that shows the handles and the write that resolves them agree, and one line cannot be acted on twice in one call (`line_twice`).",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/persona.py#L135-L135",
+          "version": "repo-lines-v1:sha256:efc94b9dc0e317044ec93a75811d2a90de56040ec067474df40027abbade5e04:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZWZjOTRiOWRjMGUzMTcwNDRlYzkzYTc1ODExZDJhOTBkZTU2MDQwZWMwNjc0NzRkZjQwMDI3YWJiYWRlNWUwNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZWZjOTRiOWRjMGUzMTcwNDRlYzkzYTc1ODExZDJhOTBkZTU2MDQwZWMwNjc0NzRkZjQwMDI3YWJiYWRlNWUwNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTQ3ZTE1MjlkYTZjZmZmY2UwZmJjOWYzZjUxYzdjZGM4ZWY0MjFkMWQ2ZjhlZWJiMTMyMGVmYTdjNWFkMTllMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjIzMDZmZjNmZGRlOTAzMzc2YjdiMjI4MDlhNWZiYWVlNGMzMzI2ZmYwYTdkMWNhNDQ4NjhkN2Y3NmVhNzcxOSJ9"
+        },
+        {
+          "resource": "repo://nora/domain/persona.py#L500-L506",
+          "version": "repo-lines-v1:sha256:60203f9ee987e8d68368ac8a5ace606c6bb277ce240ddb6d167cfd69ff13ad88:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmI4ZTQ1ODczNWIwZTgxYzk2ZTEzM2Y1YmIwZjJiNTJhNGRlOGM1M2RjOTQ1MWRiNWY1MzU1ODIwMmU1N2IwZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjg1NjgzMjY3Y2Y3NzAzZmQwYzkxNTRjNjNhZmU4MTQ0NGY3YjI1YmZkZjY0MjdhZTAyZmVmYjQ4YmE5ZWMxYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOWVhNTA1OTk0N2JhMjFiMmM3ZmVjOWNhMTI0MTdlNmIzMzdhNmQzM2NiMjcwNDU2MGJmMzJjYmYzMTFmNWI4YSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDgyMzlkNzI5MGZkNmQ5YTU2MTExNmU3OGNhMGRkZTc5OWFlOTM0MzQyZTEyNGNjOTE2ZWFhNDdmYTE5YTc3NCJ9"
+        },
+        {
+          "resource": "repo://nora/domain/persona.py#L915-L921",
+          "version": "repo-lines-v1:sha256:8a96d1018e7d4d33615b732c14bd63a9560260442ffabe35bf23cbe8b7489473:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODg3ZTRjMTA0NGFiOWUyNjU2ZjY3YzZmZmFjNTI3YTA2ZWI5NDlhN2I0NjZiYmQ5NDVjYmQ1MzM2ZjZmZGYwZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTUzZTIyZDM1YmZiZWU3ZDNkZjhmNDJkNzgwOGQ0Mjk0YTVmYWIxYzNkZGI5NDA2YWMzNThkNzUxOWZjYjBhYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTJjNTA4MzFmYjUxMDQyOGZlZTkzNWViOWYzNThkMmZhMDc0ZTc5OTE1NjIxODMxYWJhNTYwNjFmMGFkMTAyMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmFkZDc1NDEwN2I2NGIzNWY1MjQ4ZWQwOTViMDlmNjBiYmUyMjA1NDBkNjk2OWU5NjU2YjJjMjE3OTY5YTQ4NSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_45000f7eab62447ba0e9c4051d6c2ea3",
+      "statement": "Two caps bound an account's held prose — 5 character lines and 3 hypothesis windows counted while the window is still open, whatever the state or verdict — and exceeding them is refused `over_cap` with the way out named; identity is deliberately uncapped.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/persona.py#L1226-L1243",
+          "version": "repo-lines-v1:sha256:ca97881527a4ad1907a284240c95672b72f7262da9216e12bc450539be429820:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY4MzkwY2FiZTk3N2E5ZjhjODg0OTk5YTcwNzQ0Y2ZiN2ZlNWJiOTRkYjUwOGY0ZTk5MDA4MGU4ZWIxY2E3NjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc2OTA1MTQ0NzVlOWNiYjgwYzAwOGFkNmRiZTE0ZGQyMjRlOTFiODA2ODczZWViMzUyY2ZhNTZlNzI2MzI4N2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAzNjU0ZDYwNDJkMjhjMmZmNTAxOThmMGEyMmMwMWVhODQzZWU0NjAyNDA2OTBmZjFjOTY1NTkyZDdiNzYyZDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFjNmY3ZjVhZGE5YTkzMDI3YTYzZjhhYThiZGQ4Yjk5ZDRlNTFiNTUyZWU0YjgxOWY3MzgzYmY5NjQxMWE4MTMifQ"
+        },
+        {
+          "resource": "repo://nora/domain/persona.py#L143-L146",
+          "version": "repo-lines-v1:sha256:b1f20f00adcc13045c2d7db9f3d394f6fecb4c0b53ccfe678125a21823316083:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiM2M1NDcyYzdiMmU0MjFhMjhjMTM2YTQ5ODQ4MGRkZTdlMDU0M2M2ZmViMDAzOWIzOWViOWM5ZjA0NDAyNGE2OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDdiNzFmMzAxM2VjODI4MDdhMTRkNWM4N2JlZmM1YjQyZjBiYWVmMWM3Nzc5MTY5ZmY1NWY5OWI0MjQ1OTgzYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODMyZTcyNDUxMzJjOWNlN2FhN2M4MzI4OTZlNDhkNTdhYzgyMmFhMGQzYTVmMTJlMzkwZThjY2NiNzIwZGU3NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjU2NzE0Y2YwZDJkNDUxODMxMWFiNjA1NWFkNWIxYjJmYjlmY2YyZTQzMjIwNDMwNDY3N2RlYmU2NjgwZDJhOCJ9"
+        },
+        {
+          "resource": "repo://tests/infra/test_persona_store.py#L105-L112",
+          "version": "repo-lines-v1:sha256:58b8a5a6aad245d1bb6798bc8d3efa0e53263ef6719029b194467a33546c9c7c:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTlhZDYzODgyYTdhZDMzMWRjOGMzNTU4YzZiYTE2OGI5OTU3MTA3NzAxN2NlODJmYzM2YzQwOTBhOWRlOWZlOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzk3YTg2ZmIwYTAyZTVmNDA4NGFjOTUwZWQyMTRmOTFhZDBiODRiYTQ3ZDEwMjY2NzA0OTUyOThmZjkxNzU0MCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzQyZTEwOTkyNjM2NGQ3YThkM2I5NzgwZmVmYWNlM2JkNGMzYmI2ZDMwYWQxMDlhN2Y2OTgwYTJhMjA2MzFiMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2YxY2RlYzgyNTNkNjRjZDNlZjdjMWRjM2YxODQ1N2RjYmI5OTI4MWQxYTlhOTY1Zjg3ODcwMjc4ZTgzM2ZkZSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_f6cd8321941b46e7b32429e8abe1b78e",
+      "statement": "A held trait unsupported for 60 days (`TRAIT_DECAY_MS`) is retired by code when a session settles the account (`apply_decay`); a bare `keep` with no citations is not new evidence and writes nothing, re-citing evidence the line already had does not stop the clock, and a line added in the same call that rests on a decaying trait is refused `premise_not_current`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/persona.py#L1202-L1224",
+          "version": "repo-lines-v1:sha256:ecd10d813fc7238d3ddad88f4616c2379ede83ce633f021c80db424160fae055:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjExNjljNDZjYmUzMmU5OGRhNzAwM2I2MDYwZDMzMDliOTZlYzBmOWI1MjczMDBjNzU0NDM2ZDlkM2IwMTYwMGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MGEzZjA2OGU0MGJhOGVmOTFhOTNkZTU4MWE3MTE3NTg3MWVjYmVlYjhhMTE5MzZkNGIyNGM5ZWI3YTNhOTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVlMDk4ZjMzYzU1MzczYTFjMzljOTc4ODE2MjY1MDJhNjUwMWI2ZWMwNzJjZjA4NjU3YjhhYjcyMWJlODUwNmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM5NzQ5NDM1ODVmYThmZWYyNGEwNDliNTQ0YjYwMjUyOTVjMGZlZjY0NGEzODYzMGE4ZjRkZTUyMjhhYmM2NDMifQ"
+        },
+        {
+          "resource": "repo://nora/domain/persona.py#L148-L149",
+          "version": "repo-lines-v1:sha256:e0edd4c2e88f4af4e7962d7699cc744cd39dc2888e6b5fb4d12677d128788fbb:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjc3YTMwNzcyY2E3Y2ZmMjMwZWQxN2VkODVkN2MzNDYyYzFhZWIzYjVlOTI1YjMyOWE1MjAzM2RhZGUzMGE5NSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZGQwODIwOGJkOWY1MzIxYTA1NWM0NWFiODYyY2MyZjg5NDZlNDFiMjQ2ZjRhY2MyYWEzM2M5MDNjNzk0MTg3NSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzJhYTdjYzY5NmM0ODVlOWQxYjU3ZjAxNDNjMTNhMDhhNTY5ODVkNDk1OTI0MWNmMzU2MjJiMDZmN2I0YjFlZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzBhMzllNjFkYmI1ODU2Y2QxNTE5N2YzNjgwYjhiOWQ1MjYwNTk1N2I5ZDMwZTFjNDI0MDZiZDUzZTU2ZWUwMSJ9"
+        },
+        {
+          "resource": "repo://nora/domain/persona.py#L993-L1016",
+          "version": "repo-lines-v1:sha256:ffcc76c33fa1bda9a2a296b391b2dd42d47a8ca3a5dc25b4aa1c03faeba222f1:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQzN2RlMjAwMWI5ZWZmNDQ2OGY4ZWVkMDA0ZjQ4ZjFhM2I3NTFkMzE2OTUzNDY1YzA5Y2JiNTdmZjhjYjFhMjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2YWQwNTJjNDRiOTUzZjBkODMyODZhMmRkZGVjMjE4NWU3ZjE4OWRiMGU0ZjUwMmM2ZjA2ZjM0NzU4NDU0YTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk3Y2Q5ZWUwY2FmNDcxYzQyYzk4ZjQwODlhZGM1OTE3ZjU2MTU2ZmMzODBlMDk5ZDY3ZTY0NDgyODg5ZTMxZTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJiNTliNmI2NTZmOGU5NjVlZmUzZjRiMTEzMzFmMmIyMDM2OTUxZjU3MmZiMDQzMmExMzI0NDZhOTIzZTExN2YifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5119d196dcdb4a18bd26828883baa2ab",
+      "statement": "The state vocabulary is current, disputed, outranked, hidden, superseded, retired and refuted; only current, disputed and outranked are held (a cap slot, actionable by a writer), and `superseded` and `refuted` are legal values that no Persona writer produces — the memory index derives `superseded` from a successor row and a refutation lives in the `verdict` column.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/persona.py#L122-L138",
+          "version": "repo-lines-v1:sha256:3b4b53a0a22bf19a2c083614b1186efd3ae82fac79f367ec163b15ee545eec1a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRjOGFiMmQxZmNlYjAzZTA2OWY3ODI5NzQ1NGY4MmMyNTNhZGNiMmIxZGNkYmQ0NWE5OTI2MWYyZTA1YTljY2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5MGE5MDEzYTlmMmY1ZTJlZjA0MDMwNjA2MTEzZWE4YzgyMGVkZjk4NDlhZGE5MzY5MmRjNDBmNDkwNTZjMWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBiZDllZTIxMmJmMDU2MjU3ODZmYWVmMDQ1OGQ2NTIyMmIxOWNjMTcxOGI4NzcwZDgzZWY1ZTRmNWRhNjk2Y2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZkY2JmZWJmZGNmNmQ5ZGQ4ZDQ5Y2NmOGZjMjNhODY2OTdhYzIzNTVjYzg2NTNlYzZiZTZlMDkzZTMxNTdlMWEifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/memory_index.py#L1218-L1260",
+          "version": "repo-lines-v1:sha256:48e7ac0957ca31d0aca903b68bdf5de2d5bc552bd7ed321a1a8e33ff6151a5b7:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZmZGMyNmE5NDA2MmI0ZGRjZWE5YmM5ZTg1ODFiMjdhNGM4YjVjZTFkNDFmZWI2NjM1MDA1NGQzYTRlYjZmNmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg0MmUwMWRiN2UyNWRjYzQ1NGJmODE2YzZkZjQ0OTJhZjI3NDZkMDIyNjA0ZjFmNmE5NjRhNGUwNmVjYjY2MWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRjZDMwOGE5ZWFkMDVjYzZhYmEwZGVkNGExNzg1NmI2OGZmNjFjNDhjN2Y2YmNjYmIyOGZmMmNjNWIyMzc5MDgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_46a33dfe57ca454e94442d0673451923",
+      "statement": "A dispute or «forget that» is a Record item (`persona_dispute`) ruled on in its own transaction with code matching the claim: the account subject's own dispute or forget hides the matched line at once, anyone else's dispute marks it `disputed` for later weighing, an unmatched or ambiguous claim lands as the row alone without touching a line, and `forget` by anyone but the subject is refused `forget_not_subject`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/tools.py#L13909-L13913",
+          "version": "repo-lines-v1:sha256:445ca938b1cc8d3892807bff61838463b4434a5a55b35346da810640142f86ca:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTk4MTJjYzRiYjFjODQzYmM2YzAwNTA4OTY5ODAyMTNiMzQzNDA4M2U4MGI3ZjY2ZDFmMjFmZjZiMmVkOTZhZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMWI3MGJjMDJmZmE4OWJjYmRmY2Q5N2UzN2YyNTk4NGM3ODAxNjc2YjhkZDMyMzc2MjUwNzMxZTE0MjhkMjdkOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2FmZDY5NTAyMmYzNTRhNmRkNmM0ZjdkMTk5ODc3MTJiYjdlYzZlMGM1YzJiOTcwMjhjYTBhZGI1OTFmOWU4OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDNmZmRlNTc2ZWU2ZmZhZmY4N2FmZmEzNzU3MjliNmZlMTU0YzUzMjVjODIzNGQ1OTIwYmJlOWJhZDc1MzRiNyJ9"
+        },
+        {
+          "resource": "repo://nora/domain/persona.py#L509-L539",
+          "version": "repo-lines-v1:sha256:ac0710b58c2d5dd83578e7fab1d39d5ab39d6f97658ef2b4df0a331c12a63d82:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiYmM2Yjc1MTE1MTVkNDY1ZTI5YTk3Y2RmODNkMDE0YjI3ZGI4NmNmYTMwMTcxZTk4MGM0ODJhYTVmMDk3ZDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRmOTZkNjFlNzIyY2RjYWIyMzcwNjc3Y2Q2ZDhiOWQwZTliMzhlYjY0M2Y1MGNkMGE0ZWYyMGVhNzQ1NTFjOTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZhYzdkY2M1NTBjZWEwZjQ3NjU4NmYwMTdkN2YzMmYyNGY3NWM0ZGYyMWU2NTI4NzYwZjk5NGJlODk1MzMzOWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ2YThiMjhhNzQwOGJkMDY2NThjNjUxNDQ3ZTQ4NjQ1MTM4YjVlODVjYjJiN2ViM2M5ZGU4N2JmZjYwNTgxZjkifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/persona.py#L214-L282",
+          "version": "repo-lines-v1:sha256:e6a1744a82c02a3dbc58c1c6166a8b13a297983116115d9814e86852e6438a4d:eyJzZWxlY3RlZExpbmVDb3VudCI6NjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkwZTBmNTk5OTQwYTBhZTk4NDcyNjI4ZTViMDU5NDEzMGFhMDVlNDNlNWUwMDZiZGViOGI0NTRjZDI5NmQ5ZjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMyNDU1NGRhZWQwZGYwZjRmMjVhZWU4OWM4ZDhmNzYyMTkxM2I3MjhmYzg2M2ZlN2Y0ZDhmY2QzNjUxMjEzMWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQxZmQ2YjM0YTI2OTQ3YjYwOTI1YWYyYzg3ZjExMDg5NWI4YmZhM2MyYzdlODlkN2Q3MmVlZmIzMjNiMTEzZjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYwODJlMzA2MjE1MmI2YzZhMWJmMjkyMmIzYjc5YmQxZDM2MTI4ZGZiMGFhYzQ2MDc5NTk2YWVhZWYxMDI4NDIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6dadf0d6fc024b738bcc0df2283633d8",
+      "statement": "A turn-written `told` line or a new dispute is a stimulus that wakes the person's session at once: `pending_told` counts `told` lines written since `persona.settled_at`, `pending_disputes` counts disputes since then, and either counts as a full wake batch instead of waiting for the message batch.",
+      "evidence": [
+        {
+          "resource": "repo://nora/infra/sql/persona.py#L196-L210",
+          "version": "repo-lines-v1:sha256:b5662a526f5deea5c5a728cd5f57b4819e74a828db056706c64d98f7bf53ca27:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlMzQxMjNiM2Y5NzIyMWNiN2FhNGZjZmU3MzMyZmE5YTFkZjc0MDA4ZmExZDU1OTBkNjA4N2E4OTY0N2M4YmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1OTVmNDQ3NjlmYTIxYjRhZTU0OGU1NDhlODA2NGU0N2VkNDA0NDJlZDRhZDQwMGE4ODU1YzdhZDRhZjFmYjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBjZjNhYjI2Y2E4OTExNmJiYWZmYTlhYzljZjgwMWY1MDM5OTQ2YjI1YTdmZTY4MzU5ZmNhN2M1OGZiZTFiNjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxZmQ2YjM0YTI2OTQ3YjYwOTI1YWYyYzg3ZjExMDg5NWI4YmZhM2MyYzdlODlkN2Q3MmVlZmIzMjNiMTEzZjYifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/persona.py#L284-L296",
+          "version": "repo-lines-v1:sha256:fef70facf97a657a394c48703b4a70a9477334146322322060db30a60beadbf9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZiNGVkNTM2Y2VlYjhkNDAwMjU3YTAyNzgxOThlYWM2NzkxZmU3NTU2NTE4YzM1NDZhZjViZDA0Y2IyZDRjOGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1OTVmNDQ3NjlmYTIxYjRhZTU0OGU1NDhlODA2NGU0N2VkNDA0NDJlZDRhZDQwMGE4ODU1YzdhZDRhZjFmYjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIwN2U3ZmNiMmRlYTA5M2ZiMTJjZjFhYzQ4ODNiMmYyZjg2MmQ2ZDc4OGUyNzJiN2QxNWUxODk2YWM0YmEyMTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNlYTdlNmY5YWNiN2I3ZTRiYTA5MzQ1NjZiOTQ1OWFhYzhjZGQzNzEyYjg4YjY3ZTI5MmI4YjNiM2I5ZjA5YTEifQ"
+        },
+        {
+          "resource": "repo://nora/language/persona.py#L425-L437",
+          "version": "repo-lines-v1:sha256:53c6a8e3cf29c3af2892d4f205fab7d95731d259dea03f019055fe58ee07df68:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNiYjdkYzZmZjhjM2FjNjAzMjhiM2FmZTUyZjZmZmQ3ZDJiZTgzNDYyMDE5ZGIzOGM3MDI1ZTJjZjQ1YTNhMzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA2YTVkMWFiMGNmMGQxNTMxNmI2MTg4MTY1Y2Q0Nzk0MTNmNjcyZTAzZjQ2YjA2OWJkNTlhOGRiM2YyN2JhZWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA0YmRiZTRmNmQ2YjBlODExOTdjMDI5YTFkYWM5NzFmYmQzOGE1ZGExODkwNGRhNzg3MTU3ODdmYTJjMmQ1ZGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM4NjFhMzdkMjEyYzdiY2IwYTlmNjdmMjgzM2Y2YTFlYzY3YzcyYmY5MzM4OTBhNzAzMmY1MzhkZjRiZWFkOGYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_723e0a061a884548979b0b25a2deee53",
+      "statement": "A hypothesis's verdict is never set by the writer that wrote it: the docket is a unit's open hypotheses whose prediction window has closed, a countable observable (an exact `rollup:<kind>:<subject>`) is judged by code from one Rollup read as confirmed, expired or unknown, any other observable is judged by the model handed only the window's rows, and `record_verdict` refuses `open`, a window still open, and a line already judged.",
+      "evidence": [
+        {
+          "resource": "repo://nora/infra/sql/persona.py#L320-L397",
+          "version": "repo-lines-v1:sha256:00365d0dd5ad704597935ff54fd3e1b1e2e288941013c768bd3985a701fadc02:eyJzZWxlY3RlZExpbmVDb3VudCI6NzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgzMWJhYWU0YWQxZWY2MGI1NWI3ZTk3MjgyYzg4OWMzM2M3NDc2MWU0MTMzNWZlMjNkNzdlYjMxNTllYmFmNmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg4NzliMWYwYjZiMGMzN2VjMDA2MGVhY2U2YjQ4NzhkMmYzYTBiNzNkNmQ4ZGVmMTk1OTU2NWVlYzAyMGNmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk2NTEwYmZhZjJhMTIzMmU0NTg3ZTE3NmQ2YmQxOTQyOWQ3YTU5ODE2YzE4M2UyMzBmNzk5NmU4MjQxZjQ3ZDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdmNjk3ZTYzYWQ0MGNiMjE4ZjZkOWQ1ZmQyOWZiYTQ3ODlhOTY4MzAzYWRiYzNhY2E3NzJiNmZhYzAyODhjODcifQ"
+        },
+        {
+          "resource": "repo://nora/language/persona_verdict.py#L1-L23",
+          "version": "repo-lines-v1:sha256:cce1665aaa81fe37ad5b3fcb0e165c0758f42ea7743060069f291ec3ae898086:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJjYWE2MmUxODk1MjI3YzQwYTk1YmUzM2FkYTE0NzZhZDM4NDZlMzkxMDQ3MTg5YmQ1ZDVjMWQ4MDg3ZjJiMmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/language/persona_verdict.py#L410-L425",
+          "version": "repo-lines-v1:sha256:9895b9a805280477db19b8933dcc528d16f74af5daec06d70fad1928d14fd2dd:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyNTg5MmQzZDQwZDc0NWM2YjljMTZhOWI4OTBlNmExYTZlYjkzNmZiMDQyM2FhZmI4YTlmMDMwMjU2MWZkNjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwOWVmNTBlNDc4ODExZmJkZTM2ZjA5Zjc0NDY0NTdlM2Y3NzgzMWM3YmVjNjc1ZWFiOGU3NzY4Zjc2YjVmZDEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY2YzdjNTVlZjM2MzI0ODY5Y2ZlNWRhZTEzMTBkOTYzMDEwZjVlZTI1NDIzMjk4OTM3YjM5NTJmNWUyOTBiNmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_64b504d4b4f34c15bcf45ed06041f2d6",
+      "statement": "Every row records its producer in `written_by_session`: the `persona-person` adaptor for a human account, the `persona-room`, `persona-unit` and `persona-nora` collective adaptors (one shared implementation with distinct names, populations, evidence and cursors), `tag` for the graph-surface `remember`/`persona_dispute` tools of a turn, and `persona-verdict` for the judge.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/tools.py#L13765-L13770",
+          "version": "repo-lines-v1:sha256:98d4ddcc111c44b58cb7b4e863d0b6d8ee6c91fbe9459097b7162881cc077aef:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTAxMTIyYTA3OTVhMDMxYjBlZWRlZTNjNDFkN2U5ZmY0ODRjZDM2ZWQzYWQyZDhlMzIzOTAxNmU1NDEzMDc5MyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYmZiYzg0NmFiM2RmZDZlNGVkOWU4MmNmM2Y1OWRjZDJiN2E0Zjk0ZjRjZGRmM2Y1MGUwYzE0MGQ0NzI2YzBjNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDRjMDc4NGVmMDJhYTU2ODkyMTU3MGRjYzA1NTIwY2RlZDVmNTRjMzViOGVjYWU0OTY0MTczZmU5YTg4YjA4OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2M4NGQ1NDM4NjQ2NTAzNGY3YWEzYzkxOGM1MWIxNmY2ZThiYzgxNzAxOGFjNjliMjUyMGE0OWFiYzZhNGI3YiJ9"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L4045-L4171",
+          "version": "repo-lines-v1:sha256:803c5659a26495ee65117f5b31eabb33d552d9048b0d049f5337e2f5c58579ee:eyJzZWxlY3RlZExpbmVDb3VudCI6MTI3LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJlOTdiZDhjMTJkODMyMWQ4NmU2NTM4MzhkYjhjZDQ3ZmRhNjk2MjNiYjJjZGRlNTU2YjdlNTUwNTE5OWRjMjk4IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI1MTAzNDgxYzU3ZDBmMGRjMGY3NmNkMmNjOGIzNjA0YzRlODI5NmRhNDEyMmFkZDE5ZTgxNzQ1ZGM3ZTMzMWE2IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJmOTJkZDYyMzIwNzViNTAyZDQ3YThiOGNkZDY1YTRmNWFhNTA3YzI3MDU2NjY5ZWE5MTNlYTkzNjA5ZTI3MGU5IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIzMmU2MDNmNjRiN2VmMjZmZGEwMTcwNzA4NDgzNjY5ZTM2MmJhYjQ5NTBlYjFhMzFmOTQxMzdlNWE5NTkxYWQ2In0"
+        },
+        {
+          "resource": "repo://nora/language/persona_collective.py#L1-L23",
+          "version": "repo-lines-v1:sha256:64d38caed8002ff86c2f918324aac4b39d60dd9bd790200f966f94ba1253a793:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMyYjYwOWY0YzczMTlhNGMyNjI5M2MwOWU4MGVjZjkxYWIzZDY2MDdiMzUxZWM5YjRjNWQ4NzUxMTEwMjFhYzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1af5fa67ceb3449baf84f0b6d29bd177",
+      "statement": "Account keys are the culture key forms: `<unit>#character:<person_id>` (one account per unit-person, not per room), a room's `primary_id`, `<unit>#unit` and `<unit>#nora`, so a person's account is written once and read by every room of the unit that lists them.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/culture.py#L438-L496",
+          "version": "repo-lines-v1:sha256:62487f8883bf87c4ae6bad2fdebe6226f5a88d460b76aef3de1e4d156b2cf7ef:eyJzZWxlY3RlZExpbmVDb3VudCI6NTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhOGJkNmQ1ZjAxZGY1YjljYzExNDYxNzkzMTAwYmQ0ZGVkMjIzMDc1MDFiMDgzYTg4ZjI2YWFlYzY3NzZlNzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVmOTlmMDEwYWYxMDhkNzQ0NmY5YmFmYmQwNThhYjE5MGVjMDI4ZjIwNjkxYTQyNzkxOTFiYTQ4NjU3MTA4ZWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3MDE0OWUwNjlhZDY3ZWNjZjQ3MzY0NmZmMWM3NTAwNTBkMzI5ZDExMDAxOGRjNTc2Njg3OGVhZmExZDYwN2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlhOGI5Y2MwZmJmZGU2Y2ZlMGRiNjFlMTBjOGFmYTkzNzg4NDkxZTY5ZWViZGRhMjJkNWZjOWUzODkxODNlMzYifQ"
+        },
+        {
+          "resource": "repo://nora/language/persona.py#L869-L871",
+          "version": "repo-lines-v1:sha256:20194455648edd7fba971f6409e18e35268b7ed685f145c507c0d001814fb04d:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmQ4OWY2YjE0NjI4N2ViNjg5MDk1N2MwNTgyZTZmZWI3M2M5MGI0YTJjZjE4MDMxODgyMDdjNTlmODUyMzJmNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmYwNDlhYjI5YmVlOWEwNWFjN2RlZmFiZjlmNDU3NDNmNWMwMmMxYmM0MmJiMjEzZWMyODM4ZDdiNDU1ZTNkOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWRhMmY4NzQxNjJiYmVhNDlmMzAwMDE4MzAzYWEwNTc1OTJlOTk5ODU0NDIwYTlkNzhhMTc2NmY3MTYzZTQyZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiN2E2MDlmNWVkNDEzNGQ2ZDNkYmE3N2JjOTI3OTRmN2Q5NDY1YWQxMjFhMjRlMGQwYTBmOWVkOTZjZjVjMWJlMCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_f528da234f6d4835aa81f302ed6687c9",
+      "statement": "A persona session's verb runs a dry-run `plan_write` so the model reads every refusal and can fix its call, stages what passes, and `commit` re-judges it inside the store at the revision the session read with `apply_decay=True`; a session that calls neither `persona_write` nor `persona_no_change` raises `AccountNotRecordableError` so the evidence watermark holds and the same revisions are handed again.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/dreamer.py#L1502-L1514",
+          "version": "repo-lines-v1:sha256:2cb71b945ee99693d832da99741ec3d497564bb3242da0a52e7f293d59d10de4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNkZGYzZjZlNDkyNDkwNDUwZGIzODljOWM0MTkxYzMyZDM4ZGExYmI2YjEzM2Y3Y2U2MWQ4OTA5NTYyNjBjYjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc2YzhlZTc0Mjg0NjQ1NTU4OWYzZTA1NmIwZGZjMmQxNzcwN2FhMzFlMGVkNTdiZTc1NDk3OTA1MDAzOTU2MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNlMTI3ZDFmYWJjNGVhOTI5NjNlZDFiYTRjZjQ2MjJjOTg4ZjhjYWIyNmQwZWMyN2I3ZmZmNDI2MjMwNTMyZWMifQ"
+        },
+        {
+          "resource": "repo://nora/language/persona.py#L1103-L1211",
+          "version": "repo-lines-v1:sha256:d1a57995b303385458268827cec9816c120ef1256158c7c8da2b1d284ffe7d36:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA5LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIxNWNmYjVlYmU4MjQ2MWI3ZDUwMzY4ODMzOGVjY2ZhYjVlZDk2ZmI4MDg4NTYzN2RiOTEwMzM3NjE4YjAzYzMwIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0NDY4OThiYmQ4MjU3ZmMyNzFkMWE3OTQwNTdmOWQ2NGUxMjY3NmRhNjVmMjJjOGQwNDc2NDZlMzUzN2VmZTNmIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJiMTYzZDQ0MzkxMTRkNWRjMjQ4MzdhY2FkMmY3ZDQ2NWZkMzgyZTUwZTY1NjA5NjliOWMzMTJmNzAwZjdkZmVmIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJjZDQwNTI4YmI1YzEwZDU0MDVkNGI2OTYxYTZiODZhYTg2ZWY0MDMyN2IyOGI0OGY3MDM2M2I3YjE3MmFkYjcxIn0"
+        },
+        {
+          "resource": "repo://nora/language/persona.py#L1213-L1249",
+          "version": "repo-lines-v1:sha256:55d2dc885c8562861fde09a6ef6afbc44d4f7b523a71ba8fd318a599713b93b4:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzYmIzMzA3YWU3ZGViOThiNDVjYjhjYWY5ZjMyZDNlOWZkMTVkZDQ3OTk0MjI0MjZmYmM0MjdlOWM3YzZjMjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1N2UwZjNhNTg0MTkwY2VkMWZmYmQwZGNkM2FkMDZiZjNlZWRkYjYxNWJkODVjZGYxZWRhNDQzYjFjZDllMmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAzZjYxOWMyYzMxMWE4OTQ5NmQzNWVhOWViM2IzNGU1NjE4ZDlmODhiYmJlZmZkYmI0ZjRkNmRkOWVhY2VjOTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9ca608fd955b48d68ee7915630af0112",
+      "statement": "Rendering applies the write rules from the other side: only `current` and `disputed` lines render (`disputed` marked as such, while hidden, outranked and every terminal state never do), identity renders only typed facts whose effective window covers now after the authored `identity.toml` lines that carry no mode, hypotheses render only while their window is open and always as questions, and the block is `None` when an account would say nothing.",
+      "evidence": [
+        {
+          "resource": "repo://nora/language/persona_render.py#L131-L199",
+          "version": "repo-lines-v1:sha256:45a0848334a26e7f63bcb005c0e397f47e9153fe94e0b5bd5a2b864433a3daa3:eyJzZWxlY3RlZExpbmVDb3VudCI6NjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFlZTBlYjJiY2ZhOGZkNDViNjU2MjhiOGI4MmQ1OGNjNTQ5YzFkY2JkY2E0OTU4MDI2MmRhODJhMGEyMjliZjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc0YzQ1OTU1ZTg4OTY5YTc1Yzc1YWYxYWIxMWU0MWIzMmRkZjQ3NTBjOTNkNzI4ZGM5MzczNjQ1YTZhNjg3YTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjczM2U4NDg3Yzg1ZGZkY2Y5ZmE3YjkzYzc0NmM5NDYyNWFlNDdlMTIwYzc5N2U3OTFlNzM3ZjllZDdmZmM3M2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVhYzE4NGE5YzhiZjFkMGVkYzczYWI3NTZlMWZjMjUxZTY0MGE3ZWE0NWMwNzFlMjNkYzhjNzczZGQwZjkxZTkifQ"
+        },
+        {
+          "resource": "repo://nora/language/persona_render.py#L224-L247",
+          "version": "repo-lines-v1:sha256:f9b8fa546515443e4fd42de379c340c8c55d1c1fc4c78cf50a4677790cade94d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0NTQ1YzEzYjg2MWMzYzJmZWM5ZjBhNmQwODRjMmMzOThiYjM2Y2MxOTdiZjA5OTRhNmE3ZTQ2OGNjY2MyNWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVkMzRjOWYyZmU3YjY0YTdmMGQzYTY3YTRmZjhjOWM5NzRhODdkMjgwMDcxMmE3OGE2MmFlODAzYjlmMjRjYjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBmNjA1YjA5ZDg0Y2I3NTVjNDdjOTUxOTEzMDEwNGRjZDQ5MzE0YjhmZmU4ZjkzMzk3ZDlkZTA2YzFmZmIwOTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYzZmM2ZWU2ZWNjNDkyOTEwMjY2YTE3Y2YxNzFmMmNjY2ViMmU4ZTBlZTcwMDc2ZTNkMjYwMDA1NGRkMDk0NjAifQ"
+        },
+        {
+          "resource": "repo://nora/language/persona_render.py#L79-L82",
+          "version": "repo-lines-v1:sha256:cfee3937c6a7e8f165a5682a97f767b4aedc4aababe7b4364cb95ff0ae4c5950:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGJlMWExMGZjOTQxOGM2NTVhMzhkZmI5ZWIzZThhMGI0MDNlMTJmNzY3MjJiYzk4MGYwNzAxNDE5YmQ3NDE3NSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDNkODAwNGYzYWNlMThiOTc4MDVlZmEwODhhNWY4ZjY1ZWVjOWQ0YjVhNTdkNWRiNDU0ZDg2YTRmMTc1MTU2OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiY2FkZDdiMDFjNGQyMGY1ZjQxMzNiZTk2ZWQxYzkxZTg1N2YyNGEwZWE2ZmE0OGExYWIxM2JhNDk0MTEyNTJiNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmVhYjc2Zjc5NzY4MmRlMjJhNzc5NjEyNGU0MzFmOTQ5YjM0Y2MwYTExYWYxNjYzMDY1Nzg4OWQxZDI1MzZjMSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_5a32ec03db104df490c2593394ab8118",
+      "statement": "Every occasion's persona read is one bounded, fail-soft `read_persona` call whose failure drops only that account's view and increments `nora_errors_total{stage}`, and the render is budgeted per account (2,500 characters, 4,000 for Nora's own) with the turn's person blocks sharing one 12,000-character cap and a closing `[N more characters not shown]` marker.",
+      "evidence": [
+        {
+          "resource": "repo://nora/language/persona_render.py#L250-L295",
+          "version": "repo-lines-v1:sha256:0f1eb352bb9c44d3198a020513b9880ae57634814f971faa8a12f56650876cf6:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ5MGE0N2ExZWEwYjdlZDJkMWUzM2E0MTIyNTU3YmM1MGEzM2QyOTYxOGM4MmI1M2ExYjhlZGY0NTg0YTk4MjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM4OGJhN2Q1ODFjZDc5ZTMyMWRjYmNhYTllNWM4YzFlNjgxODJmNjA4MjVlOWRmZWY1NTU3ZTM2OGYyODQ1ODAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQxNTM5ZTAxYjE1MjgxYTRjNjRmMzZiNDRmYTk5NmJlNGFmN2QxMDllN2Y1MTZiOWRlMTJkNzAwNjBiNzc0YWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://nora/language/persona_render.py#L56-L77",
+          "version": "repo-lines-v1:sha256:109b9aa5f182ca76263dfc07a70f61fe08de28768cef64bb808ed90ce0b66d72:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUzYjA5YmMxODA0NGQ4OTM4ZmNmYTNjYTk2YzZkNWVjYzZhMDJjMDNhNWYzMzQ5NDkwM2U3MDI0YzRkNmVkMTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjExYjBmYzQ2ZTU4MjM1MjBkZjM5YTM2ZGRiZWRjZTRlYWRlMDc3MGJkZTdhNjYxYjU5YTI3Nzk5NjM2Y2IzMGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM1NWE1N2Y4ZThlYTgwZDMwNmQ5Y2I2YWNmNDUwMmZhZTRlNjcxMGNmMzI3NjdiZDY5YTY4YzVhYTI0ZDk0NTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg3ZWUxYjY0YTE1NjUyMGJhMDRhZjFlNjNlNTM3MTUzMGUyNjk4ZTc4ZDYyNDU4NGE5NzMwY2YyZDBkN2Y1OTUifQ"
+        },
+        {
+          "resource": "repo://nora/language/persona_render.py#L95-L128",
+          "version": "repo-lines-v1:sha256:ccfb57e8c1d6b180827b3c675183c6d906f0577e3195a1637f3d14aba6f44fa4:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJiY2JjN2Y3N2E1NmM1M2E4YWNiMzljNDA1MmM1OTZiNTJiNjRiYzZjZTRlNWE5NWFmODgzYWM3NTFlMzEwMzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlN2M5NTdiY2I0NGZiNjczYzk4YjAwNTBhNzVkMzgwODJkYjgxZDkxOGRlMzEzYTNmMDdjMTIzNTMwNmQ3ZWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYyY2ZiNGFhY2ZiNjE3YzJkNWI5ZmFlNmQ2YzM3MGQ2OWUxNDc5Y2I1NWNhYjM5YWJjOGM1NTEzZTkwOTk4MjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY0MDllYTE3YTRjNGNlNDAyMmUxMDhiOTllMzZkYTQ2NTZjNTM4ZjRjNTJkYjJmOGVkMDhhN2JjODk4NjNkOWIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5bc2a0427cae49f2a03da468549a93a9",
+      "statement": "`[persona] enabled` alone is the shadow (sessions write, nothing reads), `[persona] render` is the switch that makes prompts read accounts instead of the Honcho and prose-culture blocks, and the same pair gates whether a persona write projects its rows into the memory index in its own transaction — so flipping `render` off is the whole rollback and shadow-era lines join the index through `nora memory rebuild`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/composition.py#L2123-L2142",
+          "version": "repo-lines-v1:sha256:8a015d099d984239a2bb6cbe70af5dbbbab3da830c6bb281b8c48c2521b043d2:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljZmYyMzUxY2E5ZDVjM2YwNzk1OGNlNmNkMjU0MDg3MTQyM2NkNmEyMWFiYjkxMmYyZTk0MWZiYzAzYzk3MjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwNTZlNWE3NzFlZDIzZGExNjdhZDQ3YzQ5ZjgxZGFiNDkxYjIwZDUyZjA5YzU4Y2FhYjRmNDE3ZTM2MmMyZDQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdiZjk4MTQxZTQ1ODBjNmJmNzZkNmYzNmVmYTZiZjFkM2I0OTIwNGUwMTg5ZjRlZDQwYzE5MzBlN2RjYzA2NGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMyNGEzYWZiMTliMGE2MzZmYzY5MjFkYzE1OGQ5YzI5YjY3MTk3MDA2NjVhYzQyM2I5NmNiNTJkNmNmODYxYmUifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L2577-L2601",
+          "version": "repo-lines-v1:sha256:79b37836d78d07213c0c684e87228cc7f28abda6ee4bed440c7ad251d2a6b285:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiZjVlMjYxMDkxOGY0Yjc5MmE0MTBlYjZmMjczYzQ1MjBmNDI1NDI4YTBhNjNkMGQ5ZGIyODY0MWViZDRlYjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEwNzYxZTZhMDBlY2FjNzRkNjIyZDhmMWE1MDA1MjdkNmI2ZWEwYzY3MjJjNjM2MGY4MmQ3ODk2MTQwMGRiYTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjljODk4NTQ3NzBkZWE4NDM4Y2JkZDViOGI1NGNiYzJjMTdlMGExNjk5MDc1YTRiMmUwYmE0ZGEzZmM0YmVhNTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYwMzVkYjNjM2JmYjUzYjNkOGMyZTgyMTI5MDc3ODUzZjk5Njk4N2FhMTNiNzk4NmEzYjY5YWYxOWExMDIxZjIifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/persona.py#L14-L20",
+          "version": "repo-lines-v1:sha256:31e5c46615c1ab24d5a7f11aea1293c4a30b98c024f7a71b643cbf3c692140d3:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMWU0NGVlYzZmZmUxYzFmNWQ0Njg5ZTRmYjZhYzFlMzhlN2Y2NDkzNGQzNjMwZjQwNjAxMjBlMzE4YWEwMTUxZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjYzNGRiZWVhZjNkMWE0Njk2MDExZDcxNDUwZDdjYjNlNzU2NWIzNGUxNDUzZTE3Y2RlYTAxZGM0MmUxMjQ3ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjBiZGQ0MzFiYjg5ZjQwODhlZjYwYTFlNDUyYmI2YzJiMTVlYTA2NTM1NWM2MjUxOWJjZDY1Y2E5YTY1YTYzMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWFhZjc2MzdjYjZlN2U1ZGI4NWQ2MzQyNzQ2MDE0ZGYwNDFjY2Q1NThhOTIwYjI5ZWI2YWM3MTlkN2JhZjVjMiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_628cbbb9fedc4ca1bba5970e5dfe64d0",
+      "statement": "Persona sessions and reads are observable through closed vocabularies — `nora_persona_session_total{outcome}` for written/kept/refused/unsettled/abandoned, `nora_persona_verdict_total{verdict,judge}` keeping code's and the model's verdicts apart, and `nora_errors_total{stage}` for failed reads — and two operator commands act on the tier: `nora memory persona-history` for coverage and a restart of an incomplete pass, and `nora memory persona-retry-media --key` to queue one attempt for an account's pending cached media.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cli.py#L315-L334",
+          "version": "repo-lines-v1:sha256:e104d0029c1f03f64dbdf1bee64967733a5b474283f0ea44ae23382fce43cd19:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3ODgzNGQxYmYwMTkxMDg3N2IyZTkxNGE3NjRjNDBmOTRhYjY3ODhjMWRkOGRjM2Y5Nzk5ZmFlNjQ3M2MwYzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0NjQ2MDk3NDQ0NWQ0N2RjYTY0YzkxNWE0NGM3Nzc4MGFhZGVjNTA2MDQ0ZWJhNjdkMjNmY2I0ZWU0ZTYyZGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhkYTFiYWI1OGQwNzdjZTlkZWJhM2UzZTE1YWRlMTg0NDhkYmJhNmJiNDg3OWFjNzc3MzgzZWJjYjE1OTAwM2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgzMDQxYjAyNDFiYWEzZDIxNDQ3MTBlMzNmMDViNTFhNDkwNzFjNWFiODg5OTg1M2Q2Mjg0YzY5YTc3MzkzMjEifQ"
+        },
+        {
+          "resource": "repo://nora/domain/persona.py#L163-L167",
+          "version": "repo-lines-v1:sha256:3dd7376bca291e39d56fe598478a34dab7e1ac929b2d4141793130dd6ace4b3c:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjI3OWM4ZTRkODc0ZjI2NGE5YzY0YjhkZjYxZmJhZDVhZTM1ZGZiYWE3ZGY4YWM3NTIwZTZlODEyZGNkNTcyZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzU1YjNjNjRjZmU2NWYxNzVmNTBkMTcxZjExZTY4YzJhMmQwOTBjY2Y5NmU1OGFlOGI5NDI5YTU4YmFlMDQzYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTI3MjVhNGY2ZWI1ZWQzYTE0OGI1MGNjZDBiOTM3ZmQyNzBjNGYzMzg2MjFiYzE2Mjk0ZGQ4OGEyMzM0MjAyMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmUwOTQ2Mzc3NTIwNjIyYmU5ODcwN2EyMDc5ODY2ZTU0NjEzODQ0MzhmYjRiYTgwNzBjNDlhMDZkZWMyOGQ1ZCJ9"
+        },
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L1636-L1642",
+          "version": "repo-lines-v1:sha256:a55c8fce3d3b3a18519f155613b96dcb1280783fae4ae1c32c6654b1fe9a9bd5:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTgzMWYzOGRiMjBmMDY4MzdlODhlNTNjMmI5NjQxNzJkODU2MDczMzg2OTFmOTJlMWUxNDg1MWMxYzc2N2QyMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMGIzNWU0MWQxYjk1YzRkMzNmOGNjZjA5ZWRmM2E4MTZjMWVhNjc1YTk0MzU5Yzg5MmQzZGJkZjRlMmI5ZjMxOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZGZhZGU2NWI5YTY5MjAzNWRkNzZmZTE3ZGY0YTgwNzQxNzhjYmRlMDAyMzc4ZjQyYjFlM2Q0MDhkOGQ1OTU1ZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWNmMmE0MzFjMzMwY2VlYTk1OTMzZjFhYzM5ZWIwNjgxOWE5YWU1ZTFkNzAwZmQwOTVhYmFiNzJjMGRlMzkxZSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_94cb7ff75a2041d183de75f28cfb0ca0",
+      "statement": "Support accounting keeps provenance honest: `support_count` and `last_supported_at` grow only on citations the line did not already carry (a Rollup aggregate supports as of now, a row or episode as of when it was said), so a Rollup rebuild over the same roots cannot inflate support or refresh a trait's age, and rewording an unchanged typed identity fact preserves its assertion time and grounding instead of counting as a second assertion.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/persona.py#L1116-L1134",
+          "version": "repo-lines-v1:sha256:8f55126b0d4628b6cc2e294ea2b2a0cbfa0e79c7be1d19b995ddf1ba8329fd09:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmMmY4Y2MwOTdjMDVlY2MzNjIzYjhhZmQ4ODBiNzIzYTE2ZTc3Y2ExMTExOWRkODViNjM4MmM5MzQyODYwNjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY3ZTgwN2I5MzMzNDQ0MDczNDNlODYzYjIwNGFmYjliNzVlNjEyNDRkZTBlOTczNGY4MjI1YTYyMjU2OTdlYjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM0ODYxZTgzNzViZGM1MjZjY2QwZjJlNTIzNTc4NTAyYjVmMWJhMzNlYTNiZTIxYzZlZDE5MWYyYzc4ZGY1YjkifQ"
+        },
+        {
+          "resource": "repo://nora/domain/persona.py#L942-L975",
+          "version": "repo-lines-v1:sha256:eb84c9b5698379d97f8bf12c8d57a11ab4e36688a3d68862113d1ef9fb46ef86:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc4NGI1YjIxN2MzOWZmMmFmMjg5ZTRjZmVkYTlhNmJhODgyYWE1NmE0NGNmMzkxMjFmZDQ3ZDU5MWYyMThkOWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIxNGMxZWZlNjQzNzZkMDA0NWI3Y2IwYmFjOTU4NmMwOTA0Njg1ZDEzNTg0ZGYyZDE5N2UxMTc2OGUwYzAyNjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJlY2VhNWU3YzkzNGUxZmZkMzc3OTg5N2EzMGQxNGVmYmVlYWE4MmIxNjgwMjE2OTdkNDNjMjkwZjM4ZDFmOWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ1MmU3ZjQ0MjhlY2RiNGMwNjZhZDZjZGFlM2M1NWEzODVlNDU3ZDBhMjM3ZjhlODA3MGI1MmE0ZWFmZGM0NmMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6861190ca1af41f9b1c38d912d4b2ccc",
+      "statement": "Typed identity has one contract: `validate_fact` requires the `fact_key` to match its part's kind, checks each field's shape (birthday month/day with optional year, relationship relation plus person id or unresolved name, `[]` as explicit none for list fields, attribute name/value with optional unit and numeric age/height), and plan_write additionally keeps singleton facts single-valued and refuses older evidence replacing a newer assertion.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/persona.py#L1135-L1156",
+          "version": "repo-lines-v1:sha256:14ee257cbe21c40bb455d68bdaa66f55ff8001449f5263309d1e1ba0d41c8d56:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI4MjkxN2ZiNWMxN2RmMzM1NGU5YzdkMTZhOWMwNDMzZjdmZjg1Mjk0MmExZTYyY2JkNWM5NDVkMTk1M2EzZWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyNmU0MzY4ZjIxZjg4OTFjZWQyNGNmYWY3Y2EzYmY5OTg1YjNmNDY5ZDRhNjgyNTZlMTYwOWQ2NTZmMWE3OWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYyZjIxZTQ2Y2E5YjMyZTM3NDE3NmRlOWI5Yjg0M2JjYzAyYmVhOGVkMzZiYTM2MWFhMGIzMGM2MDE4OGIxMzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVmZTVhNzc1YTgwNGY4ODdjNzgwMjZlNmM3Yjc5NGEyZGI1NmYxMGZlZjExNTA2YmQyZjJhYWJlNjI4YWU5NzEifQ"
+        },
+        {
+          "resource": "repo://nora/domain/persona.py#L1246-L1249",
+          "version": "repo-lines-v1:sha256:0922401f75e4ef67ad5395c71a949ba3f4917a0fbc78a3f1682207fa15742302:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDRhYzFkMWIxYmQ0OGU2M2UwOTg2YmRhZjcyMmE1NjZlNmNmOGVmZWI0YzQ4YWM2NGM2NjQ3MjNkYTVhNzk4ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODU4MGI3NjUxOGRhZTk3OWZhZWJkMDIzNjdhMjkyOTJhNTBkOTc2MDkyMjUxYTM4YTZjZTMwODgwYmE0MjgyNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODA1ZjNjYjBhYzIwMjk0ZDYyNzIzZWE5MzVjOGI0ZmU0ODFmOWM1ZDU4OTRhYTY0MmVmNWVlMzY2OTU1MjZiMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjlhY2Q5OGZlYTVhZTE4MTNhOGI5NWJmYTc1MTA3NzFkNzJhMjAyYWQ3ODlmMjE3MGNhODE1ODBhODQxZGU4OCJ9"
+        },
+        {
+          "resource": "repo://nora/domain/persona.py#L1271-L1360",
+          "version": "repo-lines-v1:sha256:efde96f76b7f720611939ba206bc2081fc9273531481114223cec1ed9e78935b:eyJzZWxlY3RlZExpbmVDb3VudCI6OTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY0M2UwMGFjMjI5NThiYWIxZDU4ZTY0NmQ2ZWI4OWY4ZDA1NTM5ZWU3MzNmOTMxZGMyODE5MThiYjYwMjZlYWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZlMWRiYTkwYjEzNTdjM2YxNGIxOTlkYTE3YjI5MmEyZWNkMThmN2I4YmRmMTEyN2NjYTY3M2JjMzFhMTQ1MjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBiZmJmNTI5ODc1NmNmZWNmMDZkN2NhMDU0MjY5MDAxYmQ5N2FjODg3N2QyMTYyMTU4ZTIxMzJiODMwMDkyZTkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c5c33499a2ce4e299aed633a55ba6cb2",
+      "statement": "The rules are pinned by focused tests: `tests/unit/test_persona_rules.py` is one test per judge rule (each failing if its rule is removed), `tests/infra/test_persona_store.py` covers the real-Postgres transaction, revision compare-and-set, refusals, row CHECKs, disputes and the docket, and `tests/infra/test_persona_verdict.py` exercises both judges over a seeded Rollup build.",
+      "evidence": [
+        {
+          "resource": "repo://tests/infra/test_persona_store.py#L1-L7",
+          "version": "repo-lines-v1:sha256:1a0cfabf0be43c66ea13ef3549cfc76a09dbae5b97cf235a2e76ec701260e100:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmJmM2U1YWUxZDNiYzg4NzIxMzhjZTc4Njk2MGUzMTQ5Y2EzMWJiMjRkYmMyOWE1MTkzMTFlZmU5YmUzZDg3OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTMwM2VjZGQ0YTRkMTBmMTljNzNmZDQyZmQxMjQzN2ZkMzM1NGE4MjY4MTYwNWRhNTI1NWE5N2EzOTA2OGRiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTViNmU4NzA2YjQzMDQ3ZjJhNmRiNjdmMTMyNjM4NTk1NjA0ZTY3ZjM2OTY2ODc2Y2UwMTU4ZjAwNTNlNmJkMSJ9"
+        },
+        {
+          "resource": "repo://tests/infra/test_persona_verdict.py#L1-L9",
+          "version": "repo-lines-v1:sha256:4f3f815462aa911fa47378035bfe4ed7127dfdd2ffa4126decb09204a13f4142:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzIxMDIxN2NmMjAzYWViZjk5MzAyMGQzZTI3MzJhN2U3NTgxYmZjMmI4M2ZlYTYyZjgyMjNiYWVhN2M5MDJiZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTMwM2VjZGQ0YTRkMTBmMTljNzNmZDQyZmQxMjQzN2ZkMzM1NGE4MjY4MTYwNWRhNTI1NWE5N2EzOTA2OGRiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTViNmU4NzA2YjQzMDQ3ZjJhNmRiNjdmMTMyNjM4NTk1NjA0ZTY3ZjM2OTY2ODc2Y2UwMTU4ZjAwNTNlNmJkMSJ9"
+        },
+        {
+          "resource": "repo://tests/unit/test_persona_rules.py#L1-L4",
+          "version": "repo-lines-v1:sha256:7e4abf42f7e0b664c35bdf605f669cc2bb6f8933172fde82a6c94e0c3f3d970a:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmVmNDA3NjI2NDExY2Y0NjAxZTdiMGFhNzIxNWZlZGFmNzAxZTY4NDdmZjkyZGI0MjZiYTg2MGJkMDM2NDVkMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTMwM2VjZGQ0YTRkMTBmMTljNzNmZDQyZmQxMjQzN2ZkMzM1NGE4MjY4MTYwNWRhNTI1NWE5N2EzOTA2OGRiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTViNmU4NzA2YjQzMDQ3ZjJhNmRiNjdmMTMyNjM4NTk1NjA0ZTY3ZjM2OTY2ODc2Y2UwMTU4ZjAwNTNlNmJkMSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_c2393e34aff043bc8e6a731959f40e4b",
+      "statement": "A turn reaches the Persona tier through two graph-surface tools and the hypothesis judge through a third path: `remember` (`remember_told`) *introduces* a grounded `told` identity fact — a `PersonaAddOp`, or a `PersonaReviseOp` when a single-valued `fact_key` already holds exactly one `told` line written by the same teller — and writes it through `persona_write` at the revision it read with `written_by_session=\"tag\"`, `apply_decay=False`, the turn's trigger messages as its citations and only a room that lists the subject in `listed_rooms`; `persona_dispute` records a dispute; and `record_verdict` (`written_by_session=\"persona-verdict\"`) sets a hypothesis's verdict. Only the last two bypass `persona_write`, and each copies a chain head and changes only the fields it owns — a line's `state`, or its `verdict`/`verdict_by`/`verdict_at` — so neither can introduce a claim.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/tools.py#L13733-L13887",
+          "version": "repo-lines-v1:sha256:9a812e137a676c91d3d6bd301b8094837f50261c3fea7d14ab512a6d44399d7d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTU1LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIzNDU5YWYxZDUwMjc4ZmViZDhhYTk0NzRjMmJmMmI3YjQ3MTNmYjUwMzI2ZTE1OWMyODFhMzQzZDYzMDAxMGE1IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0OGRhNjMxZGVjOTQzOGY0MDBmNjllNGYzOWU1Mjg5NjZlN2NhYzBiOTNkYzFhNWRhZGM3YzkwNWU1YzFhMDRlIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI2MzIwYzFkMjAyOTk5MjdhMmQwZmUxMTNkMTNmZmFkNTY2YzVkYTk3NTFiNGMyY2FmMzBhYzY5MzNhZjQ4OTRiIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIwYjQ5NjRkNmUyMzI1ZjMyM2IwOWM4NWQ2Mjk4MTNiNmE0YTI3ZGUzMjk4NGVjOWEyNTY4NmNlZmJiMmMzZWRiIn0"
+        },
+        {
+          "resource": "repo://nora/domain/persona.py#L1246-L1249",
+          "version": "repo-lines-v1:sha256:0922401f75e4ef67ad5395c71a949ba3f4917a0fbc78a3f1682207fa15742302:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDRhYzFkMWIxYmQ0OGU2M2UwOTg2YmRhZjcyMmE1NjZlNmNmOGVmZWI0YzQ4YWM2NGM2NjQ3MjNkYTVhNzk4ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODU4MGI3NjUxOGRhZTk3OWZhZWJkMDIzNjdhMjkyOTJhNTBkOTc2MDkyMjUxYTM4YTZjZTMwODgwYmE0MjgyNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODA1ZjNjYjBhYzIwMjk0ZDYyNzIzZWE5MzVjOGI0ZmU0ODFmOWM1ZDU4OTRhYTY0MmVmNWVlMzY2OTU1MjZiMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjlhY2Q5OGZlYTVhZTE4MTNhOGI5NWJmYTc1MTA3NzFkNzJhMjAyYWQ3ODlmMjE3MGNhODE1ODBhODQxZGU4OCJ9"
+        },
+        {
+          "resource": "repo://nora/infra/sql/persona.py#L214-L282",
+          "version": "repo-lines-v1:sha256:e6a1744a82c02a3dbc58c1c6166a8b13a297983116115d9814e86852e6438a4d:eyJzZWxlY3RlZExpbmVDb3VudCI6NjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkwZTBmNTk5OTQwYTBhZTk4NDcyNjI4ZTViMDU5NDEzMGFhMDVlNDNlNWUwMDZiZGViOGI0NTRjZDI5NmQ5ZjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMyNDU1NGRhZWQwZGYwZjRmMjVhZWU4OWM4ZDhmNzYyMTkxM2I3MjhmYzg2M2ZlN2Y0ZDhmY2QzNjUxMjEzMWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQxZmQ2YjM0YTI2OTQ3YjYwOTI1YWYyYzg3ZjExMDg5NWI4YmZhM2MyYzdlODlkN2Q3MmVlZmIzMjNiMTEzZjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYwODJlMzA2MjE1MmI2YzZhMWJmMjkyMmIzYjc5YmQxZDM2MTI4ZGZiMGFhYzQ2MDc5NTk2YWVhZWYxMDI4NDIifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/persona.py#L341-L397",
+          "version": "repo-lines-v1:sha256:aa7621ba831fd11aefca989ceb8c6f002fc0a0d9348457cd42f33a807c9b16a8:eyJzZWxlY3RlZExpbmVDb3VudCI6NTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjViNTZlOGExMDI0MGEwOWM3NWRiYzM1M2ZjNDk4MDczN2IwNDY4MmY3ZTRmNmU0Y2YyOTFjNGY2ZDM3N2I3MWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg4NzliMWYwYjZiMGMzN2VjMDA2MGVhY2U2YjQ4NzhkMmYzYTBiNzNkNmQ4ZGVmMTk1OTU2NWVlYzAyMGNmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhmNzI5YjZlMjRlODdiNTk3NThmNmMwMzdkNjJjNWI4Mzc2YTgwNmRjZmZlMTgxNDliNmIzYmE5OGIzYmRiMmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdmNjk3ZTYzYWQ0MGNiMjE4ZjZkOWQ1ZmQyOWZiYTQ3ODlhOTY4MzAzYWRiYzNhY2E3NzJiNmZhYzAyODhjODcifQ"
+        },
+        {
+          "resource": "repo://tests/infra/test_remember_persona.py#L132-L149",
+          "version": "repo-lines-v1:sha256:22cb45a1002aa3c994e24dd802c9e37a57cfd9b9f1022e80f417a91d08e51ee6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjExM2IyN2QzNzBhNTE1Mjg2Y2QwNTgzODcwNDJhMTRmZmNjMzNkM2NjMzQ3MmFkODczOWRjN2FiMDFiZGYxNWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFmODQzODgxYjA5N2FkYmJiZWNjNGI2NTI2ZTFlMmVkYmI1OTA2NDBhYzI2YTA1OGEwNWRjMTljODM1ZmQ2OTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYzNzIzYWU5NGU2MTI5ODk5ZTAyOGYyYTkwMGVlZGE2ZjBhNmNkY2EzMmI4MTc0NmEwNWRhNTIxYTUyZmM4NDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFmZmY2Y2VjZDgyOGU1MTNkYjc3ZWY5ZDQyN2IwMTA2YzU5ZDAwNjAxMGFiODU0NDc5ZWU5MGJkYjdkODVmOTUifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-20T12:25:17.607Z"
+  }
+}

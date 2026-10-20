@@ -1,0 +1,31 @@
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import test from 'node:test';
+
+test('public links must resolve inside the wiki mount, including redirect destinations', async t => {
+  const root = await mkdtemp(path.join(tmpdir(), 'wiki-links-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(path.join(root, 'graph'));
+  await writeFile(path.join(root, 'graph/graph.json'), JSON.stringify({ nodes: [] }));
+  const script = fileURLToPath(new URL('./check-links.mjs', import.meta.url));
+  const check = () => spawnSync(process.execPath, [script, root], { encoding: 'utf8' });
+  await writeFile(path.join(root, 'index.html'), '<a href="/wiki/">Wiki</a>');
+  assert.equal(check().status, 0);
+  await writeFile(path.join(root, 'index.html'), '<a href="/concepts/sessionless-continuity/">Redirect</a>');
+  const escaped = check();
+  assert.notEqual(escaped.status, 0);
+  assert.match(escaped.stderr, /link escapes the wiki mount/);
+  await writeFile(path.join(root, 'index.html'), '<a href="/wiki/missing/">Missing</a>');
+  assert.match(check().stderr, /broken static link/);
+  await mkdir(path.join(root, 'quickstart'));
+  await writeFile(path.join(root, 'quickstart/index.html'), '<nav aria-label="Main"><a href="/wiki/quickstart/">Guide</a></nav>');
+  await writeFile(path.join(root, 'graph/graph.json'), JSON.stringify({ nodes: [{ id: 'quickstart', body: '' }] }));
+  await writeFile(path.join(root, 'index.html'), '<meta http-equiv="refresh" content="0;url=/wiki/quickstart/">');
+  assert.match(check().stderr, /Wiki home must render content instead of a redirect interstitial/);
+  await writeFile(path.join(root, 'index.html'), '<h1>The systems behind Nora</h1><a href="/wiki/quickstart/">Guide</a>');
+  assert.equal(check().status, 0);
+});

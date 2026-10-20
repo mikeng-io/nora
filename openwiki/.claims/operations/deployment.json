@@ -1,0 +1,582 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:6aaeed57b479a942e61abbf669a4332a0e36176d1b1113b02cda0f4a205e47d0",
+  "claims": [
+    {
+      "id": "claim_7ee862a9de60420887be7231df518172",
+      "statement": "The root Compose project gives `nora`, `presence` and `analytics` one shared image build and one image reference (`nora:latest`): `presence` and `analytics` declare no `build:` stanza and override the image ENTRYPOINT rather than appending a `command:`, because a command would arrive as arguments to the daemon's own entrypoint. What they share is the build and the reference, not guaranteed identical running code — each container keeps the image ID it was created from, so a moved tag plus a partial recreate leaves containers on the older image while `docker ps` shows the same tag for all three — which is why cohort recreation plus the image-ID readback in `scripts/verify-deploy.py`, which selects containers by the reference they requested and compares resolved IDs, is what makes the running code coherent.",
+      "evidence": [
+        {
+          "resource": "repo://docker-compose.yml#L511-L529",
+          "version": "repo-lines-v1:sha256:7364a294c48648d1695ebe6b4f153082d0ebf2f9eafe44d9614dd7ef065a58be:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ2NDQ3ODRjZGFiOWM4MTI0ZTkxOTc5YjhmYzRjNGQ2ZjcxYWY4YzNlZTBhZjVhYjJiOGNmODQzNmMxM2NjMDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRmZWI5MTA3ZWY5M2U0OTc3ZWM5NjUyM2U4YzkxMTNmY2M3M2E1YjRkNDYzM2E2MDUyMTk5OGE4MDc2ZjE1ZWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhmYjdhZDJjN2U1Yzk0MGZmZTUzNWM4MjE2MWIyNzk0NTU2MTEwM2Q2NTU3ZDI5ZjdiYzNlYzlkN2U0MzI1YWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJlNWFhZjIyOTc0YzEyMzMyYTkwNmI1NTVjMTkzZmViZDllZTIwZDEwNjZiZjRmM2E5YzBjZTE4OWRjYThlYTkifQ"
+        },
+        {
+          "resource": "repo://docker-compose.yml#L567-L587",
+          "version": "repo-lines-v1:sha256:a3556cbd2ca99393b4a946efc82504d9a378ba5d1d9c9b7d84ac85e7932244e3:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1NWRlOTA4MWI2ZGY1MDc5ODA5ZGM3MmVhMmI3NDdhNDQ2MGQxMGJmZGYyMzI4OWUzYTIyMzc2Zjc4MTMxYjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxM2Y0ZDk2NjFlOWQyYzNlMWEyODllNTgzMjI5OWJlYTE0Y2RiNjRiZjg4NjYxZGY3MTdiMTJmYTAyZDAxMWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNhYmZkNWY1ZmI1ODEzMDJlZjBlZTMzOTc0OGM4NjRiN2RhNmQ0MGI4OTZlNzM2ZDNmOTA5MjgwMmM4NmExM2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE0YzI5MmE2OTAwMzUzNDhjNzJjNGZmYzczMGNjN2E3MjcxMDVhMzZhYzNkODJiMmY2ZTI4N2EyY2M1OTI1ZDgifQ"
+        },
+        {
+          "resource": "repo://scripts/verify-deploy.py#L1-L41",
+          "version": "repo-lines-v1:sha256:9f57dcf4c772d438fd4221e907431e5093eea07a4ebd92a5c39b09d3a5b96956:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg4NzNjMTU5NjJjMDE0MGQxNzRlMWIzOTM2NzY4NGUwMjliMTJhNzgyOTRkZDQxMmVlNGU3MjkyMmNhNTQ5ZmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://scripts/verify-deploy.py#L72-L107",
+          "version": "repo-lines-v1:sha256:cd38f801ba7de3743fcd17182ff932e37b89c92bb0a4fac03c60081ee8f5e2f1:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjMzM1ZjliNDNmODkzZDc4MDA5MjBkZDU0MTNhYzMyMWI1MjNhNmZhNjFkZjE0ZWNlM2MwOWE2ZWFjNmZjNjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4MTQyM2JkZGM0YTI0YjllNjIzNmQ3NjI1OTkxM2Q0ZWYyM2E0YThhZjQwMTlmZjRmMWRjODE3NWI2NmFiNjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBiNDY4YWQwYWJkNWRmODYyMGJiOTRiZGZmZTg1ZjQyMTEwZWNkYThhZjc2NGE0ZDVjM2JhMDZiYWE1Zjc3M2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM0MTU3NzZhOTlmMTQxNTY1OWRlMjZlYjRkYjI2MTg2M2ZhMTIxOTY2NjBjOTU3ODUzYTYzMTMxOWJmZDliODYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9c89eba72b134770aff0d805c7273754",
+      "statement": "A code deploy must recreate `nora`, `presence` and `analytics` together: `--force-recreate nora` alone leaves the other two containers on the image they were created from while `docker ps` still displays the same tag for all three, and when the live config carries keys a stale image's schema forbids those containers reject them at startup (`extra_forbidden`) and enter a restart loop that the recreate's own exit status never reports.",
+      "evidence": [
+        {
+          "resource": "repo://docker-compose.yml#L511-L529",
+          "version": "repo-lines-v1:sha256:7364a294c48648d1695ebe6b4f153082d0ebf2f9eafe44d9614dd7ef065a58be:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ2NDQ3ODRjZGFiOWM4MTI0ZTkxOTc5YjhmYzRjNGQ2ZjcxYWY4YzNlZTBhZjVhYjJiOGNmODQzNmMxM2NjMDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRmZWI5MTA3ZWY5M2U0OTc3ZWM5NjUyM2U4YzkxMTNmY2M3M2E1YjRkNDYzM2E2MDUyMTk5OGE4MDc2ZjE1ZWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhmYjdhZDJjN2U1Yzk0MGZmZTUzNWM4MjE2MWIyNzk0NTU2MTEwM2Q2NTU3ZDI5ZjdiYzNlYzlkN2U0MzI1YWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJlNWFhZjIyOTc0YzEyMzMyYTkwNmI1NTVjMTkzZmViZDllZTIwZDEwNjZiZjRmM2E5YzBjZTE4OWRjYThlYTkifQ"
+        },
+        {
+          "resource": "repo://docs/runbook.md#L342-L364",
+          "version": "repo-lines-v1:sha256:5e2c900adf6df8189e4e3f71d9926f95a82c005911580a3c9568aff182bf6e17:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxNTg3MTU2ZTQzZWJiNzM3MTg1NmVlZmMyNDlkNTNlMmQyMzdlN2FmZDdlYWNhODk1Yzk5YmJiNDE4MTFlNjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJiYjE3Yjc4YmJhZjUyZGUwYTM1ZDk3Njg4OWQ1ZWI0OTViOGNhMDEzODhkMTZiNmVmMzFjMGM4OWQwYTZkMTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI2ZWYyNzhmMGIzOTkzMDExOGRlNTdhZDg5N2QzYzcxYzg5MWM4OGRlNGQ1ZDgwMmNhNDg0NDBmYTM1NjM2N2QifQ"
+        },
+        {
+          "resource": "repo://scripts/verify-deploy.py#L1-L33",
+          "version": "repo-lines-v1:sha256:b0b071897be203396b1534f8911ec5e3112e8f2a2cac6c01c5a14bed9aaeb7c6:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg4NzNjMTU5NjJjMDE0MGQxNzRlMWIzOTM2NzY4NGUwMjliMTJhNzgyOTRkZDQxMmVlNGU3MjkyMmNhNTQ5ZmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM5NTI4NzIxMTFiZDUzNzFmNDA4YWEyY2Y3ZmRhMTQyMjIyNzVmZDZhMDBjN2E2OWFhYzBiZWE4ZGIyYjk5MWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b054fdeee420436b9f50bdceefd137ef",
+      "statement": "Containers address each other by service name on the project's `nora` bridge network, and the credential-holding services (`signal-cli`, `whatsapp-bridge`, `instagram-bridge`, `rustfs`, `stt`, `voice-sidecar`, `voice-wake`) declare no `ports:` at all, so no host address forwards into them, while the loopback publishes belong to the admin and HTTP surfaces.",
+      "evidence": [
+        {
+          "resource": "repo://docker-compose.yml#L33-L40",
+          "version": "repo-lines-v1:sha256:71f88f22a45a55a4b214e942c652bdb2c4389dc6f5cb14e3c5c7e04ad42f444d:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiM2UwYzkzYWJhNjA1MzdhNWQ2ZTNkZjk5MjhmMDM3NjhiZmM2ODA1MzI1MjZlNjQ2NzU5MjYxNzdjYjFkMzMyYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGE5YjRlMWYzYjdmMzE2NWQ0NDhmMDU2YTQzYTUzMzI5ZTAyYzZlOTRhY2RlMTFlN2U2M2ZjOTAzMWI2MjAyYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGMwM2Y5OTg3M2RjZWYwYTExMGM4YmQxMmJlYjM2MDlhMjZmOGM1ZWZiMzgyZjgxZDIwMzRmYTEyYjM2ZTdjMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYmU5NmQ4ODlkNGNjNmY5ZGZjZmIyZWRkMTc0MWEwNTQ2NjY5ZDkyYWRkMjRhNWJjYTdkNDYzZWQ5ZjYzOGUxMyJ9"
+        },
+        {
+          "resource": "repo://docker-compose.yml#L783-L793",
+          "version": "repo-lines-v1:sha256:fc37d8061e1f2e95c557e13abd63006570b76d29deaec8eeb6b630c32c2aa99b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZlZTU2MmFjYmJkNGZmODRhYjQ5NzFjN2ExYWRmOThhZjZhZDdkZGEyMzAwMjlkM2Q2MDU4MThjYjIxYTUzM2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNlMGM5M2FiYTYwNTM3YTVkNmUzZGY5OTI4ZjAzNzY4YmZjNjgwNTMyNTI2ZTY0Njc1OTI2MTc3Y2IxZDMzMmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdkZjY3ZTI5ZmI5MjBmNDA3ZDRlODk2ZmZlOGFiNTdjYTAzYzQ1NDQyNjRmYzI3YWY2MjM3ODg2NGUwMzZlZmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI4ZjIwMWQ5YjQ4MjM2MDhlY2ZhNTRlN2ZlN2RiNmU2ZmJhMTkzMjdkNTdmZjliZWFhOTkzMTYyN2ZkYmU3YWEifQ"
+        },
+        {
+          "resource": "repo://docker-compose.yml#L925-L945",
+          "version": "repo-lines-v1:sha256:a2e6c579701d6f188fdb9996fab2d2928785caca0a4e64892ab56546b71c0e8b:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmOGNiODk0Yzc3YzQyNWZjY2Q1OGVhZjJlZGY1MjcwZmFiMjljOGQ5NmFkZjExNmEwNTIyN2I0ZWUxMGM3OTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNlMGM5M2FiYTYwNTM3YTVkNmUzZGY5OTI4ZjAzNzY4YmZjNjgwNTMyNTI2ZTY0Njc1OTI2MTc3Y2IxZDMzMmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJiMmM3ODM0YTdlMDgzY2Y3OWY3YzVhOGY4YmNhNTUyNWU4YTEwZmRjNGQ0MTIwYTI0MDNmYzAwMTI0YmNhYzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEzOTJiYzFkZDkxNjY1YTM3MDUyNDViMmU4MGMyMjhmNzBmOWJlMDhkODY0OTYzM2RhMTgyYmE5NWY1Mzc4ZjQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f0240be5c9f14de59014a34a31ba71ca",
+      "statement": "`network: host` on a Compose `build:` block is a build-time property only: it governs how that build's own steps reach the network and never the network mode of the container created from the image, so a host-network build does not produce a host-network container. On the container side the root Compose file decides with each service's `networks:` and `ports:` declarations, and the question is mode-conditional: a Komodo stack deploys pre-built images from a generated file that carries no `build:` stanzas, so nothing builds on the installation host.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/komodo/README.md#L46-L49",
+          "version": "repo-lines-v1:sha256:898351fb8ce7b215c7410c37de08567f9ad088335a86bebe604d20b1d635cb24:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDE1ZWQwNThhMzJmNGU5YzkxNDM1MWI1MzljZDZkOTcyNGUzNTZhY2ExYmVkYzFlMzkyZTg2ZjVlYzdjZmRiNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNmRlY2VmNzUyODVkOWZiZTZhZGMxYjQxYTY0ZDQ5MjNjZjZkYWE3ZmUzZGFkMzBlNjc0MDcyYzc4MzE0YjhhNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzQyNGRjNjA2OTU1YzQwMjA2MTEzYTE2MjczNmUyZGUyYmZhZWVkMWI0OGI4NzM1YzVmYjFlMzU2MjQyZDA0ZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmNiOTNlZGJhNjhlMzUxM2ZmMTY5YWI0MDk5YzYxOTZjMWFkYmFmOGEwZGVlNDZmOWJjNDYxNTVlNzgzMmJlOCJ9"
+        },
+        {
+          "resource": "repo://docker-compose.yml#L195-L213",
+          "version": "repo-lines-v1:sha256:e5a66634a6d1710e669bda68747d87612808ddf3da61705d056192aef7c031bf:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZlZTU2MmFjYmJkNGZmODRhYjQ5NzFjN2ExYWRmOThhZjZhZDdkZGEyMzAwMjlkM2Q2MDU4MThjYjIxYTUzM2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlYjc3NzdmZWJlM2M5ZWJiNTQ1NGVkN2Y0ZDY3OWU2ZjJkOWFhYWRhNTVhNzA1ZDBjNWMyNGU3ZTY1MjYxOWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdkZjY3ZTI5ZmI5MjBmNDA3ZDRlODk2ZmZlOGFiNTdjYTAzYzQ1NDQyNjRmYzI3YWY2MjM3ODg2NGUwMzZlZmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM3ZDU0OWExNDRkNzNhYTc4ODZhOTY5NjUyNDMzNjU3MTI0NDMwOGQ1YzUzZThjMzk2MjNkMmE5NmQzODQwZDQifQ"
+        },
+        {
+          "resource": "repo://docker-compose.yml#L228-L260",
+          "version": "repo-lines-v1:sha256:7bbe1115ab248975960cc618a6eb78a725a3ec23f1d0179366128045b0aea0e6:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwNTdmNGMwM2M5NzlmNDhjYjE0M2M4NmQ1NTYxNzI1YzYzMjU5NDIzMWJhMmMwZmM4OTkzYWMzM2ViMzQ3YTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBmYmVhYzBmZDI1YzUyZTlmNmM1OTExNzIwMmQ0OGZmOWJlM2MxNWZjMGVjZmQwNzViZWYxMGU1ZTU4Nzk3ZjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFkZDk5YjJjODViNmNlZTY4ZDY1ZGJmMDQzNDhmMzQ5ZDMzY2U4N2E5NDIxZDNhN2ViNzBmZTYwYTYwODI0ZTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk5Mzc3ZjhmMTM4OGJhMzYwYjI1Njk3ZmYyMTllNTkzMjE3NTY1ZGI5OTZlYTZjMjE1NzE2MGYxYWNlYmQ1ZTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_af3f50eaf616419dba53149f47197e4d",
+      "statement": "The `honcho` Compose network is declared external under the name `honcho_memory`, is created by hand with `--internal`, and has `nora` as its only member; without it every `up` that names `nora` fails immediately before any running container is touched.",
+      "evidence": [
+        {
+          "resource": "repo://docker-compose.yml#L1051-L1061",
+          "version": "repo-lines-v1:sha256:3d89bccfd2314907f08133124784a80ff4f597613b918e18ec08c1ee13d7d519:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlMTg4ZTA1YTcwY2M5MGQ3Y2U4OGYzMGM3ZWFiNDdjZjM4MjFhNTA5Y2ZkNDQ1NDZlN2ZmMjdmOWFiMGE4NWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhYTg0ZTI2NTNjODk3M2I5YmQ4MDMzMGM1MmE3MjQwYzJkZjU5ZTM1MjI1YWJmOGJmZWY0N2U3OGI4MWZlMDQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJmMGNhMmE2ZTM3YzY3MzQ4Y2I0MGVkNGVlYTVlMTAwMjZiMjYzNzU3YWExNGUyOTkxNzhlOTA1YjhkOTBhZjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFmODVkMjc0ODkxYWNjNTNhOGRiOTIxMGQxMThhNWIyODgyNTJlMzZkYTAyYjZjOGU5NjY1ZjY0ODU2NzhhMzkifQ"
+        },
+        {
+          "resource": "repo://docker-compose.yml#L247-L256",
+          "version": "repo-lines-v1:sha256:0ef5dc8b7d6bba742ea1bd7ee7a1191efd27bac3269900c35ee1ebe11f2c4798:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5NGZiYjdkNDA0Njk2Nzg0ZjM3YTc4ZGY3MmJmY2Q4ZWFjMDhhNDc1MTY2N2VjM2JlODgxYmY2Nzg2Zjc0MzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBiODhiN2JlMDE0ZTQwY2MyN2VmMWUzMTkwMmQyZTVlY2IyN2MzZjA1MDQ5MDg0MmUwNTAxMmViNzFjMjcxNWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUwYThjMWQyMDVmNDJkODM1ZGZmOWM4YTA2NGQyYmY0NTlmZmEwZDZmNGQ5MTQxZmI5YTc2YWMxNDc0ZWVkYzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFlNTdjODNhYmVlNzY3OTc4NTM0NzM4NTQwNDYzZmI2ZGM1NDQyNmUxZTM0YjYzZjUyMGU0MWE0ZjVjZGVjYzgifQ"
+        },
+        {
+          "resource": "repo://tests/architecture/test_honcho_is_reached_by_a_private_network.py#L41-L68",
+          "version": "repo-lines-v1:sha256:682c80b18ab173c791ea7569950619ed86ea86fcbeeb9c964a6f4a4207aff03d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlZmZjODU3Nzc5YTM0OGI4ZGVlYjQ5MTQ2N2IxZDQyMWJiZjAzZWE2YzdjN2JmYjJjMTA3NGNmYjMzNDlmOTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJiNWQ0Mzk2NmMxNDZkYThiZTQyOTYxMDhiMzNlNGM1ZDkyZDFjOGJmZWUzZWJmMGY3ZDA2OThlOTIwYmQzMWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNjNDI5MWEwMmIzZTA1MDgyM2FjMTViZDk3MmFmMjA0Mzg1NjhkMzVkMjRlYmE5M2Y0ZGI0MjBhZWI3NmI4ZjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMxZjNjZmQ3ZWRiMGRhN2NlYTBmNGI3MzAzM2VkNTY3NGU5MjNmMTNiYjY1NjY2MmQ5MmZiYjIwNDJmZWY4ZmMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f0821b765afb4c9aa66090490b90c8ed",
+      "statement": "In checkout mode, live-mounted content changes running behaviour without an image change: `nora/doctrine` and `nora/dreamer` are read-only directory mounts reloaded on mtime (a pull alone deploys an edit), while `config.toml`, `identity.toml` and `policy.toml` are file mounts loaded once at startup, so an edit needs a recreate rather than a restart and `/health`'s `config.<file>.stale` reports when the process is still serving the old bytes; where an installation's generated Compose file drops those source mounts, the same edit is an image/release change instead.",
+      "evidence": [
+        {
+          "resource": "repo://.agents/skills/nora-deploy/reference.md#L89-L105",
+          "version": "repo-lines-v1:sha256:d1a5428ff23f6b899a5f81abfcb478f38fbbbf0a452cb4ef164f456a2007c6de:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjZTg2ZWYyMTIyNjRmMGQzY2ExNzc5Nzg4MjQ4ZTFhMTY2MTg5NWRhMjRkNmEyNzY2MWUwNjMxNDhlNzhmZTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMxZDhjZjJlN2NhZTM3MTkwMDU0ZjdhOTM5ZWQ2YzAyYmNiMWE5NDg0OTUzYzg1MmQxYjQxZTY5M2MxYzVkM2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNiMzM5NTQ0NGExYzNmMjk4YTE5MTI3ZGJiODcyYTA0ODhiMTg2M2VhNzI1MDMzYTcxMjFhOTY4ZGZhNDcwZTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://deploy/komodo/README.md#L46-L49",
+          "version": "repo-lines-v1:sha256:898351fb8ce7b215c7410c37de08567f9ad088335a86bebe604d20b1d635cb24:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDE1ZWQwNThhMzJmNGU5YzkxNDM1MWI1MzljZDZkOTcyNGUzNTZhY2ExYmVkYzFlMzkyZTg2ZjVlYzdjZmRiNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNmRlY2VmNzUyODVkOWZiZTZhZGMxYjQxYTY0ZDQ5MjNjZjZkYWE3ZmUzZGFkMzBlNjc0MDcyYzc4MzE0YjhhNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzQyNGRjNjA2OTU1YzQwMjA2MTEzYTE2MjczNmUyZGUyYmZhZWVkMWI0OGI4NzM1YzVmYjFlMzU2MjQyZDA0ZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmNiOTNlZGJhNjhlMzUxM2ZmMTY5YWI0MDk5YzYxOTZjMWFkYmFmOGEwZGVlNDZmOWJjNDYxNTVlNzgzMmJlOCJ9"
+        },
+        {
+          "resource": "repo://docker-compose.yml#L435-L448",
+          "version": "repo-lines-v1:sha256:13c5ee7b83088c388005b5cc82c5af17b60a72c98f2631593c75aa1e8fa95af8:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNjMzAzY2RkZWYxNzAxZTU1ZjIzZDM5NGNiODdjMDRkZmY4MDE1MTY4OGVhNzIyNDQ2MzVkMmQ5ZjU3N2ZjMDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYzZTg3OWI0YmI2ODBjOWQ5ZDJkMTBiYmUzOWExNmFlNjFkOTg5NDIyMjkxNGQ5ZjkzNGRkOTRmMDkwMjg2ZDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjExNDM3ZTJmMTY3ZDc3MjE2MGJjYzY5ZjZkZWVlNGEyODUyMWU4YjI2MzQyNmNmYmRlNTc5YjU2OThmZmM3ZDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBlYTAzZjczYTFjYTU1ZDg5NDU4MWFlZTk5ZWRiZjM0NGNiOWQzZWJmNWNhNGExYjc5YjkzMDM2NWVlMDQ3ZGEifQ"
+        },
+        {
+          "resource": "repo://nora/obs/health.py#L14-L20",
+          "version": "repo-lines-v1:sha256:08eff34c2f2cb081876bd84e8f98ae1d0b53c83479e8d5cb17d550860bd7c9ba:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDU1ZWU1OTRjOWQyOGE4ZDgyZmQ3ZmMwZTcxYzgxODhjMjZlYjc2M2Y3NzdjZDM2YzE1OGU5MzI4ZTQ4OGJiYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzhlZWNkZDVhZTkwMmZmMzEyYWRmNDk4YzFhYzFkZWZiYTBlZDNjNTcxNjYwN2U0Y2M3NjAwYmY5ZjE4M2M3ZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOWJhMzJkNTQ1NzA0MGI0NmIxNWJjOTA4Y2Q2NzUzMTExOTdmMTEyZGRmODQ2YzM0YjIyY2JiNjEwMzYzNmJkYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmM4Zjk4ODhjN2MyOTQxYTk3Yjk5ODZiMTk4MjAzNmQ3OTIzODVkZGExNzIxOGU3ODk5YjM3Y2E1ZmIyZjM2OSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_11a6f1542e424dfbabddf94227759c65",
+      "statement": "The reported version is a baked artifact built as a chain: `scripts/gen_version_manifest.py` writes `nora/version.json` on the host from `git describe`, the file is copied into the image by the same `COPY nora/` that copies the code, and `scripts/check_version_stamp.py` fails the build when the `NORA_VERSION` argument disagrees with the baked manifest in either direction.",
+      "evidence": [
+        {
+          "resource": "repo://Dockerfile#L30-L46",
+          "version": "repo-lines-v1:sha256:b5a1dd293aab5eeb7f718b26a708ec26eb98f433400bf6660d202ff4b4c0a2ae:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZiYjIzOWVjNjkyZTllOGIzNjU5Nzc1ODg0NzVhMjk4YjYyYzcyMDI4ZTcxNzQ5MDI5Y2E1NTk2YmFjYjhiMGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0OGJiNTM4OTQ2ZWI2OTJkYjNkN2U5OWQ4MjBkZWEzMWZkNWFkYTBiM2E4ZDdkYTZhNjQ4NDZhMzUzZjQ2NjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3MTE2N2ZhM2U5ZGJhNDA1MWQxOTQwZjg2ZmYxMmE2NGI2ZDFiMGJlYjM1ZTAzYjk3MGQ0OGEwOGU3MzQ3NWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVlNDM1ZWUyZTNhMGMyZGY1NjYwNDg0ZmU3OWI4ZmMzOWVhYjcxYjkwMmYzNThjNWEyZmQ1YjBiMzgzNWU0NjgifQ"
+        },
+        {
+          "resource": "repo://scripts/check_version_stamp.py#L14-L34",
+          "version": "repo-lines-v1:sha256:3b073a8e69291fec6b1f49e73699560e9b1f1fc80c8680e5bc06c170785addea:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3ZjkxNmFiMjc0MmE3ODQ1YjliNzhmYzVhMjNlM2Q4ZDg5NWMxYmRiYjRlMzJjMmVhNWM0NzRhYjQwOGU3MTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEwODMwYjkxNzM5OWZkOGZkMTQxMDcyMmRlMmQwMmY3MDVkM2MyNDM0NGVkYmMxNDEwMTNkMTQ4YTk5MzgwZTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://scripts/gen_version_manifest.py#L1-L45",
+          "version": "repo-lines-v1:sha256:120acdea9d50ad4dddc098950177d8057388ff2c75aa7b1fe2a63a4907e6c4a0:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1Y2M1MjRiMjBhYzk2MjRmZjVjYjQzYzBlN2EyMDgzMWNkYTJhYWY1NzA5ZDk0ODQxNWZlNjQ4ZjEzNDlhYWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFmMDZjYmE2YjAzYjY0NzdhN2U5YzQ5Y2QxYjI4ZGVlMjQ2ZjBmZWU3ZDBlOTAyMTRhMDMzOGVkODE2ZDc4NDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhYWY3NjM3Y2I2ZTdlNWRiODVkNjM0Mjc0NjAxNGRmMDQxY2NkNTU4YTkyMGIyOWViNmFjNzE5ZDdiYWY1YzIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_cf4754709bd447c2ac303d5a88bbac27",
+      "statement": "An empty `NORA_VERSION` is an allowed UNSTAMPED build, and the gate then deletes any stale `nora/version.json` from the build context so an unstamped image reports `unavailable` instead of a version it is not running; a claimed version with no manifest to read is refused.",
+      "evidence": [
+        {
+          "resource": "repo://docker-compose.yml#L215-L227",
+          "version": "repo-lines-v1:sha256:93abfb9d2c4c35ee05c0ad796e5c03e25b56a89e28f747220deddc3c9334a407:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ2MmQ5YTJiMWU4YmExMTU1ZjU1NTkzNGM3NjNiNWE3N2Y5MTE0NjUzM2ZlMTVjZDM5YzI3OTk1OGJkMzA3MjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNkZGQ1ZGViZjNmMmJhNzMwZGY0MDM3MmJhMjc3ZDg3NTdkMGMyODc0NDVkODU0YjA2NTNjMGRlYmZkODVmOGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZiYTRlYWE4NmYwNGI1MzAzOTk5NWI2MmU4MTE3OTYwOWFhYTM1MTk4NGE4MjZjN2NjMmZkNGRkNDcyYTI0YjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUwZmUwZTcxOGE0YTI1ZmU5ZDVkMjM4MjcyNWU2ZTJjYjUyZjY0Njk0OTY2YzBjMDIyYTk0MTUyZWM2ZTEyZjAifQ"
+        },
+        {
+          "resource": "repo://scripts/check_version_stamp.py#L45-L90",
+          "version": "repo-lines-v1:sha256:3a314bc567d53f1757818f100133af5e2315adba53e75808f96db44be71dcde8:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImExNThkMzM2MjNkNTk1YmVlMDEyOTA0OTBhNDg0MTdjZTVlMWUxNjIxZmFlZmU5Y2YyZGVmZWY3YmI0ZTBkNjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE2MjMzYjNmZmVhMzJhMjNkZjUzMDY1MzQzNDhmMmRlZTc3NmE1YTZmNzRmYjUzMzE3NWRkYzUzOWE4ZmU0NjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc4OTE4MjQ1Mjc1YmRkNDkzOThlYjQwN2Y2MThkOTUwZTEzYTljMzg4MjhlMzY0ZmRiNzEyZWM5NDlkNGQ3NzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNkNDEzNDBjYzIzOWExNTljZTliNjAyMmU5ZjYzMjI4MzJlMmVhZDc2Y2FlOWU0NzU0ZDIxMGViOGZiNmQ1ZTgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_cc8f599fd46046319a530cd3b33a67e5",
+      "statement": "`nora/infra/version.py` reads only the baked manifest and never raises: absent, unreadable, malformed JSON and well-formed-wrong-shape all degrade to `unavailable`, and the three statuses (`ok`, `nothing_found`, `unavailable`) keep \"cannot check\" distinguishable from \"that version never existed\".",
+      "evidence": [
+        {
+          "resource": "repo://nora/infra/version.py#L1-L30",
+          "version": "repo-lines-v1:sha256:ecb9d1120e4a598d88e50339d344eb4a02c9cb09a78fcaf58a6c5dff4ee0f076:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4NzIyMzk3ZTI5MjE1Y2IwNDQwYmI2MTA0NTE5YjMzNmUyODc1NjNlODVhZGFmYmI2MzBlMDc3NTA1NjIzMzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIxMWYxZTk4NmZhYjg1MGRiYWUzNDA0ZDExOGFhMzUyN2FkZTNjZjg5YzVkZjk1MGVkMDBlZWExOWVkZjU1MjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdkNjYzZjNhOWQ0NjdkNWIxZDdkZGE0NzljODY0YzU5NDczYWVhNWI5Y2EzZGJjNjc5NGMwMzhlNGEzZDI2MmMifQ"
+        },
+        {
+          "resource": "repo://nora/infra/version.py#L156-L250",
+          "version": "repo-lines-v1:sha256:21609c0318c609f6e606c447b4b96f699047f8247fe5dee1b911e9c7d74dbe94:eyJzZWxlY3RlZExpbmVDb3VudCI6OTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYwZmZjZDUyZTY0YzEyMjQxY2FiYzhiZjAxMTRjNWVmZjkzNDNhNTg4MWYyZmY4MzY4NGUzYmUxNTEyNTg5ZTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg1ZTA3OTZmMWE3MjFiNmFiMDFkZWNkNDIxYjBkNGIyNDA2MWUyNzgyNjVjMGM4ZjBjZTdmMWE5NmJhOTRmY2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM3Mzk2NDk0YWE3ZTU0Mjk3NjVkZmFiMjA4ZDNkNDU3YTRhOGViZGJjNzRlZDBhOWE3YmQyZmEyNTAzZDIyZTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIyYTBmZWNhMDM4ZDUwOTE2M2JhZmRiMmQ1NmE2NTdjNjkyOTU3YmU2YjU2OWE5MmFjODhjYjgzYTIzYjYyM2MifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f7629e5d001f4c00a259a6dd27d4ece3",
+      "statement": "`NORA_GIT_SHA` and `NORA_BUILT_AT` are separate build arguments carrying the commit and build time for every build, and `nora/app/revisions.py` records them with the three config files and both corpora at each boot, so \"what code was in force at T\" is answerable on an unversioned deploy; a failed write is counted and never load-bearing.",
+      "evidence": [
+        {
+          "resource": "repo://Dockerfile#L57-L68",
+          "version": "repo-lines-v1:sha256:7c1a087d4b6cbd249828b65a89fe264deee8fba98ccac8fa4dd1c1e9602ba760:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViMzgzN2JiZTc0NTRkNTgxN2I2ZGZkZDViODJkOGI4ODM1ZmE5ZWI5ZTg2Nzk0ZDMyYzE1ODBmM2VjZjNmMzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAzYjE3NjY1ZDM0NjNiNDYxNTBmZjA1ZWVkZGI3OWE5ZjNjZDEwMDEyNmZiNDMwMjVmZTdjNDAwOGVkMDQ2MTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMwNjE5ODg0ZWM3ZGQwYzljOTI3ZWIyYzY3YzdmOGY3NDcyMzExY2MyNDQwMmVjOWUwYmUwZjFkOTFmNDMxMzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZlZDY0MTNjMDYxY2FiMGQ4Zjk5NmMwMmM0ZmY3YjAzYzMyY2E4YjdkOWJiNDg0NjczMmM4YTQ1ZGI5YWI0MDMifQ"
+        },
+        {
+          "resource": "repo://nora/app/revisions.py#L1-L19",
+          "version": "repo-lines-v1:sha256:d1ec0640cdfcdacca0c5b3bea8b1b5acffda7bdae91daba82dbf409df014eb29:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3MmQ3NDJlYmZhODNlOTZjZjFkNzgwZmQ0YjM2MDkwMDI0MzRhMzAwYWZmNmFlZjhmMmE0ZjFlYjEzNDA5ZmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8819067e0f764a87b0929069d15479e2",
+      "statement": "A checkout deploy is one serialized transaction under `flock -o -E 75 -w 900 /tmp/nora-deploy.lock`: prove the reviewed commit is merged and the checkout clean, stamp and build the image, validate a copy of the live config through the new image before recreating anything, force-recreate `nora presence analytics`, read back, and only then tag `nora:sha-<commit>` and log the deploy.",
+      "evidence": [
+        {
+          "resource": "repo://.agents/skills/nora-deploy/SKILL.md#L200-L204",
+          "version": "repo-lines-v1:sha256:18da38622f57f01cd3469ded5b0c1b405b726bc23054461d6744b097c892d379:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzZkNzE4MjRhMmZhZmYwYTkwODRiMmY1ODg2NjRjMmE3MWQ2YmEzMDIxZjIzNTQ2M2M5YzY4NmM3ZDJkZmE3MiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzY5NWIwMTYyM2U3OGJhMzhiNjk0YjNmMGE1YWQwNWNkYTQ1MTgyNmRlMjU5YzBjYzkyZGZlMjgxMmE5NzRlNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDVjNmRiZTZkN2E0MGZiNzk0ZDIyMjJkOGI3ODg5Nzg4N2QyODZhYzkxNWQ3M2NhZGViM2QyMmEwZDViNWFiYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        },
+        {
+          "resource": "repo://.agents/skills/nora-deploy/SKILL.md#L50-L96",
+          "version": "repo-lines-v1:sha256:df0b210d7de76a6ceabf6878ccc5fbd40112826a012096fed46fe579285fd07a:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlNjIxNjAxMGE1MDAxMWZhMTAzNjY3OTUxYThiNjIwYWM1ZjdkNDZiMDYzZDcwNjM2NjFkNDYxNWJiM2Y2ZjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVkYjBlZmNlNGUxNjExYTJhNjViNzU0MTBkMWQ5Y2EzZDk0MzZjMGMxMGZiYzU5MDg4YzZjODZlZWU3NWQxZDAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBjMjRiZmI0MTVkMWFkYzM1YzA1MThlZDNhZDY2NDA1NDE2ZWJiZDM0ODUzMTNiMDRhYmU2OTRiZjQzZWYwN2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYyNDkzNGFiNmM5MTc4OTExZmVmYTNhNTQ1ZjNkODQ1MmVhNGMxZjIyY2MyNDM4ZDE0Nzc4MjY3YjY0ZmY0ODEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0c1b5ad9031448d8b12981fa392ea6e3",
+      "statement": "The live-config validation step runs the candidate image's `nora config validate` against a copy of the live file kept outside the checkout, and refuses with `LIVE_CONFIG_REFUSED_BY_NEW_IMAGE` before any container is recreated; validating by bind-mounting from the checkout is avoided because Docker creates a missing source directory as root and the next pull then fails.",
+      "evidence": [
+        {
+          "resource": "repo://.agents/skills/nora-deploy/SKILL.md#L78-L82",
+          "version": "repo-lines-v1:sha256:15a2c625057bb56fcf93638e2fcd453c84c1c2eb0692f5a571b57144d001862e:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjQ3ODlkOTE3OTI4NDg4ZjkyNDFlNmU2MWEyODEwY2E2Y2YwYzQ1MDIwMjJlYjU5YTNlOWVkMjExM2ZjMDczNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzgyZjFmZDZmNTY3NmU4ZWM4M2Q0ZTljYmY4OGFjYTEzMDQyNWNmNzg3NDFhNDE5YWYxOTZhYjcyOTM3MzI1MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGIzMTQzNDFkNWYwMzkxNDUzY2FhMDdiOGFmZTFjZjVlNWY3MDY5NGQ1ZGJjN2M5NzgwYWEyZDE0MTc4ZjBiOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOWIyMTZhOTA0OGQwNzFhNDIyODUxM2I0MWQwOTJjNWU2NjM4MjQyODllMDcxZThlZTY1YzU1NTE2ZjIwNmQ2MyJ9"
+        },
+        {
+          "resource": "repo://.agents/skills/nora-deploy/reference.md#L47-L56",
+          "version": "repo-lines-v1:sha256:f70f468335584aa45c57f009ba5f94cd4a97ee66d4b4b27a64c73e47470c743c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY1MTJkNDdhNTNiMTA2ZmQ0OWZlY2U1MDQ0NzMyYjEyYmZiOGMzZTY5MjAwNjAzMTE5ODYxZDNmNmY0MWFlZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE3ZGQ5ZWVjYzllYjc5MGNiMWUxZmRhOTdiNDAzYzFhYTNiN2Y4Njk4MmM1NjkwNmMzYjViNGExYWVmMWU5NGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIyZjM1YmIyYTViODZkOGVhY2ZiNmFkNDI3ZjMwYWUyODg2MTc5Mzc3MzU4M2MyMjI2OTMwNDkzOGVkMjRkYzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJjNzY0ZGI0YjM4MjVkYjgzNDYwZDM1ZWM0MTJjNWNjMGJmMDk2MTM3NDQ1MjI0NzRkN2FhOGIzZDI0YmU1ZWEifQ"
+        },
+        {
+          "resource": "repo://scripts/komodo_deploy.py#L89-L100",
+          "version": "repo-lines-v1:sha256:b34ad9da23019e6b0139b7534e1d054993f77d7370d85bdead0a565491c4fa41:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyMmU4NDAwNDIzNWVkNGY5NzcwNDEzMWFkZTJiMjQ0ZmI5MGU4MjdkNjQxYWQ4MDI1MmMwNTJkNjY2ZjliYjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQzMjk1NzdlYmZkYmIxOGFkMDU2OTg3MWM3OTliNDU5YWQ5YTMxYzViMzkwZGJiNjdmOGNjOWE5MmFmZjExY2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ2OWE5NzFmNmE1ZTQ4MmJjMTI3ZTUzYzZmYTEwMmFjMTY0NjkxMzhjOTQwMzJhZmU5MDg3YmU5MWZiNmI2NTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg3ZjYyNzRmNzFiNjZiZDhkMWFkNTExMjAzODEwNzRlNmMwMzA1MTliMDJlYjU0YzcxYTVkMjQ2ZTY3NGJhN2MifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_03f4142f579e46e8a6bb55d9fe19ae5f",
+      "statement": "`scripts/verify-deploy.py` selects containers by `Config.Image` rather than by `--filter ancestor` or the `docker ps` display value, because both of those exclude the stale container it exists to catch, and it treats `running` as insufficient: any restart since the recreate or a `starting`/`unhealthy` health status fails the deploy with a non-zero exit.",
+      "evidence": [
+        {
+          "resource": "repo://scripts/verify-deploy.py#L72-L172",
+          "version": "repo-lines-v1:sha256:c80873320e2ca2a728d43c4fd93e5463193c3a9415f8c600d0a460b137373043:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAxLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJhYzMzNWY5YjQzZjg5M2Q3ODAwOTIwZGQ1NDEzYWMzMjFiNTIzYTZmYTYxZGYxNGVjZTNjMDlhNmVhYzZmYzYxIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIxNjIzM2IzZmZlYTMyYTIzZGY1MzA2NTM0MzQ4ZjJkZWU3NzZhNWE2Zjc0ZmI1MzMxNzVkZGM1MzlhOGZlNDY0IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIwYjQ2OGFkMGFiZDVkZjg2MjBiYjk0YmRmZmU4NWY0MjExMGVjZGE4YWY3NjRhNGQ1YzNiYTA2YmFhNWY3NzNmIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIzNzM3ODBmYTk1MzMzOTM4YjllNjQzNDZlOTk4MzhlMGYyZjRjZWY5NmQ2ZTBjMmJiMjhkMDZhZmZjMTk4MjI2In0"
+        }
+      ]
+    },
+    {
+      "id": "claim_e054bf3a5b4f4ce8b10ad21cce335bc7",
+      "statement": "Rollback is bounded by schema compatibility before it is a retag: the procedure diffs the migration versions directory between the two commits and refuses with `MIGRATION_SINCE`, because every startup runs `alembic upgrade head` and an older image cannot start against a newer schema — the follow-up revert PR must keep the migration file and revert only the code that uses the table.",
+      "evidence": [
+        {
+          "resource": "repo://.agents/skills/nora-deploy/SKILL.md#L186-L198",
+          "version": "repo-lines-v1:sha256:1b3be24368926f1084c8a4acf242838c07040616c71b44c46a8b0231fa9ef449:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRhMTkwMTdiOThmZjA2YWQ2MTgzODdiZGFlOWYxN2EwYjlmZDY1NzMzNTYzYzFkMzAxNDQ2ZGNjYzNlZDJlMDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxNGU5OTQzNTQ4MWYxZGU3ZDc5NGZlMjg0YTYzMGM5ZmRmZjkzZTc5NzZmNGZlZDZlNGU3MGRlZWYyYzFlZGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg3NDI4YjhiY2RlOTEzZGQ0MmYyODI5MTBjNzVlMzI5MzhjODI3ZjBjNjdkODQwMmYwYTlmOGFlMmVlNmVkNTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFmY2VkM2ZmNTgyYmNiYjQyZmQ5YjAwYjk0NzhlMDAxYWNmYjQ2YWUzZWI4NDE4Y2Y1NjE3MWJmYTU1ZTdjMzEifQ"
+        },
+        {
+          "resource": "repo://.agents/skills/nora-deploy/reference.md#L66-L71",
+          "version": "repo-lines-v1:sha256:96da7b92f787cc13929629c8ee460c94b2379bb011397b65ad21d3b53b310e85:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNThiODQ1NmMwMGQzZjNmNzRiMGY1MjQzNzJhMThmZWJiOWFkYzY4ZWNhNjhmZTczNGI3NzExMzI3YTcwYjI2ZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjRkMTVjMzJlMWM4NzhjZmVmYTJmM2NmMjZiODdiMzRhZmRiYmU5NzM0MGYzZTQwZTk3NDIwZTk4ZDRmNGNkNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGIwMmFmZGY3NDVhMGJiNmYxNjcyNjMyZjAxNjU2ZGNiMjQ0NzA2NDQwYzA3ZDVkYTlmOWU0ZGI4ZmE4MmM3NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjI1ODYwNzRlNDFlMzY4NjhlMmM5MTNiYTljMzg4NDBkNzVjYzFlNWE3NzQ5ZGY1NGMxY2IxMzk5MTg0NmVlYyJ9"
+        },
+        {
+          "resource": "repo://docs/runbook.md#L274-L292",
+          "version": "repo-lines-v1:sha256:6fb82ecaef5ba1794a34955cdf5a1332910a139c4047d91c3bb362e96e8364db:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU0MmVmMDc5YzBlYWNkNzZlZTBlYWZjN2Y3YTE4MDQ5OGY0NDI5OTYzMTFjMDliY2MxZmIxYTI0NDFjMmJjYTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU0ZTQyNzYxNmY2NWUyNDUxYThiNDZjMGE2NmU3NjdhOWY1NmJmOTc0Y2EwMDY5OTk0ZTljOTg0NzU4ZTEyNjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYxNGI5ZmM4M2VmMzMwMzEzNTI4ZDhiZjgyZDkwOWIyYmQ4YjBmYWFlNTgwY2UxZjFhMzk0ZjFiMjg5ZDI5YTYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_338bb40a6a8e47af82c9df89fb0103ee",
+      "statement": "Rollback is also bounded by config compatibility: because `config.toml` and `policy.toml` are strictly validated with `extra=\"forbid\"`, an older image meeting a newer key crash-loops until the keys are reverted through the validated-copy procedure, so a compatible rollback moves image and config state together.",
+      "evidence": [
+        {
+          "resource": "repo://.agents/skills/nora-deploy/reference.md#L47-L56",
+          "version": "repo-lines-v1:sha256:f70f468335584aa45c57f009ba5f94cd4a97ee66d4b4b27a64c73e47470c743c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY1MTJkNDdhNTNiMTA2ZmQ0OWZlY2U1MDQ0NzMyYjEyYmZiOGMzZTY5MjAwNjAzMTE5ODYxZDNmNmY0MWFlZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE3ZGQ5ZWVjYzllYjc5MGNiMWUxZmRhOTdiNDAzYzFhYTNiN2Y4Njk4MmM1NjkwNmMzYjViNGExYWVmMWU5NGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIyZjM1YmIyYTViODZkOGVhY2ZiNmFkNDI3ZjMwYWUyODg2MTc5Mzc3MzU4M2MyMjI2OTMwNDkzOGVkMjRkYzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJjNzY0ZGI0YjM4MjVkYjgzNDYwZDM1ZWM0MTJjNWNjMGJmMDk2MTM3NDQ1MjI0NzRkN2FhOGIzZDI0YmU1ZWEifQ"
+        },
+        {
+          "resource": "repo://docs/runbook.md#L394-L397",
+          "version": "repo-lines-v1:sha256:cd613bc0f5914157aeb5d3b78ba6dc450311d719a55bf001eb439d833fa8a036:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjM4NWUyN2RlZWU0ZmZkOWUwYWFiMWMxZjhlZTkyOWMzZGFkMjhjNDRhNjgwMmEwZGU3NDU3NzgxNWMxMjZlNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYmVkZjFkZTE2MDZkOGQ1ZmU1YmFlNTQ2NTRlYTI5NDIyNzkzNGIwOTU5MzhlYzRiMWE4ZTg3Y2IxN2E2NGU5ZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzVhOTE4YmRlMzM5YmZhYmU1OWJjNzJhN2YwMmU5Njc5OTkxZjAyNjY5NjlhMWRjM2M3ZjY0NDEyMWRlYTkxYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOWNjMGMyYzMwM2MyNTljNzI4YmJiZWY0ODYxMzk1NmVkYTNhZjMyOWI0YjlkNTY4YmNkYzY0NTc2MGE5YmM4NiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_534f3a914aed492ea52e63bae2f43446",
+      "statement": "Only a VERIFIED deploy is tagged `nora:sha-<commit>` and logged, so a failed deploy is never a rollback target; with no logged previous deploy the procedure answers `NO_PREVIOUS`, and a retag rollback recreates `nora presence analytics` together for the same reason a deploy does.",
+      "evidence": [
+        {
+          "resource": "repo://.agents/skills/nora-deploy/SKILL.md#L180-L198",
+          "version": "repo-lines-v1:sha256:a25860c745b747a9b1f645efb682e6329e090d19ef5088751a46bd1107096c2b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiYzJlN2M3YjNjNTBkNWFjNzM0ZTIwZDZkZjY2ZjM2ZTVlMDU2NmQxOTNjZDJkMzhlM2MzOGY3Y2UyYjUxNDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxNGU5OTQzNTQ4MWYxZGU3ZDc5NGZlMjg0YTYzMGM5ZmRmZjkzZTc5NzZmNGZlZDZlNGU3MGRlZWYyYzFlZGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgwYjczMWMwYjc0ZTU2YjFkN2E2ZjdkMmQ3MDdjNjZlZWNlZjAxYWVlNWQxMjEyODU0MjMwYmQzNTFkMTE1NWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFmY2VkM2ZmNTgyYmNiYjQyZmQ5YjAwYjk0NzhlMDAxYWNmYjQ2YWUzZWI4NDE4Y2Y1NjE3MWJmYTU1ZTdjMzEifQ"
+        },
+        {
+          "resource": "repo://.agents/skills/nora-deploy/SKILL.md#L86-L96",
+          "version": "repo-lines-v1:sha256:c7a5e10d0a05f748e669bc945792806189542264f515b0f44fce5a1a5bfd1010:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzMmM1OWI0YmQ3ZTgzNmFiZTkxNjkzODkwMjY0YmQyZWMyZGNiM2VhNjA5OTJkMDllZGMwODU4ZmU4NDQ5NTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVkYjBlZmNlNGUxNjExYTJhNjViNzU0MTBkMWQ5Y2EzZDk0MzZjMGMxMGZiYzU5MDg4YzZjODZlZWU3NWQxZDAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjliMjE2YTkwNDhkMDcxYTQyMjg1MTNiNDFkMDkyYzVlNjYzODI0Mjg5ZTA3MWU4ZWU2NWM1NTUxNmYyMDZkNjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYyNDkzNGFiNmM5MTc4OTExZmVmYTNhNTQ1ZjNkODQ1MmVhNGMxZjIyY2MyNDM4ZDE0Nzc4MjY3YjY0ZmY0ODEifQ"
+        },
+        {
+          "resource": "repo://docs/runbook.md#L274-L292",
+          "version": "repo-lines-v1:sha256:6fb82ecaef5ba1794a34955cdf5a1332910a139c4047d91c3bb362e96e8364db:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU0MmVmMDc5YzBlYWNkNzZlZTBlYWZjN2Y3YTE4MDQ5OGY0NDI5OTYzMTFjMDliY2MxZmIxYTI0NDFjMmJjYTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU0ZTQyNzYxNmY2NWUyNDUxYThiNDZjMGE2NmU3NjdhOWY1NmJmOTc0Y2EwMDY5OTk0ZTljOTg0NzU4ZTEyNjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYxNGI5ZmM4M2VmMzMwMzEzNTI4ZDhiZjgyZDkwOWIyYmQ4YjBmYWFlNTgwY2UxZjFhMzk0ZjFiMjg5ZDI5YTYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_217020aa6de440ca9fd52a3c70604c75",
+      "statement": "Because `nora`, `presence` and `analytics` each run the migration chain at startup, `run_migrations`/`stamp_head` serialize on a Postgres session-level advisory lock taken on a dedicated connection, and losers poll rather than block (a blocking wait would deadlock against the `CREATE INDEX CONCURRENTLY` migrations), with a deadline that surfaces a stuck winner as an ordinary startup failure rather than a hang.",
+      "evidence": [
+        {
+          "resource": "repo://nora/infra/sql/migrations_runner.py#L56-L90",
+          "version": "repo-lines-v1:sha256:c7e8262abdd602567ab79a777a4a748aa3ee4225eb50dee68f338113549026fd:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlZjUyMzg4ZjFhNGQzODJkOTRkMjhkMGJiYjAwZmYzZmRiMWU1YjA0MTE1ZGVlMDk3NjBhYTI2ZTViYzM4ZmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM3MjE4YzRiNjlhNzBkZGZkMDkwOTdmZjZmOTA3YzJlY2UyY2IwNzYyMzNiYTUxYmJkN2NiNzllNGRjM2EyNDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY3M2RhMWNjNzVhZjE2NGQzOTExM2E4YjFjNjlmYTUzNGEzZDA3NGQxZDYwOGI5ZGUxZWFjNzMzN2QyOTI3OGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk2MjFjMmIzY2NhMWI5ZGI0MDZmMjA4N2FmZmZmNzAxMDJlNWJiZTIyZDIyN2RmNDUyZWJhZGVhMDdhYjYyODEifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/migrations_runner.py#L7-L33",
+          "version": "repo-lines-v1:sha256:21cd05c123840976270ef868909e7728260cdf6c46bc71b0fb0f0f7c411639ab:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM0N2Q5YjRkYjkwMzIyMjA3ZmExY2M4ZTI0ZWU1YWQyZjJiMjAyZjE2YjI0MGNiNWFjYjRjMzQyYjJlMjczZjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYyMWMxYWNmNDY4ZTFhOGEyNjA3ODBhNjA1Y2QwODlhMDAwZTFjM2Y4NmU5NTNiNGRmN2RlNWM5M2NjYTZhZWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc4ZTQ1NDcyYWMyODQ3YWNiNmVkYWRmODVmYTY1ZGViZDdjM2QzNmUxZDRjMTcyYmZiNzc4NGRmZjFkNzZmYTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhYWY3NjM3Y2I2ZTdlNWRiODVkNjM0Mjc0NjAxNGRmMDQxY2NkNTU4YTkyMGIyOWViNmFjNzE5ZDdiYWY1YzIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ad8c55e8a99f4e6d9f64b19473bc7fde",
+      "statement": "Shutdown is a designed interval: `docker stop`'s SIGTERM is handled by `run_until_stopped`, which stops adapters and loops, gives a running Cognition session `SESSION_SHUTDOWN_GRACE_SECONDS` (30 s) to finish, records the remaining wakes `cancelled`, and closes the model client and store, with `stop_grace_period: 75s` on the `nora` service and a second signal ending the process at once.",
+      "evidence": [
+        {
+          "resource": "repo://docker-compose.yml#L230-L240",
+          "version": "repo-lines-v1:sha256:0d43cb0dc880ed8336f39b45a2f5a89ff385bca35e995393a61ec23c3d81c9a2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1MzFlMjYwMzk4YWQ2MTA5MTRkZmMyOGYwNDhkMzkyNjRiYTdkNTAzMjc4ZGQyZjhiYjFjNGMxNGI0OTlkOTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI2MmMyZjk3YjRiZGVhODAwODk5NzM3NDRiNGJjYTIzMzRkMTBjNDRmODY2N2NhMzVjYmZiOTEzOTMzZjY5ZjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU1NjM3YzMwODBiMzM1NmVlMWZhZGJmNzFhODQ5ZDZlYmI5NGZhNTM2MjY5YzIxZGMzMGY0MDdjMWYyZTFmNjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEzZmI0ZTIzMWJiZTM0YzhjYjllODkwNjczNzNiZTdiYmEyODExOThiYTk3MzM1Y2UwODczNjgyZGM1ZWYwYmYifQ"
+        },
+        {
+          "resource": "repo://nora/__main__.py#L499-L540",
+          "version": "repo-lines-v1:sha256:3bae41c4440fd3b4ab1ef11d9b01f68d9782838bc56eb2a22583e5c6b3879386:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0NzhmNDhkODBkMmVjODVkZTc5M2I3YWQ2YmQyYTMxZWU4NGYwZDI2OTQ3ODg2YTc5ZWUxYmE2MGFiZWI4NWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc0M2ZiMjc5OTNlMmVmYjNjNWY4NDQzYWQxMjcwODA5Y2MwZWYxMGY1NjljZGU3OTg2OWM3N2RkOGU5ODM5NGUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRiNmY4OWNkMmI4MjNlM2NjOTJhYWViNjA5NGNmNjMyMDhiZTU1NzVmZjU3OTUwMzc3ZjQzN2Q3OWEzOGVhOWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU0OGQ3NDgzZDA2MGYxNzIyZTI0NTM2ODg4MzM0MjU2YjU0OTBlOGJiZTg2OTgyMDY3NmNhOWVhZjM1MDljYzkifQ"
+        },
+        {
+          "resource": "repo://tests/architecture/test_the_stop_grace_covers_the_shutdown.py#L52-L73",
+          "version": "repo-lines-v1:sha256:d426b9f0a2b95e663373017ab4232f56846b58ee9513bd2429d80926e401f8d4:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmMzEyMTFmNTNhNDA0NmEwZjJhNjY4Y2E1MmEwOGMxNDY4OTI3OTkyYzFhYWU2NDI4NjI1ZTU2NzVhZDFiZTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1N2MzOGUyN2Q0NGY0NzJkNGMzYjljMDdlODc4MDZmZDE5MWEzYTFkNTgyZGNiNDIxMjk2MDE2YThmNGJjYTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJmY2E3ODk4YmI4YjBlZjIzZmZlNDFkOWY2MzJhNzg1NGQzMjNiMTRlN2JkODFhMDFiNmMxMGM0NzZjYWI5MTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNkYzY0MTgwNjRiNDRjNTk1ZWZkN2MyZmQwMGY0NWRiMWI1ZTVmYTZmMWQ4MWQ3ZDVhN2ExOTVjZDI2MGJhZDIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0f4f4f8d9fa9459bac864781dd64ca23",
+      "statement": "`/health` is a status document rather than a liveness ping: a disconnected adapter, an unreachable store, unreachable Honcho or an unreadable doctrine store make it answer 503, while a merely degraded platform does not, precisely so a 503 cannot fail the container healthcheck and take the other platforms down with it.",
+      "evidence": [
+        {
+          "resource": "repo://nora/obs/health.py#L86-L192",
+          "version": "repo-lines-v1:sha256:8921dccf4beb6a321ec921d1994c83abe95863bdb9b62c5b91539ff53f1176d0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA3LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJlODBiMTY2NTMyY2ZiYjczN2NmNGI2MDFjOThjNDFkYWIxZjc4MDI1NmUyOTljNDM3NDVlMzNlY2YxM2Q0YzQ1IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJkMTQwYjZlZjhiMTAxMGIxMTk5MGJiNjg1MzA4ODVhMDVlY2ZhM2UwNzdkZjRhYzhhZmJjNjU2N2I3NGY0NjBiIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJiYzBlODQyZTk4ZWUzZDBhYWRiYmNmN2FjMTMxMTBkODU1NDY3MzY2OWYwOGIxNmE5NzRmM2JjZWY5MWYyZDUwIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJhZWJiOTg5ZTA0OTI3ZmZjMjNlNzRlZTk5MTZmMzExM2YwYTFmYzExOWY2MzhhMTZhNTg3YjVkOGMxNTc0NjJiIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_fc12a2d2c8d649c68bd73fa2da41a13c",
+      "statement": "The Komodo release deployment is gated by the repository rather than enabled by it: the publisher job requires `vars.RELEASE_IMAGES_ENABLED == 'true'` and the example Procedure ships with `schedule_enabled = false`, so merging the code publishes nothing; whether an installation actually deploys that way is decided by its production receipt, not by the repository.",
+      "evidence": [
+        {
+          "resource": "repo://.agents/skills/nora-deploy/SKILL.md#L17-L40",
+          "version": "repo-lines-v1:sha256:4d91c44e09645e586ed024f49914e71a0e88542c2b68a23a10e8b19ce2a477f2:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg3YWM0NDdjODI3MGFjZGU0NWVmNjIxNmRjMDk1Y2YwNWQxMjAwMTEyMjc3NzM4MGFlZGFlYjIxMmIxY2RhY2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFiZjZmOWUwNTkwNzQwYzIxNmZiZGFiNjk4M2ZiZjlhY2VhNDNjOTY5NTU3YzgxYmI4ZjQzYjU1Yjc2Y2NjMzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFkZWFkZGVhMWJhMjJlNGJiZmI5MWQzZTU3YjRhMzNkY2I1MzBlZDg1N2Y3NDFhZDM5NDQ4ZWEzNmFiYTZmNGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJhNzUzYWZlODI5OWE1NmViOTMyYThjMTAwMmZjMzg5NGY5MTI3MTAwYjVjNmIzYmZlMzUxMjBhNTc2YzEwNWMifQ"
+        },
+        {
+          "resource": "repo://.github/workflows/release-images.yml#L17-L20",
+          "version": "repo-lines-v1:sha256:ac7bf3098f8d1acded4b2c5dbadbc6340925b10b88b25c722af118a0be9970e5:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTlkODAxNTRlZDQyZmM1Yzc3OWIxMzMxNTc4YjU4Yjg5YzgwMWVhY2U3NGYyNGNkNDhlYjRhMjM1Nzk0MGE5NSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzMzNzMzNGFlYzBkY2IyNGU0MGUzYzIwZGMwOWQ1OWFmNjc0M2QwMjdkYmZmNTBjMWFjYTA4OTc0NzExNzY3MCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzdiZDE0ZjNmYTljMWE1NDQzYmEwZDExYTI0Yjk5YjljZDRhOGI3MDhiNWIxYmNlZDc4MTAxZjMwZjIyODkzNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDUzYzgzNTQzMTE1ZTkwNWM0M2VmYTA3Y2Q3Y2FmMGQzYjRmMTBmZmQ3ZDQxOWE1NGM5ZjU4OGFmM2ZlMzExMyJ9"
+        },
+        {
+          "resource": "repo://deploy/komodo/resources.example.toml#L35-L48",
+          "version": "repo-lines-v1:sha256:ae378181bce510b5bd8743f6e5f87d4d636501a84cae472c5900376adb963104:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJjOTI3MTA5YmMwZjRmYmIyMWEwNTEyNDZlZWZhNjM0NDhjYzUyNDAyYmU4YWI2N2EwNTg2MzE1MjY2MmIwOGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5NDE2ZTA5Zjc4YmEzMTZjMDMyNTY4MjEzYjg1NWVlNzU2ZTQxNTY1ZDkxOGYwOTUxOWM4MWZkNjIwZjQwNjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJmOGUzODA0NmQ3NjRmODM1NDExYmRkOWNiZDE1YWFlYTEyM2RiMWMwM2Y3YTMxNTE4Y2E1YWQ0MjMzMWIyMjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0ae0aa1a6ce0469388a65c25f232d370",
+      "statement": "Under Komodo the release bundle would pin every owned image by digest on a generated `deployments` branch, strip every `build:` stanza and the doctrine/Dreamer source mounts so the image's own instructions become authoritative, and rewrite relative host binds to `${NORA_RUNTIME_ROOT:?}` paths so private config and transport sessions stay outside the managed clone.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/komodo/README.md#L44-L59",
+          "version": "repo-lines-v1:sha256:387b028e03fca4f500adbe71777a853c1f83dda3de594f26245d2877d382404e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0ZDlkN2I1MDFmNWZlOTRlYTZlMzdmNDEzOTQ2MDZmYmNjOWY0YWM0MzZjNGMwMTdjZmZlZjVlYjAyYWVkNTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyMmUyZDUwM2Q3NDBmOTdmMmVjNWY4N2YxZDJjYzBlZjkzYzYwMTgyMTIyM2I0NWQzNzY2NzJhNjBjMTY3MDUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY0NjEwNjMyN2JlZjJjZDcxZTk3MDMzMTI4MmY1N2JkYjkwOTQyNDE5Y2Q2MTJhNzM3Yjc2N2JkMGMzYTdjZjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdmNGFlNjgzMzM4ZGRhYTFiN2FjNGI5Mzk4ZWQzNzE3NmE0N2RiZWU3ZjE4NWUyOGM2NTg0MjIwNWJkNmUzNGYifQ"
+        },
+        {
+          "resource": "repo://scripts/release_bundle.py#L39-L68",
+          "version": "repo-lines-v1:sha256:3ad1eb5f20bd191aa993d2c5c65183ca962e8069a28caa1899d33e26b07433b2:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY5OTEwMTdkNzMyNDNhZDAxYTE0ZTMxZmNjN2E5NTJkYmU5ZTRiMWJmZTEzMTk4NWQ5YjdjYzE0NWNmNjk4OTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJiNWE1ZTZlYmYyN2U4M2UzNzAwMGU5ODYwYjg3NjRkNjIyMjUzMzI2NDNmNzA4ZTMzZGVlZmYwZTRmOTQ0ZjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEyMjZjYmZhNzZmMzkzNDY4ZTFjZWU1MDgwMTVmYTY1MGU4Zjk3ODE3ZjdkYzY1MDFhYWVhZjk0NGYxZjVmMzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNmNDVlNWM5Y2RmZDE1NzNjNzhhYTc4OGIwZDEwMDczY2NhZWI2OTY0ZGYyZDQ2NzA0OTkyNzMzN2ZmYzE5MzAifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_release_deployment.py#L31-L49",
+          "version": "repo-lines-v1:sha256:ec009a8dd13d2feed44fce6d4940df73e246018444113863ebc2fc195e8cc8e4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNjMDAxMWIwZjlhYzIxZjI5NGFkYTFmMzE3OWQ4NjRmYWFhMWNhMTgwYTZlNWMxYzFlMjViNzZiZDAxNTZiNWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcxYzIxZjBhNjdhY2I5ZTQzNDdmNWUzYmYzNjFjZDQ2ZjRjYmFiMDU3NWRiODQ2OTBmNzhjNzNhZGI1OTVmMWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUwNjE5NTNhOTkwZWYzOTA1MDVhYTU5ZTIwMGJjMjcyOGQ5ZTdhODdkN2YzODJjNjJkYTU1MDUwZTVjODZiZWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9980a3453fc44760b69d290ddeab6a1e",
+      "statement": "The Komodo wrapper holds the same host deploy lock through pull, candidate config validation, recreation, readback and a success receipt, and writes an outstanding-attempt marker before the attempt so a failed or interrupted candidate is refused on later checks; there is no blind automatic rollback because startup runs database migrations.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/komodo/README.md#L142-L165",
+          "version": "repo-lines-v1:sha256:819adbb5215b49eb4bcf1d58f754eea95a8ed0ef443ffa4516645078289b7e46:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ2MWY3ZmJiYWQxMmRlM2JkODFiNjBkMjgwNWYxMzk3ZWVlNzM0MDMzNDY5Y2NhNmEyNTZmY2Q0MGU4NTZmNTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM4OTVjOGFhYmNmZTgzM2Q3NWUxM2IzMzc3ZGJkODMwYzA2YWZmMzc5OWNiOTg3NjU5MjhlYjcyZjY5ZDRkYWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcxYzZiMmUyZDBlNjlkMzRmNzYzODVmY2EwNGM4N2FhNzdlYTM5YmI0NWNhYzE0OTI0NWJmYzM2M2IxM2ZjYjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU5ZTRlOWY3YmQ0OGZjZmM4YzgwZjBiOWIxY2M3MjhhOGJiYzdkOGQyYjg4MmQwNzIxZDRkMGY4YTEzMDI4MTAifQ"
+        },
+        {
+          "resource": "repo://scripts/komodo_deploy.py#L124-L145",
+          "version": "repo-lines-v1:sha256:755cf4b68c81c494ba0dd7b800c037b8e1185c780e567db2adaf2bc9f7bbaa12:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwN2Q2ZjMwY2I4MGQ1ODlkZDZmMTcxZjUyZDg5NWYwZDFiODI3YTU2YmM1NTU5ZjVjZTcyNmIxNzgxNzZmNjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYxZjliYjgzYTAxYzlmYzU0MjkwOThmMzE2OTI3MjRiZTk4OWFmN2EyOGE3YjJiMmMwZWU5NTU3MzM5MmM4MzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI1YWVjNWNhN2Q5ZTQyN2VhZGI2N2JjZDlkZWExYmU2ZmEyOTVjOTY5OWE0NTA1MjBiZTdiNzViYmQ4NTU0NDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY4NzhlYjQyOTc4MDFjZTFlY2I0OGJmNmIxYzk3YTZmNDQ5ZTI4M2Y5ODQxYTUxZTJlMjNjMmQ0NjEyODY5NjEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2c109602614f4d6798a34915f54d9c2d",
+      "statement": "The bare-metal systemd path (`deploy/nora.service`, `deploy/install.sh`) is retained for reference and as a fallback and predates the Postgres cutover: its `EnvironmentFile`, `ProtectSystem=strict` hardening and `IPAddressDeny=any` egress floor describe a host process running against a local SQLite file, and its documented rollback is a `git checkout` of a previous tag plus a restored v1 database, which is not the container-era rollback procedure.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/README.md#L36-L65",
+          "version": "repo-lines-v1:sha256:4f78c02ea4883af78d15fa9ed91954c8bfe3b949a5b59116654f6c28127c3faf:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYzOWI3ZTVhMzQ4ZTc4ZDEzYjYyZjQ4MjJhODFlNmFlMGQwODU0NDA3NjgxYzc5NjU3OWQ2MjY2YjdlMDQ1NDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY1OWFlMWQxMGE1OTk2YjRjZDE1MjkwZTU5NDM4MWZiMjliMmU1NTM3YjFjOTNlODA5YjQwNmU1MWUzM2NkMjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY3Yjg0MDJhM2RkOTQ2MzYxNTE2MDk4NGE1MzZjNjdmNTRmYmEyNDAyMmI0NDkzNTExMDE4YjM2NTY3ZDQ3ZjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdjY2JhM2JmMmQzMzdlZmUzZDY1MzA0MDM5OWFjMDgxNTJmNDVjOGU5M2M5MjNmNGU1MzkzYjFiODljOTNiZDYifQ"
+        },
+        {
+          "resource": "repo://deploy/nora.service#L1-L22",
+          "version": "repo-lines-v1:sha256:3a056006d3b500c74fbb37a58da630707ea4c0de13ef45e2a26043308fb95ed2:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFlNmM2M2NmZjMzYmNmYTNiNmEyZDZkMGM5ZGQxOTUyMWRlZGFhMzUxMTQ2YjFhNjQyZDJiZmM5Y2Y1YTFlMWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1OThhNTI2NDJiNzAzM2FhY2FiMDE3Mjg1ZjNkNGM4NzNmNzI0MTljZDA4ZWQ0YThmZGE5NDkzZjZkNDk3NWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU2MzY0ZDhjZGZlYjBhMjAxZWQ5NGY4ZDI2YzZkOWI2NDNlNjY1ZDBlZTNhMmVmMjc3ZDg1MzdjYWE2NTAzMWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1ddcd721e1fe4c2fb62e0b9e9263da27",
+      "statement": "`site` and `embedder` are profile-gated services, so a plain `docker compose up -d` does not start them and their absence from the running set is normal rather than a failed deploy.",
+      "evidence": [
+        {
+          "resource": "repo://docker-compose.yml#L496-L509",
+          "version": "repo-lines-v1:sha256:47fca302bdc796762a422f8a2661acd54b286553deb98c92e22ef7a3ecb56742:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJmYTYxZWQ1OWNiMGMxNWE5OGJmNDE3ZmNiYTUyOWFhNDI3OTYzZjhlNDJjZDlkYjNiMzI3MjVkZWRiZWQyYmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdhNWVhNjQ1YWQ0YjJiZmU2ZWI1OGU4Y2U4MjhjZTU3YzdlNGJhNTExMTAwMTA1MjYxMjFiMTc0MTY3NjRkOTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRhNGVlOTA4YjUwMzk5YmQ4NmQwYmQ2MjRmZjVmZjY5ZTYyMzI0NjIzZmE2NjM0NTFjYWY1ZTMyZTllNDEyMDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM3YWI4OGUyZjA2OWNiODFhZmRkNjNhNTMyZTZkOTcxNTQwYzQ4NDZiMjU0NWMyODYyNGY0NTUwODkzMGYwOTgifQ"
+        },
+        {
+          "resource": "repo://docker-compose.yml#L651-L693",
+          "version": "repo-lines-v1:sha256:b93ec3bbac0371f8702b6c186d1dd56da79f34e26133803d7bbed3155b2a0d44:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIyMWQ0NjFjNjk0MzA4M2UyYjkzYzcxMDcxNjI1NGE2MjQwZDNhNTM3ZWY0ZGU1MzhiOTE1YjdhNmM4YjczN2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3NWJlYjQ5MjllMTFiNTliNjY1OTc2MjU1NGJiZjk3YzYyYmQ0ZDA4YjEwZDU3YjM1MDllNjA3NDk5YzQ0ZTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg1MDkzMGZlNDk5ZjcxMjgzMWQ1NjU1YzNhMGEwM2U5NmM1MzMwNDBmNWMxYmE2NmJmNTA2Zjc2YjE5MjkwOTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY4Zjc4YjgwMmMxNmNmMTA0YWE4OTVkNWJlYWQ1NWUzZTQ5NTBkM2Y1OWQ5MDUwODZjMzY5MDI1MDk4MWZjOTQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_121e683a997c40b3969431b0840d123b",
+      "statement": "Compose passes each service an explicit `environment:` list and never inherits the host `.env`, so a variable missing from that list is invisible to the process however present it is on the host — a key becomes `unavailable` forever, except where an enabled adapter cannot authenticate, which is a crash loop by design.",
+      "evidence": [
+        {
+          "resource": "repo://docker-compose.yml#L333-L341",
+          "version": "repo-lines-v1:sha256:0d9cef710964e18c62a6349af3272c64690188cbeea4e0b02a54e2098f69974d:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzEzNTRlZDFjYjIwYzRiM2ZlODk4Y2U1MjJlMGI1M2JjMzg0MDYzNzkwYWJkNTJmNDJiZjEzMjZiNDNlYjZmMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjI2YmFhNzE2NzJjMTU4ODhjMjYxYTQ2MzQyMjc4NjQwN2UyYmFhYTJlMDFkYmEwZjgyYjJjNGQ0ZmEwZDhjMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDk0M2M5ZjQwMjg5NmI5OTQ0NmIxNWYwNzM5MTlhMWQyNjEyMzVkODkzNWRkNDQwOWFiNDI5MTFmMjE4Yjk1MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjA2YTUzMDU0M2E4OWZjODJmNmM5ODQyNThhODU2MjY3ZTQxOGM3NTU1ZDljN2NhYjk3N2NkNWM3NGExZDM4MyJ9"
+        },
+        {
+          "resource": "repo://docker-compose.yml#L375-L383",
+          "version": "repo-lines-v1:sha256:03916cbd71e613b2907a6cb762be4e2ebe7e0a241abca1e6d2efa19442810d56:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDQ4MzlhYmRiYjI1MjI5ZmMwNDk5MzE2MzM2MzZhODEzOTNiN2YwOWU4ODAwNDhiNWNhZDI5NjQzMzJkMzRhZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGVlZjEzMzViM2UzOWVkZDNhMDViYTFjYjU3MTM1ODJjMDkyODQ5NTRjZmJlZDViNjUzNmYwZjYyMjM3OTdlZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzkzYmJkZDFmOTEyMDI4OGU2ZGQyNDQ3MjlhNTc4NjNjOGEyM2ZiYWEwOWNkZWJhNDAxMTU5MWEwYzhjM2YxYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWMwNGZkZmI1MjZlNmMzZTZlNjBiOTlkMzllZTkwZGYwMTQyNWZhZTI4OWNkYjk1MDUwODhmOTkxYmNhYWJiMCJ9"
+        },
+        {
+          "resource": "repo://tests/test_env_template.py#L478-L544",
+          "version": "repo-lines-v1:sha256:fe3d6ec875f5c596ca9842fbb8e0216bfa8ae0fa0d60f45dee0c923d837fb760:eyJzZWxlY3RlZExpbmVDb3VudCI6NjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU1MDc2M2JlYTlmMWM1MWM4NWIyNGRlNGM5YTlhMWZkZTJhZjRjYmFhYjg1ZjViYmQzMWM0MDBkZDMxNzEwOWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ2MjA3NTk5ZWM0MDY5M2Y3MDNmY2I0ZWZjMDM4ZTc4MTdmYjNlMWViMTI4OWNlZjQxNzZjMGFiODQxM2YxYzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_36c8b41ee4414241b3463a64f8ad865f",
+      "statement": "Transport credential state lives in separate host directories bind-mounted only into their own containers (`./state/signal-cli`, `./state/whatsapp`, `./state/instagram`) and losing one loses the device registration or pairing rather than just history, while `nora` itself mounts `./data` for blobs and `./state` for rotating OAuth token chains.",
+      "evidence": [
+        {
+          "resource": "repo://docker-compose.yml#L34-L40",
+          "version": "repo-lines-v1:sha256:afc87e4c40c9620197faea6cd36482a36c633308f6b255d1156e90ac8f16f3bc:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDEzZjRkOTY2MWU5ZDJjM2UxYTI4OWU1ODMyMjk5YmVhMTRjZGI2NGJmODg2NjFkZjcxN2IxMmZhMDJkMDExZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGE5YjRlMWYzYjdmMzE2NWQ0NDhmMDU2YTQzYTUzMzI5ZTAyYzZlOTRhY2RlMTFlN2U2M2ZjOTAzMWI2MjAyYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTczNGUwZTdlOTY1NmU0MjczNDgyM2E0NmUyZjdlM2JlYTZkY2Y3YTJhZDFjODlhZjZmZDZkZDU4NDAwMGVmZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYmU5NmQ4ODlkNGNjNmY5ZGZjZmIyZWRkMTc0MWEwNTQ2NjY5ZDkyYWRkMjRhNWJjYTdkNDYzZWQ5ZjYzOGUxMyJ9"
+        },
+        {
+          "resource": "repo://docker-compose.yml#L421-L434",
+          "version": "repo-lines-v1:sha256:67ffd96882c7622879f52c4ed4bd3965945e582d3f61f0af8bd5117c2e420958:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxM2Y0ZDk2NjFlOWQyYzNlMWEyODllNTgzMjI5OWJlYTE0Y2RiNjRiZjg4NjYxZGY3MTdiMTJmYTAyZDAxMWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0NjQ3NzhmZjU4MjU4OWE0NGMwNmUwODc0YTNmNmY5MDVjOWNhNjVhM2ZiODZmYmJhNzJkMTI0YWI3YTAzMTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU3NmM2NTA3MTYxYWFjNDU4Njk4NjYxNzlkNzg5OTE3OGU2ZTU5MmE1Y2IxZDg2ZGU1ODdmN2E5ZTM5YzM4NmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZiODM3ZTcyMDYxZmQyYTE3YThkYjhmZGEyYmZjZjhmYmI2NzZjZWE2ZTJmNzhmMTM5ZmE4OTM1ZDlkYmYyNjAifQ"
+        },
+        {
+          "resource": "repo://docker-compose.yml#L99-L105",
+          "version": "repo-lines-v1:sha256:e573d7e47705cb5cd36ed67bf997cb268aa31c34518b85850ffe5be2fd1dc1eb:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDEzZjRkOTY2MWU5ZDJjM2UxYTI4OWU1ODMyMjk5YmVhMTRjZGI2NGJmODg2NjFkZjcxN2IxMmZhMDJkMDExZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWNkMTgxMjYxZmI1N2Y4MmJjZGE4NmRkMDkyMGI4OGY2MzM2ZTk2ZjE5Nzg1ZWMwODZkNTczY2E4ZWMyYTNlZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGY4ZjNmZTVmMDIyNjA3MTQzZjg1ZWExZTM0MTAwMmNmZGNlNDI3OTI3OWJlYTM2ZGNmOGQ5ZjA3YTVjMWM0MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTg0ZTc0NGQ4ZmZkZDRmNGEyYTllZmQ5YTJkNzcwMzcxZTY5ZWEwYTZkZjFlYWJmMThmMTdkZDQxOGU5OTY2ZSJ9"
+        },
+        {
+          "resource": "repo://docs/runbook.md#L1170-L1192",
+          "version": "repo-lines-v1:sha256:6589ce7f34bad4f85b682338f78b4605bb9381bc1eac85a528985bf152c09196:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYxOTVhYzI2YWYzZGRjYzBlZDIyYzY5NGUyZjZkMzM4OWE1NTEzYWJkY2IxYjQwNGExMjcxY2I5ZTFhN2FkMGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliMjI3ZTY3MDMwMzQ1YzNkNTExOTY5OTFlZTAxMzU3OTU1Njk5NWZmNDA1ZmQ5ZjZiZjNhYWE2MWI2MDM2NjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNlNTYxZmE0NTc0YjgwMjNmNTNkNzc2NjNmYTI1YmEwOTBhYjM1NzJmNmM5Nzk3NTY0YTM3Mjk1YmFjMDk1N2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQzNWMwYjc5NTc5NDliZTc3MGFmMGIzODMzODYwNTM3Y2Y4N2QxN2I5ODRhNWZiMmJmMjk5OTQxYzE4NTZhMzQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_98c94562205542a7bae3969ecba142e6",
+      "statement": "`nora`, `voice-sidecar` and `voice-wake` build separate images that must be deployed together: they speak two changed audio seams plus a control plane, and a partial deploy fails silently in the far container — an old wake gate misreads a new hello frame and tears the connection down in a loop, a new gate drops frames from an old sidecar while still reporting `healthy` — so `verify-deploy.py`, which only inspects containers on `nora:latest`, cannot detect it.",
+      "evidence": [
+        {
+          "resource": "repo://docker-compose.yml#L828-L855",
+          "version": "repo-lines-v1:sha256:3cd2d2a995e56ed0bc3e48e488b0014cada9e6a252129e0a69895e8b257e0736:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjYmNjMzliMzg1ZmJmNjQxYWU2NmMyNjk5NzI5M2Y1MmVhYThhYzUxMTkyODM2YWRmM2YxM2NhZTU3M2U5ZGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNlMGM5M2FiYTYwNTM3YTVkNmUzZGY5OTI4ZjAzNzY4YmZjNjgwNTMyNTI2ZTY0Njc1OTI2MTc3Y2IxZDMzMmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM5ZmQ4NWNhYjNlOWUzYzMyNDQ1YzkxYWYxMzJjYjcwMzM5NGQxMjI4ZmI2Mzk2MmU2YzAyYTZkZDI4N2UxNTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwNTJjOWE4ZmMyZTI0MmE3OGE1Mjc3ZGFhZTQzYmNiYzZmOWQ0MzEzNDgwN2Q3MGZkM2QxZGJlZGEzNDAzZGUifQ"
+        },
+        {
+          "resource": "repo://docs/runbook.md#L381-L392",
+          "version": "repo-lines-v1:sha256:32f207284ddc79889954ce976c72c8ecb7725f12b9963b1effc5bd2d5f3cfcf6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI0MzA3MGNjMmUxNDI2YTc5YTkxYTUzOWIyMjI0MzQ3NDViOWE5MTJlOGI0ODQwZjA2ZjkwODY3MGEwNGM1MTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0YzJkZGZmNTE3NWIwOGYzY2ZkNWZmNTlkMDYxMmI1NzRiM2I3ZGMzNGY1YmNhN2MyYWE2MWRiOTU0NTViZGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIyODQwNDAwNGEwMWIwMzRkY2U3YWU0NTBkYjY4YzE5YTZhNTViMDk5NDA4MTFjYjA5ZTdiMTk4ODFkNzA3MDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ1NWM0ZDRiZGIyMWMxYjcxZTM0NmNkYTJhNDAyNTdjMjExZmM2OGQzMWJlY2M2OTA2ZTQxMzdkYWJjNzI3MzUifQ"
+        },
+        {
+          "resource": "repo://scripts/verify-deploy.py#L72-L107",
+          "version": "repo-lines-v1:sha256:cd38f801ba7de3743fcd17182ff932e37b89c92bb0a4fac03c60081ee8f5e2f1:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjMzM1ZjliNDNmODkzZDc4MDA5MjBkZDU0MTNhYzMyMWI1MjNhNmZhNjFkZjE0ZWNlM2MwOWE2ZWFjNmZjNjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4MTQyM2JkZGM0YTI0YjllNjIzNmQ3NjI1OTkxM2Q0ZWYyM2E0YThhZjQwMTlmZjRmMWRjODE3NWI2NmFiNjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBiNDY4YWQwYWJkNWRmODYyMGJiOTRiZGZmZTg1ZjQyMTEwZWNkYThhZjc2NGE0ZDVjM2JhMDZiYWE1Zjc3M2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM0MTU3NzZhOTlmMTQxNTY1OWRlMjZlYjRkYjI2MTg2M2ZhMTIxOTY2NjBjOTU3ODUzYTYzMTMxOWJmZDliODYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ea50753bfa314168bc18bd34577a3e4d",
+      "statement": "Inbound publishing and outbound connectivity are separate axes in the root Compose file: nine services bind a published port to `127.0.0.1`, several services declare no `ports:` at all and are addressed by service name from their peers, and egress is decided by the network's gateway rather than by `ports:`. The `nora` network is an ordinary bridge with no `internal` flag, and on a Docker daemon host a container's bridge address is reachable without a published host port, so publishing configures forwarding on host addresses rather than excluding the host, and a missing publish removes a way in rather than a way out.",
+      "evidence": [
+        {
+          "resource": "repo://docker-compose.yml#L1000-L1019",
+          "version": "repo-lines-v1:sha256:2b300a4d1f29d3d850f6ee2321ab5157aa70da16e57308fe50f83d468ff00275:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJjMTZlZDIzOWEzNjUxYjUwNzljMGU0ZTdmMDc4NDRlYTMyOWM4NzYyOGJmOWZjYzQ2MzY3NzMzZjVlMWU5M2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk5NTExYWM3NGQ3NTljZWIzYjExMGVkY2ZjZGE1ZDkyYWVmYjA1YWRiODAzOWM1ZThmZjVkNGNkMTAzNWFkNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3NTJlYWU4YzkwZTU5OTYxMjA0NGFjYjUzMmQ1M2I2ZTMzZWI0NjZkYTcxNzM2ZDM3MjEwODNmMmM3MzU4OWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhmZDcxOTQyMTFiNzEyNTAxMWY0ZDUzZWY1MmFhNjhjODIzNDBiNDE0OTJlNzM1ZTVjODkwMWEzNjZkNWMyN2IifQ"
+        },
+        {
+          "resource": "repo://docker-compose.yml#L1051-L1073",
+          "version": "repo-lines-v1:sha256:2c4a0e6e33753a792ab5a284d7e0d063f903335fc85bdefdb1d93cffaf5cbffa:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlMTg4ZTA1YTcwY2M5MGQ3Y2U4OGYzMGM3ZWFiNDdjZjM4MjFhNTA5Y2ZkNDQ1NDZlN2ZmMjdmOWFiMGE4NWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5Nzg1MDI0Y2IxZjNlZDdjYjZiYTA5OWVhY2ZiYzdlNDU1MzU3ZjU5YmU4NjU4OWExZTkxNjI0ZWU3NjM0ZTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJmMGNhMmE2ZTM3YzY3MzQ4Y2I0MGVkNGVlYTVlMTAwMjZiMjYzNzU3YWExNGUyOTkxNzhlOTA1YjhkOTBhZjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ1ZGFjZGFmYjg2ZDg3YmE3ZDhjZWQ3NmIxNmM4NGY5YWY5Yzk0ZmJhMGQ2YzVkYTM3NDVmZDNiNjg0MWU5Y2IifQ"
+        },
+        {
+          "resource": "repo://docker-compose.yml#L241-L260",
+          "version": "repo-lines-v1:sha256:2c5935ad541c7ca442f0f277824b920cfa2f39c2599e114e5af1add6af272073:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2ODdmODcyYmRiNDIzMWJiZmM2ODNjYjNjZGU4ZDZlMGU1MGZiOGUzNjhiNjVhYmRkYzc1Y2FlYzdiMDE1OTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBmYmVhYzBmZDI1YzUyZTlmNmM1OTExNzIwMmQ0OGZmOWJlM2MxNWZjMGVjZmQwNzViZWYxMGU1ZTU4Nzk3ZjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNjYTNlODhiN2NlMjg4MzY2MjQ3ZWU2MjcwZTlmZmI2N2RmNDgwYzIzZTMyZGVhNGUxYjk2ZWY5NjcxNjAwOWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk5Mzc3ZjhmMTM4OGJhMzYwYjI1Njk3ZmYyMTllNTkzMjE3NTY1ZGI5OTZlYTZjMjE1NzE2MGYxYWNlYmQ1ZTUifQ"
+        },
+        {
+          "resource": "repo://docker-compose.yml#L769-L772",
+          "version": "repo-lines-v1:sha256:469668b25b15490b6b90570a3f26ddb82de7fd8e417a87787c470bbb9ee63c83:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzg1ODg2NDA3Y2QzY2Q3M2FiNmFiMzg5ZDVkNGM1MTJiY2E0ZDY3ZTBlNzI3YmY3Nzg3YWY2YzFmMDlhZTg0NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTZmMWEwNzA0ZDkwYWQ0OTQ0OWVkMjIzMTI0Yjg3YmQ5YTI5NWU1MzU0NWY0Y2ZiMDUyZDJmMzkxNzk5MzU5MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTYyZWYxM2Q5OWQ0YjFjYTkzNDAxYTEwMzBiYjc0ZjBiNDljMzQ3YTc2MWU2ZWQwMzQ0NWU1MDRhYjJmODUwNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjhiMGI1OGM5OTJiMmRjMTVhYTJlZmE1YTQzNmFjYWFiMzZjNWU0OWI4NDlkYzFmNGM1ZWMxMTU4Yzc4OTIwOSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_61e170f1ab6541f584b3850432eb2573",
+      "statement": "Only two networks in the root Compose file have no gateway: `embedder` is declared `internal: true`, and `honcho_memory` is created by hand with `docker network create --internal` and declared external; `embedder_host` exists only to carry the embedder's loopback publish with IP masquerade disabled, and `alert-bridge` additionally joins the default bridge alongside `nora` for its own outbound Discord traffic. The internal networks exist so that joining them cannot move nora's default route.",
+      "evidence": [
+        {
+          "resource": "repo://docker-compose.yml#L1042-L1049",
+          "version": "repo-lines-v1:sha256:79cf4552d188486c4f5c4c4013b309ae9158a93de5d679648d5b55c9631a7266:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDYzNDlmNzEwYzgyOGZhZjkyNzRmZjkxODk5ODg4MzEyNjAyNjBlODAxNmJjZDkyZjRkYmU3NDM5NzJiZTBkNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTVhMGZjY2FmZGU1N2IyZjZhYjU0ZDYzY2EzOGI1N2YzMDQ5NjRkMjY1MDAxNDVmODljZWZmYWU5MzA0YmFjMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiY2NmMjUxYWIyYzhjMGI2OGRkYTM3MzU1YTVkOTk3OGYyYzRhZDU1MjdkNWZlYTkyNDk4Mjk5NjcyYTI0NDFjYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMGYwYzA5ZTJkZjFlODg2MThkYjFkYjg1MGY3NmQ0Y2YwNmIzMzZhMWU3ZDk2ZDFhYWQ1MDViNzBhOGJiZjRkMiJ9"
+        },
+        {
+          "resource": "repo://docker-compose.yml#L1051-L1073",
+          "version": "repo-lines-v1:sha256:2c4a0e6e33753a792ab5a284d7e0d063f903335fc85bdefdb1d93cffaf5cbffa:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlMTg4ZTA1YTcwY2M5MGQ3Y2U4OGYzMGM3ZWFiNDdjZjM4MjFhNTA5Y2ZkNDQ1NDZlN2ZmMjdmOWFiMGE4NWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5Nzg1MDI0Y2IxZjNlZDdjYjZiYTA5OWVhY2ZiYzdlNDU1MzU3ZjU5YmU4NjU4OWExZTkxNjI0ZWU3NjM0ZTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJmMGNhMmE2ZTM3YzY3MzQ4Y2I0MGVkNGVlYTVlMTAwMjZiMjYzNzU3YWExNGUyOTkxNzhlOTA1YjhkOTBhZjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ1ZGFjZGFmYjg2ZDg3YmE3ZDhjZWQ3NmIxNmM4NGY5YWY5Yzk0ZmJhMGQ2YzVkYTM3NDVmZDNiNjg0MWU5Y2IifQ"
+        },
+        {
+          "resource": "repo://tests/architecture/test_honcho_is_reached_by_a_private_network.py#L60-L69",
+          "version": "repo-lines-v1:sha256:e92ec935277916a4c55e4f501068da5a88c9cdf364952e0ccf88e050cfb0122d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkMjg1MTdiOGFiNDA1OTUyNjlkMDFmYWE3ZDcyOTZhYTJhNTI3YjBjMTViZGVjNjM4Y2Y4M2U0MzVjZDYxOTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkZWI1YWY5M2ZiNWE4OTBmOTRiZGUyZWMzNTE5MjE5NjRiNmRhYTJiZGQ3OGU5Zjc5OTZhMTA4Nzk4ZmQxMmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdkMjBmYjhiYmZlMTNmMjNmYzE0ZjAwM2I0MmRjMjVmNjE2YmE4MDdmNzc3NzBiNDUyYzQxZmU2NTBjZmI3YzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMwNjYxYWU3NmFmMmFlZjFjZGIwMzYzZjcxZTRjYTgxNzkxZDAzOTMwMzM1NTIxMDU4ZjExYTM2Mjk3MzcxNDUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a4645da2aeb34c00813bb3a59ff23602",
+      "statement": "Deployment mode is a property of the installation, not of the repository: the deploy procedure reads the production `release-deploy.json`/`release-attempt.json` state first and treats an existing success receipt as \"Komodo owns deployment\" (checkout steps inapplicable), both files confirmed absent as checkout mode, and unreadable state or unavailable Periphery as UNVERIFIED rather than checkout mode; an outstanding attempt requires native failure recovery even without a receipt.",
+      "evidence": [
+        {
+          "resource": "repo://.agents/skills/nora-deploy/SKILL.md#L17-L40",
+          "version": "repo-lines-v1:sha256:4d91c44e09645e586ed024f49914e71a0e88542c2b68a23a10e8b19ce2a477f2:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg3YWM0NDdjODI3MGFjZGU0NWVmNjIxNmRjMDk1Y2YwNWQxMjAwMTEyMjc3NzM4MGFlZGFlYjIxMmIxY2RhY2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFiZjZmOWUwNTkwNzQwYzIxNmZiZGFiNjk4M2ZiZjlhY2VhNDNjOTY5NTU3YzgxYmI4ZjQzYjU1Yjc2Y2NjMzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFkZWFkZGVhMWJhMjJlNGJiZmI5MWQzZTU3YjRhMzNkY2I1MzBlZDg1N2Y3NDFhZDM5NDQ4ZWEzNmFiYTZmNGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJhNzUzYWZlODI5OWE1NmViOTMyYThjMTAwMmZjMzg5NGY5MTI3MTAwYjVjNmIzYmZlMzUxMjBhNTc2YzEwNWMifQ"
+        },
+        {
+          "resource": "repo://deploy/komodo/README.md#L142-L165",
+          "version": "repo-lines-v1:sha256:819adbb5215b49eb4bcf1d58f754eea95a8ed0ef443ffa4516645078289b7e46:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ2MWY3ZmJiYWQxMmRlM2JkODFiNjBkMjgwNWYxMzk3ZWVlNzM0MDMzNDY5Y2NhNmEyNTZmY2Q0MGU4NTZmNTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM4OTVjOGFhYmNmZTgzM2Q3NWUxM2IzMzc3ZGJkODMwYzA2YWZmMzc5OWNiOTg3NjU5MjhlYjcyZjY5ZDRkYWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcxYzZiMmUyZDBlNjlkMzRmNzYzODVmY2EwNGM4N2FhNzdlYTM5YmI0NWNhYzE0OTI0NWJmYzM2M2IxM2ZjYjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU5ZTRlOWY3YmQ0OGZjZmM4YzgwZjBiOWIxY2M3MjhhOGJiYzdkOGQyYjg4MmQwNzIxZDRkMGY4YTEzMDI4MTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f61740ae006b4e5285b9a09a754aafbe",
+      "statement": "`scripts/verify-deploy.py` exposes a second entry point, `verify_services(project, images)`, which selects the expected cohort by Compose project and service labels before comparing image digests, so a service that is missing altogether is reported as missing instead of falling out of the denominator; the Komodo wrapper calls it after recreation and then compares Nora's running version manifest with the release.",
+      "evidence": [
+        {
+          "resource": "repo://scripts/komodo_deploy.py#L104-L121",
+          "version": "repo-lines-v1:sha256:1df67d1fb5a30d6c956f1c52726d28121d89e7c4ea58fad2b81be5187ee7b06f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEzODFkNmJjNDViMjc1NjhjZTBiOTVkOTFhNGE4N2RmOTI2MTNkNmE2MDIyNTU5Y2FjYzI4MTMwZGU4ZDY2ZDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyYTc5ZmNhMDc5MmY0Y2E3YTJhZGZkOWQzOTU1NDZjZGQ2NjE5Njg0ZmZmZWJjYjgwYmRmYjgzZjA2MmE4NWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg3ZjYyNzRmNzFiNjZiZDhkMWFkNTExMjAzODEwNzRlNmMwMzA1MTliMDJlYjU0YzcxYTVkMjQ2ZTY3NGJhN2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIwYzk2NWQ0MDJhOTkyMWViZWYzYTY0MjZjZjc5MmE5ZmE1NzgzMmM1NTdlNjdhN2EwY2FiZTRlZWU0NjI1YjMifQ"
+        },
+        {
+          "resource": "repo://scripts/verify-deploy.py#L175-L224",
+          "version": "repo-lines-v1:sha256:234bf346e7f025cf62f2ac2d367066b082b62ebd2779b9d72511d045cdf76f25:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI4OGM2NzMzMzZlMjcxOTE2ODhlNzQyNDIzZjk0YzY0ZGViOGQ0ODY1ZDYyOGM1OTZjYjNlNmUxOGI4MWI1OTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFhNzdmYmFlMWI2OTA4M2Q0YmYwYjc3OGE1MGQyOTI5ZDI0OWFlM2E3MGI3MDdiM2E4MjA1MTY2NzNiZGVkYzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA1NzIyYjhjNGYyODMxYTA4YTZmZjE2OGQxNjUxMTRiNmZkYmFjZjk4NDIxNTM2NjI3NzY5M2JkY2IzYmQwMjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNkNDEzNDBjYzIzOWExNTljZTliNjAyMmU5ZjYzMjI4MzJlMmVhZDc2Y2FlOWU0NzU0ZDIxMGViOGZiNmQ1ZTgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1ed4f2b4992143798d0185d1e6fcc264",
+      "statement": "Nora's computer is deployed outside the root Compose project as user systemd units under `deploy/computer`: `nora-computer.service` runs `computerd` in the foreground of an `sbx exec` so systemd restarts it, and `nora-computer-backup.timer` fires a nightly oneshot `nora-computer backup` (`Persistent=true`, so a missed night is made up) because a recreate or destroy deletes the VM's `/workspace` and the archive is the only copy that survives one; `nora-computer destroy` takes a verified backup and refuses without one. Installing them is a host step documented in that directory's README, and the repository's test drives backup/restore against a stub host while marking the real `sbx` crossing UNVERIFIED.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/computer/README.md#L161-L196",
+          "version": "repo-lines-v1:sha256:668611998caef7f9aa776ffaf6b47105897a142b7c85a4fafddb62712a7d3081:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhZjI2OWMyMGNkY2FhODJmM2Q0NjhmNTkxZGE3ODliZTlkNGVmNjk1YjJjNmQ1MTQ1MTlmYmU0NDEwNjlkMWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUzZGNkMWYwNWRhYzVkNzg4NzM2MjU4MjgxMDczMDgxYWI4NjBkMmZlOWUzYjZkMDcxOTU2NWM1NDg0YmEzNTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkyZWYzMGFlNTBhMWQ2MzEyMzhkZTQxZmQyMWEyYzlhNTIyMzBkNjAyOGM4MjkwMzZhNTU3MzcyMWQ3ZjA0OTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAwOWVlODg2ZDU4ZDVkOTFkMGUyY2IwODM5M2U1MjU0ZTQxYjhlYjE2MzZkYTZlOWZiZTVkNTE1YzdhYzlhNTkifQ"
+        },
+        {
+          "resource": "repo://deploy/computer/nora-computer-backup.service#L1-L14",
+          "version": "repo-lines-v1:sha256:8f51f1382bd93a0c4377cb59b3b5c4f2dd8b8e86e409be00b4f28d26c9094cda:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhNTBiZDRkZGQyNzMwMjUxZjFlOWUxY2RjNTVlMDM5MDY2ZDU1YWU4YTFmYWIwZmI2Y2ViM2ZiYjcyY2RiOTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE5OWExZGZlNzY4YzI1NDE5MTFiYzc3MDUzOWVjMjRkN2UxMDdjMzk5MzRmY2MxOTM1OWRiNzZmOTBiNWNkMjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://deploy/computer/nora-computer-backup.timer#L1-L14",
+          "version": "repo-lines-v1:sha256:af9d4ef4ef44b70925ae69087eb5fa73f3f5c006ff04bc8e417f30503b8c172f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM3YWFhZTViNDY1NjFkMzg3Y2ZhMTQzOGZmNTJiZjhhYmY2YTViN2Y3MzZkMjQyNTU4ODU4NDc1MDlhZjk5ZTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU4MzQ5MDZjNDMzY2NhYjI2ZWMxMzU0MWE1YmM1ZWNjY2I4MzVjYWU1NTIxOTQwNGVlNTNhYzI0ZTQ3NDc1ZWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://deploy/computer/nora-computer.service#L1-L18",
+          "version": "repo-lines-v1:sha256:cead82357ac672dd64faee82b73700aacc18713727d3c30623d61ced64917f8f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ0ZGM4ODg1MGNlMWU4MmEyNThlZWNiOTI4YjEzY2I5YzA2MTdlZmE1ODdlNWJmOWUzNzMzMmRkYTcxMzVhYTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjZDA3MzdjOTE4ZjRhYzIyMTdmZWQzNGQzOTRlZWY4M2ZiN2FlZDVhYTRkZTg0YTg2ZGYxNWU5OTdhMjUxYjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_nora_computer_backup.py#L1-L12",
+          "version": "repo-lines-v1:sha256:b8e29b059e323a3c8724a0e252854cf787b39090f1a7b3892c2785395014c8f8:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxYTlkYjdmMWFiZDBjYmQxZWE3MGEyMzEyZWFmMzZkMDM2MTU4MzQyNjZmMGM1MzYwNGRiNmRkYTg0YWYwN2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ae052226bfcc4a758ea8678efbee6023",
+      "statement": "The tracing collector is a conditional integration whose container-side contract only is in this repository: `[obs.tracing]` selects the exporter (`otlp_http` plus an endpoint) and `instagram-bridge` is handed `http://host.docker.internal:4318/v1/traces` directly, while the receiving collector and its sampling pipelines are a host service this repository does not own — so an absent trace says nothing about whether a deploy succeeded.",
+      "evidence": [
+        {
+          "resource": "repo://config.example.toml#L1366-L1371",
+          "version": "repo-lines-v1:sha256:073ccea6a66d3661f5589ef26ddc79dee79b361ccef03143f6052d94a747e20e:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTNmYmJmNDVjNmExNjQ3M2IyZDVlMDRhNDliMGJmMjIwM2JjNzY3YzZiZDY4MWY3ZDc1MjJjNDExZGQ3NmQwNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWM2ZTlmZWVmZmU5ODExOTk2YzE3YWJkMTE4MGViYzBhMDk3YjU5Njk3ZGY0NTkxOTZkOTE0OWFlY2U5ZjE4NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDU1ZjYxZDZiNjJkMGJkZWY2YTExMWFkYTc4NWQzMDYyY2Q4ZjJhNDkxYmExMDE1NzRlYjM1YjNmNGQ2NGE5NiJ9"
+        },
+        {
+          "resource": "repo://docker-compose.yml#L151-L160",
+          "version": "repo-lines-v1:sha256:d0ce14b7478091afe492618ae8cbdc37fd04dbf3f7099f28f836deb716b96b28:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiMGQwZjA3M2VlOTkyYWU0YmZkMjFiMzIyYjk4ZTAzZDU1MGY4MmVlMWI5MTNmMjc3ZjdjZjczNDQyOTIwZjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNlZTJjNTQwMzk0ZDFlYWJhZjQ2ZDIxNzFjZTE4YzMzNDY4MWM2M2MzOTUxNDg3ZDg0NWRmZmViNDY2MzFhOTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY3MjUzMjgwNDY1YmZjYzE4MDc1OWZkNjQ3MjdhZjZmZTFlOWIzM2MxODdjMTZlYWZhZjU4YTg4MWU2MWViYTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwN2U0YjQ0MWIxZWRmNTgzNTgyZGYzNzVjMGI4MTcwMTNiMGRmOGE3OGE5ZTVjOTBhM2Q0NzdkM2JjMGZlNGQifQ"
+        },
+        {
+          "resource": "repo://docs/observability.md",
+          "version": "repo-file-v1:sha256:cd5a3634e8799bd88323677a2cabdc99039d47890f4e5f98cecea16bbe3cd79b"
+        }
+      ]
+    },
+    {
+      "id": "claim_4c0d580a374c453a914aa21e17235706",
+      "statement": "`alert-bridge` is a Compose service in a deliberately separate failure domain: stdlib-only with no retry queue, state or dedup (Alertmanager already groups and repeats), posting to Discord's REST API over the default bridge rather than holding a Gateway session, so the \"Nora is down\" alert cannot depend on Nora; with `ALERT_DISCORD_CHANNEL` unset it renders and logs the alert and says at ERROR that it dropped it.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/alert-bridge/bridge.py#L1-L24",
+          "version": "repo-lines-v1:sha256:a7ba27ad2fd67a24a76d4aeee703579a065a0f65b015d9106fc5eec781aa59be:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY1ZWI0ZTk0OWQ0YWIzYzczYmZkMTA5YzJmODllYTc0NDQwZmIxNzNhMzJkMDQyYmIwYjc2OWU5NjMzMWExYTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://docker-compose.yml#L1026-L1049",
+          "version": "repo-lines-v1:sha256:fe5eaa1404ae0d983f5eb708d1180d8fba13f4efcbdc68e02855829799adadb9:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBiZDFhNmIwNzA2NzliOTg1NWZmOTAzYzgyNzc0M2Y4NDkyNWViZDM2YWJjNGJhMWM4YzM5MDlkNGVjZmIyMDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1YTBmY2NhZmRlNTdiMmY2YWI1NGQ2M2NhMzhiNTdmMzA0OTY0ZDI2NTAwMTQ1Zjg5Y2VmZmFlOTMwNGJhYzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJmMGNhMmE2ZTM3YzY3MzQ4Y2I0MGVkNGVlYTVlMTAwMjZiMjYzNzU3YWExNGUyOTkxNzhlOTA1YjhkOTBhZjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBmMGMwOWUyZGYxZTg4NjE4ZGIxZGI4NTBmNzZkNGNmMDZiMzM2YTFlN2Q5NmQxYWFkNTA1YjcwYThiYmY0ZDIifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-20T13:47:41.518Z"
+  }
+}

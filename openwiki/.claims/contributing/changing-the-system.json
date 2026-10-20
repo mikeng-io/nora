@@ -1,0 +1,544 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:d1c7dde614b58bafd78a165131c3898c85fd7b756a5380bf59a71d707bcb2012",
+  "claims": [
+    {
+      "id": "claim_38c2e9bdd1574c59a4f61bc49047d414",
+      "statement": "Cora's contributor documents are split by job: AGENTS.md carries the terse rules for working inside the repository (the gate, the Never list, operational constraints), docs/CONVENTIONS.md carries the reasoning and war-stories behind them, CONTRIBUTING.md carries the branch, commit, PR and issue conventions for getting work into the repository, and each .agents/skills/SKILL.md carries one recurring task's procedure.",
+      "evidence": [
+        {
+          "resource": "repo://AGENTS.md#L1-L18",
+          "version": "repo-lines-v1:sha256:81563006bf371b1b73ea0b5841bd06b5d3cab7ef6481f493913d88d989a20b92:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJjN2Y0NDA4YTJmOTM4NjU1OGZmNGJiYjNlNDM4NTZiNTE2Y2I4NzNjOWRmNGM0MGVlY2Q5YzhlOGY3YzRlMWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMzNzYxODRiNGM5YjU0OWMyYzdkNjI2NWEzZmU0MzRjYzc4MjYzZGZiNTdiMzQ0NDdiZTNkODZlOTA2ZDI1MDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI1MDM1NjEzYTQwNDc2ZDNmMTk4ZWZmZmU4MGMzMzRmNGI4NzhkYWYzZTM4NWVkMDgyZjFmMmYwZTM2M2FlZjMifQ"
+        },
+        {
+          "resource": "repo://CONTRIBUTING.md#L20-L24",
+          "version": "repo-lines-v1:sha256:9da0ac1be8f746b4de0dbc41ec521538b034730891b9d6a17a81b8959de8fdd5:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMGQzZmE2ZDU4ZDk5ZGNkY2JjYTRlOTY5MWZjN2E0NGI0NWQ3MmM3NDQzZmRkYjMzYWQxMGNkNWMwOWIxZmFhZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjdhMjgzOTk4ZDhhZDIxYzFkMjM5YjhhZjg5YWQyOTE1YTRiZWY4ZTQ3NzFjMDE3ZGI2MjhkNjI3Y2U2NDE0NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWJlYjJkMTA5NGFkMzk2NzgyYjI3MzUxZDJjNzg0ODUzMWQ1ZDAxNTBiYjg4MGJmZDRmNjAzNjkzYmI5ZWM2OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2QzYzIwMjc3ZDQyZWUxODgzMTFkNzcyMWI3OGVmMTUyMjYxYzk2ZTlkYTU3ZTQwMmY0YzdjYjY4MzhhYzk3NiJ9"
+        },
+        {
+          "resource": "repo://docs/CONVENTIONS.md#L1-L8",
+          "version": "repo-lines-v1:sha256:40efee1ecdd00fdf8fbee8e9ef9b9070bfef3103bb0f278cb86fd4185f9da2be:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDBiMmFjN2E4NzFmM2NkM2Y3MmFlY2Y0YTg0ZTc1ZjlmZjJmNDA2OTAyNTAzYTkyYTZkOWM5MzZmYjU2NWU5MiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTNmYzU5MDg1NDc1ZjVhZmZlNzE1MmE0OTIxYzZjYTQ5NWRhYmFhM2FiMjQxZmMwMDk3ZjE1ZDJiNzI1NWJiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTI3OGNkNzQ3MGU1ODAzYmY2ZTY5ZjkxYzViZTU4OTM0YWY3OWNiMDAxN2FlNzVjZTUwNGQwOGNjOWNjMjZkNyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_c503053638b9485c88b0261d45e680c8",
+      "statement": "Every change, including a one-line doc fix, starts in its own worktree on an example-owner/<kebab-slug> branch cut from origin/master and reaches master by merge; editing, committing or merging on master in the checkout is forbidden because the deploy host's own checkout is the bind-mount source for nora/doctrine and nora/dreamer, so on master there is no step between changing a file and its being live.",
+      "evidence": [
+        {
+          "resource": "repo://.agents/skills/nora-land/SKILL.md#L21-L42",
+          "version": "repo-lines-v1:sha256:8ea5d0a4db3276aa13eeec02bd53a469bdba139b76b81ace25e56c767f088fb5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZGUwMmU4YTkzY2NlMTY4NzExZjk3OTc3MmNhNWUxODc4ZTE1Y2VlYzQ2Y2UzNGVmZTU1NThkMDE4ZWY4YTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI0MzMwZTI2NDgwMWExNzg5ZTc5ZjdmYjc1OWY4ZTkxMzczODRlNzE2NmM1ODMxYzEzNjk0OGRmZjRiMGYwMWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZjNTJkN2E0ZGMwODI1MzdjMDg1NWJhZmQzMmI3MTQzMDNkMTg2MzQxZjI0M2MwYTkyZGUwMTg0ZWRmOWQ1NWEifQ"
+        },
+        {
+          "resource": "repo://AGENTS.md#L611-L631",
+          "version": "repo-lines-v1:sha256:6d92e5888b8c4338af9593323d699a204da08ce25abce00e96eb7b0ddfe4b9e7:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRmNzE4ZjkwYTY0NmJmZjUyODAzZTY3MmFjZTdiMDU0YTg2NGZhZDY5ZmQxMWU1OTYzYmEzZjIxOGM2YThlN2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1N2U5YmY0OTQ0OTVjZGU2OThiNmI3ZGJiNWM4YWY3NmRlODM4NWFhNWE4NTJhOGFmOTQ0MTMxZDNkNWJmMzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA3NmY3N2E2MDQyZWFiOWEyODVhODNmODMxNGI4YTg2ODhhMmQ2YjE4ZDVkNWNiZjQ2YWRmZGVkNTM0ZTQxYWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJlMzNkYWY4MzNlYTA3NWJmYjAxZGJhNWZmZWYwNzY1YjY3ZWRhNjI4OGM1MDk3ZTVmMmUzMDZlNDJiNDk0ZTEifQ"
+        },
+        {
+          "resource": "repo://CONTRIBUTING.md#L44-L63",
+          "version": "repo-lines-v1:sha256:1c6b88d49003975687d8c203cff398a2adc9c64e12c654b31f1d9890280b59cc:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIxMWZiZTRhOTYzNzJiYTM5ODVhNTU4NGVhZThhYjc5MzFkOTFlNzlhMWI3MjE1NGJkNzBjYTczMjJmNjYxMDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk0MjgyZmE3OTU2ODVlZmRkZjEyYzJhYTc4MjZkMjUwZWZiNTU2YmNjY2Q1ODQyYjhmMzJkZTlkNmUxZTY0NjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAzNDY2MmVmZWFiZTRkNWNkOTM0ZGIyMDVhODJkNTM3NDk5NjRjNThiMjQ4NjNhMzExZmJmZmI2M2FmOTFjMGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU3YjZjNmE4OTRjODJlMjAwMzZlZmYwZDNkNzRiYjgzMGNkYThiZmNmNmFkZGRjYzQ1ZGY3N2VmZWFhN2ZhMmQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_23ed9ecb64634da4901e872308676354",
+      "statement": "make gate is run once on the final head and runs ruff, mypy and lint-imports in full followed by the tests the branch's diff against origin/master can reach (the whole suite when the diff cannot be mapped, nothing only on an explicit NONE); iteration uses make test-affected or make test-fast instead, and the outcome must be read from a captured exit code because piping the gate returns the pipe's status.",
+      "evidence": [
+        {
+          "resource": "repo://.agents/skills/nora-land/SKILL.md#L54-L82",
+          "version": "repo-lines-v1:sha256:2de07c8f2d5e32a94e656039cb9f98c2d87a44d0f1970ebef6c1bdba4c106f55:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdmZjc0ZDRkMmJlYzVmNWNhMjI2YmY4YjFiMDVmN2Q5M2Y3NjIxYWMxYzlkMWMxOGFjODQ1ZmQ0Y2JiMzJhMmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2Nzg0MzhhZTg2NjljZjc4NjFlZGFjYTkxNWJlMjczNGIxMGIwNWVkM2MzY2YyNjBlZWIxYTYyOTQxNmRlNjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYwZjkwOWVmMTlmMmUxOWU4NGFmYzMxZTFiM2FmZDQyZjM0Y2Y4M2JmYjQ5ZWM3NjM0ZTBmODcxNTY0ZDFjY2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJjZGQ3YTA3MDg2NTgwMzFiOWNmNDI2NzFmMWJmYzkwYmUzN2U2ZGZjOTRjY2E5MDM3MmY2NDAwNDFmOTQ4Y2UifQ"
+        },
+        {
+          "resource": "repo://AGENTS.md#L462-L504",
+          "version": "repo-lines-v1:sha256:09576fb2e203f7792e56f3482334afc16edaa8e7221e8419934313c510c37da4:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlMjcwNGM5YzE1NjNkZDQ0ZTEwZjU0ZmI2NDM5NWNjNWY4ZGUzYzNkZTlhMzFmOTkzZTIyYjBkM2EzODYyODYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFjYmI5YWFjYmNlZTllMWFiYzk0NjMwY2ZlNzAzNDljMDJjZDc2OTNkNDE5MTM3MzI4MDUzNDE3M2FkNzNkOGUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYzMTFiOWIzNDU3Y2JhZTQwYWMzNWMwMTBkYTRlOTk4MTFkYTU0Y2E2ZjAwMDViMWJmYjEzNWFkZjM5ZjU1MDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYxN2ZkY2E1MzQ1ZGVlNTdlZjlmYWE3ZDgxOTFjODBlNTk3ODc2NDhmOGExZjMxNmM5MDFlNDFjNjkyZDhmYWUifQ"
+        },
+        {
+          "resource": "repo://AGENTS.md#L604-L607",
+          "version": "repo-lines-v1:sha256:f3b8d82853de611ccd83ce744cf3147fea9c381db186c7b1cf35035a426a75e7:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGM3YTdlNjBkZmVkOTRhMGM5YjQ3MzhmYzQ4ODFkMjk2ZDJjZDg3YzQ1MDk1YWU0OGEwNDc2ODJkMTdiYTRiNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTk2YTZmYjMyNTM4ZmZlNzRlOWY5YTA3NmRmNjk1YjExNTcwODI4NzAxM2U3MzM3YmIwNzIyNTcwMGExNTc4MiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODg5YWViMmM3Nzg5ZGI2OGU5MzgxMjBkMjBlMTdlZDgzMTI3NTQxMWY0OTY5YmQxZWZlNzgzMDA3ZDljM2JjNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDc2Zjc3YTYwNDJlYWI5YTI4NWE4M2Y4MzE0YjhhODY4OGEyZDZiMThkNWQ1Y2JmNDZhZGZkZWQ1MzRlNDFhYiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_7a429d196ec145c383a216feddcf8e8f",
+      "statement": "A docs-only change runs the gate's affected-test selector without the static steps, with the document staged because the selector scans git ls-files, and a hand-picked list of test files is not an acceptable substitute because it has omitted real readers.",
+      "evidence": [
+        {
+          "resource": "repo://.agents/skills/nora-land/SKILL.md#L70-L82",
+          "version": "repo-lines-v1:sha256:be37b1b123365da6bc34cd740e3cd30b93df4d62ef28ae1a0eb99610ebd02f39:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdiNmVmNmNhZGFjNTk5YWMzMmNlOTljMTIxMWM1ZjE4MWYyZjk4YTczMWIyNDQwMGFmOTMxNDc4Nzc3OGU1YmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2Nzg0MzhhZTg2NjljZjc4NjFlZGFjYTkxNWJlMjczNGIxMGIwNWVkM2MzY2YyNjBlZWIxYTYyOTQxNmRlNjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIyMmNkOTQ0ODU4NzBhZGUwNDc3NWUwMzA4ZmYyYjA4ZjEyMjZjNDQzMmI4NmMyODRkNWI3YWJkMDhmNzA1ZTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJjZGQ3YTA3MDg2NTgwMzFiOWNmNDI2NzFmMWJmYzkwYmUzN2U2ZGZjOTRjY2E5MDM3MmY2NDAwNDFmOTQ4Y2UifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9903bccc30734d11aeed217cb771cd4b",
+      "statement": "Commit subjects follow Conventional Commits with a closed 17-type list enforced by scripts/check_commit_subject.py through the commit-msg and pre-push hooks installed by make hooks; the body states what was broken, what was measured, what shipped and what it does not cover, and the subject doubles as the release note consumed by release-please.",
+      "evidence": [
+        {
+          "resource": "repo://.agents/skills/nora-land/SKILL.md#L84-L113",
+          "version": "repo-lines-v1:sha256:14f51770a044262dfc4e206617f434dbbb7721c4018fc4f51c1ae48acdf42985:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjExYmFmYjc2ZTE3Mjc4NTdkYWJiNGVlZjRmODIyYTQ3NjA2YTEyOWM5MDIyODdjMGE0ZmY2YTE5NjY0NWIzZWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJjZmU0NTM0YjE1ZTVlZTIzYzY4OTkyMDQyNjlmMzg4ODZiNDU5ZjRiNjcxOWQ1MGFkZTBhODQ2ZGNhNmM1NjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI5Y2VjNmQwOWEyZjkzYjY2YWVlMmYyYTliN2U0MDI1NjAwMzcyMjQ2NmQ1YTg5YjUzMTBjYjdhNTRkODVlNGIifQ"
+        },
+        {
+          "resource": "repo://CONTRIBUTING.md#L204-L207",
+          "version": "repo-lines-v1:sha256:e102ecf5d3988e1550a5d57fba2526d2833215c1de0cdbb128b30355c9eedadb:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGIzYjY5NzUxMWJjYTJjNDQ1ZGRmMzQ0ODBkNTZlYjU3M2I3ZGQ2NzIwNDdhZmEzYzA4NmE1ZTVjOTI0MzhmNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNGY2MmNlZmE5ODY0YWJjMDllMTRmODEzODczNTE5MTVlZjhkZTJlN2RhNTAzZjE4ZjNjODc2ZDYwOTZmZTVmNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiY2YzNDhhNWNiNmM3MDllMzExNzc4YTUxNzBlYzU2NTc0ZDNhNDk0YjJhNWFkODhiMDRmMWI1YTNlNzk2NTQzNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWZlZjNlNDljMDM0NzQwNDk4ZTlhMTRiZDE2ZWNlM2UwYzdiNjhmMmJlZTE4MTlhZWRlY2FkMjMzODBhMjI1MCJ9"
+        },
+        {
+          "resource": "repo://CONTRIBUTING.md#L65-L107",
+          "version": "repo-lines-v1:sha256:7e6c8156765bde1ebb7b20e170ea45a20582a24acbfb6ccd8f2d778999fa311e:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmYTQ4OWE4YWY5NWNhODA1MzQ1OWJiN2UzOTcxN2ZmY2Q1MGY1N2UwZTg1YmFiZTI1Y2I3YTg0OTVjOGQ3MWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVhNzU5MjNiNGE4NzVkYjcxMGZhOGJjMTUwOTA1ZmMxYjc2NDE3ZTM1OTEyNjk1Mzg5OTU0NDAyNjYyNmM5NzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIwYzI1ZTFlZjEyM2EwZDFlZTk1OTczY2MwMDk3NzMyOTVkMzEwZTg2Nzg1NWJhYjQzZDM5ZWE4OTViNmExNDUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_88ddfc4fd79540e9a788d8b9da3b5d7f",
+      "statement": "A branch lands as a real merge commit with an authored 'merge: <the arc>' subject supplied on the command line (gh pr merge --merge --subject with --match-head-commit), never squash or rebase-merge, because no hook sees a server-side merge and GitHub's default subject would otherwise become the permanent history entry.",
+      "evidence": [
+        {
+          "resource": "repo://.agents/skills/nora-land/SKILL.md#L148-L169",
+          "version": "repo-lines-v1:sha256:ec1e360677a5abdefe81363f01a43de09008518aad7bf497c05366b2cc9c9387:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ0YzQ3NWU4ODIyNjk0OTViZWVlOGNjYWU5MDA2N2U4MDg3NDRmOWUzZTBiMmZjMjQwYTBkNzAyNDUwNTViZjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRlYmU5ZWQzMmJlMjFmOTA0ZjkwNGJjNzBhMDg0Njc0MGFhY2JjNzE3ZTBmNDdkYjcyYTcxMWM2MDI1Yjc4NDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjczZjAwNjBjYTQ4ZGI4MzBmZDdiMmMyNmU1NTliYjRjYmE2YWU2NTdhZTA1ZTAzNzNkZGVmMTk0Zjg2YTkxOWEifQ"
+        },
+        {
+          "resource": "repo://CONTRIBUTING.md#L141-L169",
+          "version": "repo-lines-v1:sha256:858b87dc70b1b3d8bd2a9132f07c71001efdb1de36aa64f744928a6f30ad3660:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE2ODcwZDNiM2UzMjI1NGUyZThkMDYxOTQ2YzJlYWQwM2U0YWM1ZjNmMzY5YTE0YTUyNWVkODViYjkyYTg3MjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljMDMzOGVmMmVjYzU5NTU1ZjZkM2QxZmFkNTg0OGNjZmZmOTRhNmQ0ZGMxMDc5ZDE4ZmI5YmFlYWE2NWI2M2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZhYjlkZDFkNzAwMWRhNmE5OGU0NjAwZGYwZWZiYTc0YTMyMDdjMGEzMmQwMWM0NzAyYmFmZjdlYWE0YzRhYWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVjYzNkNDBhZjhiMDAxMWE1MTc4MGI1Y2YwOGRkYjZlMWQ0MDdlNmE1ZjNjMzEzNTg1MzRjYTU3NmM4MjAwMmMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e5a7f24b0f494c88b6d1e56d10ef2081",
+      "statement": "A PR body is filed through .github/pull_request_template.md with the headings What, Also, Gate on the merged tree, Deploy note and Closes in that order, Summary and Test plan being retired headings rather than synonyms; the heading set and order are pinned by an architecture test so a deliberate change moves template, pin and CONTRIBUTING paragraph together, and the Contribution content workflow validates live titles and bodies structurally without judging whether a claimed gate result is true.",
+      "evidence": [
+        {
+          "resource": "repo://CONTRIBUTING.md#L171-L241",
+          "version": "repo-lines-v1:sha256:2476ade2e7ce31879a48a151f4c858672026358fe18e8cddc8d0a10bbe973875:eyJzZWxlY3RlZExpbmVDb3VudCI6NzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUzZGYwOTU4NmM3MTVlMDU2MGNhMzBkMGZlNWE2YWE3MjI2NDA2YWFiYjMwMDBjM2E4YjVjZTI2YTE1ZTgxZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU0YWI3MGRhNzA4MWYyNzg1YTAyMTQwYzRkNTI1NzA0OGVkNDhlZWI3MzdiNzI2OWFmMDg5NzdjZWJjZGE0YzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVjMzA0N2ZlNTNjOGEwZDhkNTA5Y2ZhZmRmOWQxYjJmZmQ2ZjU1Mjc5ZmY2OWFiMTZkYzBmNGI1MGNiNDg0YTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdlOTU3Y2VkMGIzNGRkODBjNTFlNzMzNWUxZmM4MGVkNjdlODQyYWQzZGM3ZWU1MzBkZjFlZjViMDBkYzA0NjQifQ"
+        },
+        {
+          "resource": "repo://tests/architecture/test_contribution_conventions.py#L1-L11",
+          "version": "repo-lines-v1:sha256:ff2b9b6bcb51d4ebd8d705684d3a30cd817c895f115f6d87f6d449ac319ff0f1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA0YWNiOGFlMWIxMWRlNDdlMjc4YWE1N2VlNzk5N2M1OTBlOTljNjA4ZWNkODQxZWNiMGYwZWVhZDA5MWYzNTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRjNGRkNWRkMjQ3MjNmOThhZDcwOTA3M2EzMzk0ZWY5ZGI5MDRiZTdiN2ZjMThlYzNmOWU2OTU4NjU2OGQ1YWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhYWY3NjM3Y2I2ZTdlNWRiODVkNjM0Mjc0NjAxNGRmMDQxY2NkNTU4YTkyMGIyOWViNmFjNzE5ZDdiYWY1YzIifQ"
+        },
+        {
+          "resource": "repo://tests/architecture/test_contribution_conventions.py#L119-L125",
+          "version": "repo-lines-v1:sha256:73506f5be87f831bf943601b4d409e890a84bbb8a3fa726ee729d17f3739aad8:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYmU1YjZmMDE3ODU1Y2UyMjBiN2VlODYwYzRkYzBlMDQ4M2UxM2YxNmM5NTYxMGQ3MGQyNGFlNjgzNzcwMDc2ZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzBjMWYxODhmMTQyZWQ3YTgyNDY4MGIyMDcxNzJjNTUxOWJjNjE0YTQ4ZmRhN2NmMTY3ZWRiOGRkZjc5OTU2YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGM4NjIxYmZhZjU0OTRlZGU4YTU3OGE1MzUwZDhkNDNlMDMwZDEyZWY5MmY2Njk4YTJkY2I4NTU2Y2Y0NTIyZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMGZiNDMxMjFiOTllZmZlZmQ2MWQ1MGJkMmVjMDEwNmZjOGEyOTY1MzVlODJjNmZhZDFiMDgzOGFiNGI5MmJmMyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_ba4a393f37ac452ebbbe58cebc6c2fee",
+      "statement": "A fix counts as done only when reverting the exact production line turns a named test red, reported beside the gate output; the harness must assert a green, collecting baseline (pytest exit code 5 means nothing was collected) and a mutant must die from the reverted behaviour rather than a NameError in the replacement, and mutation tables are driven by scripts/mutate.py yet deliberately excluded from make gate.",
+      "evidence": [
+        {
+          "resource": "repo://CONTRIBUTING.md#L260-L320",
+          "version": "repo-lines-v1:sha256:05b47547d409229ab483f667a94da0210476fa1da087b7c6f804db565a3500f9:eyJzZWxlY3RlZExpbmVDb3VudCI6NjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5NGY3NGQyNjI5NjIwNmRkYzZiYzdmOWViOWYyNTlmNGFjODk0NDJlYmJiYzFlMWU3M2Q1ZDI5YzJmMmZlNGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2Y2UzNDA5ZGEwZjc3ZTIzNmVjZDM3NWNjMzRmMTMxOTliOTU0NjIwOGMxODMxNGU2OTIxMzljNDg4ZmQ5MjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQzMGNmNTgzYjhiZDU0YTEzOWU4YzEwYTI2ODI3MDcwYjI4M2VkYzBkZTA0MjhmODQ5NDk2YWFiY2RkN2Y4M2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ5OWJjOTkyYTJmMzBlOTNjNGZhMGM1M2VlOTNhMTAzYTRlMWRhYTBhODNlOWQ2YWFhZjczYzE3OGUzMGYxN2QifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_90ba3e4eb7744bc0bbf440f43a67cdf0",
+      "statement": "A test's directory names what makes it true rather than what it is about (unit has no I/O, contract is one suite with N implementations, integration is the wired pipeline, architecture covers properties of the source), and the tests/ root takes no new files.",
+      "evidence": [
+        {
+          "resource": "repo://AGENTS.md#L750-L753",
+          "version": "repo-lines-v1:sha256:c9406cf0b1dfb91f337e9bad2b70d014bec5eab28f76854c818d492dd84b97f6:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTcyZDQxYzZjZWYwZGJlMGFjMDUwY2JiY2I1M2RjNzZkYTE4ZjVjOGQ4MTcwYTFhMWVjZjZjZjQ0ZDFjMTk5OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDc1ZGY1ZTYzNDRmMDY1MTA3NDc3YjA2NTdlNDg2ZmZmM2UyZjg4YzY0NzI3NTIzMzk3YTY1NDllMjNkODJkYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDUxMGRkODRlODFkOWMyYzliZTA1YTA0MmUwYmMzMzBmOGEzYTQ0N2FlNjI0ZjdmOTRiYmU4ODY2ODgzZWQ3NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDgyZTkxNGI1ODZiYzY3Y2Q5MzczN2ZmYjVmNDVhZTM0NWM3YjdhYTViZmQzZDI1MjBkNzY2ZDE4NTBjZGQ2MiJ9"
+        },
+        {
+          "resource": "repo://tests/architecture/test_tests_root_takes_no_new_files.py",
+          "version": "repo-file-v1:sha256:960b440fd2fb86ea39152545e682fc8e650e348323122b287cff255fefd3d96d"
+        }
+      ]
+    },
+    {
+      "id": "claim_c60ea0b391834198ba4523de0323ad6d",
+      "statement": "A native tool exists as one NATIVE_TOOLS row plus one _spec(\"<name>\", <function>) registration; _spec copies every declared field off the row and raises KeyError for a name absent from the table, so R-7's default-deny arrives at build time instead of at the model's first call.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/tools.py#L3307-L3336",
+          "version": "repo-lines-v1:sha256:e573e90addf345770918a902724258c545c01fbba973661d031dc01718b3de77:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3YTA5ZDVlMGJiMDk2MjJkZTQ2MzNhOGNlYTFiNGI4MjgxZjhjOGJlNTE3M2UyZjNkNzc3NDA0YjllN2E4NTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU4MWUzYTkyM2ZlOTJjNTYxZTA4ZjQ1ZDk2ZDkzMmQyYmYxNjgzYjYzYmM4NWM5ZTdkMmVhZjZjYzgzZDdkNTEifQ"
+        },
+        {
+          "resource": "repo://nora/agent/tools.py#L608-L631",
+          "version": "repo-lines-v1:sha256:adf8cbb5cf96023f65abe1ef9e629aed752a39b60d7908fa58a77aa51fe8444b:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYxMWY2NzVhYmJmZWFhYmE1OTA5NGVjYWY3YjFlOWIxOTVhOTQ0MmM5MDA0ZmJlN2RiNTM4YzJiYzg4NDRjYzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5MmNmODVmYmNiYjhiZGRmM2EwZDllNjZmZjZhMGUzMGRlMjlkMjY1NmI1MmY3YzhhMDhlOGExYzQzOGQ5OTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUyNjA2NDZmZDEzZWNiYTY5ZmE0YWZiOTVkNjY0ZTI4MDQzZGM4MzI1ZTdlNTU0NmI5YmQ3ZmUxMzZhMWMwODIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRlODU3ZDdhNjliYTczMjIwZTdmNjQyOTlhMDQ2ODc1YTgyMDlhYzMxMmNmMTlmM2UxNzY0YjUwNDgwNzYyZjAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8ed4d931de2541ee93b1975554c74039",
+      "statement": "A tool's name shape and charset are enforced by tests/architecture/test_tool_names.py, its first 40-token opening with a when-trigger, level ceiling, dash ban, one-non-English-string limit, no-loss-after-Args rule and MUST/SHOULD register by tests/test_tool_surface_policy.py, its declared side effects by tests/test_tool_contract_metadata.py, and its budget by the whole-table pin in tests/unit/test_tool_registry.py.",
+      "evidence": [
+        {
+          "resource": "repo://docs/adr/0015-tool-surface-policy-v2.md#L271-L291",
+          "version": "repo-lines-v1:sha256:75fd1c454796694ed20093014f5a0e3dd8946898cc7f602d4d4206139477f980:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjMGI4NzdlMmVmODA0NzA1YzllMGE2ODk2YTI2NWQ0ZmU0OTFlNWJiZTA3NGFkYTBhN2Y1NjdjNzhmNzJiYTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFjNmYxNTE2Nzg4ZWZhYTViNGM0NzBmMmYwZjlmMTk0ZjU0MDIxYWQ2NDYwN2U1N2NmNTg0M2IwOGQ1NThmZjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNjN2UwYTAzOGY4MTZiNTgwODhkYTc0ZmU1NTNlNGFkY2ZlOGU4YWJlNmE2YjE1ZjBjYWE1MWI5Mzk3ODc2Y2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVmNzMyODlkZTFiYjVlM2E4NDM0Y2ZmMzYxNjczOGY4NWU3ZDQzMmM5MTM2Y2E4MDk0MGI0NTk4MGE4YWViOGUifQ"
+        },
+        {
+          "resource": "repo://tests/test_tool_surface_policy.py#L1-L45",
+          "version": "repo-lines-v1:sha256:f352621efe7cc3c3335e9e527e77f20ae6aef03d723f85ad7ddca7518e9fa14c:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0MzMyMmRiNWFhZTIwZjY0ZTBiNDUyYzNmNmQ0Y2FmNTk1YWUxOGRhNGY5NWJmMjgyOWU2ODAxOWNlMTI3MDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhZmJhMDUyN2MzOTUzYzRiNmUwZTViNTczOWJhODM2MTJmODA1M2JjZGM5NDY2NzMwMTkzY2QxZDU5MGI0MDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNiYWU0YTZkMzkzN2VhZjJlYjZhY2RjNDc0NDY5MWRiMjI1NjcxYzc2MTA3OTMxODczMWViZjhhN2ExZDI4MTkifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_tool_registry.py#L294-L294",
+          "version": "repo-lines-v1:sha256:29193c2bbfb06d433cba3ab1cde933f1b0fd3b0805a3b6695f3fbf22f6cec158:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjkxOTNjMmJiZmIwNmQ0MzNjYmEzYWIxY2RlOTMzZjFiMGZkM2IwODA1YTNiNjY5NWYzZmJmMjJmNmNlYzE1OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjkxOTNjMmJiZmIwNmQ0MzNjYmEzYWIxY2RlOTMzZjFiMGZkM2IwODA1YTNiNjY5NWYzZmJmMjJmNmNlYzE1OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDEzMTYwYmJjMGZkZWNhYzAyOTYyYTBhODY5ODQ0ZGIzNTg0NWYyZjdiZDJkZjQyYzVmMDkwYTk1MThlNDE0NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWI0OTA1ZTBjYzA1NGZhN2UxYTAyMzY0YmYxNTkxMWM2MDJkYmFkOWMyMmMwYTk1MGZkMzczOTEwNjY2YzI3OSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_dd76153d31ed4f578fedb720c3d56a53",
+      "statement": "A tool is never renamed without a tool_selection run showing the current name causes a misroute, and any change to a name, first paragraph or level reports before-and-after tool_selection runs (and tool_reporting with --judge when interpretation moves into a result) in the PR; a new same-domain pair also gets tool_selection cases naming its sibling in not_tools.",
+      "evidence": [
+        {
+          "resource": "repo://.agents/skills/nora-tool/SKILL.md#L119-L133",
+          "version": "repo-lines-v1:sha256:d3cf489b49fc9f34306c62ff6f36957e178b4b3ae05878b4f1a77176338900d8:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRmMzAxNmU1ZDVhM2FmMDg5MGI3ODc2Y2QxYzZmZWIwMjI5ZDZhOTQ0MGE2MjJmYTQ4NGQ3OWNjZWRjOGE5NzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJlZDM5MDI1ODY5OWFiMDc1MTVjODA2OGFlODM3MmYxZjQ2M2U0NGNmMTkwMWYwNzBiYzg1ZjVkOGJkZWQ4ZjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ3M2YxYzhjNjE3NDAxNzU2NGUyMTA1ZTlhYjU4M2IzNzQ2YWVmM2JjOGU3YzNhZDA3OTU5YzgxYWY3YmI5YWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBlZjQ4ZjMzMjBiNzZhOWUzNDNiYWZkYTZjNWQ0N2Y2MTY1YTNkZmIwMWM3ZTZkZDIwYTM2MDVjNGRhMTczN2YifQ"
+        },
+        {
+          "resource": "repo://.agents/skills/nora-tool/SKILL.md#L27-L38",
+          "version": "repo-lines-v1:sha256:60220fbbbe6bc2d2d91fc35e7fa7249a1c007beb22f45cf7e7ede0bdfc91d8eb:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzYjQ4OTk5ZDcwOTRmNDZlNWU3ZWM4OWU2ZDE0MzQ4NzhhOTZjMTU1M2NmMTkzMDYyZTYzMTEyM2E0NWM5Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVjOGVkOTgxZWNjYTJlN2MyZjM4MDFlOWNmOTM1YWY4YTIyMWMzNjQ2MDc5OGRiODFkNWZmN2NiNWI2YWQ1OWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhlZWJiNTk3ZDk0MzU4OGI4MmE5MGZjZGFhNzc1OTdiNDY4OThkNzAzMmFlMjY3ZGE1N2VmZmIzZDQwMWNjYzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdkMGUzMDQ3ZTI2ODcwNmEzMTVjZTExNTliZTVhYjM3ZDYxYWNmMTVmYzNhMDQ1OTYwMjFkMDk3ZjMwYjg0N2QifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4af231ea644e4b688380165c9e1fc709",
+      "statement": "Every non-ok tool result must carry a note, checked statically over every module that assembles tool results, so a new module that builds results has to join RESULT_MODULES or its statuses escape the guard.",
+      "evidence": [
+        {
+          "resource": "repo://tests/architecture/test_every_status_carries_a_note.py#L1-L33",
+          "version": "repo-lines-v1:sha256:3fd6a705eadbc9fbbbbdcf887368abf7f4fc39721903d28444076c2cc2b9faed:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdmMjZkMjIyOTVjMjEyMmU1Yjk3MDc0NWJjZDhjMTdlODJkN2E4NmU4MzMyZTQ0ZTI3M2Y2MWUyZDFjYjBlNWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhZmJhMDUyN2MzOTUzYzRiNmUwZTViNTczOWJhODM2MTJmODA1M2JjZGM5NDY2NzMwMTkzY2QxZDU5MGI0MDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlhYjFhMjgzMTM4ZjMzMDk4NDQ2MTc5NWVlY2E1ZmUzOGU0NTVjZDk2ZTMzOTIxYWJlMTA5YzVkMWYzNzM3NTIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2a4d3aabbe9549628a329bee9d79e084",
+      "statement": "A runtime skill is a nora/skills/<name>/SKILL.md whose frontmatter is name and description only: parse_skill refuses authority_above, authority_below and change_policy because nothing reads them for a skill, refuses a name that does not match its directory, and refuses an empty body.",
+      "evidence": [
+        {
+          "resource": "repo://nora/skills/loader.py#L118-L159",
+          "version": "repo-lines-v1:sha256:381612e0136dfaa36ab7b8726938d2559923e8a8f4b33118103d3072ab6998cb:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVhZDNlOWMxMGQ2NTJiOWVjYzBiZTk0MDA5YjgzYjRkMjhkNTFlNTE1NGE4ZDc1ZjNjYzhiMzJmNzljMGE3MGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMyZWVlMmNhMTJkNGIzZmZkYmQ2MzQ4ZDNjMWMyNmJmOTM1ZTNlOWI2YjQ5M2ZiMjg1N2YyNTM1MTFmNWZmNjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjliOTQ3Mjg2OGIzOWZmNzZkNDllNTM0MTE4YWZjYjIxMGJlMTIwZTg0NjMxMWQyM2ZiMzA5NWNkNTg2MTliMjUifQ"
+        },
+        {
+          "resource": "repo://nora/skills/loader.py#L69-L101",
+          "version": "repo-lines-v1:sha256:08076819cc3060f6a015d651b541980d5bb51a423170fef0fb9b41fbaac032e2:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyYjFlYWQwOGIxM2FlOWNhODdhNmUxYWIxNWU4YWEzODI0MDdiYThlMGFjMmZjMTM0NmY0MGMzYTZhMzc5ZGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFlMTBkY2ZhNDNlODZlY2VjMDdmZmI1ZGYyYjg5MzA0Y2Y3ZmFhZTQ1NDU0ODlkNzNlMzE0ZDUxOTcwMzc4YjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNiMDQ3NGRjZmU3Zjc1ZThjYzQwMTM5NjJlZWVlY2FiMzhmNzFkYTBlOWY1NDEyODI4NGViZmRmNGU2NTYwM2EiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY5YmE1ZTRmNjdhMTNhNjljOWViZmJhYjE3ZjkwOTBhZjk1ZWEwZjZiNDRhMDNiYmRhMWVkZjFlN2IyN2QwYzIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f3adb68e4c6045989771d4ba5f7de8c2",
+      "statement": "Runtime skill content is additionally held by tests/test_skill_content.py: the description must be longer than 40 characters and contain a not-for half, each skill has its own forbidden scenario list, the description ceiling is 80 cl100k tokens, and the body ceiling defaults to 1,500 tokens measured with whitespace collapsed so rewrapping cannot game it.",
+      "evidence": [
+        {
+          "resource": "repo://tests/test_skill_content.py#L79-L115",
+          "version": "repo-lines-v1:sha256:0aeb73aaf35f621521db3fce2045405c073c3565fbcbd5c599cce51c8e37831f:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0ZDNmN2ZmZDYwYWQ3NmFkMDUzNTU2YWI0MWMxN2UwODMxMmYxMzUzMmMxMGQ5YTMyNTM4YjYyOTllODc2ZmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJiMTMwOTgxNDI0MzRiMzQ3ODUzYTU3NTQ1ZDk5NTM3MjBiNTM3Njk0ZDk2MTg2Y2ZkMzdiZTk4ZTFmZTY5NTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQwZmNkY2VkNWU0ZWI3MDQ5ZmI5MTg1MGI0ZGMxMGMwNzI3ZTgyZWJmZDA3OWU3NzMwNzAzYzAyOTczZTA5MzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI4ZGI4N2EzMjZkNzU3YTk3ODUxMjM0NjhiNWEzMDZmNWI5Zjg0Zjg4YTAzNTMxMjk1ODlmOGUxM2FjZjVhMWEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1fb5a12d147f43a7ab8e179db5e08a94",
+      "statement": "The skill loader's refusals are gate checks rather than runtime guards: the live agent loads the same directory through Strands' AgentSkills(strict=False), which never calls parse_skill, so a keyed skill would still load in production, while the portal's non-strict store silently drops it from its listing.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/factory.py#L306-L335",
+          "version": "repo-lines-v1:sha256:571968f40c4c22d279efebcb147a8b5420367b962ab09bbfe5ce95a469769635:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVjYzMxZjhmNDc0NzVjM2JjNTE0NjI4YzkzNDlhYWJjMjEzZTFhN2JiYmVhZDk2NWE1M2RlZGIxMWJhMDcyYTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJhMThiZjg5NGJmNjQxNTM1OTFiNmE0ZmFjM2Q2NTIwYjQ3ODNkNzlhYmFjNGY5YTZjNmZhMjQ0ZGIyZGM2OTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA1ZDgxOWUwY2NlYTM5OTU1OGRkZGQ2MTc1YjI0NDAwZDlhMzVjZjE4YzkwZDY1MmM3Mjg0YzVhYjdjZjUxOWQifQ"
+        },
+        {
+          "resource": "repo://nora/skills/loader.py#L34-L54",
+          "version": "repo-lines-v1:sha256:c4ae54e57e89a29d9653d88aca35dddb218cd158b57ee6c12eee2db879a69352:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNjOGIzYzlhYjFlYzhlM2ZkM2QyZWIzNWEwNWIxMmVhZjg5ZTQ3NTc2NWM3OWNhMzliZGVkOThmZGY4ZWQyN2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjllMWVkMDA0ZDg1YTlhMGIyZTUxMDk2ZWYyZTk5OGE0YzgxZWVmODFiNDNmZWUwNzk2MWI1OWQ0NGQ0YzA0OTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI2YjQ1ODFlMWM3ODU0YjQyZmM0MDBiZDg2NTVhMWNhMjY3Mjc3ZDk0NDA3YmVhZjBiNzhmZjk4YTlkNWJkMjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhYWY3NjM3Y2I2ZTdlNWRiODVkNjM0Mjc0NjAxNGRmMDQxY2NkNTU4YTkyMGIyOWViNmFjNzE5ZDdiYWY1YzIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8f7bef53d8d04be9adc11e5e5ded7c8d",
+      "statement": "A doctrine file must declare name, description, order, applies_to, version, kind, authority_above, authority_below, not_here and change_policy; kind is drawn from the authored taxonomy (constraint, identity, conduct, instrument) plus the derived situation that no file may claim, and applies_to comes from a closed AUDIENCES vocabulary because nothing downstream could tell a typo from a deliberate exclusion.",
+      "evidence": [
+        {
+          "resource": "repo://nora/doctrine/loader.py#L1-L26",
+          "version": "repo-lines-v1:sha256:ed38bccd5c46bb8f611365f939124e805232c5fd66e080adfadaab5d880e41cb:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAyNDU1MTZmOTc0NmExMTMxODdhMjYyOTc0ODY1ZGNjZTg2MmY5NzJkNTU0OGQ2M2IzODU2MTQxMjgxMDBlNzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/doctrine/loader.py#L129-L155",
+          "version": "repo-lines-v1:sha256:84a1a0024df52af9eba97afe13a2e071ed5de4f313e0ed18aa4ac9a968819b52:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMyNjQ0ZTZmNDA1MzE5MTI4Y2EzZDk3Nzk5NWY3Mjg2NGM0NzU2NDRmYjFjYjMwZmY4M2FiYWQ2Y2M1MmM3NmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFiNGE1MGMwZjA1ZWFkM2Q5ZjVhYTFhN2YxY2EyZTRjZTQwOTQ2NzA1OWY5Yzk4MTZlY2ZiN2MwMjlhNWMxNmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgyZTc1ZTkwNzU1MmFjZmM2NWViNDlkNTllZDY1ZWMyZmYwMjU3ZTQwNjNjZjg3NDcyNGU0NjVmYjg3MTlkY2IifQ"
+        },
+        {
+          "resource": "repo://nora/doctrine/loader.py#L50-L103",
+          "version": "repo-lines-v1:sha256:1abaa778ee0000a571a27219f361479dd328e9b6156f4d1a8efef39545265921:eyJzZWxlY3RlZExpbmVDb3VudCI6NTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM2M2YwNmU2NjhlMDJhM2NiMjgxNzYzYWZjMWZkMDFmMDEzOWEyNWJmZDljOTBlY2IwN2ZlNjdiNTIwY2IyYmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhZmJhMDUyN2MzOTUzYzRiNmUwZTViNTczOWJhODM2MTJmODA1M2JjZGM5NDY2NzMwMTkzY2QxZDU5MGI0MDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc5ZDljMjllNDYyYWY2ZDZkN2Q4N2ZjNDQ5YWE2ZWNiMmE0MmNkYWQ3MjYzNjU0YWU5Nzg2ODg4N2M2MGVkMTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMwYmNjNjQyZTMxYWFjMjMyNWI4NDM2YTg3MDk1OTM5OGJjNWEwOGNjZTAxZWI3ZmM5NjU0YmVkYjBkYzFjYzQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6513ae856a87402da4a9908bf5edd33e",
+      "statement": "Doctrine gates enforce kind coherence: an identity or conduct file may not name a tool (including a bare snake_case identifier), an RFC 2119 keyword contradicting the file's kind is a category error, and authority_above/authority_below must name real targets, agree in both directions, and form an acyclic relation.",
+      "evidence": [
+        {
+          "resource": "repo://nora/doctrine/loader.py#L375-L434",
+          "version": "repo-lines-v1:sha256:b556c0ac38eaab9d1188cc3eecdf3d17214bd63f11c3931298921c0cc8de5979:eyJzZWxlY3RlZExpbmVDb3VudCI6NjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiMTM0MzY1OGYyYTViZjU1YmVhODQyOTY4N2Y3ZGUyY2UxMDBmOWJhN2I2YzU1MTQzYTlkNjRjMGJlNGJlNjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNkZWYzNDM0MTQyMjhlNzhkNTNhNzFjNzc1ZjQxYTQxMDIyZWVlNzVlYTk2OWI1MGZjMDNlNDIzOTg2NzA0NzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI0MjAyZDZlMmM4NGJmNWZiNWY0NDViYjUxN2YyYjRmZDc2ZjQxMTJlMTFhNzEwZmRjZDk4ODEwZmI4ZDVmMzkifQ"
+        },
+        {
+          "resource": "repo://nora/doctrine/loader.py#L471-L495",
+          "version": "repo-lines-v1:sha256:1d4f1c2f5a2c9226f03060252d13437f459a96e4e3bf46285e319586605898c1:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIzZjcwNjcyNTI2ZjNkNjNkZjAwZGZiODlkZTgzMWMxZWUwZWQ5ZDYzZTA4MjQwZGY4OGIwMGNkN2MwMWI4MGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3MDE0OWUwNjlhZDY3ZWNjZjQ3MzY0NmZmMWM3NTAwNTBkMzI5ZDExMDAxOGRjNTc2Njg3OGVhZmExZDYwN2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU4ZWY5MjUwZjQ0ZmE1ZTI4NjZhYjUwOWI5ZTViZjRkMjZmNjlhZTg5YzMzOWU2YTA1ZTlkM2Q2NTU0ZmZjNTkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f4c95d3c66444ca7969ded2f68010f17",
+      "statement": "A doctrine body edit must bump the section's version and repin the digest in tests/test_doctrine_version_parity.py, which is computed over the rendered section (so a description rewrite counts) and catches only the unannounced edit; every section must also be classified in the doctrine's classification.yaml side table, a check run by a test rather than at load because live doctrine reloads on mtime.",
+      "evidence": [
+        {
+          "resource": "repo://tests/architecture/test_doctrine_is_classified.py#L1-L15",
+          "version": "repo-lines-v1:sha256:b6eaaa49c2aff9391dba00f591a104345f517a1c76ffd558cf4b07aec563afe1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc2NWIwMzA0M2RhMDFjOWIwNjZjYjQ0OGZhMTBhZDA1MDVjYTk0MTYwZmMyOWY2MzE2MTdlNzBiMDE4NjFmNjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://tests/test_doctrine_version_parity.py#L1-L53",
+          "version": "repo-lines-v1:sha256:f503c1eb10123a223a725e1da0bcfe0a9a3e6b567d9dcce891382fd8fc6434b2:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgwZDU5YWQ4YjRkYTUyZGEyZTNjOTk0ZGQxZTFjMGU2MjEwZTgzNWFlNTAwNzk0YTNlOWU3NGQ1NTdmMWZkNDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1ZGI0ZGU2MjZkOWJkNGIwNzU4ZjY2Y2U0MjZkZTVjYWJlNzU0ZGI3Njc1OTAyMGI5ZGUwMGM5OTBkMDdhZTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhYWY3NjM3Y2I2ZTdlNWRiODVkNjM0Mjc0NjAxNGRmMDQxY2NkNTU4YTkyMGIyOWViNmFjNzE5ZDdiYWY1YzIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f7267033769c45a2a315d7b1597888c2",
+      "statement": "Instruction corpora share one reload machine: a live edit that breaks a file keeps the last good scan, increments a per-corpus failure counter and logs one line, while a broken corpus at startup raises in strict mode; the mtime-versus-startup choice is the caller's configured reload mode.",
+      "evidence": [
+        {
+          "resource": "repo://nora/config.py#L2904-L2909",
+          "version": "repo-lines-v1:sha256:d5596d84a8134af71a3d9fec1512f9926837ea3fcb490a960e30b73d7de530fb:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjkzOGQwNTQ2NmU2MWE2ZjAxMWZmMzM4YzUwZDQxOWM5YzhiNGYxYTU3NzMzZTllMTYxMTJmODM2NWYxYjlmYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNmMwMzlmY2ZiMTY5YjVkMmUyODFiY2Y3NTg1NzY2MzIyNzE5OTJkZjVlYmZkMjcyZGI2Y2I4YjE3ZjdjNTZjZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTk2OGNlOTUxMWFiNTY0MjgzMjA5MmI5ZjIyZWQwYzBmY2Q5Y2VkNDUxNTNkZTgzY2Y0MWZjODhjNDk1YWEwZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYmUyOTcyZGRlOWVlYjM3MDMxNmE2NzMxMzljNDE1OTE3Njk2MDYzOWU2YzE3ODM1NmM4NzNiNGI0YWFkMmJlNyJ9"
+        },
+        {
+          "resource": "repo://nora/instructions/reload.py#L1-L19",
+          "version": "repo-lines-v1:sha256:858a296a1a49948412f6d71edafd138bb28a0cf78fadc1978f72bafb06439600:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYzZTUxMjc3MmZiMGQwZjhhOTM4MWY4NzQwZDRlM2NlYTQ2ODZhNDllNjFhNjcxNjZmODNhNmY5MGJhNjVmYzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6f6f206ffcbb4d33a49edf2e5cd2d09f",
+      "statement": "A Dreamer objective is nora/dreamer/objectives/<name>.md with exactly name, kind, version, applies_to, description and change_policy; the key set is deliberately not the doctrine's and none of the doctrine's gates run on it; the digest every adaptor row carries covers the dreamer doctrine plus the objective, so editing the shared dreamer doctrine changes every adaptor while a prelude under nora/dreamer/preludes replaces that doctrine for the objectives its applies_to names.",
+      "evidence": [
+        {
+          "resource": "repo://nora/instructions/dreamer.py#L1-L30",
+          "version": "repo-lines-v1:sha256:3198c158aaa91e770174d321c665611fd58ddc242a75976f52a0936b0003a235:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjZWY1NDg0Y2IyMmZjMmM0ZGY5YzYwNWFmY2I2NTc5MzU2YTY5YTczMmM5NzA3MjA3YWY4ZGQ4YjQzZDVhMmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/instructions/dreamer.py#L382-L409",
+          "version": "repo-lines-v1:sha256:2ae5a89a63d4ae5afbb6547078a93050474aff2cc33b0c8ce1a9f8910e560416:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3N2E4ZDAxYTM2N2M0Y2ZmZDhiZjI1MmJmZTY5ODliN2NmZjEwMWNlNTM4MTllNDc5ZWIxNGNlZDliODc5ZmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxMjFmZTgyMWVlYWI4OGZiZjY2OThhYmVkM2M5NzZhMjY3ZTQwOGYwZDUxYmM2YzIzM2ViN2IyOGUyMDNiODIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ5ZTk3MTc5YjE3NDliYzI3Njc4Y2Y2NWE2YTQ3MGM0ZGE5ZWJhNWI1MmM4NjNiZDBmNWQ4Mjk2MWViMGFkNDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjExMWNiMmQ2Y2QyYjM2MjQ4NmE4N2M3N2U0NTQzZTFkY2ZhMjM4MTE5YTNmMmQyYTM2OWM4OTc4MWFkOWY3M2UifQ"
+        },
+        {
+          "resource": "repo://nora/instructions/dreamer.py#L57-L82",
+          "version": "repo-lines-v1:sha256:301a90d6b24bc09f0652966cd3620432e4888aaed315c682e86e1d6dbe51b3bf:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk2ZWQxYTNiYTkxNTFlMmE0ZDE4ZjYzZmM5ZjQwYTQwYjU0MTRjMTY2NDk4YTQ2MDNmN2VhOTY5YWMzZjk0YTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ2ZjhmYTk4NGU1OTM4YmJiMTdhZjI5OGY2NzA1NzQxNjFkNmQ0YmJmYmNkODRhZGY0NTUyMTMwMzFhNzNlZWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY2NDE1NzA4MjA2ZjVlNWI1ZDc2NGYxYWNhNWY3NWQ1MWMzNWVmY2U5ZTg3NzUxZTQ2N2ZmNWE3OTc0MjA4MjQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_362fc32710214d6c8a21456a49d0cf62",
+      "statement": "An objective is selected by name through for_objective(adaptor.objective); an unknown name raises naming the objectives that do exist, for_objective refuses to assemble the doctrine alone, and every shipped objective except cognition must have a golden pinning its whole assembled text, digest, versions and raw body.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/dreamer.py#L1200-L1210",
+          "version": "repo-lines-v1:sha256:66b21c7abf5a3fddd03d5a2cf474f787abc960703651b49c214b572c64519401:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1NGNjM2I4ZDY5YzU4YTU2MjMwM2RkNmE3MmEyNTFiYTIyNzlmNDY2NWEzYmZkNmY0ZGZmM2U4OGU2MDgzNGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFiZTMzYzQwNDU2ZjcwNzU0MTcwYWY4MjYyZmMwNjA3MTM4ZDNjZGFmNjUxOTViNGU1ZWRjMTkyZDEzNWY3MDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM1ZTBjYzdiM2ZiM2ZhMGJjZjNjMTY1ZWJiYTEzN2RmNTNkODk5MWVlZjU2MTI1ODJiMmY4Y2M3NDlmY2ZjNjIifQ"
+        },
+        {
+          "resource": "repo://nora/instructions/dreamer.py#L219-L283",
+          "version": "repo-lines-v1:sha256:82b1a0ef8fd308faaa8536e846dcab1b3f212a3d35925cbaeb68942415e85472:eyJzZWxlY3RlZExpbmVDb3VudCI6NjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNkMmQ3NGI5OTcxM2UzZGQ1MGM5MDlhNDZjOWVmZjU3MzRkZTdhNzQwMjgxOTk5OTBlZTAwNjdhNGZiNzNlZDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRkMTMxZmEzYzdkZjRlNTVlM2RmOWExMTViZmViMTI0YjBlMTc2MzhjMDNiNjFiYjA1OThhNGE4ODhkMzQ4MDQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI0MjE4ZWFhNDZiMTcwYTBhYjQ0OWYwZTZmZDYxODgyMWFhMTNjNDQ5MjJiNmFkZTliZWMxMDcwYmQ4ODBkZjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY1Nzg0NzM0YjBlMWRmMjg0NDQ2MDhmNTVhZTUzMThkMTFiOThiZDBlMTU3NDRhZTZmZmFiMWZhOTYyOWY2YmYifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_dreamer_instruction_goldens.py#L1-L48",
+          "version": "repo-lines-v1:sha256:91f7dd83a5d9b2bf3089c83310320a8750596462e105556a9acb9f96d9b1abeb:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiODdmZmQxMDIzZGNmNTI3NDA4MGM1NzEwZGM2ZDViZTE0MjEyMzA5MTI0OWZmZmZlYTc2Y2Y4NjEyYTE4ZjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlMWVmOGY2N2E4ZmNhZWJlMmJmZGE4ZmQ4NzdhZTY5YWNhNDlmOTg0MGY3OTM5YjE5MmU5MWYyODg1NmViZDUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d6b8acbf1d6040e3a7ae7997d16ebcd6",
+      "statement": "For an objective that returns structured fields, tests/unit/test_objective_parser_parity.py reads the shipped objective's own worked example and derives the parser's fields from the parser's AST, so either side moving alone turns the test red.",
+      "evidence": [
+        {
+          "resource": "repo://tests/unit/test_objective_parser_parity.py#L1-L60",
+          "version": "repo-lines-v1:sha256:c81f974da64e5177bd5905da4f49bb8559760e2b6d97a92977c0fa5f070fcc24:eyJzZWxlY3RlZExpbmVDb3VudCI6NjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFlMGRhNDcyNDQ1MjYxZmM1YmIxZjAxOGI2MzI1MzhjNTA1MjMwZDZiYTJiZjljMjk3Y2QzNjhhYzExMTMwYzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0ODM3NmYyMWFkZTAwZmZmZDJjNzAzZDA2MWZkMjhiOGQxNTJmZWRlNWJkZWVkYTFjMTM0NWY0NTk2MGZlOTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQyMzRhNzM2NDFmYWYwMjY5ZTMyYzk5YTBiMWQzNDBkZjZlZDVhNjcyMzg2MDAyODBjMzY4ZGIwNTc2ODE3YmEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_206826205ff24bdab2768ae639258a6d",
+      "statement": "A store port is declared in nora/domain/ports.py, and a port never gains a second implementation, including a test fake, without a shared contract suite both pass; shared fakes live in nora/testing and are gated by an architecture test whose allowlist only shrinks, while a store method with no production caller must be classified and pinned rather than left an accident.",
+      "evidence": [
+        {
+          "resource": "repo://AGENTS.md#L737-L761",
+          "version": "repo-lines-v1:sha256:f6854b2b161cba787c8d0ff8653d54d3ad0ae0a6c1caecc58ed9e2af4ccc85b1:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE4YzY4ZWM5MTM5ZDA5NjQzMzFhN2M0MmI4OWYxYTgzNzhhZmU2YjE3Mjg0OTM4NGZlNWYzNjZiZTkyMTc3NGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlNTNmOWI2ZGJhYWU1YjdjZjg3ODRkZjIxNzhkMjA1NDg4ZWZhMDE3ZDVhYmJhNDM2YTg2YWUwOWUzMmZhZDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM5ZTU5OTQwZjA3OThjY2VhYTk5ZGFkNTlkNmExMmQ1MmFmMTY5MzVhY2M1NDhiODk0OTY0ZmJhNzdiM2ZkNGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImViMWJjNWJjNGEyMzdmNTc4ZTZhZjRhNDE1ZDA2NDdmOTkxMGIwM2IzNjRlMWUyN2MxZjFkYmFhNzQzZDAzYmEifQ"
+        },
+        {
+          "resource": "repo://nora/domain/ports.py#L1-L12",
+          "version": "repo-lines-v1:sha256:a58d8be218fe353f5ffdd912d0bc8710417261e7cb62f4469715fffd8f92b0e5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmMTNjN2FiNTNkMDk2ZTViODhkZjQ4NTBmYzg5ZGE0OGY2MTBlMDExZGZjNzJhZjQ0ODdlOWZmMDNhZGE0NTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY1ZGUwMzZkZjVlMTk5OTJlM2U2ZGIwYzAwNzdmMjc0MjhjYTU3YTE5NDVjZDAyMDMwODJlOTQ5ZDZhNDQwZjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY4MjEzYmVjNTVkYjk2MjllYTc4YTU3N2M3YmQ4NDEwNjdmMTBlMDg3OGRmNjE3OWRiNDA5ZjI1ZGQ3ZmM4YzIifQ"
+        },
+        {
+          "resource": "repo://tests/architecture/test_port_fakes_live_in_nora_testing.py#L1-L48",
+          "version": "repo-lines-v1:sha256:01c7e25cd082496c671789567ba7068b809701ba7980f1dee8712f7537210863:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU4ODdkNjIzN2E0NGQ0MmMwMzAwOWJhMWNhNTcyMDE3M2M2YmNhNTkxNjEzM2IwZDY5YTYzZDI4OGE0YjdjZDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://tests/architecture/test_store_methods_have_production_callers.py#L1-L45",
+          "version": "repo-lines-v1:sha256:bc864c54d4d7fa7f2d734eca4ced4a6342526bb97c6d008ed27222e45731db64:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkxYzAxMDk4ZjBkYzQyOThiYzQxZTFkNzA2ZmY2MzI3ODNiNDEwZWRiNjc0YTFlOTA2NTZjYzEzOTVlODNjZGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2ZWQ1NTVjMWViODliYzkyYWQwYjQ2ODUzZjc4ZjgyOWFhMzUxYzcxNmVlN2FhNzNlNWNjMTgxYzAyOGQxMDUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUwNTU5NGM4NDA5ZWM0M2FkMjYzMzI2YmEzYmUxMzI2ZTNkZmE2YzE5NGQxNzk4NjcwNzYwZjkwZmEyMTYyY2UifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_cb330d6dfbc34d629036b5218f3483c7",
+      "statement": "Port declarations stay pure: nora.domain may not import aiohttp, strands, sqlalchemy, pydantic, prometheus_client, opentelemetry, yaml or openai, and that is an import-linter contract run in every gate rather than a comment.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/ports.py#L1-L12",
+          "version": "repo-lines-v1:sha256:a58d8be218fe353f5ffdd912d0bc8710417261e7cb62f4469715fffd8f92b0e5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmMTNjN2FiNTNkMDk2ZTViODhkZjQ4NTBmYzg5ZGE0OGY2MTBlMDExZGZjNzJhZjQ0ODdlOWZmMDNhZGE0NTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY1ZGUwMzZkZjVlMTk5OTJlM2U2ZGIwYzAwNzdmMjc0MjhjYTU3YTE5NDVjZDAyMDMwODJlOTQ5ZDZhNDQwZjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY4MjEzYmVjNTVkYjk2MjllYTc4YTU3N2M3YmQ4NDEwNjdmMTBlMDg3OGRmNjE3OWRiNDA5ZjI1ZGQ3ZmM4YzIifQ"
+        },
+        {
+          "resource": "repo://pyproject.toml#L192-L196",
+          "version": "repo-lines-v1:sha256:eaa21b941846ced1ea9906692454507fa886190277d76e537dff2d463675f0fb:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNmUzYmFkNzBhNjI1ZmNjN2VkYzY4YjZmOTY3OTQ0NDJhMDI1NGIwM2M4ZDZhODU4YjA0ZDZhNjg5ODRkZjg3MyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDdjN2IwODE4NDI0MDNkNDI0ZDA3MDg4MDk2YzgzNWY4NGQ1OThlOGFkMjM3ODIyOGQzZWE2ZGRiMzYxZmI5OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWZlZjk1N2U4ZDVlYzVmNWU4MmQwMDE0ZjJmM2ZmN2VkYTczNDRhMWZkZTBiMzJmMDA0Y2MyOWZmMTY2MzEwNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2EwMmU2YzU1MzIzNTc4MWQ1NDg5Nzg3MDRiNzRlYmI0NDVhYTY4ODEyOGRjZWQ4OWNhMDQwZTU0MWY4NTZhYiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_a261b9961cdb4f38828b01e90b0d62c9",
+      "statement": "A capability flag is a field on a pydantic config model with extra=\"forbid\" (so an unknown or missing key is a startup failure) and is read only by the composition root; when the flag is off the collaborator is absent and the tool registry withholds the dependent tools from every surface and from the gate's digest, so the capability costs no prompt and cannot be routed to instead of answering unavailable.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/registry.py#L312-L339",
+          "version": "repo-lines-v1:sha256:c7761cac24df4e400ab7a22664556f7320aab2de808239437fadfbe716fc3f6f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRiNDNiOGRiN2I0MjI3M2FlYzZlYmNjOWRjYjE0ZjM5YjhkOWQ5Y2FjNmM4NTllOGVhYzhjMTY4N2Y1NzE0NjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZmZDI5MWI5YmM0YzI4YzBiM2ExZGUxNWI3NDAxOWE0NDI1MjIwZjYyZGEzZmFjNzZhYzllYzc3NzMwMjg5YzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRmMDIxMzFkNjNmYWRjOTZmMzczMWY4YWU1YThkODFlOGRiMDM1NWFlNmM1N2RmMGIyYjVmOTkyNTI2OTU1OWMifQ"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L1-L13",
+          "version": "repo-lines-v1:sha256:3700631e8cfaec1200e037e7e0f850f8ad5cbb9ca30cabf7dfa9b8b84df22484:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE3ODljMDRkZTY2MGMzZjA1MDM5OWFjZTQwMDZjNjhkYmQ2ODM1ZGU5MTc3NTFmYjcwYmFjM2Y3NWE2MGFjMjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkM2Q2Y2ZhNTAwMDAzMDllM2FmMjc1M2I5OTgwNTljNGZlZWE2OTc0M2M1MjdiYmQ1MTBkNGE2M2ZkN2I0N2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhYWY3NjM3Y2I2ZTdlNWRiODVkNjM0Mjc0NjAxNGRmMDQxY2NkNTU4YTkyMGIyOWViNmFjNzE5ZDdiYWY1YzIifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L1-L6",
+          "version": "repo-lines-v1:sha256:933eb32b1afb0574de41c1b8cd40b5e678476aaebd6aa7b8ac361476d473a341:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjlhOTcxNmRhM2FlZjg3ZjJkNmM5MDVmNzVhMmJmNGI4YzJjNjJlYzdjZjY4YjE1OTcwZWE3ZWI5M2Y3ZGI2ZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTMwM2VjZGQ0YTRkMTBmMTljNzNmZDQyZmQxMjQzN2ZkMzM1NGE4MjY4MTYwNWRhNTI1NWE5N2EzOTA2OGRiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTViNmU4NzA2YjQzMDQ3ZjJhNmRiNjdmMTMyNjM4NTk1NjA0ZTY3ZjM2OTY2ODc2Y2UwMTU4ZjAwNTNlNmJkMSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_a72a6995158f480195c50cce2c10c931",
+      "statement": "config.example.toml is the committed record of the configuration's shape: a test pins its top-level section set, its comments must describe a key rather than carry history or measurements, and config.toml is untracked so the template-versus-deployment drift checks skip where no live file is present; live mutation goes through nora config, which validates against the same loader, writes atomically and preserves comments.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/config_cli.py#L1-L36",
+          "version": "repo-lines-v1:sha256:a19785db2a0f181073b6dfebcb8559d91cf767423590d1c46268c11b1e9beb7d:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ5MjAwZmZjN2ZhNWVhNDM3MzA0YWFjNDNiYzBiYmIzOTZjNTUwODE3ZjUzNmMzYWM2NzU3YjFjZjM3NzYxMmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://tests/architecture/test_example_toml_comments_are_reference.py#L1-L8",
+          "version": "repo-lines-v1:sha256:4c9538976b64a3f39615b900874322490b4f8f109eef48d3f13283246ebea9b5:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzkxMzViMDIyZWE4YTk4NWE5NDZmODU3YTE4YzYzOWE3MzRiZDVmODNmNWU3YzVhNTdkNGY5OGFmMjQ5NmMzZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTMwM2VjZGQ0YTRkMTBmMTljNzNmZDQyZmQxMjQzN2ZkMzM1NGE4MjY4MTYwNWRhNTI1NWE5N2EzOTA2OGRiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTViNmU4NzA2YjQzMDQ3ZjJhNmRiNjdmMTMyNjM4NTk1NjA0ZTY3ZjM2OTY2ODc2Y2UwMTU4ZjAwNTNlNmJkMSJ9"
+        },
+        {
+          "resource": "repo://tests/test_env_template.py#L20-L34",
+          "version": "repo-lines-v1:sha256:bba6da4712a32d507f1dbfc686245f6b303d56ab6852a31edd634a8af21fee3a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQwMWFhNjU1ZjEwNjljNzczMGM2YmU0MjJmMDcwZmEzNDQ3YzJkZjUwZGUyNGUxNGFkNjkzMjg2MjY0MmNhZDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI1YWMwNzg4NTdlOTgxNTczZjhhZTc5YjkyZmFlNjgwZDAwNDI0NDY1MTBiYjIwZWUzNzQ5NDRkYWVlZDg2ZjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk2ODNjMzk0Y2JhZDlmZGRlODNhZDY5Y2IzYzgxZDlkZTQwMzBmZDRkODc4MGYxMWQ2MmQ1ZGM4ZTFkZmU4NGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ce286c8b897742b5bc5900493f917d8a",
+      "statement": "Every model prompt must be built through context assembly: a module that sends a prompt declares a module-level _BLOCKS table and calls assemble, and tests/architecture/test_every_model_call_is_a_declared_occasion.py discovers such modules by reading source rather than a maintained list, with a non-occasion module classified as MECHANISM, RUNNER or EXEMPT with a written reason instead of tolerated in a ledger.",
+      "evidence": [
+        {
+          "resource": "repo://docs/adr/0021-every-prompt-is-assembled-and-the-enforcer-finds-it.md#L35-L56",
+          "version": "repo-lines-v1:sha256:0d86072d405145caa706e367d8ef3de49578319c8e45da4852ece8a1ec6c70ae:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkM2RiYzRlN2U3Y2JlNWRkYzg5MWIwODA3MTJmNjM1MWM5NGI3MjhlYzhiZDg1NTZmNDYxMmIwNzBkMjdiNDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhmNzBlNDliODMwYmUzMDMxNWI1ZGI3OTVlYWEwNmQ4ZGM4YzkyZDhiYWQzOTVjODE4ODM3YTY4NDA5ZjUyOTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYyMTc0MWRjZmQxYTdkODYxODlhMjI0MjZkOGJjZWRjNTE1MWMwOWY0ZjYxMTBkZDlhOGJiYmQ2MmQ4NmY3YWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVmNzMyODlkZTFiYjVlM2E4NDM0Y2ZmMzYxNjczOGY4NWU3ZDQzMmM5MTM2Y2E4MDk0MGI0NTk4MGE4YWViOGUifQ"
+        },
+        {
+          "resource": "repo://tests/architecture/test_every_model_call_is_a_declared_occasion.py#L1-L52",
+          "version": "repo-lines-v1:sha256:35f2a3053f3226e4a39a0382328cbbb167cfb549ed9949c976a8257ef750dfac:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFhM2Y5YTI5ZmY0NDAzNWE5MTNlYjVjODJkYWQ1OGI3MmM3NDE3ZGEwOGYzYzk3MTk1ZTNhZjZkOWZkNjg5NzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_eb2e5f99bef844e295d3829afa86fdc2",
+      "statement": "The decision chain assigns distinct jobs: a GitHub issue is a candidate that is not yet decided or built, an ADR records a decision with a cost in Nygard form whose consequences must include what got worse, and a decision-index row records a landed decision plus the test that enforces it, with a trivial decision getting a row and nothing more.",
+      "evidence": [
+        {
+          "resource": "repo://CONTRIBUTING.md#L458-L475",
+          "version": "repo-lines-v1:sha256:4845de614730f7e29526cbafd78056acaac637c493b9d571cf318112e9f05861:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1MGNlNzJhMzdkMTljYzFkZGI1OWJjYTAyNzQwMjdiODdmOTBhMzgwMjM4MDVjYWZmZjk1NWYyOWUwYTQ1Y2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY5ODQ3MzBkZWVkNDg2YmFlMDMyODJmYmI2YmVhMTMzMTQ4M2NkZDAxMWU4NGZhMzgxZDdkZDYyZTQ2YzcwODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM5MWM4NDBjZDNkY2VmMzY2ZGY3Mzc3YjQwNTk3MmMwMTlkMjJhMTcxNTk0YzYyNGU4Mzg0ZWRkZTVkZDM0ZWEifQ"
+        },
+        {
+          "resource": "repo://docs/adr/README.md#L1-L33",
+          "version": "repo-lines-v1:sha256:13cda76a906d22b712c5f6a49bf247196e597544976828297c757452092c7dde:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwNjIzNzM5MWVhNTQ3ZGExYjlkZDc2YTI1MWIwMmM5YjUzZDBmNDk5ZGJlYWQwNjk0N2I2OTBhMTdmOTYyOTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIwYWYwZWMxMjI0NmYxY2EyZTgxYjc0NmZlMmNkYmQ4ZDg4Y2UzM2FiMTZjOWQxMTk5YjE3Njk1ZmZmNjM4NGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ad8bf0cdbec44c7c97b1ded09155ee2f",
+      "statement": "ADRs are numbered NNNN-kebab-title.md in the order merged, taking the next free number from origin/master at merge time, and are immutable once accepted — an accepted ADR is changed by a new ADR and the only edit to the old file is its status line; duplicate numbers have landed because two branches each took the next number from their own base.",
+      "evidence": [
+        {
+          "resource": "repo://.agents/skills/nora-decision/SKILL.md#L54-L81",
+          "version": "repo-lines-v1:sha256:22e6c5e565d651acbef360c77f38581d7cafe347bc430ac651b879518a4242bf:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjczYTQ0OGFjZDY3OTAwZTdiOWUwODAwNmJhYjQxNGU1YjhlYjk1NWMzN2ZiMmJjZGQwYTllZDhmMDg0YTk3YjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFlMzE2YzQwODRjNDY5OWY0ODY5NjA4ZWIwNjJjMzIyNzEzZTJmODhkNzllYTUwM2FmMThkOGZhMGMyNzEyZmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVhOWVhMDM5NjRlYzk5ZjU5MWE5Y2Y2NjhkZDgxYjRhZWZiNWJkODFjZWEyNGMyZmI5NjcwMjcxM2U3Y2RlYjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg3MGFkMTAyZjRmYzRjMWFjNjFmNTI0ZDM2MGNiMGQ5M2RhNTlmMmUwNmQ4NTdkOTRmMTg3ZjNmYjkwNTQyMGQifQ"
+        },
+        {
+          "resource": "repo://docs/adr/README.md#L24-L33",
+          "version": "repo-lines-v1:sha256:dd267320593649faa0a6a8edba9f41996a81c4fe9393659d779fb1e70ee7ca8e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlOGJkNjk3NmM2ZDEwYTdmOTE2Zjk3MGJjYzgyY2UxNzQyZTU0Zjk0YjY3NzJhNDViMTg2ODZmODZhOTIxZGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIwYWYwZWMxMjI0NmYxY2EyZTgxYjc0NmZlMmNkYmQ4ZDg4Y2UzM2FiMTZjOWQxMTk5YjE3Njk1ZmZmNjM4NGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY4ZGY5ZDY0YTY0Y2Q4ZWI4ZmI1NmM5OTVkMGEzYTU1MmI4ZGUyYTVjZDljN2YxYTAzZDkzODQ4YjZhMDAzNWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_67429354cf6d42bd958a9b2243642357",
+      "statement": "A decision-index row's last column must name backticked test paths that exist, or say NOT ENFORCED, DEPRECATED, DEPRECATED IN PART or REVERSED; a row whose file exists but whose named selector no longer resolves is caught, rows are marked rather than renumbered or deleted, and a new behavioural rule registers its test in tests/test_acceptance_rules.py::RULE_TESTS.",
+      "evidence": [
+        {
+          "resource": "repo://.agents/skills/nora-decision/SKILL.md#L83-L109",
+          "version": "repo-lines-v1:sha256:1cd5364a358da11eae3bdf8d033afbfd5164bdecb10361432b98a07d01878480:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIwNThmY2E4YTM3M2FjZWMxMTQ1ODczZWZjOTRhMGMwMTVkMDJmZTg5MGY3YjA2MWQ5MjgyYjkwMzRkNGRjZWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk2ZDc4YmZiZjc0N2Q1MDM4MDRjOTAzZTAxOTNhMGExYWJjZGYxMjgyMTk5MmUwOGE5Y2EzZDYzMTAyM2UyZmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk2Y2M3ZTY4MzEzNzIwOTJkZjNlZTZmYmViMDI1MDNkODZmNDgzZWQ5NTgzMzQzNzA2NjM2ZDQ2YTM4ODQ5MTkifQ"
+        },
+        {
+          "resource": "repo://tests/architecture/test_decision_index_tests_exist.py#L1-L55",
+          "version": "repo-lines-v1:sha256:f210c690971da4b6ae1aab58ae88aa1cc98b3ef32a9fac5d8a38934b95fc29c1:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5OWExOGY0MTY5NGM1NTZkNzYzOWY5ZjFmMzVmZjU2NGZiYTcyYWE0ZGFiZTc4NzU5YjRiNjg1NGVlMDFiNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyNWYzZDc0YTRkOWUxM2Y0OTQwZTY4ODY0MzkzNjMzYzIxNWM2ZjdlMmQyNDE5ZmIwMTYzMTgyNzQ3NjBmNzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU0MjhlNTliM2Q2NmMwZmVkMGFkMzdmYjI5MTE3MzJiOTc4Y2Y2ZjkyNzFiZTcxMzI4MWQ4OWU3Mjg2Yzg5ZjQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4ac554e569854156bb4b60677ba4aae3",
+      "statement": "DEC-, R-, ADR- and issue numbers are never taken from a chat agreement or memory: they are re-read from origin/master or the tracker at merge time, because two carefully coordinating sessions can still pick the same number and land it without a git conflict.",
+      "evidence": [
+        {
+          "resource": "repo://AGENTS.md#L641-L652",
+          "version": "repo-lines-v1:sha256:b0319b511a66003de623bf500dee0709859ade94a4b0665dcc023a6a728b93e4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZiYzFiMmY4MWFiZTZiMzNmODkzYTVhOTY2ODUwMDE5NTkwYzY2ZTQ1OTYxMDgxYWM2NzQ4MjEyZDdjZjViODgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjNWZhZWNkNjA0ZDMyODZmNjIzMzZiNTMwZGJhMDY2M2MwMGVlZjlmNjllYzIwMWFkNmNhMmVmMDc4NzIyNWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkyOWVjYThhZTVmMTc5ZjE0YTlmNGQ2OGExNGMxN2UzN2NmODlmYjFlZTA3OWFmN2YyMjRkZmQyNzNiZWE1NmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZkODc1NjYwY2ZlMTkxYmU3NjgzMjdkOTA1MTExNDQ4NzFmMjc1OTViMTlkMGU1MDhjZTQ2Mzc4NjY4YTQ3NWEifQ"
+        },
+        {
+          "resource": "repo://CONTRIBUTING.md#L476-L482",
+          "version": "repo-lines-v1:sha256:ea4c49f899623abe1151769f477430d1b5eaf64c82ec8ff3ba07de5637eac45f:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjJiNDQ2YzFlNTRhZDYxM2QzMzc2ZDlmNGI2Y2IyNWE3NmQzZTk3ZDgyYjM3NmRkNWNhNDU0ZmUzMGMxMzQ1NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjNmYjY1MGM1MDVkZmNhYTM4MTFhMGNlYzNkZjljNTdmY2U1ZTk4MGQ0MzlmM2IzMjE5NzE5N2ZkNWU5NmIxOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDI3ZDg2YjhhZDMzNDg4NzdjNDhjNjJjNjdjNDM0OGNiN2I0ZmZiNjZmYjM4ZDAxZGIzOTIwZjk0YTFhYzE3OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmNmZDViMDMzZTY3MjhkYTBlZjQ3MzU4ZDI3Zjg2YzM3NDAwOWVmNzRmNzFlMThhYjNmZmVlYmVjNjAyM2MyMCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_dea48aa68c8a4488a35f2972b0a3d789",
+      "statement": "A decision changes only on new evidence (a measurement, a read-back, an executed probe, a file that says otherwise) and never on a better-argued restatement, the reversal condition is written when the decision is made so a flip is visible, and a reversal sweeps every file that quoted the withdrawn answer, marking rather than deleting.",
+      "evidence": [
+        {
+          "resource": "repo://.agents/skills/nora-decision/SKILL.md#L172-L179",
+          "version": "repo-lines-v1:sha256:c94018ce576bd7a136f3f9908fb9c59a3412c6b17455134cf659a374027051b8:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGIyY2MwODMyZWU5OWNhOTJmMTc1MWRmOTI4NTEyYTVjNzk3MzBhZDE1YTkwZTU0NWI1ODc3YTI3N2NjNWIyNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTAxNzRjNzQyMGY4MDIxMjlhNjBmNDVmNzQyZTNjMGFlN2IwZjQ3MjJhOWZhOGJlMGE2YjM2MGU2NWZjNjVmMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiY2NjYmM5ZGQ1NDc0NzhkNjNiMDQ3MWJjYTVjNGEyYWM0YWYwMDAxMzM5ZTU1NDkxMmE3NmU2OGU3OGRmNmRkNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzIxNWE5YWYxNmY0ZDhlZmE3OTI1Yzg4ZDUyNDczNmU3ZmJjMmM0MDE1ZDJkNmY0YjlkZGU3YTBjMGNjMGE2OSJ9"
+        },
+        {
+          "resource": "repo://AGENTS.md#L277-L298",
+          "version": "repo-lines-v1:sha256:8175da6e73ccd639e1512db9c48f5f641e27f82c9ca76fc2b61fcef1d1e49541:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzNTg2MWQyZWExMWY4YWFjMmVjYTM5ZjRhNjk3NjU3OWY1NWViZDZjOTU0ZGE1NGU2YmZhYmQ5M2NiOGZjYTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlODk1OTExNjY5MzI2MWQ3ZTExZGM2YTAxOGM0NmM4NjliMWQwMzJkN2EzM2FhM2QwYzQwZWZkOTRiODdhNzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFkNzZhNjQ3OWU0MmVjNmJjZmIwODAzNDA3NTExZDkzMjJiNGU3NTIzNTI5Y2ZiNGIzNGJjMDYzNjA1OGU2OGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ2NmM5MmM1MDEzYWM2MTVjNmRmM2MyYjhkNGVhMmVjNjc3NGU1Y2I3MGI3ZDU2MDVjNDZjOTA4YTNiYzM1NjkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b7f5bb6354e546559e90f20240564bec",
+      "statement": "Some artefacts must not be hand-edited: the generated openwiki/ index, the untracked live config.toml, the migration touching the autogenerate-excluded index plus the requirement that uv run alembic heads prints exactly one line after every merge, release artefacts produced by release-please, and pinned digests and goldens which may only move deliberately in the same commit as the thing they pin.",
+      "evidence": [
+        {
+          "resource": "repo://AGENTS.md#L506-L524",
+          "version": "repo-lines-v1:sha256:d60c6f1e27bbba04911b24e95897eec2a83ceef116aa184427c871d61d83ca2e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlkMzgyMmU2NGRlZWFkM2I0ZTQ5MTMwZGZhNmQ3MWRkMGViNzMwYmRmNDRiOTM0M2Q2MTkzOWY0MGQ5NmI4NDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhNDY0M2UxNWYzNWE3NTdkN2I2Mjg4OGIwYTcwYjcxODNmOWFkZmZlMDYxNzIwYWJiODQyNWQwYTQ5ZTE0YzciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdjYjVhZTY1MWYzMTY0MjEyMWM2MTdhYzY3NTFlMTYzMmZlYTcyYzZiZDc4MjYzNDE2Y2MwM2U4NDkyM2FlNmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRmNDZjZjQyNDhjOWNhNjQ1YzJiOTQ0OTc3NDA0YzgyZGRjMGM5YTg4NTI1MGU5YzY2MWNlYmJiMmRmYzEyMmQifQ"
+        },
+        {
+          "resource": "repo://AGENTS.md#L634-L640",
+          "version": "repo-lines-v1:sha256:1032df9d62f26f261363016a37ed8aab695bfaaf6c14ffacbb02d11a447a8f68:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMWM5YzQyNDU3ZTdlOWQwYzdiODZlYWExYmE4NGZkZDk2YTUxMGIxNTUxZWMwNjE2NmUxMTczZjdkZmZmNzdiMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWNjODQwOWE3NzQzNjdiNjBjODgzZjhhNDU2ZTg3NDdjMDJiYTFiNzMzODI2YmNiMTEyMzFmZTIwNDA4YmVhMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGY4MzAyNWMzNDFjMDQ2YzJkNDZiZjM4ZDUwNDhkMTNkZTU3YTM1NTM3YWVlNTA3M2Q0ZWMyMjI0MGVhNjJiOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDc5OGJkNjY0NjBlY2I3OTU4NmQxYWM1ZDgxYjk1MDY3OWVhNjM4OTMyNGM4YmRlYTM2Y2I4OWMyOTM0MzEwNyJ9"
+        },
+        {
+          "resource": "repo://AGENTS.md#L763-L776",
+          "version": "repo-lines-v1:sha256:6c90a8ee260419ce52c98ce902d593546e4e6c9b455577ea517f64e10c04699c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVmMTgwZjljMTI2OTAzYmNjMzMxYWE5NTQ1NmU0OTQ0NGE3ZDRkMDExZThhMmE4M2Y1ZGM4NzAyMzkxODEyZDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFiNTM5NTNiZmI3MmMxMjYyYmJhZTJlYWNhNzJjYWJmMWFmNDk5MjdhMGJiYTExNTdiMmQ1YmRiMjg1YzRiZDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI0ZGFlYjQzZWMxZTZjMWQxYTEzZjk5ODVjZGI5MDhlMTRlOWFiYTk0MGFmMzc3NmY3NThhNDZlYTc0YWFhOWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMwODlkZjkzZjhiYTU3YTRkZGJmZDhmMDEzOTYyYzM5NzhjZTRkYjY4MTk5YzRkYTY2NjY0OWIwOTk2Y2VkYTkifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_dreamer_instruction_goldens.py#L1-L18",
+          "version": "repo-lines-v1:sha256:6bab95b377866b85be188d5813e215566ddb679f1aef2758f6044c85800fc37a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiODdmZmQxMDIzZGNmNTI3NDA4MGM1NzEwZGM2ZDViZTE0MjEyMzA5MTI0OWZmZmZlYTc2Y2Y4NjEyYTE4ZjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b1d729d06de743609522be2783fcc0cd",
+      "statement": "The deployment path differs by seam: on the deploy host an edit under nora/doctrine or nora/dreamer is itself a deploy (mtime hot reload, no gate and no build), whereas nora/skills is copied into the image, so a merged skill or tool needs a rebuild before it is live.",
+      "evidence": [
+        {
+          "resource": "repo://.agents/skills/nora-runtime-skill/SKILL.md#L139-L152",
+          "version": "repo-lines-v1:sha256:8376b8006b9ef36361e078a929961d50638e0b9e19f7d153a366dfb82e86bd2b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBkNmZlMjJmM2Y5ZTNkMmE4YjU5ZjY4ZmFlMjU3OGZjYTViYTdkZmM3ZmNmYmZlMzdjMjExYjA1ZmI0NDQxODYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0ZmY4OGM0YzZjYjhiOWMyOTUzNGVkMDJlMTI2YTA1NDI2OGU2Zjk1NzQwMGM2YjRiOWU5NWEwMzM3NGY2NjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEyZmM5NDE0ZDY5YTZkZjU0MzU0YmUyYzU0NzVmOGEyNjIyNTU5YjM2N2FiN2I1ZjFkNGY2YzE0ZjRhMjI3NGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMyMTVhOWFmMTZmNGQ4ZWZhNzkyNWM4OGQ1MjQ3MzZlN2ZiYzJjNDAxNWQyZDZmNGI5ZGRlN2EwYzBjYzBhNjkifQ"
+        },
+        {
+          "resource": "repo://.agents/skills/nora-tool/SKILL.md#L135-L142",
+          "version": "repo-lines-v1:sha256:859e5c2b30155f32ad5f3f297a273619197092417fa28a1b26a392560888c16f:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmMxZDllM2JkYWU3YzBmZjliODk1NjYxY2RmN2E4NDBmMjJmNWQ4ZWQ4M2RmMWYxOTY5OTEyMjBlNjIyZmRhNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTFiOGQxMTFiZDk1NjBjM2VjYWE1MTY3OTg2NDQ1ZTM2NjA0MWM5NmQwMDdkNjBlMDJhYzZiYWJkMGY2NDM1NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZmQwMGY2ODQ0MjllOTQ4ZTkxNjkyYWE0ZTY0OGE1ZjIzM2VhMzY0ZjI5MDhjZmMzZTJlZDI1OWZiMjRlY2FiNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzIxNWE5YWYxNmY0ZDhlZmE3OTI1Yzg4ZDUyNDczNmU3ZmJjMmM0MDE1ZDJkNmY0YjlkZGU3YTBjMGNjMGE2OSJ9"
+        },
+        {
+          "resource": "repo://AGENTS.md#L622-L627",
+          "version": "repo-lines-v1:sha256:980998cb4a58ef1424775122b775c4249ae3b3bfd257cf611d2435dd85963eb3:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDVkNTVhNTQyZmM1ZjkxMjFhYTQ1MWFkYzIzMmEzNDc5ZDQ1MzNhNDFkZGQ5OTkyODMxOGE2Njc2NmI4Mjk5MSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzUzODcwYmQ0NmY1OGMzNWM1YTI5YjMzM2JlNjEyMTViZWNiYTI0OTI5NTNkNGNmYzhhZDNiNjIzMjVhNDQwNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNmI0YzFmZGNhZjRhNzAzMTYxOTlkY2M2YWQ3YjVhY2EyZTljODY3OWUyYTllYmZiN2M1OGEyNmQxMzU0N2Q4OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWZkOTViNzc0M2RmN2U1NzEyODY3OGE1ZGFmMmFjOGMzZjhiZjQ1ZTljZGUzYzdiMGFkN2JiN2E1NzMyNjQyYyJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-20T12:25:17.607Z"
+  }
+}

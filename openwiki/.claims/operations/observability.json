@@ -1,0 +1,508 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:fba5dbef5d122b7f743e64c844849ec2fcede522da561ca9e54f008ee30b72a3",
+  "claims": [
+    {
+      "id": "claim_df5fc2f415da4051962349ef890360d6",
+      "statement": "Nora's observability is split across four stores plus one endpoint, chosen by the shape of the question: Prometheus metrics answer aggregate counts and outcomes, Langfuse/Jaeger traces answer what happened in one instance, stdout JSON logs are forensic, Sentry groups exceptions per stack trace, and /health gives one verdict about the named dependencies.",
+      "evidence": [
+        {
+          "resource": "repo://docs/observability.md#L33-L44",
+          "version": "repo-lines-v1:sha256:727b5d7b3819ee5b44dc0901bfc01ef475aed6c1270675af1325b76b4e4bca3f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU3NWI4MTY3NGY4MTJkYTBlYTY0YTEyYjJlYTNjZDk4Yjk1NDUxMzM2YzY5ZjcwZDM4ZTYwNjk1NDIzYTcwMDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkyZjJjM2ExZDY4MWU1NzI4ZjEzNWU3OTI5MWNmNjZlMjQ0ZjI2NjIyMmY3ZmVmZDYzMTUwZGQzOWVhNTNiYzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU1ZWEyZGM0NmYxZDAxYmEzNGY1NGM4ZTZmMGY0ZWE2YmRkZGQyYjlkYjAyMzlhZTYyYzhlZmRmYzI2Y2FhNjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY5NjIxMDRkYTBmZTk2NDlhNWZkMzY1YjEyN2Q3Zjk1ZjQ4OTgzMWIyYzgwMjg3ODBhYWZkYzI3YTExODQxMGYifQ"
+        },
+        {
+          "resource": "repo://nora/obs/errors.py#L1-L14",
+          "version": "repo-lines-v1:sha256:8bd23814bf6b7ff104d7e0409cfb42bda530403d2337137c32e534f0d08507b3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdhOGRmNWEwMmU1ZDEwMDU3ZDdhOWMxYWI5N2YzM2I5ZTFhMDk2MWM0NGM3MWRkMzIzYTdkMmRlNDM3NTc4ODAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIwYmUyZDg2OGZkMTYwNzQwZTczOTk4NGE2N2I5ZjNiZDZmODI5N2U3MjE0ZDFmYjc3N2U5YzdmODZjNTk1YmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk2Mjk0YWY1ZTdkYjVmNWE5OTE1ODRjYmY4OGVlOWQ5N2U0OThmNDZkMmE5MTljMzJkYTU0NmIzMGM4ZmNlY2UifQ"
+        },
+        {
+          "resource": "repo://nora/obs/health.py#L86-L96",
+          "version": "repo-lines-v1:sha256:ea26f8a9353845dc1a7d6907be8e90f3b04e077ad139d23b2edcd7b95f9a42b1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU4MGIxNjY1MzJjZmJiNzM3Y2Y0YjYwMWM5OGM0MWRhYjFmNzgwMjU2ZTI5OWM0Mzc0NWUzM2VjZjEzZDRjNDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MjJjNDJjZDE5YzZkMDNkODA4YzQ1MjcyMDU1MjgyNWI3ZWExYzViNDkxYjIxODUxMWNhYzc0MTVjZjlkOWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJjMGU4NDJlOThlZTNkMGFhZGJiY2Y3YWMxMzExMGQ4NTU0NjczNjY5ZjA4YjE2YTk3NGYzYmNlZjkxZjJkNTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhNWU2NGQxM2YzNTIxOThhYTZkZjA0YzBjY2IzYjg0NGYzMmMzMTY4ZDVlMWQxNDNhNmI5ZmE2NTVmYjJhODUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b6869b06883f402193d94f890f041eda",
+      "statement": "R-76 draws the trace boundary: a trace reaches the LLM-observability collector only when the work under its root can contain a model call. The sampler's judgement is about ROOTS, not spans — deterministic stage sequencing is plumbing and belongs on a counter, while a stage span with no model call still belongs inside a generation's trace.",
+      "evidence": [
+        {
+          "resource": "repo://nora/obs/tracing.py#L41-L51",
+          "version": "repo-lines-v1:sha256:7b7d0ed09c4a7ea6b740293575f1e237a559200e94b1c24a03de4ede58cf198e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM2ODFlM2E4YWIwZDI5NzhlNjIwZmYyZjAyNDczMjcwNTA0NGRmOGZmOThkMzUxZTgxNmUwMzk2MDBkYTRlMzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ0MjljMzAwZGU5YTdlMGJiYjBkN2ExMWI1YzMzN2UxNGNjN2NhMGVlYmU3NTQxNDI4ZThiYjUzM2Q5MWIwMmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgyNTUwN2E0YjM0OTI4ZWYzODVmNzJjNDlhZDEyMWM0OGU4NDVjNDQwMmJmMWVhZDQzYTMxOGJkYTU1NzkwMTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM1NzBiOTcxZDQxOTdkNTA5ZGNjODk2NjhlYzM4MmY2YTMwZGZkZDEyNmIzMTcxNGRkYzZkYzJhMjgzNTM0ZGMifQ"
+        },
+        {
+          "resource": "repo://nora/obs/tracing.py#L66-L91",
+          "version": "repo-lines-v1:sha256:2569d5f041445d7cda3bc10a7d56e91033d688cd5ca9c1dcb95ce7f3f0a097ad:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlmODFlNzYyODZmMzhiOTAxMWNiMWM0YzE1NDU1MDc4NGExZmEzYzY1MWY0MjM1YWE5YjExMjNiMzgzZTUyZmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2YTcxNTI1NzJlZTg0ZjEwOTA2Yzc0YjlmMmE5MjQzNGRkYWIwZTNjNDI4MTNiMDRlNTk3ZWZjZWM5NTFiMjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJjNTQ3ZTQ1OWEyOGRmNWIxNzBkZTUwMmRmN2RiYjg1NjA4YzY2YTg2NmNlYzdhZGM2YWY2M2ExY2NiNGUyODEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBlOWYzZjZmYjFjMzkwNGRmNDhkMjc5NmI1MWU1NzhkNTIyNDEwOTg0NTRjY2IzZGJmNmNhNmE0M2RmZDc5ZjQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3fd8fb277c594978ab5289de232e3afd",
+      "statement": "Production builds its sampler as ParentBased(root=_PlumbingIsNotATrace()), so only a root's nora.trace_kind is consulted and children inherit the root's decision without re-deciding; that is what keeps a stage span in the middle of a real turn and keeps a queued tag's turn attached to the trace that admitted it.",
+      "evidence": [
+        {
+          "resource": "repo://nora/obs/tracing.py#L118-L126",
+          "version": "repo-lines-v1:sha256:9c4402ea05f0481ca3adcf0b2ed88a8ee9a01d2e3c6b7af101fee418add59caa:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODhkY2Q2ZTk0NGNmZGFlMmU5MTYxMTNjYjg1MmNjZGFjNTE0YzllMTkwMWQ1Y2I1MDYyZjVkZTZiZDQ0NzFlMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMWQyYTI2NTQwNzVlNzlmNzE0NDllZDg4MTMxYThiYWVmOGZjODQ4ZjNhOTEzYTRlYWQ3YzQ0ZjVkOWY4YmUyMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZGQ0YWQ1Y2VmODk0NWMxZDhmZWZkYWJkMzI0ZTYyMGMyYTQzMGFkMzlkOTA1NGJkNTNlMGZiNDFjNGFjMTBiMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDhiODcwNzEwMTRlMTkyM2YyZWNmMGIyZTQyZDNhNjAwZWZjZDQ3ZjgzZDg1ZWM5MTM4MzAxNGE5YjZhZjE1ZiJ9"
+        },
+        {
+          "resource": "repo://tests/test_span_skeleton.py#L333-L354",
+          "version": "repo-lines-v1:sha256:897604931a5603f6f9765ff8c89fae1d960674274835479667e7d6d8204e494d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNlZWY3ZDZkOWJkZDJhNGRjZDk1ZWI3ZDhiYzVlYWViMDNjNjI1MjIzZmFlM2JhZWU2OThmOThkODRkZWEzYzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFjYjFlNWEzYzljZDk2ZDc2MDc2ODk3Y2ZlNTcyYjA4OWVhYjIwMDc2YzM3NmEzY2FmYjNkODNkZGVmYzMwNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA4ZGUyY2UxOTQ5YTg4ZTczNzg2NWZhNWJlNzFmZjY1NjBhZjVjZDNjMjAzY2Q3ZjBiMzY3NTM2MmFlNTFiZmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhZmYzOTZmZGY0ZGI0Yjk1MjY1NTY0ZTMyMWYzM2E4NjJkNWZhOTM5YjY2ZjAwYWIzZWNjOTdiYWIyNTFkYTkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_518b5b20a21443e086a476cfad61246a",
+      "statement": "The plumbing filter is fail-open: only an explicit nora.trace_kind=\"plumbing\" drops a root, an undeclared root is exported, and an unrecognised kind is logged as a warning and exported anyway, because silence would make a typo indistinguishable from a deliberate drop.",
+      "evidence": [
+        {
+          "resource": "repo://nora/obs/tracing.py#L87-L112",
+          "version": "repo-lines-v1:sha256:082f7c75a4e057a92afdfb1027b9d04d2ed290d143d736a79ca41cb68fa56b38:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVkNTE1OGFhMDZjZGM0MGY4N2NiNzI0ODIyZTUyMmU3Nzg2OTk4Y2E1Mzk1MzdmMjRjMjRmYmU5NGFjOGVlNmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQwMmZjZWQzOTZmOWUwMjA0Yzk2Y2E0NGI0YjBkM2I4NGQ0MTYwYTBlYWUzODIyNGU1ZDhkZGIzZjAzNzMzZDUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5ZmY4MWJiMmRlNWY5MGNlMTk3MDc4YTdiYjMyMjljZDVhYTZjYzg1MGU5MTEwYjVhNGVkN2NjN2RiOTc0MDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxNjg3OTU0MmYyMzhhMTI0OWM4NzYzZjNjOGMyMTQ1OGY2ODFjZDRlMjQyOGI2ODQxY2JkMjBkYmNmYzVlZDMifQ"
+        },
+        {
+          "resource": "repo://tests/test_span_skeleton.py#L357-L390",
+          "version": "repo-lines-v1:sha256:1085d81c95d5385cb96eb7bdb3060b3757164d83838b498c12cb59c909f5d57a:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJlNDQ2NjIyYzRjYTc0MDA4ZjFjM2ViY2ZmMjUzMGI2MWRiNGU3NGMwNDdiYzhjYmE3YjllNGM1ODg2ZTE0MmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhkNDQ0ZDVkMjZmN2VhN2Y1Yjg3N2I2NDJiMTc1NjQ5NmNiZGM4M2EyY2IyYjVhZjc1YjJkNWFhOGIzY2MwYzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgwOTMzZjgwODIzMGY0MmE1NzVmZDMxZWUzZjAxYTQ2MDI5NWQ3OWJmYjlmMzNiNzk1MTA3MDQ1ZjhmZWIwNTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMyMzEyMzFlYzg1ZjZkMjc5M2FiOWQwMGUwNmYxZGJlMWI3MjRkNDVhMzJjN2ExZGFlNDA4ZWE3ZmRhN2VmNzQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fc26f44742244f7ca955056f85ce62ed",
+      "statement": "The sampler reads only the attributes a span started with, so span() passes its attributes to span start and an attribute added later by annotate() is one the sampling decision was already made without — a declared-at-start plumbing span stays dropped even if it is re-annotated as generation.",
+      "evidence": [
+        {
+          "resource": "repo://nora/obs/tracing.py#L138-L140",
+          "version": "repo-lines-v1:sha256:8f621455e0e5299c6f91745eff383d7b137f2aee832d378372a6f1593b18eee3:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTYxZjMzYzEzMjU2OWE3NDk0NmIyZmNmNTQ2Y2EzYzQ0MjVkYTBjYTVjZjZiNjg2YzI2MDkwZmFhOWQxMTJiNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYWMxYmEzZDM5YzcyMDZhMmY4MmIzNGU2NDJlNmUxM2I1MzBlODE2NTc2ZDllZjg3ZTY3Nzg3OGYwODQwNTMzYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGZiOTFkZDU0ZjJlOTk5M2NhNjhiNWE3MTViODAxYzMxYTk2NjlmMTk0MzFiYTZjZTNkMGVhZjQwOTA4MDM1ZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzg5NGU3NWZjZGRkOGQwYmNjODVjOGNkZTZiNDdlMGZhYmUxNWM1ODlhMzI5MzY5NGQ1MDMxYTgzZDcyZmVmNiJ9"
+        },
+        {
+          "resource": "repo://nora/obs/tracing.py#L221-L235",
+          "version": "repo-lines-v1:sha256:479352c3584e8798c287d89e7077954d7744cfc8e72de7bfbda32cddacc3ca53:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2YjU5Mzk4ZDAwYjYyZGJmYWVkOGNlZjYzZWYwOGFkZjYyYzgzNTE5YzY0M2RjZjEwMzI4Njk4NDIzZWIzZTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2YTcxNTI1NzJlZTg0ZjEwOTA2Yzc0YjlmMmE5MjQzNGRkYWIwZTNjNDI4MTNiMDRlNTk3ZWZjZWM5NTFiMjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBiNDY4YWQwYWJkNWRmODYyMGJiOTRiZGZmZTg1ZjQyMTEwZWNkYThhZjc2NGE0ZDVjM2JhMDZiYWE1Zjc3M2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc2OTE0NGMyYWZkNWY4ODVkMmExNzczODUyZGY3NGY5ZWE3ZWY0NWFlYjdjMTY4ZjgzNzFiNjRkMjY1YjUyZWMifQ"
+        },
+        {
+          "resource": "repo://tests/test_span_skeleton.py#L393-L405",
+          "version": "repo-lines-v1:sha256:a01e9808d47399f88db9213bc81e3967e75f2c8a2e5da30595273fd81399fa61:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZjNmQ5NTRiODM0MDJlNjZhMDNhZjBmMzE0NGQ0NTY1NWIxZWVjNjJlYjhiN2NhYjc5MzEyNGFmMjhmZTk4YTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM0NjRjNWZlNDA1NjdmZWUwZjEzNmU3MDJmOWMzMGMyOTA2NTZlZGEyYTAwZTBlMTY4N2I4ZGY5ZWM0NGM1YjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZkY2IyM2NjMjcwOGJmNDhjN2JkZTlkODIyYTkzZDM1MmRhNDcwZWYwY2UxNWNkZDMyMjlhMzYyZjJhMjA0ZjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI5YmVmMTQyM2U2MDQ5MmQ4OWE5MjZjZjU0OGFkYTk1MDcwZjdkZGVkYjUzZWM4NjQ5ODhlNGQ0YzYyNjIwMzEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7b8147f04c2c4266a75b0e85f65f0669",
+      "statement": "Downstream of the SDK sampler sit two independent collector pipelines belonging to an integration configured outside this repository: docs/observability.md records their intended design — tail sampling per trace on the Langfuse pipeline, meant to keep a whole trace iff it holds a span whose gen_ai.operation.name is chat or invoke_agent, and a Jaeger pipeline meant to drop only chat spans by exact operation-name match, because Strands also stamps that attribute on invoke_agent, execute_event_loop_cycle and execute_tool — while the repository's own contract ends at exporting over OTLP/HTTP, so it can neither verify nor enforce those filters.",
+      "evidence": [
+        {
+          "resource": "repo://docs/observability.md#L55-L108",
+          "version": "repo-lines-v1:sha256:5ff49750e16baf5db0f7464cf2ec155e2a0e85df4749b81e51bbf7191d102364:eyJzZWxlY3RlZExpbmVDb3VudCI6NTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM3OTcxYzYzYzZiZTI4YWYzYmU3ODJjMTYxZmNmMTJjM2RmZTBlOWQ2ZTJkNjQ3NDExZDhmYmFjOTJlNTRlYmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU4YjQ0YTVmMTM2YzU2M2VhZDYxN2RjYTVmNzliMTU5ZGVkYTFmYmNiYjVkOWYzOTUwMThlZjkyZDZkMjA1ZjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAwMWYyZWMxNzU5M2MxMDU0ZWI0NjM2N2Q4NDUzZWYyNGExNzNjZTk2YjcxMTdkOTFmOWE2OGQ0NGZlZjhiMDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYxNjdiNjQ0MGZhMDhlODEyNWZmOTk3NDlkYTkzYzJhY2ZmOGQyMGVkNjUzNTRkNjAyNWU3NjEzNWU2MWRjMGIifQ"
+        },
+        {
+          "resource": "repo://nora/__main__.py#L88-L100",
+          "version": "repo-lines-v1:sha256:713d6ed68266a84e2e666b29c8e235adb9b79f9ae40bffa2f72e4927ba0856e5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA2OTRmYjI5NzEyNjA4YTlhNzVlYzYwN2Q4M2IxOGQ0OGQzNTliZDExMGE4NWI1MTI2NTkxODdkOTM5N2I3YzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5MGI5ZmM0YjdiYmU0NGYxNmE4ODdiODg4MzBlZGI5ODA4YTQ1NmQwODE0MTBhZmU5MGM3ZDEyZGE3YmRjYzEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRiZDA2MTRkYTRlYWQ4ZTExYWJiYjUwNGMwNGIwNTE5MzEwMzg5ZGM4ZGU5YzEwZGQ4Y2M5YmUwZjE2MDAxNGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVhNTYzOGE4ZDhjMTA0YWRhY2IwZDYxNmEyMjAwMTU4M2UzYWM1NzJkZTM1YWY1YzRhNTA1YzBkODRmZjM5YzUifQ"
+        },
+        {
+          "resource": "repo://nora/agent/telemetry.py#L216-L225",
+          "version": "repo-lines-v1:sha256:b61c5fd5a73c55865f7d63a7991539d5156254720848bc364cf6f58e18101b3c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5YzcxNDk3Y2ZjODJlNmZlMGZmZmYwYjA2MjM2NWVmNDk3MTUzODhhNjU0N2I5N2ExMzAwZjdlZWEyOGYwMmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ5NGM2MjUwODZhZjJjMTMxMWE3OWI5NTk0YTVmYTc0YjUwNDNmYTUzZTFjZTdlNmMyNDU5OWUwNGExNTE5NTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJiMDBhZmIzN2RkZTQ0M2I5OWMzZmI1NjVjMDMzZDkwZjNmMjg1YjA3YmNkNzljNGEwYmYzMDI1YTcyN2UxNWYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8aff30dda4f74c0fb1ae223d233f5d39",
+      "statement": "Under that documented design, absence from a store is not absence of work: a generation would reach Langfuse and be absent from Jaeger by the chat-span filter, its agent, cycle and tool spans would be in both, and a plumbing root in neither — so \"it is not in Jaeger\" is evidence about chat spans only, and what a particular deployment's collector actually keeps is a fact about that installation rather than about this codebase.",
+      "evidence": [
+        {
+          "resource": "repo://docs/observability.md#L89-L108",
+          "version": "repo-lines-v1:sha256:49ae29b4671f917c42fa0f880dac11a8a5fe8581b97088327675387985dbd857:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ2YjRjYWZiYzVmZGFjNDIxOTY0YmM2YTJhNTg2YjExNmU1ODUyMjRlN2FmZGNlMDhlZThlMmJmMDRlNWYxMWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU4YjQ0YTVmMTM2YzU2M2VhZDYxN2RjYTVmNzliMTU5ZGVkYTFmYmNiYjVkOWYzOTUwMThlZjkyZDZkMjA1ZjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI1NGVkMmNmYWM4YzdhNWUyMjk4MmEyNTQ4ZWVmNWUzNmJiOTQwM2NjNTcxZmQzZjBhYTQ3MTVkNmI4ZDMyNWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYxNjdiNjQ0MGZhMDhlODEyNWZmOTk3NDlkYTkzYzJhY2ZmOGQyMGVkNjUzNTRkNjAyNWU3NjEzNWU2MWRjMGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7906f379658f45af9bf62fd8ebb600a6",
+      "statement": "A plumbing trace is unexported rather than deleted: what its root carried moves to Prometheus, with nora_ingest_outcomes_total{platform, conversation_type, outcome} carrying an ingest's ending, so reversing the decision for one entry point is a single declaration on that root rather than a return to exporting everything.",
+      "evidence": [
+        {
+          "resource": "repo://docs/CONVENTIONS.md#L400-L414",
+          "version": "repo-lines-v1:sha256:5522894dc2d2dcef62b127608ee068c79641ad7ef635d716bafad9887dd44e3d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM3ZDZlMWMzOGYyMmI5NTBiYTY3MTU0ZmI4NmY3N2YxNTRmZjI4NDcyYTZiZDAwNmQxNjVhNGNkOWU3OTBkMWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1ZmNhOTYwMjJiN2VmYWYxZjQ2YTc4NjVlNDZhZmVmZGRmMjI0NzQzMzViNjlkMWIxMzc4N2MyMWEyNzAwYjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI3MTI5NzBlY2Y0YmVkOWRiNDI4NDIyZDIwYTUzY2VmYTFiM2FkMmMwYTJlZTFkMGZlYmEzMzIyZWJjNTIzYmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlkMDliOTBmMzJhOWY4NjI5NDFhZjQzZWVlNjRkNmMyMjMyNWE2NWQ1MjRhNzAwOTJmNzIyNGRlMTEwOTJmYmIifQ"
+        },
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L334-L345",
+          "version": "repo-lines-v1:sha256:ae619acfe746a481369d1e60c29cec7498ef9f6fae7ed1c2dad5decc6d294bf7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI2ODQxYWM2ZmNkOWY4YzA2YWYxZGUxZGNmMzhjZGIzNGQ5MTdmNGJhYzJiZmM4ZDk1NDU3NmRlNjliZTVkMWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwMmM0MTRiNTRjZjg2ZGZiNGY5MGRmZTdkN2JkYmZhNjY2YjdkZGRkMzJmMTI4NmYyMzBhNWI1MzI0MTgxOGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVlOGFmOTFmODVhN2U1MzMxNDc4NWZiNWJhMTRjNDAzMjVkZGJkNWE2MzdlMzlmNDliOTY4YjNkMWE0YjZmYWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE2NjRjMTNiY2ZjNmQyMGVkODA3YWE4ZWM2YWIzZjEyNmJhZWQ0ODQyMTdmZTQzZmYxZjQ2MjEzMjZkYWQ2NjkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fb27a7628a344d269f342938e77e99f9",
+      "statement": "TraceIdentityProcessor stamps each span's Langfuse session from nora.conversation_id or nora.dreamer.pass_id when the span started with it and otherwise from the parent's session.id, leaves an id Langfuse would drop unstamped rather than truncating it, derives langfuse.observation.type from the span name on a first-match basis, deliberately does not stamp user.id, and is never load-bearing.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/telemetry.py#L78-L141",
+          "version": "repo-lines-v1:sha256:4e5b7422a14a335cf98193165a027e865b1a80a7c504eb27bd6c0dd4f15585c8:eyJzZWxlY3RlZExpbmVDb3VudCI6NjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI2NjAzMjBkYTljMGNhZTIwZmNmZTE1MmNkMDA4MWYzY2YzNzU5OTJmM2I4NTg1NTZiYzg1NmQyYTA3NDY0YTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2YTcxNTI1NzJlZTg0ZjEwOTA2Yzc0YjlmMmE5MjQzNGRkYWIwZTNjNDI4MTNiMDRlNTk3ZWZjZWM5NTFiMjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA5ZjkzMDgzYzE5NzEyMWI5ODI3MDBiYThhZmFiZDE3MjJjZjFkM2U3NDA0NTA5ZTgwZWZhMjcyNDdmNjJmMDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBkYzIxMzY2YjlmYTkwZTNhOGZmMDMwNDc2MDM5ZjVhMWEyNzUxZjJmZmNjNDI2NDRmNWYyNTYxZjA2NTdlNWUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7a543e6026d54f17b9b061ea40afd024",
+      "statement": "Registering the tracer provider is the application's job because Strands keeps a supplied provider without registering it; without that call the process global stays ProxyTracerProvider, whose tracers are no-ops, so every nora span records and exports nothing while raising no error — which is why a test asserts the registration and that the registered provider carries Nora's sampler.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/telemetry.py#L174-L195",
+          "version": "repo-lines-v1:sha256:b24f967e76d1dcdfc82d94954699603b0d601da4e37cc8485811dd34819fc336:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM3MjU4YWNjN2MzYzRhNmVlMTQ1OWMyODA3ZTI2MWIxMjI2ZTY4YTE2OWJiMjE2YTVlZDIwMWY0ZGE4OWUyNTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2YTcxNTI1NzJlZTg0ZjEwOTA2Yzc0YjlmMmE5MjQzNGRkYWIwZTNjNDI4MTNiMDRlNTk3ZWZjZWM5NTFiMjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMzMGZiODc5Y2Q3MmM0ZjFkYjg5MjQxNzEzYTRlNzMyZDAwN2JkOTYxYzgwYjQ1NDdhODYwYTg4MjRmZGI1NGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYzNzZlNWU5YTZiYWY5ODFhYjFmMTlhOWRmZmQ1ODFmMTBjZGQ4YTRjN2UxMTBiMzc0M2Y5ODliMDA1YjU2OGUifQ"
+        },
+        {
+          "resource": "repo://tests/test_tracing.py#L99-L158",
+          "version": "repo-lines-v1:sha256:1fc1902593da7e288b65f93e57d5f00d95a1f9a61554aa57e5c4edd5aec36247:eyJzZWxlY3RlZExpbmVDb3VudCI6NjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRkYjg1YTMzNjU1N2I4M2ZiYjg4ZmZhOWViYWYzMmUwYTAxYjZlODMwMzE2ZDVmNmIxZDg0YzU4MDQwMGUxOTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdkNWM1ODU5OGQwYWJhMTA3NmU2ZmFlNWU5ZjZiYjY1OGI2NWNiMGUxM2FkMmQzZjhhMWE0MzU5MzllNTM4ZTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e119fb6f5a1b4b99bd876de4f988c99a",
+      "statement": "Tracing setup is guarded at the composition root so a bad endpoint or unreachable collector cannot stop the application, and export itself happens on BatchSpanProcessor's background thread, so an export failure never surfaces in the application and a malformed endpoint 404s silently.",
+      "evidence": [
+        {
+          "resource": "repo://docs/observability.md#L336-L357",
+          "version": "repo-lines-v1:sha256:7ab4b12e5d3c4e82e576dda32301876d7bdafdc23d7ad7e8787392da8733d6f9:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1YTEyZGFiMmYxNzAwYzQ1MzczZWZkZDk2NzY5YTBkZWFiNTllNDU5M2U0NDc5NmIxMDgyYjhhMDFmZTcxNTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRmZjM3MWI0YmU3YTZkZWIxMDNkMTM1YWMyMDAwYjVlOWY4YWRjYzRlZmJjM2Q0Yzg1MzVjNjA4OTJjNDEyMDYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAwMWYyZWMxNzU5M2MxMDU0ZWI0NjM2N2Q4NDUzZWYyNGExNzNjZTk2YjcxMTdkOTFmOWE2OGQ0NGZlZjhiMDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAwMWYyZWMxNzU5M2MxMDU0ZWI0NjM2N2Q4NDUzZWYyNGExNzNjZTk2YjcxMTdkOTFmOWE2OGQ0NGZlZjhiMDEifQ"
+        },
+        {
+          "resource": "repo://nora/__main__.py#L88-L100",
+          "version": "repo-lines-v1:sha256:713d6ed68266a84e2e666b29c8e235adb9b79f9ae40bffa2f72e4927ba0856e5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA2OTRmYjI5NzEyNjA4YTlhNzVlYzYwN2Q4M2IxOGQ0OGQzNTliZDExMGE4NWI1MTI2NTkxODdkOTM5N2I3YzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5MGI5ZmM0YjdiYmU0NGYxNmE4ODdiODg4MzBlZGI5ODA4YTQ1NmQwODE0MTBhZmU5MGM3ZDEyZGE3YmRjYzEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRiZDA2MTRkYTRlYWQ4ZTExYWJiYjUwNGMwNGIwNTE5MzEwMzg5ZGM4ZGU5YzEwZGQ4Y2M5YmUwZjE2MDAxNGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVhNTYzOGE4ZDhjMTA0YWRhY2IwZDYxNmEyMjAwMTU4M2UzYWM1NzJkZTM1YWY1YzRhNTA1YzBkODRmZjM5YzUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5efd54eeefdd4850ad296cf1c8b60511",
+      "statement": "Which span shape a model call gets depends on whether it goes through the Strands Agent SDK: an Agent-backed call is instrumented by the SDK with no call-site code and takes extra fields through Agent(trace_attributes=...), while a raw chat.completions.create call instruments through start_raw_model_span/end_raw_model_span so the span vocabulary stays the SDK's; two architecture gates enforce the dialect and the raw client's own machinery respectively.",
+      "evidence": [
+        {
+          "resource": "repo://docs/observability.md#L169-L229",
+          "version": "repo-lines-v1:sha256:c9e6d187883d42a6644c8ec30f3140e5fa36906ccd881c335b1d92672e6a833c:eyJzZWxlY3RlZExpbmVDb3VudCI6NjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI4NTRkYmI4ZGVlYzdjMTgyYzZhMTljZmIzZWZmMzU3M2U4MWQ3MDc4NWIzNjI4NGZiY2IxNTk0YTkxODkzMmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1OWVjZDEyNTNlN2MxMGRlYTg2NzVmNzViZjVhOTc2MThmMDJlNWRkNWJjY2JiYThjMGU4NmJhYWI3YjViZDUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUxZGEyOTc1ZDk2OGVjNTczOGQ5ODg2ZmZhOThjOTA2Y2QyYmFhZmRjZDY4MDg3Y2NjMWY0NDE0YWNhNmU5YjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI1Mzg2NmNmZWM5MGJmNGVkM2FlNTQ5MmU4ZWVjMWUwNjJjODhmNTdiNTljMzVhYzUzMDFjZWRkNzkwZTY1YjMifQ"
+        },
+        {
+          "resource": "repo://docs/observability.md#L288-L297",
+          "version": "repo-lines-v1:sha256:3dd13ff1acff0a3dc02bd267ec173c6c15fdce76e632df71bdabd605ecfa386d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2M2M1ZGRhNzk4NTkxMmJiNTAwYzQ5ZWQ3OGYzMmJiZTk3ZmFiOTEwNGNjNTY5NTJmYWMzMDAxMzgyNzRhZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwOWE2MzM4YjI0MjY0YzJiMDJjMGM4NGEzMzU2ZGVlOTQ3OTVmZWJmYjU5NDY0MmE0M2QxZjdhMjJmZmUwYmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg5ZTMxYjg0NmVkOTE4ZDZlMTViNzI0M2Q4NTg1OGIwYzM2OTI1ZjVhM2FiMWQyNzJmOWI2ODhiNmU1MzAxNDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAwMWYyZWMxNzU5M2MxMDU0ZWI0NjM2N2Q4NDUzZWYyNGExNzNjZTk2YjcxMTdkOTFmOWE2OGQ0NGZlZjhiMDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_55b75e07b30645bdb7e9736a88369392",
+      "statement": "Metric definitions and metric recording are split on purpose: nora/obs/metric_specs.py owns WHAT is measured (name, help text, label names, with names append-only and DECLARED_NAMES as the union), label vocabularies are derived from the domain Literal or tuple the call sites already use rather than hand-copied, and nora/obs/metrics.py owns HOW recording happens.",
+      "evidence": [
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L1-L10",
+          "version": "repo-lines-v1:sha256:ab317c5867e289d9d714e8ab5e00a71ce44dce31dd36994bc189ff3c82b0de8d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRkMmYxZDA5ZmU1Y2MwMDAyODcxNDNjZmY1MzU3NTJhOGNmYzg1MzIxYTM5YTFlZDQ0YjYyYzE4NzBhZjJhMTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L2459-L2465",
+          "version": "repo-lines-v1:sha256:2bcd8d7165d1088fae30f630953c8016cf61cb7826988571d181f1e456b073b5:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZWEwYjBkNGFhN2JiZjk5NTk2MmMxZTE3MDcwYzE1Mzg5NjU2NDZkODQ4NGRhY2U1MmQ0MzQ4MjFlYjMyM2I3YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmFmYmEwNTI3YzM5NTNjNGI2ZTBlNWI1NzM5YmE4MzYxMmY4MDUzYmNkYzk0NjY3MzAxOTNjZDFkNTkwYjQwOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWI4MGQ3NGNjMzJmY2RiMDJmYzE4Njc0OTkwMDk1YThjZGYxNzhhNmQxMmQ3YWI2ZjdiMjQ1Y2RkZTMwODg1NiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        },
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L81-L91",
+          "version": "repo-lines-v1:sha256:19c776b50474288be7fad1874c5f7b1f6fb59606d3457dfa025b95eaff3f0dc1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE4N2JhZTBiNjUzN2E1YzBkM2MwMmYxMDY4ZDQ3NzIwYjU5OTEwOTc5ZDBmOGQ4MTQwNzUzMTJjMGViOGJiOGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk1NTM2MDY2Y2Q0ZWFmMzc5MTVhMWMzM2Q3N2E5NDI2ZDQ3NzdiNDE2YzE1M2M5ZTM0YzI0NWU2ZmNlM2ZmNDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYwY2JjYzg5NDc2ZDkyNDIyMzJlMjY0NGU0MWZkMTlmZjQwYmI1MDQzNjkxMjE0NzZiM2JmNDFhNWI5MGMwM2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxODMyMTAyNDA0Y2FhOTNlYTgzZjdiNTc5ZGU0MGRmYzVkZmQyM2VkNGJmZTcxZTFjZTk2ZjlhMzNmZDc1YzgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_640fc6636347467f8e62080abbc0d289",
+      "statement": "Each Metrics instance owns its own prometheus-client CollectorRegistry — one per process in production, a fresh one per test because the registry has no reset — and its reads are partial-label, so a query sums over unspecified labels and a call site that omits a declared label records the empty string instead of failing.",
+      "evidence": [
+        {
+          "resource": "repo://nora/obs/metrics.py#L1-L17",
+          "version": "repo-lines-v1:sha256:f5fe5e3bb19a212ca0f3f4a22b69e31e018f7410cf3c64a2c8b7a062b1f8348e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRhYjdiYjUzZGQ1NjliZjMzYzY1M2U5ZTQ2Y2U1Zjg5Mjg4ZTdhM2ViYmFmNWY2Yjk2NDI5NzlhZmQ0MjY0YTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/obs/metrics.py#L174-L184",
+          "version": "repo-lines-v1:sha256:d71a2bf5c831ca29a7f175ecbdb6a5cd5cad776ccf976a5d617d060af7cd20d2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmYTY5YjBjYTJhMTBlYWFlMjEzZDE5OTBjYmYwNzVhYzEzMzYyMmNlY2FhMGQ5YzBhYjUwOTljY2JhYzRiNzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVkYzFlNzUwNGVhYTRhNzBmNGVkZWI2YzVjZGZjNzhlMTYxM2UzYTY5OGRmNWM0NTlkY2MzNTgwNTFmZTBkNmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM5YmJlMGIzYzdjNGQ2NTI5NzZjZTg5ZmQwMDczODNjNmU4YzY3YWUwY2U5YjZkZTkxOWNkMWYxNTE4Nzg3ZDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAxNmI1MGYwZjFhMmU1NzlhZGFiNDIwYWRjMDFiZTQ2YTBlYTVmOTA5OTdlZjc3N2YwMGE2NzMzMWExNzVlNGEifQ"
+        },
+        {
+          "resource": "repo://nora/obs/metrics.py#L53-L60",
+          "version": "repo-lines-v1:sha256:d94987ec31aa71600ac0c93107e59a9895c1e657cd96862838673c97bdc86939:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjkzMzgxMDQyMTJjNmM0ZjU5MzkzMDA0Y2ViMzk4ZDNjOWU2MWMwNTdkYjc3OWZjZjZjMzYxYWI1ODFkNDlkZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTZhNzE1MjU3MmVlODRmMTA5MDZjNzRiOWYyYTkyNDM0ZGRhYjBlM2M0MjgxM2IwNGU1OTdlZmNlYzk1MWIyNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGI0NDkwZjUwNDg5OTZhODFiODU5Yjg1MzNhYTYwMGMwNzIzNTU1MDhhMzcxOWU1ZjdiYmVjMDViMWFjNGZlYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOWIyNTRjM2MyMjQ5NzYxY2U1ZDg5ZWE4NTM1N2VlOWYwZTFkOWE2ZDYyYzRjZmIyNGM5ZWU1NGEwNTQ1ZmM1YSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_6530fb10235d4c0d8741bb300fdd79ae",
+      "statement": "Recording a metric name that is not declared raises KeyError, which a surrounding except Exception swallows as the failure of whatever it wrapped — so the series is absent from /metrics and the error counter reports a failure that did not happen; an AST gate over every recording call site closes this by resolving literals, module constants and two-arm conditionals, deriving the forwarding wrappers rather than listing them, pinning unresolvable sites by file, enclosing function, method and argument text, and failing on a stale pin.",
+      "evidence": [
+        {
+          "resource": "repo://tests/architecture/test_every_recorded_metric_is_declared.py#L1-L73",
+          "version": "repo-lines-v1:sha256:4773e203a7e3b94b8e0dc98327c3d4ca177a88fb59ecee0dc8249a3c2f9d05d2:eyJzZWxlY3RlZExpbmVDb3VudCI6NzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxNWUyZmRlNmE3YzZlM2I2ODUyMmM0OTBmNDU4ZjRhMjFlZTFiNWJkNjJmMjFhY2U1NzA3ODViNTZmNzM3YWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://tests/architecture/test_every_recorded_metric_is_declared.py#L233-L305",
+          "version": "repo-lines-v1:sha256:301929844157def5876052c0f0ea077c5420490df462aaf39c760d1091f97542:eyJzZWxlY3RlZExpbmVDb3VudCI6NzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRjN2MzYjE1OGUzOTM0MjViMzU1NGVjMDY5NWYyOGQ0ODkwMzI1ZmJkMzYwNjI0NGUyOGRhODg4N2VlZGFlZDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlhODJlYmU5ZWQ0MDdjM2E2YmE0YjAwMzQyOTJiYWE1MmMxMWNlNWFlMjg2MTA3NDAyZGU0NzkyZWVlY2FjZmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5c5e5aaf75ef4c6fb3e5b3066ef43760",
+      "statement": "The declaration gate's coverage limits are stated rather than implied: label mistakes are invisible to it (an undeclared label is dropped silently and a missing one defaults to the empty string), and a name bound at construction rather than at the call site can only be pinned, never checked.",
+      "evidence": [
+        {
+          "resource": "repo://tests/architecture/test_every_recorded_metric_is_declared.py#L62-L72",
+          "version": "repo-lines-v1:sha256:399adb600815ba7b4e1a1401266c67035012580ed23e5acd3100e1b211057c93:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVmMzYxMzk4MDM1ZTIzODk3YzdlY2QxZTVmYjFiNmFmMGZkYTFlZDhiNWFlNjQ2MGM3YWEzMzRhYzY1YzE3NDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIwZGE2NWFjNGE5OTlmYTZlMWY1ODAxNmM1YTQ0YzUzYThiMWQwM2VjNmEyZDkwNWI3NGZlZWUxZWQyOWE5ZmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA0M2JlZTgzY2VkODk2ZTU1MjE5MjE0OTcxMzEwYTQ5MTRmNTFjODYwYTUyYWUyZTViOGMxODdhOGVkZDA5YTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhYWY3NjM3Y2I2ZTdlNWRiODVkNjM0Mjc0NjAxNGRmMDQxY2NkNTU4YTkyMGIyOWViNmFjNzE5ZDdiYWY1YzIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_acbefcaeddee4256aeefb3296cc87247",
+      "statement": "Priming exists because a labelled Prometheus series does not exist until its first increment and increase() over a series whose first sample is already 1 reads 0: ComputerMetrics.prime() creates every (op, status) and (tool, stage) at zero, while nora_computer_up is deliberately not primed because a 0 written before the first probe would be a lie — which is what lets a deployment with the computer switched off read as not-applicable rather than down.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/computer_metrics.py#L13-L64",
+          "version": "repo-lines-v1:sha256:6cfdd6b37bdd27fc5de72df103206589a6f4b7e69e082f9bc135706207f45894:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIwMGI2NGQ5ZjcwYzJjNzc3OGE0OWI3NDdjZjljZjM2OTU1MDRkY2MyOWE1YmQwNDUxNThmOGY1MmQ3ODM4NTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJkYjBjYjhhMWY0NjM2NmVjYjg2OTA0Y2E3MDhmMTExNzFiODhmN2VmMTJjOWNkZDhmYTY0YWE0NzQ0NjMzODkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjExYWJjOTg2ZWQzZTczMmY1ODk3M2VkZDE2OTVlNmQ1NGFmYThlNDM0YzdlYmVmYzM5N2RjNjNjZWVkNmU2ZjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFiMDQwOWI4ODczZGM3NWJiZDRiY2VmYTlkODgzNjlhOWM3YWQ1MzY5OTkzNzU3OTA1MzE0ODk2MDY2MTQ2OGMifQ"
+        },
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L2315-L2329",
+          "version": "repo-lines-v1:sha256:e879759deeb16bd5f1c30b465f1c11aa8fe7e3a356c742af644148fa9bb83455:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFiMDk5NDljZWNjMmViNzA1ZDkxMGNjNzY0Y2ExZjFmMDRhNmFjMzY2ZGNjZDFlMGQ1OThlZWYyYWRjNWM1MDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwMmM0MTRiNTRjZjg2ZGZiNGY5MGRmZTdkN2JkYmZhNjY2YjdkZGRkMzJmMTI4NmYyMzBhNWI1MzI0MTgxOGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhhODEzZDM1NDQyMDNhYTczZDQ2M2NlMDFiODc0ZGRkNThjMTc4NjhjYmE1N2U2M2YxZTI2MTc4MjUzNzhjNDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIzY2UxYjdiMGRiYTk5Yzg0MjM4ZjkwOGM2N2E5YTYwMGM3MmJlNDBlN2NmZWE4M2M5ZWQwY2Q3NDEyYzQyOGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c92d4c67534e4c4a8fd16e6a6b0baf2d",
+      "statement": "A liveness gauge must be bound at scrape time (Metrics.gauge_function) to show a climbing age when the loop behind it stops; a gauge written from inside its own loop can only detect a loop that is up and failing. The heartbeat's age is therefore function-bound, seeded at construction rather than zero, and bound to a \"not running\" sentinel when the loop is disabled, since an unbound gauge exports 0.0 — the same value a healthy loop exports just after a tick.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/heartbeat.py#L145-L166",
+          "version": "repo-lines-v1:sha256:18916a86c1443fbd80a350dbf8241800a7852b8c5a35dd94b3f2fed7a5ad914d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5MDgzYjZlNjQ3MTBjZjU5MWZkNjE0MzcyMmI0NjJiN2Y1MjY0MDI4ZTFjMzZlYWQ2OGZiMzM4YzEzNTQxZGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk1OGU3MWY1OTliNjM0OWJlNGQxMTIyYmEyYWRjY2RmMTE5MzYzODY0OGFlMDNiZDRlOWI0MDc4NTA0MTkyMzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFkMGJkZmFlY2Y1MzU2MjJkNmY1ZWE2ODY5YzVmOTE4NTJjN2ViZTBiYjM4YWUyMmExNWRkZDFlNWQwYmUyOTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJjZGYwMDUzNjUzNDFhMWI5MzFkYmVlNjAwOWUyZmFmYzI1ZWI2Njk3OWE3ZmYwMGVlNTczOTkzMGFhOWZmYzAifQ"
+        },
+        {
+          "resource": "repo://nora/app/heartbeat.py#L462-L481",
+          "version": "repo-lines-v1:sha256:f60a4892bb94c11f6e2ce8a5a8c57a8cae4badeba38c40dd52ef359acd04973b:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhkOGRhMGQ1MjM2NjRiZDgxN2MwOWVjYWVlMzZjNTA0MmJjNGFmYmI1NDQ1NzM1NzYxNTc5NjMzMWQzODdiZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg2ODA5YjgzZDk0ZTQ5YWRkMWViNDVhYzExOTIzOGJiOWEyMDE2ZDU5YjkwYTU3YjhmNGQ2MzZhZjU1MDhkYjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjViYzhjZTk1YTA0ZTIwMWYyMGI1MTFhYjllN2IxNzEzZjExOWY2YzY2ZDliOTI4MDZhMDU0ZDg5NDJlOTFkODAifQ"
+        },
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L2278-L2284",
+          "version": "repo-lines-v1:sha256:73a00d33f2a7b09845f15d37aadbd28f858428387c9d8c4b8366ba10769ee1ad:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzNiOGNhYjQzNzY3YTVkNDVmZDBhMzlkNTdkNGY5ZWQ1NTc2ZmNiOGFiOThiYjJiNzAxMDRjNjQxNDg0ZDc0ZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNGM5OGRiYTU1ZjkwYTdiNjdmOWQwYjEzNDEwMWM3Nzc4Yzk4ZGE2MDUyNWI2YTg1M2Y2YWVmOWUwZjE5YmI0MCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGU2N2Q4NzFiNWIyMDQ1YWIyZWNmZjEzZWM5MTI0Y2UxMzc2OTExNDkzN2UxYjJiNTg1NWFmNWQyNTA5NTRiZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTA5YzYwNTI5NDVkZjg3YmRmZmFlYWRhODFhMzZiMWNmODc0MmRiOWRkNTcwZWMwNTViZTFkODNkZTdmNTYwMSJ9"
+        },
+        {
+          "resource": "repo://nora/obs/metrics.py#L115-L132",
+          "version": "repo-lines-v1:sha256:09f462d6a34e234a9d4a08d6483d590d08e7199465873f9f50c3a1c3ef288c48:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMwNDc2MGI5OTU0ZWE1NGRmMDI4Y2QwYTUwM2Y0NDYxMjYyZWJmMjYxMDkwMzgwYTY4MDg5ZWYyMDViOTlkZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ2MjliNTQ3MjIzZWJhMTUxZjFlMjZkMzkxYjA5NTQyZTc5NWQzNjk5MTgzZTgzOTExMGYwNGY5ZTg4ZjFkZjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU3Y2NlMmM0NTcxOGRlODRkYWI1ZWRhY2YxNjMyNDFlNmY2ZDkwZGIwMGFhOWRkNTY3Mzk2ODNiNWJhNzRjNzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM0ZGYxZWViMmRkNzE3ZjU3YWM2NTI3NDI3NmUyYjNlN2Y1MTU5MTgwMmZmNjk2ZjM5N2ZkMTYzOGM2NWZjOWYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e3dbb619a5084c0ab23ab6f0d2a49d16",
+      "statement": "A declared metric with no call site reads as \"this never happens\" rather than \"this is not wired\", and a declared-but-unpublished gauge renders 0.0 forever — the stated reason there is no nora_reminders_pending at all, since publishing it from the tick would be worse than absent when the tick is switched off.",
+      "evidence": [
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L2257-L2270",
+          "version": "repo-lines-v1:sha256:444ef5d72a1e5df1d4ff269ddceab93931f3325559597de0670b80d0be98b148:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmZTQ2ZTE2ZDRkYjcxYTNlODQyZWI4M2YzYjkxZjY2OGE2ZDRmNDFkZjdjYzNmNjUzNDI3ODZmZTM2ZGYwODEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlMDg0OTkyZDRjYTI0ZmRmMDQ0ZjFkYjVmNTExZWM5ZWI1OGJiYjUwYzhiMDYyYzcwMzNkZTEzYmRhMjZhNTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVmY2VlNjU1MjA2MTIyNjliMzc2MDg5YWQ3YjI4NDgwZTAwZjJkZmFiYzU1YzIyNzI1NjllNTUwNjM1MmEzMDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU3YWI0MDE5ZmEzZGZjMzVhNzc5N2U1YjVkODdmNWJlNTdjZTNiOWU0NWFhZjA3ZThkZGVkODNkODkyZDk0NmYifQ"
+        },
+        {
+          "resource": "repo://tests/test_metrics_export.py#L29-L46",
+          "version": "repo-lines-v1:sha256:d5a53904fc9c40d3ba76788d22e1a65b360d4e37e1fd0ae68ac280c011168ca4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyNWE2NmVhMTZmZDU0MTIxODNhNjJkZTdhOWZjZjkyOTE4NGMwY2Q1NGM5Y2FhNjIzNzYzODU4NzA2ODY0NGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4M2UwODA5MzRiZTNhZjExMmU3MGRlZTdlNzA5YWMxMjc5ZTdhYmQyYTJiYzM0NTQ1MTZlZTdjNWM0MTc3MWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYzNjdjOGE4OWY2NGYwZDAyOTMzZDkwYjgxOWQxZjk5OGIzOGQzMjExMGMwZTE2MjVlOThiMDFjNGUzMWFkZjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNiOTdhNjA1MTI5YzBkM2Y2NzdkOWRmZDBmMGQ2NjE0ZTNhMDM4NmVmMWMyZWZiZDU1YmE5NjVhMjA5ZGRlMzIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1504c9f6b95b45f18b7dd05e85f714f1",
+      "statement": "/health aggregates adapter connectivity for every enabled platform, record-store reachability, Honcho reachability and the loaded doctrine's hash into a 200 or 503, and never raises: a dependency that fails answers a false or unavailable field instead of a 500, a degraded platform is reported without making Nora unhealthy, and an in-progress memory-index rebuild cannot flap the container.",
+      "evidence": [
+        {
+          "resource": "repo://nora/obs/health.py#L174-L192",
+          "version": "repo-lines-v1:sha256:74e63023f4be3879f17b83e152fc66b21bfa273b7de2c19be0ea764022cd5366:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlNzM3N2E0Nzk4MGZhYjBkNDY0ODBiZDQyNjM3MDM3Y2M3MTliNWY1YzNkY2MwMTVhNDE5MmE5YmFkMDJjOTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxNDBiNmVmOGIxMDEwYjExOTkwYmI2ODUzMDg4NWEwNWVjZmEzZTA3N2RmNGFjOGFmYmM2NTY3Yjc0ZjQ2MGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ0YzI5ZmYzMmZkMThkNGRjNDc4Yjg4M2FlOTgwMzgzNzU2M2UxNzRiMTk0ZGRjMzhlZjViNDU0MTRiMzkwYzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFlYmI5ODllMDQ5MjdmZmMyM2U3NGVlOTkxNmYzMTEzZjBhMWZjMTE5ZjYzOGExNmE1ODdiNWQ4YzE1NzQ2MmIifQ"
+        },
+        {
+          "resource": "repo://nora/obs/health.py#L86-L161",
+          "version": "repo-lines-v1:sha256:a7d4a31c5095208b6582503561badd9d592f783022105c2d76f6b402fd29b7d5:eyJzZWxlY3RlZExpbmVDb3VudCI6NzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU4MGIxNjY1MzJjZmJiNzM3Y2Y0YjYwMWM5OGM0MWRhYjFmNzgwMjU2ZTI5OWM0Mzc0NWUzM2VjZjEzZDRjNDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhNzI1ODMyMjM4MmY5MGQ1NjJlNDIyNWRkZWU0NGIxOGVkMzg5ZTIwOTAyMGNjMTg2NjI5MjczZDgzMzEwMTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJjMGU4NDJlOThlZTNkMGFhZGJiY2Y3YWMxMzExMGQ4NTU0NjczNjY5ZjA4YjE2YTk3NGYzYmNlZjkxZjJkNTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIxYmVhOWE0OTAzZWQ1OTMxOWMxYmJmZjQxMTk5YjZhYzJlZDYzYmRkOWE4NTNiZjhjMDY3NWZlNTFkNTQ5ZTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_19595746a51548a8b27bdd0096d9120e",
+      "statement": "Several /health fields are reported but never counted toward the verdict — omniroute's last success timestamp, errors_since_restart, uptime_seconds, strands_version, the memory index's status and queue, and the config staleness canary — which is why a green check does not prove model calls, delivery, export, background loops, writes, or that a config edit took effect.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/prometheus/rules/nora.yml#L1-L7",
+          "version": "repo-lines-v1:sha256:b61cbd3f9a2d59d8303d2fa645728964e239f3aac30f85991e7b8e22b9227926:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjBjMTM3ZmQ5MTEzYjYzYmM3ZjFkMTBlMTgzMTVmYzg3MjQyYWFlMDU4NTlhOTVjY2MzMzc0NTMyOTNhNTc3NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjRjZTY4YjNmZDA4ZWVhNzhkNWJiMTUxOGZiNzQ5NWMzNTgzNGU1MzA1NTI1YTU1YjNmMGZlNDE5NGFhNzNlNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMGNmYzM0YjIzYjhiNDI1YTFhNjU0MzM4Y2QxMzJkZDM1NjU3NDQ0NGU5MWJiZGIxMDY2YzhlOGM4OGExNmM3YyJ9"
+        },
+        {
+          "resource": "repo://nora/obs/health.py#L163-L191",
+          "version": "repo-lines-v1:sha256:a4842feb9c7cadbcecdf593c8c85fcbd733814f4930f4661c723e6a19ff4e63d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNjZTY0ZjhhYmVhOTVmNWI5ZWVlYWY4OTQ1NjBlMTQxMGNhNDRmNDBjMTliZGE5ZTJhZmFkNGEyMjNiYzAzMWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE3ODNlY2Y4ZWY3NzE1NmZlMzlkZmFkMWYwMDhjNzNhYWM5ZmZhNTk0NTgxMjU5OWY4OTZkYThjNDY0NzdlMjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI0MjVjZjkyNGYzODAwNjE0NmEzNWVlZjgzNjcwMGM0M2ZkNDAyYjg3ZWQxZDljNzI3ZDBlMjgyNDgwM2JmNmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI2MDkyN2JkMWY5ZmI3MDU1MmIzNDUxZjI5NzAxNDFiZmY5YWIxMGYyZGRmNjk3MzE5MGJjZGQ5NWZhZDQwYzcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_862203af189549fe868e222bc10378a4",
+      "statement": "The per-platform map in /health exists because the single primary adapter entry would leave the endpoint at 200 while a second platform was wedged; an explicitly empty mapping means \"no platforms\" rather than falling back to the primary adapter.",
+      "evidence": [
+        {
+          "resource": "repo://nora/obs/health.py#L57-L69",
+          "version": "repo-lines-v1:sha256:82322e437868fea61300d76ebbdadae02a75d82e34d70f0a47b5f0889a131521:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFiZGRkZmI0Y2QyMTg1ZjBjMTJkZTExN2RmYTBiYTg5ZjhhMzRiOTNjNGI4MzFjY2QwZmM0NmI5YjdlYzhiZDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdmYjgwOGMzN2U1MTI3YTc1ZWZjYTgxMjQyODNiMmQ3N2ZmYmQ5NzliZTc1YjlkYTAwNzViZDg1MTk5OWFiNTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgzYzBjYTdkZTAxZjk1ZTA0ZGI2NTkzMzAzNDU0ZTU1MmI0NjJiMmM5NmNlMWI4NTVlNWY5MzEwNDYyNjliNzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRjYTVkYjRlZTIyNmFlMzhjOWE1Mjk5ZmFjNjMyODZhNDM1MjA0NzAzOWMxYmNiMWM2ZjI5NjY4ZTg0MmIyYmIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8bf32e87eae34c0395613d8a98aacd46",
+      "statement": "Logging is structlog in front of the standard library root logger rendering JSON lines to stdout: every call site uses logging.getLogger, third-party records ride the same foreign_pre_chain, tag_id is carried for a turn through structlog.contextvars, level is the human-greppable word while severity_number carries the OTel band base (an unmapped level gets no field rather than a guess), and an exception is split into exception.type/.message/.stacktrace while the original blob is kept.",
+      "evidence": [
+        {
+          "resource": "repo://nora/obs/logging.py#L1-L19",
+          "version": "repo-lines-v1:sha256:04ff3f7c0835163e374a541d5ff618321c8994be0f81d62a1f053d32d03a8eed:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3ZTgxYTdjMjkzNWEyMzc4MTE2NDMxZjBmMzE5NTg0ZDdhNTA5MjQ5M2EyODdkZGVkNTRjMDEyM2IwZjdkMWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/obs/logging.py#L207-L246",
+          "version": "repo-lines-v1:sha256:48600760bdd30b41d286bda585e877c7dd87943363946f432df0d5958fdca493:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwMzkyYzRhMTI2Yzg4NTZhN2I2ZGQxYTkxMzUzM2Q3YTg1NmRlZjQ4MWYzNzQzZjE2OTgzMTQxNTEyMjVhMjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEyODkwYzIzNmViOWE0MWJkOWU4ZTRiY2UxNzU0YjQ3YjVlMGQxNmViNDI1NTU0MGFkZDZlMDJlNTY1MDNlY2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg5ZmFjMGRmNzBmYjU1OWQ5ZmM3N2EyYjYzMzBiOTEwY2U1MzQxYTEwZWE0Yzc3YjdmZjVhYjUwOGU0NDMxYTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEwOGY2NDE2N2FhMDkyYWVkNWU4MzMyYjI3MGVhMzhhNWZlMmY1MjU4MjRjZjZiMGI1NDAyMTlmOGQyN2NhMjQifQ"
+        },
+        {
+          "resource": "repo://nora/obs/logging.py#L90-L120",
+          "version": "repo-lines-v1:sha256:c62671e27ef91a88bfdb444146ff1c64875052306bbf56c52a76d8b652a0b1ec:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUwODdiNzhlZGM5MTZhZDg2MTY3NDFlNDZmMDE5OGI2NWQ5MzFjNDJkNjVhYWU1NDMwM2RlZDgwOTk3NmZjZGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJjMzgzYjRhNGYzMGEyNzM2YmFiMDdmODZiODc3YTdlOWFhMGNiZjJhZmYzOWQ0NzBjMTIwZjU3MmU5YjBlYjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI2NzM0YzFlMWM1YmM3Y2EyOTY1MWNhYWUzNDNlNDY0ZjVmY2RjYTk0ZThhNWUwY2E2MDhlZDBhODQxNjg2NTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNjODFhY2FhM2JkOWVmYjJmZWIxNzJjODMzYzFmMzM5YjZkMjFiYmZkMDAxODBjNzM2Mjg4Mzk3NmI0MWQyYzcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f36f4faa35f64bbf834f62a74bbcd19d",
+      "statement": "A log line is not a metric: the health/metrics server runs with access_log=None so a per-poll INFO line cannot dominate the log, and the heartbeat logs at INFO only when its ingest counters moved (DEBUG otherwise, first beat always INFO). The stated cost is that an idle-but-alive deployment emits nothing at the default level, so the log alone no longer distinguishes idle from dead.",
+      "evidence": [
+        {
+          "resource": "repo://nora/obs/health.py#L206-L215",
+          "version": "repo-lines-v1:sha256:3b22531e4680b8038c7eae4be40ce4bce9eab56971dd7ed7e57df7a96b188184:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFiYTc3ZTJkYzE3OWRiMTJhMjhiOTFlNzVkMWFjM2RiOGI5ZGNiYjE5M2U4ZTAwNDkxMWMyMGY2OTBlOTg4YzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRmYjVlYzNmZDdhZDNmNGJiNjRhZTlhOGE5ZTEzMDQ2NzM4ZTZhNmQ5NDI2MDRiMDEyNWUyYzQ3Y2M0MmZlYzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFlZmFjOWE2YjY4ZDA5NDRmZDMzNmRjOGYzOTM4YjhhMTVjZGY2YzQ2ZWJiODViNDk4MzViODIxNGNhMDE5NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBiMWZjY2Y3OWFlNTE2NmRlMTRlYzAyZGVmMTQxNzY3OWVmZGNmOGQxMzRiNjU0YjU5MWQyZDI5ZWJhZDc2MDMifQ"
+        },
+        {
+          "resource": "repo://nora/obs/logging.py#L249-L274",
+          "version": "repo-lines-v1:sha256:8461cec6cc332e719cd3b4a6180fd9b8536c5c50df5ae962a5bbae92851f98b5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM0NDczMzg5MTFkZDhlNDZhMWM1ODMyNGM1MTY1Yzg1YjA0YjliY2Y2NDU4ZmM2ZmU0MTMxYjdiY2RmNmEzZGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFkODMzY2U0YmNhZGZiNGJiZjUwNTAzOTYyNzkzZmQ2MjI5ODdlM2NlNDBkYTgxNTM0MjVkNmJjNmNjMGExODYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkyMDBkMjNlYjJkNzc0NjVkN2ViNzVmNWU1MjBlZDAwNjM2MmQ1NjVkYTU2ZTdkMmIxMTZmZTM3YjE4MmE2NGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_be50bc942bda47aeb2affaf95290dc6e",
+      "statement": "Sentry holds the exceptions half and is errors only (traces_sample_rate 0, because a second tracing pipeline would write a second incompatible trace id): it captures every log.exception record plus anything escaping to the top, cannot see an R-27 unavailable, reports off rather than failing when the DSN variable is unset or the SDK is absent, keeps frame locals off the wire via include_local_variables=False, and is given no release so \"is this new since the last deploy\" is not answerable from an issue.",
+      "evidence": [
+        {
+          "resource": "repo://nora/__main__.py#L75-L87",
+          "version": "repo-lines-v1:sha256:dec2e9b178a124fc7ba75c7860e0eddb2c3636e31cc2e7b410859aed17088e9b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJjODMzN2I4ZGMwZjkzOTEwZDYzZDlhYWJhZjc4NWFlNWViYjJlMzcxNGIyZWEwZmZkM2FiZjVhYTZkMWRiNjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA2MzgwOTFiZmRjNzdkZjVjMGZlYTljNDE0MzlmZWQyZDgxYzNkMzdkZjlmMWE3ZjMxZmJjZjFmYjFmZGYxZTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNiYzJlMTk5MTllMTM5YTYwNGYxY2Q4ZjVmZmQ5NjdmMzk1ODE1YjBjYzJjODY1MWMyMmU3MWQwNmZhOGQzYWMifQ"
+        },
+        {
+          "resource": "repo://nora/obs/errors.py#L1-L104",
+          "version": "repo-lines-v1:sha256:c82fb9514ce4c2b6957eac94965a8b7be5738656f275e5d29b7a385704f5c4df:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA0LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI3YThkZjVhMDJlNWQxMDA1N2Q3YTljMWFiOTdmMzNiOWUxYTA5NjFjNDRjNzFkZDMyM2E3ZDJkZTQzNzU3ODgwIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIzMGUyYTQ2NTAwOTVmYTk1ZDBlMmJiNDFiMmRiMjkwOTRkMzQwNGQyOGNlMTIzMzllYzg4YmI0YjVjNWJlOGY2IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MCwicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MCwiZm9sbG93aW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1In0"
+        }
+      ]
+    },
+    {
+      "id": "claim_9b7ba035790b40559f1af27cbd5b5423",
+      "statement": "The alerting path is Prometheus (scraping the nora, presence and analytics exporters and itself every 30s, with rules) to Alertmanager to a separate stdlib-only alert-bridge container that posts to the chat API; the bridge is deliberately outside Nora because an /alerts route on her own app would make the \"Nora is down\" alert depend on Nora being up.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/prometheus/prometheus.yml#L1-L49",
+          "version": "repo-lines-v1:sha256:f953dc9df62bee5002abe3906b53af52d8629b480cbeb00d4beadb2613a4e474:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg2ZmM3YWZjOWYyZGU3OWEzN2E4NmM1ZTcwZGY1OWVmYzAyMDAwZTM0ODU0Yzk5ZGViNmE1ZWJmODg0MDVmZWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMzOThhNmY3ZGRkOWMxMjU1NDg0MzAxMTk2N2QzNTczMWFhNjJhZDJjOWY4NTE4OGExNzU2YmI3YjQ0OTJjNjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://docs/observability.md#L451-L485",
+          "version": "repo-lines-v1:sha256:671a3ec9dfd0bd6d033fdf82aa38b2722ef29451385772343684063f35f91bf8:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwZGVlYWVmNWEzODE0MWE2Yjc5MmRjNDQ5Mjk4NDJhYjA2N2RlMjAxNzQ0MDkwOWEzZjU1YzdjYWFkNGFkY2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEwNWU1ZWFjNTlkM2U2YTdiMzUxNDcwZDQxYjNiZjcwNDY3MmZjMWE0ZGM1N2I0OTFmOTVmYjhhODYxYTJlMzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJjOTUxYjljNDE0MWRkNDI1NTJhNjE2YzI2YzViZjFjM2ZhMjRhOWIwMTQzY2QxNzU3YWEyNTMwODYyMDEyN2IifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_20920e8a9b5145aa9320421b544604bb",
+      "statement": "The Prometheus rules fire on absences (up == 0, a climbing heartbeat age, adapter event age, a presence collection age, a music belief/controller divergence, computer and OAuth lane failures), and the generic UnavailableOutcomes rule covers every *_total carrying status=\"unavailable\" except nora_computer_calls_total, which keeps its own thresholded rule so one computer call cannot page twice.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/prometheus/rules/nora.yml#L1-L20",
+          "version": "repo-lines-v1:sha256:df4aa9fa15ddf7b91054f10eb9cf3acf189af0181bd1c5e3c84c2a398fbba42f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIwYzEzN2ZkOTExM2I2M2JjN2YxZDEwZTE4MzE1ZmM4NzI0MmFhZTA1ODU5YTk1Y2NjMzM3NDUzMjkzYTU3NzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAzOGQ1YzYzOWQ0NDllOGVmNWVjOGMyYzhkMmM5NTg2YTAyYWQ3NzE3ZjVhOTI0NzFmMzgyMjEwYzY2ZDExZmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRhZTBmMjA5NGRhNGY1YjIxNzE3YjQ5YWJhMTU5MWU3NDM4OWEzNDllMjQxMmEyNzNiMjE0MTk5MWVkMzBlZmQifQ"
+        },
+        {
+          "resource": "repo://deploy/prometheus/rules/nora.yml#L129-L171",
+          "version": "repo-lines-v1:sha256:c72489a1d5ad76a53facddc617880cbe63ab7a01072dbff9e19282839bd1cba1:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0YzhiMzRhZmJhOTkyMzdmY2Q3ZjQ3NDNkN2MzNWJiMzBmYTZlYjA1ZDZjYWQwYjUzNzFhNWE4NzI3Y2RlYzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3ZDI0NzgwMWIyNjkwYTU2ZmRiZjRjYWZiOWYwZjFjMDUwODYyYzNiN2FmMjMyNmY3OTRlNzUwZmQyZWIxY2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE1ZmNkYTFlZmMwZWY2OTUyMjZjMzdhMDJhZjdiMTY2NWFjNzIwZTU2MmY3ODNlZjE3OTZmMGQxYmE2ZGRmMmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNmMjA3NDRjZTViZDNjYzczY2QzNGJmMWVjY2NiOTlhNmNlMTA3MDhiYzdlMjRjMjVkNDkwMmJmNDlkMjRkYjUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0fb3eeefa6ad4dfaa4fbbfab2f8d08ea",
+      "statement": "The alerting stack's limits are stated rather than discovered: there is no dead-man switch (PrometheusNotIngesting is evaluated by Prometheus and cannot report its own death), the bridge acknowledges the webhook even when its chat POST fails so one alert is lost for the repeat interval, and several known-bad shapes are deliberately not alerted on, including a stalled cognition wake loop, which is read from the rows instead.",
+      "evidence": [
+        {
+          "resource": "repo://docs/observability.md#L511-L524",
+          "version": "repo-lines-v1:sha256:3789185c36e09e121faba16fc6c521fa36bc60e652e1d52af1e1542b61522d93:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImExNGQzN2VmMmIxYTY2YjgwZmU2MzMyZGVjODcyYjg4OTM1NTIyZjVjODI1ZjQ5MDdjNWZmODcxNjM4MWI5NDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUxMWRiYjU5YzdkN2FmNzg1NjQzYzJkZDQyZGQxNjM3Y2IwMDAzNTE2ZWIzYmJmM2MxMzg1MTllNzllOGViMTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQzYjlhMDFlYmE0MTkxMjkzZDY2NTgxODdjMTY4YzRmMzA0NDlmOTNhNzc1MGMwMDQ0NzRkZTM2ZjJmMzMyM2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZmOWRlNzljNTI0YTg0MjZkZmU1OTk5ODIwNmM2ODgwNzQzMzVkYjZhYmE1YjA2ODY3N2FjODM1N2UyMTRjMDYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b90ceec44f2f4a1baedab0a71aeccd2e",
+      "statement": "Engagement series are split so the reading stays meaningful: nora_engagement_outcomes_total carries outcome and audience (recovered against send_reply is the tell that the route is not honouring tool_choice=required), and nora_llm_latency_seconds is labelled by audience because a tag's invocation and a fire turn are cut at different timeouts and mixing them would blend two distributions with two ceilings.",
+      "evidence": [
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L2336-L2347",
+          "version": "repo-lines-v1:sha256:d02a0e1cdba262c70301a57a64998ad039a7c849020d470e7cd43ad8d94bfce7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4OTBjYWQwZjc0OTNjMmVmYTg4ZDAxMDVjNzQxM2I4OWJkYmVmYTczODZlMmUyMjU5NDhjYmQxNjYyOTZiMWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlN2M2NzRkOTJjNjI1ZDdhYTdkNmJmNWY1ZjY0Y2Q4N2UzZGU4OGY5NzY5OGMwY2Q1NzNmMjMyN2I0YTVkOGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRjMDRkZWYxMmVjOTY4NjdlZDc4YzEwNmNmMjdhODRkZTQ5OTZhMTQ0NmU4N2IzNjMxMGNhMDk4ZTk3NjQzZDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjljMWRkY2ZiOWU4Yjc3NzVkZjdhMmFlMmMzNzk5MDgwNTYzYWY5OWRlZmRhNDViYmM3NzlhMDc3ZTc2OGMyNzYifQ"
+        },
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L677-L687",
+          "version": "repo-lines-v1:sha256:31bffc8fa7aa417660ecececc0c83f0fa5af46c23db4e05da70b7d83f3be8f6d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc2ZTJhMmY5ZjAyNTkzMmE1MzFkN2JjYTI5YTM0ZDkwNjFmYTVkYzYwMWUzN2UxNzg0MDdlYzNkNWVmMWEzYzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwMmM0MTRiNTRjZjg2ZGZiNGY5MGRmZTdkN2JkYmZhNjY2YjdkZGRkMzJmMTI4NmYyMzBhNWI1MzI0MTgxOGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI4N2IzNjRmODJkZjA3NGY4N2Q0MmRlYmI1ZGY2ODQ4MTliZDY0NGM4YzNlMjBhZTQ2MDcyYzkwOThlMWE3NDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQzNTk0YWRhMmVmMWY2NjY1YzI5N2Q1NDQzYTgwMGZkNTgwNjQ2MTBhZDc5M2E0YTNlNzE5MGFmNzA4NzA3ZWYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1d5cd010994f46439ce86106adfe3221",
+      "statement": "Participation silence is the healthy outcome and has its own series, so it never lands in nora_silent_failures_total — a turn the budget cut off before it could send is a silent failure instead — and the Relevance Gate keeps two series (decided versus could-not-decide) so \"the room was quiet\" and \"the gate is down\" are different readings, with gate verdicts never counted in any tag or participation series.",
+      "evidence": [
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L1491-L1511",
+          "version": "repo-lines-v1:sha256:837d85e4a8ad6a64f0d09bbe1b8e14078b0f816c66f881c78f9796ee0a52f041:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRhZjYyNmFjOWNiYTEyNGI1MjI3M2NiODBmN2RhOTIyZDFiYTM2M2RhYmE1NTUyOGVlMzA5Yzk1MmM3ZjAwOTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlODM0NTdkMzgzYTljY2Q3YmZkNmMyMDU3Y2JiZjc4OGIxZmUyOGE1Mjc4NWNkZDUyMzgxMWFhYTE5M2JmZWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUzODBmZGQ1NmZiMGRlNWZmOGMxOTE1MGZjNzMyYzU4YzViYWZhNzMxMmJkNGVhZTM3N2QzNTcwM2E5YzkyOGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA3MDMxNGM4MmFmNzdiMWI1ZWVhNDQzNWRlN2I4NzIyNTFlY2ZlOTc1NDhlZTU1ZTc5MjM0N2M3YmRiZTE0ZWQifQ"
+        },
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L1530-L1538",
+          "version": "repo-lines-v1:sha256:046c291a079d829c3972f28a8de4cf328da74c98997f6578d4b957b7f629f0cd:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTE4YTQzMzE5MjQwNTZkMTFkZDA0NTlhM2FlMDM2NWVhNzNhMjA2MTg2MDJhNjAyNzU1NTExYzhiZjY4ODk3MyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYmY2NWFkM2EyYzI2ZmZjMTE1MjkzNDFhMjE0OWNjNzRkN2M4N2E2Mzk0NjA3MWZhN2M2Mjk4ZWY1NjgyZTliNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2U4MzhkNjliMjk0M2JiMjFjNmJmMzQ4YTE4Y2E4MzcxMWExM2U2ZDg0M2JjNmI3OWVlOWRmZjRkMTVkYWExYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTQ0NWZiMzVlYmUyM2EwYjJhZmY0ZjZkNmRmZTEzMDk3MGFkMGQ3ZTBiZDIyMjlhMWRiMTVkNDc0YmZhNzA0NCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_8fca26ffb84f4e51ba0b9cebc3263099",
+      "statement": "Some gauges are labelled to avoid a last-writer-wins lie: nora_presence_circle_subset_ok carries circle, platform and conversation because a circle-only series let a passing room overwrite a failing one, and nora_music_controller_playing is absent — never 0 — when Nora could not read the controller, so \"I do not know\" is not read as \"not playing\".",
+      "evidence": [
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L2164-L2176",
+          "version": "repo-lines-v1:sha256:85f1a91c411dff73937d2b0c56ed1a5464508b42e22241d6dca3347eb5eae138:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM4ZjRkZDA3MDFhZTg3MWMxOGViYjRhY2ZlZWI1ZjQ3YTRhNWE5ZWE4MzMxZjY1ZWViNzNjNDEzZWY2NDBhMDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwMmM0MTRiNTRjZjg2ZGZiNGY5MGRmZTdkN2JkYmZhNjY2YjdkZGRkMzJmMTI4NmYyMzBhNWI1MzI0MTgxOGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcyOTljZjY5NjEwZDhkMGRlYjVhMGQyZWEzZjU3YWEzZmZkOTJkZWRlZTYyNTM4MmRlMTkwOTg0NzQ1YjM0NjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM0ODY0YTc0MTgzZGExNGRjNWRiYjU5ZWMzNDE1ZTZiNmZlOWE4NWMwMDdhODNlNTg3MTVjOWJjZmZiMmU3NWQifQ"
+        },
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L2244-L2256",
+          "version": "repo-lines-v1:sha256:3293390ca326bba15a3f927b32756594d69f8c3980414236a49cbd5f64cb96b6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMyYWEwZmI3MDA0NGFlZGM3ZWUwMjg0Yzg0NTc5ODlkMmI0ZTFjN2IxMGZhOWI2NGRlNWYyMjJhYWQ2MjBmMDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwMmM0MTRiNTRjZjg2ZGZiNGY5MGRmZTdkN2JkYmZhNjY2YjdkZGRkMzJmMTI4NmYyMzBhNWI1MzI0MTgxOGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYyODIxYjljZDkyYWI4MDJkNTE0MmY3NzhhNzNjNzU4MTNjMzI4MWFiMzljMzE1MTM3OTA3Y2JkNzE0ZDRhODAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRkMTA0M2Q5YTJmNDFkOTliNTQwMDA0ZDI3NjFmMjU3YTE5N2JkMjUxOGQ1OGU3YmE2OTVlMjI3NDU0OTk2YWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_90bd68eedc124eca8c7517bcd1be06ab",
+      "statement": "The web API and health endpoint share one aiohttp application and one port, and the friend-facing /app/v1/status is a deliberately filtered re-projection of health's facts rather than the /health body, so portal traffic produces no per-route metric and the shared server's access log is off.",
+      "evidence": [
+        {
+          "resource": "repo://nora/__main__.py#L145-L173",
+          "version": "repo-lines-v1:sha256:7d16368310ab47a75ddd04f74f9f212ed26b72049304bee70b2a04de5f01daa7:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY1NzRkYzI0MjVhNmY2MWM0M2IyYjBhYmE1MjUzNGE4MzYzMDJmZTNhOTQ2NjliNmVlYTNmYzU3ZmY2MzYzMDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5NWM1MDAzOWZjODVmMmNiMGFkNDY1ZjFiYzIxYTAwMTBjYzYyMjNjMWY0ZjEzYTQ3ZWI0ZDEzZjgxNGUzYzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFjODFiNDRlZDRjYTc5MzE3OGE5N2IxMTYyNGYwYjJhYTBmNTk2MTczZTlkNGEzNjE5NGFhYTI3NjdhYjBmNDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ5MzVlNmM5ODcxNjA0NGI5NGU1ZDVhY2RjOTQyMjcxMTc4Y2U0NzAzNTViZjUwYjc3YTZiYTY5ZjY4YTBmNzYifQ"
+        },
+        {
+          "resource": "repo://nora/obs/health.py#L206-L215",
+          "version": "repo-lines-v1:sha256:3b22531e4680b8038c7eae4be40ce4bce9eab56971dd7ed7e57df7a96b188184:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFiYTc3ZTJkYzE3OWRiMTJhMjhiOTFlNzVkMWFjM2RiOGI5ZGNiYjE5M2U4ZTAwNDkxMWMyMGY2OTBlOTg4YzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRmYjVlYzNmZDdhZDNmNGJiNjRhZTlhOGE5ZTEzMDQ2NzM4ZTZhNmQ5NDI2MDRiMDEyNWUyYzQ3Y2M0MmZlYzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFlZmFjOWE2YjY4ZDA5NDRmZDMzNmRjOGYzOTM4YjhhMTVjZGY2YzQ2ZWJiODViNDk4MzViODIxNGNhMDE5NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBiMWZjY2Y3OWFlNTE2NmRlMTRlYzAyZGVmMTQxNzY3OWVmZGNmOGQxMzRiNjU0YjU5MWQyZDI5ZWJhZDc2MDMifQ"
+        },
+        {
+          "resource": "repo://nora/web/status.py#L1-L13",
+          "version": "repo-lines-v1:sha256:005bae28f4884426eb789ef55920de7dd10d65286df0ca507e01e204aae0b062:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlMTQzYjcyMjA0ZjZlNzQ1ZDEyYjAwZWZmY2U2YzFkY2IzMzA5YTQ0MDc4MTI0ODI2NjEyNjk1MzY5Y2VmMTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a104a8d5841147c191757f5902c346cb",
+      "statement": "Tests assert against the deployment's own sampling rule: the exported_spans fixture builds its provider with build_sampler() rather than a sample-everything provider, so an assertion about what reaches the collector is not measuring a provider no deployment runs.",
+      "evidence": [
+        {
+          "resource": "repo://tests/conftest.py#L118-L159",
+          "version": "repo-lines-v1:sha256:7402497a9a79b4b6d4680d9e73b888b386db2b020de4bbb40bd41581d5e9ed5d:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzZjM2NmI5YmQ5YThkMGYzNDBhMmJjMGJlMWUyMmVlYTIwNTY4ZGQ3OGE0NTI4MWI3MjFiMzBmMjJkMDg3ZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMwYzcwYjU0ZDQwNzJmYzYzYmM2MWI1MThmOTlkZDBjYzQ2MmQ4ZjRlYWM2ZTk2MmRkYTJmMGY4NGZmMWJmNTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI0NDM5NjgwOWUyNzczNjg5NjQwZmUwNDliYzZmOWJhYmJmYjljNmQzY2RiZTI4NDUxNDBlNTJlZmU3Yzg0OGMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ec86919759914269a65c2d5b2798cf93",
+      "statement": "`[obs.tracing]` is the repository's whole export contract: `enabled` decides whether a provider is installed at all, and `exporter` selects `console`, `file` (the endpoint used as a path to append to) or `otlp_http` (spans posted to `endpoint`, with auth headers parsed from the environment variable `headers_env` names); the endpoint and its authentication are therefore configuration rather than code, and everything past the endpoint belongs to a collector this repository does not own.",
+      "evidence": [
+        {
+          "resource": "repo://config.example.toml#L1366-L1370",
+          "version": "repo-lines-v1:sha256:cd53944a1c6a4c9ca0ca4dec987df2e4aff3b0b75e8a646709a04ac5487dcc25:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTNmYmJmNDVjNmExNjQ3M2IyZDVlMDRhNDliMGJmMjIwM2JjNzY3YzZiZDY4MWY3ZDc1MjJjNDExZGQ3NmQwNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDcxNmM2MTZjYjdhM2RmOTg4M2I5MDkzMWY5MTg3Mzc1NGYzM2ViYzViNzgwNWI1MmQ0YmUzZTk5ODM3MGYzMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWM2ZTlmZWVmZmU5ODExOTk2YzE3YWJkMTE4MGViYzBhMDk3YjU5Njk3ZGY0NTkxOTZkOTE0OWFlY2U5ZjE4NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjc4ODI1MjU2N2RkZGMzZDk4MGZhZDEzMmVhNzgyMTM3NDYyM2ZhNjRlNDMwNzExMjEzNzljZGE1YTA5YzNjNCJ9"
+        },
+        {
+          "resource": "repo://nora/agent/telemetry.py#L196-L225",
+          "version": "repo-lines-v1:sha256:e46289d54b07be0795e22db4f4d3fc299439563bd897a5f1c66a1c7807fcbbe4:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI4YTkxYmIyYTNiY2I4N2JkOTk4ZGQ3ZWUwYzEyOWFkMGMzZWRhZWVjMTM1Y2M4YWFhOTE2OWQyMTA3ZWY1YzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3ZjM5NTY4MmEwYTRjZWY5MGI1NWYxZDI2MGJlZjhkODQ0YTM4MDdiZGQ0MmNmYjdmMDBkNjRjZWI4YmI2ZmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJiMDBhZmIzN2RkZTQ0M2I5OWMzZmI1NjVjMDMzZDkwZjNmMjg1YjA3YmNkNzljNGEwYmYzMDI1YTcyN2UxNWYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a597912dc97349f18f8eaaef6c218d9f",
+      "statement": "nora/ingest/pipeline.py opens spans with no model call under any of them and is the codebase's highest-volume entry point, which is the concrete reason an unfiltered export would bury the turns an LLM-observability tool exists to show — R-76's trace boundary is drawn over the main ingest path, not over a rare edge case.",
+      "evidence": [
+        {
+          "resource": "repo://nora/obs/tracing.py#L66-L91",
+          "version": "repo-lines-v1:sha256:2569d5f041445d7cda3bc10a7d56e91033d688cd5ca9c1dcb95ce7f3f0a097ad:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlmODFlNzYyODZmMzhiOTAxMWNiMWM0YzE1NDU1MDc4NGExZmEzYzY1MWY0MjM1YWE5YjExMjNiMzgzZTUyZmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2YTcxNTI1NzJlZTg0ZjEwOTA2Yzc0YjlmMmE5MjQzNGRkYWIwZTNjNDI4MTNiMDRlNTk3ZWZjZWM5NTFiMjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJjNTQ3ZTQ1OWEyOGRmNWIxNzBkZTUwMmRmN2RiYjg1NjA4YzY2YTg2NmNlYzdhZGM2YWY2M2ExY2NiNGUyODEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBlOWYzZjZmYjFjMzkwNGRmNDhkMjc5NmI1MWU1NzhkNTIyNDEwOTg0NTRjY2IzZGJmNmNhNmE0M2RmZDc5ZjQifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-20T12:25:17.607Z"
+  }
+}

@@ -1,0 +1,478 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:560e2468416863a2b14bf359411d7b935c903a198c47e76b4f89607b9ec67ef2",
+  "claims": [
+    {
+      "id": "claim_73dfb2c116274b48b4e492028c09251d",
+      "statement": "ParticipationTrigger is the only place an untagged message becomes a candidate for an unprompted turn: Dispatcher.on_message hands it a message only when ingest returned engage=False with relevance_gate=True, and any resulting turn goes through FirePath.speak rather than EngagementPipeline.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/dispatch.py#L67-L83",
+          "version": "repo-lines-v1:sha256:887a5b151a593fb1b7de532f387840021dc65f66b61462201d10148ac7956b9d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJjYzZhM2E0MDkxNWM0NjFkOTI1YTA2YWU3NzJhNDg4Nzg2OGFmNTYzOTAyN2FiYzY5YTVmZDVmYTVmZDk3YjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEzNThkNmMzZDMzODk2YTU1NzJjNDkxZDVmY2ZhMTcyZTIxMzZhYjhiMzI4NzMxMGE5ZjAwZWM2MDBjOGM4ODQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVjYWUxMjc4ZTIyYzg4ZDI3NmRjOTIxNWI4OTUzMTY4NzRkYjMxOTEyMzg0ZmQyODNjMDU3ZTgxNTM3MzYyYzIifQ"
+        },
+        {
+          "resource": "repo://nora/app/participation.py#L1-L13",
+          "version": "repo-lines-v1:sha256:eb213a5bc6afd437792904d7f72b9a842c846d2e73d289fffb2faf75b9d1aae4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxNDdlNDMzMjU5MTZkY2M5Zjg0ZGRhYjYwZTQxZjQ0N2Q3NGFlYjIwZjE2MDlmNGY1OTY2OGU2ZWY5MjNkN2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZhMThjYjk2YmI1MGQyZjY2ZDk5ZmIyOGNhMWYxOGUyYzU0YWY1Njk2ODdkNTk4YjZlZWZjMzUyNzBlMDFhODYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVlNjQ0ODkwNWU4MDYwZDAwYjY3NjM3YWNhOTNiMDBiMjJlNGU1ZjYwYjcyNTI3ZjJmYTA2MGY3ZDhhYWNlZDQifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/policy.py#L138-L170",
+          "version": "repo-lines-v1:sha256:4cc56b334c70a161b11dbced6ecd0f764ad4fe32577d6012bf7f229bfe8ce371:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxMjEyODVkN2I5OWY4Yzc2NWEyYzYyODk1MDg0ODJmZGQwYWIwN2M1MmM4NWU2NDEwOTNlMWU1MDI3MzI2M2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4NDg4MWJjYTgzOTU4YTkxYTU4Y2E0YjczNjhhNTUzNDdiOTRiMjg4YTE3MGNhY2M0NmJmYThjYzdhN2RjYjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAyNWVlY2Q5YWNhM2FiMDA1NzE3YTFiZTEyOGE3Njc0M2U5ZWU2NTllYjQ5NmQzNWEwMWIxMjI0YWNhMmU5NmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVmYzAxNTgxMzc2ZWFiMjk4YThiYmVhNmFmYzgxYTgxZmZhYmZiZTRkZjM3Mzc2NWUxZDQ2ZjMxN2E1M2FhNzYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d654c98755bf4657b19649f91e740a70",
+      "statement": "A room opts in to unprompted speech in policy.toml with relevance_gate = true on its [[conversations]] entry (default False), read by RelevanceGatePolicy, which is appended last to the engage chain only when [relevance_gate] enabled so a real tag keeps its own reason.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/composition.py#L2059-L2066",
+          "version": "repo-lines-v1:sha256:049944fe3644149be2e0a70d8fe16e1260d04ea63b52d27b38c61cc737cf4da6:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNWQ1ZDI5Y2NkZmViMDJkNWE0YmRmNjNmYzQ1MTdhZTRkYmEyN2M1NTVlMzU3MWE2OTQzNTRlYzk5ODJiMmNkMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzRkMDIwZjA5Mjc5MzI1MmM1MTY4YWU4NGU0MDA3MDQxMjhmNDcxNGE1ZjU1YjJlMWRkNTExMDZjZWQxYmYzYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTFiNTk3ZDAyZGUwYWQwMzA4ODJlNGMxMDIzMGVlZDFiNjRhOTFhOTQ1ZjZkZDExZmQ4ZjM0MzQ0MDJiZmI1YSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDI4MzkxYTk5N2UzNWQwNWMxYWVhNjQyMDM3OGNmMzI3MzI1MjY0MmEyOTZlZTY2MTkyMjM2ZDk2MDkxZGE0NCJ9"
+        },
+        {
+          "resource": "repo://nora/ingest/policy.py#L153-L170",
+          "version": "repo-lines-v1:sha256:3d1f7ed7ed0ae44eef77687412dc1091a6c6ab2437799a0947f9ed50bd461a82:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNjIxNjgxYTkxMjgxOTQ2MmU4NDM1YzY4MTVjNTZhNDg5NzY0ODUxYTE3N2ZmNzRmMDYyMDk5ZmI1ZTI0OGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4NDg4MWJjYTgzOTU4YTkxYTU4Y2E0YjczNjhhNTUzNDdiOTRiMjg4YTE3MGNhY2M0NmJmYThjYzdhN2RjYjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcwMTllOWQwMTlkMjk1OWQyMTlhNzE5YjU0ZDY3NjQ2OWYyZTgzNWViMDc3YmMyNDJmN2E2ODdmYmM2ZDI1YjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVmYzAxNTgxMzc2ZWFiMjk4YThiYmVhNmFmYzgxYTgxZmZhYmZiZTRkZjM3Mzc2NWUxZDQ2ZjMxN2E1M2FhNzYifQ"
+        },
+        {
+          "resource": "repo://nora/policy.py#L124-L130",
+          "version": "repo-lines-v1:sha256:83808390303ff7c5d33ddc6965440ac47aa44eb32189ec171124566c5002a25e:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjdkMmY2NTYyODhjY2MxZDU0MTliNjMxZTc5OTIzOTM4YjAyYTliN2QyN2ZhNmEwMGY0NjRkNGU5N2IzNDQ5MSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTc1MGE3MWIwMWRjOTRkNzVlYTkzMDZkZTJjZDllMTc3OTFhMWIzNzRhMGE3NzE0YWU0ODRiYjVmNTMwOTU2NSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYmU4YzQxMDk0ZmZmODcxOGQ3MjFlMDViZjY5MWY5NjEzNmU4NDI0ZjhiNWY3NmRiOGYwODZjYmUwZjIwNjg5OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODU5MjM0NjZhNjYzMmNiNzMzODU5Y2IyNWVjYmIyYjdiYzg4NjdhOGIwZjc5MWUwM2RhZjJkOWIwMWVhN2FkNiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_9bdad16c15824cf3bd21201d615974e2",
+      "statement": "Participation ships inert and needs both [participation] enabled and [relevance_gate] enabled: Config refuses to start with a gate and no participation turn behind it, and with participation on but the gate off the composition root logs an error because no window is ever noted, judged or turned into a turn.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/composition.py#L3784-L3799",
+          "version": "repo-lines-v1:sha256:60fd598c8ff2c8317fc1e5c33f7110e113ac8fca08f206218c7c1aeccf13b492:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZkZmVjZjA2OWE1ZjE4M2EwNWIyNWNmM2U3NjBhZGM1ZDVlYjgzMTU5Zjk0NTQ0OTEwZTU4YjRjYmM1MGIyZTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMyYTcwZjMyNmU2NjkzNzAzODI0MzZmYTc0YmE1OWI0NTBiMzUzZGM1OTAxMTI0Mjg3Mjg4NGQzZTM2YTk2ZTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZiMzU0YmE5ZTU5M2FmYmRmMDdmM2YyZDc4NThlNzE4ODc0ZWMxY2E3ODQ2MWM2NmIzZjk3OGViYTFlMjQ0NTQifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L4125-L4152",
+          "version": "repo-lines-v1:sha256:afc9ffe834e4b2283fc0a535aa0c7afab0a26c5ff15af9726cdcc3b1089f5f17:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlZjFjZGQwZjU3NDMzY2U1MDc3OTA3MjJlMmY1MWQ5NzM1NmNiZmZhN2IyNGRkN2NhMTM0NDgzMmQ0ZTUyNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyYWIwOTBiY2QxNjIwZmE2MmVhZWUxNTdhNzRmY2E2MzVhYTI5ZTEyY2JmZmQ2MThiNTc5MmQ4N2JjMDNhM2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJkODk2MThlMTczYjY5ZDBlYmVmMmFhOGY3OGE1MGVlOTRhM2JiZTJjNTYwYmIxYTkwNTJkMzZiYzU4NmIwMjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM2MTNkMmNmNDcxOGM0Y2JkMjI3ZGNlZjFjM2JiNjJjZTM5YzljZWM5ZGYwNzUxMGMzMDNkYWJmMzMyZDg1ODEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3904406b892f4b44804fa46765f2e024",
+      "statement": "The composition root constructs ParticipationTrigger only when [relevance_gate] enabled and a FirePath exists, giving it fire_path.speak as a bound method and the same ConversationSlots every other path into that conversation holds.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/composition.py#L3686-L3699",
+          "version": "repo-lines-v1:sha256:e38e4d6b2c602adc5cf49b7672a39acef3e8a03f37374428c4b1ebe0ad9d8db3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiYjI1NWQyNzk0ZTZiMDBmYmUwYmVmY2IzNzBiYmJmN2M3YWNlODk5ZTQ4ZGU0ZjY5YzZiNWEyYTdiYTQxZjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyZjgxNWE2Y2EyN2JhNmY3MGFiM2E1ZGE1NGQyYTNkNzIyODc4OGRiOTBkODBlYWU3ZDk2MzZiOTU0MjI0Y2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU1YzEyYTdjMzE4ZGNkNmQyNjBmNjdkMTdhYWFlOWRkMzRmZWNlNTBiMWM2MDcxOGI5Njk5ZTEzMzNhZTMwMDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhiYTk5NzBkNDVmMWE5NjA2NjE3NTY2ZTU0ZDlkOGRjNjAwNjQwOWI4Yzk4OWZlODM5ZGU1Mzg2Mjg0NDMwNDAifQ"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L3762-L3783",
+          "version": "repo-lines-v1:sha256:730cc30e1c3028a70ac423f0ce3c26f84ce67626732118cd82031a85d7facb57:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkzZjBkMjcxYThjN2M2NTRjYTI1YjNjOWM5Y2YzZTZkZDljMzhjMmQwMzQ5NTFmZDZkOGEyZGVjYjI0Y2Y2MjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZmZDdjMmE5MTU3Njg0MzBhY2IwZGE3ZWMyZDU0ZDlmMGEzMGUwNzU1MGExYWU2OGY1Y2FlOTZiZTdkZjc1ZjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImViMzA0MmNiZjIzMDY4ZmRlYjRjNzYwNWM3MGQyODdiNWNiYzY4MzNmZDdmZTBlYjM5YTQ3MjgxNzZmZTZiNDMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_de91425e3c3b48589f8c39e4db9ee4ee",
+      "statement": "A participation window closes on whichever arm comes first: quiet (settle_seconds since the room's last noted message) or volume (max_window_messages unjudged messages since the last judged window). The volume arm exists because the quiet arm reads time since the last message and therefore never closes a window in a room whose gaps stay under settle_seconds.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/participation.py#L187-L205",
+          "version": "repo-lines-v1:sha256:02b67a62064f1d2ac27f48a51397e1ab031fb87b27e0bc87a6a43cb2ca6ce32d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNiZGQ0NTlmNmQ5ZTk2MDlhYWRmYjY2ZWIzMzVjMDdiMjEyZDAxODYwNmQ1ZGU2ZjZjNWIwZGFmN2E3NGVmNzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5NzQ0N2M0YWI1ODk5ZWY1MmFiMTk3MmIwY2NjYWY5ODc4NzdiYmVmZWMwMjNkMGRmNmNhM2Q5MTlmYzMzNzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjljY2RhMWY2NTQ4OTJkMDljOGY5YzQ4MTRlMjY4YmJhY2Q1YzBlNjhkOGRkYjRjYTVlMWJmYzQzNzQ3MGY4YjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ2ZTA4NDM1ZjYyOTg0NTkxMzFmNmNjZDQzN2JiMTJkM2FhN2YwM2M5NmZjNjM1NTMxOTExY2YxMzM0NGIwZjQifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L424-L432",
+          "version": "repo-lines-v1:sha256:ad63d3972f6a40ff7594d46731648aa933124aec4f4f151bb7a80ae48d144ad0:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzAwMTExODkxZjhiOTA3YTZlN2U3ZGJhNDdjOWVlYjA5NDZjNmQ1YjVkNTk5MWQ5ZDBkMjI2OGI0NmEwY2JkYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTA5ZWQ3ZGNlMjM5Mjg3OTZkYjgxMTYwM2Q5MDc5NzFiMTE3NTJlMTk0ZTVhMmQ5NGNmMWQ1MTIxZTQ2MTA0MCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZmY1MzdiODM0ODlhODEyNzQ0MTNmMThkNzRiMTI2ZDdlN2NmYTg3ODJiZWUyYzYxMTRlNTNiZDVlMDIwNzJlZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmZiNGFlMmRjN2I5OTdjYjg0MmRmZmFkNTFjMDQyNTc5OTQyN2VjMGUxZGRlOGY1OTZlZDBlNTU1ODVmMzYzMCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_ccfb6fc2dbe5476bb156051289f59955",
+      "statement": "The trigger writes the window watermark and clears the unjudged counter before evaluating, so a closed window is evaluated exactly once even when the gate declines or the turn faults; re-opening it would cost a gate call or a turn on every tick.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/participation.py#L206-L239",
+          "version": "repo-lines-v1:sha256:b0ad3ad62b46699c981beddf360ed08f0f8c5e758ba12b86edc9a0cac8929b9c:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZkODBkMjFiZTYzM2I4M2U2OGY2ZTg2MTU1ZWQ3ZWRhMWE1ZTU0OTE5OWZlZjgyNjBmNmZhMDk2NjlhYTAyNTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQwZDQ1M2QzNzU5MjIxNjc3ZjkyZTMwODEwZjNlN2Y2Yjc3ZWUwM2UxOGE2M2UzZDE3MjNjZTk3MDg2YzJmZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVlYmE0ODIwMDU1MDBjNzljZDVjYWZiODZlNjEzYjNmYzVlOTRhOTM1N2VhMzNkYTc0YjMzZmZiNWJlOWExNGYifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_participation.py#L100-L137",
+          "version": "repo-lines-v1:sha256:9d56b988b336999c1cbd95a14504dc8dbf2a5ed737fd8bc8e91151ffed8838c9:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk5NWI4MGE0MzRhZDZmMjFmMDM4YTUyOTFkODExYzk5MmYyNTRhZDk2YjllOWZlMGQ5NzEzNGJkNGY0ZDI4ZTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdjZDFiYjBhODZhMjM0MjYxOTE0NTVjZTEyZGNlN2U1Y2E5YzFhZTNhOTIyNWRlNGIxYTgzYzU0MWQ5ZGE4YTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE2NzYyOGE4MjI4ZmYxY2FkNjUzOWMzMGFjNGUzODZmYjAyZDMyMWYxOTUwMDRkZDlkNjQ3OWU3N2MwZTM3MmEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c4082ec4f8c7410db3445740f639a801",
+      "statement": "The window takes the conversation slot only if it is free, via try_acquire; a held slot means the window is closed and skipped silently before any gate call, because a tag must never wait behind an ambient thought and a stale burst must not be answered after the conversation moved on.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/participation.py#L15-L21",
+          "version": "repo-lines-v1:sha256:e95f96886416463c71cc6d17548c9d33ad545b27e55d2e550f100884aa0e1e2c:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDM5OTQxN2I2NDcyYjM2YTc2Y2Q1ZDUzYjBkN2U0ZWM4NjMwMzMyMWMxZGZmOTBhOWJjY2NiZDNiMzc3ZWNhOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmY2ZGIxODUxZjY1ZjdlNTU5NzkxMmI3NzQ0ZmIwMzU2NTljYzE2M2RmYWRjYWEyYjVhNWY5MDA3MmZmN2UwZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjRiNDgyMWYzZmQwYjM2Y2QzOGYxNTAwZWFiMzQzZmNmODliNmU1ZWNmMmNlNTc1ZDZhOTI3OTRjMjMxZDgyOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTBjYjM5ZDQ4ZGVhOGU1NzBmYmRkYjJhYjIyZTNmNThhMDQyOTk0YTQ1ZGE1MzFlMmU2YWU4YmRkODZjOWE3OSJ9"
+        },
+        {
+          "resource": "repo://nora/app/participation.py#L240-L249",
+          "version": "repo-lines-v1:sha256:e9f5b73480f6ea54c143550aa1f349e0183c00fbcce5fe46a8c7201f55a13277:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MjFmNzkzYTVkZmU2NjBkZWNiNjU4MGVhZmM5NGNkZDdiOTBiYWI5ZGUzNGQxMGM3NWZhYjExNmEwMDEyN2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlkOGE5ZTljMzI1MjgyMGM2NWE4MTY1MjBiOGRiNDkzMjI4MDg0OWVjOGM3ZDJlYjYyNzJhZmRmZWJlMDU5YzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlmMTAwZjYxNzNmMjgwOWIwODdkNjNkZWQ5OTdlYjNhMDhhOTg1ZDQzYzNkZjI3MjUxZjhkYTI3YTJhMTQ1M2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJmYjhkMTI4MDcxZWIxMjlkMjQyNThhZTA0MDU3MzU0MTIxMDk2OWUyM2Q2YjU4ODY0NDA2OWMzNTI1ZDgwNzAifQ"
+        },
+        {
+          "resource": "repo://nora/engagement/slots.py#L60-L67",
+          "version": "repo-lines-v1:sha256:eba7e5233dacf04783ddc4f9d9d91c227029fcd5fea01eb8551924cf1c788499:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOWMyNDAxMjE5MTc5ZTRhYzEyNjQ2ODBlOGM0YTdiNGIzMTgzOGNjMjY0YWJkNjA2ZDliMmIwYmJiZjE1YmVlMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDEwNDI0YmRlM2FkOTFmZjhkYWVhODFhNGFhNTA0YjJmZTlkMzc5MjNmNTkzNzkxNTJkNTQzZDdiNGRlYWY3MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzA2OTQ3Zjg0ZmEwZTE2OWFkM2E0NzlkOGM1NThhMGZjYTQ4MGE1OTFlY2IwMmQ2MTg0ODU2MDk5MDNmZDVjYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTUwZWY2MzI0YTIxMjZlZTM0YThiMzIzN2E5NTI1MjgyZGU0YTY0ZDc1ZTBmYjY3NzhjN2Q1ZjBlZmI1OTQ1OCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_b115f2d5d44c4c8ca3f46051bd4d7e45",
+      "statement": "The slot is held across the gate call and the whole participation turn and released in a finally through release_and_dispatch, which starts the next queued tag turn immediately if one is waiting.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/participation.py#L250-L296",
+          "version": "repo-lines-v1:sha256:677a7f2a07ec2e3bfe1cef199eced805c59f3ac287d4298ab443c6916b088151:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk1NzgwNWMzZmU3YWM2MzA3NGY2OWNkYjI1YjlhY2Q3YTg2NzkyZGZlNTQwODE4YWM0Zjg3NjRiNDllN2QxNGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlODk5ZTA1MzYwNTZmNWZiMTY3ZjNmMjA2OTk3OGQ5ZmUzZjNmN2JjMDRjNzRiNDIzNmY0MjNhZDFlODkzYjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5ODYwMWIxMzI2MjAwZDJjZjJmMGQ5ZTYzNTZlMjVjNTBlMTY5Nzg3YTAxMzVlOTliMjFhYThjOGJjMzdjNDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU4MDU3YjZjYTAxYjZhZmYzMzZjZTJmYWU0YzhmYzMxNmZiZjYyMjZjNDg0ODFlOTI5ZWNkMmUzMzEzNGI0MWIifQ"
+        },
+        {
+          "resource": "repo://nora/engagement/slots.py#L72-L82",
+          "version": "repo-lines-v1:sha256:4525001fb2cc4f6a52f0f4dfb9f287f6767288c6bd83ee134739052557145a57:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkwYjAwNTc5YmM1M2EwMTM0ZjMwZGUzZWFiYmViYjVkYjFmODllNDU1ZDMwODE4ZDAzZGI4M2JhOThjMzU0MDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxZmNiOGE4MGVlMmZlOTI4ZDQ5MThkZGRlYzc3M2RmNDk1NWY0NDEyNjQ4ZmYyNDJiY2JlNDc5M2JkNjY1MDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhkMTc3MzgzNTEyNDA2OTQ1YmNmYmZiY2YzNzdmNjIyNWVjMTQ1NGFhMzhhMjdiZmMxZjg1YWEwMDYzMWYxZTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgwMjI2OGI5YWQ1MmUxMGViZmUyODAzM2QyNDI2YzM1ZjBiM2U0ODA4ZDc5Y2Y2NDNjOGMyYmIwOGY1ZjZjYzIifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_participation.py#L406-L439",
+          "version": "repo-lines-v1:sha256:ab18ebef6f9c3e870d229dbd50cc247f7b356f8320cffa38622ce227ecb18657:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVmZDQxN2Q1YjRiYjBmOTRkMGE3ZjRmM2I4ZDViNzg4MDhlOWJmYWNlOGQ4YTMyOTcyNTk2YzhkZGM5OGExOTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1MzkxMTQ5MDNkM2FiZTc1MzEwNmUzYmQ2OTFmYTUwZjgzMzkxNzZlMDBkOGJlM2NmOGRmYzg2ODVmNTY1YTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA1NzkzZjQ3ZWI2YjU3YmY2MTEyMzhiZGM0ZTNmYmNlNjM4YzRhZDc3ZWRjOGVjYzU3YmI3M2E0ZGQzNjQ5ODIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNiZDJkZDc0OWU1ZmQzNjBjNGZmMDRiM2MzZmRjOWE0NDA1M2VmMGFkZDhjYmE4ZGRjZjdkM2M1ZjZkNzJmMGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6e01075d4b1341a89fac8c60111c0849",
+      "statement": "note_message is synchronous and called from the dispatcher, which must not await it: it sets the room's message cursor to the trigger's own clock reading rather than the message timestamp, increments the unjudged count, and remembers the conversation type, deferring all evaluation to close_due_windows.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/dispatch.py#L67-L80",
+          "version": "repo-lines-v1:sha256:e14aa955ed997bbb5749eacadc10a9f3c14b717f87951c6d0080abaf0156b157:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJjYzZhM2E0MDkxNWM0NjFkOTI1YTA2YWU3NzJhNDg4Nzg2OGFmNTYzOTAyN2FiYzY5YTVmZDVmYTVmZDk3YjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVlN2JjZDM2ZWY1M2I0NDUyM2U2NWU5OGQxOTQ0OTkzZTBmZjE3NDZmNTUzNmMxYTUxMTc0NmYzZTAxZTc1NmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEzNThkNmMzZDMzODk2YTU1NzJjNDkxZDVmY2ZhMTcyZTIxMzZhYjhiMzI4NzMxMGE5ZjAwZWM2MDBjOGM4ODQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhZTc2ZmMzODk5NmFiZDFjMDkyMDRhOTUwZmQwMWI0YzY3OWJmODVhNjg5M2I4ZGE1Yjk3MTk0ODEyMWNhNDMifQ"
+        },
+        {
+          "resource": "repo://nora/app/participation.py#L178-L185",
+          "version": "repo-lines-v1:sha256:6a11086431139e0a2358a4266992e1f992846a0bf811a4ecabed5e36d279f97a:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjc2NzFmZjFiNjJhMjVlNWM4OTViN2VkZDRhOGVkNWE0OTVmMTNlNzliZjNkOGRiYjBkNDlkYjI2Yzc1NWQ4ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiM2U1ZWJmYzRlZDc3MGUwNjQzZGQwMDFmNDRmNjhiZmI1M2I2NjY3YWM0ZjdiZTgzMjk3NmNjNjFkZjM2NTMxNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODAzNzBmNzY2MDEyOTNmYWFmYzg3YTQzOTE0YTQwM2Y2OTk2MTI0NDk2OGFhNDM0YzBjNjRjZjdiNWJkOGYyMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzk3M2VjNTAyMWE0YTA0Zjc0YjBmOWQyY2Q1OTJiOTljZDRkYzc0M2FkNDc5ZjkwNWVlM2ZjMDRjMTc1NDg4MiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_f0803d5e881f4ce29e45c3889ccc0749",
+      "statement": "The trigger's retained state is five per-room cursors keyed by (platform, conversation_id), bounded only by sweep, which the runtime loop calls each tick with a one-day TTL on a two-second clock rather than the trigger calling it itself.",
+      "evidence": [
+        {
+          "resource": "repo://nora/__main__.py#L46-L51",
+          "version": "repo-lines-v1:sha256:703f9e8c4f0348a267ffd949243e016d4202cd6017c7037a834229b29e44fa8b:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGUxMWZjMTA1OTNkMDYxYzkxZTA4NmRhYTVkNmQwOTkyYmFiM2RiYTc4YjVjNGU3N2U2OTVmNjc5M2YyNDZiNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMGFhZGU4Yjc1ZWRiODkzNzI5NjI4YmI4ZmNhNTIwZTZkYTM1ODY0MjMxYjFiMWIzNWEzNmMxMmU4ZDMzOTU3YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGM4NmI0NzlhY2I4MzU1ZDIwN2JhZjVmODE1NTJiNjg3MGI3ZGYzN2U2OTQ5NjFhMmRhYjczN2YwOWUxNTBmMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDczNWRmNDBkYjU1NjViOGU3YWY5YmQ1ZGVjZjZhZmYwOWEwNjUxMmM0Zjk0NTY0N2QwMDM4YmZmMmQ1ODkxZCJ9"
+        },
+        {
+          "resource": "repo://nora/app/participation.py#L27-L32",
+          "version": "repo-lines-v1:sha256:03a008c9eb45b6b28205e3b387b83d17303514036713a71586a5f82538930737:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjAxMjA5YmIyOGVjMTczNDZhY2I3NTg4ZGVhZmQ1ZWRkNGM2M2ZhZWJhMTdiMzNjODYwZGMxODAyMzRhMDYwNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTlkMmZmODNhYWRjZjA1YTU0YTllNWIxMWFiYjNkOTNjNWIxMTY3Y2M0MDkwZTMwNWE4YjZmOTdlMDk5MmY2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDRmMTkwNzhiMjQ1NzY0MWQ3Mjg2MjFlNmNmMzUxMTg3NjcxZTI1YzUyMTg1OWRjOGI4MDczNWI1NDllNzgwYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjE1OTQwYzk4ZTQxZmRjYTcyNTI1OWVhYTc2NDM1YTdmZDdjNWU0M2Q3ZTJhNWM4NmFhM2M1YjAwMDcxZWE5OSJ9"
+        },
+        {
+          "resource": "repo://nora/app/participation.py#L402-L424",
+          "version": "repo-lines-v1:sha256:e68bdd681ecb09d3b0062e28f66d44b3d6e88a63f93f631e2bf4aa337427b2f4:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM0YjJhNjFmNGVlZWMxNmQyMDJiYTFkMzAxZjdhOTViZTFlMmRiZWI3Y2M5Mzg0NjY0YTVjMDM1ZDc2ODcxMTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYyMjExMDUwNGQyMzdjMGExMGM2Mzc2OGEwOWYzZTcyMGQ5ZWEwMjJiZTZhNWVjZDFlNzE1MGUxYjgwZWFhMGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMxM2E4YTg3ODM5M2MzYzEwNDc4MGRjYmE0YWI5NjU4NDRmYTQ0M2U0NGE2YzA0ZWIwMTE1MTNjODQyY2E1OGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://nora/app/runtime.py#L259-L291",
+          "version": "repo-lines-v1:sha256:ecf5b11331b398dacb48ca2ed2064cfe8998d83aeb60a97d8397a28cb1dddc3c:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1YWQ1NTVkOWIwZTVmOTE5MWFhZjRlMDdlODQ3NTk5N2JmMDkxNGIzNDZhYzNmMzIyYTdhMTI3MzAzM2NlOGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliZjI3NzJlYjY4Y2I2MjljZDFiMDdmYTEwZjU4MjU5MDA1ZGJmZWMwMzRmMjhkYzYxNTRhYzhiOTBlYjllN2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUyMjljODc4NzJjMWIzM2VhMDJkMjNmYmRlYzI4ZDc2MDNhZmQxZDhkMzZhMWE0MjlhMWJkMmMxOGQ0ZWViMzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8c6f2a09b37f49d9b78ad7b6794636ea",
+      "statement": "The Relevance Gate is admission control and nothing else: one call whose only inputs are the room's transcript window and its standing, with no tools, doctrine, loop or drafting, because its question is whether the window is worth a reply from anyone while whether Nora holds something to add belongs to the turn behind it.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/relevance_gate.py#L1-L21",
+          "version": "repo-lines-v1:sha256:8ad1447627e8d14eb79525022b63db308bcf8b775d6622ea13019ed9f7d3fe77:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYyNjk1Y2YxOWM1ZjcyZDkxMDkxMjczNzVjYTYxN2I2MjNlMjM1NmYxMGVmMDBiMTY3NTlmOGQxZjViZmYzMjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAzYTY1Mzg4NDA4ODA3OWFkY2U0ZDM3NDRkMjU1ZjNkYzI5MjNiY2M1NzJhMDJkMDBhYmMwN2U0ZjgzNDIyODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY3ZTJiMDU5NGU4ZjRjMjdkYjg2ZDFlNGJmOWIxNTlhODM0ZTM0ODM0NjM2NDU0NWRiNmQ0NmJhNjJkMWYyNWUifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/relevance_gate.py#L492-L500",
+          "version": "repo-lines-v1:sha256:380b158d4218c327eb2d9def2a303a07ac8692ffccdf6f989079b032ae3cab85:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTYxODM4ZmM4OTlhMjVhMjQ5ODNiNWY0NGMzZmM2ZDE1NjM3NDA1ZWNhYjMyOGY0M2NhZWI1ZWM3ZWMxZmQxMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTZhNzE1MjU3MmVlODRmMTA5MDZjNzRiOWYyYTkyNDM0ZGRhYjBlM2M0MjgxM2IwNGU1OTdlZmNlYzk1MWIyNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiY2U0ZWUzY2JjNmZkODJkMWM0MWYzZjllMThkOGJiZGQyMGM3MTJjOGQ0ZWM2OGM3YjVhZDg2MzBlYTdkOGUzZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDMzMTA5NWQ1ZmQ5NDk3ZjQzZGQ2OTAxYTkzZjc0M2JiNjU1NTA2YTA1MGUxNWMyODE1YmYxYzlkNGYxMzI5OCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_75c90bd1902b434bad429025fc01740f",
+      "statement": "The gate's two visible blocks, group_transcript and standing, are declared as a data table and rendered by a function that can only produce a closed set, so a third block would be caught by a test rather than silently widening the gate's input.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/relevance_gate.py#L369-L399",
+          "version": "repo-lines-v1:sha256:2654836f3d0f29a5d6151eac3ddb2074f8451839bf72f206a181ab845c468112:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFjZjg2N2UxMjI2YmNlYmMzMmRiYjQ0YTUyNDQ0YTUwZGEwZTgxNTg0YTdmYmIwOWVhYmU3YWVkNzQxNWY4NDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM4ZDYyZTNlOGExYTE1ODRmMDU2YWQ4ZjJmZDY5NDQ1ZGQ5MjhjYjNhNWE4NDRmZGI1Y2FjYzE2NmE2MzA1OWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFhYWViYjI2OTNmNzBiNDQ2M2I2NmE3MzM5MTU0Yjc2ZmM1YjlkOWYwNjU2YjJjNWRmMzJiYmQ2Zjg0ODRjYTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEyNzdjYTA4YWM3YTZkNjkwMjk1OTJhZThkNjkzNDlmOTdjNTY3OTVkOWY0MGY2ZTZlNGVjMTUxM2QwYzAyY2EifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_relevance_gate.py#L220-L241",
+          "version": "repo-lines-v1:sha256:a8d2172169bf0ec67a0e444337b6c84dfd70c3a3af890495e705e172fd1c78e8:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzNTI0ZmFmY2I3ZTcwYjA2NWNmYTdhN2U4Mzk4ODAwYzliZDNmZWZmMDJmMGFhZmQ4MDcwMjgwYjEwMjlkMmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBmYTdjZWFmMTBjNzQ1ODViYjE5ZTUxNDc1MDk1ZTE4ODRhZjlkZGUyMWJlZjAzNzAwODQxM2ZkZWI0ZGQxYjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA5MGY0NjM2MmFjNGNjNmYzNWZlYjE0MzdhMjEzMzkyZGFkM2I3Mjc1OWI5NDhlNTQyZDRlNDcxMDhjMTIwNzcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8fca5630a993485ead91037d39819113",
+      "statement": "The gate's prompt keeps the instruction in the system role and the room in the user role, and escapes each transcript body inside its own element, so a member typing a forged [assistant]: line cannot occupy a role the operator's rules do not.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/composition.py#L538-L569",
+          "version": "repo-lines-v1:sha256:04234e1ce2315ba10e1b02ad25d64add1669f9d93fc2bfcbdb203301a9d80f82:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMxNzczNzcwNGM3NzNiOWMxMDYxYWVlYmZiODNhZDZkYmJkZDlmY2Y0YWQ4ZmYwODBjNzk1YjBkZTBkNTMxMjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZmNGY1YTAwMDRlZTYyYmQxZGQ1OWYzZjdkZWM2MjM0YzA2ODUzNzEyOTFkNzhhYzJjMjZlMjdjM2YzZjkwMzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNhYWY3NjQ4MTZmNmZiYTExYjNjNjY0MmQ4YjVhODU0OTk2NThkOTUwYjViNGZlOGE3MTJiMDFlMzM1NWE3ZjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE0YThkMzg4YWVmMTQ4ZjYyZTA2MzFjYzc1OWE0Y2MzYTI3ZGQyOGMxMTE5MDMyMDc2ZjU3YzVhMmViNzJkOGUifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/relevance_gate.py#L303-L315",
+          "version": "repo-lines-v1:sha256:ea318c827fa19a1aca6024a42ae8907669f32c18f7b585c1e7b6659c68d36b91:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0MDEwNDQ0Yjg0ZDVkY2ViMTIwOTUzM2I4NDQ0YjBhNDUzZjA4MmY3YjMxYmNhYmVjOTY3ODIzNjk0YWNlMTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlMzQ5MzFiNTZhNjFhNTBmYjZlYzJhNTI5NTU1Njk0YWM0ZDg2N2UyYjE4YTE2YzkxMzA0YWYyYTAzMzg1MDAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJmYWNmODVmODRlOWFkMTEzNzg4ZTMzMTE3ODUwNTM2YTc1M2RjNTZiNDZhNGYwZmRiODA3ZDIwMzI2OGRiNzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY4MzUyNjVkYTY1MjE0NjkzMjlhMTQzNjcyOTIzOGJkMTc5ZGQ2ZGQyYzQ4NWM1Y2JkZTJkMjM2YzFkMTI2Y2MifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/relevance_gate.py#L400-L426",
+          "version": "repo-lines-v1:sha256:b1fceeca65b967b05c7d603ea80b83e1231d7eff39db8e10b4e65664ed683a57:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2YTcxNTI1NzJlZTg0ZjEwOTA2Yzc0YjlmMmE5MjQzNGRkYWIwZTNjNDI4MTNiMDRlNTk3ZWZjZWM5NTFiMjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcwNmU3MTUxM2MwYzRmMjM3YmZkMDc5M2IwZTQyYTkyODgxNmNlM2QzNDNmYmFlNTA2MGJhYTE2NTE1NGQyODMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYyOTgwNDcxNDU4NDUyMWM2NDNhZWY3OTc2YTFhZjliOTkyZTRjODY1YjlkN2RiYmRhM2VhOGFlNzFjNTI5Y2MifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_42fce7192e214211bfb6578d1a5ee02c",
+      "statement": "GateVerdict.score is reference only and absent rather than zero: it reaches the participation turn as a note in its header and onto the trace, and is never compared against a threshold, because the verdict is the only enforcement surface.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/framing.py#L340-L402",
+          "version": "repo-lines-v1:sha256:597f868bdd64a88e961c17284a789641f92554ceb465b802e86e8f0e4f588478:eyJzZWxlY3RlZExpbmVDb3VudCI6NjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc4NWFkYTU3MDI4ZmU2NGEzYmY2YmJhMjlkZDFkNGQ0NTY5MjUzZjUwNDNlODI1Zjc2NzY3Y2ZkZDQyM2NlZmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYxOGYzNzlhMzY1ZmU4MWMyZTMxZjc5NmMwMjVhYzJhOGYzYzBmNDQ2NDUzZTA1M2ZhM2M0YzBkODBmMWY5MWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQyNmEyNzBjMjdmMDk4NjVhMTcxNjJhN2M3YWJiYTQ5NTc5Yjk4YjliZjc5NTVjNzE4ZWJkMThhZTkyMmZhMmYifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/relevance_gate.py#L233-L249",
+          "version": "repo-lines-v1:sha256:c1430cc85c57e2cc5720adc229717303ea2a8db311996f01fd6cea186d994655:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZkM2I0OWMyZjI3ZmRiMTU0MjNlNGRmN2Y0NjBjM2IxZWYzNzkwNzRkMjA2YzQyNWE0NjlkYThjMjg2YzM5NDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjViZjRkNjk4OGQwZWRkMDFiNGU2OTI4MzkyYzUxY2RkNTRkY2I5ODdiNjE0N2NiZTc2ZDllZjdjYWEzOGQzNmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYwMjM4Mzg1MmFhYzVkYzBhYWMzMjE3YWJhYWQ1MGMzNjljOGRlMWQwMGQ1OTA3NTkyZTMwOTE1ODk5YmZmNDIifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/relevance_gate.py#L898-L914",
+          "version": "repo-lines-v1:sha256:ef8946c573184a2e6c550d394e49d3fdd686ef9ccbdb8b8a4d2c4518057621dd:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk0NzRkYTY1MjJkNTIyODRkMmRlZWY4MjA4MDI0OTdhMWRjMTI0NmJjZTNmNGQ2ODMzMmY3NjczMDVmMmM5MjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY4MTM1NjU3NDhiYmVjYjVjMjJiOTRmMzQwNzY3ZDNiYWJlM2RmOTA2NjUyYTRiMWE4YjRiYzZiNTYxNTIzMmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQyYmI2N2UyMzhiZDExOGU4ZGZiYzZhZDQzMzBlNjlhOTE5YjEwYWViYzMwNzFmMjU4ZTBlMGFkMWQyMjY2YWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c3e80c8abf424a68a2b5ba512b1a1462",
+      "statement": "Every non-answer from the gate fails closed to no_go under one of the enumerated GATE_ERROR_KINDS, which is also the metric's label vocabulary, and a finish_reason of \"length\" is never parsed because a cut-off JSON body can still parse into something shorter and wrong.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/relevance_gate.py#L102-L115",
+          "version": "repo-lines-v1:sha256:2772a725f7ff785f404e7a2ef05c3fd803903203cf88e656368fcb446f640a7f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRkYzQyZGEzNTg2OTlkNDYwYWE1NTcxZjFmNmE5NWM5OWVhMzIzNWY3NDg4OWRjZTI4NDg0MGI5N2Y0M2ZiOTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhZmJhMDUyN2MzOTUzYzRiNmUwZTViNTczOWJhODM2MTJmODA1M2JjZGM5NDY2NzMwMTkzY2QxZDU5MGI0MDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU1NzIxZTJhYjg5OWYzOGE5NjFhNmVlMzQ4YWI3Y2RlYzgyMDk5OGVkN2NhNjkxZmIxZjViMmY4YjdiMjhlMTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVlMjhjYmFmZWY5ZDhiOTE5MmYyZjQ5NjBhZmQxMDYwNjg0NzVjMmY0NDJhZjhiMjdjZTRhOWQxODM2YjUzOWQifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/relevance_gate.py#L23-L43",
+          "version": "repo-lines-v1:sha256:561fc85d51cee305323880b7cff6b005e4fbd4c8ec5a2644c22b5c5e3405e0bf:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU4ODVlZmZjYjEwMjU0ZmRkN2IxMzlhMmZhODNhMjc4ODA1OTc1OWU0MjA5YzUxYWYxYTlhMmYyMjllYzE4MDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2ZGFjNDg3MTk1YjFlMmMzN2ZmNWY2NjdkZGNiNjIyNjcyOWQ1NDBjNDJmZWVkNzJkMGQzYjI5YjY4ZWQ2NGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFjMDYzMjMwZWRlN2ZiZDVkYjMzN2YxM2JhNTUyOGY1NGZiZDc0ZWM0ZTEyYWE5Nzg5ZjQ3M2U0NDY3ODJhNmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcxYzNjMjQ3YWZjZGIwM2I5NWMxMDE0ZWVlMzk5ZTZiZTk4NWY4NjEyMDIxMGFmN2UzZGU1OTI1NmUwNTRlZjcifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/relevance_gate.py#L707-L715",
+          "version": "repo-lines-v1:sha256:1da34435a4250c180c891ae6aeb5d7f6def67e7d832688767bc7653ea37858d9:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiY2U2ZDk5N2E4M2ZhOGJlZWM3ODA5ZmVhZjRjYTE0MmMyZmQxMDhmOTgzOWZiMjVkNTA0ZDNhZTNmOTMwZmZhYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTJjNTNlZmY3ZGUyMzVlN2MwMDM1MGY1YmM3ZWY5ZWNlNmVjZTBmMThiOGE0NjIyMzE2NWI0ZDY1MTdlMjJlMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2UwNzVkNTUyMGMwMzczNDFlZTc4MTlmMDRmYjJjZDQyMTQyOTE2YzAwM2Q2NjcyN2RhODY1NDZlYWUxZTljNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWEzZTIzMDRlNzhmNTkyNTI3MjQ3YzcwMTlkNjEyZjQwZmZmZTdjZTEwY2U5MjYyMDA1NjRkZTBkYzYyYjFlYyJ9"
+        },
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L1589-L1603",
+          "version": "repo-lines-v1:sha256:ce2684d203cf6762dd34e050dc11c6f0d7db1750809bec7514297e9c90f99f74:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc2ZTJhMmY5ZjAyNTkzMmE1MzFkN2JjYTI5YTM0ZDkwNjFmYTVkYzYwMWUzN2UxNzg0MDdlYzNkNWVmMWEzYzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwMmM0MTRiNTRjZjg2ZGZiNGY5MGRmZTdkN2JkYmZhNjY2YjdkZGRkMzJmMTI4NmYyMzBhNWI1MzI0MTgxOGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZjMGNlODFlOGZlYWI5OWVhMTc3Y2E4MTFjZDkxNWQyMDVlMzVmYzI2NWY3ZmMwMTkxYjczMDg2Y2FkMjU1NTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE0YmRlZTMwYzYwZmFmZmZlNGU1MTk1ZThiMTA3ZWU5YzE4M2I0ZjNiZWQyYTVhZDE3ZDQ1MjM4ODlhZTRjMDgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c4adcd1d85414d718e63b2f47ed79000",
+      "statement": "The gate refuses two substitutions that would let an outage read as a healthy gate: an unreadable transcript returns no_context instead of an empty prompt the model could answer either way, and a missing or bodyless participation.md returns no_instruction instead of a criteria-free verdict reported as source=model.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/relevance_gate.py#L725-L767",
+          "version": "repo-lines-v1:sha256:70e2fbd6e0763a2b911ed8384877b1d28fcb3d1ed054c411a8c158c9f1191df4:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlNDRlOGJjZDhmNWRkOTI4ZGFkNTI3NTQ2NmJkYzBmZWY2OWNkODJlOWRjNTRlNDkzMWViOWJiMzNhYzlmN2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyMDc4MzkyZmZlOTM1MTNhNGNlYzA2MjQ2ODZhOTcyM2Y4MzgxYjM4YTNjNjBmYWQ0NmYzYjEwYTc2NjVlN2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM4MjJiNjNjN2IwOGQ1NDBjZDBmMjJmOGIxZjllN2ZkY2M5ZmFhNmUyNjQ4Zjg4MjM4NmU0YjYwMDRiNDYxMzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVmZjM2OWRmM2QwMmRkMzYxYTRjYWJjMjg2ZmFlOTA0MDA4NDIwZDExY2I1YzE5M2IzMzYyYmE3MDZlY2EzODAifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/relevance_gate.py#L773-L800",
+          "version": "repo-lines-v1:sha256:b59d83262cbb4c74b34f3c451a7519999c7082b1120e95d9d1f37e456c9d8a59:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZmMzEyNDY1ODkzYmY4NzVjMzYxNTg1ZjczN2RiNmYyYWEyNWZlMTk2ODRhMGU1YWI5YTU5Mzk0ZjA0MzBmYmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY1ZDFlOGMzYTU4YmNjZWMwMDFlMTViYjY5MjJhNjdjMjI3NWJiNWJjMWEwMWQ5MmIzNzFiM2JkMjQ1ODI4ZTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUwMzMyOWY2MmUwYTQ1MGEzMjhlZWRhMjA3ZGM4OWY0OTczYzZjNzhmOGU2ZTg2N2NiMjhhY2Q0MjE5MTM2ZGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU0MTgzYWMxZDUxMTY0MmVmMTA4Yjc0OTJlY2ZhZTdmY2FjYzY2N2FiZGIyMjE4ZGE4YmIyN2M3NjU0Y2U4NTIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_303ffe6c54624bfa95a2bb0f3158c21c",
+      "statement": "GateVerdict.source keeps a chosen no_go apart from a fail-closed one: nora_relevance_gate_total moves only on a real verdict while nora_relevance_gate_errors_total carries the failure kind, both labelled with conversation_id so a refusal can be joined to what she held for that room.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/relevance_gate.py#L839-L854",
+          "version": "repo-lines-v1:sha256:f47d27c5680197d0eaa077e360e3aab7ae59b4447f253c387e1c05e8ec8af894:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzMjFhMDg0ZWQzYjE5MGMyMWI0ZjZiMTUwMmJmMWIzMzE3ODVkZTZlYjYwNGI2MTdiZDE5NTQwZTU3OGRhMmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYyYWVkMDk5MWQwMmE0NzQ5ODc4ZjdjZjgzOWJkODRiNjU1Mjk2MzVlMmE2NzE1ODUyZDkzYTFhNzAzOWVmNTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRiYjEwNzc5NjQ5ODUxNzQ4M2ZkNTFiOTIwNWMyMWVlYTE1MjE0YWJjNjlmNDIzMGJmNGIwY2VhYzc3NDhlYTIifQ"
+        },
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L1566-L1603",
+          "version": "repo-lines-v1:sha256:29e956fa7559ced2497ee8f5db168f3aef0f898849b45064c549f13d655f862e:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc2ZTJhMmY5ZjAyNTkzMmE1MzFkN2JjYTI5YTM0ZDkwNjFmYTVkYzYwMWUzN2UxNzg0MDdlYzNkNWVmMWEzYzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwMmM0MTRiNTRjZjg2ZGZiNGY5MGRmZTdkN2JkYmZhNjY2YjdkZGRkMzJmMTI4NmYyMzBhNWI1MzI0MTgxOGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY5YjBjNGVkZGVjOTY4MjFmNDEyYmZmZWU4OGEzNjhkMzBkMmNlOGJlMDRlMDEwMmU0NjgyMjNmODA1YmEwMTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE0YmRlZTMwYzYwZmFmZmZlNGU1MTk1ZThiMTA3ZWU5YzE4M2I0ZjNiZWQyYTVhZDE3ZDQ1MjM4ODlhZTRjMDgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_56e9599381f84ed5a87641ae0ace63c8",
+      "statement": "RelevanceGate.decide promises never to raise and never to hang: the model call is bounded inside _ask by call_timeout_seconds, mirroring [relevance_gate] timeout_seconds, because the trigger holds the room's slot across the call and walks its due windows serially; the timeout is counted apart from call_failed and the latency series is observed on every exit.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/relevance_gate.py#L45-L59",
+          "version": "repo-lines-v1:sha256:29028c98214187e3b00e0f928b98030a7e4def415e4ef2dc70bb5703a89aa47d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ2NGE0MTFkYzQ4ZWE0MDQ4YzdhMjc5NzYyN2MxYTJmMGFjN2I5Nzk2ZjU0ODIxM2Y2NWQ1MWVjZjE2M2UyODYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0MjhhNGI0ZDI3ZDJlYTQ1MDg1ZGZhZWQzYTdlOWRlYjBjNjNkMTUxODU4ZmE1YmY3ODEzMjM3ZGRlNjkyOGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVjYjA4N2ZhZDJkYjZjMTg3ZjdhZmQ4ZjE0YTRiMjUwNWI2NmI1YmM3ODk2ODQyOGJhMWYyMGFjZmFlOTY4ZDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhYWY3NjM3Y2I2ZTdlNWRiODVkNjM0Mjc0NjAxNGRmMDQxY2NkNTU4YTkyMGIyOWViNmFjNzE5ZDdiYWY1YzIifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/relevance_gate.py#L594-L605",
+          "version": "repo-lines-v1:sha256:7c70da6150f9b76168b3441fa40eab1edb3a158948b58c3bd8fc6802309ff20e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmNmM0ZjI2YmNjYTdmMmYyNjY2NmEwNTNiYjFlOWFmOTgyZjM2OTE2NTdlOWE3ZjcxMGUyMDQ2OGY4OWUxZDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwZGUyNTg3MTk2MTQ5MjYwNzFjOGZiMTlmZDg2NjE1MDU1NWYxYjAxMzU0ZjhjZDE2MDNhMTA5YTdkZGFlNDAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFkN2JhNTBhZTA1ZDZmMjYzNzFkMWI3MDVmYjQ5ZjFjMmUxMDczY2U2NTc5N2U2ZmVhODc2NzAyYTFiYWIzZTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkxMmZhNDllMGU5ZjRmY2YzMDQ4MGU3MjhlNGFmZWI3NGQyNTE1MmYxMjFmZWNjOWVjNDljNjdkZWI5NjgyYjEifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/relevance_gate.py#L673-L706",
+          "version": "repo-lines-v1:sha256:f4ee01389025de7d52183b9e8e1574b89415ab58c354e9707eaf514bd43024e7:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkZjAyNGFhYjk3YWJlNmE3ZWQ4NDM1ZTQ1ZGNiNzFiNDdjNWVkZjgwYmU1MjMwMjU0ZmRmZjhiYjlhZjA3ODIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdiYmU3MjIxODU5Yjk1NmM1ZTkyMGJiNDNmNDcxODUxYzA1MTViMGZkM2JkNzA2YTMxYmYzYmYxMjY2MTEwMjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY2YjI2ZjBjNjczNjkxNjI5NjJlMWIwY2MxNjYwOTk5ZmE0NWFhNzM5NmFjZGRiMTc3MGIyMzFmODhhNmQ0MTYifQ"
+        },
+        {
+          "resource": "repo://tests/architecture/test_every_gate_construction_bounds_its_model_call.py#L1-L20",
+          "version": "repo-lines-v1:sha256:116810216c7ae2432ae4c762f0db55441a7ac3f1038d050f9e7498aa3c2d983a:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzMGJkZjI3ZTQxZDYxZGY4ZWE3YTFjMGVmYTA5MzljMWIwYTgyNjQyZjliNDFmOWM5ZDhiZjgxNWE3NTMxMzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ef2e8de10fc644eca2839e9500a165b9",
+      "statement": "The gate's verdict is formed on a raw json_object completion with no tools and no declared tool_choice, not on the SDK's structured output, because that transport is measured to believe a forged assistant row — a false GO there is an unauthenticated turn — and the property is enforced by a test that discovers every RelevanceGate construction under nora/ and fails if its client reaches ask_structured.",
+      "evidence": [
+        {
+          "resource": "repo://docs/adr/0011-the-relevance-gate-stays-off-the-sdk-transport.md#L70-L114",
+          "version": "repo-lines-v1:sha256:060df1dd466bb10e0117063e75a58aec465377d2c0841f5e936551a333c153f4:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkM2RiYzRlN2U3Y2JlNWRkYzg5MWIwODA3MTJmNjM1MWM5NGI3MjhlYzhiZDg1NTZmNDYxMmIwNzBkMjdiNDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYyZGVmYjgxMDE5YzU0NDQzM2NmMzhmMGY3ODI3NTU5MjJlMDA3YTBjMzdkMjI0Njk4MDhhZTFiNDliYWY2ZjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIzMGIyY2U4NDZlNDI1NGZjMGM1N2Q4OTMzNWNkNjhkM2ZiNDliMzgxYmQwMjQ1ODViNTY1NGEwZjE2MjgwYmUifQ"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L477-L520",
+          "version": "repo-lines-v1:sha256:8c665d3b9e8de71f718cd883f280dbe9053e05ce889f8480ae618c884d9952d5:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUwNjBhZWMzZjRkYzNkZTE2MThjZTkwMzg4NTNhYTVmMDFiZjA5MzQ0ZTZkN2QyNjUwNDYyN2I5ZDEyY2ZmOTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2YTcxNTI1NzJlZTg0ZjEwOTA2Yzc0YjlmMmE5MjQzNGRkYWIwZTNjNDI4MTNiMDRlNTk3ZWZjZWM5NTFiMjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZhM2NmNTE5MjM1NGY3MTYxNWFjNTEwMzRiM2U5N2MyMGVkYTk5NjQzZmNhZjViYmU2ZDQxYWQ1OWJkMTIxNjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFhYTQ0ZGY5MmU1OTQyMDRjMGRmMGE2NDcxMzY5MWM0ZWM0MzBmNjljZmMxMDAwNDQ5Y2EwNjhhZDdhMmJmOTUifQ"
+        },
+        {
+          "resource": "repo://tests/architecture/test_the_gate_does_not_form_its_verdict_through_the_sdk.py#L1-L53",
+          "version": "repo-lines-v1:sha256:9c9bf287fc88a10082a9fad617f5715c9b8cc681c09b34b5307c791f1a2b1a6c:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIyMGQ1N2ZhMGJkZDlmNzk0MDI3NDI2ZjQzMGNmOWRlY2NhNjhiMjZiMGE2Mjc4YTdkNGE1YjQ1MmMyMGY4YTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY1OWEwNmJjODE4MzExZDA4ZTE5NjBhMzVjOTdhMDUzYzVkYzJhMjViYTQ5YzljNDIyMDYyZmFiZDUzZjU2OGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjExYmQ4ZDY5YTMxYzk0Y2Y0NWMzNTg3YjVkOWM5NmNiOTdiOTY2MTMyNDA2NDE2ZTljODBhZGZiYzNiMjYzNjkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3e32c9fcbe4749fb807957f7bfad03dd",
+      "statement": "Passing the poster is what makes gate shadow mode: a GO is posted for review under audience relevance-gate-shadow and no turn runs, the slot is still taken so the reviewed GO rate cannot exceed what the live path could produce, and a reviewed GO never spends the send cooldown.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/composition.py#L3772-L3777",
+          "version": "repo-lines-v1:sha256:f6c179ba6d5914de3ab20a5e154774f389129491ff1c0e21f4ab1bcd13c05f01:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjhhOWEwYTVjZjQ2NDI3M2UwMmU0ZjdiZDBmYzA3ODhhMjc4OGJlNWVhMWVkN2FmYmNmNjdkMTlmNGZmNDA3YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZGQzNGE5ZGY3NzliOTU2NmIwNGFkMmI5ZTZjZGRlM2IxZDVlNmMxYThjOGI5N2FiN2MyOGE3YjEzYTMzYmQ2YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYmYyMjY5Y2Q2MDI3ZWNkOTlhOGVjYWZlNDM1MzFmZjNkOTI1ODA1YTI5NTZmYzYwNjBjM2ExMThiMjg2YTc3ZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjE1M2EyMzBjZDJhMjlmY2VmNDZhOTc5M2IzOWJlZjhmMjA3ODMwMGFiYmFlYzY0NTBiNDMwYjM3NzVlNzgxZSJ9"
+        },
+        {
+          "resource": "repo://nora/app/participation.py#L145-L149",
+          "version": "repo-lines-v1:sha256:af2021ed3ff68abd77270be9672872c814e736155104e7f52c2cbe01f1656daf:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDAzYjI5NjRkOTkwYTg0ZWU1YmVmZTJhODIyNzY2YTI4NDM2MjkxZTAwNmE1ZjE2NTEwZGYyZWRmOWQ5YjViOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTQ1MzIxNTEyMmRkMDI1ODZjZDE3ODFmZmM0ZjBmMmM4OGY2OWMxYjlmMjk3NzQ2MDc2YjMzYjY0YTEwNzE4ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjJhNTlmYzdmZjVkZTY3NmJlNTBjZTI4ODAxMDM3M2ZmNjg5NzE4M2Y0NTgzZTg0OGY2MWJmMmMyMzI0NGRiOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTdhMGU4YjljMjdmZWRjODcxNTNkNzNhYzIwYTRiN2MwNDlkMzk1ZmFlODU1ZWE4YzBkZTM4M2Q1OGZmMmE4NiJ9"
+        },
+        {
+          "resource": "repo://nora/app/participation.py#L258-L269",
+          "version": "repo-lines-v1:sha256:c5452c0b7c86898f3e8f8b0aa18047c93f584d87a6c5a7c40d35b0138c7ffee6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFjYzkzOGQwMzU5YWM2Zjk4YTBmNjNkOGMyYmU0ODQxMzQzNzA5NDEwODcyN2Q1OWNmYmU4OTgzYjQ4ZGUxMDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyNmU0MzY4ZjIxZjg4OTFjZWQyNGNmYWY3Y2EzYmY5OTg1YjNmNDY5ZDRhNjgyNTZlMTYwOWQ2NTZmMWE3OWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA0OGQ1NzI3NTI5MGViZTc4OWU2Mjc0MDJjMWYxM2MwNTNkNzFmYmRhOTJiNjljZTBjNDA1MjhkZmYzYTAzYTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ4YmVmZWQ3NjI5OGI2NDJlOTMxZmUzM2UyNTEwNjk3MjI3NDA2MmE3NzdkMTE4OWFkZTE5NWJlMjczZDc5OTQifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_participation.py#L338-L382",
+          "version": "repo-lines-v1:sha256:23400177997a6a9d3c81095781000aab58c80baa76adafbc74f62d11a309892a:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgzYTAxY2ZjNGFlN2Q5YzMyOWQ2N2VjYTYzYWFmMGNhNWE1NWY0YTNmMjAwYTE1NzA4YTVhZWFmNWZkMjQ1MzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk2MWQ4OWEyNWI3ZWM0OTRhN2E0NmYxZWM2YzVkMDg4MTU1N2RjMmIyZTJiOWExMTdjYjdhMWMyZGQ3Y2Y2MTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRiNjBlMzcxYmQ0OGQ0MTY3OGIxMjhkZjZkMjMyYWYwYjM4YzM4N2NjNTE1OGQ5ZjkyZTE3YmJhYjdiNDM4OWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ1OTk2ODgzNDM0NDE0OWNiMTBmZjA2NmNlNjU4NmZjY2IyMDM4MGFmYTczNDk2MDU3MDlhMDljZTNhMzc1ZmEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9bcdee56d7f14edd8e757e1e66569dbf",
+      "statement": "The cooldown caps sends rather than evaluations: every closed window is evaluated, and send_permitted is derived from an absent-or-expired last send and enforced in the Deliverer after every guard has measured the text and before the audit row and the wire, so a held message leaves no trace in the room and the turn still answers SILENT.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/guards.py#L436-L452",
+          "version": "repo-lines-v1:sha256:b17afe2316e1b1d7aa79a395099741b17630ccf9cef0013bf2bc2bd78ae85bf9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViNDYxZmEyYTgyODI4ZmQ0Y2QwMGJiNGFmNjVjMDMxODdjNTIzYzYwZTJiMGYxZDllN2M3NzA5OGJhNGUwMDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlmMTFlYTExZWYwMWUyZTk2OWU1ZjRjNjI3MmYzZGI2NmRlNWY4ZTU0ZDFjYWFhNGFmZWYyZDIwYmJhMmVmMjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhkMjJlYTM3NTEyOTA4YzY5YThhOTcxODEzMWQ3NzE5YzJhNDUyYzc0YmFhN2NmNjA3YTIwOTJlOGFiMDkzMGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk4NTgzMmIyYmIzYmFiODdhOTY3NjczNjk1NzUwMDg2ZTQyY2IyN2QxMTA1YTk4M2Y0Y2Y4NjQ4YmFlOWY0MWMifQ"
+        },
+        {
+          "resource": "repo://nora/app/participation.py#L22-L26",
+          "version": "repo-lines-v1:sha256:2a8e5bd7b973c44342d5b1e12c45520e3c95013df3e7b4c07cf6e5dd9f2103fd:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODg5ZDdkNjUxNjIxMjRmYmYyMGU2NDE4NmZmZTZhZjk0ZjgyYjY4YjY4YmUzODEzMzRlNzkyY2E4MDk4MzQ4NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZGU5NmVmZTYzMTEyNmNlZjBlZWQ1NDc3NzY0NDhmOTM2YTg5Yzg2MGE3ZTA0MzZmOGVmMTFlNGRiZDNmMjhjMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGFlZTIzMWFiOGU0MWUwMWZiMDI1NThjOGE1MzE2ZGE2ZjJiODlmZTJjOWUzMTY4ZTc1ZWE0OWFhMDljZjFhMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODY3MGFlOTBmNDY1ZjY1Njg3Y2YxYmMxOWM5OTEzOTI4YTg1YTZiN2MwODg0YjYwYTEwMTE3MTNhNjI1MGU2OCJ9"
+        },
+        {
+          "resource": "repo://nora/app/participation.py#L270-L294",
+          "version": "repo-lines-v1:sha256:f41e6510673295479adf74564b08cec4132e85ba3f66ec13a017452065e5e6a9:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5YzFlMzRlNDRlZWM3ZGUyMTZkNDExOTNiNjE2ZThlZjM3ZDg0Yjk1MmI2NTZhZmVmYjJmMWFlYmU5ODM1YTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzYmVmMDEwZWFmOTkwYWFmMDUyM2RjNmQ5NWExZTMzZDhkM2U2MzhmZmY0YmY4NmE3NGU3OWYwMDA4NjczNjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc1OTc5ODFjYTViNzZlYjY2MjY1YTk3MTYwOTQ5YjM3Njg2ZTdmMWMwMmVmY2RhZWU4NWNlOTE1NjcyNDExNzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIzOGE3M2I5ZDhjZmEwZDdkMGY0N2JjMDk0NDBhMGNiOTcxOGUxY2YyMmI5NDA0ZDM0MThmZWMzNGNiMDIxY2YifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_491bef4f15f8455287b5f13b57253de6",
+      "statement": "Only a delivered send spends the cooldown: the trigger stamps the in-memory send cursor on the same tick and then attempts the store write, so a held, silent or failed turn leaves the cadence untouched even if persistence fails.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/participation.py#L289-L294",
+          "version": "repo-lines-v1:sha256:fb3db70ef1939d7dfd98e5b81e48923cd53ed8852d4ff99f791f06f2181bd80f:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjVlNmQ0YWUwOGQ2OTFmMDZhNWZmYWYwMTVhMTRhOGU5NTNmY2I1NjkzY2EyZjg0OWZkNWNhNjljZDRjNjU5NCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTNiZWYwMTBlYWY5OTBhYWYwNTIzZGM2ZDk1YTFlMzNkOGQzZTYzOGZmZjRiZjg2YTc0ZTc5ZjAwMDg2NzM2NyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYmZiZDBmN2E1YWIzZWZmODcyNjhiNjNmZTRjNTFhZTVmM2JiMThkYjNkMWFmOGI4ODAzNTc0OWU5NTQxNzI5ZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjM4YTczYjlkOGNmYTBkN2QwZjQ3YmMwOTQ0MGEwY2I5NzE4ZTFjZjIyYjk0MDRkMzQxOGZlYzM0Y2IwMjFjZiJ9"
+        },
+        {
+          "resource": "repo://nora/app/participation.py#L345-L364",
+          "version": "repo-lines-v1:sha256:f25f75c0558beb3db2a980f6f9bb471b760223ee37798c225d0d5485dbc2b35e:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkxZmYyNzI5NjNlZjk4NDczZWQ5MDQ4YWU4NTg1ZTMxOWI0ZmQ3ZmJiOTA5YjAxMzc0ZGRmMzQ0YWQwNzg2OGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliNjk3M2QzYjZlMDVlOWY0MmM1NGVjNDhiZDBjMzk0MTc3YWE1YjQ5Nzk4ZmI1YzkyM2U1NzQ3MjRhM2NhYzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJlYmY0YjkwNjUxNmI0MGJiMTZhYTc5M2MyZTljZWEwNjQ5NDk3MjYxYTI3ZTU0OGQyY2Q2ZjYyYmViNDhhMTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImViNDRjZTc2M2U3ZTQ1ZTA5ZTQ5YTM0MTA4OGIwYmUyYTllMjliZGViNjE0NDY1ODEyODkzM2JmNDkzMTNmNTkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_84b941a2ef13451bad6745783e654f05",
+      "statement": "The five cursors are split three ways across a restart: last window end and last send are stored, last message at and conversation type are re-derived at hydration from messages, and the unjudged counter is deliberately neither and restarts at zero, because a messages-derived count would close windows earlier than the live trigger does.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/participation.py#L34-L60",
+          "version": "repo-lines-v1:sha256:403fb344c5d100e9b8b9431e9112654f68a825d98762579909b31424b8851cc0:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRjOTkxYTczNWJhODk2NjY4OTdkOWMwNjgxNTNhZGUyYmY3ZTA2ODBlZDEyMWI1Mjg1ODljYmZhYmFkMzA1MDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ2MWRjNWNkMzc4OGJjMDA2MjhhYTRmYjVkOTM2ZDE4YTU3ODA0Zjg2NjdlODg3MWU3MmJkNjQzOTJkNzUwNGUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg1YjY3NmJjNDk3YTM3OThmYTRlZTlkYjUzNTU2Nzk3MDM5Njk4OWQxMjBkOWIyN2IwODg1YjNhYWZjMjZlNjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhYWY3NjM3Y2I2ZTdlNWRiODVkNjM0Mjc0NjAxNGRmMDQxY2NkNTU4YTkyMGIyOWViNmFjNzE5ZDdiYWY1YzIifQ"
+        },
+        {
+          "resource": "repo://nora/domain/participation.py#L1-L28",
+          "version": "repo-lines-v1:sha256:0a99e9138ba83648d62b55c83d2dc1a74274549e16576b1b9e86aabe8ba4711e:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2NDA5N2I0YTUwYzIyNDRkZDljNWYzYWM3NWNjNjEzNTY3MjUyYzUwZGZjYTIzNjdmYTYxNDY4MDI1ZDA3NDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc0ZDA4Yzg0ZGY4MDJhOTg2MDcxNzg3MDFhYWZlYjg2NTBkZWNiOTFiMWNlZjJmYzFlOWRhZWZhNjJjYjdmNWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhYWY3NjM3Y2I2ZTdlNWRiODVkNjM0Mjc0NjAxNGRmMDQxY2NkNTU4YTkyMGIyOWViNmFjNzE5ZDdiYWY1YzIifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/migrations/versions/0056_speech_trigger_state.py#L20-L30",
+          "version": "repo-lines-v1:sha256:8b58e58cfede66d14b6bb1222db0e99165444a11a55036f582ece2f496113693:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcyNGQxNjExMWJmMjIxNzE5MTZlY2IyMDAyYjBmNjIxMWViYThmOTE1ZjQ0YzNjZDI0NDFkNmZmZTJmNWQ1NmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5YjAzZGEyNjI5MTJlODlkNmY3NDE1OGNlZjM3MzllZDYxMzdlMjgzY2IzYmI2NThjNWVjMGQyZDY5MzVlZWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJmYWNiZjM1ZTRjZmI2YzkzNGQ0YTYzODAyNmYwZTBmZTFmMDZjYTg4NWY2MzIwNGE4NTJlNWUzNWM2NDU5ZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJlYzJjMDhjYmViNDNlMzk2OWQwOGU0MDc3MGMyNzhjNDNkYTE5YjdhMWZjYTczNWQ3NzBmYzY5ZGZhN2U5MjMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_44c487e5935945e5a45d2ecda63b704e",
+      "statement": "Hydration runs once per process on the first close_due_windows and uses setdefault, so a message noted before the first tick is never rewound, and _hydrated is set only after the read returns so a failed read costs one tick and is retried rather than evaluating against half a cursor set.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/participation.py#L304-L329",
+          "version": "repo-lines-v1:sha256:3309573a57b368cc9a0de7ecea939bb34aad692b0d632eda1a70858e2bfa3cf7:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU3ZmNjNWU5OGRjZTdlYjA5OWIxYzY2MTZkMWRmYTZmNjg5NzAwYzIzNWYzOTMwOWJmOGU3Yzg2ODMzMWI1ZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBhNWFkOTY1ODAyMDlhYmZiOGIwODQ2M2M2ODk3MmI0YTljYmNiOWYwZWM3OGU2Y2M5M2ZjOTFjZjhkYjE2ZjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNmYmVmYjlkNjY1MGFhMjgxMDk0ZWM4YTEyODYyYWUwZjQzYzUxMzQ2NzFkYjU0NGZiOTlhODU1MWU3ZWRlNjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM0OTU5NTZlNDY2N2YwN2YxNWY1OGQ1MDI1ZmU3ODVlMGU4OGFiNjk4MTY4ZDQ4YjAwNDU0OGUxM2QyNTk4OWMifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_participation.py#L697-L748",
+          "version": "repo-lines-v1:sha256:f565335e101792da8d6b11c580df4d938ef43da4116ebfe9d34984185581d1f9:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhY2U1MGM3ZmFhYmYwNmE2MTVlYTRhMWYyYmJiZGI0MTlkMWE0ZTQzODI1ZGE3MjgwMmMwZDMwODM0OTljZTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ2OWExMWU1OTFiMjMzMzk3NDEyYTIzODFkMWY3ZDliOWZmYzNhMWVjZDFmZjU4MGIxY2YxMTc3NjczMDBiOTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBhNWI3MGQ4NmVkNTA0YWFhN2UxYWU1NjBkMjdmN2FhYmRhNzgwZjlkZTE5NmQ0MzI4ZGFmZTUzYzAzNTc5YjUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c8d82eaa61a74651a62fcf917af788a3",
+      "statement": "Persistence is a mirror, not an input: the store is an optional narrow three-verb protocol read once per process, read_cursors joins the watermark with the newest inbound non-Nora, non-hidden message in one statement, and a failed write is logged without changing what the trigger decides.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/participation.py#L82-L96",
+          "version": "repo-lines-v1:sha256:2bf5bd3f85fe8238c0b36f9966317d3635219799fd2238f9c98ac2ab4b321009:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1ODNhMDM1NDg0NTExMGRlNTlmYWQzMzRmNDg4MDYwMGQ1ZjIxZjA4ODgwZjE5OGU0MDM2ZDJkZWNmY2YxY2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzOGQ5MGMyOTg3ZjhiODQwYzQ4ZGU3ZTRmNDU3ODI4MGQ1ZjU3ZGNlNDAwZTEwYjM4MWQ0MTZjMTQ5ZjBhM2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI5NzdhNTIxYmViMzM2N2EwMzBkNTI3NTUzNGZkZWUxMGQwMDIzNTRiMmJjNDcwODFiZjAwNTE1NDA1NmQ0N2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhmNDg2YjM0ZjllNjk1MjIyZDE5MmJhOWZkY2ZhOTRmMjkzMTU3ODc1YjNkYWI2YzRiMGQyYmI1NmRhNjI1YjQifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/participation_state.py#L1-L29",
+          "version": "repo-lines-v1:sha256:bac4d684f924e8c2619f4ba7474a177fef34d9600d1c63c30965f716d642a716:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRjNWJmZjk0YjIwODE5NDM1ZTQzNTI5NzkzMTJhNmE3MTU0MzFiNjcyZGM3NTQ3M2Q0OTgyY2Y2MjJiYTMwNzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/participation_state.py#L50-L99",
+          "version": "repo-lines-v1:sha256:b77e10c4489f8f5316a0752df1de31b35a885feeec798209791487f7541a3de5:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlYWMzMTZlNTFhODZjMGNkN2JhMDA4YWRlNWE4ZDY3MDI0NWE3NmE3Y2MxNjc2M2FjZDgyZDQ1YjJkYmJkNDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhYWU4YTBjYTc2Zjk4ZjdiN2RjNzk4NDk1MWQ2M2U1N2RiM2M2NDU1NzljYTUxYmFkNmE1MzlkNjE0ZWRiYmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY5ZmVhNTBkMTEzMTVlZmJkMTYzYjI3OWNlYmFmYzU5ZTFhMjJhMzQxYjBkNmE5ZGUxNWQ5ZGQyMGJjMjkzNTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFmN2QzZGUwMDZhMTFiMmY1MWZkYmY2MmY3YTAwNWVjODFjZGY5YWNiMmNmZTVjNTdmMGZiMTcwNDgwMDhkZGEifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_participation.py#L763-L780",
+          "version": "repo-lines-v1:sha256:2b2a3540bd6e4e6b01336a92ea02296fb3896e7b084a69ceea0a13f58a2ba9b1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE5Mjg1Y2M3NDA5N2NhYzAyNTQzYzU5NTlkMzU3MDY3OGUzYzU3YmIyOTRiYzI0MTdjOWI4Nzc3NTAwNjU1MDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM1NTA4ZTNmMDI1NTE1NTY4ZTFiMDY0NTgzMDYxYmMzMDA2NTIxYjIzNDcwZmI0YTE0ODg0YzUyNDZmOGIzOWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNhNjQ4MTAwODI0MDFkZjQ5MGQwNGIyZjYwZmIwNDUxYjgxMjY2NjNlNDYxYjdjZDBlYzI5OThlM2ZhOTE5MGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMwY2ZkNGZjNjVhYWI3YTE5M2JhZjcxNThhMzA3MzQxMzE5MmYyN2I4ODIyZWE4YjZjMjRhZmYwNWI4ZjI0YjcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7c667b08afca4aa197b30763e966d2e4",
+      "statement": "record_window_end is an upsert that deliberately does not touch last_send_at, while record_send supplies last_window_end_at on insert, so a close that ran no turn or stayed silent leaves the cooldown intact and a zero-row update cannot silently lose it.",
+      "evidence": [
+        {
+          "resource": "repo://nora/infra/sql/participation_state.py#L101-L154",
+          "version": "repo-lines-v1:sha256:6bd4173f9ae8cb86d9b8845a0426e5a7ede33a44cad10d38c42476395556a9f4:eyJzZWxlY3RlZExpbmVDb3VudCI6NTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIyMWQ4MjRlZTYwZjc4OGIyOGRkNTg0OTc0OWUxOTdhNTMxYjZmZTU5NTRlNWNkNzgwNWE4OGQ4NjY0OGE5NTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJkNWYxMjI0YzZkNDJlNjVhZWMzNmY2ZGNiMGIxNzZjYWQwYmNiNTQzZTVmMzcwMzM4ZDhmNjNmOTRkYTBlYzciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBkZTg0NGY1YzRhMjEwMGVhOGFjYzIxMTUzZTQ2ZjQ0OTcwMDdkNGVmOTAwN2IwMGRlN2VmZGYyMzg5MTYwMjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://tests/infra/test_participation_state_store.py#L135-L178",
+          "version": "repo-lines-v1:sha256:e8a9f2ea01ed3df0c294a4bc6da2841c84f747de9f99ba3edc183c4ef8048ced:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVkNmJlN2ZiOWVhM2EyMjI5MWY1YmIxYThlNzc1YTc4N2E1OTQ5ZWQ4NWEyMmRjNTAzZmE3ZDBjM2I1MDZkMjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBmNTQzOGI5MTZhY2JjNDkwZTZhMGFmMGMyN2RhN2JmMGU4YmZmYjQ0ZWM0ODE3ZmFmZWNjMDlhMzIyNGVkZWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5ZmI4ZDk3MWNmOGIzYTQ0NTRjYTkyYTUwMTU5NDJjYmE2OWYyOGJlMmEzMjVkODJjMGU2ZTljZDlmMDVhZjYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_493ec01b416641289adbe7d55f6610f4",
+      "statement": "participation_occasion builds an Event with person_id=None and body=\"\" because the quiescence trigger owes the turn to no one person, so the whole basis for the determination is the injected context and the header's stated right to decline.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/fire.py#L466-L497",
+          "version": "repo-lines-v1:sha256:7e69ce86a46a10ef7ad116f351306687f6fb3592ed1b5c8146109775bd8b2c45:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4MTcxM2ZmMmZiYWYzNDBjZGRkOGM4ZjYwNjUxMGEwNjg1OTU2ZmIwN2IxOTQ1M2RiMmZiZmRlNWE1M2Q1OTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYwNjk1MWRhZDRlNGNmNmRmYTg2NWE4MWRlODUyZTBmNjc1MmI3Yzc1YzBlOWU3NWNkMGExN2VkNWFiM2M1NTcifQ"
+        },
+        {
+          "resource": "repo://nora/domain/framing.py#L375-L402",
+          "version": "repo-lines-v1:sha256:86cd8c7be6b5907bba77fa9e32de44a7563ce572cd296f069e3b0afcd7060731:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQyNmEyNzBjMjdmMDk4NjVhMTcxNjJhN2M3YWJiYTQ5NTc5Yjk4YjliZjc5NTVjNzE4ZWJkMThhZTkyMmZhMmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_141bea29a3104360b39085795c8ebbcc",
+      "statement": "tests/integration/test_ambient_loop_positive_control.py drives the real ingest, policy, gate, trigger and fire stages with only the models and the platform faked, and asserts the gate was asked exactly once — so a trigger with gate=None could not make the decide stage pass vacuously.",
+      "evidence": [
+        {
+          "resource": "repo://tests/integration/test_ambient_loop_positive_control.py#L1-L53",
+          "version": "repo-lines-v1:sha256:5271859d5dbbe625ac09e5736b79dea4118d58c0d0229d930515809ec6a527f8:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc5YjlhMjBhZDJkYmU1ODAxMmNjYWI3ZDE4NjhlYzc5ZDY2NzQ5OTI2ZWVhM2U3ODViZTQ1NzUzZWVhYzg0OWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZiN2E1NmQ0MzkyOWMyMTQ0NzQ1MmJhZWQxYTQ3MzU0OThjZTA0MzQ5MTliNTkyOTM0NWQzZDI0ZTE5MGI4NjIifQ"
+        },
+        {
+          "resource": "repo://tests/integration/test_ambient_loop_positive_control.py#L518-L572",
+          "version": "repo-lines-v1:sha256:5484e57c9b1613dcdc8f96fcdc36d5fe9d8accb687b36463377820543f62da93:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmMTQzNmJiMDY5Y2JlZGIzZjFhYjc1OGZlMGVlYTg5ZTNjNjI1OWVmNmNjY2YwZTVkNjQxYmFkNTJhMDgxYWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA4MjY3NmM4ODhjMWE0ZDlmYTc3MmZjZGMzMDJmNzczYmM3MjkwZWViZmY5ZGEzNmEzOWY0NGMzMjExOTgzODUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI3NjUyNThlZDIyNDJhNGNlNDIyMTk3YTMwODZlMDI0OGVkNzZjODg5MGNlZjgzMzk0NjE1YzZkMjgxN2RkM2MifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-20T05:37:18.064Z"
+  }
+}

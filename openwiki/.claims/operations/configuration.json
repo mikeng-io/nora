@@ -1,54 +1,508 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:af5c1c2ca0e87f837ebc1ea766ffa29c66fc6a76856b3d36964d3143faaa66b1",
+  "pageVersion": "sha256:4051ca11d7b5b45ac6e7ea0155e26e38aab5f169a9fcaa93fcb6b3fed1332e7e",
   "claims": [
     {
-      "id": "claim_c7c73d2f3d25486a9881ddf2ad2b6a99",
-      "statement": "Configuration, identity and policy are distinct untracked operator inputs, and example files are not a ready deployment.",
+      "id": "claim_8e2e2abd5668418c9dc606dfe803946d",
+      "statement": "A deployment is configured by three TOML files split by lifetime and review surface — config.toml (how the deployment runs), identity.toml (who people are), policy.toml (who may talk to her and where) — and config.toml points at the other two through identity_file and policy_file, which resolve relative to the config file's own directory.",
       "evidence": [
         {
-          "resource": "repo://README.md#L114-L128",
-          "version": "repo-lines-v1:sha256:4d28a4d06eb491fbe73a49e79dd831bbfcc77499b1edca7aedac57cb0eac302e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmMjc2NGI4MjViNGI5NDE3ZGJmNjM3YTcwYjRlOTViZTAxZTBmNDU2MjYxMzQxODlmNDdkOWIwYzA0NmQwYzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdiZTZlNjBhY2JmNzUyOWM0MzcyNGNkZGY2NTZlZWRlYWQ5M2EwMzY1ZGVhOGI3MDkxN2RmYTNkZDM3YjJjYzYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc1MTU0NjAyMTNjZTFkNDZkYWVlODViYTAyNGRkZTVmM2Y1ODBmMTMyOTVkOGMwNzI3NjQ0YzNjNmY1N2I5ZDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdmNzM5ODQ4ODU3NWMyYjE5ZGRjOGQ2NDg5MWFlMTQwOGJlNDFmNzAxNTliMjI2Mjg0MzgxNjAwNjhhMjM2NWUifQ"
-        }
-      ]
-    },
-    {
-      "id": "claim_2b3a9956fabf4e0abe6a5b1b811fc6c0",
-      "statement": "Policy loading refuses missing policy, duplicate rooms and empty conversation grants.",
-      "evidence": [
-        {
-          "resource": "repo://nora/policy.py#L553-L595",
-          "version": "repo-lines-v1:sha256:822a2bc7b3cc48af465720bce1bebb0bec1e42e8de13eac226a201e009b6fd84:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1MmZlNTQ3OWViNmQ2ZGY0NjBjNDU0NmU4Zjg5MmFhNGI3MmE2MjQ1MjdiMjFjOGU0NTQ3MDhjMmQ5YzMxNmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU2NWM5MWQxMGY1NDlmNWEwYzI1YWQwOTc3ODhlZmI1MWRjOTJhNjBhZjMzNDY3YmQ3NDY3OGY1ZjNhMWE4OWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ0NmNlOTg5ZGRiY2I2Njg2MWQ0MzEyZmZlNzkwM2VhNmNlNmNhZjViMWRmNTIxNzA3ZjBkNWFkZTUzZmRmMDgifQ"
+          "resource": "repo://AGENTS.md#L359-L368",
+          "version": "repo-lines-v1:sha256:c6be4fd6fade12ce9dda9fe1ab59f4e283bad3b75b772c24ae4726d91a1140c3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1YmIxYjU1NTI5NGNiZTM0MzAxMzIzMjU5MGM0NTgwNTk4ZjYwYmU0MWRlNTAxYjcyOTExNWMyZDNhMTA1Y2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU2MDJmMDc0YWQ1ZmJmZjE4NzgxNDM4OTgzNWNkYWY5ZjViMjk1ZDkxMTIzYmNiNDkyN2UwY2MxYjJjYzI5YTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZjNTE3MTI0ZjIxYjhiYjFjOTlhZjhkOWFmNWZjMjZhYzhhNmI2ZTc1NTMyZmZiY2YyYzhjNzE5NTA5ZDcxMTYifQ"
         },
         {
-          "resource": "repo://nora/policy.py#L744-L762",
-          "version": "repo-lines-v1:sha256:a15e5c1d9b3d2e4d50b48fb3fba3d9b60c281fc183058acb164ad2f8f42f6a76:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5ZTIyNGZlNjNlMTkyNTUyZjMzMTYxNDliNDdiYjc1MTg4MzMxNDA2ZTg1NmFkOTIxODg3NjNjY2ZlYzgzMzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQxZjk3MWYzMTE1NTc4Y2ZiYmRkNDZmZmVjODc3ZTgyNDFlY2MwMTkyY2VkZWYxMDkyYmM5ODNhZDRjNDY0NjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFiYTJjM2YwMmE1N2UxYjg5NDE1MjRkZjg1YjkwZjllMjc0ZGJhODMwYjY2YWNkNDdjNTNkZGJkZmZkYzg1YjcifQ"
+          "resource": "repo://nora/config.py#L3988-L4004",
+          "version": "repo-lines-v1:sha256:5224a16491bf0fa9404997705374690f7a6abaf0476eb4aa0997de4040b2db8f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE4MWRhNGJhNWQxNDRjODUwYzI1MGIwZGQ0OTFiYzQyNTJmY2ZmYTZkMTI1NmNlMzJkZWNlZDczZTdhNTBhYWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyYWIwOTBiY2QxNjIwZmE2MmVhZWUxNTdhNzRmY2E2MzVhYTI5ZTEyY2JmZmQ2MThiNTc5MmQ4N2JjMDNhM2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlmN2NkODcxZDQ2MTNmNGMyYTE2MGZjZTk2NWI2N2JkZmI0MTlmZGQ2YzU0OTU4NDBhOTdiY2EyYjBlNmU0ZTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZiOWFlNzQ5ZDIxZjliMDljZTBjNjE1MWQ1MTU3MDZjZmEwNjY5ZjU5MGVmN2FlYjc1YThiYmVlYmM3Zjg3NmUifQ"
+        },
+        {
+          "resource": "repo://nora/policy.py#L1-L19",
+          "version": "repo-lines-v1:sha256:dd9b94c0bb4a4796671154f0657aed24d19f285ab67034de3e644b9d52a1f187:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0NTUzNDZjNmUyOTU1YTUwNmQ0MmVmZDhlM2EwMTAxYmE1YjU0YjVlNzg4NDQ0NDYxY2VlNTkzMmMwODUxZDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
         }
       ]
     },
     {
-      "id": "claim_895bd2727d5549d79dc6d3e3e6808eda",
-      "statement": "Compose preserves runtime state and mounts config, identity, policy, doctrine and Dreamer instructions separately from image code.",
+      "id": "claim_ce2d4c25d8f44a06a61a04bfabe90630",
+      "statement": "The three-file split is a review-surface split rather than a security boundary: all three files are gitignored and equally readable, and the argument for separating them is that an allowlist buried among port numbers is an allowlist nobody reviews; the actual secret boundary is the host .env, since config files hold only environment-variable names.",
       "evidence": [
         {
-          "resource": "repo://docker-compose.yml#L421-L448",
-          "version": "repo-lines-v1:sha256:c4a11f97a123050a0b55939381bd5ef9905d9873bdfcd05fd3e345a6d001d520:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxM2Y0ZDk2NjFlOWQyYzNlMWEyODllNTgzMjI5OWJlYTE0Y2RiNjRiZjg4NjYxZGY3MTdiMTJmYTAyZDAxMWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYzZTg3OWI0YmI2ODBjOWQ5ZDJkMTBiYmUzOWExNmFlNjFkOTg5NDIyMjkxNGQ5ZjkzNGRkOTRmMDkwMjg2ZDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU3NmM2NTA3MTYxYWFjNDU4Njk4NjYxNzlkNzg5OTE3OGU2ZTU5MmE1Y2IxZDg2ZGU1ODdmN2E5ZTM5YzM4NmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBlYTAzZjczYTFjYTU1ZDg5NDU4MWFlZTk5ZWRiZjM0NGNiOWQzZWJmNWNhNGExYjc5YjkzMDM2NWVlMDQ3ZGEifQ"
+          "resource": "repo://AGENTS.md#L369-L377",
+          "version": "repo-lines-v1:sha256:cc7bbc835966e343b0e0de3b81f402207e800a9e0c9763b35848edf333692e8e:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiY2VkNTU3MjA5ZTI3ZDIyYjk0MWM5ZTVjYTJiNzg1NzlmZGEwOTI3NDE5ZDY3NDFiZGRkOGMwOTY4ZGQ4ZDg2YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTUwYjcxMjg1ZThhMjVlMGExMzBhZWIzNGM1NDUzNjg4ODZiNWNkM2NjMGZiYTYyOWU5NmI0ZGI1Y2ZjNzMxMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGVjOGMyNDQxMGE0YjQxZTVkNGY1ZTE0MmIxZTBmN2ZkYmRiNTBkMDM0OTFhMzIyZjg4NmNmYjAzYzAyNTljMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDllZmM3MDQxNzkyOGIzNDc3ZjQwNjk5NGZiYjEzNGQ2Mzc1YTE3YmIyM2M0NTI5ZmUxMzNkMmM2MTZjYzY3MCJ9"
+        },
+        {
+          "resource": "repo://nora/config.py#L592-L596",
+          "version": "repo-lines-v1:sha256:95ff113501c3cc46bee7d53887f4400546407aaa15d71d9fb60de71770e09094:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTQxZGI5ZGI2NDMxMmIyMmVkNGU0ZmI2ZDE4YWFiNWM4MGFiMzQ5NGJmN2NjNDM0ODA0OTg1Yjk5YjkwYjAwOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTg2YjU4NmVkODNjMzdlYTIyZjQwMjFjOWRlNzhiYzFhYjVlYTMwZjk4OWEzMzI5ZDVkYjA0NTM0OWQxYjIxYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODFlN2E2MmQwMjRiMGVhMDIzODNiYzljYzg0Yzc0MzE0YzYwOTMwMzk1MGQzM2ZkZDBlMTM5YTA2ZjhlNzc5NiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDBmNGNmZjY5NTE1ZWI1YTU2NGJjYzI1YTAwMDJiZjM3NzMxNDMzYjRlMTNkMTNiODE5YTIyZGQ1MjBhNjdkYiJ9"
+        },
+        {
+          "resource": "repo://nora/policy.py#L3-L6",
+          "version": "repo-lines-v1:sha256:2639b6d10bb22097f4de5365f8519ffa433e1ffdf05d79aba26983a03c1a9150:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDczYjE5MjIxYTcxZWEzYTYxZmI0NDU5ZDRlZTdhMDliM2QwMzU4NTFhM2Q2ZGViY2M5OTU1ZjJhMzg2MTY0YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzFlMTlkY2U2NTQzZGU3MmEyNzQ0ODBmZmYyN2VhM2MyYmNlNmNmM2MyNWQ0NTAxYzk2NzVkMTI2M2I5ZjM5MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjIsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYThiNGQ5ZDdjODIyZjJkZThlNjk4NGEyNzJhN2I4MGY4M2M1ODY0YzFiMjg3MWMyZDAyNTY4YWY4MGI2NTY3YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODVkZTJhZDk3NjBlMzAzOGQ5NjRhZGI4YzAyZTRmODE0ZGMyOGRkZDlhNWY5NDA1YjdiNTM1YTU0YWQ4YmRlNyJ9"
         }
       ]
     },
     {
-      "id": "claim_1e8b0cbe10c1492caf861dcf96e914a3",
-      "statement": "Current deployment remains operator-driven and rollback must account for schema and configuration compatibility.",
+      "id": "claim_670dbac47d3f4ca19953c685707b1aea",
+      "statement": "All three files are loaded once at startup and handed to the revision recorder, so a snapshot can say which config.toml, policy.toml and identity.toml were in force; editing identity.toml or policy.toml without a recreate therefore changes nothing and warns about nothing.",
       "evidence": [
         {
-          "resource": "repo://ARCHITECTURE.md#L143-L148",
-          "version": "repo-lines-v1:sha256:0aa42b0a7fe00f7f81023e292e2c1f1d7366a0d77bba50c7be74ba51419a69cf:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYmU3ZjBjMDUyODFiMDI2YzBiYmMwZDhiZDViY2I1NTk2YzhiMzQ3YTkwMjIxYjcwMzIwYzVhOTUwOTRhYTc2OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMWVkZjk5YWI5NmYxMzQ5YzFkYjQ1NGRjN2Q3NDQzMWRlMDdjNzYyOWU5ODk0MWRlYWYxN2U0OTU4MWU5NmM1YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWNlMDFiMjk3YWFkNTNlNDc4M2NjN2IyNzlkNjQxNjNjMDFhZTg2MDAwNTA5MjEwZTllMmU1MWI1ZDI1YmJlOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjAxODA3Y2Y5NmQ3MmFjNzJjMmM1YzUwZGM4YmIxOTU4ZDAyZWVmMWUwNjFiNDM4MjJlNWUxMjIxNWI4Njc4YiJ9"
+          "resource": "repo://AGENTS.md#L407-L412",
+          "version": "repo-lines-v1:sha256:f000eeab7042e3b1bd37b93b0bfac6a96f6f1b7d167e056d85f1ace42457f896:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGNlOWZjNGIwMzJmOTg1MjYzYzg5YjMxYzgzODBkNjcxODhhZjcxNmEwMmI2ODc0OWEwNDU0ODYwNDMxMDUxZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzg4YTYwOWIwOGM5MjE3ZjZiMzQwZjBlZTNjMDUxNmM1NTJjMTQwMjM2NGRkZTk5ZmE3NjlmNmVhMTU3MGFhMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzZhMzMwOGRiYjYyMzIwNWZhYjY3NTgwOGRmZDdmZDBhMGZmZmZiMDYxODdjYTcyMTAyZjFjMDgwMDlmM2U1YSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmFjYTU3MDZhMmQ3ZjcxMzMwZWU5OTc0YjE1MTIyNDdhMDZiNWMyZjVkNWM4OTMyYzNmNDgyOGEyZTgyMmYxMiJ9"
+        },
+        {
+          "resource": "repo://nora/__main__.py#L193-L207",
+          "version": "repo-lines-v1:sha256:05053f9722fff4b8fbd33771e06ff1f2353c84c9295c134ee9d6e476adef1924:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMxMTJjNTQ3ZDcxZTE4ZWQ2YWQ4ZjYxNmMyYmRhODM2ZTNkMTk0ZDZlOTliZjU2YzE1N2MyZjlmYTZhMmY1MzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVhZDA1YWIzMGMwNWIyYmQ5ZGQ5ODA0ODU1N2Y4MDE1ZTAzYTMzMGU0N2MyMThlNTkwNTgyM2M5MjlhOGE2YjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUwNTZlYWRjN2YzMmI5MmYyZTE1OTJhZmZjNjY4ZWNkNjkyM2I4ZDFkY2FjMjJkN2UxYThhYmVjYTk4NmFkYmUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2393d01394d4408693b94a4d41edebdd",
+      "statement": "config.load() is the only reader of config.toml in the daemon, validating with pydantic into a tree where every model is extra=\"forbid\" and frozen, so an unknown key is a startup failure and nothing downstream can mutate a loaded value.",
+      "evidence": [
+        {
+          "resource": "repo://nora/config.py#L1-L6",
+          "version": "repo-lines-v1:sha256:933eb32b1afb0574de41c1b8cd40b5e678476aaebd6aa7b8ac361476d473a341:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjlhOTcxNmRhM2FlZjg3ZjJkNmM5MDVmNzVhMmJmNGI4YzJjNjJlYzdjZjY4YjE1OTcwZWE3ZWI5M2Y3ZGI2ZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTMwM2VjZGQ0YTRkMTBmMTljNzNmZDQyZmQxMjQzN2ZkMzM1NGE4MjY4MTYwNWRhNTI1NWE5N2EzOTA2OGRiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTViNmU4NzA2YjQzMDQ3ZjJhNmRiNjdmMTMyNjM4NTk1NjA0ZTY3ZjM2OTY2ODc2Y2UwMTU4ZjAwNTNlNmJkMSJ9"
+        },
+        {
+          "resource": "repo://nora/config.py#L3854-L3856",
+          "version": "repo-lines-v1:sha256:8ac7a9c53d9aef07aaed5590e2cc726e9fdcc1138c77962cea1720683f0a2b9c:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTBiNDRhNTM3YzVkOWQ4ZjJhZmQzMjczMDQ3M2YzMTdkNTJjMGI4YWZlNmVlN2U0M2I0ZTY3ZmYzYTM5ZDRkMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZmFiY2U2MjM0OWJhODI0MDMxMGMwYzc2OTk4ZGJiNzg3NzIwZTEwOTcyZWI2OTAyZDc4NWY2NTdkYmE1NTBkNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMGIzNGNkMGNkZGQxY2VjNDYzMmNjYjIzMDRkYmZjMjNmNGZhMjA5Zjg0NWVmMjJhOWFmZGViOWMzNjg2ZjY3YyJ9"
+        },
+        {
+          "resource": "repo://nora/config.py#L4431-L4464",
+          "version": "repo-lines-v1:sha256:c58209dde30559124667a416ff88548973033cd90c4c9ae163bdc79d337adeda:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA4ZDBkOTQ5NmI0ZDA3MTAyNDQ0ZTNmMDJlMTRmYjU0OWM0MzdmNWZmM2IyM2IyZWYxYTgxNTk0ODc1MDRlZDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmNGJiNzA2NzAxYTJmMmY5YzkwYWQ5MGIxOWRkZjY3ZDk0MjE1MTgwNGIxZWY3MmVkMDYxYWUwOTU3Y2Y0NDUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZhM2NmNTE5MjM1NGY3MTYxNWFjNTEwMzRiM2U5N2MyMGVkYTk5NjQzZmNhZjViYmU2ZDQxYWQ1OWJkMTIxNjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_541b47c6ebf24d289c292b70a97d0628",
+      "statement": "Config is validated with a base-directory context so path fields (identity_file, policy_file, store.data_dir, doctrine.dir, dreamer.dir) resolve against the config file's own directory with ~ expanded, and a Config validated without that context raises rather than guessing a working directory.",
+      "evidence": [
+        {
+          "resource": "repo://nora/config.py#L3995-L4004",
+          "version": "repo-lines-v1:sha256:bf7d33a0d2a07f091a108aacc732a508e07c0cd53436939429ba86745236a9f8:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlZjFjZGQwZjU3NDMzY2U1MDc3OTA3MjJlMmY1MWQ5NzM1NmNiZmZhN2IyNGRkN2NhMTM0NDgzMmQ0ZTUyNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyYWIwOTBiY2QxNjIwZmE2MmVhZWUxNTdhNzRmY2E2MzVhYTI5ZTEyY2JmZmQ2MThiNTc5MmQ4N2JjMDNhM2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFlYjllNDFjZWEwNmU0M2FlMTBmMzJhN2VmZWU1OWZlYzZlNzhkMmY3ZjkzODg4YjNhZDVhOTFlMzZiMjU3NDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZiOWFlNzQ5ZDIxZjliMDljZTBjNjE1MWQ1MTU3MDZjZmEwNjY5ZjU5MGVmN2FlYjc1YThiYmVlYmM3Zjg3NmUifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L4448-L4457",
+          "version": "repo-lines-v1:sha256:7e72f52e0b3d67d89f1bdb607d752fb0dba63588bb1f71df643d393cabdc7a11:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJjMDRkZDI1YjE5OGQwYzc5N2QxNWNjZjk1ZDUzYzE3MDI5ZTUzY2FiYjI0MTZlMWZhNjA2NjFhNjM0NGUyMDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRlMGZkMmQzMmI5NzI0ODQ3MWExNmE3MGM3MTNkZjdlNTExNWIxODYxYjFjZjJhM2Y2M2ZiYjA5ZTUzYTZkNmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNjN2Y3NWYwNjY3MmVhNzAyNTNhNGE4MDk3ZDQ2MjdmMGZhZGQ0Mzk5MjdhZWYwMzBjMWI3OWRiNjY4OGZlNDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ5MGVjZjk4NzAwYTJhNTc5NGFmOTRjZjg4MmI4YmYzZWI2ZDRjNDUzZmY1NGRiYzczZGJlNjVlZmU2OGU0ZWIifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L87-L97",
+          "version": "repo-lines-v1:sha256:3b1d3c9c99e25105d33885ffa5feabd29674c987548cd4201f83afa4542d77b6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJjZmM2Zjk0MjdmMTI3ODAxYmU0NWNhOWE2OTYzNTkzNWI1MzVkYTkzN2Q0OGI0MTVhM2E3YWFmZTU1OWJiZDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFhOWQ3MzliNmUwZjk1YjE2OTI0OTk2NjZhN2JlMTI2MjBiMTVjYzFhODgwMTFjMmE2OTEwNTIyYzg5MGQxNGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMxOWEyZTM2MjQ3MjY0NGRhMTFlNDBlN2JjZmU3YTNmNjRiY2QzYzdmZjJiOTNmN2M3YTA0ZWYwZDNhZmI4MmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5a2a1418934345d59c5b6b7dad5e0269",
+      "statement": "The schema is asymmetric by design: some top-level sections are required and absent means load failure, others are defaulted and ship inert, and a few are defaulted on; defaults live in code, and the committed template deliberately omits at least one key (store.prune_enabled) so a test can pin the code default.",
+      "evidence": [
+        {
+          "resource": "repo://nora/config.py#L3857-L3993",
+          "version": "repo-lines-v1:sha256:1793fc0da16986f6e233ce5dd33fd8faa3c1c6b7fd2e2bfa91aff45c47e0a1dc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTM3LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJlZGI3ZTI3NGRmMmZjZWYxN2MwMWVjZWY2MGJmMWRmMzU0MjkxYzQ2NWVkODQ5ZTM5MjUyZDI1NWM2M2IxOGYxIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI1ZmEwN2ZjYjVkZGRlZjVmOWQ0OWI0MjkzN2IwN2Q0YmI0Y2U1ZTFiNzRmYWQ5NTU2MmMwYTY4MzRjNTY5OGYwIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI4YWM3YTljNTNkOWFlZjA3YWFlZDU1OTBlMmNjNzI2ZTlmZGNjMTEzOGM3Nzk2MmNlYTE3MjA2ODNmMGEyYjljIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI5MzAyZTYxZmVmYmE3OWE3OWM0NWFjNTg2NTQ5NDgyOTZkYTEwYTU5Njg5OGJkMGY4MDBlNTNlNGFkMGEyNzA2In0"
+        },
+        {
+          "resource": "repo://tests/test_env_template.py#L296-L311",
+          "version": "repo-lines-v1:sha256:826a9bdcc2c1fb52a2ea4a8f21a9ff69068d7cc8efb9fa335aa8f8d58c9e172e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlNjUxZDMzMTljMTc2YzgwZDM3OTNhMjQ5MWVkZTAyMDE2ZGQwZTUzODRhNDk4MWVjNTFjMzRmMGY2NWYyYmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA5ZjkzMDgzYzE5NzEyMWI5ODI3MDBiYThhZmFiZDE3MjJjZjFkM2U3NDA0NTA5ZTgwZWZhMjcyNDdmNjJmMDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE0MWQ1YjAwNjQzZGVjYjFjYTI5Y2MyMmE4NjUzY2ZmOGYyMTA2OWZkNWZiNDA1NGFiZDk2NTVkYTgzYjM5ODgifQ"
+        },
+        {
+          "resource": "repo://tests/test_env_template.py#L357-L374",
+          "version": "repo-lines-v1:sha256:927ad985db7a831043dfc71a9007a201d91356fe8dac2109a57b61bc45207ddc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0NDUyN2Y5MDJmNTI3YzdkOGZjOWExYTVlZjEwZTM5MDJmY2Y1ZDY1ODY1OWI1OTRjNjRlYzI5ZDc3MTc4MmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEzMWI2NjFkMWZiNzBhMWI0MjA1NTA4M2ExY2MwODE5MjBjNGY0OGNlNzYxNGM4ZTNlNzRkZDQ2MDYwNjhmYTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFlMzZiMzA3MTk4MGRmNjY5N2E2ODlhNjlhZWJiNWFkNjczYTJlZjY3YzI4NGFlZjg0OWFjNTU0MmIwM2ExYjMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_210d10cc542f4c20ad86fc1c0ce17d95",
+      "statement": "Some configuration values are derived rather than stored: search.api_key_env is a property that returns the selected backend's variable name, and Config.dreamer_model()/dreamer_max_tokens() fold a sibling section's fallback, so no caller can read a raw empty string or 0 as a real value and none of them is a settable key.",
+      "evidence": [
+        {
+          "resource": "repo://nora/config.py#L1422-L1431",
+          "version": "repo-lines-v1:sha256:69dfb19dc8f0bef5b822195838e12ecf9dc35aa5518e7362de762c0259fc0d54:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzZDAwY2YyNzA5NjRkNDRhMTNkZmFjODc1MmIwOWZjYzQzNWIwZjE5YjMxNmFiY2Y4MWE3YWE2NGJiMTIyZDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMyNDJmN2NkNjljMjgzM2E3MzBjM2VmODBhM2IzZTZiNmY2MWI5NWYzZjdiZmI2MDIwNTVkYTUwMmZlYjVhNjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIxNWZhZTQ3ZjI3ZDRhMmUwY2RkYTdkZGNmZjMzNzIyMDE3OGRhZTVmMWUyMDAxZTdkNjY5YWQ4MzdjNzBiNmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZhMzNiYWE4OGU2ZThiNGJlYTcwZmNkNWM5YmZkZWVkN2M4MDY0NGMzYjNlNjQxZTBkNTljOWU1YmNmODVmYTkifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L4006-L4035",
+          "version": "repo-lines-v1:sha256:0c871d8bf1373e02dc4cc3e75d8047fd3035c600fd475fb33cfd21c1f06d24f2:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzZWFlZGIzZTYwODAxMjI0Y2MwNzlkNzNiZjA1NjNiOWU2NmRjOGE2MzkyMzc0OTQ1ZDI5NGYxOTE5YmZkMDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxODcwOTkwZDEzMWVjMjU1NzBlODUzMGMyYWMxZjk0MWE4ZTJkYjAyODNkY2NhMWRkOWFlMWM2Njg1MWE3N2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRjNTBlMjNkM2RkMzkwOWRmNWJkZGRhYWEzNTJlOGQ0NGE3NjgxNWQ1ODFmZTc4Y2RiNzYwZjc1NGI0ZmU1NmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZmYTRlZGM0MTkxNjVjNWEzZWUxZDdjNjk2YTQxZjNjMjI1MDU4OGIxZTg2ZDNhMzNlZTcwNzhlNjAwM2VhYTkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6ac32b17097947eabcc0cefcf11331a8",
+      "statement": "Cross-section model_validators on Config refuse configurations that are individually well-typed and jointly meaningless, because such a configuration is invisible at runtime: a relevance_gate enabled with no participation behind it would judge every window, count every GO, and reach nothing, which reads exactly like a gate correctly declining.",
+      "evidence": [
+        {
+          "resource": "repo://nora/config.py#L4125-L4152",
+          "version": "repo-lines-v1:sha256:afc9ffe834e4b2283fc0a535aa0c7afab0a26c5ff15af9726cdcc3b1089f5f17:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlZjFjZGQwZjU3NDMzY2U1MDc3OTA3MjJlMmY1MWQ5NzM1NmNiZmZhN2IyNGRkN2NhMTM0NDgzMmQ0ZTUyNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyYWIwOTBiY2QxNjIwZmE2MmVhZWUxNTdhNzRmY2E2MzVhYTI5ZTEyY2JmZmQ2MThiNTc5MmQ4N2JjMDNhM2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJkODk2MThlMTczYjY5ZDBlYmVmMmFhOGY3OGE1MGVlOTRhM2JiZTJjNTYwYmIxYTkwNTJkMzZiYzU4NmIwMjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM2MTNkMmNmNDcxOGM0Y2JkMjI3ZGNlZjFjM2JiNjJjZTM5YzljZWM5ZGYwNzUxMGMzMDNkYWJmMzMyZDg1ODEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f899c38542154a92bfcea350f6e10d68",
+      "statement": "The Dreamer family's flags refuse to load without their prerequisites and their own budget blocks: cognition needs the Dreamer plus an explicit [dreamer.budgets.cognition] block, lessons needs the Dreamer and a check_model different from the Dreamer's model, subagent needs the Dreamer and the compute poller plus its own budget block, and video_gen needs the compute poller.",
+      "evidence": [
+        {
+          "resource": "repo://nora/config.py#L4252-L4285",
+          "version": "repo-lines-v1:sha256:0bc87485ea53b1852dc30d1f8b3eca6f5a30ee8963fe55f73a6164460ebf2092:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlZjFjZGQwZjU3NDMzY2U1MDc3OTA3MjJlMmY1MWQ5NzM1NmNiZmZhN2IyNGRkN2NhMTM0NDgzMmQ0ZTUyNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyYWIwOTBiY2QxNjIwZmE2MmVhZWUxNTdhNzRmY2E2MzVhYTI5ZTEyY2JmZmQ2MThiNTc5MmQ4N2JjMDNhM2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU4MDUzNzAyYzBjYmFkNWY2NmIyMzk4NTg2OTJmMzE1NGUwZTU3NDVjZGM2ODY1ZDBkMTgwODlmYmMwYTMxNTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhlYmY5NjRkOWJjOTcwNWJjNzRhOWExMjQwZDIyYzU2ZjJjYTM1YWNiYzM5OTI1MWZiNjUzNDlkNzM1ZTI0ODAifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L4311-L4326",
+          "version": "repo-lines-v1:sha256:ff99b0d55a33c217efdeb76d42d8383101d50791a392fb3aa7f69589107b55b5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlZjFjZGQwZjU3NDMzY2U1MDc3OTA3MjJlMmY1MWQ5NzM1NmNiZmZhN2IyNGRkN2NhMTM0NDgzMmQ0ZTUyNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyYWIwOTBiY2QxNjIwZmE2MmVhZWUxNTdhNzRmY2E2MzVhYTI5ZTEyY2JmZmQ2MThiNTc5MmQ4N2JjMDNhM2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU4MDUzNzAyYzBjYmFkNWY2NmIyMzk4NTg2OTJmMzE1NGUwZTU3NDVjZGM2ODY1ZDBkMTgwODlmYmMwYTMxNTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE3OWY4M2VkMjU3ZTAyNDlhMDcxMTEwMGU0NzcwOTdiZWU0NTQzZWI0ODU0MmUwODU5MDU1MTJmODhlMTM2ZTUifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L4351-L4364",
+          "version": "repo-lines-v1:sha256:130185c7ca9dffa6e7d9e65a52476244baf551d37cf49724e335225af6c1b1c7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlZjFjZGQwZjU3NDMzY2U1MDc3OTA3MjJlMmY1MWQ5NzM1NmNiZmZhN2IyNGRkN2NhMTM0NDgzMmQ0ZTUyNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyYWIwOTBiY2QxNjIwZmE2MmVhZWUxNTdhNzRmY2E2MzVhYTI5ZTEyY2JmZmQ2MThiNTc5MmQ4N2JjMDNhM2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU4MDUzNzAyYzBjYmFkNWY2NmIyMzk4NTg2OTJmMzE1NGUwZTU3NDVjZGM2ODY1ZDBkMTgwODlmYmMwYTMxNTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgxNjk4NjVlZGE5MTg5MjZmNDdlY2ExOTZhZmJmYWFhOGI1MzNlNTBjMWMwMjFhM2JkOWUzZWRlNTliYzYwZDkifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L4381-L4391",
+          "version": "repo-lines-v1:sha256:ca717285d7294f394eea3b774c48db291bc3f9bab54c900f9db19978be9a874a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlZjFjZGQwZjU3NDMzY2U1MDc3OTA3MjJlMmY1MWQ5NzM1NmNiZmZhN2IyNGRkN2NhMTM0NDgzMmQ0ZTUyNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyYWIwOTBiY2QxNjIwZmE2MmVhZWUxNTdhNzRmY2E2MzVhYTI5ZTEyY2JmZmQ2MThiNTc5MmQ4N2JjMDNhM2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU4MDUzNzAyYzBjYmFkNWY2NmIyMzk4NTg2OTJmMzE1NGUwZTU3NDVjZGM2ODY1ZDBkMTgwODlmYmMwYTMxNTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZkMzE3NjFmMzhhZTQ5YzA2NzExNjZhNTY2ZDcwNjI4NGQzNGU5YTQ2MTAyMWVhMGEzZDMzNzcyOTI4ZDY1MzUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_637c6661d1a946beaed24f2bb6948422",
+      "statement": "Whether a validator is gated on `enabled` is a decided question: the standing slot-hold sum and the reminder-lead check run regardless, because a number that lies is wrong whether or not the feature is running and flipping the switch is the worst moment to discover it, while the shadow-channel checks are gated — relevance_gate's because its `shadow` defaults true, participation's because its `shadow` defaults false.",
+      "evidence": [
+        {
+          "resource": "repo://nora/config.py#L4154-L4177",
+          "version": "repo-lines-v1:sha256:944934c826b34e1eaca46fad8e1522b64f10ab82a19cb96961a6c331dbd6be1a:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlZjFjZGQwZjU3NDMzY2U1MDc3OTA3MjJlMmY1MWQ5NzM1NmNiZmZhN2IyNGRkN2NhMTM0NDgzMmQ0ZTUyNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyYWIwOTBiY2QxNjIwZmE2MmVhZWUxNTdhNzRmY2E2MzVhYTI5ZTEyY2JmZmQ2MThiNTc5MmQ4N2JjMDNhM2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU4MDUzNzAyYzBjYmFkNWY2NmIyMzk4NTg2OTJmMzE1NGUwZTU3NDVjZGM2ODY1ZDBkMTgwODlmYmMwYTMxNTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM3OWIyNmMwZjFmMDhlOWFmOGViMjE0NjU4NzhkMzY4N2YwOTcyMjJhMTI4YWFmNmY3MzVhYmE2MTZkNWU2MjgifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L4207-L4250",
+          "version": "repo-lines-v1:sha256:a31e20912f1ee38a4db5826a4a14e613ed7582ba0a34162df6ab3046ccf9cdd6:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljOTQwZjRlZDBhNzg1YmQxODk0Yjg2NDEzNTE5M2Q0NGMyZTc2ZDZkNjg0OTY3OTliYWJmNWNlOWFkMDRiZWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyYWIwOTBiY2QxNjIwZmE2MmVhZWUxNTdhNzRmY2E2MzVhYTI5ZTEyY2JmZmQ2MThiNTc5MmQ4N2JjMDNhM2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE4YjZhMTIwNzE2ZjI1NGNhZjA1N2E0Y2U1N2NkZjhlMDhjZWViYmIyYTViZTIwNDkwNzFiOTUwZmU2NGUzZTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFiMjUwN2FhN2FkYTc1YWIzZWI4MmMyODM1YTNmZjI2MTI2ZTc0Y2VkNGVjNmJhZmU4NGU1ZGIyZTM4MjhlMmUifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L450-L467",
+          "version": "repo-lines-v1:sha256:324a1975d4abe38c4fda2334050a1d28e41b5013b737c3ec937eb17fe9b01dd3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlZjFjZGQwZjU3NDMzY2U1MDc3OTA3MjJlMmY1MWQ5NzM1NmNiZmZhN2IyNGRkN2NhMTM0NDgzMmQ0ZTUyNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyYWIwOTBiY2QxNjIwZmE2MmVhZWUxNTdhNzRmY2E2MzVhYTI5ZTEyY2JmZmQ2MThiNTc5MmQ4N2JjMDNhM2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3YWRkOTg0YjBmMmRjYjJkZTcxMDVlM2ZlMmVmZjcxMjYxMWNkYWZiODM5MWYwYWNhMjkxMGRiZGFjN2NiYmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMwMWQ5NWQ0NDY1MTI5MmY0YmNiMDY4MjdmNmM0Y2YzMzBmM2RiYjExOThlNDVjYmRiNDRmOWQwNDRmODRlMTEifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L559-L586",
+          "version": "repo-lines-v1:sha256:e03e9aa467c36a29c04e0d3137899a1ecc0e660a1a63c2e04a4917c98ce0c7c3:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlZjFjZGQwZjU3NDMzY2U1MDc3OTA3MjJlMmY1MWQ5NzM1NmNiZmZhN2IyNGRkN2NhMTM0NDgzMmQ0ZTUyNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyYWIwOTBiY2QxNjIwZmE2MmVhZWUxNTdhNzRmY2E2MzVhYTI5ZTEyY2JmZmQ2MThiNTc5MmQ4N2JjMDNhM2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3YWRkOTg0YjBmMmRjYjJkZTcxMDVlM2ZlMmVmZjcxMjYxMWNkYWZiODM5MWYwYWNhMjkxMGRiZGFjN2NiYmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU4OWVlYzI4ZTg3NTgxZjkyNjVmN2IwMWMwYzUyMGIzMzA2NWVlNGM3NDU5ZGFjMjc1MDc4MjljMWQ2YzBmMDQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_455981f726c44b55bdb213da1ab6b889",
+      "statement": "A configuration failure has one chain: pydantic ValidationError becomes ConfigError, then StartupError, and main() prints `startup failed: …` and exits 1 — in compose a crash-loop, which is the intended reading of a wrong file rather than a graceful degradation to a mute Nora.",
+      "evidence": [
+        {
+          "resource": "repo://nora/__main__.py#L543-L557",
+          "version": "repo-lines-v1:sha256:7daf5f4d34b66c9ed3082e1e2eb113a2ae427d7b63dd061f73774deb9a6f4669:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFiMzk3OTMzYTI0YTgwMWVlOTIzMzI3YmQ2OWEwMTA0OWMwNzc5MTUwMjFjZjJlYzM5ZGRhNGY4MWFhODM3ZTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE2MjMzYjNmZmVhMzJhMjNkZjUzMDY1MzQzNDhmMmRlZTc3NmE1YTZmNzRmYjUzMzE3NWRkYzUzOWE4ZmU0NjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQyZjUwMmY0OTQ2NTA3MjNhMGE3YjhhZWYxM2ZiMDdmOGU0MTRiMTdmOWM3YTVmY2JmODE1Nzg3MmE3OTkxZDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNkNDEzNDBjYzIzOWExNTljZTliNjAyMmU5ZjYzMjI4MzJlMmVhZDc2Y2FlOWU0NzU0ZDIxMGViOGZiNmQ1ZTgifQ"
+        },
+        {
+          "resource": "repo://nora/__main__.py#L63-L67",
+          "version": "repo-lines-v1:sha256:67fa64f3fc96253f13fde91ea00f35249e402d3e8a56de312d313cb73b98d62b:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTlhZTNhZDVhZTQ5NDAzYjQ1ODQ3OTQzYmExOTNiZjliZDhmNjIwNzZmYWY4NjkzYzdiNGE0MWNjZWU1Y2ZlZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMmViOWRhNmZkZGUzZDY3ODJmYzIwZDlhMWIxNzNiM2FlMDM4YTMzNTNlZjgxODEwMDAxZTQ5MWZiZTlhNzZjZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjQ2N2FiNTdjZTBhYjIyNDlkMDE4N2I4YTcwNGRjZmYzYzZlMTM1YTE1ZWIzNGM0ODRhYjYwOWZkNDViNTAyYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDFkYzgzNzU1MTIyOTQ3NDhlNzk5YWFkNDcyZmQ0MmFiZTg5OTdjMTVkODU1ODlkZjYyZDQyMjMyYjNjMmJiOCJ9"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L320-L322",
+          "version": "repo-lines-v1:sha256:9373e0a03c841e13bf142b4de1e87245d526dafd213481126c39663bd841769e:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODU1NTNkM2NlODU4NTBjMWYyYzM4OTEzYTc3ODljMTdmNzRkNWMwMGU0MDQxNjk0ODZkZmQyNGM5NTNmNWY0NCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjE1MmViMzZlY2E4ZGIyMmRjZGJlNmE1OWMxNDEwZWFhMmU4ZGMzYTRkMjZiYjU4MGQ0MDBhOTQ4MjFmZTFhZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzkwOGRmMzlmNzNlNWM0ZjE4M2VkNzRhZDJiNWZiODk3MDMyNzdhMTNlODRhMTM2MzQ1OWRlMDdhOGJjODdmMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjFmYzRjYTAwMTZmMDJlMWNmZjExNGU1ZTkyMzQxYjlkMjkyYmJlZWJkM2I0ZGY5YTEzNWVlYTcwOThlM2UxZSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_99afb75ef1b44e4580bcfc07f9a09f50",
+      "statement": "Secrets are reached by environment-variable name in three enforcement tiers: load(config.load) fails only on a missing llm.api_key_env when require_secrets is on; composition raises StartupError when an enabled subsystem's credential is unset (database URL, computer bearer token, OTP HMAC key and API token); and a bonus capability warns and degrades instead — a missing or malformed media encryption key turns custody off rather than writing plaintext or crashing, and a misconfigured RustFS backend falls back to the filesystem store.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/composition.py#L1454-L1460",
+          "version": "repo-lines-v1:sha256:444116d616e8e03a42c2297602ab792353faadee2b111347394a40d964887d82:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTNiY2E3MmM0Zjc2MTNhOTBiZmNlY2Q3ZDhhZWRhMTAzM2FkM2MxNmE3OGVlMDRiNTgwN2NmZmM5YTY0OWRkNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTkwOWE1M2E2MThkMDI4ZTFkMzAwMGMwYTdhYmNlZWNiZTVmYjM3ZjRlNTExZWZlNDY2NDNmYWQ2ZTY2ODcyZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMmY4MzNiMTg5NDRmY2ZkZTgwNTY2ZGIzNTVlZmY2NDVlMjNhNTg2ZDVmZTVkYjY4N2Q4Zjg2ZWZiZDhmZDA5MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzliNWJjZDg2MjFlZThiMzk4ZjdmN2E3MTg1ZWVhZTAzMTFjMmQyMDFkOGJiOWQzZWVkMmRjOTY2MWU4ZDcxNCJ9"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L4964-L4990",
+          "version": "repo-lines-v1:sha256:074751f3ea83b3e63309e3a96f43a3c0b52d1d407465c733fc10d68f7b00e575:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdhZmM0YWQ4MjQzMjEyNzVjYTM2MDJlNWU2Y2YwMGVmMWExZjI5ODdkM2QxY2ZkZGI0MjY5MTM5ZDRjYTgxOGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2Yzk4ZDk5NjdiNDA2YjM1Zjk2NTU3NWZmNjVkM2VkYTJkZmEyNWU3ODNmMWU0ZmZlZDU5NzQ2YjlkYzFiMWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzNTlhNjcyMTA5ZWM2YzMyNDgyY2VmZWE0MDExYTA5M2ExMzI5NmM3NjZiZTc3NjdiOWY3YzI3YzIyMThhYTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg4YTMxMTRjYTg4ODE5MTQyOGUwN2U5ODAxZWE4YjVhZTJiMmM4MjVjYjllNTM0YmZjNTY2ZTQzYWRiNzVkYTIifQ"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L5016-L5046",
+          "version": "repo-lines-v1:sha256:82acc43a33e8fb0bf063961bf4bb8db7641037cce8a06d1a45a4a28b96caccea:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0MGFkM2U4MjFiZTMxYzUxYzEwYmVhYjMwOGI2MTJmMzM1NTJlMmZiMzdlMTQ0NzczMmVkNWM0M2EwNjRmZDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5MjdiMTAwZDMyYzdhYTA5NjI5ZGIxMTg0ZDlhN2Y5OGY4NDJjM2ExZWU0ZjE5ODhjY2U2YzI0YTcxYmJmMzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJmYzE3NDcxNjhlMzdiNmNiYzc3YTNmOTIwNzlkYzA0YWFiYTE1ZTMxYWZkZDQyM2FkMTk2Nzc1NDRiYWE4YjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQwZjBlNjg2NDk1YzNlNTkwODlhOThmYWFjN2JiMzFmNTU4NDJjMDBmZTRkNDI4MGIwODJkNTI1MjdjZTNlYjcifQ"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L854-L885",
+          "version": "repo-lines-v1:sha256:87ab7907eb7ef1b9fd7591ad42f841c6de5a6fef1ef17abd14bb40cff9f7c4ad:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyMjhhNTRmMjAwNGZiMjljNDJlNzkyNTE1NjY1MjAyY2FiMzJjMTBiYmQ5YTMxMjY1Y2IwZjg1OGJkOWRmZmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgxNDJhNmMzMWFmOTUwMThlYWQ1MjdmZTU2NjI3NGZlMWY4MjUzMDg3NTEwMzViNzk5YzU0OTIxOWNlMDdhMGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlmYmNmYzYzZWJkMDk5MzQyMzlkZmI3YzJmODk1OTkyMTQ2Y2NmOTczOGMyNTc4MmYxOWM5MzZkZGNmZGViNjUifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L4431-L4464",
+          "version": "repo-lines-v1:sha256:c58209dde30559124667a416ff88548973033cd90c4c9ae163bdc79d337adeda:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA4ZDBkOTQ5NmI0ZDA3MTAyNDQ0ZTNmMDJlMTRmYjU0OWM0MzdmNWZmM2IyM2IyZWYxYTgxNTk0ODc1MDRlZDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmNGJiNzA2NzAxYTJmMmY5YzkwYWQ5MGIxOWRkZjY3ZDk0MjE1MTgwNGIxZWY3MmVkMDYxYWUwOTU3Y2Y0NDUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZhM2NmNTE5MjM1NGY3MTYxNWFjNTEwMzRiM2U5N2MyMGVkYTk5NjQzZmNhZjViYmU2ZDQxYWQ1OWJkMTIxNjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_16ac1c7c549343a593462ff6f35b5267",
+      "statement": "The read-only operator commands load the config with require_secrets=False because the LLM key is injected into the container, not the operator's shell, and a command that builds no model client should not refuse to work over a credential nothing on its path uses.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cli.py#L30-L37",
+          "version": "repo-lines-v1:sha256:e404048d5c2d2a3264d558b3e9f4cf71a96a361eb9b2063679c3941dd2529e09:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMGViMmM3OGM2NTJmNmFkYjQ4MjA5NGU5ZjAxNDI4MWE5MmRkM2FkMGEzZTI3YzhlNTZmM2Y4M2JlMGNjZGY4MyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMGQ0YTQwMDIxNTRlYTZkM2QyNDQ5MjE2MTVmMDllYTA0OWNjN2Q2Yjc5NzliNDE1NzY5YTViNGU0OTg0YzhjNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODE4MTc2OTM4YzUzOTc0MjlmOTc1MjNiNTMxYTQyYWViN2Q3NTczZWM0ZjJjMzg4ZGRkYTE2ODIyM2ZjN2Y3OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjVjOGE2N2M0ZmYxY2VhOGEzZmUwZmE3ZTJmYzY1YmRlNDY2YjI3OGFhODVhMmM3ZmRkNTZlZDM1M2ZiODIzNSJ9"
+        },
+        {
+          "resource": "repo://nora/config.py#L4438-L4447",
+          "version": "repo-lines-v1:sha256:14263c4f7873ceff5f7bd7f1aaff76c6db4496a2218765c1c06ea822bbca3ef2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkwYTlkYjg4NzM4OWViY2QzZjU2NmU2MDNjYzc5YmUwOWJjMDIyN2UwMjUyZjg3YWFiMDY4ZTMyNTI0OTlkMTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2YTcxNTI1NzJlZTg0ZjEwOTA2Yzc0YjlmMmE5MjQzNGRkYWIwZTNjNDI4MTNiMDRlNTk3ZWZjZWM5NTFiMjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMzMjcwOTk5NDkxMTA0Y2M3YmE4NzUxNWYwMDY2MzAxNzdjYWMxMmRlZDMwNTg3YmU2M2ZhYmM0M2E0MDA2NDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ0Mzg3YWM1NWRlNDg2ZDZkZDZjODZmMWU0MzRkNjdjMzYwNTQ1Y2YzZmM3YzNkYWI2ODJlZTk1NTVkNWVhYzcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_31a120f20213408ba44c6dfc643acc7b",
+      "statement": "`nora config get/set/unset/validate/path` is the operator mutation surface, built on four guarantees: comments survive because reads use tomllib and writes use tomlkit; the write is atomic (mkstemp with O_EXCL in the same directory, mode applied with fchmod before content, fsync, os.replace); the change is validated twice — a candidate sibling is validated against the daemon's own load() before any write, and the written file is loaded again with the original bytes restored on failure; and a value's TOML literal is honoured only when its type matches the key's current type.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/config_cli.py#L1-L36",
+          "version": "repo-lines-v1:sha256:a19785db2a0f181073b6dfebcb8559d91cf767423590d1c46268c11b1e9beb7d:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ5MjAwZmZjN2ZhNWVhNDM3MzA0YWFjNDNiYzBiYmIzOTZjNTUwODE3ZjUzNmMzYWM2NzU3YjFjZjM3NzYxMmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/app/config_cli.py#L123-L154",
+          "version": "repo-lines-v1:sha256:a17a4463429a48886b62642331e5b34a04c4374533c8387fbcba8b7250b3e099:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY4NWU3ZDE5OTRjZmYyYzA2Zjc1ODAzNTU1MWEyY2ZmYzQ3ZmY2ODI5MDExMDMyOWJlNGIxOGY3YmI5OWExMDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYzMTFlNTllYzcxN2ViMzRjOGM3YTNmOTlmZmVkMjJiOTcxZDE3OThjNDljNjliYzFiZjQzMWExNjEyYjQyNWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3N2I4YzU4OWYyMmUxNjkwMDZlNTAzNTE5ZjRjODc5ZTRiODM5NzA3MDA0MzA4OTk5MTAzOGZjMzgwMzQwMzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg2ZjI2ZmMwNmExOWE5YzM0ZTBjNTg3MmVmZTcxOWRmYzU1YTVlY2NjNDMzOGYyNGJkZDg0ZjM0MWJjMjYyM2MifQ"
+        },
+        {
+          "resource": "repo://nora/app/config_cli.py#L166-L190",
+          "version": "repo-lines-v1:sha256:8ebb90b40a3ba8341b5c222fb3582f0f69038a557d923bfbdb028f96a4e608d4:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2ZWZiNjJlODg3NzZjYzU5ZjZkOWI1YTBmNGI0MjJhNTg1NTg4YmVmMjQ1ZTdjNTlkMmY3YWMxYzNiZmJlYjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEzYjIyMzQzZTljNzU1OTIzM2RjNDZkY2VhNTg5OTY1OGY2Yzg2YTczMTRmYTQ2MjA5OGYyOTI4YWY2YWQzZjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFmZWVmYTNkN2U4NmUwMDQ5MWI3OWNmNjY3NTcxZTBmZmU3MDMwZGZlZDZlMmM4OWNhMWE2MGRlM2JhZDg0OTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI1ZmE0YTE3MTA4NDgyYWM4ZTRhZmUyMWVmZWRlZDcyM2I1NzVmOTVlOGFiZDQxNDdkYWUwZDI4MTFhNWQ5NTIifQ"
+        },
+        {
+          "resource": "repo://nora/app/config_cli.py#L202-L226",
+          "version": "repo-lines-v1:sha256:95d91f9439c2d191898155dfb1b669a35969e90dd534d32021cffd7da83e4880:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk0ZWI0YjZhNmFmZGM3NjUyYjRjODg1ZjkwNmE4NDc5NDczOThiZWNhYTU3NTAwMDMyMmExNDk4MDExNmE1ZDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0MTc2NGUyZjM5Zjc0ZmRiMjk3NGUyMDM0ODFiMjBjNDc2MWU3NTg5ODgyZGIyOTczOGQ1NjQ5YjljZWEwZDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA1NzIyYjhjNGYyODMxYTA4YTZmZjE2OGQxNjUxMTRiNmZkYmFjZjk4NDIxNTM2NjI3NzY5M2JkY2IzYmQwMjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFmNjZmMTA0OWQxNDZkNTcyZWVlZTdhYmQwZDE1MzUyMjRjNWU1NDlhNGQ0Nzg2YWRjOTQ4NDRmMGJjNTBiMzIifQ"
+        },
+        {
+          "resource": "repo://nora/app/config_cli.py#L247-L289",
+          "version": "repo-lines-v1:sha256:5696dab16f3e23748d64fb5bfc9f8eed4245424800285eb53ea3a569f92b7af2:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjYTVhZTk5ZTdkMDNlMjg3OWNmMzIyNjZmNTg4NTY0NmY5MzViNTk4NzQwMjE5MjA1MWZiM2YxNzhkMGQ1OGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE2MjMzYjNmZmVhMzJhMjNkZjUzMDY1MzQzNDhmMmRlZTc3NmE1YTZmNzRmYjUzMzE3NWRkYzUzOWE4ZmU0NjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFhMTkwYjdlMWQ0OTUyZmYwODlkY2ZiNmZmNjI3MmZjNWYyMGIxOTE5NDgzNTc0MWM5YjAzYjk5Mjc1MWE2M2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU3ZWJlODQ0ZjMyNmE5NjI2M2U4YTNjMTZkZDcxNTQ0ZGZjNzIxOTgwYTdmMGI2NWU3N2ZjMzU1NDdkMDg2YjYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_99b09647e5bd4adfbf1f589b2e7e63c8",
+      "statement": "The config CLI refuses to accept a secret value in a `*_env` key — the value must match an environment-variable name pattern — redacts what it prints for such keys, never touches .env, and prints the restart command instead of restarting, leaving restart authority with the operator.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/config_cli.py#L235-L267",
+          "version": "repo-lines-v1:sha256:92c64ab48c584cc7166651edc15cab7016cf7384f51486d4e94b1036e71cd252:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1OTE2YzJjNzg2MTcxMzZlYmRiOGVhNGViMzQ1MDhhYjg4ODBhY2JhNzFhMzQxZWU3ZTEwNjFlYjg2NDhkYTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJjZGM2MmFiZTRlM2NkYjExOWI2ZmY1NDRlMzk1Y2I5YzFhZWM4ZTQ3ZmU1YjI4MTIxMTZlYTQ2ODU1NzNhODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdlNThmNmE4ZTA0YzFkOGE0ZTcwZjdjYzQ0MDJmNThlNWIzOGMzZWNkNWJhYjFmMDk5NjFiZmMyZWRmMWI5NWEifQ"
+        },
+        {
+          "resource": "repo://nora/app/config_cli.py#L32-L35",
+          "version": "repo-lines-v1:sha256:1497c21dd4aa1fbdde2f86e087e9cc80fbcd22aec5060211792fcacb9b789e19:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWQzOGI4MjEyYzg3Y2Y2NDc2ZDkwZDEyNjNlNzk5NjI5MjBkYzhjNTNkMzUwNWQ0NGMzY2NkNzIxODk2NmQ1ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDZkYzZiNTBlOGY4MjA3NDYwNmI0OGFlN2UwZjM5ZjM2YmViMmU2NmE0Y2U0NzkwZTJmMDRkNDAwOWEwNDIxYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOWZlOTY1YzEzYTFhZTUxMDM0OTcwZDQ3MGRkYTBiM2ZhNGUzZTE3ODE1OWZiNmQwNTcxMzJmMjg3ZGVjZmMxYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWFhZjc2MzdjYjZlN2U1ZGI4NWQ2MzQyNzQ2MDE0ZGYwNDFjY2Q1NThhOTIwYjI5ZWI2YWM3MTlkN2JhZjVjMiJ9"
+        },
+        {
+          "resource": "repo://tests/unit/test_config_cli.py#L195-L226",
+          "version": "repo-lines-v1:sha256:0773a772b0b7a3e311c47e798a618db6c590656e0acac24202eaeff5dad9b9f6:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhmMWQ0MTZkNmM0YzI1NTYxY2E5NWYwNjU2ZDUyMWY1NmRhMWRkOTBkZThhYjYyZjAxOGJhNzFkOTMzZTljMzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI2YTU0MjhhZjE0YjQ4ODViYmM3NGIxYWI1YzhjMDYzMWUyYTdmOWEzMzE3ZTMzMDA0Y2UzZDhkZTFmODIwYjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhMzNjMTQ2NDI2YjMzYThkNGY0OWNkODdhZDZkMTdiZDU2MGZjZWIwM2U5NTI0ODc3ODBkYWQ3ODc5MGMwMTkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ad3f47ace3464201859ab4c28b3b1979",
+      "statement": "`--config` defaults to config.toml and works on either side of a subcommand because each subcommand's copy uses argparse.SUPPRESS, so it cannot overwrite the top-level value with a second default.",
+      "evidence": [
+        {
+          "resource": "repo://nora/__main__.py#L470-L490",
+          "version": "repo-lines-v1:sha256:ce9c25068acccdcf391b1eabecd3394649a0cceae521febd67a19ed6d1ef2e29:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAyN2QxYWJhMmQ5OGU3ZjZiZWEzMTI2NjljOTI3Yjg0OGRjMzNhMmJlOTVjYjIxY2NlZTRjYzNmMTQ2ZDBmYzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwODUyMzNiZDA1OTNiNmE3OTNlMWNhMjY3ODM0YTA0YTRjYjUxNzJhZmM4N2E0MTZhMTdlYWQ3M2MwNTI0YjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc0OWZjMzVkMjY2YTcxYTQ1NjI5YTA4YzFlM2QxODBjMTJlZDBjNDBiZTY5OGNhNjE0NWM1MzcwOWFhNGQyM2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFjZTZjOTY3ODg3YmVkOGYwOGQwNDVmNmE1OWQxM2EyMjc4Mjg1Mjc5M2JjNDVmNjdmOWNmMWNiNzFjMWMwYzAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d26459508ca54d5ab34135f7d834f914",
+      "statement": "On a deploy host the config CLI cannot write the live file from inside the container because the bind mount answers EBUSY, so the live procedure is edit a copy, validate the copy through the running container, copy it into place in place (keeping the mount's inode), recreate, and restore the backup on failure; an unvalidated hand edit is never the procedure because extra=\"forbid\" catches a broken file only by crash-looping.",
+      "evidence": [
+        {
+          "resource": "repo://AGENTS.md#L393-L402",
+          "version": "repo-lines-v1:sha256:8104108e00c2fce384a38620dd314d65c6f1649c2db8cfe2ee50bd0b22a2e6ed:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0NDVjMDU2MTNiZDlkMzRjMmQ0MjRkNDdjMWJjZWNlYTQxNGJlYmVmYTNmNmFhMDljYjNmMDIxMTg1ZjFjNTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1OGJmYjYzZjA0Njg4NzQxMTJhMzNlMDU4N2FiOTFkMGVlMmI0NTc2N2ZkODhjOGU2NjhkZjNjY2JiMjkxZDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdmZGI2MmRhYTQ2MDQ5OTc0NmFmYTJhOGJhYjE0ZDVmNGY2ODQ3ZTlhNDBjOWZlZjhkZTlmYjgyODRiMzU1OGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYyZjlkZTg4MTAwZTk0YTczMjUwNzk4ODJkMWZlN2U4ZTk4ODJhNTRkYjRjMzFlMWMyYThhODc1ZmI0NzEzMDEifQ"
+        },
+        {
+          "resource": "repo://nora/app/config_cli.py#L202-L210",
+          "version": "repo-lines-v1:sha256:20a83bd061b5f664638db8871a22f4a090baf857dd06ce1cbb64ca000964a0b1:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTRlYjRiNmE2YWZkYzc2NTJiNGM4ODVmOTA2YTg0Nzk0NzM5OGJlY2FhNTc1MDAwMzIyYTE0OTgwMTE2YTVkNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTZhNzE1MjU3MmVlODRmMTA5MDZjNzRiOWYyYTkyNDM0ZGRhYjBlM2M0MjgxM2IwNGU1OTdlZmNlYzk1MWIyNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDU3MjJiOGM0ZjI4MzFhMDhhNmZmMTY4ZDE2NTExNGI2ZmRiYWNmOTg0MjE1MzY2Mjc3NjkzYmRjYjNiZDAyMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTdiZmM0MjMwYjk0M2ZhOGQ0Mzc1M2FlZGQ1N2I3MDUyZGJlOGI4ODgwNjIwZmExODZiMTZmNjU3YjI1N2I4MyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_37fc84e161954259af7881470c313532",
+      "statement": "A capability flag decides whether code is constructed at all, and the shape of its absence is chosen deliberately: startup can refuse (no Signal adapter), a loop or runtime collaborator can be missing (Dreamer, computer runtime), a prompt block can never render, a tool can be withheld, or a registered tool can answer `unavailable` — with computer tools answering `unavailable` while their event and session stores are still built and audited.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/composition.py#L1501-L1539",
+          "version": "repo-lines-v1:sha256:194f36ec96502babf6a0b22db42c92aed5de437d7bede1da71e1fcff78c9ba8a:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIzOGY3YTgzMDljNzdhOTM2MTU2ZTkyOThmMGRjOTFjZjAwNzY2MDI2NzcxYjdjMzEzNjY0ZjBjZDZjYTIwNTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2MzY4ZjYyNDJiNDE3MzIyNTMwNWJlYWMxOWFkMzI1NzFmYTEwMmExNDIzNjZiZDBmOTcxNWFiMWRkYTExZTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU0Y2ZjZmVhZGNiMTZlM2E1ZDk4YmVhZTE2MmQzZmNhZjM0NjNjMmM3M2FjOWU4MmU5ODBjZTJkNzk5MWRiMDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImViYTdhYzFjZjZhYWU2NDRkYmJhODNhNTkzODIwZjU3NjVlYzdlNjA3MjFiNGQ1MDVmOGRjMmJjOGM1MDU2NTkifQ"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L1906-L1922",
+          "version": "repo-lines-v1:sha256:01677918050b000d6f59b2ee883c44ae2998849864d0ec72f2d62eba5a6f0061:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkzMWQzYmIyOTJjYzFmODZlOGMxNWIxNGY3OTY2ZDc3NGU2NGI0YzRmNmExM2NmY2QyOGM5ZmViMWI2ZWIxZTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU4NjEzMjIxMWY5ZDA0ZDBkNGE0YzIyNzY4MjkyYWIyNTZjOTg2ZGUwODU4NWM5ZTUxOGQ1NzQ5OTRhNDhjYWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE0YjQ3ZGMzOWJiOGYwOGUyN2ExMGEwMjA0NTIxMzgzZWI0MjY1OGY2YzExZGMwYzQ1ZTRmNTMzMmUwOWI2ZDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc0NjQ4ZjNhYzJmNDY2NTQ1OThjZDA4NjI0OTJlM2Y1YzJkOWI4ZTY0MzJiZGJhYTAyNTEzNGU5YTBmOThkNTYifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L3933-L3943",
+          "version": "repo-lines-v1:sha256:3c35c8f6627e237016bce1696f7f4494da85be6a73e155fe7b35e4478409ced2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0NjMyMzY4YmUwNzhmYjkzNmNhYTNhOTg1ZjMxMmU5OGE2NzEwZjM3YzNjNmY3OGM5MzQ1YWUxMTFhYjJmZWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU3NTVmYmIwZThlNzkyMzFkZmY1YjBmMzQxODVmNjhmOWFmNWVmYTQ0NGY2NzEyODM5Y2QwMGU5MTgxMTkzZTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg2NjgyZTVlOWZiMWVmZGU1MTJkMTU2Zjg5MjYyMDA3ZTM5YTBkNTExODBhZDFkMWI5MWRmMjdhZGU1ZDJmMDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc5MzMzYzUzMWUzMTNkM2YyNmQ1ZjE2Zjg2MmFhYjhkZGVmOWYzMGE0YmY2ZDBlYzg2ZWEyZGJkMTVjOTE1NWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_63cffe5408a440858626f912b6f09b92",
+      "statement": "Flags gate the tick, not the store: the reminder tables, compute outbox, tool-call log, computer event and session tables, reasoning-strip counter, tag-trace store, standing store, documents store and dream schedule clock are built unconditionally over the one engine, and only the loop or the runtime collaborator that consumes them is behind the flag — so a tool can answer `unavailable` for the feature being off rather than for a forgotten store, and an idle gauge must not export 0.0.",
+      "evidence": [
+        {
+          "resource": "repo://nora/__main__.py#L217-L224",
+          "version": "repo-lines-v1:sha256:32281dd43b7fbf176218cebe6954f612882889bff320cb6a405d8e5086c4e69c:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODA5OTEwNGQ5ZDZjMTg4NjM5OTZkYjA3MjMzMzRlMmRhMzUzMTlmMmYyZDQzNTI3NTg4YzU5MGE4ZjE1ZWM2ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMmQ1ZjEyMjRjNmQ0MmU2NWFlYzM2ZjZkY2IwYjE3NmNhZDBiY2I1NDNlNWYzNzAzMzhkOGY2M2Y5NGRhMGVjNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTdlYjRjNTJlMTNiYzRkYWU3MzA1Yjk4ZDNlY2M1N2QyZjJlZDg2Nzg1NzQwNTU2OGExMDkxYWZiNzQyMzc4NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDUwYjVhMDRhZWIyYTY4YTA4ZjI0YTY4NDIzMTBjMjRjNDBkOTBiNGI5MDNlOWQyZGVmNjhhMDBkMDA5YmRmYSJ9"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L1501-L1510",
+          "version": "repo-lines-v1:sha256:b30685856b767b1b2e7635e991470845b4bac2d3b1f6e0afe5c9fff824d4e9dc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIzOGY3YTgzMDljNzdhOTM2MTU2ZTkyOThmMGRjOTFjZjAwNzY2MDI2NzcxYjdjMzEzNjY0ZjBjZDZjYTIwNTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA4NjgyYTUzOGQ1ZjA3OTU2OThjZDYzZjgxOWZkYmQ2ODQ5YmUyZGM5NTdkYzE3ODY5MDY2NGViOWExNTJlZjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU0Y2ZjZmVhZGNiMTZlM2E1ZDk4YmVhZTE2MmQzZmNhZjM0NjNjMmM3M2FjOWU4MmU5ODBjZTJkNzk5MWRiMDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI3OWFlNGQ0MTk5N2ZiNzg0MTg2ZjkyNDE4ZTY4MmZkMGYwODQ2MjE0Zjg4ZmE1NWM2NTU5ODBmM2RlNzhmNGQifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L3928-L3936",
+          "version": "repo-lines-v1:sha256:76e111487554005c7b4b9bfc2732131757289fb626db6cc56a163620c838a6c2:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMGQ4Y2ZkN2Q4N2ZjMzZmMmZjNGY5MGZiZmEyZWZjN2FiMzFiNTUxNzYxMzQ2MzQwZjIwMDJlMzIwOTkzNzRiMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiM2ZhNDZiYTE0YjUwZmNhNTE2NzRlYTM1ZGRjYjE5ZTFhZTQ2OTE5NzdkYTU0ZTJkNGQwZjZhMDY1ODIyZGE5MiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTQwYjIwMGI4MmM1NWFlOTEzZGZjZDllMWNmOWI0NzNmYmVlNGY1YTA2Y2E2OGVkOWI3ZDI0NGRiMmFmZmE2YSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTc5OGVkM2YwMTEyNzEzNTliMDdhYjQ1YzhjOTIwYzc3YTRjMmQxZGNkODE0ZTVhNTVmMmJhMWFmN2MwYmQwZCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_75b5527a5fc744989049447046563e61",
+      "statement": "Three configuration sections are read by processes other than the daemon — [presence] by `python -m nora.presence`, [analytics] by `python -m nora.analytics`, and [speech.wake] by the voice-wake container, which nothing in the nora process reads — but the daemon still validates all of them, so a typo in a knob it never uses is caught at load; the analytics process additionally refuses to start when enabled with no Life360 subject to derive.",
+      "evidence": [
+        {
+          "resource": "repo://AGENTS.md#L404-L408",
+          "version": "repo-lines-v1:sha256:9010ff95cc3ef2ca913f001f7284ece3a45688705f7b70e142942a84d12960ba:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTRmZGU5ZTgxMDFjYWIzOGYwN2U4ZWNlNmYxOTUzNzBhZjExNDI3YmU3OTlkNzUyMTgxYzU3ZDEwOGYwOTkwOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzFlNjU0NDgzN2E1NTg0YjQwZDFkMWFiMjAwNWQ0YTc4YzhkYThiZjYyZmFmYjU5ZmEyNjEzOGNmMTg0MDc3NCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOWM3MTkyYmI5MDAyOGIyZTgyNjc3N2JjM2QwN2ZjMDMwYzJmMzA4NDcwNzY3YTNjNzkzMzNmOGUxNjMzZjYzYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjdkODlkMjQ3ODA3Y2Y5MjNmOWI5N2EzOWM0ZjAwY2ZlNTI3NzQ5MzM4YWU2MzZlZWYzYzc4MGYxZDU4MTc2NyJ9"
+        },
+        {
+          "resource": "repo://nora/analytics/composition.py#L139-L160",
+          "version": "repo-lines-v1:sha256:5361d8f34cd85e732cdb8c9eb11bbcd69abfa004c53f9dcce90fd6df721e4823:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MzE4NGUxYjFkYjgzY2U0N2Q2ZDAyYmYwNTk0YTIyZWM3ODYzZTA3MDM4M2Q2Mzc4ZjBjYzc4MTQ1OTdmYWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFiMjc1YmJmZjVjYjM3YzNiZjk2YmEyMzRjNDliMDcxNjk4NjM2NDY3ZDZmMzJkODU0NTI1NWI2ZjNiNTczMjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIxNWFlZTM0MTdiNzkzOTFmYzM4OTViYzAzZTM2ZWU3NDU0ZWE0NmYzMzVhMGQwZGU1MDc3ZTgxMGQ4Y2I1YjgifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L2003-L2021",
+          "version": "repo-lines-v1:sha256:17225aa1179831c0b948ff948c13825a00f892538f9015a703c89916eaefa4ad:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQzNjBiZDg4NGRmMTc1NDRjYzI2YTMxZDY1Njg3OGM1ODE3OGI4MzkzZGM1ZDgzYzFiNzVjZjFlMDIzOWE5NjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0MzkwNDc1ZmE5Y2U3Y2RjYTNmYzlkZjgyYjM4NmUzMjFhOTEyMzJhMGExYTJjZjVmMWEzY2NiZGVhZmQ1NjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFjMjQzNTBmZGU1ZThlNmRmMzFkZTlhYjBhYzE0ODg3OTY5MjE3OTZkODlmZjAxMzA2NDc2NTllMTZmNzI4ZjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBiODIyZWM2MmZkMTI4N2I1YTY1ZDM0NzJjNzEwOTZlNWUxMWMyYTE2YmFjNTEzOTc3NzQ2YmZkZmY0ZTU1NTMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_20d804eed9934d9ba02943e28dd50119",
+      "statement": "config.example.toml is the only committed record of the config shape, kept honest by gates that pin the template's top-level key set, load the template through the real schema, compare keys and values against a live config.toml behind an argued allowlist (_MAY_DIFFER) with named deliberate omissions (_MAY_BE_ABSENT), compare Dreamer budgets as typed maps, and forbid changelog markers in the template's comments — and the live-file drift checks SKIP where no config.toml exists.",
+      "evidence": [
+        {
+          "resource": "repo://tests/architecture/test_example_toml_comments_are_reference.py#L1-L8",
+          "version": "repo-lines-v1:sha256:4c9538976b64a3f39615b900874322490b4f8f109eef48d3f13283246ebea9b5:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzkxMzViMDIyZWE4YTk4NWE5NDZmODU3YTE4YzYzOWE3MzRiZDVmODNmNWU3YzVhNTdkNGY5OGFmMjQ5NmMzZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTMwM2VjZGQ0YTRkMTBmMTljNzNmZDQyZmQxMjQzN2ZkMzM1NGE4MjY4MTYwNWRhNTI1NWE5N2EzOTA2OGRiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTViNmU4NzA2YjQzMDQ3ZjJhNmRiNjdmMTMyNjM4NTk1NjA0ZTY3ZjM2OTY2ODc2Y2UwMTU4ZjAwNTNlNmJkMSJ9"
+        },
+        {
+          "resource": "repo://tests/test_env_template.py#L121-L151",
+          "version": "repo-lines-v1:sha256:f462d6d291fe64b8165c5ab248cc670f3b0277c102e46ed5072e59d1ab1c75dd:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjllNWIyODQwNmFkZGI4NmYwNDJjZjY1ZWM1YWRlZWJiNmEzNzFhYWQyZTI5NDFmNjM2YjliOWYxNzU4MjgyZWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1ZjQ5N2Q4Njg4N2I0MGIyYmEyMmYyMWRhZTJjOTc1ZTJjMWNjN2I2YjY4MDFjYmRlMTk2ZjdkNzE4ZjljNWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBiYWZmZWM2YzEwNzVjZjlmNjVjMDc0YTViZjlkYjdhOTdhODQzZTI1ZWRkOTk5Y2Y1NDQ1OGNmMWRhMjM2YWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg4MzZlZjcwMjcxMDQ1YjRmN2FkYzJjMzgxNWE5MGMxZjg5ZTk3YjVkODkwYjM4MTgzNDIwMThhNTJjNzFlYjcifQ"
+        },
+        {
+          "resource": "repo://tests/test_env_template.py#L14-L34",
+          "version": "repo-lines-v1:sha256:179b678708ebea84a689617f5f88b82bfb524e954a287b270f3061622a160c78:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJlMmE0ZTM3NzA2MGE1YjQ1YWU4ODY3YmU3ZjM3MGY4MWUwMTQ1ZGI0OTQ5YTMxNTBlOWVhMTBlNDBlMTliYTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY1ZDg3OGRiOGZlMDE2OWFjZmY2YTJiM2MxZDVjZmQzMjBhNjE1MDk2MWY2YTY2YWVjOTIyOThjZjEwYjUxMDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk2ODNjMzk0Y2JhZDlmZGRlODNhZDY5Y2IzYzgxZDlkZTQwMzBmZDRkODc4MGYxMWQ2MmQ1ZGM4ZTFkZmU4NGIifQ"
+        },
+        {
+          "resource": "repo://tests/test_env_template.py#L314-L356",
+          "version": "repo-lines-v1:sha256:c3d40ca6c5db66a6163269c7121643f1958fb579afbb3e3d638ff9248d0d0e41:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkNDg1YzAwNDk1MDA2YWRjZTg5MGY2YWQ2MjNlMDg0NDk0MGZjODgxM2EyMWVmYTQzM2NjMzM2M2FjMTQxYTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA5ZjkzMDgzYzE5NzEyMWI5ODI3MDBiYThhZmFiZDE3MjJjZjFkM2U3NDA0NTA5ZTgwZWZhMjcyNDdmNjJmMDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVjNzU3MmFkMTMyODc3YWMzNDlkM2MyODFmNDUxNDE4MzFiZDZlN2Y3ZmQzZjY1NTI1ZWQ2OWEyNzY1Nzc0NGYifQ"
+        },
+        {
+          "resource": "repo://tests/test_env_template.py#L377-L436",
+          "version": "repo-lines-v1:sha256:78b29cb65fc28cba99bb1486855547a97fc8a944ece05c6b38dcb40602689789:eyJzZWxlY3RlZExpbmVDb3VudCI6NjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUwNzgzNmViMzAyM2UxOTc3MGY3YzUxODY2ODUxZTg3Nzk4ZTczNDEzM2E2YmUyYjI3ZjEwZjk3NTUzMmJmOTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjMDcxZDZmMmM2ZDZkYzI2NjNjOGM0ZjM1MjE2NTdmMDQ0ODk2ZDMzYzcxYTNhM2Y2YjUzNWJlMjgxYmZlMjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJlZDE4NjFlZTU3MjQ0ZjczYjAyMTIzODRmZjc2OTk5MGE0MzJmNzRjYTg0OGQxYTM2MWEyZWRmZDQ1OWE3YTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5OWM0MmRkZmEzOTExOTI0YjJiZWZlYWVlNDk0ZDczMGMyYjg4YmQxY2E2OTdiMTg5ODM0ODI3NjUyYmRjMGQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9d38828f71b74ec8935be636ce6b0ef5",
+      "statement": "The test suite takes its config from the committed template through one fixture, and only the modules pinned as deployment subjects (plus the one copier) may read the real config.toml; an AST-based gate enforces it with a positive control that every pinned file still shows a read, so a blind detector or a stale pin fails.",
+      "evidence": [
+        {
+          "resource": "repo://tests/architecture/test_config_comes_from_the_template.py#L1-L39",
+          "version": "repo-lines-v1:sha256:08f1a80d8d391854baace92648217036c41a4e4f914728dab29b421b50964604:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE5OWE0MTRkNGJkZGFkYzE1Nzg5OTk4Y2IwZDAzNjU5MWNjYzI5YWNkZTZjZDBmNGZhODEwYzgxMTA2NGRmOTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://tests/architecture/test_config_comes_from_the_template.py#L153-L178",
+          "version": "repo-lines-v1:sha256:52657555009f1efb00875b32ac473877da7f3d61c66b54bdc726992a7dc1bd8c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ5NDg5NWY0ZTc3MTdlNGJhNjc5NmQ4MGMyMzBhYzE4YTJiZmIyZDJiNDdmMTAwM2E2YWU3OTc1ZWU0NWIyNTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEwMGNlMDQ5ZDhjOWJjOTg5ZTU1Mzc4ZjU5MTQxZmI0OTg2OGNhNDYzZjM1MWFlZTE4YjExOTUzY2Q1ZWM2YzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg1OTVjYjc3Y2Y5ZDE5NjFhNWJmMjE2OTVkY2E5N2U5YmE3ZTY0OTg5YmUwNmVlNGQ5MGYzNjc4ZTM2ZGVjYjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://tests/builders.py#L66-L86",
+          "version": "repo-lines-v1:sha256:428025f9dc0f2f8197672df6aa2df3fba3968272fe2e7f898263936be6e8ec5a:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkOTlmMDgyMDk3MzAzZjM5ODA4MjNjMTk3OTIxZTE1YTI2MzllYWY0ZjViZmI5OTMxMTk3Mjc2NTg4ZjdmMDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE4NTU3NjcwZGY1MGY4ZDc4Nzk2OWQyZWRkMThjNDQ1M2U1MTE5NzRhMTRlMzNmMTIyNDc0MDIzODdkM2Y5ZmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI2MDhkMzhkNmYxMGUwMmFjZTllZjA0Nzg0Y2Y1YWRlMTJkZGZhYjQ1NjhiNjk5ZjM2YTdkMzlmYmVlZDNhNGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://tests/conftest.py#L88-L110",
+          "version": "repo-lines-v1:sha256:e4e1d47cfa5ab9a4f94bf47aa5527c3074c6db5143b15654cb4d06edb3b1d903:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzZjM2NmI5YmQ5YThkMGYzNDBhMmJjMGJlMWUyMmVlYTIwNTY4ZGQ3OGE0NTI4MWI3MjFiMzBmMjJkMDg3ZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc0YmVmNzg1YTBhNDAwOTU5YjRkM2U3OWM2ZjUwMjJjZmYyYjc0YTA5YmFhYmJiMjQxM2M5MWE2MjYwMDYzZGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI1OThjNGEzNTg5MzdiYWNiNTg3N2Y5OThkNWIxZmQyZmJmZGQwZDIyMTgzNjFiODcyZjNkN2FiNDk1ZWNmNTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgxYzE0MjZiZWE3ZmFiYTA1YTEyYzFlMWM4NjBkYTY3YzYxNzM4ZmZjY2NjYTRmNjc2ZTRiOTI2ZGVhNjZlMDIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_190e07a6b52f41dbaf810a2242427a84",
+      "statement": "Under `[subagent] enabled = true` the composition root builds `SubagentDesk` over the compute-job store (with the `<subagents>` reader beside it), passes the desk to `ToolRegistry`, and only then builds `SubagentBackend` — its closed tool list is derived from the registry — registering it under the subagent kind for the compute poller and attaching it to both the desk and the reader.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/subagent_tools.py#L149-L176",
+          "version": "repo-lines-v1:sha256:8116f71f4532359d8e6bae229a505732ca070a869d33f08bc40197279cea5dac:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYyYjhjZjU2ZDIyNTM0ZDI0NzkxNzRkZmRkZWU3YThjMDg5N2QxYTVhNjVjNmRlNWJlYTMzNDNmMzZhZjJmNWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY3ZTY4NjY5MTQyYmY2OGY1OWQ0NTY0NTcyNjg3NTMwOWU3N2YyMWNhNmQzMDBlNmE0OGJkYjA0YjkzZmFiN2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJjYmNlMjE2NDQxMDdhMTBkMTJmMjYwNGVlODFiN2Q0NzJjNzA2NGQ5MTUyNzg2YTYxZTdiODBjMTM0MDVlZDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://nora/agent/subagent_tools.py#L92-L95",
+          "version": "repo-lines-v1:sha256:12005e11104bbe24ddf3b34bc687e8c63dfb206110cbd14ff8a1ae41729c6f51:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiY2JiMjVhOGE3MThmYmVhOGU0OTFhM2Q3NjIyMTllYmJmY2ZlZmM4OTRmZjQ3NTVkMGI0ODY0NTc1OWZkMjQwNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTVhYWI0ZDMzNjAwMjhjZTZlODMzYmVlMGVmOTdhOTU5MmEyMmMwNzhjZTkzYWUwZThkNDA3OWVmYzI0ZDNkNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDk2YTk3ZTBjZWM3NzZjOWYzZjlmNjY5ODliZjA0YzBmMmZlMDgzYWJhNjcxNzMxMzcwYjQyZDE3ODAwYTQ3ZSJ9"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L3024-L3037",
+          "version": "repo-lines-v1:sha256:cbd3a66da22d86115125115c179e93f7473306b3d87c0f42ea065d62b5ce455b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkYmFjYzA4NGU0OThhNGIzMjY3NWE2NjNhN2YyYTNhZWIxMzk3NmRmNjIwNTEzMWFhYjNjOWMxNzkzZDZjZmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5OTQ5N2M5MGRhODI0NWI0ZTUxOTA4YWU4MjAwZDljYzUzODJlOWM2ZmVlNzBlYTEwOTNlNmI4YTdkMmRkMjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZiYThiYjk2MmRmNDNmNDI1YmM1MmYzMzkzM2IxMDNlZWRjZjdkN2Q4ZGZjZmE4YTk0ZTQ5MTg4MzVkOGZkMDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQyYzQ0OWRhYWQwZmE4NzY1YTE0NDQ1MWI1MzEwYTIzYjI2NDY0MTgyMTcwYTY2NDBjZDU1NmI0YmE1MDg0MzkifQ"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L3192-L3210",
+          "version": "repo-lines-v1:sha256:63e87627fc84dce3347719810757151e83ae941921bf12e4e929b5db3779775f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2OWU5OGU1YWE2MmM3M2U4YjY5MmU0OTM5YzIzNTU5OTcwMDRjMjBhODZhZmMzODkzNTdkOTcyYTAxNTgyMjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU0NjA0MmQ5MTg4NGJiMWJlOWVhZjg2NTc3Y2FjYWY0OTg2Njc3Y2Y5ZTYwNDk4NTJlODJkYmQxMzFiMTY5ZWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVkOWUxZWZkNmJmZWFiZjU4OTlmYmJkNTNmNGNiOWM3NmRiYTZlNWJkNGVjOGFlYTM5MTcyOWZlNWY3ZjU3MTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1ZDZlNmMyYmMyZTczNmViNjU3NWNhNWU1YWJlYWJhNDQ3YjZkNDAzMjNiN2I0MWJhYTY2MDI0NDZmNDMyMTIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_519ee70fe303416ea6327f931e1fb2c1",
+      "statement": "With `[subagent] enabled = false` nothing is built — no desk, no backend registered for its kind, no `<subagents>` block — and `ToolRegistry` withholds all four `subagent_*` tools from every surface, so no turn is offered them; a call that still reaches one of the closures answers `unavailable` and starts nothing rather than reporting a launch that did not happen.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/registry.py#L320-L340",
+          "version": "repo-lines-v1:sha256:3c64f5ebbe799aef3184818cadaec2c55c0f9fbaf6d2360c7f1d1c72250a9585:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk5OTVlOWFlNDczOTQwYmRhNTE1Y2RkZDc3ZDRkN2ZkOWQ5ZWIxMGRjZjc2ODYyZmJhYmViNzZlMTliNGY5ZTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjllZTNlNzExNDg5NTMxYTk3YWNjMDI2MzE3NjljMDRkZTE5OWY0NThmYzg5MmQ4ZmE0ZjgzNDAwYmU0ODczOTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQxOGYwODFjOTI0ZDUzN2E4NmE3M2Y1YmM5NjljYWUwNzliYjAxMzI1ZDAzOWFmNjJhNjlmZGUyZWUwMDhiZTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYxMzViNjQ3MTU2ZWIwNWU4OWYxYmI2Y2QzMzMyMTZkY2Q0ZmE5OGViNGRiMDk3YzI3MTcwMzBiNzM4Y2VmZGQifQ"
+        },
+        {
+          "resource": "repo://nora/agent/tools.py#L16385-L16389",
+          "version": "repo-lines-v1:sha256:8f29455062a9134d6a261ff4651d665b39149ec30b6294463cca583218b0eec4:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiMWFjMzRkMWYyNDJmOThkNzA0MDUzOTZmMDZlMGM0MTcwNDU3ZjliNzEyZTNjZWZiMzYyYWI2MTExOTJlYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzg3ODFiN2YyYjhmZTg5NmE5MmNiYWU0ZjEyMmNkYWFkNWY0NmExZTkxM2VlOGQwZGJiMDJjNmIwMzU3ZDU3ZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGY2MWRkZDFmZmJjYjA4ZDdiNjFkZmI2NDRiNzAyZDcyNDk5ZTg3MjAwM2M3MGU5YTAyMzlkMDUwYWE0YTc2MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzNmN2JjZDYzZmM1NGIzMzgyMTNiOGQwYzA3OTE4ODQ5OWQ4NmQzMjYzMGI4MThlZGViZTM3MmY0OGQxYmUyNiJ9"
+        },
+        {
+          "resource": "repo://nora/agent/tools.py#L16448-L16459",
+          "version": "repo-lines-v1:sha256:caa893487a1f49e8028d99f3a958035c1ee39252ec414d23260764acae5698a3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg1MmQwMWI0YzgzNWYyZWE0MzgxYmJhZmI4NDgxNDA3NGU0MjVlMGY5YjdkM2VkZDYxMzZkOTdiNGVlM2YyZTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY1ZWY5NDJiMzg0MDI4ZjVjY2U3MmMyMzQ2YzE1ZjNhMjdiOTg0MjcyMDM3ZGQ3M2JiNDNhNmZmNzExMjkzZWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY5MDA2MThlY2JjMDRlNDA3MTU1MWYwOGI2MGM3MzQwNTc0ZmI4ZjE1MWYxYzU2Mzc2MGU0YzVjMDg3NDFkMjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ4OTI1NjkzM2E5MjhiZDE0NDQ1NjlhNzMwMTE3OGY1OTI5MWVmNzI2YzY0OTE1ZWQ3MTVmNGNlOGNhNWVkNzEifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_subagent_tools.py#L350-L357",
+          "version": "repo-lines-v1:sha256:e44ebeac73a27c8c2f991d9d25a3d93e9f5a85f81807777e1add6dc0f085dc5a:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTEwMDU1ZDUzZTljMzNiMDlkMzFlN2ZkZGM5NzFiZTk3MGM0YTYxZWUwOTAyZjYxODlmY2U3MWU5ODA0YTJmMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNGI0MTdkZDk3M2JmZGIyOTJiZDk4MDVjYjAxNTY4YmM5MjZkZjU2NmEwY2IzMzYzNjg4YTg4OTgyMzM0MDU5ZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTliMWRiOGUwZWEyMDg0ZjlmMTE1ZTY1NzBjMmQwYWMyZmRiOGI5NWQ1ZTRlNjJjNjc1M2QxYmUxN2U1ZjQ2NiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzNmYTNkMTMyYjBmZjM4OTkwNjA1MzIwMTc1NTNlMDZlMTkyYWMzNjg4ZDMyMWM4OTYzNDQxZWNmM2RlYWY0MCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_d0ca8521e5744f6b9b66c56f8193d593",
+      "statement": "`subagent_create`, `subagent_list`, `subagent_read` and `subagent_cancel` are `TAG_ONLY_TOOLS`: admitted to a person's tag turn and refused to a fire turn, a Dreamer pass, a cognition session and the sub-agent worker itself, with each closure re-checking the same provenance; `subagent_create` additionally requires the turn's requester and refuses with `unavailable` when there is none, and being tag-only they never enter the Relevance Gate's capability digest.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/surface.py#L118-L131",
+          "version": "repo-lines-v1:sha256:803f49d8f390d136abae9506f63280d5828c3e251657613894369a0316d377cf:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxMjAwMzhlYWEyODg0MGUyMzk0MDU3NTNjNzkxMDUyY2U0ZjA1YjU2Y2Y4MGM3NWE3ZGNhMTJkOWFhMmQyMTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY0MDExMWZhMjE4MGI2Y2NlMjZmZDU4ODZiODM1YmY4YmJmOGU0ZTcxZmE4ODViMjY4ZGJiN2VjMmVlOGE3NjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhlNDMwNGUzYTUyZDU0NDI3NGJkMjY5YWM4Yzk2Njc2NTMwMWRkYWUwZGM0ZjlhZTdjNTQwOTVlMTRmMWI1NzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA2ZTA5ZDU3Zjc1NDdhM2EyY2M0NGZkZDA5MGE4ZjZiNDM1NzYzMDA3MmNkNjA4MTlhYjg4ZTFkN2FiOTk2ZGYifQ"
+        },
+        {
+          "resource": "repo://nora/agent/surface.py#L72-L86",
+          "version": "repo-lines-v1:sha256:34d4756c2c548537c84aceeb82942731aef84864821e8e1513228fbbda0cb357:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJlN2I3YjdmY2RiZjgxNGVmZDc4YzQ0Yzc0Y2M2ZWY0NGY3MTdmZjQwZGUxOWJiNDdjZWM4ZjEyMDdhYWRjMGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmMzM1MGFlMzk4ZTYyNDJmYTc4OTA4OWY0OTc4Y2UwZTE1MWEwMTYxYWRmYzU2NTI4YzYxMTEwZGMyZmQ1MDYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzODBjM2QzODM5ZWQ5ZDY4MGFjNzJjYTljM2M4ZWFjY2I0NmY0NzFhYzA1MzUwOWVlNDhlYWI0MTNhYWI0Y2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        },
+        {
+          "resource": "repo://nora/agent/tools.py#L16376-L16389",
+          "version": "repo-lines-v1:sha256:e4230e4dbdd52bab899b0e2b0adc2c5a85382f1d215e92bfc3350f4b97f3b2da:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE0YzIxZmU5N2UzNGRhM2M3ZjYzNTNhZDExOGFkMDYxMjQ2YTQ4ZTMzYzg2NjlmZWY5MWE2NmVhMjVlZTg2NmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM4NzgxYjdmMmI4ZmU4OTZhOTJjYmFlNGYxMjJjZGFhZDVmNDZhMWU5MTNlZThkMGRiYjAyYzZiMDM1N2Q1N2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZmZmYzMTNlNjk5M2E2MTU3Yzk0NTZmOGU4YmI1OWI0OWZmZTg5Njk0Zjc0YjI3YTUyMTgyMWJlNzExYjQ2YTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMzZjdiY2Q2M2ZjNTRiMzM4MjEzYjhkMGMwNzkxODg0OTlkODZkMzI2MzBiODE4ZWRlYmUzNzJmNDhkMWJlMjYifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_subagent_tools.py#L360-L374",
+          "version": "repo-lines-v1:sha256:2309bb75d631670c7859de2e05456655abbcd1d8042ffc28708afe6ef2bdc857:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlkMjk3M2VhMWJjNjZkNzZlNTdkZjljN2E5YjY1N2U2ZDI2ZWQ5NDMwOTUyMzAyNmRmZWMzYTMzMWVmZTk4ZTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdmNzQ5ZmRmNzI0Y2IxYzJlMTY5MzRjOWIxYTQ2NTJkYzA2Y2RmN2JhYjFhNWFjMmM4ZDkxMDRhNmIwZWEzY2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQwMDJlODc2OTliMThmN2FlNzQyOGRjNDY3ZWRlODU4MmI3NzRhYWZkN2JjNmU4OWRhODJlMGZjMWVjOWFlZmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFiOGRiZTYxYzJjNDU2YWEwMzgwYTE2M2VlOGRkZWNhYTI5MzQyY2E4Y2Y4ZmMwMzliN2JjZTIzYTliYTJlODgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d9e27b0b755d4fbfbd3658de972428b7",
+      "statement": "`subagent_create` builds the `SubagentBrief` from its arguments (title, objective, deliverable, decisions, workspace-relative inputs, document ids) and asks `SubagentDesk` to launch; the desk refuses a bad brief as `bad_arguments` before launching, writes the `compute_jobs` row after the launch (stopping the worker if the row cannot be written), and answers `started` with the job's id or `unavailable` when it cannot act.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/subagent_desk.py#L149-L176",
+          "version": "repo-lines-v1:sha256:3cdf598332df1c02eee4078b02706a075f83d3ddb84cdf7a7c39484df473b487:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5YTNmODA0NzRhZGYwYjhhOWY2N2ExYzM4MDk4NzU3N2M1ZTFlYjg1Y2YxOWVhYjg3YmMxYzNiOWUyYzFjYWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2MGM0M2NhOTYzZTJlNzk2ZjUyMjU1OTc4ODI2YmNhNDczNmNhZTc4MDM4YTkzNGQzZDEwM2VjZDAzY2QxZWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE0Nzg2MjE3YWNiNzQ5MWYwMDFlMWQzM2JkNzQ0NmI4ZTVlNmFlNjk0ZTYxNzk0MDJmN2IwYWVlOTRkODNhMmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI1YTQ4MTIyYjFkZjJiOGNhNjE1NTMxOTU3OGZlOTk4YjkyMmRhOTc1M2Y0YjBkYjU5ZGRlMWUxOGY1NjVkMzgifQ"
+        },
+        {
+          "resource": "repo://nora/agent/subagent_desk.py#L192-L222",
+          "version": "repo-lines-v1:sha256:ed76f9d49e7c9428dbaf4200c99e2e3ca3526c277cccdb299e8164002698fe0e:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1NjljYjA5MjgwZWUwNzgxOTQ1ZTQ4ZDQwNDFiZDJkZmFhZTY5MWFkMmVhYmY1ZDNjYmEwODQ2YzcyMTZjYWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5ZjU5ZTIxN2QwYTJlZjk0ZTlhYmZjODg0MzViNWJlZDhlZmI2OTcyM2U1Mjk5ZmIxNDUwOTllMzM1ZGNhMDAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU3MTQzZWIzMzA3NzkzYTJkNGEyZmQxZmMxODZlYWJjNDNiNTU3ZGZhNTc3MTIwMmIyNTE2ZWQxOTY1ZWE4ZWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk1NzFlYzJhZTY2ZWI3MmJiNGRlMGQ2OTg3NGVjZmZlZGRlNTI4ZjllYTE2YjZmYzM5ODhkYTIwNDVjZGU1YjIifQ"
+        },
+        {
+          "resource": "repo://nora/agent/tools.py#L16471-L16506",
+          "version": "repo-lines-v1:sha256:4db41cd959ea99ea2b50580bf6619a094ebf50e860f6103d6113fe0fc9894e85:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNiMmViMzUxY2EwYTA5MDZjZTc0ZGFkZmU1YWNlYzlhYWNhMWFhOWUwYTc1ZjI0NWVlODA4Nzk0N2IwMmViZGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiNDVhYTA0YWEyMjcyNGUyZmJhNmI4ZGM4ZDZiOTRlZjRiZWI4YjcxMTc4ZWViMzg3NTk4YWFjNDVkNTk0OGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRiZDFiZmY3NGYxODRiODlkZDE1OTFkNmNjYTE1MWE1MWYxODlkZTE3YTk0MjY2ZWYyYzI0ODZjOTBiMjcyYTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA3NGVjNGVlNDdhMWJhYjhjNjkzODg5NDE0MDZlOGE5ZGViNTA1N2NmZDFlZWI0NjE4OWQ3NTE0YzY3OWVkZTMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c4a9ec98b2cb475fb2246881706da145",
+      "statement": "The `[subagent]` section carries exactly two keys — `enabled` (default false) and `reasoning_effort` (default `low`, typed as the provider's closed set so a misspelling refuses to start) — the worker's model is `[dreamer] model` with no separate setting, and enabling it takes effect only at restart because the desk and backend are built once at boot.",
+      "evidence": [
+        {
+          "resource": "repo://config.example.toml#L1256-L1264",
+          "version": "repo-lines-v1:sha256:c407ea4e0ca71aa9a2081ac5eb89ba838b679965c451e614bc5efd9065f107fd:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTcyOThkNjdiMzRiYjkzMGUxZDQyMWUxM2VjMjk3ZmVjZGM5YmFmZWQ1YWJhODIwMzE5YmJhYzUyZWU3MmI3NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDQzODc3YmE5ZTNlYWJjNjg2ZDNkMmRmNGUwNThiZGQwNTBiNjQ4NDM2MzAyM2VjNDhjODRkMjcxYmMyZDdiOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjUwY2UzNWU5ZDA3NWRjODZhMDQ1OWYxM2FiNTkwMzdjZTgyZDcxZTJmNjU3Y2MyOTE4ZTY5ZTczNGUxOWVjYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmM5MTMxM2NhMzg4ZWUwZWRlMWJkOTk3NDVkZWNkMDkyYWVlZDYzNWIwM2RkOTA4YzMyOTYzYzRhNTAwZTc5ZiJ9"
+        },
+        {
+          "resource": "repo://nora/config.py#L3415-L3435",
+          "version": "repo-lines-v1:sha256:7b68fbe5b2bb3a5d61323501e76134ca7079d0e57a2995c0494d3ff3db67bf0b:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNiNGUxMDFjODEyYjkyMmY2ZGU0YTUyZjEwZTM2N2VhMDRhNDdmYTQzNmQ2M2E2YzcyOGFjM2M5ODVlN2UxMWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1YjE3YjkwMWRmZGI2ZTBjNjlkMGYxOWY2MGU1ZDFhMDFlYjNjMzI3YzI4ZGQyZjk5ODY5NDc1YzkzNDBmODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU2NWM5MWQxMGY1NDlmNWEwYzI1YWQwOTc3ODhlZmI1MWRjOTJhNjBhZjMzNDY3YmQ3NDY3OGY1ZjNhMWE4OWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFmNDhlMWJlMTg2YzNlMjRkMjBmNmIzMGM1NTI0YzVjMDAzN2VkZDYwYThjYmE5NmU4NDhlZjU5NThlZTFjZTgifQ"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.7.2",
-    "at": "2026-10-20T00:28:42.613Z"
+    "at": "2026-10-20T12:25:17.607Z"
   }
 }

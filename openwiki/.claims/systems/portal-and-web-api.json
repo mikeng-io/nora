@@ -1,0 +1,386 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:b0da24f16d02954a56f164bed8c5ce2bba663272805157227834ca3bd1d634f4",
+  "claims": [
+    {
+      "id": "claim_3832eec547ae4adbb9e452dfb606a548",
+      "statement": "Every `/app/v1/*` route registers onto the single aiohttp application that `build_health_app` already builds, rather than a second app, so the portal API shares one port with `/health` and `/metrics` — `[obs.metrics].port`, which `config.example.toml` annotates as also serving `/health`.",
+      "evidence": [
+        {
+          "resource": "repo://config.example.toml#L1363-L1364",
+          "version": "repo-lines-v1:sha256:f3087edfe6e21343b89bcb2c0fc0754823c72249f3fe362cd30593e90ca88205:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNWI2NDdkZTFhY2MxODk0NTljMzRkYTMyODUwM2YyMjI5M2ExM2QwNWRkY2QyNTMzMjY3NTRmNGM0NTIyNjJkMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiN2U1YWMxODRlNWU1MGMxYzdjZTgyMzYyNDVhYTI2YTYwOTQ5YzlhYzNlYWRmZWU3M2M4ODk0ZWU2YTdmOTcxMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjRiYmM3Mzc1NGJhNjlhNzY4MGNjZTJhYzVmMDc4MjA1NmE4MTEzYTgxN2E4NWZiMWFhYWNiZGFiZDQ0MDRlZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjE3YmQxOWFhNGRlYzUyYTEyZmYwYmMzMzI5OWY3ZTRiZDEwZGE2NThjYWE1MTlmMDFhODUzOGRhNWI1Yjc1ZSJ9"
+        },
+        {
+          "resource": "repo://nora/__main__.py#L139-L190",
+          "version": "repo-lines-v1:sha256:66b7b7e2199dc3eb02242e583f2724f3bab523c205a86e29be20761ef373661f:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFlN2ZlZDNhNzRkNzhhYmZkZDAzZjA0N2Y1ZGZiMmFlMjcxMzFhNDhjZGVlNjA5OTQ2ZjhhZGM2MTE0MDc5NGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhOGNkYjBhMWJlNzQ2ZDBmMGQzNjY4ZTZkYTMyNDc2MDgwZjI3YjJhNTM3NzdhNjczNmJkZGFmY2Q5N2ViZmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM2NjI1ZWQ0NWM3YTYwZTIyZjFkZmFmNTYwM2U5MDU0Y2U5OGRlMzk5Mjk5ZjA3M2IwZTVjZDI3MjliMzk0NmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMwY2JmMTExMzY1MWM3YzkyMThmYmNkNzlhZDQzZmRjMjlmOTUzOWU0OWUwYmE4MTJjMzRmZDkwZGRmNmM0YTIifQ"
+        },
+        {
+          "resource": "repo://nora/web/api.py#L1-L11",
+          "version": "repo-lines-v1:sha256:10efa5b38ab505688de363b8bc4ac2dcea325a8192b44c0d233911bfafa12134:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1ZTdmMDg1M2IyOThiNzE5M2Q1YjYzOGI1N2Q0ZDU5NjQ5ODZjYThjYzA4YzRkMzhlZDRiYzM2NTc0NDFmMDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_eea6866be38e444cb646e02689e91e7f",
+      "statement": "`register_web_routes` takes every collaborator as a keyword and stores it under a `web_*` key on the application, and the sibling registrations `register_document_history_routes` and `register_artifact_routes` read those keys — which is why they are called at the end of `register_web_routes` and would raise `KeyError` if called first.",
+      "evidence": [
+        {
+          "resource": "repo://nora/web/api.py#L213-L253",
+          "version": "repo-lines-v1:sha256:05f5872f724b64ba23f60f1eb2713e480cc0cb5e4c2ad4a007af5c11486f3279:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNlMWZhYTNlYjc0MzEwYjRjYmEyYWM5MzkxMWJmNzdlYzM0YjkzOTAxMTI0ZjdlOTJhMmE3MjRmZDZhYzEzMjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk1ZmJmZWZhYzYzYzEwNWNkMjMyZGM4MTAyYmEyZTFjNDhmYmE0OWZhNzQxNGJkNjdkZDY1NWYwNDRhMWNmNDYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmYmQwMDkzMTRiYzI3MDg0MTY3MzRhMDJhZTVmZjM5YTFlNDhhMDUwYmU5MWY0M2IyZmFhOTIwMDJjNjJiZmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwNDIyMzI4YjZjYmI1N2E5YmVkM2ZjMjY0MmJhYjc4OTM1M2JlNDBmOWZjNTY1YWJmZGJkZDMwNTVkYmM3NjcifQ"
+        },
+        {
+          "resource": "repo://nora/web/api.py#L826-L827",
+          "version": "repo-lines-v1:sha256:c9945e832434ea34466f3cf2ac62659a969f75b1830da1b969c36da355b3c047:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWYwODVkNmNhMzZmMDk4MjhiNTI1NjE5MTU0ZmExNGQzMzI1YjY3NzUwOTk4ZTVkMzg4ODFjN2MzYjllNTVlOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzllMWQxYzQ1OWU3Njk1ZTc1YmYyNmVkNGQ1ZmE2M2ExNDQ1OWEzMGYzZDRjZGMwZTY3MzBkY2NiNDJkNTc3MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTViNjY0ZTk3MGFhNjU5YmM3OGM0ZWY2NDExYzM0ODI0MmY2NGViZWMxODZmOGUxMDU5YjEyMjMzZDAzOGM2NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        },
+        {
+          "resource": "repo://nora/web/artifacts.py#L263-L265",
+          "version": "repo-lines-v1:sha256:ac0d5cf29389bd7c07d5dcf0f2cac355f588292b431f4674172142a243406c2e:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiN2Q5NjgzMTJjYzA4MmNkMzgyYjJiNmQ3OTM0Mjk4NDE1N2EzNmRlY2Y2N2QzNTU5NzUxNGE2ODdkN2NiOGFhYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjVhMWVhZGQwMjE3YTJkYjQwNDIxYWMxMzI5MjYxMjcwMzczNDMxNzBiNDk0MWJkOTczZmQzOWYxNWZmNmJhMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDBjZTNiMGJjZTg1NGRiNGUyMGMyMzc4ODIxMmUwYjJhYmFjMzlhNmExOTRjMDQxNTYwZWU0Mzc0NDM4NjE4MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjY0ZDQyMTJiMWY5M2YwODY5ODE3NzE4ZjRjYTNlOWNhNWRiMTRjMTVhZTA5NmRlOTBkNWM1ZjVlZWM1YzBhYiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_22441544320f4dd8854c454808053e72",
+      "statement": "No `/app/v1` read authenticates its caller: the reads trust the private docker network and the portal proxy in front of them. The one-time-code pair is the single exception, because it hands out a `personId` — it requires a bearer token named by `[otp] api_token_env`, compared in constant time, is mounted only when `[otp] enabled`, and `register_otp_routes` refuses to register with an empty token.",
+      "evidence": [
+        {
+          "resource": "repo://nora/__main__.py#L169-L173",
+          "version": "repo-lines-v1:sha256:7fc98a7ff405cc3b119be3a76e35649677b3fb3b9f2a7ba87be337280969ee29:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDI2MTFiZmRkMGMxODQ2YzIxMGYwYTUwOWM4NTVkNWM0NWZjY2ZkYjBlOWM0ZDk1YzkzYmE2OGVjZjg4ZGQ3MCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjk1YzUwMDM5ZmM4NWYyY2IwYWQ0NjVmMWJjMjFhMDAxMGNjNjIyM2MxZjRmMTNhNDdlYjRkMTNmODE0ZTNjMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTUxYjVjMzUwYmM1ODA4ODM3MTdjZTJhNTAyZDZhOGJjZTc2NDU3MTZkMzNmMTEzZTg2NmY0ZDIyYmVlMGVhYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDkzNWU2Yzk4NzE2MDQ0Yjk0ZTVkNWFjZGM5NDIyNzExNzhjZTQ3MDM1NWJmNTBiNzdhNmJhNjlmNjhhMGY3NiJ9"
+        },
+        {
+          "resource": "repo://nora/web/otp.py#L38-L48",
+          "version": "repo-lines-v1:sha256:f21d25966ba08bdde0e6e0804e4c955b87e2459c3fe8e7a5ff8c2ad9bf18b3d1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVkNTk4ZGE3NWQ2MjUwMmE3NzZmN2ZjNjc0YmMzMzExOTFhODlkYjU3NTU3MmViMzU1ZThhZjQyOTA1MWMwYWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBhNDhlMzZjZDllZDM2ZmQ4NjBiYmIwZGFiOTNhMTgyMzk1MzIzMjM5ZWZiYWM2YmY3ZmExMzVmOWFmZGU0OGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY3NmJjMmRhNzk3ZGNmZTE5ZGZiZWM3NTdjNjQ1MjBhZDNlMzY0NzYwZmYzYTg1MmQzZGZhZWNmODgzNjVhYTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNmYWMzZTUwZGMyMWI3ZDI2NjE1ZmY5YmM4ZThjYWU2ZTUzYzQ3YTBhNmEwNmFkMWE2ZmViNTdmOGU5MWFlYmMifQ"
+        },
+        {
+          "resource": "repo://nora/web/otp.py#L9-L22",
+          "version": "repo-lines-v1:sha256:9d78c43a64fe6a27879748a61801c89409f632652fc1c210437896b8442e8724:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM2ODRiMzY1NTg2ZTExODhlMDNlYWRmODZhOTg2M2ZhMDU5MTUyY2UyZjc1MjgxY2MyNmNjMjQwNWE1ZGM0MTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBiZGYxMzhhNzUxZDQ3YzE5MDE2NGI1NzFhZjFhMWFhOGM3NDZiMTdhMWQyYWJlOWI3NTgyZjYxMTE1ZjBjZDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1531d92fb5104f8bb34f5d8130eb4efd",
+      "statement": "The portal's session and allowlist logic lives in one function, `checkSession()`, which re-reads the same `identity.toml` bytes Nora's process reads (cached, re-read on mtime change) and resolves both Discord sign-in and one-time-code sign-in to one identity.toml person, so somebody removed from the roster is refused on their next request whichever way they signed in.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/server/session.ts#L31-L55",
+          "version": "repo-lines-v1:sha256:6f3a21b7f3168bcf8185f178eedcc283ed8703b630c4ded734268684b4a2be89:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFiZmYxOTE0ZjlkNDE2MzlhZTA0ODEzM2YxYzE3YjlkOGQ3YjNkOWU0ZmMwYTlhZmJjZTEzM2Q2MDFiM2RiYzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI1ZmFiM2MxMDg2NDE4OTk0NGM4MjFiYjYyNGFhMDZiYWZjNDZkZGE2MmViODY2YTExYTkzZGYwN2M0Yzc1ZjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ad33d57a943f4bffbc0191c4379e02c0",
+      "statement": "The portal reaches Nora's API through one table, `ROUTES` in `app/src/server/upstream.ts`, which enforces GET only, forwards only the query parameters a route names, overwrites `personId` from the session on `scope: \"self\"` routes (ignoring a browser-supplied value), re-encodes id-shaped path parameters, and prefers literal segments over parameters so `presence/analytics/places` cannot be read as a person named `analytics`.",
+      "evidence": [
+        {
+          "resource": "repo://app/src/server/upstream.ts#L1-L30",
+          "version": "repo-lines-v1:sha256:c8ad46a4c76962486c06d05165f6da77195534afcfb19692d5d48cc804b41f2d:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhlYzhmYzI4YTRlMzVjMGU1MmEzNjI5Y2YxNzUxY2Q0ZmNiMWNmYWZiMDcyYjYzNDI2NTMzYTE0MWExMTRmNjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImViY2U1MDYwYWUxZmI4MmQ1OTg1NTc1M2NmM2E4MDQ4MjI5OTEyZTUxNjUwZTgzNDA0ZDIzNTExY2QwMzAxNTUifQ"
+        },
+        {
+          "resource": "repo://app/src/server/upstream.ts#L102-L151",
+          "version": "repo-lines-v1:sha256:e5dc5b567310a859ca2ba72e2960c2213f87b71c2cd3ccb53bd4a2614640d7d3:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc2M2UyMmZkMGZhYzk3ZDFkMTUwNjA5MDBhMjkyMDY2MGMzNTY2MDU5YWI1ZmMzZWJjYmJkMzZjY2EzMzBiZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ3Zjg4OGJiYTc0NjljNDkzNWE4YWY3OWQ5YTlkYjFjNmJhMGNlZjAwMDBlYjlmYmI2MWRkMWIzMzIxMTY3NWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_366ffbc35bb14cdfb57614fc6e3703dc",
+      "statement": "The three derived-presence endpoints are wrapped in `_needs_a_build`, which turns `NoRollupBuildError` into a 503 `{\"error\": \"unavailable\", \"reason\": \"no Rollup build yet\"}` instead of an empty 200 — because with no build yet, 'no places, no rhythm, no routes' would be a false statement about data that was never derived.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/rollup.py#L110-L114",
+          "version": "repo-lines-v1:sha256:d2b3166472995e431453938792cb3259f059ad9cb8ca77eb3413579356fe23b6:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGM4OGZlMDg1MGQ5NWExNDliOGQzYTMzNTc3NjA1MDM1MjExNzc5ZjAzODkyM2MwZTQxYjIyOTVlMzQ0ODUzZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWRkYThiZDQ0NjNjNzk0YjU0M2Y4YjAxZmM2NzNlYjg0NmFmMjllZTVjMGFiM2JlZjM4ZTdiNjExZGQyZWU0OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzYyMTVkODlmOGY4MWVhZjRlZWQ2YTNhN2YxY2E1MWEwNWRlZWY4MTQ3ZGU2ZjBlZTQ2YzVhNjVhMmRkMzliMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzBjZTNmMjRhYjQ3YzJmNWE5ZDMzN2YzNzdlZDg1NzNmYTU2NTg0MDc2NDAyZjFhZjA1NGEzZGVkNjE5NDYyZiJ9"
+        },
+        {
+          "resource": "repo://nora/web/api.py#L102-L119",
+          "version": "repo-lines-v1:sha256:402c628f89494cc86d0615261af59e5865581b6c49780b0f299fffd34cebfdfd:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMyYzJhMWMzZTU2ZDFhOWU5YmJjM2NjZWMwOGJmNmYxM2NkNDMzNGEyMGM0ODU5YjJiMTZmMjRjMmI5NzMyNWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0YmFiZTFlNDlmNzAwMzAwODcwZGUxMzdkODIyNjgxNzUzZjU3MGRmNGI3NzllYzk0ZDg2M2EyMjMwMmRiYzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYyMWEzMDk0ZGNiM2NlODY1YzJkOGQ4YTY2YmYxZWVmNzAwNGFiNjU1YjQ0ZTJhMDgxMDk0OGZkNDViNzlkZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM0MTgxYmY0MGMyNzE5NTQ3MDVkZmVmY2YxMzgzMzgyMWU2OGNhZmMyOThhMjRmNzFlNmNkZmYwMDA4NDYwYTkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4a2d8056916041b9854a07c5bafe94d2",
+      "statement": "The games routes proxy Pulse's REST API and convert every `GamesUnavailableError` into one fixed generic 503 body (`{\"error\": \"games backend unavailable\"}`), logging the real exception server-side so tailnet hostnames, MCP payloads and Pulse's own error text never reach a browser.",
+      "evidence": [
+        {
+          "resource": "repo://nora/web/api.py#L296-L313",
+          "version": "repo-lines-v1:sha256:41bf56cd548564f29e71c2f155a9e5c90e7964bad2bd6c18c45af17c3792c79c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5YTg3NWI0OTNlNDBiOWQyYzgyMGVkODQ2YTAwZTg2MjU0NDE4NzczYzU5YjY1MjgyYjYwMThmMjc4ODhjZmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI3NGQyNGM4NjQwMGZkM2Y0ZDlmNTgxYmM4ODgzMWE2MzNlNGQ5ZGMxMmVlZGUzYzc2NmM4N2RhOTJmNDFmNjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIyMjQ4M2FiN2Y0ZWU0YWVkODQ0NWUwNWUwZDQ5MGUzZGM1YjM1MGZhY2UzMmU3NDdiNGU4ZTllNmU2ZTBmMGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI2N2IwZTE0ZTZiOGNhZTliMTIzNGY3YTg5NzM0ODYwZTBkOWY2Y2JmZTQ4YjlmZGRmYmViYjRlMjU1MGEwZGIifQ"
+        },
+        {
+          "resource": "repo://nora/web/api.py#L73-L78",
+          "version": "repo-lines-v1:sha256:dfda217114cc0b0521f3339ff051fdb965ac243842ed31edd9cc168499b565ef:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTg3YWI0ZGIxNzVkNzVjZWRhM2UyMjk0ODJkZjJhZjQzZDEzNWNhN2JmMWVkODgwNmE3NGQ4M2ExYmJjMDgyMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTllM2E5NTg2YWE3YWM4NjI5MGYzNDdhNTEyNGU1YmM0ZjhmZTIzNDQ3ZWRkOWUzNGEwZDk4OTNhYzdmMmM5MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGE4MDdmNGZlOTdjYmE1YjFiNjE4YWNjYzFiMjg4ZDdmMzBmMTIzYTcwMjIxODQ4Y2M3MDE1YWE1NzlmMzI5YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2Y3OWJlNjJhMzQyMDk5ZDg1OTllZmFiNGY1Njk0ZThlNzRkYjAzMTA3MWM0ZjBmMWVjYmZiNzEwNzJmOWZmYyJ9"
+        },
+        {
+          "resource": "repo://nora/web/games.py#L64-L75",
+          "version": "repo-lines-v1:sha256:c2108434abccb5d095c7d2937f43fa46643343ee5d583f097c9bb4b2892051c7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwMTJjNGZhMzc4OWI2YWMxM2NlYjAxYzY1MmUxZjFjOGQwMzkzZjYyYzc4YTA3M2ZhZjc3ZGQyOGI0NThjMzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYxNWYyYzAzMjFiNjA2NzgzNjhiMzc3MzJmMGJmYTliZWZhOTFkNzUwNGI0ZDllNGRhOTM3Y2JkNWYwMDU1N2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZmN2Y5NTI2OGExOTNlZWNhYWFkMDkzODNiMDc3NTRiYmQwZjlkMGM2NmEwOWZjMzExZTJlNzQ4OWZiMmNkNWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQzZGJiYzAzMjBkNzhjNDhkZjZjNjQ0MjY5OTMxNjVhNTA4ZWRhYzQ5YWY0ODI2ZjdmNmFmZjhjYTNlMjhiZGMifQ"
+        },
+        {
+          "resource": "repo://tests/web/test_api.py#L191-L200",
+          "version": "repo-lines-v1:sha256:11d7b0b368f4680ff07d993d4a1485c37513953702cef26e1dc5fa85281e7221:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlYzJkNGY4NzFjZjMwNjk2ZDA0ZGJiYmYwNGY1YWZmMTQ3ODIxZTIyMDhkYzE4ZGM5ZGFkYjBjNTEwYzQwMjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1ZTI1YWFhYjQ0YjEzZGM5ZGVmNDFlNjk1ZTc1MmI5M2YzMDc4ZDU2MDg1NTNiMmE3ZTBiNWY4MzgyYTljMzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY3NDIzMTVlZDQyOTY2ZGVlM2M2ZTZhYjZhMGIyNTdlYTQxODg4NzZkNTM5NGVjYWJmMGJmOTU3NzljZjZjOWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE3ZWUzNThkNzk4Zjk2OWZjMGNiODIwZjk4NjU2YzAwNTgxNTE1ZGJhZmFlNzg4MjM1ODAwZWQwNWZiMjcyNzUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0fcf79eec679490790d14bfaba0c2c23",
+      "statement": "Documents, artifacts, events and the evidence text inside a memory entry are gated by `rooms_of(person_id)`, a callable so `nora.web` never imports a `Policy`; composition binds it as `functools.partial(rooms_named, allowlist)` where `allowlist` is the single `Policy` `load_policy` returned while `build_dependencies` ran, so the room set is recomputed on every request (nothing is cached between reads) but `policy.toml` is never re-read — a room-membership edit on disk takes effect only when the process is recreated, the same load-once lifetime `identity.toml` and `policy.toml` share.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/composition.py#L1443-L1446",
+          "version": "repo-lines-v1:sha256:06607f5dfee48af238a1de43a9d5033e5c88485726de2154d02c1ac4c476a3f2:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWRhNWM2NmUxN2IxNDUzOTc4MzRiOGM4NTRkYzQxOTNlMjEyNTE4MGE4OTk2YTE0YzMxODgzMzI2YjJlZmJjZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZGM4ZDFhZjExMmEwMWVkMzI4MzZjY2FjMDJkYjE5MzEzN2EwNjI3Yjk0NmY3MzhkMGMxZGEzYTUxNjJmMjY3MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTgzM2E4OTE1M2I1MDhkOTVmMGRmODY5YjIwNTdhZDU4MTQ1NzUzMDZjMTFlNDY2ZjkwZWJhYTAzZDJjMjVlYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDJjNWMyZTdkYWRiODg5MmQ0NGY0OGQ4ODJjNzZlZDVhMjJjMmQ2OWU4ZjE3MDY0NGEwYTgxYzIwYjc1ZDZjMSJ9"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L4684-L4686",
+          "version": "repo-lines-v1:sha256:ebf791a5ccac64f8cd92ede6a7fd9168a5eb19d683574a5c2f639465022f3dd0:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjZhYjg0MTMzZDNkNDQ1ZTc2YTM1YzQxYjQ2ZTcyMDc5MWQ3MTI5NTc5ZTA3ZDU1ZWNjZGY5MjcxMGUwZTQ2MSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGNkYjYwNTk5MTVmMzc2ZDVhYmVmMTZhMTcyZmE5NDJjNWMwODNjNDVlZGI5YjZkNDVkYjE5NmIyMTlkODM1OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDMxZDVhMWRmOWQ3NWYwYTkyZjkwOGNmNDczNzBmMzBmY2YwMDhjZmZlYWU2YmE5ZDViODU2NTJjYjk4M2IyMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTc0YjZiZWNhNTUwM2M0ZTE3ZDdhNmQ0MDBkZmQ0ZGJiYTZhNzA4NTgxOGYzNTg2OGRiMDlhZjMzMjdlZjcwOCJ9"
+        },
+        {
+          "resource": "repo://nora/app/documents_service.py#L126-L134",
+          "version": "repo-lines-v1:sha256:a219c7d3902c82f13e8be179b3a131b2302644f065eb0a0b24831327d51753a7:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNmZiNGExMmUzODNmNzJmODU1NzU4NGRmYmY2NjFhMmRmN2JkMDk3ZjFkNmM2MmE5NGI5NTY2YWM3MTBmMmFkZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzBjMWYxODhmMTQyZWQ3YTgyNDY4MGIyMDcxNzJjNTUxOWJjNjE0YTQ4ZmRhN2NmMTY3ZWRiOGRkZjc5OTU2YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWIyZDM4NDE4NThlY2IwYTA4YmRmNjA4YTE2YTZiZTkyNTljNTk2YTZkYjMxM2MyNzhjNWQ2MmNmNjJmOWRlYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDM0NjQ2NDJjODRiYmVkMTkxNjJiODgwMzAwNGY0ZWY2NTlkZWNjMmU2ZTUzNmYzZjVhYWNhOTMzNjc2MGY5MCJ9"
+        },
+        {
+          "resource": "repo://nora/web/documents.py#L1-L14",
+          "version": "repo-lines-v1:sha256:5b737bf998becf63dad59fc7db65878e4cc7519dce90d36b3eae8f3d0a28d445:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA4MTA5YjY3YjE4ZjAzMzE0Y2E0YTFmNGNlYjc0MWE2NzJiMTA3YzdhNjZmYTg3OTA0ZGE5NmE5ZTkyODMwNTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlMmZkMDhiMjA3MzFmNzc5N2VmNGNjOTMwM2E3ZDcyODVlMWI0NzgyODk4OGIwNTU4OGYxNDg0NzcwMmY1MGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZmZmVhZjkwODExZTgwMTdjN2ZkMDI1YWY1ZDM3ZjQwM2VjNDA0NjIxZjVhOThjNzQ2YzYxY2ZhZTMzNTk2YjkifQ"
+        },
+        {
+          "resource": "repo://tests/web/test_documents_api.py#L196-L205",
+          "version": "repo-lines-v1:sha256:a47cea87d345da2bba80367f780d4698e1eacb73d14f9564b393e891155169fc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc5NDgxNWE4NThhMjliMzhiNjIyZGUzZGVmODgzYmYwNjViNTllZTllZjYxYTU5N2M0NmQ0MTYxYWZiMmJkYTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZhYTk4MmFkZDc3NTI3MzFlMjE5NGE5NWMxZGVhOTRlOGFhOWY2YmIwYTlhMjc1NDUyOWY1NDc0ODdhYmIxNDYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg4YmNjYzdmNjAwYzY2MDkyOWFlNTdkNWU1MjI0N2I0YjBkZWNiNzZkMTc4NGI2ZTE3YWJkNTBjY2JhYzJiOTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjllMGMyZjg1MTg3M2ZiNmFiYTQwZTRlNzdjMmVjNjhlOGQ1YjhjNmRlZTViNTlhYzc0MTMzMWZiYjcwZWE2ZDQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8ac435d93d4a416598cd6169367fe44b",
+      "statement": "A document or artifact the viewer may not see, a deleted one, a picture the document does not name, and one that never existed all answer the same 404; no portal route returns a distinct 'forbidden', because a ref must never confirm that a thing exists.",
+      "evidence": [
+        {
+          "resource": "repo://nora/web/api.py#L708-L711",
+          "version": "repo-lines-v1:sha256:7997e5c4ced03a6ae2a5fdfe1caff8d2e6cc3000a0ffe920fed5ea2e1ab92692:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzdmMzc0Y2ZiNjM0NTM2Y2NhOTM0M2ZmZmMxNDk0NzJmZTdiOGVmYzY0MzIzYWQ2ZTNiMTczZTg2ZjcyOTZmZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjc0ZDI0Yzg2NDAwZmQzZjRkOWY1ODFiYzg4ODMxYTYzM2U0ZDlkYzEyZWVkZTNjNzY2Yzg3ZGE5MmY0MWY2MiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTg3ODY2OGU4NDVkMzY3YzhmMzMzM2NmZDliY2QwMjcwZTliOWJiMzdlYzU1YjcwYWNmZDM1NDJkODMyNmFmYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDc5ODI3NGFjMGFmZDNkM2U4MzgzNjRlYmM2YjE1Y2RhNTc0YTQ3YmY3YmJiZGM0NTRhNjE1YmRkNjg2N2FiZCJ9"
+        },
+        {
+          "resource": "repo://nora/web/artifacts.py#L17-L19",
+          "version": "repo-lines-v1:sha256:29837a780a67678fa42711e5e54213cf23c007ffd9c7e68815486e065a13be4d:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiY2FiZTk4YTZkYjM1ZjI2ZGNhZjRhOWYwZWI4MjU2N2Y0MjBmY2EyNTczODYyM2ZlMzI3ODE3MzVhYzE0YzU0YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzM0MDYyYmM4NDA3OWJkNGI3ZGRjNDk5ODFiZmNkMDE3ODdhOWUyZWU4NGUyYTBiYTI4MTk1NTkzMTE1MWIxMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjE4NmEwNjU0ZjZmMmM4OTEyZDU0ZmZhNzkzYzQzN2IxYWNiOTQ0NjFmODFmOWVhYjA1NWJkM2ZjOGZiNTliMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDc5MDQxNzYwMDRhNWVjOTU2NGVkMGFkYjNmZmVlYmM1OGU0ODlhNjU3ZmM2YmY0YWY0NGU3NDMyMWFjNGYxMSJ9"
+        },
+        {
+          "resource": "repo://nora/web/documents.py#L1-L22",
+          "version": "repo-lines-v1:sha256:9a2e8c24ea02c9ffdf5980ae0fedefe4fcb1accfd273ce0ca85b91521154d1b6:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA4MTA5YjY3YjE4ZjAzMzE0Y2E0YTFmNGNlYjc0MWE2NzJiMTA3YzdhNjZmYTg3OTA0ZGE5NmE5ZTkyODMwNTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkzY2YxZGY3NjcxYzY0NTVlMDdmN2UzOWU0Y2JiNGQ3OWMyODE1MGEzMjg0ODdkNDdiZjI2YTM0OTc3ZWI0NjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg2NWZiYzdkNjVhYzY3MWVhY2MzM2VmMGUwYTZhOTA1YmJjMjQwNzkxYmZkMWU4ODg4YWVkYjA0N2UyYzU4ZDkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e5709757528a475da2515cec15472b59",
+      "statement": "Live and historical presence are not room-scoped and deliberately bypass `DisclosureGuard`: every allowlisted portal viewer sees every `identity.toml` circle member, a stated product decision; `presence=None` (feature off or no circle) yields an empty list or 404 rather than an error, and a non-circle `person_id` on the history route is `None`/404 while a real but empty history is a 200 with `points: []`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/web/presence.py#L1-L19",
+          "version": "repo-lines-v1:sha256:d8bdefc106e3f0e02530df0e164f8be97e6fff6dc023872d26008ef94367e6f5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlODcwYzk2M2RhOWExMzlhN2ZiNzUwNGM4N2ZhZjI2ZGI3N2QzYWRmYWUzNTljMGUwNWE2ZDRlZmQzMzg3OGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/web/presence.py#L157-L176",
+          "version": "repo-lines-v1:sha256:12d5256a82ab8ce8a5926aa3281233118053be753d61e899adb469dfb48337c7:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUxNDdjZjYwOGNmOTA3MWJiYWQyMjZjN2IxOTk4MDJjMWI3M2RjMzc4ODgxZTZmYTdhOWFiYjU0M2ZiYjZlYjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlN2M5NTdiY2I0NGZiNjczYzk4YjAwNTBhNzVkMzgwODJkYjgxZDkxOGRlMzEzYTNmMDdjMTIzNTMwNmQ3ZWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBiNDY4YWQwYWJkNWRmODYyMGJiOTRiZGZmZTg1ZjQyMTEwZWNkYThhZjc2NGE0ZDVjM2JhMDZiYWE1Zjc3M2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNlZTNkYWYwMmQxMzUwZDMwNDM4ZjEzNzJhZjg4NGE3NDU2YjdmMGM4MDgxOGNjOWRhNjBjY2JjMjg1Yjk2NzAifQ"
+        },
+        {
+          "resource": "repo://nora/web/presence.py#L61-L77",
+          "version": "repo-lines-v1:sha256:3df9a7989b7a27c0cd0a73dfe885ef8592dfcc8ac0247787226fba0bc354dc19:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA2NmYyZjBhNDk5ODM4YmUwZmIwMDJlOGQ4NzI5NzE3MzljNTZmYWNhYTU4OTc4NThlY2E5NTNmMmZjOTRlNWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNkODdjMzVkOGQzYmE4MjNmZTI4MDM3NmFiNWUzMzkzOTQ1YmVlNDAzMDMzZmYxNzMzMmRhYWEyZGUxMGU2ODQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmYmQwMDkzMTRiYzI3MDg0MTY3MzRhMDJhZTVmZjM5YTFlNDhhMDUwYmU5MWY0M2IyZmFhOTIwMDJjNjJiZmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ3OGRjMTY3ZDNjNWQyMWI4ZDQ4OGU0MjJkN2U1ZTIzMTJmMzI2YjNhNGFlOGZmNjVlOGM2Mjc1ZTYxNTk5ZGEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d46b115eec814af1b390620d0c3de053",
+      "statement": "The presence analytics routes resolve their subject against the same circle roster the presence route renders (`_analytics_subject_ids`), so an unknown or non-member `subjectId` gets an empty shape and the mobility store is never read — the endpoint is not an existence oracle.",
+      "evidence": [
+        {
+          "resource": "repo://nora/web/api.py#L158-L167",
+          "version": "repo-lines-v1:sha256:2bd872308ac57417ccc09aeb3e71027789a9035adeec8b3e14691c1d98232668:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZmMzlkMTk5NzJjMTJkNThiMmNjM2NhN2FmMTE4MzJhODYzMmEyNGQ2NTBiNTU5M2M3MzA2ZjQ3ODU2N2ZkMWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY4OTE1MTIxZmU5ZjAxOTQwZTc5ZTNkZmEzZDE0Y2ZlNmRkNjU0ZjI3ZWEwNGU0NDQzYWI1ZDZmOGU5ZmIzYjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM4OTY0NTlmY2M2OWE2MmRjOTc5ZGVhMTA2ZjYyMThjOTQ2NDI1NjkzYWViMzZlMWJhNmU1NzU1YjUzZmE1ZjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjViNGVjMjMwZmQ4ZmMxODBhM2I4ZjU4OTQwZDgyYmRkM2UyZWNjMDNkODljYjA3OTU3ZThiMGM0OTJhZTc4MWEifQ"
+        },
+        {
+          "resource": "repo://nora/web/api.py#L472-L514",
+          "version": "repo-lines-v1:sha256:bbc8c11de6315c27a46c2d9d8e9a1db3e775e1213c55a09c1eed065bac42a621:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2NTFhYTAxMTI1ZjdlOWZmNzBhM2Q2MjEwODQ1ZmQxNGFkYzQ3NGNmMTdmM2JkMWUwYmNlNzhkMTBlOGRjODMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEwZTIxN2FjMjhhZDJhMWIwZWYxMDQwMzIyNzdmMzMyODNjMzRlNWMwY2E2YzRiYTBmMDRkZmUxZjg3ODQyOGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdmMTk1YjFkYTMzMDA1NjFlYjE2ZDdiYjhlMzliYTU0MzhkZTAzMzFmMWEyZDliOWRhZjg3ZGM2MjUxN2U1OTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM5YjZhMWI4ZTk1ZDA0MTYzMzQ4NWY0ZWE4ODdjNTJmNTg2OWE3MTVjNTUwZDJkOTQ0NmUzMzdlYWIxMDk0MzEifQ"
+        },
+        {
+          "resource": "repo://tests/web/test_presence_analytics.py#L226-L241",
+          "version": "repo-lines-v1:sha256:770830b7bb55b1720d7b7b1223f3ecd9485f8d5715fc43e44eb541d956571377:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjMWZlODI1OGVkOTM3OTcxNDAwMWU1MTJlNTQ1NmFhYjk0MzdjNjgzNTMxZWRiYjI4ZGI0ZWRlNTFkZThiNzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5NDA2ODkyOGE1NDI4N2MwZjRlNzk0MzE0MjMxN2FiM2E0Y2VjMmUzNmI4Yjc3OWYxOTRhODQyZDRjYzgwNTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBhMGM2MGMwODUzOTc4M2RlNmVjZjI4OTM0ZmQ2NmQxNWQ2OTVhNWNlYmY0ZDFhNzRiNmE3M2I4YTYzZTk3OTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_48dbb0f7759f46cc8fbfcbf559f4a6bd",
+      "statement": "`/app/v1/memory` is self-scoped: a missing or unrecognized `personId` answers `[]` rather than any other person's data (fail closed), and each entry is one per Nora workspace that names the caller, keeping Honcho's identity claims (`peer_card`) and its dated episodes (`representation`, observer = the AI peer) as two separate lists rather than one merged list.",
+      "evidence": [
+        {
+          "resource": "repo://nora/web/memory.py#L1-L25",
+          "version": "repo-lines-v1:sha256:a50d168f7751c2cdd648e9717438593e58caeac6337f29ca0cd1bf20817cf29d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM1ZGUyOGMzNDNjN2UxYWI2MDc5OGIxMjNkM2MxZmNiZDUzZTFhYTg4YjQ5ZDJjZDc3MzhjMmM1MWI1MmU1YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/web/memory.py#L121-L132",
+          "version": "repo-lines-v1:sha256:b035106e07b57892f378fe684657f8bbd36f4defe4a222e4d6eb2423b02bc26c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY4N2RlODc2ZjBlNGI1NzU4YTIzNjJhNjVhMjhlZjYwZjgzYmY3ZmUzNTgxZmEwZTI5MDU2NGQwYTNiZjRkMTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhYWU4YTBjYTc2Zjk4ZjdiN2RjNzk4NDk1MWQ2M2U1N2RiM2M2NDU1NzljYTUxYmFkNmE1MzlkNjE0ZWRiYmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmYjRmNjI2M2YwNmRhZDFiYjYwNTlkZDcyZDIwNjlmNjA5ZjIyYWYyNjIyNjI0NzE5ZWQxODAyNjE4Yjg2MGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhMzA2OWQxYmU3ZTRhNGQ4MWU5MDUzYjA5ZGU4NjEzZmQ4MzczZTZiNzIxZTFmNmRlN2UwYTM4ZWYwYzg5MTUifQ"
+        },
+        {
+          "resource": "repo://nora/web/memory.py#L143-L160",
+          "version": "repo-lines-v1:sha256:b567896a10252cebc0f452ee4cd3e37ac277305055e19ae91f615d0c6148cbe5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZkZjIxNmE0YzY4ZDM2YWQ0ZWRiNTRlYjJhYzNmZTczNjQwYjc5M2IxMGFmNGJlNDUyZDhlZDYxNDQxMzgxMDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFiMjc5MDQyMWM5ODFhMWVhNjVlMjFiNmIwYTc5OWZkM2I2ZjIxZDYzMTUyZjg0YjRmYTRlY2MwNTRhZDRhODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY2ODI4NTc2MTRmZTZlNjcyY2Y5Mjc5NDJlYTg3YTg4ZjRlMTAwMTZiMTc3OGYwNmE2MjlkZTM5NDg0ODVmMmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJjMGI1ZTVlOGNmZGE4Y2UzOGFjNWFhYTIzNTA5ODZhMzU0MzQ3MDA3NzY3ZjdjZmE3YmVhMTI2MTIwMjQ2ODEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a0bddb926ae44a92830b40b7a51f235c",
+      "statement": "`/app/v1/status` is a filtered re-projection of what `/health` computes plus a reminders summary: it names reminders by due time, platform and conversation only (never their text or requester), and it omits any cross-room 'recent activity' field because `RecordStore.recent()` is scoped to one conversation and no port method spans rooms.",
+      "evidence": [
+        {
+          "resource": "repo://nora/web/status.py#L1-L31",
+          "version": "repo-lines-v1:sha256:b9841bcfc73bcfac39dc6f404efb28398a915b6da9af04fd08228aeb08125390:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlMTQzYjcyMjA0ZjZlNzQ1ZDEyYjAwZWZmY2U2YzFkY2IzMzA5YTQ0MDc4MTI0ODI2NjEyNjk1MzY5Y2VmMTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxZTVhZjY0YTA3YTNlNWI2YmNlYmExOTJhZmVhNjVjNzVlNDA4YjRjYmFhYzllZDQ4NDYzYjVlMmFjNGNhZjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImExMjI5NWFmZjViYjEzZjljZDE2ZGMyY2M1YzE1N2IwZDQ4ZjU4NTg5NDE3NDNkMDhkZGE3ZjgwNWI1MjE3MzkifQ"
+        },
+        {
+          "resource": "repo://nora/web/status.py#L34-L75",
+          "version": "repo-lines-v1:sha256:d4272c681813be0fb5516dfc9b2d30ccd258c86204d374af620b78c6e35fb3ff:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU0M2ZlNjM5NjAzNzY3ZWE3MzkxNTAwYmYyYmJlZDQzNjA5ODJkNmNmYTRhMmE2N2Q5NGVkZDM4ODIzMDBhNjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlhM2NkN2I2Y2JiYjI0MzVkNTZkNzAxZjliNmQzMzU4MTViOWMxMzk4ODIwMDQ1MWVmNzIxNmI2ZjBkNDRmNDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5e952b67414c45b9bfcfe3a21688b53b",
+      "statement": "The process start time is created once in `App.run` and handed to both `build_health_app` and `register_web_routes`, so `/health`'s uptime and `/app/v1/status`'s `uptime_seconds` cannot disagree about when the process started.",
+      "evidence": [
+        {
+          "resource": "repo://nora/__main__.py#L139-L155",
+          "version": "repo-lines-v1:sha256:87306942cfce6f5436f656c5c6e11d3d59f4a536606a64aa1331e6086d8f1b2d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFlN2ZlZDNhNzRkNzhhYmZkZDAzZjA0N2Y1ZGZiMmFlMjcxMzFhNDhjZGVlNjA5OTQ2ZjhhZGM2MTE0MDc5NGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU4MTNkNGNhYjE5YzI1NWQyMGFjNmRmYTEzZDEwZjk4YWJmNGVjN2I2OTEwYWZiMzc1MzM2NTRmMGU2ODI4NTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM2NjI1ZWQ0NWM3YTYwZTIyZjFkZmFmNTYwM2U5MDU0Y2U5OGRlMzk5Mjk5ZjA3M2IwZTVjZDI3MjliMzk0NmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY1NWY3NTY1YjVlZjZmYzk1YmFjZjdhYTg1NzMyZTljM2FjMGYzMTE4ODY2MzQ3MDQyNzRjNzYxY2ZiNDJkYTQifQ"
+        },
+        {
+          "resource": "repo://nora/web/status.py#L34-L55",
+          "version": "repo-lines-v1:sha256:dd2af36474aed66efab4373c88e468d8cc7cf0fc21ab43cb7494918265c279b7:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU0M2ZlNjM5NjAzNzY3ZWE3MzkxNTAwYmYyYmJlZDQzNjA5ODJkNmNmYTRhMmE2N2Q5NGVkZDM4ODIzMDBhNjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlMjM2NzFlYTkzYzNjZTc4ZTE5OWU0NTcxNjRhODgxOTAzNjJlMDQwMzUyZWYzMGE3YjkyNWM1NWYxNTM4NjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlhM2NkN2I2Y2JiYjI0MzVkNTZkNzAxZjliNmQzMzU4MTViOWMxMzk4ODIwMDQ1MWVmNzIxNmI2ZjBkNDRmNDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEwY2UzMGY2NmM3NTU1ODE2YjhmN2FkODBjNThiY2M4MjczOWU5MDJiZWVmYjJiMzA0MGIyMDI4MzMyY2I4MjAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_716296e870c148a8a78c8b4669910c8a",
+      "statement": "`POST /app/v1/documents/{id}/state` is the portal's state write and reuses the read gate (`DocumentStore.get_visible`): whoever may open a document may archive, delete or restore it, a document they may not open or a deleted one is the same 404, and a store exception is answered `unavailable` (503) rather than 'not found'.",
+      "evidence": [
+        {
+          "resource": "repo://nora/web/api.py#L749-L785",
+          "version": "repo-lines-v1:sha256:7a2e42ca35539b7da5e3fc011121d969aceb8545f81b675551e9d264887182ef:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkwNTJjYmQxYjI2ZmE3YzQ2MTIzZGNlMThiMDMwZDBlNzExZmFiM2JmODQxYTRkYzkwYzk0MTljNDI4NzRlY2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdmOWNiMDk2MjI3MDgwNWFhYjAyYzFjYzM1MjFjMGFkZDFkN2FjMTlhZmI1ZjE4MDkyNmZlMTIzZmVhN2E3YjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYyNGRlOGRiYzU4YmIyMmRjNDIzNjhlODY3MWMyNmJhOWQ1NGVhZmEzZWE5OWJkYzM2N2ZlZmFiOTJhMzE2OTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMzYTk2ZmNiODIxYmRlOTZhY2ZhYjgyYzc1NjQ2OTc3MjM1NDRiMTUwZTZiYjdlYTViOGY1MGVmYjQxNGE1MWIifQ"
+        },
+        {
+          "resource": "repo://nora/web/documents.py#L133-L165",
+          "version": "repo-lines-v1:sha256:c705a5094444f69815a411acb5b3dd635c15c0ecef2acc5ed6f2a0b0b5e895e2:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMwMTRhZWIwMTVlOGI4ZTcxMDdjNTQyNmZjODY2ZGZmOWRiYWMyNjBjNmYxMTZhYzM1ODYxYjcwOTk5OGM4ZmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmYmQwMDkzMTRiYzI3MDg0MTY3MzRhMDJhZTVmZjM5YTFlNDhhMDUwYmU5MWY0M2IyZmFhOTIwMDJjNjJiZmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM2NGFhZWJiMzc4ZDQ3NzQ4YmIzODhjOWFhNGM3NmFmZWIyMzcwZmIwYzk1NTA5ODQwNzU3ZmE1ZDliZjg5ZTkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d4916caff8a947f9a9df392afb39c8ef",
+      "statement": "A document revision restore republishes an old spec as a new revision through the store's compare-and-swap (`base_revision`), records `portal:<person_id>` as the writer, and answers 409 for a stale `base_revision`, an archived document or an invalid spec — history is never rewritten.",
+      "evidence": [
+        {
+          "resource": "repo://nora/web/document_history.py#L1-L35",
+          "version": "repo-lines-v1:sha256:11609aa4e395ad2274ff44718c84cb76656c8bb3c934a392cce2c9ff766cc4e0:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiMzk1NzE2MWE2Y2JjMWM4NTcwYjQ3YTkwMGI3ZTRiNzZhNWEwMGFkOGMxZThiODEwZDEzOWIwYzQ4ZDFlZGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/web/document_history.py#L302-L341",
+          "version": "repo-lines-v1:sha256:3c4c94052420410e18b0f2439f04d3f1d80b8fe4a717e790dbf30d2365afd622:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlkZjBkYjgyZjkzYTQ1OThmODRkNWVmNzBmNWJlNDUzOTlkZThkMDI5YzRkOTljYTA0YmQzYTQ1ZDFiYjFmMzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRlZmU3NmVmZjYzZWYxNzdlNmIzNzk4YjQ4MTU2ZTExZmJmOWZiNzAxMDllNGVjNzNkMmFjMDg0ODBiZGRhN2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ2NTY3MDEwN2UxNzhkNWY1ZWI3NzliOGI5YWY5NDEyNDAwZTI2NTRmNDk3YjcwNGIwNDYzZDc3NzMyNDJmZWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2e86b6c29f4c442287b8db883c6a1cc5",
+      "statement": "Document pictures and artifact downloads are typed again from the bytes rather than from the stored row, and are served with `nosniff`, `Content-Security-Policy: sandbox` and `private, no-store`; only a raster picture may display inline for a document, while artifacts additionally allow audio and video inline and mark everything else an attachment.",
+      "evidence": [
+        {
+          "resource": "repo://nora/web/api.py#L713-L747",
+          "version": "repo-lines-v1:sha256:8a107e1c249e7c0b83c46ecd7f3699820b7dd036420642e91e45902c42e5c254:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRmYjhkYjMwNDMxZjE3YTc5OTM0YjNmNmU0NTUzNzRmNzVlYjI1NjZjNmY4MjcyMmZhNTM2ODZlYmE4ZTZkZWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhmM2Y5MzdmNzZkOTJhY2EwYTIyMWUyZDJlMGJhMDk3Mjc3ODdhOWMzY2ExMTRlOGMwZTkzODg0MTFhMjVlYmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJkZWI2NzYyMzk1NGNiMDJjYjUwNTAyN2E2NDdhMTZiZTYyNjhjNDY1MDdhZWI5MDdhMjZjMTMyMzhkYTNhZmMifQ"
+        },
+        {
+          "resource": "repo://nora/web/artifacts.py#L125-L137",
+          "version": "repo-lines-v1:sha256:277477e89b2ae8f5853416851bada23d2105098084fb590550011471570940ea:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5Y2I1MTEzYjY3ZjA4M2ZmOWU1Yzc2ZGYzMTRlOTY0MDU3NmNjNjFlODIyNmQwMDVhZDdjZDIzNjE5MTJkZDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI3NWFmMjEyOWMzMjZlZDU5ZTdiNWUzZjRhOGU2YTA1ZTRhNTZlYzVjZDFiMDdhYmNiNjgyNTBjYmZjZTE2NDAifQ"
+        },
+        {
+          "resource": "repo://nora/web/artifacts.py#L55-L74",
+          "version": "repo-lines-v1:sha256:1516c2851289f7103f776e8c6d1412bcd29f3d5f7e2e105d77d592ff4e4322ad:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlMWQyNDg2NzFjNjcxMWRkODhkNDE4MmEyZWJiN2E2MjliZGJjZWM0YzM3ZDhjODFjMWM2OGNkNWFmNGQxNzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxZTQzMWM4Mzc2Y2EwMzEyMWE1Zjk1MjRlNDBkNTBhY2VlYjIyYzQ2NTdiY2EzZWQzZDMyYTJjYjAxZmI1NzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZmMWViNjQ5NDlkMDdkMTI4OGFjZDMzZTJkZmIzODIwZjc5MTI2NDNiZTI4YzVlMzU5MjI3YTNkYWVmNzQ4OGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMxN2NkODYyMTQzMDgxMDczYWRjMzYyOGQwOTU5ZTQ4MTU1YmRhM2Q4MmEyNDYyZWM5NDhjNWE4OTU4MDYyMDIifQ"
+        },
+        {
+          "resource": "repo://nora/web/documents.py#L227-L243",
+          "version": "repo-lines-v1:sha256:edd9682b3d6c19a2ad811f8b6ac486e36635436455fa19a8aa207b3e29a32905:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNjNjA5YWEwZjcxYWYwYjQ0ZTkyMWMwMTY0NWY5OTNiNmI3N2RhNDFmYTAzMzVkNzczN2NiMzA2OGMzNGE0ZTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTYwMGE3M2QyZTAyZjM1MmI5MGZlZjFkOGQ2MzgxMWJhNGE4ZWUwYzFiZWFhN2FlNDY1OGYzNmFhMmUxOTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVjMWNjYjZkNDBiZDVkYWFkYWY4YzdjNjRjODRlNDRkMjFlOTljM2Q3Mzc2ZGE4NGUyNTQ2ODg1MTMxYzI3NmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        },
+        {
+          "resource": "repo://nora/web/documents.py#L258-L304",
+          "version": "repo-lines-v1:sha256:7bd2603c820443cd53dd06c7bd0487908172caf164ca55ff791dd38b714c162d:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIwZWJiM2NiZmZmZTcyNDExMjU0N2FhOWJmYzlmODQxM2RiMTNhZjA1YTNkYTgxN2MyNWI1M2IxODlhNDg5YWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJlMTRlOGZiZDRmNTM1N2RhYTJlYWI0OWYzNGI1YmI2ZjY3NmNkNWM3YTQxZmFhMmI0ZGJmYTVjMGY5NDY4ZWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE5YmU0Y2EwOTRlMmM5ZDhlNDk4NzMwNTE4NjE5ZTJiN2Q2NDJiODM5YWE0MDhjNDkzYTk5ODVkMDQ0MmExMjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6477797bdd90488eaf913d81baaf85bc",
+      "statement": "`/app/v1/events(/{id})` require a valid `personId`, and a room-only event is listed only when the policy-bound `room_event_shown` collaborator admits the viewer; without that callable no room-only event is listed at all (fail closed), and an event the viewer neither created, answered nor shares a room with is the same 404 as an unknown id.",
+      "evidence": [
+        {
+          "resource": "repo://nora/web/api.py#L592-L635",
+          "version": "repo-lines-v1:sha256:86cb7d7184e0b900c7e9b817761c0d0ada808ec41d554bde18a2462349e8762f:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIwMzQwNTkxYTIwZDFlYWUzY2FiNzJmYWFmYTY0NWM1NjgwYTE3N2E2N2RmMWQyMTA1OTVmNDA1M2MyNzg5ZTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI3NGQyNGM4NjQwMGZkM2Y0ZDlmNTgxYmM4ODgzMWE2MzNlNGQ5ZGMxMmVlZGUzYzc2NmM4N2RhOTJmNDFmNjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQzMzE1MThkYzM5MDc5MWZiZjgwZDg5NjZmZGM5ZTExMjI1YTIzZTE5OGNlMzMyNGI0Y2U3NWM2NGViZWI5ZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM3NjVhNjI0OWNiYTdkZmVjMDljNDZkYWE5ODE5ZWFkZTAwZTcyMWRkYjg5YmY5ZGE0YzdjYmZmZGFhMzcwYjcifQ"
+        },
+        {
+          "resource": "repo://nora/web/gatherings.py#L57-L77",
+          "version": "repo-lines-v1:sha256:7be69ca3c573f519a5bb150a5a44e7acb90998fbb36c2f59febd89bf2677db60:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiNTdhNDRhMTYxYjQ3MDgxNjY4YTc3MjUyMDc5M2Q5N2Q3N2ZiNWEyNDY3MTRmMmEyNWVhZmM2NGFjYjRjZTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYyZTkzODAxYTRhMzhlYTM4ZjEzNjBkODBlMGZhMzNlNDIyZjA3NWZiNDRhMTM3Y2VkZmE5Mzg5OGM4MmY3YWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmYmQwMDkzMTRiYzI3MDg0MTY3MzRhMDJhZTVmZjM5YTFlNDhhMDUwYmU5MWY0M2IyZmFhOTIwMDJjNjJiZmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM5NzFlYjhkMTRjNjFkYWE2NGFhMGM0ZDZlMzA4MDNlOTJmNGVhN2FmYzgxYWJjOWVjYjQ2YmZhMzBjOGNkZDgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8a6666451735409b8c443ff4bb45162b",
+      "statement": "Route handlers in `nora/web/api.py` stay thin — query parsing and validation, viewer resolution, and mapping a payload builder's result to an HTTP status — while the payload construction and the visibility gates live in per-area modules (`nora/web/documents.py`, `artifacts.py`, `memory.py`, `presence.py`, `gatherings.py`) that take typed collaborators rather than the application object.",
+      "evidence": [
+        {
+          "resource": "repo://nora/web/api.py#L122-L294",
+          "version": "repo-lines-v1:sha256:48da17ca17c9896116e7cf2a5c178de7a1692bf63ff3bdf6c921a883f3bb8567:eyJzZWxlY3RlZExpbmVDb3VudCI6MTczLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI3ZDA5MTgzYzMyNzBmMGYyM2EwNjZlM2VmM2FlNmJhMjBiMGM1NGYxOTJmMmI0OTRiZGFlYmI1MmI0NWQzNTkxIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJiNzRkMjRjODY0MDBmZDNmNGQ5ZjU4MWJjODg4MzFhNjMzZTRkOWRjMTJlZWRlM2M3NjZjODdkYTkyZjQxZjYyIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI5YjE0YzBkNjFiYWU1Y2Q2Y2MzYWY4YzZlOTM1MGM0NGE3NWExMjA0OWEzMjNjYWFhODgyM2YyMzllZjhkZjYxIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIzMGUwMzNmMWVlOTE5NmRkZGIxMjVhNTY0YTk4YzUzNjQzYjE4ZGY0YjQ2NTk0OTgxOTRiOWZiODhlN2I0NGYxIn0"
+        },
+        {
+          "resource": "repo://nora/web/gatherings.py#L1-L5",
+          "version": "repo-lines-v1:sha256:a2ed398afae0d3c91995559f4db520e4df5cc94089a0030af11a18cc0c6c757b:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGE4ODQyNzE3YWEyYjYwZWJmODJjNzllMGYxNmZjY2RiOWRiZDdlYjhkYTVjYmQyNTY4MDlmNzMyMjljNTQ4YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTFjMWQ3ZmRiMDZjYTMxNmVlYzNiZDc5ZWY3MTcyMjVjYWMyNWRmYjcxYWI4NzkwZDIyZGE4ZDBiMWVmZDQ5YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTViNmU4NzA2YjQzMDQ3ZjJhNmRiNjdmMTMyNjM4NTk1NjA0ZTY3ZjM2OTY2ODc2Y2UwMTU4ZjAwNTNlNmJkMSJ9"
+        },
+        {
+          "resource": "repo://nora/web/memory.py#L75-L82",
+          "version": "repo-lines-v1:sha256:27428de36ab609a4af49389316657c1dbe4740ac5130bdec38c4c3be4fb3f62d:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDM4ZDAxMTNiNGEzN2I0Y2NiYTI2OGE1OWFkMGI1MjVhZjBjNTA2NjZmZmM4ZmNhOWViZDMyNDI4YWJjOWQ0OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzJhOWMwN2JiMzQ4YTcxNjEzYWI3ZDQwNDRmYzcxY2U0NTc4NzQxOWRmZDMwYzdjMDBhMzY2YzhmM2ZkNWZlOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDZiY2IwNTgxMmI1YWU5YzcyYTZiMjM5M2ExNDI1NmYzNGIzMWIyODQ1MGI2YmI2MjFjZjFiOGFiZTIzNTQxMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTBlZTY2Mjk1ZWYyODNjYzRjNjQ1MjFjZWI0ZmRkNGJlYTQ0ZGQ1OTY4OTBjNzk5NGY1MDFlYTRhZjAwY2IyMyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_f8ea5f8bf0444837860267835c59e62b",
+      "statement": "`rooms_named` returns every id form (`id` plus `also_ids`) of each room whose `persons` names the person, and leaves out a `persons = \"*\"` room entirely because such a room names nobody — so only a document's creator reads what was made there — while the creator clause itself is unconditional and reaches the database as the single predicate `created_by = person_id` OR the document's `(platform, conversation_id)` among the viewer's rooms, the same predicate the listing, the detail and a search all apply in the statement that reads.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/documents_service.py#L126-L134",
+          "version": "repo-lines-v1:sha256:a219c7d3902c82f13e8be179b3a131b2302644f065eb0a0b24831327d51753a7:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNmZiNGExMmUzODNmNzJmODU1NzU4NGRmYmY2NjFhMmRmN2JkMDk3ZjFkNmM2MmE5NGI5NTY2YWM3MTBmMmFkZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzBjMWYxODhmMTQyZWQ3YTgyNDY4MGIyMDcxNzJjNTUxOWJjNjE0YTQ4ZmRhN2NmMTY3ZWRiOGRkZjc5OTU2YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWIyZDM4NDE4NThlY2IwYTA4YmRmNjA4YTE2YTZiZTkyNTljNTk2YTZkYjMxM2MyNzhjNWQ2MmNmNjJmOWRlYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDM0NjQ2NDJjODRiYmVkMTkxNjJiODgwMzAwNGY0ZWY2NTlkZWNjMmU2ZTUzNmYzZjVhYWNhOTMzNjc2MGY5MCJ9"
+        },
+        {
+          "resource": "repo://nora/infra/sql/documents.py#L167-L171",
+          "version": "repo-lines-v1:sha256:722aca6421703cff46805b15340abccdc1c504b6958b58a5d8b74549aac6755e:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMWQ1MjU5YWQ5NjI1YWE0NDFiMDhhMDY4MTlhYWJhZmFiZjA1ZDVmYjE3YTA1OWZjNDc0ZGViOGMyNDYwZTNjNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMGIyZTU0OGIwNzJiYmU4YWY0YzU1Njg3YWU2NWE1YjZjMzIyOTgzOTdjMGI0ODVjYzM2MmRhNzk2YTFlODIxMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGYwMTM2M2U3MzY2MTczYzZlNTM3NGYyZmRkM2M0MjhiZjQ3YWZkZTI5ZWE3NjIwMTVkNGVmYjI1YjgxYjMyNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiN2EwOGNjMDk3ZDkxMTBiZDVmNjFkMDAzMGVhYzU2NmIxN2Q2ODc0OTY5OTE4NTM0OGQ2ZDJmNmFjMWE2NDJiMyJ9"
+        },
+        {
+          "resource": "repo://tests/web/test_documents_api.py#L125-L129",
+          "version": "repo-lines-v1:sha256:09840c58a7a86f1dc4812a70a3f4ac93e11dc1d1bab054503091461ead690221:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYmMxOTYwOGY0OTdlOTdkZmJjNzU2Yzg2MGVkZWI0OGIwNzRjNGQ0ODkzMTAxZTkwNWUxNGQwNWQ1NGYwZTE4YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWNkZTBmZWZiYTYwZmNmMWYwM2VjOTRhNDFlMDdkNTRhYjE0ZGM3ZTRhMTM2YzNmNGEyYmE0NDhkNDA0MmFjMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiN2UyMTBjZDc4OGE4YmRkZWQ0OWVmZWFlODU4NzU0ZjU2MGVkODJjNDFiOGMzZGJjYTEyMWU1ODc2NzdjNTIzOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmJhN2E5YWJhYTk3YjU3OWQ1NjlhZTA3NTI3MWY4ZGRhMjY5ZDg0NjYzYjg1MDlkZGQ5Mzc0ZmYwYTMzMDE4OSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_438198c32cb34eec87d9595739d585c1",
+      "statement": "A room's label is shown only to a viewer whose own rooms include that room: a creator who has since left the room still reads the document, its detail and its revision history, but every payload gives them `roomLabel: \"\"` and no chat id, so the label of a room a person is not in is never theirs to see.",
+      "evidence": [
+        {
+          "resource": "repo://nora/web/document_history.py#L104-L110",
+          "version": "repo-lines-v1:sha256:feaa9e86a35ee701d91090e9b0599a4e05e8156ff8a33ea17f92b38f335efced:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzY3N2ZlMWYxY2QxYmEyY2ZjYzcwYTY2MWVlYjFhYjhhOWMyZjRlMmQxMmE5ZWYyNGQ1MTk4NjY0MmMwMTc5YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTg3NDkyMzNmY2ViZGY4ZWY3YjllYjU2OTRiZTBiYTVkMTU3NDY3ODAxNmNhMzMzZmM4ZDZlN2UyNGQwYTM3YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNWUxZDU4NzE1ODY1NGE5Njc1YzI2MzZjZThiN2JmMmVjNjdlYzRhM2RhN2JjNzVjNDlkMjVmOTM3ODBjYzdmZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDg2NzljN2FjMDg5NzAxMjlhYmZiMWMzNTBlYzE5YmYxNjM5MzYwNjUxN2EwNGQ1MDRjMjYyNWJhMTEzMjdiMyJ9"
+        },
+        {
+          "resource": "repo://nora/web/documents.py#L70-L78",
+          "version": "repo-lines-v1:sha256:82f85ed5c0efc7c7d4219be764ba4508e753f8c97a27a81d3a9d36323f05ef2c:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDU5YzAyOTEyNWM2MmM1YjIxMzc5YWZhYjFhZWNkYTFhZDQ4YzMxYmFkYzc5MjRkNDAwMGJjZjMyZDg3YmZjMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNGY0NzA2OWIxZmE4MTZhZDAwZDlkMzRjOGNhNWExOWVkZWRlMGFjZDUxM2MzOWZmYWRlM2VlYjYwOGI4ZGYyMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDFlZGQ1MDFmNjA3YmRiZmU0ZTAwNjc3MDU1NGIxODY4YWMzYzAyYmE1ODc1MGEwYWYxNjE3ZTRiYzllMGQ3NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTNjMmZhNzJkYjE0NjUxMWJlM2YzMmRkZTUyZTU0NTI2Mjc5MDRiZWI4NTZjNDI3ZDE2ZjdjZThlMWVjYjFlNSJ9"
+        },
+        {
+          "resource": "repo://tests/web/test_document_history_api.py#L287-L298",
+          "version": "repo-lines-v1:sha256:9aebaf13e6ec53d1c65aa3c109fa7b4054470af18b69df7ae4696d749534ff35:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAzNzNkOWViMzdmOGYwOWY0ODQ0MDEwMzdhNWFjMjBiOGU0ZDBjZjEzOWFjZGQ5ZGM5NDMzYTliMzQ2ZGM0MDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ2ZDI0NTc2YmE0MTZjZGY1ZWY0NjljMzgyYTRjNTc3MWRmMjA1ODllMGJkMzAxNGRkMGEyNzcxZGQ2YzU0YTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMzZjFiNGExYjk3MDYyODEzY2ZkODFmNTZiMDFlM2NlZGNlODczNGJmNGVlNDFkMWEzMjU0MWM4NDUyNDJhYzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzMTFmNmVkMWY4OTJjZDE5YTZmMTI3YmViYjU3MjFiZTg2MjkyOTA4NTRkMjk3OTMwNThmZGEyZTAzMTYxZDIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0ce65038ec3c43329bbb08bb9db7971c",
+      "statement": "The web tests named for revocation prove next-read evaluation, not live membership changes: `test_removing_a_person_from_a_room_revokes_access_on_the_next_read` and `test_leaving_the_room_revokes_on_the_next_request` reassign the test world's `Policy` object and re-request, and the documents test's own comment records that the object is loaded at startup so in production a removal takes effect at the next restart.",
+      "evidence": [
+        {
+          "resource": "repo://tests/web/test_artifacts_api.py#L148-L155",
+          "version": "repo-lines-v1:sha256:e52d5530ca2d48b2129d648d6be1fd9aa2b482b961946ee0f07c2986da84b906:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTk3OTE0ODgwNmE3MmM4MjgxMTA2ZTI2MTRjY2U5NjZhOTc3YzY5ZDE1MzYyZDBiODAwY2VkZTNkNjI0NjA5OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODg3ZjgwZTU3YmI5YjkwM2EyNjJkNWUwNjBhN2EzOTY5ZDIyNDgxY2QxZWU0ZWQwNWVhYzM5YjAxODY5ZTk0MiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNWE4MzM1YTNhMjAyNjRjZmEwZGYyZjYxODkzMWU4Njg1NDViY2NkMWFhMTEyNzMzMzA1NTY0NzE5NWNiZmU2YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOWY5MGU3ZjRmZWMwMmZhMWU3MjU0NTRkYWE3MTZlMjhhNDlkMTkwMWQyMTc4NzIwNDdlNzgzYmNiMTQ5ZWJlMCJ9"
+        },
+        {
+          "resource": "repo://tests/web/test_documents_api.py#L196-L205",
+          "version": "repo-lines-v1:sha256:a47cea87d345da2bba80367f780d4698e1eacb73d14f9564b393e891155169fc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc5NDgxNWE4NThhMjliMzhiNjIyZGUzZGVmODgzYmYwNjViNTllZTllZjYxYTU5N2M0NmQ0MTYxYWZiMmJkYTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZhYTk4MmFkZDc3NTI3MzFlMjE5NGE5NWMxZGVhOTRlOGFhOWY2YmIwYTlhMjc1NDUyOWY1NDc0ODdhYmIxNDYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg4YmNjYzdmNjAwYzY2MDkyOWFlNTdkNWU1MjI0N2I0YjBkZWNiNzZkMTc4NGI2ZTE3YWJkNTBjY2JhYzJiOTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjllMGMyZjg1MTg3M2ZiNmFiYTQwZTRlNzdjMmVjNjhlOGQ1YjhjNmRlZTViNTlhYzc0MTMzMWZiYjcwZWE2ZDQifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-20T12:25:17.607Z"
+  }
+}

@@ -1,0 +1,654 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:8b56cc9450a566bd0f4d6d552c70019bcc0d888a573a04d0574a9be33deaa9e0",
+  "claims": [
+    {
+      "id": "claim_72a176fa6ed145a08057728bb5167a11",
+      "statement": "Verification in this repo is two instruments answering different questions: the offline `make gate` (deterministic and model-free, judged on the tree) and the live evaluation suite (`python -m evals`), which docs/eval-sop.md states is never part of the gate — the only eval material inside the gate is the deterministic evaluators and the rubric tests.",
+      "evidence": [
+        {
+          "resource": "repo://Makefile#L49-L64",
+          "version": "repo-lines-v1:sha256:d4cbcc7ef6dbad61abd6c1910d13786e63f9cdb48b32c60cc0232ca8326a1472:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFjMjNkNWYyOGQwZDQzZDE0NWQzNjhkM2VkMmNkYjcwNGMyZGQ0MDE4NDZiNjk4YmUyYjhiNGJkZTkwMDRhMDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM0OGRlZTA3NDc2ZDU5MGJiOGZiMzUwNGVmMDA5NWQyNTVmOTE4ZGQ5NjI0MDRhYWIzZGQwZTJkMWQyMzJjODciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgyZTM0OWU3Nzc5OGU5MDhlOGY0NjI0NjgwODU3NzIzODM3ZDU0MmUxNWM0YzYyZDIyMDdiYTRlMjU4YjdhMDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIwYTliMTdhNjIwN2YwNDllMTg1NTA1N2JkMWI4MWRmNWUzOWFiMjM1YTMxZThlYTU5Y2VmYzYzN2E5M2U5MzgifQ"
+        },
+        {
+          "resource": "repo://docs/eval-sop.md#L106-L120",
+          "version": "repo-lines-v1:sha256:d992ea58d7fc063525576e36af201872358aa1346f624bdf1d9c02c98e2e7499:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyNmM1YWUxMWU0ZGI0ODc0NjZlZjM5MGMwODkyZTA0YTE3NzcyMjU4ODU2MDExZWE4MzQzZjQ2MjJhYTlkNDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc0ZWE0YWZmM2Y3NTJiZGRjZjhjN2Q5ZjJiYmE2YmNiNjQ1OTc5NjYxN2FiN2VkMWNiNWFhNDIyZDBkNmEwNzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE2NzZiMGY0YjA2OWM1MmFhMDgxOWMyZmRiMDhiMjI2NjhlOGQ4M2Q5MGM0ZWMwZDU2M2ZkMDEwODQyOTc1OTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYzN2U0NWEzMzIyMTFlZThlYzAwMDU4MzUwNDdhMzRkMmIxOGQ1M2RiNDBlM2EwMWE2NDQ4MmQ3ZGJiMWM5MzkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_37175851b4d24962a6ea3efaa1105b1b",
+      "statement": "`make gate` runs ruff over nora/ evals/ tests/, mypy over the named packages and lint-imports in full, then `go vet`/`go test` for deploy/instagram-bridge only when the diff touches it (or when that diff cannot be computed), then the affected-test selection against origin/master with uncommitted edits included; `make full-gate` runs lint, typecheck, imports, bridge and the whole suite serially and unconditionally.",
+      "evidence": [
+        {
+          "resource": "repo://Makefile#L37-L47",
+          "version": "repo-lines-v1:sha256:80b226765fa32791bd5165fe2f540720cc56d3f68e6c3556230813da38326b7c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQwMDdiNTExODg0NTFkYjM3OTNhZTI0ZWExNzk0ODU4MzY3MmVjNTUxNDJhZmFiOTVmMzE0MTNkZjExZDViOWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzYWJlNzcyMjdkYmY3ODdhNjM5MDcxMTdmZmJlOGY4NWFhMmE5ZjhlM2U3ZDkyNGExNDFkMzMyMzgwOTI2NTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEzYjgzN2I5NDIyNDIwMDA2OGIyNDNkZDhmMzdiOGQyNmExMGM5NWI0NjJiYzhhNWUwNDUyNDZkZGExYjVjZTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk3ZjYzMzk5NzQ5ODY3YjM0ZDg4ODQzNGUyOWI2MmQzZmVmYjc5Y2M4ZjJiZGI1MTVmNzA1MGY3YjVjOTM2YWIifQ"
+        },
+        {
+          "resource": "repo://Makefile#L57-L72",
+          "version": "repo-lines-v1:sha256:73fdd944521373547224250c7cdc77840b9c0afaa25eacfa5c7926934459c710:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM1MzQ3OWIzNDc4NGEzODg3OGYxYWMwNjcwM2Y0YjgwNjU1ZjkwODM0ZGVkM2I5MGMxNzFjZTFlYmY5ZjEwNjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVmYjYxYzVhYjgwZWZmY2I1ZjEyMGRhOGFmMGUxYTAxMDU3YmRlMDZhYmYzMDUzNjQyMmI3YTFlODQzZDlkMjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM3ZTkyOWUzNmJlYzI2M2Y5YzM0ZDMxNmQzNjVlNjRjMmEzOTVmYWFjZWQ5ZDcxZGRhM2QyZGE1MTI5ZDE5MTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI3NzMxOTNhNjJhNDdjZGM3ODBlMWM1ZWMwYTE1YTIxOWU0OWVlZWM4ZWJmYWFlNzExZjNiNWZiZmU4NmY0NGUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_adc1f06755b74ee89f91edb82824b55b",
+      "statement": "The `test-affected` recipe fails closed: a nonzero selector exit, an empty stdout line and `ALL` all run the whole suite, only an explicit `NONE` runs nothing, and `SELECTOR`/`PYTEST` are assigned with `:=` so an exported environment variable cannot replace the gate's own command.",
+      "evidence": [
+        {
+          "resource": "repo://Makefile#L97-L123",
+          "version": "repo-lines-v1:sha256:8b861166748c0c156d9441a77d919052a6575e1f9c0d476340ba49cd8ec4af33:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZmI1ODBhMzJiNzkwOTlkYzJiMGEwMzRlNTM4NzlhNzQ0YmRkMGJjNWRhNTg3MzBlYThhN2U3MjZhMjQ5NDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJlY2IzODFhYjc5MmQ4MjNmMDEzZjgyYzcwNjdmY2YwNjE0NTZjY2I2ODU2ZTJmYTNkMzZkNDA2ODZiZjhlYjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY5M2JkOWMyNzMxMjJhNzI1MzY5OWM0MjMxMWIzYmUxNzUwZTg2ZmRmNDNmN2NmYmUxNDNjYjM3ODRkMWM3NzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUyMTM1ZjNhNDIxOTMwN2MyYzNkNWI3ODQ0YTA4OWExNzZhMGJmNzJjMWNiZDU4NmZiNjBkMDhmZDkxMjA2MDgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b65b1f73c3844f07b9a5316e250ad106",
+      "statement": "`scripts/affected_tests.py` classifies each changed path and defaults to `ALL`, so any diff it cannot map runs the full suite; documentation classes only narrow within docs trees while code trees are always `ALL`, and its blind spots (computed paths, files opened by called code, `importlib` imports of test modules) are documented rather than discovered later.",
+      "evidence": [
+        {
+          "resource": "repo://scripts/affected_tests.py#L18-L61",
+          "version": "repo-lines-v1:sha256:7d984eb79be7c7147d4079343ff4d593cf5aac392b60a12e3886e3c983fe37e6:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVjMWJiYjg0NjgzNGRkNDkyYWI2M2U4NWY2ZmY5NTYxYmU4M2M3NjJlOTliNWFhZTI3NzU2ZmJmZDc5Njk2N2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5ZDJlZjRiMmU2YTU1YThhN2E3NmNkZmE4YjBjMDA5ZTkyY2VmNDBjN2ZkMDQ1NTcyNWI2NWFmNGYyZGZkOTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI2ODI3MDFlODQ2ODcwMjJlZDZkM2E4MjUyZjhjNjk0NDQ1MWViZDI3NjY5NDA0OTA4ZDJiZjRlNGJjZjdiNjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIzMWVhMmIwYjhhYjM4YzkxOWQ1NDliMDNkMDU0YmYzYWZjMGU2M2ZkZjBlYTUyNjBkYTFiOWE4Y2Y0ODIwMjQifQ"
+        },
+        {
+          "resource": "repo://scripts/affected_tests.py#L82-L90",
+          "version": "repo-lines-v1:sha256:f306e915171a725dbf5a91955461d79d352a3a43c7f9df7e3e4f64afab8e8541:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTM2NjE4MWE1MTM3M2NiNWNlNjQ1YjZkYmFhMDc5ZDhhMDU3NWFiYThiYmEyMzYyZjdhZTBhYWM0MmE2NGY4OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMmQxMmM5Y2NjMzA0Y2ZjNDMzMzlkMGIwOTdkZjZjZDMyMjBhZGNhYmNiN2U2NDE0NWYyMGNmODM0NzlhMzdhNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDgwNTYxZmYxOTFmOGI5M2Q4NGQ3MjdmY2ViYWI5NGQwMjk5M2JkMTY0NzgxYjM0ZTAxNWE3YjEwYzE0MTViYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWFhZjc2MzdjYjZlN2U1ZGI4NWQ2MzQyNzQ2MDE0ZGYwNDFjY2Q1NThhOTIwYjI5ZWI2YWM3MTlkN2JhZjVjMiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_3c687554ed3b48ff8dee1913b6149e47",
+      "statement": "`make typecheck` covers thirteen named packages, so a green gate means those thirteen are type-clean rather than the whole repo, and measuring a package's own errors must be done by scoping the mypy override because strict flags on the command line leak into imported modules.",
+      "evidence": [
+        {
+          "resource": "repo://AGENTS.md#L487-L495",
+          "version": "repo-lines-v1:sha256:2f4b24caaf124bd4cb8faf9fa27e8feb478c2d066ca7d52093e3ad6d8b74676b:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiN2I2M2Y1NmQ1M2U1NWI3NjZjMmFiZTdlMjY3ZGQ1NGQxNDM5MjM2Y2NjNjliYzU0NDBiZmRkYjgwMGExZGU3ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmI2YTc4NzkwZWU3MGYzNmM1NzA3MjRhNWY5MWU2NDhkZGQwNzA0MzJjYmNiOWRlY2Q0ZmYwMzlmZGQ0Y2NjOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiN2ViOGY5MjczYjVkNjlhMzlkOGY3ZDJmZjMzODE2Y2M0MzcyNTM4MjBiOWY0NjU4Njc3OGI1MDM3MGM5NGQ3ZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmVmZWJmNTg1ZjIxMDIzYTNhMzgyODA1YjliYjIyYjY0MmFhYzhiYTc5ZTU5ZGIyY2I2OTE0NTBhYjFmNWRlYiJ9"
+        },
+        {
+          "resource": "repo://Makefile#L43-L44",
+          "version": "repo-lines-v1:sha256:021b61496c17d4232b12bb168e1d1b6a1332f2edb7b0ae75ac0a558d3d7bfb8c:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODFiZTM0ZjAxZmVkNTE4NTNmMTFiZTg4ZmMxYzUwM2U1MDFjZDhmNzViMGMzMWY0NmFkNDc1ZjcwMGM5YTZjMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMWI0NzE2YjAxOGJiMjAzNGJhMzBiNTJiNmFjMmIwMzhlOWVkNWYyZDUyMWQ1YWZmMWIxMDZkNWU5OTZkOTA5YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2E3NzYwZTUxZTg3NGRiNzU1Nzk2ZGQwNWYyNWRiYjJiMTQ5YWZmYjhlOTgzM2E2N2U2ZjhlMzVmOTA5MGNiZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTg3YWEwMDI2ZTI0MWU0MDYwZmJlMDVkNDQ2OTJhMjEwOGYxNjFhODM3MmQ1ZDhjZTliMTY4YTQyZmFlNzI1NiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_af224d258b194615bc63a4994185e2df",
+      "statement": "Import boundaries are enforced as eight import-linter contracts run by `make imports`: domain framework-free, the room policy never imported by platform/domain/infra, analytics as a substrate serving no consumer, a layered order with `nora.subject` above `nora.app` and `nora.testing` beside `nora.infra`, `nora.documents` importing nothing of ours, config read only by the composition roots (with `nora/__init__.py` checked as a single module), and `evals` restricted to `nora.app`/`nora.testing`/`nora.subject`/`nora.domain` and forbidden `tests/` — each carrying its reasoning inline.",
+      "evidence": [
+        {
+          "resource": "repo://pyproject.toml#L188-L362",
+          "version": "repo-lines-v1:sha256:c790f8b706f9547df0b18ebb98b5fe6e8cb85ac1f1c4ae0fa479c0e23ee33366:eyJzZWxlY3RlZExpbmVDb3VudCI6MTc1LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIwMTlmZmI2MDAxMWE4Y2IwZGU0ZDYyODY4Y2VmMTFiY2VlNjBjMzE0NTVmMzc0MWQxYjQzZDYwNDQ3ZjMyOGVjIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI3ZTc4YmEzNTgxZDgwZTJiNDM1NzRiYmM5MmExNGVlODRhNjlkN2UwZmYxMWNjYTQ0M2M5NzE5ZmQ0ZjM0YmYzIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI3ZWEzYzdhZjE2YzNiOWNmMjE0NjEwNGYzMDg4ZjMxOTU5ZWNmOGY1YmYyYTM1MGQ2ZTVjMzYyMTFhZWFiZjdiIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJiODRiODZiNjIxMjhiNmJiZDRhNTJkNGQzODY2M2E2Zjc5NzVjMDAzZjdhZmU1NzcxMDA0NzU5ZjU5ZWFiZmQ0In0"
+        }
+      ]
+    },
+    {
+      "id": "claim_cc1aa4baa4a04249b483229880e9c7d0",
+      "statement": "The test-directory rule is that a directory names what makes a test true rather than what it is about: `unit/` for pure logic, `contract/` for one suite over N implementations, `integration/` for the wired pipeline, `infra/` for a real adapter against its real backend, `architecture/` for a property of the source and `web/` for the aiohttp surface; `tests/` root is legacy and takes no new test files, and the gate forbidding container fixtures outside `integration/`/`infra/` is deliberately deferred with the planned move because `contract/` legitimately collects `pg_url` today.",
+      "evidence": [
+        {
+          "resource": "repo://docs/CONVENTIONS.md#L718-L738",
+          "version": "repo-lines-v1:sha256:7c4cc68ae9b1cb13337cfc778aec9978e89edb7c3980e0a1da51ab98abadd563:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyOGMyMGQzOTQwZjlhYWYxMDUyMTk2YjBlYTE3NjQ3OWYwYjA1ZWFlNTNlNjZlNDFjODEyY2ViM2M5OGY5NTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmN2NjZWQ5OTRkMTQyMTViNzY5MTg3MTg1YzFkY2JhM2Y0YzhlNTY4NGRhNzg5M2YyZDFmNTY1NDQ4MDU0NGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI4MjAxMGZjYzg4NzY2ZTlmNmNiZjE0NDRlMjYyNGY1NjBiN2FjZWIwNWMxMDhiNWVlNzk2YTk4NmE0ODMzNjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY5ZTlkYjE1YTkyZjM4OTVlM2FmM2JmMzVmZDE2NzE3OGY1YTBhMjY5N2NlMmMyMmNmMTI4OGNiZGE5NjQ3NzAifQ"
+        },
+        {
+          "resource": "repo://tests/README.md#L7-L18",
+          "version": "repo-lines-v1:sha256:c0b1c6ecfc048ec5726105abc16782e870cb7929ed3ccf8afd8789a3ea32ef44:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmZWY4ODI2NTk3ZTQ1NjE3MmU0ZDMxZmU2ZGEwMTE3YzJjNzM1M2Q3OTUzNzUxZWU4MzA1MDcwZTBmZjEyZWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyMmY3YzQwM2EzYWYxNTQxMzEwOTE0OWJhMThkNTMxNTQ3N2QwNTZiYzY4NGIyMmVkMDgyY2I3MzY0ODc2MzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQxZTRmOGI1ZDA2YTcwZDBkMGFmZGI3MjA3NThlMWMyZjE3OWY2MDliODFkMGZiMGMxODQ3MWI0Y2QyMTQ3OTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIwMGQzMTFiYWZlZjIxY2JhNTk3NzMxZmY2Yjk0NWZjNDI3ZGRhMGYwYjg2ZmQzMjZlZDc4OTVmODEyZDEzY2IifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fa20fd69136e4e199b92acabe83bd852",
+      "statement": "The R-A rule is enforced by pinning exactly what is on disk in `tests/` root and checking the pin in both directions — an unpinned root file fails, and a pinned name with no file on disk fails as stale — and the list is an inventory that only shrinks as files are relocated.",
+      "evidence": [
+        {
+          "resource": "repo://tests/architecture/test_tests_root_takes_no_new_files.py#L1-L27",
+          "version": "repo-lines-v1:sha256:0cb51b55fbd781a5e316f52e55329a4e4e136c431436a9f2d6fed93db8183e46:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5MDFkNDEwYTE1ZWQwMjNjNzcwZjllZjg4NDNiYWU5YjI2YmVkZjdjM2EzOWNkYTJiYWEzMGJlODBlZmNmNjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a562aa1a10104fd8a384bf798160dd2b",
+      "statement": "R-B routes every test's config through the `example_config_path`/`example_config` fixtures built on `tests.builders.copy_example_config`, pins by name the few files whose subject is the deployment, and enforces the rule from the AST: a root-relative `Path` chain, a cwd-relative `Path(\"config.toml\")`, an import of `load_eval_config`, or a module-level constant naming either config file fails outside the pins, while a message string that merely mentions the file does not.",
+      "evidence": [
+        {
+          "resource": "repo://tests/architecture/test_config_comes_from_the_template.py#L1-L83",
+          "version": "repo-lines-v1:sha256:8c43630d7c852286084421e416ea4b7294f4b7ec736bf9fccc82e0b6e3a1ccd9:eyJzZWxlY3RlZExpbmVDb3VudCI6ODMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE5OWE0MTRkNGJkZGFkYzE1Nzg5OTk4Y2IwZDAzNjU5MWNjYzI5YWNkZTZjZDBmNGZhODEwYzgxMTA2NGRmOTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY1MDY0NjcyNjliMTNkZjUxZGNiYjJiMzQ0NmYxZGExODg4YThkNmM1ODM5ZjVjOWYzNWUyYzYzMzRiZTk1ZjIifQ"
+        },
+        {
+          "resource": "repo://tests/conftest.py#L88-L110",
+          "version": "repo-lines-v1:sha256:e4e1d47cfa5ab9a4f94bf47aa5527c3074c6db5143b15654cb4d06edb3b1d903:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzZjM2NmI5YmQ5YThkMGYzNDBhMmJjMGJlMWUyMmVlYTIwNTY4ZGQ3OGE0NTI4MWI3MjFiMzBmMjJkMDg3ZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc0YmVmNzg1YTBhNDAwOTU5YjRkM2U3OWM2ZjUwMjJjZmYyYjc0YTA5YmFhYmJiMjQxM2M5MWE2MjYwMDYzZGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI1OThjNGEzNTg5MzdiYWNiNTg3N2Y5OThkNWIxZmQyZmJmZGQwZDIyMTgzNjFiODcyZjNkN2FiNDk1ZWNmNTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgxYzE0MjZiZWE3ZmFiYTA1YTEyYzFlMWM4NjBkYTY3YzYxNzM4ZmZjY2NjYTRmNjc2ZTRiOTI2ZGVhNjZlMDIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f257f93a2b8d4eec824648d5d86f2ed3",
+      "statement": "R-B exists because unit tests of the eval harness loaded the deployment's config through `load_eval_config` and went red when the operator enabled an export, and its pins are checked both ways so a pinned file that stopped reading the real config fails rather than silently widening the gate.",
+      "evidence": [
+        {
+          "resource": "repo://docs/CONVENTIONS.md#L751-L759",
+          "version": "repo-lines-v1:sha256:0b6d662d281c4d30a9fa01525e6281635529871ab130ef38d9efa94f37696504:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjI2ZDA5YWMzN2NjNzkwMDk0NjkyMzRmMTNhYmY0OGJlOGI4ZDA4OGU0MTA3ZmM4MjE3MWRlODdiMDAxNTQzZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODBkYzFmMWYxMzYyZjQ2YjNiYzM3MWY3N2Y3NjMwMjIyNGM2NzIzMWEyMjg3MWE3NDFmNTJhZTFmODQ3YjQyYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiN2Q1ODYxMTJmYjgwM2QzNGE0YjM4NjIwNWJkOTM0MDM0MDk0YzE0NTFkNDU4Y2IyODgwODk5OWQ2YzdlMDVkNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzM5ZWUyZDczYmQ3ZDAzMGY3MjViZjNmYzY3ZjZjMWVmMDEzMDI4ZDA5ZWM4ZDhiNDJjZjZlZDcyZWUyNTM5YiJ9"
+        },
+        {
+          "resource": "repo://tests/architecture/test_config_comes_from_the_template.py#L35-L83",
+          "version": "repo-lines-v1:sha256:0f12ea589f615b6f07d602f411700eae56c2ba9dd277a213b7aa999445b12259:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyNTE0Y2ViYmJmNGQ3ZGZkZWQ0MWVmMzgwMDAzNWQ5Y2ViNjQ5M2MwNWE2ZGM4YjQwMzZjY2E4ZDc1NDgzNTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzODU3YzM5OTA2NDBiODcwMjI5MzYwZTQ0MmE4Y2RlNWFiYTRmYzVkNjM4ODYzMDM3ZjM1MTQxNGFiMjVlNzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY1MDY0NjcyNjliMTNkZjUxZGNiYjJiMzQ0NmYxZGExODg4YThkNmM1ODM5ZjVjOWYzNWUyYzYzMzRiZTk1ZjIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e193482334414741861e9399fe6cbddb",
+      "statement": "R-C requires a class in `tests/` that implements every public method of a `nora/domain/ports.py` port, with exactly the port's parameter names, to live in `nora/testing/` and be parametrized into that port's contract suite; exemptions are structural (a class inside `tests/contract/`, a double whose port methods only fail, a subclass of a shared fake), everything else is pinned with a reason, and the allowlist is checked both ways with a positive control that runs the matcher on `nora/testing/fakes.py`.",
+      "evidence": [
+        {
+          "resource": "repo://tests/architecture/test_port_fakes_live_in_nora_testing.py#L1-L99",
+          "version": "repo-lines-v1:sha256:1fafbbb30290a1f5c5cdb101e6c7624201ff2be524a68676560a07ad064e86f7:eyJzZWxlY3RlZExpbmVDb3VudCI6OTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU4ODdkNjIzN2E0NGQ0MmMwMzAwOWJhMWNhNTcyMDE3M2M2YmNhNTkxNjEzM2IwZDY5YTYzZDI4OGE0YjdjZDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d4e5dd8c55ab45bb9513862593284b3e",
+      "statement": "Architecture tests establish their claims from the source — an `ast` parse tree, occasionally a pure builder's output — never from a running service, which is what lets them pin facts a runtime test cannot see: every call site of a method, a single construction site, or whether an exemption has gone stale.",
+      "evidence": [
+        {
+          "resource": "repo://tests/README.md#L15-L15",
+          "version": "repo-lines-v1:sha256:8d6f8e50dd96cf2492ff99a340d225b8f3ca099ab982af9c252f7170034c532f:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGQ2ZjhlNTBkZDk2Y2YyNDkyZmY5OWEzNDBkMjI1YjhmM2NhMDk5YWI5ODJhZjljMjUyZjcxNzAwMzRjNTMyZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGQ2ZjhlNTBkZDk2Y2YyNDkyZmY5OWEzNDBkMjI1YjhmM2NhMDk5YWI5ODJhZjljMjUyZjcxNzAwMzRjNTMyZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTMzMGVmNTMzMDQ4Y2YxZDljMmM2ZWYzZmQ0MzA1OTM5YTUxNGFhNjY0M2JlYTZmYjIxM2U0MmRiN2FjMTNiYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWZmNDg3OTIzMTlhN2U5ZDI3NzQxM2ViMGQ2NzUzNjM4NThiMWI3ZWQyYTc3MDI1ZDEzMmI3OTE5MDUzMTBiYyJ9"
+        },
+        {
+          "resource": "repo://tests/architecture/test_store_methods_have_production_callers.py#L40-L58",
+          "version": "repo-lines-v1:sha256:4539573fe738b0674ea65835f6015119019592b0b7f7e1b6eec00f200a1e04fc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3ZTU3ZjdlNzAwODY5OGFjNTE0ZGMxNTIxMDFjNmJlYzMyM2Q2YWQxOThhY2JhNTIzMWM0ZDE5NTQyOTIzNzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIwNmNmNTg3YTg0ZDk0NzU5OGZiMTlkZWRjZjAzODQwOWZlY2JjYjcxZGFlN2FmOWYyYmRlY2I5ZGY3OTQ3NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJkZGMwZTc5ZjZkMDZhZWIyOTgwNTNhZGVmNTk0ZDgwYTg1MTk4OTczMzdmZWI2MTA3YTU0NjI5ZjFiYTYwMGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVmMTNmOWE5OGI1YWMzZWI3MDE3OGY1NzVjNDUyMDdkYWVlNWZlMmZlNTY3MTc4M2YzMmVjNzk0MDZhZmVjMzQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_13ffd4893f244b498949b4ecf29fe6d6",
+      "statement": "The sending boundary is pinned as a three-link chain read off the AST: `Deliverer` in `nora/agent/guards.py` is the only module matching the port's `send(target=..., text=...)` keyword shape (the adapter's own positional `self._sender.send(...)` is not a caller of it), `deliver.build` is the only place a `Deliverer` is constructed, and the test's `CALLERS` declaration names four builder modules — the tag pipeline, the fire path, the public summons and the one-time code — against which the discovery-based assertion compares the modules that actually call `deliver.build`; the summons is in that set because its deliverer is a staging one (`send_permitted=False`) whose publication is pinned separately by `test_the_summons_writes_in_one_place.py`, so none of the four reaches the adapter directly, and a module outside the set that reached the wire would bypass every guard inside `Deliverer.deliver` at once, which is why a fifth sender means editing `CALLERS` and the decision index's R-1 row.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/guards.py#L443-L452",
+          "version": "repo-lines-v1:sha256:ccc519ba3429f47f530968c9724fb781b023154f064c78d177321ad5171d5f99:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVmNWU0NjRlY2NmNGM0ZmEyZWEwZjljOTczOTY0OTZlZWZmNTM5NTZkYWIxMDY2MzI5MWI1NzNjYWY4M2ZlNmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlmMTFlYTExZWYwMWUyZTk2OWU1ZjRjNjI3MmYzZGI2NmRlNWY4ZTU0ZDFjYWFhNGFmZWYyZDIwYmJhMmVmMjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ0YzdmZGRiMDhkMDMwOGQxNTI3ZDcyMjFhOWUyMTRhNDUxNjJmNjMwOTc5ZDg5MTVkYWY0OGIzNTllN2ExNjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk4NTgzMmIyYmIzYmFiODdhOTY3NjczNjk1NzUwMDg2ZTQyY2IyN2QxMTA1YTk4M2Y0Y2Y4NjQ4YmFlOWY0MWMifQ"
+        },
+        {
+          "resource": "repo://nora/app/summons.py#L487-L507",
+          "version": "repo-lines-v1:sha256:70ed9825b32055ebda31f7fb51968162fa9a0ae568c85c24d4a014245e4a3777:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0YmZiMWYzMmM0ZDc1NDY1ODk1MjRjYTE3OTllNTJjZjlhYjI0YjkwMTg2NGNjOThiYTBmNzlmZGNjYWJkMGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJhNGFiZjVjNDFlMjI1YjIyNGEyMGI0YmQ2OTYzZWFjZmVhZmQzOWQ3ZmFmOTMzYzNlODAyNWZhYzA0MDY3YmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE2NzhjMDJmNzhiMzNlODNmYTA4NTUzZjQyNzZlZjZhYTdjMTFmMjUwZDI1ZmY3YWNiNDk5MTI4YjRkM2MxZjcifQ"
+        },
+        {
+          "resource": "repo://tests/architecture/test_only_two_paths_can_send.py#L50-L134",
+          "version": "repo-lines-v1:sha256:c5a8b56c18ce88b0a497ffbc89185867f5153a0441e2df7c3248e97d5a1bb4a2:eyJzZWxlY3RlZExpbmVDb3VudCI6ODUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRlMDFhMjJlY2FhM2ZlYTQ2ZmI0ZGYxOTI1ODExYTMzZTdkYjg0MGMwNDYxYzA2NWE2OTE2ZTU4ZDdmOGY0NWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZkZDU3NDQ0MTYyYmI5NTM3ZGIwOGNjZDNmYmU2YjM0OTM5YTAzNWM1MGY5MDNlZTMzOGUzOTNjMzhjODg4Y2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e722fc55625445cb808666b808bfea20",
+      "statement": "The Relevance Gate's verdict may not be formed through the SDK's structured output, so an architecture gate discovers every `RelevanceGate(...)` construction under `nora/` and resolves its `client=`, requiring an unresolvable client to be exempted by hand rather than skipped.",
+      "evidence": [
+        {
+          "resource": "repo://tests/architecture/test_the_gate_does_not_form_its_verdict_through_the_sdk.py#L1-L38",
+          "version": "repo-lines-v1:sha256:b8d42c5bf74518fa1dfaab327d503a00a190ad53bddbd50a0b41124f79d4a2dc:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIyMGQ1N2ZhMGJkZDlmNzk0MDI3NDI2ZjQzMGNmOWRlY2NhNjhiMjZiMGE2Mjc4YTdkNGE1YjQ1MmMyMGY4YTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_52be13c0509c422fa5012a83bdecfc54",
+      "statement": "DEC-13's test-seam policy is enforced as two AST checks over `nora/`: no module-level name bound to a call that constructs a class defined in the same module, and no `global` statement anywhere, because rebinding module state from inside a function has no other legitimate use here.",
+      "evidence": [
+        {
+          "resource": "repo://tests/architecture/test_no_module_level_mutable_singletons.py#L1-L17",
+          "version": "repo-lines-v1:sha256:d97304dd0c1fe3fc1e45ce4fda930e5622fcd88d60a4e0c16eefd0ee17e33c9a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwMWZiMDU2MzQzNzFmM2UyZDQxZjkyMDYwZTBkNzI5NDI4OTFkODU4ODIxNWQxYWE1YTk5Y2NhZjI1ODQwMTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_62ca74fca9c44fc784ff79cb7692c271",
+      "statement": "A green contract suite proves a store verb works, never that it is used, so store methods with no production caller are pinned with one of four reason shapes and wiring one into production forces its row out; a docstring mentioning the method, or a call on the result of another call, does not count as a caller.",
+      "evidence": [
+        {
+          "resource": "repo://tests/architecture/test_store_methods_have_production_callers.py#L1-L58",
+          "version": "repo-lines-v1:sha256:35a7d8edcf2030ea9b3b5fb5ad7f6a9d0db0c73bdd71833d5671c0af063fb8fe:eyJzZWxlY3RlZExpbmVDb3VudCI6NTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkxYzAxMDk4ZjBkYzQyOThiYzQxZTFkNzA2ZmY2MzI3ODNiNDEwZWRiNjc0YTFlOTA2NTZjYzEzOTVlODNjZGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIwNmNmNTg3YTg0ZDk0NzU5OGZiMTlkZWRjZjAzODQwOWZlY2JjYjcxZGFlN2FmOWYyYmRlY2I5ZGY3OTQ3NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVmMTNmOWE5OGI1YWMzZWI3MDE3OGY1NzVjNDUyMDdkYWVlNWZlMmZlNTY3MTc4M2YzMmVjNzk0MDZhZmVjMzQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6eaa670ad1f348de80f34334f2a4f69c",
+      "statement": "Every decision row's named enforcing test must resolve — the file and the `::selector` half, with the `RULE_TESTS` registry form and `-k`-style prefixes named as accepted blind spots — or the row must carry a `DEPRECATED` banner, so a rule cannot point at a test that was deleted.",
+      "evidence": [
+        {
+          "resource": "repo://tests/architecture/test_decision_index_tests_exist.py#L1-L55",
+          "version": "repo-lines-v1:sha256:f210c690971da4b6ae1aab58ae88aa1cc98b3ef32a9fac5d8a38934b95fc29c1:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5OWExOGY0MTY5NGM1NTZkNzYzOWY5ZjFmMzVmZjU2NGZiYTcyYWE0ZGFiZTc4NzU5YjRiNjg1NGVlMDFiNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyNWYzZDc0YTRkOWUxM2Y0OTQwZTY4ODY0MzkzNjMzYzIxNWM2ZjdlMmQyNDE5ZmIwMTYzMTgyNzQ3NjBmNzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU0MjhlNTliM2Q2NmMwZmVkMGFkMzdmYjI5MTE3MzJiOTc4Y2Y2ZjkyNzFiZTcxMzI4MWQ4OWU3Mjg2Yzg5ZjQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5148efd9d0cb4f5d92633a75b7c17221",
+      "statement": "The eval layer's structure is pinned offline: `evals/rebuilt/` may not compose a subject (`build_dependencies`, `build_offline_pipeline`, `FirePath`, `Agent` and friends are forbidden, aliases resolved), `nora.app` may not reach `nora.subject`, and `SubjectSpec` names only seams with its field list pinned in both directions so a new seam has to be argued.",
+      "evidence": [
+        {
+          "resource": "repo://tests/architecture/test_the_entry_point_is_a_port.py#L22-L42",
+          "version": "repo-lines-v1:sha256:1a521ea67f48faa4b1c62c79428a2557060c3eefd4627081358967ae544444ee:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE2YmFhYTg1YWExZGUyMDkwMTg3ZmJhMWJiZDc3YmRjOTMyMzliZmFhNDZlNTVkZDg0NGIwODZhOGYyZmQ3MDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE3ZjIyMGE2ODJiYmRhZjc3NGE3Mzk4MTBmMjVjYThmMThlOTIwMzJlMTJiZWEzOWE4OTFiODMzOTMyMDgzZjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM2MjhjN2MzZGFjYWE4MWI3Mjg4ODg3YTRiZGFjMTI0ZDZlOTgyNmRhYTQ0MmYxNTVmNTViNGU2YzZiYWFkOWIifQ"
+        },
+        {
+          "resource": "repo://tests/architecture/test_the_subject_is_obtained_not_assembled.py#L1-L45",
+          "version": "repo-lines-v1:sha256:6d7364311d697caa007d6f765b6b8710e6fe2d1370f774c2725710770d5785c5:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVkMGU4NDMwNGYzYTM0ZDE1YzM1ZmUwNDJjYmM0NzFhMzZhYzMwOGRlM2ZjZmZlMzM4Mzk4MjIxNjNkM2YwYmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIzYjFhZWYwYzkxNjZjMzMxYzk2YjlhNDdhZTVmMWFmMzBmMjFmM2NjYjVkMzY4ZDRmNDhmMDBkMDM4YTU5YjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZmNTRjNmQ0ZDgyOGExNThlNjc2MGU3YmM1NzI1NmVmMDhiNDQ0ZWZjYjdkMzM4YzIxZDljYzEwOWFmYzQ1YjQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_12f771b0e0f44f82a89c18ddaf9e077b",
+      "statement": "The eval subject is composed from the deployment's own config rebuilt into `config.evaluation.toml`, never from the template (which ships with most capability flags off and would measure a different model at a different effort), with the `ALLOWED_TO_DIFFER` list living beside the check that reads it and the guards running against a deployment-shaped fixture so they cannot vacuously skip when the generated config is absent.",
+      "evidence": [
+        {
+          "resource": "repo://tests/architecture/test_the_eval_subject_is_the_deployed_nora.py#L1-L53",
+          "version": "repo-lines-v1:sha256:b62bddc739151b688a8ed6bd464a345a08e96616ccd4ba52da3b669e98b209cb:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA1OWVmNWY3OTkxMDA4MjcyNTEzYTRiYjBhNjkxNTJmNDkwY2YwYmQ2MWFjOThkMWY5MTZmMWE2MTRiNGI4ZGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3ZWZmZDE2NWI3NzM5NmIyZDg2OTY2MTVkMjE1ZjY5OGIyM2VmNjg4ZmQ3OTU5ODhlYWY2ZTJlNzNiMGU2MDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRmNWIxNjFkNDI1Mjk5OWQ2OWY0OTg3MjdkMTViODNiM2JmMTFjNzI4NDE5NGE2ZjM1MWQwYmJmNGM0MzVmZDAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_51d060f0477c42449bfef1b74609b97b",
+      "statement": "At the corpus surface every case must be anchored on a real room at a real instant, parked with a reason, or named in an unanchored set that can only shrink by editing the pin, and the loader refuses keys (`knows`, `config`, `policy`, `room`, `now`, stated culture keys) that would let a case state an assembly of its own.",
+      "evidence": [
+        {
+          "resource": "repo://tests/architecture/test_every_case_is_anchored_or_parked.py#L1-L17",
+          "version": "repo-lines-v1:sha256:c53681be93c622df1e5361f37365c61e8248346ef850e2eca5c6a7e82bf61135:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgzZWQyODM1MzdlYWU3M2Y4MTRjMTIzYTZmMjk0ZDE3MGUxNjU0OTk3ODI5NTZhNmZhMmNkM2JlNzk5ZDlhMzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ4NWFmMzY3ZDY1ZTQ2MGY5NjFhZmY4NmFjODQ5NTQ3ODQyYjM5NGQwZGFmNjAyM2U3ODQwZTBhMmU4YmM5ZGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_479399945446403d84f4f82dce130f3f",
+      "statement": "A corpus case that passes by producing no reply cannot distinguish a rule holding from the input never reaching the rule, so the near-miss corpora are rendered with the deployment's own trigger and each case names the source rule it exercises; deleting that rule must break the corpus, and cases about a property no deletable rule governs are declared individually.",
+      "evidence": [
+        {
+          "resource": "repo://tests/architecture/test_the_near_miss_corpora_exercise_their_rules.py#L1-L70",
+          "version": "repo-lines-v1:sha256:18d7b339b793f1ea0cef67c11298597d8970dc0bc9467dadd5eb2cdcf35847e7:eyJzZWxlY3RlZExpbmVDb3VudCI6NzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1YjA0NTlmNzlmZjZkYTMwN2MzNjA1ZmVkMDEwMmRmOTJjYTVmNTVhNzU5YzYyMzY1Yzc2NDFkYTM0OTVlOGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM2Zjk5MzI5ZThiNzk0ODBlM2RmNGE0ODA2NzQxNTU0N2YzMDlkZGNmMGMyZjUxZTM4MzhhMTQwNWI3NjlhYTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU4YzdkYWRjMjQzMGFjNmRlNDY4ZjVhMWU2MGNkYmQ2ZTk0ZWQ5NjFkNzIxOTcwZTRiMjE5OTA5NWM4NTllY2QifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fed18424a5c8409caa2a3a0272dba848",
+      "statement": "Contract suites run one suite against N implementations of a port (fake and production), with one database and one migration run per module and truncation between tests because the isolation needed is 'no rows from the last test'; the suite asserts the property that would otherwise pass by accident — `write` being an upsert, tested by writing twice — and that both implementations refuse identically.",
+      "evidence": [
+        {
+          "resource": "repo://tests/README.md#L12-L12",
+          "version": "repo-lines-v1:sha256:a6740207799eddd177085d6bd9bedd42fe230c6cf22e51b03bb65e491eed7ad0:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTY3NDAyMDc3OTllZGRkMTc3MDg1ZDZiZDliZWRkNDJmZTIzMGM2Y2YyMmU1MWIwM2JiNjVlNDkxZWVkN2FkMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTY3NDAyMDc3OTllZGRkMTc3MDg1ZDZiZDliZWRkNDJmZTIzMGM2Y2YyMmU1MWIwM2JiNjVlNDkxZWVkN2FkMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGRhY2FjZjI1MjZjYTNmMzRkNDU1NTllZDBiNDI3N2UyYTIwNWJiMzg3ZmNhZDE5ZTExOTU2NWQxMDE4ODhjNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTQ3Y2NiZjMxOWRiNGU3MjMyMGI0ZjBhNWE3ZGM4ZTMyOGY5NjEzNGMxODhkNDk5YTA3N2NlMmViMzQ3MDUyNCJ9"
+        },
+        {
+          "resource": "repo://tests/contract/test_standing_store_contract.py#L1-L90",
+          "version": "repo-lines-v1:sha256:29412a6a5efbccb1d5950bf01503eee83b0dd9277248bad9d24b11a3a911cee3:eyJzZWxlY3RlZExpbmVDb3VudCI6OTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEyZjVkOGVlYzhlNTk5YjM1YWRiODY2OWUxNzhhMzFlZTQ4ZTNmNDg3NGY3Zjk5NTlkNmY0YjJhMzc4YjEwMjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjOTE3OWM3YjFmYzBkNzQ4MmIyNzYxYzkwMjI2NzcwY2IyMzc2YWJmYjY0NzBmZmFhNGM4YWVkMTdhYjQ5NjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQyZjBjODQxZDVlNjA1Njg1ZWU3MGNmNDNhYmEwMzk5ZDM5NjRkZjA0ZDBlM2RlMzNiZWEwZTYzNTY1ZWRmYjUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5204f4c0c55d49528c5f1f85fea9d57b",
+      "statement": "The shared-fake-and-contract-suite rule has already caught production: a two-word query returned every row matching either word because `SqlMediaObjectStore.search` combined words with `or_` while its own docstring said it ANDed them, found only when a shared fake and its suite were written against the SQL store, and a duplicate memory fake living outside every suite was deleted.",
+      "evidence": [
+        {
+          "resource": "repo://docs/CONVENTIONS.md#L803-L825",
+          "version": "repo-lines-v1:sha256:5311dea9d1145eabaee40433a6ee1a2097bdd02ba788924231cc82aae0b1c200:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3YzExYTFkMzQ5NzNhMjMxMDA4N2FhN2NkNzM3NTBhNTQ0NmRmMzU0NjU2NjU5NjFiZTA3NDMzMjZiNTlkODEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyMDRjNGY0NmQxMGNkN2ExYmEwMTdkYzRiMDY5MGQ1YjIyMzU3NDI0N2Q2ZDVkN2JjYTBjZTdkZDM1MTJjN2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZmZmQ3YzA3YWNmN2U4YzZiMzFjOTcxYzUzNDYzOTg5MTNiMzk4MmNjMzkxMTI0MzFmMjEzNzIyY2EwOTBlNGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUwYjNiOGZhZWM3OWQ4ZWVmOTkwYzIzMWViNjlmNzdkNmRlMThjOTRjODExNDVlNDhkYTQ0ZmUwMTMwMzQ3NmEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f22bd1cd7fc14078930c2f381153b5ed",
+      "statement": "`tests/integration/harness.py` assembles a real `IngestPipeline` and `EngagementPipeline` glued by the real `Dispatcher` against a throwaway Postgres database and the real doctrine, with only the model and the outbound sender faked; `tests/offline_pipeline.build_offline_pipeline` is the single definition of that wiring, shared with the offline eval harness, and constructs no collaborator itself.",
+      "evidence": [
+        {
+          "resource": "repo://tests/integration/harness.py#L1-L17",
+          "version": "repo-lines-v1:sha256:bbae63ed9d240e4127fe9b7c9d51643cd3beef27da4d564bf0cecf59ec2cc667:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNlOTU1YjcxNDQ5ODI3YmM2OWNjYzJhY2ZlOTc0MTVjMTMyZjBlZTUxYmE4MmQ1YTFhNmJmOGFlYTk1YjdmZGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://tests/offline_pipeline.py#L1-L13",
+          "version": "repo-lines-v1:sha256:f72886893091e03ee13ab1fd71308f81f3dadb2660a5c3049779f8a086fbd123:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRlNTNiNWQxOTgyOGYwZmQ5MTBkYWViNTEzNWIzMDE4ZTQxMmUxNDczOGNkNTY0Y2I5NmRiZDgwMGQyNjI2YmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7bd4e1b073b64215a5b37052e8e8751a",
+      "statement": "The Postgres testcontainer is one per session and starts lazily on the first `pg_url` request, each test that asks for `pg_url` gets its own freshly created database dropped at teardown, and the image is pinned to track `docker-compose.yml`'s `db` image so schema parity validates the version it guards and collation-dependent indexes sort the same way as production.",
+      "evidence": [
+        {
+          "resource": "repo://tests/conftest.py#L1-L12",
+          "version": "repo-lines-v1:sha256:8d0aae3c8e276b17c8cdbb6eb8eaa6fd0da5793fbe91a0cb82de1c32e5053b0b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwMTFkNjg1MTVjNjRlNGJkODk2MzQ4MDc0NDE0NzgyZmJiMGVkZjcwZmIzY2QwNDhkNDM1N2M5ZWE4MWZkYzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://tests/conftest.py#L39-L54",
+          "version": "repo-lines-v1:sha256:cf288ac6b048a30c30660163af4fb79d9ac576dd480b428d761a604a19f8a47b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyYTI4ZDA3NDVlNWE4MmE3MjgzOTVmNTQwYzBhYjllNDc1MGNmMDRhZmQyYmNiY2I0NGNjNTIzOTNiNjRjMjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRiNTJiODdkMDAzYTQ4YTQ1OTZkOWEwYjMzMDc3NTY2NGU3ZjhhOTliNDY1NzVkZDUwZGQ0NDFkNjRlZTU3MGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZhZjg3MWVmYTM4ZmZjYTY0MTdkZjQ4ZTc2Mjg5ZTVmNzBjMjVlZDk3ZWRiOGViZjQ2ZGUxOTQyNDZiNWRhOGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgzZGJjYTAxZTI0YzdiZjlhMzgxOTFlZGI0OGVmYjc1NGU1MzY5ZjZlYzY1OGM5MDIyZGMzYjRkNjA5Yjc4YTQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fd067b41dd44436cbf31b401875bce5f",
+      "statement": "The real schema gate is `tests/infra/test_schema_parity.py`, not `alembic check` (which is blind to CHECK constraints and to `ts DESC` index ordering): it reads Postgres's catalogues, asserts the CHECK constraint, the descending index bit and parity between `schema.py`'s CHECK constraints and the migrated table, and its frozen `pg_dump` oracle establishes metadata-and-baseline parity rather than anything about live production.",
+      "evidence": [
+        {
+          "resource": "repo://AGENTS.md#L520-L523",
+          "version": "repo-lines-v1:sha256:1d2f5323ad63a8684df8f85b45c09cc9e3352856754f5addc3165a3d35dfa785:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWQ4MzhjNzlhZjdmOTNlYTY2OTQ1NDljYTFhMGIzOTlkYjNkOGVlMzRkNWU5MGJhNmUxODg0ZTQyMDY2MWJmZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDFlMTdjNWUwY2I4YzczMmRlNTFhNTA4NGRlZTRlMWM0N2I3ZDA2NjEzYjY3YzFhYjY4NTg4ZDFjMjA2MTYzNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjI0YjkwZmM4MjY0NmEwNTRlYjlhNzk3NDUxMjg4MjZkNTU5NzNjZDQxNzQ0MDAwZWFjMWUyNjA3NmY3NDgwNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTY2Yzc1MzE0M2MzZjlkYThjNzcwMTRmMmYzZjAzYmJjMjExZDdlMTI1YzE3MGMyNmViNjIxMTdmYWZlNDM3YSJ9"
+        },
+        {
+          "resource": "repo://tests/infra/test_schema_parity.py#L1-L38",
+          "version": "repo-lines-v1:sha256:19dbe11ddd6f7578f7eea9346d4c54177ca02f49e2fb211947cc3cc6fbe2c3be:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhMTc4YzRiOTQ2N2EzODNlNzg2YTQ3ZjI2YmU3NWIxMGJhMjk1NzFkMDg3MTU5ODk1NGY5MjRhYWYyN2VkMzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6892c1e8abbb4db38c21df79d1ceb6b1",
+      "statement": "The eval suite runs on the deploy host in a checkout of the branch under test, against the deployment's clone: every case names a real room at a real instant, composes the deployment's own Nora, is seeded from the clone into a sandbox database of its own, and is driven through one entry point with nothing authorable or configurable per case.",
+      "evidence": [
+        {
+          "resource": "repo://docs/eval-sop.md#L9-L35",
+          "version": "repo-lines-v1:sha256:83b7c5180cd5e28a25dfee47a2dc270afc465ded0bc5192fc1a3c9e3f3e8951b:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyYmUwNGM3NTFlYzExZGU2MzAyNzA0Mjc1ZDZkZjUzNmQxODhhZGM2ZDM4NjcyMDM2NDdjMWU3MDI3ZWNiZDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3YzA2YzU2MWQ1YzMyNzM0MzY4NTI2OGE0NmIzMzkxZjM5OThlZWU4OTBkMmJlNTFmMGQyMWNjNGE1M2FlNmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZlZjEzZTZjZTdiYmE2NmZkNDUxNDU5ZGJhYzk2M2NjNzhhZjY0NGM2MWI4OGRiNmFhYzg0Yjk3YjAwMGYxMzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ0MzgzZGFmYmVkODg5NGI3YTU3ZmZjMWFkNTM5MDQ3YWI4OTlmYzA5N2JmYmJiYTE2YmEyMzgxM2E0NGUwMDEifQ"
+        },
+        {
+          "resource": "repo://evals/backbone.py#L1461-L1495",
+          "version": "repo-lines-v1:sha256:3f49e5d319ba56c83ba3d43ce3ec5ea29afbfdd9f74da4828eb51364939786fe:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY1MTU3MGJiM2VlZGExODk0OGMzZjk5NGVhMzRhODFmN2UwYTA5ODM0NmJiZDk2M2JiYWJmNTRmYzliNjIxZWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0MzgyNTYyZTYwZjQ5Zjc4ZjI4ODhkZWE1NmE2OGRmMjBiOTk4YzE4YTMxODcxNjYyZDM3YWI3OThlMWVjMGUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3MjIzMTA2ZmQ4NzQyYjcwZWEyMzNmOWRjMzU5ZjRiMDJiYmIwNjliNzI4M2VlZjc2MjQ5OTUxNmJkN2I5YzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJjODM4MzhhMGZhMGI2ZGU0YjZmZWM2YjlmYjRkMDkzMWM5YWYyMjMxZmY0ZTY3NzQ0ZDQ1YmJkMTc2YjExZTYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_66aa6a9e2ce34ab1afca725c72e87d57",
+      "statement": "The eval isolation is by database rather than by room: the deployment's clone is opened read-only and production is never opened, each case gets a database cloned from a blank migrated template beside the source and dropped at case end, and every seeded row keeps its real timestamp with the subject's clock frozen at the case's instant.",
+      "evidence": [
+        {
+          "resource": "repo://nora/subject/sandbox.py#L9-L31",
+          "version": "repo-lines-v1:sha256:0c513bc7b097c63b77b7d7cbfa61d3381dbb80a20cebf1aa8e59ae8e527912e7:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjMmM5OGQ1NjZlYjUwODA5YmQxN2JiOWU5NmM5NzE1ZDk4MWY2ZDc5ZTI0OTNiMmFkNjEzN2FhMGUxMDY1MjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgzMjNhMGFjMzFlNzAwYzBiOWE0ZjI5NmE4ZDEyNzViYWEyNzljZTY1YmQ0NGMxNTM0ZmE0OTI1ZjM5NDI4YjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM2NDdmNmVkNzA3YThjYjQ1ZDZlYmJlZmNkZmIwYzYzMWIwM2EyZDg1ODUwNjQwNDNlYzFjM2M5YjZlYzg1OTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY0OWM5MDYxYTU1MGQ5YmEzODFlYTQzZDg5OTg0NGIyMDJkMWY4ZDk3YjJlYTlhZTBjZmJmYTUxOTg2NWU4ZGEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_92f3c6a4b92f45f9bd1753fb996f6a19",
+      "statement": "The shared eval source and blank template may never be migrated by a run, because every session on the host reads them: a branch ahead of or behind the template's own revision gets a throwaway private copy migrated to its head, a source ahead of this checkout's head is refused before any case runs, and a snapshot read that hits a missing column or table raises `SourceRevisionMismatchError` naming both revisions.",
+      "evidence": [
+        {
+          "resource": "repo://nora/subject/sandbox.py#L56-L94",
+          "version": "repo-lines-v1:sha256:4fb9db98d57564d0356ff4b0796032aabc15c7a4328dd8b761da6eec271c1ee7:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE3MDgxYzQxN2Q0MGY2NWQxODNjY2Y4YmI2MzdlM2U3MGQzZTc3NDY5ZmQxODJiNjhlNGM5ZWI4Yzg3MTgzMmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRmY2IzZmEyZjlkMTFkOTM3MDE4M2MwM2I5YThlMmNjZDBhYjViN2YwYmUwZGUxZTg4MmExMzQ0ZTU2ZDliNjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYyZmYxOGNlM2QyOWEwYjMyYjlkMDU5ZjZkNWMyNThhZjI2ZTVlZWY2MmE5ZjBhNWFlYWQ4OTc5NDQxYTA1MWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMxNDhhYjU3MzdkODE3ZDNhNGE1NGI1ZjVhNmZjYjNmYjQ5NTM2YzRmMzJkOWM1ZDkxZTRmZWE1MjJjMzVlYmUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2b54225ecadb4e23ae6a87633972905c",
+      "statement": "Each eval draw creates its own Honcho workspace before the subject is composed and deletes it only after the draw's teardown, because a shared eval workspace would be fed by every draw and read back by the tag path, so draw 3 would read draws 1 and 2 as the tagger card.",
+      "evidence": [
+        {
+          "resource": "repo://evals/backbone.py#L1417-L1458",
+          "version": "repo-lines-v1:sha256:4b0b2e0aa4df15fdfd0ce9dd6aff7329af7c51c3a5e72be4798f0995e9d7acad:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliNWNhYmM4NjdiODZmYWNmMzRhNTFjYjg5NjY2MzEwMmYzMWIzZmQ2NjA5YmMzNmRjNGI0MTI2N2JhM2VjOTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhMTFjMDU2N2QwYTVmOWU5YjEzNWY2NWNkMjUzNzJkZmQ2Mjg3NzVmN2MxZWQyNTNmOGJhZDQyZGQyZDY2NjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ3YWQ1MTEyZjQzMjM0ZDFmMmU5NzkzMTdhMTY2MmI1NzAzOGJlZDAzMzYwNzExNGViMjkwNzI4ODVhZWJiOWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJiZDNiNTc3N2MyMjExNTU3OWIyYmRjYTgyN2FlZGU0YmU3NDZjNGFlZTVmYWUwN2U1OWJmNjMxNjIwYTAyMjMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e833fa305e444bfa9204da10d9a7a976",
+      "statement": "The deploy host holds a single eval lock and `python -m evals` refuses to start a run estimated over 60 minutes without `--allow-long`, because a run holding that lock past an hour blocks every other session; `make eval-source` drops every sandbox and therefore may never run while a run is in flight.",
+      "evidence": [
+        {
+          "resource": "repo://docs/eval-sop.md#L57-L62",
+          "version": "repo-lines-v1:sha256:d52d159c745838dcf1b355a871488ad663b057df6c0c6559e1dc9d6b6d446b63:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWQ5ZGY0YWQ2M2ZlMjQ1YzU5NjRkZjk1YmZkOTM0NWEwM2IyN2Y2OTM5MGFkNTk4MzM3MmQ0ZGY0YzFkZTk3NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODk0OTU5YWQxNjBiZTdhNWEwNzg5NmZkMTc0NmQxODgyOTdkZDhkNGY4NzA0NmZhMWM2MjI2ZDQwMmVlYWI5YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDdhM2NiYjVmMDliNDJmYzhmNjI2ZTcxMTM2MjE2YzZjYTJiMmEwZDFlNWIwNmUzZTFhMDliZWUzOTEwMmQ4NiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGVkNWM3NjIwZDc5NDg2Y2JkNTkxNTAyYjg1NzQxZWE5ZDZmNGUxYmI0MzNmNzM4ZWEzNWMyMzQ5YzIwMTM4MyJ9"
+        },
+        {
+          "resource": "repo://evals/__main__.py#L125-L173",
+          "version": "repo-lines-v1:sha256:72d5be57eaf4360263b6f9bac37665063c9728d0aba70d8202dc6abe89eb8b3d:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI2YjAxNDRkYTU3OTBlYWRjYmNiODIzOWI4MzhhNTUwYzYxYzhmOWNiZDBkZmRjMGU5N2JhZDNlNDM1OTgwOGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZiNjkyMjUxMDNmYjFkMmZkNzg0YzcwNTY5NmQ3N2NmYmQxNmIyMjU1YTkzZDNkYjNhYzllZTE2NzdmZmM0M2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ1ZmIzNjI3OTIyMDVjNTAyYzA0YTg4YmI4MzY0ZTY0ZDQ1MjE0OGU4MzIwZWY2M2I4MTllN2NiNzAyZjVmOGYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_13680256bac748168eaec601827ab8aa",
+      "statement": "Draws are named individually by `sampled` because the SDK caches on case name, and `sample_read` groups them back so a case reads PASS or FAIL only when every draw agreed, otherwise UNSTABLE — a deliberate fourth answer rather than a majority vote — with an all-ERROR group staying ERROR so a case that never ran is not merely unstable.",
+      "evidence": [
+        {
+          "resource": "repo://evals/backbone.py#L2526-L2597",
+          "version": "repo-lines-v1:sha256:5804a1a719328ad9ad19721d69c8a38d71c8be56a348a724a1b2301484b272ce:eyJzZWxlY3RlZExpbmVDb3VudCI6NzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdmMGFiOTU1MDUyNDkxNzg3N2ZhOGM5N2VmNjNkNzkxY2RjNmM2NzcyYTliOWRjOGI2YmNlNGQ3ZWQ4ZWFhOTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImExOWRhYmYwYmFhOWVhZjMwMDMwZmQ4NjM3OTRkMWIyOWRjYTIxMmE2NTc4YTEyNWQ4ODZmNjc1MGExMGJiMTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM2YmVmODY5ODA4N2U5ZDdmMzBhNzY4N2RhNzdkY2FmYTQzYTUxMTJkOWJjYWMxZmRiNDc2OGU0ZDQ4Zjc5NDIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fc3e89ecbd29477083182fd1b2dc2123",
+      "statement": "The eval task never raises: in the installed SDK an exception is recorded as `test_pass=False` for every evaluator without calling any of them, which would dress a crash as a considered FAIL, so `nora_task` catches, scrubs and returns the failure as data on `environment_state`, the one channel the SDK preserves.",
+      "evidence": [
+        {
+          "resource": "repo://evals/backbone.py#L1-L27",
+          "version": "repo-lines-v1:sha256:081fdc20ba15cebb7803202599c0d3123581bcb4ea87112a783fa2036a1aa46b:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEyYjJhZTRmODhkMzk0ODhhYWI4NWQ3ZGYwZTI4YzdjMjliOWUxNTc5MmJkNzgzNDU2ZGRlNmY3ZTg1ZjFkMjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://evals/backbone.py#L1886-L1946",
+          "version": "repo-lines-v1:sha256:c77b91fd1cb83cbb0b9166aa4a162a78eb9a4562554747522a378c0afe948f77:eyJzZWxlY3RlZExpbmVDb3VudCI6NjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiOTA0YWI5NGFhYzM1MDQwNzBkOGRiODNlOTY1Y2JmNjM3ZmJhN2FmOTA3NjM0YTkxYmZkZTU3ZmY1ZjcxYjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdiODkyMzk0ZjZiOWUwMmFkOWQzZmY5NGIwY2E2YWQ2OTg1M2I4MGIzNjM5ZDQ3MjFhNGY2MzQwZTU2YTlkOWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhkODg1ZTJlYTMzMzAyMWZhNzZhOGJjNjgzNGRhZDVlNWE0NTAyZjVmMzM0NDg0NDk4NThlNWUzYWI0NDE5YjAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_64ffc2e15dcd43daa62d0757e00c7cd0",
+      "statement": "`AbsenceGrader` exists because every built-in evaluator judges `actual_output` and a crash produces the same empty string as a correct silence; it reads the case's `expect` and the entry point's own fail-closed signal — whether she was admitted for a gate case, whether a row was written otherwise — and `either` still requires that something happened.",
+      "evidence": [
+        {
+          "resource": "repo://evals/backbone.py#L2127-L2189",
+          "version": "repo-lines-v1:sha256:23d37ef824276ab794ef229df477115d2ff45858cf147d7bb7f201b39a60c118:eyJzZWxlY3RlZExpbmVDb3VudCI6NjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVlOTA1ZDI3YzFjZDE0ZWQ1ZDk4NzdkY2EwMWUwZGQxZWU3YTQxY2YyOWY4MzY5N2UyYzE0ZGQ4NGNiOWNmNGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhYWU4YTBjYTc2Zjk4ZjdiN2RjNzk4NDk1MWQ2M2U1N2RiM2M2NDU1NzljYTUxYmFkNmE1MzlkNjE0ZWRiYmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzZGYyYWNmMDZlOGMzZjAzYzcxMzVjNmU4YWM1YTljYTU0MzJhYmUwNmE3NGFjYTBmZGQ5YTUzYTAwOGY5ODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE3MDVkNWE0ZmRmZWMwNWUwYWUwM2UxMzYwZTExZjRlY2I3YTQ3YTQ3YWEzZGFhY2I0NzY5OTk5NDk5MWRkNzYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_36ca016ab0ea4332a50e1bc906d941d6",
+      "statement": "Every run prints a census: parked cases are counted and never run, unanchored cases are loaded, driven and ERROR, and the counterfactual subset is reported separately and never folded into the active count so the anchored rule cannot erode by arithmetic.",
+      "evidence": [
+        {
+          "resource": "repo://evals/scenarios.py#L12-L120",
+          "version": "repo-lines-v1:sha256:67157585d875c0e9be06c850fca902a0289564834a4c0be1aa92f50adb74fe1d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA5LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIzNDQ4YWMwZDU1MWVlYTI4Yjc1OGVjMTYzNTI0ZjliNzg2NjkwYTFjOThhZTMwM2FiOWM3MGM2YzdmMzRhMGYwIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI3YjM0ZTE2OWU5ZDIxYjQ4M2IyZTFhM2Y1MmZiZTBhMmEzZmI3YTRhNWVhNTk5OWIxYTA2NGUyNmNmNmE1MGU3IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJmOWRiNWNkNjYwOWU3M2RkODAwYjc3ZDczOWY3ZWE1YzQ3NDFhYmViNWU4NTFjYzI4ZGNkNjZiMWQ5MmE1NDNlIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIwMjQ1MDViYzdmYWY5MTcyMDk2MTMwN2FjYTI5MWI5NGUwMGFmMTc3YTIzOWQ3Njg3YmFjY2ZmMTE0NjhlMTQwIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_ae8a9f912b1f49538b345feb6964cd16",
+      "statement": "A corpus maps to exactly one entry point through `CORPUS_ENTRY`, and `ENTRY_POINTS` supplies the implementations (`tag`, `participation`, `gate`, `dreamer`, `proactive_act`, `standing`, `persona_identity`, `persona_coverage`), each declaring only the capability flags it needs while which adaptor is built stays the corpus's business; a new suite over an existing entry point adds nothing there.",
+      "evidence": [
+        {
+          "resource": "repo://evals/rebuilt/entry.py#L649-L693",
+          "version": "repo-lines-v1:sha256:188c055898098c765c95ea78b04ed9060517fd64840d4ba399e8f0cd0b3027d4:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ3MDA3MDhiMDk2OWJkMTU2NTk4NTJhYTVlNmMxMjFiNDljMjM1YTExNmZmYjlkOGJjMjZlYWVjM2UxZWU2YTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImExOTk5ZTFmM2Y5ZjIzM2MwZWQyYmFiZWJjZjNiMTA2ZDM2NTAwZmNhMjQ3NGRhZmIwNDVlOTllYWM0ZTUxNDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://evals/scenarios.py#L359-L401",
+          "version": "repo-lines-v1:sha256:014dda312b5b71cbdd94270e14c61e7dbc4c0e6b884850be259aa3d602b70747:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE0MTYzNTE4ZGFmYjk4MTI4NGMxYzhmMGI1NWI2YWY0OTQ2MjhhNjEwOGUyNTUyMmM2MTBkY2EyOTE0YWQzZTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZhNmY3ZWQ3ZjI0ZWZjMTIwMzUwYzRjODdiNDRkNDNlM2M0NWJhYmQzZDZhNjUwYmViMWUzZWQ3ZDA1OWY3ODAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_bd41470c4c9541ae9f9d133703d81ecf",
+      "statement": "Grading is layered: `MeetsGrader` delegates to the domain's own verdict vocabulary rather than reimplementing it, `ToolRouteGrader` grades routing on the tools that actually executed, and tagged replies go to a model judge whose base rubric `RUBRIC` names exactly six criteria — those six are the tagged-reply rubric, not the rubric of every judged corpus, and a standing fold is read against the property-per-kind `FOLD_KINDS`, which the judge's position prompt reads for the case's kind and refuses as an unknown kind when absent.",
+      "evidence": [
+        {
+          "resource": "repo://evals/rebuilt/judge.py#L287-L308",
+          "version": "repo-lines-v1:sha256:62e42df73b7f5f8e80f7cb60a073c072066099cc71c534cae7ca5bec78df3f56:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkMjFiODU0Y2IxODUzZjMyMjNmNWNmZDYwMDgyMDIxMmI5N2RhNzZlZjRlNWQ5YjQ4ZmM1ZWQzODU0Y2IxMDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY4ZmRlZmEzYmQzYjFmNjNjZDRhZDkzMTY0YmY2MTQ2NzM3ODI5MTZiMTA4MDQ3NDdmMTg3NTI1OTExM2I0NDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFiMjc1YmJmZjVjYjM3YzNiZjk2YmEyMzRjNDliMDcxNjk4NjM2NDY3ZDZmMzJkODU0NTI1NWI2ZjNiNTczMjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc4NjcxMzUzYjNjNzkyMDZhODgxNTg3NmE5MmQ4OGM2NDJkNDIzN2M4MzNlZjgwYmUzZTYwNzU0NDEyMGU4OTEifQ"
+        },
+        {
+          "resource": "repo://evals/rebuilt/judge.py#L368-L368",
+          "version": "repo-lines-v1:sha256:bb8fa48b4f30ee86406e979c6f10e720e95db7549c18e347c30292bc36e27caa:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYmI4ZmE0OGI0ZjMwZWU4NjQwNmU5NzljNmYxMGU3MjBlOTVkYjc1NDljMThlMzQ3YzMwMjkyYmMzNmUyN2NhYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYmI4ZmE0OGI0ZjMwZWU4NjQwNmU5NzljNmYxMGU3MjBlOTVkYjc1NDljMThlMzQ3YzMwMjkyYmMzNmUyN2NhYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjkyYjU0OTdhOWI2YWU0MWVhMDc5YzYxYTU4OTA3NmIyODM1MGJjMjJmMzViYmNkMGQ3ZWZmODI0YTczYjYyYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjI4YTE5ZjViMGUwMTA2NDI3NWRmYjE5MGUwNzVkMWYwYmZhMDNmMGEyYzllMTdjMTY2ZmYwOGZmYjEyMjcxYSJ9"
+        },
+        {
+          "resource": "repo://evals/rebuilt/rubric.py#L12-L51",
+          "version": "repo-lines-v1:sha256:5661778a0680573b3f4fc39824b2da7c74994c8afd4cec67eccde3e3d92339dd:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjViNmJmYWYxMDA2ZWE4NjQ1MjljNWIzMDU1N2MyZDU2ZjBiYzljOGQyMzMxY2E2MjY1NjkwNmJhOTg0MWU4MzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhZmJhMDUyN2MzOTUzYzRiNmUwZTViNTczOWJhODM2MTJmODA1M2JjZGM5NDY2NzMwMTkzY2QxZDU5MGI0MDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjViM2QxNzFiZDdkNWI0MzI1OTk4MDEyN2NhYTJmNDQ2YTgxNmQ1OGI3NzEwMjYzZjZhNjNhZWRmZjYzMGU4NDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlkNjNiMzVmZjk5NmM1NzdjMjlhZDBhNzdiOGIyMDc4MGY3NThiNGZlOGE3MmQ4YWJlN2E3OGZhYzhiNWIwMjcifQ"
+        },
+        {
+          "resource": "repo://evals/rebuilt/rubric.py#L363-L398",
+          "version": "repo-lines-v1:sha256:8c4ba056b167118bd3ef836ef147f3d8567549977600f05b9669b3f1be872e78:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlYjI1ZDkzOWFmZmE4Y2Q4OTE1MTIwOGIxODcwYzY5OThmOGJhZDhiMDhmYjQ5MmE4MWU0ZjY5MGNiZWFjYjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYxNzA3MjZhYTM0NDFjYzM4NDQyYzQ3Y2E2OGFiYzRmYjY4NmZkYWFhNGE5ZTEzMTU2NzQ5ZWJlNDc5OWEwMDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://tests/test_evals_rubric.py#L7-L11",
+          "version": "repo-lines-v1:sha256:de20d41e38f776d825130472cbe79a9c90aa9bcd85d859f6908e9c5d4c42ed1d:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYmExMDY4MWE1MmFkOWZhYzIzOGEzNDFmMzM1ZjEyMjBkMmY4OWE3YTc2NThkMTI4NTYwYjcwOGIzNzliYTVmOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYmRkMDg3YmJjY2RhMDFiMGVhYWYwOGVlMjZmM2E4NWJlOGJlZTBkN2VlMTRhZDQ0YWIzNDk3NjU5YWQ4ZTIyYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiN2I0NDBjMDdiMjRmMjgwNjJlOTFhOTRmOTEzMTNjZmU3NjU5ODdlYWQyMjdiNjZkOTJmMzFhMzcxYzY2MzU1NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjA3ZjAwMjg0MmQxNjVhZTBmYjNkNjk4MmEyZjkwY2U4NWRiMTZlYzdkNzY2NWU1YjA5MmViYzQ0MmNkOTBiNCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_aca14693c84a4d68b9238629aebad4db",
+      "statement": "Eval corpora are pseudonymised and resolved by a private map that lives outside every checkout: unset, a pseudonymised anchor refuses and names the variable, a case whose pseudonym is missing refuses with its room withheld, and with the map in effect a run log holds real names and content and stays on the host, with only case names, PASS/FAIL/ERROR, counts and spend leaving it.",
+      "evidence": [
+        {
+          "resource": "repo://docs/eval-sop.md#L39-L53",
+          "version": "repo-lines-v1:sha256:1fc9255fe9c41299f6aa29617fdc72975ae7a69c73b92e7bd98b8ea51476ebc8:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhYThkMzFhMjlkNmI5NTdhMjNiZmYzMDgwMjNiZTNkZWNjYTI1NDU1NmY1YzM2M2JhMjAyY2NmZTAzYmY2NTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlOGFmMjdjOTAxODY3MjFlMTZjZjc3OTM0NGQ0MzAwN2VkNmEwMTg2MDNmMTJhZDNiYjA4ZjczNTM4ZjRhNDUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ0MzgzZGFmYmVkODg5NGI3YTU3ZmZjMWFkNTM5MDQ3YWI4OTlmYzA5N2JmYmJiYTE2YmEyMzgxM2E0NGUwMDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ3YTNjYmI1ZjA5YjQyZmM4ZjYyNmU3MTEzNjIxNmM2Y2EyYjJhMGQxZTViMDZlM2UxYTA5YmVlMzkxMDJkODYifQ"
+        },
+        {
+          "resource": "repo://docs/eval-sop.md#L68-L68",
+          "version": "repo-lines-v1:sha256:15f3d0b96f2607b009bbba009d7ca8326ad787eee6c9cee1fa5505b94f156aed:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTVmM2QwYjk2ZjI2MDdiMDA5YmJiYTAwOWQ3Y2E4MzI2YWQ3ODdlZWU2YzljZWUxZmE1NTA1Yjk0ZjE1NmFlZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTVmM2QwYjk2ZjI2MDdiMDA5YmJiYTAwOWQ3Y2E4MzI2YWQ3ODdlZWU2YzljZWUxZmE1NTA1Yjk0ZjE1NmFlZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOWZhZjY3YjI1YTlkZDM1OWI2MWE0MDk0N2RhNWU0OGU5OWIzZmFmNTk5ZjdkZGNkNDExNTVmODQxYjY3M2UxNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTBhMDBlMzhkMDYwNDJlMTljNGYwYzhjNjAxMjVjM2UzMDEyZjJhOTkxNjRhOTkyYzAxNzNjMWIxM2ZlZWU3MyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_596c2d1ab995441782d73ae332fb4c5f",
+      "statement": "The eval harness is itself verified offline: with no provider reachable the rebuilt suite must report the failure first and must not print a clean bar, while cases that ingest refuses before any model call legitimately grade as a correct silence — two different answers from one runner, each right for its own reason.",
+      "evidence": [
+        {
+          "resource": "repo://tests/integration/test_the_rebuilt_suite_runs.py#L1-L17",
+          "version": "repo-lines-v1:sha256:d5f87dbd760520747205286a2d6a3dd1bb408d95d1e66bc635a35e2810929109:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBkNTYyZTI3NDg0MmVmMzIzY2JmYjI3MzBjZDk5MzE0ZDA5ODVmYTA0YWE5N2IxZThmZThjZGJlNjE3MGQyOWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEyNzI1YmFjMWQ5YWY5MTAwODkwNGQ1ZTZhZWQ1NzBiMjE4NjMxOGE1ZGQ0Y2ExZTI0MTJmOGEyZmMwYjZlNDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_bef8658e084e4fd7bc9bb3bcf906ac80",
+      "statement": "The eval SOP records four limits on what a live run's number means: repeated draws do not establish a population error rate, an eval whose tool results differ from production measures a different decision, a case must anchor on a platform adapter the sandbox carries, and a narrow corpus overstates detection so a green adversarial run means only 'not caught by this judge'.",
+      "evidence": [
+        {
+          "resource": "repo://docs/eval-sop.md#L128-L144",
+          "version": "repo-lines-v1:sha256:5d5448ff212ce7a6a80f4f28cc6c2d5c9c8df6ed2e66d41ea422eb98fafdf8cf:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjczY2NhNjBmNmVmNjU4OWEwYTU5ODk0MDU0ZGFiNzdiYTk4MGIxNjFkOTc0NDZkMDNhZDUwNGQ0MTM1OTI2NTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIxODMyOGEwNDQ5YmVmZmUxOTY4MWE3NzFmNmE4YmQyYmIwMjlhOWNjYzUwZTdkMjc3NmQ0NTg0M2VjYTllMjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg4ZDMxY2NhYzMyYzY3YzEyYWRkMDM2NjJlMGU2ODc5ZjU0NDYyMWI4OGFlZWI2ODRjOWYwOGY3YmI5OGRiNzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFmOGFhNmZkN2ZhYmE1M2NmZTgzMjIxOTcyN2IyM2MxOTRjYjgyY2ViOGFhYzE2MDc4ZGViNWNkMzBjMTIyZjYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d7caeae3eda14e0db571d2c1341d528f",
+      "statement": "Some corpora are a measured record of a doctrine gap rather than a gate the shipped doctrine clears, and their tests pin that the measurement exists and is findable rather than that the rule holds.",
+      "evidence": [
+        {
+          "resource": "repo://tests/test_acceptance_rules.py#L486-L515",
+          "version": "repo-lines-v1:sha256:0b99c5a411f5455657a5dc71a07fd5e15e0df55dc6cfe52f8bf332433180cf16:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA2Yjg5YjA3N2ZjNjQ0ODg1YTJmY2E3ZDVkZWI2Yzk0MDBkNzg1ZTg1YmY0ZGEwMmZjZTQ2YTU3OTE0NDU5OGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNmNDlhYjA2OTM0NDE1NWM2ZDYwZjExYzE3OWM2MmZhMDU0MjY3Y2IwY2ViZDgyMzMxYjI0MGYxYWUzZWE0NTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY3ODlmN2NkMDY1ZDczMmYyZDU5NDkzNWQ1ZWJjYzEwMzY2NjAxMDY4YTM4MDI1ODE1NmMyOGZkYjQxNjgyZjQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4fe34b1fc8cd4143bb1c3aa029b8e835",
+      "statement": "`scripts/mutate.py` proves a fix is guarded by reverting each named source line and requiring the guarding test to go RED, and it is deliberately outside `gate` because a table naming exact source text is per-change and disposable; pytest exit code 5 ('nothing collected') and a Go package that fails to build are BROKEN ENTRY, never a caught defect.",
+      "evidence": [
+        {
+          "resource": "repo://Makefile#L74-L82",
+          "version": "repo-lines-v1:sha256:3a75cddfb94da6d7b27355133ec7035bee79559715caa86bbb47ff4f4bfd94ec:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDhhNzMzNmM4YWY3YTEyZTBjZDg1NmRjMjZjMTJlOGJmMTk0YzU5MDhmNGQ3NTJlNWE3ODAyNTUwNDI3NWEyYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYmNlNGU5NTg5M2E2MjQyMDNjYmYwZGUwNjdiZjUxNGZmYmZjZTk1MGUzMWQ1ZmNhMThiMzRhMzNlNzZiOTNhMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOWU3NGQ4NjVkYTk0MGE1ZDNiYWE4YjlkYTliMTFiY2JjZmM3YmY1MGZiYmJiNzM1NzA2NzNjZDg2MTBiODEwZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTIzM2RkYWY1MmZiMjNlNmYwNzViOTE3ZWU5ZDBjM2EyMzUxOWZiYTk1MDY3Mjc0NGRhMGM0ZmM4MzIyZDE0YiJ9"
+        },
+        {
+          "resource": "repo://scripts/mutate.py#L1-L64",
+          "version": "repo-lines-v1:sha256:43e52abfdefcbcf83b8fbc885cc1ac348f23590c720dbb16144632903fab23a6:eyJzZWxlY3RlZExpbmVDb3VudCI6NjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjExM2ExZDQ5ZGVjNzVlZmIwYTcxY2VhYzZmOTQ2ZjgzNjI0ZTQ2ZjJiMjgyNWFiNTJkODgyZDU4M2VmMjQ3YTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBhYWZkMWJmZTg3NTc0N2YwYmYyNTE3MTdiMGJhNDgzYjc5NThkNzY4Y2VhNWYzMzgzNmY3MjBjZjdiMTk0Y2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhYWY3NjM3Y2I2ZTdlNWRiODVkNjM0Mjc0NjAxNGRmMDQxY2NkNTU4YTkyMGIyOWViNmFjNzE5ZDdiYWY1YzIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7c76b60e6f834f989c4798cda19bc998",
+      "statement": "A new behavioural rule is registered in `tests/test_acceptance_rules.py::RULE_TESTS` alongside its decision-index row, and the registry is checked by collecting the suite (`pytest --collect-only`) so a rule cannot point at a renamed-away test; a rule that is strictly behavioural instead pins the corpus that measures it.",
+      "evidence": [
+        {
+          "resource": "repo://docs/CONVENTIONS.md#L691-L695",
+          "version": "repo-lines-v1:sha256:38444cc9f6d8886121c3ef5db46524f8191a5827b492103c71cb572efc0ce3e1:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjRhMjJkNDBjM2EyNjVlMDczZGVjYzUxYmYzZWRjNjQ4NDhiN2ZjNmNlYzY0MGU4ODljMDdiNzk0ZDUwNGQwNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzYxY2Y1Y2Q1NzBhMGY3Y2Q0OTNhN2VkMjZhMWEyM2Y1ZjMzY2IzYzhiODMwMGQxMTEyYjhiMjFjNjkzMDRmNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjRiODQ4MzY2ZmYwNjBjYzZiYmQ2ZmFmYzk2M2E2YWU4NDNjM2RjYzQ3MWNkZDFmYWZhOTc0OWYyZGZjNDk2MiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDcwYTFlZGI0YjNjMzA1NWIxYjU1MTk2MGE1ZjQ1MjA2YjViYTczZmQ0NDk4NzkyODVlZGYyZGY2NWFiZGU0NCJ9"
+        },
+        {
+          "resource": "repo://tests/test_acceptance_rules.py#L468-L477",
+          "version": "repo-lines-v1:sha256:106765cb06b0a98a50a1f035de7999c0cb1db8b15719d39a5e6bc8dd64354fdc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiZDJjYWJkYjVmZjQ2MWQ0NWJhNWFmNTIyYzQ2OTE2MWEwZDUzNTE0NjkxOTAyZmNhMThlYTIyN2UyOTZhY2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA1N2Y0YzIyM2EzY2ZmMmVmNDRjOWE2MGRmNzM1OWEzNTkyNjFjMGFkZTFjZGZmMDBhMDNlZDlhMzE5ZmY1NGUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA5ZjkzMDgzYzE5NzEyMWI5ODI3MDBiYThhZmFiZDE3MjJjZjFkM2U3NDA0NTA5ZTgwZWZhMjcyNDdmNjJmMDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNjYTkzZmM0MjQ0ZjcwOGEzMjZlZmQ5OTMwNjUzMzI2ZDNjMzk1OTZiZmU0N2M5YTVjZmUzYzljNGIzODA4ODgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fc89b5ca67e94d38bb9453772a103623",
+      "statement": "A new corpus is added as a dict entry in `evals.scenarios.CORPUS_ENTRY` rather than as a new Makefile target, so adding a suite is a code change under `evals/` rather than a change to the gate's command surface.",
+      "evidence": [
+        {
+          "resource": "repo://Makefile#L128-L131",
+          "version": "repo-lines-v1:sha256:600b3ada6fd0c514d8b27962cf33fa27967b17700f34f1c86442677d9a88d3d4:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTc1NDlmMGI2ZTEzNmFlZjU3ZTBlZWNhYjA3ZGQ5NmM0NTU4ODBiMjViMzljMzY5MjkwYTQwYzA0YTQxNmQ0YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTU4YjY4YjA5NzYyOWIyMGMxZTQ2ZGZiYjY3YTk2NDMyYzg3ODAxNzUyMTRmOTI0NzU0ZjM4ZWU4MWYzNTI0YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjIxYjQ4YTQwYTBiY2YwY2MxNjMwNTgxZmY5YjkxM2MwYjJhYWI1ZWMzYTFmOTI1ZDUxYzQ3NGRkZDc5NTI3ZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOWQ2OTc3ODIzMTYxMGIzYjU0YWRmMTczMjMyMGU3NTM4ZTYwYzliY2NhYzI3ODI5ZDQ3MGY3M2FmZmNhNzQwZSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_770d8ac98bbd46738878abfc10708cfb",
+      "statement": "The sending boundary is a discovered module set, not the historical filename: `tests/architecture/test_only_two_paths_can_send.py` asserts that the callers of `deliver.build` are exactly the tag pipeline (`nora/engagement/pipeline.py`), the fire path (`nora/app/fire.py`), the public summons (`nora/app/summons.py`) and the one-time code (`nora/app/otp.py`), while separately asserting that `Deliverer` is the only caller of `adapter.send` and is constructed only in `deliver.build`; a fifth sender would have to edit that set and the decision index's R-1 row.",
+      "evidence": [
+        {
+          "resource": "repo://tests/architecture/test_only_two_paths_can_send.py#L50-L134",
+          "version": "repo-lines-v1:sha256:c5a8b56c18ce88b0a497ffbc89185867f5153a0441e2df7c3248e97d5a1bb4a2:eyJzZWxlY3RlZExpbmVDb3VudCI6ODUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRlMDFhMjJlY2FhM2ZlYTQ2ZmI0ZGYxOTI1ODExYTMzZTdkYjg0MGMwNDYxYzA2NWE2OTE2ZTU4ZDdmOGY0NWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZkZDU3NDQ0MTYyYmI5NTM3ZGIwOGNjZDNmYmU2YjM0OTM5YTAzNWM1MGY5MDNlZTMzOGUzOTNjMzhjODg4Y2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f8da46621a64435daa08e77dd78a1a58",
+      "statement": "The public summons never reaches a room adapter: its deliverer is built with `send_permitted=False`, so `send_reply` runs the empty-reply check, leak scan, egress scan and markdown render and then holds the text on `held_texts` before the audit row and the adapter, its store and adapter are `_NoRoom` doubles that raise if reached, and the held reply is published only by `SummonsOccasion._flush` through the instagram-bridge's guarded comment write.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/guards.py#L436-L452",
+          "version": "repo-lines-v1:sha256:b17afe2316e1b1d7aa79a395099741b17630ccf9cef0013bf2bc2bd78ae85bf9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViNDYxZmEyYTgyODI4ZmQ0Y2QwMGJiNGFmNjVjMDMxODdjNTIzYzYwZTJiMGYxZDllN2M3NzA5OGJhNGUwMDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlmMTFlYTExZWYwMWUyZTk2OWU1ZjRjNjI3MmYzZGI2NmRlNWY4ZTU0ZDFjYWFhNGFmZWYyZDIwYmJhMmVmMjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhkMjJlYTM3NTEyOTA4YzY5YThhOTcxODEzMWQ3NzE5YzJhNDUyYzc0YmFhN2NmNjA3YTIwOTJlOGFiMDkzMGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk4NTgzMmIyYmIzYmFiODdhOTY3NjczNjk1NzUwMDg2ZTQyY2IyN2QxMTA1YTk4M2Y0Y2Y4NjQ4YmFlOWY0MWMifQ"
+        },
+        {
+          "resource": "repo://nora/app/summons.py#L487-L507",
+          "version": "repo-lines-v1:sha256:70ed9825b32055ebda31f7fb51968162fa9a0ae568c85c24d4a014245e4a3777:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0YmZiMWYzMmM0ZDc1NDY1ODk1MjRjYTE3OTllNTJjZjlhYjI0YjkwMTg2NGNjOThiYTBmNzlmZGNjYWJkMGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJhNGFiZjVjNDFlMjI1YjIyNGEyMGI0YmQ2OTYzZWFjZmVhZmQzOWQ3ZmFmOTMzYzNlODAyNWZhYzA0MDY3YmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE2NzhjMDJmNzhiMzNlODNmYTA4NTUzZjQyNzZlZjZhYTdjMTFmMjUwZDI1ZmY3YWNiNDk5MTI4YjRkM2MxZjcifQ"
+        },
+        {
+          "resource": "repo://nora/app/summons.py#L650-L711",
+          "version": "repo-lines-v1:sha256:0e08e6dc3d5f89afc5d0988e053e7d3171b114b8886d05ef331f95199c4cce71:eyJzZWxlY3RlZExpbmVDb3VudCI6NjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5MjdiYWRlMmQ2MTFhOGNjMzkyNzRmMzRmZGZhNzQxZjY0Y2E3ODNjYTg3OWFjMGRlMzA5ZWJkZjAyYjM4NjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg3ZWZjMTllMmE0ZmMzZjU4MDI0MGM0YTIyNWEzNjYxNWU1N2NiMmE3MjdiN2VkNjBlYWY2ZjZkZDQ0ZTViNzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjljYjgwZDk3M2ZmYjJmMmRhMjc5NTkxMzIxMDEzZTRkMWZkNDYxNTJlNWIxMDAwZGJjY2NiY2NlNTg5ODNjOWEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_45bb41fb6aca49d3bddbc667752279ec",
+      "statement": "The one-time-code path is a fixed template with no model, no prompt, no tools and a one-message budget, sent as a direct message only to a person resolvable in `identity.toml`; it still travels through `deliver.build`/`Deliverer.deliver` so the leak and egress scans and the audit-first write stand between the template and the wire, and the audit row records the message with the code blanked.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/otp.py#L14-L18",
+          "version": "repo-lines-v1:sha256:2ab5ae479c0583551a984d94c3e7c6fe67d43c401c86754bdb1f5bfc0e520551:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGRmNWZmMWYwMGM2NjAzM2U4OTRjYWZmMmIwM2IwOTU0NTQ0MjFiNWNmMWI5ODkwNGE4NTIwMWRhNDE3YTY0YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGY5NGRlZTVmMDc1ZWIwZWUwYjFiYTFmMzI0NDk4M2M3ZGNlYzJiZTMwYTI1YzlmYzY0NDZhMWI1M2EwN2U0MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODY5ODlhZTQxZjljMzZjNjQxMGViYjc5MjZhMTk5ZTJkNTY3ZDAyYzU4NWQyYWE1M2ExZjIzMDA0NzYwZWVhMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODhjNDdjYzgyODcwMzlmZjhiOGYyOGI0ZjRhOTg1ZWIxY2E4NWZkMDdmYzBjOWQxNjU2MDY2NzhjNjUwNjQ4OSJ9"
+        },
+        {
+          "resource": "repo://nora/app/otp.py#L150-L169",
+          "version": "repo-lines-v1:sha256:f45e7f157a513dd2f47ae5345d7d437d06799f5aedb925b0a0fb800988d70e1a:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ0OGJhNzEyZWYwOWY1NDlmY2ZhMTRkMzE1NmZmMmEzZjk1ODBkNjg4MzIzZjVkM2IyYjkyZTA5N2I1Nzc0MDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3ZWQ0OGUxNmYxYTZkZGU1YjdhZGI2NWNlYjgwMTQyMmQxY2QyNTUwN2JjYjM2N2U5MmM4NDhjYjg3NjEzMmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhlNWQxNGNlZTc0MDcwODhjMjhkNjg5OTViMjc2NmE1MDI1MmRhNTE2ZGEyZDIzYWI5ZTY0MzZlYmVmNTljMzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRmNmM2MjJkMjdlMDEwODk4NTM1YmIzMjY0OTBlODc0OWRjNzg2OTUxYzAwNjJiN2ZhMTEzZGFkZDhiYzEyMmUifQ"
+        },
+        {
+          "resource": "repo://nora/domain/audience.py#L63-L70",
+          "version": "repo-lines-v1:sha256:075713356687a928577c96524e094f15e812f89dbaeba1f3404a9637d54208ea:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTI5ZDZjOTYzMDUwOTkxZWM5MzViNjkzN2ZkNmVlMjk2ZTlkNWFlNTIzZTU0ZTRkZGExZWNkYzEyYjRhM2JkNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYmYwMTYwNDBmMjAzYzI3Y2NhZDM1NGNlYjIzNjdlYTAyNTAzOWI5MWM2Zjg1ZmUwNzEyZTkzY2U1YjVjOGEwZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTRhZTY4MjljOGExNDI5NWMyMGIwNzZjYWRlOTJkZWIyYzZlMGY3Mzc4ZTgzNTI1YjliYWQ0YTFhMTJjZWRhZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjIsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjliMzEyZjkxZmM3YzA2ZjM1M2M3NWM5MTdiYmE5MWE1YWM3M2U5ODgyNmQzOGRmNDI3YzA0YmFmYjBiOTY3YSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_8da320442d344e9092033ab71ac72aa1",
+      "statement": "`tests/architecture/test_the_summons_writes_in_one_place.py` pins the single `post_comment` call site under `nora/` to `SummonsOccasion._flush`, constrains both `_flush` calls to the first held reply (`held[0]`) or the stored row it came from, and carries a positive control asserting both call sites exist so the check cannot pass by finding none.",
+      "evidence": [
+        {
+          "resource": "repo://tests/architecture/test_the_summons_writes_in_one_place.py#L58-L99",
+          "version": "repo-lines-v1:sha256:7a2dd5a658fd40007469df239c0998bd12cf30ce359ff314a503adc392cf0070:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMyNTEzNzg3ZmJmZjU2YThlNjA5NWFiM2U4Zjk0MTQ4M2E2MTM2ZjA0YmUxYTVmYTMyNGQ4NDA5NDM5OGE4NzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxN2NmMTUxODE2YTMxYjQyN2VjMGVmYmRhYjU5NzhjOTY2NGZmOWJmNGU1MGJiNTcyNjc2ZjVhOWRhOGQ3NGUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUyZDY4ZDMwM2FlOGYwNWVhZTczYTA3YWExODg4ZmE1MTY3ZDY2YjJhNGQwOTRkMTlmYmIzNWM1MTE5ZmQ1OTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFkZDI0NDU4MmI2ZmIwM2QyM2I4NDE1YWJlY2QzNDZiMGM5ZjQ2NmI2Zjc1MmIwNjgxODljZTdlOWEyZGMzNTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_de0a9bdaa2f049c5ae445289e44f0ce1",
+      "statement": "Because `deliver.build` callers are compared per module rather than per call site, `nora/app/fire.py` holds several deliverer builds — the participation turn, the shadow mirror and the gate's review post — each under an audience of its own, and `nora/domain/audience.py` declares that vocabulary once, separating speaking audiences that run a model loop from the two shadow audiences and the one notice audience.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/fire.py#L2520-L2577",
+          "version": "repo-lines-v1:sha256:bb12ad016ee01f283df40b33d7b6ecec78339d5a8126a802dfdf574508c5d25e:eyJzZWxlY3RlZExpbmVDb3VudCI6NTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzM2IxMzkwOGNjY2E0NWU3NzliZmE3ODdhYWZkODE3OWMyNjkxMzNjMzNiYWY5ZTJjM2NkODc3NWRjNDNiOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVlMGY2ZWVmMTE2ZDVlMjg3NjVhZDVlY2U0ZDFlYTQ2NmUzYmE4YWMzNTc5MmJmNDhjNThiNjYxM2UyYTFhM2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMyN2I4MmU2ZGJmMTllYTNkZmE0NzU0N2QwMGMxZTVjZjk0OTRjZjMwYzE1MzJiNWU3NDE1Nzc2MDZkOGU0ZDcifQ"
+        },
+        {
+          "resource": "repo://nora/domain/audience.py#L14-L72",
+          "version": "repo-lines-v1:sha256:72edab435a7095289de4c43178c5e1a8d9dab95bb9b954c7991e5e2b973985e3:eyJzZWxlY3RlZExpbmVDb3VudCI6NTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQzZDkzMDIyYmMxN2VkZWVkMjlmMTI1OTNmMDRlMTk3NTdlMDY5ZmI3ZDc0MDE2MTQ2YzUwYjUzNjZmNDg1ZmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwYWMwMjFiMzQxM2YzNzE1OWZiZGU2OTZmNDZmNTBkYTljMDk3N2Y2YWNiMjlhNDExZjI2YTYzMmZkOWEwMmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYyOWE5ZDlkZTg3NzhjZjU4MmFmNjYwNmMwZTZhZDkzODNmMTZmY2EyNWYwNjk3YjIwOWYwZGU3ZjFkOTc0YzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://tests/architecture/test_only_two_paths_can_send.py#L81-L109",
+          "version": "repo-lines-v1:sha256:6a3156b346c209f3b7eeef70abd36fac91cebc49a5a2a37a082b729b5aa687d9:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZjMDRiMDk4YTFjMjI3ZWI2ZjI1MTc3OWI2ZjVlYzAzMmJkZTFlZDU1ZDM1MGE0MTA4Mjk0Y2E3NjQyMDZkMzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlhODJlYmU5ZWQ0MDdjM2E2YmE0YjAwMzQyOTJiYWE1MmMxMWNlNWFlMjg2MTA3NDAyZGU0NzkyZWVlY2FjZmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIyNWRkYWEwYjhjOWViZDBiYThhZDM5ZDE5N2U0NjhhNjViZjU4NmUwNTVmZWYxMjA5ZDUzODJkNjllOWRiNzAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c7ab551eb6f74c9abf21cda2225b3f78",
+      "statement": "The judge's third label `REVIEW` is an uncertain or mid-band answer and is never a pass: `evals/rebuilt/judge.py` documents it as the fail-closed third answer (every path that can fail to parse returns REVIEW, never a silent PASS), `Outcome.meets` returns `None` for a REVIEW because it is an error about the instrument rather than a verdict about her, and `MeetsGrader` serialises that ungradable verdict as ERROR (`ungradable: judged=...`) instead of as a pass.",
+      "evidence": [
+        {
+          "resource": "repo://evals/backbone.py#L2254-L2259",
+          "version": "repo-lines-v1:sha256:f120173156650da89328b2c9deca05403c99133f2658e2b851e9c6f8f5c3c206:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjk1NDIwYWZmYjk1YWY2YzI1NDA4N2VmZjg1ZjQ5ZGEzMmNjODk4N2UwMzRmNTVlOTI4YWQ3ZDRhZTM5MDVhOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZWUwNjg3ODY4NDc4Mjg2ODdlN2FlY2UzNGFlOTc5NDE3N2Y4ODE5Zjg3OGYyYzQ3NzIxNzYwNDEwMDMwOGRiZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNmY0ZTJiY2Q3NDJjM2E4ZjMxNWQ2YzdkNzg0Y2IzMWRjMTE5MTZmMWNmZTkzZGQwYjhmYjcxYTdlMTI0MGY3ZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTA1M2U2ZTZjZTQ3ODFmMzNmMDZhZGUxZGU3ODFjYTgxYjBiMjg2NDRhOWI1MGY3NzlhYWQ3ODJhNGJhMjVhMSJ9"
+        },
+        {
+          "resource": "repo://evals/rebuilt/domain.py#L220-L231",
+          "version": "repo-lines-v1:sha256:c28010a255fc9e9730dfb88715a92733a322f53f02aa66e41668189486bd5e1a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcyMDdjZGFmZTZkNDkyNDA3ZWIwYTg1YjAxZDZmZjBmNWI0YmNkYzQwZGM4ZDNhMmZkYTAwOTc0MzI4NWE4NmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRkMGI1MTU3MDRiY2IyYWEzZGYwNmYxMDc3MzE3OTI5NjRlYmU3NWQ1ZTg5MDY2OTNlMTM1YjFiNjA4NTRlNmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc0Y2ZiY2M5ZDhhNjVlY2EyNDA2YzgxYWQyN2Q1OTk3ZGQzNTBlMDBjNjk4YTdkZTY0ZWUzMmY3YWZjMzc2YWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA3NWVhNDg3NDFkOTA0YWUyYThmZDFhZjBhODJiMTg1NzRiZmNjMTNiODZjZThhN2Q3MmJlNGQwZTFmYTY2ZGYifQ"
+        },
+        {
+          "resource": "repo://evals/rebuilt/domain.py#L311-L321",
+          "version": "repo-lines-v1:sha256:d912ebc339406816aff210bc550dc26e0603bd5915c3747c628e434f6f88aed5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwOTI1OTIyZmU3YTc0NDgyZmUwMWU0YzFkZDU0MjMwNzkyOGNmZGM1YjhlNWVlY2IzZmM3ZjA0ZGQ1ZDk2MWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyMDc4MzkyZmZlOTM1MTNhNGNlYzA2MjQ2ODZhOTcyM2Y4MzgxYjM4YTNjNjBmYWQ0NmYzYjEwYTc2NjVlN2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdmNGE1MDY1NzhmNmFiMDYxMWIyYjQxMmVlYzgyYjcwMjhhOTY0ODQ2ZGQxYzA4NGY3Y2ExZTYxNzI5NzNkOWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBjMzhiZWVhZmU1Y2Q4ZGEwNDJlNmRkOGM4MDkyOTE3YjQ5Mjk3NjU4OWEyZmEyMmRlOTdmMDkzMjY0NzNhZDIifQ"
+        },
+        {
+          "resource": "repo://evals/rebuilt/judge.py#L1-L11",
+          "version": "repo-lines-v1:sha256:d9026ff64d05f9120e67292e6430e2c5f81679dbc55aedc76d25abfd5b534bb8:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNjMDdjZTE5ZjlmYzRhMmQ3MmFiN2JhMmE2N2Q3MmYzOTljYTVkNWVhZDRmYzU2ZDQxMzA4YjA0ZjY0YmE5ODIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://evals/rebuilt/judge.py#L96-L104",
+          "version": "repo-lines-v1:sha256:b6e86bcaeb53246e733432413204a6f13997aec0d736d2b7f1524facb9e6cd76:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjdjZmVmMmU1NzdhNGNiZGZhNmViY2U3NzNkNDQ2NmUyN2E2Yzk3N2QyYmFlOGZkNzRjNzlkYmM4ODk0YTAyNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTc0ZmZhZGVhN2JkYmYyNjFiMWE4NWJjNDhhMmMyY2VjOWYxMzFmZTA0ZmMwYThiZjkzZmExOGMyODYyNzQ3NyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTJlNTdkZjdmMTdlNzQ3NjI2NzgzNjkzM2I1OGM5NzM5ZmI3OWYwNDQ0MWVmZTdjZTE1YTE5YjQ2MDU5OGM2MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOGI0M2I2YTcxMDlkZjgwNGFlY2I3ZTEwZTJhOWFhNjU2ZTNhNzZlNjViM2UyMjVlYWVlZjRjMzUwNDZmNjQzNyJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-20T15:38:07.223Z"
+  }
+}

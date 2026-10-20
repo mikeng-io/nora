@@ -9,12 +9,13 @@
   --sl-color-gray-1: #d8cece;
   --sl-color-gray-2: #b9afaf;
   --sl-color-gray-3: #948989;
+  --nora-ink-muted: #948989;
   --sl-color-gray-4: #4a4243;
   --sl-color-gray-5: #332c2d;
   --sl-color-gray-6: #241f20;
   --sl-color-black: #141112;
-  --sl-font: Inter, 'Noto Sans HK', 'PingFang HK', system-ui, sans-serif;
-  --sl-font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --sl-font: 'Inter Variable', 'Noto Sans HK', 'PingFang HK', system-ui, sans-serif;
+  --sl-font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
 }
 :root[data-theme='light'] {
   --sl-color-accent-low: #ece8e8;
@@ -24,6 +25,7 @@
   --sl-color-gray-1: #5e5351;
   --sl-color-gray-2: #6e6362;
   --sl-color-gray-3: #8a7e7e;
+  --nora-ink-muted: #6e6362;
   --sl-color-gray-4: #bdb3b3;
   --sl-color-gray-5: #dcd5d5;
   --sl-color-gray-6: #ece8e8;
