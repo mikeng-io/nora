@@ -17,10 +17,13 @@ RUN npm run build
 
 # The wiki is generated/reviewed in Git; image builds make no model calls.
 FROM node:22-slim AS wiki
+# Native wiki regressions create Git fixtures and independently verify the patch.
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 WORKDIR /repo/docs-site
 COPY docs-site/package.json docs-site/package-lock.json ./
 RUN npm ci --ignore-scripts
 COPY docs-site/ ./
+RUN npm run postinstall
 COPY openwiki/ /repo/openwiki/
 ARG SITE_ORIGIN
 RUN npm run build
