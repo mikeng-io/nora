@@ -1,7 +1,7 @@
 # Current flow and first transport
 
 Status: inspected source, not live verification. Baseline:
-`6945619b556c4089c58442a3be5efedca8f1868e` (`origin/master` when inspected,
+`7b23140e2b36cd7f45bcfa58636b9c3c94e595fa` (`origin/master` when inspected,
 2026-10-20). The documentation branch adds no runtime changes. The knowledge
 graph supplied symbol discovery; the source in the checkout was checked because
 graph entries can refer to older worktrees.
@@ -33,14 +33,14 @@ not proposed modules or claims that the listed changes have shipped.
 | Admit/record | `nora/ingest/pipeline.py::_run` calls `stages/scope.py::run` before identity/media/audit | Resolve and carry private scope before every persistent or spawned operation |
 | Scope | `nora/ingest/stages/scope.py::run` refuses unknown DM senders but still requires a listed conversation | Branch to DM person allowlist + selected-unit validation; never require a fake shared conversation |
 | Audit | `nora/infra/sql/audit.py::SqlRecordStore.append` inserts Record and projects its graph node in one transaction | Store private scope on inbound and outbound rows; partition transcript and point lookups |
-| Stimulate/feed | `nora/ingest/stages/stimulus.py` resolves a unit from the conversation; `memory_feed.py` spawns Honcho writes | No shared stimulus, Standing wake or Honcho feed for DM; private Persona wake only |
+| Stimulate/feed | `nora/ingest/stages/stimulus.py` resolves a unit from the conversation; `memory_feed.py` spawns Honcho writes | Bound private stimulus wakes unit curation; no raw Honcho feed or ordinary shared agenda text |
 | Engage | `nora/ingest/policy.py` has mention/text/reply/voice policies; sender permission follows Record | Admit eligible text DMs directly, with existing budgets/debounce/queue semantics |
 | Assemble | `nora/engagement/context.py::TranscriptInjection.assemble` gathers transcript, Persona and unit blocks | Bind reads to the carried private scope and explicit read-only shared scope |
 | Resolve audience | `nora/agent/room.py::Room.scope` normally reads a platform roster; `lineage.py::render_room` looks in policy | DM audience is its authenticated peer, never a group roster or unknown-room fallback |
 | Retrieve | `nora/agent/memory_search.py::scope_for` builds unit/room/person scope; SQL applies it per hop; `SqlRecordQuery` reads supplied rooms | Give private and shared retrieval separate bounded selectors; never let a wire chat ID span anchors |
-| Learn | `nora/language/persona.py::PersonaEvidence` / `PersonaPersonAdaptor` and `SqlCharacterEvidence` read rooms and watermarks | Reuse the writer for a private human account, with private evidence and independent cursors |
+| Learn | `nora/language/persona.py::PersonaEvidence` / `PersonaPersonAdaptor` and `SqlCharacterEvidence` read rooms and watermarks | Reuse the same unit account/writer; admit subject-bound DM evidence through curation before shared mutation |
 | Deliver | `nora/engagement/stages/deliver.py::build` constructs guarded delivery to `ConversationTarget` | Preserve wire target and private Record binding; recheck permission before send |
-| Debrief | `nora/engagement/stages/debrief.py` produces model-driven Standing / working state | Skip DM model fold and working-state production/replay; retain only bound operational outcomes/traces |
+| Debrief | `nora/engagement/stages/debrief.py` produces model-driven Standing / working state | Scope private working state; shared Standing/debrief output requires curation and protected provenance |
 | Telemetry | Engagement roots, `nora/obs/tracing.py` and `nora/agent/telemetry.py` currently use the conversation ID for trace/session attributes | Replace DM wire IDs with opaque turn/scope IDs before tracing or logging; a direct JID contains a phone number |
 
 ## Why storage changes are necessary
@@ -58,13 +58,16 @@ history. These are real existing read boundaries, not speculative leakage.
 
 `nora/app/composition.py::character_person_keys` builds shared person accounts
 from policy conversations; `character_unit_keys` builds shared collectives.
-Private conversations must not be added to either input as shared rooms.
+Private conversations must not be added as raw shared rooms. Their bound
+evidence enters the existing unit writer through an explicit curation input.
 `nora/infra/sql/persona.py` already owns atomic validation, append-only chains,
-disputes and hypothesis verdicts; private learning must reuse those operations.
+disputes and hypothesis verdicts; curated DM-derived learning must reuse those operations, with a publication
+boundary for mutations that can become shared.
 
 `nora/app/memory_routing.py::persona_scopes_of_person` and `nora/web/memory.py`
-currently enumerate shared accounts. A private account must never enter a
-shared portal list simply because the owner belongs to its anchor unit.
+currently enumerate shared accounts. They should continue showing the same
+canonical unit account, while private source citations/reasons remain protected
+even when the curated line is visible.
 
 ## Current rules that remain
 
@@ -74,3 +77,16 @@ source still contains legacy Honcho routing even though the unified-memory
 design plans its removal. A design describing that removal is not evidence that
 the legacy feed can safely accept private messages. DM composition bypasses
 Honcho reads and writes regardless of the group memory surface.
+
+## Revised interpretation (operator clarification, 2026-10-20)
+
+The earlier bundle treated all DM-derived learning as private and excluded DM
+Cognition. That is superseded: one unit Persona and shared Cognition curate
+suitable understanding from group and DM evidence. Raw Record access and shared
+publication are separate permissions. Existing validators check structure and
+citations; they do not establish that a paraphrase is safe to share. Current
+Cognition native verbs can commit immediately, so their raw-DM-capable mode
+needs guarded publication, not just a changed objective or rendering filter.
+
+This is a proposal about changed behaviour, not evidence that today's writers,
+Rollup or Notebook already implement a confidentiality publication judgement.

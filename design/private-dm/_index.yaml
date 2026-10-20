@@ -2,12 +2,13 @@ kind: design_index
 bundle: private-dm
 title: Private DM anchored to a person's default unit
 description: >
-  WhatsApp text DM proposal: existing unit context is readable privately,
-  while Record and learned Persona remain private to one person and anchor.
+  WhatsApp text DM proposal: private Record stays protected while existing unit
+  Persona and Cognition curate suitable understanding into shared Notebook state.
 status: proposed
 timestamp: '2026-10-20'
 governance: operator-directed
-origin: Operator discussion of one-way group-to-DM context and default units.
+origin: Operator clarification of shared unit Persona/Cognition and curated DM learning.
+revision: 2026-10-20; supersedes isolated private Persona and blanket DM learning exclusion.
 docs:
   - 00-contract.md
   - 01-current-flow.md
