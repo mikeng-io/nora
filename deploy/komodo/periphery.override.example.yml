@@ -8,4 +8,4 @@ services:
       - "${NORA_RUNTIME_ROOT:?}:${NORA_RUNTIME_ROOT:?}:ro"
       # Same host inode, not merely the same pathname in a different namespace.
       # Create once as the deploy operator if absent; never replace/delete it.
-      - /tmp/nora-deploy.lock:/tmp/nora-deploy.lock
+      - /tmp/nora-deploy.lock:/run/nora-deploy.lock

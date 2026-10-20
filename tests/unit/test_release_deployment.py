@@ -193,7 +193,23 @@ def test_real_compose_config_capture_does_not_expand_host_secret(tmp_path, monke
 def test_periphery_shares_the_existing_host_lock_inode():
     override = yaml.safe_load((ROOT / 'deploy/komodo/periphery.override.example.yml').read_text())
     mounts = override['services']['periphery']['volumes']
-    assert '/tmp/nora-deploy.lock:/tmp/nora-deploy.lock' in mounts  # noqa: S108 -- shared inode
+    assert '/tmp/nora-deploy.lock:/run/nora-deploy.lock' in mounts  # noqa: S108 -- shared inode
+
+
+def test_wrapper_uses_the_shared_lock_outside_sticky_tmp():
+    import os
+    import sys
+
+    wrapper = load('komodo_deploy')
+    from unittest.mock import patch
+
+    with patch.object(sys, 'argv', ['komodo_deploy.py', '--runtime-root', '/runtime',
+                                   '--project', 'nora', '--', 'docker', 'compose', 'up']), \
+         patch.dict(os.environ, {}, clear=True), \
+         patch.object(os, 'execvpe', side_effect=RuntimeError('reexec')) as execute, \
+         pytest.raises(RuntimeError, match='reexec'):
+        wrapper.main()
+    assert execute.call_args.args[1][6] == '/run/nora-deploy.lock'
 
 
 def test_optional_profiles_are_excluded_from_native_default_monitoring():
