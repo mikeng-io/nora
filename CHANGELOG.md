@@ -1,5 +1,21 @@
 # Changelog
 
+## [6.4.0](https://github.com/mikeng-io/nora/compare/v6.3.1...v6.4.0) (2026-10-20)
+
+
+### Features
+
+* **wiki:** publish technical guides with a Nora landing page ([363716f](https://github.com/mikeng-io/nora/commit/363716ffe609992c2bf61d02405be8ba4435b1b6))
+
+
+### Bug Fixes
+
+* **memory:** consider authored transport metadata when retaining observations ([e283c65](https://github.com/mikeng-io/nora/commit/e283c65556311d8974f562968b16c980aabbd22f))
+* **memory:** preserve unspecified participants in plural reports ([898a813](https://github.com/mikeng-io/nora/commit/898a8139220b3ad94e01819a1b2962d037fbb74b))
+* **memory:** retain qualified reports and observed transport evidence ([f10a64e](https://github.com/mikeng-io/nora/commit/f10a64e13c7aa33fe3b89c3d264fcb10cacb45af))
+* **wiki:** keep Ollama completion IDs unique during generation ([ec9dffd](https://github.com/mikeng-io/nora/commit/ec9dffdc4f466723ae5288413a8af21e108d3d20))
+* **wiki:** preserve verification when resuming interrupted generation ([e81320a](https://github.com/mikeng-io/nora/commit/e81320a289d049a6d2942228e4ecc1dfa9e14db0))
+
 ## [6.3.1](https://github.com/mikeng-io/nora/compare/v6.3.0...v6.3.1) (2026-10-20)
 
 
