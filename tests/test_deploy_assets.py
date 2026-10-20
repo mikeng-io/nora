@@ -217,3 +217,12 @@ def test_nora_is_handed_the_pulse_base_it_reads():
     env = compose["services"]["nora"]["environment"]
     names = {e.split("=", 1)[0] for e in env} if isinstance(env, list) else set(env)
     assert {"PULSE_API_TOKEN", "PULSE_API_BASE"} <= names
+
+
+def test_stt_cpu_index_does_not_shadow_general_python_packages():
+    import tomllib
+
+    config = tomllib.loads((DEPLOY / 'stt/pyproject.toml').read_text())
+    cpu = next(index for index in config['tool']['uv']['index']
+               if index['name'] == 'pytorch-cpu')
+    assert cpu.get('explicit') is True
