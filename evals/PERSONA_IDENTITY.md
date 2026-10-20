@@ -1,5 +1,25 @@
 # Persona person writer acceptance
 
+## Handoff: 2026-10-20
+
+The operator requested saving and merging the implementation despite incomplete
+model acceptance. Merging this work does not authorize deployment, Persona
+render/retrieval cutover, further paid draws, or removal of Honcho.
+
+The latest stopped n=1 after-arm confirmation passed `categorical_report`, then
+failed `observed_sharing`: the writer settled with `persona_no_change`, treating
+bare links without readable media as no personal content. There was no attempted
+write or store refusal. `observed_participation` and `birthday_retained` were not
+run because the run stopped on the first failure. Earlier draws and the original
+before baseline remain separate; they are not pooled, redrawn or regraded.
+
+Next: inspect the saved sharing input against the composed objective and existing
+Character thresholds before changing behavior. The objective already permits
+source-bounded observations of sharing; adding the same instruction again is not
+a demonstrated fix. Preserve private receipts on the eval host. Confirm any built
+fix with a newly frozen, bounded acceptance plan; deterministic tests alone do
+not establish writer acceptance.
+
 This grades the actual Persona writer separately from `tool_selection`.
 The original vectors use deterministic grading; only the optional three-case
 representation bundle adds semantic judging through the existing Judge. A draw obtains the existing Subject, restores the normal

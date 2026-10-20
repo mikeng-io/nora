@@ -282,3 +282,30 @@ existing request constants. Replaying saved responses through a changed parser i
 an **offline diagnostic**, never a formal calibration under the new prompt. Keep
 the original input, gold, evidence pin, prompt hashes and receipt unchanged; report
 format errors separately from strict evidence failures and label disagreements.
+## Handoff: 2026-10-20
+
+The latest frozen run is **ERROR**, not a coverage pass. Calibration accepted
+19/20 references; measurement reported 32/140 card and 11/39 explicit comparisons
+covered, 97 source-unresolved, 23 derivable misses and 16 errors. Two labels in
+one batch cited sibling-claim evidence; strict whole-batch rejection was retained.
+All 24 requests reported actual judge model `k3-256k` with known token usage.
+
+Offline source checking of the 23 reported misses found one confirmed typed
+qualifier omission, eight representation-policy gaps and fourteen unsupported or
+ambiguous full claims. The confirmed omission was repaired once through the
+owning Persona store and independently read back. Do not repeat that write or
+retroactively change the frozen verdict.
+
+The reviewed batching fix separates claims with different eligible evidence
+pools. On the unchanged frozen input, the plan grows from 24 to 98 requests
+(15 calibration, 83 measurement), exceeding the existing 3300-second guard at
+135 seconds per request. No larger paid run has started. A fresh-head export and
+explicitly bounded budget must precede a new run; do not shorten timeouts merely
+to fit, salvage prior labels, reuse calibration, drop unresolved rows or change
+the denominator. The existing offline scope regression passes; model acceptance
+of the new batching remains unmeasured.
+
+The operator requested saving and merging this implementation with these limits
+recorded. Coverage and historical paired-reply acceptance remain open, so this
+merge does not enable Persona rendering/retrieval or permit removing Honcho.
+
