@@ -80,7 +80,7 @@ test('native OpenWiki completes despite repeated Ollama completion IDs', () => {
       assert.equal(metadata.status, 'complete');
       assert.equal(existsSync(join(root, 'openwiki/.run.json')), false);
       assert.match(readFileSync(join(root, 'openwiki/quickstart.md'), 'utf8'), /minimal documentation fixture/);
-      assert.ok(requests >= 7);
+      assert.equal(requests, 6, 'successful submit_page terminates the page worker');
       const probe = { method: 'POST', headers: { 'content-type': 'application/json',
         authorization: 'Bearer synthetic-key' }, body: JSON.stringify({ model: 'probe',
         messages: [{ role: 'user', content: 'Complete the synthetic probe.' }] }) };
