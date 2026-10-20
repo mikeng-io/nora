@@ -202,7 +202,7 @@ itself. The work goes to three lanes:
 | the task | lane | how it is launched |
 |---|---|---|
 | build, fix, debug, a design bundle, merge conflicts: anything that edits code, tests, doctrine or design | Codex, `gpt-6.1-sol` | T3 `delegate_task`: `providerInstanceId: codex`, `model: gpt-6.1-sol`, `options.reasoningEffort` = the effort table's level (it takes all five), `isolation: worktree` |
-| independent review, audit, verification of a built change or a PR | Kimi CLI (K3, 256K context) | `kimi -p "$(cat <brief>)" > <log> 2>&1`, run in a checkout of the head under review |
+| independent review, audit, verification of a built change or a PR | Kimi CLI, `kimi-code/k3-256k` | `kimi -m kimi-code/k3-256k -p "$(cat <brief>)" > <log> 2>&1`, run in a checkout of the head under review |
 | mechanical: renumber, rename, doc sync, config edit to a given value, read-back, lookup, log or diff fetch | Claude `haiku` | the native sub-agent tool with `model: haiku`, or `delegate_task` with `claudeAgent` / `claude-haiku-5-5` |
 | a light check: read a gate rc, open a cited line, compare two shas, count a log | the orchestrator itself | no launch; a launch costs more than the check |
 
@@ -229,6 +229,10 @@ itself. The work goes to three lanes:
   line, not into the diff. It still checks its own work, but that is the
   minority of the run. The orchestrator guards it, reading the diff for
   scope creep and anything reckless, and the review lane does the checking.
+- **Name Kimi's model on every run.** Without `-m`, `kimi` runs its
+  `default_model` (`kimi-for-coding`, K2.8 Preview), not K3. The T3 ACP
+  provider (`acpRegistry_kimi_cli`) returned an empty turn on 2026-10-21; use
+  the CLI until a `delegate_task` smoke test returns text.
 - **Kimi is told it is read-only, and that is measured, not trusted**: `-p`
   cannot be combined with `--plan`, so `git status --short` in its checkout
   after the run must print nothing. Its thinking stays on; it takes no effort
@@ -236,8 +240,7 @@ itself. The work goes to three lanes:
   other review's (`nora-land` step 7).
 - **When a lane is down, use the next and say so in the report**: implementation
   falls back to Claude `opus` through the native tool; review falls back to a
-  fresh `gpt-6.1-sol` launch that did not build the change (or `opencode/kimi-k3`
-  through `delegate_task`); mechanical work falls back to `gpt-6.1-sol` at `low`.
+  fresh `gpt-6.1-sol` launch that did not build the change; mechanical work falls back to `gpt-6.1-sol` at `low`.
   A lane is down when its launch fails or its quota is spent, not when the
   orchestrator would rather do the work.
 - **Say the lane AND the effort in every launch** (where the lane takes one);
