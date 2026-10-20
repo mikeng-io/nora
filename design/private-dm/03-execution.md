@@ -1,172 +1,143 @@
-# Admission, context, learning and delivery
+# Reuse the unit pipeline; curate before sharing
 
-Status: proposed. [Storage](02-storage.md) defines the durable scope; this file
-defines which existing owner enforces it. No part depends on a prompt asking
-the model to keep a secret.
+Status: proposed. [Storage](02-storage.md) defines raw scope and publication
+provenance; this file assigns enforcement to existing components.
 
-## Bind before ingest side effects
+## 1. Identity, admission and audience
 
-Extend the identity file schema (`nora/persons_file.py`) with optional
-`default_unit`; load it into `Persons` through `load_persons`. Composition
-validates explicit defaults against the current policy. Add `[dm] enabled`
-to policy with default false; it gates conversational DMs, not OTP templates.
-`Policy.dm_persons` is the per-person grant; eligibility comes from explicit
-person listings in shared
-unit rooms, excluding wildcard-only membership and the reserved private prefix.
-Missing default: infer exactly one eligible unit, otherwise decline that DM.
-Invalid explicit configuration is a startup error. Identity/policy are loaded
-once, so changes take effect through validated files and recreate, not an
-imagined hot-reload mechanism. Each operation checks the current process's
-authoritative objects; no unbounded cached permission decision is reused.
+Extend `nora/persons_file.py` / `Persons` with optional default_unit; compose
+validation against explicit policy membership. Add `[dm] enabled` default false
+beside the person allowlist. Enabling requires graph/Persona readers and the
+curation write boundary to be wired; never fall back to a legacy Honcho feed.
+Identity/policy are startup-loaded; validate copies and recreate for changes.
 
-At the pre-audit scope stage, only WhatsApp ordinary text DMs enter this path.
-Resolve the sender and direct peer independently through `Persons`; require
-both to be the same known person and the direct address to be identity-bound.
-Reject unknown/mismatched/unsupported peers before persistence, custody,
-projection, media comprehension, model creation or spawned feeds. Never use a
-push name, model argument or client-supplied `person_id` as sender authority.
+At the pre-audit scope stage, resolve the WhatsApp sender and direct peer
+independently to the same known person, validate direct target and anchor, then
+bind DmScope once. Unknown/denied/mismatched/ambiguous/unsupported input is
+refused before Record, custody, projection, feeds or model calls. The initial
+slice rejects media before custody. Redeliveries and edit/touch targets retain
+original scope and existing author checks.
 
-For known but denied/ambiguous DMs, record only the existing content-free
-refusal counter/log, not message text. Reject media-bearing messages before
-custody in this slice. Known text edits/touches may operate on an existing
-same-scope target through existing author checks, but never become fresh text
-turns by inventing a parent. Empty/control events remain non-conversational.
+Reuse the deterministic engagement policy, with an eligible DM addressing Nora
+without a mention. Preserve budgets, deduplication, wire-conversation slots and
+queue semantics. Build the audience as one authenticated human, not a degraded
+roster fallback or a borrowed group audience. The default unit grants context,
+not location permission or another room's tool grants.
 
-The admitted binding travels with every subsequent stage. Give DM engagement
-its deterministic direct-address policy ahead of mention/relevance policies.
-The default cannot be re-resolved independently in later stages. Existing
-wire-conversation slots serialize replies on the same chat; cross-account
-Persona contention uses the existing expected-revision conflict handling.
+## 2. Context and canonical Persona
 
-## Compose two read authorities, one write authority
+Reuse TranscriptInjection and existing block formats. The DM assembles its own
+private history plus the default unit's permitted group context and canonical
+curated Persona/Notebook. There is no second private Persona block. Confidential
+self-details remain available through private Record, not an uncurated shared
+Identity line. Existing listed-subject, exclusion and location rules remain;
+never widen a DM to the group's whole roster to expose restricted accounts.
 
-Use `TranscriptInjection.assemble` and the existing block builders. The DM's
-actual audience is a complete, authenticated singleton of its owner; it is
-not `Room.scope`'s degraded group-roster fallback. Construct an explicit DM
-audience view and render scope rather than registering a synthetic conversation
-in shared policy. Its location flag is false and its tools grant is empty.
+Group turns assemble group Record plus published unit views. They never get raw
+DM history, private curation drafts, review rationale or source citations through
+prefill, tools, lookup expansion, caches, graph neighbours or portal payloads.
+Private evidence reads are a code-bound capability for the owner/curation task,
+not a public tool parameter or a consequence of unit membership alone.
 
-Shared context uses the anchor's existing unit boundary with this audience's
-person/exclusion/disclosure constraints. The shared subject list remains the
-owner alone for person-bound Persona/social/presence reads; group discussion
-Record content is not limited to messages authored by that owner. Do not borrow
-the whole group's listed roster to expose another person's restricted account.
-This preserves the existing rules rather than widening personal data access.
+`remember` in a DM queues the bound source Record item for the existing unit
+writer's curation path. It does not directly store a fact invented by a model
+that has read mixed context. A queued response says processing is pending; only
+an actual curated commit is a saved/shared understanding receipt. Hypotheses
+still need the existing trait premises and prediction machinery.
 
-The private transcript uses the exact scope ID, including cross-account
-continuity; provenance names its source platform without leaking identifiers.
-Render shared Persona and private Persona as separate labelled blocks. Shared
-facts do not get rewritten into the private account just to compose a prompt.
-Where they conflict, keep source/age/uncertainty visible; a private correction
-affects the private view and does not erase the shared line. Hypotheses remain
-labelled questions under the existing rendering rules.
+A subject's explicit dispute/forget of an existing unit Persona line retains
+the existing immediate-hide semantics, including when requested privately.
+The request and its reason remain private; no automatic group announcement or
+private replacement text is published. Reweighing/replacement uses curation.
+This deliberately replaces the earlier private-account-only dispute design.
 
-Omit location-bearing blocks and mixed-unit Nora self accounts that existing
-`Policy.shows_self_in` / `shows_self_to_unit` would withhold. Never substitute
-the home room. Shared notes, memos, Standing and lessons may be read only
-through their existing disclosure filters. Blocks without a suitable DM
-read predicate remain absent, counted as unavailable when requested.
+## 3. Cognition and Rollup
 
-Collect shared exposure references for prefill and every tool result as
-specified in storage. Private transcript replay checks those dependencies
-before returning bodies. Tool caches, lookup expansions and citation hydration
-include scope in their cache key/selector; raw source IDs alone grant nothing.
+Keep one unit's existing Cognition runner, agenda, locks, budgets, native stores
+and Persona adaptor. A private stimulus may wake that unit for **curation**;
+its text, activity counts and agenda description are not exposed to a normal
+group-facing situation. In the initial implementation, a curation batch opens
+one owner/anchor's raw DM scope alongside permitted shared context; it does not
+pool every member's private transcripts into one unbounded prompt.
 
-## Closed tool set
+Use an explicit internal session capability for this phase. It may read its
+bound raw evidence and propose curated native writes. All mutations pass the
+publication boundary in storage. It cannot use group send, proactive/remind,
+pace/self-wake, export, computer or asynchronous callbacks to express private
+material directly. Expiring/holding a draft leaves no shared agenda text or
+work item that bypasses publication; failed sessions retain unconsumed evidence.
+Private review timing may affect internal scheduling, but normal group agendas
+must not expose a member's DM activity or source-specific reasons.
 
-The initial DM registry permits only `send_reply`, `memory_search`,
-`record_query`, `load_transcript`, `about`, `remember` and `persona_dispute`, using their existing
-names. Read tools receive bound private/shared readers, not arbitrary units or
-wire rooms. `about` and `remember` resolve only the owner; remembering a fact
-about somebody else is refused. In DM mode `remember` queues the owner's
-bound Record item for the private-only writer, ignoring model-supplied facts
-as evidence and applying no direct Persona mutation. The writer reads only
-private owner-authored text, not hydrated quotes, shared material, Nora's
-replies or mixed-turn working state. A successful queue is not a saved-fact
-receipt; its result and doctrine must say processing is pending. This is a
-DM-specific routing/result change to measure under `nora-tool`/`nora-eval`,
-not a claim that the existing judge verifies a fact against cited text.
+After a successful curated commit, ordinary unit Cognition and person writers
+read the canonical result normally and can act through existing audience guards.
+They do not inherit the raw-DM session's transcript, logs, tool cache or working
+state. Same engine and unit understanding; different read/effect capabilities.
 
-`persona_dispute` binds the subject and target account to the private owner
-before looking up a line; a shared or another private account's line is refused.
-Keep the existing subject-dispute immediate hide for that private line, then
-queue private-only reweighing. Persist the bound owner Record citation and
-private target, not a model-written replacement fact, quoted shared text or
-freeform reason as new evidence. It cannot hide a shared line. All ordinary
-incoming private correction/forget text also reaches the private adaptor; an
-immediate-hide claim requires the actual scoped dispute write receipt, while
-later reweighing is explicitly asynchronous.
+Rollup can supply bounded private patterns to curation. Neither a deterministic
+count nor a model summary is automatically shared. Curated roll-up understanding
+may inform unit Persona, Lessons, Standing, notes, memos or collective accounts
+through their existing writers and the same publication boundary. Curation of
+person facts still honours the subject's listed-source rule. Do not reinterpret
+a Notebook write as permission to publish arbitrary information about others.
 
-Required tool discovery, if used by
-the current registry, may reveal/activate only this same closed set.
+DM debrief/working-state production is permitted as private session bookkeeping,
+with DmScope propagated to storage/replay and no ordinary unit reader access.
+Do not run the old unscoped Standing fold. A shared Standing/working summary is
+a separate curated write, not the private debrief copied into the shared unit.
+If a private artifact has no scoped implementation, keep it transient/omit it;
+that does not disable unit Cognition or canonical Persona learning.
 
-All other tool specs and budgets are excluded. Both discovery and execution
-enforce the set through the existing registry/ReplyGuard seam, so a guessed
-call cannot reach a disabled tool. No relay/send-to, reminders, group writes,
-computer/subagent/export, external MCP tools, location/presence, social reads,
-generated/fetched media or asynchronous jobs. This is a narrow initial slice;
-expanding it requires scope and destination proof for the added operation.
+## 4. Tools and other consumers
 
-## Consumer inventory and write disposition
+Reuse the registry's capabilities rather than building a separate agent.
+DM text tools include send_reply, memory_search, record_query, load_transcript,
+about, remember and persona_dispute with the bound readers/writers above.
+Required tool discovery can activate only permitted tools; execution/ReplyGuard
+also enforces the set. Direct DM relay/group writes, location, video generation,
+media/voice and unsolicited private jobs are deferred in this slice. A later
+capability can reuse its implementation once scope, cost and destination are
+proved. These deferrals do not imply that curation must be disabled.
 
-| Existing consumer | DM disposition in the first implementation |
+| Existing consumer | Required behaviour |
 |---|---|
-| Ingest audit + graph projector/rebuild | Persist bound Record; private graph scope only; same transaction |
-| `memory_feed`, media comprehension feeds, lazy adoption (`app/adoption.py`) | No DM input to Honcho, including replay/backfill; DM never reads a peer card |
-| Ingest stimulus, Standing folds, Cognition wake/agenda, group participation | No DM-derived shared stimulus, activity count, wake, agenda or turn |
-| `PersonaEvidence`, `SqlCharacterEvidence`, person-key enumeration | Private owner key, private Record counts/pages; shared enumeration excludes all private rows |
-| Persona write, dispute, hypothesis/verdict polling | Same private account and private evidence; no shared line mutation; no global unscoped pending-row scan |
-| Collective Persona, Culture, Rollup response/play/tie, Lessons, Nora self | No DM evidence or unit-wide aggregate input; group readers explicitly exclude DM rows |
-| Notes, memos, Register, Standing writers | No private write in this slice; no shared write from DM prompts or background evidence |
-| Memory exact/lexical/vector seeds, hops, rebuild retries | Persisted private scope applies on each read/projection; no hub traversal into a private partition |
-| Model debrief, Standing folds, conversational working state | Skip production and replay for DMs; this slice persists Record and private Persona, not mixed-context summaries |
-| Tool-call logs and retained operational traces | Private binding carried; no shared learning/output consumer may read it; telemetry uses opaque IDs as below |
-| Portal account/history/citation/dispute endpoints | Exclude private namespaces in shared payloads; private portal UI/API is deferred and refuses private IDs |
-| Analytics and operational evidence | Content-free aggregate counters may count DMs; shared social/cognition metrics must not ingest DM content or person activity |
+| Record and graph projection/rebuild | Raw DM binding persists; no raw DM node/text enters group reads |
+| Stimulus, Cognition agenda and queue | Private cause can schedule bound internal curation; only published results enter ordinary shared situations |
+| Persona evidence/write/dispute/verdict | Same unit account; author/subject scoped source inputs; publication check on raw-DM-derived mutations |
+| Rollup, collective Persona, Lessons, Standing, notes, memos | Reuse native writers; private inputs/drafts stay protected, curated shared results are allowed |
+| Debrief and retained working state | Scope private artifacts; shared folds require publication, not a session label |
+| Memory feeds, media feeds, lazy adoption | Never feed raw DMs to Honcho or other uncurated legacy surfaces, including backfill |
+| Portal, evidence, citations and exports | Published view only for shared reads; private source bodies/IDs/reasons are not inherited from target visibility |
+| Trace/log/provider metadata | Opaque turn/scope IDs; phone-bearing direct chat IDs remain transport/authorised Record provenance |
 
-Paths are verified starting points, not a substitute for implementation-time
-caller tracing. The implementing PR must attach an executed consumer census:
-every changed selector and every intentionally disabled path, with its proof.
+The implementation must trace every caller of these native writes and reads;
+this table is the census starting point, not an assertion of runtime coverage.
 
-In particular, `nora/engagement/stages/debrief.py` is a model-driven Standing /
-working-set writer, not just operational bookkeeping. Do not call that fold for
-a DM or replay its mixed-context working set. Retain ordinary delivery/outcome
-and trace recording separately. This avoids adding a second private summariser
-or another summary dependency mechanism to the initial slice.
+## 5. Publication is a semantic decision
 
-## Telemetry identity before the first span
+The existing writer must judge whether the exact visible result reveals a
+private statement, confidential implication, source identity or interaction.
+Keep-private instructions and uncertain confidentiality cause hold/refusal;
+notes, memos and predictions cannot be loopholes. Semantic fidelity is also
+required: do not turn a private anxiety into an unsupported universal trait.
 
-A WhatsApp direct chat ID contains a phone number. The existing group pipeline
-uses `message.conversation_id` in engagement roots; `nora/obs/tracing.py` and
-`nora/agent/telemetry.py` propagate it to provider trace metadata, `session.id`
-and `gen_ai.conversation.id`. Private storage binding alone does not stop that
-identifier export.
+Code enforces source scope, restrictions, exact candidate/target binding,
+transactions and audience projection. It cannot prove from a hash or citations
+that the model's paraphrase is safe. The proposed model acceptance suite must
+independently label both safe useful publication and unsafe publication; a
+system publishing nothing fails usefulness. A model/reviewer outage is ERROR
+and leaves the candidate uncommitted. No extra always-on review agent is required.
 
-Before any ingest/root span, logger context, queue annotation or provider
-metadata is created, DM paths use an opaque turn UUID; once resolved, they may
-use the opaque scope UUID for session correlation. An unresolved DM is named
-`dm`, never its wire chat/sender ID. No phone/JID, account ID or identity-index
-key enters trace/session attributes, exception messages or ordinary logs.
-Keep wire identifiers only in the transport and explicitly authorised Record
-provenance. This sanitisation must not rewrite the actual delivery target or
-break edit/deduplication keys. Group telemetry semantics are unchanged.
+## 6. Delivery and operational privacy
 
-Check all export routes, not just one root span: queued turns, model retries,
-fallbacks, tool-call recording, error paths and retained trace serialisation.
-Operational evidence may correlate opaque scope/turn IDs; raw message content
-remains subject to the existing private evidence handling rules.
+Retain deliver.build → Deliverer → sender, audit-first delivery and egress guards.
+Recheck active owner, grant, anchor and direct target before each DM send;
+queued work cannot retarget after a default change. Ordinary group sends can
+consume curated premises through existing guards, never raw curation output.
 
-## Deliver and refuse safely
-
-Keep `deliver.build` → `Deliverer` → platform sender as the only reply path.
-Before the first and each subsequent send, recheck the owner, DM grant, active
-anchor and identity-bound wire target. The outbound Record uses the original
-scope and exposure envelope even on failure. Retain ordinary egress scanning,
-audit-first delivery, budgets and strict send-reply semantics.
-
-Queued work retains its original scope. After restart/default change, discard
-or refuse work whose original anchor is not active; never rebind it to the new
-one. The initial slice starts no delayed tools or unsolicited DM tasks, but
-the queue, fallback and delivery callbacks still need this check. No OTP path
-is routed through conversational DM scope; requested login codes retain their
-existing independent bounded template and guards.
+Before any root span, logger context or provider metadata, replace DM wire IDs
+with an opaque turn ID; resolved sessions may correlate with the opaque scope
+ID. Sanitize retries, queues, error paths and retained traces too. Do not alter
+actual wire targeting or edit/deduplication keys. OTP template delivery remains
+independent. Operational traces/review inputs containing private content require
+private evidence access; a shared publication receipt does not expose them.

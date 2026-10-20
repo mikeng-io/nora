@@ -1,125 +1,119 @@
-# Integrated build, proof and enablement
+# Integrated build and acceptance
 
-Status: plan, not a receipt. Depends on [execution](03-execution.md). All test
-names below are **proposed tests to add**, not existing green tests. The
-operator authorised design work only; this bundle does not start paid calls,
-schema changes, enablement or deployment.
+Status: plan, not a receipt. All new test names and migrations below are
+proposed. The operator authorised this design revision only; implementation,
+paid evaluations, enablement and deployment are separate work.
 
-## Build one integrated change
+## 1. Build the integrated feature
 
-1. Rebase the investigation on the actual latest source without rewriting the
-   primary checkout. Re-read the identity, pipeline, Record, graph, Persona,
-   background and delivery seams in [current flow](01-current-flow.md). Reuse
-   existing code; amend this bundle if source drift changes a contract.
-2. Add identity/default validation and the durable private binding/migration
-   in [storage](02-storage.md), including schema metadata, migration parity,
-   history/snapshot registration and scoped Record APIs. Reject the reserved
-   private namespace in shared policy. Do not enable DMs at this step.
-3. Wire WhatsApp text admission and singleton audience through the existing
-   pipeline; implement the closed DM tool registry, separate shared/private
-   context and guarded outbound binding. Every new Record point read must
-   prove scope before hydrating text. Exclude all DM evidence from shared
-   background paths, including legacy feed/backfill.
-4. Reuse the person adaptor for eligible private accounts; add private
-   enumeration, independent watermarks, same-account citations and scoped
-   dispute/verdict processing. Add graph projection/retrieval/rebuild support
-   and conservative shared-exposure dependencies for DM reply replay.
-5. Complete the consumer census and proofs below, then run one final exact-tree
-   gate and a fresh independent review under the repo's model/effort rules.
-   Ship as one integrated behavioural PR, not disconnected partially safe DMs.
+1. Refresh the [source trace](01-current-flow.md), identity/default validation
+   and WhatsApp text flow against the actual current tree. Preserve group/OTP
+   behaviour and keep conversational DM enablement false by default.
+2. Add the raw dm_scope/Record binding and private graph/point-read selectors.
+   Include actual metadata/migration parity and history/snapshot integration.
+   Do not introduce private Persona accounts or synthetic private policy units.
+3. Bind private input to the existing unit Persona/Cognition evidence paths.
+   Add scoped internal curation capability and private agenda/session artifacts;
+   leave ordinary shared prompts and actions on published views.
+4. Wrap every DM-derived native write, correction/verdict and aggregate with
+   the publication check/atomic receipt. Protect private source provenance
+   across renderer, tool, graph, portal, citation and explanation reads.
+5. Reuse context blocks, tools, guarded sends and telemetry sanitisation.
+   Inspect every raw DM consumer and native mutation caller. One integrated
+   PR ships the capability; do not enable an unsafe intermediate DM path.
 
-## Deterministic and input proof
+Curation belongs in the existing writer/runtime, not a parallel service. Its
+privacy and usefulness must be measured rather than inferred from new metadata.
 
-Use the existing integration harness, real SQL stores and realistic transport
-fakes. A sender fake must refuse wrong direct addresses; a scope fake returning
-empty for every read proves nothing. Use synthetic fixtures, no private names,
-quotes, IDs or provider calls in the normal gate.
+## 2. Deterministic proof and actual inputs
 
-| Proposed test / location | Must demonstrate |
-|---|---|
-| `tests/unit/test_dm_scope.py::test_default_resolution` | Explicit valid/default inference; multiple/zero units refused; wildcard excluded; reserved namespace and invalid explicit default rejected |
-| `tests/integration/test_private_dm.py::test_admission_precedes_side_effects` | Unknown, sender-peer mismatch, DM-denied, ambiguous and unsupported-media events create no Record, blob, feed, stimulus, projection or model; valid text has positive controls |
-| `tests/contract/test_dm_record_contract.py::test_scope_survives_default_change` | Same wire chat and verified second account preserve exact partition; default changes and old quotes/edits/touches cannot cross it; redelivery never rebinds |
-| `tests/integration/test_private_dm.py::test_shared_read_private_write` | Owner's permitted unit fact is visible privately; other unit/person private facts absent; private facts and mixed turn outputs never appear in group prompts/results/writers |
-| `tests/integration/test_private_dm.py::test_background_isolation` | Inspect actual shared and private writer batches, stimulus/Standing/Cognition/Rollup inputs, counts and cursor effects; private Persona alone learns from private evidence; DM model debrief and working-state creation/replay do not run |
-| `tests/contract/test_dm_persona_contract.py::test_private_dispute_and_verdict` | Private told/induced/hypothesis chains persist; a real owner correction/forget journey invokes scoped dispute and immediately hides only its private line, with asynchronous private-only reweighing; prediction evidence cannot mutate/read another account; conflicts retain unconsumed evidence |
-| `tests/integration/test_private_dm.py::test_remember_cannot_launder_shared_input` | A mixed-context turn asks to remember a shared-only fact under a private trigger citation; only the private Record stimulus is queued, the private-only writer cannot see that shared fact, and neither direct nor later Persona writes store it. Include a real private self-statement as positive control |
-| `tests/integration/test_private_dm.py::test_retrieval_and_replay` | Exact/lexical/dense seeds and every hop/lookup/hydration stay scoped; projection rebuild preserves scope; excluded shared evidence cannot return through dependent DM replies |
-| `tests/integration/test_private_dm.py::test_tool_and_destination_bounds` | Discovery and guessed execution refuse every disabled operation; sender receives only bound direct target; audit-first reply/fallback/queue retains private scope and exposure references |
-| `tests/integration/test_private_dm.py::test_revocation_and_restart` | DM grant/unit/identity removal closes current and historical private access; default change cannot retarget queued work; restoring authorised anchor resumes only its own partition |
-| `tests/integration/test_private_dm.py::test_portal_and_legacy_feed` | Shared portal lists, private-ID probes, lazy adoption and old Honcho surfaces cannot expose or ingest private contents |
-| `tests/integration/test_private_dm.py::test_telemetry_never_exports_wire_identity` | Capture real exporter/provider attributes, retained trace serialisation and logs for admitted, refused, queued, retried and failing synthetic DMs; no phone/JID/sender ID appears, while opaque scope/turn correlation and actual transport targeting still work |
+Use existing SQL stores, harness and realistic transport fakes with synthetic
+people/units/messages. The fake must reject wrong targets/scopes, and successful
+reads/publications are required so an empty reader or universal hold cannot pass.
+Proposed coverage:
 
-Run the existing schema parity and snapshot/restore checks for persistence
-changes. Prove the central private-scope predicate and outbound binding by
-temporarily reverting them: the named tests must fail from cross-scope data or
-wrong destination, not a setup error. Restore, then run the final gate once.
-No mutation sweep is needed beyond those real trust boundaries.
+- Proposed file tests/unit/test_dm_scope.py: identity/default/explicit-membership/enablement
+  resolution; zero/multiple units, unknown peers and unsupported input refuse
+  before Record, blobs, feeds, stimulus or provider creation.
+- Proposed file tests/contract/test_dm_record_contract.py: same owner/anchor across verified
+  accounts; default changes, redelivery, quotes, edits/touches and by-ID reads
+  never cross private partitions. Raw citations remain protected.
+- Proposed file tests/integration/test_dm_curation.py: DM and group evidence reach the same
+  canonical unit Persona account; a useful safe DM-derived trait is published
+  and reaches a group, while raw text/source pointers remain inaccessible.
+- Proposed file tests/contract/test_curation_publication.py: exact candidate/revision/hash
+  and unit/source authority; missing/forged/stale decision, explicit hold,
+  wrong scope, ERROR or receipt-store failure commits neither target nor receipt.
+- Proposed file tests/integration/test_dm_cognition.py: raw-capable curation cannot directly
+  send, remind, self-wake, export, write unguarded shared state or leak a private
+  draft into shared agenda/working state. Ordinary sessions can read and act on
+  the committed curated result. Failed review does not consume source progress.
+- Proposed file tests/integration/test_dm_disclosure.py: graph seeds/hops, cache expansion,
+  citation/why-this-line queries, portal, backfill and projection rebuild cannot
+  reveal source DMs through a visible Notebook item. Cover every target kind.
+- Proposed file tests/integration/test_dm_disputes.py: a subject's private dispute hides the
+  existing unit line without revealing the request/reason; replacement/verdict
+  changes pass curation. Explicit privacy restrictions cannot be cleared by a
+  generic remember request or untrusted third party.
+- Proposed file tests/integration/test_dm_rollup.py: bounded private aggregates can inform
+  curated unit understanding; raw DM counts, timestamps and activity episodes
+  never appear in shared blocks merely because a Rollup exists.
+- Proposed file tests/integration/test_private_dm.py: preserve scoped delivery, fallback,
+  queues/default changes, legacy-feed exclusion and opaque telemetry coverage
+  from the original bundle. Revocation closes raw access; prior published
+  understanding remains in its original unit until corrected/retired.
 
-For model-input proof, capture actual assembled DM/group prompts plus private
-and shared background batches from the same frozen synthetic journey. Read
-every before/after input before creating providers. Confirm the intended
-positive fact is actually present and private evidence is actually absent from
-the shared batch; renderer success by itself is insufficient.
+Inspect actual model inputs for a frozen synthetic journey: private DM reply,
+raw-capable curation, ordinary group Cognition and group response. Confirm the
+intended private input reaches curation, the useful curated result reaches the
+group, and raw DM/private rationale does not. Print/render success is not proof.
+Run schema parity/snapshot checks and named revert proofs for central raw-scope,
+publication-transaction and shared-evidence projection guards. A failing setup
+or empty collection is not a killed mutation. Run the final exact-tree gate and
+fresh independent disclosure review once the implementation is complete.
 
-## Bounded model acceptance
+## 3. Semantic model acceptance
 
-After deterministic and offline input proof, use `nora-eval` and existing
-subject/runtime composition for a bounded sequence agreed with the operator.
-The implementation PR must define the exact cases, source snapshot, model,
-budget and pass bars before spending. Do not invent a new eval runner or choose
-a paid sample count from this document. At minimum the journeys cover group
-recall in DM, persistent private self-knowledge, a private correction/hypothesis,
-a group probe for that private fact and a default change.
+Use existing nora-eval/subject/runtime composition after inspecting every offline
+input. Define the exact labelled cases, models, budget and pass bars before paid
+calls, with operator-authorised bounded sampling and no redraw/judge override.
 
-A privacy pass requires inspected inputs and observed behaviour; fluent refusal
-alone is insufficient. Provider failure/timeout is ERROR, disclosure or wrong
-path is FAIL. Bind receipts to the exact tree and traces; keep deterministic
-proof, model acceptance and live deployment readback separate.
+The corpus must include: a safe communication preference worth sharing; an
+explicit keep-private instruction; confidential specifics disguised as a shorter
+summary; an indirect hypothesis revealing a secret; source attribution leaking
+DM existence; titles/predictions/conditions/aggregate side channels; a private
+correction; another-person and another-unit information; multi-message privacy
+instructions; and publication that is safe but changes the fact's meaning.
+These are synthetic categories, not real private session quotes or a permission
+list. Inspect complete committed shared views/actions, not only writer replies.
 
-## Enablement and rollback
+Require useful safe publication as well as privacy negatives. ERROR/timeouts
+remain distinct from semantic FAIL. A semantic disclosure failure blocks enablement
+and reopens curation. A receipt/hash or deterministic scope pass does not count
+as semantic acceptance. Report deterministic proof, model acceptance, deployment
+and external trace persistence separately.
 
-Add `[dm] enabled = false` to policy as the explicit conversational enablement
-gate, alongside the existing person allowlist. The current example already has
-a nonempty list for an unreachable feature; with single-unit inference, that
-old list could otherwise activate DMs merely by upgrading. Enabling requires
-`enabled = true`, an admitted person and valid identity default resolution.
-Composition refuses enablement unless `[memory_index] enabled` and both
-`[persona] enabled` / `render` are on and private readers/writers are wired.
-It never falls back to Honcho. Unsupported platforms remain refused.
+## 4. Enablement, readback and rollback
 
-Before any enablement, inspect live configuration through the normal procedure,
-back up the database and affected files, and validate copies. The implementer
-must ping the operator before deployment and follow `nora-deploy`'s exact-SHA
-lock/build/recreate/readback procedure. A successful local test is not permission
-to enable real identities or send them unsolicited test messages.
+Before enabling, inspect/back up live database and config files, validate
+identity/policy copies through their loaders/default resolver, and require
+[dm] enabled plus admitted identities and graph/Persona/curation composition.
+Do not use deployment-config validation as a substitute for identity/policy
+validation. Existing inert DM grants must not activate on an ordinary upgrade.
 
-Read back one explicitly authorised DM journey: private reply delivered to its
-direct target, scope-bearing Record and private Persona persisted, no shared
-stimulus/feed/derived write, and no private hit from a group reader. Read back
-the deployment/config identity separately; report VERIFIED/FAILED/UNVERIFIED
-for each layer instead of upgrading absent evidence to a pass.
+Ping the operator before deployment and use nora-deploy's locked exact-SHA
+build/recreate/readback. Only an explicitly authorised live journey can send a
+real test DM. Read back private Record binding, the unit's unchanged account
+identity, a curated publication and private source access denial from a group;
+verify no raw feed or direct curation action bypassed the boundary.
 
-Immediate disablement is setting `[dm] enabled = false` in a validated policy
-copy and recreating; clearing the person list also refuses everybody. Validate
-identity/policy copies through their own loaders and composed default resolver,
-not `nora config validate`, which validates deployment config. Existing data
-remains isolated and stored. Keep the new binary/schema
-for routine rollback. An old binary ignores private binding and cannot be
-assumed safe: binary downgrade requires disabling DMs first, stopping writers
-and proving the chosen version cannot read private Record/index/Persona rows.
-Do not reverse migrations or delete data as a routine rollback.
+Immediate disablement: validated [dm] enabled=false and recreate. Stop raw-DM
+curation as well as conversation admission; retain raw data and published
+Notebook history. Existing published facts remain ordinary unit knowledge,
+subject to dispute/revision/retirement. No automatic forgetting/cascade or reverse
+migration. Binary downgrade needs proof that old readers cannot see protected
+raw rows/session artifacts; staying on the new schema/binary is the routine undo.
 
-## Decisions and status
-
-Resolved engineering defaults: WhatsApp text first; one private partition per
-person/anchor across verified accounts; existing stores and person writer;
-owner-only private Persona; no DM Cognition or asynchronous tools initially;
-closed seven-tool registry and explicit DM policy opt-in. These are proposed choices
-within the operator's agreed direction, not additional operator rulings.
-
-No product question blocks this design. Runtime implementation, migration
-number, exact corpus/budget and live enablement receipts belong to the later
-implementation task. Reopen a choice when a source trace, failed scope proof
-or measured user journey shows it cannot meet the contract. Documentation
-approval and documentation merge leave issue #124 open.
+Issue #124 stays open after this documentation PR. The proposal's defining
+change is one unit Persona/shared Cognition with curated publication, replacing
+the old isolated-private-Persona and no-DM-Cognition defaults.
