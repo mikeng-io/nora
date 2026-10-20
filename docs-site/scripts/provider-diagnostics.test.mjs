@@ -94,3 +94,38 @@ test('tool diagnostics classify schema and execution failures without exposing e
   assert.equal(result.stdout, '');
   assert.ok(!result.stderr.includes('private-tool-error-sentinel'));
 });
+
+for (const scenario of ['throws', 'changes']) {
+  test(`an error name getter that ${scenario} cannot leak text or replace the error`, () => {
+    const result = spawnSync(process.execPath, ['--input-type=module', '--eval', `
+      import assert from 'node:assert/strict';
+      import { DynamicStructuredTool } from './docs-site/node_modules/@langchain/core/dist/tools/index.js';
+      import { z } from './docs-site/node_modules/zod/index.js';
+      const scenario = ${JSON.stringify(scenario)};
+      const hidden = 'private-name-getter-sentinel';
+      let reads = 0;
+      const original = Object.defineProperty({}, 'name', { get() {
+        reads++;
+        if (scenario === 'throws') throw new Error(hidden);
+        return reads === 1 ? 'Error' : hidden;
+      } });
+      const tool = new DynamicStructuredTool({ name: 'read_file', description: 'probe',
+        schema: z.object({ value: z.string() }), func: async () => { throw original; } });
+      await assert.rejects(tool.invoke({ value: hidden }), error => error === original);
+      if (scenario === 'changes') assert.equal(reads, 1);
+    `], {
+      cwd: new URL('../../', import.meta.url),
+      env: { ...process.env,
+        NODE_OPTIONS: '--import=./docs-site/scripts/provider-diagnostics.mjs',
+        OPENWIKI_PROVIDER_DIAGNOSTICS: 'true' },
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const diagnostics = result.stderr.split('\n')
+      .filter(line => line.startsWith('OpenWiki tool diagnostics: {'))
+      .map(line => JSON.parse(line.slice('OpenWiki tool diagnostics: '.length)));
+    assert.deepEqual(diagnostics, scenario === 'throws' ? [] : [{ tool: 'read_file', kind: 'Error' }]);
+    assert.ok(!result.stderr.includes('private-name-getter-sentinel'));
+  });
+}

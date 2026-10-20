@@ -10,12 +10,18 @@ if (process.env.OPENWIKI_PROVIDER_DIAGNOSTICS === 'true') {
     try {
       return await invoke.apply(this, args);
     } catch (error) {
-      const tool = ['submit_plan', 'submit_page', 'inspect_claims', 'ls', 'read_file',
-        'glob', 'grep', 'write_file', 'edit_file'].includes(this.name) ? this.name : 'other';
-      const kind = error instanceof ToolInputParsingException ? 'ToolInputParsingException'
-        : ['ZodError', 'TypeError', 'Error',
-        'GraphRecursionError', 'InvalidUpdateError'].includes(error?.name) ? error.name : 'other';
-      console.error('OpenWiki tool diagnostics:', JSON.stringify({ tool, kind }));
+      try {
+        const toolName = this.name;
+        const errorName = error?.name;
+        const tool = ['submit_plan', 'submit_page', 'inspect_claims', 'ls', 'read_file',
+          'glob', 'grep', 'write_file', 'edit_file'].includes(toolName) ? toolName : 'other';
+        const kind = error instanceof ToolInputParsingException ? 'ToolInputParsingException'
+          : ['ZodError', 'TypeError', 'Error',
+          'GraphRecursionError', 'InvalidUpdateError'].includes(errorName) ? errorName : 'other';
+        console.error('OpenWiki tool diagnostics:', JSON.stringify({ tool, kind }));
+      } catch {
+        // An accessor or logger failure must not replace the original tool error.
+      }
       throw error;
     }
   };
