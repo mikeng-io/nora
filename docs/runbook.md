@@ -1495,3 +1495,24 @@ cursor settlement repeats evidence. Runtime traces and watermark row history
 retain per-page provenance. Render-on retires legacy model writers and reads
 Persona room accounts for person/unit context; render-off restores the old
 configured writer/read surface. No legacy tables or Honcho client are removed.
+
+After fixing a cached-media reader, inspect one account's actual rendered input
+offline before spending another model pass. To wake just that account without
+resetting history or lowering the global interval, use
+`nora memory persona-retry-media --key '<unit>#character:<person>'` (read-only),
+then add `--apply` to queue one attempt. The command requires a listed account,
+completed history and pending cached media; it never composes a second Nora or
+calls a model. Duplicate pending submissions coalesce. The normal running
+Dreamer consumes the request before reading its next batch, under its existing
+per-key exclusion, schedule batch size and model budget. A failed/interrupted
+attempt consumes it too: there is no automatic paid drain loop. The normal
+schedule and other wake signals remain active. A request arriving during an
+in-flight pass waits for the next eligible tick.
+
+The request token and its claim reuse a separate
+`persona-person:media-retry` consolidation namespace, retained in row history;
+they never acknowledge a source or alter existing cursor timestamps. A claimed
+request proves only that an attempt began. Read the normal Dreamer trace and
+`persona-history` cached-media receipts afterwards; `unavailable` is not success,
+and no-change can settle rendered inputs without adding any identity fact.
+Stop after the first account to assess progress before requesting another.

@@ -314,14 +314,79 @@ def wired(engine, *, media_join=None):
     return reads, persona, source, evidence, adaptor
 
 
-async def settle_account(adaptor, evidence):
+async def settle_account(adaptor, evidence, *, settle_sources=True):
     from nora.domain.ports import Proposal
     _, no_change = adaptor.verbs(key=KEY)
     assert (await no_change(why='synthetic unchanged'))['status'] == 'ok'
     staged = await adaptor.accept(key=KEY, items=())
     await adaptor.commit(key=KEY, proposals=[Proposal(payload=p, instruction_sha256='a' * 64,
         model='synthetic', established_by='synthetic') for p in staged], now_ms=T0 + 1000)
-    await evidence.settle(key=KEY)
+    if settle_sources:
+        await evidence.settle(key=KEY)
+
+
+@pytest.mark.parametrize('outcome', ['unavailable', 'nothing_found'])
+async def test_operator_media_retry_wakes_once_without_resetting_or_acknowledging(env, outcome):
+    """A consumed request is not a successful read, and never an automatic retry loop."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from nora.agent.dreamer import AdaptorSchedule
+    from nora.app.runtime import _dream_evidence_once
+    from nora.domain.media_join import MediaJoin
+    from nora.infra.sql.language import SqlLanguageStore
+    from nora.infra.sql.media_objects import SqlMediaObjectStore
+    from nora.obs.metrics import Metrics
+
+    sha = 'a' * 64
+    await message(env, media=json.dumps([{'sha256': sha, 'media_type': 'image/png'}]))
+    async with env.begin() as conn:
+        await conn.execute(sa.insert(MEDIA_OBJECTS).values(sha256=sha, media_type='image/png',
+            size=1, source='inbound', created_at_ms=T0, description='retry-visible scene'))
+    reads, _, source, evidence, adaptor = wired(env)
+    boundary, _ = await reads.history_state(key=KEY)
+    await reads.advance_history(key=KEY, cursor=boundary)
+    # A previous consumer attempted this reading without being able to render it.
+    await evidence.count(key=KEY, after=boundary)
+    batch, _ = await evidence.newest(key=KEY, after=boundary, limit=100)
+    await adaptor.inputs(key=KEY, batch=batch)
+    await settle_account(adaptor, evidence)
+    await evidence.count(key=KEY, after=boundary)  # finish the initial attempt sweep
+    language = SqlLanguageStore(env)
+    await language.advance_watermark(consolidator_name=adaptor.name, scope_id=KEY,
+                                     last_message_id=boundary)
+    # Wire the now-working reader, exactly as a deployed reader fix does.
+    _, _, source, evidence, adaptor = wired(env, media_join=MediaJoin(
+        store=SqlMediaObjectStore(env), screen=lambda _: None, metrics=Metrics()))
+    sched = AdaptorSchedule(min_interval_seconds=604800, wake_batch=100, batch_limit=100)
+    calls = []
+
+    class Runner:
+        async def run(self, *, adaptor, key, batch):
+            calls.append(key)
+            assert not await source.recovery_requested(key=key)
+            rendered = await adaptor.inputs(key=key, batch=batch)
+            assert 'retry-visible scene' in rendered
+            if outcome != 'unavailable':
+                await settle_account(adaptor, evidence, settle_sources=False)
+            return SimpleNamespace(status=outcome)
+
+    async def tick():
+        return await _dream_evidence_once(adaptor=adaptor, runtime=Runner(), language=language,
+            metrics=Metrics(), evidence=evidence, key=KEY, sched=sched, batch_limit=100,
+            max_age_seconds=604800)
+
+    assert await tick() is None and calls == []
+    # Concurrent duplicate submissions enqueue one request, never multiple paid passes.
+    queued = await asyncio.gather(*(source.request_recovery(key=KEY) for _ in range(2)))
+    assert sorted(queued) == [False, True]
+    assert not await source.recovery_requested(key=KEY + ':another-account')
+    assert await tick() == outcome and calls == [KEY]
+    assert await tick() is None and calls == [KEY]
+    status = await source.media_recovery(key=KEY, rooms=ROOMS, person=PERSON)
+    assert status['pending_cached'] == (1 if outcome == 'unavailable' else 0)
+    assert await reads.history_state(key=KEY) == (boundary, boundary)
+    assert await language.watermark_for(consolidator_name=adaptor.name, scope_id=KEY) == boundary
 
 
 async def test_budget_trim_and_write_conflict_never_acknowledge_unsettled_source(env):

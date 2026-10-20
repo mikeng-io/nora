@@ -154,6 +154,66 @@ async def invoke(env, *argv):
     return await cli.execute(args)
 
 
+async def test_persona_media_retry_only_queues_known_completed_account(env, capsys):
+    import json
+
+    import sqlalchemy as sa
+
+    from nora.app.composition import character_person_keys
+    from nora.infra.sql.character import SqlCharacterEvidence
+    from nora.infra.sql.persona_inputs import SqlPersonaInputs
+    from nora.infra.sql.schema import CONSOLIDATION_WATERMARK as W
+    from nora.infra.sql.schema import MEDIA_OBJECTS, MESSAGES
+
+    cfg = tomllib.loads(env['path'].read_text())
+    for section in ('dreamer', 'culture', 'persona'):
+        cfg[section]['enabled'] = True
+    env['path'].write_text(tomli_w.dumps(cfg))
+    keys = character_person_keys(load_policy(Path(cfg['policy_file'])),
+                                 load_persons(Path(cfg['identity_file'])))
+    [key] = keys
+    assert await invoke(env, 'memory', 'persona-retry-media', '--key', 'unknown', '--apply') == 1
+    capsys.readouterr()
+    engine = create_sql_engine(env['url'])
+    try:
+        sha = 'e' * 64
+        async with engine.begin() as conn:
+            await conn.execute(sa.insert(MESSAGES).values(id=10, platform='signal',
+                conversation_id=GROUP_ID, conversation_type='group', sender_id='synthetic',
+                person_id='nobody', ts=1, body='synthetic', media_json=json.dumps([
+                    {'sha256': sha, 'media_type': 'image/png'}]), is_nora=0))
+            await conn.execute(sa.insert(MEDIA_OBJECTS).values(sha256=sha, media_type='image/png',
+                size=1, source='inbound', created_at_ms=1, description='cached synthetic scene'))
+        # No history reset or bootstrap is permitted by the control command.
+        assert await invoke(env, 'memory', 'persona-retry-media', '--key', key, '--apply') == 1
+        capsys.readouterr()
+        reads = SqlCharacterEvidence(engine)
+        boundary, _ = await reads.history_state(key=key)
+        await reads.advance_history(key=key, cursor=boundary)
+        async with engine.connect() as conn:
+            before = list((await conn.execute(sa.select(W))).all())
+        assert await invoke(env, 'memory', 'persona-retry-media', '--key', key) == 0
+        dry = json.loads(capsys.readouterr().out)
+        assert dry['pending_cached'] == 1 and not dry['requested'] and not dry['applied']
+        async with engine.connect() as conn:
+            assert list((await conn.execute(sa.select(W))).all()) == before
+        assert await invoke(env, 'memory', 'persona-retry-media', '--key', key, '--apply') == 0
+        applied = json.loads(capsys.readouterr().out)
+        assert applied['requested'] and applied['applied']
+        source = SqlPersonaInputs(engine)
+        assert await source.recovery_requested(key=key)
+        assert await reads.history_state(key=key) == (boundary, boundary)
+        await source.claim_recovery(key=key)
+        pending = await source.messages(key=key, rooms=[('signal', GROUP_ID)],
+                                        person='nobody', limit=100)
+        await source.settle(key=key, revisions=pending)
+        assert await invoke(env, 'memory', 'persona-retry-media', '--key', key, '--apply') == 1
+        assert not await source.recovery_requested(key=key)
+        assert env['seen'] == []  # no daemon/model/boot recovery is composed
+    finally:
+        await engine.dispose()
+
+
 # ── nora groups ──────────────────────────────────────────────────────────────
 
 async def test_groups_marks_an_allowlisted_group_allowed(env, capsys):
