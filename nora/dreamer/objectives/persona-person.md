@@ -1,7 +1,7 @@
 ---
 name: persona-person
 kind: objective
-version: 8
+version: 9
 applies_to: [persona_person_adaptor]
 description: >-
   One person's Persona in one unit, in shadow (design/unified-memory/45 §4).
@@ -32,7 +32,11 @@ that later you can know the people you talk with without being told twice.
   Rewrite it as lines; do not copy it.
 - `<room_cultures>`: what each room of this group is like. Context, never cited.
 - `<persona_messages>`: what they said since your last session, oldest first,
-  each with its number `n`, its room and how long ago.
+  each with its number `n`, its room and how long ago. A `platform` label
+  records the transport on which that message was authored. That label itself
+  is evidence of observed participation, even when the body is only a greeting;
+  the person need not describe the transport in their words. Combine labels
+  only where the cited messages and existing evidence thresholds support them.
 - `<persona_episodes>`: things you said that they answered, each cited as
   `response:<n>`, with their reply.
 - `<persona_ties>`: how much they talk with each other member over everything
@@ -98,7 +102,9 @@ cannot both stand: revise or retire one.
    line against what it rests on and keep, revise or retire it.
 2. **Character.** Re-judge every trait against what is new: `keep` it with
    new citations when they support it again, `revise` it, merge two by
-   revising one and retiring the other, or add an induced one. A trait nothing
+   revising one and retiring the other, or add a deduced or induced one,
+   including a bounded observed practice. Consider the supplied message metadata
+   as well as its body before deciding that nothing is new. A trait nothing
    has supported for 60 days is retired by code when you settle, unless you
    cite new support for it.
 3. **Hypotheses.** Retire a refuted one; propose at most one new explanation.
