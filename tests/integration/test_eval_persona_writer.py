@@ -173,6 +173,7 @@ async def test_all_declared_sources_reach_writer_after_restored_backlog(
     assert calls == []
     for item in private["sources"]:
         assert escape(item["body"], quote=False) in shown, state_of(data, NORA_ERROR)
+    (tmp_path / f"{vector}.print-input.txt").write_text(shown)
     assert 'evidence_mode="recent"' in shown
     assert "2026-10-12" in shown
     if vector.startswith("birthday_"):
@@ -366,3 +367,94 @@ async def test_v2_missing_reading_cannot_pass_with_missing_fixture_root(
         assert agents == []
     finally:
         await _close(subject)
+
+
+@pytest.mark.parametrize("vector", [
+    "categorical_report", "observed_sharing", "observed_participation",
+])
+@pytest.mark.parametrize("print_only", [True, False])
+@pytest.mark.parametrize("judge_mode", ["pass", "fail", "missing"])
+async def test_representation_sources_use_composed_writer_and_store(
+    pg_url, pg_template, tmp_path, monkeypatch, vector, print_only, judge_mode,
+):
+    from nora.subject.obtain import _DEFAULT_IDENTITY
+
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    policy = ('default = "deny"\n[[conversations]]\nplatform = "signal"\n'
+              'id = "g1"\nlabel = "Common room"\npersons = ["miles_novak"]\nunit = "nora"\n'
+              '[[conversations]]\nplatform = "discord"\nid = "d1"\nlabel = "Common room"\n'
+              'persons = ["miles_novak"]\nunit = "nora"\n')
+    identity = _DEFAULT_IDENTITY + '[[persons.miles_novak.discord]]\nuser_id = "12345"\n'
+    source = await seed_source(pg_url, tmp_path, Knowledge(transcript=("background",)),
+                               template=pg_template, policy=policy, identity=identity)
+    private = case_file(representation=True)[vector]
+    calls = []
+    monkeypatch.setattr(factory, "create_dream_agent", lambda **kw: kw)
+
+    async def invoke(agent, prompt, **kwargs):
+        calls.append(prompt)
+        citations = re.findall(r'<m n="(\d+)"', prompt)
+        op = {"op": "add", "part": "character", "kind": "trait", "mode": "induced",
+              "citations": citations, "text": (
+                  "Observed sharing Instagram reels; creator account ownership "
+                  "and usual frequency unknown"
+                  if vector == "observed_sharing" else
+                  "Observed participating on Signal and Discord; account ownership "
+                  "and usual frequency unknown")}
+        if vector == "categorical_report":
+            op.update(part="identity", kind="attribute", mode="told", told_by="Miles",
+                      text="source-reported categorical statement", fact_key="attribute",
+                      fact_value={"name": "statement", "value":
+                          "Self-reported being in their forties, including unspecified peers"})
+        verbs = {t.tool_name: t for t in agent["tools"]}
+        assert await verbs["persona_write"](ops=[op]) == {"status": "ok"}
+        return SimpleNamespace(stop_reason="end_turn")
+
+    monkeypatch.setattr(factory, "invoke", invoke)
+    case = Case(name=vector, input="", metadata={
+        "expect": "identity", "snapshot": source.snapshot, "person": "miles_novak",
+        "synthetic_evidence": True, "private_persona_file": True,
+        "persona_input": {"sources": private["sources"], "clock_ms": private["clock_ms"]},
+        "print_input": print_only,
+    })
+    from evals.rebuilt.grading import Judgement
+
+    class ScriptedJudge:
+        async def grade_identity(self, *, heads, evidence):
+            payload = json.loads(heads)
+            source = json.loads(evidence)
+            assert source["sources"] == private["sources"]
+            assert source["subject"] == "miles_novak"
+            assert payload["samples_ok"] == 1 and payload["samples_failed"] == 0
+            # A wrong/missing canonical claim is not accepted by this fixture.
+            good = judge_mode == "pass" and bool(payload["heads"]) and all(
+                "Owns" not in h["text"] for h in payload["heads"])
+            return Judgement("identity_representation", "PASS" if good else "FAIL", (),
+                             receipt={"actual_model": "scripted-judge", "usage_known": False,
+                                      "response_id": "response-1", "trace_id": "trace-1"})
+
+    result = await _drive(case, Spec(source_url=source.url, entry="persona_identity",
+        judge=None if judge_mode == "missing" else ScriptedJudge(),
+        policy=policy, identity=identity, template=source.template,
+        overrides={"llm.base_url": "http://127.0.0.1:9/v1"}))
+    data = EvaluationData(input="", actual_output=result["output"],
+        actual_environment_state=result["environment_state"], metadata={"expect": "identity"})
+    if print_only:
+        assert calls == []
+        shown = state_of(data, NORA_SHOWN)
+        assert shown, state_of(data, NORA_ERROR)
+        for item in private["sources"]:
+            assert escape(item["body"], quote=False) in shown
+        (tmp_path / f"{vector}.print-input.txt").write_text(shown)
+        if vector == "observed_participation":
+            assert 'platform="signal"' in shown and 'platform="discord"' in shown
+    else:
+        [graded] = MeetsGrader().evaluate(data)
+        expected = {"pass": PASS, "fail": FAIL, "missing": ERROR}[judge_mode]
+        assert graded.label == expected, (graded.reason, state_of(data, NORA_ERROR))
+        assert len(calls) == (0 if judge_mode == "missing" else 1)
+        if judge_mode != "missing":
+            judged = json.loads(state_of(data, NORA_POSITION))["judge"]
+            assert judged["usage_known"] is False
+            assert judged["actual_model"] == "scripted-judge"
+            assert judged["response_id"] == "response-1" and judged["trace_id"] == "trace-1"

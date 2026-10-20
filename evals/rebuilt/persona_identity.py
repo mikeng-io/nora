@@ -8,6 +8,22 @@ from nora.subject.persona_writer import run_writer, validate_sources
 
 from .domain import Case, Outcome
 
+REPRESENTATION_PROPERTIES = {
+    "categorical_report": "The source author self-reported that they AND unspecified others "
+        "were already in their forties on 2026-09-02 (the original source date). "
+        "Preserve the inclusive "
+        "subject and dated self-report, not a current numeric age, birthday or birth year.",
+    "observed_sharing": "The source author shared Instagram reels on 2026-10-01, 2026-10-03 "
+        "and 2026-10-05. "
+        "Preserve the bounded observation; creator/account ownership and usual frequency "
+        "remain unknown. Do not infer preference, proficiency or an enduring habit.",
+    "observed_participation": "The source author authored messages on BOTH Signal AND Discord "
+        "on 2026-10-01/05 (Signal) and 2026-10-03 (Discord). Preserve the full "
+        "conjunction and bounded dates; "
+        "account ownership and usual frequency remain unknown.",
+}
+
+
 
 def check_identity(vector: str, receipt: dict[str, Any]) -> tuple[str, ...]:
     """Grade canonical current chain heads; never all rows with state=current."""
@@ -69,6 +85,39 @@ def check_identity(vector: str, receipt: dict[str, Any]) -> tuple[str, ...]:
                 if (not provenance_ok or h["as_of"] != receipt["timestamps"][-1]
                         or set(h["citations"]) != {str(i) for i in receipt["rows"]}):
                     failures.append("v2 profile preference lost source provenance")
+    elif vector == "categorical_report":
+        if not heads:
+            failures.append("missing categorical report")
+        for h in heads:
+            value = h["fact_value"]
+            if (h["fact_key"] != "attribute" or not isinstance(value, dict)
+                    or set(value) != {"name", "value"} or value["name"] != "statement"
+                    or not isinstance(value["value"], str) or not value["value"].strip()):
+                failures.append("categorical report requires a qualified string statement")
+            if (h["mode"] != "told" or h["told_by"] != receipt["person"]
+                    or h["as_of"] != receipt["timestamps"][0]
+                    or set(h["citations"]) != {str(receipt["rows"][0])}):
+                failures.append("categorical report lost author, date or source")
+    elif vector in {"observed_sharing", "observed_participation"}:
+        if heads:
+            failures.append("observed behavior must not become told identity or ownership")
+        traits = [h for h in receipt["heads"]
+                  if h["part"] == "character" and h["state"] == "current"]
+        if not traits:
+            failures.append("missing observed behavior")
+        roots = {str(r): ts for r, ts in zip(receipt["rows"], receipt["timestamps"], strict=True)}
+        if {c for h in traits for c in h["citations"]} != set(roots):
+            failures.append("observed behavior lost source roots")
+        for h in traits:
+            cited = set(h["citations"])
+            if (h["kind"] != "trait" or h["mode"] not in {"deduced", "induced"}
+                    or h["told_by"] is not None or h["fact_key"] is not None
+                    or h["fact_value"] is not None or not h["text"].strip()
+                    or not cited or not cited <= roots.keys()
+                    or h["as_of"] != max((roots[c] for c in cited if c in roots), default=None)):
+                failures.append("observed behavior lost its mode, transport roots or date")
+            if h["valid_from"] is not None or h["valid_until"] is not None:
+                failures.append("invented effective date")
     elif vector == "residence_unknown":
         if by_key.get("residence"):
             failures.append("incidental location established residence")
@@ -136,6 +185,12 @@ async def persona_identity(subject: Any, case: Case, *, now_ms: int) -> Outcome:
         return Outcome(
             admitted=None, position=json.dumps(receipt, ensure_ascii=False, sort_keys=True),
             checks_failed=failed,
+            judged="REVIEW" if case.name in REPRESENTATION_PROPERTIES else "",
+            evidence=json.dumps({"subject": receipt["person"], "sources": private["sources"],
+                                 "rows": receipt["rows"], "timestamps": receipt["timestamps"],
+                                 "actual_sources": receipt.get("source_evidence"),
+                                 "property": REPRESENTATION_PROPERTIES.get(case.name)},
+                                ensure_ascii=False, sort_keys=True),
         )
     except Exception as exc:  # noqa: BLE001 -- unavailable setup/read/write is never a negative PASS
         return Outcome(admitted=None, source="fail_closed", error=f"{type(exc).__name__}: {exc}")

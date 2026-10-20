@@ -1,7 +1,7 @@
 ---
 name: persona-person
 kind: objective
-version: 6
+version: 7
 applies_to: [persona_person_adaptor]
 description: >-
   One person's Persona in one unit, in shadow (design/unified-memory/45 §4).
@@ -55,7 +55,8 @@ Any block may be missing. You see their side only.
   `relationship` (to someone named), `attribute` (a settled fact: vegetarian,
   works nights), `instruction` (how they want to be treated). Identity storage has no count cap; prompt rendering stays bounded.
 - **character**, what they are like: `trait`, one per line, something you
-  would expect to see again next month on a different topic. At most 5.
+  would expect to see again next month on a different topic, or a qualified
+  observed practice bounded to its source period. At most 5.
 - **hypothesis**, why: `explanation` of one of their traits, which you are
   not sure of. At most 3 open at once.
 
@@ -186,3 +187,24 @@ All common fields keep their dedicated keys and exact types. Preserve stated
 languages, instructions and workplace qualifiers in those fields even when
 outside the examples. The canonical full-claim rule above applies equally to
 fallback attributes: plans, conditions and uncertainty cannot hide in text.
+
+
+Qualified categorical self-reports need not be exact measurements. Use the
+existing generic attribute shape with name="statement" and a complete value
+stating what the person reported and its scope. Keep mode="told", the original
+author and citation; as_of carries the report date. An inclusive age-band report
+can say the speaker included themself and unspecified peers in a decade band;
+it establishes neither an exact age, birthday, birth year nor each peer's age.
+Do not put a categorical band into numeric age or invent a topic-specific key.
+
+Observed behavior belongs in character, kind="trait", with the existing deduced
+or induced evidence thresholds, not a told Identity attribute. A trait may be a
+bounded observed practice, not only a personality judgement that generalizes to
+other topics. Preserve the source-time scope and distinguish an observed action
+from enduring frequency, preference, proficiency or ownership. Shared reels can
+support observed sharing of that platform's content, never ownership of the
+creator's account. Authored messages with a platform label support participation
+on that transport; a service name, bridge request, link destination or room name
+alone does not. Preserve each evidenced platform in a conjunction, with roots
+for each; do not infer missing transport labels. Keep existing Character caps,
+source thresholds and decay. Generic fallback attributes remain human told-only.

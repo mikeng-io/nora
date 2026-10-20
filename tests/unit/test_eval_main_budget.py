@@ -15,6 +15,43 @@ import evals.__main__ as m
 from evals.scenarios import selected_cases
 
 
+@pytest.mark.parametrize("value", ["0", "-1", "nan", "inf", "301"])
+def test_invalid_judge_timeout_is_refused_before_setup(monkeypatch, value, capsys):
+    monkeypatch.setattr("sys.argv", ["python -m evals", "--judge-timeout", value, "--list"])
+    with pytest.raises(SystemExit) as exc:
+        m.main()
+    assert exc.value.code == 2
+    assert "judge timeout must be finite" in capsys.readouterr().err
+
+
+def test_judge_timeout_reaches_existing_judge(monkeypatch, tmp_path):
+    runs: list[str] = []
+    _stub(monkeypatch, tmp_path, runs)
+    seen = []
+    original = m.Judge
+
+    def bounded_judge(**kwargs):
+        seen.append(kwargs)
+        return original(**kwargs)
+
+    monkeypatch.setattr(m, "Judge", bounded_judge)
+    monkeypatch.setattr("sys.argv", ["python -m evals", "tool_selection", "--case",
+                                     "route_where_is_now", "--judge", "--judge-timeout", "90"])
+    assert m.main() == 0
+    assert seen and seen[0]["timeout_seconds"] == 90
+
+
+def test_spend_keeps_missing_usage_unmeasured(capsys):
+    import evals.backbone as b
+
+    b.drain_spend()
+    b._SPEND.append({b.NORA_CALLS: 1, b.NORA_INPUT_TOKENS: 0,
+                     b.NORA_OUTPUT_TOKENS: 0, b.NORA_CACHED_TOKENS: 0,
+                     b.NORA_STOPS: "stop", "usage_known": False})
+    m._print_spend()
+    assert "usage UNMEASURED for 1 call(s)" in capsys.readouterr().out
+
+
 def _stub(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, runs: list[str]) -> None:
     monkeypatch.setattr(m, "source_url_for", lambda *a, **k: "URL")
     monkeypatch.setattr(m, "refuse_if_source_diverges_from_head", lambda url: None)

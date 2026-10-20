@@ -133,7 +133,8 @@ async def test_the_session_is_handed_its_messages_with_their_age_and_never_a_sen
     reads.add_tie(unit="friends", person_a="ada", person_b="bo", counts=(3, 1, 0, 0, 2, 0))
     out = await _adaptor(env, reads=reads).inputs(key=KEY, batch=BATCH)
     assert 'name="Ada"' in out and "阿Ada" in out
-    assert '<m n="43" room="Friends" age="' in out and "booked 8pm again" in out
+    assert '<m n="43" room="Friends" platform="signal" age="' in out
+    assert "booked 8pm again" in out
     assert 'cite="rollup:tie:friends|ada,bo"' in out and 'with="Bo"' in out
     assert "spoofed" not in out and "+852" not in out and "colocation" not in out
 

@@ -228,3 +228,63 @@ async def test_chat_media_readings_reach_persona_without_becoming_sender_claims(
     assert "+85291234567" not in rendered
     assert ">hello<" in rendered
     assert set(adaptor._runs[KEY].citable.messages) == {1, 2, 3, 4, 5, 6}
+
+
+async def test_message_transport_is_evidence_not_guessed_from_room_label():
+    from dataclasses import replace
+    from types import SimpleNamespace
+
+    from nora.domain.culture import RoomMessage
+    from nora.domain.models import DeliveryStatus, TranscriptRow
+
+    room = SimpleNamespace(platform="signal", key="room-a", label="Common room")
+    pk = replace(PK, rooms=(room,))
+    reads = _ReadsFake()
+    adaptor = PersonaPersonAdaptor(
+        persona=_PersonaFake(), culture=InMemoryCultureStore(),
+        evidence=_evidence(reads, None), reads=reads, keys={KEY: pk},
+        name_of=lambda _pid: "Ada", clock_ms=lambda: T0, clock=lambda: NOW,
+    )
+    row = TranscriptRow(id=1, sender_id="s", sender_name="Ada", person_id="ada",
+                        body="Hello", ts=T0, is_nora=False,
+                        delivery_status=DeliveryStatus.SENT, raw_json=None)
+    shown = await adaptor.inputs(key=KEY, batch=[RoomMessage(room="room-a", row=row)])
+    assert 'platform="signal"' in shown
+
+
+async def test_colliding_room_transports_are_omitted_in_both_orders():
+    from dataclasses import replace
+    from types import SimpleNamespace
+
+    from nora.domain.culture import RoomMessage
+    from nora.domain.models import DeliveryStatus, TranscriptRow
+
+    for platforms in (("signal", "discord"), ("discord", "signal"), ("signal",)):
+        pk = replace(
+            PK, rooms=tuple(SimpleNamespace(platform=p, key="room-a", label=p) for p in platforms)
+        )
+        reads = _ReadsFake()
+        adaptor = PersonaPersonAdaptor(
+            persona=_PersonaFake(),
+            culture=InMemoryCultureStore(),
+            evidence=_evidence(reads, None),
+            reads=reads,
+            keys={KEY: pk},
+            name_of=lambda _: "Ada",
+            clock_ms=lambda: T0,
+            clock=lambda: NOW,
+        )
+        row = TranscriptRow(
+            id=1,
+            sender_id="s",
+            sender_name="Ada",
+            person_id="ada",
+            body="Hello",
+            ts=T0,
+            is_nora=False,
+            delivery_status=DeliveryStatus.SENT,
+            raw_json=None,
+        )
+        shown = await adaptor.inputs(key=KEY, batch=[RoomMessage(room="room-a", row=row)])
+        line = next(line for line in shown.splitlines() if ">Hello</m>" in line)
+        assert ('platform="' in line) is (len(platforms) == 1)

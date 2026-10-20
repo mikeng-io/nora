@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import math
 import os
 import signal
 import statistics
@@ -126,6 +127,13 @@ JUDGE_SAMPLE_SECONDS = (JUDGED_DRAW_SECONDS - UNJUDGED_DRAW_SECONDS) / DEFAULT_S
 #: host has ONE eval lock (`/tmp/nora-eval.lock`), shared by every session:
 #: a run that holds it past an hour blocks every other session's PR.
 BUDGET_MINUTES = 60
+
+
+def judge_timeout(value: str) -> float:
+    seconds = float(value)
+    if not math.isfinite(seconds) or not 0 < seconds <= 300:
+        raise argparse.ArgumentTypeError("judge timeout must be finite and >0 and <=300 seconds")
+    return seconds
 
 
 @dataclass(frozen=True)
@@ -259,6 +267,9 @@ def _print_spend() -> None:
     )
     if spend["truncated"]:
         line += f"   TRUNCATED: {spend['truncated']}"
+    if spend.get("unknown_usage_calls"):
+        line += (f"   known token totals; usage UNMEASURED for "
+                 f"{spend['unknown_usage_calls']} call(s)")
     print(line)
     # The SUBJECT'S OWN TURNS only — the calls under her `invoke_agent` span,
     # without background passes the drive also spawns (the standing fold).
@@ -556,6 +567,8 @@ def main() -> int:
     ap.add_argument("--coverage-timeout", type=float, default=90.0,
                     help="coverage wall-clock seconds per batch; plan must fit 55 minutes")
     ap.add_argument("--judge-base-url", default="http://127.0.0.1:20128/v1")
+    ap.add_argument("--judge-timeout", type=judge_timeout, default=300.0,
+                    help="wall-clock seconds per non-coverage judge draw (>0 and <=300)")
     ap.add_argument(
         "--judge-samples", type=int, default=DEFAULT_SAMPLES,
         help=(
@@ -825,6 +838,7 @@ def main() -> int:
 
             judge = None if not args.judge else Judge(
                 base_url=args.judge_base_url, model=args.judge, samples=args.judge_samples,
+                timeout_seconds=args.judge_timeout,
             )
 
             ok = True

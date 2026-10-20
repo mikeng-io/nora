@@ -10,6 +10,65 @@ from evals.rebuilt.persona_identity import check_identity, persona_identity
 from evals.scenarios import census, load_corpus
 
 
+async def test_semantic_judge_retains_unknown_usage_and_response_identity(monkeypatch):
+    import json
+
+    from evals.rebuilt.grading import Judge
+
+    draw = {
+        "raw": json.dumps([{"criterion": "identity_representation", "score": 1,
+                            "confidence": 1, "rationale": "Supported by the sources"}]),
+        "actual_model": "physical-judge", "response_id": "response-1",
+        "trace_id": "trace-1", "usage_known": False,
+        "spend": {"nora.model_calls": 1},
+    }
+
+    async def recorded_draw(self, prompt, **kwargs):
+        return draw
+
+    monkeypatch.setattr(Judge, "coverage_batch", recorded_draw)
+    judged = await Judge("unused").grade_identity(heads="{}", evidence="{}")
+    assert judged.verdict == "PASS"
+    assert judged.receipt == draw
+    assert judged.receipt["usage_known"] is False
+
+
+@pytest.mark.parametrize("stop", ["length", "content_filter", "stop"])
+async def test_returned_judge_response_survives_finish_rejection(monkeypatch, stop):
+    import json
+    from types import SimpleNamespace
+
+    from evals.backbone import drain_spend
+    from evals.rebuilt.grading import Judge
+
+    raw = json.dumps([{"criterion": "identity_representation", "score": 1,
+                       "confidence": 1, "rationale": "Grounded in the supplied sources"}])
+
+    class Client:
+        def __init__(self):
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
+
+        async def create(self, **request):
+            assert request["model"] == "nora-judge"
+            assert "canonical Persona" in request["messages"][0]["content"]
+            return SimpleNamespace(model="physical-judge", id="response-1", usage=None,
+                choices=[SimpleNamespace(finish_reason=stop,
+                                         message=SimpleNamespace(content=raw))])
+
+        async def close(self):
+            pass
+
+    drain_spend()
+    monkeypatch.setattr(Judge, "_client", lambda self: Client())
+    judged = await Judge("unused").grade_identity(heads="{}", evidence="{}")
+    assert judged.verdict == ("PASS" if stop == "stop" else "REVIEW")
+    assert judged.receipt["actual_model"] == "physical-judge"
+    assert judged.receipt["response_id"] == "response-1"
+    assert judged.receipt["raw"] == raw
+    assert judged.receipt["usage_known"] is False
+    assert drain_spend()["unknown_usage_calls"] == 1
+
+
 def receipt():
     h = {
         "fact_key": "birthday", "fact_value": {"month": 6, "day": 8},
@@ -222,3 +281,151 @@ def test_v2_closed_bundle_and_missing_either_reading(tmp_path, monkeypatch):
     path.write_text(yaml.safe_dump(seeds))
     with pytest.raises(ValueError, match="registered"):
         load_corpus("persona_identity")
+
+
+def test_representation_bundle_and_grader_keep_qualifications(tmp_path, monkeypatch):
+    path = tmp_path / "representation.yaml"
+    vectors = case_file(representation=True)
+    path.write_text(yaml.safe_dump(vectors))
+    monkeypatch.setenv("NORA_EVAL_PERSONA_CASES", str(path))
+    assert len(load_corpus("persona_identity")) == 11
+    good = receipt()
+    good["person"] = "p"
+    good["heads"][0].update(fact_key="attribute", fact_value={
+        "name": "statement", "value":
+        "Self-reported being in their forties, including unspecified peers"})
+    assert check_identity("categorical_report", good) == ()
+    wrong = deepcopy(good)
+    wrong["heads"][0]["fact_value"] = {"name": "age", "value": 40, "unit": "years"}
+    assert check_identity("categorical_report", wrong)
+    for vector, text in (
+        ("observed_sharing", "Observed sharing Instagram reels; creator account ownership "
+         "and usual frequency unknown"),
+        ("observed_participation", "Observed participating on Signal and Discord; "
+         "account ownership and usual frequency unknown"),
+    ):
+        behavior = receipt()
+        behavior["heads"][0].update(part="character", kind="trait", mode="induced",
+            told_by=None, fact_key=None, fact_value=None, text=text,
+            citations=("101", "102"), as_of=2)
+        assert check_identity(vector, behavior) == ()
+        for field, value in (("valid_until", 9999999999999), ("valid_from", 3),
+                             ("citations", ("101",)),
+                             ("mode", "told"), ("as_of", 1)):
+            wrong = deepcopy(behavior)
+            wrong["heads"][0][field] = value
+            assert check_identity(vector, wrong)
+
+
+def test_participation_fixture_cannot_select_an_arbitrary_transport():
+    from nora.subject.persona_writer import validate_sources
+
+    for platform in ("unlisted", ["signal"], None):
+        with pytest.raises(ValueError, match="transport selection"):
+            validate_sources([{"body": "Hello", "ts": 1, "platform": platform}],
+                             2, vector="observed_participation")
+    with pytest.raises(ValueError, match="transport selection"):
+        validate_sources([{"body": "Hello", "ts": 1, "platform": "signal"}],
+                         2, vector="birthday_retained")
+
+
+async def test_representation_semantic_draw_accepts_paraphrase_and_decomposition(monkeypatch):
+    import json
+
+    from evals.rebuilt.grading import Judge
+
+    good = receipt()
+    good["person"] = "p"
+    good["heads"][0].update(
+        fact_key="attribute",
+        fact_value={
+            "name": "statement",
+            "value": "Reported that they and unspecified others were already in their forties",
+        },
+    )
+    assert not check_identity("categorical_report", good)
+    behavior = receipt()
+    behavior["heads"] = [
+        {
+            **behavior["heads"][0],
+            "part": "character",
+            "kind": "trait",
+            "mode": "deduced",
+            "told_by": None,
+            "fact_key": None,
+            "fact_value": None,
+            "text": text,
+            "citations": (str(row),),
+            "as_of": ts,
+        }
+        for text, row, ts in [
+            ("Observed Signal participation; ownership/frequency unknown", 101, 1),
+            ("Observed Discord participation; ownership/frequency unknown", 102, 2),
+        ]
+    ]
+    assert not check_identity("observed_participation", behavior)
+    wrong = deepcopy(behavior)
+    wrong["heads"][1]["text"] = "Owns a Discord account and uses it daily"
+    cases = [(good, "PASS"), (behavior, "PASS"), (wrong, "FAIL")]
+    for text in (
+        "The author alone is in their forties",  # dropped inclusive subject
+        "The author and their friends are exactly 42",  # invented identity/number
+        "They reported being in their forties on 2026-10-12",  # invented source date
+    ):
+        changed = deepcopy(good)
+        changed["heads"][0]["fact_value"]["value"] = text
+        assert not check_identity("categorical_report", changed)  # semantic, not lexical
+        cases.append((changed, "FAIL"))
+    answers = {json.dumps(item): int(expected == "PASS") for item, expected in cases}
+
+    async def scripted(self, prompt, *, trace_name):
+        assert trace_name == "eval.persona_identity.judge"
+        assert "NOT a reply or standing" in prompt
+        heads = prompt.split("## Canonical heads and writer settlement receipt\n")[1]
+        return {
+            "raw": json.dumps(
+                [
+                    {
+                        "criterion": "identity_representation",
+                        "score": answers[heads],
+                        "confidence": 1,
+                        "rationale": "fixture meaning comparison",
+                    }
+                ]
+            )
+        }
+
+    monkeypatch.setattr(Judge, "coverage_batch", scripted)
+    for item, expected in cases:
+        verdict = await Judge("unused").grade_identity(
+            heads=json.dumps(item), evidence="frozen sources"
+        )
+        assert verdict.verdict == expected
+
+
+@pytest.mark.parametrize(
+    "draw",
+    [
+        {"error": "response truncated"},
+        {"raw": ""},
+        {"raw": "[]"},
+        {"raw": '[{"criterion":"other","score":1,"confidence":1,"rationale":"x"}]'},
+        {
+            "raw": ('[{"criterion":"identity_representation","score":true,'
+                    '"confidence":1,"rationale":"x"}]')
+        },
+        {
+            "raw": ('[{"criterion":"identity_representation","score":1,'
+                    '"confidence":0.1,"rationale":"x"}]')
+        },
+    ],
+)
+async def test_representation_judge_errors_are_not_pass(monkeypatch, draw):
+    from evals.rebuilt.grading import Judge
+
+    async def scripted(self, prompt, **kwargs):
+        return draw
+
+    monkeypatch.setattr(Judge, "coverage_batch", scripted)
+    verdict = await Judge("unused").grade_identity(heads="{}", evidence="sources")
+    assert verdict.verdict == "REVIEW" and verdict.error

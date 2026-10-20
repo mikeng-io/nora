@@ -394,6 +394,7 @@ def drain_spend() -> dict[str, Any]:
     }
     turn["fresh"] = turn["input"] - turn["cached"]
     turn["turns"] = sum(1 for x in _SPEND if f"turn.{NORA_CALLS}" in x)
+    unknown_usage = sum(int(x[NORA_CALLS]) for x in _SPEND if x.get("usage_known") is False)
     _SPEND.clear()
     return {
         "turn": turn,
@@ -401,6 +402,7 @@ def drain_spend() -> dict[str, Any]:
         "fresh": inp - cached, "stops": stops,
         # NAMED, not inferred: a `max_tokens` finish reason is the truncation.
         "truncated": [r for r in stops if "max_token" in r or "length" in r],
+        **({"unknown_usage_calls": unknown_usage} if unknown_usage else {}),
     }
 
 
@@ -1467,7 +1469,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
     There is no authored branch: a case with no anchor is UNANCHORED and is an
     ERROR here — never a skip, never a case quietly run in an empty room.
     """
-    from evals.rebuilt.domain import Moment
+    from evals.rebuilt.domain import Moment, Outcome
     from evals.rebuilt.entry import ENTRY_POINTS
 
     port = ENTRY_POINTS[spec.entry]
@@ -1653,10 +1655,15 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             nora_case = dataclasses.replace(
                 nora_case, moment=Moment(source_url=spec.source_url, rows=seeded.rows),
             )
+            from evals.rebuilt.persona_identity import REPRESENTATION_PROPERTIES
             from nora.subject.context_filter import case_scope
 
-            with case_scope(case.name):
-                outcome = await port.drive(subject, nora_case, now_ms=clock_ms)
+            if (port.judged_on == "identity" and nora_case.name in REPRESENTATION_PROPERTIES
+                    and spec.judge is None and not md.get("print_input")):
+                outcome = Outcome(admitted=None, error="representation requires a semantic judge")
+            else:
+                with case_scope(case.name):
+                    outcome = await port.drive(subject, nora_case, now_ms=clock_ms)
             blocks_empty = _blocks_empty(exporter)
             # BEFORE the judge: these describe what the SUBJECT spent, and a
             # judge's draws are the eval layer's own cost.
@@ -1696,7 +1703,31 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             # case's one stated property, read over the turn's RECORD — the
             # same evidence on both arms of a comparison. Selected by the
             # port's declared `judged_on`, not by its name.
-            if (
+            if (port.judged_on == "identity" and outcome.judged == "REVIEW"
+                    and outcome.error is None):
+                if spec.judge is None:
+                    outcome = dataclasses.replace(
+                        outcome, error="representation requires a semantic judge",
+                    )
+                else:
+                    judgement = await spec.judge.grade_identity(
+                        heads=outcome.position, evidence=outcome.evidence,
+                    )
+                    if (draw := getattr(judgement, "receipt", None)) is not None:
+                        receipt = json.loads(outcome.position)
+                        receipt["judge"] = draw
+                        outcome = dataclasses.replace(
+                            outcome,
+                            position=json.dumps(receipt, ensure_ascii=False, sort_keys=True),
+                        )
+                    judged_why = judgement.why
+                    outcome = dataclasses.replace(
+                        outcome, judged=judgement.verdict,
+                        error=judgement.error or (
+                            "representation judge returned no rating"
+                            if judgement.verdict == "REVIEW" else None),
+                    )
+            elif (
                 spec.judge is not None and port.judged_on == "position"
                 and outcome.position is not None and outcome.error is None
             ):
