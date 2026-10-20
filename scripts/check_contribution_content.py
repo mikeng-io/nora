@@ -258,19 +258,11 @@ def check_pr(github, repository: str, number: int, event_head: str = "") -> int:
         {"name": "PR content", "head_sha": item["head"]["sha"], "status": "in_progress"},
     )
     try:
-        login = ""
-        app_id = os.environ.get("RELEASE_APP_ID", "")
+        # Private Apps cannot be looked up with this repository's GITHUB_TOKEN.
+        # Pin GitHub's immutable bot user ID in trusted repository settings instead.
+        user_id = os.environ.get("RELEASE_APP_BOT_USER_ID", "")
         author = item["user"]["login"]
-        if (
-            app_id
-            and author.endswith("[bot]")
-            and author not in {"github-actions[bot]", "dependabot[bot]"}
-            and item["head"]["ref"].startswith("release-please--branches--master")
-        ):
-            slug = author.removesuffix("[bot]")
-            app = github("GET", f"/apps/{slug}")
-            if str(app["id"]) == app_id:
-                login = author
+        login = author if user_id.isdecimal() and str(item["user"].get("id")) == user_id else ""
         errors = pr_problems(item, repository, release_login=login)
         summary = (
             "\n".join(f"- {error}" for error in errors)
