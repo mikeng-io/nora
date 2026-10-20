@@ -13,6 +13,19 @@ Ordered by how much confusion each has actually caused.
 
 ---
 
+## Nora as a social agent
+
+- **Social agent** — Nora participates in ongoing relationships and shared
+  situations: people, rooms, plans, responses and what remains unresolved.
+  Messaging, voice, memory, cognition and her computer workspace are connected
+  parts of that participation; their availability is configuration-dependent.
+- **Sessionless** — her continuity lives in persistent records and derived
+  state, not in an SDK chat session. Each speaking turn assembles relevant
+  context for a fresh agent. Bounded cognition, browser and computer sessions
+  still exist; the term does not mean a continuously running model.
+- **Learning** — revising evidence-backed accounts and lessons used as future
+  context. It is not model retraining or permission to rewrite doctrine.
+
 ## Identity — three different things
 
 The worst collision in the codebase. All three are live, all three are called

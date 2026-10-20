@@ -5,9 +5,9 @@ import type { Dict } from "./types";
 // scripted example with invented people; it says so on the page.
 export const en = {
   meta: {
-    title: "Nora · the quiet AI in the group chat",
+    title: "Nora · a continuing presence",
     description:
-      "Nora is an AI who lives in one circle of friends’ group chats on Signal, WhatsApp, Discord and Instagram. She listens, remembers what matters, and answers when someone tags her.",
+      "Nora is a self-hosted social AI agent. Across conversations and voice, memory and background cognition carry people, plans and unfinished matters beyond a chat session.",
     ogAlt:
       "Nora, a small 3D figure in a grey hoodie with white wired earphones, beside the words “The quiet one in the group chat.”",
   },
@@ -44,8 +44,8 @@ export const en = {
   },
   hero: {
     status: "In the group chat",
-    title: "The quiet one in the group chat.",
-    lede: "Nora is an AI who lives with one circle of friends, in their Signal, WhatsApp, Discord and Instagram groups. She listens, keeps track of what matters, and answers when someone tags her.",
+    title: "Here, beyond the conversation.",
+    lede: "Nora is a self-hosted social AI agent who shares a circle of friends’ everyday conversations. She remembers people and ongoing plans, revisits what changes, and can follow up when the room permits. The conversation pauses; her context carries forward.",
     primary: "See her in a chat",
     secondary: "Friends, sign in",
     platforms: "Signal · WhatsApp · Discord · Instagram",
@@ -57,7 +57,7 @@ export const en = {
   },
   chat: {
     title: "In the room, not in the way.",
-    lede: "Most of the time she’s just listening. Tag her and she answers from what the group has already said. Ask her something.",
+    lede: "A conversation is one part of her ongoing context. This example shows replies, recall and a later reminder drawing on the same shared plan.",
     disclaimer: "A scripted example. The people and messages are made up.",
     roomName: "Saturday people",
     members: "5 members",
@@ -125,29 +125,29 @@ export const en = {
     ],
   },
   loop: {
-    title: "Two ways of being there.",
-    lede: "A straight path for when someone calls her, and a loop for when nobody has.",
+    title: "A turn ends. The context continues.",
+    lede: "Fresh agents handle individual occasions. Persistent memory, working state and a background cognition loop connect them.",
     tagTitle: "When you call her",
     tagBody:
       "One tag, one turn, one reply, every time. She reads the recent conversation, where the room stands, what’s still open and what she knows about whoever asked, then answers with whichever of her tools the question needs.",
     tagSteps: ["Someone tags her", "She reads the room", "She thinks, and uses tools", "She replies"],
     ambientTitle: "When nobody has",
-    ambientBody: "A loop that runs underneath everything, and almost never speaks.",
+    ambientBody: "When enabled, cognition revisits recorded changes, keeps ongoing matters in view and can arrange another look.",
     stages: [
-      { title: "Observe", body: "Every message is recorded as it arrives. No model reads it yet." },
+      { title: "Observe", body: "Permitted messages and shared signals enter the record. Media may also be interpreted when configured." },
       {
         title: "Orient",
-        body: "Notes, each room’s standing and what she knows about people are kept current in the background.",
+        body: "Cognition reads what changed alongside ongoing matters; slower reflection maintains accounts and lessons.",
       },
-      { title: "Decide", body: "Two careful questions: is this worth saying, and is now the time?" },
-      { title: "Act", body: "At most one message, only in rooms that asked for it." },
+      { title: "Decide", body: "Participation checks relevance; a proactive turn reviews whether an earlier intention still needs action." },
+      { title: "Act", body: "She may speak, use tools or stay silent, within the room’s grants." },
     ],
-    people: { title: "The people", body: "They decide what happens next. Then the loop starts again." },
+    people: { title: "The people", body: "Their replies and reactions become evidence for later reflection and lessons." },
     closing: "Speaking without being asked is something each room turns on. By default, she doesn’t.",
   },
   memory: {
-    title: "She remembers at five speeds.",
-    lede: "Not one big memory but five, each kept for its own reason, each letting go in its own way.",
+    title: "Memory connects the occasions.",
+    lede: "Records, working state and derived accounts serve different purposes. These are examples of what she carries forward, not five separate memories or fixed retention periods.",
     tiers: [
       {
         scale: "seconds",
@@ -157,7 +157,7 @@ export const en = {
       {
         scale: "hours",
         title: "Where the room stands",
-        body: "Each room’s current position, rewritten after every exchange. Short and lossy on purpose.",
+        body: "A compact account of where the room stands and work still in progress, revised as context changes.",
       },
       {
         scale: "days",
@@ -167,15 +167,15 @@ export const en = {
       {
         scale: "weeks",
         title: "What the room has become",
-        body: "How each room talks, jokes and decides. Written once a day.",
+        body: "How each room talks, jokes and decides, developed through background reflection.",
       },
       {
         scale: "months",
         title: "Who people are",
-        body: "What she has concluded about each person, built slowly from everything they’ve said.",
+        body: "Evidence-backed accounts of people, developed from permitted sources and subject to correction.",
       },
     ],
-    note: "What she may do with what she knows is governed separately from what she can see.",
+    note: "What she may read, share and do is scoped by people and room policy.",
     imageAlt: "Nora sitting on a small wooden stool, writing in a notebook.",
     kept: {
       intro: "Under each, what she would be keeping from the chat above.",
@@ -201,7 +201,7 @@ export const en = {
   },
   senses: {
     title: "Where she is, and what she can see.",
-    lede: "She lives where the group already talks, and sees only what people choose to share with her.",
+    lede: "She joins the group’s existing spaces and uses the sources and capabilities configured for each room.",
     rows: [
       { icon: "chat", title: "Group chats", body: "Signal, WhatsApp, Discord and Instagram." },
       {
@@ -225,6 +225,11 @@ export const en = {
         icon: "everyday",
         title: "Everyday things",
         body: "Weather, the next bus, routes, parking, reminders, events and RSVPs.",
+      },
+      {
+        icon: "web",
+        title: "Her workspace",
+        body: "A persistent sandbox for files, commands and bounded browser tasks. Later turns can pick up the work when configured.",
       },
     ],
     note: "Which rooms she’s in, and what she may do in each, is set room by room.",

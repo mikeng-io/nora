@@ -5,9 +5,9 @@ import type { Dict } from "./types";
 // en.ts, sentence for sentence; `astro check` enforces the same keys.
 export const zhHant = {
   meta: {
-    title: "Nora · 群組入面最靜嗰個 AI",
+    title: "Nora · 對話以外，仲喺度",
     description:
-      "Nora 係一個 AI，住喺一班朋友嘅 Signal、WhatsApp、Discord 同 Instagram 群組入面。佢聽住、記住重要嘅嘢，有人 tag 佢就會應。",
+      "Nora 係一個 self-hosted social AI agent。由群組到語音，記憶同背景 cognition 令佢對人、計劃同未完嘅事嘅理解，延續到每次對話之外。",
     ogAlt: "Nora，一個著灰色 hoodie、戴住白色有線耳筒嘅細細 3D 角色，旁邊寫住「群組入面，最靜嗰個。」",
   },
   nav: {
@@ -43,8 +43,8 @@ export const zhHant = {
   },
   hero: {
     status: "喺群組入面",
-    title: "群組入面，最靜嗰個。",
-    lede: "Nora 係一個 AI，同一班朋友住埋一齊：佢哋嘅 Signal、WhatsApp、Discord 同 Instagram 群組。佢聽住，記住重要嘅嘢；有人 tag 佢，佢就會應。",
+    title: "對話以外，仲喺度。",
+    lede: "Nora 係一個 self-hosted social AI agent，同一班朋友分享日常對話。佢記住人同進行緊嘅計劃，重新睇有咩變咗，個房容許嘅時候亦可以主動跟進。對話停一停，理解仲會延續。",
     primary: "睇佢喺群組點應",
     secondary: "朋友登入",
     platforms: "Signal · WhatsApp · Discord · Instagram",
@@ -56,7 +56,7 @@ export const zhHant = {
   },
   chat: {
     title: "喺房入面，唔阻住你。",
-    lede: "大部分時間佢只係聽緊。Tag 佢，佢就用群組講過嘅嘢答你。問佢嘢試下。",
+    lede: "一段對話，只係佢持續理解嘅一部分。呢個例子示範回覆、回憶同之後嘅提醒，點樣接住同一個計劃。",
     disclaimer: "示範用嘅對話，啲人同訊息都係作出嚟嘅。",
     roomName: "星期六班友",
     members: "5 位成員",
@@ -124,34 +124,34 @@ export const zhHant = {
     ],
   },
   loop: {
-    title: "兩種喺度嘅方式。",
-    lede: "有人叫佢，行一條直路；冇人叫佢，行一個循環。",
+    title: "一個回合完，理解仲延續。",
+    lede: "每次有事要處理，都開一個新 agent。持久記憶、工作狀態同背景 cognition loop 將佢哋接埋。",
     tagTitle: "你叫佢嗰陣",
     tagBody:
       "一個 tag，一個回合，一個回覆，次次都係。佢會睇返最近嘅對話、呢個房而家嘅狀況、仲未搞掂嘅嘢，同埋佢對問嘢嗰個人嘅認識，然後用啱用嘅工具答你。",
     tagSteps: ["有人 tag 佢", "佢睇返個房", "佢諗，用工具", "佢回覆"],
     ambientTitle: "冇人叫佢嗰陣",
-    ambientBody: "一個喺底下一直行緊、差唔多從來唔出聲嘅循環。",
+    ambientBody: "開咗之後，cognition 會重睇記低咗嘅變化、跟住未完嘅事，亦可以安排下次再睇。",
     stages: [
-      { title: "觀察", body: "每條訊息一到就記低。呢一步冇 model 讀。" },
-      { title: "定向", body: "Notes、每個房嘅立場、佢對每個人嘅認識，喺背景保持最新。" },
-      { title: "決定", body: "兩條小心嘅問題：值唔值得講？而家係咪時候？" },
-      { title: "行動", body: "最多一條訊息，而且只限開咗呢個功能嘅房。" },
+      { title: "觀察", body: "獲准讀嘅訊息同分享咗嘅訊號會入紀錄；有設定嘅話，亦會解讀媒體。" },
+      { title: "定向", body: "Cognition 將新變化同進行緊嘅事一齊睇；較慢嘅反思維持理解同經驗。" },
+      { title: "決定", body: "Participation 檢查相關性；主動回合重睇之前嘅打算，而家仲需唔需要做。" },
+      { title: "行動", body: "佢可以講嘢、用工具，或者唔做嘢，都要跟個房嘅權限。" },
     ],
-    people: { title: "大家", body: "之後點，由大家決定。然後個循環又再開始。" },
+    people: { title: "大家", body: "大家嘅回覆同反應，會成為之後反思同學習嘅證據。" },
     closing: "唔使人叫都出聲，係每個房自己揀開嘅。預設係唔會。",
   },
   memory: {
-    title: "佢用五種速度去記。",
-    lede: "唔係一個大記憶，係五個：各有各記嘅原因，各有各放低嘅方式。",
+    title: "記憶，將每次接埋。",
+    lede: "紀錄、工作狀態同推導出嚟嘅理解，各有用途。以下係佢會延續落去嘅例子，唔係五個獨立記憶，亦唔係固定保留時間。",
     tiers: [
       { scale: "秒", title: "講過嘅說話", body: "房入面講過嘅每一句，原汁原味。其他嘢都要對返佢。" },
-      { scale: "鐘頭", title: "個房而家嘅狀況", body: "每個房而家嘅立場，每次傾完都重寫。刻意寫得短，刻意會漏。" },
+      { scale: "鐘頭", title: "個房而家嘅狀況", body: "用短短一段記住個房而家嘅立場同未完嘅工作，隨住新情況修訂。" },
       { scale: "日", title: "仲未搞掂嘅嘢", body: "計劃同未解決嘅問題，每條都寫住點先算搞掂。搞掂咗就收返。" },
-      { scale: "星期", title: "個房變成點", body: "每個房點傾偈、點玩、點拎主意。每日寫一次。" },
-      { scale: "月", title: "每個人係點", body: "佢對每個人嘅結論，由佢哋講過嘅所有嘢慢慢砌出嚟。" },
+      { scale: "星期", title: "個房變成點", body: "每個房點傾偈、點玩、點拎主意，由背景反思慢慢整理。" },
+      { scale: "月", title: "每個人係點", body: "由獲准用嘅來源，建立有證據嘅人物理解，亦可以更正。" },
     ],
-    note: "佢知道嘅嘢可以點用，同佢睇到乜嘢，係分開管嘅。",
+    note: "讀得啲乜、講得啲乜、做得啲乜，都要跟人物同個房嘅權限。",
     imageAlt: "Nora 坐喺一張細木櫈度，喺簿仔度寫嘢。",
     kept: {
       intro: "每一種下面，係佢會由上面個群組記住嘅嘢。",
@@ -177,7 +177,7 @@ export const zhHant = {
   },
   senses: {
     title: "佢喺邊，睇到啲乜。",
-    lede: "佢住喺班人本身傾偈嘅地方，淨係睇到大家自己揀俾佢睇嘅嘢。",
+    lede: "佢加入班人本身用緊嘅地方，按每個房嘅設定，用獲准嘅來源同功能。",
     rows: [
       { icon: "chat", title: "群組", body: "Signal、WhatsApp、Discord 同 Instagram。" },
       { icon: "voice", title: "語音", body: "一個 Discord 語音頻道。喺度講嘅嘢會入返個房嘅記憶，佢亦都可以播歌。" },
@@ -186,6 +186,7 @@ export const zhHant = {
       { icon: "web", title: "網上", body: "搜尋同網頁、X、LinkedIn，同埋大家傳俾佢嘅 Instagram post 同 story。" },
       { icon: "picture", title: "圖片", body: "佢睇到大家傳嘅相，亦都識出圖，包括畫自己。" },
       { icon: "everyday", title: "日常", body: "天氣、下一班巴士、路線、泊車、提醒、活動同報名。" },
+      { icon: "web", title: "佢嘅工作空間", body: "持久 sandbox，用嚟處理檔案、行 command 同有限度嘅 browser 工作。有設定嘅話，下次回合可以接住做。" },
     ],
     note: "佢喺邊啲房、喺每個房做得啲乜，係逐個房設定嘅。",
     voice: {
