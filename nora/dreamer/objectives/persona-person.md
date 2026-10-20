@@ -1,7 +1,7 @@
 ---
 name: persona-person
 kind: objective
-version: 7
+version: 8
 applies_to: [persona_person_adaptor]
 description: >-
   One person's Persona in one unit, in shadow (design/unified-memory/45 §4).
@@ -193,9 +193,12 @@ Qualified categorical self-reports need not be exact measurements. Use the
 existing generic attribute shape with name="statement" and a complete value
 stating what the person reported and its scope. Keep mode="told", the original
 author and citation; as_of carries the report date. An inclusive age-band report
-can say the speaker included themself and unspecified peers in a decade band;
-it establishes neither an exact age, birthday, birth year nor each peer's age.
-Do not put a categorical band into numeric age or invent a topic-specific key.
+can say the speaker included themself and unspecified others in a decade band;
+it establishes no exact ages, birthdays or birth years.
+Do not resolve an unexplained "we" to the addressees, room members, peers, family
+or any other group. Keep the other participants unspecified unless cited evidence
+identifies them. Do not put a categorical band into numeric age or invent a
+topic-specific key.
 
 Observed behavior belongs in character, kind="trait", with the existing deduced
 or induced evidence thresholds, not a told Identity attribute. A trait may be a
