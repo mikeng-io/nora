@@ -19,12 +19,22 @@ existing site port 3401 in the Cloudflare Tunnel, before the portal catch-all.
 
 ## Generate and review
 
-The initial wiki was written by the host coding agent using OpenWiki 0.7.2's
-begin → plan → next-page → submit-page → finish lifecycle. The host supplies
-research and prose; OpenWiki owns Claims, evidence versions and finalization.
-No separate provider key is needed for that host-driven path. Install the
-upstream Codex/Claude integration at user scope to repeat it; avoid installing
-extra project skills into Nora's agent-skill directory.
+The technical wiki was initialized locally by native OpenWiki 0.7.2 using
+`openwiki code --init --print`, through OmniRoute and Ollama Cloud's
+`deepseek-v4.1-flash:1017`, with high reasoning and one page worker. Its 29-page
+queue completed after resuming the durable local checkpoint. The generated
+prose, Claims and completion metadata are copied together without rewriting
+their recorded source revision. This replaces the initial seven-page seed.
+
+The wiki root is a Starlight splash page with existing Mini Nora art and
+curated reading paths. It renders directly at `/wiki/`, retaining the built-in
+search and theme controls; quickstart remains the technical routing guide.
+
+The reader discovers pages from the generated topic directories. Previous
+seed-page URLs redirect to their technical replacements. Repository source
+references remain readable labels; source files are private and are not public
+routes. The same adaptation applies to the exported graph. Build rejects an
+active or incomplete native run before rendering.
 
 For native generation, set the provider environment and run
 `npm run wiki:update --prefix docs-site`. Always use `openwiki/INSTRUCTIONS.md`

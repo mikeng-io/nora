@@ -8,7 +8,7 @@
   "scripts": {
     "postinstall": "node scripts/patch-openwiki.mjs",
     "dev": "astro dev",
-    "build": "npm test && astro build && npm run graph && node scripts/check-links.mjs",
+    "build": "node scripts/check-completion.mjs && npm test && astro build && npm run graph && node scripts/check-links.mjs",
     "preview": "astro preview",
     "graph": "cd .. && openwiki visualize openwiki --export docs-site/dist/graph && node docs-site/scripts/graph-directories.mjs",
     "wiki:update": "cd .. && openwiki code --update --print",

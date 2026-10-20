@@ -1,0 +1,446 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:11f5f475cbf6b70169978ae61cd68f735f8ea7403f44e5139c174dc1ed3454ad",
+  "claims": [
+    {
+      "id": "claim_4f2d7dd81b4d48e09a70a696e4592a0c",
+      "statement": "A tag turn's prompt has a fixed five-part shape: the system prompt is the audience's `Doctrine.text`, followed by a `<context_header>` user message, then one user message led by the clock line and every assembled block in `order`, then the assistant `CLOSING_LINE`, and finally `build_tag_message`'s output handed to the agent as the invocation prompt.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/prefill.py#L1083-L1097",
+          "version": "repo-lines-v1:sha256:d1c35f930d37126bafc0fb3215c6508dfc7371eb1c0b924645fd7335e4df0e02:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg2YWExYTcxOGE1YmZmNjkyNzJmZjQ5NGRlYWQwNTQxMzFkZGYxNGJjMDExODgzNTcxMzYxODljOGQyNDk2NjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhYWU4YTBjYTc2Zjk4ZjdiN2RjNzk4NDk1MWQ2M2U1N2RiM2M2NDU1NzljYTUxYmFkNmE1MzlkNjE0ZWRiYmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQyNzIxZjU4YTc0NTU1NmM3YzA2NmI3M2Y5MDliMWMxODI4MjhmODBmZDYwM2JhYmEzZjFiNTY1MjQ2NzgyNTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU0YTg2NDE4ZDdjNjk3ZjBhNTM3MzQ4YmQ3Y2Q0MzNiNjBkZGU0OGQyZmRlZjg4OWM3YTVjNzNiZjExNzViYzgifQ"
+        },
+        {
+          "resource": "repo://nora/agent/prefill.py#L971-L997",
+          "version": "repo-lines-v1:sha256:0cc09d7961e0b37feadead82ca9d8b036b3323f4a4d83bde07a5e7880a838643:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiYWZhYmMzMjQ0NzEwOGUyNjA2YzM5NzA5YzdlZDU1NDU3MzYzNjc0MWEzMzU0MmU1NmZhOGZjYzg2NTFjNjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU4Nzk2ZWZlYjY1YWFmYTViZmJmYWU0ODNhNzcyM2JmMDMzM2M2Mzc1NGJmMzkyZmVmMDdlYjJjM2UwYmJiZTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlkMmE3ZjNjYWJlODJhZWVhOTk1NzM1MzA3ZjU3MDRlMTU2MTU1MmIzMDEyZTJkMzJhZjI2MWY2MzI5OTllMWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNmYTJmNTFiMTZkZmQ4YWEwNTk3MmVhZTRiNmRkZDM0YTk5NDI5M2MyNjdiOTlkYmQ1MDM2Y2IwMTE0MWQxNGYifQ"
+        },
+        {
+          "resource": "repo://nora/app/agent_runner.py#L167-L173",
+          "version": "repo-lines-v1:sha256:eb9f2582459615185a5d89a8183101943e0dcedfa5894965d1af714c76bf8721:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNmYzNGNmZGFjYTRlZjcyYWU5Njk4ZWQ0OWYxZjIwOWNiODA1N2I4ZTZkMzc5MDc0ZGM0NGIyOGQ3ZTg0MmJhNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzQyYzhlZWMwZDA5YTFmMzk5MTA5MzkyNTVjMWY3ZWFiNmZlZGRmMmVkMTkwYmJhY2RhY2Y2YzQ3ZGE5YTQ2YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjgzN2RiMGIwZWRkNTE1ZTQ4NjFhNWJjOTI2MmNkNTcwOGRlOTBjZWMwNDBjYzk1N2NlMjM2ODg0MjE5MDJmYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzFjYjExNmQwMTBhYjE1YzNkNDhiZGVhZjUwOGE0YzZlNzgyZTlkNjFiN2MyYTg4MWRhNWQ0YmZhMWY1Mzg0NiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_c01db5da24264482b30837287543f935",
+      "statement": "`BlockKey` records what a block's content varies by (`global`/`unit`/`room`/`person`/`turn`) and therefore, structurally, how many distinct prompt prefixes the block creates: a value keyed narrower than `global` cannot sit in a byte-identical head, so every row is served in the per-turn message, the field defaults to `turn` as the safe end, and `test_no_block_in_this_table_belongs_in_the_cached_head` asserts no built block is keyed `global`. The asymmetry is why the declaration matters: a block wrongly declared `turn` costs only the prefix it never had, while one wrongly declared `global` ends the prefix match in every room where its value differs, whatever its rewrite interval.",
+      "evidence": [
+        {
+          "resource": "repo://docs/adr/0012-one-renderer-for-every-context-block.md#L99-L103",
+          "version": "repo-lines-v1:sha256:01e0979c0711139f0267dc8ebdc2e1f613c1a9d35e6c860e5ac151bedc1d3a65:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiN2ZlYzgzZmQzMjBmYTVlMjJlYWMzOGU1YmJkYmJjMjVhNDg1NWEzNzcyZDMyNWE5MTgzZmM4Zjc4ZDczYjljNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTJlOWZmZDE2ZGY5OGRlYWVhMjU3YTFkMDEwYzZkMWI0YWQwNDgwNzYzYTQ1MWEwMTRmMzFjMTk2OWY0YTNhNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODJkMWRkNjM0OTRmNzM4ZDhiNTVjM2YxNTJiM2NmNGI5ZTA3ZTFkODFkOWFmZDNkNjk0ZWZmNWRkNzlhNDcyNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTZkMWU4Y2Q2MjEwOWE4ZTM0ZTY0YTgwOWJiOTVjNTExYmQwMGFjYWFmMmMwMjAzNjlmODViNTUwZjZiMzE3NiJ9"
+        },
+        {
+          "resource": "repo://nora/agent/prefill.py#L107-L124",
+          "version": "repo-lines-v1:sha256:78cae5ddd0f1fcbe1b03a37bd9f2abd20b107b6c3a4165191546ef4410e10e3d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFhOTJkMzlmMTE3YTRmM2M4OTk2NDQ4ODZhOTkxMDExZTFkMDliZWFjMmFmMWI3Nzg3OGNhZmRmZmYwYzRmNGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAwYTg2MmJhNTQxMDNmZjViMTgzYmZlYzU0YThkZmUwMWI0ZDNmYWNkY2UxMDNlNzJmMDhlYmQwNWMzNjY0YWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZhM2NmNTE5MjM1NGY3MTYxNWFjNTEwMzRiM2U5N2MyMGVkYTk5NjQzZmNhZjViYmU2ZDQxYWQ1OWJkMTIxNjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNlYTJlOGQzYzkwNmRhYzI1ZDRkOGJhZWQ3Njc1NTY2ZTNhNDUzYWUwM2I3MGU3NjVkZWQ0MmQwN2M5NGM4MDgifQ"
+        },
+        {
+          "resource": "repo://nora/domain/blocks.py#L48-L67",
+          "version": "repo-lines-v1:sha256:1d58a03d6afb0ba45e7bd315af46f0280735813f96564e486f0ee9f189303aef:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhZDU2ZjJmYjQ3ZjBhN2M0NGQ0NWM2YWUwODM5NDUyYjYzMWE1YTNjYzk2ZjI4MTg2MDNhNWYyMjVkOTUyNjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlmOTA0NGRlM2JlMGIyNTNjMTE3NGFiZjEwZDgxNjVkZjQ4YjU0OGE2ZDgyMDcwMTBkYmE5YjdjN2RmYjU4NjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE2Njg3MDY3NjhmZTI5MDEwOGMyY2MyZDQyMjI2Y2M5NjMxODgxYTQyZDkzNDk3NjU0MjNlMzQ4MDYxYjQ2NzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZhNmJmN2U2ZDc3MjYyOGZhYTA0ZTdhODYwNDBlZjIzYTE3ZGMyNDhlMDE1YTliMjA4YzhhMjQ4MWEyZTM4NDQifQ"
+        },
+        {
+          "resource": "repo://tests/test_prefill.py#L889-L910",
+          "version": "repo-lines-v1:sha256:2d5c3ea15f6700561843ba2ca8d1304865ec9027352dd2aa9bc2ccf7281c4ae0:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlN2ExOTBiZWQ1ODI0ZDBhMGM5MDE2MDg5OGE5ZGQ5MzkwZjRhZDUwYjAwYzQ4YWFhNGJjN2M0ODE2ODQ0MzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZhM2NmNTE5MjM1NGY3MTYxNWFjNTEwMzRiM2U5N2MyMGVkYTk5NjQzZmNhZjViYmU2ZDQxYWQ1OWJkMTIxNjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRmNWIwOGE1YjUxMTEwZGI1YzBjMmE5MGNlOGQwMDE0ZjllZmViYzAwM2QyODBmNDE0NjM0MGQxM2I0NTdmYjEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4e0afc36ac3f436980ee497b0d938a21",
+      "statement": "`nora/agent/prefill.py`'s `_BLOCKS` declares the tag path's blocks once as name/order/scope-key rows; `_ROW` derives the lookup and `_block` fills a block's `order` and `key` from the table, so a block cannot be served without a row and a table row cannot be served without a renderer.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/prefill.py#L107-L141",
+          "version": "repo-lines-v1:sha256:11d6aad24756226f9bd5fd5ef390f236ddf1aa7e170f5bb4b5a8ad5dc839e9cf:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFhOTJkMzlmMTE3YTRmM2M4OTk2NDQ4ODZhOTkxMDExZTFkMDliZWFjMmFmMWI3Nzg3OGNhZmRmZmYwYzRmNGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc2Y2Q3NTQyZmM0MmIwMjQzNTMwYzJjYzllMDgzZmQ1ZjEzZGVmOGE3M2E5ZDQ3MjMxNjMzMzc3MTdjOTcwZGUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZhM2NmNTE5MjM1NGY3MTYxNWFjNTEwMzRiM2U5N2MyMGVkYTk5NjQzZmNhZjViYmU2ZDQxYWQ1OWJkMTIxNjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVkMTIzY2U4YmM4M2RlMzE2M2VmYTI0ODRhMmQzZTY0N2YxZjUxM2JlZmRmYjA4MjcxNjg5YzM2OGEyYjlhMGEifQ"
+        },
+        {
+          "resource": "repo://nora/agent/prefill.py#L230-L256",
+          "version": "repo-lines-v1:sha256:53e99841a20bebce6fd8b77f11736db58f34b53f1f72f8c21141d793409293a3:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkzZjczMTM2MjhlYzJjZGI2ZTg5NzllMjQ4YzNhYzA4MGVkNzc4MjAxNjNjYjMwYjczODUzNWQ2YTBiMjZkODMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE5OGIwNjNkOWI0N2U2NTM3OTYyNTU3MmNjZTE5NzY2OWQ1NzY3ZTEyYzE4YmUwNzU2NTJiOGNkOTgxY2U4ZDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImViOWEzZTUyMmE1MDQ1NDRjMDYyMzk4ZmQ3ZTcxMzYyMTYwNWY1ZmQ2MmEwMTEwODBkYTE2ZTZkNTE1NTcyZWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c2f69a0bc6f14eabae512e01a1d69ef0",
+      "statement": "`restamp` stamps a block built in another package with this prompt's `order` and `key` and nothing else, raising `KeyError` for a name the caller never declared, so the block's identity, content and description stay owned by its own module while its placement stays owned by the prompt.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/prefill.py#L259-L274",
+          "version": "repo-lines-v1:sha256:695b8deda1191ec1c369a473e590b856c27d61ad1a36615191aefa04fc49f5d0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3MGMwNGI0NjVjYzJmZmUxNTgyNDhlMTJlOTc1ODc1YmFiYmJlZmUxNDliNTI0OGNkNjViOGZjNTc3NGM2ZmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFhYTdjODNjMGMyYmM1NTg0NmY3MzVjNTFkM2JjMzVjN2Y4MGVjNWU5YTU3Y2Q2YzMzODFiODMyOWRjNWE5MTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUyYjZiY2ZkNTBiZGI2NTYyYmE2ZjhjYzlmYjc1YmNkOWIwOWE5NDYyOWNlM2MwYzZiMmYxZmI0MmM1NmRjNTcifQ"
+        },
+        {
+          "resource": "repo://nora/domain/blocks.py#L394-L412",
+          "version": "repo-lines-v1:sha256:85ce4c781877dbe3dcb4a7e1c6ab9aa87831c56e916c8840e696675551ec2fb2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgwNTViNDlmNmRmYWFmODUwYzJmMzNhZDMwMzZlZWQ4ZDAyMGMxMmJiZmMxMTQ4YWIwMmUyMmNhNzNjYTUzZmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMDdkZGMyMGEwN2VkZTRhMWViZDk0ZWY0YTdjNDhmMTIyMDhmZWNhZGUyNmYwMzA1MGZjNmRiZGY4MDhmYzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3ZDVkZGJkYjJjNDk2YmUzZGMxZTcxMmVjMWI4YWQxYWIyYTcwOGY4OGYwZWMxYWI0NWNmZDgwYTJkM2M1YjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdlZDk1ZDc5NDI2NTBiMzE3MDIxNjFkZjFkN2JjNTUxMmNiOGE3ZDRlNDJhNDQ4MGNlMDA3ZDQwMjkxNWM5NzcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_678cbe1b620c4195b563da0c71115dd5",
+      "statement": "`_declared` emits an empty stub for every declared block that rendered nothing, so the `agent.prefill` span reports `blocks_declared`, `blocks_rendered`, `blocks_empty` and `size_chars` and a silently failing read is distinguishable from a genuinely empty one.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/prefill.py#L1057-L1082",
+          "version": "repo-lines-v1:sha256:c2d01afe5519ecd015ba5aaa10e3b309308591169a87915934df7588abc092ed:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI2ZmZkYmM2OTFkNzQzYTAzY2I5NjkwODU0ODNiZmJmNTIyZDBjYTFkNjY0OTBhNjU1NDcxMWI5NGMzYzhiYjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5YjE5ODJlOGRkNzQ4MTE4MTQ2YjM5YTJkMDA2MmY0MDgxZTM0Nzc5Yjg2NzVjMjM0YzRmYjEyNGRjMzkzOTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZiOTUzZmM5NzVlMDg4MGQwMzNjOTdkMzRjZGU5Y2JhZWE3NzBkNjU3MGVkYzYzOThiOTI3YzUxZDhmODAzZGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzOTQzMDNjNGUwODRjMWFlNGVjMzZlNThjYzcyZjkzMTU4NzBlYzM2YWM4NjAyOTZmZTE0NWQ3MjRlMTlhNTgifQ"
+        },
+        {
+          "resource": "repo://nora/agent/prefill.py#L277-L303",
+          "version": "repo-lines-v1:sha256:795f4fe66b456c4c9250d60b2452f3f13cdd00460277445dd40e75b3f4d7d786:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyZTcwMzE4MDczMGQ3YTI1MjI3OWQwYmYwOWU4NzQ1NzFhNzc5MWE2MzVmOTdlYmE0YWQ5ZDlhZWFlMGMxZGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU0NTI2YWZkNzhlMmJiZGM0N2QwODZmNjliOTdhZjYwZTQ5MjAzZDNjNDlhMTAwMDNmNTQxNzEyODlmOTYxZTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdkNzliZWNkYzI0Yzg2NDBlMWY5NTVlODRjMmE4NjhhMTRlOThlMDg1YjBiYTNmNjUxNDQxZGM1ZmZlNGRkZmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg0ZjRhZWZhZDE2NjQ4OWE2ZGMwNjJiZGM0MzI3YWMwYjVjODQ5NWYwMzRjYWE1MTcwYjEyMTJlZWY4ZGY1MjcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6af23f99d68b407a973fc5eeffdd2850",
+      "statement": "`assemble` treats block order as data, sorting by `order`, and drops any block whose body is empty unless the block opts out through `when_empty`; with no separator each block is followed by one newline, and with a separator the blocks are joined so nothing trails the last one.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/blocks.py#L352-L383",
+          "version": "repo-lines-v1:sha256:275a2909d6c76792f27c75d06eb21725c64790fff2f2c23475413119fe41a1f8:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0ZWQwNDE2YTY4Yjc5Mjc0MjEzNzZjN2JmYjRlNTE1ZTA5ZmZhODA5MTU0YzE1N2M4YzE3ZTIyOGU4Y2JjNDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI4MmY3ZDgxOTFjMWE2YjYxMTc1ODE4YTQ5MTAyZjZlMzllODkwYzc5YTEyYjBjMTgyYmVhNjY4MGM4MzhkZTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc5MGU3OWJiMzdhM2E2ZjlkYzU5NTY3OTdjMmRkNjNhMjdjNWNjOWJhNTM1MjU0NWUwYjgwZWU5MjgxYTU5YzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc5MTMwOWQ3MjI5ZmEyZTMzMDc2N2FhOTk4ZWUxNTBjZTkyMmM5NDNhMDRmZmJjYWYxNGFjYWYxZGE4ZWJkMjcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_23c9b3354072437b80dea1c7adc7ead3",
+      "statement": "Every block type is declared once in `BLOCK_TYPES` as `BlockType(name, description, annotations)`, and `ContextBlock.description`/`annotation` are read-only properties looked up by name, so a renderer selects a description instead of composing one and an unknown name raises at construction rather than at render, where `assemble` would have dropped an empty body first.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/block_types.py#L32-L51",
+          "version": "repo-lines-v1:sha256:069f47166e149b78e9b5cb5c4f62898d3fb69becb2cf925b4c335e403216f4a7:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc3YWNjNTQyYmM2MjM1NWVmZmJiZGI1YTdhOGMyYzY0ZjNjMWFiMDk3ZGViZDY4MWNiMjY0MWVkYTc5MDE3NTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVmODg0ZmIyOGY3YmVjYzEyYTZkYWFjYWQ4OWRjZjkwMzY2NTg0NDBjNzFiMDZlNjMyNWQyYTNiYzY0YWRkM2IifQ"
+        },
+        {
+          "resource": "repo://nora/domain/blocks.py#L253-L294",
+          "version": "repo-lines-v1:sha256:5991421dafebfe16f61ba56c3f2086452f185ecc5210c9e373cd82f5bfea6093:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzZDAwY2YyNzA5NjRkNDRhMTNkZmFjODc1MmIwOWZjYzQzNWIwZjE5YjMxNmFiY2Y4MWE3YWE2NGJiMTIyZDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3MDQ4YjMwMGYzMTVjN2RlY2FlNGNjZmYwZWMxYzA3MzVhMTRmOGZiZWExMWNmNWUzMTlmODhmMzkxNmU0MTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlhZjBkZGNiNjFlYTRmZWY2MDAxZTdhNzE2MzVkYzkxYWE4NzQ0YTRhMGUwOWJhZTk0N2JjNDhiYjVhNzk2OGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYwOTA0ZmMxNWVmYTlmNjg3YmIyMjIxZTlhMGY0MjZjNTg1YmY4Y2ZlMmIyNDhmMGVhOTA5MDVlZjNlMjY2YjcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ae1dfafd161b43879937a27c50ad4574",
+      "statement": "`ContextBlock.__post_init__` refuses `description`/`fields` in `attrs` and refuses attribute names outside `[A-Za-z_][\\w.-]*`, because `render()` writes caller attributes before the derived pair and writes keys raw — otherwise a caller could emit a second `description=` on one element that most readers would take as the block's own.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/blocks.py#L154-L180",
+          "version": "repo-lines-v1:sha256:5a1038c7eafaf9891f1495be37cd3b6c93eaff727008d9c838c2316377d2f457:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxYzNhY2MxYTEzNjlmN2Y3NGE5ZWM4NGVkMThhNDljYjUzMjY4ZGU2NDcwNzM3NTg4ZjNkNTY3NWEwZjBmOTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYyYzJiMmVmZjg2OWY5ODQwYTcxNDBhN2I3M2ViOWZkMjQ5OGRlZDA2MjYxOWY2YzkwYjFjZjJkNTQwYWY0MzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ5NTIzZmMwYzJkYmRiOGI4OTRhMTRjOWM2MmMxMDllMTg4NmE0MDVmMDYyZDdlMTBjNzM1NzU3NzI1YThiYzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        },
+        {
+          "resource": "repo://nora/domain/blocks.py#L217-L249",
+          "version": "repo-lines-v1:sha256:88b31f8d35619927b15764b281933c79580ea7aa3f44ca4621428ef297825968:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJmZTQ3NzMwMTdjZTIzMzI5YmVmZmFjY2NmMGY5ZGFjZWE1NmE2YmYwNmYxNmIyNzdmNGJkZjE1NzNiOGMxYjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxMDM0ODFjNTdkMGYwZGMwZjc2Y2QyY2M4YjM2MDRjNGU4Mjk2ZGE0MTIyYWRkMTllODE3NDVkYzdlMzMxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQyOTVhZjU1MGNmZDJiYjdmMDBiYjY0NjkzMjcyMjVjNWI4YWM0NzkwNWE3ZmU2OTEzZjA4YzhjMTc1NmVhMTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlhZjBkZGNiNjFlYTRmZWY2MDAxZTdhNzE2MzVkYzkxYWE4NzQ0YTRhMGUwOWJhZTk0N2JjNDhiYjVhNzk2OGIifQ"
+        },
+        {
+          "resource": "repo://nora/domain/blocks.py#L296-L326",
+          "version": "repo-lines-v1:sha256:38451045ab2bbbba81cf8acff862b94642a59c6f427c2637dcbe835c21f34586:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA1N2M0NGZjM2U1NTg3ZTljMzMyOGI2OTczNjcxYTAwOTY5OWJjYjU1ZDIwZGNkMTcyMDQzYzY1MDliMTRmMWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1MGJhZGNiYTYyZTc4ZGYyNzhjZjRhYjY3ZWZmNjExZDZjZDI5YzJkMWE2NmQ3NGY3ZGE5ZjM5YjgxNzkyZTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlkYmU5NDZiNjU1OWVlNGFlOWM1NTQ2NDlkZTY3YjIyZTk5N2U1ZWZjNDI4NDg5N2QzMGM2MGM1MjQzZDJhZmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJlZGIzOTZlYTAxZjUwMzI5NTRjYzk2ZDBhMmUxZWI4Njk2MmQwYzBlYzM5NzliYTk0YTIxZDViMzYwY2NlNzIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_14f59aae831b49b3a350d84512624c7a",
+      "statement": "There is no block catalogue and no `untrusted` marker: what a block is and what its fields mean travel in the block's own opening tag as `description=` and `fields=`, and a type-level annotation may not name a tool because the relevance gate renders the same type and holds no tools.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/block_types.py#L10-L24",
+          "version": "repo-lines-v1:sha256:319813ee57f4106e11c47bfbdb8795bc3f72f6ccaf916eab1c2166e9a9f54864:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyYjQ3YzUxNDI2YzUwN2YzNTRlN2JiNTVkMzNhMWJlMWI0N2Q2ZjZhNzM3MzQ5YWVkMjZjNGI0ZDEwOTZmNzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4ZWI3NjQ5ZjQ3YTUwMjk4NWUxZGIwZjE0NjhhYzhlMzMzYzc1MGU0MDg1YjU5MmM5MTA4NTA4YTFmMzdkOGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEwMWFkNWUwNGNhY2JiNWFkZGNhZTg0YmY4NjZhMTQ5YjVmYmFjOWFiZjE4ODFiYjMwYzJjOWE4OTdlMTg3ZmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhYWY3NjM3Y2I2ZTdlNWRiODVkNjM0Mjc0NjAxNGRmMDQxY2NkNTU4YTkyMGIyOWViNmFjNzE5ZDdiYWY1YzIifQ"
+        },
+        {
+          "resource": "repo://nora/domain/block_types.py#L93-L124",
+          "version": "repo-lines-v1:sha256:1a0a1238368ddae5c2513cd4e570e51d99e5c7f394afb6c338b5f952ae862861:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYzZjY1MjczYjY1MDUyY2U3YjFlYTQyZmM3YTU4ODA4Y2ZjYmZlNjAwMDAwNTE3NzAyMzYyYjkxZGMxNzMyN2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRhMWRkNTc4ZDhjNTAwZmVjYjkyNGEyZGIyN2U4ODk4MjI2MTI3YTMyOTc2YzIwN2VjYjMxYjlmNWNmZTg3ZjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3Y2U2Njg1OTJkYjM1ZmZjNWE1NWEzZDYzOGQ3YzNlOTU4ZTk0MTczMDY5OGRmYTU1YjRiZjc3ZjIwMDFmMTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZhNGZmNDg4OTdjNTI2MTdiMjFkOWMxMGJiMjlkYjZiOTY1MjQyZTNhMDRlOTVmYzMyZWNiZjljMzk5NzViMzQifQ"
+        },
+        {
+          "resource": "repo://nora/domain/blocks.py#L415-L418",
+          "version": "repo-lines-v1:sha256:0e31a133ddb3f5ec7b845dd02a8df38b8ed102030a000c4d0f322551d9805495:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTFlNTkzOTViZmMwODg5ZTZiNjNlZTA1MGQ2MjcyMWFjOTBlZGMwMDUzMGRjMWFkMWZjNWVhZTRkYTBlNDUyOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGJmMTVhNWQxZGQ1YTRlMWYyMDE4MTgwNDI4NjgxYWJiNGNlOGVmMGViYjZhZGU5NzU0NDgxZTk0YTZlMjdjZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOWNiNmNiNTBiYjU5YzA5YTM4NTY2NjRkYmM3NDUwNzJkNjljNTNmZTc4Y2YxNzRlMzMyZGNiOTJhNDZjMjU2MCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWU3ZWRjMWQxYzAyZDJjMzNjNGI3NzY3MjczNWExYzJmNWQwZjBhY2VmMjNjMzZmZGIwZWJkNGI5NzExYjQ4ZSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_359db5087a8049bdbcc810fa52d6e17c",
+      "statement": "Escaping is unconditional in the shared renderers: `escape` closes the tag boundary, `escape_attr` also closes the quoted attribute, `one_line` closes the line boundary, and none is a switchable `RowStyle` field — `render_messages` instead puts each record in its own element so a body keeps its line breaks while a forged closing tag is unwritable.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/blocks.py#L10-L19",
+          "version": "repo-lines-v1:sha256:6b7d28c367be456a92014f0cf6d021b1fe7b226abf6c712b907e61308e84a111:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJmNzkwNmUzMWEyYTY0MGVjYTRkN2Y1MzliN2JkYzk3ODJiMDQ5M2ZkMDE1NDRkYWEwMWVhMDJlZWQ4MjIwZWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU1NzdiMDI3MjU3YTFkZGM2NTRhN2Q3MTQ5NTIyMWEzYzNlYzEwMzQ4YTEzN2M2YzYxODgzNTNhMDI3NjNlY2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFmMDMzNGZkMzUxNDMwMTE3NjdiZTU2YjcwMTRkNDg3ZWIzNDRjZDU4MDhjM2E3ZDQ2N2U4MTUyMGViYzcwYzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdmYzRlMjhiMzM0YjVmZTM4ODQzNGVkZmM2NzkwOGYwYzBjZjU4ZThlN2Y4YjY1MmVhNGQ5NWUwZTQxZWE1MzkifQ"
+        },
+        {
+          "resource": "repo://nora/domain/blocks.py#L701-L774",
+          "version": "repo-lines-v1:sha256:4fed84e28d71bbc201efafcdd3dc61f082e67d5022e8faf770bf98b7878b10de:eyJzZWxlY3RlZExpbmVDb3VudCI6NzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2MjgyY2EzMjgxYjllMTQwNTE0MDc2NTQxNzA3Y2ZjZGYxZWQxNjEzYWIxODQ0ZjY4YjY2OWU5NWI5YzUwNDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIyYWU2OTM1YThmNjA0ODMxNDE3M2I1ZjI2YjRhZWQyYTQ2N2Y4NmFiZjlkYzlmZmQzYTM2NGFmYmMzNDUzNjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJhMTkwYmQzYWFmNzlkM2JmMmEyNTI1NzkzMDVlMDlmYWQzZGE3MzQ5MjU4YzhhZjFiMzE4MTY2YTQ2ZGRkYWMifQ"
+        },
+        {
+          "resource": "repo://nora/domain/prompt.py#L55-L70",
+          "version": "repo-lines-v1:sha256:e418614be70b6cffa72746f1e7c425f052f3df922343bc4ff3801e4e860beae7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc5MzEyYTFjOTM2Y2QwOWQxMDcwNTdhY2MxMjFhMWU5ZTUxNzA1YTUwNDA3YzZhZWEwNTM5N2Y5YWIwMmUyYTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk1MzRjYWMyZTdkNWUzZDY3MDQ2ZWQxYWE3NjE1YzE0MTQ3MjY2YzdmNTNhODI1M2UxMmYxNmE1NmY2N2FhYmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA5ZjkzMDgzYzE5NzEyMWI5ODI3MDBiYThhZmFiZDE3MjJjZjFkM2U3NDA0NTA5ZTgwZWZhMjcyNDdmNjJmMDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYzNDg1OWQ0OTk4ZGI0N2M0NjM0YzgyNWZlZTA0YmRhZDQ4ZjFjNGRhNzk0YzY0YTdmZDVhNjQ4MGFkNmJhNzIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5b2724e2138f4119ac33a7444fb86c70",
+      "statement": "Authored text around the blocks (situation paragraphs, fire headers, the clock line, the closing line, the summons' head) lives in `nora/domain/framing.py` as one frozen dataclass builder per piece, where every person- or store-controlled value enters through `_put` marked `escaped`, `carried`, `joined` or `system`, and `_put` is the only function there that calls `escape`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/framing.py#L1-L37",
+          "version": "repo-lines-v1:sha256:2650a38d1b58ad34e79e54f85cfd214d980b7dee81dba090a78e1abd8edf8e11:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIwZTYzN2I5ODNmNWUxNDhkMDJmNzRlOGFjODBiZWYzNzkzZTFiZmJiMWZhNmMyM2M0NzZmMDIyNzY1N2M4MzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyYmM5NGIyZmVkZDFiMWE2NzU5MzQ5OGMxOWI4N2JiMWMyODIxYTRlODRiZWIyNzViNzdhYjg0ZTE3Yjc0MmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhYWY3NjM3Y2I2ZTdlNWRiODVkNjM0Mjc0NjAxNGRmMDQxY2NkNTU4YTkyMGIyOWViNmFjNzE5ZDdiYWY1YzIifQ"
+        },
+        {
+          "resource": "repo://nora/domain/framing.py#L56-L68",
+          "version": "repo-lines-v1:sha256:9144a68aaa8b7bdeb9a167e3bcf87a54911c2a5112441c77a1f1f798340302ab:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJkOGMxN2VlZTcxOGFhNzYyZWQxZDM5ZGQ5NTNiYjZjNmEwNGM2YTkzMDI2NjY1NDNkMTMxNTdjMDdhYjQ3ZDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU5NWQ4NmQxYTE0MjIxNjk3OTE3MmRjODAyYjIxNWVlMjk0NWQ3ZjNhMzkxZDMwYjE3ODI0ZmQwNWE1MmE0ZjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ5YjEzOWJlMmZkYmUyYTk2NjAyMzYwMDdlOGU1NmVlYmI3YmY5ZWRjMTE3NzdmNWI5NGE5YWEwN2I5MDYwNTQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_20462b8f342e4ae9b2571c887db7038d",
+      "statement": "Doctrine `kind` splits authored files (`constraint`, `identity`, `conduct`, `instrument`) from the single derived kind (`situation`); a file claiming `situation` is refused, and the same `kind` both gates the file during the scan and is rendered into `<section kind=...>` so the label the model reads is the rule that was enforced.",
+      "evidence": [
+        {
+          "resource": "repo://nora/doctrine/loader.py#L1-L26",
+          "version": "repo-lines-v1:sha256:ed38bccd5c46bb8f611365f939124e805232c5fd66e080adfadaab5d880e41cb:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAyNDU1MTZmOTc0NmExMTMxODdhMjYyOTc0ODY1ZGNjZTg2MmY5NzJkNTU0OGQ2M2IzODU2MTQxMjgxMDBlNzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/doctrine/loader.py#L325-L344",
+          "version": "repo-lines-v1:sha256:33dac2e6a03293919bb7060d3fe7a5271e9073f84bc4ff16c14f4d1e0d6d3bab:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgwZTJkM2I4MTc5ODQ1OWViODUxMGNlNDNiM2M3MmRiMzAzY2E2NGY5YzQ1ZjUyMTVmYmJkNjA4MTFlMGZkYjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRjMTcwYWZhMzg2ZTJiNzg5ZDExNzQwYzUyNTlmMjQwMzAwZDg3ZTkzNWYwOWZkMDUyZjIzNGRkNjRiY2Y2YTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRlZjUwNmZhNjJhMzU0ZDZiMzJhNGFkNWZmNTJjY2U3OTI4NGU0Mjc1Zjg3Mjk3ZGMxY2JkYzcwMDY5ZjhmYzYifQ"
+        },
+        {
+          "resource": "repo://nora/doctrine/loader.py#L55-L74",
+          "version": "repo-lines-v1:sha256:1128968ee295594dee70a705652253478d861cdeb12e366b610204edb2af2b0a:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ0NTJmY2JhMGI4OTYwMDJhZGI4ZjQ0Mjg5MzA2MzcwMTVlYjA5YjAyYjQwYTViMDNkMTBkNDU0ODI5Y2U5ZTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM4YmRkOWJjMWM2MmI3ZGJlMjdmOTIwN2M4ZDA5NzM2YmY4OTM3ODA2YWE0ZTIyMDI4NjY3NmE4MGI4NTRjNjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg0OWFmZmMyOTA5ZTVkYmIwZWRjZDA4NzBmMTIwOWUxYjM0MmM0ZGYwYzYyMDNhMmY4NTUzN2ZhMDNkMjNiZTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU3MTY1NWVkNTMzY2I3ODdiYTExZThjOGJhYjFlZDA3YzFlYjVjYzc1YjAxZDE3OWMxMzY5NzdmNjkzMWY2MGIifQ"
+        },
+        {
+          "resource": "repo://nora/doctrine/loader.py#L804-L816",
+          "version": "repo-lines-v1:sha256:92e73ce66d530620d5db6edb23b8f4ea665daebb0063f864ae210ddf9d6c9b3b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg5YjQxZjgxNzk4NGE2MzFhMWEzY2M0M2Q0OTU4ZDlmZWVkM2JhOGRlMmI4MDE5N2FmZGM5Njg1YjdjMmY4ZTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0ZWUwZGQ5MGMxMGMxNTY5ZGQyYWIyNWQ0NWRmYmI2MTQ2ZmM4M2FlNDYzYWM2YWM2ZDBlMDUxZmQwZGEyOTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFmMDVhYTlkYWUzMWJhZmQ3NDc2ZTFlMzRlOTVkZWY5NDFlZTEzYWZkMGVhYzcyMjdjOWY2MDk2NmYwNTllMmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRkMDE0ZDg4ZDFjMmNmY2ViMDFmZmM1N2MyZmVmZWVjYWI5NWY3MTdmNTQzZmNlOWQ3NmE3MTZhMmY3ODQ2ZWEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ecd8ece7a9244abd9a8e96d8e9dd9a44",
+      "statement": "`applies_to` is a closed vocabulary of the nine consuming audiences plus `always`, and an unknown name is refused at parse, because `get()` filters sections by string membership and a typo would silently remove a file from every prompt while the reload-failure counter stayed flat.",
+      "evidence": [
+        {
+          "resource": "repo://nora/doctrine/loader.py#L269-L289",
+          "version": "repo-lines-v1:sha256:41814a2ead51d2b5eb9a4b545acb49ea4ac59e863d2aa54c6a830e9184770809:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU4ZmRmMTM1NzUyNDAzMTRhZTE0ZmJmNzhjMDlmNWFhMWU3ZTc0Mzk0ODljYzBkY2Q4Zjc3ZGRmYzFmZjk3YmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5Yjg3NTY2ODEwZmU3YTA1ODA4YmRkNDc1Y2RhNDNkNzcyZWMxYzU3YjE2MWEyNmRhYmY1Zjk5YmI5ZWVlNWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZhODgwZGVlYzAwNTllODMyOWMzNjk0YzVlNDk4OWZlMjU5YTljMmFkNGIxMzQ1Y2Q3MDM5YTU5ZDczZjY1MWEifQ"
+        },
+        {
+          "resource": "repo://nora/doctrine/loader.py#L80-L103",
+          "version": "repo-lines-v1:sha256:2009e6d150627ee92b005cd752e1a1625ec762446abdf548edeea96a18c4184a:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1Yzc5ZGQ1MTE2YTgzZGRmZmJiNzgxNDMyMjdiODMxMGM0NTRhYjIwZWI2YjVmYjA2MzA2ZWZmN2I2NzM4NzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhZmJhMDUyN2MzOTUzYzRiNmUwZTViNTczOWJhODM2MTJmODA1M2JjZGM5NDY2NzMwMTkzY2QxZDU5MGI0MDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAyMWZiYzRlZDEzY2ExMzFiOTg1MDQ3Yzk0MDBiN2U5ZWMzYjIxYjVlNjFhY2RlNWRlMDBkZjQzNTEzMTg2NTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMwYmNjNjQyZTMxYWFjMjMyNWI4NDM2YTg3MDk1OTM5OGJjNWEwOGNjZTAxZWI3ZmM5NjU0YmVkYjBkYzFjYzQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a8d197fe8d9b408587f3767b82569099",
+      "statement": "`authority_above`/`authority_below` are checked as a strict partial order over doctrine sections — every name must resolve to a section or one of the authority terminals, both declarations of an edge must agree, and the relation must be acyclic — with unranked peers allowed inside a tier rather than an order invented between files nothing reads at inference time.",
+      "evidence": [
+        {
+          "resource": "repo://nora/doctrine/loader.py#L471-L546",
+          "version": "repo-lines-v1:sha256:38f811de6ba6086da422b2f5d1737c05e764493b0feaa8f56f7462bc4c3673f8:eyJzZWxlY3RlZExpbmVDb3VudCI6NzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIzZjcwNjcyNTI2ZjNkNjNkZjAwZGZiODlkZTgzMWMxZWUwZWQ5ZDYzZTA4MjQwZGY4OGIwMGNkN2MwMWI4MGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3MDE0OWUwNjlhZDY3ZWNjZjQ3MzY0NmZmMWM3NTAwNTBkMzI5ZDExMDAxOGRjNTc2Njg3OGVhZmExZDYwN2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNhYzM5ZDU1YjFjNDA5YWVlN2MzMThhZThmZWU0ZjEyOWVlODM1OWViMjczNjU3NWJlYmI4MDcxN2E1Mzk2OWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e8e9c5d39b0246f0a62fcdfff369209a",
+      "statement": "`[doctrine] reload` selects the lifecycle: `mtime` re-fingerprints every file's path, `st_mtime_ns` and size on each read and rescans when the fingerprint moves, so an edit is live on the next turn with no rebuild, while `startup` freezes the corpus after the first successful scan; size is in the fingerprint because an edit restored at its original timestamp moves no clock and would otherwise serve old text silently.",
+      "evidence": [
+        {
+          "resource": "repo://config.example.toml#L1109-L1112",
+          "version": "repo-lines-v1:sha256:a037405f3ee8c11a9d0568a8e66dbc3cabc2916c76a9e32aac7a825cbf75d3cf:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTQ1NThmN2RiYjczNGMwMWI3NjA1MzBlYjJlOTQ1NTkzODU3NzNiNTM3ODYyNTgyOWFmMTMxMWYxMWY3MzJhNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiY2QzZTA4ZjQwMWI3YWYyZTg3MDQ3NjNkZjBlNTYyNDc5MWRjZWU3ZjNlZWVkNTViY2I4YTFiYmZjZTM4MWI4YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTAxM2ZhYWIyYjkzZjMwYTJhNDFhODBhNDE1ZWNjMDdkYTg2NWI2OGE0OTk0NzAxY2NiNTIxMjc0NTNhZTBjNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDUzM2U4Yzk0MmU1OWZiZmQzMzU2NWVlZWQzZjQ1N2YwYmY1YzliYjI5NWVjMGRkNjMyZWZkMjE4ZTkzZjc1NSJ9"
+        },
+        {
+          "resource": "repo://nora/instructions/reload.py#L116-L157",
+          "version": "repo-lines-v1:sha256:573c1c29ce204d575ad22e9e80dee6d9fb236277de7d31ff9bec7612a5bf96fa:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY4ZGM1OWNmYWRmMmE5ZWEwNTcxZDQ0YmEwMTk4ZDM5MzFjNjM5NTMzNTdhMTk1MzU4YjhkOTk4YjhlMDAyNDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVlN2JjZDM2ZWY1M2I0NDUyM2U2NWU5OGQxOTQ0OTkzZTBmZjE3NDZmNTUzNmMxYTUxMTc0NmYzZTAxZTc1NmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgxY2E2ODZlZjhlNDMzZDczYTYwMTUzY2FhNWExMTVjMjI4ZjQ0YzRhMTM1NjcyM2JiODg1YzBmYzBjNzUyYzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYxYmE1ZTgxYTU4YWExZGY2NGQwNTllZGJkZDNmYzlkMzIwZGIwMGRlNjJhNTUyNjJlMmRjNmEzOTIwZTM1NmIifQ"
+        },
+        {
+          "resource": "repo://nora/instructions/reload.py#L15-L18",
+          "version": "repo-lines-v1:sha256:a67d843ab1e152e1aeea75c5f0eb582cc8b7d3df5cb8e910d22bf0296c29c261:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmIzODgyZWE3ODYzMWZlNGRkYjNlN2FjNjExMTdjYzA1MjM5MjRiMzA2YWU3MGU0YTcyYzI4ZmQ5OGMyNWJlMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMGJlMTQ1OTBkNjRlNzhkZTg0MDRiYzA5OTI0MWNiMTA5MjhlMWFjNzZjODAwMTdjYjlhYWYzMGUzYmE2YzY3NyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjg1NjliYTMxNGQ0OWZmMzQzNzE3ODQ1YzFlOTk1OTBjOTI0ODJlMWUxYzc1Y2UyNjQ2ZWZlZWQ5ZTI3MDkzNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWFhZjc2MzdjYjZlN2U1ZGI4NWQ2MzQyNzQ2MDE0ZGYwNDFjY2Q1NThhOTIwYjI5ZWI2YWM3MTlkN2JhZjVjMiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_99c0f752e9014b0883baeae475d244fc",
+      "statement": "A doctrine rescan that fails after a good load keeps serving the previous sections, increments `nora_doctrine_reload_failures_total`, logs one `doctrine_reload_failed` line and advances the fingerprint, while a failed first scan raises so a process cannot start with no instructions; only a successful scan bumps `generation`, which is the only thing that clears the per-audience assembly cache.",
+      "evidence": [
+        {
+          "resource": "repo://nora/doctrine/loader.py#L837-L854",
+          "version": "repo-lines-v1:sha256:4c4c3f2d1ef08c6884fac97f279444f8b951b91bab17da98652d71b1e2c5057c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjExNDIzZTE5MDg1NWJjOTlkYjZmMWU2NDIzMzRhOWQ5M2VlNzdlZjFiMjdlZjIyNzJiZGE1MTFhMGFkNjk3Y2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI4NzZkMmNiYTA2MWQzN2FjYmRhNTFmZmFmM2UyZjI0Y2E3MjY2OTIzOWE3MTMwMzY0OTFiYjQyNWY5OTI5N2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQwYzgwOTMxMzNhZjRlYWMzMjUyODhiYjhjOTg1MzljNGY3ZDRlNTJlN2JmNGVjNzUzOTMwYTY5NTNkY2E0NzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQzODliNGY5YjdjZmJkNTFjNmZiM2JiMmI5ZWMzM2Q1ZmEzZTc4OWJjN2I1MzJiNGJlMGI1NTM0ZTZhZjlhMTkifQ"
+        },
+        {
+          "resource": "repo://nora/instructions/reload.py#L1-L19",
+          "version": "repo-lines-v1:sha256:858a296a1a49948412f6d71edafd138bb28a0cf78fadc1978f72bafb06439600:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYzZTUxMjc3MmZiMGQwZjhhOTM4MWY4NzQwZDRlM2NlYTQ2ODZhNDllNjFhNjcxNjZmODNhNmY5MGJhNjVmYzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/instructions/reload.py#L141-L196",
+          "version": "repo-lines-v1:sha256:fb4ca286965a2ee599752e12f93644c5e612bd923a93c45b496947862bdf7fc7:eyJzZWxlY3RlZExpbmVDb3VudCI6NTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxN2QwNTcyNmMwNjdlOTM0ODA4NWM1NDgyYTE5YTBjYTQ1NDQxODhhYTQzMDliY2FkZmY3ZGE0NWJkOTczYzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE0YjEzYmJhMjI2ZTUxZDI3MGRhNDkzNTg1MzgxZmMxOTllYjJjYmJlYjAxZTFmNmUyN2Q3YjBlMzZkYTgyMTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_28c4c8ff5b924a5fa1a7916f3287cb36",
+      "statement": "`DoctrineSection.sha256` is taken over `render_section` — the served bytes, `description` included — so `tests/test_doctrine_version_parity.py` can refuse a served edit that reaches `master` without a version bump, but it is a repo gate rather than a runtime guard: an operator editing the corpus on the deploy host is not stopped by it.",
+      "evidence": [
+        {
+          "resource": "repo://nora/doctrine/loader.py#L161-L200",
+          "version": "repo-lines-v1:sha256:0d60cba3b86369b746cabefc65e2abb0eebfe7940cbcf6199b061261a6dfa347:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVlN2I0YzRmMWRlNmRmNjU2YTc0NmZkMTVhNzEzYTRhM2FiYWJhMTYwMDU1N2JlNjhmNjM0ZWY1ZWFkMDIxOTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk1ZDg5NDllZGJkMTQxZGMxNWMwNjk4OWI2NzJmM2ViYjYyMmMxNDg0NGE5YTk2MjZmNmVhYzFmN2VlNDc5NDUifQ"
+        },
+        {
+          "resource": "repo://nora/doctrine/loader.py#L202-L266",
+          "version": "repo-lines-v1:sha256:57c6e5de751e9be9effbeb5734162cd81b128df6951718fc62485e93d965535c:eyJzZWxlY3RlZExpbmVDb3VudCI6NjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4ZjBmMWYyYzUyY2RjZTA2OTU2NjBiMDI3NmM3OTg4NmRhM2Q1ZTRjN2NjNmY2MTkyNGU2MmJhMzE3ZjAzMTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjExMWYzOGY2MjBjMDNjMmFjMWE3YjQ5ZmM4ZTA2ZmNlNzkwOWY0NzZmYWYzYTA2MzU0NjZlYzU2NTk4N2QxMzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYzZDE3NDg0ODM3MzgxNmUxYjhiY2Y1ZTE2NTU2ODJjM2I5NGExZDQzNjQxNmIxNGZhYjc2YTM0YWMzMGU5NmIifQ"
+        },
+        {
+          "resource": "repo://nora/doctrine/loader.py#L346-L362",
+          "version": "repo-lines-v1:sha256:62b41dc835e22906fba7b62a388d2af4e072627f298a554398ed1f5e9fcd309b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY0NzY5YTE3Y2IzNDNiNWFjMzUyMWZlODFiMDFhZDM3NTFiNjc3NzJiYTdlM2ZiZjE5ZmUyOTc4MTU4ZTJkOGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg4MzEyMzNkMjhkOTUzNWQ3YjM3NjFkMjFhM2U5YWU0M2Q4MTYwZmQ1MTAzNWExNTM3ZDAxODJlODY4OGY4OWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU5MDA0NTE5MDdjNjY3YzlhZDlkMjJhOTFhOTk5NDFkN2RhNDgyZDVjMGI0YTJiYzQxZWE2ZDM4ZjYyODE3MjQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d4faf70bc1414e9ab334ca83546c2fbc",
+      "statement": "The relevance gate carries its own two-row `_BLOCKS` (`group_transcript` at order 10, `standing` at order 20, both keyed `turn`) and renders them through `ContextBlock` and `assemble` rather than the tag prefill assembler, so its input stays a closed set; it renders `<standing>` as `(none)` rather than nothing because `assemble` would drop an empty body along with the sentence explaining that absence.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/relevance_gate.py#L369-L489",
+          "version": "repo-lines-v1:sha256:9a2929a43be664429264aadefcf2b82fc7fade9971483cae2c74a13f96eead82:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIxLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIxY2Y4NjdlMTIyNmJjZWJjMzJkYmI0NGE1MjQ0NGE1MGRhMGU4MTU4NGE3ZmJiMDllYWJlN2FlZDc0MTVmODQ5IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJjYzBlNmFlYzhlZTVjZTExYTg4OTM3NmZjOGU1MzcyYWNiOWQwNDdiZGFmNzI0ZjVlN2UwZDBhNzBmYTdkMzc4IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJhYWFlYmIyNjkzZjcwYjQ0NjNiNjZhNzMzOTE1NGI3NmZjNWI5ZDlmMDY1NmIyYzVkZjMyYmJkNmY4NDg0Y2ExIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJlNDlhODc2OTQzNjU0Y2JjNTkzYjlmYmNjOGM2NWU4NWIwMTBlZjAyYjgyYWU5NzM0N2FmYWVmY2ZjMmY5Mjg2In0"
+        }
+      ]
+    },
+    {
+      "id": "claim_5007907e560749ebbcb6e9c3ddace456",
+      "statement": "Because a scan that succeeds with a missing or empty `participation.md` is not a reload failure, the relevance gate refuses to send when its audience resolves to zero sections or an empty body, failing closed rather than reporting as a working gate with no criteria.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/relevance_gate.py#L725-L770",
+          "version": "repo-lines-v1:sha256:26aed29d16ab7993082739fdf5e0a143a27a02f8ec056714187609bbab699ca2:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlNDRlOGJjZDhmNWRkOTI4ZGFkNTI3NTQ2NmJkYzBmZWY2OWNkODJlOWRjNTRlNDkzMWViOWJiMzNhYzlmN2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwMWFiNmUzN2E2NDA1NWJkODQ4MjgzNWRlOTcwZGMxNTQyYjY1NDNlZjQzYTFhYjY1Mzk4MTFjODIyOWU1MDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM4MjJiNjNjN2IwOGQ1NDBjZDBmMjJmOGIxZjllN2ZkY2M5ZmFhNmUyNjQ4Zjg4MjM4NmU0YjYwMDRiNDYxMzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYyY2E1ZmMwMWU1NzE2MmZiOTI3NjYyN2FhMmQ0NGVhZjhhOTg1MGViMGNhZTRlYmNkYjcyODlkOTQxMjU2ZjAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b3930a528e8e48c48277d77bce4e3d2d",
+      "statement": "ADR 0021's rule is enforced by discovery: `tests/architecture/test_every_model_call_is_a_declared_occasion.py` reads `nora/` source, finds every module that calls a model by a known door or defines `inputs`, and requires a non-empty module-level `_BLOCKS` plus a call to the `assemble` imported from `nora.domain.blocks`; a hand `.join` of `.render()` results is a violation even beside a working `assemble`.",
+      "evidence": [
+        {
+          "resource": "repo://tests/architecture/test_every_model_call_is_a_declared_occasion.py#L1-L52",
+          "version": "repo-lines-v1:sha256:35f2a3053f3226e4a39a0382328cbbb167cfb549ed9949c976a8257ef750dfac:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFhM2Y5YTI5ZmY0NDAzNWE5MTNlYjVjODJkYWQ1OGI3MmM3NDE3ZGEwOGYzYzk3MTk1ZTNhZjZkOWZkNjg5NzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://tests/architecture/test_every_model_call_is_a_declared_occasion.py#L213-L317",
+          "version": "repo-lines-v1:sha256:9a99bc09d089123dd79e7f7f762b0b231e7eacf54c463b1df0dd94aff9f31b5d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA1LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJhMGMwYWE0MjU3Mjc1ODNlYTM1ZjQzMDkzMGM2ODlhYWQzZGY3ZThhOWRmNGExYTgyYjNlZmExMDk3ODU5NWQwIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIwNTc1NzRjZmM1Y2U4MTRhMWMzODY3ZjBhNjUzZmZlMzBiYmQ1NTgyNWI1ZDk3ODhiYWNkMTY1Yjg4ZjY1MDkxIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI4Y2M0YTdkMWNjNzk2YWJhM2U0NjcyMzMyN2Y1MTdlOWY4MTE5ODJkMjUwZjA3MDI5ODZlNGI1NzY0YWQ5NTg5IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJmYmI2NDU4ZmMzNWQ4YWNlOWU1MDU1ODdhZTUzNzU3ZTVjNzRlM2RkNWYxMzJhYWRhMjZjMDY0MTc0ODQ0NzZlIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_a104bce202fb4ebcbe70540ea4d444aa",
+      "statement": "Modules that run or transport a prompt another module builds are classified rather than recorded as debt — MECHANISM, RUNNER (naming its builders and how they are reached) and EXEMPT (an authored prompt plus media) — each with a written reason the test re-checks, and there is no PENDING ledger, `CEILING` or per-occasion exception.",
+      "evidence": [
+        {
+          "resource": "repo://docs/adr/0021-every-prompt-is-assembled-and-the-enforcer-finds-it.md",
+          "version": "repo-file-v1:sha256:ea24e80ea67752251fdd704aa2e1a0f34e903bf1be87ef3e7ef200e96788623f"
+        },
+        {
+          "resource": "repo://tests/architecture/test_every_model_call_is_a_declared_occasion.py#L79-L138",
+          "version": "repo-lines-v1:sha256:616fda6b72731626a0c5da01376e2b2542f1db4b91fa26854973d8c44dca27db:eyJzZWxlY3RlZExpbmVDb3VudCI6NjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMzYjE5YTA1YmJkYzZiMmJkYjE1NDM5M2Q3MGM0YjVkYjgxNzM5MWRjODk3NjA1NzRlMzk5OGE5NWI5M2I3MTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY4ZDVlZDBhNDA4M2U2NTY4YzI2MmYxYWRiNmFmM2JlODVjY2JlMDc5ODg1YTY5ZDhjMzJiNTU2N2U3NmIxY2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY1ZDBkYWU4YzAxMmEwMzRiYTBhZDBhMzEyNjU0NGVjMzNhOTcyMWUyMmExN2Y4ZThmMmFkMjFjM2U3MjkxYjEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c29761a3779843e5a05606d18ab242ee",
+      "statement": "The typed-block gate checks both directions — every rendered block name has a declared type and every declared type is rendered — and adds population-wide checks: a description must be a sentence rather than a label, may not lean on internal vocabulary such as `tier` or `injector`, and a sentence discussing absence must carry the R-27 hedge in that same sentence.",
+      "evidence": [
+        {
+          "resource": "repo://tests/architecture/test_every_block_declares_its_type.py#L1-L22",
+          "version": "repo-lines-v1:sha256:b641b708867b093c5ed0ad9882af7f1b792bc829a18f85cb947c0b4d29631ecd:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiYzc0NDQ4ZGM4YTYxNTU3MmUyNTVjNTljNDE1NzlhMmFjYTBkZmYyNjBjMDg2NGYyNTY2MTcxYmEyOGEzZDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://tests/architecture/test_every_block_declares_its_type.py#L127-L157",
+          "version": "repo-lines-v1:sha256:430eb2d4ba8fd6e7f9b3b8573b9f82f2f3a20f89611aa9b58053b8af22889db6:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFmZmRmZTJmM2Y2NGE1MmIxMDJlNTI1OWRlMWE4OTE3OGNiMDE5NmVjZGU5YjRkOGM2MmM4NWE2MmM5MzdmYmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUyZDY4ZDMwM2FlOGYwNWVhZTczYTA3YWExODg4ZmE1MTY3ZDY2YjJhNGQwOTRkMTlmYmIzNWM1MTE5ZmQ1OTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMyMmE1NGZmOTJhMDE2ZTA0MmZiNDMwYTkzOGUzYTJhYjViMWI0ODg4YjEzOTQ1NTYwNjI3Y2IzYWRmMjQ3OTcifQ"
+        },
+        {
+          "resource": "repo://tests/architecture/test_every_block_declares_its_type.py#L181-L255",
+          "version": "repo-lines-v1:sha256:d093739e122295c8848ba13c27732e7dce071d6b04d95cd5d3be1bd1eca3cd96:eyJzZWxlY3RlZExpbmVDb3VudCI6NzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY3YWJkODVkNDYwYWVkZGFjY2UwNWY0Zjg2OThmZjZjZWQ1MDcxMGNlYzlhOTYzYzYzYjIxMDI3OWQyMTBlZTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_44c52a546e064e5f8f142b5cc48bb098",
+      "statement": "`test_one_block_injector` keeps modules from opening and closing a model-facing element by hand: a discovered hand-written tag must either be routed through `ContextBlock` or classified with a written reason, and a classification whose module no longer writes a tag fails as stale.",
+      "evidence": [
+        {
+          "resource": "repo://tests/architecture/test_one_block_injector.py#L1-L23",
+          "version": "repo-lines-v1:sha256:89803f00f21a1a83a05dced7f44d72e2a855c411f6b3f171f244b2d442e2e593:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA4MjFiZmZjZGU4NGViMWY4ODJiZDY5ZDFiMjEzYWFlYjI0YjRiYmUwMTAyMTNhNTA4MDk0YjA4ZDFjMTBjZDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyY2QwMjhkY2M1NjJkNGU4YTc2YmFjZjU4MzA0ZjFhZTM2MmUwMWUwNjZlMzE0NWRlYzhiMDVlZmI5ZTFmNzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFhZGY2OWI0MmRhZjBkMTJhZjgyMDgzNGRiMGE3MDk1MDY0ZmQzYmFhYjk5ZTFjNjk4Mzg4ZjJhMmJiNDBkMTUifQ"
+        },
+        {
+          "resource": "repo://tests/architecture/test_one_block_injector.py#L140-L156",
+          "version": "repo-lines-v1:sha256:12818c77e9cd5f1124b90bf903d598e6ff7798b9d1edc9018e66c26d8d3b029d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUzYjVhMTVlMmEwZDE1MTAxNjg4N2M3ZmVjNzgxYzc5MmE0NDkyNTNmYmY3ZWI2NTUwYWY5MjUwYWE2ODlkMjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJhMjdjMTQyOGU1ZGRlOTVlMTVlNTFjOTFlZGFkYzMxYWY0YjlmNTg2YWM5NGFhMjM5YjhiYTMyMTA3M2UyZmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgzY2Y3YTY3OGE4Y2ZlOWVlN2Y0NmViOTVjOTVjN2ZjZDhlMmVmNWM4ZmMzZGViNmVmZmJmNmNjMDA3M2M0NTMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_10cb0dba192c46b59487f1750bdac522",
+      "statement": "The tag path and the fire path share one renderer: `TranscriptInjection.assemble` and `FirePath.build_context` each build a `TagContext` and both hand it to `build_prefill`, which differs between them only in the situation paragraph passed as `header`; `build_assembler` is the single construction site for `TranscriptInjection`, pinned by `test_assembler_parity`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/assembler.py#L1-L13",
+          "version": "repo-lines-v1:sha256:8c2e5fdd9f79ed1ba3cf19bf09724f49ccda91fd7942176847b7362fd43a5b52:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlNzU5YzEzNGFmYmVjOGQ2MGM5ZGFmODNhM2VmMWUyNTJiNDIwNzkwY2FmN2EzMjdhNjk0NDgxZDA1NGQ1OWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/app/fire.py#L1964-L1970",
+          "version": "repo-lines-v1:sha256:fd7e473f5b482bdd0cb9c3f38be35278802d69d5ac76b0df8a4f75b70bdfe488:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTVlYWFhNDg2MTM3OWU3ZDRiN2E3YWZiNmQ0OWVkZDM2NDJjM2YwNWY4MTBkM2QwN2YzMWQ3MGEwNDM4ZWIwNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTUwMzJlOTY0ZDA5MzIzNTFlNWQxODUyNjkyODFiMTcxYTNhMDliMDhiMjg2ZTY2MWVhNDcwMzIzYzgyZWI0ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGRlNjkyNTY2MTYzMzkwZmI3ZmVhODIyOTk2ZmRkNDNiY2U0N2FhZTY5NTcwYWNlMDcyODE5MzNiZWM0ZTc0OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjkwYzYwNTcxNjA3NmFkZjk4YTM0NGUwNTc2MzI1OWZjZDJiZmFkZGRiNjZkNmZkNzAxNjFiNjFkNmRkNTY1YiJ9"
+        },
+        {
+          "resource": "repo://nora/engagement/context.py#L261-L314",
+          "version": "repo-lines-v1:sha256:6f875fd605c9cb834024fcf860b7a0ee61f5d6912dc080690f56e3f689de172d:eyJzZWxlY3RlZExpbmVDb3VudCI6NTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI2NjJjNTRlN2Q1YTAwZGE5MGM4Yjc4MTFmZmI5OTBjODNjY2VkZDVlOGQ2NDBmYmY3MzA1ZTU1ODBiMmE1ZTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFhNmEyNTIzYmJiOWZjNmU4YmU2YzYxM2JhOWMyMmEyZmQ4Zjc3MjA0ZWZkNWM1MTM0MmRkMjY1NDUzMTc1MjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA0YWI2N2VjODgzNTM1OGZiNDdkZjU5YTc5ZjY0NjEzZjc5NzljOWY0MWU3Y2NhNDcyYWQ2YWMwZmVhYmM4YjAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_32b9cb38d41746ecba86ea8887ea684e",
+      "statement": "With `[persona] render` on, the seven rows in `_PERSONA_REPLACES` are not rendered, their stubs leave the declared list, and `<persona>` blocks are stamped into those same orders, so the prompt's read order survives the cutover.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/prefill.py#L1053-L1056",
+          "version": "repo-lines-v1:sha256:35e53aa1b69c013cd1aa294e3c9e8b3f964ec3349b973226ba87d117e0e7a651:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGIwNjI4ZjA1ZDJiOGViNjdkZGUwYTIwOWZmOWEwNjNmN2JmMjcyNTI0ODZhNjYzYTM0NDUwY2JjNTYxZWZiMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODdjMWU1ZjZkMGRlZDM0MTIxZTc4MjljMGU1ZmMzNGM2ZjNhNTRmNjVhMjE4NDFkZTFiM2UxNzcwY2U1MmUxYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzdiNTUyODNjNTg1MGUwMTM4Y2E1OTQ0NTQ5OGM1MmE1NWY3Y2Q4MzQxYTI0MjJhYjhkMWQ0Yzk0OGM1YzI3OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOWIyOWNlNmM3Nzc5YjAyYjBhZTg0YmE0YjliMDFhY2NhYjMxMzNmYmU4ZDY4MjEyNmY4MmE3ZjdhYmNmNWNiMCJ9"
+        },
+        {
+          "resource": "repo://nora/agent/prefill.py#L306-L314",
+          "version": "repo-lines-v1:sha256:ea65d4f32cff55476f94c328fc5d4156bbd28840201e858ce49df6893ea438ce:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGQ3ZjlkMDk1YTM4NTZjNmY3MjVjY2FhOWViZTcxMTQ4OTExZDA2MTE3ZmNkYTg5ZGEzMDU5Y2JiZWE4N2M1YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODU4MGI3NjUxOGRhZTk3OWZhZWJkMDIzNjdhMjkyOTJhNTBkOTc2MDkyMjUxYTM4YTZjZTMwODgwYmE0MjgyNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGI0NjhhZDBhYmQ1ZGY4NjIwYmI5NGJkZmZlODVmNDIxMTBlY2RhOGFmNzY0YTRkNWMzYmEwNmJhYTVmNzczZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWJjMGM4NjljMjljNDZkNDUwMzNjZWMwNmEwMjJmMzNjNmRmYThlZDRmYzI1ODNjYmE2MzJjNjJiNzU0ODg4OCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_06434f629e2143b481d38cbe0ffc5810",
+      "statement": "The prefill order widens from her own account through the people, the unit's notes and decisions and the room's culture, then breaks scope on purpose: `standing` at 60 and `standing_working_set` at 65 sit immediately before `group_transcript` at 70 so the pair reads as where she had got to and what has been said since.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/prefill.py#L107-L113",
+          "version": "repo-lines-v1:sha256:879e6f93ff594829ae5bd8d4a9de35129f8c1b38dab9bbcfa535ec5366ba2f77:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMWE5MmQzOWYxMTdhNGYzYzg5OTY0NDg4NmE5OTEwMTFlMWQwOWJlYWMyYWYxYjc3ODc4Y2FmZGZmZjBjNGY0YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTAxYTI4OWZhMTljNDAwOTk1Yjk1NDY0YmEyM2Y2YzA5OWQyMDI5MjAyMThiZjZhNzY1MjM4MzAwMjcyZGY2NSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNmEzY2Y1MTkyMzU0ZjcxNjE1YWM1MTAzNGIzZTk3YzIwZWRhOTk2NDNmY2FmNWJiZTZkNDFhZDU5YmQxMjE2NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzM4NDdhNzJhYmYyYmE4OWRkOWJhOGM0MmIwODliMzQ1ODUyMWM3ODFlMTM0YzMwNDUwODQ5N2NlYmVmZTU2MiJ9"
+        },
+        {
+          "resource": "repo://nora/agent/prefill.py#L200-L216",
+          "version": "repo-lines-v1:sha256:a3003ba7109587c2ffe74cfb313c0daa88a89d780227e4ac2c179b90efc45ecc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5YmNlNWZiZmEzZWZlMzY4ZTU0YzU0MzFkNzI2YjAxMzQxNDE0MTk0M2FjZTFiNjk5NGZmN2RhODJlODIwNTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhZmJhMDUyN2MzOTUzYzRiNmUwZTViNTczOWJhODM2MTJmODA1M2JjZGM5NDY2NzMwMTkzY2QxZDU5MGI0MDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM5MWI4MWRiNmQ2NjA2OGMwNjA5NWM3MThjOWVlMzg3OTE4MTBjNTNhYTliNDNiZWVmMjIyYzM5MDMwZDk2ZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFiMmVjZjhiN2NlMzQ4ODc4MjMyNGIwOGVkMTJhYTk2MTQ5NzM1Mjc1Y2VmOTVmNmJlMmRiZDZhNzAyMWY1ZTAifQ"
+        },
+        {
+          "resource": "repo://nora/agent/prefill.py#L855-L877",
+          "version": "repo-lines-v1:sha256:f445b93c729d0e9cb011d7d193721e1da41a758e8f1a31f6463b56571e7df666:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRlMjA0YzE4NWVkYmUwZGQzZWNmNDM4YjJjMWViZjVkNzI1ZWQ2NGRiNzY4NTQzNGY4NjYwNTczY2Q5ZWU3NzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2YTcxNTI1NzJlZTg0ZjEwOTA2Yzc0YjlmMmE5MjQzNGRkYWIwZTNjNDI4MTNiMDRlNTk3ZWZjZWM5NTFiMjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA4MWY5YjBmMDc1MDhlNTVlM2M1NTFhNjZhMTk0NjU4ZDZjYmVjNzBiM2UzOTkzY2ZjYjlkMGRjYzAzNDA4MDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhZTI2ZmNiODdmN2IzMjk2NWUwNmE3ZTYyMGIxNDg3NWI2NDFiNzk3YmNjNDBlZmUwN2E3NTkzYWQzZDkxMTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_82c9abcd5e6d44ada3cd01624e613484",
+      "statement": "Assembly owns the static head's byte-identity rather than any measured saving: `<context_header>` carries nothing that changes between tags and the clock leads the volatile block instead, so the head is eligible for a prefix-cache hit, while whether a serving route charges less for the repeated prefix is a property of the provider and model to be re-measured there.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/prefill.py#L1083-L1097",
+          "version": "repo-lines-v1:sha256:d1c35f930d37126bafc0fb3215c6508dfc7371eb1c0b924645fd7335e4df0e02:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg2YWExYTcxOGE1YmZmNjkyNzJmZjQ5NGRlYWQwNTQxMzFkZGYxNGJjMDExODgzNTcxMzYxODljOGQyNDk2NjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhYWU4YTBjYTc2Zjk4ZjdiN2RjNzk4NDk1MWQ2M2U1N2RiM2M2NDU1NzljYTUxYmFkNmE1MzlkNjE0ZWRiYmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQyNzIxZjU4YTc0NTU1NmM3YzA2NmI3M2Y5MDliMWMxODI4MjhmODBmZDYwM2JhYmEzZjFiNTY1MjQ2NzgyNTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU0YTg2NDE4ZDdjNjk3ZjBhNTM3MzQ4YmQ3Y2Q0MzNiNjBkZGU0OGQyZmRlZjg4OWM3YTVjNzNiZjExNzViYzgifQ"
+        },
+        {
+          "resource": "repo://nora/agent/prefill.py#L317-L363",
+          "version": "repo-lines-v1:sha256:61de36562b22591bf69b230310c93b02578f9573ea995b1fcb07f6da8aa1ce27:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhjNGE3NmU3Y2I3MjA3ZjI5N2RlYmNmYzQwMDgyYjIxYzY4OWViY2EzZDIwNjYxZjA4YTY4ZmRhMTQxY2Q4MjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQwNDBkYTUwZmU4ZTExODQ0ZjgxYjI2NGMxMjQzMGM4NDgxYzY3OTRhMTY3ZDIzZDU1OWU3MGQyYjI2YWE1M2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYzNjdjOGE4OWY2NGYwZDAyOTMzZDkwYjgxOWQxZjk5OGIzOGQzMjExMGMwZTE2MjVlOThiMDFjNGUzMWFkZjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJiNGViOTViMzVmZThjNjY5ZDZhN2Q5MWE2NWQxZTRjMjcwZDdjMjcwMThlNjM5Y2Y0ZTQwZGNjODdkYzViMTgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9681ff66979b4fbdbbede880139e029e",
+      "statement": "`<tool_catalogue>` renders only when tools are deferred (`[llm] defer_tools`, off by default): `ToolSurface.prompt_catalogue` returns the index only when something is on the shelf and an empty string when every admitted tool is already resident, so the block cannot become a second copy of schemas the request already carries.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/prefill.py#L1024-L1030",
+          "version": "repo-lines-v1:sha256:674a36b746483e4563a8b4f4c2877581a21e0bc9b564a6d4f2360049c1789b27:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjUyZTk3ZWZlNWY4Zjk2ODkwNjdkOTE1ZWNjMTkzZDBlNWI0NDBlMTFlMTYxNWMwNThiNjEzOTViMGY4Yjg3NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNThjOWNjMzAyNTIwZDdlZDE4OWVkMDQxZWZkNTA1MDQ0NjRiZDg3NDIzODZhNzMxNDk2NjI5MzQ2N2MzYzhjOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOWNiZmFmYjU2MWZjYmVhNjcxNDBmMjYwMmFjNjgzY2JhYTg5ZDI5Yjc3MzBlYzdlZDQ0ZTI0MDA5N2RmNzdhMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTdmNWIwYmIzZDE4NjNjNTlkMDhlNWRkZDkzZWU1NmZhZTM5YjA1ZmY3N2VlMTE0NTk1NjZjODY5MjMyM2RiYyJ9"
+        },
+        {
+          "resource": "repo://nora/agent/surface.py#L192-L202",
+          "version": "repo-lines-v1:sha256:1746b564ba43539de94ded65edddf725aaf78b40b630c47613629c92ec5d7252:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUwNWVhYTg0YmVkMjQ3YTAxMDAwMGMzZWNhNzI5MzA3N2U4YzA0Mzg5YWRiODNhNzkwOWZhOGI4ODQxYzNiNmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxYjk4NmExMDVkNTc2MGI3MjFmMmFjYWFkNGZjZDA3NzFjMjRhN2FhYWZkNTVlNTI4Zjk4OGY1YzgwNGU1NTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQwNWRhYzQzYzBjMDk4Zjg1Y2VlNDY1N2I0NzNkYzUxNGYyMzVmNDEzMjgwZGIyYjg5MmNkYmNmZTA2NjEyYjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBhOGVmMTVmYWE0NzU2NjJhNjRlMTI2ODM2ZjlmMjY1MTY2OGQzMTg0NzkxZTE4MjhkZDI1ZmQwMzk1NWYwMGEifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L274-L281",
+          "version": "repo-lines-v1:sha256:2d8067992f33b8d27eef600a9bedfd86c51ead8557d0c74f3b7f63252ffd2d3c:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjc3OWNjOWU1MGJmN2NlOGVhYjI2M2NlODIzZTU0MTFmOTY5N2QyMWJhYzdlNTJhNTg0ZjcyZTI4OTA0NmMyYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmUyN2JhOWZhMWVmYjNkNTEyZWEwNjQyZjc0MTNiNGFjNWIxZjRlMDJlNmYyN2Q0YjUxM2YzOTk5MzI4YzMxYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTE5ZmU2MjhjMjQ0MGVkZmNlZmE4NDJmZWYxNjJkYTM4NTlkMjk2NTgxOGU4ZmE4NWM5OWUxYmY1MjJjNjBkYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjExOGU1MWIyODIzYmJlZmFjZmJhZGI5ZjE4MjM2MWFhOWJhZWU5YmJkMmUyZmFhZTliNWVjMDgwNTc4MTZhNSJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-20T12:25:17.607Z"
+  }
+}

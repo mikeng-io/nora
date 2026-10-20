@@ -1,0 +1,508 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:9182777a26a9f792732b158c491842e81b607a310ecf100fb8719524da05cfde",
+  "claims": [
+    {
+      "id": "claim_3783b7e7574243f4bde72806ea18a634",
+      "statement": "Silence is Nora's default posture, but the tag path is only one speaking route: an untagged message in a room the operator opted into the Relevance Gate is noted by the participation window and may be answered through the shared fire path subject to the send permission and SEND cooldown, and the scheduled/proactive occasions (reminders, compute results, relays, kind=\"proactive\" rows) can speak through the same path, each conditional on its own flags and room grants — so an unanswered message is not by itself a symptom of anything, and absence of an error is not evidence that a path ran, because tracing failures are non-fatal by design and the alert bridge answers its webhook with success even when its chat POST fails.",
+      "evidence": [
+        {
+          "resource": "repo://docs/runbook.md#L15-L59",
+          "version": "repo-lines-v1:sha256:4547faacb75548779ed8ec3d3b0f11c646fdbdaf5a9f5be59b77a7604d5623e3:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRhOWE1NGVkNWEyYzdhMDc5ZjRkZTA1ZDY5ZjAzZjAxOTliYWY3OGU4NThjY2NhMWQxYzE0MjIyMTJjYTYxOWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEzY2E5NjY0ZjI3MTg0YjUzY2Q4YTdhNGMwZmQ0Y2JlYjgyNWY2ZTlhMmE2ZjM1YzNlNzA2YjNhMDZjNzUzNzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUyZDI5ZjY2NzkwNTViM2QzMTdhMDQ3MmUwYzIyNDZmOGYyYTk0ZWMwMDVlNzAwNmUzZDUxMTJjZGFlMDViZTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE4NWY2NjM1ZDBlY2E3ZGYxODdhZDcwYTIxZWM2YzdkNTMzZGZjOTc5ZjhhMDg1M2EyYWVjNzFjNjkxNDVkNTAifQ"
+        },
+        {
+          "resource": "repo://docs/runbook.md#L619-L621",
+          "version": "repo-lines-v1:sha256:39700b68ab3cdcf01e16eb17cedeae8d431716d8d077176655acc9cd2e4320f7:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDYyMDdhYTZkYmE5M2E2NWMyZGJjM2QzYjQzOTNkOWZkMDUxOWU4MmY2ZThlZDU4NTIyNzg2NzkzNTc1NmFiMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTkzYzBkMGUzZmU2YmE1NWFlNjBmMGI5ZGFiMTQ5NzM0OTFiYzE2YTk5NzdlNzI1MDk2NGViZjdkNzE1NzEyNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMmIxY2ZjZWZjNmVmOWViNzZiYjkzNTMyNjdhMzc5ZGE5N2UzZTNiYWM0MmRhZjQwYzUxZTRiN2ExMzJiZWQ5YSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOGI5ZjJmMzY1YWE4MGY2NTA4M2ZjZGQ3NDAzNTkwYmUyZDAzMWNmYzUzZWIyMGM0NDk0YTM4YzA3YjM3ZmU1MiJ9"
+        },
+        {
+          "resource": "repo://docs/runbook.md#L688-L693",
+          "version": "repo-lines-v1:sha256:488c935f471bae32127d7cb3577cf10d43def729ea9aa6b8c06951acab1418a4:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjk2YjYwZTcxMDI2ZTY5ODViY2YxZTQ0ZjZlZjIyNGNiNTEzOWQzNGE4ZmQyNDg2Yjk0ZjExMGNiMGU3ZTIwYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjI1YmY3NDUzNzAyYjQzNjNmMzlmZTM5YmQzM2M4MjFkZjQ2MmYzY2NmOWY4N2YzMzk3NmZlZTc1NWU2MTZmMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTNiOTlhYTA3ZmY5MGZiMzljNWUzYjQ2ZGFhNmNkNWViNjdhMWE3YTQ4MWZkYzJhNjk2Nzc5ZmQ1MDRkNzg2NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOGU3OTI2ZWM0ZDZiY2QzNGUwMWVmMWE4YjBiMGNiZjg1N2Y0YjE1Mzk3YTA3NmY2NWUyZWU4NTE4ZmRmZGY3ZSJ9"
+        },
+        {
+          "resource": "repo://nora/app/dispatch.py#L67-L84",
+          "version": "repo-lines-v1:sha256:5d75e47845787b76e580f250b278ebc5a9641bf0a7c482274afe82060c05c734:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJjYzZhM2E0MDkxNWM0NjFkOTI1YTA2YWU3NzJhNDg4Nzg2OGFmNTYzOTAyN2FiYzY5YTVmZDVmYTVmZDk3YjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjYWUxMjc4ZTIyYzg4ZDI3NmRjOTIxNWI4OTUzMTY4NzRkYjMxOTEyMzg0ZmQyODNjMDU3ZTgxNTM3MzYyYzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEzNThkNmMzZDMzODk2YTU1NzJjNDkxZDVmY2ZhMTcyZTIxMzZhYjhiMzI4NzMxMGE5ZjAwZWM2MDBjOGM4ODQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://nora/app/fire.py#L1643-L1668",
+          "version": "repo-lines-v1:sha256:d623c5d5833b358ce9b4044b17f1fccc3b1566c0176a83611681d5196b687939:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJjMmFkMTAzZmI1ZjA2MzVjZTg1YjlhM2Q0NjExODExYTY1NjMzYzE4OGI3ZGQzNGRmM2FmZmM0ZDllMWYxNmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyY2Q1OTFkZThmOWViYzMzMjY4ZmNkOTMzZjVkOTFhZjA2NWVlNjhiZGVjYmJmMTU3YWFjM2YyYTE0NWFlMWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU2MjRiMDA4MGY4ZTcxNTg2M2FiZTZhMmUyZGZiYzY2NmZiODIzZDllZTkxMDhiNmJjYTQ1Zjc1NDM1N2Q3ODgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImViMzEwZDA0YTAzNzYzOWJhNjBiMmJiZDQ5YjliZWQwYTMxNmFjNWMzNWY5MTY5ZTc0MTQ2ZTQ4Y2JkMGZmNGQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_993aacfa09b14ae3900e9371a3b196f3",
+      "statement": "The operator's escape hatch for \"invisible when broken\" is the ratio nora_silent_failures_total{audience=\"tag\"} / nora_tags_total against a target under 1%, and the `audience` filter is load-bearing because the heartbeat's fire path and the participation and proactive occasions share the same series with their own budgets and denominators.",
+      "evidence": [
+        {
+          "resource": "repo://docs/runbook.md#L20-L45",
+          "version": "repo-lines-v1:sha256:a5a7056945a3168f26642f3b39f24394fdaf2f386b94832026f956eaa754c9e1:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkwZjU5MDNkMDg4NjQyNjhlNTBmOWVjM2Q1YTdhNjc5NTViNzA0ZmZlZGFmY2IxYTc3ZDBhNGExYWZiYTRkMzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhM2FjZmUzMmIxNTQyN2IxOTdlYTYyYjc0ZDEyNDJiYzQ4ZWM1ZjJlZGNkNTYwZGIxMGYxMWJhODI3YmU2ODUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRhN2VlYTFiMGRkY2JiZDg4MWI0NjAxMzhiYzYwZWJhYzFmNmNkNTgyMjdjNzVkOTZkZmFmMjZmNTIwNTNlYjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM0MjkxZjBjNGJjZmE2Y2QwNjIwM2Y3ODk3YmYxYTUzMGU1MTE3YmNiMjBjMmQ5MTdhZTdkYTc5ZTQwYzQwMjgifQ"
+        },
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L198-L226",
+          "version": "repo-lines-v1:sha256:2cc71c4cfbd20fa8132125e9b8e24f8d29e1a568724c46c69c5f7a3ecabd42c4:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc2ZTJhMmY5ZjAyNTkzMmE1MzFkN2JjYTI5YTM0ZDkwNjFmYTVkYzYwMWUzN2UxNzg0MDdlYzNkNWVmMWEzYzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwMmM0MTRiNTRjZjg2ZGZiNGY5MGRmZTdkN2JkYmZhNjY2YjdkZGRkMzJmMTI4NmYyMzBhNWI1MzI0MTgxOGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEwODlkNDE0MmMwYjQ5YjJkYjA4MTM2Zjg0ZjVhOTkwYmY2Y2VmNDYzYjYxM2Y1OTUxNzEyYWI1NzY4YzIxNjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdhZmE5ZWVhYWMzZjMyMzJkMjU5NGVmYzZmNDU0MDU5ZTZjNGJjYWY4ODMwNThkNDI3NmQ3OTYzYTZkZjlmMmEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_10222f1c40ab4b3da48c66ac7442854a",
+      "statement": "An increment of nora_silent_failures_total that omits `audience` records audience=\"\" and drops out of the tag-filtered budget expression, most damagingly at the `handler_error` site, which is the last-resort signal for a faulting turn.",
+      "evidence": [
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L216-L225",
+          "version": "repo-lines-v1:sha256:663a8eaa91b9c0726d7c679379195291c2489a1fd14098983e0b457a2716bc4c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBiODdlMjhlNjk0MGEyNmNkYjMzM2E5YTkzZWJiMGZhYzU4YTRlNzBjZjBmMWIxM2JkZGJlNGI3ZTc0Njg4ODQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI4Mjc1ZjI0MzY0MzViYzk5MjQ1Nzk2MmM4NDE1ZWM1N2JkNDk3NWVmYTZiZmNkM2U4N2E0NDFmN2ZhOWMzODgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg1NWYxZWI4MWJlZGRlZDdlY2ZiOTM3NzlhMmE4ODY1NWE4MmQzYTE3YjU4ZTViYjAzZGU5NGYwZWZkMTdmOTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI2NmM0NjhlYjA2NGRjNTMyNzU4OTUxNjdlZGQ0ZmJjNGQ5ZTdmZmFkYWY2M2IyNGZkZjZjODJiZWIwOTczNTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e0b483f220ea4dadb2e459238d727a2a",
+      "statement": "The two policy refusals are counted separately and differ in what they leave behind: a denied conversation is not recorded at all because the room gate runs before the audit write, while a denied sender's message is audited and simply not answered — the sender gate is only consulted once something would be answered.",
+      "evidence": [
+        {
+          "resource": "repo://docs/runbook.md#L176-L203",
+          "version": "repo-lines-v1:sha256:d2d452791366d73e030a4aec546221ce76947e9f7e99a581c462bf56aea5811b:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNiYjk5ZDk2ZGJjZWRhM2JmYWU5NmM1Y2I4ZDE0NmRjOTA4N2EyZjg1M2ViYjZhMzFmYzRlNDRkM2QxODdjMjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg5NGE1YjI1ZGI5MWI0ZGQ3NGIwMTYwYjQwNzNiMTU5NDI3OTE0YTZlM2E2M2MwOWVkNTVmYWEyM2ZiYTZjZDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM1YjM0MTdmNmVkNmY0MWFiYjUwYzdmMTM3OTMyYzM4MTFmN2ZjODA1YmYxZTdjNjQ2ZWYxODIxODY3YzM1NjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIyMTc4MmZhNjdlNmFlNjBlZmIzMGQ2ZDYyMDI3ZmUwYjY3MTc5ZjkxZDI1NTdiYzQwODZhNTYwODJhNGE5ZmUifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L415-L435",
+          "version": "repo-lines-v1:sha256:63b0b0fba96533e0dd5308fb7e0985e57540683f6a8967ca4018cfeb93f2c630:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4NGEzOWMyMzIwMzY0ZWVkZTI1YThlZTJlYTJlYjZhOWEwZWRlYjM3ODVhODAyZDdhNjY2NTRlZjc0ODQ4MjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk0YTJlOGYxYWIyMzJiYjFmN2Q4NDgwOTY0MTEwM2MwMzFiMTUyMjVjYzFjYTY0ZGFiZjNlNDJhM2NkNmI3MGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAxY2ZhOWM0MDg0MDY3MzVmMDhjZTRmOTMyNGVlOWM3NzUyZTQ4ZGQwZDFiNTU5N2ZkNDczNTc3OTM1MjYxZmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNkMTk0NDk0ODA4ZWNiNTlmMDNiYzFlOWI0ZDU0ZWU0MTJlMTg0MjE4ODZhN2Q4NWRkMTY3YTRmZjVlOWJmNDIifQ"
+        },
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L326-L350",
+          "version": "repo-lines-v1:sha256:1d489dc7187dd11500fc97932de1bdb80100e6c9305a9885b16805c8268cf382:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFmZDAyMTlkY2IwZTNjYjE2ZjlmYmVkMzY2ZGMwNTc5NDY1YzBiNTY4OGY0MjIxNjAzOGMwZjAwYzk1M2NiNDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwMmM0MTRiNTRjZjg2ZGZiNGY5MGRmZTdkN2JkYmZhNjY2YjdkZGRkMzJmMTI4NmYyMzBhNWI1MzI0MTgxOGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRkZWNhOTczMjg1ZWFlNDQzYWEwZGE3YmY1MWEzZmU5NGVhNmI5N2Y2ZDA1ZTdjMTU0MmE0MDMwZTMzNTIyOTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA1NjNkMDNiNGZiMjBmMmJmM2YwOTBkOTdhZjBhNGFkNjMwZjNiNjlmMzQ4Njk5NzRhN2UxYTMzODMwYmQzYTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7701d5306a5f45e5a694f5632058a286",
+      "statement": "Admission classifies an engaged tag into four verdicts, and only one of them is uncounted: RUN_NOW and QUEUED both increment nora_tags_total (a queued tag is a delay, not a silence), a debounced tag increments nora_tags_debounced_total, a flood-bound drop increments nora_tags_dropped_total{reason=\"queue_full\"}, and a trigger from her own account is logged at INFO and moves no counter at all.",
+      "evidence": [
+        {
+          "resource": "repo://nora/engagement/stages/admission.py#L74-L116",
+          "version": "repo-lines-v1:sha256:edf6752948b43fed7cdf3fedc5e69f026b8601bac171ec9be6163ca583e2f10c:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYyMjcxNmRjYTRkNjM4MGUzY2VjYWZhOTg0NjBhZDJkODNkNWNiNWNjZDhkYTIwNWQ3ZjczMTlkZWZjOWFmMDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjMDg4YzM1YjVmNDljN2VjMWZlNmQ3NjI3NDI0MmE2MTY5Yjg5NDQyYmY3Yjk3NjQ0ZTRmOTY5YTQzODNkMjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUyNDQzNmNjODI1MGM2OTdhZTNkOTkxYzY2MTA0YTkwMTU5MTQwNTFkNWVhMmM4OWU1MjA0NzAxMTg4NjkxMzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L152-L165",
+          "version": "repo-lines-v1:sha256:b4b7320839ca062b95212692e3e58bac2e320f4728d6415b253142c1138a6bdc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc2ZTJhMmY5ZjAyNTkzMmE1MzFkN2JjYTI5YTM0ZDkwNjFmYTVkYzYwMWUzN2UxNzg0MDdlYzNkNWVmMWEzYzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwMmM0MTRiNTRjZjg2ZGZiNGY5MGRmZTdkN2JkYmZhNjY2YjdkZGRkMzJmMTI4NmYyMzBhNWI1MzI0MTgxOGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM5YjgwOTJmODM3Yzg2M2M4ZmE0MjgyMGE5OWY5MzBlMGZkZWY0Zjc3NDJmYjc5MDIxZWM1MTE0ZGRmOGU2YTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVlM2MzZTgzNjRjOTk2MjRlMzc3ZjRmMDUzZGM2MWNkOTVhMzJiMDVkNmJiNTZhY2NjNGM0NTQ4YjczZDljNGYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e64cc9dca83d4ff4ab6d528ca1a2db32",
+      "statement": "nora_ingest_outcomes_total{platform,conversation_type,outcome} is the live instrument for how an ambient message ended, because an ingest contains no model call and its trace is plumbing that is never exported (R-76); its outcome vocabulary is `IngestOutcome` in the ingest pipeline, not a hand-copied list.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/pipeline.py#L69-L105",
+          "version": "repo-lines-v1:sha256:1af8d0b6f0b97afecae37ed4e1224aec88286ad2a7e5a892461fef9f1f074cf5:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ3NjEyZjlmNmU5MzIyNTdjYTNjM2M0MWNhZjc2MWViOGM3MDYyYTE3ZDYwNWYyYzI3MmU1ZGM0ZTk2OTI0OWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViMTMyODNmNjM4N2MyMThlNDg5MTYxNTZmNTIzZjc2MGRjMjZlZTk1OTM3ZTAyMDU4ZjU2MmM5OGQzZDk1ODIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OGY4ZjhkOTk1MjcwOWU0MDhiZDRkMmM0N2E1YzdmMmIzZmZjMTBkOWY3NGI0OWRhOTNiMTkwZDk3NDUyNWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUwYmU2ODg3NTI1M2IyNGE3NDc5MjFhMDA0YTVhODg3ZjAyMzVmNzNkNzBkM2QwY2IyZWM5OGNmZmJlNDYzMWYifQ"
+        },
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L334-L345",
+          "version": "repo-lines-v1:sha256:ae619acfe746a481369d1e60c29cec7498ef9f6fae7ed1c2dad5decc6d294bf7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI2ODQxYWM2ZmNkOWY4YzA2YWYxZGUxZGNmMzhjZGIzNGQ5MTdmNGJhYzJiZmM4ZDk1NDU3NmRlNjliZTVkMWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwMmM0MTRiNTRjZjg2ZGZiNGY5MGRmZTdkN2JkYmZhNjY2YjdkZGRkMzJmMTI4NmYyMzBhNWI1MzI0MTgxOGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVlOGFmOTFmODVhN2U1MzMxNDc4NWZiNWJhMTRjNDAzMjVkZGJkNWE2MzdlMzlmNDliOTY4YjNkMWE0YjZmYWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE2NjRjMTNiY2ZjNmQyMGVkODA3YWE4ZWM2YWIzZjEyNmJhZWQ0ODQyMTdmZTQzZmYxZjQ2MjEzMjZkYWQ2NjkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_36a870032c2d4e8aabc6a6f253ba47ac",
+      "statement": "Per-platform liveness is nora_adapter_last_event_age_seconds{platform}: its absence means no instrument has been created rather than healthy, and the same age means different things per platform because Signal ticks on every SSE envelope while Discord ticks only on messages and on connect/resume.",
+      "evidence": [
+        {
+          "resource": "repo://docs/runbook.md#L128-L150",
+          "version": "repo-lines-v1:sha256:df241669abe1451cfcae062dc1286dd3d049145e942d32080873c8621804c86a:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU3ZmViODFiNzYyOWUzMGQxOTYwZTM4NTk3YWIyOWQxZjMxZTc5MDBhMjIzOWVlNWY3OGU0MzExZjY2NjQ0OWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVmZTZiZTFkZGRjMDBmODA4ZjI4NjFjZmNhZWQ1ZGFhYzM5ZGZhZmEwMTgzZmU1YWU1NDNjOTJlZjZhMTIxNjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgyNGMwOGNmOWVlMzlkZmJkZjc0N2IyOThmNzc0NDdjOTUzYmFmNTM1YzFhZGRiMGIwYmUwODI0YTQzMWQ5NmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcyMTAyNThiOWI1MzM3MWUxZDhlNzdkMmI4MWIzYjI5ZmMzNWRlZWFmMmE0Yjk3ZGM2MjFhNjZiZTY4YTU4OTkifQ"
+        },
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L2177-L2201",
+          "version": "repo-lines-v1:sha256:c44bb990dc83a85e9e8d8ead164b7358d809dbf587477f19c694d9fb829d3f96:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgwZDI4MjRjYjY1ZWE1YTJjNjdjZGM5NWYwMzZlMGU1ZGVhNDI2MTBiZjMxODAwZWI1NjRlNmVhYTMxMDFmNTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwMmM0MTRiNTRjZjg2ZGZiNGY5MGRmZTdkN2JkYmZhNjY2YjdkZGRkMzJmMTI4NmYyMzBhNWI1MzI0MTgxOGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYzYWE0N2VjZGRhZjg0MjU0ZTcyNzhjYTUwZGI0ZDY3Nzk5YTY0YWI4Y2JjYTRiYjBhYjhjMjNlZWFiOGNiZjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc3MmI4ODdlMzA0MzllYjgxYjY2OWVlNjdhYzY2NmZjMzBlY2ZmYjg5MmZhNDdhN2UxNjFkZThhYjYzZjc3ZDIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_98d22f036eb4406f8cb6d2cc637ec523",
+      "statement": "The `source_health` record writes one row per adapter state transition in five states (up, stale, degraded, down, unknown) with an `unknown` for a health() that raised, uses the same 900-second threshold the PlatformSilent alert fires on, and retries a failed or timed-out write on the next sample while counting nora_errors_total{stage=\"source_health\"}.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/source_health.py#L1-L64",
+          "version": "repo-lines-v1:sha256:9723ff351c069e58b4dc3eb5e5893d30d6d38faa4a46ae8028b8667dd72a0973:eyJzZWxlY3RlZExpbmVDb3VudCI6NjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImExMWNkNTE3M2I4MjdlZjFiMDcwZDc0ZjZiZDY4MjBmNGZjM2U3MjBkNjM3ZWJmMTJmN2U0MWNlMjQwMjc3NzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI0YzUzYTA0ZTZiMzU0Yzk3ODk1M2M0NGIwZDc5ZmIzYWEyZTc1ZTdiYmZhOWI0ZDVhZjcxNzAxYjkwMmJiZDIifQ"
+        },
+        {
+          "resource": "repo://nora/app/source_health.py#L53-L107",
+          "version": "repo-lines-v1:sha256:5ea20cb770470932fa16ecd626b5d9a681134415c9c5311657fafb00a7f727e3:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg4ODkxODczMjlkMTk5MDA5YzYzNmE3YjlhNjQwN2I0Zjk4YjE2YzZlMjNjYjk0NzVmOGFlNzBlZmJhZWYyZjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI5NWM3YWRlZjliZThkYjFlODI3YzFlYTA4ZGQxNjllYmY0MDUzMmZkMTZmNzE2YTExMDYxZTFkN2UxNTBiMzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE2NmRkZjZjM2QzM2VhZTFhMTA0OGRiZWIwM2JlYzNmYzcxMDZkNmVlYzFiOGZhMjhjYmFmMzNmZTc3NDFlMTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4c723505a0be4729a5823c660b23c19e",
+      "statement": "A degraded platform is reported in its own /health entry and does not make Nora unhealthy, because a 503 would fail the container healthcheck and take the other platforms down with it; every enabled platform that is neither degraded nor disconnected does count toward the status code.",
+      "evidence": [
+        {
+          "resource": "repo://nora/obs/health.py#L111-L140",
+          "version": "repo-lines-v1:sha256:88e45a52cc0e612d8e5466114cfa8d793571f0d5d0fc79299383190467d9d58c:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMwNWJiNWY2OTBhZTE5MDZmZmUwMDkxZjY2NDk2OTgxMDE3YzczNTczN2QxZGRjMGUxYjYwNmUwNzdlMGMwMDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlZGY2ZTQ2ZWI0Y2VkMjk1ZTgxY2NlYzc4NmJmNTE2MjQ4ZjFjNTg3Y2VhYjQxMGFiM2VlMjNiODY5NTVlMTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjllMTQ0M2M1ODJjOTAwODE5MDIyMWE1NzdjYzBmNDFhMTRjN2E3ZDMyNTEzZTI3OTk0ZThjNDhjOGQ5MTE5YzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZmMzkzNDYzZTljYzk4NWRkYjk5Y2Y2ZDMwNWI4N2E2MTMxZjNlZThiYTJkNTk4OWY3ZGY2YmNlOGI4MDJmYWUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5bf4d2101b7b48f9ac74cb1b4c002e8b",
+      "statement": "/health never raises — a dependency that fails answers a false or `unavailable` field rather than a 500 — and several of its fields are reported without being a verdict: omniroute.last_success_at, errors_since_restart, the memory index status, and config staleness.",
+      "evidence": [
+        {
+          "resource": "repo://nora/obs/health.py#L163-L192",
+          "version": "repo-lines-v1:sha256:14d2f10fac7b3c45808ac7d8e5831a275373ef0ce16da194da29ac6c24ed1476:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNjZTY0ZjhhYmVhOTVmNWI5ZWVlYWY4OTQ1NjBlMTQxMGNhNDRmNDBjMTliZGE5ZTJhZmFkNGEyMjNiYzAzMWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxNDBiNmVmOGIxMDEwYjExOTkwYmI2ODUzMDg4NWEwNWVjZmEzZTA3N2RmNGFjOGFmYmM2NTY3Yjc0ZjQ2MGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI0MjVjZjkyNGYzODAwNjE0NmEzNWVlZjgzNjcwMGM0M2ZkNDAyYjg3ZWQxZDljNzI3ZDBlMjgyNDgwM2JmNmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFlYmI5ODllMDQ5MjdmZmMyM2U3NGVlOTkxNmYzMTEzZjBhMWZjMTE5ZjYzOGExNmE1ODdiNWQ4YzE1NzQ2MmIifQ"
+        },
+        {
+          "resource": "repo://nora/obs/health.py#L86-L110",
+          "version": "repo-lines-v1:sha256:6b5020fb2b590d2669a7ed2f1b5bc51e5afb001846fea995aaf781b620c5fb80:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU4MGIxNjY1MzJjZmJiNzM3Y2Y0YjYwMWM5OGM0MWRhYjFmNzgwMjU2ZTI5OWM0Mzc0NWUzM2VjZjEzZDRjNDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJjMGU4NDJlOThlZTNkMGFhZGJiY2Y3YWMxMzExMGQ4NTU0NjczNjY5ZjA4YjE2YTk3NGYzYmNlZjkxZjJkNTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ1ODM4NWVmZGVmZjc1YThjZTIwN2MwYTI2NTZmNzUyNGIwYjA2NzQxYzdjNDg1ZjM2NDUyYThhMTIwMjRiODEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e4e2362d6bb0457bb8d4463131c74756",
+      "statement": "config.<file>.stale in /health is the canary for the single-file bind-mount inode problem: it says the file the operator edited is not the file this process loaded, so the remedy is a container recreate rather than a restart.",
+      "evidence": [
+        {
+          "resource": "repo://nora/obs/health.py#L14-L31",
+          "version": "repo-lines-v1:sha256:c139336077ab1a57f094badb462251d1daa19deb12be553db1dd0ff78f254081:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1NWVlNTk0YzlkMjhhOGQ4MmZkN2ZjMGU3MWM4MTg4YzI2ZWI3NjNmNzc3Y2QzNmMxNThlOTMyOGU0ODhiYmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU0NTI2YWZkNzhlMmJiZGM0N2QwODZmNjliOTdhZjYwZTQ5MjAzZDNjNDlhMTAwMDNmNTQxNzEyODlmOTYxZTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjliYTMyZDU0NTcwNDBiNDZiMTViYzkwOGNkNjc1MzExMTk3ZjExMmRkZjg0NmMzNGIyMmNiYjYxMDM2MzZiZGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjllM2Q3ZDE0NzgzYWRjZDJlNTU1OTI2NTMyYTE5NTlmZWRlOGM5YThmM2JlYWY3MDdiNjlmMzFiMjI5ZTQ5MGMifQ"
+        },
+        {
+          "resource": "repo://nora/obs/health.py#L186-L191",
+          "version": "repo-lines-v1:sha256:dfc81d0013abdf7ec8484a5d08d7511f9a5c3aade5c7a02df322ad741972a492:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDMxOWVkNWJiNGNkNDA5MTU5YmIxYjQzNGMyZDZlNDQxZmY1MTMwY2ZlOGE5N2JjNTRmYmFmODc2MjhmMTY0YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTc4M2VjZjhlZjc3MTU2ZmUzOWRmYWQxZjAwOGM3M2FhYzlmZmE1OTQ1ODEyNTk5Zjg5NmRhOGM0NjQ3N2UyMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjIwZTdhMTFmYzM3MjA3YzM0MjM4Zjk1MjVkYTYwMjUzMGRjNzgzYTY2ZDcwYTllMTY2ZDEyNzczM2M2ZTczMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjYwOTI3YmQxZjlmYjcwNTUyYjM0NTFmMjk3MDE0MWJmZjlhYjEwZjJkZGY2OTczMTkwYmNkZDk1ZmFkNDBjNyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_0a11d4ab413b4f8c81870e38d5bd4e11",
+      "statement": "A turn cut off by one of the agent loop's budget caps is byte-identical to a model that chose not to call send_reply in nora_silent_failures_total, so nora_llm_stop_reason_total{reason,audience} is recorded on every completed invocation — the healthy end_turn and tool_use included — to give the truncated reason a denominator.",
+      "evidence": [
+        {
+          "resource": "repo://nora/engagement/stages/deliver.py#L251-L264",
+          "version": "repo-lines-v1:sha256:b142e5710db9f12185022c0d88287f34cff85b069d6c413500a3627d11153792:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzM2Y1NTIyMWE4ZDEzMzhmYTZiMmVkNGMwYjhjZTk0OTY2ZGE2Y2MyM2E3MTUzMmVhZjcyYWI3OTBhMWViYTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY1MjZlNjgwODgwYTEzMTk5ZTAzZDFiMDdhMzNhNzJjMWIwNDY3OGJlNGYwNDVmYTA4MzI1M2Y1ZGI1MTUzNmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVhNDk1ZDk5ZDUwZWZjY2MzODJjYWRjNGNkN2ZjMDg1MWJhZTk3OTRjYmNhYzYzYzYwNDMzYmRlZDUwYmM3NzEifQ"
+        },
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L455-L476",
+          "version": "repo-lines-v1:sha256:1c77a85d6590d9f6974d99c2571e5c6889427f30b6a183e63847a65358ecfee8:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBmMTNkMDFhZmE1ZjJhOTRlNmQxYjZkMDFiNWExMTk0ZjhhZGVlMmIyZjBkNGZmZjQ0MDA0NTAxZmJjNzFhMGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwMmM0MTRiNTRjZjg2ZGZiNGY5MGRmZTdkN2JkYmZhNjY2YjdkZGRkMzJmMTI4NmYyMzBhNWI1MzI0MTgxOGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcyNzk0MTdmZjlkNjM3MmI0NDdkMzYyNDE0MTM2NzZmNmNmM2VkMTM3NGM0NWRmYjg2NDY3ZDk5YjNmZWMwN2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM5OGEwNTJjOWE1MWJjNmUwNjY3ZmFiMzdhZjM0ZjBmYTA3MmMwODY3ZWUyMGU4Nzc2ZGM4Y2EyYTg4ZjE5MjIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ed600274d8fb424986fa04e1e851dd00",
+      "statement": "The Deliverer writes `last_outcome` on every exit and it separates her own choice (never called, empty_reply, cooldown_held) from this process refusing to try (cap_spent, doctrine_leak, egress_block, audit_write_failed) from the platform (send_failed); the post-turn check keys on `called` rather than `attempted`, so a guard-refused turn is not counted a second time as no_send_call.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/guards.py#L180-L210",
+          "version": "repo-lines-v1:sha256:68293460765736ea0944403ca023f63f07eef86503b6da21bf54579a657d8f19:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhMTRjNmY3MWQ4ZTE4YjhhMWY3MWI2YjIzYzBlYzgwZGQxOTI1ZWIxZTg1ZDYwZjA1Zjk5NWYzYzQ3NDExZjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFhNDk1ZTU1ZmU1NWNjODllNDFiOWQzNWE1OWYxM2FjYWVhN2RlOGY1YjAyMzllNmI4YjY4M2ZhMmEyZGQ2MTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY0NGQ3NDQ0NjQ1ZDRmNGYzNzk4ODUxMmIzOTNmMjUwMjBiMmRjYTY3OTYwZDkxNmM2MjNhMjc2ZTAzZjcyZDgifQ"
+        },
+        {
+          "resource": "repo://nora/engagement/stages/deliver.py#L273-L305",
+          "version": "repo-lines-v1:sha256:255a485d05e674796595b8ae37f9e49fae332d617b36a32759b53295e71cce55:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI4NjMyYTk1OWYzZTRiNDg1YmRhOTA4ZDE5YmEyNGQyMzg2ZDI3MmMxYTZmZWMxMTEzNmY5YmYxY2EyMjQ0MTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxMDM0ODFjNTdkMGYwZGMwZjc2Y2QyY2M4YjM2MDRjNGU4Mjk2ZGE0MTIyYWRkMTllODE3NDVkYzdlMzMxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk3NDI3ZTVmZWNmNDA0ZjA5YTU2YjAzOWU4YWY4OGE3OTgzZjZlZmUyMWQzNzE3ZTc3YjNhNGFhYmE2NjI1ZDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJjNTQ0OWE1YjBkMmFiZDM1N2VkZTc5ZmQzNDZlZTBhOTJhNTBlOGY3NTVjZjg5YTZjZjhkZmIyNDFmZGFmNzAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_63f1412dc5a6402196b3664b1bc7c417",
+      "statement": "A reply held by the participation SEND cooldown leaves no trace an operator can count: no counter moves and no audit row is written, the text is retained on held_texts for the shadow mirror, and only an INFO log line records the hold.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/guards.py#L436-L452",
+          "version": "repo-lines-v1:sha256:b17afe2316e1b1d7aa79a395099741b17630ccf9cef0013bf2bc2bd78ae85bf9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViNDYxZmEyYTgyODI4ZmQ0Y2QwMGJiNGFmNjVjMDMxODdjNTIzYzYwZTJiMGYxZDllN2M3NzA5OGJhNGUwMDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlmMTFlYTExZWYwMWUyZTk2OWU1ZjRjNjI3MmYzZGI2NmRlNWY4ZTU0ZDFjYWFhNGFmZWYyZDIwYmJhMmVmMjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhkMjJlYTM3NTEyOTA4YzY5YThhOTcxODEzMWQ3NzE5YzJhNDUyYzc0YmFhN2NmNjA3YTIwOTJlOGFiMDkzMGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk4NTgzMmIyYmIzYmFiODdhOTY3NjczNjk1NzUwMDg2ZTQyY2IyN2QxMTA1YTk4M2Y0Y2Y4NjQ4YmFlOWY0MWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5775cfa59c71436ab904f018f5d10c61",
+      "statement": "nora_partial_replies_total{reason} is the only series that shows a turn which delivered some of its messages and then stopped for a reason that was not \"she was finished\": delivered is true, the group got the check mark, and nora_silent_failures_total never moves.",
+      "evidence": [
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L510-L526",
+          "version": "repo-lines-v1:sha256:bf2231e2a695a1a5c8e097c70abf8fa6c7d8436ce1fa26546fbe04d8df7858e4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFjNTk0MThmNDMzZDkzODMyZDY2NDE3MDExMDI5OTc0MjRmNWFjZDRjYjE0NGRkYTUzNDRhNTg5OTQ4ODJlMjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJjNjFkZjNjMzQ0MWFlMTNhYzVkMzdkODk1OGNjYTQ5Y2FkZDRmYTQzNDViM2E1YmNmOWY0YWQwOGU4YmRiYzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBiMjAxNDFhZjFlODZjZmUyOWIwMjdiNDhjMGM4N2FlNzE5NWI2ZTA3YTkzM2NjN2RmZGIzNDgzMDVlZWE2NTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA4MjcxZTc4ZThkYWYxYjM4NDhlZWExNDFjZjY5Y2I5NjE0YTIzZjEwMzg0YTNiMjRiZjFkNjViMDdkODdhODgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_23fea900a96f4ab5b4e67f641f7e348d",
+      "statement": "Guard blocks and delivery failures are counted where they happen: R-2's spent message cap increments nora_guard_vetoes_total{rule=\"R-2\"}, a leak block increments nora_leak_blocks_total together with nora_silent_failures_total{reason=\"doctrine_leak\"}, and a send the platform rejected increments nora_replies_total{status=\"failed\"} together with reason=\"send_failed\".",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/guards.py#L307-L314",
+          "version": "repo-lines-v1:sha256:b81619d5c3b248c254f6133a821b690bc26e19bb899d1e7be85e1c6451f5728a:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzYxODY0M2Y1NmRkNDYyOWJhNTAzNGU2YTc1MzNiMmJhZTVmNGZkYjUyOWQwMmExZjE1ZmU2NmQ0MzY5NTI2NCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWYxMWVhMTFlZjAxZTJlOTY5ZTVmNGM2MjcyZjNkYjY2ZGU1ZjhlNTRkMWNhYWE0YWZlZjJkMjBiYmEyZWYyNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzA2NTczMmQyNDk3YzcxY2Q0ZWVhZGQ4NmQwYmQwOWI2M2QwZGM3MDlkNzE1ZDAwMzhjZTMzNjJmMzk1YzUzNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTQ2ODFiZTcwZjhhN2I2NWU4Yzg4YjYyMWM4NDIyYTQwYTlhOGExMjgwYjUyODFhNWQ3NDZiMzg1ZjFlZDNjYSJ9"
+        },
+        {
+          "resource": "repo://nora/agent/guards.py#L395-L407",
+          "version": "repo-lines-v1:sha256:4ceb52edf46a447a381c4888e6c04784aabcffb865c06ff51ebb4c03bf80b69a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJkMWJhNmYyNGUwOGQ1ODU2NmZhYTcyMDVjZGU3N2M1YjU4ZWE2YmFiYmJlNzVlMWJhZjAwNDFjYjE2MTVlYmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlmMTFlYTExZWYwMWUyZTk2OWU1ZjRjNjI3MmYzZGI2NmRlNWY4ZTU0ZDFjYWFhNGFmZWYyZDIwYmJhMmVmMjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY5YzdkMTg0OGJmNjY2ZDI0ZWJjNDczN2ZlMjllNDY4NjFjYjI5YTlmMjA4MzllYTUyYjc4MDFiMzcxYWI5OWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAwZDExZTY1NmQxNmRkOGVmY2RlYjhiMWQxZTUwMzk2OTZiY2FhM2U3ZjY5NjA4MWFlM2QzZTM5YjgwMjY2ZmEifQ"
+        },
+        {
+          "resource": "repo://nora/agent/guards.py#L543-L548",
+          "version": "repo-lines-v1:sha256:45382157b4e50b09280127d36eb1d83c73005a73c781573820ecac3ad70a9151:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTk3YjQ3YmI4MWNlOTNjYmE2N2FmYzA4Njk4YTgwY2ZhMDkzYTg2NjdlOWM5Zjk2NTMzNzgxOGQ2NTc4ZDE4NSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTUwMzJlOTY0ZDA5MzIzNTFlNWQxODUyNjkyODFiMTcxYTNhMDliMDhiMjg2ZTY2MWVhNDcwMzIzYzgyZWI0ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWM0M2EwNWNiODU1MjZiODY3NjY1MGEyNzhkZmI5ZTRjNDQwOTZmYzYwMmYxNDIzNjdkMGNlOGNiODZmYzM3NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmM4MWNhM2JiYzFiZmY2Y2FjNWI5MzZjNjE0M2Q3NmM3OGE0ZWMxOTJhOGZkNTlhMzViYmZhZjk2ZTQwMjFjNSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_0e8a0ad47b564b91b4aacf3927fcb6fb",
+      "statement": "A Cognition wake with pending stimuli can be held by four brakes (single_flight, cooldown, backoff, concurrency), counted once per unit per tick while the brake holds, and a wake that runs no session at all is counted by reason (no_home_room, which is also recorded failed so its stimuli stay pending, or empty_agenda).",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/stimuli.py#L84-L105",
+          "version": "repo-lines-v1:sha256:b7734323a6fad61a879cddd0857d6e774cddf867cd3b73923e6d3333e60d4e9f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAzZDk0ZjljZjg0Njg5MzZmMjFlOGUyMGIxMDI1MjYyN2M2MGU2Njc5NTllMTQzNjAwZTNiMWZkNGJjZjg3YzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI1NjM3MDgzMzljY2UzYzAzNTU4OWFjZjc3M2E0ZTYzNWFmMDM2ZDUxYjMwMTFkNDg0ZTI5ZDNhYjM1OTZkNmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMyMjMzYmZkYmFmZGQ5MTM0YjViZDJjMDc0YjQ4N2I4MThlMjAwZjM2OWRlODVmMjczZmM3ZWVlZTA4OTVhMTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQzYjFlMDA0MzkxMWJlNGJhMGQxODlhODNiMmYzNGI5OTE5NDE3ZjU2MGUwMmJiZTEyZDcxN2FmMDZhYTExNTIifQ"
+        },
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L1818-L1824",
+          "version": "repo-lines-v1:sha256:76e0e1b849bf060f43be95123d2049b745c0af0f5f4de1b8c33ee2352c0e3d0a:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzZlMmEyZjlmMDI1OTMyYTUzMWQ3YmNhMjlhMzRkOTA2MWZhNWRjNjAxZTM3ZTE3ODQwN2VjM2Q1ZWYxYTNjMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzAyYzQxNGI1NGNmODZkZmI0ZjkwZGZlN2Q3YmRiZmE2NjZiN2RkZGQzMmYxMjg2ZjIzMGE1YjUzMjQxODE4YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjY2ZTA2OWM5YTcyMTU2YTA5ZmU0MTNhMDE1OTFmZjQ2MTUyYzIzMzYzZTI2NWFlZDNjNmE0YmVjNTUyOTcwNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2EyNWE1ZmU5YzQzN2IyN2VkMzllMzA4NzY4MzlhMGU0YTczMGEwNTA4YWFjZTAwMmI4NDAwNmE1OGMyMDE5YiJ9"
+        },
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L1871-L1879",
+          "version": "repo-lines-v1:sha256:f3a0e6db636d8ea55c6ab79fe6c6e722ffd7ca67e9d2ec3107ce48054a4f2181:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzZlMmEyZjlmMDI1OTMyYTUzMWQ3YmNhMjlhMzRkOTA2MWZhNWRjNjAxZTM3ZTE3ODQwN2VjM2Q1ZWYxYTNjMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzAyYzQxNGI1NGNmODZkZmI0ZjkwZGZlN2Q3YmRiZmE2NjZiN2RkZGQzMmYxMjg2ZjIzMGE1YjUzMjQxODE4YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMmU3NjRjNTM4NjVhZDBjZTI2NDg1NWI0YTExMDJkYWJiMmUwZjUyNTM5MTk1OWQ2YzE5Y2M0ZWQzZTkyNDJjYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmNmODYxZDM1ZjI5MjRlYTRmZWExMDFkYWIwMDZmOGIwMGU2ZDQyZTVmMDI2NDAyYWZkNzRkODYyMjA4YTc3MSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_bf231ac37b464650bcc4aeaeab7030bc",
+      "statement": "nora_cognition_session_units{state=\"no_home_room\"} marks units the Cognition loop never wakes, and nora_stimulus_pending_age_seconds{unit} is the backlog gauge that reads 0 when nothing is pending and is absent until the wake evaluator's first tick for that unit.",
+      "evidence": [
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L2156-L2163",
+          "version": "repo-lines-v1:sha256:6149df52ef00909b7916e286711db4f0baf79d0a25bda873182087aac4b188be:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzhmNGRkMDcwMWFlODcxYzE4ZWJiNGFjZmVlYjVmNDdhNGE1YTllYTgzMzFmNjVlZWI3M2M0MTNlZjY0MGEwNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzAyYzQxNGI1NGNmODZkZmI0ZjkwZGZlN2Q3YmRiZmE2NjZiN2RkZGQzMmYxMjg2ZjIzMGE1YjUzMjQxODE4YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjUwZmZkZmY5YmNlOTExYWQ1ZTFkNjFmYjMwYTk0ZGRhOWU0MjNmZWNhZGU0MjE4MDI0ODlmYTI4YTk0MWU2OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYmRmYTk1Y2UwZjY2MmUxNDQxMGYzNzljZDg4ZjNhNTQwNThkNmIyMGYwYTgwMGQ1ODFjNGJkNDU2YTc0ODZkNCJ9"
+        },
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L2306-L2314",
+          "version": "repo-lines-v1:sha256:6e32da61f3587a32abae070bbc988cfe557cbcb6c90a5cb4ac51ba687126f310:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzhmNGRkMDcwMWFlODcxYzE4ZWJiNGFjZmVlYjVmNDdhNGE1YTllYTgzMzFmNjVlZWI3M2M0MTNlZjY0MGEwNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzAyYzQxNGI1NGNmODZkZmI0ZjkwZGZlN2Q3YmRiZmE2NjZiN2RkZGQzMmYxMjg2ZjIzMGE1YjUzMjQxODE4YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDczNDMwOTEyMTA4ZmYzYzZlNTU0YTU4YjY5M2E0YmY5MGEzZThkZGQ1MjFiN2ViMTgwNzYyMmFjY2EzYWRhMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjU3MDQyMWM5MmYxODAyNmQ2YjIxZmVmYjNhNTVlNzNlOWMwNDYyYTRhMGI5OWM0YmE1MWIwYzI5NzI3ZjQ2MSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_5aba14c7688844dda8c17e7ab501ca6c",
+      "statement": "Cognition stops re-waking a unit on input it cannot process by striking that unit's stimuli once it has failed max_consecutive_failures sessions in a row, and a wake a previous process left open is reclaimed at boot as `cancelled` with a restart detail, which neither counts toward the failure backoff nor strikes a stimulus.",
+      "evidence": [
+        {
+          "resource": "repo://docs/runbook.md#L590-L606",
+          "version": "repo-lines-v1:sha256:804c170ca4e3ce4cc245b70f9eb7be5c19bd7dc8c56fcecc90c5e25c4381303e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMzZjBjMTllMjM2MWFkYmRiZDNhZmY0ZDRmZDBhNzQ4MGM0YmViZDA0MjUwNWMyNGYyNzFmYTVhYzNjYzM3MmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVlNjY5MDFlM2FhZWFlZDdjYWE3ZTc1MjNhYzQzZTQ0ZWIwMDA2NmI4OTgwZjM3NzdiYWIxZGNkM2VjYmFkMjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE3MGQxYzk0NTQwY2JhNzBkZDkwNTM0MjU3MDc4NDJjYzZmMzFiODQyYzkxOTFkYTljNTQ5NDg5ODIzZGI1MTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU2NTAwODA2NjlhMmM5NzQyOWUyYjg5Mjg3OTA1Y2VlMGU1OTQ2MTAzYTY5NDgyMWYwZDg3NTgxMWU4ZjM5MzAifQ"
+        },
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L1802-L1811",
+          "version": "repo-lines-v1:sha256:6b9e7a66aa5573e6aa5256185ce710ce23b859eeab34651505dfa3e895e7b3c4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc2ZTJhMmY5ZjAyNTkzMmE1MzFkN2JjYTI5YTM0ZDkwNjFmYTVkYzYwMWUzN2UxNzg0MDdlYzNkNWVmMWEzYzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwMmM0MTRiNTRjZjg2ZGZiNGY5MGRmZTdkN2JkYmZhNjY2YjdkZGRkMzJmMTI4NmYyMzBhNWI1MzI0MTgxOGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVjNjBiYTM3OWY0YjRkNWQzOTE4MGZkZWQ3MWJkMDJmODdlMmY5YzU0MjlmODJhZjliMWViNjMxYmQ3MjE5YmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYwNGU0NzhkMzIxM2U4MGFiZDM1ZWRhMjAzYjg1OGUxMTYzMjgzMGZlZWRlMzIxOTkwNDBjMTZkNmJmNWM0ZjAifQ"
+        },
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L1862-L1869",
+          "version": "repo-lines-v1:sha256:418b9de351c27b80bb3fa7d9deac6be3318d42d00e8634426b434f4b11c8783e:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzZlMmEyZjlmMDI1OTMyYTUzMWQ3YmNhMjlhMzRkOTA2MWZhNWRjNjAxZTM3ZTE3ODQwN2VjM2Q1ZWYxYTNjMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDczYTRiNTQwYTEyYTdlMzhkOWJhNjU0Y2UwNjkzMWJhMTJlYjgxMmQ5NDIzMDRkZGZlY2E1MjVhZWRkMTliZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZThmOTkyNjdmYTM0MDUxZjFjODJmOWMxZTNmZmFiNjk1MGQ3N2U3NDQ1YzUxMDVkNmJlNjc5NzUyZmM1MDJlNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzFlZWY3ZTljMGMzMTJlYjgwMTY0MGVlMWM2ZDIyMDk3NjhkMjI4NzBhZGZjZWMxOGJlZjI2OTJlODA0MzVhZSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_274c3dd2315f4d9788258c98c2281551",
+      "statement": "A rising nora_peer_card_empty_total means her card stopped appearing and cannot be narrowed further: the Honcho client catches every transport failure and returns the same empty card, so a dead endpoint, a timeout, a 4xx and a genuinely empty card all arrive as one empty result, and the peer_card error stage stays near zero even during an outage.",
+      "evidence": [
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L1444-L1466",
+          "version": "repo-lines-v1:sha256:4fcc01cd5d64cd225a637e145d492bcd4169ff15d1841947db745be3356d15b5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIyODY5ZTIyZWI4ODJiMDM3YjNiZmRkN2RlYmQzODQ4YTZhYWFmNDk3NDhkOGNlNWJiOTNiN2EwOWZkYmU1MDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwMmM0MTRiNTRjZjg2ZGZiNGY5MGRmZTdkN2JkYmZhNjY2YjdkZGRkMzJmMTI4NmYyMzBhNWI1MzI0MTgxOGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgzMzMwZmIwMzZkOWExZTY0M2NmMDAyYzQzNjEyODMxZTMyOGU2NjczZGY4ODE2YzQ1OTZiOGMzZTliMDk5YmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJjODJmMGYxOTc2MTk1NGUyMTU5MWM5MGVjOGUwNGU5OTEzMGQ5YzYxYWY0ZDIzNzcyZjViZjc4ZGMwMjUwY2IifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9e99a3aadf8f4d19b066d85dbe17ecf2",
+      "statement": "The memory index reports its status and projection-queue length in /health without counting toward the status code, because a rebuild in progress must not flap the container healthcheck, and a search that cannot be trusted answers `unavailable` (fail closed) or `partial` rather than an empty result.",
+      "evidence": [
+        {
+          "resource": "repo://nora/obs/health.py#L174-L185",
+          "version": "repo-lines-v1:sha256:9eaad1c02547a6a1aeb33767ad8bf75664de598c3e8d9233753580336aa7bc63:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlNzM3N2E0Nzk4MGZhYjBkNDY0ODBiZDQyNjM3MDM3Y2M3MTliNWY1YzNkY2MwMTVhNDE5MmE5YmFkMDJjOTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2ZjE3YTRmYWNmMzhkNGNkMzY1NGYyZjkzOWZlOGIwMDUxZDQ0NjMyNzAxNzQ4NzhmMTkyOTNhNzhhYzA4ZTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ0YzI5ZmYzMmZkMThkNGRjNDc4Yjg4M2FlOTgwMzgzNzU2M2UxNzRiMTk0ZGRjMzhlZjViNDU0MTRiMzkwYzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEyMGJlMDJiZjViOWE0ZWFhOGQ0ZmMwODA5NmYxZmNhMzBhMzc4N2FhYmRmM2Q4YTBhYmQ1MjhhY2M2NDE4ODMifQ"
+        },
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L1995-L2007",
+          "version": "repo-lines-v1:sha256:ff1371744fc5933aa93589be321b8808bd871b2aecc26212d9976eafd19d3919:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY1OWQyN2MwNWUzMjgyODUwOGQ5ODU0NTU2YmFhZGNiODQxNWI2NmExMjA4NTY0OGNkNGEyY2M4ODEwZjYwNDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwMmM0MTRiNTRjZjg2ZGZiNGY5MGRmZTdkN2JkYmZhNjY2YjdkZGRkMzJmMTI4NmYyMzBhNWI1MzI0MTgxOGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRlODU0ODc0MDY2NzgzOWVkNTg0MTRmNDYxOTQxMDE5ODk2ODAwMDllMTQzMWE1ZmZjN2JkNmRiZWY2NWMzZDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzNWZiNWZhYzhiMTJiNDE3NTVmOWU4NGJlN2I0ZGY3NjM5ZThmZjc2NTE5ZmI2OTA2NzNhY2I1NmFiMDAwNzMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_df678f8db1184c4097c8e542d10eebac",
+      "statement": "Nora's computer publishes nora_computer_up and nora_computer_calls_total only while [computer] is enabled, so absence means not applicable rather than down and the ComputerDown rule cannot fire on it; every (op, status) is created at zero at start so a first `unavailable` after a restart is visible, and an audit write failure is counted separately because the tool call itself still answered.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/computer_metrics.py#L1-L64",
+          "version": "repo-lines-v1:sha256:ad19ef8ba9c72b96924b82b0d3f7b8b73590d1cddb34c9ba0e065ceef107724b:eyJzZWxlY3RlZExpbmVDb3VudCI6NjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxYmMzYjY2ZTk1M2UxOTllMzAwNGRhMDlhMTE4MzFjZDczYWJmYTQ0OTNiMzMyZDk0MTc5NzdhYThlOGRmMmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJkYjBjYjhhMWY0NjM2NmVjYjg2OTA0Y2E3MDhmMTExNzFiODhmN2VmMTJjOWNkZDhmYTY0YWE0NzQ0NjMzODkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFiMDQwOWI4ODczZGM3NWJiZDRiY2VmYTlkODgzNjlhOWM3YWQ1MzY5OTkzNzU3OTA1MzE0ODk2MDY2MTQ2OGMifQ"
+        },
+        {
+          "resource": "repo://nora/domain/computer.py#L33-L49",
+          "version": "repo-lines-v1:sha256:8e2e785357075a40833d8d0d2be115f7bfa46681d7712fb087853999e6d92590:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDFhNmFlM2JmNDBkODc3N2U0NDQxZWRiZmVmMjA4YjIxZjE3OGFiYjAwMThhYTU1NmVkMjkyMjEzOTdjMjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhZmJhMDUyN2MzOTUzYzRiNmUwZTViNTczOWJhODM2MTJmODA1M2JjZGM5NDY2NzMwMTkzY2QxZDU5MGI0MDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZlMDU3YmZmOWNlNmQxMzQyNGM4NDQ2MzU3OTAyNTBjOGJiZmQxMGU5YTE5YzhiMDZlZmQwZjQ5YWY2OTdlNGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM4ODA4MDYyMTNhYzQyOThmNzYwZGE1YmRkYWMxMmY0YTJiODliYzNhYTcxMGNkOGNkNTcxYzFmNDUzNGFhNDAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_667d105bdd1f4226bce91a697218d56a",
+      "statement": "The document checker has three outcomes that are never collapsed — ok, refused (with findings naming the rule and place), and error — and an error is never treated as ok, so a checker or store failure surfaces as `unavailable` with nothing known to have been stored.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/tools.py#L16210-L16234",
+          "version": "repo-lines-v1:sha256:8c6b34ab84db5c7b2a8ba31b408770cc127cc7851351c47aa7b1148318ae5f8e:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjczNDc0NzM0MTMzZGRjMjJjZTdlOTRlYzEyNzEwYjA3M2I3ZDlmNGYxMDc0ODVlYWU5ZTY3Y2ZiYTViNzY1ZmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJmODU5ZGM2Y2M3YzkxYTkwM2Y5ODliY2NiZjZkMzUyYjk5ZDRlYzM3ZWU0MDdiZmE0MTg5N2Q1Nzc5OTE1MWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVjMGU1MzdhYWE3YjVmY2UxNTA3ZGY3M2UyZWFjY2RmZGViNGFiMDA1YWE0ZTljY2I0MTdjZjc3NDQ3NWVkMWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFjZmRjMWFmOWY2NGZkNzBlZDQxNjVhMDI3NGEzMzlkZTRmMjlmMmI2ZDVlNWI5ZDMwNDNhYTM3NTllZjYwZjUifQ"
+        },
+        {
+          "resource": "repo://nora/documents/check.py#L1-L32",
+          "version": "repo-lines-v1:sha256:19f0f28612e222253931ac8406d3d19915ae84ea5edd4aa07a84339638a43774:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI3YzRiODU5ODJhNTg0MTgwNTkzOTc0MDVkYTRhZjgxYzFhODk4NDBkYWYyNzdhMzZmNzkxMDQ3YmZhNGM4ODgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ac54c35a90784c1f94f5d3b8198d31bd",
+      "statement": "A document refusal is reported to the model as `bad_arguments` with the findings (reason findings, not_json, conflict or not_active), while an unknown or another room's document is `not_found`; a published document is a `documents` row with a `document_revision` and a `document_state` row on a state change, and a revision of a document that is not `active` is refused as document_not_active.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/documents_service.py#L1-L36",
+          "version": "repo-lines-v1:sha256:ed25988e9e44555b346ac9889f96543b1a0c73599d440271c5901e8812e00766:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVjMDVmYmEwMjJmMzY5ZDgwMjQ1OWM4YmEzZmM1MTJkZDk5NDQ5MWY0ODdlZTNkNTljZTM2Y2U3MjZiY2RkZGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/schema.py#L4214-L4270",
+          "version": "repo-lines-v1:sha256:773cb43f4f31ea02fab2e86a8c68e7e716433e2ca25b20a239ef7ff340234e83:eyJzZWxlY3RlZExpbmVDb3VudCI6NTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM3Y2RkYjY0ZGNhYWY4MWZkNzBjYTczMDBmZmEzODM4MDYxZjcyMDNkZjI3ZTQwMTljYWU5NDU5ZGYyZmQ4M2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA4Y2JiMWI0Y2MwNDhjYWNlMDlmZTEyODIxNDFiZmVkZTMxZWZmZjFkNDQ2OWM0YTQwOTg3MjY2ZjBiZGI4YjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRiYzNlOWI0ZmFjYjIyOTViZWU5OWVjZjhhODRmZjk1NmM1NzRlMjNjNzQzYjgzMWZjNWJhYTlmOTk4NGMyMWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA3NmY5OGQ0MThkYzhlY2M1NzU5OWYxNmE5MTU4NWY2YWMzZDQ0YTZmYjZkNmZkYjUwOWVlOTQyMjY0ZjRiZGYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b1210d93bd1f47258da1844a970266e9",
+      "statement": "When document_publish was called and stored nothing, the reply carries a not-saved note and the process logs `reply_document_not_saved`, which is the only evidence outside the tool counter that she claimed a document she did not make.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/links.py#L280-L292",
+          "version": "repo-lines-v1:sha256:902fffc6171205be9a5257307c46dced20f9d34b2acc15a6af53a229c4e77cac:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgwY2E0YTk2ODMxMjczYjllMzZiMzVkNDhjMDVhOGZlM2Q2ZmU5OTk4MGU2MTMyNDM4OTgzZDRkMGMwNDY3OGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU4M2E4NWZhMDIxOTIyNGE4YTY4YTkwZGEwYzk4ZDRjNDM3ODgxMmZkYzRiMDNkN2E4NGViMWQ4NzRlNzE5NjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3M2Q0MGIxMTRjNjI4ZDVjNTYwZDkxNzE3OTJlNDMyMGFhYzY4ZmQyNjFiMGExNDE5YjQ5ZTI0M2JjMTMzZDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAyMzY0OWI3N2Y1YTVmMTY1MTJkYzRmNzg2MjRkZTdkMzFmMjMzYzliZTRhYWViNjc0YWRiMWU1YzY4MjVhNDcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d24e6ef8a6484b3ca60c276a90e4e5da",
+      "statement": "The operator control plane's read-only half is enforced rather than promised: the record store is opened through an engine whose every connection sets default_transaction_read_only=on (plus a GRANT SELECT-only role in the deployment), and the only daemon calls go through an allowlist of exactly two read methods on signal-cli's directory.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cli.py#L19-L41",
+          "version": "repo-lines-v1:sha256:3d02b409b45c0059d36d54d1fef34f700ce13b0ce4bc27617b3a5bc04feec305:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg2NWU0YWNhNTY0Zjc4OTM4ZTQxMTQ0ZjA2MGY5OTMwZmIyZGJkYmJiMTk2ZTYxMGM0NGQ3YzVlZGUxMTE4OTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVjOTRmYzI5MzJjYThhNDRjYzZhZmMyZGMzYjVjNDAwZmQwNjNjN2FjZTRhN2MwZTMyNzkzNjkzNzEzMTljMmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/engine.py#L19-L37",
+          "version": "repo-lines-v1:sha256:9542b6d465df3aba982dcbe112536f09fa5fa235c03dc2f74da855ea3b435cf3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU3ODA1NTI2M2MwYzQxODBjNThjNjg1ZDBiYTk3NThkNTlmMTM2MzQ3ZWVkZDNlNzM0MTE4MDAyYTViNjJmMjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFhZTA1MjJkMmE4NDdjNGEyYzliZDBlMGY0ZTZlZmZkNmNkYzNiYTNjMTUzNzlhNTg4MGQ0YmEwNTQ5NDg1NTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fe043fe297fb474b9945d3ff039ff22b",
+      "statement": "The read commands build no adapter, bind no metrics port, open no SSE stream, run no migration and construct no LLM client, and load config with require_secrets=False, so they run with the Nora container stopped and without the provider key that only the container needs.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cli.py#L30-L40",
+          "version": "repo-lines-v1:sha256:444086c9f1df43f48ff8748e905836434c247b4ecc90416109d7641287da3a5f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlYjJjNzhjNjUyZjZhZGI0ODIwOTRlOWYwMTQyODFhOTJkZDNhZDBhM2UyN2M4ZTU2ZjNmODNiZTBjY2RmODMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0MTAzZGNlNDkwN2JkNjdkMjczMzkwZWM2NTZmMmUxMzg2ODFhZjcyOGE4YWUwNWI0OTJjMGViNzk4OGQyODQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgxODE3NjkzOGM1Mzk3NDI5Zjk3NTIzYjUzMWE0MmFlYjdkNzU3M2VjNGYyYzM4OGRkZGExNjgyMjNmYzdmNzkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhYWY3NjM3Y2I2ZTdlNWRiODVkNjM0Mjc0NjAxNGRmMDQxY2NkNTU4YTkyMGIyOWViNmFjNzE5ZDdiYWY1YzIifQ"
+        },
+        {
+          "resource": "repo://tests/test_cli_control_plane.py#L707-L720",
+          "version": "repo-lines-v1:sha256:1d5403d104ffbb4f46f9fa210ec1e3decbbe3af20703207d423bd7eb8b57a02f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiOGRjOTNkNzEyNjAxNzYxNjA1ZGQwMmQ5NjdmMTdjMTMzYmQyZDhmNjYyMTQ1MDJhZTg1MmZjMzEyNDI3N2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg3YTNkNjk1NDY3NmQ4YTQ2MzU0MjJkZTFjYTFjYTE5YzBkYTBjZTQ0YTU1MzJhNzQ4M2YwNjY0NjQ5MzlhZjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMyOTUxOWM1MDBjZWJhNzFhYjFiZDYzNWJlOGM1YWE2NmU5MzQwNTJiODE2OWQ4YWVmNWQ5MmU2MDE3Njg3MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc5Y2RhOTY0NTRjZGVkNWIwNzU1OWZkYTJjYTk0NmEzMTBhNjg0ZThiMGY2YTcyNDZiY2JkNGQ2NGZlMzk5ZGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5f473ba34aa04eacb1426adcac764e5d",
+      "statement": "`--apply` is the convention for the CLI's repair commands, and two of them invert it: `memory rebuild` and `assess run-nightly` write by default and take `--dry-run` and `--no-record` respectively to avoid writing, while `config set`/`unset` and the two device-login commands write by design and `snapshot` writes only into the target it is given.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cli.py#L1-L12",
+          "version": "repo-lines-v1:sha256:96e7cefdfb01669bd4c09477e8977d5c67d9b0ff3186292f0b3b80be4943bc35:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBiNDBiYjI5ZTA3YTdiY2NiYjcwZWQ4NjhmMDkzNDM3ZWY2OWQ3NTFkM2VhYzA3OWQ2MmJkMzZjYTY5NjdlNGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUzOTQ3MDFhN2QyZGY4MzMyMTNjNzI2YjZmYWFhMDg1M2ZjZTcxYjA4ZTI4ZDc4NzY4ZDVkMDYzNWE4N2FhNWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU0YmU4MjJiNDJhZDYyM2EzMTFjOTFiMDFlNWIwMmQ5NmYwNzFhNDg2MzA5Y2M5MDE4ZTA2MTAzZjM1MTVhNGQifQ"
+        },
+        {
+          "resource": "repo://nora/app/cli.py#L385-L409",
+          "version": "repo-lines-v1:sha256:060057a7bca9e08db15fcc26bfc3afa5b5c178826f48a326654089c4cafc61d4:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzODdmYmRkNGVkZTExNzdiNTE1ODhjNzVlNDNmNWMxNTc2ZWQ0ZmY3NTk3ZWYxNmIwMzFhMjZkMzVhYTgwNTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM1YzNmYjI1NDczNWZjZDc0M2M4ZDljYTUzM2U0NTc4Y2M2N2Q2ZjQ0Zjg2YzA1YmMyNWE4NWVhYjM4YzAwZGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzNzcxZDAwNzlhM2EyNzNmNmE1MGZjNTFmNzMxMDI1M2I1YWZmY2JjYzlhMzA5MmMzMmIwNjJhMmQzMmQ0MjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJjZWQzYjRmMzEyNWJkNmI1MzMwNGE3ZDQzZmU3NGY5ZDBiMThmMzUyMTBkZDY5MGI0Y2U1ZmIyODk2ZDU0M2UifQ"
+        },
+        {
+          "resource": "repo://nora/app/cli.py#L451-L469",
+          "version": "repo-lines-v1:sha256:f8d08dcb0cbe2407bb98ff46b004df011629e2a242d5c13ed155719e23792439:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxNjZlY2I3NDAzNDJmZmUwOTYxYzg0NWE5NjNkYzcwODg4ZWYwMWZjYWNkY2Y3ZjdhOWEzM2RlMGViMzM5NGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBmYzY3NjM4ZDYzMjI2OTU3MGYzNjgyYjZiN2FiYjVkMzJiYTljMDA2MjAyZmY5ZDRiZDEzYWM4MDM3YjVkOGUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYyYWFhMzA1MmNlYjA1Y2UxMWIxYmFhODJlMjNhMjkzMWIzMWQ4OWY5N2RjZmRkMDk1YjdlMjE1MjMzMDBjMDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMzMTFmZGIwZjI0NDQyNDc1OGIzZDFhNDk2ZmE0MjFkOGQ0MjMwNzg5YjQ5NTVkZmE0YzRmNDA0OThjZmVkNWYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4eb9c1ec6bbb479388ab6966bbb2d873",
+      "statement": "A `cancel` subcommand for reminders was deliberately not added because it would have broken both read-only guarantees at once; cancelling one reminder is the model's job in the conversation it was set in, and the operator's switch is `[heartbeat] enabled = false` plus a restart.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cli.py#L168-L184",
+          "version": "repo-lines-v1:sha256:fa56c2f1f0dff4df87c71bc90205509a6cc051d88fec63206f547fa3055013e4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRmNWNkYmNlNjU4ZjNkZmNkNGIzNjAxZDE1YjY0ZDAxODdhOWJhMDNlZjFlMzhjMTk3NWYwYTRmNGE5NzRmMmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcyYjZjNmJiNGRmOGNhYTExNGViZmNhNTMwYmJkNjY1ZjBjZjU0NDY3Nzg1Y2U4OTM3MDBhOWFiZWI2NzUzNjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdjYzRlYjI4NmU4ZDdiOTRkMzc0MzQyNjg0MzllYzFjZjBjYTI5NjZkNThhMjk0MTlkY2JlMmUwMGZhOTA4NmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFjOGRjMTU2MmY4MzBiYzIwMmEyNDhjY2EyYTEwMTUzNWZjMGExZDA3OGJlMjI0OWE3MzY2NTVlNDEyNjFkODkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_75b687a4c4144a548aeabcf79cf811a8",
+      "statement": "`nora measure participation` reports `n/a (nothing considered)` rather than 0 when a measure did not run, and refuses a refusals file whose window does not span the one asked for, because a clean-looking zero and a measure that never ran must not be confusable.",
+      "evidence": [
+        {
+          "resource": "repo://docs/runbook.md#L718-L743",
+          "version": "repo-lines-v1:sha256:09445f057fd4d376e1a02e2bbbc6e07f3202b802e36c9412553c49c707920650:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ3ZjIxNmY3NzNiYjMxODk3NmE5Yzk3ZWYzZGY4YzgxZTBiYWZmMTExN2IyMTYxMzkzZTg2NzZlZDJhNTI0NzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhmNDc2NTE0ZmY4NGFhNTg0Nzg0ZDYyN2VjNDI4NmJmN2RmYjNmZDEyYzlmNThjMDA3NWYwZjM5MzNjZTU1NzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzOGIzOTJiNGFkOGM2MmQwMzg3MzY1NDBiOGUyYzM0YmRhMzZmYWE1OGFhNDYzMmQyMGJhZTY5MjAxMWJjNjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRhMzZhYzBiYjQzNTQxMjYxNjA3M2FlZDYwN2Y3YWRkMGVhN2I2MzA1MzhjNTI2MDNkNDNkYTUxM2Q4M2U2NzQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ac7b325095244253a3ab03260949fa08",
+      "statement": "Evidence discipline for a diagnosis is fixed by the readback skill: pick the store by the question, report each claim as store, query, window, reading and VERIFIED/UNVERIFIED/FAILED, treat a write verb as proven only by fetching the thing back, read an absent series as \"nothing since the last restart\" rather than \"never happened\", and pair every zero with a positive control.",
+      "evidence": [
+        {
+          "resource": "repo://.agents/skills/nora-readback/SKILL.md#L8-L31",
+          "version": "repo-lines-v1:sha256:f84be4ab829e30cd7838caef002932215715495441933f849cfbf1da683a6bf9:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZkYjEzODUwY2Q5ZDdiMWE3YWMzMzU3MzI1NTY3M2I2ODMzNDY4ZDliYjc2ZDQ3NzQ4NzM2Njg5NGEyOTBiYmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRmYWRkOWNiMjZkNGUzNzBjZTAyYTZiYjZkMDIzNmExMTQ5YjY3M2ZlYTI5ZmE3MTcwMjFmNGQ3NGM2OTY3ZGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkyMDkwOWNjZGVlODU2M2VkMmQ4ZWNhZmNjNTM5MGFmMzZjY2JlNjQ0MzdhOWZkNjM1NmI0NmY3YWRlYTZiNmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY3NThkMjRlNzc2ODVmMWVjMDVlNjc3Y2FkYTYyMmZkYjg4OTE2MDRhOTkxZjAwMzI3NzU3YTM4MjE1ZmMwOGQifQ"
+        },
+        {
+          "resource": "repo://.agents/skills/nora-readback/SKILL.md#L99-L111",
+          "version": "repo-lines-v1:sha256:27194d892812cf897b7167af08d4bbf5be4b23e3b61a10f6076c7a45f89e9541:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5NTMxODg2ZWMwYTQyNWE4OWRiZjIzOTg4NzE2ZDEwZGE0MzBjNjE1MzVjODczYzIwN2FhNmM0ZTY4ZjA3NDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNjMjkyZGQzYzE4YjQyZTQ1NDdkZDBiZDMwOTMyODNmZGJiZTRkYjQwZmNhZWNhYWZkNzIwNzg3YzUyN2Q2MDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZjYmFmZjk3ZjMzOGIzMmYwMjhjMTY3YzJhNWZlYTZhZGJkMjQ0MTZiYzUxZDQ5YjY1NTY5MjI2NjU3MDhlOTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI2MWIyYTc5M2FlZjc1MmE4Njg0YjVkMmE3ZTVhNDUwZDlmMzM0Y2NlZjA4ZDgwYzhmN2U4NWMyNDYyYmU5YTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fd72d6b9c37e4e74a4c2f091a81fe534",
+      "statement": "A fix counts as proven only when reverting the exact production line turns a named test red and restoring it turns that test green; a green gate is not that claim, and \"reverting X reddens Y\" may be written only for a revert watched to redden that test in that run.",
+      "evidence": [
+        {
+          "resource": "repo://.agents/skills/nora-prove-fix/SKILL.md#L123-L136",
+          "version": "repo-lines-v1:sha256:abcee030a8f512014fc26d0a8648d89b478f0f9a3fc6cc8356ec29c9c8a761c4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIyMWVmNDlmNGNjMjg2NGFmYTllMTllNGUyYTc5YTcwNzZlOTAyNTk0NTEwMWYwMDU0M2QxMDY1ZjZhN2Q5ODMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZkMGJjMDcyMTUxYmZlODIyM2I0MmU3ZDQyOTZkMjdmMmJkMGEwOTVjODBjODA2YmU5NGEyMThhMDE3ODdjYmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM0NWIzNWFkZGU1OGYxOWQ4OWE3MTMwYzBlMmE5ZmM1NzgwOWUzYTJiOGRhYjY5OTE2ODJkYzFlNjA5ZjBlZTMifQ"
+        },
+        {
+          "resource": "repo://.agents/skills/nora-prove-fix/SKILL.md#L6-L12",
+          "version": "repo-lines-v1:sha256:9f20bec1534bfaf3348e7f42c64590074bbc8c27defb4528f72b6057ba692625:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjNlNzk2ZmFjODZiMzIyYzhhZjdjMTAzYzA4MDNiNmZjMzEyNjdkMzFiZmE4NzY2YzJlODJjOWM3M2MyZjUwMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTllMjQwZWMzOTgwMGZlZDQ3NmI3ODNhY2IzNWRiMDk1MjllMjkxYjI5ZGVkZjZlZmEzOTI3ZGYyYmQwY2FhNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWZiOTE5OTlkODRiNDg5MmUwZGJhNzAyNDYyMDRkNjEyNjkyOTZmZDhkMjA5ZjQ5YTg3MzgxMmQ0ZmUyNWFmNCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_8c5153e4dd5e4f5ab12f2aa782d4ea31",
+      "statement": "The speaking routes beyond the tag path are wired independently and none of them ships enabled: an untagged message in a room whose policy entry sets relevance_gate=true is not admitted by the dispatcher but only handed to the participation trigger, which runs at most one turn per quiescence-closed window through FirePath.speak; participation additionally requires [participation] enabled and [relevance_gate] enabled, and a kind=\"proactive\" reminder row requires [heartbeat] enabled plus proactive=true on the room it fires into.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/dispatch.py#L67-L84",
+          "version": "repo-lines-v1:sha256:5d75e47845787b76e580f250b278ebc5a9641bf0a7c482274afe82060c05c734:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJjYzZhM2E0MDkxNWM0NjFkOTI1YTA2YWU3NzJhNDg4Nzg2OGFmNTYzOTAyN2FiYzY5YTVmZDVmYTVmZDk3YjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjYWUxMjc4ZTIyYzg4ZDI3NmRjOTIxNWI4OTUzMTY4NzRkYjMxOTEyMzg0ZmQyODNjMDU3ZTgxNTM3MzYyYzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEzNThkNmMzZDMzODk2YTU1NzJjNDkxZDVmY2ZhMTcyZTIxMzZhYjhiMzI4NzMxMGE5ZjAwZWM2MDBjOGM4ODQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L2059-L2090",
+          "version": "repo-lines-v1:sha256:cf8c4d9122012e33398cd11a79294382e3166a707795d85e75b719de80c6b196:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA2NGVhZmFmNmFmNWJmNGMzNDM3MjhmYjI1NDYzNzQ2ZmJhNjkyMzY2MTBlYjA2Mzg4MTg0ZjJhZDQ0MzVjYTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY0ODdkNDRhNTVmZDcxNWVhZmRhMTBmYTAyZTNlZjgwZDE5YjQ2MjdjMjExZjViMzU5NTk1MjRiZDQxYzU5NmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZiMzJhMzllZjM2N2I3NzY3YzQzZjE2NTQyMjg5ZGVhZmVlNGFhZjEzNjE5OTE2YjI2MmQ2MDkwNjQxOTQyOGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU3OGRkNTMzMGY0MjFhMWY5ZDI5YTZiZTRiYzJhODUwZDE4MTAwODE3OGU0ODBhMzZjOTVhYmI2NTJiMTNmNTgifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L393-L410",
+          "version": "repo-lines-v1:sha256:0f2fdf76de62f9687aee607f98a6b049b4a38f87aff2591d1ab1d2377a304fdc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4NDg3ZjdjNjMzMzg5ZGFiNzgwMmI2NDBmMGVlM2QwZjA2OWM3NWFiNDJlZDk5YzE5MzY0M2ZhYzYxMTc4NDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxNjY5MDUzN2RmYWUxNzQyNzFlOGI4MGI4Y2ExZDkyMjM0MDViMjA3NTRmNGJiZDU3ZjM1ZDFkYzI2MTk4YzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjViNDJkNmJmZDE4N2NlOTcwNTJkYTMzYmMyYjcyMmE4YWE5YzYyZDU1NDNjNDkzMDQ4MmQ4MWMzYTc3Yjg2NzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZkMjdhNjExYjI0NzJhNjEzMDNmNjU3MzkwMWYwZGJjNzAxZDM3NWYyMTRhZTUyMTViMmZlMDVhMTdkNGZhY2UifQ"
+        },
+        {
+          "resource": "repo://nora/policy.py#L124-L152",
+          "version": "repo-lines-v1:sha256:969e56a987a69a0a98706b97c7f59075b7e1496299b202a3edb0f9e976688aa2:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3ZDJmNjU2Mjg4Y2NjMWQ1NDE5YjYzMWU3OTkyMzkzOGIwMmE5YjdkMjdmYTZhMDBmNDY0ZDRlOTdiMzQ0OTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2Y2Q1MGEzY2ZlZTc2YzdhZjJlOTgzMzJiMjc1ZjFkZTg4NDQyZjBiN2QzMDM3M2NjMjQyM2Y3YjljNGFmYTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJlOGM0MTA5NGZmZjg3MThkNzIxZTA1YmY2OTFmOTYxMzZlODQyNGY4YjVmNzZkYjhmMDg2Y2JlMGYyMDY4OTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI0OWQ5YWZkOTBhNTZjYmJjMjZmMzFiMzdiNjRkMmNhYjJhNTFlMThjZjRjOWQ3NzNkNjYyYTdmZDhhN2Q2YTIifQ"
+        },
+        {
+          "resource": "repo://tests/integration/test_ambient.py#L30-L55",
+          "version": "repo-lines-v1:sha256:b6b2230636e6eff3dc9f369c15b2539dbcdc434d5590144f906129f2861c91eb:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEzZmMzMjg0Nzk4YzUwYzg0YjdmNmFmYzFiYTJhYmZlOGNkZTI4ODYzOTJjMTZiNDYwNTA5NWU1MjNhMTA0MzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZmMjQ2YjY1MzcyNjg4ZDBhY2ZkNDk0NDliZjcyMzdkOWZlNGRlODVjNTk3OGYzN2Y1YWJmNTkyOWI2YzljMTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBiOTQ5NmEzYWNjMjgyNzk1Yjg5MDdhYWRhNjhlNjUyZDFhZjUzODA0ZTIyMjI2Njc5ZjdiZGYxZmNlOWI1YzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM1MjQ1ZTM0MTY2MzI2N2EwYWJjNTgyN2M1NmQ0OWM4ZDFmMGI5MWVhODM2YmVhMzI5MzUzZjBhYWZlYTdiYTQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1f3e8e9d7eaf4c53bfe8b418340b645d",
+      "statement": "The participation SEND cooldown is decided by the trigger and enforced downstream: it is threaded into FirePath.speak as send_permitted and from there into deliver.build, while a wired shadow channel forces send_permitted=False for participation turns only — so a participation determination can conclude \"speak\" and still deliver nothing, and every other occasion leaves the permission at True.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/fire.py#L1650-L1668",
+          "version": "repo-lines-v1:sha256:573fd4c4a2ab43999dc427ba13096041704cd18677c2ebc37ff900e74419a3af:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxZDA4YThlMTE3MDFhZTI1NWQ3N2E1ZWYyNjViMjdmM2RlZTE3OTZiOTRhZWYyNDE0YzNlZjdkY2FhMjA2OTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyY2Q1OTFkZThmOWViYzMzMjY4ZmNkOTMzZjVkOTFhZjA2NWVlNjhiZGVjYmJmMTU3YWFjM2YyYTE0NWFlMWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzMjQ0ZmVkODg2MmEwOWRmYjg0ZTkwOGViYTcyYWIyOWMxYjA1ODJhOGE1NTVkNDc4MGQxZWQ0MmUwNjg0MjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImViMzEwZDA0YTAzNzYzOWJhNjBiMmJiZDQ5YjliZWQwYTMxNmFjNWMzNWY5MTY5ZTc0MTQ2ZTQ4Y2JkMGZmNGQifQ"
+        },
+        {
+          "resource": "repo://nora/app/participation.py#L22-L32",
+          "version": "repo-lines-v1:sha256:c2345c4bb288ff93547d421a2b98f7e4aef44ffeced39744491152882046dade:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg4OWQ3ZDY1MTYyMTI0ZmJmMjBlNjQxODZmZmU2YWY5NGY4MmI2OGI2OGJlMzgxMzM0ZTc5MmNhODA5ODM0ODciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk5ZDJmZjgzYWFkY2YwNWE1NGE5ZTViMTFhYmIzZDkzYzViMTE2N2NjNDA5MGUzMDVhOGI2Zjk3ZTA5OTJmNmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBhZWUyMzFhYjhlNDFlMDFmYjAyNTU4YzhhNTMxNmRhNmYyYjg5ZmUyYzllMzE2OGU3NWVhNDlhYTA5Y2YxYTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYxNTk0MGM5OGU0MWZkY2E3MjUyNTllYWE3NjQzNWE3ZmQ3YzVlNDNkN2UyYTVjODZhYTNjNWIwMDA3MWVhOTkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a9d3471c9aec4f4ca5205c04a17688dc",
+      "statement": "The Relevance Gate's two series are the diagnostic split that keeps \"the room was quiet\" apart from \"the gate is down\": nora_relevance_gate_total carries only the verdicts the model returned, while a call that produced no usable verdict and failed closed to no_go is counted on nora_relevance_gate_errors_total, so a sustained error count is the gate being down while looking exactly like a quiet room and the verdict series stays a true admission rate — and a chosen no_go refuses the room just as a fail-closed one does, moving no participation silence or spoke counter because no turn ran.",
+      "evidence": [
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L1530-L1603",
+          "version": "repo-lines-v1:sha256:1633bdb789b33730a300a245d851a6018c18b1c7b65ff1912cb692c861a94bef:eyJzZWxlY3RlZExpbmVDb3VudCI6NzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxOGE0MzMxOTI0MDU2ZDExZGQwNDU5YTNhZTAzNjVlYTczYTIwNjE4NjAyYTYwMjc1NTUxMWM4YmY2ODg5NzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwMmM0MTRiNTRjZjg2ZGZiNGY5MGRmZTdkN2JkYmZhNjY2YjdkZGRkMzJmMTI4NmYyMzBhNWI1MzI0MTgxOGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNlODM4ZDY5YjI5NDNiYjIxYzZiZjM0OGExOGNhODM3MTFhMTNlNmQ4NDNiYzZiNzllZTlkZmY0ZDE1ZGFhMWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE0YmRlZTMwYzYwZmFmZmZlNGU1MTk1ZThiMTA3ZWU5YzE4M2I0ZjNiZWQyYTVhZDE3ZDQ1MjM4ODlhZTRjMDgifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-20T12:25:17.607Z"
+  }
+}

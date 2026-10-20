@@ -1,3 +1,110 @@
 ---
-return Astro.redirect(`${import.meta.env.BASE_URL}quickstart/`);
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import { getCollection } from 'astro:content';
+import { getImage } from 'astro:assets';
+import portrait from '../../../assets/nora-canonical-self.png';
+
+const pages = await getCollection('docs');
+const image = await getImage({ src: portrait, width: 560, format: 'webp' });
+const paths = [
+  { slug: 'concepts/sessionless-continuity', title: 'Continuity between turns', description: 'Start with the state that carries across a conversation.' },
+  { slug: 'concepts/memory-and-record', title: 'Memory and provenance', description: 'Follow Record, retrieval and the Persona write path.' },
+  { slug: 'workflows/cognition', title: 'Thinking between interactions', description: 'Trace stimuli, wakes and the bounded cognition loop.' },
+  { slug: 'systems/computer-and-browser', title: 'Tools beyond the conversation', description: 'Explore the persistent computer, browser and scoped workspaces.' },
+];
+const base = import.meta.env.BASE_URL;
 ---
+
+<StarlightPage frontmatter={{
+  title: 'The systems behind Nora',
+  description: 'Explore Nora’s implementation: sessionless continuity, memory, cognition and computer use.',
+  template: 'splash',
+  pagefind: false,
+  tableOfContents: false,
+  prev: false,
+  next: false,
+  hero: {
+    title: 'The systems <br />behind Nora.',
+    tagline: 'How a self-hosted social agent carries context, thinks between interactions and works through tools.',
+    image: { html: `<img src="${image.src}" width="${image.attributes.width}" height="${image.attributes.height}" alt="Mini Nora in her grey hoodie, wired earphones in." loading="eager" decoding="async" />` },
+    actions: [
+      { text: 'Open the guide', link: `${base}quickstart/`, icon: 'right-arrow' },
+      { text: 'Explore the graph', link: `${base}graph/`, variant: 'minimal' },
+    ],
+  },
+}}>
+  <section class="reading-room" aria-labelledby="reading-title">
+    <div class="reading-intro">
+      <p class="page-count">{pages.length} technical pages</p>
+      <h2 id="reading-title">Find your way <br />through the system.</h2>
+      <p>Follow a message, a memory or a piece of unfinished work. Each path leads into the mechanisms behind it.</p>
+      <a class="orientation" href={`${base}quickstart/#route-by-task`}>See the complete reading map <span aria-hidden="true">↗</span></a>
+    </div>
+    <ol class="reading-paths">
+      {paths.map((item, i) => (
+        <li>
+          <a href={`${base}${item.slug}/`}>
+            <span class="path-number" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span>
+            <span class="path-copy"><span class="path-title">{item.title}</span><span class="path-description">{item.description}</span></span>
+            <span class="path-arrow" aria-hidden="true">↗</span>
+          </a>
+        </li>
+      ))}
+    </ol>
+  </section>
+  <div class="wiki-note">
+    <p>Implementation, context and the connections between them.</p>
+    <a href={new URL('/', Astro.site).href}>Meet Nora <span aria-hidden="true">↗</span></a>
+  </div>
+</StarlightPage>
+
+<style>
+  :global(html:not([data-has-sidebar])) { --sl-content-width: 72rem; }
+  :global(.hero) { padding-block: 3rem 4rem; gap: 3rem; }
+  :global(.hero .copy > h1) {
+    font-size: clamp(2.8rem, 5.5vw, 5.1rem);
+    font-weight: 650;
+    letter-spacing: -0.035em;
+    line-height: 1.06;
+  }
+  :global(.hero .tagline) { max-width: 34ch; line-height: 1.65; color: var(--sl-color-gray-2); }
+  :global(.hero .hero-html) { width: min(100%, 18rem); }
+  :global(.hero-html img) { width: 100%; height: auto; border-radius: 24px; }
+  :global(.hero .actions a) { border-radius: 10px; font-weight: 600; font-size: 1rem; }
+  :global(.hero .actions a.primary) { background: var(--sl-color-text-accent); color: var(--sl-color-black); }
+  :global([data-theme='light'] .hero .actions a.primary) { color: var(--sl-color-gray-7); }
+  .reading-room { display: grid; grid-template-columns: 5fr 7fr; gap: 4rem; padding-block: 3rem; border-top: 1px solid var(--sl-color-gray-5); }
+  .reading-intro .page-count { font-family: var(--sl-font-mono); color: var(--nora-ink-muted); font-size: .8rem; }
+  .reading-intro h2 { margin: 1rem 0; font-size: clamp(1.7rem, 3vw, 2.35rem); font-weight: 600; line-height: 1.2; letter-spacing: -.02em; }
+  .reading-intro > p:not(.page-count) { max-width: 29ch; color: var(--sl-color-gray-2); line-height: 1.75; }
+  .orientation { display: inline-flex; gap: .75rem; margin-top: 1.3rem; text-decoration: none; font-size: .9rem; }
+  .reading-paths { list-style: none; padding: 0; margin: 0; }
+  .reading-paths li { margin: 0; border-bottom: 1px solid var(--sl-color-gray-5); }
+  .reading-paths li:first-child { border-top: 1px solid var(--sl-color-gray-5); }
+  .reading-paths a { display: flex; align-items: baseline; gap: 1.25rem; padding: 1.4rem .25rem; color: var(--sl-color-white); text-decoration: none; }
+  .path-number { font: .75rem var(--sl-font-mono); color: var(--nora-ink-muted); }
+  .path-copy { flex: 1; }
+  .path-title, .path-description { display: block; }
+  .path-title { font-size: 1.15rem; font-weight: 600; line-height: 1.4; }
+  .path-description { margin-top: .35rem; font-size: .9rem; color: var(--sl-color-gray-2); line-height: 1.6; }
+  .path-arrow { color: var(--sl-color-text-accent); transition: transform 160ms cubic-bezier(.2,0,0,1); }
+  .reading-paths a:hover .path-title, .orientation:hover { color: var(--sl-color-text-accent); }
+  .reading-paths a:hover .path-arrow { transform: translate(2px, -2px); }
+  .reading-paths a:focus-visible, .orientation:focus-visible, .wiki-note a:focus-visible { outline: 2px solid var(--sl-color-text-accent); outline-offset: 5px; border-radius: 4px; }
+  .wiki-note { display: flex; justify-content: space-between; gap: 1.5rem; padding-top: 1.75rem; border-top: 1px solid var(--sl-color-gray-5); font-size: .85rem; color: var(--nora-ink-muted); }
+  .wiki-note p, .wiki-note a { margin: 0; }
+  .wiki-note a { text-decoration: none; white-space: nowrap; }
+  @media (max-width: 49.99rem) {
+    :global(html:not([data-has-sidebar]) .header .right-group) { display: flex; }
+    :global(html:not([data-has-sidebar]) .header .social-icons) { display: none; }
+    :global(.hero .actions a), .orientation, .wiki-note a { min-height: 44px; display: inline-flex; align-items: center; }
+    :global(.hero) { padding-block: 1.25rem 2.5rem; gap: 2rem; }
+    :global(.hero .hero-html) { width: 10rem; }
+    :global(.hero .tagline) { max-width: 36ch; }
+    .reading-room { grid-template-columns: 1fr; gap: 2rem; padding-block: 2rem; }
+    .reading-intro > p:not(.page-count) { max-width: 46ch; }
+    .reading-intro h2 br { display: none; }
+    .wiki-note { flex-direction: column; gap: .75rem; }
+  }
+  @media (prefers-reduced-motion: reduce) { .path-arrow { transition: none; } }
+</style>

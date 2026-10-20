@@ -1,0 +1,602 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:53e52af3856cfb8f45538f9d858c3637360eccf06b57f198189f06ea466b8191",
+  "claims": [
+    {
+      "id": "claim_58592fb0f63a45cb9e05eb7d8fcc3b72",
+      "statement": "The presence collector (`python -m nora.presence`) and the analytics daemon (`python -m nora.analytics`) are separate processes from the agent — different commands, their own composition roots, the same `nora` image and one Postgres database — so either can be down without the other: with the collector down nothing new is recorded and `where_is` still answers from the last stored fix with its age while the Rollup keeps folding what was recorded, and with analytics down the collector keeps recording while derived reads answer from the last build.",
+      "evidence": [
+        {
+          "resource": "repo://docker-compose.yml#L511-L525",
+          "version": "repo-lines-v1:sha256:7635ec0f6f24af34875f7265293724371f3c60bbe563ce938b699f76320fbdee:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ2NDQ3ODRjZGFiOWM4MTI0ZTkxOTc5YjhmYzRjNGQ2ZjcxYWY4YzNlZTBhZjVhYjJiOGNmODQzNmMxM2NjMDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjViZGU3NWYxOWEzMDQwZjA0M2NlMGEyMTQ2ZWY4NWZmZmEyM2VmYjFiZDg1Y2E0ZmE3Njg2NWViNmEzODQ3MDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhmYjdhZDJjN2U1Yzk0MGZmZTUzNWM4MjE2MWIyNzk0NTU2MTEwM2Q2NTU3ZDI5ZjdiYzNlYzlkN2U0MzI1YWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwMjg5YmJlOTIxN2ViYjE4MmUxNTUzOWRlMjkwYTk3NzQ0Yjg4MDYwYTlhOTEwZWZiOGZmZGZjZjI5NDU1YzUifQ"
+        },
+        {
+          "resource": "repo://docker-compose.yml#L567-L576",
+          "version": "repo-lines-v1:sha256:7cc0c5d5a57a3a2b542bce3d686c4736fb9f8b06f1be2e90b3a64f0c6c339098:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1NWRlOTA4MWI2ZGY1MDc5ODA5ZGM3MmVhMmI3NDdhNDQ2MGQxMGJmZGYyMzI4OWUzYTIyMzc2Zjc4MTMxYjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNlMGM5M2FiYTYwNTM3YTVkNmUzZGY5OTI4ZjAzNzY4YmZjNjgwNTMyNTI2ZTY0Njc1OTI2MTc3Y2IxZDMzMmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNhYmZkNWY1ZmI1ODEzMDJlZjBlZTMzOTc0OGM4NjRiN2RhNmQ0MGI4OTZlNzM2ZDNmOTA5MjgwMmM4NmExM2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQwMDEyOTMzZTc0M2Q5MTI3N2NhYzMyMTY5MjM5NWFmYTUzMWNhZDZmNDBiNGE2MjI3NTMyMmJiYjZkZTAwYjAifQ"
+        },
+        {
+          "resource": "repo://nora/analytics/__main__.py#L1-L16",
+          "version": "repo-lines-v1:sha256:41e554a28907b47646ae5f8ee3bcbd472f403364b9886660cf5f6dd66cd1ef58:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZkOTFkMDY1NzI3YjAyMjQ2YTUwNjI2MGFiMTNkMDE4NGE4ZjAxYjIxZDgwODcyNmVhYWMxNjI0ZGY2MTJhZTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/infra/presence_refresh.py#L35-L46",
+          "version": "repo-lines-v1:sha256:594e2a254236895b52fd5c4611434db3509befc1cb907bb293eebd3387462148:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwNGNhZWIxOWE2OTE3NjA2NzIzZWJlNjNkMWUzMTRlOGU5MjViNzJhOWY2NmIwYTA0MzVmZmYxMjRhN2IwZjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlmMTFlYTExZWYwMWUyZTk2OWU1ZjRjNjI3MmYzZGI2NmRlNWY4ZTU0ZDFjYWFhNGFmZWYyZDIwYmJhMmVmMjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU2MmQ4N2ExODBjMWMwZmQxODBkYTNhNmM4OTdkOTlmYWQzMzhkMGM5ZjBlM2EzNTk0NTUzN2ZlYWQ5NGQyOTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://nora/presence/__main__.py#L1-L12",
+          "version": "repo-lines-v1:sha256:0a36b427a5c5da0ee23e246b6b52e14133e18fe126e32bd2a49b739cb04fb619:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVjMjY0NmIwOWViNDRlODczNmI2ZTE0NmU1ZWEwOTEzZjM3NTFlYjliMjdkMjA0ZDhiNjRlNGJmZDAwODc3ZTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b8a7b21463564f38977d3e78a3a08786",
+      "statement": "`PresenceStore.record_fix` is a change recorder, not a sampler: it reads the member's latest stored `ts` and inserts only when the incoming `ts` strictly exceeds it, in one transaction, returning whether a row was written — so two reads of an unmoved member produce one row and the table is a time series of distinct fixes.",
+      "evidence": [
+        {
+          "resource": "repo://nora/infra/sql/presence.py#L64-L98",
+          "version": "repo-lines-v1:sha256:f790fbd3f656ced49c32ed311b2353803803c8cda7aeb15cfc74357dd00e4f85:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNjZTQ4YWI1NjU1Zjg3N2I0MTM2YjYyMjRhZGJkNjBmODA5YTRkOTkxNjg1M2JlYjhkZmE4ODU3YjYwMzNmNjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxMDQyNGJkZTNhZDkxZmY4ZGFlYTgxYTRhYTUwNGIyZmU5ZDM3OTIzZjU5Mzc5MTUyZDU0M2Q3YjRkZWFmNzEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdkNDBmM2EyNjkyZDc4OGMwMmI5YWZjN2RjNjE5OTQ5OGQzMDU0NDJiNGM5YTQ4N2JmNGI1OTdlM2U3Y2E5OWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk5M2M1YzVmNzJmODE4MTc0YTQ1YjBhNTUxMDhkNjVhMGRmMWVmYTVlZDM5YzI3MjU3OWQwMTQxY2NmZjkyOGMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_155a4db704cf4ef190bb551c08998c0e",
+      "statement": "A collector cycle classifies every member's `WireState` and counts it: `sharing_off`, `disconnected`, `no_fix` and the read-level `unavailable` are known states that write no fix row, and a circle member with no `person_id` mapping is recorded as nothing.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/presence.py#L45-L65",
+          "version": "repo-lines-v1:sha256:0bc7a8fcc95415b287835019931c6d2fa4d4fb3bc6268ec229282f742969a285:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhjY2VjNjNhMzRmYmEzY2Q0Y2U0Zjg3OTg5ZWMxMWMzODI1NWE5MmFkN2I0NzM2NjdiNGY0OTVkZWM3MjMwYTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk1NzJlMWY5NzZjMmEzZmNhNmI2NzJlMmVhMTllM2I4ZjVmM2Q2ZWE0NTUzN2JhZmVkMWVkZjFjOWY5ZDY5YjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY1YTg2YWNlYTRjN2E2YjY2YzYyODhiNWM2OTRjMDk5NzMxN2NkMmY2MDgxZDY3MjA3YjFhNDBhMTgyNWU0ZDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        },
+        {
+          "resource": "repo://nora/presence/collector.py#L185-L190",
+          "version": "repo-lines-v1:sha256:495e0e05b906efc3b09f9b2c3aacf705a20e36d4ffb41b6ada19d66c1deb5398:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzk5YmFiNzEyZjdiNjcxZDg2YmI1NDI1YzIyOTAyNTg2Mzk5ZjFjNjI5ZmU0ODdiZTk2ZDkzNmY4Yzk2NmQwYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDUzNjUxMmVhNThhZGQ4NGMzYTNiYmM5MzBlZGQzZjA0YzY0YTBlZmQ0ZTAxNDg1YzNmZWQxMTQ1NGMwMTBjMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNWMzZmE3ZTFjMDg5N2NiYWJhNjcxMDNlMzEzMTlmNjRhY2IwNmI4YWY3NDkwM2M4NGIyMDAyYjU3ZGFkOTI0NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2E2MTlkZDY0NzMzNGYwOTgyM2RjNGU3OWVlMzlmNWJkNmNlYTMxNDg1Nzc5MGUxY2NmNWNkYzk3ZGU1ZTU5MSJ9"
+        },
+        {
+          "resource": "repo://nora/presence/collector.py#L270-L290",
+          "version": "repo-lines-v1:sha256:7d8222b7fb93abdfee2246100aecebd41294293c529c9bc08e6a40d034e5d50b:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgzNjg3NjVjNzhlZWFmOTcxZTljZjljMjRhZmM2MWYzZGM3ZDFjZGY5Y2E0MGU3YjdmZGMzNGQwZWMxYTY4YmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYwNzE3NmQwZDY5ZDM2MzM0ZmJlNjUzYTA0YTc1NjM2ZDJhOWY4ODJhYTJiOThjNDE4M2I5NWNmZjM2ZmI0NTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU5Mzc1MTUwOTAzOTA3YTU2MjdiY2MyYWVjMmJjMGI2ODJhZWE5YjBiOWUwNTY4OGVlZDZiZmI1MzRmMmQxZWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEzZDMxYTExYzE4YzFlNWNiN2FiZjdkMDRhODk1M2JkOWMxZGQ2ZjI4MWUyNjM0OTI3Nzg4MWNkMWNmMzQ0YzkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9b44fa43661543d396a562376e7ad3ec",
+      "statement": "The app-update canary lives in the collector: a non-JSON (`challenge`) read and an unexpectedly empty circle each bump `nora_presence_canary_total`, and an empty circle deliberately does not stamp the circle's last-success time so the heartbeat keeps climbing through that outage; the collector also never reverse-geocodes, storing only Life360's own label so no per-tick billed geocoding happens for addresses nobody reads.",
+      "evidence": [
+        {
+          "resource": "repo://nora/presence/collector.py#L162-L183",
+          "version": "repo-lines-v1:sha256:2cb2087e3a8c7d611212da5251010df5e99e47ce86780d803856987f08bdfe33:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVmZGEzNDM1YmIyNDUwYWRkNTRjNGUyN2M1NDJjZWZkZjRlOTMzODBkMTY5OTNlMWRmMzQ4NGE1M2IwMTM4YTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxNmQ0MmM3NmNlOWJjOTNkZTE4MjI0NWE5NmU5MzdmMmFmNGJkNTAzNTdiNmNlNDBmOGFhZGFkOWEwOTkwYzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUwNDhjODU4Yzc0YTRlOGExOTUyNzUzOWY3Zjc2NjJiODMyZjE3ZjAwY2EyNWFmZGZhMjFhZjRlZjQzMGU3NzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZkZjIyN2NmMjc1NThlMzVjNzdlOWI4MmY3YjQxY2Q3ZGM3NjhlMDViMTkxY2M5NmYxNTFiNWIxMGMyMDM4YjkifQ"
+        },
+        {
+          "resource": "repo://nora/presence/collector.py#L288-L297",
+          "version": "repo-lines-v1:sha256:2977f6e4cd8da6a0e4c9d17c2e0a6d1d0b3ce5f5f21a7c5e8060be2b9514ffd2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ2OTYzNTVkZDljZTAyYjU4OTA4ZTBmN2IzNWQxOTM2MGU5OGU1NjljMTI5OWFlNmRiODYzNWIzM2JkYzgwNDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkMzM1MWNmYWJkZGQyOWYzNWNkZWZjZGJjYjQ0YTAwMzhlNGJlYWQ1MTRjY2M0NjNhNmFiZmFkZjhhODNlYjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjljNmMxNTU5Mjg0YzExNjcwYThmMjUwOGUwN2IwOGU0ODRkMWI1NmQxYjkwZmQzN2Q3ODQ3ZDViOGY0NmEwMTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMwYzdhYzhhNTMyMjI1MmQyMjhjODE5MjBmYzJmNTMzZGE1ZTk0OTQzMmUwODA3MTY3Y2I3NGJjODg1OWRhMWIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a9f715b7f3cf408788b602f083e5b359",
+      "statement": "The collector's liveness heartbeat is the age of a circle's last *success*, falling back to the time the circle was first attempted, so a collector that has never succeeded emits a climbing age from boot instead of no series at all.",
+      "evidence": [
+        {
+          "resource": "repo://nora/presence/collector.py#L115-L121",
+          "version": "repo-lines-v1:sha256:bc65507430183f4810ad1a782f198854da3447bccf8a3b7a874de587de2ed627:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjFiZjAxNzlhYTQ1ZjBhOGEyNjY3NTJmMjdiMzE3NDBkYzRlYzc5Y2M1ZGU1MjhlNjEzOWYzNjQ4MjgzNmEzMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTM5NGNkZjI5MGM4ZTc2YjVmNTlhYTZmZTIwZGUyNzQ1YjY0M2M0ZjI4ZWE2MGM2ODEzOTcwMmVjY2JjMjYyOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiY2VhNmYwNTg5ZDJhYzJmNjAwMTVmYzQ2NGQ2YTFhN2NlMzRlYjllN2YzMTFiZGYyN2Q3YWNhNjE1NjMxNGQwYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMGFlMmU1MGU5MWNmZGE4YmFjNDJlZDcwZTM5YWYzYTY3ZDNhZWVlMTA5OTBkMzVkNDE1ZjFhZjkzODkwYmIyYSJ9"
+        },
+        {
+          "resource": "repo://nora/presence/collector.py#L421-L436",
+          "version": "repo-lines-v1:sha256:75b380a55576c008409d6ee85c1a27069602952ee2ea97ef783448ec3e4adce2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2ODg4YzE5MTVkMjZlMGQ3OWNlZWU0OGNhMmExNjBkMGVkMWNjNjYwMGIzNjM5ZTQ4Y2ExZmY2ZmJmYjE5M2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFjMDU0MTFmMDMxMGZlZGM4NTQwMjIyN2U0YTdkZjczNmRiZWM0YzIwYWIwYTQxZTJjMmFkMDg2NGVjYjRhNTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA4NzYzYTgwYzg4ZTk1Y2E0MzcwN2I1NzAwY2IyY2FhMWQwYzk3YmVmMzZkMGRmMjEwNWNiYWQzZjc3NGZiYWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_39150ee4bfcf4d5cb4767d87331c17d7",
+      "statement": "Every collector poll appends one append-only `source_health` row (source `presence`, event `poll`, that cycle's outcome) through a write bounded by a timeout whose failure is counted and never raised; those rows are the evidence `polls_healthy` later requires to prove the collector was healthy across an interval, so a missing row reads as an outage rather than a quiet circle.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/rollup.py#L976-L999",
+          "version": "repo-lines-v1:sha256:2e2bbaf761d7b5388bf14b1eb303ae36fb4706e5170f3ab51ce9548c84190dc5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiMjU4MDdiZWMwZjMwZDQ4MzU4MWJiNzFiOGYwOTk1MmYwYjA2ZWRiMTU0NzdiM2Q2ZWFmYzBhMWZmZmFmODQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI2MTQ4OGIwZTQ1MzQyMTk0MTk2ZTg3MDliNjIwMWM1ZDE5NDJhMDkzYTZlNTIyNzU3ZDEwZTQ5OTEzYTBkN2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgyYmFlNGQ5MDQ5NjJkNTY0MjMwMTYxODliYjE3NjVhYzNlZjVmZjUzZDQwZDFjN2VkNjNhNTY0NGEyYmRjMTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ3ZmNhMzg4ZTkyYjMwMDFmM2ExOTNjMWM0ZWU1MWU2NGQ2Njk0YzZjZTk5ZjkyYzg5YmM0ZjdkMjJjNjFjODMifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/source_health.py#L37-L52",
+          "version": "repo-lines-v1:sha256:c52d49a414ff5e1503ee4428889e08273f50f8fe36e71e557bcad66151ed74da:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3NjE3MWY4OWUyN2Q5YzVkZjNjZjMzMDcyMTZlYzE2NzI2MDVhMTJkNTFhNjU2ZjJlZTI3ZDM2YjEwMzMzYzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxMDQyNGJkZTNhZDkxZmY4ZGFlYTgxYTRhYTUwNGIyZmU5ZDM3OTIzZjU5Mzc5MTUyZDU0M2Q3YjRkZWFmNzEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRiNWYwMDc2OGFlNDFjM2U0NjUyYzZjYWIyNjVkYTI3NGJiZmNjNGVlNmYzNjI4MGE2ZjhhZmQ1NDJhNmRlODQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQzNzFmYWIwNTZkM2FiMzliMjBlMjZhNjFkY2E0NTFkNDc4N2NiMGZjMTA5NGVmZDJmMDAwYzgxNWY4MDcwMjAifQ"
+        },
+        {
+          "resource": "repo://nora/presence/collector.py#L210-L229",
+          "version": "repo-lines-v1:sha256:5c3e0bf3727ed6f2fd418b3ca601aba50be122f9cf6ae60e551d45cd386e21e9:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFkMzY0YjZkODgzN2IyZGI0M2E2ZGFhOGRhOTg1NWQyNWQyZmZiZDM2MjY4MTAzMzE0ZjljODdlNTAyODQ4ZjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk1MjFhYzE2YzgwZDVlZDcyZGQyOWQ4Yjk4ZDE2ZDQ4ODNhYWMzZjExYjkwY2E2OTJkYjRhMDUyZmFlNThmZDQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVmYTQ3M2MxMWRiNzc0MzBlNDZmM2Y4MTY2N2QwMDllZmRkNjM5OWY2NDIyMDcwNDJiMTI4YzNhOWRmOWRkYzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEwOGE0NWI5ZDg0NDM1Mjg1YmM1MjEwNjBiMjE3YmZjNGM2N2EyMTkxNTVjOTRlM2M2NTMxMmI5MTEyYzNiMGYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5a5bba5090d14b2680f960091e42f8a1",
+      "statement": "The collector's inter-cycle sleep is the larger of two floors — an adaptive cadence that polls at a moving floor while any member is driving and ramps toward a still ceiling as consecutive cycles see nobody driving, and a ban-safe back-off of `cadence * 2^auth_failures` capped hourly — and both exponents are clamped before exponentiating so days of stillness cannot raise `OverflowError` outside the loop's handler and take down the collector.",
+      "evidence": [
+        {
+          "resource": "repo://nora/presence/collector.py#L379-L419",
+          "version": "repo-lines-v1:sha256:4c79a0b9e34443379e0c9c3465cf5c654b2a819bb921c1c0492e8d6a86f8738f:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhkNDk5ZWQ1NmE2YTBmYzNlNTE3NWNmZWM2ZDExMTc2NTAyZGM5NmQ3M2U0NDI0MGY5ZjQ0N2FhMmQ5NjMxZTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1OWU4YmY2M2I1Njc4MDYzOTk2N2MwY2MzOGNhNjBmZGQ3MWNkZTlmOGM0YmM4MDczOWU2YzJjNWI4YjQ3MTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMzMjY4NGYwNzEzZDllZTA0ZTk4NjZlM2U0YzllMTliOGQzZTFmOTIyMGU5ZmFmZjk1YWQ4MzYzMTU3ZmM1OGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFlY2ExMmY5ODNhMTZkMGQwNmE1YjUyOWI1ZDRkNDg0YmJjM2FhZGVjMDkwYzc3ZGEzYWEyZjRkOTVkZWVkMjcifQ"
+        },
+        {
+          "resource": "repo://nora/presence/collector.py#L45-L52",
+          "version": "repo-lines-v1:sha256:e0415194a3d07684abacca2487e3f8f5af49fc45b104b2fb448fa8f692942674:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTQ1ZjZlMzc3Y2JiNDgzMzE0NmEwMWRhMmQ5ODdkZmJmMmJkZmEyYmVlNzVmMjViNzM4ODVjM2VkMzQzNzQwMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDEzMjMyNjZlOTUzNWFjYWU1MmExOTcyNTQ1NTQ3MjU5YzMwNTA0NjVkNGI0OWIyMGY1MThhOGZhMGJkYjMyYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjkwM2M5N2NiYzQxYzYyMzE5YjkxMzg5YWUwMGE4NDBmMzQ5MDI5MTQ4Y2NjY2Y5MWU2MjUzYzdiMzJjOGYwOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2EwN2U0OTk3ODNmNjFkYmQ4ZjYyODRhZTdlYjk5ZmRlMTUyOTRhZDlkNmEyYWFiOGE5ZjFjYTYzZTI1MzJiYyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_687b7e74b6724a96a688f2731f279408",
+      "statement": "Saved places refresh on their own schedule behind two gates — a success waits out the hourly refresh interval and a failure backs off `cadence * 2^failures` capped hourly — and the refresh runs only after a clean member read, so a cycle that could not read members does not spend a second call on the same struggling account.",
+      "evidence": [
+        {
+          "resource": "repo://nora/presence/collector.py#L200-L203",
+          "version": "repo-lines-v1:sha256:58ce0c5101f2d579a58a34b83b87230fb8afeb089d9104cbc43972cdfbfab0a4:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjhhNjNhZDJhMWU1ZTQ0ZWYzZmFhY2JkNWE4OTcxOGVkMDU5YWJjZWMyNzZhODUwNTEwYzU1ODJmMGNjZjM0NCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZWM5NTVjZWM5ODFkNDg1MmI1NThmNTcwNjNhOGI3ZGU0NmZjMDZjNDA3YTAzZTU2NjY0N2E1ZDI0NmM4OTQ1NCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTM3MzdmYWQzZTEzMWI1NTdkMzcwNGMxNTA5ZGU5NmNkMmEyYjIzY2IyN2ZkY2U5Y2NhNjllYzQ3NzBmMmEzOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjI2ZmIyMjMwZjBmODQyOWY2OGM0NTU2MTFlNGIyZDFmMzM1NjAzOTgzNWYyMzc3M2M5NDFmMTY0YWNiNzNkNCJ9"
+        },
+        {
+          "resource": "repo://nora/presence/collector.py#L231-L268",
+          "version": "repo-lines-v1:sha256:c044c9fbe6aeabec9210f67b8b6e291a0c52948d5176c34c3f504cff870a90ec:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhjZDhiYmViMGEyOWY3YjcxODExNWViYjcyMmMwYjhkYTc2YzdiZDE0YWI2YWIxMWMyMmNlNTExZGZkOTQxMGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxM2U0YTFiOWM0N2NlOGRkMzA3M2ZhMWY3OGM3MDcyNWFhOGU1MDU1MGE0MWU0MWFkOGI5ZWQ0N2Q4NzQ2ODciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhlY2RiYmI2YjVjZGU0OTNlNzVmMjE3NjAwOTMyMjBlYmI4ZmVmODljZDIxYWE4ODIzMmRlYjk0NTViZTllYzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAxMzM3OTVjM2RkZWRlNDE3YjRmYzgzYjllZDk4OTk2NzZhNmViODc0MjQ1MGI5N2EzNTQ3ZDZlNjI4ZDRmNGMifQ"
+        },
+        {
+          "resource": "repo://nora/presence/collector.py#L54-L57",
+          "version": "repo-lines-v1:sha256:912d514a4f002067eed0cd07ec79d410653e622d2f16c335181731afd250157a:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZWVjN2ViZTk3ZjBmNGJlNGMyMjk3OWE0ODhhNDdmNjA5MWJlOGNkMjQ1OGM1NmMxOGI3NjBiNTg3YTM3MjNlMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTU4ZTQxMTQyYjUwMjliNzkyNzZhM2QwMjg3M2NhNmQyN2FmNmYxMjM3ZmY0YjE0OGFjMDIyZWNhZTdmYTU2NyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzk1YzMwOGE0OGM0YzIzMTlkNTYxYzJmZWMwMjEwYjU5ZGZhNDMzNmMwNDY4MjVjNjc4YTA1Y2Y4ZGI2ZTllYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTlhYTMxNDk3NDMyYWQ3OTFkODZiOGRiMDkzZTRmZTc4MTY2MTRkMmQwYWJlN2VjOWI4MzYxNTg0YjQyM2U2MSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_5ad293c72fae4118a9f225c33dafa0e3",
+      "statement": "The on-demand live refresh is served by the collector as `POST /refresh?person_id=` precisely so no Life360 credential lands in the agent: it pings the phone then polls to a deadline through the same write path as the background loop, is skipped entirely while the loop is in auth back-off, and answers 200/408/400/503/502 but never a 500.",
+      "evidence": [
+        {
+          "resource": "repo://nora/presence/__main__.py#L39-L98",
+          "version": "repo-lines-v1:sha256:db8cd42f527613c31c0d56f4d5792e4d496d278bb20832120d82f70c3f98e64d:eyJzZWxlY3RlZExpbmVDb3VudCI6NjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzMDFiM2UwZTRiOTFkMTNhNzY0ODgyYTAxMzZmM2Y1YzY4NDAwZTAyYTg0NGQwNDFkNzNmYWZmYjJmNjY1ZGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5NTBkNGVjMDI3ODcxNGRjY2FmZWJiM2M2NjM1ZjY1OTlhMmZmMzY4MDdlYjFhMjdiNTkyNmFlNjVkZTQ5MWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMzNjY2M2IyNDhkNDE2ZDM3ZGY2ODc3NjMxNDBjODc4NGY0Mjk4YzYxZmM3M2E3ODdmNGRkOGJmMjlkNzVhMzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg4NTM2Mzg4OTJhNTkwMGI1NzZjZWY1ODE2NjBiOTU1MTE3YTNjNzA4MzAzY2U0N2RjMjI1ZWMwYWY4NjQ1ZmIifQ"
+        },
+        {
+          "resource": "repo://nora/presence/collector.py#L335-L360",
+          "version": "repo-lines-v1:sha256:02c21734977bcbc02cdbc857ff9864a1b2fedbcd13e70a117553573c94ac8ac5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlMzkyZGZkMmZlMTkyOTVhNDU5NmMwOTczOGIxNmY5ZGQ1NzVjY2UzMWRkYjU0MTQwYWNhZTc3NGJhYzIzNDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhjMmZlNmVhZjAxMGJmZTZmMjU3YjU1NTE5YmU5OGE1Y2EyMThhMzlkYTA5YTVkMDE5MjU2NTc1NDM4Y2QzOGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEyZTJmYjk4MzRiOWEyNTdkN2I0MzFiZmM1M2NkZGQ3MzM2YjMzN2NmZTk1NmMzNzg5MmIwNzM1ZDIyYjdiZmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE2NjBkOTBkNGEyZWU0MTA4MWU5NWZiZWZlODkyMWRlMzNkNDBlNmZkMmI1YzgyMmFkZWY5NzkwYjRlZjg3Y2IifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c945d4db3ebf482db77c58180d2b3859",
+      "statement": "Presence retention is a periodic sweep off the write path that deletes fixes older than `retention_days`, time-windowed rather than count-windowed, so a retention chore never contends with a collection write.",
+      "evidence": [
+        {
+          "resource": "repo://nora/infra/sql/presence.py#L204-L215",
+          "version": "repo-lines-v1:sha256:f10c785a737365d4692d525662133bd8f58f1cea8bb863693e89bed1a0fd1c84:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQzMzA4NWU3OTk4MTM5YzFiNWZjNTk0MzcyNjIyZGJhNDFmYjA2YWUwNTEzODUzOGUzZjcyZjZhOTcxYmNlM2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRiMWMyZjlhMjk1OWMzNjZhYTk5OWFmNzA2MjExNDk3YzhlYjMxYzllMGMzYmUwNzc5ZDg1OTZiN2QyMDE4OWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBkZTg0NGY1YzRhMjEwMGVhOGFjYzIxMTUzZTQ2ZjQ0OTcwMDdkNGVmOTAwN2IwMGRlN2VmZGYyMzg5MTYwMjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkxOWNlZDBkNDBiN2I5NjYwYmUyY2UxNmNmN2JhMGZhOWFhMjRlM2ZkMzJiYjY5YjNmZDZjYTkyZWU1ZmJlYWQifQ"
+        },
+        {
+          "resource": "repo://nora/presence/collector.py#L462-L470",
+          "version": "repo-lines-v1:sha256:33f1aa1a93736eff77e37fac2dca7691ff032c2fbafa6e598fdaf3e616b2f6d5:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGE1ZjMwZWRjMDA3NDkwYWQ1ZGM4YTlkODkzNTcyOTgyYmNmMDI5NDBjZjMxMDU1ZDI0MzFjYmYxYzE1NDBkMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODk1NWJmZjE1NzAwZWUyMWJmZDI2ODhjMmRmNjQ4NmI2MDM5NzJiOGY4NzVhZDMzNjFkNDExZTI1ODI4YTI1NCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDE3NWQ5MGZhMjJiYWQwMWU3NzU4ZDkzMTIxYWY0YjBkNjdjNzA5NTk2NGZiZWY0MmY3OWYyM2JiMzRlZjFkYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        },
+        {
+          "resource": "repo://nora/presence/collector.py#L59-L62",
+          "version": "repo-lines-v1:sha256:78fc7732f125d73acde51dde0296904c76a707b8b8bbbda4b56d38602700ea9e:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzBlY2MzMjc1MWFlZTQzYWQ4NmQ1Y2Y2ZGI1ODY4NGFkZTAxNTJjZGFlZTMyMTRlOWJjMWYwOTBjNDU4ZjA1NSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGViYzliYTc3NjMyZDM4YTg4Y2U1OGQ3YTQ4OTdlMmM5MjM5YjllYmM4ODU5YjRiMTM3NzVhZTlmNmJlNjUyYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzMwN2MzMGU5OTBhNWZlYjcyZGU3MTg5NTg3OTMzOTc4MGQ3ZmUyNjRjMDNlZGY5NjEzMmQyMTk5MmUxNzZkNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDU4YTNiYjgxOTAwOGE4OTNjMjFiZjNjMTBjYjZlYmY5ODcxN2E4NGYxYTJmMjA3MWE5NWI1YmIwYTYyYzE3YSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_f128abdcb1aa4b3d9e6539a6613abaf6",
+      "statement": "The fold reads one person's Record as a single event stream ordered by `EventPosition` = `(recorded_ms, rank, id)`, with a fix ranked before the poll recorded at the same instant, strictly after its stored position and at or before its watermark, so how the Record is cut into runs cannot change what the fold sees.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/rollup.py#L40-L66",
+          "version": "repo-lines-v1:sha256:8836975d50ca786b36a4422de2c121b154eb62f502e8562f70921fb9e62b1f9c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkNDA5YThhZjA3YWM4ZTllZGYxMDY2MzYwYmJlYzcxZDdjOWU4MWNmMDVhMWM5Y2I1ZDY3Njk0ZWMzYWZmMjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjM2ZlMmE3Mjc0OTAzMmFiZmZlNjE1MjMxOWU2MDE5MzM2N2UyOWI2MzI0YWUxZjBjNzQ0ODAzYTgyNGZkZGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM3NWYwMGMwYzRmMWM3YmQ5Mjk4OGUwMzBlMDAxYTU3MzM1ZjU2ZDIyNTQwNjNjYWE2ODYwNTI3OTlhNzg4ZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/mobility.py#L559-L627",
+          "version": "repo-lines-v1:sha256:6b398bdea3370fa5391792f029a445d1ab90ff36e2eff815c7e6b60ea38a5b1b:eyJzZWxlY3RlZExpbmVDb3VudCI6NjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwYjg1ZDczYTBiZGMzNjUzMWRmYzBhZGRkMDRmYjI3YTBlMWZkZWIxOGYyNTE1NDY4MDlhZmJiNDk4YTBiMTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzZjJmNTJmMzRiZmExM2EyN2ZjZWIwYWYxOGRmM2U0OWRmN2I0MzQyMDhhZmI4OTc1MGY0M2E5MDc2NDdhNWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM1NWFhMDJjYmE4YzdlN2VmZDJkZjI2MjU5M2M1YTRkNTBmNTY3ZDc2NjQwYzI2MTE0NWYyZDg1MjEwNzMzMWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVhMDVhMTI2MzA2ODI0NWM5NmQ3ZDk0MDgxYTU4NWIyZTYwMGMzMzA3ZTE0OWI0MTMyMmFmNGY2NzVjMTY2MDYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e15c4ef872814c47897734eb1f20dcc0",
+      "statement": "Only two kinds of Record row are fold events: a fix with `accuracy_m <= 100` and `wire_state == 'live'` (so a stored `stale` fix, which `where_is` will show with its age, is never folded), and a presence poll whose outcome is `ok`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/rollup.py#L75-L83",
+          "version": "repo-lines-v1:sha256:95a7bc6c7ad0f9684f8862392b3df3ebb35ee03d26c67b4d4e43d09cc7a7c771:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjY5YTEzOTc1YzI1NmVjODMyMGUyMDE2MDgzYzk2ZGY2MzdjYTNkMzViZWJkZTIzMTRiZWUzYTQ3MTFiNTZjYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZGE1ZmQ4YzFhNTNlMjI2YTBhNjc2YjQ0ZGI2Y2YwZDE3MDc5YTQ4YTg3ZjU5OTZjNGUyNzY1ZGQyMjFiZDIyNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjNjMDlkNjY5ZGU3OWJkMzkzY2JlZDQ3NjExY2MxMGE5OGEwN2ZiNjY5MDI2ZTkyZjY2OGRiZThiYjJmZjk0YyJ9"
+        },
+        {
+          "resource": "repo://nora/infra/sql/mobility.py#L578-L602",
+          "version": "repo-lines-v1:sha256:499cb5d4193f616d7176002f49135b948723575f09466d47200b2c474bfb4c6c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1NTQ0MmI0YTZhY2ZlMTgwZTllYzAyZTFjMjI4MGQwMTE1YzE5NDE3NzQyOWQ2YmU5NDUyODU1YmIxYWY2OWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlhN2VhMDdlMTA5YmE4MzIxNjdiNjliYmRkMGJjZWY1ZDhmZTcyNWI4NWU4MDE4ZTJlYTljYjFkNjUzMzQ5OWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ5MzU1OGJiNmMyZGUxNWUwMzg3ODQ3YTNmODllZDg4YmU1NDhhNzk3MGQ3OTEyMDNjMWQ4NTdjMTYwYjlkOTYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_091ba2f03c994d0a8815ce414e7400bc",
+      "statement": "A failed poll is never evidence of time passing: `PollEvent` exists only for a poll that succeeded, so a challenge, ban or transport failure proves nothing about elapsed time and the fold never reads one — missing data is not absence of activity.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/rollup.py#L75-L83",
+          "version": "repo-lines-v1:sha256:95a7bc6c7ad0f9684f8862392b3df3ebb35ee03d26c67b4d4e43d09cc7a7c771:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjY5YTEzOTc1YzI1NmVjODMyMGUyMDE2MDgzYzk2ZGY2MzdjYTNkMzViZWJkZTIzMTRiZWUzYTQ3MTFiNTZjYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZGE1ZmQ4YzFhNTNlMjI2YTBhNjc2YjQ0ZGI2Y2YwZDE3MDc5YTQ4YTg3ZjU5OTZjNGUyNzY1ZGQyMjFiZDIyNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjNjMDlkNjY5ZGU3OWJkMzkzY2JlZDQ3NjExY2MxMGE5OGEwN2ZiNjY5MDI2ZTkyZjY2OGRiZThiYjJmZjk0YyJ9"
+        },
+        {
+          "resource": "repo://nora/infra/sql/mobility.py#L594-L601",
+          "version": "repo-lines-v1:sha256:d57bb9b5f0871c5a1892d86b5da02fa8bfd1dfb524ddc36432139209df368fdf:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjU1NDQyYjRhNmFjZmUxODBlOWVjMDJlMWMyMjgwZDAxMTVjMTk0MTc3NDI5ZDZiZTk0NTI4NTViYjFhZjY5YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTc1YzRkZjg5YzYzNTdiZTU0ODRkZGQ2Y2Q0ZmJhZDBjZTQ0ZjFkODk1ZGQxZTJlM2MzZjAyYjc3Y2YzNjcxYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzEwMmZjMmUzOWY2MDhmYzY1NTdhZTQ2MzAzNGU1YjBiNjk2NDc4NGY0NWIyMTdlM2Q1MDE2YWE4MjU4MzI0MiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjZjODFmZGQ1MWQ4ODk2NGY3YmVjYmUzM2U3NWQ0YjExODFmOTFmMjhlY2QwMzQ2MzM3N2UzODY3NzA1ZWUxMiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_fa46025b12bb42368b2321fb01012fd6",
+      "statement": "The fold's clock is logical — `FoldState.logical_now_ms`, the newest time the Record shows through a fix's `ts` or a successful poll's `at_ms` — and the wall clock enters exactly once, in the daemon, to choose *which* watermark to build to (`now - grace_seconds`) and never what is computed at it, because deciding a tail on wall time makes a tick-by-tick run and a batch re-derive disagree about stays inside the history.",
+      "evidence": [
+        {
+          "resource": "repo://nora/analytics/__main__.py#L72-L84",
+          "version": "repo-lines-v1:sha256:14c72cd0bea7d74a4bc9f7ff72f391021e47f1cb7da7707a1d728d4ac55d02ac:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc5YmMyMzM2ODg5YTc4MzgzOGZlNTRmNTZkMWQ0MzYxNWYyNGNmZDliNzQ3YzNiYjhiY2UxNjUwMGMwYjg4MTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5NGM2NjY4MGNlZDE0ODlkMmRiZGY5NjVjZmUyZDMxY2ZmYzkyMjk5YWQ2NjI3YzA3YzIxZjA2ZTQ2ZWRlZmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFlZmFjOWE2YjY4ZDA5NDRmZDMzNmRjOGYzOTM4YjhhMTVjZGY2YzQ2ZWJiODViNDk4MzViODIxNGNhMDE5NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIxYjk1OGU5NTkxZmE4NDk0NGRlMmI1MDI5ZTA2NTNlOGE5Y2E4MzczMTA2ZDBlMDFhNDdjNDhjOWRiODU3MjYifQ"
+        },
+        {
+          "resource": "repo://nora/analytics/rollup.py#L1-L38",
+          "version": "repo-lines-v1:sha256:4075e304caac7ac7f679f65e1f377913736f62a3c7f60e18ec22b4d105943d8b:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM0NDFhNjAzY2MyMWVlODZiMjQ3OTI3NWZjYmQ2NGJhMzFlNmI1ODViMTQ4MWFjZDk1N2VhM2Q5YWNmMTg2MGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b7839d889bd0419cb3744dc69d6fc941",
+      "statement": "`_step` folds one event purely: a fix joins the undecided window unless it is older than `frontier_ts`, in which case it is dropped as late and counted in `late_fixes` rather than spliced into a stay already written; a poll re-evaluates the window only when its clock move crosses a deadline some decision reads (a window fix's `ts` plus `settled_seconds` or plus `DWELL_CAP_MS`); and what stays undecided is kept from the earliest held fix onward in time order, never by id.",
+      "evidence": [
+        {
+          "resource": "repo://nora/analytics/rollup.py#L289-L361",
+          "version": "repo-lines-v1:sha256:061f5ac0f97aab789ed7d6c72e374b9e1d4652d11c36554130d55af919db2f9f:eyJzZWxlY3RlZExpbmVDb3VudCI6NzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA2ODY5ODVmY2Y3ZWVmYjg5NDZiMDE3YzE4OWNiYjFhYWM5YTA1ODU1NjdkYWI0NjQwMTM2OTZkMjRmOTA3NzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMyZWViYTMxZmEyYzc0NjljODNkODliMTNmODA4NmE2N2IzNjJhNGUzNjk4MTdlZTNkNTMwZTRlODQxNzk2MGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ5MTEzMWE4MDIyNDI4M2E1Nzc4ZDQ5NGY4ZWM3NWFmMTM5ODMxMGEyYzk4NjYwNTE1Y2MwNjhiZDNiZTQ4ZjcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ef580e186edc47cfbe590bbb0b8ce0c1",
+      "statement": "Because every event is folded alone in one canonical order, an incremental run at a watermark and a rebuild at the same watermark compute the same stays, trips, places, occupancy, rhythm and corridors — the determinism gate, asserted across every-tick, ragged and one-run rebuild schedules, with a late fix seen and dropped.",
+      "evidence": [
+        {
+          "resource": "repo://tests/integration/test_rollup_builds.py#L212-L235",
+          "version": "repo-lines-v1:sha256:c473da917909b0e67bdf820d8ab02ed88eb620fdc970e8b299302e6655b62728:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYxZTc0ZGRkNmU5YTY0MWZlMzkzYmM1ZWY0ZTBmMmVkMzkyN2VhN2E2MWNmNmY3OWM4Njk0N2UzOWNlYjQ4N2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU3ODdiNDEwNDViMDE4NWI4MDI0ZGY1YTUzN2FmZTcwZWU5NWEyYTc5OTI1MjNkNDU5NWMxMzM2NGU3MmEzNDAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBiNDY4YWQwYWJkNWRmODYyMGJiOTRiZGZmZTg1ZjQyMTEwZWNkYThhZjc2NGE0ZDVjM2JhMDZiYWE1Zjc3M2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJlMjdhZmM5NGZiODI3MDI4NzE0MjRmMGY5NzQ2ODM4ZGJkNzhiMmNjZDlkMjY0ZGVhM2FmMzE4ZmJjMDQwMDcifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_rollup_determinism.py#L212-L243",
+          "version": "repo-lines-v1:sha256:a2b7e1cdfda07f26e7067ba59683e0effeec46efd42ecc37a166f4c664e15f77:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA2NWViZmEwMmUyZDFhNzdkMjAyMmUxMTI0OWIyNDg3Yjg2OGExNDVkNzJhZDJkNjcwZjRmNzRjYTE2ODIwNDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3NzIzNTcyZDJkZjZkOTEyM2U5ZTdiYzlmMGY0MDRmY2VhNGFjYzQ5Y2M4OGIyNWRhYzk2Y2MyNDdlZjBlZjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM5NzVmM2UwNTFjZmViN2EwODU1M2U4OTBiZmJkOTAzZjU1OTBkNjczMTNjMjU5OGFjY2IzZWViN2Y3MDczZTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRiOWVjZTg1MDQwMzk2ZDg3YTFjZGMwZjRhNGM4YjY4OTBmZDJkZDljNmIxMWY3YTMxODA1YmYzMWVkOGFiMWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_13af0700df1f4ec79c2865d8443758dc",
+      "statement": "Determinism holds on the Record's clock rather than the wall clock: a phone that reports, goes quiet and then reports again from the same spot is one stay on every schedule when no poll falls inside the silence and two on every schedule when polls do, where a wall-clock close would give two tick by tick and one in a batch.",
+      "evidence": [
+        {
+          "resource": "repo://nora/analytics/rollup.py#L21-L29",
+          "version": "repo-lines-v1:sha256:2908ec4e40929f35d73557898fe52fb41e1964333fabe202f5e295ef66df0b4c:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTJlNTU3MTllOWM0M2FjMjUxYzM3MWNkZmZmNDUzOGJlOTE0ZmU2OWE1YTc1ZTYwZDJlNTY3ZGQ1Y2RiODEzMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjcxY2JjNWRhZjRjOWEyZmU2ZjMzZDdmMDYyODEwYmRmZDQwOTkzMjM3YjIzZjg2YzUyZjllYmQ2ZjkzODRhYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzJmNjc1NjNjYWNhOWU3ZWYzY2ExMjIxY2JjNzM5OGVkOTZiOWY5MmNmNGFlNzhiMzQ0MTdkYTdlZWU4YjI1NiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWQ5OWU0Nzc0YjA1MWY0MTg0NWQ2OTkxMWZlNjM4MmQ3OWQwZjU2YmMzNDA0YTUxOTBjOGE5OWZmNmY2NmZjZiJ9"
+        },
+        {
+          "resource": "repo://tests/unit/test_rollup_determinism.py#L246-L280",
+          "version": "repo-lines-v1:sha256:beabcdf0350c360903212bc8a1d96c50fc35413c6b04b00edcda5481593df955:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFkYWNjNjFiNjMzNzRlYTljZTk2MGRkZWY3MjIwODg0ZDhlMjRkZGQzYjg2NjNjYzNhYjZjNDU5MDYxOGE4MWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyMzRhMzU4YWQzMTA5NzU2ZmExNGRkYjJkZjkzZjA5YTJhOTBiMDBjMTliZDc3Y2ExNTVhMjlhNGRkNDM5MzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZiNTNmYjc2MTllMjllYWJkZTkyZjQ0NDIwYmE4N2NmZWUzYWU0NzdlNTg5YTE5MDg2YjM0Yzc0Zjc3MWJjYzkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkzYzBkMTI2MjkxYmI1MDliMWIxMzcwNWFlNWFiN2I3NDRjMDQ3ODgxZWZjYzEwZTgwMmU2NjJmZWNlZmMzZDkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6b80d01cbd8d4a03a2dc0692ddedda48",
+      "statement": "Every presence Rollup row carries the `build_id` that computed it; one `rollup_build` row is `current` and that row is the pointer every unbound reader resolves, while the analytics process writes through a store bound to its own build and a write through an unbound store raises.",
+      "evidence": [
+        {
+          "resource": "repo://nora/infra/sql/mobility.py#L1-L17",
+          "version": "repo-lines-v1:sha256:9fe3509a75f7bad1418f896a7fd375b38622b6002c6604b0cea6ade361e3f74d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlZmE0YzZkYjNhM2IxZjNlNDE2NWY4MjAwNDRiNjk5NGVkMmJiNDZmODkyMzM2Y2I3MWI4ZTVhZTUxMGQ3ZmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/mobility.py#L160-L195",
+          "version": "repo-lines-v1:sha256:505dab56fc92133c6d28272dc584a9c6d105634781216401431526cf76504ea8:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5M2M4ZTFkNGIzYjQ5MWM4YjhhMzJjOGU4N2RhZDZhMzU3NTA5YmMwNTEzOWM1NTVmMTRlMTBiMjZhZTBiNTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFlNmY3NzUwYzkxMDEzNGFiNjY5NTgxYjJjNmM1ODNlYTQ0YTQ5MjE0ZTUwZmM3Y2FkN2FkNDBlMGMxYjk0ZTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIwMjA5NGFiM2Q0YWE5ZTJmMTQ1MmM1MWExNDMyNDQ1ZTk5N2E1M2E1NWEyZThiMjI3Yjg2NzE4NTE0NjI1OTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA2MmViZjY4Y2Y0ZjY0Y2E3MDYyOWM3Y2UyMDM1NGUyMjQyZjE4NWRkYWZlZjYwMTVmM2EyOTMzY2I4YTY5MGUifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/rollups.py#L1-L23",
+          "version": "repo-lines-v1:sha256:413bf2406dd3205f42d9e4cf7424d1c2b87283fb5ef822d0f2a9b6b2c71744b9:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk2Y2ZiNWQwNWVmNmFiZWM1ZTdmOWZhZDkyZWVkYWQ1NmQzOWMwOWFiNzhmMWU5OTE1YmI2Mzk1YWRmMWZlMDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_536dbb2e5bad4ed6822888821804b1fa",
+      "statement": "A build records `CODE_VERSION` (what a run computes) and a digest of every `RollupConfig`/`UnitConfig` parameter a row is a function of, with the pacing knobs excluded, and `ensure_build` rebuilds into a new build rather than extending one made by other code, by other parameters, or with no build at all.",
+      "evidence": [
+        {
+          "resource": "repo://nora/analytics/runner.py#L170-L186",
+          "version": "repo-lines-v1:sha256:aaa1f35d1971ebb65b90cd95c0476e43e502ee49d87d43c3466abaca491e7cce:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVlODQ4OGQ3OGM2NDFkZjc0YThkMzhjNWIwZmQxNjkyYzQwOTQ2MjU2MTJiZTU4ZjVjNjg5NjgxN2U0OTA0OWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5NTAzYTI0YTE5NDYwNGNkMjgyNjUxNGY2ZWJjNDViMTYyODI3Y2I5NmVlMGY4OGM0NDQ3OTZmYTM2OTE3MDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEzNTY1NzA3OGFlNDRkNTBjNDA3N2IxMzgyNDE2NTRjNTg3ZGRlMzA1ZTYyMzc1NTlhODhlZjM4ZDExOTg0ZDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://nora/analytics/runner.py#L43-L61",
+          "version": "repo-lines-v1:sha256:ea8de15447c0e445be03afb32b8ff39fd28771b218ec972cb4cda35ac50546e3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE4ZDcxNGQyMjA5ZDIzZjkwNDQwMTU5YzZkYmVmMTFkYTU1ZmMxNTBhMTA3YjZmZTI3MTY2MThlMDBmMzMxZGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFlZDA2OGE0NjYxMjhlMzhhOWJkNjVkYzkxMWVhMjc2YTBhOGQ1MzE3ZmE3NTI5YWI4Nzc2OTYwYjY4ZjAxZWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM0NzU5M2RjNjA4ZDA5MjE0MThiZDRiODBiMGRmNGY4YWZmNjQ0MzQzODAzOTI4NDhhODgxYzJiNzVlYTE3YzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9d9554bee4d94439a5b79ef72f18ec51",
+      "statement": "A rebuild folds the whole Record to the watermark into a new `building` build, raises no stimulus, then switches the pointer in one transaction that supersedes the previous build and re-projects the memory index's episodes; a failed fold or switch abandons the build, and a superseded build's rows are never read again but never deleted.",
+      "evidence": [
+        {
+          "resource": "repo://nora/analytics/runner.py#L146-L168",
+          "version": "repo-lines-v1:sha256:5fc6ecc68f70f0f58a61cf1ee0424002a65ddf63baf0b42a589db7b9531d7002:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYyZDI3YTIwMWY5Y2FiYTdjZjAzMWUwMDUwNzQxNzE3OGM1ZGEyNTQ1MmMxODVhMDlhZTE4MjFiYzhkZTI0OGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0YTA0Zjg4MWM3YTk1YzA2ZmI5Yzk3YmI5Y2IxYTdlZDVlOTJjNjlkMGQ2ZDUxOTIyMTQyMjlmZjM4YjhhYWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY3M2E0ODgzMWM0YzAxZjlmZjE1NjU2MGM2MzRlNzRhM2E5Mzc3YWViMGUwYzRmYmI2NzMzMjNlN2RhNDcyMjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYzMDc2ZmNmZTk0MDdjNWI1ODA3YTExYTI0NzA3ZWZjZTk0NDliZTI4MjllOGU2ZTg4YjUzMDk2ZTBiNjdkY2YifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/rollups.py#L159-L191",
+          "version": "repo-lines-v1:sha256:9364d4ff86bd7e6b1e74128685774a39ecb46c75a6e61de32ef31b900fce844c:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAwYzA3NjNhNGRjZDA0ZGYwNThhMGUyM2QxNWYyYTIyYjAwNmU5ZGRmNjM2MDM0Y2E3ZDJkOGNmNzI0NjIxMjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIxNWFkOTBjMTAzNjgxZDhiZTQwYWI0NmNhZjM0MGZlMjYxMjVlODg0MGJhYzM0NjYyOTJkNDQ2YWFiNTk5ZGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg3MTFkOTFkYTQ1ZDMyZjMzZmY3OGIxMDA3ZWYxOTEzMzYxMjM0MTQ0ZDMxYTI5MTVmYWIyZDFmMTM3NjkyMTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIwMGY4YWJhZTYxZThiNzBkMDc5ZTM5NDA2NjdkZTRlN2M5YmRlMDdjMzNjMTRjNWY5ZGIzZTM2ODIyZTE2YzIifQ"
+        },
+        {
+          "resource": "repo://tests/integration/test_rollup_builds.py#L387-L433",
+          "version": "repo-lines-v1:sha256:17c340e02f765a06dd0f815cdcdb86af368f999c9ca4196d727c5f4ba55c93c0:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJlODFjNDgwOGZiOWNjMDRlZGFkMTQ4YzdmNTQ0Yzc3MjNiM2ViMzQ0Y2NmMmYxYTNkODQzOGFhMjgxMGNlODMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRmZmVhODk0YWI1MTdhNDY5MzRjMWJkOTdkZTc5OTQ3NTU2MjUwZTdhODU1NTMzNjZkMmM0YjYxMzIxMjA5YjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRiOWZlOGUyZDViZDdhMzE4NjY3ODIzYzRjNjBkNzY2M2Y5NzU3ODhlMWI4NDc3MjQ0ODNiMjBmMWQ0ZjMwZjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRiOWZlOGUyZDViZDdhMzE4NjY3ODIzYzRjNjBkNzY2M2Y5NzU3ODhlMWI4NDc3MjQ0ODNiMjBmMWQ0ZjMwZjQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ca6e22eb07c7443694fd8982032ef7c0",
+      "statement": "With no current build a derived read must answer `unavailable`, never an empty result: `SqlMobilityStore` raises `NoRollupBuildError`, `SqlRollupRead` returns no build id or watermark, the `rollup_read` tool answers `unavailable` and instructs the model not to read it as nothing having happened, and the web's derived-presence routes answer 503.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/tools.py#L3071-L3074",
+          "version": "repo-lines-v1:sha256:3b71e477f4ba61b7514f467f695e5081f9c68f3f8b704d1853d1f9851b2358cb:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMGVhYTBjMjhlZDEzZWUzZjQ2NDNiZDU3NTFmYWUwMmZjNmI4YjI1MGYyYjk0ZTgyMTQ3M2I4NTM0YjQ5YmEwNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmFmYmEwNTI3YzM5NTNjNGI2ZTBlNWI1NzM5YmE4MzYxMmY4MDUzYmNkYzk0NjY3MzAxOTNjZDFkNTkwYjQwOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGE0ZGQ4MzEwNzljZTc4Y2ZjZmQwOGIyN2Y4OGFhZThmMTUzZDMxYTY3OTRjN2JhNzQxNTQyODJkOTI2N2E2NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGVhNTkwZWQyMmVjNDhjYmZhNDI3NWE4YjFmM2FjZDc1OGZkNTdmZmRjOTJiM2UzYmZmY2IxNzc0YzhkMGU2MyJ9"
+        },
+        {
+          "resource": "repo://nora/infra/sql/mobility.py#L176-L188",
+          "version": "repo-lines-v1:sha256:3d937031c2cf073f1636a0431e4e5f8baec423f8359a8366cb514d6493440fd9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM2YzliOGRjNmNiZDE1ZWQ3ZjZkOTlhYTk2MThjMDRmODZlMmM0MTM0ZjA1MTViMGVkMzZmMjA1NjJhZWJkYzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlOWNlMWVjMmY4MjlhZTE0MmQ5MTBkYjI0M2E5YmRmOWVhZDI4YjYwZjMwNDRlMDY2OThmMmZlNjUwZTkwZDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBkYjBiNDY1MzkyYmQ1MTQ0MTVjYWNhNzYwOWRjM2QyN2VjZjE4YzA5Y2U4Y2NhMzQ1NDg2MWQ0YWE3N2I2MzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdkNWRmNmMzOTUyMzhmOTY1ZmMzOTQ0NTg3YTVhNGZjNWI2YWYwY2IwNzg0NTVlMGZmMzQxMGYzZTVlMmYzZWUifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/rollup_read.py#L54-L72",
+          "version": "repo-lines-v1:sha256:1376aaca112f9734997f1db9f37d4dc76dae3d67ee986991a57e7102198f61ef:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdmN2MyZTAzYjNmZjRiODY4OThmMGU3OGJjZmJjYzg5Yjk1MjM3NzdkNDI1N2FhN2Y2OWYyNTA5ZTQ4MzBjMmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY5ZmVhNTBkMTEzMTVlZmJkMTYzYjI3OWNlYmFmYzU5ZTFhMjJhMzQxYjBkNmE5ZGUxNWQ5ZGQyMGJjMjkzNTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg5MDFiZGNiNDhiZGMyOGJjYWJmNGIzMWUyMzA4NTAwMWVlMWM0YmY1ODcyNjQzMWEzOTNhZTI4NDQ4MzQzNDIifQ"
+        },
+        {
+          "resource": "repo://nora/web/api.py#L102-L119",
+          "version": "repo-lines-v1:sha256:402c628f89494cc86d0615261af59e5865581b6c49780b0f299fffd34cebfdfd:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMyYzJhMWMzZTU2ZDFhOWU5YmJjM2NjZWMwOGJmNmYxM2NkNDMzNGEyMGM0ODU5YjJiMTZmMjRjMmI5NzMyNWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0YmFiZTFlNDlmNzAwMzAwODcwZGUxMzdkODIyNjgxNzUzZjU3MGRmNGI3NzllYzk0ZDg2M2EyMjMwMmRiYzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYyMWEzMDk0ZGNiM2NlODY1YzJkOGQ4YTY2YmYxZWVmNzAwNGFiNjU1YjQ0ZTJhMDgxMDk0OGZkNDViNzlkZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM0MTgxYmY0MGMyNzE5NTQ3MDVkZmVmY2YxMzgzMzgyMWU2OGNhZmMyOThhMjRmNzFlNmNkZmYwMDA4NDYwYTkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b04e0d1b98c4460d9036e1812ba5ae91",
+      "statement": "Rows above the Rollup are cited as `(kind, subject, interval)` and resolved by overlap in the current build, because a rebuild recomputes rows with new ids: after a switch the same citation resolves to a disjoint set of row ids while the happening it names is unchanged.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/rollup.py#L245-L287",
+          "version": "repo-lines-v1:sha256:394b8e31c8e622c5ba223c2023e1e07f35494c229d3914d9bef0f836f50cd946:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM2MGQzNjYxOTE4Y2E3ODc0ZjBlZGFlMGE5MDYwOTM3NmY3ODg5NTkzZjI1YWE0NWZkM2NkOTgwYzA1YjJkYzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFmNTE3N2YwNWU0NTQxOTM3ZjM5YWEzMzk0ZWJhNGY5OWJjZGUwNzBkMzFmOTE5MmFhMjk2YjM4YWFlYjMzMTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM5NWVmNzg0OGU5YWI0YTIxODQzNTc4NzYyMmVhZGY3ZjYzOWY4YzJlNzYxYWFiY2QxMTNiYWNmOGUzNDk5YWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAwMWE5NWMyMGIwNTBiNWJiYzJiOGI5NWFhNmQzNzI0YjZjOWRiNTE2ZDRlMzFiMmM3YzVmMjE3NzQyMjJjMWIifQ"
+        },
+        {
+          "resource": "repo://tests/integration/test_rollup_builds.py#L387-L413",
+          "version": "repo-lines-v1:sha256:d8a3e438151bc446889f6a2b538cfdcbb0c806359f339dfcc224362040cff8a2:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJlODFjNDgwOGZiOWNjMDRlZGFkMTQ4YzdmNTQ0Yzc3MjNiM2ViMzQ0Y2NmMmYxYTNkODQzOGFhMjgxMGNlODMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRhZmQ4NTJjMGVlMWMyYWY1YmFmODE2ZWUzMjk2NTYyMDFiOTk4ZmFkOTljYmNhYWM1OGZmNDdmNzM5ODBjODYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRiOWZlOGUyZDViZDdhMzE4NjY3ODIzYzRjNjBkNzY2M2Y5NzU3ODhlMWI4NDc3MjQ0ODNiMjBmMWQ0ZjMwZjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVlYWI3NzZkZWQ1MjljNjNkNDE2YzI3YjRjYWJhODkwYzQzNzMzOTQ4Y2UwOWU0ZmI1ZDgwZDM3ZGVmNzFiNGUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8def004a574148048e12a71b85ea814f",
+      "statement": "Places, occupancy, rhythm and corridors are recomputed from the fold's stays and trips when those change or when the saved-place set changes (detected by a stable `tags_sha256` digest), a place's label is re-checked on the logical clock on every run, and a derivation failure is only logged and left for the next run because the fold's rows are already committed.",
+      "evidence": [
+        {
+          "resource": "repo://nora/analytics/rollup.py#L671-L710",
+          "version": "repo-lines-v1:sha256:5505af8b4a604f3d986d9b8bfe08bcd4b80828194c5f1ff0cb51b74d46eee3a8:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkxZjg3NmE5MzFjZDBhNzZjM2RmNDIwOWQzOGRlZDNmNGIzODk4NzUzNWFkOWUwZTJjZTU5MTBmZTI4NDI5NTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEwZjEwZjc5NDIyNzE2NzJmN2YzOWJmOGZhODY5NzVmZjFiM2YzYzI0YTRmMTYxZTE3YzY2MTRhYmFlNzc2NWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQwMzgxYTRjMzgyM2VhYTI1ZDYxNmYxNmMxOTkzNDhmYzY1NWNkOGQzZDdmYmM2MWE3YWRlODUzMjAxNmRiN2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU2YzJlOTgwNzFmNjAyYmNmMjllZmM5ZDQyNTRkOTU3YzMyZjliMDhjZGY0ZWMyZjU0NjAzOWExOGU2YjcwMmEifQ"
+        },
+        {
+          "resource": "repo://nora/analytics/rollup.py#L728-L737",
+          "version": "repo-lines-v1:sha256:4535a832858a03a42e60952f2a92948799aebb0acaba6e69a796bb31a10cc584:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBmZDUyNjM2NjUzM2VhOTU4YTkzNDRkNjBjNjRlNmI3MTM3NDY4NDk4Y2Y5YTZkNTFkYjFmMDlmNDAzMDM3M2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZjM2RlNDE0NGJlOTVkOTA2MGQwNWU1NWI0NDBmNjU3NjdhNmI2YzViM2ZlZDY4ZDU2ZGQ5OGZjYzVmZDJmZDYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcyMWFiM2M5ZTU5NDk1N2I1NmEwZWM3YzhmMGU2ZmVmYTcwYWM1YjhhMjc3M2VkN2RkZTZiY2VhYzM5M2UzNzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY0M2NlZDk3OGJjZmVhNmMxMDViYjJkYTg2NGQ3N2VhYTNhYjNhZTU4ZmU2N2U1YmQyNzcyYzQ0MjYyMjI3N2YifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d720ebfc65054c4985411a3af8a816ba",
+      "statement": "`UnitRollups` computes five row kinds per unit — co-location, outing, daybook, tie and response — from the Record bounded by a `RecordMark` plus the presence rows of the same build, writes each row diffed by its natural key so a run computing the same rows writes nothing, and takes its clock from the newest time its own members' folds and rooms' messages show, capped by the watermark.",
+      "evidence": [
+        {
+          "resource": "repo://nora/analytics/units.py#L1-L30",
+          "version": "repo-lines-v1:sha256:312204f5d2915fbd1165600f003daf27673e7d04901852aa70720d5ffc6bbee9:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM0NDQyZGRiNTEwZTAzYmMyMmNlYTUyMWMwY2UxMzUwZWU4NjNiMTRiM2MwN2NjZDNmYTc4NzgxN2E2MjQwNTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/analytics/units.py#L181-L244",
+          "version": "repo-lines-v1:sha256:84bfac03703f053fbaf26ff34337f752c176d78dd5d5d06bb78792fbb8d180ec:eyJzZWxlY3RlZExpbmVDb3VudCI6NjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiMzlkZjliMjRkOWZlMDg1ZDA5N2Y3OTUzNmI5M2EzYzljOGIxNWU5MjdmYTNlMTgwMjRkMDY5ODUxYTM0N2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlODZlM2MxOTdmODM0Mjg0ZGE0ZTE1NTIxMDI0MGQ0YTMxMWYzMjc2NzBjZTQxZGY5ZTM2Njc2M2EzZGM1MDQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY5ZmRjZjExYzliOWIyNzE0MzU2MGViYmUyOWY5N2UwYTFjN2Y2N2QwYjQxMzVmYjE1MjA4NzViMGQ2NzE3MjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVkYTg2ZmQ2MzQ0NmFmMWNjNDdlNGUwOWY5YTcwNjBhNWEzOWI3NzNiMGY4MWY1NzRjZWM0NjE3MjEyZmY2YzEifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/rollups.py#L10-L22",
+          "version": "repo-lines-v1:sha256:6b41e6a1f9510243b6056d321d1a0692f79b80b1bc89b3bdd1a327f7e80c92b2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjYmVjNzY0ZGY4YjY3ZDBkNjBkYmI5MjQ2ZGNlMDYzYmIwOTBkNmRlZGFkNGU2MTNkOWU4OWFmMWM5NWEyMTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE5ZDkyZDc2MDMyODQ4ODlhZjA3MTdlMTdlNGYwODIxN2RjMDIwZGQzOWRkZmYyODRlNDJiMDY5NzI2OGJlOTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ3MjFiYTMxOTFiYWQ5MDA5ZTVlNTRjMTMyMjkzOWZjNTFmZWNiNWE0MTViYWViZmIwMmJhNzk5N2I1ZTI2MWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhYWY3NjM3Y2I2ZTdlNWRiODVkNjM0Mjc0NjAxNGRmMDQxY2NkNTU4YTkyMGIyOWViNmFjNzE5ZDdiYWY1YzIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_80a53c1a9c274fdbaace3d815c026932",
+      "statement": "A unit row's `as_of_ms` is its own newest evidence rather than the unit's clock, so a later run whose Record merely added polls rewrites no settled row and adds no version history.",
+      "evidence": [
+        {
+          "resource": "repo://nora/analytics/units.py#L317-L318",
+          "version": "repo-lines-v1:sha256:1ae72536bd3b866badaccf9f220843006a550ad40a5c97fd26a25a68f44b2fc8:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMWFhMjMyYzNmOWNkMDI3NGRkNjFhOTk4MDk5NDczZmViZGUzNTM0NzY3NjJiYjY5MmFkMjZkOTM4YzgxZWMzYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODljOWZlZjI4ODAyYWJlMmYyZmJiOTQ0NzMyZTllMWNiMTJhN2JjYzc4ZmNkOWEzYzdlNWRmNGI4YTBlMTdmZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTg5ZjIwOGY2NGE1OTQ0OGVjODY0ZDdkYzA2MDQ4MzFlYjA4OTYzNzNmOTAxYzQ2OTJlNjBkZjgyZWY4M2VhZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmY1NjI3NDcxNzgwMTNhOTQ4NGQ2N2ZhNGUzNzUyNmNjYzgwODYwMWE5M2U2NjdmNTJkOTFkYjc3MGIyZTZjMyJ9"
+        },
+        {
+          "resource": "repo://nora/domain/rollup.py#L479-L481",
+          "version": "repo-lines-v1:sha256:7dcc81e79e5b1170881dcfe9113fe17b86a0048549d5c54dddc6e1d33368e3e2:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiY2Q0NzM1YWI0YzI0MWU5YzhlNGNlNTRlMzc3MjI0ZTZhZmZjYTI3N2FhZTYzNmYzNGNiNDA2ODhhMjkwY2M3MiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjQ1OGQwYmU4ZTk0M2JjMGY4ZDEyYjYwOTQxOWM5ZWRiZGNhYmYyZWUwZGNlNGIyNjdjZDRlM2I0ZTA5YmIyMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDI4MDczZGJkZDQ1YzNmNDgxM2UwYTc5MzhlNDI1OGRhYTZiYzI4ODFmNjViYjJkNTJjNGViYTAwMTFlNjU3MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTE1ZmQ4OTUxMTliNGYxZTZhMTEzNjFiNGRlZjMzN2UzZjY0MGNjYWRjOGRhMDAxYjVjN2M3OGQyNGY2YWRkOSJ9"
+        },
+        {
+          "resource": "repo://tests/integration/test_rollup_builds.py#L511-L515",
+          "version": "repo-lines-v1:sha256:8a79c35f95fcf82568e21beb9455fe04fd2b45e79787216180968fbf27729f87:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiN2E2ZDcwZTZkMjAxOTY4NWY5Yzc4YzZmODYzNDJkYmFhZjZmOTU3NjY4MmQ5NDZjZjMzMDBkOTI5NGUyZTZlZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjM4YTM3MTlmYzM4NzYxNmJiNWEyYzQ4NzMwMzRhODNmMmEwYTUzMDQzODExZmM2YjM3YmZhZjcyYTU3MTU1YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGI5ZmU4ZTJkNWJkN2EzMTg2Njc4MjNjNGM2MGQ3NjYzZjk3NTc4OGUxYjg0NzcyNDQ4M2IyMGYxZDRmMzBmNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDFlNDE3OTNjZGEzMjA2MDEwYjRmYjIwZTQ4NDM1NTMyNGVjNDg5NmFkYmIzYTk0Zjg4Mzg1ZWEyOTUxMjc1NiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_e45daf446d4343f284a12e2da009f48b",
+      "statement": "The Rollup raises three stimuli into the per-unit `stimulus` table, one per `(unit, ref)` so a later run or a rebuild never raises the same one twice: `colocation_start` for a co-location still open and begun within the stimulus horizon, `arrival` for a stay inside a place an open event names (a hook whose only implementation names no places, so none is raised yet), and `deviation` only when every source it rests on is proved healthy for the span and at most once per person per local day.",
+      "evidence": [
+        {
+          "resource": "repo://nora/analytics/units.py#L20-L29",
+          "version": "repo-lines-v1:sha256:3acf653b86f11593853dfb0ce0ff91fc6598ee680f477905c2358599bacb5262:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU0ZTRlMDhkZGQyY2MxMWMxZTFjYWQxNzIzNWZjODRmNjJmNjYxZTVmY2U2YWMxYjc0NWE3NGM4Zjc2ZWY3OTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjczOWJlM2ZkZjAyNmRmNDk1NDc0OTQ5YmQ4MTdkYzI5OTNhNjJjOGFlYWJlMmM4YjA1ZTIzOGZmZWIxMDEyZjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVjMThkZjBhZTQ4MDY2NmE0NTk0ZTNhMzNjMDk2M2Y3ZTJhOWVlNDVjNmQwMjY5ZWM2MzQ5ZWFmNTdiNGMwODUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhYWY3NjM3Y2I2ZTdlNWRiODVkNjM0Mjc0NjAxNGRmMDQxY2NkNTU4YTkyMGIyOWViNmFjNzE5ZDdiYWY1YzIifQ"
+        },
+        {
+          "resource": "repo://nora/analytics/units.py#L283-L343",
+          "version": "repo-lines-v1:sha256:75ea7aca61928f5c16222eac743eebcd2f2031e58c9615fd2b2482912d6e9d69:eyJzZWxlY3RlZExpbmVDb3VudCI6NjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5MDFkN2ViN2U0ZTkxYjc1NzE5Mzg0ZGU3YzQzNTIxM2NkZDkxNDkwZGJlZjQzMjAxMDZmYTEwYThlODQwNmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhZWJjMGZlZjBlMDUzOGUxNGY3NGI0YTcxNDg2NTQyMTRjYWMyMzY2YzM2NDI0MGQ4NTEzOGY1YWUyOWM4N2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNmMWUwYWM4ODQ0NjVjODdhNjQ0ZjYyNmY2NDVlMGJmNzY3MThkY2MxOGE2MjY3ZGJhZmJjMDFiMTdmN2U3MzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUwZjA1YzI1MTI1NGIxNTA0NzAwODY2YjIyYjdmNmNiNDAzMTExZjk1NGVhOWE4NzU3MzZlNDRmZGQzYzA3NGQifQ"
+        },
+        {
+          "resource": "repo://nora/analytics/units.py#L375-L401",
+          "version": "repo-lines-v1:sha256:32d3b599cee24efbe74f329311ef363a7a07e17637347ad157a5d97917061716:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkyNDBhYmIxZGMzMTlmMjAxYmQyMTE2MDcxMDQ1YWNmYWRmMGQ3ZDRhNDEyYWQ4ZTgyNmY2NGZjZjZhNTJjOWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxMDQyNGJkZTNhZDkxZmY4ZGFlYTgxYTRhYTUwNGIyZmU5ZDM3OTIzZjU5Mzc5MTUyZDU0M2Q3YjRkZWFmNzEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRlYTEyMGZlMWY4NDQ5MTZjYTlmM2NmY2IyZDcxYjkyODZjY2I4ZDgxN2M5MTBiYzllMWI1YzRmY2I1MWQ4ZTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZiYzM1ZTZlYzZkZWMwYWU4YmNkMGQ4OTVjOTg2YzY4YjBkY2I0NDBmNjYyNzYwMzJjN2VmNjVlMGVhMWJjNzMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b3292407d2214cb8af9d62b6ee33ecf8",
+      "statement": "The healthy-source proof a deviation needs is explicit: `polls_healthy` requires a poll inside the span, every such poll `ok`, and no gap (nor a gap from either span edge) over the configured maximum — no rows at all is not proof — and `adapter_up` requires a recorded `up` transition at or before the span with none leaving `up` inside it.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/rollup.py#L976-L1017",
+          "version": "repo-lines-v1:sha256:57f8a252a63fc53e670d43937419b6fe438d369708ba822f38f228e2b2fb8159:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiMjU4MDdiZWMwZjMwZDQ4MzU4MWJiNzFiOGYwOTk1MmYwYjA2ZWRiMTU0NzdiM2Q2ZWFmYzBhMWZmZmFmODQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ2NmQ3NWQzOWUzZGQ1MWJhNjhjYWQzOWQ0MmYxOGU2MWY5ODgzOGMwODM5NjJkZmIzNzUxZDFiNzVmMWY5YjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgyYmFlNGQ5MDQ5NjJkNTY0MjMwMTYxODliYjE3NjVhYzNlZjVmZjUzZDQwZDFjN2VkNjNhNTY0NGEyYmRjMTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6d85cc2986c5451d8f082c15f44d918a",
+      "statement": "`whereis` reads the local fix rather than calling Life360, and its disclosure seam is the inverse of the room-scoped tools': `DisclosureGuard` refuses when the conversation contains anyone outside the circle, an unreadable, degraded or empty roster never permits, the room-level location trust flag relaxes the subset and unnamed-account checks but never an unreadable room, and a failed read degrades to `unavailable` instead of an empty or invented position.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/whereis.py#L243-L267",
+          "version": "repo-lines-v1:sha256:6f9169316f114b28ce80404d98d72b56a34b9a48390d9e465e82958e8543e6f1:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNkOTM2ODI1NTZlZThkOWQxODk3ZGIwMmE0NGJhNzgxYTUxYzUyMmRkM2YwNTk3NDBlNGU2NDg4MTJhNGFiZGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc4ZTVhMWYwNGZlYjU1NzIyOTlhZGJiOWM3ZWJlOGJhZWE4YzBlMTFjZTAxNzc0MmZkMjdiMDMwMDlkODY2OGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhlNDBiZGY1NWVlZjk3ODY5MzIzMzg0YmFhYzA5Yjg1NzNiNDA2MmFiNjhhMzc5Y2E1OTBkNTUwYWVlMjUxMGUifQ"
+        },
+        {
+          "resource": "repo://nora/agent/whereis.py#L400-L497",
+          "version": "repo-lines-v1:sha256:09cbaf459b433997e45b6a202e657bd9e489883a4835f9646454101c460d141e:eyJzZWxlY3RlZExpbmVDb3VudCI6OTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYzOGNhNDZkZDFmYjlmMWM3MTMwOWQ5MmJjNWIyZmQyYzYwYjIxZGI4NWY5OTQ1ZmZiYzExNDg2Y2UyOTAwYzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwNTUyY2M1MzI1ODVmZjQ5OWY4Y2ZlZDQ1Nzg4MWJiYzdiNDMzMWUzMWNjNWQ4MzAwMzkxNGE5YWY0ODNmMjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJmYzBlYTVjZDQyNDdkYWNmZjBhMjIxZWY2ODY1NGI4ZWI0MGI3OWVkODQxYTRhZGJlN2U3MDRiMTA4ZWMyMmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ2OWIzZGJiYTk0NDVkODBkN2Q3MGJmM2EyNDk2ZWQwNjI4ZDUxM2Y0OGNhY2IyMzE3NTczYjM3NTc4NWIyNDEifQ"
+        },
+        {
+          "resource": "repo://nora/agent/whereis.py#L538-L552",
+          "version": "repo-lines-v1:sha256:b0c1aa0b39623b9ef8e2d805cc87a71409090d0dc545e220acbca795997c0e2f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1NjljYjA5MjgwZWUwNzgxOTQ1ZTQ4ZDQwNDFiZDJkZmFhZTY5MWFkMmVhYmY1ZDNjYmEwODQ2YzcyMTZjYWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZiNWIxZWYyNzUzMjJiOWE5YzU5MGEzMjJmMTBlODRlMGJkMWQ0YzhlZDU5Yzk1MWI1ZGJjMDhhNDk2YTE4ZTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAyYjBhY2VhMzJkZGFjZjQ3ZGRmMjYyNzEwMGJlOTc1NDNiZDUyYzZlMzcwMzc2ZWI2YjY3MTIzMWIwMjg0Y2UifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d08fcbd6b0524cfebddbb11f363e5fe8",
+      "statement": "`whereis` carries the fix's age to the model, turns a fix older than the staleness bound (one missed Life360 heartbeat) into an explicit last-recorded-position warning, and derives movement — moving, towards a saved place, reported speed — as a measurement off recent stored fixes, suppressed inside a saved place and never as a prediction.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/whereis.py#L126-L148",
+          "version": "repo-lines-v1:sha256:22f5c8118ad53b7429439fa5974f31e7b924a38b521c38905202727eb35711c1:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1YTQ3MzVjODViMWM4MTIxNTlhNzVlOTcxNTc2MWM0MDExOWQwYmRkYzQ3OTI4MTA2YmIxYWYyOTM0ZTA0NDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhmMjhlMTA2Y2I3M2E4NDJmZjhlMDg4MzA4MzdkNTIwZjk1NWI0YzA5NGE5NzBkMGU2M2Y0MDUyNWMxOGZjMjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRkZjJjNGU0MTc0NjMwNTNiMzJiOGE3NmNmMWZmNzYwMzg5OTA3ZDJmOWE2M2U4Mjg1NDk4MjMyYzcxNGNiNTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFmZDUyZjYzYTdkYjY0YjdmOGY0N2EyYWQxMDAxMTVkMmVlZDgxNWU2ZmU4ODllNGM0ZGEzNzc3MmI2YzkzYWIifQ"
+        },
+        {
+          "resource": "repo://nora/agent/whereis.py#L580-L610",
+          "version": "repo-lines-v1:sha256:bb81a8905355d11790f065ad99d67af64ee610d2a64250bf0a96d0f4ce40a9d7:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJiYjgxNWI3YzY3NjdjMGY0NDJhYmYzYzZlMDE5M2MzOWRlMTAxZDA5MGJjYzVkY2ZkNjhiNDYxNmI5OGMyZjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3MTQ4ZWE3YjcyZWZjMTMzMWQ5YTBlMjEyNzMxNWEyOWVlOTM5ZGMzYTkyMDY5YzBhZmE2NjY0NjMxZTFhNTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU0MTNkZjYwNjU0ZmViMzFjNDJmZmRhZjdiZjg0YzhlZDMyYTE1Yjc3NmNmOTQzNDM3YTdlZDQxYzU2ZDhhMTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg3NWViY2Q0NzU5YmE3NzA1NDhjZjgxZWEzMjhiOWYyNTM2Y2UzNTU4NjNjNDYzM2I5NzM3ZWViMTBhMTQ5ZmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b2ea0561b951439dbba3ee70fb886fe8",
+      "statement": "`SqlRollupRead` reads the current build only and never builds, applies the unit boundary before the read and the row's lineage after it in `nora.agent.rollup_read` (`section_permits`), requires a non-empty subject set instead of widening to everyone, and returns no coordinate in any row because a place is named in words.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/rollup_read.py#L77-L94",
+          "version": "repo-lines-v1:sha256:629dba009132ccfd9bea1ac457f51552c7e15524ea6da77beea619492a8c17b3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY5YjIxMTdlOGJhY2Y2YzUzOTAyNzhhODI4N2I4ZDY2NjVkZjU4MzNjMjYwNmMyODkzOGNlMDQyN2Y5OTY1M2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY2MjY2ZDQ5MTQyMDU4ZWNhZGU3MGNmZWI1N2Y5MDJkN2RlNTRjNGY3MzQ1ZGI3YjMxNzMwYWI3NGNjYjYwYmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM3NzY4Njc0OTc0MTZhNTgxNWJkM2NhMDcyZDU5ODMzMGYzNDc4MjczYWNhNDllNmU2YzIzNGU5MzVkZGE2Y2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNkNTU0MjExYTUwMGYwMGI4MDk0MDBlNDI0Y2ExZTNjNDYwYWExYzgzN2M1OWUwYzdkZTRkNjgwZWFmMTg2NWUifQ"
+        },
+        {
+          "resource": "repo://nora/agent/tools.py#L5789-L5802",
+          "version": "repo-lines-v1:sha256:71503f348500f601c716e798831f4d245bd832efca6d7141d3ebecd4b406e83f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk0ZGZlYTFkM2Y3NzUxOTkyYTZhZDMyNmViM2IxODBhOWFiZDUyNmI1OWViZmZhZGM1MmFjMDIzYzJkYWFjZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI3OWRlMDFlNjljYjBiNWI0NTA4OTRkYmMyN2Q0YzhmYzQ2ZWQ2NmU3YzY3ODE2ZDRmYTE4ZjY3ZTJiOTZkNzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI3OTA0OGU2ZDBmMGVhMmE3YTJlMWM1MDFjY2QwMzcwMzhkZjZlMzljY2EwZmNlZTA2YjcyMTk5NTdhMzBiMmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVjNGNkNjczNjNiMjBkM2RmOGIxYjFjNjljODk0MTg5YzhjYzQzNGRmNjAxM2NhNzM2MGZlNTRlZDcyMmYyMmUifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/rollup_read.py#L1-L24",
+          "version": "repo-lines-v1:sha256:3f5c806ea601422f7e73f4f1da6b4cff22e4185f3af13bed4721eb4bbd17664c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiZGQ1ZWEwZmU3NmZmM2MxMzhiMDkxMzk2NzIzZDY1NjI5ZjUwNjlmZDg1ZmNhMDJiZTFmNGQwNjg0ODEzMGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/rollup_read.py#L54-L104",
+          "version": "repo-lines-v1:sha256:e18f0c7f883859aa7405b9bd96be34beb92c8d1a73c8fafe83fd4de75bd4f7de:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdmN2MyZTAzYjNmZjRiODY4OThmMGU3OGJjZmJjYzg5Yjk1MjM3NzdkNDI1N2FhN2Y2OWYyNTA5ZTQ4MzBjMmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljYTFkZWFhMmEwMGU3NmFmMzU0ODVmNzM3YmI1ODViYzM2NGNlNWEyZjkyZDAyNjQ4MTg3ZDhiYTFkNmRkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY5ZmVhNTBkMTEzMTVlZmJkMTYzYjI3OWNlYmFmYzU5ZTFhMjJhMzQxYjBkNmE5ZGUxNWQ5ZGQyMGJjMjkzNTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgwMjgzYjJiMmFiYmEzYmVlNzU1OTc1ZmY3ZmNkYmNiYjBkMDg3MDg4YzE5MzgwMTk2NDA4NWQ0M2JkMDg5YTYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6c40a4dd2d09400c9b8bd1599e61810a",
+      "statement": "The portal's derived-presence routes read the current build with a bounded 90-day window and row cap, scope subjects against the same circle roster, and answer 503 with a reason when no build is current rather than an empty 200.",
+      "evidence": [
+        {
+          "resource": "repo://nora/infra/sql/mobility.py#L69-L75",
+          "version": "repo-lines-v1:sha256:1a0a7d596160038b4912678d5707868fa96057f0cd8fc5c138bde9088b2a7795:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODI0MjI0OGExMGM1YzZmMGU0OTAxZWI5YjBiMDNmMzZhMWNmNzA4MjRjYzE0MjkwMDIxNGFlZGRiOGQzZmU3ZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZGYxYzIzNDM4MmJjNDFlMTNhMDEwMjY5ZGMwYzUyMDY0MGI3MWU2MDI0MzIwYjQyNjBkZjQ4ZTVkMzVhYWFmNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzE1YmI1NGY1ZGEyM2MyN2ExYTU3NGQ1ODYwN2Q4YTM5M2FhMDBiNjEyOTQ3Zjk4YTVhZDQ2NjkzOGM5MzMyZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2IyNTczMDQ3NGFkYmI4ZjFhMGI3NDA4NmQ3YjUyZDNlOGU4YzYwMTQ1MjJiNmZmN2Q1ZDA2YzA1Y2I3YTYyNiJ9"
+        },
+        {
+          "resource": "repo://nora/web/api.py#L102-L119",
+          "version": "repo-lines-v1:sha256:402c628f89494cc86d0615261af59e5865581b6c49780b0f299fffd34cebfdfd:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMyYzJhMWMzZTU2ZDFhOWU5YmJjM2NjZWMwOGJmNmYxM2NkNDMzNGEyMGM0ODU5YjJiMTZmMjRjMmI5NzMyNWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0YmFiZTFlNDlmNzAwMzAwODcwZGUxMzdkODIyNjgxNzUzZjU3MGRmNGI3NzllYzk0ZDg2M2EyMjMwMmRiYzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYyMWEzMDk0ZGNiM2NlODY1YzJkOGQ4YTY2YmYxZWVmNzAwNGFiNjU1YjQ0ZTJhMDgxMDk0OGZkNDViNzlkZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM0MTgxYmY0MGMyNzE5NTQ3MDVkZmVmY2YxMzgzMzgyMWU2OGNhZmMyOThhMjRmNzFlNmNkZmYwMDA4NDYwYTkifQ"
+        },
+        {
+          "resource": "repo://nora/web/api.py#L808-L818",
+          "version": "repo-lines-v1:sha256:48bc9b65cf67ecbffa790bba50da26570028b705e2903aeceb456e3681330515:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMzNkMjQyNmM5NmRiMzY0NWEzMWNkZDVjOTliNjRjZDdiYmFiYjQ3OTcyYTY1Y2IyYjc0ZTdiZTZkMmYzOTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJkZmY5NjI3MWY1ZTY3NTBmZTYwYjk1NGI4NTI2ZDkxYWFkZjQyN2Y4MmVhMGM4NmQ5YzdlMGUxYTkzODg1YzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ4ZWMyYzlhMmFmY2RiYTVlMmJjYTg3ZDU5NWUwZmU2MmJhNGQ0ZDI1NWJiZmI5ZGRjNTI5MTc1MTIzMTM0OGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_62bd725e93d2423c9cc4df39ddf9df86",
+      "statement": "A subject's fold failure is isolated: the run does not advance the build's watermark when any subject failed, but every other subject is still folded, so the next tick retries the failed subject from the same state while the rest advance.",
+      "evidence": [
+        {
+          "resource": "repo://nora/analytics/runner.py#L110-L134",
+          "version": "repo-lines-v1:sha256:824d518bd84caa54a1244edccd59b359be2301ec61c38d20faf2acea2ffcc8f0:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlMzg1ZDg3YWQ5Mjk2ODM1NWQ3MDRkYmU4MjhjMzZhNThkOGI5Mjg0OWY1NzQ4ODY3NWRlZTZhN2Q2Mjc4MGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiZWVhMzQ2NjRiMDU4MDg1OTRiOTkyYTBiYjkzOTJiOWM1YWVmOWJhMjBhOThiNTc2MzFmYzllMDhhMTQ4ODIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ4OWFhM2U4Yzg2ZmViOGIxY2ExY2Q3ZDFlMDNkNDAyMDkwZWRhOTliZDgzNjY0MjJiYzA0NjkxNzU3ZWExMmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIwZGM3OGMzNTVhZGQ1NjM4Njk3NTEzMGNkYmQxMTM0YjQ5MTFiNjk5ZGI3MDVjYWEyODY3YzI2MjhkMzY0YTcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e7b9e413b1824a2fba74a05f56416d31",
+      "statement": "The collector and analytics daemons both ship inert: `enabled` defaults to false, a started-but-disabled process logs that fact and exits 0, and an enabled-but-misconfigured one refuses to start with a readable `PresenceStartupError`/`AnalyticsStartupError` instead of running silently broken.",
+      "evidence": [
+        {
+          "resource": "repo://nora/analytics/composition.py#L1-L10",
+          "version": "repo-lines-v1:sha256:1bb09b6078ac8f3f7202a79753c63a64dba9734aae325cd7aad41092268208c5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1NjM3ODQ2YWUzYjhhMjFlZGQwYmM2ZDRiNDFjMzYwMTM5NTJlNTU3MzZhNGUwMzI1YzZjMDllOGY1MzdmNjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/analytics/composition.py#L139-L168",
+          "version": "repo-lines-v1:sha256:3d13a331f2037ca5c11f5881c072138353291bbf883688001c61241322cf0300:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MzE4NGUxYjFkYjgzY2U0N2Q2ZDAyYmYwNTk0YTIyZWM3ODYzZTA3MDM4M2Q2Mzc4ZjBjYzc4MTQ1OTdmYWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRhNWMxMTRiOGFkYTBlZThiMDJkOTk0ZjRlMDJiNDk3MzgzZjllZGNlYWUwYjhkNzdjYmQ4NmQwYmI5NGZiNGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFiMjc1YmJmZjVjYjM3YzNiZjk2YmEyMzRjNDliMDcxNjk4NjM2NDY3ZDZmMzJkODU0NTI1NWI2ZjNiNTczMjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBiNjg3N2ExOWI3OTI2MWU0ZGU1ZGRiOTE3NzYyYjMzNzZkZTNhNTljNzk4ZGNjZDIxMTk0Y2VkYmMyNzcxMzUifQ"
+        },
+        {
+          "resource": "repo://nora/presence/composition.py#L1-L17",
+          "version": "repo-lines-v1:sha256:fe6b7eeb404ebd3dd740f28c9142f01a104109d4e6a905873945c90e899560f4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI0ZTRlNTFiODgzMGEzNDAyMjk1MDQ0NDY3OTMyODE0M2NkZDA4ZjQwNTc5NmM0NWNiNDJhYjkzM2I4NWUzYzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/presence/composition.py#L88-L124",
+          "version": "repo-lines-v1:sha256:ff8d268fa7c393f36315bf8514d83c77ed121528c41fe2a351cf0f0f9b8e8ee7:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI0MDcyNDYyMTc5YTFjMDRkMDVkNzQ1YmM0NGRmMzkyNDhiN2Y5OTA3Y2M2OTljYmMyMmNjOTEwY2NjODkwM2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI1ODJlNDlmNjA0OThiYTNjYjQzYjM3MmJjYTQ4YzhiNTNlNzE0ZTkyMWZiZjYzOTk1Mzk0MzYwY2NkMjBmZjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBiNjg3N2ExOWI3OTI2MWU0ZGU1ZGRiOTE3NzYyYjMzNzZkZTNhNTljNzk4ZGNjZDIxMTk0Y2VkYmMyNzcxMzUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7bde1bd6d3f34de5a81379a962f8b762",
+      "statement": "`where_is`'s live refresh is best-effort and never load-bearing: with a refresher wired it asks the collector for a fresh reading only after the disclosure gates and name resolution pass, and `HttpLocationRefresher` returns True only on the collector's 200 and False — never raising — on a timeout, on a non-200 (the collector's 408 when nothing fresher landed, 503 when collection is disabled) and on an unreachable collector, so the stored read that follows runs either way and a collector outage degrades to the fix's age rather than to `unavailable`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/whereis.py#L530-L543",
+          "version": "repo-lines-v1:sha256:060f081853b41fed1e964b2c84e79172cc513b0868dbd44d37e9b6059a39021d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmY2M1MjZjYjM2OWJjMTJmNDhmOWMxMmY0OGVmMjJhZWExNzY3Mzk5YmJkMTg5M2ZiYTVhMDUxZTYzYTc5ZWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5M2VmZjA1Yzc2MzhmOGU0MjgzMTgwZWJiYWRlOGFhNTU1ODg4YTdiOWY5MjcwMzEyZTExMWQ4NjI5ZGEwNTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBhMGI5YzgwMDZiZTczNTU3OWNkZjQ5NTgwYmZiMTJlYjM1N2MwMmEyMjEwMjY3YjMzZGU3ZTU4OTJhNTViNmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMDlhNzJmMzAzZDU4YjMxZjM2MzExNThlYzZkNjJjZmYwOGIzNzRiMTVmMzExYjcyNzU5NzdkMmFkOGFiNTUifQ"
+        },
+        {
+          "resource": "repo://nora/infra/presence_refresh.py#L21-L46",
+          "version": "repo-lines-v1:sha256:c0b111fe3bad6b839ba3414be32024848f7fa3767d3d1a904b84534c1c694c43:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ5NTFkODNjM2Q5NmViNTMyZGIyMjhhMGViNzYxMDMxN2M5OGQyY2RkMjRkM2FlZWYzMTMyMmY3OTY3MzI3Y2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlmMTFlYTExZWYwMWUyZTk2OWU1ZjRjNjI3MmYzZGI2NmRlNWY4ZTU0ZDFjYWFhNGFmZWYyZDIwYmJhMmVmMjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJhNjYxMGYxNWI4MmE4YTg2MDU3Yzc4YzgxODEzNDYwYTQ2ZjdlM2I3ZmUwYmY2N2E3NjQxZTg4Y2ZkMWVhNGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://tests/test_presence_refresh.py#L38-L52",
+          "version": "repo-lines-v1:sha256:5346a551c9fc796e90b9028c3cd6a9d09ba0bcb92a96b0f667b60532e1d7dc70:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwZWU3ZjljZmVkNWU2ODRmMWZhY2YyOTNlNTkxNWNmZDljZWFkMzM5YmM4ZTU5NTUwNjFhZjY1Y2FjOWViMjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkYWRkYmE0OWU3MWQyZGU0MzQ1YTI5MmM0MTlmOGQ3N2IxNmY4NWY2MDcwMmVjYzFjYjJjMmIyMjE2NzM1NmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU0YmNkMmU5NWJiMDlhOTcyYzhhZTExZmU5ZGVkNDY4ODAzYzYyZGEyZmE4YzZmZDhlYWIxODZhMDlmOGI1NjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://tests/test_whereis.py#L170-L180",
+          "version": "repo-lines-v1:sha256:f1defb426c938590a38c7e9d34c72d1f63ba4320dac7e32887275c1bbc44f6ec:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdhOWNmYThhMWNjZjI1NTFkNTQyMzc3Yzg1ZDg2MTZkNjNkMGQ1Y2U1YmM3OWI0NzFkMDAxNTc0MThhYTcxYTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5NDFmN2QwOGRhYTk0NmQ1NmNmNWRhZDVjNjhhNzJkYmI3NDk0YmM3YmNhMmRjMDEwOTM5ZjgyNWM0ODM2ZDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI2ZWVmZmNlZTQ2ODFhZTdjODFkMWEyNTQzOWM0Njk2YTE3N2Q4YzRhYmNmMTJkYTRlNWI3NGRhODgxYjUzODAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBmMWIzZTNmZGMzNjAxMTE2ZjY0M2M1YTBhNmU1ZDg5MWRhMjIyMGEwYmE0ZmNiNjZlZDIwMWUxYTQ0MGVhODcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1384d249939241ee816682b24354e386",
+      "statement": "A `where_is` answer that is `ok` carries the fix's `age_seconds`, its recorded timestamp and its `wire_state`, and past `STALE_AFTER_MS` (45 minutes, one missed Life360 heartbeat) adds `stale: true` plus a note that this is the last recorded position, when it is from, that nothing has been recorded since and that where they went afterwards is unknown — naming a failed live refresh when one was attempted in that call — so a two-hour-old fix behind a failed refresh is still `ok` and stale-flagged, which is what `tests/test_whereis.py` asserts.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/whereis.py#L131-L131",
+          "version": "repo-lines-v1:sha256:a2dbbfe0a5b920c655638a8653322cd446e091771e71996a319f4e0a0811168b:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTJkYmJmZTBhNWI5MjBjNjU1NjM4YTg2NTMzMjJjZDQ0NmUwOTE3NzFlNzE5OTZhMzE5ZjRlMGEwODExMTY4YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTJkYmJmZTBhNWI5MjBjNjU1NjM4YTg2NTMzMjJjZDQ0NmUwOTE3NzFlNzE5OTZhMzE5ZjRlMGEwODExMTY4YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjg1MjMzZWM4ODdiMGM0Mjk1OTViNWRiZGU2MWU2ZmU0YzAyY2Q4NzZmNjkxMWI5MDM1MDNjZDVmYzYzZDcyZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDY0M2I2YzMxNDFiMDYzNGVhY2ZjYzdjNjRmNWI3N2ZlNGE5MDhjYTYzYzkzM2VjZTY1ZjBlMzU2YjlhNGI3NyJ9"
+        },
+        {
+          "resource": "repo://nora/agent/whereis.py#L553-L597",
+          "version": "repo-lines-v1:sha256:346e0f8b3c47d2053b9157ff984ae1189bfd9ad0ad0125a411b3097dfcf4dbc0:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIwZjA4ZmJmZDUwYTUxZTUzNTFmYTQyMThlYmYyNGQyODVmMGM5MDVjZjI0MmFjMDE2NDJhNThmNTBlNDA2NzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYwZDlmNzM0YmU1YWEwMzkzNWM0OTliNzE0MTEzNTVjZWZhYzJhMmJmNTc5ODllMTI0NmQzNWE3MzUyYzdlOWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJkYzliN2Y3MDVkZTQzMjg3NDA4YzkyYzA3MTBmMDQyZGJlZWQ1OWVlZjA4MDhhOTZiNzllZmU3ZjcyYThmZjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzMzI4N2U4N2FmMjY4YTkwZDdlNjc4OTU4YzVkZmJiZGIxMzdkMjM4NjY2OTA5ZTQ2OTI3YjU0YWI4OGEwODMifQ"
+        },
+        {
+          "resource": "repo://nora/agent/whereis.py#L615-L639",
+          "version": "repo-lines-v1:sha256:2ac9da7ec3bbd2f6544f2787b9ae33e392ab41b425fc3fc2475dc00974b58ad4:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEzOWViMTUxNWU4MjE1NGY5MjdkMDlkNzNkNjkzYzUyMjM5MmMzOTFlYzAwMmVhZGI3ZmY0ZGRmNjM1Y2YyZDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgwZjZlNTAzMDQ5ZmJkMzVlOTczNzJhMjEzMzkxODdmNmVhNDE3NDQ2Mjk4YmUyMTFiNDJiOGFhMDk3Mzc0NDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM5MDAxMjgzMzJhZjUxZDA4ZGI3ZGVlM2EyYTYyNjI0N2E0YzY2ZTYwODM0NGMzZmE0Y2FhNmVmYjJkZGQ5NTYifQ"
+        },
+        {
+          "resource": "repo://tests/test_whereis.py#L140-L152",
+          "version": "repo-lines-v1:sha256:331d75f82fa3895e03252a2319e5e54faf78b03b10a4eac0ae88ec8a2191cfc7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVlMzU4YzZhOWI3MGU1YTVhODA3ODkxNWI3MzkyYmVmMTEzMzc3MWYxNjdkMTQ3YjQ3NjZjNmM5ZjFjYzExOTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFkZmQwYTc5MWI1YWEyNzdhYTFiNWUyMjJlMWVlMTAzMmM2YjY4NmI5ZmI0OGM1ZWUxMjQ0MmJkZGVjOTA0ZDYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcyMGQzZTY2MzgwYjVjMTQwMWZkNTljZDBlMzJmMDdmY2Y2ODM3NzhlYzg4YTU0MjJhYzZiNTUzZDA5NzFkYTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA4OWNiZTZmOGE4MmMyMmU1ZDZlYjA4OTE4OTI4NTM3ZDlkZDVlYzFlNDE1ZGM5ZDQyYzY5N2U1MGU3YzI3ODIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_78330360d63b4f64898f29deb1d6bf67",
+      "statement": "`where_is` reserves `unavailable` for the cases that produce it — a stored read that raises, a person with no recorded fix at all, or a room whose roster could not be read (the `degraded` case, counted with `reason=\"degraded\"`) — so a collector that is down, in auth back-off, or answering 408 is never reported as unavailable.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/whereis.py#L400-L420",
+          "version": "repo-lines-v1:sha256:9dd79d8e6514d5bac50e94fb8385b22b50a8a2e81a28beb732fcecd24be22d08:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYzOGNhNDZkZDFmYjlmMWM3MTMwOWQ5MmJjNWIyZmQyYzYwYjIxZGI4NWY5OTQ1ZmZiYzExNDg2Y2UyOTAwYzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwZGUyNTg3MTk2MTQ5MjYwNzFjOGZiMTlmZDg2NjE1MDU1NWYxYjAxMzU0ZjhjZDE2MDNhMTA5YTdkZGFlNDAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJmYzBlYTVjZDQyNDdkYWNmZjBhMjIxZWY2ODY1NGI4ZWI0MGI3OWVkODQxYTRhZGJlN2U3MDRiMTA4ZWMyMmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI0YjkxYWZhODRjNzVhMzRlNjMwMzI0NTJjMTcyNjQzNjRmN2Y3NzFlZmViZjc4M2FhNjMwMWYxZjA0ZTU0MmMifQ"
+        },
+        {
+          "resource": "repo://nora/agent/whereis.py#L458-L471",
+          "version": "repo-lines-v1:sha256:ec64e609df764fc4c77b60a5c3002a47e92058ccab810730bbc0ef0cc90ee9cf:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRiMTg4MTkxYWRhNjFmMDE5OTllZmVhMWE4NzEwYjY4NWEwZjRhODE1MjdiMGFmODQ4YmFlMmQ5ODg1NjdkNTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ3YTdmOTdhNTVkNjFiNzk0NTM1Zjc3ZTA0NDBhNjFkNDdiZjJhZTg0NmEyYjVjZTBkNTRkYzBmMDJhZGFiOGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwNWRkYWQwNzVkNmU5MDkyYjgzZDgxNmI2Y2YxYzMyODAxNDkzMmI3ZTAxY2MxNmYwZTZmZDEzOGFlM2IyNTQifQ"
+        },
+        {
+          "resource": "repo://nora/agent/whereis.py#L538-L552",
+          "version": "repo-lines-v1:sha256:b0c1aa0b39623b9ef8e2d805cc87a71409090d0dc545e220acbca795997c0e2f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1NjljYjA5MjgwZWUwNzgxOTQ1ZTQ4ZDQwNDFiZDJkZmFhZTY5MWFkMmVhYmY1ZDNjYmEwODQ2YzcyMTZjYWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZiNWIxZWYyNzUzMjJiOWE5YzU5MGEzMjJmMTBlODRlMGJkMWQ0YzhlZDU5Yzk1MWI1ZGJjMDhhNDk2YTE4ZTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAyYjBhY2VhMzJkZGFjZjQ3ZGRmMjYyNzEwMGJlOTc1NDNiZDUyYzZlMzcwMzc2ZWI2YjY3MTIzMWIwMjg0Y2UifQ"
+        },
+        {
+          "resource": "repo://tests/test_whereis.py#L424-L439",
+          "version": "repo-lines-v1:sha256:797d15b6749eeb6307247d30fe1619cc0aa3465eed17bdcb34c9e217139b37ab:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3NGQ1MWZkMzI3M2Q3NTViODljMzc4ZjVmM2Q5ZTQ3MzhmYmFjZjNhYTZkYjY1M2Q2YWRhOWU5YWM4MWQxNmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjOTg1MGM5ZjEyMDNiOGQzOWE1N2ZiNzdmNGVmZTg4MzBiZWFkNDdjY2ZhNDhjNGY1MTBmMzA5MGVlY2E0MzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNmMzVmMmRhZGI3ODdiMzBhM2I5YjZkMDNkZDlhNjIxNDYyM2U4NGQxYzUxMDIyNWJlZDM2MzExM2UzMDQyNjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg4MmFhZjM4ZmNjZjM5OWQ1ZWUxYjI1Y2JlYWFiNGNmMDM5MmZiMzE2ODExZTYzNzU5MzcxYWRiYjk3MzE4ZWYifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-20T12:25:17.607Z"
+  }
+}

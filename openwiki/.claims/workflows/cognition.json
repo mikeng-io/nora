@@ -1,0 +1,888 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:0fde47ee9b88d196b0d1a17d1b6bc691cfad5143f2154ec65b8f78e76b843c4c",
+  "claims": [
+    {
+      "id": "claim_fd7978ec59f444399290318319ff6dca",
+      "statement": "`[cognition] enabled` (shipped `false`) is the single flag governing the whole Cognition subsystem: off, the composition root builds neither the wake evaluator's session hook nor the runner, the ingest stimulus stage's wiring is `None`, so no stimulus is appended, no wake recorded and no model call made.",
+      "evidence": [
+        {
+          "resource": "repo://config.example.toml#L1267-L1276",
+          "version": "repo-lines-v1:sha256:ff36ec44daee482eb6d67051a18fb7070315db5cdafa40e85e60bde46db65ea0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhjY2VlNTJhMmM1Y2VhNDA0NTVmNGRhNWI3OTZiMzE3ZmU0NTA2ZTgxY2Q1OTZlYTdjNjUxZDI0ZDcxNGJjYmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlhYjkwY2VjYjZjN2ZlN2ZmOTQ3NjU1MzM3ZTAwZThkNTA5OWZkZjJlZmJjMjEyZjZhMjhmNzUzMWZmMjdiMmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc5MDZjMjZlZmJkZWVkMmM4MTIzZmMwODI4MjI3MjgyY2VhODU5ZGQ2MGE5MDJmN2NkYjZkNmMxNDhmNTI1MzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ4NDE0YzU3MmU0MzQzNTkzNGJiNmQ5NWIyNTliYWM3Zjg5OTQ2ZGQ1ODcyOTA3NjZkNjAyNGQ0YjJiMDA5YzYifQ"
+        },
+        {
+          "resource": "repo://nora/__main__.py#L309-L326",
+          "version": "repo-lines-v1:sha256:b13bb4f093109223b01a8489fe6c0d791e884f74f1bd5c67094e5a820681d524:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc0YzFhMjQ1MjAxZGI5NzdkNWYwODA4ZGUwYjJiMDJhMmYxMzA3ZjJiZmJhOWFiYmQ3OWNiNzRjZmE3ODdmNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYwNWZiMTFlMzY2NWQxNzQzM2I3OTQyZjE3YTM5NWQ4M2NlZDkxODI2NTUyMmM1MTg4MGY1ODc1NGFhMDljODciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI3MmM0ZmViZDMzZGUzNGU3NTIyZmQyNGRiMzNhZjg4NDg0YWQ2NWViZTEyZDExNmZiNTdjMWM4NDk3YzI2YzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU0OGM4ZDUzMWZmMDcxMTZlODRiYThjM2JkMzIzZDIyNmVhMjIwZWQxZjgyZGVjMDRiYTU1MDg1ZWQ4ODZiNTgifQ"
+        },
+        {
+          "resource": "repo://nora/app/cognition_wiring.py#L1-L26",
+          "version": "repo-lines-v1:sha256:f3c6933f7bb9e5002d610be5bec17502599d4cc1df60f9560fed01193a6f5df6:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5NjQ5NDhkZDIzNzYyYjQ5OWI3NmUwYTRlODVkYjQ1ZTI1NzAyMzM4OGFlNGYxNDNjOTQxOWEyMWI0NTA1YTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/ingest/stages/stimulus.py#L29-L32",
+          "version": "repo-lines-v1:sha256:a676a0c43cf69d043cc5396130eb5db0f51a547e82548b1e28adeac9f0e58a89:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDgxZDliYjFkOGY1MzI5YmFkZGY3ODA0Y2JiZWEzOGQ2ZDNkYWRmZTk3OTQ5OGExMGJjOGM1NDIzNDdmMDBmZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDg4ZmI1MTVjNWY4Nzk5NGYwZTI0M2Y4ZGY4ZmVkZjBiMTU4Yzk2MjRlNzQxZjlmNWRiZDA0M2EwMTI4NTkyZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODg0MTA1YzA1MDEwOGM5NjAwMWE3Yzk4MzZmYmNkYmMzYzNlMzkxN2EyZTQ2YmY1Y2M4YjViZmQ5MmIxYWMyNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWFhZjc2MzdjYjZlN2U1ZGI4NWQ2MzQyNzQ2MDE0ZGYwNDFjY2Q1NThhOTIwYjI5ZWI2YWM3MTlkN2JhZjVjMiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_6acfcdf7e69e4558aeb9915b82846f73",
+      "statement": "`[cognition] enabled = true` is refused at boot (`require_session_hook`, surfaced as `StartupError`) unless a session runner was built, the evaluator holds its hook, and at least one unit names a `home_room = true` room in `policy.toml`; config.example.toml additionally requires `[dreamer] enabled`, `[notes] enabled` and a `[dreamer.budgets.cognition]` block.",
+      "evidence": [
+        {
+          "resource": "repo://config.example.toml#L1267-L1276",
+          "version": "repo-lines-v1:sha256:ff36ec44daee482eb6d67051a18fb7070315db5cdafa40e85e60bde46db65ea0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhjY2VlNTJhMmM1Y2VhNDA0NTVmNGRhNWI3OTZiMzE3ZmU0NTA2ZTgxY2Q1OTZlYTdjNjUxZDI0ZDcxNGJjYmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlhYjkwY2VjYjZjN2ZlN2ZmOTQ3NjU1MzM3ZTAwZThkNTA5OWZkZjJlZmJjMjEyZjZhMjhmNzUzMWZmMjdiMmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc5MDZjMjZlZmJkZWVkMmM4MTIzZmMwODI4MjI3MjgyY2VhODU5ZGQ2MGE5MDJmN2NkYjZkNmMxNDhmNTI1MzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ4NDE0YzU3MmU0MzQzNTkzNGJiNmQ5NWIyNTliYWM3Zjg5OTQ2ZGQ1ODcyOTA3NjZkNjAyNGQ0YjJiMDA5YzYifQ"
+        },
+        {
+          "resource": "repo://nora/app/cognition_wiring.py#L361-L399",
+          "version": "repo-lines-v1:sha256:fd0e381085306cd1c5e011e75dfb33f6c4e21c01c55dc404d19386c99657786e:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4Y2ZkNDA5ZTcwYmEyMGQ0OTYwZTU1YjY0MmM5YTk1YzM1YzliMTY1NmY5ZGNhZTNmMTkzMGIyODViMjA0NzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiN2NhNWVlMzJjOGM4ZGYzYjI0YzRjM2YyMzlkNzJmMjViNjU4NWQ5MjAzYTE1ZDkzOWI2NmY5NzIxYzgyOWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA4N2RjZTk4ZjJkZDViYWM5NzY4M2YwNTY2ODMxNTNkOWE4MmRjY2U4YjUzMTg3OWEwZmQ5ZTUyZDliZjMyNjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhNDU1YmVjOThhYzU4NWFlNDczMDNhYmRiODFmZTBiYWZlNGUxYjJjMzIyMjc5Y2Q0YTA5MzE2ZGU1MzVjNTgifQ"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L4645-L4651",
+          "version": "repo-lines-v1:sha256:d0961ae5bb3bbe689095c4b0b54642a8e62296ccf5cec0860d81be9104e5b325:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWRhNWM2NmUxN2IxNDUzOTc4MzRiOGM4NTRkYzQxOTNlMjEyNTE4MGE4OTk2YTE0YzMxODgzMzI2YjJlZmJjZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMmViOWRhNmZkZGUzZDY3ODJmYzIwZDlhMWIxNzNiM2FlMDM4YTMzNTNlZjgxODEwMDAxZTQ5MWZiZTlhNzZjZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDUyY2MwNDNmZjUxNDEyM2NlZDNkYTYzM2YxMzE2NjI3NGY5OTllMTY3NzcwNTg2Y2M1YzJkZTJjZWYwMDk4NiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGE3ZTg4YjE2MDJlMmMxNmEyZGEyYTFjODdlYzRiNDQ5Nzk4YjNiYmFmMWZmODhkZmRlNzlhMzZmMTQwZDU3YSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_3f652ff5195a49a79f0716decf7ab3a7",
+      "statement": "Every stimulus kind has its own producer and the evaluator claims none on their behalf: `message`/`edit`/`reaction`/`delete` from the ingest stimulus stage, `rollup` from the analytics unit rollups, `social` from the social perception poller, `self` from the session's own `wake_at` (`nora/agent/cognition_pace.py`), and `time` from the wake evaluator's floors and look-ahead; `play` is a defined kind that nothing in the tree raises.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/cognition_pace.py#L150-L160",
+          "version": "repo-lines-v1:sha256:3fb1a795d6d5ce8ca4b2f4d9bccd40269627a49a4e091daec59230e62c83763c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkzMzM1Y2RiMTI2MTM5OGUwNzJhZTAzOWFiYTQ4ZDM4ZjUxNjA4MGE0ZTZkNWZhNjU3OThlYjA5YTI5YjY3ZGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiOWQxMGU5MzJhMjM0Y2Q2MzY3YjBlNDA5ZmM5MGFmMTIyYzgzMjllZjI2YWNmMzEyMzdlNTIwYjMyMzZiZDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI1YzVhNTRjNzViYzcxZDUxNzk4ZDI0MmVjZGRlMzkxZDdkMDI1M2UwNzg4YTFiYjQ4ZmU4NTQyMTRmZWJmN2EiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE5YmVlYzAxNjFiNDljNjkyMjk4NDY3NjRiM2JmZjhiYTI0YmQ5M2Q5NjY5YzQ1YjZjODlkY2IwODA5ZDhjMjcifQ"
+        },
+        {
+          "resource": "repo://nora/analytics/units.py#L403-L416",
+          "version": "repo-lines-v1:sha256:668d6c6c15fde6a621a6263c2e1a5d3b4ea5565056ae4cb74c042a5adee0df5f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkwZjFmZmYxMjlkNzhlNjE4NGIzZmVlZWM1MzY4YWRiNjFkMzZlN2M5YjY2ZDVkMWM5M2E1N2JhYzBjMWNhNGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyMmVjZWQ0MDNhN2YwOGI2NDZhMjhhZmM2OWJiNDFlMGY4YjExNTYwOWYzMzZjM2JkZmY5MjY5ZDg4ZThlZDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUzODJhMDAwODMwNzNkNGM0NmJmYWJjNGZiZDQzZjViNTFlMjI4MWJmZjY5NzY4ZTdlNzVmYzQyZmY0Mzc4MGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg5MzM0N2U0YzE4ZDBiYjM2YzU1YWIzMTJjNGFkZjZkY2U3YTUzYzE1NmYxOGQzZTFhMTFiNmQ3NzNlMWQ1ZmEifQ"
+        },
+        {
+          "resource": "repo://nora/app/social_perception.py#L278-L308",
+          "version": "repo-lines-v1:sha256:4d65e3333e1d25effa8bd99c7468be34dbd9a83d445d054072b6617b1f2a3dbf:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU4NDczMjlmOTE3YzA0ZTgzNjVlNmFiODlhYjg4Y2FkMWJmYTUxM2MyNTUwNGU2MDI0NjcyMGU2NGJhZjk1ZGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5YTk3YTEzZDc2MWIyY2I0YTAxMGE3N2Y3NmVjZjFmYmExN2U2OTZjZDI2ODA0ZTY5ODk4OGViMWU5NDkwODAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ1OWI0NWFmNmZlODQ1NWQ2NWQ1ZjRlZTA3MmY5ZWFlZTk3Zjc0MWRhYzU1MmQzYjczNzlkZTdlMjE5ODYzMmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkzMzJlMjEwZGQzMmZjYTUxMDI5N2M4YThhNGIzYjA0YTdhNDNjMTE4OTgwMjE4ZDJlYWIzMWVjYjcyZDc0MDcifQ"
+        },
+        {
+          "resource": "repo://nora/app/wake.py#L357-L400",
+          "version": "repo-lines-v1:sha256:aaebc324c6c36028f7f38c4d999922a045aef0269ba89ea050f6f192d0bffc98:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIwODA5ZTQ4ZDY4MmFhMDQwMmYxMDQ5MzBiZTY2NjQ1Njc5ZDVhZWE2ZDc1YjI5ZGJkM2QwOWE4Y2FkZDhiMzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhYWU4YTBjYTc2Zjk4ZjdiN2RjNzk4NDk1MWQ2M2U1N2RiM2M2NDU1NzljYTUxYmFkNmE1MzlkNjE0ZWRiYmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYwNzZlODJlMjk1ZWRiYWNiN2MzZWRkZGY2NzllMjZhZjVjNTY4N2IyMTJkNWZkMzU5NWViMTRlYzQzZDI3MWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVhNDE0YWY5NjcwMTBlY2U2M2RkODM0N2Y0MWJlMDkzZmE0NzQ0ZWViM2IwNGNjYWNiZTQyODcxODhjMzA2YWYifQ"
+        },
+        {
+          "resource": "repo://nora/domain/stimuli.py#L69-L72",
+          "version": "repo-lines-v1:sha256:7a7c34684d51f376b73f70a7ffb706903bbecc29f5d3d5c46657c9b9e8060403:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjdlMDdlYzg0MmM3N2VhMjQxZDU5YjQxODgzYTU0MzE3YjFiZWQ5NTNmZTBmODY0ODg2NDc5ZGNmYmQ1ZTIxZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMWQ2YjRlZjU1ZWY4ZTBkMjA3MjUzMGZiOGIzYTg5NDhhZDkwN2RiYjNjMWYyZDdiYTU1NWQ4MDc0NGVkMzFhNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDE5NjQzZDZlMmY4ZTBjNGExNzVkYWU1NTAxMGJlODdkMGE5ZjNjZmI5MjgxMjA4NThkZDRiN2JmZDkyMWQ4NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzM4OGJlNjM0YWQ2MWJhMDBlZmE4ZmFkODliMDc2MGU5OGFkNDM1ZTJkOGJmMTFlNDA3OTZkYWQxMWY3YmI5OCJ9"
+        },
+        {
+          "resource": "repo://nora/ingest/stages/stimulus.py#L1-L33",
+          "version": "repo-lines-v1:sha256:d27a9ba5868f8ece447f2a03c5a3e1c7870fc89d6f5d94490977765b177893a6:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4NzVjNDI0NWU1NzYwNTFjOWFlMWY4YmE1MjVlZGEzODFlMDg5YWUwYTYyYjE0NTc1OWMxODBkZDkzYjJhMzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_039512c7489f421a9d1be393ff65c8e7",
+      "statement": "`nora.domain.stimuli.decide` is a pure function of a `UnitView`, a `WakePolicy` and a clock that tries the wake reasons in the table's order — `settled`, `strong_cue`, `batch`, `max_age`, `time`, `self` — and returns a `Verdict` with the reason, the claimed stimuli, the consumed range and whether it cut a cooldown; there is no `rollup` reason at all.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/stimuli.py#L746-L782",
+          "version": "repo-lines-v1:sha256:a5736d93017290b0b3ccb27f216e6ca9b3828eb03bf4bcb27bdf5072a3b3a715:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyZjY3ZWUzYTUxOTMwNzZjY2UwZjNiMTMwM2UxMDdlZTUyZGNmNDZmMGIxZWE1NWJhNzMzY2NjOTg4NjU5YTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTYwMGE3M2QyZTAyZjM1MmI5MGZlZjFkOGQ2MzgxMWJhNGE4ZWUwYzFiZWFhN2FlNDY1OGYzNmFhMmUxOTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMxZGYwN2NiMTkwZjhmNGU5NDc5OGVkNWM5M2QxY2UzMjY2ZDViY2VhYjc5NDJlNGFlMTJmYzA2ZjE5YWI0YWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJlYzY5MWViYjg3ZGM2MWFmY2I3Y2YxOGEzMDhjMTcwZTg3MDhjY2RiZTUwYjdhYmM5MjY4ZWYzZjFiMTI4ZjEifQ"
+        },
+        {
+          "resource": "repo://nora/domain/stimuli.py#L785-L842",
+          "version": "repo-lines-v1:sha256:8e5f7b7d44580b39959ea7e967971090f54c4af0f6d7ab045b52731935e93317:eyJzZWxlY3RlZExpbmVDb3VudCI6NTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI0MzI4ZWY4MmUzYjI3ZTUzMTE5YmMzYmZlMDk5NjQxMmY2YTk1NzNjMmRjNGMzMDE2ODUxNzQ3NzkxNzllMDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3MDE0OWUwNjlhZDY3ZWNjZjQ3MzY0NmZmMWM3NTAwNTBkMzI5ZDExMDAxOGRjNTc2Njg3OGVhZmExZDYwN2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjllMGMyM2MyZTYyZDk2OTFjZmQzMGQyZmYyMDQ0NmM0ODg0YjI2MjU1NTc4NDRjZDExZTAxMjVkZTVkMGQ2Y2YifQ"
+        },
+        {
+          "resource": "repo://nora/domain/stimuli.py#L79-L87",
+          "version": "repo-lines-v1:sha256:aa2be1cc54a502d881c4602d16254f1bf694395d0d6388a23f1000c3144e454b:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzMwZDFjZDNjZjExM2ViYTAzOThmOThiMzg5MTliZjNjYzA2MTI1MzJlZDVlZjlmNjQzMGQ3ZTJhNmEzMThjNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzAwZmNkMjI1ODRjYzYwMTEzYmQxNDI1MTQyYTE5NWJlMGIwNjNmMTY2Y2Y5MmNhNmVkMjgzZmEwOGU2ZTYzNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDFjYmIzNmIxYzc2NGYzYjkzNzBjNTEzZDU1Zjk2MTM2MTk3YWE2OTU2YmQ5MzEwYWJhMGE3MzViMTIzZDdlMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDUyZDYzZTRlOGMzMjFmMjZlZGNiNjcwZmEwZTY4YzQ4MWRhMDUxNzljMDRiNGY2MGE3ZWU2YTY2YjBhMmFkNSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_a106fbf1864d48f495ba6c12fbc80d6f",
+      "statement": "`settled` and `strong_cue` count observed kinds only (`message`, `social`, `play`), so a pending `time` or `self` row cannot be recorded under the room-quiet reasons, and after a `strong_cue` wake whose session actually ran only re-arming cues count as strong.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/stimuli.py#L107-L109",
+          "version": "repo-lines-v1:sha256:2ac044d5d01595b02358bd63f39904132a74ace91943503424db15f737ee1f84:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmViMmY4NjlhMGE0YTg5MjhiMjdmZjEwODJlNGQwMGNmMTY1YWE4YjQ3YjY5OTQwM2Q4NDEzNmRjZGQ2OGEwYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWM4MTcxM2I4NzQ2MGU5NGE3NjczY2UwZGIwNTc5NWQ2ZDQ0ZGUzOGQwNTlkYzM5Y2E0ZDcwMzYyOTQ5MzhmMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzcxNzZmNWRhNGUzNTk0YmEzMTU0NDUwNmE3MzlmYzMwZDYxNTdlYjA3OTI0MzNhYjEyMTgwMjM0ZDZkNGI5MCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzBjZTNmMjRhYjQ3YzJmNWE5ZDMzN2YzNzdlZDg1NzNmYTU2NTg0MDc2NDAyZjFhZjA1NGEzZGVkNjE5NDYyZiJ9"
+        },
+        {
+          "resource": "repo://nora/domain/stimuli.py#L726-L743",
+          "version": "repo-lines-v1:sha256:0b417c90a0c6c0dfcb5827b482ea3f2aef8b1acbe24611f4b20c10e4a135d42c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIxZmE2YzEzYWIwOTVlYTRhMTM4YmM5ODZmMWUxYTQxYTJhN2U2NTk5ZDY3OWI2NDc4NGZkYWJmNzkwMDc3YmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIxMjliYmY3M2IwNzBmNjFmN2Q5ZTM1NGE5ZDBiZTY2YzlhZDVlNGRkZDZhNGJmMjkyMmRkMTc3YTdhZThlNzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg5MmVlMGFlMDE5YzIwMDBlOTViMmJhZGVmN2U1MjY4YjcwYTRjZDliYWE1NTEyYzQxYzdkYWVlOGE3OWU4YjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU1YTZlZTg3NTkzYmVmMzA1OWQxYjNhZDZiM2EzZWI2NWRjMGY2ODFkYzk3Nzk2NGEzYzJiMzM3YmRiOWNmZjQifQ"
+        },
+        {
+          "resource": "repo://nora/domain/stimuli.py#L763-L772",
+          "version": "repo-lines-v1:sha256:644a930b944174584abb8d68c92a81bbe9844aa264ff1e9c330c13f1f8298583:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE3NWFiOGYzYmJkMDE5MGM1MjYzZTgxMTQ0YTYwYzZkMDQwZDBjODJmZDgyZDcxNzg4NWMyZGIyNmM2YTgwZmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI2Zjk1YjVmNmMwMGY5NTEyMTM0MDA2MmE4MzU1YTJhMTIyZmRiMDU3Y2I1NzdmZDQwYmY4NTk0NTFiNWYwNWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEzNGVhNDJkMjU1OGIxY2JjMmMxODI5NjZmOGY5MGMzYmJmN2I4MDUzNTM3ZjJjOWYxOWIzN2VkYTk1YmZmOTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNlZTM0YzZjOGZhMTU3ZGMwZDA0NDYxNWI1NWJhNWZjMTEwNmViMjZlY2E2YjIzYTU3MmIyNjJmYWI0NDFiNDYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_93ad0ce30a6049dd9114a89e44288d12",
+      "statement": "The brakes are applied in a fixed order — single-flight per unit, cooldown after each session, per-unit exponential failure backoff capped at `backoff_max_seconds`, and the cross-unit `max_concurrent_sessions` which only the evaluator can apply — and every brake is recomputed from durable rows so the evaluator is stateless between ticks and a restart changes nothing.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/wake.py#L189-L228",
+          "version": "repo-lines-v1:sha256:5d5cd6f404370afb78c069be790a451a2f99344b6afd9c0a85b49532fc379d6d:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg2OThjODRiNDU3YjRkMTZlM2U0YjIxODdjMzUyOTMwOTIyM2MzNTdkOGQ4NGU3OGNhY2M3MjFhOTcxNzM1NTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1N2UwZjNhNTg0MTkwY2VkMWZmYmQwZGNkM2FkMDZiZjNlZWRkYjYxNWJkODVjZGYxZWRhNDQzYjFjZDllMmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc4ZDhhM2RhOTc0ZmVkMDFiMDNmODQwMGYxODYxMDllYmVjZmU4YWYxYTNiNDc4MjM2YmM0NDk2MzgwZjYzMjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFkMmI5NjMyZTFmOTJhMmViNWViZGU0OTdhZmYwYzQ2MWFlMjg3MjFjMmEzZTY1MzlhZDk4MmQwMWQ0ZjQxMzUifQ"
+        },
+        {
+          "resource": "repo://nora/app/wake.py#L81-L84",
+          "version": "repo-lines-v1:sha256:401948b26b0033353fa9b0f69744d35c7083555319d43f5e16a1b72e860289db:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjVkNDdiY2IzZTQwYjVmOTI3MmY4NjA4YjFhMWQ1NDZhN2I5YjFiOGJkZjBjMzYxOTg5ZjllMzVkZmU0YWZiMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTlmZmUyYTFjNGM3NGU0MDhmZjBjYmEyZmVmMWY3Y2I5YTJiOTQxOTJiMzczZTE2YmMxNjA3Mzk0YjIxMmUyOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmRmMWM1ZmYzOThmZjA5MWI3ZDc0MjgzMGMyMTI4NjA5ZmU3Njc5MDZiODYwMjRhYjZjZWFmNjg0NmNjYzYyZiJ9"
+        },
+        {
+          "resource": "repo://nora/domain/stimuli.py#L658-L666",
+          "version": "repo-lines-v1:sha256:c0522e4c2834b78c810e6c25c48adc2a07ecc2a929dc99b4beb148fdf11df1c3:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODVlODNlOTQwNDFlZDg4NWVhZWRkYTIzZjQzMDFkYTA4ZGE2YWJlNDFkNjY3MWFjMmIyNThhMWEwNmY4YzE2NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjEwNDM1NzBkM2NmMDM0ODFmMjc1ODMwNDcyMGY1MzA4YWUxMDQ0MjRhZDQ5ZGZjYjI1Y2M1MmFkN2JiNGE5YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOWNmMjdlZjJkMTliN2E2OTNhOWQ5NWNkMjg0NDdhNmIwZWZjN2FjNTdmYTc1YTM3NzM5NjMzMWNmMTlkN2ZkZSJ9"
+        },
+        {
+          "resource": "repo://nora/domain/stimuli.py#L697-L724",
+          "version": "repo-lines-v1:sha256:035bd64ff00d3cd8e4e482d2ee874d21f166bc064bfd2f2fb751c52365b41075:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5MWQyZGE5ZGFjNjQxODU1ZDI0M2IwMDhjOTczNzAxMmE2NzFiODY2MGJlMGQ0OGFmNmMxMWYwMGEzNTRjMDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImExM2EzZjE3NDNjODk0M2FkNTcwNjI4OTU2ZjdlNjc1NTRlNjNhZDU4ZjYyMDhmY2EzMWY2YWJkYzk3NTBiMzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU5ZmQ5YTE5NjI4NDE4ODMzMTU0NzliMDAwOTczZTUzZWU2MDk5YTAyNTAyNDE0NjYzN2ZiNjY3NWNkMjEyOTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5635cc6c989a4e0ab3774c47feee426e",
+      "statement": "A strong cue may cut a cooldown exactly once (a wake that cut one leaves a cooldown nothing can cut) and never a backoff, so a unit whose sessions keep failing cannot be re-woken by a room that keeps naming a time.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/stimuli.py#L799-L813",
+          "version": "repo-lines-v1:sha256:b340c2febd11ba184a7b1ba77fb9fe90e81353dfa47e25cf4014ce459554c9a6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkxNGQ2M2Q0OWIwYTAzNDU5MjRiODI4ODNmMjNiZjNjYjFiZmRhMTJkZjRiMzRmNjMxMmMwYmFkZjVkZDc2ODIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY1MjI0YjNkY2U1YmUxYTlmYzY1N2Y3YzkwZGU5ODk4ZDdkYzI1ZDMxZmNhMjVkNzEwOTc5NzBlNDRmYmU5YzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgxZDJkMGU0Mzg1ODI3NzdhMTJjNDRhMDQyMTEwZWZlMzkyMDExMDcxOTk0NjVmYmE1ODljYTBlMjJjNmVhNjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcyYzIzYWI0M2QzYTQ2NTM0NjA0ZTEzZDAxZmRjYTIxYWNkMmY3Yzg0N2UxMDkwMjA5NjQzOGE3ZTI0ODZkOGQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2569cef6aa65485aa7fe97e2e393cf3a",
+      "statement": "Single-flight is derived from the wake rows: with a hook the unit is in flight while its newest wake is OPEN (no outcome row, younger than `session_timeout_seconds`) or its task is alive in this process; without a hook the wake is treated as a session lasting `session_seconds`, a stated shadow assumption.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/wake.py#L131-L144",
+          "version": "repo-lines-v1:sha256:123cff089bdf0033d956ef169482b7f08ed25eb4e5a95b92532a5194cda5658d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI2YzQ1ZGViYmU4NDFhYTI5OGYxYWQwZTNjZTliMjgyNzlkNDUwNjY3MWQ3N2FiOGU0MGMxNTI4OGZlODhmMjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwZjkzNzgxMDNmOTVlYWExN2Y0Mjc5ZGZiMTRhNGEyZDI5NmY2M2Q2YjVmODU2ODQxMTgxYjI4YmQ3NmJjZDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI0MDViODUyZTVlOTEyNDg3NzNlNzYzZmMyMTIwMDM0YzZhMThhN2VjODFkMjgwNzEzMjA1OGUyZTEzYzVjYjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc2MDk3YTVlNTZlYWM4NTBhYWEwOTUxNDc4NWVlZTQ4ODk3YTI2NjRiMjhiNGM4N2ViMDEzODMyNDIwYzFmOGIifQ"
+        },
+        {
+          "resource": "repo://nora/domain/stimuli.py#L668-L694",
+          "version": "repo-lines-v1:sha256:492902aa7d386d93980666fe8621a0352c9c4472fa7f717bc7593fcfcd0cd27f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg5ODNkZjVjMzI4YzYyY2I3NmY3MmEyMDUwMzI2YWJjMmQ2MDY2M2JlNmU4ZjU5MDI5ZjY0NGNlZjY5ZWVhNmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3OGNjMTA5NmNiM2QzNTgwNzY3YWM3NjJjMjY4YWEyMGU5YzM5NTJlMzY3N2FmNjA5Yjc0N2QxZDI2NGNhYzEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJlYTIwODc2YTZiMmM4M2IwY2U4NTg3ODAxMTU0ZTY3NzAzN2VkN2RkMjBkZWQxODE0ZTk0NTNmOTA5OTQzZDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzZWZjOGM5Y2ZiNDcyYWI2M2RlZGQ4YTg2NjAzZTgwYjgzNzdlMDFlNDIyNmU2MGYzZjUwYWVlNjUzNmY4NTQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_83894868567748fab981258e776a1fcf",
+      "statement": "What a wake claims is part of the rule, not an afterthought: `settled`, `strong_cue`, `batch` and `max_age` claim every pending stimulus, while `time` and `self` claim only their own kind plus the riding-along kinds and record the rest as `unclaimed_ids`, so the watermark range can never consume a stimulus the wake did not take; a wake's `through_stimulus_id` is never set below the watermark it read.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/stimuli.py#L814-L842",
+          "version": "repo-lines-v1:sha256:584799664505c4f10e4c433feae52e36d0618f81c86bd5d549c59300dc622e63:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcxOTVjNzBmN2MwMWI4ZWM4MjRiNWVmMTRhYzBiOGI4YTEwMTA4OGMyNmEzNGJhMTFlMDZmYWNkNDBlZjE4OGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE5NmUzMjlhMmFkMjNhZmJkNDFhMTUzMWE1MTZmMDBkM2FlM2UyYzNlOTdmYTZhNDNkOWNkZWRmMjA3NzQwYmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjllMGMyM2MyZTYyZDk2OTFjZmQzMGQyZmYyMDQ0NmM0ODg0YjI2MjU1NTc4NDRjZDExZTAxMjVkZTVkMGQ2Y2YifQ"
+        },
+        {
+          "resource": "repo://nora/domain/stimuli.py#L845-L879",
+          "version": "repo-lines-v1:sha256:135fc1658d6656a34d237d5eb2363e7ecd02b2bb9849945a8eb362bc777eb3ae:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyYzM1NzNiOGFlOTJiNzE5Njk3NTg0ZGExYzhhZWRlYjk0ZTA2YjM4YWVhOTVkODk3NWNmODU3MTFiYTkxMTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdmN2FiMWNkNjQ3NjNiNmFhMTRmNWU3ZThjMTczZDNmYjRlYThhYWM1YWFkNmExYzE2MTVkMDVhNTk3NjBjMWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4cd317a848df4a7890c7ffcf0f5b5652",
+      "statement": "`RIDES_ALONG` holds `rollup`: a Rollup stimulus never starts a wake and is claimed by every wake, so a daily `time` floor is what bounds how long it waits (and with `time_floors = []` nothing does, by operator choice).",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/stimuli.py#L862-L879",
+          "version": "repo-lines-v1:sha256:81324e753e20d764676ec8850b34c23ff2980ad475987c18b1e80fd75b4f7d4b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ2N2UzOGVkMTI2MTRlMzAzYzdlNjNhOGYwYzZiY2FlYmE2ZWNkOTRlNTgyNWFmYTE0NDQ4YmIyZTRhNWNlNmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdmN2FiMWNkNjQ3NjNiNmFhMTRmNWU3ZThjMTczZDNmYjRlYThhYWM1YWFkNmExYzE2MTVkMDVhNTk3NjBjMWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://nora/domain/stimuli.py#L89-L96",
+          "version": "repo-lines-v1:sha256:7501df9774d60dc7d7a4a6ffed520339eba545927686f17ec96f717f5b2fbceb:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTQxN2E0NmI1NjI0MGRhYjJkODZiY2QwZjU0ZGQ5NmQwODI4NjBiNTg3ZjE5NWU2NDRiZWEwN2RlZmFkNmQ4MiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTZiNTgyOGJjNmMzMGU3MjdiYTIxMzk0YTg2MDcyMWY0MjY5Y2NmMDlhNjc1MmY1Y2I0ODIzMTcwMDQ0NjhiNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNWEyMjgwY2QxZWMyZTQyNjU1NWJmZTRiZDcyODM2NWZmZTkxNzJkMzY3MDk5ZmFmYjdlNTczZTQzNTIyMzk3NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzFiZWNkY2RjMTY3YTRjYjhjZjA1YzY4OTM3NjkzMjgyYzZhODM3NDU3NDQxMjg4NmIzZjM5MGMwYTYzOTVkNSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_1dc1a81876cd4f1383df7e507eecb830",
+      "statement": "Two kinds of stimulus never wake a unit: a `waits` one (a person's reply to Nora inside `reply_quiet_seconds`, recorded and consumed like any other) and an inert kind (`time`, while no skill ships for the `time` agenda kind); both exclusions come from one place so `decide`, the pending-age gauge and the health command agree.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/stimuli.py#L415-L420",
+          "version": "repo-lines-v1:sha256:be2769b8c772ddccc1b6719ee5cd37d1070fdb16b40aff098883d6992e7efec4:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZWQ5ODdlNmExMzAyN2NlMjFiMzJiYjJmZjJjMGRlZjY4ZDFjNThjMTI4NThmNmYwOWUzMjI2MWE4M2RjYmI3OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzExZGQ2NzUyZGY5ZTJmN2UzZDgwNmJiNzQ0NDIwZWE1OWJmY2UyNDYzNzljOGUzODUzODMyZmRmOGRhZDNlMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTE4OTA5M2JmMWM3ZGI3YzE1YWU2ZWRjMzIyN2VlYjQwMzI3ZmEzNjk2ZjcwODJhYWMyMDQ2Y2YxODQzMjk5MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzBjZTNmMjRhYjQ3YzJmNWE5ZDMzN2YzNzdlZDg1NzNmYTU2NTg0MDc2NDAyZjFhZjA1NGEzZGVkNjE5NDYyZiJ9"
+        },
+        {
+          "resource": "repo://nora/domain/stimuli.py#L851-L859",
+          "version": "repo-lines-v1:sha256:749bc3e64ccb4b4066c00759761889c0eb57480de3987ae08a680be1a575bae0:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDEzMjJjNTU1YWY1ZjQ1NDAyMTc5ZTBkMmQwNGUyYzBjYTA4ZTBiODg4NjZiOTBiYjkwMjA4ZDE1ZDcwZGMyOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzBjMWYxODhmMTQyZWQ3YTgyNDY4MGIyMDcxNzJjNTUxOWJjNjE0YTQ4ZmRhN2NmMTY3ZWRiOGRkZjc5OTU2YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTgyZDYwYWY4NmY4Y2Y5NDU0MmU2ZTBhMzA2MTQ5ZDBiYmM0MzAwZjg1MTc0YmVjNThjMzdkNGMyNzlmYjA3NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjMyMjI2YTc5N2Y2ZDVjMjQ5MjJmOWJlMDdlNjg3ZTUyNTE0YmJiMGIwNzc1OGFmMjhmOGM3OWMyNGZkMjMyNCJ9"
+        },
+        {
+          "resource": "repo://nora/ingest/stages/stimulus.py#L16-L21",
+          "version": "repo-lines-v1:sha256:c005a97d62c4eacb6a91142472d696668fba2091fba22632ab7e210dee21a3fe:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNmFlOGIwZmYxYzEwZjhhZDUwMjk0ZTlkOGI4YTUyZTRiZTQ3ZWFiYWNiYmYyZjc0OTdiYTg0YTQzYjFlYzRiMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGZkYzg3M2VhZGU4Y2JiNjA3Y2NjODYyYjBmNmI0NDY5NDNiNTRhZjMwODViNGZhMGNmYjVlZGYwYmNkYjNlNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYmMyNjdkMjg2Zjc4ZTEyZmQ4MTU1MzJjMmNlMmUyOWI5OGIwMzY2YzNiYTg2Njc1ODU4YzUzNDIzNTFjMGJiNiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_d026ecd52dee4e06a506e584d3572e9e",
+      "statement": "The watermark is the wake log itself — the `(through_stimulus_id, at_ms)` of the unit's newest wake in that mode that did not fail or expire, plus the ids that wake left `unclaimed` — and a stimulus is consumed exactly when `id <= through_stimulus_id AND pending_since <= through_ms` (with `pending_since` = `coalesce(due_ms, recorded_at)`) and its id is not unclaimed; pending is the negation, i.e. a disjunction, so an older id that only becomes due after that wake's time bound (a `self` stimulus appended at 15:00 and due at 19:40) stays pending and is taken by a later wake. Both bounds only ever grow, which is what lets one row carry the watermark.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/stimuli.py#L13-L25",
+          "version": "repo-lines-v1:sha256:45314df358daa2fe333b77b1c9ca858057c73270c60b7e2007257bf2201d59e6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg4MDc0ODdkMjNhM2E0NGJmZTk0NjM4MGRjYjk3YWVjZWQzZDRjMGYzYWEzZWU0ZTgyYTA0ZDhiOTcwNmZmNjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjczMGMxNTVmZWQyNmI4ZmMyNThmYjg0YWJlYzM4MzdmNWUxY2NiNWI2YzFmODFhNTI1ZjgxYTJhOTQwZTAzY2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI2OGMzZWM3M2JmMTNlYmY5YjY0ZjJhYjNmMjVlOWQ1MzY3ZmEyNWNmYzlmMWZkMDhkOWVhYjZhZDgyOWE3YWQifQ"
+        },
+        {
+          "resource": "repo://nora/domain/stimuli.py#L133-L155",
+          "version": "repo-lines-v1:sha256:fd0d59165561978269842ef5d52bc317fa49f3650291c5222d5c91781f7ff810:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU1MzYwZTdmZDE5N2JlODEyYzIzN2IxNDM0NTE0MjEyNjM3NWJlNGJmN2E2OTZhNTdiZmY2ODQ5MzRhZjRmOTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlkMGEwNTk2ZDQyOTIwN2M1MGM0YTYyNWFjYzFkY2MwNDYxNjUyNDg5NmNhNzJlZTBlZmQyN2I5ZWUzZWU4NGIifQ"
+        },
+        {
+          "resource": "repo://nora/domain/stimuli.py#L423-L448",
+          "version": "repo-lines-v1:sha256:e01773edb3ff66a7a90b69bf722e13d65f1f7b2269137ed211a5b0f5d8d93725:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdhMTJmMjVlOGEyNDY5YTlmNWQ1MjY2MDc3YjY5MjlmYjY4MjA2MjdmMWIzOGIxYmM3YjBkNTg5ZWY2OWZlZmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk3NjA1MWRlOTYwNDY2ZmFkZDMxZDA1ZjQ3N2E0MWYyNjE1NTQ4MTdkNmJiZmJkYzAyYjQ3OTg4ODc0ZjhmZjgifQ"
+        },
+        {
+          "resource": "repo://nora/domain/stimuli.py#L816-L826",
+          "version": "repo-lines-v1:sha256:20fc965dc3ddcd650d690e04eb3e3ee8b5c7c75f2a165644eea2004cb408db55:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJmNDQ2YjIwMzViZmJiMDI5MjFiYjExOTUyZDI1MmIyMDRlYzE5MDUwODI4M2E3MmFlMDRiZjBlMDJmYmNjN2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhjYTc4ODIwOWIwYzI1NGEzMWJhYTgwYmZhYjNiNjFhMjgxNzkzMzg2ZGVlNjVjYzYwZjIyMjdlNzJlMjVhZGUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM1MzUyY2NhZjRlOTQ3ZDk2MTNjNmNhMzEzM2QzODRjOGQxNjZiNDRhNDc2YjU3OWViYTBjY2M5OTA0MmM5OGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM5ZDkyMTIxNDIxYmVmYmVkYTEwNGExOGUwMWI2YzZjNTFkMzI5NzE2Yzk3YTFmMDY4ZDU4MGYxODAzMmU1OWMifQ"
+        },
+        {
+          "resource": "repo://tests/contract/test_stimulus_store_contract.py#L141-L157",
+          "version": "repo-lines-v1:sha256:c2a3e552c2d890852a480904e48487f6a5936509a6e7d7faa398e1d65dfc6d03:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjMDgxOTA2ODQ2Y2VhN2FlMWRlNmMzMmMzZDFlMzNmNWNhN2UwZDBjZWMxNWExYjI0OGIzZDY0Yzk2NDcyMTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI4YmEwY2M2NjJhNDAyMWNiYjg4ZTZhODg0YTczYmFiNDc1N2RkYTA0Yjc5ZTQ5MmU5M2NmOTNiNWYzYTU4ODgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM3YzY4NDE1MDY1NWE2NTdlMzBlNTJjZDUwNzNkNmFkODkzYjBlZjVjNjEzMjc3ZTFmZjZiM2JiNmEyYjZiOTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY3Njc0MmYzZjgyODUwNzVlMjlmMTc0YTVhMTJmOWE0Y2NlNGEyMjBhOGI1ZTQ0MmUzOGViODI5ZDc1ZDE0ODEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_805c50d4e4704de3a370dbc0f536ed73",
+      "statement": "A tracked wake has at most one `cognition_wake_outcome` row and four fates — OPEN, CLOSED, FAILED (`failed`/`timeout`/`cancelled`) and EXPIRED (no outcome past `session_timeout_seconds`, read exactly as FAILED) — and only `closed` advances the watermark; a failed or expired wake's stimuli return to pending and the mark falls back to the newest wake beneath it that did not fail.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/stimuli.py#L33-L58",
+          "version": "repo-lines-v1:sha256:3db023d1c8d4e5419f5f062bf752de185af53864319ef1432b58b2edaf8dda40:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJmZTM4ZTBhMjJhY2RhMDQ0YzZjODc4ZTdlNmM0MzJjNTgzMWIzOGNiNzkxZDIwZDY5Y2Y1MjhlMmVjMjUyMmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQxZmRiMzJlY2NjOTg0YWIzNmI3NzJmNjVjYzljMzc5OWZiNjY2MmUwMGI5MzFmMWRhMzY5MGUxZjJkMzU0YmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/domain/stimuli.py#L410-L412",
+          "version": "repo-lines-v1:sha256:f2ee47753619de9f6f52eb37f6c90904a3bb01dc0d29e0531ad32816c50fecdf:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMGQ4ZTg5NmVmNzIzODEwMjg5M2FiMjdjMzc2YzRiYjIwZDgwMmIyMjgyMmNiNWFkZTY1MTk3OTkyY2E0OTdkNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTZlMGJhZGE4ZWM2OTkwNmUyZTJlOGU3M2IxM2I3NzVkMTYyY2YyZjM1Yzg3YmY4YmI1MTVlYzhiZDkxMjBiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGNjNGE3ZDFjYzc5NmFiYTNlNDY3MjMzMjdmNTE3ZTlmODExOTgyZDI1MGYwNzAyOTg2ZTRiNTc2NGFkOTU4OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTQ1NmU0YTM0NmRkNjk1MTYwM2EyOWUwYjRkOTNjOGY5N2MyOThlNzcxMjBkNDI1MjVlZTU0OWY5YmNhNWQzMyJ9"
+        },
+        {
+          "resource": "repo://tests/contract/test_stimulus_session_lifecycle_contract.py#L148-L190",
+          "version": "repo-lines-v1:sha256:7e08ef6364d739f1310f7115f64d5cfe76da58b50a6ac0c43502819c5f96f008:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgwNTNkNmY4N2JkNzM5M2YxMTQzYTk2MDFiOWE4ODc2YTk3MjFlYWZmMmIyMzk4YThlMWU2ZWI0ZmY0NmJiNjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdiZjNkNDZlMzk2NWJkZjNkY2M3YjgzN2JlMjFkYzM4NzNmNjVlNmRhNDBhNGFhZTljMTNkMTVlOGM0ZjRkNGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMyZmQ5Y2JkYzY4MTM1YmNjZTAwNDBmZWYyMGJkZmJlOWRhNjFjZGM2OTdiZmYwNDU1YTk2ZWRkNWJjN2ExODgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRhYWI5ZDg0ODhmMjkyNmExZjQxMTRlYzFiNjE2MjU4MmE4ODU2NGYzMjU3ZGQxZDdiZWYwMGJmYWRiODViNjAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_55b18df3e74246429ac11f4fcb4f8859",
+      "statement": "The two writes that decide a wake's fate (`record_wake` with a `WakeGuard`, and `record_outcome`) serialize on one transaction-scoped advisory lock per unit; without it they write-skew under READ COMMITTED (a guard sees no outcome while a close sees no later wake, and both commit).",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/wake.py#L512-L538",
+          "version": "repo-lines-v1:sha256:ae14a4a67e58f0b9de2090599169c76e2a11f44de62e3301b0aede885552cecf:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxMTkyMzA1MzQ2ZWIxMjU1OTYyOTFmNThlMjFmYTk1MDVlYzkxOTRlOWM5NDM3NjZlNDBiMTJjYjViNWJiOGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyMDc4MzkyZmZlOTM1MTNhNGNlYzA2MjQ2ODZhOTcyM2Y4MzgxYjM4YTNjNjBmYWQ0NmYzYjEwYTc2NjVlN2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjllODU3Mjg3NTFiYTdhZjVmYmNhZjE1NDlmMzg3OGNlZmI1ZjJiOTZiZmI5ZTBjNGM1ZTM0NWFkODVjZWYwYjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFlMTBiMzhhMjZhMGM3MDczN2M2ODY1ZmVlNmU2Yjk5Zjc0NDI5MzZmYTQ1NDQyNTBkOTA5ZThkNmNiZDRiNzAifQ"
+        },
+        {
+          "resource": "repo://nora/domain/stimuli.py#L201-L211",
+          "version": "repo-lines-v1:sha256:bc52d54b52d908171d4526a985f981a16e68f86c6bb2354c5056b77b291c0475:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE4ODEwMDU1NjU2ZWE1ODk5YzYxZmVmMTNiMTQ1Zjc3ZjQ5NTAzZjYyNjlmZjAyZjQ0MTgzYjQxN2MzNDVkODQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEyMjUyYTFlMTk0OTc0ZjU4Yjk1MmRmNTdkNWQ2NjJkMzA5MGYzZTY1NmJjNDI1MTkzMDUwMzk2ZDI5Mjk2NTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFjYzAwMmY5ZDY4NDA4ZWU4ZTU4NzhiZDY0YzhiOWU0ZWQ5Yzc0YjExNTJlYzRlZmU1NzQ4NWVjYTE5YzZlMDAifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/stimuli.py#L247-L255",
+          "version": "repo-lines-v1:sha256:c1808978a2d5ed0b0e02638ab8c3534a5741c467427927814954656718734342:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMWY4YTQ4YTRjOGI3NDk0ZjQxYmQ5YzBlYjBiMThmODM0YTQxYTI4YjVlMGEwNmY2YTYzNWM4NWM2ZDljNmY4YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTZmODIwMDM4NjM3MjEyYjhhYmMwNGVlZDRhZWM0NjJhYjFhNDA4ZTUwOWQyYjEzZDM1ZTE3NmMxNmE0MDRmMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGNjNGE3ZDFjYzc5NmFiYTNlNDY3MjMzMjdmNTE3ZTlmODExOTgyZDI1MGYwNzAyOTg2ZTRiNTc2NGFkOTU4OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTI3NTlhM2FiOTM2ZmE2YmU4MjA2YzA0MzQxMWI0ZWY1Y2EyMTNlZWY4N2E3MWU2ZWI2NzZhNjhjMWY5MzI3OCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_5f829cc3f68143009962a592425f0129",
+      "statement": "An outcome is first-write-wins per wake, and a `closed` outcome for a wake a later wake already superseded is refused and written `timeout` with no carries, so an expired session finishing late cannot close over stimuli another session took; a closed outcome and its carry rows land in one transaction.",
+      "evidence": [
+        {
+          "resource": "repo://nora/infra/sql/stimuli.py#L408-L458",
+          "version": "repo-lines-v1:sha256:5d2787ebe1c8a888edccde2423e6f4406d0bb431d86a698e9551eee45dd19968:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjViMTllZmJhOTE2YjVhNWI3YmU3MTJlNGViMjc4NWEyNmU4YjdjNTgwNzhlNmJkOWYwY2U4ZjUwOGE0MjhjM2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRhNzg3MmU3YTUwMDg1N2Y2MzgxYTc1MjZlYmM2YjU3ODcyY2FhN2I1ZGMxMWQxZDQ2YmFjZmI2NTFhMzQ1Y2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRhZTM1YmQ4ZjkyMTBkYTdhZTcxNzczMWQ0NWEyNTIxMGUzOGRlNjc1MWNiZTRjZGI3MTY5NjYyNmZlZDJiODQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYxYzNjMTc3MzZlODNiZWQ3ODdhODMxMWM4NjRiMDhlNGExODk1MzhhYmZjZWY5ZWI2NWMyZmY5ZmI1MGYxMzgifQ"
+        },
+        {
+          "resource": "repo://tests/contract/test_stimulus_session_lifecycle_contract.py#L316-L362",
+          "version": "repo-lines-v1:sha256:b317692a4a8356b84766c68de75ebb3c0446c6c17c7e0cc7a12b42a0b5f51bf1:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk5YWEzMTYyNzhkMGNmYTc5MjNkNGM2ZmE4OWEyNGRhZmRlYzQxNWZhNzc1N2JiZjlmMmQwZTk5ZjVjNDM4ZDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAzNDg1MjNjODA0YWI3ZjQ5ZWRlMDVjNDU5OTJhMjA3MTU4ZWE3MWYxMTgzNTQ3MDYxMWY5NmNjNzc5NjA4NzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFmNjFkMzc4NjRhNzkwMzIyMmJmODQyYTQzY2UzM2VlMzcwYmQyZmEyMTg3MzkwNWMyNjZiZjg4NDc3ZGVjNWUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_cdec5e3b79914848ad22349c2acaf0b1",
+      "statement": "The evaluator's pending read lags the clock by `settle_seconds` (default twice `store_timeout_seconds`) and the wake's `at_ms` is that cutoff, because ids are assigned at INSERT and become visible at COMMIT: a stimulus recorded after the cutoff stays pending whatever its id.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/wake.py#L105-L114",
+          "version": "repo-lines-v1:sha256:b8bf3451e28ede30f6fd9cf7c42d0f905f113545629e227a0cb1567b0dcb96fe:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzYmU0NmVkOTg4ZTZhZDg0MjA4YzI3ZmM2ZjgyOTM3OGJhZjhhMGExMGMzN2IyNjY1OGM2NWQzZTgzNmExNWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1MTg0ZDBmZDMyYjBkNmY1ZDMzYTIzMjljNDEyNDQ5MTk2M2ZhYWY0NDI2Zjk1ODc0MmFiM2I4MmJhNjZjMjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE1NDhlNjU1NDcxMzkyYjQ0OTdkZTg1MGY5MThkMzNkMmFlNjcxNGQ5ODkxZDc1OTc2MDdkMjIwODRkNDEyNDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY2NDkyNWZmMjAyNTI2ZjlhNjQ0MDc1NDczYTY3ZjIzMDIyNjNkMmJhM2NiYzc2MTk0NmRmZTJiYmRmNmJjYjEifQ"
+        },
+        {
+          "resource": "repo://nora/app/wake.py#L189-L192",
+          "version": "repo-lines-v1:sha256:e640459cbcea2b998d70b0109d2da51431491f34277d695ae70e12d03758b598:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODY5OGM4NGI0NTdiNGQxNmUzZTRiMjE4N2MzNTI5MzA5MjIzYzM1N2Q4ZDg0ZTc4Y2FjYzcyMWE5NzE3MzU1NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTM3MWEyNjllYjI1MmVlZjJlYzMyNzQzM2NhZDE2NDg4MDhlMmU4NGUxODBiZDIxNzI2NjQyYjZkNDVmOTQzMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzhkOGEzZGE5NzRmZWQwMWIwM2Y4NDAwZjE4NjEwOWViZWNmZThhZjFhM2I0NzgyMzZiYzQ0OTYzODBmNjMyNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMGFjM2U5MjBkODIzMjM2MzAzNmEyNmE3NmYzMTc2ZjkwM2MyM2MzMDBiMzE2YWEzMGY1NTExMGE4ZjE5MzhlZCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_8749a6aad85a4deb88ab77cac27dc986",
+      "statement": "The evaluator itself raises the two daily `time` floors (07:00 and 00:00 in `[cognition] timezone` by default) only while they are no more than `floor_grace_seconds` late and only once per unit per day, and with each floor raises one room-bound `upcoming` stimulus per room holding an event starting within `upcoming_days`.",
+      "evidence": [
+        {
+          "resource": "repo://config.example.toml#L1290-L1301",
+          "version": "repo-lines-v1:sha256:d5c6eb1c1bbab3e21484342ce2329c69d96bbe209c5f27143246446270bd43d5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiNTBmZTZmZTQ0ZTVhZmMwMDMzM2RlMTEyMjQ1NmVjNjRlYjA3MjM2NWFhZGIzYzVlYThhNTJkNzk2NzU2OTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkNTc5N2FhYzljZjFhYTliZDNjOTJhZWUzZTE1ZGY4N2Y2ZjM2ZDllOGU5ZGZhNDdkZjI3YTIzMmY2Y2VlYWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI0YmVmODEwYTgzMjBjYWVjM2JjZWQ4NGM0ZTQyNmQ3YzI1ZWQyODg2NTE5OTAxYWVkNDgxZmI2NzA0YmM2MzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUyY2E2YTA4YWQ1ZDI3ZGMxZGE2NGI1Y2FkZDUxNDUwYTI3MWFmN2UyY2Q1YWQ5ZmVjN2FkODQyZDMyYzgyZjIifQ"
+        },
+        {
+          "resource": "repo://nora/app/wake.py#L10-L18",
+          "version": "repo-lines-v1:sha256:1763e824c1cf77f0129db84c4eb16ba458a2eba529ce2d7892ca2e9e3267ef68:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTIyYzA5MDBlN2Q2ZGNmOGNkYzQ3MTBjYzQ4YzNkNWE5MTAwNDgzZWE0MTQ2ZTgwN2UwZmUzMTQ0N2EzNTY3OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYWNiMDFjNTJjNjI1YjYyNzEyMWU2ZTUxMTIyMDEwODEyMTdmZGVjMzIxYzAxMjVjODMxNjVkZTA1YWQxOTNjYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzQ2MjUyYTFhNzI0ZWMyNzgxZmFlZDZiY2JlMzUzYzFlMWRjY2U1MTQ4OTZjN2I4NzgwZDJkYjNkZmNjZGVkOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMGYyYzY2MDBmYTM3ODA0OGRkMTgxYmVkMjgxODBjNGMzNzhlMzA2NTU5N2ZkZGZjZTZlMzNhOTg1NmJjZGM1MCJ9"
+        },
+        {
+          "resource": "repo://nora/app/wake.py#L357-L400",
+          "version": "repo-lines-v1:sha256:aaebc324c6c36028f7f38c4d999922a045aef0269ba89ea050f6f192d0bffc98:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIwODA5ZTQ4ZDY4MmFhMDQwMmYxMDQ5MzBiZTY2NjQ1Njc5ZDVhZWE2ZDc1YjI5ZGJkM2QwOWE4Y2FkZDhiMzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhYWU4YTBjYTc2Zjk4ZjdiN2RjNzk4NDk1MWQ2M2U1N2RiM2M2NDU1NzljYTUxYmFkNmE1MzlkNjE0ZWRiYmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYwNzZlODJlMjk1ZWRiYWNiN2MzZWRkZGY2NzllMjZhZjVjNTY4N2IyMTJkNWZkMzU5NWViMTRlYzQzZDI3MWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVhNDE0YWY5NjcwMTBlY2U2M2RkODM0N2Y0MWJlMDkzZmE0NzQ0ZWViM2IwNGNjYWNiZTQyODcxODhjMzA2YWYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ecc7c51cb44d43078593c26dd22d7a84",
+      "statement": "`floors_ready` (whether a skill ships for the `time` agenda kind) gates the floor two ways: a unit whose wakes start sessions raises no floor, and any `time` stimulus already pending is inert — pending, never waking the unit and never claimed by a wake, so it acts as soon as the kind is ready.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cognition_wiring.py#L292-L309",
+          "version": "repo-lines-v1:sha256:7cfa44d522db2b532ec7cd52543f8969976586a3983d30fe78716afc36aaa6c1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYyZjQ0ZTk2N2U3ZmI2Mjk2MGM3ZDIyOWZjMDBmMTViMGQxYjlkM2M4YTEwZDNkOTFlY2NlZGJhMGUyZDcyMzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc2Nzg5ZjQzNzQzNGE2YjMwOTRhNmZmMDc0NGRjYTFiMDhjODU2ODRhMmU5OGFjMzBjNDNlNTZlZmYxMmFkZTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE3OWViZWFjNDkzZjJlNDI3MWQzZWYxMmM5OTI2MjNmZWUzYTMwMzM3MmE4ZDg1MWUzY2ZlZTJiZjdjODc4MDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjczZDNiY2Q1YzBmZWE2MGU5Y2E0ODQ1NzZmMjdjODU2OTY2YmNiZTdmZThjZjVjNGVhODVlNWE5M2E1MWE3OTUifQ"
+        },
+        {
+          "resource": "repo://nora/app/wake.py#L146-L150",
+          "version": "repo-lines-v1:sha256:39422cca9fdcbb5fa1be8311736e1fd36e164284d82423177f7e9198fe6b9800:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiY2FmMDc4NzM0OWMzY2NkMWNmMWYzNmIzN2FkODRkMGQ4NjYzYWMzYTkyODRkNWVmNTZlYjE0NzkxODkxMzNhMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYmJhZTk5YjUwYjI3NzY3MTIyMWI5OGQ3ODA4MWY5Yzg0NjljMmIwZDE5ODljYmQzMWRhZDZiYzFjODEzM2U2NSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDBjM2FkNmYxOWYzOTViYjNiNDVlMDQ5Mzg0MmZhM2U1YzAwOWI1YjEwM2I2NzNhYTIyNDhmZGE4N2UzNGRlZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzExYjQwNDYxN2JiMWI5NWM3NjhjYTQ4ZDIzYThkODZmYWExM2Q4ZTE2MzE4MjljZTZjMjM5N2ViOTZjNTNmZiJ9"
+        },
+        {
+          "resource": "repo://nora/app/wake.py#L426-L432",
+          "version": "repo-lines-v1:sha256:b5b3a854308d7f7c829ef4fcfd8594f9f3e6ba1ef0552b7d1df04bf937485799:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzA0YjllY2M5ZjdkYmVjZDQ2YTU4OGU3ZjA2YWY0MmMzZjZlMDU0YzhkZGJlZjI0YjUxNmRhMjU2NTgyNGQ2MyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTUwMzJlOTY0ZDA5MzIzNTFlNWQxODUyNjkyODFiMTcxYTNhMDliMDhiMjg2ZTY2MWVhNDcwMzIzYzgyZWI0ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjkxYjAyMWI1ZGQ1NWVhOGEyOTIzOTNkZWY2YmM1ODE3MGRlMzUyZGM2MmJkZGI5NWYxOTEyYWFiY2QyNDJkYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWQ3ZGNmMzgwNWJkNzE1ZTMzMTM5YmU5ZWExN2I4YThhMTlkMGIxZDg3MGI4YmQ3ZGQwODBiZmFhM2NkOGNiZiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_e6465c69acca4c6e932e99dd0820d047",
+      "statement": "One unit's failure is contained: a unit whose read or write fails is skipped this tick and counted `nora_errors_total{stage=\"cognition_wake\"}` while the others still run, and since the watermark is only ever a written row a failure never moves it; a hook that raises while being called is logged and contained so it cannot abort the units after it.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/wake.py#L20-L23",
+          "version": "repo-lines-v1:sha256:0f40cd3c1b30c2df2bff521ee516d279118ea8087c78675c66441238fc629e9d:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTZiMDBmMzc0ZjMwMDk5Yjg0Mjg0ZjdkNzllNjlhNTBkNzNkZWQ5NDIzMjg2NDg4ODA2MmZiMWQ5ZDQ1N2M0NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzNmZThkYjkzMjliNDY1NjFlYjBmOGUwYTJhZjAxNGE0ZmYwYzdlN2NkNjdhZDhjYzRkN2FmZjUxNmY2MTI2NCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjRjNTVlOWVhNDE5NzhmZjA0NDMyMGUwMjcyZDgxNDgzMDVhM2Q3YTEzMTMzMThmMmM4NjZkZjliNWY1MDIzNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWFhZjc2MzdjYjZlN2U1ZGI4NWQ2MzQyNzQ2MDE0ZGYwNDFjY2Q1NThhOTIwYjI5ZWI2YWM3MTlkN2JhZjVjMiJ9"
+        },
+        {
+          "resource": "repo://nora/app/wake.py#L230-L263",
+          "version": "repo-lines-v1:sha256:60b027de09f56b566b0588a4c2b0f326f94a6829c5b30314c2d027fbd68e3607:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlhNDI3ODY1NmY0OTNlM2E3ZjY0NDU4ZGQ5ZjA2Y2E4NTY4YjY0ZDBjNTdiMDljZDAwMWUzZWM2NzQxZmYwNzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiZTQ3NWJhMjE0YTc5MjNkZGE2NzBlMTFjNmQ5NGEzMGQ1NDJhZGY3OTg3MDMzZGFhYmQ1MDA2NDU5YTg0NmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVlN2M3ZDMwYjZhMGYzYWQ4NjYyNzUyMzc1MTI0NjhhOTM3NWM3MTFhZTViNTM5MTkwOTlmMjFhM2I5M2E3NTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEwMTAxYWZkNjYyM2FlNTI0YzllZmU3YWYzMzgxODkyZThmODRiZTU2YWM3Zjg0YWZhYzI1ZWU2Yjc4NDJiMDAifQ"
+        },
+        {
+          "resource": "repo://nora/app/wake.py#L402-L436",
+          "version": "repo-lines-v1:sha256:9260b1c89ad68e4a3419755380666e798570990f60b3b41c1a83e824739ad8dd:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5NjI5YWNlZmM4YzJhZmFjN2Y5ZjU0M2M2ZWNiZDg3OGM5YjdjYWVmZDA0OGFjMzc3YWQ5ZWEzYTdjYjM3MzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyMDc4MzkyZmZlOTM1MTNhNGNlYzA2MjQ2ODZhOTcyM2Y4MzgxYjM4YTNjNjBmYWQ0NmYzYjEwYTc2NjVlN2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUwMDhiZTM1MDljMTAyMzhlZDM1NDRiNDE0YTg3MTM4MDA3NjIxM2JjNjY0Y2Y5MDJkNGYyZjU2M2MwYWM1YjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwNTk0ZDMwNzdiODY1M2E1NzdkY2ZlMzFiY2U2MTQyZTAyNzBiMmQwMjkzZjk2ZDU1NTA1OTEwMTk2NjE5MmIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4b3aa1e3eac24a87a45073f2554a548c",
+      "statement": "At `max_consecutive_failures` consecutive agenda-caused failures the evaluator retracts (`stimulus_retraction`, reason `failed`) exactly the stimuli the newest agenda-failed wake claimed — never one that arrived since, and never one only an infrastructure failure claimed — so an agenda that always fails stops.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/wake.py#L438-L473",
+          "version": "repo-lines-v1:sha256:0affffce7769e081e6141c3eac46f65be6eaad101523c8fdb30ccf8a992625fb:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY3MzQ1Y2E3MGM4NzFmYjVkZjdkOTZiMjQwZjJmNDRmZmYzZDRkMjUyZjE2NTZkMWU1NTA1OTA4YThlN2I2MjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMxOWQ4ZGFhNWU3NzFiMWI2ODI0ZTA1ZGUzNWM0NDE4OTFkNjE0N2RhZmQwNWFlY2M2ZDY2YjlkOTM3M2EyYWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY4NjBmMWZhOGQ1OGUzZmRmODMwNzgwOTFlMDU4MWY3ZDUxMTlkNjkxMTc0ZDg1YTBkM2I2NWNkZjA0ZjRlMzkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU5YmI0YWIzOWJiMTg2MzBhNzhiYzhiMTdiNWY2YmE0YWQxYmQ2NWI4YWQzOGY3M2VjMjc1ZTkzMzJjZGM2MmQifQ"
+        },
+        {
+          "resource": "repo://nora/domain/stimuli.py#L468-L478",
+          "version": "repo-lines-v1:sha256:e012475b549775ea2a783c7f50d40cbcf58b79a3de55008061c800e27e428e79:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgwNTFiOGNhODZhMmRmNmYxZWI4MzYyZDUyZmM5MDlhMGIzNTg4MGMxZTIyNmVmOWE4MTc2OTliNTcxOTQ0ZWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRmMzQyYjRjNDY3YzBjMjI5NjE0MGM4ZDRhMjQwZjk0NDI3YTI0OTVmYTVhMWZhYzI1YjNkM2ZiYzI0ZDlmMDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRhZDg3YjExZDYxNWQ2NWYzNjI0ZjE2OWE4YmQzNzcxNDU4Yzc4MjMyNGQ5ODU3YThmYTk5YmZiNTE0YmYxMTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA5NmM0ZTZjOTZlOTc5ZGM5OGRjNWFiYmJlMzFkMTVjZjczZDZhOGU4ZjRhZTU5MmM1MGU2OWZiMzcyNGViZGQifQ"
+        },
+        {
+          "resource": "repo://nora/domain/stimuli.py#L550-L560",
+          "version": "repo-lines-v1:sha256:80cede9ff7a92e6ccbf2f240e8e1ba14519b2da1356675a26fb35f1b6e18eba9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMwZjBmNTdlMTlhN2E4MGVlZTEwZGM0NmU5ODM4Y2EzOTVhMWEzZGZiZThhZGJiOTk0ODk3M2E3OTIzZTgzOTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZlYTQ5YjYwOGJkZTA1NGFlZGYwZDRkOTI3YTU1YjcwMjY1MDM3ZDhiOWQwYmU3OTBiNWUyY2Q3ZWQyODA1ZWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ0MGYzODYyNDJjYjY5MjY1YmQzZjVjOWE3ODVmYWViODZlZjU5MTI3ODc3ZDhmMjc5ZWJmZGYzMTIwMTVlMTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE4YjBlY2EwZDkyZGZlYWFkZTIxNzI0ODhiM2E4OTQ2YTg3ZDA1ZDdhZDYyMGZjYWRhZmMxZDIxNjNhZmYyMDkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6b8454e5ed864064a12ea1a8434e67ba",
+      "statement": "`WakeEvaluator.reclaim_orphans` runs at boot before the first tick and releases every tracked wake a previous process left open as `cancelled` with a restart detail: `cancelled` is skipped by the watermark (its stimuli are pending again) and neither counts toward the failure streak nor resets it, so a restart is never a strike and never a backoff doubling.",
+      "evidence": [
+        {
+          "resource": "repo://nora/__main__.py#L309-L324",
+          "version": "repo-lines-v1:sha256:507110e48c202560a2460f57fa3e53b7b1d26cdafed40a99f6f04cbabda4b366:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc0YzFhMjQ1MjAxZGI5NzdkNWYwODA4ZGUwYjJiMDJhMmYxMzA3ZjJiZmJhOWFiYmQ3OWNiNzRjZmE3ODdmNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJkNWYxMjI0YzZkNDJlNjVhZWMzNmY2ZGNiMGIxNzZjYWQwYmNiNTQzZTVmMzcwMzM4ZDhmNjNmOTRkYTBlYzciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI3MmM0ZmViZDMzZGUzNGU3NTIyZmQyNGRiMzNhZjg4NDg0YWQ2NWViZTEyZDExNmZiNTdjMWM4NDk3YzI2YzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM2MmQ0ZWZhNTY5NDkwZmU3MWNmZTI4YWMzOGIxNDY5MWNhYTE3YTU5ZWY0ZjFiNjg3YzMyNzU5YjQwYjk2NmEifQ"
+        },
+        {
+          "resource": "repo://nora/app/wake.py#L265-L325",
+          "version": "repo-lines-v1:sha256:cd192d726a9c58499ad29f66aed6b9d2bc842e7c3bb42b266f74900ba3bb14bc:eyJzZWxlY3RlZExpbmVDb3VudCI6NjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcyNGI2NzllMzZkYzFhOGI5NWUwMjc4ZDBlMDE3ZGRjYzIzNmY3Yzk1MmI1OGU5YzM1NGZmM2E1MGQ2Y2YwODYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZjMWE3NzVkMGI2OWJiODk2NmM2M2E2OTg5M2U3MDdjYjgyZDEyYjNkZGJlZDM1MzJlNGMzMTkwNjFjZjgyNWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYzOTVmNmNlNmE1YzAwNjE3MGE1OTUxOTA3MDU0MzBmNDBjYWYwMjhlNzQ5MzQ4MjRmMjIyMWE3NmE5NzJlYTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg4ZGUzMTY4Y2VlNTkxYzYyOTQ1YmNlMzU5ZGM0ZjdjM2RjNGI5M2NhYzk1ZjAzYmRmMDIzMzkwZmNhYTMyOWYifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_cognition_restart_reclaim.py#L1-L15",
+          "version": "repo-lines-v1:sha256:f80830930ac22af3558697e8fcb3e080d32df9228004024827a373d892e4dc74:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJmZTA1MjM0N2I3Mzg0YTlkMzgwMTZiMmUwNDIyZDE4MjY4M2UyOGZjNTdhZTI4NzZhZGRjMTE5N2Y5ZjRmYWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3efff8931cba47599f311716f149a7dd",
+      "statement": "The situation and agenda are built once per session by pure code from the stimuli the wake claimed — one item per `(kind, room, item)` and one per room for `message`/`social`/`play`, summary text that is a count and never a conclusion, deterministic surprise ordering with ties broken by the oldest stimulus id — and capped at `max_items`, with the overflow returned separately as `deferred_stimulus_ids` so the caller's watermark excludes what the session never saw.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/cognition_session.py#L1-L38",
+          "version": "repo-lines-v1:sha256:8b3026e74534bab07ff9bb32b4f1420bc9e9cfb69036a116a36c265ce80ee932:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlkZWRmODY1ODE3MTNiZDdhZTQ1OTlmZWY2NjE4NzU3Nzc4N2VkZjNlYTdmNTM0YWIyNDJiYmU3M2ViY2MwMGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/domain/cognition_session.py#L169-L266",
+          "version": "repo-lines-v1:sha256:25e3f6eb1dd07f6fe05aaa72dfb65b4836f01393c752654b4a28f09801ba407d:eyJzZWxlY3RlZExpbmVDb3VudCI6OTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjczOWU3ODhmYzhkNjcxNTgzOTUzODJjYmJjMjljOWFiOTY0MTRkNWNkNzA0NGExNmFmODAzYzBjZDY5NzU4ZTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3ZTRkMTAwOTFiOGRhOGQyZTM1NmE2MjdlY2MzN2FiYjc1NDExNDYxNGIyYjAwZjFiMWU3NzAzZGEwZmRlODUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlhOGEzYTIyYzE3YzYwMzM3NWQ1Y2E4ZjI1M2YzOTZhMjg3N2RlYmZlMWVmYTc0YzE5YzA4ZjQ4ZjJmMTA0MGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJiMGI5YzJhMDg5MzhlNmEwNzYyNWYzZTNmZWQ4YjVkNjFmYjcyZTg4YzEyODA5OTFhNzE1ZmE0NTlhNTdiYTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ddaecdc2940f4a03ba4df956e8b38a99",
+      "statement": "Every agenda item binds one room: a `message` binds the room it came from, a `social` read a room of the unit that may show it, an `upcoming` `time` item the room of its event, and every other kind the unit's home room — which is why `build_situation` takes `home_room` as a required argument.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/cognition_session.py#L158-L178",
+          "version": "repo-lines-v1:sha256:2730a84e4607a560294b77147f12245c1eb786683cc38473ff40a08f0f48699a:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjOWRjZDE1Mzc3NmIwNjRiNGJhNjA1NzhmNzIwYzllYTgyOGFiMjc1YTU5OTk3NWY1MGViMmFkZDU4NTQxN2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZjZjFlYjI5NmM1YmU5NTQwZDdiZmIwNzQ0MzNkNzZhYzc1YmFkZjI3OTBmZDk3ZWYzMmQ2MzU3NmJjZTBkY2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBmOGNmNmU2MjBjMDg2ZDAzMTIyYzIxNThkMTY2ODZkMmIzYzBkZGE3YjY1ZDdkMjc4YjVkNWFlOGE2MDMxMmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA3OTk5MjIyYjZkMDcwMmFmMjBlOWZlNDk3MDYzYjVmYzVhMzgyZDJhMTI0YzAxYjQxMGYzZjkzMTZlODE2NGYifQ"
+        },
+        {
+          "resource": "repo://nora/domain/cognition_session.py#L54-L63",
+          "version": "repo-lines-v1:sha256:29bb891688ffc5dcea3ec5425c997c30970ad1e0baefc531637725930cff520e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNjYmY5OWVhOTE4ZmM0OWE2NzlkNmVmYzhkZmJiYmRkM2I2OGJhNGEzMjUyZTA4NjgyNGE0NmE3Zjc4M2ZlMzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJjZDE0ZWI4ZTU3ZGQ4M2E2OWNjNzllNWJjODE5OGVmMGMyYjBjMTFmNGIyNWMzODMxYTRlNzc3Y2RhMmRjMjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ0ZGU0MWYxYjNkNmM3OTFiY2VhMTk1ZDdjNzM3MWUyMGNlYTk1NTAxZmNkYTlkZTFkMTZmMzY4MTAzOGM3NzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNiMWY4ZjBjYzdjYTA4NmVkYWJlMzA4NDUyZGYyZjU2MGMwYmEwZjg3NzAxZDBhYTFiZDhhYWE4YzM4ZTVlNjgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4c12f5f430f141f384189fb973e5e659",
+      "statement": "Grounding hands each item, once per session, the Record rows that raised its stimuli (author, room, id, time, photo content) and the Register index lines it might duplicate or contradict — index lines, never bodies, and no Standing body ever pushed — and the grounder RAISES when it cannot read, so the wake is recorded `failed` and its stimuli stay pending rather than running a session on bare counts.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cognition_grounding.py#L1-L46",
+          "version": "repo-lines-v1:sha256:420ec206a225942737faebf607a2b87649a6f8116daf813017f93d4e8c4af197:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkZTY0NGJhZmEzYTA4NDg4ZmRjZjNkYTVmNDNmZTEwMzFlOGMwZmVhOGVlZGZhMDk0YmY0ZTU4Y2Q2NmEwZGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/app/cognition_session.py#L864-L871",
+          "version": "repo-lines-v1:sha256:14e7d717a9c113991c97bb636b0d550f3716f621724fa47d4295c8ce0ce38f63:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTQ1MDFjYjNhMWEwNTJjYzc3MjBlOGU4ZDUzNDhhMGU0MjNkOGI3YjgyNDQ1OTg4NTc0ZjE0NWVhNDEwYWFiNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWFmMjZkMjNhNmVmMWQxOTNmYmY4MDhhZTcxYjEwMWI1NDRiMjgxZjY1ZmE0MjBkNWEyMmI5MTg4NWJjMDhmYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjQzYjdmMDIzMWMzZmVhY2JkZGMzYjU3NjA4NTZjMWQ2M2ViYTZlZGY0NGNlOGQ2ZjMxM2U4MWQ0MDQ2Y2NmOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzAwNmQ0MDIyNTNiMGY3MDYwZDNlNzZjYzk1ZmY5YWU3MjNjOTc0MmFjMzA2NTM1ZGU0OTMwZmJiZDg4NzI1MiJ9"
+        },
+        {
+          "resource": "repo://nora/domain/cognition_ground.py#L1-L27",
+          "version": "repo-lines-v1:sha256:1bca56a20f30bacc26a0993de952d62d861f1a07a88198af4cf337dc38ea9786:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5ODEwMTY2NmVmZjYxZDk4OTYzM2I5M2VkMDcwNTJjNGI2ODk1ZDg3NTRlODY0NzNjZTFjMzFlZWRmYjJiNWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ce511a845d9048f0beacfcf83b2a724a",
+      "statement": "Grounding's boundaries are applied inside the read: only rooms of the unit, the row joined to the stimulus's own room, platform-deleted rows absent rather than withheld, lineage enforced on every pushed note and event line per `[lineage] mode` (`shadow` reporting without removing), and names resolved at read time and never serialized into the append-only session row.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cognition_grounding.py#L12-L46",
+          "version": "repo-lines-v1:sha256:54b7529835451a50305c35bc46b0415f97430bc9b0873ea0267307aec10d9e2c:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI4OTFjZWExMTYwZjM5NDA1MGI0NmNkMjJmNjdhNDk4YTNhZDMzNmQwMWU3ZDMwMjBhMDM3YTk0YjJjYzdjMzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM5NzIxYmEwZGVkOTk5NTM2YzRlNzAzN2Q2N2Q2NWUxNjdiZjJkYTQ2NjBjOThhM2I0MGViMTEzNTcwMzE2ZjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/app/cognition_grounding.py#L436-L490",
+          "version": "repo-lines-v1:sha256:63af55172f9c9659e34cee8bbe2e393c23dc43187e0c1034ded5ac02ab92b4e2:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMyYjhiMjNjNTEyMjZjMmNiNTg2NzhhYTg2ZGQ2YzVmNDU0ODcwYThjMzc4YmJlM2M4MjQzMWRmNWVlNmE3ODUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFiNzcwMmIzMGJjZGFlZTU0NDA0ZWE4NmJkMjFlNGFkMzRkN2U2MzJmY2VkNmVmYWQ0Y2ZjYjMzMTA4ZjVkMWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY0MjdiMmVkZjAzMWFlNDEwZjUyZmM2MGM5NTkyZmYwZjkzMzA1MDg2YmY1MTlkZWRhODIzOTk2ZDBlNTY5NTQifQ"
+        },
+        {
+          "resource": "repo://nora/domain/cognition_ground.py#L285-L325",
+          "version": "repo-lines-v1:sha256:292a9ffa8321bb52088da6d2bb171c76d7a37a13ffbbdcc95c6f4c3c4be4af19:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM4ZjU2MzBlZGVkZmY2M2Y2MjM4OWExNzNjODI3NDBiOGY2ZjM3NDg2OGMzZjNlZDEwMTQ4NDIwZDJhNTUzMDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE3NWM0NmIzMmZmOGY0NDZkMjZkMjc1YTgyYmExZTNjZGQ4ZTY3NGYxNzA1ZDFhYzI5ODAyMjM1OTg4YjZiNTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNiMjM2N2JkMGRmMGE2MmRmYzNkMTIxOTkxYjI5OGZlNGU5YzNkMzI2NzUyZTY5ODU1OTQzYjZjZjRiMjQ4M2QifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_edd6b1ed8bc64df4ad7d02c6fbd9b86a",
+      "statement": "A Rollup stimulus a session cannot read is not an agenda item: a `malformed` ref (one that never parses) is consumed, while a `roster_miss` (a person the roster does not know yet) is retained as a `waits` carry row so it is never consumed unseen and becomes an item again in the first session after the roster knows them.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cognition_session.py#L803-L841",
+          "version": "repo-lines-v1:sha256:de2c97b664b62fe9dbaabe44e7ed0ecc4ddfdb2765b822d9666ce57ccb2f023e:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyNTE0N2EyNGQwOTFkMjgxM2Q5OGUyMDQzN2I1NDUxYTFlZTQwZjViZjQzM2FjYTlkMTI4YmI0ZTI3ZmJhNDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU3ZjIzNDI0N2I3OThhOTE3ZjI4MmM5YWU4NjU2MWYxMTAwYmJhYWNhYWQ5MzdjOWYyY2VmOGUwNzdlYzA3NzEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhkNjJkMjZmYjhkNTMzODk0MDgwNDJmMzdiNzViZTRiODk2YTgwMjdmNjIxNTZlNjA2MTBkMGZhOTZiNjFhMDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY1NjVlNzBiMTIzZWY5Y2FhYjY5OWNlMzA2ODdhZDQ4YWM4ZmU0YmUwNGI4ZmM0YTBmMTM3MGVlOGYwZTI2N2UifQ"
+        },
+        {
+          "resource": "repo://nora/domain/cognition_ground.py#L143-L157",
+          "version": "repo-lines-v1:sha256:b47d5c2fbdbb08d904d7ac2670ef1282608c324d60282c93c0e46069837906b8:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjOGFiNTIyZWEyMjdlZTg1MmEwMjMyNWNhZTY4ZDUxYjZkMjdhODU0NTY2Y2VkOWQwNDc0NzYxNzlmZDczZGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJmZmU3ODIxYzcxMGM0MmZkMDRjNjUwNDA2YTBhN2YwMThiM2I0YjFjNGNiNzU0MWVmYThlNGQwODRhZWMwODIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMwODI0OGE0Njk3ZWRiNzc2YzVlOTkwZTg5YjZhMTgzYzIyZWE0MTFlNjY3M2RjNDk3MzAwZGViZTBjNjQzMTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlhOGI5Y2MwZmJmZGU2Y2ZlMGRiNjFlMTBjOGFmYTkzNzg4NDkxZTY5ZWViZGRhMjJkNWZjOWUzODkxODNlMzYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_cb5db4c63bf541b2a697ccf991deb438",
+      "statement": "The session's read surface is an explicit allowlist: `COGNITION_READ_CATALOGUE` intersected with the registry's read-only set, less tools withheld by an off flag or by the registry itself, built through the same `RegistryToolSource` and `cognition_grant()` the tag path uses; `_guarded_read_tools` refuses any tool not on the passed `read_only_tools` and any tool whose name shadows a session verb.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cognition_session.py#L1285-L1305",
+          "version": "repo-lines-v1:sha256:1158eaf5e25e335f615cf83d128a139d6069c5af0ed5dde263ac84722a1a65b9:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVlM2U3MDk1YmU4MzY1YjcyN2MwNmI1YzFkOTczZWI5ODkyNWU2Yzg2NjI3NmNkMzBmMzRhYTA3MWI2MjczZGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBmMTM3NGE1ZjI1M2FmN2Y1NjQzZWEyNTk1YzE2ZTYzOGIxMmIyMzUyMTczNDM2ZDkwZWU1ZDA4ZjE0YmI3Y2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc2ZjcyMjEyM2MzZGYwM2ZlYjViNjEzZThmZjIwNDc4MDdlY2VjZmViZWU3NWMwN2Q3ODZkZWQxZGIzYmVlYWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkwMjY0NmRjNmVkMTkyYzZhZTdmNDUwMzgwYmNhZDVlODU0M2RiZjUxNTQzYzEzNjIxZDgzMDRmYzc2MDhlNDIifQ"
+        },
+        {
+          "resource": "repo://nora/app/cognition_wiring.py#L149-L168",
+          "version": "repo-lines-v1:sha256:64989e05df6161e1a265eace5882a299d744ef892938aafb93523b97a49e99f0:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0YzhlNTM0ZjIyNGU1MjkyYzhlODFmZDZiMDk1ODM5YWYwNjZjMDVjYTgyZmFkZWQ5YmVmNzQzM2M2M2JjZGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc5YjFlMGNmOGFlMmEzYjYxNTgzMDM1ZDI1YjA0MTRhYmE2NWY2YTBhZTU3Y2RlOTU3NjNjMzgxNWU4MmUwMWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVmYjNkZTBhYjExYjRkNGMxNTVmM2Q3ZWQ5Nzc2YWZmYTBlYWUxMTg2NzE1ZGM2OTYxMzRkNmM2YmIyMjVlOWQifQ"
+        },
+        {
+          "resource": "repo://nora/app/cognition_wiring.py#L57-L72",
+          "version": "repo-lines-v1:sha256:90f160273d9c00190d8106d62b4d10051b29bfed7f7c018db50f5581253a2828:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFkZDVhNTkwMzFhNTM3YmY0ODg3NDIyY2E1OWU0YWI1NTY3NDcwNTZmNjlkOTA5OWIyZTkyYTVjZDcwZGYzMzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg1ODBiNzY1MThkYWU5NzlmYWViZDAyMzY3YTI5MjkyYTUwZDk3NjA5MjI1MWEzOGE2Y2UzMDg4MGJhNDI4MjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRkOWEyNTdjYjNjM2I1ODZkNWY1ODdmOTJjOThmYjljODMyMGExMjRhMWQ1MTc3MGE4ZDFhZWJhMzVhNThhNjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhZDk1MjlmYjk5MGU2ODZkYWIxNGMxNzdhMGMxNWFiY2MwNDA0M2M5YzQ4NzRlNmFlMmIyYTQxOTRjY2JmNDgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_eb4ba5d59ca24b87be03d776c2064501",
+      "statement": "An agenda spanning several rooms gets ONE tool per read name that takes a `room` argument routed through that room's own binding, refusing a room value not on the agenda; the unit (not the room) remains the read boundary, so `record_query scope=\"all_rooms\"` and `search_memory_workspace` may still reach the unit's other rooms.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cognition_session.py#L1307-L1339",
+          "version": "repo-lines-v1:sha256:2747a7e0cd3b79318df89c8165836e008450756d17ea13059ebd77c540bf2ec0:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZmNmRhZmM1OTNjOGQzODg5OWU2NTdjNjQzNWUyYmQxZjk5MTZlMzViMWYzMTgxNTgxZDYwYTI1YmZmYjRlYTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJlOWJmMWVhYjc0NTczNjdkOWNjYjMwNjc1NTNiN2IzNWZiZWQyNjczZDE4NzQxYzg2ZjliMGY4ODBlNWUzMzEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI4ZmFmNmMxODYzMTZiYmM4YTgzMzgzYTYzMjIzNDUzN2YxYmY3ZjMzNGYyN2MzZmYxY2RmYjIyZWQyNGUwNzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIyNTFiNDg0MzBlNTU0MDk0ZjlmZWFhZGQ2ZDczMzFmZTc2N2E2YzNiNWVhYzY3Y2RjN2Y4OTZkOGUxYmQ5YzMifQ"
+        },
+        {
+          "resource": "repo://nora/app/cognition_wiring.py#L189-L226",
+          "version": "repo-lines-v1:sha256:f8a37468a9f047cd399563bc4e3a7fbd4904d37fc34b79501b98d27a8e8cc737:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1M2M4NjUzOWQ1MjIyMWVmNjFiMTJiOTc5ZmE2ZjE4MWVmNmQyNWIyZGFmMGM5MDE2NmI0YTViNDZjMGNlYWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxMzQxZDg0Y2RhYTJjMzY1NjFlM2ViZWY1ZTI0ZDU4MGE5MWNhZTkyYjBkNTU3OGFhN2Q3MTQ4Njk1NzNjODkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc3NGY3M2Y2MGQ3NzI5NmY3NmFiZDBlNWE2MTZjZGI1Y2M4ZTBjNjVhMmZiNTUwZmIwNmY0NzJlYjBmOTAzYjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM1MzEzYTgwYjQzOTExYjM4ZDI4YTZkMjEyNTliMTJiNzBjZmJiM2MxOWQzNWQ2NWZmZjIzM2IwMjUxMjQ3OTcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ba77bcabdb144c4284f00d2791faaa5a",
+      "statement": "What a session may write is exactly `SESSION_VERB_NAMES` — `close`, four `note_*`, three `memo_*`, three `event_*`, `standing_revise`, three `wake_*` and three reminder verbs — each declared with named typed parameters and a docstring, each running the validator the tag path runs, and each committing through the tier's live store stamped `established_by = cognition:<unit>` so provenance is never a model argument.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cognition_session.py#L1394-L1531",
+          "version": "repo-lines-v1:sha256:58c5fcb637b084f457cfeb23cd4b677028382c1a670c898ff340ac74b3344b0d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTM4LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIwNGU4ODgzZWM5MjA1NWRkZThjNWU0ZDQxZWFjN2MxNDAxMmU2M2ZmY2YyZWFmOGRhYjg4NjM3YmM2MmQ3OWU0IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIzYzUyMTljYjBiNjcxMjlhOWYyOTU1NjE1NzY1YmUyYmQ2ZmE4M2NlNGM2YjBjNmUwY2YxNTRiMDljZmQ1YTJlIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJkNGU1YmFlMTc5NzE4NGRkNzZlOTA4NGIzMTE0OGRmNDlkNDM3ZTQxMGRjNTVkZGZmMjY4M2M0NTMwZDliMWIwIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI0MWYzOWM5MzNjMmYxMzVhNDU3ZDZlZGZmNDhiMTFhNTIyZjM3ZTZhNmE2ZTNjMGZkYjg5NzhiMmQyMTk1NWQ4In0"
+        },
+        {
+          "resource": "repo://nora/app/cognition_session.py#L170-L184",
+          "version": "repo-lines-v1:sha256:f7fda33662d66e67b5f3911d7d039f999fd3295a0131361191060fab13b8b8e7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg2NTM5YjNlYzcxYzgzMmEyZDMyMGRlODIyZjllZjQ0M2RjMTU1YmI5MmU5YzNiYTAyODI4NDMxNGZjNWMyNTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg1ODBiNzY1MThkYWU5NzlmYWViZDAyMzY3YTI5MjkyYTUwZDk3NjA5MjI1MWEzOGE2Y2UzMDg4MGJhNDI4MjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdiODI4ZGRiZWJiZWUxN2MwNDhlZWEyYmNjYTgyOWI1NWRlMWMyMTg0MTg0ZTEyNmEyMjhjZTQwNmE3MjUyY2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFkNjg2NWE0NmYyMTQ0NzA5ZDFmMGY5NDZjMDUzMDZjOWM4MmQzZjU2ZTMxYmJjZmQ3OWMxMDliMzU3ZTk0ZTUifQ"
+        },
+        {
+          "resource": "repo://nora/app/cognition_session.py#L2218-L2265",
+          "version": "repo-lines-v1:sha256:3797ee7b4052fd11db4e0fba6d08958fec144181419a634fcf611832ebf75166:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU3MTNmYTQzYTBkODZkMzc3MmMwYjUwYmIyNmQ2ZTRjYWQxZjYyOTNmNDJiYTU5ZmQyYjIyYzc0YTQ2NzMzNzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkNjMwMmZiMjJjZmZiOGQ2NGNmMzczMTY0OWM3NDE3NDU2ODhjYmZhNTUxZGIxNzI4NTg0NmQ2NDkyNDM4ZGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZmYjRjNGFjNGI3YjMzMWRhMmFmZjVmYjFmOWQ3YzhiNTIyZGNiNDE1YWE5MTZlOTU2NjFjNmEzYTE3NmZlODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI0ZWE2ZmQ1ZWQwYmE3NmYzYWZjNmFiM2ZmMzg3NDg4Njg1OTczMjI1YzA5ODJjODI3ZDBiNDRlZDMyZDk5MmMifQ"
+        },
+        {
+          "resource": "repo://nora/app/cognition_session.py#L2526-L2534",
+          "version": "repo-lines-v1:sha256:207ac667d1983d89fb8ba1b1b6cc4943526fd3333332e71e06922c875f7eb8a6:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTFmZDAzYzBlZTY0NmVmZjMxNjQ3ZDIyMDlhMmRmMTQyOTlkZTZkZDRkMTVhMjRhMjM0OWUwMWIyNTI2MGQ3MyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYmViM2YyYWJlZWVjNzU5MzEzMjM5ZGRjOWRkZDUyNDVmYzE4Yzk2MzZhYWI3MjBhMDRmYzkyOTU0ZDBlYzA2ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZmEwOWIzOTgyMjQ4ZDE0OGI3ODc2ZGYzMDdmNjc4MjU2MzU4MjhhZjRlYzhjZjRhMjgyYzI4NDFkNDEwNmFkNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjc2OWIyMTg0YmM0MjU4Y2RkMzcxZDk2NTFiNmY2YWI5NDZhOWJlZWVjOTI4NjUzNzdiNTNiMzUzMTlkNjgyMSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_2b59d4ce9c214705a8a7f6b5a22051f3",
+      "statement": "Each write verb reuses its tier's existing validator and guards rather than a second implementation: `parse_note_body` and duplicate-title checks for notes, `parse_memo_body`/`title_carries_value`/`dream_screen.offence` for memos, the event tier's `FieldMeta` field modes and `check_citations` for events, `nora.infra.sql.standing_revise` with the read base revision for Standing, `cognition_pace` caps for `wake_*`, and `check_remind` with the tag tool's `ReminderCaps` for reminders.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cognition_session.py#L1508-L1531",
+          "version": "repo-lines-v1:sha256:6a3ea37bcbad9bb04b0247d66b6fafb4d988245952427c670a7ec28798c9b43c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk1NzgwNWMzZmU3YWM2MzA3NGY2OWNkYjI1YjlhY2Q3YTg2NzkyZGZlNTQwODE4YWM0Zjg3NjRiNDllN2QxNGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNjNTIxOWNiMGI2NzEyOWE5ZjI5NTU2MTU3NjViZTJiZDZmYTgzY2U0YzZiMGM2ZTBjZjE1NGIwOWNmZDVhMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjMGIwYzhhZDI5NDExMWNjNDIzNjk3YWQwYzMwYmVlZTc0NTFmODAwMGYxMzlmZmI0NzBhYmNkYzEwMDA5ODAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxZjM5YzkzM2MyZjEzNWE0NTdkNmVkZmY0OGIxMWE1MjJmMzdlNmE2YTZlM2MwZmRiODk3OGIyZDIxOTU1ZDgifQ"
+        },
+        {
+          "resource": "repo://nora/app/cognition_session.py#L1720-L1754",
+          "version": "repo-lines-v1:sha256:73a27439df417ca5589cd0a48fcaec1d05800147453e7ac23a4f15d25679f119:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYwOWM3MmEyOGNmMWIwOTZmZDI4NDQyYzlhNjhkZDI3ODMyYjdjZGE0NTdmNWQ1N2U0MTdmOTE2NTFjMTBhMWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0ZjVkNDk1MTc3YjJlYWJmMGZlNTQ1ZDE0NmU5MDgxZWVlYTBhMjIzOWU4NzQzYjRjYjg5OGRhZDlhZWI0MWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBlOWZiMTdhNWY1YzgzODdiNjE2YzI3MmQwNTMwZWYwNTgxYjU0YWY5MGVkNDBmYTFlMzcwYTE0ODUwY2Q3NTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJkNmY1NDlhNzJmMGE1MGE0ZTA5ZGRhMTE4NDBhZDg4MmJjYjMzODQ3NWIyNjcwZjQ3YWVjZmUzNGZmMGMxNjgifQ"
+        },
+        {
+          "resource": "repo://nora/app/cognition_session.py#L1951-L1971",
+          "version": "repo-lines-v1:sha256:0ab3df886fe4f2a9dfe50dea6a9d381894f6bb03b391328f8c2381cf7a1bee05:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVkNjA4OTliZDQzYTFmNWZiNjQ5Yzg2NmZiOTM2ODM2ZGYwMjRkNzc3MWNjYzM3NmJjYjJhMDA0Y2EwMWI0YWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcxYTI5MWE2ZDRhM2UyMmRjZTVjODQ1N2NlYjNlYzA5Nzk3NTg5NjllZjAyMTQ4ODJjZWUyMTI3YTE1NDcxZDYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY3NzMyM2JkYzA0ZDc4NmYwMjFmOWQ0MWM1MDdjMDFlZTEyN2I1Njc3OWFkMjliOWI5MGU4N2FlMDIxYmZlNDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ1YzNhYjNkMmI0YjBhMmJiOGEwZDczODUxOTJmNDgzNGU0MDNlMGE1YjhhZDdmZGQxM2I1MTk5NTdhZjQ3ZTEifQ"
+        },
+        {
+          "resource": "repo://nora/app/cognition_session.py#L2250-L2262",
+          "version": "repo-lines-v1:sha256:aa94ae41d6e4763ebd5f82453442b1b3c8ece89a193864c0f31856f472bfffe5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZhNmU3ZGY2NjA1NWRhN2Q0YTRkY2EwYjE2NWRhYTUwNTY3YWRmNDI5M2ZjZjJjMDljNWMzOGQ3OTFjZTQ2MTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxMDM0ODFjNTdkMGYwZGMwZjc2Y2QyY2M4YjM2MDRjNGU4Mjk2ZGE0MTIyYWRkMTllODE3NDVkYzdlMzMxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdlMDIwYmZlMjdiY2M1NzEzYWNiZjUzNWNmNDlhZjI0ZDA3YTFlMDlkMjkyMjQ5NTQ1YTFlMzBmZmU3NDg2MTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgzZDQzZThjZjM4NGEyNDY3YTIyYzdlOWUyYTMxNWM0ZDYwOTlmZWQzNzk1ZTk1OTUxMDkyYzVmZmVkMjFkNzcifQ"
+        },
+        {
+          "resource": "repo://nora/app/cognition_session.py#L2392-L2402",
+          "version": "repo-lines-v1:sha256:3e431ef8b21c5211743def784ce3982f04b19a568bfafe18a63561643b2548fe:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZhNmU3ZGY2NjA1NWRhN2Q0YTRkY2EwYjE2NWRhYTUwNTY3YWRmNDI5M2ZjZjJjMDljNWMzOGQ3OTFjZTQ2MTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVmN2RiNzZlZDRiYjNlOWQ3NTJkNTM2ZWJlY2JlMzIwYTI3NmFhZDE5OTUzM2Y4ZDVmYjZjODM1NDcwYmNkZDQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc5ZGZmNjVkYzg4NTYyMWNlZmUwMTM2OGQ1YjM5YzMwZmRmZWVjNjc2ZWRlNjNlODVhZTBmMTEzZTk2NTdhZDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU5ZDVjYjUyOTE0OWQzODExZTA1OGMwYzU2ZjBhYjdiNWRlNTc2OWQ0MThiYzI5ODRkNzkyMTU5MWRmYmY5MmMifQ"
+        },
+        {
+          "resource": "repo://nora/domain/cognition_pace.py#L1-L25",
+          "version": "repo-lines-v1:sha256:9c4c0e2dc998b1a2dc4e40bd82dcc8eb3384cf8090649138eaa25416421287a1:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyNmQ2MmVmMzMxZDY4ODE0YTdjNjc2YjQzZjM0NjFmYzE0YzYzMzVhMGViZWY2YjJjYzM0Y2I2YmI3MzExMDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5ca040dafe834820839bc3e31da0f9b0",
+      "statement": "A verb never raises to the model: any store or seam failure inside a verb is logged with its traceback and answered `unavailable` with text that names no exception, and every refusal or unavailability is counted once by `nora_cognition_refused_total{verb,rule}` so no verb and no early return escapes the count.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cognition_session.py#L722-L765",
+          "version": "repo-lines-v1:sha256:e394ec6498773ccf49634a07ece4946bb0171c18a0b3fa4d5881fecf12498dc3:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM3MDBjMTM5ZjBiZmE2ODZkMjg5OTMxZTI5N2M5YmNjNWIxOWZjNDRiOWJjNjhjMDE1MGZkZGNjZGJlMGVmYjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5ZjcxZTVkZTk4MDViZDE0MjY4OTI4MWNjOGEzYjIzZjM3NDdhZmVlNjJmNjRmNjk0OTVhNTVkNjYzMDZmOTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZmMTZhMGZmYjY5MmEyZGE3NDRmZjNjNDFkOTk4NTU5MDJmNWMzYjgwNzZhZmFiYzdlYmY1NzdhMjBjOWFjZDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJhODJkNjE3NmIyMzVkNzhkNTMwYzQ3ZDA4NzhmMWUwMTliOGQyZjI2YTI4NjhmZDNhMjBjNjZkMmU5MjFmYTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ed0e40c58781451f9b4cd01a02627c6a",
+      "statement": "A `close(written)` is measured against a write that actually landed in this session for that item (or an untagged write in a room holding the only item), never against the model's assertion; `close` is also the only verb that can end the loop early, and only when every item closed `no_change` or `covered` and no other verb was called.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cognition_session.py#L1422-L1447",
+          "version": "repo-lines-v1:sha256:ae6cb20e83bd4be1fec2eb436a371ce0bc33db392a7808b6be065c65a4a3747c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJlMjQzYWE3ZmMzNWYyM2RmODljZDFjZDM0OTY3MjE1NGMxNDIwNmY0ZWQ5ZmI0NjVlMzg0NTk4NTRmMGI5YTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0ZWNkZmFjZjE1YTI1NDhkYWI1ZmNjZjFjZjQxYjI2MTNmNjZkNzc2MTFjOTQwZjRmNTIwNzVlOTQwN2NmOGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNiNjBhNmYzODYwZTYwMzYxN2RhMTU3ZTFhMjhiYTI4MzZmZDcwNTI5NjA4YzE4YjkyMjdiNmI4Y2NkMTIxMDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY1NDBiYjMyOGNkNWZkYzRlNWEyNDY0MTYyMWU5ZWUwYWQ2M2VjMzE5NjE0Mjk0YmFkZTgzNDM0ZjQyMDZiYTcifQ"
+        },
+        {
+          "resource": "repo://nora/app/cognition_session.py#L417-L431",
+          "version": "repo-lines-v1:sha256:676c5c2636947aac971a11b4d4a438cf81699fc9f7fa36686ecf01a34a6a4852:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhNGQzMDQyODY2MWNkNjQ1NjU4YTczMzYxNzE3M2VjZTg3NTY1M2E3ZGQxZGY3MmFkMTY2MDFmNzg5N2UxOGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjliZGUwN2U1OGMwM2I0YWZiZTdmZTQ4OTRmZGU4Njg4YjQxYjdkNmZiMDkyZmY5YmJjOGYyMThmOGNkZWU2OTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgwZjRjNjIwNWFhZTEyYmJlMmIzZDUwZThjMGM5MDllMmVhYzEyODU5MmYwNTdmZTk3NTkyYjMxNWY3NzU3YzUifQ"
+        },
+        {
+          "resource": "repo://nora/app/cognition_session.py#L487-L496",
+          "version": "repo-lines-v1:sha256:a1a8e9fc01c9b63a05830222d445ac1028cf3561d78ae1bb739314ec83d048c1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMzNzk4ZDI5NjVjNmNkOWQ1NzdmMDQ3MWFlZTgzZWQ2YmEyOGVlM2MwYWJiY2VmMDc0NWQzZTQ5NjI3OWFhODEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMyOWNmYTQyMzdiZTg5ODRmYzk0ZTMxNmE5OGQyYzQ0MTkxM2IxYTNlN2Q4NzUxM2RjYTA1YzM2YzBmN2Q1MWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmYmQwMDkzMTRiYzI3MDg0MTY3MzRhMDJhZTVmZjM5YTFlNDhhMDUwYmU5MWY0M2IyZmFhOTIwMDJjNjJiZmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhhMDlmZTFmNzBhYzE2NDRjM2JlMGY4MjBkODVkNjBkMzhkZmQxYWI5ZGEyYzRkZmVkM2Y3Y2Y2ZGI1MWE0YmMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_64eb31d2bddb46a58ab3e5d061dea913",
+      "statement": "The session's only ceilings are rounds, total tokens, output tokens and a wall clock, taken from `[dreamer.budgets.cognition]` and converted by `cognition_budget`; there is no per-tool, memory or pass-wide call ceiling (DEC-247) and a config that sets one is refused rather than silently dropped.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cognition_session.py#L1146-L1190",
+          "version": "repo-lines-v1:sha256:23257c4b22a6a2fe352ca280c73eea77952630a4d02a79cbf76ac81b83f3950b:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA1NjIyZDhiMDBkODQ5YzQxYmUwMTFiZTc4MDcyNzIwNDlkMWVmMjU4MGQ2ZjMxOTYzOWZjMDBjOTE2YzNmMzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzZThhZjQzMTVmMWFjZjA1ZTM2MWFjMjBlMmJjMGM3NzI4YjhlOGZhZDZkNmY2M2ExODEyY2RmN2I2MGVkZGUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFjMjcxZjVlMzZmNzhkMjZlMGVmZjVhNWI0N2UyNTBiNTAzMTM0ZTYzNGU5N2U1MmQ4ZGNmZjU5OWZiOGQ5YmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM5MTg0ODFmYWMzMGMyMDZiYjdkNGRmMzlmZjZlNWExODEyZTNjNGUyZDMyMWM2YjE1MWE5NTcwMmJkNTYzZTUifQ"
+        },
+        {
+          "resource": "repo://nora/app/cognition_session.py#L258-L272",
+          "version": "repo-lines-v1:sha256:944b1b16d37648d806fe71973dac623331e76e3fa6cf024dd3c1b2501c6e7e6d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFmNjcwZWZlNzRlNjU0NTc2MWVhZjA1OTg0ZmIxYTk5Y2M0NWE3YmQ1OWRhNzdkMjUxNDAyYTMzNWJhMmJiYjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFiZGVkMmQxZTI1YTg3YjZjN2Y2YzNlNWFhYzkxODUxOTNiMWY3ZDQ2NThkNzJkOWY4YmJmYTRlN2ViOWU5MDAifQ"
+        },
+        {
+          "resource": "repo://nora/app/cognition_wiring.py#L171-L183",
+          "version": "repo-lines-v1:sha256:17ad75796f9919337a50ec890df11e2cf95f09752285f92acaaa540ba2f1273d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiOTg1ZWFmNTRlNDgwNzg0YjFkMTkzYzUyMjFmMzIzMzlmN2NlMzg3ZTBiYWFjZTcwNDcxMTEzZDJhNzJhNjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRlOGQ1OWE1OWYxMzE0MzUyNWVkMWMxMWI4ZDFlNzgxNTc1YzEwMDg2MGEwMzE1MWQ3YTQxZTM4NDk4ZGQ0MTkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1bf87a67736a4e899ef442c8c47b98fe",
+      "statement": "Strands returns normally when a loop is cut off at a bound, so the runner checks `stop_reason` against `LIMIT_STOP_REASONS` and raises `SessionLimitError`: the session is recorded `failed` with cause `infra`, gets no close, no strike and no carry, its stimuli stay pending and the failure backoff applies.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cognition_session.py#L1108-L1116",
+          "version": "repo-lines-v1:sha256:27e9691b989045b5a4f1eb210f1d90a855fec796945f8ca5bbf0d838f0d75f02:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjJiNTY0ZWFmZTllYjUyYjdlMjNmNGFiZTQ2YzcxNjk5OWIyY2YwNjMyMDRmYmFmNWQyYmEwZDdjMzBkMTA1ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTUwNjgyN2IyZDQyNDRiNTkwNmRlNjRlNzI3MzNiODY3YTlkZWQyOWJmOTY3MDA4YTYzNjYwOWY5NmQwMWM2ZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTViN2RjNWJjMmU1ZjYwMzhiMzZkYzQ1MTdiNDM2NGEzMDUyMjI0NTE2Zjc0YzA1MGUwMzMzMGM2YjM5MmM4OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTk0ZDU3YzE1MzNlYWE3MzY0ZmE5MzdjZjI5NmVmNmMxMWMxYmRlMzgxZGZlYTcyYTk0MTAxYWE2OGM3M2YxZiJ9"
+        },
+        {
+          "resource": "repo://nora/domain/stimuli.py#L259-L300",
+          "version": "repo-lines-v1:sha256:6c674e2509001a1688d46b977380c337c3995dbc3ef2eb089d6b400ab7d4679f:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhjZTM2ZGVjYzg1NmRmZDU5NjYxNjQ3ODgwMzMwMTg3YmFkZmE5MmFhYTA4M2Y5ZDEzYTkxY2U2ZmUyZTFiOTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1YWI5ZTZlMjhkMjIwYjllMTQzNTMzZmRkNWM2ZTkyOWU5NTA3ZDAxNmVmZGVjYmE0MzlkN2MyYmU3ZjIwM2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFjN2I1ZDIxYjEyN2UwNDJiZTFlNzAwNmZkYzUxOGFhZmIzZmU5Yjg3MzI4NDU1YTk4Yjk2M2RlYjYyMWRiYWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVmMTk4M2IxOWNjZmQyODQ5MzI2MTEwNWI5N2U3MDVhZTFhNjczZjM5NDNlNzg4YmY3Yzg0YjExM2M0MDBmMjgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3a31d4211b914e7997d6ba539445f8b0",
+      "statement": "The session's wall clock is enforced by cancelling the model loop (`SessionTimeoutError`, recorded `timeout`), and the constructor refuses a budget whose timeout does not end at least `SESSION_TIMEOUT_MARGIN_SECONDS` (60 s) before `[cognition] session_timeout_seconds`, because a session outliving its wake would try to close into a range a later wake may hold; a unit with no home room is likewise refused at construction.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cognition_session.py#L1043-L1092",
+          "version": "repo-lines-v1:sha256:278438ee5eb857f0436cd377e279e5f4c1e7aea6fb398a90c928c7189f7e4297:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxNWNlMzhhNGU4ZWRhN2EzNTI5NzQ3NjVhNGI5YzFmZDIxZTBiYTMxZTViYjYxN2I5MTJiM2UyMDU5NDM2ODgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiMjgwMTBlODAwMjcwMzVlZWJmODc1YmNhOTNmYmQwMjdkOTEwOGQzMTlmZTA0YjJhMTQ3MDY2ZDlkNDJlZjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVmMWY2ZDQzMmE5MTEwMDZmYWZlNzRjMTcwY2YxYmRkOTU3ZGQ5MmMyM2E1YmFkNDNhODI0NDJhMzNkNzhlMTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImViZjQ0MWE2YWI1ODUwN2MxMWY0Y2Q0NmQwYjQ4Nzc3ZDBhYWJhNzlkNzEyY2EwYWE2Y2U1M2Y4NTg2MDY2MmUifQ"
+        },
+        {
+          "resource": "repo://nora/app/cognition_session.py#L227-L251",
+          "version": "repo-lines-v1:sha256:29b4e5a5d31f7e055ad0f6cd28bc1f706d9a801e376a09a374088e87e0ee1731:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhkYTQ2ZDNhZjhkZjE4NTYyYTEyNzk2YTQyMWZmNzViNDhlNWJmMDQyZGMzNjBjNDgzOGYyNmJhNjk5ZDc4YjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkY2EzYmEwMDNmMjFiZDk5NzFiYzgzNTI3NzU5MTkzOTUzMzg1OTY0ZTk0MmI1ODA2MGQ4YTZiZjNlYTcwNTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBhYTVkZWViNzU4ZGFjMjA5ZDJlMGM1ZGE5NTE0ZmI1MzIyYTJlNjAyYmU1Njk3ZGE4NzY4MDE5MTg3YmEyMjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiMzM1MTAzYWM0ODViMzQ5NmE5NzliYWFlYzMwYmJmYzYxMDI0ODI0MTI5MzVjOTcwZDg4Y2QxOGYzMzk4NmYifQ"
+        },
+        {
+          "resource": "repo://nora/app/cognition_session.py#L655-L656",
+          "version": "repo-lines-v1:sha256:add3c1f7fd72375fa67d571c76522a077dcb85303eef0d258f771dea77465cef:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjc2MmEyZWViYmY2NmExN2VkM2RkODdkN2UzOGUzMjY1YTlmMTBkYmE4YzRkYzMzNjA3MjFkYmNhZWFiZDVmNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzIxZjFiYTRkNDg4NTc0ZTYzNTExODhlZGE2MWViZjk1OGQ0ZGE1ZDgxMzE5N2FjYjQ3MjlmOWYyNGVlZWVlMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzM3YzU3MTMwZGMyNjkzZTVlY2Q1MDVlNTYxY2I0YWJjYWM5ODViNDQzYzdmMGQwZjc2NGYzY2EwN2EzYWNiYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjNiZGFkOTI3OTk3Y2NlOTVjNmU4ODg5YjAwNDAzMjRhZTBkZjg2NTQwMzBlOWJkMTQ0NjQ5ZDk2MzNmZThmNyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_df2d64f3a8c343a5980d16b3e8d8462d",
+      "statement": "An agenda with no items is no session: `on_wake` records the wake `closed` with an \"empty agenda\" detail and returns before building any tool or touching the agent runner, and since the single model call site in the runner is the one `await self._agent_runner.run(...)` inside `_run_session`, an empty agenda makes zero model calls by control flow rather than by a flag.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cognition_session.py#L1128-L1130",
+          "version": "repo-lines-v1:sha256:b321219998e502b548d25edfaf8491bc3e6b9e7af47ec7919ebafde7bfd7653a:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzdkM2IzMTIxMzMzNDA2MmVhYzE1ZGQ1MGM5N2ZkYWNmNzEwYWNjZjUxNTNmMmQ3OTRiOWFjYjI3NmY3NzQwOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTkwOWE1M2E2MThkMDI4ZTFkMzAwMGMwYTdhYmNlZWNiZTVmYjM3ZjRlNTExZWZlNDY2NDNmYWQ2ZTY2ODcyZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYmU1Mzc3ZWM0MDQwOWUxMjFjMmM1NGIyZGE0Nzk2ZTI5MDk0NTUyYjA3YTUzMGY4ZDU2ZTVjOGQwMDdiZmY1NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDIyODlmZTc0YTQwMzM1ODRmYmM3OTIyM2NlMjI0OGFkMWU1YTdhMjJlNmQxY2M0YjUyOTdjY2M2M2Y1MGUwNiJ9"
+        },
+        {
+          "resource": "repo://nora/app/cognition_session.py#L47-L53",
+          "version": "repo-lines-v1:sha256:704321cef26426bbca123b176408d5741081f6f9f86b4fc8c758e011f9d5b7bd:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDZlYThkNGJiY2MzYjQ3MTMwZmMyMDU2YmZjNjE1NzA3ZGQzZTBjM2M1YzkxNWM4NjViYTJkZDIzZDMxZDUyMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTMwM2VjZGQ0YTRkMTBmMTljNzNmZDQyZmQxMjQzN2ZkMzM1NGE4MjY4MTYwNWRhNTI1NWE5N2EzOTA2OGRiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWE3MDYzMzgyMDU4Y2FjMzUwODBjZmJhYTZhYzcxNDljMzdjZTI5ZDUyMmU1M2EzYTBiY2UzZDE3ZTBlZTY1MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTViNmU4NzA2YjQzMDQ3ZjJhNmRiNjdmMTMyNjM4NTk1NjA0ZTY3ZjM2OTY2ODc2Y2UwMTU4ZjAwNTNlNmJkMSJ9"
+        },
+        {
+          "resource": "repo://nora/app/cognition_session.py#L842-L855",
+          "version": "repo-lines-v1:sha256:03aa58fb47a65d54ada0af48873879d58e9ab38a56a5d21424a7524755ddb586:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMzYThkZGRkYmQ0MTI2YTg2OWMxN2M4ODJjOTg5OTI1MWE1MTg3ZWY2NjA1MmJmMDZiZGFlNjI4MGRhMWZiMjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhhNTczODMyZDE1M2RlNGFiNjc3ZGMxNjcwYTJmYTNiZGFmY2I0ZGVkOTZhMmFkM2U3MjkzZjg3MzQ0MTI1NTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk3ZDY0NzRlYWQxNTJiNWFkMDI2Yzc0YjZiNmViZGQ2NTNmOGU4MDJlMzViZjljNWRhYjRiMjMyN2I2NDlmODIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI2YzE4OWE2ODdhZDVjNTVlZThiMjZkYzI5ZjNjYWIxYmNiNGE5NDcxNzFkM2VlYTVkNmZiMGJjZDNhMGJiZGUifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_cognition_session_runner.py#L130-L138",
+          "version": "repo-lines-v1:sha256:0bc8f401afbd5fd17ca3b1e8e54b78e119985cc27a69b3195e34cea77c0112b7:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjg3ZDAzOGNiODFhN2UyOTY5MGU2MzU2ODY5ZWJmMTQ0ZTk1NDMwY2FmYWNkYmE0ZGZlNGIwM2M2ZmU2YzlkNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDMyYzg3ZGJkMjE0OGUzZGYzZmJkMmQ0YTQwMjEyN2EzYzhkMjRiZWU5ODU1M2Y2NDMyNjJhMThjMTQwZGUwYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNmEzY2Y1MTkyMzU0ZjcxNjE1YWM1MTAzNGIzZTk3YzIwZWRhOTk2NDNmY2FmNWJiZTZkNDFhZDU5YmQxMjE2NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTlkZGNlODBkMTgwNDExODQ5N2JmMDdjNTc5ODQ3NzllMTZmOTY3NDJhNmZkYWQxODk3NTEzNDQ5ZWNlOTJkNSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_59f940521141460096625d2c8b0a87d4",
+      "statement": "When the loop returns, `_settle` closes every item the model left open as `waiting` with a strike (code's own close, counted `unclosed`) and `close_or_strike` escalates to `struck` at `max_strikes`; the stimuli of waiting or struck items and the ones deferred past `max_items` are RETURNED as carry rows that land in the same transaction as the wake's `closed` outcome, so a session is either closed with its carries or not closed at all.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cognition_session.py#L1118-L1136",
+          "version": "repo-lines-v1:sha256:8aa5cb83975045b55f897ce0f7044e5e10f53b1c1e531237a2bebdfe2ca2230e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhNjdjMzM1OGE2NTc3NGRjMzQ5Y2YxZGQyODAxZjI2NjVkOGYyMjEyODJjZjI4YzY5MGFlYmFlOGFlNjk4NjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAxODZmMzllYWEyMTJjYmIyNDAxM2FiYzBkYTFiOTc4NThhY2VhMjE4ZTY0ODRkYzM2NzkyZmY3ZWM2NThjZWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg5OWU0ZjI2MTQ3ZTliN2E3MWNjNzAyZGUwYTExNzYyYzkxYThhODU2ODVlNmNlYmJhMDZmYTgzNGEzNjdkYTIifQ"
+        },
+        {
+          "resource": "repo://nora/app/cognition_session.py#L1189-L1233",
+          "version": "repo-lines-v1:sha256:0fa09f97e759a3aad231a205e48c85f0d7e3cfa3d34d169ded5a96069352f6b1:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA1NzBmY2I4YzZjZDAyZTc4YjE3Y2ZjNjE1ZTBlMTlmYWQzOTk2YjI4YjJkMGRkNzg1NThmMTVmZmJlM2NkYTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZiNmIxY2VjN2Q0YzBhYjU1ZDUyZDhhMGE4ZmNlMmE2NjdhY2M1MjVkYmE2OGE3MGNiMWE0NjBiNjYwMDQ2ZmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjllMmE3YzZkNzQxYWQzYzc5YWZmZWE4OTVlMDIyMTc0NDA5ZTBlMDIxOTFkNTYwOTJhOGVmZDNlOGFlYmFkZjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg3ODlhYWNiMzQwMWI1M2U2YWYxMjMzMmVlNTgyNTVmMGFiM2NmZjk5ZjQwZGZhNWViNjc1NWUwZmJmNTlmZGMifQ"
+        },
+        {
+          "resource": "repo://nora/domain/cognition_session.py#L302-L329",
+          "version": "repo-lines-v1:sha256:cf53b32c1ddc3d59c33df5ad5746420c1911e418146fcfbfb38342a718d7a6ed:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIzMDk4ZTAwMmU0NjJhZWVhYTEyMTg1ZDc2YzQwYmQyNzYxZTVlMTAxYzdkZDlkY2I4YjM3ZTBmZGQ0NjZjZjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAyMDliNzY1ZTZkMTk0MmZjNTFlMDcxOWIxY2U5ZjEyMmI3MDZkZGVkMzUzZDA0YzBkZGFiOGExYWI0N2RkMWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_643ec581b1f943cdae277021f4cb498f",
+      "statement": "A strike belongs to an ITEM, not a stimulus: the strike is part of the agenda grouping key, so a returning item keeps its own count while a fresh stimulus of the same room never inherits a strike it did not earn.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cognition_session.py#L1199-L1201",
+          "version": "repo-lines-v1:sha256:ad8d01ce169f111588f41cee23862ce39767bf855ebf910ab7ef8548e30b1660:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYmU0YWEwMjc0ZDc5MGNiMDdlOTg5YmM5MmFmOGM0YTAzYzk0NjQ0NzY4ZGM1NmYxOGQxNDRiNTE3NjIwMjRhYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGQyYzI5NTUxMzcwZWYzZTQ2YmNlNjUwMGIzZjA3NTVhM2QyYWJlMDM2NjMxNDFkZDBmZWQ4MjU2YTZlOWIwMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDI1OGJkMmVhY2M5MmU5YmJjNzhkNzRhYTlmZDY1MzM3MGFkNjJiYWM5ZTY0YTQ4NTQwMmZkOWM5OGMzZTZhOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWRhNjU1MzgzOTNmOTQ2YTk1MGM2OTg1NGE4ZWJmNzczN2U2NGY3NTYyM2Q0ZWJhODU2MDY3Y2ZlNjE4MTk4NCJ9"
+        },
+        {
+          "resource": "repo://nora/domain/cognition_session.py#L226-L257",
+          "version": "repo-lines-v1:sha256:c8b498c49dcc0766a020f92c888b46391a2143fab661f1494e4407026cd15907:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlMGQxNWYxNTUyZmIwNzM0MGM3NmFiMzZhMWY0ZWQyM2Q3NzU4ODkyMDEwYmVlYWU2M2FjNjkzMTgyMGUzNGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg4YjhkNGVlY2FmNGQ2NzA3NWRlZDRiMzZhNjA1ZDhiZTU4OTBjNWVlZjQ3M2MzNGMxOWI1NWQxNmMyM2UyYmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQyM2U0OGY1ODdmMTY2ZmQ2NWM0MjY3MjU1YTI4OGJjODRkNTQyMDU3OTllYzBjMDViMmJlOGVmMGY3NWI0ZDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRmZWJjZDJjYjk4YzE5ZTQzZDdhNzc1YmVmNzRhNTlmMjg2ZjA5OTM2YThjOWJhMzkzODZjZTc2YjA4YzFiYzkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b01b27749ef14761a8e0d8763e48da14",
+      "statement": "Failure cause is classified in one place: `agenda` only for an `AgendaError`, `infra` for everything else including anything unclassified (fail closed on the side that keeps the message), and only `prove_overflow_is_the_agenda` may turn a context overflow into an `AgendaError` — it must carry no transport evidence, have a prompt at least `overflow_window_fraction` of a KNOWN window, and repeat on the same agenda. Only agenda failures feed the strike.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cognition_session.py#L1146-L1187",
+          "version": "repo-lines-v1:sha256:aaf2ce80297bdbecef2d506ec140e6520363971d9376c447c32d67f310601727:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA1NjIyZDhiMDBkODQ5YzQxYmUwMTFiZTc4MDcyNzIwNDlkMWVmMjU4MGQ2ZjMxOTYzOWZjMDBjOTE2YzNmMzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIyOWM1MjQ0MzRjMDA5YWFmMGQ3ZmU5ZTJmZmU3MjJiMTcwY2Y4ZWIxYzhjMTU3NWU0ZTNiZDUxZTkyNmM3MWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFjMjcxZjVlMzZmNzhkMjZlMGVmZjVhNWI0N2UyNTBiNTAzMTM0ZTYzNGU5N2U1MmQ4ZGNmZjU5OWZiOGQ5YmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBmODdjNTBmZmFlZGI3YjllMDJmNTJkYmU1NDdhOGE0OTc2MTlkM2UzMGM1MTI0NGEwOTI1OWY4NjdjMTc2YzkifQ"
+        },
+        {
+          "resource": "repo://nora/domain/stimuli.py#L214-L230",
+          "version": "repo-lines-v1:sha256:65d2de9285bc06cf80c0c104e9238c379cec67dc5b963ca1bd7d56545a0b2dea:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI4ZWRmMWE3YTkyNmYxMmIyYTgxZGIyYmMzZjQ4M2NmOGZiMjBiNTg5ZjdjNDc2Njg1NTFjOGQ4Mzg1NWU3NmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZjZTFiMTY2MzdhNTlhYTY3YmM5ZjkxNmE1OTE1NWMwNmM0NmFkOGFmMTQwOWU0NGIyMGQ2NTJhMDYxYjlmY2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJmYTdkZDQ0NWRhZjFhZDRiZTYyYzZiYzRkNWU3NTRmYjgzMGI1Mjk2OTBhNGVjYjI1OTgxOWM0MDkxYmIwZDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMxOWY4ZjczYTgyNzFhNjA0MWU2NjQzMTNkZGI0MDY3NjExNDY0Zjg3NGNmZDRkM2E1NDE4NjQzODIyMjgwMjYifQ"
+        },
+        {
+          "resource": "repo://nora/domain/stimuli.py#L289-L300",
+          "version": "repo-lines-v1:sha256:cb4000f16483ef90c41e2a1e3c211c45b5cff2ddd2ec211d5866dc32c13ba485:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMzMjI3NDk5ZDY4ZmVhMjgyMjI2YzIyNDE1Y2I2ZmE1NzgxMWE4NTUxNjU4M2RjMWE1Yzc5MWJiZjAzMjQ0YzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1YWI5ZTZlMjhkMjIwYjllMTQzNTMzZmRkNWM2ZTkyOWU5NTA3ZDAxNmVmZGVjYmE0MzlkN2MyYmU3ZjIwM2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEyODEwMTgxNTRhMDY1Zjc5NmNjZTMyNDViYTg4NTgwZWJlZDJjNzMyYjcxZTc0Njc1MmYwMGZjMjgzYWI0MTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVmMTk4M2IxOWNjZmQyODQ5MzI2MTEwNWI5N2U3MDVhZTFhNjczZjM5NDNlNzg4YmY3Yzg0YjExM2M0MDBmMjgifQ"
+        },
+        {
+          "resource": "repo://nora/domain/stimuli.py#L389-L407",
+          "version": "repo-lines-v1:sha256:e7002b6737a836f5fb80bf58dad511a8c04d356f8ac348bcc9fccd8447377526:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5OGZiMmQ3YzZiZmQzMzgwNGIxN2I0ZmJjNDM0MjJkMDAwMDZiODNiZmE4MWZmNzZmYzM4MzljMzU1MjdmZmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEzYjZkYTZjZDUzNTEwMjJhNjhlOTY5MjRmMWZlZGZiOGI2M2RlZDU5NTc2NDI2ZTk4OWEwZjQzYWQyNzcwZGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNmNGYwMmNjNWE4YWRkNjhkYTE4MWI4Yjc5MDk4NjFhN2Y1ZjJiZGU0NzhjN2RjZWRmMjVlNGIxYTQ4ZmQzNjkifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_cognition_failure_cause.py#L1-L14",
+          "version": "repo-lines-v1:sha256:accce8f303cf4544ecbfa3e62bec6e97bf52d131a42a1b50a7fced80144b07e2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMzZjk3NmNmMGE2ZjVkZDVmNzBiNTY1NWQ2NDRhNzY2NDQwMjM3ZTNkNWRmODRmY2UwZjJjYjhlYTE2NTY2N2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3524eefb99a7423c8bac3337cd962517",
+      "statement": "Every path out of `on_wake` writes exactly one outcome keyed by the wake — a session that failed, timed out or was cancelled RAISES after recording rather than returning a normal result — and a cancelled exit is shielded from a second cancel so a shutdown (or the evaluator's `cancel_in_flight`) cannot interrupt the write.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cognition_session.py#L773-L781",
+          "version": "repo-lines-v1:sha256:1bad73ce68875a875cbd350317f53cc21194b6a8008570819532a7e7286e4c7b:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNmNhNDg0ZmRhYzJiNmNiN2U4ZTlhZTA0OGJlY2YyYjAwYWVlMmM4ODhiMDM3ZmU0N2FmNjY0NzI2ZTNlNTA2MiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODQ0OTVjOWQwNzNjZDdiMzJjNWRkNzk0M2RmNjBkYjhkZjUyZjM4OTVjNzVlNjBlZDNlODU1YWEzYzk0ODM5MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGNlNzMyMWQ0NjFiYTE1NTVlYjk1ZWQ5MjczZjg0MDE1Yzg3MGFkYzVmNzdmZTcwNDk0MmQ4YTUwYjJhYTM3OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWRkZGRiN2ZhOTllMmExMDQ2OTM0MDNkOWU2OTVkMGExYmJjODI2MGY2OWFkYzJhMjcxYjQzMDJlZWY4NjM5NyJ9"
+        },
+        {
+          "resource": "repo://nora/app/cognition_session.py#L897-L920",
+          "version": "repo-lines-v1:sha256:2c1a5d2b98d237490829915a7145bc75a8bea4fb6dc0fddefffc966cad85e18f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY1ZmUxZTM5MmM1YmZmYTJjNjJhYWY4MzRiM2M0Yzk3YjBhZDVlZDM3ODBlMGY4YTYxMDYxOWFjMTg0NjVmNWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU1YTM2Mjc2NzUzOTdjMWQ4NWUzYjlmNjhjMjFlYmZjMmU1MmYyMjljMjk5Mjc5YjE3NzM4OWE0NTg4NjQ3ZTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhkMzNlMGViMjNhYWYzMDBiZTQ3NmZkYzcyZDdjYTIyZjIyODZiZDRmNGFiNGY5NjdjNDc4MjQ2NjUxZTIzYjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc2Y2U1OGIwZmI3MDg1YzQyMGI2YThhNzhmYTE4Y2NlMGVkMjMzNmQ1MTYyMWRlZjRiMjRhYmU1NGUyYjEwMmUifQ"
+        },
+        {
+          "resource": "repo://nora/app/cognition_session.py#L998-L1041",
+          "version": "repo-lines-v1:sha256:65959efbe1d861e8c6f786baea25cc2ce52236c0ba0fbd1ebbb73335811e3864:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFkODFmNmRjZDNjMGFhMGJlNDI4NWE5YmM3MjFiMzdiYjhiNGNhMDJhNzY2NjAwZTMyNzE4NzYwNzFkY2Y3ZDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYzMDRkNmVhNWNiYmU0OGUyZDY5NTBlYzdmMjk4NjRhOWI1ZGIwNTAzMGE0ZmNhNDk1ZmU0Y2Q1YTM4OGVmZmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE2MjQyN2YzOGY3NWM0NWE4OTJkODM1NGE4MmI2ZTNmOTE2NDM0MzdjOWU5OGQwZTI0ZTE2YmJhYTlhZDkwZDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ1ODUwNWFiNjc4ZmU5NjJjNzBlMjA5YWU1ZTc2OTkwN2U2NWQ0MmMxNjM0ZWFjMjVmMDIwZDI4MjlhYjMyM2UifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_496cf8ddc3ec4d3aaa0d7739336e5059",
+      "statement": "Shutdown is ordered: `CognitionShutdown` first gives running sessions `SESSION_SHUTDOWN_GRACE_SECONDS` to finish on their own, then cancels them, then lets the runner finish its outcome writes; the wake loop is already stopped by then so no new wake starts.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cognition_session.py#L986-L996",
+          "version": "repo-lines-v1:sha256:0d9709324ba35a58dc868db3380ad846e8f4195079bf1e130c805659e367dbc6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE2MTk1YTJhNzUyNGQ4ZTc4N2Y5M2U3ZjM4YTFkNjk0MGU3OGIzODAyZjQwYWE0OTM3NjM1YjNlYWVlOWQxYTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc5NDgxZjUyYTY4ZDRlZjFjZGU3MGEwNmI2NGNjZDlmZWNjOWY1YmUwZDNlMTMwZDAwYzRhNTQwYTQwNjRlN2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhmY2Y0YzY1MzVkNmM4ZGY3ODIyNDA5YzVmMDNjNmY1NTMxZWEyNmVlZGUxZjA0YmZhYmI0ZjMxYTk0ZjgyZGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg2ZWRiN2I4NzdhOGQzNTgwZjlhYmQ1MTUyZjQ5M2M4NTA2ZjExNzQzM2ZlOGZiODY3YzYzYzk5NGJjNGY1M2UifQ"
+        },
+        {
+          "resource": "repo://nora/app/cognition_wiring.py#L319-L358",
+          "version": "repo-lines-v1:sha256:55f683483381ae5253109284185ae0a0c1511a282465499309bd00ef50fa4ef8:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVmNzg3MjQ4NWU4YzdiYmU3M2UwOTc3Y2I4MzAxMjA1MDY4M2UyZjJiNzgwNTFlY2ExYzNkNTQwN2I4MzY2NzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUwYmY1MzliODMyODI5YWFmYWEzYjMyNjE1NThmYzNlMWE4MGUzMTk5OTVkZWI2YzlhN2RlYTUxMzk1NmFmMWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmMWQ1ZDEwMDJkYjI5YzdjMzZlNTZlMWVkODFmZjg1ZTZhYWJjMDFlYmY0NWFmZTY2NWFiMDQzNDE3NDI2YjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU2M2FhNGE3Njg4NDJmNmYzMWMzY2E0OGM2YmIzMDJmOWZiMjk0ODI1OTRkNWE5ZjIyZmMxZmFmN2Y5Mzk5NTMifQ"
+        },
+        {
+          "resource": "repo://nora/app/wake.py#L327-L348",
+          "version": "repo-lines-v1:sha256:5db1ebc1fa61c20411b77fd4d04cf3e2fd073f6f693c6830ab8f47a162b0a1c4:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4MTExMDZhNjI3N2ZkZTE1YTBkMTRhNzY0MDE3ZWNlOTMwOWU4ZTdlZjljZTRhNjY1MWMzNThmNDYyYTEyNGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI3ZTI2ZGU5NDRlYmEzZGIxM2JkODYyNGI4MTdmZmQyYzIxOTI0ZDFkM2Q2ZjgxYjkzMmQzMmFhOGE4NWNkMzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQxMTAyMGU4ZTU5MDNlYWNlMzdlNzM2MGFkZmI3NGMyZGE5YzhlMGFmYmNiNjg1ODhiOTE2NDM5NDMxZjU2YzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhkYTMzYmI0YTdhMTg0MjQ2ODA2NjM4Njc0OWFkYWUwNWJmM2ZkZGQ4NTRkMTA1Y2YxNmYwNGIzMjY4MWJmNTgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6866aa46b0a94d089f9c15e9c70b418f",
+      "statement": "An architecture test pins the wake evaluator's `nora` imports to exactly `{nora.domain.ports, nora.domain.stimuli}`, so the evaluator cannot reach the session, agent, fire path or any adapter; the only connection is the typed `WakeHook` slot handed to its constructor and awaited in a background task, which the composition root fills whenever `[cognition] enabled`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cognition_session.py#L716-L720",
+          "version": "repo-lines-v1:sha256:3f2adab520e18ef130b25d331cc694ae782bb41a3147cc7de1d95dffe605030b:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjNkMDBjZjI3MDk2NGQ0NGExM2RmYWM4NzUyYjA5ZmNjNDM1YjBmMTliMzE2YWJjZjgxYTdhYTY0YmIxMjJkNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmVkOWMwM2JiYzFjMmZhNzRmNmExYWU4YmIwZGVjOTdjNTE0OTk2NDMwNjg5MmM1YzE3MTJlYTEwMDNmZGM0ZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGYyNTBiNmY4YmVhZDc0YjkzMjUyMTdmOGZmY2Y0YmFlYjk2ZjM3MzU1MzgyZGFkMDcyOWYxNDBhMjUyZGU0MiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDYyZDFiMGJiZDJjN2Y0OTY4MmIyMmM3NzZkMDk4NDQ4YjI0NzM2MzFlMmRmZTRkYTk2NDdhMTUwN2ZlYzdiYSJ9"
+        },
+        {
+          "resource": "repo://nora/app/wake.py#L116-L144",
+          "version": "repo-lines-v1:sha256:c26eb03e418a91369512d4a223ce917ca7059ea24b9e1b26700326adf6c152a0:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNiOTQ3YmZlZDM4MzcxZTU1NDIzN2IxMjQwYmI3MGVhZTYxODUwYjA3YWE3MzI3N2VlZGFmOTg2YmQyNDhmYmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwZjkzNzgxMDNmOTVlYWExN2Y0Mjc5ZGZiMTRhNGEyZDI5NmY2M2Q2YjVmODU2ODQxMTgxYjI4YmQ3NmJjZDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA5Mzk1ZjJkNDBlYjQzODY4ZDI5OGNiN2U5Y2U5NGIyYjgzZmJlMTFkMzkxOTljODRkZjYzNjRhMTI4ZTU4ZTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc2MDk3YTVlNTZlYWM4NTBhYWEwOTUxNDc4NWVlZTQ4ODk3YTI2NjRiMjhiNGM4N2ViMDEzODMyNDIwYzFmOGIifQ"
+        },
+        {
+          "resource": "repo://tests/architecture/test_the_wake_evaluator_cannot_act.py#L1-L32",
+          "version": "repo-lines-v1:sha256:d0a8e52a9ab4ebf36638d2de4699443807c45b53694505f90ad4f00c2d39929e:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFlYjEzZTM0NzY0OTllOTQ3NDU1NmY5YjQ3ODA0ODRkYzk0YzVhM2RhMDZkMTYzZmZkODJjY2M2MTJmMjA3OGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2OGRlYjQxMDY5YzdiMmNjOGY0ZDBiYmRjMmM3MGZjZjczZjQ2NDIxODBlMmJiMmQ2NWFmMzVmZjMzNDlkOGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d7d6e67efbe84f899775a290630e5868",
+      "statement": "`tests/contract/test_stimulus_session_lifecycle_contract.py` binds both `StimulusStore` implementations (SQL over real Postgres and the in-memory double) to one rule set for the wake's fate: the watermark, the four outcomes, first-write-wins, the guarded wake write, superseded closes, carries riding only a `closed` outcome, retraction and the failure streak.",
+      "evidence": [
+        {
+          "resource": "repo://tests/contract/test_stimulus_session_lifecycle_contract.py#L1-L19",
+          "version": "repo-lines-v1:sha256:7b4ba1b779a613c1ba3f8dcd298a1b6b80a25302f9a332b1f46fbde972ff9490:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3MGMxNDc1ZDA1N2RhMTgwZTI1ZDEzNWNkMTA1NjIxM2M0ZjU5NjYwNDk5YTQ4YTAwZjY4NmQ5NTJlMDU3OGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://tests/contract/test_stimulus_session_lifecycle_contract.py#L148-L230",
+          "version": "repo-lines-v1:sha256:5a48abdd0c32e5c88bf02066c2f1a3413c1528fabd628c1e8b6f98e06ba737a8:eyJzZWxlY3RlZExpbmVDb3VudCI6ODMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgwNTNkNmY4N2JkNzM5M2YxMTQzYTk2MDFiOWE4ODc2YTk3MjFlYWZmMmIyMzk4YThlMWU2ZWI0ZmY0NmJiNjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIxMGZjOTYyYTgzOTRjNDhjMDc2ZGUyMzQ0ZmY1NmYxNmU4ZDVmOThhNzRmOTk3MWZiM2Y2YzM2ZWFhZjE5YjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMyZmQ5Y2JkYzY4MTM1YmNjZTAwNDBmZWYyMGJkZmJlOWRhNjFjZGM2OTdiZmYwNDU1YTk2ZWRkNWJjN2ExODgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFlMzYzMWFiZGZmM2U0ZDUwNjMxMTczZTY2NTM2MDg3M2FmNGJlZjJjYWQ4YjM2NThkYmMzNTEzZDk2MjRhOTYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1267b5b65ccf4ef6b1378d82bb4f51ac",
+      "statement": "`CognitionSessionRunner.probe` is the evaluation seam: it builds the same tools, holds the same instruction and calls the same agent runner as a wake's session over one hand-written agenda item, with no wake, no outcome, no carry and no fired self-wake.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cognition_session.py#L922-L954",
+          "version": "repo-lines-v1:sha256:360223f31ab478e9d998deb16bbf937789fa47db42217bbb7b21f0c6ed13c152:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIyNWZlMzM2MGM1ZWNjNWRjNDU1ZjA4MTAxNDE1NmRlZTY1OTUyYWE3ZmU1NjdmZjRiMDRmYjkxM2ZkNzY2NzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJkMGI2YjNlODcxZjZkODllYWI3ZjU2MDgxMTExNzI5YzU4MzhmMzFlZjIzNzMxMzYwZGE1NTdlYzE3NTBhODkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkzNjllODYwYTg2ZmI4OTIxYjY3MzhmMGNlNTgwYWI4NmU5ZTg0YTliMDkxY2EzOTMyZjM1ODE0YjM2NTlkNDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJkNmQ4ZWM2NmJlMWIzZmFjYTM0YzliZDY0ZGJhODhlYTVhZDA3ZTllZjFhMTc2YTU2Mzc5NDdlNzU2YTVlYzcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f12f4f0840d54144a61dec07a9b64a65",
+      "statement": "The loop's observable signals are named in one vocabulary: `nora_stimulus_total{kind,cue}`, `nora_stimulus_pending_age_seconds{unit}` (eligible stimuli only, 0 when none, absent until the first tick), `nora_cognition_wake_total{reason,mode}`, `nora_cognition_wake_deferred_total{brake}` with brakes `single_flight`/`cooldown`/`backoff`/`concurrency`, `nora_cognition_session_total`/`_ended_total{outcome}`/`_skipped_total{reason}`/`_limit_total{limit}`, `nora_cognition_item_total{kind,outcome}`, `nora_cognition_carry_total{state}`, `nora_cognition_stimuli_struck_total`, `nora_cognition_wake_reclaimed_total` and `nora_errors_total{stage}`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cognition_session.py#L1039-L1040",
+          "version": "repo-lines-v1:sha256:b9e47688216b7d14b6b548cf20bf5895d1d0c7f0c2b6658a1a9acc986ac2b4b0:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGZkMWNlY2FhOTIwYjgxNTI3ODIzNTcyMDAzZGJlNWI3YTViNGRkNjkyMmY0MDE4NzI0OWM1ZjU0N2FiZDZkMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWU5NmVjM2Y2OWE4OGFiZjBhOWY3MmMzODJhMTI4YzdmZDEwNGQ4NDAyMzRkM2Q1M2FkY2I2Y2M4MGU3NTcxYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzQ1ZmJlZWUwNmM4NjI1MjdmMmE0MzFkNzIzMWY4ZjcyNDBiNGViMzI1NDI1ZDM4OWU3MTQ0NjI5MDg5ZmFjNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGIwNzM3NjU5MjEzNjhlYjE4NWYyZDNiZjc0MDA1MjI2ZTFkOGI5YTQxMTk4NWMwZjZmOTcyNTA2MzY3NGNlZiJ9"
+        },
+        {
+          "resource": "repo://nora/app/cognition_session.py#L1103-L1116",
+          "version": "repo-lines-v1:sha256:d22afa425b48822efae869bedbfe5ae3065e955d10415f38b927f247e8bde08e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4ZmQ1ZGRhOWVjZTM3N2JmN2VlYmE5ODI1OTVkNjg1MDYyNWUzMmExYzU5MzdkZDYwODUyYjIwMzI4ODJhODciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk1MDY4MjdiMmQ0MjQ0YjU5MDZkZTY0ZTcyNzMzYjg2N2E5ZGVkMjliZjk2NzAwOGE2MzY2MDlmOTZkMDFjNmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZiNzUxYzM3Y2I4NzVkY2RjOGFjZmY2YTZmNzU0NjUyNDkyYjViMTU3ZTE0NGZmYzg1NDlkYTZkNWYwMDkyOTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU5NGQ1N2MxNTMzZWFhNzM2NGZhOTM3Y2YyOTZlZjZjMTFjMWJkZTM4MWRmZWE3MmE5NDEwMWFhNjhjNzNmMWYifQ"
+        },
+        {
+          "resource": "repo://nora/app/cognition_session.py#L1138-L1139",
+          "version": "repo-lines-v1:sha256:9c06f6de0b5bf08bd6970b13a349b318acd77a4b07d17d89f651732694920e68:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGMyYjBiNjgzNTgwMWM3NjZhMmQyYmRmNWNlZjRmM2RiOWZiYTY2YTAzMzk0ZGE0NmQyNmUyYWY0NTFmMGEwOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzJjNWYxMTA4MWJlMTMwNTI0NWYzNjI5N2M5NDU0ODkzMjUxMzIzZDI0YmQ2NmMzZTYwYzIwYzQ4NzU5NTc1MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjNjMGJjMjk1MTVkMTAxNzEyZjhiZDU1ODYyNDBiNmRmM2E1MjhmZmQzOGU0N2QyMzdlMzgzNDFlMDZkOWIyMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDVmYTdiNjhhOWMyNjJmNmM4Nzk2YTdkMGY4NzkyZDMyNGJkMDNlZGViMzJlOTJjNzExODc2YmM4MWQ3YjQzNiJ9"
+        },
+        {
+          "resource": "repo://nora/app/cognition_session.py#L1278-L1281",
+          "version": "repo-lines-v1:sha256:b46292d66f314892a4c3f4fdf8069d9de114315d3b290d366e4e7245566e8832:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmY3ZGFmYzQ0YzRlZTI0MTJlMWQ5M2YyMDRjNGQ0OGQyNDMxMmM1NDE1YzU3YWZlNjBjZjc5MWVjZDI2YTNhYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTkwOWE1M2E2MThkMDI4ZTFkMzAwMGMwYTdhYmNlZWNiZTVmYjM3ZjRlNTExZWZlNDY2NDNmYWQ2ZTY2ODcyZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMmVhYWI2MjY2YWJkNWI0Y2U3NzgzZmUwMTg3OTM3OTI1MDA0OTQ4ZWQ3MGFlYTYwYzYyZDBiMzJhNzU5ZDU1NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzZmNzIyMTIzYzNkZjAzZmViNWI2MTNlOGZmMjA0NzgwN2VjZWNmZWJlZTc1YzA3ZDc4NmRlZDFkYjNiZWVhYSJ9"
+        },
+        {
+          "resource": "repo://nora/app/cognition_session.py#L888-L890",
+          "version": "repo-lines-v1:sha256:de481fb893dfa26d943c0f9fc3d640691938b89422081baf2e0f22118e313ab0:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNWQ4OTY5ODk2YzMxMjg4YTIxZjE0YzgxOTk1YjhmZGU5OGMwZTk4MDllODViZTQyZWVmZjU1MDhmNDdjZjJkOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzU2NTAxMjZhZWYxMjM3NjM0MjM5ODRlYzUwZjc5Yzg5YTZiNzhkODI5MTgxNmZiOTVlMzAwNjhkMDI5YTljNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjZmMTkxOGZmOGEwMzg2MjRjOTkyZDg4YjUwZTIwY2FkMjM1Njk1Y2JkNWQ4N2M1M2IyMmJkODcyYjcxNmM1YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjUzYTFhYzc3MTkwZTQwYTZmMzEyMDRmNjA5ODIwN2VmZmYwOWQ1NTgxZjIxNWRhYzlhMTQxM2M0MTQ3NGQyYyJ9"
+        },
+        {
+          "resource": "repo://nora/app/wake.py#L205-L206",
+          "version": "repo-lines-v1:sha256:8bce7ee14d466501a0acc0d55fc5b54a97e05da32479876b91567b01526f07d4:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmUzNWU4NDlhZTY0NTY2Mzc0MjVlZGQ1NzlhMzQwMjQwMzZlM2Q2N2M0OTJlOTY1Y2NiNjkzNmY2MDAzZmI1OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzY2MmI3Nzg2MmJmOThmNzFmMjdlZWIzODg1MmNjNTAwODUwMGUyNjZmNGZhODlmNzk4ZTExZmY0YjhmZTUxMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTNhMzMyNzBlNWQzZWY5ZWQ4MWRkY2RjODE5OThmNmMxNDNlMTc1ODk3ZjM0ZTE1NTI1ZWI0ODc4MDY0YWQ5YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzAxM2JlODJjMTg4ZmY2MDY0MmU3YmEyNTIxM2ExODcwMGQyMjUxMGFiMjZmNTg0NmQ2Yzc5NDE4YjI4MWNjZiJ9"
+        },
+        {
+          "resource": "repo://nora/app/wake.py#L318-L318",
+          "version": "repo-lines-v1:sha256:b6803ef20fe0445b46111e814a079530f68bbb3bbc57c5e6ca3e449874aa5b37:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjY4MDNlZjIwZmUwNDQ1YjQ2MTExZTgxNGEwNzk1MzBmNjhiYmIzYmJjNTdjNWU2Y2EzZTQ0OTg3NGFhNWIzNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjY4MDNlZjIwZmUwNDQ1YjQ2MTExZTgxNGEwNzk1MzBmNjhiYmIzYmJjNTdjNWU2Y2EzZTQ0OTg3NGFhNWIzNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYmFmNjQyMzI2OTFmZWEwM2E3Y2M4MGNlNjI2Njg5OTdjOTg1YWIyZGEwMjJkNmNhN2JhNzVhMWYxZjNmOTFlNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjcxNzZmMDRkMDBiOTcyNTA1MmJhNzgxZWFkYThiNzdmZjg5YjFmODRjMjY3YWQ3NWMwOTU4MzU4MDRkNGY3NCJ9"
+        },
+        {
+          "resource": "repo://nora/app/wake.py#L413-L414",
+          "version": "repo-lines-v1:sha256:29d233682c96732a4a0a3913a4c3e615dd6e924492ac7a8918423c51b5fb7f15:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTk4ZWNlYmFjMDgwNGY2MzgwZGYwNzNlY2FjOTdhN2VjMjNiZDNiYTZjYmVhMzliMDMwYmZkM2ZiNjNkNzgxYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTM1M2ZkZGYwY2I5MzA4YWJmYjM3YWVjZjQ3YzQwZGUwMjIxNTBmNjYyNzBkZWM3NDEwNDY2NDUwMmNlY2M0ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDYwNmQ5YTgzZTYyYzVmNjQ3YmZmMjYxYThhNzkxM2FlZTY4Y2RhZDhlZWZlYzdlMWYzMGFhZDc5NmY4YjI4NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTRkNWVhMDUyYTIyZmQ3YWUyZjc5ZmNlZDQ5YTEzMTUyNmU1OGI4NTk4MzkxZTYzYzZjOTllMzI3MjY4NTY4ZiJ9"
+        },
+        {
+          "resource": "repo://nora/app/wake.py#L466-L483",
+          "version": "repo-lines-v1:sha256:28fe17ab99926f1dd9077c207895c4ae5306b00d182790d72bd8d87f11777998:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI3OTBjOGVjNmE3N2UzNTc4NDc5NDA3Y2UxMGE5OGEzNjM4ZjZiMzViNzE5MjA2NTY1MzViMjgwMjIyNzJhZTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJiODFhMmIyNzI2ZTI5OTI1MTU3YjZmMTBjNGM3YzQzMjdkMzA1MzIzNjI1YWNiZTk5MjJmMjE5MTMzYjVlYTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZhMjIzODJjZGNiMTY1NjQ3NjU3ZWM3ZTMyNjQxNTliNmEzNjI1YzA2ZWZjMjIzMjMzYzkyNDY2YjkwZWYwODMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIzMTRhNzU1YWNmN2IzNzNlYTM4NTc1NTIyNTdjN2E1ZGNiYmYzZWEzYTM3YjA0OTRhYmIxMzVjY2EzNDA1MDcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_915a43b2cb204636a550fe66771c813f",
+      "statement": "`StimulusStore.view` answers the pending predicate as three disjoint range reads — `id > through_id` on `idx_stimulus_unit_id`, `id <= through_id AND due_ms > through_ms` on `idx_stimulus_unit_due`, and `id <= through_id AND due_ms IS NULL AND recorded_at > through_ms` on `idx_stimulus_unit_undated_recorded` — each under the due cutoff `coalesce(due_ms, recorded_at) <= now_ms` and the one live-stimulus predicate that no `stimulus_retraction` row exists, unioned with `UNION ALL` so nothing is deduplicated; `tests/infra/test_stimulus_store_plan.py` holds the plan to those three indexes because the single negated predicate would walk an append-only unit's whole history.",
+      "evidence": [
+        {
+          "resource": "repo://nora/infra/sql/schema.py#L3476-L3489",
+          "version": "repo-lines-v1:sha256:aa5840797bb96ab604a2fc4c6ba2f083f0623e7b83056c8cf47da03c284847e5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyNDM2NmYyOTMxYTc1OTg1NGIwOWUyNTZiNTRiY2M0NmFiOWM0NTNjOWVmM2ZmYTU3OWFjZjJhZjg3MDVhZGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhZmJhMDUyN2MzOTUzYzRiNmUwZTViNTczOWJhODM2MTJmODA1M2JjZGM5NDY2NzMwMTkzY2QxZDU5MGI0MDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFiODBkNzRjYzMyZmNkYjAyZmMxODY3NDk5MDA5NWE4Y2RmMTc4YTZkMTJkN2FiNmY3YjI0NWNkZGUzMDg4NTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRkYjQyOGRiZTczZDkxMmRjZjA1ZDM4NTc2ZGM1Mjk0YjY5M2JiMWUwNTE4YmRmMDVjODcwNWU0ODJiNGEzMjYifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/stimuli.py#L115-L122",
+          "version": "repo-lines-v1:sha256:e3c2f944a53b466cb23c9b17400ad2ede5ce9fe8fc5793c1ba124a30f65f25ba:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNmU5OGVjYzI3MWY4MmNhMzdmNTA0YjIwMmY1ZTU1YWFhMDA1NDg3ODAzN2QzZjMxNTVhMzRkNDM1YTk2ZTI5OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWQwMTIzZTk4Zjk1MDY2OWE5OGY3NjMwMjczMDhlY2IxOGE4YmZiNjg2ZDg4OTk3ZDcwMTFlNjBkZThiMWI2MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzFhMDg1NWFhZGZmMzMwYmM2YWQzYjUzNjg4NzBiMmUwMjc0MGY3NDdiYzBmNDNjNzY0NTg5NThkZjZmZDBkZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTRkYTgyZDljNDMzZDVjYmZiM2U2YzllMjAwYmJlYmIxYTc1ZWY3NDcxZDJmODc3N2FhNTQ4NjRiYjBmNTQ1MCJ9"
+        },
+        {
+          "resource": "repo://nora/infra/sql/stimuli.py#L125-L153",
+          "version": "repo-lines-v1:sha256:0a35b582c28100584d00c4f063c490df33f0bc01a975c827024e945ccf12617f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFhNTRhM2M2YzAxNzU5OTZjOWJiNzA4M2UwNjhhNDMyMGY5OTE2ZWViZmM3OTI4MDRlMDQ4MjdmNDY1NjY0NDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzOTJkMTIzZTQxMzJlNzkzMDMwNGUzZTQwYTg3YWFmZjQ1OTM0ZWM1YjI4OWU4Mzg2MmUzYTExZjViMTdhYjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgwYjliODlhNTNhNDIwZDQzNzM0Y2IyODE5MDMwNjU2OTEzYWY0YmMzYzRjNjI5YjE2ZjUwNTIwNGRlYWZhMjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJhNDU4ZjliMWJkZjY4ODNiZWUzNDZjZDc4YWRiZGNlZGM3Yjk5YjJjNTEwODQ3YjBjZGM5Mzg5MDAxZWEzNzcifQ"
+        },
+        {
+          "resource": "repo://nora/testing/stimuli.py#L135-L142",
+          "version": "repo-lines-v1:sha256:81df6e6ca6489ffcfaa1435f69e90c4a1c51c66418f1fcbe64914d52c4b4a45c:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmEyYzZhZjcxYWNkMTNhZGIyMjgzN2VlOWRkMTMyNDBjY2IxMTk5MmEyMmE4MzJlYmU2OWIyZWYzMzFkNTFkOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGQxMTJiZTNkMmE0NTA2NjI3MWZmOWJkY2IyNDY5NTlmM2IyZDM5ZDUzNmZmMzFiMTM4YWU0YjU0M2UyYjViZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNmQyZGQyZTE3OTY4NDAwOTNjMzY2MzJlMzJiMjdjM2ZhM2Q1NzI5NWQxMDUxYjc3ZmJjZDcyMDM0ODlmYmMwZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGU1MTk4MzMwZjNmOGM0OGYxMWRiNjVmM2ExZTVmOTY0ZGU3YTFhYTNmYmU0YmZkODYyMWVmOTc3M2Q5Y2JmYiJ9"
+        },
+        {
+          "resource": "repo://tests/infra/test_stimulus_store_plan.py#L1-L47",
+          "version": "repo-lines-v1:sha256:f66fa407ec978675bbb48791bfaaebfd0c02586119e697c2a27c7776ec361c44:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZiM2E3M2RlYTMyNzBkMTZhM2UxYWZmNjljMmYzMDhiYTA5MDFmMDMxYmEwYTE4Mzk0MmUwM2IwNmY2M2U1MTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcyZTA4YjgzZTRiMWJiYmY0YjQ1ZGIxNTJlNDJlNGI0ZTg4ODFjMjI1ZTBkNzQ0NjEzM2MzMjM4OGI0Yzg1YjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYzNTRiNmEyYThkNzFjNzlhZTAxN2VjODgzNzdiOGFiOTE0Y2Q3YjgxOWI3ZTQ1ODE0ZTJmZjMzOWQxNjdkZTYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8c5f9d9d3aff4fc79278cc932ac311ed",
+      "statement": "After the range read, `view` merges two side doors — the stimuli a `closed` session carried (its current `carried` carry rows, delivered `waits` when a person's wait closed the item) and the ids the watermark's wake left `unclaimed`, which stay pending rather than consumed — then sorts by id oldest first and truncates to the one shared `limit` (the evaluator's `pending_limit`, `DEFAULT_PENDING_LIMIT` = 1000, a different bound from the agenda's `max_items`); oldest-first plus a wake's `through_stimulus_id` being the highest id it claimed is what leaves the cut stimuli pending, both stores return the same bounded list, and `decide` carries the watermark's unclaimed ids into the next wake whether or not a truncated read showed them.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/wake.py#L415-L424",
+          "version": "repo-lines-v1:sha256:72fa9d4c6f1ce4289d551597f627d614874c81210f06736ea706afc3c3755a5a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2MWQ0N2VhYjE4MTI0MTYzOTIzMWJhMzdiM2QxY2U5OTIxYThlMjNiOGRjYWZkYzAwZTgxMDYyNDdmZTdhYmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAyMDZlZjE1MmRhNDhkZjRhNDllYjY4ZmIwMWNmYmY3YzEyMDczZWRmOTUzZDVmY2VkZWY2YjMwMDgzOTUyOTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI0YTRjN2I5M2Y0NWU4ODRmZTljOTlhODhmYzYyYTI5YzYxMTA0M2VhYzgxYTZmNGIyMDExM2IxYzFhMjdiMDkifQ"
+        },
+        {
+          "resource": "repo://nora/app/wake.py#L58-L61",
+          "version": "repo-lines-v1:sha256:9e0788edd8f00526cf5bc6f224336f305a2628f40766ec003d1c264036b93a8f:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjU5NzlkMDkxZDgzYmUzOTk0NjlmNWI0YjM0YjM3YTM0N2E0MmNkYjJmNjVmZGYyMDc4YjNhODQ5N2Y2NGI2ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiM2ViNDY2YTI4MTRiNTlmNGEzZTZlMjY3MzQ5MTE5M2FkZGUwOWUyZjc0YmE4MTA0NTE1ZDg5YzA2ZjA0MTczZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTdiMDM5MTdiNzNlNWQ1OWU3YTBjMTQ3ZjM5NWU0MDBiY2ZmZGZmN2IwZjY3YzIxMTA2NDEwYjQzM2MwMDI5NiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzBjZTNmMjRhYjQ3YzJmNWE5ZDMzN2YzNzdlZDg1NzNmYTU2NTg0MDc2NDAyZjFhZjA1NGEzZGVkNjE5NDYyZiJ9"
+        },
+        {
+          "resource": "repo://nora/domain/stimuli.py#L834-L841",
+          "version": "repo-lines-v1:sha256:08cccc84020f5f903eeaddf45dbfbcf6c65d47bc442dcc15375a772162077e62:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODU5YjI5NjhhZjQwZmNjY2U1MmNjMDhlYzU1ZjI3YWM0ZmIyZmJmZmE3YWU5MWM5ZTIzZjc2YmVlNjE5MDllNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDEwZjAxNzg2ZDhkYjI1MGZhZTIxNmMwMGNkNWFhYzNiNDYwMzY4ZTIwMTkwM2YxNWU4MTJiMGYyNmM1MzJhYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTg0ZjgzNGUzNGRhOGJmNmRkNDk0OWNkNDIwNDhhNjY3ZDljYTJlZmNlNjc3OGQ5YjkwODM1YTIxYTcyYzliMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOGNjNGE3ZDFjYzc5NmFiYTNlNDY3MjMzMjdmNTE3ZTlmODExOTgyZDI1MGYwNzAyOTg2ZTRiNTc2NGFkOTU4OSJ9"
+        },
+        {
+          "resource": "repo://nora/infra/sql/stimuli.py#L355-L384",
+          "version": "repo-lines-v1:sha256:c75ee54704da373691734598c9147abd0cc3df91d9aa8d35ec5c6a0c996553f7:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFiOTAyNTFkNWJjYzExMzQ4NzI2YTE0M2IyOWJkODMwNmY1MWE4MzI4MjU0Y2NkYTlkNmQ1OTIyOGYwYjQ2YTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljYTBhZDljZDJiYzU3MDg0NDVlNjlmMjNjMjIyNzYyMzY1NTQ3MWRmMWZlZWExNTljNmVmNDJkMjE0Zjg5NDUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU0M2EwMDQ0ZTNiMzNlNTMzZjhmYjA4ZDU3OWNlNGZjZTYwNjI1Y2FkZGVmOGUyYmNmMGI4YmViMDYyNjYzZjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFlNGIyMjdlZGNiMmIyY2ZhNjU3ZWEyNGFiNjE4MTkxZjJmYmMxMjBjNDNkMzk2YTU3ZDA3ZDY5YTI5NzkzOTMifQ"
+        },
+        {
+          "resource": "repo://nora/testing/stimuli.py#L143-L161",
+          "version": "repo-lines-v1:sha256:100e95b79baff7d7ec0659ffd9a826773cb84bf696f741b10076627d33203a8b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIyZTg1YWE5ZTEzN2UwNWNlOWVkYjQxNTFhMmUyYjg3ZTA1ZjRhYWNjNTE4NzI1YjkwMzc3MzgyYjYxMmYwZGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMyYWFjOTExMWQyOWY1MWQ3YWI3ZTdhMDBkN2MzZjIyN2JlNDI2NTc4NjQxOTA4NjhjNTQxNTA3NjJiYjA3MWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA4ODVmN2EwNzQxZDU3NjRiMzc4MWQ5NmYxYzVmOTI5YjhjOTE1YjQ4NGJmZDFjY2UxNTY4NzVmZjA2NGE4YzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjllMzIyZWEzYTBhMDI0OGJkYmMxMzkzMjU3ZmZlNTM4YTk2YWY0OGFhYTYyMWRmM2Q0YjFhODI5NTMxOTE2OGYifQ"
+        },
+        {
+          "resource": "repo://tests/contract/test_stimulus_store_contract.py#L286-L302",
+          "version": "repo-lines-v1:sha256:2bcc62e91e8f52037a7ab1a94a257d9eaac3f3f4ccbcd8b1fd6266ae59544c76:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI4ZmEyMWZlZDhiMjNlNzUyNzA0N2IzOTdlOWRmNzQ0ZDdjYWU4MTU5MzU5ZDM2NWMxMTEzMDg3OTRlYTNhNzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkYjNjYzFjNWZjYjliMDNlY2Y4ZTNmNWFiZTI5MDk0N2Q3MjNiNTE4YzA5YTVhNzE4N2FhODBiMDc0OGVmYTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk2YTRjODQ0N2YxMGNlNmE4N2MwNWExMmYyMDU2MmRjNjdiZWMzOTM1MjJmMjRhYmE3MWI4ZjVhZTg4NGFmMTIifQ"
+        },
+        {
+          "resource": "repo://tests/contract/test_stimulus_store_contract.py#L511-L535",
+          "version": "repo-lines-v1:sha256:c2cba3efc460772c9095192059f62acc72f53f8c12b211e24e1d181f959d8697:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRmNTA2NzMwNjcyYTY1OTA0ZDA1YjJiZWQwYmYxNGFiNTZhNTc0YWJjMDk4ODRmNzJiN2JlNGJjODI0MTc4MjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg3NTA1MzZkODdkNzk2NjYyMzhlMTY3ZDIxMGZhMGEyZjBiMmRjMDdhYTQxNDJmOTRlZGZiMzNkNzRmNzEyODkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQxOTFlMzE3ZDNjZDk4MzA3YTEwNzc3YWRhNDRlYzJkNDk4MWU3ODVmMmZmZTQ4Nzg3MDU3ZjYxNzhjODEyZjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg0YWI1NjA0ZDc1MTUwNTY4ZGJhOWFiMTY0NTYxNWMzYTBkOGFjM2ZmYzUzNzc4OWZkNDQ2YjY0NTQzMzUzZTIifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-20T12:25:17.607Z"
+  }
+}

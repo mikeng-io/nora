@@ -1,0 +1,476 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:e834b69c2cc24c69960a64ef56dc22e534650a0fc32681280c19b0613279e614",
+  "claims": [
+    {
+      "id": "claim_520ccf72fcd84914bc771ba55285c325",
+      "statement": "A room's workspace key is derived by Nora's code, never named by the model: computer_scope(platform, conversation_id) is the first 32 hex characters of sha256(\"<platform>:<conversation_id>\"), so no platform identifier reaches the VM; computerd accepts a lowercase hex scope key of 16 to 64 characters and maps it to a per-room unix user (c- plus the scope's first 12 hex) that owns the room's 0700 directory.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/computer/computerd.py#L147-L150",
+          "version": "repo-lines-v1:sha256:9e8ccc090c87aa4dfaef69504e07eb59aceffbee7d08571ef0e956166b0c0777:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjk1YWU4YTIyMWYwZDQ1MzEwZjhhN2ZmOTRkYWU4OWZiYjFkZThiOTZkYjM0N2VkN2U0Y2Y1M2JmM2RhMDU2YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMmFlYWNiYmQ4ZTMzN2IyNTVjMGI3NTQ2ODQ0ZTYwMjBhZDQ2OGEwZDJmOTk3MDI3NGRlZjBiNDQ2MTQ2ODE1ZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTBhMmFjZDg5Y2FmOWZiNTBmYzk0MDA2Nzg4NTllYzA4M2VmMGYyYmU4NGVkNjJhMjUxOTEwZjAwOWM4Nzc2YyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjMwMGI0OGU0NDJkMmQzNjAyMWJmYWYwMjE4YmJiMWM1NGM3Njc2NTcyNWU5OTU2MmQ4MmM4OThlOGYwNjBkOCJ9"
+        },
+        {
+          "resource": "repo://deploy/computer/computerd.py#L233-L235",
+          "version": "repo-lines-v1:sha256:6d44c86eddb5e676e09772da484b2c5ec8966dbe0d5cd22deb68da372e323c8d:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDFhYmNkMGNjNjkxM2Q0ZjUxZWIyMWU0ZjVhZmMyZTkwZjg2ZDM2YTQ1MGJiNDJjYjA1YzZmM2UwZDcwNmY4YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzY0OTllNzY2MzQ4MDE2ZWZmOTI5N2I5ZWY5NDJiMDdlZjFmYTZlNTAyZjUwMjFiMWM1OWI4M2YwMjA1ZjVhYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGUyMzFiNDM3NTk5YTFkMzcxOTczYjMyYTg5ZWE0NDM2OGU4NWM4NjMzMzFkNzFlM2JkZjBhMjk3ODk5YzhkMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMGUwZWI1ZDVlNWUyMDg1OTFmZDJmMWE0ZWZmMDA4ODYwMWJkYWVjNjMwYTE1ZDFkNDQ1NzRkOWRjNWJhNDJiMSJ9"
+        },
+        {
+          "resource": "repo://nora/domain/computer.py#L70-L74",
+          "version": "repo-lines-v1:sha256:f88a8318e27f08f6f8f0eff992e858c125c18319f4a3b1466c64848dd0d17726:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTg4MjYzNTRkOTRiMTM0MDcwNDZmOWE1MDhlOWQ2NDI5ODA4Y2FkZDc2YmE3ZjM0MTRkN2E3MzFlZTAwZmY0MiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzZiY2NkNjAyY2I3ODMxN2FhOGRkMTQ1NDUxODI5YTA0MDQ1YzIyN2Q4NmQ3NzFjZDc3YjI2YTUwZmEwNGQ5YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDI0ZTkzNzEwMzk3NjA5YTI0NmIzOTBhY2QzOTBkOWU3MGUxNGYzMmQ4YTNhMTIwNTQyNjIxZGQ5MzIwOGU0NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzBjZTNmMjRhYjQ3YzJmNWE5ZDMzN2YzNzdlZDg1NzNmYTU2NTg0MDc2NDAyZjFhZjA1NGEzZGVkNjE5NDYyZiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_be92a0db89194742a36a988af896ba7b",
+      "statement": "Every computer port result carries one of four statuses plus a reason a model can act on: ok (a command that exited non-zero is still ok, its exit_code says how it went), nothing_found, denied (refused as asked) and unavailable (could not be done now, never an empty success).",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/computer.py#L1-L31",
+          "version": "repo-lines-v1:sha256:8b3645097d7f6760c8add5950dd7132f609305fa0605815af6034a709fcb9ae2:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY4NzliZmI1YTc1ZDVhYzlhMjM3YjU5Y2RlOGVhYmM5NGEyNDRhODhlMzBmZjc2ZjA5YjQwZWJmZDQxMjM0YjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM0YWE0M2ZhZmY4ODA2YTIwNWFiYjgyOWY4ZGU1NGM0ZDQwMmUwMmFlYjNmZDk5MGUzZDM5NDRmNWJkOTkzNjYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1c971083c7da485e97bb2062e103d8f7",
+      "statement": "The SandboxRuntime port states two invariants for every implementation — it NEVER raises (a down computer or refused path is a typed result) and `scope` is derived by Nora's code from the turn, never chosen by the model — and declares no dedicated method that deletes a file or ends a tmux session; that absence describes the interface, not a guarantee, because `run` forwards an arbitrary command string that computerd executes as the room's user, so the command keeps its ordinary effects within that user's permissions. BrowserRunner repeats the never-raises shape for one whole browser task.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/computer/computerd.py#L404-L427",
+          "version": "repo-lines-v1:sha256:13d550bc2be85ab82f3763d694c1897ecc1415a79c8134bcf28a0e44509ab33f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViM2FhMTgwOGJlMmExNDA0NTBmNDg3MzZiZGNkMTQ0ZGRmMjJkMjgyZjZmOWJhZjhiM2UyOTgyZDRmY2JmZjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxMDM0ODFjNTdkMGYwZGMwZjc2Y2QyY2M4YjM2MDRjNGU4Mjk2ZGE0MTIyYWRkMTllODE3NDVkYzdlMzMxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYxMGU3YjIxZGRhMjg4ZDIwYmE5NGZmN2UwMmJhNzc0MGFkNTVkMzc2ZGNlNjVkOWU2MmQ5YzJkNTA3ZWZjMmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlkZjFjYTQ3NGUyYmM1N2JiYzljNmYyYmM5MWQxODBhMWI1Yzk3MmVlOTNhYmNlNjhlY2YwYjhmNWZjMWU1ODgifQ"
+        },
+        {
+          "resource": "repo://nora/domain/ports.py#L1745-L1791",
+          "version": "repo-lines-v1:sha256:2c96aa015d692f5c0d211c8800d02863485bea1b25f55197f4f9a5c2d72f2f27:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwMzA2OWQzZjMyN2IwY2ZkMWQwODcyNzRlYzI3NTY1ODU0ZDg1MmIzMjI1NTNkMzkwMmM4OWY1M2YwMDBlZGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2MjBkODVkZTRlZDdhYjgwMjFiNGE4ZGQ0ZmExNWVjNTE5MjVjZGZjY2RlMTgwNTg5NWE0YzhhM2MzYmE0OGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBiYzg1NTkxY2Q0YWQzMDMwYTNmMWIxYWQ1OWE5OTM3NjA5N2Y4YTM0Y2I3NDgxNmFmY2ZkMzQ0MWM2M2Y4ZmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQzYzYyNWY5MWRmYjhlNGMzZDFlYjFjN2NjNDU3NWNjOGE1NWJhOGE2N2E4ZmM1MjA1MjYwYTBiZDgyYTgyYjIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_eb0db0101ba0445cb06a1f8d72ac4130",
+      "statement": "The domain keeps unknown distinct from nothing: StateResult.tmux and StateResult.processes are None when they could not be read (with a reason field), and anything_running is tri-state, returning None when one of the two sources was unreadable so a caller never reads it as 'nothing is running'.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/computer.py#L190-L226",
+          "version": "repo-lines-v1:sha256:53d42c3b69213a798912f79b64491d696f0f30fc207a82a7c5e0651944377c68:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU1YmM0NzExZWNjYTA0NTBhZmM4MzI3NzlhODg2NzZhN2M2OTYwZmEzZGE1YWY0MTBlZTAyZDFlMDE1MTU5MWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUyN2Q5YTM0YmNkNmU0ZjNjYTA3NTEwODM1NDQ1ZTQ2Zjg0MmRlNmZmMTY3MGEzMTQ5MTdiY2QzNjhiMjUyZDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        },
+        {
+          "resource": "repo://nora/infra/computer/client.py#L254-L286",
+          "version": "repo-lines-v1:sha256:9a95fc25d9887e4f8e2e2857248d3e53722062e1d33ed9fb58709ef76441ca36:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE3YzI2YmRlYzQ4OTRkM2Y4NTk4YTdkNmZlMTIxN2NhZTIxYzc5ZGRiZjUyYWIzMmJkN2VmZjU5ZjAyNzdmNDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdiNGQ4MWJhNDIxOGRjMzU3NjdiNjU5Yzg4NjE5MTYzYmFlNDg2NDEyOTcwMTU5OTI3YmIzZTdjZDFhMTk3NDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIxOTUzZjEzYTIwNzYxMjQ3MWFkMzljMWZkNDkyNDdjZGRkZTdlODYyMDYzMjU1MmQ2MWZkYTkxZDA4ZDkwZWIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4985e97012924719bb3b8c17f1b2cf0f",
+      "statement": "ComputerdRuntime is a plain HTTP client with a bearer token that knows nothing about sbx, so the same client works against computerd in any VM or container and the runtime stays replaceable while the host-side lifecycle unit changes.",
+      "evidence": [
+        {
+          "resource": "repo://nora/infra/computer/client.py#L1-L20",
+          "version": "repo-lines-v1:sha256:3fc2a44e00c0c83b6a0790c0a2d7e01e35cd9bb0c5c7e935840df7228b1a5d73:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmMDZiNzY0MTZmN2E3OGMzMTZkYTIwZjE4MzRjODdhZmY3Mjg4YjZkNzY2NGVjNmE5NzZhYTcwMDk2MjM3ZjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6c63042cf49d42d48be43f6dec5aeb4a",
+      "statement": "Every ComputerdRuntime public method funnels through one guard that never raises: a refused or timed-out connection, a malformed body, any non-200 reply (including a 401 after a token rotation) and any unexpected exception all become SandboxStatus.UNAVAILABLE with a reason, and the guard reports (op, status, answered) to a ComputerCallObserver where answered is False only when no usable reply arrived.",
+      "evidence": [
+        {
+          "resource": "repo://nora/infra/computer/client.py#L316-L350",
+          "version": "repo-lines-v1:sha256:608270af6c47d6a4639deda8ca3702edb345ba97f7efede65bc758e733b589bf:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdhYzFlZmVkNjUzMjJlZGE4MmJkNmRmYjA4MWFiNGI1NDFmM2QyOWI0NWM3ZDFkOWM0YTdiZTBlOWY5OTYwNDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU4YTMwNzFlN2YwMDkyMmU3N2IzYmYyMDFjYzdjNGVkY2YyMWYyOWZjMzIyMDU5OTY1ZDYzYjQyNDgwMDU5MzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU4NzlhYWExMzFjZmEzYjdmYzE4NjJjYjgzMDljNzQ5NzAzYjEzZjExNWIwNmRiZTU3YTIxZTRhNDMxNjBjNGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI3MDYwMDA4NDVhNTg2ZjAyYThhMjVkYzljNzUyNjAxNGZiOGM4ZDQ4MGEyYjc5YWQ5YWEwMmM2ZmI5YjBjMzcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3e41ea1932e44422b0ec326f24068361",
+      "statement": "Transfers across the computer boundary are verified end to end: fetch hashes the bytes it actually received and requires the digest computerd sent, put and write compare the digest computerd reports with the bytes they sent, a mismatch is unavailable rather than success, and a read that exceeds its byte cap is denied.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/computer.py#L114-L123",
+          "version": "repo-lines-v1:sha256:f09a2f862473739397ce0c3b231342ee3bc01d089e63ecb8554560156970b887:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYzYmIzZmZmNDViNDhmMGI5YTQzYjA3NjcyMTQyM2ZiZWQ0MGYyNTNhZjY1NGM0NDBhYjUzOGJhMDU2NmMzZjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjliOWU3YjUxYjZhYzQ2NzlkMDc2ZDRhNjhlMDFkMzgwYmUxNTFkZjA0MDcyOWJlZDAzOWM5ZmFjY2ZkMmFhOWIifQ"
+        },
+        {
+          "resource": "repo://nora/infra/computer/client.py#L184-L241",
+          "version": "repo-lines-v1:sha256:d5a512311d0d9f70b85e319f2abc7300f70c6779d505973000105a41cbec0a11:eyJzZWxlY3RlZExpbmVDb3VudCI6NTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2YmQ0MzcwZWIwMTllYmIyOGEwNDhlMmYyMjg4MzI1Y2YwMTlmYWZkOGI1MDcwNmJiMGNmMGU5MTQ2MWIwOWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU1NGNlZmYyOTQ1ZDY4YTE5MWZhYjE2Mjc0NjA1OTExZGFlOTU0MDY0MDI0ZGMzMzVlOTE4NjA1NGZkNjQ2OTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlkOWVmMDgyMDhmYTA4MDkwYzMxZGQ0ZjNhNDUyNGYyMGNhNjdlNDQ1OWZhNjgwMTk0NDQzMjMwNGQ2Y2IzZjIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e2811b96bdfa423a946d391126f71350",
+      "statement": "COMPUTER_OPS is a closed tuple naming one operation per port method so every nora_computer_calls_total{op} series is primed at zero; a test drives every port method and reads the observed ops back against the tuple, so a method missing there fails instead of creating a series after its first call.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/computer.py#L33-L41",
+          "version": "repo-lines-v1:sha256:d6fcfcc752021bbc6983af7824d4e6bff47f91f13814ff2fdc1daf05bacb1b07:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDVkMWE2YWUzYmY0MGQ4Nzc3ZTQ0NDFlZGJmZWYyMDhiMjFmMTc4YWJiMDAxOGFhNTU2ZWQyOTIyMTM5N2MyNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmFmYmEwNTI3YzM5NTNjNGI2ZTBlNWI1NzM5YmE4MzYxMmY4MDUzYmNkYzk0NjY3MzAxOTNjZDFkNTkwYjQwOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZmUwNTdiZmY5Y2U2ZDEzNDI0Yzg0NDYzNTc5MDI1MGM4YmJmZDEwZTlhMTljOGIwNmVmZDBmNDlhZjY5N2U0YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTIwNmQyMDA2MmE5MWU4NmJjMGQ3ZDQ0OTA3ZDhlZWJlMGJmYTM4NGQ5YmE1MmYwZmNiODliYTgwZDkyMzVhMiJ9"
+        },
+        {
+          "resource": "repo://tests/infra/computer/test_computer_metrics.py#L96-L114",
+          "version": "repo-lines-v1:sha256:df4ccf5dc32f7b38974eacec7ba184c3f69bfd46e3c872dd3ea896c15b514d40:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU4YTJjODkyYzQyMzU3ZjIyZmMxNzc3ODk5M2VjN2NhYTQyYzNhOTU3NTdiOTkxNWJkMTM2OGU4YzdlZGFlMjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk1N2JiZGQ1YzVkZGYyNWY5ZDZmYzkxYzhhYzBiOTQwMTBkZDI2NjFiMDI3NTg1Y2E1Y2Q0NDUwZmZkZjFlMjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVmODY1ZTk0YWE2N2RiYjg2ZGE3Y2U2Zjc3NGY3ODI3ZWUyMTNhMmY2NDYzNDJkODEyMWI4YmUxYTA2YjkwNjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRhNzcxMmZjYTRhOGY5ZTUxYzIwYTNiZGYwYmVlM2ZjYzhkNTc1NzY5Zjk0M2M2OGUzODgxNjE5YTZjMzg3MDgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9b933387133a4ee3a3f71e74750bd1cf",
+      "statement": "Computer sessions are derived by code, never written by a model: a computer tool call in a room with no open session opens one in the same tool path immediately before its started audit row (writing a computer_session transition row), and continue_or_open is exactly-once under concurrency because a partial unique index allows only one open session per scope.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/tools.py#L14769-L14807",
+          "version": "repo-lines-v1:sha256:e66bf16ec0f8a0a4210bb5def4d23d0576fa23f2d672859c29f5d95b433ac016:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3ZTkwYmU4Y2Q3ZDJmYzljOTNmYTk2MWEyZDU4N2YzYTFkM2U2MWZjNzkwMjcxNTVlNmMzZDZkMDIxNTBhMDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQzM2VmYzdjNGY0NTE5NzIzYjM1MGRhMDdjMjI3MDg1MzY3ZDFkYjEyZDQxZjEzNDM3OGM5ZjliMmI3MTRiMDAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIxYzRmMTY5M2I0NDY5NDI3M2QwMjAwODU2Y2FiMjA5MTIwMTZkZDcxMDgxYTE3Mjc3OWViOWYzNmJlNDQ2YzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY4OTZmNjgwM2E5Y2RmZjI5NDBkYmJmZTQ5YjAzNGViZTc3NWYxOGY3YmVmOWM2MDc5YjM2NzY2YzY4OTYzZGQifQ"
+        },
+        {
+          "resource": "repo://nora/domain/computer_sessions.py#L1-L32",
+          "version": "repo-lines-v1:sha256:c4e0a79e6e52327c38cf0f72a21552975d55363060cd862aca9a32dde7108817:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1ZmIzMzk3YTg0NzY3YmI0N2ZmZjI1ZmZiYzhhOTY5ZDA2NjdkMGMyNjU0ZGNlNzk3YTBlOWQ3MDkwMWU4NDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/computer_sessions.py#L54-L97",
+          "version": "repo-lines-v1:sha256:3134a5c53854791201cea3d5deb85ac365299cd2f6b09b3bc8418af71847da78:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg5MTM5OWE5MWE0ZmQ3YWE2N2RmZjk3ZjMyZjMzYmVmY2JhNjlkYWJmNmViYjlhNDhhY2RmYmNiZWJmMmUxYjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVmN2ZlNzg4NmUzNTMzNTFhMjc2NDQ4ODM4ZmQ0MjBjNGJhZDliYjAxNjI0ZjcyY2QxNzhiYWQ1ZDk3MDg3NzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY5ZmVhNTBkMTEzMTVlZmJkMTYzYjI3OWNlYmFmYzU5ZTFhMjJhMzQxYjBkNmE5ZGUxNWQ5ZGQyMGJjMjkzNTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBiNDdhMjc5YmU5MzQ0MTQyZmY2Zjk3ODJlZDY0Njc3ZGRjYzMyOWUwMDI4YWRlOGJhMTAzMmMxZTRmM2Q2NzkifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/migrations/versions/0082_computer_sessions.py#L78-L85",
+          "version": "repo-lines-v1:sha256:30626fb3c45b072523e5581d89b71e36dde88794959633040ffdab2acbc835f4:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGQ0OWRiZDYyZTc0ZDlkYmQ2OTE1YjIwNzUwMzQzY2NiZGZiMmI3NzhlNjk1MWU2MzcwZTZiNWVlYTk5YzY4ZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzBjMWYxODhmMTQyZWQ3YTgyNDY4MGIyMDcxNzJjNTUxOWJjNjE0YTQ4ZmRhN2NmMTY3ZWRiOGRkZjc5OTU2YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWJiYmE4NWRmY2JmMzZkMzc5MmYxNjYxOGYyYzNkMWNhMDZkYzhjNWMzZGE3ZWI3OTkxNmJjYmY5MzU3MDBkMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDZhZThhNGFkMmQxODJiMGIwODJkNmY1ZDM2NzRkMjVjYmUyMDkwMjYyMmI0MWY3MzA5YzBiMjYzNjFkNmU4MyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_2ea3313a040b42f984f8525e6ee92296",
+      "statement": "Session progress is never stored: derive_progress folds the session's own computer_events rows (tool calls only) into runs, the last command and its exit code, the files written or edited, and the last activity, so no summary can go stale and nothing the rows already hold is copied; a capped read marks runs_capped and progress_text renders one line.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/computer_sessions.py#L14-L29",
+          "version": "repo-lines-v1:sha256:759deaabce3359d3bc44b968b6fdd15999a4f4ae5edc69b006fc073e261988ff:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhhMmM5OTVmZTQxOGRkY2NjNjQ5ZThmM2FmM2U1YTBlOTc3N2Y5ZWU3Yjc1YzA3MGVmYmQ5ZmVkOTBlMzJlMjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNkNzU0ZjdkNDRhMmRiZWRlNGI1MzkzNzdiOTNiN2RhOTc4YmIyMmZmODUwNWVkZDZkNjIyOTA1NDE4ZDIzOGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU0MzFjYWE0MjI4Y2UzNzNjODU3OTMxY2E4ODkzNDZjZGY2ZDA3ODg3NjI2MzI1ZjQ3NmU0ZDdhM2RhYjcyY2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE2MzhlOWE5ZTdmMDI2MDBjODdhNDFiYWUzOWU0ZDNiNzkxMTc4YmUxOGFiZWM2MTQyNTBkOGQ1MTE2NWI0ZGUifQ"
+        },
+        {
+          "resource": "repo://nora/domain/computer_sessions.py#L184-L219",
+          "version": "repo-lines-v1:sha256:543f3fd5041a59ac36ad3141ed4541c775084966ee0fb0de22f35845ec0bffbc:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmZTg1OWY3OGExNDhlYTdiMGJlMjY4ZTUyOWY0MWEyMzU3ZWJjNjQ3ZjVlNDY3YmMyNTUxMDdjYjlhNjM1MmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVmZjgwYmE1M2ZmYjM1NGRiYzQ5M2VhOGYzMTg5NWVmOGExYjNiYTgwNTI0MWE3MTQ4ZjEyZjdiZmY1MjFkYTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM0M2UyM2Y4NGE1NDc4NTc1YTU5NWZlY2ZkOThkMzhhODU3YmQwMGNjYWY5YWJjMWJjZjgyZGMxMDI4NWViODYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d371d8a2b04041f8a6a03fcddeb1cea0",
+      "statement": "A session's stored status is only open or expired (with expired_reason idle, jobs_ended or running_past_limit); the status a reader is shown is derived by shown_status as active, idle, running unknown, lapsed or expired, where 'running unknown' is never collapsed into idle and a non-zero exit code appears in the progress line rather than as a status.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/computer_sessions.py#L151-L164",
+          "version": "repo-lines-v1:sha256:d9c8c3613949b1d8326a10d5294c108952b0fda094003066747da3ac44316dc3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdiM2M5ODcwMjA4OGIyMGE2MDU0ZjM0NTcwMzFiNGFiMGY5MDEwZGY3YmYwNjJiYjFlYmE2NzliNzIxOWM3N2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg2YWMzZDM1NTUyNTlhZDIxMDM1ZDVkOTE1ZjcyNzc2MzdjNWIwZGZjNWM4ZTU5YjU1OTA4MzU0OWNhYTExMjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        },
+        {
+          "resource": "repo://nora/domain/computer_sessions.py#L227-L249",
+          "version": "repo-lines-v1:sha256:80b0392d26617ccbb00b7323630f648ad26f23f27558be8a7630c36ebcb5dd15:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliMWJhZWNlMGE3YzBhM2QwZWViOTA4MDBlZWVhMjZkM2NjMjI4YmNkNTgzNjUxNzNkYzVlNjRiMTA1ZGI2YjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE2NGEyOWM5MDMwODA1NWJkYmQ3Njg4ZjZiZTZlNDhiNTYxZjU3MWM1YmY0MDhlYjk0ZmM1MjhiNDU4ZTA4NWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQwMWY3ZTA0YTgyYjc3ZTA0OWYzZWNiNzU2YjY4YmMxN2NiNWY3YjE2MzE5YzM3NzBlMjZhOTIwYTZlMTNiMTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQzYzYyNWY5MWRmYjhlNGMzZDFlYjFjN2NjNDU3NWNjOGE1NWJhOGE2N2E4ZmM1MjA1MjYwYTBiZDgyYTgyYjIifQ"
+        },
+        {
+          "resource": "repo://nora/domain/computer_sessions.py#L64-L80",
+          "version": "repo-lines-v1:sha256:189338fc0efead1a35f2829b363bd37c376973780739f081d9d7ab8a6a135e0b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1ZmMwZTVhYWY5YjQyOGYwNGZjMGJlM2VhMDZkZDYwODhmYzVmNmU1Y2QyMTk5NWM2ZjdjNzVlNTFiOTI0NzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIxNjUzNDZlZTUzM2YyYmMwMzJjNDc1MGUyYTg0NjVkMTg2ZjQ2ZTc4N2I5YmI2ODZhZjI5MWJkZTI3NjAyYjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI1NmNkZjIzOWNhYTUyNTU0NjA0NTBhZTZkNTI4YTUxN2E5Y2JjYTE0ZDQwNjk2NTk1N2ZkOTQ4MzM2OGZlOWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNjNWMxZWEzNTAxMGI1ODExYWJiNTllYTc0NDMyMDUzNzc1ZDFjZTg5MGU5ZjQwMmRiYmI0Njc3NzQ0OTViYjEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e5c41a262cd246ecac234b34ed7e4ae5",
+      "statement": "Only a live actor (tag or fire) opens a computer session; a background actor (cognition, dreamer:*) continues one a live turn opened and otherwise runs with no session, and a sub-agent job keeps no session at all because its record is its job row and audit rows.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/tools.py#L14759-L14796",
+          "version": "repo-lines-v1:sha256:823c6589bf75b1cd72d8eb295747deb2fb142ad567d17beb9c96792d2294c64d:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRhMWZkMjFjYThiMDg3MTA0Zjk1ZTNkM2I0MTg3YTBjNjQzNGNlOWI5NDE4M2FhNjM3ZjIzYmQxOTIzMTkyNWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyMDc4MzkyZmZlOTM1MTNhNGNlYzA2MjQ2ODZhOTcyM2Y4MzgxYjM4YTNjNjBmYWQ0NmYzYjEwYTc2NjVlN2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZiNGI0MTZlYWIzY2Q3ZjEzZDFhNGMzOWEyNmQ1YWFmZDQ5ZGRiNTc4YmQ1Mjg5NGYxMjI5OWI2MzQ2OTJhMzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA4NmViMTFkN2VlYzI4MzA1NDBkNGMyM2U2MzY4OTJiYzg0NmU2NTQ1NzBhMGY4NWM0MTc2ZDdmYjhlMzQzYjUifQ"
+        },
+        {
+          "resource": "repo://nora/domain/computer_events.py#L40-L58",
+          "version": "repo-lines-v1:sha256:4d2704e1f4e9ffe5625e11606f2492b9c1ca6a00937429d29992f679e700c883:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE2YzI0OWM3NWUyOGE3ZWVlODhiODA0N2JkMjA2M2Y3ZWQ5MmZjYjIwNzJjZWUyMGYzOTUxMzNjZDdmNTZiM2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEwNWU4YzRiYWEyYWU2ODY1NTJiYzcyYTQ0NDU4ZmI1OWU0NzBkYWRlODc4OTQzMWRmZDRmYmM5M2U4M2Y2MGUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAxMDZiYjdiNTM3N2YxYjg1MzFiNTMyY2Y4NjA3ZjM4NGQ5ODBmNWY4MjFmZjg4YmNlNWQ0NmQyMTU5YTdmNzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjljNTM5OTRjNWY2ODU3NGVhNGNiNmY2NGMxMWJkNGIyOWYwZjZiODczN2Q1NzJjMjAxYTk3YTMzOWNjNGFjMDkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4abfd400d953403c9e3cfcac87ec77d9",
+      "statement": "The sweeper expires an open session for one of three reasons (idle, jobs_ended, running_past_limit), is fail-closed on what it cannot see (an unreadable state, tmux or /proc listing skips the room rather than reading as nothing running), and each expiry takes the session's lease with try_acquire, compare-and-sets on last_activity_at, and writes exactly one computer_events row with actor sweeper; a job still running is flagged in that row, never killed, and the non-destruction the sweeper guarantees is scoped to its own bookkeeping — an expiry is a status change plus one audit row, with no session row, file or audit record removed and no command run, which says nothing about what a room's own run command may delete.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/computer_sweeper.py#L20-L34",
+          "version": "repo-lines-v1:sha256:896be760878489490f2f4e7a8ca82c7f4c97484149b2388862275e4d68e26e90:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5NGY5MDc0MmNkMjIwY2FmN2Q5ZWEyZTQ3NjZhYzYyNzU3NGVmZWI5ZDRmMjA0ZDU5MTBmOGIxYmIzNmY2MWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlODc3N2MwZGFlNTVjZWM0MGUxNTVmODRkYmNhMjNlOWFjMTM4Zjc4ZGUyZDhlODlkZTRjYmY1MDgzYjQ3N2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEwZmVmZWIxM2Y5OGMwMWExOWQ5MWRlZWI5YzIyMDIxNzQ0OWFlODIwM2FiOWI5YjFhMjg3OTAyZTVlZDU3NTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhYWY3NjM3Y2I2ZTdlNWRiODVkNjM0Mjc0NjAxNGRmMDQxY2NkNTU4YTkyMGIyOWViNmFjNzE5ZDdiYWY1YzIifQ"
+        },
+        {
+          "resource": "repo://nora/app/computer_sweeper.py#L81-L131",
+          "version": "repo-lines-v1:sha256:d0bc003561795b9971ea10e9567bbf5dcb645ceb184a7db68a4a4b2f31527ce9:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1ZGU3ZWJjYTMyMWZjMjNkOWFjNDUzNGMxZmI0ZWFjMjU2MGIzMTk1MzA5OGJkY2U3NjI4ZGE3ZWQ3YWQ3MjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdiNDIyMWIyNmEyZDFiZjE5OTk0ZmE2NDYzZjcxZTIwOWFjYmEyZDRlZGQ1MjMxMWM3YzJiNDA4ODE5NjhkNWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlkZTkwNTljNmM3NDhhMGNkODc1YjUwMzIwOTQxYjg4ZGZmMTRlZWM0Y2ZkOGFiZTc1NDExZjg4MjcwOTg4YzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVlMGI4MzMwNWI2ZmJkMzliMWMwMzEyMDJlNDQ1YjViMDY2ZWYwMTM1MmRhOWJkNDBkNjNlZjM0NmYwNDI0MDEifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_computer_sweeper.py#L68-L101",
+          "version": "repo-lines-v1:sha256:90f8bb0ff5ca6d7a51a1e9574314c48ea16bc95f7d2f3d392edb700847577845:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkwYzc4OTU1ZjZmYjMwZTg5NzM1N2FmYjAwODJiMjZjMzU5MTZjNmJmMWE5ZWFjZDYyMTNjMjg3MTIxZDgyYTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM1MDMwYjcwYTcyNTY0NDBmZjM2NjVkZjcwM2NmNmY1OWI4MjdkNDMxNTU1NDliMDkzODdlMGNkZjIwZjM1ZDYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcyYzRmZmQ2NzIzYjIxZTg4MGM5YWE3NDQxYWQ2MmIzMWEyODQ3MWY4NGVlNThmYWY1YWY0YmU5ZmIyZTE0ZmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI4OWEzMGQyODE5NDQ0ODdkZmRkYjRiZmE2YWNiZDhkNDU5NDlhNTk1NDg1ZDE1ZDMzMGE1ZTU2M2I3NTIyNDQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_307e20b25d7b4efaba0e6ae65d0ade4e",
+      "statement": "Computer leases are keyed on the session a call belongs to (session:<id>) and on the scope only when the call has no session, through one lease_key function every caller shares; a live actor waits up to live_wait_seconds and is then refused while a background actor never waits, and in-process asyncio locks suffice only because one Nora process serves every room, so a second process would need a lease row in Postgres.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/tools.py#L14810-L14840",
+          "version": "repo-lines-v1:sha256:73ee67cce43507e0e830142cdc7bdba1ebe055aacb70d8874025a5b554586869:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhNjQxNDMxNDhlMWE2NjNmYzBjYzg4MDIzNTk4MjY1MDFiMjBmMWVmNjAzZDk5MzM0MGFjN2NhZjc4MjZkYWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxM2E5YzA5MDA2Mzk4ODA1OTcxYTk4ZDY4OWEzOTM1MjU3YTU5ZTM2ZGMxZDMxNDUzZWZjYzNjMTY4MDk2YTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYxYTM0YzM0MDQ5YWU5MjNmNjJiODIzMTM3MzY2ZWNjOTExMjAwZGQzMGY4ODZiYzYxNzY3MGIzZWY1ODY5NTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc4YzFiOTIyMWJiODE4Njg2MzZiMTczYTZmNzFkNGEzMDU5MGUxNzllNzc0ODg0OTFlZGU3M2NmYmUyOTMzMDUifQ"
+        },
+        {
+          "resource": "repo://nora/domain/computer_leases.py#L1-L91",
+          "version": "repo-lines-v1:sha256:acebce611e3267231e8e6989f6f94223ba855952d644c7c273a3adb91a10ca14:eyJzZWxlY3RlZExpbmVDb3VudCI6OTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0MTEwYjViOGNiMTQ2ZmJjZGNiYjE1ZGVkYzk3MmM3N2JhYTI1ZTE5ZmQ0N2M1OGYyNTVjNzdmMjJiOTU4ZWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzNzlkN2IzYzA1YmVkMjE1YTQ0YTg3MWM3MTE2ZjAyZGJmMzM0ZTMzZDc3ZmZlNGJhZWVhNmMyODM2MjI5YjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMzODg5ODY5ZjJmYzIxZmQ0Y2RhMDIwMTFlYmUzNWI1YWE0ZDdjMmZmOWVhOTE4MWJiNDg3ZDE5ZWJjNTcyOWEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7feb1c6b11d9445f8d9bb735ac5bf4c4",
+      "statement": "Every computer tool call writes two computer_events rows sharing an operation_id on every path: the started row is written before the call reaches the computer and a tool refuses to run a call it could not record, the finished row is written afterwards even when the turn is cancelled (so a started row with no finished row marks a crash), and rows are written by Nora's tools rather than by computerd, with the full request inline and the full output pointed at in the blob store.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/tools.py#L14809-L14860",
+          "version": "repo-lines-v1:sha256:555cfc9fdf1ac6b8d69354a13503d0231338bc0a5eb514b2b8aadb39c7d5f3a7:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzZTg4YjFkY2VhMWQxNDNlYzJjNDAwMjcyNTNjNjIxMmE4ZmM4Mzg1Yzg2MzliZTM2Y2M2YzQzNWRlMDc1NmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM4MmJmMjAwMGI3ZDdhNGZmZDNlZTQ0Yjg2N2IwNDJlYWMyNzAwNjkwZmNkNmUxZTUwNmE4ZThiZDc4MzYwNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlmNmVlN2FjYTA0ZDI5Y2Y4NmQyZTM3NDA3Y2I5NzllNmI4YTRkZDJiMDYxOGMyYjAyMjMzZDRmMjE5MGVlMjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE2MzBkM2MwYTUzZTFlZWUyMjlhOGYwMzEyYjYzODIzYzZkYmI0OTU5YzU4MzAwOTBlM2Y0ZmQ5YjM5Y2M3MzAifQ"
+        },
+        {
+          "resource": "repo://nora/domain/computer_events.py#L1-L30",
+          "version": "repo-lines-v1:sha256:0c802dfef9900effaec44c2b29bd039395585c95f72867ecdcd70f82ed29613d:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU3NzhiZTA4NjM4NDEyNDM4OTUzZTcxNTlkZGFhNDhmYjRjMWY1ZGY1NTA5MDkyMWIxZjhhNWZlYzgxNDQzYjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/migrations/versions/0081_computer_events.py#L46-L53",
+          "version": "repo-lines-v1:sha256:48d5d5b498d9c39bb91eb6848bf2899b40d9953459d982f45da840260d9f07c7:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTlmZDdhOGFmNmNiMmRiZDQwYWJiZTkyYjhhZTRkZTgyYjA5NjhhMjEzOThlNjY0YTI1MjI5MTNhMTQxMDA1ZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjg0ZDg4N2M3OGI4NDYxMmVlYzU3YmE3MGI5OGFjZWY1OTkxOGI0Yzk3ODgwNjcxZmM1YzYyMTE5NWI0MGYwZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGFjNTA3MTg3ZTNhZDJkYWMxMDQwNDIxNjk2YWQ5ODQ3ZWFkNzM0MWZiYzhlZTc5MDExMjgzZTRhODJhMTE0OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzhkOWQzZDE2YzU3MDA2MzdmMGM5MmIwMTQ2ZDE4ZTA2MTRiODE5ZjQ2MTQ5ZTU1YTg1MTlmMTlhYTg1M2YyMiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_0e82a6083dc54b4c82d5055473d45dc6",
+      "statement": "The <computer> block is a deterministic window rebuilt each tag and fire turn: a database gate costs one read and renders nothing for a room that neither used the computer within active_days nor holds an open or lapsed session (so no VM read happens), the live-machine read has its own short budget after which the block renders from the database alone and counts the miss, a good read is cached per scope, and the reader never raises — a failure is logged, counted and read as no block.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/computer_context.py#L21-L40",
+          "version": "repo-lines-v1:sha256:474fa58e57e82030522cbc23cbd1c2566ffd4596e42b94876608fb845cc334ca:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY5MGE4NDFkODRjOTZhMGY4ZGZhZGY0NDU3MDQ1NmE1N2VjOGVhNjVhZmZkMTQwMjdhZDM4NjEyNjQ4OGVjMTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAwMTEzNGI1MzYyNmQwMGFiYTdhMTAyOGY0YmQ2ODZhZDM2ZjdlN2U3ZGYyZTQ0ZTcwMDIxODViYzJhOWJkM2QifQ"
+        },
+        {
+          "resource": "repo://nora/engagement/computer_context.py#L1-L131",
+          "version": "repo-lines-v1:sha256:841731d3fc3d763a58a93f07d790cbc9bd69a885134af9d988b7e85bcc4f6b8e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMxLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIzOWE1NjFhNWFmMzQ0MzgwMjc0OGE3N2QwMTUwYzlkMTVlZTdkZGZiYjg3YzI4ZmMyMGI1ZGY4MTZjZWNiZTYwIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0MjA3ODM5MmZmZTkzNTEzYTRjZWMwNjI0Njg2YTk3MjNmODM4MWIzOGEzYzYwZmFkNDZmM2IxMGE3NjY1ZTdlIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MCwicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI5NDJmMDkxYWI1OTA3ZDNlY2YwODM5ZGI1ZjdjNGQ3OGQ0MGJkZmFkNmUyMzhlYzFiMDIwNTgxOGI0MWY1ODJlIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_caa8f9c93ad14d1199c78d5bff0abfb6",
+      "statement": "The rendered <computer> block lists open and lapsed tasks with derived progress, tmux sessions, owned processes, recently changed files, the room's newest portal links and recent runs, gives every line an age, and enforces a token ceiling by dropping the oldest item lines first and saying how many went.",
+      "evidence": [
+        {
+          "resource": "repo://nora/language/computer_render.py#L1-L23",
+          "version": "repo-lines-v1:sha256:2f58eaea92879f69c663d73870a7a9403fea0432856637b5146837dac0d9f695:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhN2NhNmM4YzI1ZmNlM2M2M2Q2MmNkYTQ4OWNmZjkzYThlOWNjNjMwOTdhNjBiMDk3MzgwNTkzN2E5ZTJhYjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhYTVhMTljODE5OTc5YmRkNzUwNWUwNWExYWMyODYxODNlM2RlOWM5MzE3NTBlOGY3MTI4NjNkMDcxODgxMWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYyNTNhNmExZDdlYzRjYTNjOWViNjQ3MTM1NzU1NmE1YjZmNjUxYjc3MmY5NTI3OTFiODc1ZDkwYjgwYjEyYzIifQ"
+        },
+        {
+          "resource": "repo://nora/language/computer_render.py#L164-L195",
+          "version": "repo-lines-v1:sha256:b5b85e31bc76538b81dbe124e912c93366a98f226ff3adf59576a2219334a51e:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzNWM5MTdiZDk1OTUyNDNiN2U5NzYwNDcyNzBkNjE4ZTZkM2I3YzhkODU2N2NjYjFhYTYyNzU1MjE4N2NjMGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdhNDBlYTM5OTBhMzFiMjk4ZjM2OWM5MjcyNjA5N2NlNzI5MzhmZTk0MzczZTVmMmYxNmM5ODI3ZjUwMjM3MDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU5NmM5MTYyNWJlNDFlNmNiYTY1M2ExMmUwZWFkZDRmYWIzYWJiM2U1MjU4Y2Q2NDIwNTEwOGM3NjE4OTYxM2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8b3180c12ddb4861b56aa920c27144ae",
+      "statement": "computer_export fetches bytes out of the VM and decides everything on Nora's side from the bytes received: the type is sniffed from the bytes rather than the extension, HTML never leaves, an SVG may be attached or kept but never published as a link, a link or attachment goes out only from a tag turn where a person asked, and a link additionally needs the portal's public URL or the tool answers unavailable.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/tools.py#L15368-L15430",
+          "version": "repo-lines-v1:sha256:f26eb20e3299f4fac004ae6587c9446de1d9869942d47de9de8b1ceee2f0b7ad:eyJzZWxlY3RlZExpbmVDb3VudCI6NjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE0ZjdlMmY1ZWU1NzdmZjBiM2U0NzE1ZjYzZWQ0ZDY3ZGFiYjU3MGI4MWQyYmE1ZTZjZTQ2MmNlMDhiZjU1ZmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5MzdjNWVjM2VmMjJjODQ1NzFkMGRiOTkzNjJlNGVmZjVjZTM4MzJiNGU3OTE5NWIwMGNjOTM2OWU1NGY3NzEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM5ZjNiYmQ2ODlkYWQyYTllMDA3YWRmMDk4ZGRjNWIxMTI2NGE0YzNjZWY0ZTRmNWMwOTJkNzFkNmVhMjllZGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMwZjFkOGYyOTJiYzZhNzY3ZjJjNGRkNzZmMjQwZjRmNTlkYzBmNTUxOWY5ZGZmMzY4MzA2ZDBmNGJkNTQzNWEifQ"
+        },
+        {
+          "resource": "repo://nora/domain/computer_exports.py#L1-L50",
+          "version": "repo-lines-v1:sha256:305e0c3add6a82c800e494f51629579352256347e38ceb7a1e374759f6dda928:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVhZDZjNDNjM2UyM2U4NGRkY2Q3NTU5YTliZTA1OTExNjJiMjZhMDU5MmY2YjNmMGMxNWJjYmZiNWFlYWRkN2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fe5a95533397443fb86977632d3866dd",
+      "statement": "computer_exports is an insert-only record of one row per export that reached its destination, holding the received bytes' sha256, size and media type, the blob key and the provenance; a revision through artifact_id is authorised only when that artifact's first row belongs to the same room, and an artifact the table has never seen is refused rather than revised.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/tools.py#L15391-L15419",
+          "version": "repo-lines-v1:sha256:f48ff4ee6b361dea1daf853d0973c84475b9951b17312ec42f48a5e946a2670c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUzMDQ5YjE4ZWU1NjZiZDQ5OGQ0NGE2YWUxZDliNDUzNjBmYWYzYjkwZDE0MTg4ZDM0MzY3NTRiNDczZTQxOTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliYjc3OGM0YTYzNzQwMWE2ZjZjYmE4MWQ4ZDE1NWUzNTVlOWNkMzk2ZGM4ZTMxNjM3YTM2NTJmMGQ4NmE2NWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcwYTljY2YyNWIwNmM4MWFmZDQ0MmU1YTk1NjNlYmJhZjM4ODJhYzNhZjgwZGFmYTZhODJlMTQ5ZTYzNDhkZjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg4ODFkNWUzNTkzMzgxYmQxZTIzNjdhMWU1YzA4NDZjNmRiMjliODQ5MTQxZTBmODIzYTA3YWVlMGZiM2NkOTkifQ"
+        },
+        {
+          "resource": "repo://nora/domain/computer_exports.py#L244-L283",
+          "version": "repo-lines-v1:sha256:52d0378d4957f61bfded61a433648aa1ada249af05e43ce8dcd5cfd5ab29d02a:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlM2ZiMWU1OGZiYzkwNDc5NGQ1MDczMTRmYTkxYzlmMmYxOThjODhkM2ZmMzk1ZTAwODI4OTAxYzM3ZGM5MWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI3NmZiNjcxZGE5MTU1NjgxNjA4NTU4ZGI3NjIxODBiYmJlODk4ODJmZDY1MTM2OGM5ZDkxMTY5YjAxYjY1MzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJlZjZlZWE5MjgyN2ZlMjY2NWVkYjhlNmM4NWQ3NGU3ZmRjNTAyZTdmOTA2ZDIyM2U4YmU5N2Y0MDRjZGEwNTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY1N2MwNWMyODYzNDc1OWVmNDIyZTY4NjRiNTMwZjZhMWZlNTg4YTM0NWNkZWZlOTQ0NmM5ZWM3NTFhMWFlMGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f79190cb62bc4664bf725897c9982e11",
+      "statement": "computerd starts one headed Chrome per room on that room's first connection to GET /v1/browser?scope=, a websocket behind the same bearer token whose text frames are CDP messages relayed to Chrome's --remote-debugging-pipe, with no debugging port; a second client for the same room is refused, at most MAX_BROWSERS (2) rooms have a browser at once with the least recently used idle one stopped for a third, a browser idle for ten minutes with no client is stopped, and browser_stop plus state.browser.running expose the lifecycle.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/computer/computerd.py#L1240-L1279",
+          "version": "repo-lines-v1:sha256:a31f10f32b65d3713282fd7b6c4eb599954a725fc095c7b587f7aecd9c225c93:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVmMDVkOGIyOTM0ZTgzMjZlZmVkYWU3MjU1MjFiZDI0MWI3ODg0MjVmNzY5NTAzMjczZjAwMDcxZDk3ZjExZGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1NTI2MTNmYjY0MGVmNTY0ZTQwZTc5MTU2MTJmNTVmYmUyZTA1MGZlMWMwYWRhMTU0YjY3NjQyM2VmN2E0YWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE4ODJiY2E1YmJmOGY2ZDM1YTRhMmI4ZjAzN2IxZDUyNDU1ZjlhYzgwNjQ1Mzk0MThiY2JjMzZjN2EzNDhmOWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQwNDczNDRmZjY4NDBkODdiMjY2ZDBmYzU2MjJjOTgzZWRlN2RjNGI0OGYwZTg3MmVmZTA4YTUwYzc5ZGEzYmEifQ"
+        },
+        {
+          "resource": "repo://deploy/computer/computerd.py#L747-L819",
+          "version": "repo-lines-v1:sha256:675856edc7059f613d37ed2c6e70e640c1c09b31aa25667b6bf481635d87a891:eyJzZWxlY3RlZExpbmVDb3VudCI6NzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIyNWM2NGNhMjkwZDQ1Nzc1NWVmOTczYzY3ZWI0YjcyZmVlOTM2MDY2YWM1MTJiMmU3N2EyZmU2OTBjNTg0NjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0YWJkYjY3MzIyNzUxOWFmNzI0MzA3NjZkNjRiMDRlMzkzMTZmNzg0MTc4NjliZTQxOTlkNTMwNzQ1NjIzNjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE4NThkYzgwZGQzZDJlMDA4MzVlOGVjNzk0NWU3OWI4OGVhMzJmOTY3YWQyOGIzM2I5ODcxMWEwNjNhZDRiZmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI4M2Y2OTJmYzE4MThmYjdhY2U1OGQ3ZjE0OTc1MTc4ZjUxOTZlOTcwZDM3MGViY2I0YTg4NzVkZjJmYWE0OWYifQ"
+        },
+        {
+          "resource": "repo://deploy/computer/computerd.py#L986-L991",
+          "version": "repo-lines-v1:sha256:a2d35b203e53820208639e2e96c6ca15dfbd6ccbb1dd586b25d79f4cc0f66ed7:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiM2U2N2MwNDBkYTg3OGRmNzI1Y2ZiMzc2MmRmMmIwMzU3YTYzZDE0YzAxZTJmZmMwMjUyOWM2NWZlMjdhNTJmMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDkxODg2NDM0OGQwMDA2MmRiODc0ZmM2NGUzMDAyZWI4OTQ1NTM4MTYzYzUwMTkzMmI2Mzk1MjM0NGZkNTJlYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWJiMTcwMTk1NTgzNTY1NTgxYjU5NDJmYjgxMzQxYWYxNjg1NTMxYzkyMDM4N2ZiODEwMGJiZTZlYjViNjFmOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzdmNjIzOTU0ZmFlMGQ0NzViYzVhNmZhZjhlYzQ1NDU0YjIyOTI1MjExZDNiN2I0OTZlZGM4Njg0YmE2ZGExZiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_0df1d2c51d9f4113864f53392f19eee0",
+      "statement": "The browser page model is an accessibility snapshot: interactive roles plus headings become lines with short refs (e1, e2, ...), role, accessible name and value, controls are listed before links, at most 150 elements are listed with the rest counted, and every action takes a ref rather than a selector or a pixel; refs are rebuilt from scratch on each snapshot, so a ref the last snapshot did not give raises RefError instead of acting on the wrong element.",
+      "evidence": [
+        {
+          "resource": "repo://nora/infra/computer/browser.py#L1-L20",
+          "version": "repo-lines-v1:sha256:295fa6b42bc9d90a92a3e60c6829a5733c17b98b0c9ffb2f88223515d15a7312:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3YzcwZjZhNmFhZjM0NDQ1ZDM0YTg3Y2QwYmI0MjhhNDRmZWVhZjBjMGIxYjcyMGY5ODY4NzBjMzRiNGU3YTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/infra/computer/browser.py#L266-L315",
+          "version": "repo-lines-v1:sha256:6eeea776aec36d9e3440739c183f04e5aa5e62f269f236b1b98e423608d3212d:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0OWQyZjg5MzU4YmY0ODI2OTI3ZDEyODUyNzMyN2Y4OTFlOTk3YTVkNjgwNDFjMGMwOTczMWRhMmM4NGY0MTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI3ZTdkNmZiZjNhZDc1ZjE4ZmNjYzE2YWI4ZGY2NzBkNmU4NTllYjJjZDg5ZDJmOTg0OTE4MDhmMTAzYmIwZjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJmNWNmOTViNjgwNzhiMzdmMzIyYWE2MGQ2ZTU4NmZjYzEzYjU0MTUzZjljODc1ODFiZDkyM2UwODM2MGQzOGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMxYTdhMjVhMWE4YWRmZTgyNzdlMDE1MDY4YWRmOGFhMGZjYmJkYmVlZTIzNmUzMDkzNWFjZGZhN2I1Y2JlYTcifQ"
+        },
+        {
+          "resource": "repo://nora/infra/computer/browser.py#L311-L316",
+          "version": "repo-lines-v1:sha256:b229363e463b91aec2b2ad4df496fbf0826523ecfe341888bdde217f4a43389c:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzE1MGFjZTU1YzI4NDg0YWM5ZWE1NDc3YjU2NTQyYTcwNGM4NDExNTg4ZmVlNjQ3MzgzMTA3YmY2MzZmNDFjZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2M0YjMzYTMxMGQxM2I0ZTgzMmQ0YTQ1ZDNiODA0ZDc4Yzg2YmE3Nzg5N2YzMTgzYjcxYWQyY2E2NjMxZmMzNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWVjMTQ1YzgzMTUxNDQ3ZTA3OTc3YmIxOThjYjQ4NDJmNmY0N2Q1ZTNiMjc1ZmI1M2RhYTQ4MDJlMTY5ZGU1ZSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_b5fd450e32dd4df29e82bb7e5bc2376b",
+      "statement": "A screenshot boxes and labels each ref of the last snapshot on the image itself (Set-of-Marks), so an answer read off the picture is still answerable by ref and the page is never modified to draw it.",
+      "evidence": [
+        {
+          "resource": "repo://nora/infra/computer/browser.py#L455-L498",
+          "version": "repo-lines-v1:sha256:24230ab2e9d307a6a80c99601cbc3d32a31e8ed72e1c2d313163c389c1267593:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxZjhjZmM5NTRiZjk5NGU5NjRkMDJhODJlZDZkYmUzMzNmMWMxZmIwYmZhOGI2NWZlNWNmZjI2NDIxYmRiMzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVkODFlMjIxMjBlY2Q1NDA5YzdjMWYxNjlhNmI1ODA2OWZmZmY4ZWMxZGIwNWMyZTdjNTYwYTQ2MmQ4Mzg1MGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU2ZGMwZmEzNTk2NDA0Nzg4NWY2NzhhNDJiMDIyZjIzNmQ0MWZlNzExNDU1NTg1YTAzOWE0YjVhN2IzMjVmNWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE3YjdkNDQ2ODlmZTcxMmQzMjBmYzBkZjU5MGFjMGUxNTBmYzU2ZjNhOTJhZjU3NDYyMmY2NDQ4YTRiMzQ0ZGUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e78aac29f87a4c7e98265906639fbe09",
+      "statement": "The browser client offers no credential path: it exposes no cookie, storage or credential-setting call, it masks a field's value when the DOM says the input is a password (read from the element's type, never its label), and the browse sub-agent is instructed never to type a password or anyone's personal details and never to buy, book, post or send.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/browse.py#L40-L57",
+          "version": "repo-lines-v1:sha256:3f8ddc0f0e1b67e6031155876ca163e6e803d15fa84920d4835326e01f9778d8:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJiMzUxNzkwYWZmYzg5NzMzZjY4Y2E3OWQ5ZjM0MDExZDk5NjM4MzA4ODkzNDFkNGY5YmFhYTA4N2YyMDIwOTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhM2ZkOWE5ZWYyNTc3ODFjNDFkZjM0MzM4OGZmNTYzOWI2NzMzYjVmNmJlMWUzNzY1YzJiYmJiNjM5N2ZhMWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQwNDRjMjdmYTFlOWUzZGFkZjliYTA1NWExN2E0MWFhNzMwZGFlM2ZmOWRmZjQxZmE3MzhhNDg4MzgzYTljYTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        },
+        {
+          "resource": "repo://nora/infra/computer/browser.py#L255-L309",
+          "version": "repo-lines-v1:sha256:d220e8d696e619f1b55947c106deb6c712676a8f2281306e82602b457d95ed6f:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxYTFmMTE4MWE5MjQyMDc1NGIzNjdiOTI1OThmOWQ3ZDY2YWEzNzJmOGUwMzQzZWI0YjhhMjk0MzY3MDI4MWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMwYmQwMmFkYjYyNzg4ZjAyNTA3MzUzZTQ0ZDk5ZjM3MmEzMjA3Nzk0MDRiMzNiMzM5NDJhZmM4Zjc0NzczYjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJkOWRlMzdiMDgzZGQyNWVjMDIxY2Q5OWM3MDczMmY1OWI3YTJmMGM3NjA4ZTY4OTM2Y2M4MmY4NjU3ZWZmNmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYxM2EzYzQxOGVhZWJkMmM1NjM1MmQyY2Q0M2Y1MTJhMDVmYjFhZTg2YmYyNTA2MDI1NGRmZGNkYTBiZjRjOWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_00cbebb4c1374b30a3d2027e5a6c950a",
+      "statement": "Page reads and per-element calls run in an isolated world created per document and navigation is detected by the main frame's loaderId, never by a marker on the page, and Runtime.enable is deliberately never called because pages can detect it; a refused open_browser is not asked again because any request to that address may start a browser.",
+      "evidence": [
+        {
+          "resource": "repo://nora/infra/computer/browser.py#L158-L170",
+          "version": "repo-lines-v1:sha256:93ca36ed909d359bc567afea23a08a7f952a7c61a65d9712851fa35da1735e0f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI2ZmJhZTBiOTFkNDRmYzBkNDlmNWRlNjkxZGE2ZmM0MzFmMjYwMTM0YmY3MzFlMGUyMWY3NjQ4MDk0MzM0Y2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2YTcxNTI1NzJlZTg0ZjEwOTA2Yzc0YjlmMmE5MjQzNGRkYWIwZTNjNDI4MTNiMDRlNTk3ZWZjZWM5NTFiMjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjViOTQ4ODA5MGMzMjg5NzdmNmM2ZTI1ZjNhZDg2MjYyNDI5MjczZDJhZDdkM2FiYmQ3YWVmNTYyMDYwOGJkNjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYwYzdlMTU1NTA2OGY0YzA4ZmQ4NDg3ODViNzUzNjQ0NWY5ZjQ0MTY5ODZkMzgwOWYyN2QyNjIzOWNlNGQ3MWUifQ"
+        },
+        {
+          "resource": "repo://nora/infra/computer/browser.py#L506-L562",
+          "version": "repo-lines-v1:sha256:03cc11a3c18f77360d8f2f4ece46fb47c61223817dd46df9766519adf2e4028c:eyJzZWxlY3RlZExpbmVDb3VudCI6NTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ2OTAwOWY0YzkzOWYzZGY4ODg4MzQ4NDQ0MzJjZTNiMWI5MTQzNjE5MzRjYWM1NmM3ZTU1NjJkYWUxMjJkZmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJlYzJiNWI2MDIxMGZjM2ZjODg2ZGRhOTQ2Zjg3ZDM0Nzc0ZjY3NWNjZjlhNTc0Y2IwYjI5NTQ3MDMxYjkxYWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFhMDE3NmRjMGRmZTYyMjAwYjA5YTBlMTcxNmQwNmUzY2MxYmY3ODY3NGVmOTczMjk3NWJjNDFmNzBhYWNjNDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ae9aa20c73b04c70be66ae5df7ff9c34",
+      "statement": "computer_browse hands a whole objective to a sub-agent with page tools only (no skills, no guard, no progress hook) that runs one action at a time for one model round trip per task; the step budget is counted inside the page tools so an exhausted budget is text the model reads rather than an exception, the whole task is bounded by a timeout and three loop caps, and browse_done or browse_needs_human sets the BrowseOutcome the tool maps to ok, nothing_found or unavailable with needs_human.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/browse.py#L216-L289",
+          "version": "repo-lines-v1:sha256:be4350c10b323f539c1fafd0353df13a25fb7e65d34798179bbf2ee869720f04:eyJzZWxlY3RlZExpbmVDb3VudCI6NzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY0MjE1YjAzYmYzMDUwNzJkZjU4YjdkNTAzNzUzNjk4ZjdlZWM0ZTM3ZTg4NTUzYTgwZWQ0ZmM5NWJiNDlkZjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY1ZmZiM2ZmYWZiMGIyOGFjZDQ5NzJmYWE1NTBiOGZlOTMwZDAzNTc1OTk3NThiZGJiNDIwZTQxOGI5YTZmMjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRjNDQ2ZjZiODY4NzQ0YTNkY2FiOTMxMGRjM2Q1Y2I1MWQ5NjU1NTNmZjUwNmY3MGIwNTY0MzdiMjExNmIwMGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://nora/agent/browse.py#L40-L100",
+          "version": "repo-lines-v1:sha256:6fed81a3c2b94d7b79cdd4bba38a09d09e92e444d337dece915556beef4ac000:eyJzZWxlY3RlZExpbmVDb3VudCI6NjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJiMzUxNzkwYWZmYzg5NzMzZjY4Y2E3OWQ5ZjM0MDExZDk5NjM4MzA4ODkzNDFkNGY5YmFhYTA4N2YyMDIwOTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNiNDUwMzlhY2RlOTdiZmMyYWExZWU4MjgyNzNlZmRiNzg0YTlhYTQ1ZDNkODc3MTBmMzE0YzU4ZDNmY2Q5M2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQwNDRjMjdmYTFlOWUzZGFkZjliYTA1NWExN2E0MWFhNzMwZGFlM2ZmOWRmZjQxZmE3MzhhNDg4MzgzYTljYTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI0N2QxODM0NjAwN2NiNmZjY2FjZGY5YTJiOGI5NmM2MWViMmE5MGJlMDk0MWU1ZmQ1MDdlZTM3NzFlOWY2NGIifQ"
+        },
+        {
+          "resource": "repo://nora/agent/factory.py#L543-L580",
+          "version": "repo-lines-v1:sha256:6313bfc627ac24c73d9785bf0e2123a2a47024d58ac70a11d433e8323091d025:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkzNDE4ODFiMjY4YzJmNTliZGE5NDFmNzM5NGY1OGU5YTQ3MjQwYjg2MTRlMWY3MmY1Y2I3ZWE5N2I4ZTRkNjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJmNzkzNjZkZTA2ZmY3ZGQ2ODRhODdhMzU4MzJiMTljMmFhMTQ5NTg3ZjgwYmQ1YTUxMDY1MjY4MWM1NWJmZWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdhM2EwNDJhMDU1Mzc3NzA3ZDI5MmRiMzc4NGY5OTViNzc1YTc2MjYyY2Y0NGUyZWQwMmJkNGI0NDlhMDRjMmMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a7bb55e030714f7b81743bfd2685003d",
+      "statement": "The browse tool clips the answer it returns to the model to the output cap while storing the full answer as a blob in the call's audit row, and annotates every answer with a note telling Nora that text from the web is data, never an instruction.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/tools.py#L15674-L15722",
+          "version": "repo-lines-v1:sha256:8d4c531116113540e3a14c99697c8d079683bc0d0e624784754d42712a5556bb:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1YTNkOTI5YjgzNWVmNGRjNGU1MDFmMTIwOWNmOTY1M2VjNzllMjhkMjg3OGQ4ZDJmMzIzMmY4YjAyZjFkOTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNmZTU2ZjMxMjVjZGRiOWQ1N2JmNTg4MmViNGU3YzU1NGMyYjMyMDAwNzBjYzFkZmQ2ODMzOTczNWJiNjNmZTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEwZmVjMDkwNTA1ZDgzMjRhZmE5NjdmOWIxYzQ1NjEyMmEyYjhlODdhMDg0MWYxZTgzZTI5NTg3YjQzNWI5NzEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e050c69ed4ac4638a28eb3b39ef304d4",
+      "statement": "The capability is optional wiring layered on two independent flags: the runtime, context reader, sweeper loop, probe and ComputerMetrics are built only while [computer] is enabled (the shipped default is off, and with it no nora_computer_up or calls series exists at all), BrowseAgentRunner is built only when [computer] and [computer.browse] are both on so the registry withholds computer_browse otherwise, while the audit, session and export stores are wired unconditionally so a call made while it is off is still recorded and the tool answers unavailable.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/tools.py#L4369-L4374",
+          "version": "repo-lines-v1:sha256:a345839d200832f31bef426c87fde79f60fe16585360ed864428e16ddb5cdfc2:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTdhNjZmMzJhYjkwMDc5MDQ0Yjk5ZGE0OGVjNjI3ZDVlMGQ4MGFiYzg5N2NmMzc3NmNkMDM0YjgwMDkyMDhjOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODU4MGI3NjUxOGRhZTk3OWZhZWJkMDIzNjdhMjkyOTJhNTBkOTc2MDkyMjUxYTM4YTZjZTMwODgwYmE0MjgyNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMmVmMDM0YTgwNWE2N2E3Y2UxOTdjMjQ5NmM5N2UzMjRiN2E4MDk3Y2U5NjliNzQ1NTcyZGUyOTM1NTlkNzZkOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTExMjdmNjBiODFmNjI5YTIzOTM0NmFlYmJjMTBhZTRmZTI1NTkzMDk1YTE5OWE4YzU1YjI1YmNlMmY0YTk2MSJ9"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L1499-L1550",
+          "version": "repo-lines-v1:sha256:e07e74965f0a6a66544eb46eb0b7536f7ed95d1ded07967b7350a2780cd26c59:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk1NTY0ZTZhZmNiNjI2OWMxOWNiNzkxN2YzMWU5NTAyNDFlOGRhZjBjMjE2N2M1OWIzNjM3NjQ2YWUzZWIwZWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ4NDA5NWQ5NzYxNDU0MzQzOGI1ZjViODgwMTc1ZWM5OGE3ZTg5MDJmZmZkYTI2YTZiMzZmYWMzZWU1MDA3MGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkyOWZmNWVkMmMwYTA1MGRiNmNlYWUyNWFiYjQyMGEwMTJjYjEyNmFmOWExNjY3MmY4MGEyZGY0ZmFhNjUxMDkifQ"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L2290-L2309",
+          "version": "repo-lines-v1:sha256:8f3fed3daf36eaf77574e15c6ae789cf922b25d1db6f1ff3db2e4e1e20f1be23:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdmYThiMGUyZDM4MjZlMjhlZmYwOGEyNTI3NDQzNDg4N2NhZDA4MTA1MWYxMzY4MmQzZDNmZjU3YmY0NGIzYjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMyNjNhYTE1MjU1MzNkZWM0OGI5MWM4OWVkMjBmODUwNDBmNDZkNTA1MDFjZjUzNTkyMzRlNThkYWViOThlN2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQyNjQzMmZkMmY1YjIxMzQ1ZDVhZDFkNDY0MjU4MTYyOWM0YTVlMmNmMzIxMzczZWE0ZjVjMDU0MDEyNjc4NGEifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L2162-L2185",
+          "version": "repo-lines-v1:sha256:cda14367037b59e1f57e59f37a49763b441f08546fe94add1dda3df743b2bd64:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmOTNhMjc3NmViMzdjYjA5Y2IwODdlZTQ5YjVmYTU5YTY0ZjliYzdkOTg5N2IzMTk3OWFjY2Y2ZjUxYTA0NGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmNDUzMWZmNjk2ZTNjNjhmNjA1OWY1MzdhYzMyYjQ5ZDhiNWU0YjY1ZDc5ZDAwYzRiNmZhYjlkMzY4ZmZkODgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU4MThhN2Y1Nzc4N2ZmMDQ0OGZkMmJmOTIxYTk2Mzg0MWZlODUwMjNlOWYwNDY3MzI1ZWU3OTFhNGIyMGE1ZjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZlM2Q0OWU3YmYyYzEwZDc5NGY0ZjU4ODU0YTVlZjY5YjBkODg5ZTMwZjIwZjllOWE5NDA4ZDNiNzJjOWYwOWYifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L2225-L2248",
+          "version": "repo-lines-v1:sha256:2b2cf6b301df8bc65e16a0032dd7d1cd2bea91f6cc1ea7f4b16c7722f28c9915:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJkMzE2NjQ3YmRkMDFkMjI3YTNiNmUwZWQyZDA0M2I2MDJjYTkwMmJjOTJiZDQ1NWZmODlkMTc0Y2Q0MzA2YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQzNzg0Yzk4ZDMwZTlmNWZhNmYwNmE4Y2U3MzYxYjM3YjQxNzc3ODRkYjA0NzJhYzU1MmFlNzhmY2M3N2Y4ZTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA0ODRjYmI1M2NjYmNjODI5MzlhMGMxYjA4ZTVjN2U2ZmMzNGVkNWQwY2QwNTFlNTkyZjUyZDVkZGQyZWZmMTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU5NTU0OTNkZDk2MzVhMjM1NzZkMjM3MGYzYzBjZmQ4MTc1MTE0MjQzOTYxMWFlOWNiMmJlMTgyOGM2YWI2YTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b90cd145be59482692f7306ca6ea0ab8",
+      "statement": "A bearer-token rotation is two steps rather than one because computerd reads its token when it starts while Nora reads NORA_COMPUTER_TOKEN when her container is created: restarting the computer unit alone leaves every call a 401 that the client reports as unavailable and drives nora_computer_up to 0 while /v1/health stays green, which is why the timed probe makes an authenticated read-only call instead of asking the open health endpoint.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/computer/README.md#L229-L288",
+          "version": "repo-lines-v1:sha256:d3b5fd02c15efd1f890871ff70a012c5ef3134a6d321eaf418524f6cae1f7975:eyJzZWxlY3RlZExpbmVDb3VudCI6NjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjczYjNkNGYyODEzZDBkM2FlYmM5OWQzOTA2NGUzNTZiMmZiOTQyZjgyOTg4YmM4YTRiMjM3N2I0ODg0MDRlYzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2ZmIyM2E2NmMxZmNkY2EyNjJhZWVlMzRhMmNhOGIzMmU5NjZhODU4MmY0NGE3MmMyYmRhOGNkMzg0Y2IxODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY1NDg3N2Q2YTg3NWI4NGYyZjg2MmY3NDNkZDI3ZDE2NDNiNzBmYmIxZGI5ZjZlMzM2OGEzMTcxYTM2NWQ0N2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVjZDUxZTI1ZWQ4YTZjMzBmZjNlNTIyOTM3MGZlNjgyZDY5MmMyODJhYjQ3OTIxMjllOGQ2MWEyNWM3YTFkNDMifQ"
+        },
+        {
+          "resource": "repo://nora/infra/computer/probe.py#L9-L16",
+          "version": "repo-lines-v1:sha256:d55d7c28458a979a093db7479a3dfac73ff035302870f9ee86c7d8e96fad9d90:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzQwMjkzZDI0YTdkNDgyZWNhMzdlNmNjMzBjNzg1Yjc3ZTFhOTljNjgyYTFjYmU1ZmQ1NDNhNGU1YzIxMzVjOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiM2MzOGY0YTRjZmE5ODg0NDBiNzhkNmNiNDFiNjM2Y2ZlMmI3NjUyOTYzMDMzOGFjZDk5MTgxMjk3MmNlYmRhZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTYzNGM2NjBiOWYyMGFjODNhZTQzNWMyN2M1ZmI3ZTdjNWU2MmM5MDU0NGFkMTIwYzA0ODFkOGNmZTgzMDMwNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTI4ODU0Yjk1MDdiMzZkMWRlYzQ1NDc4NjY4NTY2ZGQ3YzljNGYwNTdkM2M4ODMzNzQyNTZlODJhZmEzYzg5ZSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_f8b151477f0943eb91064ca6a43a2eab",
+      "statement": "Pages a room's browser loads are bounded by computerd's sandbox egress policy, which allows the public web and denies the private ranges, the host's loopback, the tailnet CGNAT range and link-local addresses, scoped to this sandbox; a public name that resolves to a private address still passes a CIDR deny, a limit the operator accepted rather than guarded.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/computer/README.md#L41-L68",
+          "version": "repo-lines-v1:sha256:b2533f4f635d4d3a977a00dea35e0f4168b14ed0092d213e85883c666ddd8e85:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRkNjkyNDIxYzA2Y2QzZTYyYjc5NWM2Yjk2MzMxZTI1M2YyNTg1NjhiZjNiMTgyZDAyYmYxNDQzNWQwZTA5NTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMyZDFiYWVjNWRjNzcyNzIyY2RjMmY5ZGQyYjc5YzMxZDJiZWRiMjJlMGY0MTJlYjBjZDRiYzVkMDJlMWE2YTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5ZGJkZGI3ZjYzNjBhZWQwZDhiYzkzNTgyZGEwNzdkNDZhNDg4NzgyZGQxZGNhYjFlNjMxZWEwMmY2ZTVmMGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYxZTg0OTgwNDYyMmU1NjE2NzhjMTBkYzZlZDE1OWNjNjY1MDQyMGY3MjJlMmUxNDkwMzczOTRlMzc0ZmE3MjUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1c8f444dfd2a4ef19ad19c6c09ec4553",
+      "statement": "computerd starts a run's command through `bash -c` in its own session with the room's directory as working directory and the room's user's credentials, and when `timeout_s` expires it sends SIGKILL to that command's process group and answers `unavailable` with the exit code, duration and partial output it captured; because stdout and stderr go to files rather than pipes, a backgrounded child cannot hold the call open and a child that escaped the group with `setsid` survives the kill without hanging the answer.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/computer/computerd.py#L421-L449",
+          "version": "repo-lines-v1:sha256:6a9f40fe0a0736fc65504526a3e43e1db9ce7a2e0894d5f4e058ae28c3d96a75:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhkM2UzNDAxOWJmZTk4MDM3NTNhZGRmMjQ5YTExMThmYzhhNTlhN2RjOGY2YTgyZmJmODBjODhkNjU1ZWYzYmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ2OGY2NzEyOWNhNDU2YTA4NWY5YTNlNDgyZTI3MDgxNTAwMmM3ZmY5MmUxZDNmMjczYWZlMmJhMDFiNTBkZDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJkMjQzNWUyMWVhZDFmNGFhMDAyNDI1ZWI0OWUxY2NiMWRhYTZkODdjMGZkMTcxMWMyYmVjNjRmM2YxYmVkYmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVmNzBiZTgwMjBkNWQ5ZDE5MTVlMzdiNGNiMzY0ZjZjOWZhYThjZDE4MzJjYjJjYjU3ZDU0N2Q1ZjE4MTk5MDEifQ"
+        },
+        {
+          "resource": "repo://tests/infra/computer/test_computerd.py#L159-L182",
+          "version": "repo-lines-v1:sha256:164a4946e027b2e78c8b85cac11fbc6006b28bc777b55de3e0cf25cdf54d1684:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlNzkwNzE4ZjRlMGVhZDk1NWEzZWE0MjQ2NDczYWYyNjVkNGQ0MDQxZDM3MDRjMDNiYTA0M2UyZWIyYmJiYzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY4YzYyNTgyMmI5OWJhMzgwZWY2N2U3YjIxNjk0OTY1OGY4YjY2OTkyOTU4MjllNTA2OGU4YTgwY2M2NjJlMTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY4MTdiY2I1OWUzOGI2NjcwNzE3OGQ1YmRlOTRmZmM2MTAyZWFhNTQyYmZkOTcyZTdiMzZmOGNkZTUxZTc3NGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhjM2YyY2Q0YWY4MjJlN2M3ODk2MWJjZjUwZjVmMDVmYjVmYjBmNGViZTIxNDM4N2RhMDM3N2NkNDE4YjY5ODUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5a12bf7c93f043e88e489632857636d6",
+      "statement": "Backup of the computer's /workspace is an installable mechanism rather than a property the code guarantees: the repository ships a user unit and timer (nora-computer-backup.service and nora-computer-backup.timer, OnCalendar 03:20 with Persistent=true) plus a `nora-computer backup` entrypoint that tars /workspace as root inside the VM, copies the archive out, verifies the in-VM digest against the copy and the gzip read-back, and files workspace-<UTC time>.tar.gz with a .sha256 under ~/nora-backups/computer-workspace inside a keep window; whether the timer is enabled, when it last ran and whether an archive exists are installation facts read back on the host, each room's browser/ profile is excluded because it is a credential store, and the archive is same-disk rollback rather than an off-host copy.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/computer/README.md#L161-L227",
+          "version": "repo-lines-v1:sha256:ecf5d1aa133d747c7288966224f51681890ce755a3c24d9a5f26ea64903a50dc:eyJzZWxlY3RlZExpbmVDb3VudCI6NjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhZjI2OWMyMGNkY2FhODJmM2Q0NjhmNTkxZGE3ODliZTlkNGVmNjk1YjJjNmQ1MTQ1MTlmYmU0NDEwNjlkMWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3YzA2YzU2MWQ1YzMyNzM0MzY4NTI2OGE0NmIzMzkxZjM5OThlZWU4OTBkMmJlNTFmMGQyMWNjNGE1M2FlNmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkyZWYzMGFlNTBhMWQ2MzEyMzhkZTQxZmQyMWEyYzlhNTIyMzBkNjAyOGM4MjkwMzZhNTU3MzcyMWQ3ZjA0OTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ3OWNkODRhOWZiMmM2ZmZkZWJhNGQwNTZmYmYzNDljM2U4Yjc3OWI1NWI1M2UzN2E2NTk2MjRlOTAwMTY4NmEifQ"
+        },
+        {
+          "resource": "repo://deploy/computer/nora-computer#L411-L479",
+          "version": "repo-lines-v1:sha256:f8e34cb7a15f67e0cbb968c0766fca9a0f4f00180bdd415b0b498cc5f559fe43:eyJzZWxlY3RlZExpbmVDb3VudCI6NjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxZDdkNWI4YzEyMzc5ZDdmMzQ5ZTA1Mjc2ZGE2OTgyMzE0ZTU3ZjRmMjk0ZjE1YTg3ZTc4Mjc2ZmI1MTAxNDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhhMjA5ZWFmM2Y2NDU0YjQ2YmI4ZjdmMDZiY2E2ZGE4MTE2MDkxNzNjYjlkMzMxYWQ3YjEyMjIwY2I3NzllODYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYxNmUzODE2N2YxYjAzMTkzMDgyNzk3YzBiNGVkMWRlNzgwMjQ3YzJjYzMzZGYyYTJiMTQ0MTAwMWNhN2VkYTIifQ"
+        },
+        {
+          "resource": "repo://deploy/computer/nora-computer-backup.service#L1-L14",
+          "version": "repo-lines-v1:sha256:8f51f1382bd93a0c4377cb59b3b5c4f2dd8b8e86e409be00b4f28d26c9094cda:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhNTBiZDRkZGQyNzMwMjUxZjFlOWUxY2RjNTVlMDM5MDY2ZDU1YWU4YTFmYWIwZmI2Y2ViM2ZiYjcyY2RiOTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE5OWExZGZlNzY4YzI1NDE5MTFiYzc3MDUzOWVjMjRkN2UxMDdjMzk5MzRmY2MxOTM1OWRiNzZmOTBiNWNkMjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://deploy/computer/nora-computer-backup.timer#L1-L14",
+          "version": "repo-lines-v1:sha256:af9d4ef4ef44b70925ae69087eb5fa73f3f5c006ff04bc8e417f30503b8c172f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM3YWFhZTViNDY1NjFkMzg3Y2ZhMTQzOGZmNTJiZjhhYmY2YTViN2Y3MzZkMjQyNTU4ODU4NDc1MDlhZjk5ZTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU4MzQ5MDZjNDMzY2NhYjI2ZWMxMzU0MWE1YmM1ZWNjY2I4MzVjYWU1NTIxOTQwNGVlNTNhYzI0ZTQ3NDc1ZWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-20T12:25:17.607Z"
+  }
+}

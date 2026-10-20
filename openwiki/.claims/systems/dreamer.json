@@ -1,0 +1,476 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:ee79823a12ab195dd30a91567f689eb9af23350d8da4ec6df224b50028277570",
+  "claims": [
+    {
+      "id": "claim_d35c8312a66c4e9e84fba5e39ace4786",
+      "statement": "The Dreamer is a propose-then-dispose runtime per route rather than a blanket no-writes-before-`commit` rule: there is no write tool in the default set (an adaptor's own verbs are *added* to the read-only set, never defaults), an envelope adaptor returns structured data for `accept` to parse, a staged verb adaptor's typed closures validate and stage as the model calls them, while an adaptor whose checked verbs write when called (Lessons) commits inside the sample; in every case `accept` returns opaque `object` payloads that the runtime wraps in `Proposal`s carrying provenance only the runtime knows, `commit` is code that reports what landed and drives the tier's own store, and no tier value type ever appears in `nora/agent/`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/dreamer.py#L1646-L1661",
+          "version": "repo-lines-v1:sha256:b7b74f50d760697b7abe01057f95d88ca757a7d7f63cde282d410b5379b2ff4c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNjMDA5ZWI1M2M2ZWIwZDQ0ZmRkMTg2MjlmYjIwYTA0ZTg1MTIyZjkyYjM0MDAyNWE3YmVmZDU5YzQyMjNmNjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwNDdhY2ZkMWMzOGFmNTVjMDJlZTkwYzYxODllYTcyNmFmYTNhMzViNjE3MzNkYzYzNGI5N2ZiMjYxZjJjY2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE4OTUzZDA5MjQ4NGNjYWIyNDEzZTlhMjY0ZDM2MzA2YzI4MGM5YTYzN2M5OTUzZTFmMzNiZDUwYjZlOTMwNjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg4N2IyMjg1MzNiZjk0NzVkNmNiM2I5NjgyNDM3OGY2OThlNTQzMDM3MGYwMjExY2M0OTBjOGI0NDE4NjhiMTAifQ"
+        },
+        {
+          "resource": "repo://nora/agent/dreamer.py#L1663-L1678",
+          "version": "repo-lines-v1:sha256:5d4848a574a93b710ed55a70ae1ff6d3f23a87267195d86bebc408e4dab94e62:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZkZjgxYzI5YzM3NzU5YWYwNmZlNGRmYTEyODcwYjE1YzZlYzhiN2Y4M2RmNGY4NzQyMWIwZmNkYjRiNGY4MzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1N2UwZjNhNTg0MTkwY2VkMWZmYmQwZGNkM2FkMDZiZjNlZWRkYjYxNWJkODVjZGYxZWRhNDQzYjFjZDllMmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBiNWQzNmQyMDY0NmQ5YmI2ZmY1MjJjOWM2MGIwMmMzNDQzNzc4NmZmYTRlNGQ3ZmIzZjgwZmUzZWIyMDEwYzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlkZjBmOTAzYzk2ZmJmMmVjNDhjODhhNjU0Y2NlMTc2MTBiY2U5ODM2YmQzMDliMzIwODlkMGFkNzQ4Zjc5MzIifQ"
+        },
+        {
+          "resource": "repo://nora/domain/ports.py#L2396-L2432",
+          "version": "repo-lines-v1:sha256:92a75835e9424a3e165487a30688aff99014437b23480caea6dc3861888ba994:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMzOTJkZWZkMjhkNjY1MTI2YmIxM2Q0NjQ1MjY0YTYwMjFlNmY1MmIwNDdiMjhkYmU2M2VkOGQxZWQxM2M2NjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA4MGQ4MmMzNzZlMjU0OGJkMjAzZTgwODY3NzJjZDU0ZTJkZTUxN2Q1OGUyNmNlNDcwNmY1NTUzODMxMGZlMDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQzYzYyNWY5MWRmYjhlNGMzZDFlYjFjN2NjNDU3NWNjOGE1NWJhOGE2N2E4ZmM1MjA1MjYwYTBiZDgyYTgyYjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRlMzMxMjc5YWNiZmU4ZThkN2M1Zjg3OTY2MjI2ZTY3M2VhYjVkM2U5ZGI3ODE0MGJiMzBmY2Y2YTVmMDNmMTkifQ"
+        },
+        {
+          "resource": "repo://nora/language/lesson_book.py#L184-L230",
+          "version": "repo-lines-v1:sha256:d23e108efaa6043819e5ae47fac487d9d19c0dbce47d21725ba7bcc8ec51a863:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2ZTI0Y2ZiOWRlM2UxZDJjMzI4ZjYyNjc5NmY3MmFhMDlhNjViMDU0MDIzMjE4YmIzNGQwYTlhM2I4YmExYmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU3YjMyNGNmYmFmM2JlYWFiOTJhZTkyOTQ4OGQ0OTY3NDMwOWViNTdjZTI0ZDU5ZDZhMTUzMjMxYTEyYjNiNDUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFhY2FlZjYyYzFmM2ViMDEyZTAzMzEwN2QyMjBiNGUyZjFmMTFjY2UyZDdmNTU5NGE3MWE2ZDYxZDE3ZWY1YmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNjMWFhNGVlOGE5MTI2YjNhYzBhZWRlNDllYzE4ZGI3YTI1YzMyOTA3N2ZkYWZhZTliMjQ0MTY2Mzg0OWE2ZWEifQ"
+        },
+        {
+          "resource": "repo://nora/language/lessons.py#L410-L447",
+          "version": "repo-lines-v1:sha256:99e4a4591007ef7957a42459eb73a72e3d68b0cee6463bed483a80a764654a8c:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQzNWU2MTk4ZjUxNzQwNjVhZGYyNzZjNDE5NzQxMmI0YWJmZDYyMjk2Y2M2M2ZkM2RkMmZhYmViODViNWMyMDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIxNjNkNDQzOTExNGQ1ZGMyNDgzN2FjYWQyZjdkNDY1ZmQzODJlNTBlNjU2MDk2OWI5YzMxMmY3MDBmN2RmZWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMyZWE5MGY5YzY2NDI5OTNkY2Q4OWU3MmFlN2EyMjk3MzkwZmE3MGNkMWNkNDBlNWVjOTgxMzk0Yzc5ZjY1ZWYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_090a77755f7c40189cdcfcfa81a338f1",
+      "statement": "One Dreamer run is a fixed order: read the objective and its digest for this run, re-check the tool subset, render `inputs` before building tools, build tools from names, run `samples` model calls, union and dedupe, cap, screen the raw items, `accept`, stamp provenance, `commit` — each step placed so the next never sees unvalidated model output.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/dreamer.py#L1236-L1275",
+          "version": "repo-lines-v1:sha256:e22ec3d9dc81da99b762f13eacdc6efea9a818930298630a6b736fe56ef79566:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE0M2NkN2M2ZjYyZTk5NDY1ODAyOTI1NWZiNmRkN2UxNmRjNzljNjUzMjA3YjFhZjBhNDQzZGNhMDdhMjBjMTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJmYWQyNzZlOGI0ZTA3ZDgyN2I4NTZiMTk1OTc0MWM4M2IwMGFmMjNhMzhhZDYxNGNjYWYzNWE2YzM3MjNmMmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY4NjkyYTM3ZTZlNTBkZDRmZDM4ZWMzMzY5ODg2N2VlZGI4MjRjOWVjYzFmMjVmODU4ZGJhZjA4OWQ1YWFhZmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEwZjZlYWY2NTE3YjllYmU5YTMxYWRlMmUwMDY0ODBjODViYzBlYjgwMzJjMjFmYjI5NDRiYjQ5ZjFkYTQ1NjEifQ"
+        },
+        {
+          "resource": "repo://nora/agent/dreamer.py#L1395-L1450",
+          "version": "repo-lines-v1:sha256:50bcc0948d017a953000075c54095b7841260e5d4c37eab56fc9633f5df20ca9:eyJzZWxlY3RlZExpbmVDb3VudCI6NTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4MzA5MDJjY2YxMDdkMTg3YjEwZTU1NjhkNzYyNGM5MDQ3OWNmODEzM2NmZGE1MGVmZWIyMTg4ZjEyNGZhZmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4ZjM1YTBkYjkwNDBmOTMwYzdkODU3NzhkNTM5NjdkODRlYzVhYjBjY2ViY2NhMjYzOWJiZGE5MjA5MjI2ZmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjExM2E5NjI0NGVlY2Q1OGVmN2RjNWVhZGM5YTZhYmFhNjQ3NDRjYmIyZTAxYTRjNjEwZDAwMzEyMDk1NzkzYmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdjNzNkOWE1YTMwOWNlZGVhOGY0NDRhZGM0Mjg3MTdlMGQzODM2MjI5ODZiODVmZDU1NzkwMDI1NzFhOTRiNjYifQ"
+        },
+        {
+          "resource": "repo://nora/agent/dreamer.py#L1494-L1515",
+          "version": "repo-lines-v1:sha256:deb947474630bf48003443020ec9afbf538a0bf2cb385ae751c6e964003d487c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkwODdiMTE3MzUxMDQ2MGIxY2VmOTlmMDFiMjFhYTE2NTQxYTE2YjRjZjk3MzYzNGFmYjMxYWY3NWVjY2I3OTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhjNGE2M2U1MjA4ODE5M2JjMDM5NzJjZDE1NTExNDZiOTRiZjMwZWQ2YmNjOWU1MGQzMjIxMTFhOGIxNTA0ZjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk3MDE0ZGEyNzUyMzRlNDQwNWJkYjhlN2U2NmUzZmZiNGIwZTJhODFlN2E2MjNiYTlkYmEzYWVhNTFmOTM5ZTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRiMTgyY2VlYzJlNjZmNDg1MDUzNmJkMDhjNWZkNDBmYjExY2JhNTZkNmExNjU2NmQ3NDQ1ZTMyMjkyNmFmMGEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7358f7d4cd9041d69a847589f3af5f36",
+      "statement": "`DreamOutcome.status` is R-27's three-state vocabulary (`ok`, `nothing_found`, `unavailable`) decided at two boundaries: an unreadable sample (prose, truncated or wrong-key envelope, timeout, killed loop) increments `nora_dream_sample_total{status=\"unavailable\"}` and is skipped, and the run returns `unavailable` before the screen, `accept` and `commit` only when no sample was readable (`readable == 0`), so that path reports `written=0` and never reaches `commit`, while a run with at least one readable sample continues and can still finish `unavailable` on an `accept` raise, a `commit` fault or `AccountNotRecordableError`; in every `unavailable` case the watermark is held and no `last_fired_at` slot is stamped, `ok` is computed from what the model returned or from the proposals/rows rather than from rows surviving, and `DreamOutcome.stop_reason` is an optional diagnostic that on its own proves neither envelope readability nor run success nor the absence of writes.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/dreamer.py#L1379-L1411",
+          "version": "repo-lines-v1:sha256:93f8e42219cc05872e95b212f8ca548e1174138f3440b84f6f931b0f5e41ce99:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk5MWM5NWM0ZmUyZGNmYWQ3NmIwY2E5NDVkOGU0ZWJlMjI5NGMwYjI3MjNmNDM2ODJkODkwYjAzYTVhNTJlNjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU1NTNhZTI5MzViNmM0MGViYjAyNDg1MGE1MWU4MDY4ODFiZWJmNGRiY2JiNzg0Y2U4OGM4ZmVjYzkyYzJkMDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ4OGYxZWI2NmFmOTcyMDM4NzA2NDFkNTI1NDk5M2ZiOGJiYzgyMzZhOGVjNzliMzRmMGM2OGQ1YmY3MzM1YzEifQ"
+        },
+        {
+          "resource": "repo://nora/agent/dreamer.py#L1461-L1527",
+          "version": "repo-lines-v1:sha256:0ea93da0bb7c85911ce27755834279a161979d012b1629ab94d7c92e6b530e2d:eyJzZWxlY3RlZExpbmVDb3VudCI6NjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1NjljYjA5MjgwZWUwNzgxOTQ1ZTQ4ZDQwNDFiZDJkZmFhZTY5MWFkMmVhYmY1ZDNjYmEwODQ2YzcyMTZjYWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRkMzYwNGYzOTFmMDVmZmQ4OGVhM2U0ZTQ1OTkxYTk3NGYyNjUzNzM3YTQxZTkxOTdhNGNlN2EyMzMxMWM3ZWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFmOGRjNWI5NjIzYzE0YWIyZmEyOTAyOTA0OTE3MjVmYWUyZDlhNDA2MTA1NWI1YzNmMTU1MDdmMjc4YzgxZjAifQ"
+        },
+        {
+          "resource": "repo://nora/agent/dreamer.py#L1529-L1537",
+          "version": "repo-lines-v1:sha256:5e619e3a7cdad9ba5fbeab7364c294c7a1f220e96257bb0f3b120cab6a472ce6:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzRjYzdlZWUzNDc4NzU2NjFlYTI4ZWY2YzdjY2VlNzQ3NzBiM2UwMjQxZGIwMjVkNDRmODhmYmQ4YTNiZjRkMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjY2MDkzZGE3ZTY1ZWIyYzdmZDdkMzBlMzQxYzc2ZjA1NzBkNTE1ZTc0NDFmNDc0ZmJlNzc2ODk3ZmQxZTM1NyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjk5ODY0YTQxNTkzNzVkMTlkYTZlNzBhMWNiNTc5ODk3MzdhYzAyNTQ1NjFiNDJjYTMxZTI3NzNkNTkzODEwMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjY3NjQwODkzM2EyZTczZjAwNDZhNTk4NWQ0Yzg2MTM3ZDUyMzg4ODQyN2Q1ZWJhOWU0MGQyOTUzYjEzODFkYiJ9"
+        },
+        {
+          "resource": "repo://nora/agent/dreamer.py#L1596-L1661",
+          "version": "repo-lines-v1:sha256:9a68dc2004639d863c7b060518c11838886283922c7a4886e78f4d4e3c04cd4d:eyJzZWxlY3RlZExpbmVDb3VudCI6NjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJmZDZkY2FmMDVlYjM1NGUxNWE3NTk4ZDIwOWE4Njc0ZDFkMmMwYWZmMmE3MGNjYWE0MzY0MjQ4OWZhY2I1YTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwNDdhY2ZkMWMzOGFmNTVjMDJlZTkwYzYxODllYTcyNmFmYTNhMzViNjE3MzNkYzYzNGI5N2ZiMjYxZjJjY2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQyYmRmODlmOWU2YmRiOThlZGI5YTMxNzhiNzYyN2VhYTM1MWU5OWZkMWI0NDJhMTVlMDM2NjBlNWQ0YmIyYjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg4N2IyMjg1MzNiZjk0NzVkNmNiM2I5NjgyNDM3OGY2OThlNTQzMDM3MGYwMjExY2M0OTBjOGI0NDE4NjhiMTAifQ"
+        },
+        {
+          "resource": "repo://nora/agent/dreamer.py#L1711-L1729",
+          "version": "repo-lines-v1:sha256:e7028f7674bd1645cc78d8a0aba8dda713654401b7b39f4721a4734932ddfccf:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIyMTFlMjkyMGVkODZlMWJhZjMxNTEwMjRkMTJmYjM3NzU3YzQ0Mjk1YjY4NzFkZDU3ZjNlNTg5MmZiOWI0YTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImExOTJhMWJlYjljMWIzZGY5MTA5NmZlNmNhNThiODU1MmQ2ZjQ3YTAxOTE4ZTg1MmMxNmNhOWQ5NDNjZWM1MDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM4MGUyMjhkYWYzMDFiMmRlY2U5MmJmMTNhNzI3ZGQ3ZjRjZTgwOGU0ZmI1ZGI5YzdhNmViYTU2ZGIwNzQ4YmMifQ"
+        },
+        {
+          "resource": "repo://nora/app/runtime.py#L1014-L1020",
+          "version": "repo-lines-v1:sha256:5bf084f286af560a9ce06dcb2f02913a4c26ab5b37abe39c7d7f4e0c06ae3465:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODYyZDQzODFmMDIwYmVkYWQ4NDk0ZDJmNTBmOWM4Y2U4YjM5MTFhN2UwYmNmN2ZiYTY2OGI1YzQxNmViMzk1NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzBjMWYxODhmMTQyZWQ3YTgyNDY4MGIyMDcxNzJjNTUxOWJjNjE0YTQ4ZmRhN2NmMTY3ZWRiOGRkZjc5OTU2YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTYwYWExMWYyOGM5NzgzMWVmNDI1Zjg2MGQ5YzhhM2EyNzZlNTA5ZWJjOGUxMjQwNTZhZDJjOGJiNWZlZThiYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmUxNDZhYjA3MmE3ZWMyNjk2Nzg3M2M4MjRlMjU4ZTNiYzJlMjk0MzdlMzBmZTUxZDJjOTZmZTQxN2ZiOTA5NiJ9"
+        },
+        {
+          "resource": "repo://nora/app/runtime.py#L851-L854",
+          "version": "repo-lines-v1:sha256:a75482e5762a0f413f42b8aad3cf828b61869111ad894e33bcdd1661095411d8:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZThmZmY3NzQ4YmFhOTIyMDJmYmQ5MmMwMjUyNjQ4YjRjNWY4MzBlODVkYWE3M2MyMTNjZjRhYzM0MjZhNmIwZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiM2YxMDhjMzIwMGQ2YjY5OGIyMjliOGI3ZDFkYjgxMDkxYWFkMmMwMjlhYjFmNGM4M2QyNTQ0N2Y1YWQ5MGIxYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMmIzM2JhYTlmMWYzNmQ5Zjg1NTUwMjAzZDYxMTZmMGY2ZDM2NTk1YTYyMTc3NzFlYzgxMjlkNGNmMjY3ZGViYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjUzZWZlMGZhZTZhMjZlYWE1NmJiODM3MGExMTllYTQxZTBkMzYyZDFjYmZkZTA2MzhjY2IzZmE2OWY1NTc1NSJ9"
+        },
+        {
+          "resource": "repo://nora/app/runtime.py#L937-L953",
+          "version": "repo-lines-v1:sha256:ef3852e6dad7610b702ea2987e6da7fa5c4bce1cfea9114fe256ca8012f16c04:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRkMmIxOGZkYmQwMDBhM2M2Yzc0MDYzOWRmNTY4MzQ0ZTM3OWI0MGNkYmQ0ZDAwNGU5MzRjNWY0ODY4NWFhOTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE3NGViZWFlOTQ0ZDcyMjVmZDRiYjRlNWYzZjE3ZGM0OGJhMjY0ODE5Y2M3N2Y4NDliNjVhZWVkYjcwNzY2MWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFhZjI3Y2EzNTlkNGE2NzYzYjljNzU3Y2I5MjdiNmE1YjFkNWNiOGY2NzNhYTUzYTliM2NmZjFiNmI4YjI1ZDYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_34c85ae1c37843058b141b42c605156f",
+      "statement": "Envelope validation is the runtime's and deliberately small: `parse_envelope` rejects a response over `MAX_ENVELOPE_CHARS` (200 000), tolerates a preamble via `json.JSONDecoder.raw_decode`, takes the last valid envelope rather than the first, and returns `None` for «not read» as distinct from a well-formed empty list for «nothing found».",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/dreamer.py#L114-L120",
+          "version": "repo-lines-v1:sha256:7b8c8fa7efc113cde9c8fe10fcd35c40aafccedfe56a59680ce13e178598c0df:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiY2M0MmRjNGRmZGE0MWEzY2U2ZDZjZjI2Yjk2NDQzZmY2ZWFkYzZjNWE0NWFmNDkzZmQ5YjQzYzk3N2Q1ZmI1YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzQyYzRhOWUwYmQ0NmNkNTE1ZmVjNTIwODA1NDRlY2U4MjI4N2ZmZDljNzJjMWM1NzkwMWFmNTVlODJhMWMxYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGI4NDMzNGIyYzEzZDkyODY1NTJiYjAzYjBiN2E1NjNkNzhlMGNiYzk5Zjk2MjY3N2ZlNTBhMjI0YWE5ZDhlOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjcxZWI0YzE5ZjhlZmU2ZTYwNDdjMzk3NjI0M2UzMTJiZjVjZWM2MzdjZTQwY2IzOTQ5Y2I2NzEwOTIwMDU5NiJ9"
+        },
+        {
+          "resource": "repo://nora/agent/dreamer.py#L773-L818",
+          "version": "repo-lines-v1:sha256:652d97522a3182b719ff4e5348279b011c7e9809ad0b1843eafe22bbb3d12211:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkzZjFiMzYxNzhlZWVmY2RkZjcxZGM3Y2FkNmViNjVjM2MxNGRkY2IxNTg5OGUzZWZkZTU2ZWY1ZTZkNDM4YTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg4OTBhYTI4MzNmYzRjZGVmMDE1ZTljODFkYWUxYzQxYWE5OTUxNzEwMTA1MWJiYWE1ZTdiNWNmMTJiZWJiYmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMzMGJjYmEyMTA5MmRjMTRiOTVlZmIyNjAwMWZhM2FjOGExYmJkYjQ0ZWViYjI1MzkzYzJlNjUxNWMxY2ZiNzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg2NzMyODA3ODBkMmJmODM1ZTFjYzM1ZTFkN2FmYmI4NDNmM2E2Y2IzNjNjYTFlOTFjMWRiOTE2NDEwODEzZGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f6cde1078df04428850090c2fc40de2c",
+      "statement": "The per-run item cap is `MAX_ITEMS` (64) unless `AdaptorSchedule.max_items` overrides it; it is applied to the deduped union across samples, is drop-shaped while the watermark still advances, and the drop is counted with `reason=\"cap\"` on the screened counter.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/dreamer.py#L120-L120",
+          "version": "repo-lines-v1:sha256:c42c4a9e0bd46cd515fec52080544ece82287ffd9c72c1c57901af55e82a1c1b:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzQyYzRhOWUwYmQ0NmNkNTE1ZmVjNTIwODA1NDRlY2U4MjI4N2ZmZDljNzJjMWM1NzkwMWFmNTVlODJhMWMxYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzQyYzRhOWUwYmQ0NmNkNTE1ZmVjNTIwODA1NDRlY2U4MjI4N2ZmZDljNzJjMWM1NzkwMWFmNTVlODJhMWMxYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiY2FiYzFlZWIwMGJkYjNjY2ZkYjk0YWY5NjJmOTg2NmMxMDc3ZjE4M2NjOTdmYWVmZTQ4YjIxMDJlODdlY2RiMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjcxZWI0YzE5ZjhlZmU2ZTYwNDdjMzk3NjI0M2UzMTJiZjVjZWM2MzdjZTQwY2IzOTQ5Y2I2NzEwOTIwMDU5NiJ9"
+        },
+        {
+          "resource": "repo://nora/agent/dreamer.py#L1412-L1435",
+          "version": "repo-lines-v1:sha256:3fca89ad6b6ab40825722df0a5fe8118a38601dd84e464d2135d9bbfc8d76856:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmMTQxYTA2NTFlOTk3OWJmZGRmMDVkYWI5MDlmMmMyNjk3OWZmN2E5ZDE4OGYyMWEyNDM1MjVlOTM5NzhiMTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFjZTVjNzljODVlMTEzOTI5MjgxMmE3ZGJlNjczZjFhYzdlZGNmN2Q2ZjllYmQzMzlmOWZjYWM0N2ExYWYzYzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg5NjgwMzMyZDE4YmMyMzZiOGJjMDU2MTg1NDQ5NWY3MTJmZjM5Y2IzMmE4NDk0ZmM1ZTQ5YTFiY2U3ZDZmYzQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6839542754d847f7ba7978a96d42b1df",
+      "statement": "The Dreamer screen runs on the model's raw envelope items after the cap and before `accept` — before any tier type exists — because a parsed object would need each adaptor to expose its own text, an item carries fields the typed parse drops, and item granularity means one poisoned item never costs its siblings the run.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/dream_screen.py#L177-L202",
+          "version": "repo-lines-v1:sha256:827e6e5f02c376fae255425d2e2c2fbb1d53727bd84f997f1f61b3e2a7226607:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYyMTlkN2M1YmUzNDMzM2M3ODU3NzE1OTI4OWViMTAzZWVhYjFiNzdkY2MwODM2YmEwMzVmZTYxMTVjMjhkNjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUzMWUyZTIyNTc0MzAyM2E3YzQ1OTY3NjlhMzNkMGJmZjNlM2Y5YTFkMjFmNzAzYzQ5ZDg3ZWZhODYwODllOTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVhM2JjNTlhYWQ3ZWUzMjAwZjg4ZTBiNjdjOWYyNGE1YThkMDg1YjRjNmI2YTNiMjA4ZTk0NTNiMjk2YzBmMGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://nora/domain/ports.py#L2434-L2441",
+          "version": "repo-lines-v1:sha256:baeb6b1aa712acafc482ed1de6ba6231f22af2d982124e0476bfd73d657847ed:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDU5YzUwMjk1Mjc2NGFjM2I0ZWUxMzczOGU5ODQwMjE5MzQzODZjMzUwZTYxMDMxOGEwZDJkZjk3NjQzZWM1OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjVlMjFiNDhiNGFiODRiNWE4YmJjOWI5NWRhOTk2Nzk3OWQ4NjJjMGY0N2VlMWU3YTdkY2FjN2EzNDhiMjI1NSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzcwYzBhN2E5NTdiYzI4M2I1YjZkYzg3MDExMDk3NjliNmYwMmIyY2YyNjkzOTdkYTY1ZjFkNmVhNzI4MWQ5NiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjRkMTk0MmU1OTgzYjQ4MmUwMzhkODYyMDE3YmE4NjgzOTQxMTJmNGZkN2NjMTU1ODA2ZjUxNTQwN2U1MTU4ZCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_1d4f4e8a15c848909660a06e2d7788c4",
+      "statement": "The screen's predicate is `scan_identifiers` plus sink-only patterns (email, 15-or-more-digit id, labelled lat/lng), walking every reachable string including mapping keys; the same predicate is reused for the runtime's screen on adaptor write verbs and as `text_offence`, the Persona store's write screen.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/dream_screen.py#L163-L174",
+          "version": "repo-lines-v1:sha256:29d9796e86bc90c84f6f5b3edcaea12382251f735f3640cb1d2cb322d5846312:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ0ZDFiMWQzZDkzMThmMjZhNzg5ZmQ0MzhhZTU4MDAxMDFmODQ4ODYwZGI3NDNkMzJjZWE5YjgyNTQ3ZjExMzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0Mzc4Y2M1YzY2OGEwNDI3NGM0YzllMjFiNmZjNTg4NWQ0NzBhYjViYWQxNTEwMDlhYTg2YmQ4ZTZmNTE2MjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3MDE0OWUwNjlhZDY3ZWNjZjQ3MzY0NmZmMWM3NTAwNTBkMzI5ZDExMDAxOGRjNTc2Njg3OGVhZmExZDYwN2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE4MTQ1ZmUyYmQyMzdkYjQ0ZmU4MTlmNzY1NTdjYmMyMzE1NzE0MjNmNDQzYmY0MmI3NGYwNzM5NjEwOTU4NzYifQ"
+        },
+        {
+          "resource": "repo://nora/agent/dream_screen.py#L94-L174",
+          "version": "repo-lines-v1:sha256:11f8363287036381d5da4fa222efc246c62c25f51fb032494f3f404075570fb1:eyJzZWxlY3RlZExpbmVDb3VudCI6ODEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAwZDM1MmM4ODZhZGY4YjUyYWQ2MjJlMjJhNDUyNjM5YTJmNDdmZjljOWExODI4ODVjNmJmYmVlYTgxYjk1YmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0Mzc4Y2M1YzY2OGEwNDI3NGM0YzllMjFiNmZjNTg4NWQ0NzBhYjViYWQxNTEwMDlhYTg2YmQ4ZTZmNTE2MjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY5OGNiMzg4YzUzZTEwYmUxNzFlNmM0NmZmZTkwNGY3MWU1MTk2ZmE1NWMyY2RmYzA3NjRjYTRhOGY5NWFiNTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE4MTQ1ZmUyYmQyMzdkYjQ0ZmU4MTlmNzY1NTdjYmMyMzE1NzE0MjNmNDQzYmY0MmI3NGYwNzM5NjEwOTU4NzYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_cd1bfcb849fb4283a4d2b24b3afe61ad",
+      "statement": "A screen rejection is a `Rejection(index, reason, path)` that never carries the offending text — so a refused phone number is not copied into a log — and every drop increments `nora_dream_screened_total{adaptor, reason}` and logs, raising nothing.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/dream_screen.py#L188-L202",
+          "version": "repo-lines-v1:sha256:c483a07e752a113b1054093ae28351ba07b465ee4d5c3edc9c6843e70eaed205:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhjODQwMzdiOGQ0M2IxNmM2NTNiNDE2MTdhMjA3ZjE4MTNjZDk5MDVlYmM5ZjYzMWQ5ZjUxYzM1ZWQ0NTAyMGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUzMWUyZTIyNTc0MzAyM2E3YzQ1OTY3NjlhMzNkMGJmZjNlM2Y5YTFkMjFmNzAzYzQ5ZDg3ZWZhODYwODllOTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUwMjBhZTI2NTAxYTgzODliZjUzMjBiYWM3NzhlOTI0ZWM4ZGUwNDcxNTA2NzZhYzI4MmU0Y2JhMDgxNjVmMzkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_80eebc67a7f543d990fc95eec4ecd730",
+      "statement": "`DreamGuard` is a separate guard rather than a weakened `ReplyGuard` because a Dreamer loop has no terminal verb: it holds no `Deliverer`, has no `terminal` parameter, registers `BeforeToolCallEvent`/`AfterToolCallEvent` only (never `BeforeModelCallEvent`, whose `cancel` ends a tag turn), and structurally cannot end a turn — the stopping condition and wall clock belong to the runtime.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/dream_guard.py#L1-L44",
+          "version": "repo-lines-v1:sha256:d3cd6a938631d4f51f73997ac8cb6f8469c0b2b88668ce3902c84bf0c480cef1:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI1Zjk5MWRjMWZkMzNmNDg3MmY3MzU2NTYzZDZiMmNjZjBjNmFhZTE0YmEyZGQ4OWNjODFmN2ZhZDZkODRkNWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_878f00b61f5c40939d3e8a1c9191a32a",
+      "statement": "The guard keeps R-7 default-deny and the shared per-tool `CallLedger` ceiling, adds a per-pass memory ration whose (N+1)th call is answered `unavailable` with a reason rather than vetoed, and turns a spent pass budget into a tool result instead of the SDK's raw cancellation error, so an error never invites the retry the ceiling exists to stop.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/dream_guard.py#L13-L29",
+          "version": "repo-lines-v1:sha256:ebeb0fe5ff30cf0be5b10aa94a4ba6ebfcbbd56caa50eaead7c184a7f5ca60ac:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1YzU0ZWMyZWI3ZjhmMTMwOTNiMjMwN2M3ZDVkMzIzODVlZGVhOTVmMzZkZTJkMjY0ZmFiYmQ1YTVhZDVkYTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJmYzAwYWQ0NzU0YmMwNGYyYzNjZDFkMjM0ODRiNzE1N2Y0ZWUwY2Y5YTFkZTMyNTkzMTQzY2U3YTczODA4NWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhmNTZhY2FlYWMzMGYxY2NkZTYzYWYyMzc0ZGE0NzRmMmExMzJkMTRhNDUwZWEyODVjZmMxOWMzNmNmODkxYzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEyMWU1MzcwNWE0ZjNkNjE2YWQwOWRhN2FjZGViZWZiYzljOWI2M2U4ZDAwZDdiZTdhMzVmYjc5NTAxZGJhNjcifQ"
+        },
+        {
+          "resource": "repo://nora/agent/dream_guard.py#L256-L270",
+          "version": "repo-lines-v1:sha256:4459369fe4fea74281098663a34e969874df1a62ab320cbb89b5ef49eaa545d9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdmNDQ1OGJiNDU3YzcxODc5NDhiOGNlZWQxMmQyYjMwZDk4ZDc0ODQ1NDIyNDQwMjQ3NjYwZjc0MDU1ODg0MjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlN2M5NTdiY2I0NGZiNjczYzk4YjAwNTBhNzVkMzgwODJkYjgxZDkxOGRlMzEzYTNmMDdjMTIzNTMwNmQ3ZWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU5MzY4OWVkOGU5M2EwMmRlMDAzMTBhMzg0NjA1MTc2NjY0YjgwNDIzOThiNzQ4NGE3ODIwNWRmMmNiYmEwMTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYzYjg2MTk4NTQ1NWMyOGY5YWQzM2NkMTMyMDQzOTYwMTAzZDZhZmY3MzU0OTM2ZGFhNTE4NDc2MTYwNmM0YjAifQ"
+        },
+        {
+          "resource": "repo://nora/agent/dream_guard.py#L364-L385",
+          "version": "repo-lines-v1:sha256:1c1f1581090dbc018594598b5c0eb83881dda121c425477aecf326a865f3edc2:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM3NzUyM2EwNjE1N2QyZmEwOTJmZmQ2YzNkMWEyMTA3OTdiZTM0YzA1MTNkM2VlOTE2ZWE5ZTdmNzNiNmZlYjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzM2M0OGNkNTU1M2JmZDA2ZDM0N2Q2Y2FjZDEzZWJlODE1ODE1MGE2YmZhNGZlZWE5NGM0YzZhZTE5ODRiMDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU1ZmM0MzRlMzBhZWNmODk3Y2NmNTRkZTYzZGY2NzA1NDI4ODMzMWY4NWIxOWVkODExZjJlYjlmOGY3NmVkNjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRmMjcxOGExYWE1ZWEyN2M3ZjJjOTk1NzE4NTI1ZDFkOGNkZDhhNzhmMzkzOWQxNGRlZDljODc4NzNkNDEyOGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_00022625036845ceb1e041555015b152",
+      "statement": "`DreamGuard`'s after-tool hook clamps tool results — `web_search`/`web_fetch` at 8 000 characters, memory verbs at 4 000 — with a marker naming the cap, because `MAX_ENVELOPE_CHARS` bounds only the outgoing envelope and an unbounded result re-entering the loop could spend the run's whole token context.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/dream_guard.py#L489-L500",
+          "version": "repo-lines-v1:sha256:bfd31d80611449fb2f1e4d26ff4c6c28ebc72dcab7cb6198f7e29a11a63d0464:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM0MzBiZTNkMTQ1YTlmY2RkMjIxNzk2MTZiMmMxMjczYjgwMmVhZjczZjE4MmI2ZGZiMTkxMDQwNmVmYTY1NGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE4MjA5NGY0NTc1NDAzMDRkYTQwZWE0MzNlN2UxZjExM2JjNGRmYmI0MWYzOTJjODFiZjdlMTFhY2IxYTZkY2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJlMGU1YTNhYjQxZmVhYWQ3NDhjODBlNThjYjZiZTYxZGViMTZkZWY3OTJlYTZmMGUxYWQyZDgxOTRkZTgxOGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxOWY4NTBiNjI1MjJjODIzODQ2N2Q2ZDk4NTVkODc3MGVjMTBhNjAwM2Q1Y2FhODU0OGJlYTg3OGQ2NTUzZjcifQ"
+        },
+        {
+          "resource": "repo://nora/agent/dreamer.py#L122-L142",
+          "version": "repo-lines-v1:sha256:f39fd499d5f33a27c6c4f72be9ff56a2a6a0784377bad7c356dbd80a6c4d4c82:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3OTFmNTFiNjM4NjBiNDE5YTdiZWI0ZTdhMTMyZTQxN2IyOGIzYTZjYzQyNTRkOWFlZmZkODc1NWJkNWM4ZTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZlODM0MzhhODY2ZmIwNWNlOWE2OGFiYzA4MjgxOWI1ODI5NDM0MjQ1MTkzODMzMjk5MTBhYTMxODMyN2VhZjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZmOTVlZDJlNDdjN2ZlMjgxM2E4Y2M3NGE0MjI0NmY2MjdmZjlmMmI5OTU0ZGM1YjVkNDdmMzczOWU4ODUxZTQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f2c0e03f2d2448f687984d84de81aeb4",
+      "statement": "`AdaptorBudget` is per adaptor, never one global ceiling, and bounds a sample's turns/tokens/output tokens, a required `timeout_seconds`, the per-pass `max_memory_calls` (default 2), an optional pass-wide `max_tool_calls` and a per-tool `tool_calls` delta; when a deployment sets `[dreamer.budgets.culture]` the Character, Lessons and Persona sessions inherit it, otherwise they fall back to the runtime's `default_budget`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/dreamer.py#L187-L246",
+          "version": "repo-lines-v1:sha256:9dbf153899a436325c16835264c9dd36f73435b53393bbfa6692aaa81a4ef341:eyJzZWxlY3RlZExpbmVDb3VudCI6NjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5Y2UyOGJlMmYyM2RhZWIzMmE4NTBiNjQ4NWI1NDM3YTU5ZmM1NDhiMjQ0MmVkMjVmYWUyYmZjYzJkZDc4YmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzZGI5NjExZDNiYjVjOTc0YWE4NzRkNGFlZTZiNzAzOTgxYmUyZGZiZGFlN2M4MTg0YzdkZTcwZjM5ZTg0OWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L4383-L4399",
+          "version": "repo-lines-v1:sha256:873e00eafb91daf79e7f8a804383d842dcf4b4d5c4568444457985b72e72be4a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlZDhjODI5MTNkMGFiMGZkMzVhODU3YTE2ZmI5ZTU1ODYxMjllMzk1OWMyYjdkNmZjMDUyMmE2NjlmYzdhZDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjZTg1MjQ2Nzg0ODc4ZjA5ZmM1NzdjMjRkOWU1OGE5ZGZjYTBiZWE5NWUwODRhODQ3MDEyZDVlMWI4YzFiMzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQyNThjNWM5ZDI4N2IyZTU4N2QwNzUyZTZkNjEyNDQ5MmMyYTFmYTUwYTRhYTg3NTg4NzUwMmVlOWIwNTUzZjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc1MWU1NGIyZDVjY2M0ODE1ZDk2ODc3ZDBhNjZlYzcwN2ZiY2IzN2UyZGM1YzRhMTk2NGMzNGU5NGYzY2NlZWIifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L2976-L3037",
+          "version": "repo-lines-v1:sha256:d967ed31c95ee9dfe9d164b6a8ab34f772844988ca5f8c06b5cfdeb647b2ba5d:eyJzZWxlY3RlZExpbmVDb3VudCI6NjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMzOGQzOGNlZjIyMjZlZTkwZWFiZjM4MDA2ZmFhNmU2Y2E4Y2FkZWI1ZWI5OTJhODZkNWQ0MDJiNDcyNDQ4YzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFlNGU4NzUxODk4MGQ4ZjdhNmFmMmNiZGI3Mjk1NTQ1YjgzM2U5MzEyYjc3M2MyMDk2NGViYWFhYjc5YzJjNWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjExMzIyODgxMjY2NWU5ZTMyNmNlODM2YTI5OTQ5YzJhOTU1ZjQ3ZDA2YzViMTJiZTM1YTljYjBiNWVhMjcxMGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMwYjQ4NGNmZTNhYzI1Y2U0ODBmMjRkMzBmYzdlOTE4OGJhZjcyNmQ4MzcyY2EyMzkxYzM0NmFiOTJkMzkxOWIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_736122ca72d94ade9255cffed1a3e35e",
+      "statement": "Two configuration mistakes are boot failures rather than silent no-ops: an adaptor declaring tools outside `read_only_tools()` (or a tool list a grant widens past the ceiling), and a `[dreamer.budgets.<adaptor>.tool_calls]` key naming a tool the adaptor does not declare — which would otherwise run at the table's number while the config file claimed otherwise.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/dreamer.py#L597-L630",
+          "version": "repo-lines-v1:sha256:26608aaa8ccbd7f35f5eb4f48d0aedc658653cd46425b35bfce79e96cbc67a2d:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkxY2I2MWRlMjRmZGZiMWE2Yjc5ZmM3YTU4OGUyYjE2OTFkMDM3MGU5MmYwZGUyNzI4ZWIyMjM0ZjcyMWU2NDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxNzRjZTUwYjk1NDYzNmVkYWNkOWVjMTliNTNmNmI1ZThjNzBkMjc1MGYyN2Q3MDcwZWEwMWI3OGQ1NTFjYTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRjZjU3OWYxZWM0NDNiNWI5ZTJiMjBlMDE0MTNiNzkwOGQ5ZmUxYzhlZDgzMDc3MDE1ZDBjNWNmOWEzMTlkMTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNiMTI3MDRmNjYwMGE0NzI2ZTI1N2MzYjJkNjY2ZjdhNzg5MWM0YzNhZjY4YmYyZjU5NjUzMDYxNWM1ZmMwNzQifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L3021-L3030",
+          "version": "repo-lines-v1:sha256:82faa8e22bc6a3ca0513b42fbff140e677bbddb61d391ca69708ec14dfbaccd1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI4MDcxNGNhODk1YTQyMWIwNzY0YTRjZjVlY2ExNjExMWI5MmE0NjkxZmI5MjAwNjkzYjc5OGQ0MjdhNTkxOTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM0YTJhNjI0MTVjYzdmNmE1ZTc1NDM3YzQ0NzJkNWRkNTE5MTRiZTQ2NGE0OTE1YjFmYWU2ZGFjNTQxZGFlNzEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZlM2E2MDdlOTUzYzY2MTA1ZTI0YjRiNmY1YTNjOWZjY2QxMzQ4M2U5NWZiOGM2NzBmMTZlMzJjYWE4ZjY0YTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBlYTI2MzZkNGQ5MTYxMzcyOWU5MWRjOTllMTFkNmQ0MDIzZTlmNTQ1OWMyNjQ5MjYwOWNlNDQ5OTE1YjEwYTkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6aad71f38e564079a965cd87456ddc0e",
+      "statement": "The read-only ceiling is enforced twice with the identical function: `verify_tool_subsets` raises `AdaptorToolError` at startup, and `tool_subset_faults` re-checks inside every run and returns `unavailable` instead of raising, because the corpus hot-reloads and a per-run check drifting from the trusted startup one would be worse than none; the two independent axes are act-vs-read and room-scoped-vs-unit-safe, with `DREAMER_LOOP_TOOLS` refused to any adaptor.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/dreamer.py#L1257-L1271",
+          "version": "repo-lines-v1:sha256:95cf1d170e1497511eddee3191d2b0787895a401b90dec3a3163fd3e0f741363:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2YWJkZTEyMzAzODFmMmUzZTUwNDM3NjQzYzdkOTEwOWY2NWI3OTA4NWY3NGU3YWVjYWU0OGZkZDdkYzhhODUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxMDM0ODFjNTdkMGYwZGMwZjc2Y2QyY2M4YjM2MDRjNGU4Mjk2ZGE0MTIyYWRkMTllODE3NDVkYzdlMzMxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZiOGI4YWE2OTAyZTAxMmNhZGQwNmExYzU2ZGExYzBlMGQyMjdlYWJkNmNhOTg0YTgxNTQ1NTc4MmRjYTRkMzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRiMTI2YWUwZjY2NDJhOGI4MDcwMWMyOGZhNDQ3MmI0NTMwYmYxZjAwZWE0NTlmNGZkZTNiODQ0ZDFkYjkxZTMifQ"
+        },
+        {
+          "resource": "repo://nora/agent/dreamer.py#L633-L693",
+          "version": "repo-lines-v1:sha256:18174005c440ca59d6580949f662d0472b781146dfdae2aa94645de409780fe1:eyJzZWxlY3RlZExpbmVDb3VudCI6NjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU3ZTk4OWRmNzMyMWE5NzAzODI1NTE2ZmZiNDUxZmQ5ZDYwMmI5ZmQ2OGEzYjcyMDMyOGFlOTBkMGQ3NTI4ZjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNkOTk0OWYwMGZlOTBmYzg3ZTZhYjM5NmEwZmE4YjUxNWFmMTYzMDA5ZTMwYTUyNWMxMWQ2Yjg2YmZiZGI1YjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA1ZTZmNDJlMzhmZDU3Y2ZhMTUxNmNhOTBjNDBmN2UzNWRlYzc3OWFkZTUxM2Q5ZWUzMGRmMTA0NDZhODcxYzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU5ZThmNzgxNmNiMDhjMTY2YzdjNzEzNzRiNzY3OGFiOThmNzRmZDI5NmNiZTVlZjMwOWY2ODEzMzU5MmVkZjkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b3709df095cb44eea6daf5a63d9a6755",
+      "statement": "`RegistryToolSource.build` adds its own two guards behind the name-level ones — only a `read_only()` name is ever built, and without a grant the `Room` has no roster source so a slipped-through room-scoped tool answers `unavailable` rather than disclosing — and `AdaptorGrant(home_room=True)` is the one widening, resolved in `home_rooms` for unit-keyed adaptors and `scope_rooms` for scope-keyed ones, falling back to the closed room and counting `nora_dream_home_room_missing_total` rather than guessing a room.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/dreamer.py#L383-L443",
+          "version": "repo-lines-v1:sha256:fea43d0814bd92bd3bbbf2bd39c669637d41c55ff5e86e67cb75ae3e2a3f2cac:eyJzZWxlY3RlZExpbmVDb3VudCI6NjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBkM2NmNTZlNmM4OTYwN2EwYWQzNjExZDAyNjY1MGFmYTcyYzg2ZjI3Nzg4NGQxNWRhMzUwYjU2MmZlZDhjMTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVhNTRhY2E1NzM2MGZlZjBjMmQ5NGY2ZTNkNTZkNzFiYjIzY2RhNzBmYzAyZmU3Y2MyZWNjMzE2ZWM4MzZiYzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImViYjdmZDI3OTQ4N2Q2MzQ4ZGI2NGQ5NTFhMDE2MjQ5MjY2OTk2ZWVlOWM1YzYzMzg0Mjc5ODZjZThiYzY1M2MifQ"
+        },
+        {
+          "resource": "repo://nora/agent/dreamer.py#L961-L1017",
+          "version": "repo-lines-v1:sha256:09a5f6d3bc39000a958dd9c0195c642df08c77db7c007567a1aebfa0d0b6aa6f:eyJzZWxlY3RlZExpbmVDb3VudCI6NTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIxMThhZGFhOTNiMmJkYTQ3MzBhYWZjZDA4MGQwOWUxZmY1MGYyNjBjOGI0Y2ViZjA1OWE4MmNjZmJiNGRlMDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVlMTQyZmQxM2NjOWY3ZmVmMzM0Yjk3N2EzOTI4ZTU4YTgxNzE2NjYzNDU2ZmMzNWJjNzA3NjJkMzk3OTA1Y2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAxYzhlMTc5MGIzZDJlYjU2MjNiM2JjZGYxNjZkMzE1MmRkODI0N2YzMWEyMGM3YzQxMTBmYWJjYTkwMzkzNmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAyZDhkNGI1OTFlNDg3MWNlYmQ1YzdkODZhODk1NGM3ZDc0Y2NjZTk2YjAyZjdkYjM4MTcyOTk3YzI3OTg2ODQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_be4eaf0f37bc432eb8da73c00663965c",
+      "statement": "`inputs` and `commit` each run under a wall clock of `store_calls_per_tick × [dreamer] store_timeout_seconds`, where the declared number is a count of awaited collaborator call SITES; its purpose is to turn a store call that never returns into a counted `unavailable` instead of a `(adaptor, key)` that is never ticked again.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/dreamer.py#L1095-L1119",
+          "version": "repo-lines-v1:sha256:3e9812acdc552238c16cafb20c9254d6e424f9574011cbc842cd386bd0e60666:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhMDMzNWEyNWFkMjIwYjFjNDBjYzQyYTVhMzZkMzZlNDY2NjIyZjBiNDIxNTJmMmFmOTdjY2I4ZjI0ZjRiZjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlZTcwZjhkYTM2MTAzMTE0ODBhNmQ3N2I2NDEwZjJlMGUzMzFlZmU3ZjhhNjEzMGMxY2M1MzY4OGVhZTJmZDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMzOWM2N2JlMzY3M2NmMTVjNTQwMTNiNjUwNjg0MjdmYTk0ZjMwODg5ZmMxYTU2ZmY4NzM0NWZjMmVkZTlhZGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZlZjkxOTExM2Q2Zjc4OWMyZTEyZDAyMGE1OWYwZmI1OTYzOTM1MGUzYmQwYWYwOGU4MTliNzBiZTE4MzAxNzAifQ"
+        },
+        {
+          "resource": "repo://nora/domain/ports.py#L2492-L2516",
+          "version": "repo-lines-v1:sha256:40ce388fc10a05ceeea10465836748531ad2d9c079371656a4d6ca73d50beb77:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk5MWU2MGExODVlOThhOTFmMTVkZDNjY2UxZjA0NGFlYjFjYTNiZjdkY2RhY2Y1ZjYwZTAzMjY4ZjZiYjljNTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4NTJhNjg4YWE3OTU5YzVhZDZmMDUwYzcwZDNiM2UyOWVhODBmYjIwMzkwNWI4MjkyNTg5YjczZDc1MzZmZWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY3ZDIwNTU0YTk3MDIwOGM0YjBmZTUxMDNmNjRjMzA3ZmM4OTQ3YjY0OThjZDk2MGVlMTM1YThjOTA1YmM2ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFiZTg2YTUzNWNmZWNhZTU5NjJhNjgyMTlhMjIwNDZmM2JiZDgyMDU1ZGFkOGZkYmQyYWU4NDBlZTY0NjkzNTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_feeb61d659194ab5ac4f4634f4ae3daa",
+      "statement": "The instruction digest is read per run before anything else and covers the doctrine+objective pair, hashed over exactly the joined string that is sent via one `InstructionSet` carrying `text`, `sha256` and `versions`; a digest captured at construction would keep naming the corpus as it was at process start and look correct forever.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/dreamer.py#L1250-L1255",
+          "version": "repo-lines-v1:sha256:d037cc140f959c5020ed25df91fa1ffdf6cda1b8fd9371abeee98ce1dfeb2f57:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODAwOWEyOGFlZGFlNzU4NWJlYzkyNTlmNmM2YTlhNDNlYzQ5ZTBjODg1YjI0ZGFjMzIyNzE2MDZiM2M5MGRmMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTVjNjQ5MGNiM2IzNTM1MjkzMGJlOTc1NjgxOGM2ZjU0ZmZhNGE3ZDE0NWZmYmQwODg4ZDRhYTI5MzIxM2M3NCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGYxMTAyMzUxMjM1ODk4MTM1OTQwYjVkMmI5ZmRkNDUyODg2ZWFlODQzMjU3OTc3YThlZDEwY2FiYmUwOTUzMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmM0MDNkMDJmMDcxMDczOGU2MWMxNGQzYTViMjM1Mjk3YjQ4YjA4YjNjM2UxMGRmMWNiMmZkMmU3Y2IyMTNkMCJ9"
+        },
+        {
+          "resource": "repo://nora/instructions/dreamer.py#L84-L132",
+          "version": "repo-lines-v1:sha256:3c18389517b3d59ce9b63cf9ea9b30a8c9bb2078bc42a05abdaa392a1b6f322b:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiZDM2MWRmYTUwNDc1NTJmZDczOThhYTViMzA2YjM3ZmQwNTJjMzUyMzNmN2EwNGJhNTBhMTFhN2FhMzkxYzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk2YjQxYzAzZTQ1OTNiYjQzNGQ2YmQzNjAwYjllNjlkODFmZjM4ZjAwZDc0Njk2NDc0YzY0YTFiYzY3Y2YwMWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRhOGUzYWY5NDQ0MmY1MjI2NmI1NThmZmUzN2E1NjQ0ZTVlZGE4ZWRjZGQxZDVhNDBiNGExNDA2ODU1NDRlN2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_cb57a97025dc4a878458f0cf3b8d88f9",
+      "statement": "The Dreamer corpus is one doctrine file (a second is a startup error), objectives selected by name with required frontmatter (`name`, `kind`, `version`, `applies_to`, `description`, `change_policy`), preludes that replace the shared doctrine for the objectives they name, and skills for the Cognition session — reloaded through `DirectoryWatcher`, with an unknown objective raising rather than assembling the doctrine alone.",
+      "evidence": [
+        {
+          "resource": "repo://nora/instructions/dreamer.py#L154-L160",
+          "version": "repo-lines-v1:sha256:9d81743ab7886999104d39eb9d3af7111757bd74b8a471f18432fcfcd7164b7b:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjY5YTEzOTc1YzI1NmVjODMyMGUyMDE2MDgzYzk2ZGY2MzdjYTNkMzViZWJkZTIzMTRiZWUzYTQ3MTFiNTZjYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYWViMGE4YmZiZWE4NDQ1MDU0NzQ4Y2Y1OWJjMWI1NjJkZmQ2NTU4MWQyZDdjNjA3MmU1NzEzM2Y1MDI1MzYwNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZmU3OTI4NzA5N2M3ZDU2ZDIxZGEwN2UzODA1NGRhZmNlZmUyNTAwZGFjMWNiY2U0MTg4OTY0ODg1NmU4MmI2OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTU2NmNmN2IwOWFlNGU3OTAzYjUyZjgxMDI0NTdlNDNlZGE3Yjc5YTBkMTM1ODY0YThjZmRhOTEyYTVkMzZlMSJ9"
+        },
+        {
+          "resource": "repo://nora/instructions/dreamer.py#L55-L81",
+          "version": "repo-lines-v1:sha256:8500ff2bbfc1a1b24e88ab4aa6abeb43c85eadc28b0645c5e0dd847aca87047a:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIxZGVkNTQ2ODg1NTZhZDFmNDgyMTMwOThjNGM3NDQ1Y2VlNThiNWQ4NjgwYjFjODNhNGVjYzBkOWIzZjQ1YjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiMmVkN2Q5M2ZkMmU0NDFmOGIyMDViZWMwNWE4MmVhYzgyNGJhNDU0YmE1ZTY3NjljOTE3NTAyYmYxNzFlM2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJkMjYyZGNlNDFkMWNmY2M1ODAwZGI4ODc1NDEyZDc5OTBhNmQ2MzM5N2E0MGE4ZmZmZjkwY2M5N2NiM2Y3MzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVmYzE0MjFiZWFmM2U3Y2UxZjg1YzZjYzM4Njc1ZDkxOGUzNzdmYTgzMTAyODMyMWFhYzllYTE3YTEwNDY3ZmYifQ"
+        },
+        {
+          "resource": "repo://nora/instructions/reload.py",
+          "version": "repo-file-v1:sha256:3467677166f26511b538150768049f3bac640f09512e848a228f207c8aaf549a"
+        }
+      ]
+    },
+    {
+      "id": "claim_2bcf47536c2b4a5092dd4910a9d493cf",
+      "statement": "`AdaptorSchedule` is a name-keyed mapping value rather than a protocol field (a defaulted non-method member breaks `isinstance` on a `@runtime_checkable` protocol), and its slot is persisted in `dream_schedule_state` — where a missing row means «never fired», not «fired at 0» — after the run and never on `unavailable`, so a 429 cannot burn a whole day's slot and a run that did nothing cannot stamp `last_fired_at`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/dreamer.py#L249-L331",
+          "version": "repo-lines-v1:sha256:c7aba69912f091b8c7076d9cc74cacb57414efb4c693a1efd3487651299a7317:eyJzZWxlY3RlZExpbmVDb3VudCI6ODMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNkZmYwZTZlZDNhN2ExYzBjZmE1NTkzZGY1Y2Q4ZjBlZmM2YWE5OTNlYjM0NTk0MmY3ODJiM2VhMWFmMGVjNWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY1YzVhNzFhYzU3OGViZTVlZTMzNzhjNmQ2MjllMTI0ZGE2MDk4MDdkNjNjNTA4NmNmMzVhNTFjNWJkMjJiZDUifQ"
+        },
+        {
+          "resource": "repo://nora/app/runtime.py#L700-L860",
+          "version": "repo-lines-v1:sha256:2ff7799e26d27582ae9cfe9415c7659ef5d5410d9d3e7f24e38d02f5d67aae7e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYxLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI1NTAzMmU5NjRkMDkzMjM1MWU1ZDE4NTI2OTI4MWIxNzFhM2EwOWIwOGIyODZlNjYxZWE0NzAzMjNjODJlYjRkIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI5MTA5Njc3MWQ3ZWU5YzZlNzc5ODZiYTYwYjEyNGI3NTI5NzUwYWMxZmE5Y2RhMzEzZWViNDhhZDM1NjljYWZhIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI1MDBiMDczMmFiZGZiNjIyZDVhMzRkMGQ4NmQwNjQ0Yjk4NGY4YTM5YjkwMTI5MGUxNzY5YWM1ZWY3ZDIyNDg4IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJjOTEwNzNmOWVmYzZlZDdjM2Y3ODQ5MmM3M2NiZGYwOTg0NDhlMjk3MzM0ODRlOWNhNjExMzY4ZDI4NjI2OWRjIn0"
+        },
+        {
+          "resource": "repo://nora/infra/sql/dream_schedule.py#L1-L40",
+          "version": "repo-lines-v1:sha256:6cdb81d793a07c059c9c25efeac6425e5afa4ffd12590b0255c6829c1bad7022:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJlYjRkZjg4OGJlNTQzYzkwZTM1ZTQ3YjJhNzVjYTYxMjhiYzcwZDBkZDI2NWFlYTYzZWRlYTRiY2ZjMWU3YWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZkYzNlNjhlNzhhZDc0ZTNjMzU3ZmNiNWJhMTNjN2JjNDEzNzhkNGJiMGNjMjc3ZTQ4OWZkNTVkMWQ2ZWFkYjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU4YThjNWYwMmViODY3NDNhMzgzOGRiOTU3Y2NiZTFhODFlZGZjYmM5ZGFlNjE2N2RmNmZkMDM0ZWEyNjcwMTIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5c51dcff83094512be2fc171994bed6a",
+      "statement": "The loop resolves one population per `key_kind` — `scopes()` for `scope`, `units()` for `unit`, `adaptor.keys()` for `entity` — and an unknown kind is logged and not run rather than guessed at or silently skipped.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/runtime.py#L1152-L1172",
+          "version": "repo-lines-v1:sha256:9778a22b019703abc9c00049526cb80bb74e60e9fc2d4c60a2733111ca2ba957:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiMDgxY2E1MTQ5YTM1ZTAyYTFhOTViMmE5ZjUzODUwNzBjYjk1ZGY2YWVlNzFkOTNjN2MxNDc3YzkyNzY2ZWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhiM2ViODJjN2MzOTU0N2ZjZTFhMmJhM2I5MDMzM2U2MTQ4ZGFjNTZjYzQ5MDA2ODYxMzYzNzJhODFjMWJjNDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhjMzNlODc3OWUzN2E3YTQ2MGM4ZGU4ODU2OWQyOGEzNTdiYjFiMTBmNmY5Y2JiMjYyNmQyOWI1ZTUzMDYzMTgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3c6ee104a3934754b0c879585ce2df99",
+      "statement": "`dream_loop` isolates failure per `(adaptor, key)`, takes its backoff from `supervise_adapter` rather than `prune_loop`, treats a runtime `unavailable` as a failure even though nothing raised (or the exponential could never engage), wraps the whole unit in one wall clock, and counts a unit still in flight as `nora_dream_skipped_total{reason=\"in_flight_adaptor\"}`; watermarks are advanced last and only on `ok`/`nothing_found`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/runtime.py#L1043-L1075",
+          "version": "repo-lines-v1:sha256:5a6068d86c56c7d87f2b00d1a40f5c14ba12d18d618ea327ab848da46e579e60:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ3ZjFkNjU5ODhkZDJlNmIyZWRhM2RjZTY2NzI1ZTQ4YWMyZjYzYmMxMTFmZTBmZmZmZGZlZDM1NDIxZTE1Y2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYwYTM2YzcwZTRkMmNjNzc0MjliOWJiOTZkMDkyMjM0NmYwNTBkNGM3ZTMzMDE0NDFiNmQzNmI0M2MzZjEyNzYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQwMjFkYzZiMmNhNTExMzE4YWIzMjcyMzMwYzQwNzIwODFhNjg1OWM5YWNiNjEzMTQ2NDM1MGJmMWQ3MTY4MzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE3YTc0YTQyMjZiYjA5NjJmNGExNDU2MmUwZjE0OWY0Yjg0ZGY1NTM3OWY3ZTZjMDE5OGUyMjQzZGUyYzNkZjAifQ"
+        },
+        {
+          "resource": "repo://nora/app/runtime.py#L1219-L1235",
+          "version": "repo-lines-v1:sha256:bea425e1fdcfd45c942e7acb4d4f6163a097b505b256fb8c6b8bc06002a4f436:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEyMmE2MzM0ODI2YmYxYzYyYzVlYzA0ZGNiMjhlZjVjNjFiYjFiMTEyY2M0ODFlYjUyMTdkZDVhMTFjNDIxNzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjNTE5MDc5ZGZiNDg1ZWJmMDZjZGRmOTMyMTQ2YmU4YWM1MzZkOTA2YWFkYTY0Y2IyNjM5ZmMwNmY4ODE3YTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUxYjFhY2Q1ZjQyZTM4N2I1M2ZmZDhlYzBlZTEyNTI0YjgzYmI0Mjk5YzI5ZTc1NjBmYTA2ZmI4OTllMjVmMWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM4YjU2NjRmNmFjMDZlOTBiNWRmNTlkNThmN2UwYjRhMzI3MWRlNWRmOTg1OTQ1ODYzN2MxMWE5ODZiYTcxMzYifQ"
+        },
+        {
+          "resource": "repo://nora/app/runtime.py#L1340-L1352",
+          "version": "repo-lines-v1:sha256:1e896bb2cfbeed10bb16a821a71fa893fadba84fa42554c35cd620cc4a433ba2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5YWEwZTQzOWYyODVjYmM3Zjk3NTYxY2U5MTUyMGEyNzhjYjMyMmNmYjM2ZTYyZDJjODRiZjA2OTkxMGI0MzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE5NWIzZWI4YjQxNmIxODJlZDNiOTg3MTcyYzIwYjE4YzlmYjBhYzU3MTIzYjRmNjhiOTA0NTUyZmZlYTQwOTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3MmU4OTVhMGE3MGMwYzRkZjk4NjlmMzg4NjMyMjhjMDQwZDY0MTdiMGNlMGQzZTBmMDllNjI5YmU5MzliODMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBlOGE5MTA0YWIyYmUzNzYyZDc0OWQyODA2NGQyM2Q2ZjUyZGI1YzBmZmY3ZWUzNWY5OGVkY2U3OWUwNjRlMWIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3e5151da70884401925ea9547256a09b",
+      "statement": "The live adaptors are `culture` (scope), `character-person`/`character-unit`/`character-nora` (entity), `persona-person` and the three `persona-{room,unit,nora}` collectives (entity), `persona-verdict` (unit) and `lessons` (entity), each gated by its own config section; the four culture-group adaptors are removed by name once a persona index exists or `[culture]` is off, so a cutover never runs two account writers over one entity.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/composition.py#L3852-L3878",
+          "version": "repo-lines-v1:sha256:fe5ed6f9541c3c9e55c6efda17792b7bc3d5cc1fd11e49dc9285d8d40847286c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI4ZTMzMWFmOGMxZGE4NzI5YmEwNWIyYTIzZWMyNmM5MTZiNzQwMjYyZDRkNzJkZDQ5YmE2ZjZiNTJlNDBhMmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRkN2VhYTIwZGY5OTE1OWFjYjhjZDNjMmUwNmY1MTZjYWE2ZGZiOTY4MmY1NTEyOGZiZWYzYTY1ZTBkYmM1YTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY0NTU1NTFjNzgyYmI0ZjUzMjhlYjQ1NmFlMjcwMWRkYjcxNzQ2N2M3YzkwYjVjMTc1ODg5ZjIzZGRiN2NhNjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRiNGQzNDFlMDllMzc3NmQ3MDU5MzkyOTdlMmE4NjQ3OTBmN2NjMTNmYjc0YmQyZjJjY2U5ZjQ2ZDhmODQ1YjIifQ"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L4157-L4178",
+          "version": "repo-lines-v1:sha256:429307209963f39e38bd64d38843562654b96f2fcc481e799a6993249083ca55:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5Yzk4N2Q0ZDQ2NTg4YTcyZGEwNmMwZGI1YTY0MzkxNWYyYzE3MDQ3MDA5YzFjNzY2MDJkN2UzZjljYzI3ZTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkzOTllZDdkZWQ0ZDFkZjM2MDRlMTBlNWZiNjhkODE5MDI3ZTU3ZTAyMzQ4MTQ4NDRjZWRiNmFkNDA2NTNkZDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ3ODMyNGVlZWQyMmU1NjdiZTUxYmQzOGUyMTZlYmNjYjQ4MDMyYWViMTQ1MDYyN2U3MzE3YTNiZWQwZWZmNzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU3NGQ3MmY1NGM5MmMzOGQzNjBmYTNjZTQyZDkyN2FiN2NiNDRmOGRkODNjMjQzZmQ5OGE3NjM3YTk4MzkzZTQifQ"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L4183-L4193",
+          "version": "repo-lines-v1:sha256:05a0230aa63e7d6b059464ce1080bc154c08e8eebaa4d91635c3957c9c1e6b08:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5NmY3YTM2MjFlM2MyZjhjZDU1YmExNmJiNjAwMTM0NGRkYTA0NzBmYzYxNzYwMjJkYTkyN2U5MWE1MWI5YzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVhNTYyNDZjMmVkNzZlNzRiNGUyNWI5NWJkNDk0YzZhNWUxOWIxYTNiMzc2YmYxZWNiYzMxMDU5MDg3ZDhjMTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ2YzFiMDllYzllYjUyNmFjZjBlNTdlMmI0YjY0NzNhZGQ0YmY2NDgwOGI5MGI1MTA2MmVlZjMwMzFhMGJiOWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUzYjY5ZDM5NzM4MDI3ZWI1MTQ1YzE2MGM2M2QzM2JmYzMxY2I3YzJhODJiNGZjNDdhMjcxZjczZGRhMzBkYTYifQ"
+        },
+        {
+          "resource": "repo://nora/language/culture.py#L292-L292",
+          "version": "repo-lines-v1:sha256:a64af98b740519e892ab3a99e1971e17b9acdd37caa2741327658446a4181004:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTY0YWY5OGI3NDA1MTllODkyYWIzYTk5ZTE5NzFlMTdiOWFjZGQzN2NhYTI3NDEzMjc2NTg0NDZhNDE4MTAwNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTY0YWY5OGI3NDA1MTllODkyYWIzYTk5ZTE5NzFlMTdiOWFjZGQzN2NhYTI3NDEzMjc2NTg0NDZhNDE4MTAwNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjlhYTViMzkzYTE0YmZmZmNlZDNiYTM4ZjU1NTZmMzNlY2JiMjAzMWMzY2E4M2NhYjQ4YjAwYTI3NzYzZTlhNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjQxMjE3OGFiODcyNTZlZWEyMDdkMmQ0MDBiYTRlYjc4MGE2YmRhZWIwZTc3MDdmMzNjY2UyZjU1NTY1NDRjZiJ9"
+        },
+        {
+          "resource": "repo://nora/language/persona_verdict.py#L173-L173",
+          "version": "repo-lines-v1:sha256:4d0b2e8a1b7737976dc8262277fd9745a31e6ef1767070bac70ea915517a3232:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGQwYjJlOGExYjc3Mzc5NzZkYzgyNjIyNzdmZDk3NDVhMzFlNmVmMTc2NzA3MGJhYzcwZWE5MTU1MTdhMzIzMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNGQwYjJlOGExYjc3Mzc5NzZkYzgyNjIyNzdmZDk3NDVhMzFlNmVmMTc2NzA3MGJhYzcwZWE5MTU1MTdhMzIzMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDZkZWQ4OTIzN2U5YjgxYzdiMTQ5YWFkNWVhNTRlOGEyZWJiZDVhMzdkOTlhMmY0OTRiMWE4ZTk3MWEyZDg1YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGRjMThjZTdiNmY1Yzg4NWE0NTBjZGI4ZmQxYTgxMzhkNzE1ZDk2MTk0MTg3MTRmODJhMDRmZGQ0ZThiMmMzNSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_05773b92772d4fb2be82b757cb6a1207",
+      "statement": "The `note-candidates`, `note-curation`, `note-merge` and `proactive` adaptors were deleted and the generic `DreamSink` port is gone — `propose`/`supersede` survive only in docstrings, `commit` drives each tier's own collaborator, and the single act verb (`remind`) is now a Cognition session closure rather than a registry tool, so no live adaptor declares an act verb.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/dreamer.py#L24-L33",
+          "version": "repo-lines-v1:sha256:6819e01c71d435395fbcde32f57d745ee2a515906f79f674b5a5d0ca8a5eba34:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE5N2RmYzJhNWUxNzczOGYwMTViMGNhYjJlMTQ5MWU3ZjIwM2MxYzJlYmE5NDQwMDc4ZTQ4MjZjMTQzMGE3NmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjViNGRiY2M0ODYyODMxN2Y5YWM0MmJiZjQ0YjY4ZTljMjg4ODcwYTkyZWE1Nzc0YmYwNGY0YjQzMTdiMGVmZmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZjZTdiNmJmMTBkZTMwNWVmNzAyZDc2YWExMzM2ZjdlNzE4NzBkMDUzY2Q4Y2VlNDM3OWJhNTVlNGU0MTlhZjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ4NDczOGY3NTI3YmIwZGRkMWVlNjA1YzYzY2FhOTFhYjY2YWZkM2U5M2NlYzBlMWNlMmQzYjg4OGI0NDMyZGEifQ"
+        },
+        {
+          "resource": "repo://nora/domain/ports.py#L2301-L2312",
+          "version": "repo-lines-v1:sha256:5585c11c4c1ed31018617c10ad6553a8a971f4f68a2fc04aad55286ee6a5d0cf:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVlNDdjZjcxNzcwYTExNmNiYzhkY2VkNGNhNmUwZTAxMmEzNTVhMzAyZjQxZTBhYWFiOTM3ODFhMzZmZWRkMzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMwNzNiNWEwZWY1NDlhZmE4MzY0OTI3N2IxM2Y4MjNmOTg0M2M2OGVjYWRmYzliM2VkMWI4ZDAxYzQxZjhiOGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdjZTk2MmZkMWZjZjk5YWE3Y2JiOWY0OGI3MDhlNDE0MWQzOTc1MTU4NDNmOWM0YTA0N2UxZTY3YmUwZTJlZDIifQ"
+        },
+        {
+          "resource": "repo://nora/domain/ports.py#L2460-L2465",
+          "version": "repo-lines-v1:sha256:67b86d4a0afc349fef2dc6bf2e4ccfda3a76adc3a8a911c6a6298dd1eb7b65da:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNWU1M2M0MDhkZmFmMzg2ZTdiYWFiZjNkNDljZGRmMzFiODQzMDY1OWIyZWE2YWNmOTYyZDA5MGQwNTUzNmYzOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTMyOTQyYjM1NWQ1NDQ2ZDNiYjRhMTJjNTA4MzM4ZmQ5ZWE5NDliNDk3NzE5NjZmYTQzMDcwNGM5NzczMWRhZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiY2E0ZDZjMTA5YzI3YWY5M2FjY2ZiZjA4ODM1NjRjNWU2YmY5MmYxNTY2OWNlYjQ3Yjg2ZjllZDZmOGYwMDlkNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWU0NWIxMWFhOWQzMzJjYmVkYzcyNDM2NjNhN2I3NWUzNTU2ZjM0MDlhYmNlOTkwMzg3Yzk5NGVmMDg3MjFiNiJ9"
+        },
+        {
+          "resource": "repo://nora/domain/ports.py#L2507-L2512",
+          "version": "repo-lines-v1:sha256:55315d3b54f60755877f30c3e9cc0940d1b0d321c76a258c9aa7213fa9253fef:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMWMyZGViZjczMmUyOGM2YzczYTMzYmZhOGVlMWEyMzZiZjU2N2ZiOTgwYTNjMzI2MWNkY2UxMzkzN2VlMmU1ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTE3ZjViMDQ2YjBkYjZiYTE5ZGU0ODRlZjM5ZGU2MGU3ZjExZWQyNzdmNGY2MTY5ZGViMjI2OGQ3OTgwODgxZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNWRmMjY3OGM3ZWJlMjQwMmQ5NGJlZTQ4YzczMzViYjllYTU2ZjE0YWVmY2NiMjk5YTM0MDRjMTY4Mzk5NDNjYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMThlMjJjMGNjOGI4Yzc5NzI1YTJmMjliMzIyMjVmMmY5Mzc2MGIyNmZkNDJiZjE3YzMzMTFjMTA5NzhhOTFkNiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_99fae310227046d58f0b350fd82faef4",
+      "statement": "The Cognition session is Dreamer work but not a `DreamAdaptor`: it has an objective, a prelude replacing the doctrine and a `cognition_grant()`, yet runs through `CognitionAgentRunner` with its verbs held as the session's own closures, and the config refuses a cognition budget that sets `max_memory_calls`, `max_tool_calls` or `tool_calls`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/dreamer.py#L436-L443",
+          "version": "repo-lines-v1:sha256:80280f8ed4ced068444ce3a24f0892dc4e26f43f6a73fed6d6ed5b21377bdabf:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjQ5ZTJlZWI4NGIwNjQzYzVhYzQzZTk5ZDVhNDk0MzlhMzA0OTFhMjYzOTFjYTI3NjA3YTEyZWQ0M2E5ZDc4MiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMGQzY2Y1NmU2Yzg5NjA3YTBhZDM2MTFkMDI2NjUwYWZhNzJjODZmMjc3ODg0ZDE1ZGEzNTBiNTYyZmVkOGMxOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2U0YmU3NjFkNTlhZjUyNWVmMThhYzE1NjBhYTk4OGVmOGY1YTJlMWY2OTdiMjYyYWY2NGJmYzM1NTUyMTc0YyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWJiN2ZkMjc5NDg3ZDYzNDhkYjY0ZDk1MWEwMTYyNDkyNjY5OTZlZWU5YzVjNjMzODQyNzk4NmNlOGJjNjUzYyJ9"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L3830-L3835",
+          "version": "repo-lines-v1:sha256:d9ab9699be43080252fc361ddb5be98d4727974e10c0d465fe7b4e038e99afff:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGVmOTA0YTg5Njg2OTg0NWJkZWUwYTk0NDE5NDdlZjAxZjE2OTg1MWVjZWY5YjhlOWI2NmUyY2QzY2NhMjRmOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGY2YTI5NmY4ODEyNzQ4OGZjMzk1NzhiNDg5YzA1ZDQ2MDlhZmQ4YTliYmQyMzA1MzcxNmQyY2Q1NWEwN2E4MCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOThiMzc4ODhmY2U3NjhmMDMxNWQxMzJlNmEyMDkxNTViNjFlYzc0YTg0OTFlOWQ2ODFkNzcwMjY4NjlhNjc0NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2E2NTAxYTA0NWM5ZjBiMjAxZTc1ODYyZjg0NmVmNmE0NGVhMzE5NDY2M2I4MTY0YTAxMmZmYjhiZTAyMTlhMiJ9"
+        },
+        {
+          "resource": "repo://nora/config.py#L2999-L3001",
+          "version": "repo-lines-v1:sha256:c1e4e222c220ef9091c437fe3ff9a3a62c78a686beaa70394e959b474f2cefb9:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDU1NGE1NmNjYmIyM2M0YWYwZmMxMGU2ZTg5MjUyMTJjMDg2NTQyMThlY2NiODczMzljYjgwNjU1OGViZjM4YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTk1NDkwZWZjYThmY2NmZTQxMDIwMzgwZjFjM2YxOTM0NTZkMTdiNDRhNzY3NjI0NmIxNDM4ZTg1N2FlMDBhNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDJlYjM3NWM2ZjdkOTE1NzRkZDY2MWU5ODlkNDhiOTEzZjFlMGMwMGMyNTRlMTViZjhmZDgxNzY2MWUxZWQwMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDRkN2YyMzI4NTYzNDMxNWM0ZjQ1M2U0MGY5MTQ3Mzc2NmVhZGE1ODlkNjFhYzVjNDkyMDlhOTBhNmIwNjI1MyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_6bee967c250749fd9b4524cf8bd68d00",
+      "statement": "The contract suite pins the port's behaviour rather than any tier's vocabulary (a legal batch parses, a malformed item is dropped while siblings survive, an empty commit is legal and reaches the sink, `tools` narrows the ceiling, the objective names a file that exists) and runs the runtime's own screen-then-accept-then-commit order; it ships exactly one registered implementation (a fake) with a control that stops the map shrinking, while `tests/architecture/test_dream_store_calls_are_declared.py` derives each adaptor's awaited collaborator sites from its own AST and forbids `accept` from holding any.",
+      "evidence": [
+        {
+          "resource": "repo://tests/architecture/test_dream_store_calls_are_declared.py#L1-L42",
+          "version": "repo-lines-v1:sha256:0abfbeb82424f7e5372ace24f76e1681bb7a579b49c12bf27f903964949c7ac2:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxMmUzZjZiNTI0OGY2YmJhMTkzODAwZDVjZDNlNGM1Yjg2ZDY3NDlhNTk1MmZmMDM5OTk4MjkxMzk2ZDQ1ODgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://tests/contract/test_dream_adaptor_contract.py#L1-L35",
+          "version": "repo-lines-v1:sha256:77a4ed49b3d0278e599de0f6a8561f3c5369303c414eb8554edfb8f401994ab0:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIyYjBkYzkxNjZmNDhmYjg1ZjMyMjljMTM1OGJmYjcwMWVmODBiM2E5ZmMzMzRmMDE3YzJmYjMzMjM2Njg4NjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://tests/contract/test_dream_adaptor_contract.py#L202-L210",
+          "version": "repo-lines-v1:sha256:5a42f0716a3960f8164aca79c81be87880173d6e0a26f2bbe195ed523f30bdfd:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjQ5MTg4YjRjMjM0ZmY1OTgxZTJkMTViY2ZkMTFmMzVjZDhjMzExNGZlN2U5MjBhNWYzYTBiN2ZmOTE1MmE0NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDEyY2EzNDVjY2Y3NWJmOWMwODA2YmNlNjk1YmU4ZGU4MDhiNzk5ODQyNTFhN2E1NGQyMDJjZjYxMDFkZDQ1MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGRjNDkzMTUyNTJjN2ExM2JjZmI3NTJkYTIzMGZmYjU1NzQwZGE3MjZhNDNmZTQ3NDlkNTY4NzMxOTRjMWI2NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjY5MjVkYWQ2ZjMwNjQ0NDIyMTg4ZjYxNmQ1N2M2NDIyMjdlMWIzYmI2YjhmNmVjNmQyMDExY2M5NWE1YTkxNSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_35d78714837f44d890a4e782f344c421",
+      "statement": "`tests/unit/test_dreamer_runtime.py` holds both halves of the per-sample rule against a scripted model: one unreadable sample beside one valid one is `ok` with one row written and one `ok` plus one `unavailable` on `nora_dream_sample_total`, and its all-unreadable control is `unavailable` with zero written, no `commit` call and two `unavailable` samples.",
+      "evidence": [
+        {
+          "resource": "repo://tests/unit/test_dreamer_runtime.py#L1728-L1771",
+          "version": "repo-lines-v1:sha256:17dfe17dc307c665da74ec39984dabf8e74a1cb8614e09167208c098aad82349:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJmYTYwZjgwOTAyNGFjOTFkNDk2NjBjMzgxYzY0ZmU3YmY0MTRkNjc4NTEzZGM2MjEzOWFhMWE1MTIwMDk1YTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkNTQwZjhmZDc2YWU1YTg0Mzc2YTlmODcyMDk1NWI4MWZlNWExMTE1NTk0NWM5OWI5MzVmYTUxMjJkMzZkMmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgyZjUzMjk2N2ZjYTEyYmQ3OGNiZmQwZGU5OTljYjNhOTUxODc4ZjZlNDdjMzk4NjE1Y2I0ODM0MDRjMjZiNmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc4MjFlZGU0M2QzNWIyMjU2ZjYwY2ViYjRhNjFhN2UyZjg4NTM3M2E2M2ZkMTk2ODVjNDg4Yzg3NjQ5ZDc0MGUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_bee3ff08127e497283818f29449c56e5",
+      "statement": "An all-unreadable run's `readable == 0` return happens before the screen, `accept` and `commit`, so the outcome reports `written=0` and no end-of-run `commit` runs — for Lessons that also skips the horizon decay its `commit` applies — but the return is not a rollback of adaptor verbs that already completed inside a sample: Lessons' checked verbs write and commit as the model calls them, so rows can exist while the outcome reports zero, and the per-sample zero-write assertion in the runtime suite belongs to its scripted envelope adaptor's own sink.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/dreamer.py#L1408-L1411",
+          "version": "repo-lines-v1:sha256:30708409abead8ad3d42e44c8b6383d53ea3c7bb6daa73f84723bd293ddc4bdd:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTc5MWUxMmVmZjhhMjlmMTZhZjQ0ZTNlZjk1ZDZhNTM1MTE4NDFlMjI4NjBhZTQ5ZjRhZjM3NGMyNmUyNDNiMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTUwMzJlOTY0ZDA5MzIzNTFlNWQxODUyNjkyODFiMTcxYTNhMDliMDhiMjg2ZTY2MWVhNDcwMzIzYzgyZWI0ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzUyMzg4ZGE5NjI1YmE3MjQ3NWU0ZmExNTljYjZmZjVkMWEwMmY1Njk3MTA1MmUxMjQ2MTlkYmIzMTc0NGJmNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDg4ZjFlYjY2YWY5NzIwMzg3MDY0MWQ1MjU0OTkzZmI4YmJjODIzNmE4ZWM3OWIzNGYwYzY4ZDViZjczMzVjMSJ9"
+        },
+        {
+          "resource": "repo://nora/agent/dreamer.py#L1461-L1501",
+          "version": "repo-lines-v1:sha256:02ef8403975e3d0b48287b785ea5d60b55fadbeb1a651ba8842e161f804ec40d:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1NjljYjA5MjgwZWUwNzgxOTQ1ZTQ4ZDQwNDFiZDJkZmFhZTY5MWFkMmVhYmY1ZDNjYmEwODQ2YzcyMTZjYWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRkMzYwNGYzOTFmMDVmZmQ4OGVhM2U0ZTQ1OTkxYTk3NGYyNjUzNzM3YTQxZTkxOTdhNGNlN2EyMzMxMWM3ZWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhODkyMWJhZTEwM2Q1Njk4MzZlNDM4OWIxMDAyNDQ1ZjllY2FmMTc4Y2EzODNiM2I3ZDliODVkOTExYmVjMWYifQ"
+        },
+        {
+          "resource": "repo://nora/language/lesson_book.py#L234-L283",
+          "version": "repo-lines-v1:sha256:8f3e9979494ec58417fb6f872c5672768f2966cacca2023b9ad6b848ab9b9f8f:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhkMzQzMmYyYTcyMmIxODIwMjE0YjhmNGQ2YTJiZWNjMjFiZTQ0ODJhNGI5MzE0N2NlODM4ZTY1YzRmMGY5ZGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNkYmI3NjMxZWNiMjI4ODIwYmE5ZWRiZDlhZWMzZTQ0NmQ4N2IxZTUwYjgzOTYzNjNiODBhZjU3N2U0OTQ3YTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNjMWFhNGVlOGE5MTI2YjNhYzBhZWRlNDllYzE4ZGI3YTI1YzMyOTA3N2ZkYWZhZTliMjQ0MTY2Mzg0OWE2ZWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM4YTg2YWFhOGJmMDM4OTg2NGUyM2ZmYTgyOGM3NzQ1MGU0ODMyMDVhMWQ1YzFiNDkyMjI0NTdmMTUwYjYzZGUifQ"
+        },
+        {
+          "resource": "repo://nora/language/lessons.py#L436-L476",
+          "version": "repo-lines-v1:sha256:bf8ed3ba4a89ae26937a123ce5779906ba3b251f96b1469afc2c39f2dfaf2435:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjN2U3ZjYyZjZlMTUwYTVjNmY4NzhjNjNiMDk2YzBiNDc3NmY0ZTJhNjRhZWIwM2UwYWI1ZWViMWNjZjhlY2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkxZjgyZTcyZjVhMGY1N2U3MTYyYWZhZmNiMmM3YjJhZDljMzBmNjM4NDFiOWVkN2Q0Mzk0Njg1MzcxNjE5M2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjllYjQyNWFmM2I1YzcyY2ZhMDg0YTMyZjNmZDQ5NjQ4YTcyNWUwMDBlM2ZjM2EzMzgzYmYyMGViY2Q5MTA3ZjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk3MDA4ZmFkODFmMDQ2YTA1Mzk3YWRhNmNlZDIxODNlNTM4YzI1ODBiODE4OWNiYTc4Mjg3YzBkZDkyYmM4OGEifQ"
+        },
+        {
+          "resource": "repo://nora/language/lessons.py#L490-L514",
+          "version": "repo-lines-v1:sha256:39cd95804b71221a1d1c13e53bda68e0a157b74e9ddb5cc3cdb5e01ef75a594d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzYmIzMzA3YWU3ZGViOThiNDVjYjhjYWY5ZjMyZDNlOWZkMTVkZDQ3OTk0MjI0MjZmYmM0MjdlOWM3YzZjMjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBhNzNlNTg4MjQxYWVhYThjMmJmYTRlODhiNzhhMTE2MDI2YjcyNWU4ZWZlNzViOTI4ZTAxYTdkODYzZDE2NzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMzZDRmZjI3MjE5MzYxYmE3NWQ1ZGZjYmUyZTQzZmFiZDI3ZWI4YzhkNTZjYWJjODk1MDJhYzIyMGVkNWZlMDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_dreamer_runtime.py#L1754-L1771",
+          "version": "repo-lines-v1:sha256:3e2e3e4d363425dfd15fbb1737e20c8253e2af702b751b0303beff95683d4796:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImExODE3ZmRiNTA5YjRlZDU3YWRmM2E5ZjVlNDNjYTk5YThhOGQzMWU4ZWM0MTgxZGMzMzg2ZmE0MDUyYTllYzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkNTQwZjhmZDc2YWU1YTg0Mzc2YTlmODcyMDk1NWI4MWZlNWExMTE1NTk0NWM5OWI5MzVmYTUxMjJkMzZkMmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYxMWM3YjU3OGExOTc1MWQ1YmM5ZGQ1N2E5ZWYxOTA1MTMxY2JmYTdiNDk0M2RhMzZhZGU3YTNhMDk2MWU1MDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc4MjFlZGU0M2QzNWIyMjU2ZjYwY2ViYjRhNjFhN2UyZjg4NTM3M2E2M2ZkMTk2ODVjNDg4Yzg3NjQ5ZDc0MGUifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-20T14:16:36.670Z"
+  }
+}

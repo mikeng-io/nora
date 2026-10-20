@@ -1,0 +1,384 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:c19137e36e27453d19f0093f7e66c16491fa7bf81861dbbba30b8dedda7ee6eb",
+  "claims": [
+    {
+      "id": "claim_27dce1e327ca4071b8c1acb0f24d867d",
+      "statement": "`nora.__main__.build_app` has exactly three steps — load `cfg` from disk, await `build_dependencies`, construct `App` — and every ordered, fatal startup validation (`StartupError`) lives inside `build_dependencies`, so the entry point only wraps the one step before it.",
+      "evidence": [
+        {
+          "resource": "repo://nora/__main__.py#L1-L8",
+          "version": "repo-lines-v1:sha256:e972188e460026f0b07c936cfbd4893e801efdaf78e1f3ab53478274bfa952d1:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODRlZmUxZTJkMDNkN2I1Nzg2Y2E2YTUzMzdiOWQwYzk5MmFlMzRhOGZiYzA1OTNmMjg5MTE5ODgyN2RlM2UxOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTMwM2VjZGQ0YTRkMTBmMTljNzNmZDQyZmQxMjQzN2ZkMzM1NGE4MjY4MTYwNWRhNTI1NWE5N2EzOTA2OGRiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTViNmU4NzA2YjQzMDQ3ZjJhNmRiNjdmMTMyNjM4NTk1NjA0ZTY3ZjM2OTY2ODc2Y2UwMTU4ZjAwNTNlNmJkMSJ9"
+        },
+        {
+          "resource": "repo://nora/__main__.py#L63-L103",
+          "version": "repo-lines-v1:sha256:0339d4df4d2d4e9b39d258735734b041b14eebe3b9ad5e8547025d5ccb2feb77:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk5YWUzYWQ1YWU0OTQwM2I0NTg0Nzk0M2JhMTkzYmY5YmQ4ZjYyMDc2ZmFmODY5M2M3YjRhNDFjY2VlNWNmZWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNjMGU0MjZhY2ExNWU2YzVjODZhMDUzNDVmMjBmMzI0NzIxZWQwZjYwYjlhN2Q0ZWNjODkzNDI4ODQ3MDM5MTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI0NjdhYjU3Y2UwYWIyMjQ5ZDAxODdiOGE3MDRkY2ZmM2M2ZTEzNWExNWViMzRjNDg0YWI2MDlmZDQ1YjUwMmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY4ZmI4ZWUzZTdjMTU3Njk4NDRiMjNmMTJmMTk2NWZmNTYyYmM4YjMwMGFjZmMwNzM1OGRkZDE5MGMwOTMyNjYifQ"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L1-L14",
+          "version": "repo-lines-v1:sha256:b90ae45beaf748fde3e8f5ad0adea106337c1b9deae338727acd4fa945f6ca63:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE3ODljMDRkZTY2MGMzZjA1MDM5OWFjZTQwMDZjNjhkYmQ2ODM1ZGU5MTc3NTFmYjcwYmFjM2Y3NWE2MGFjMjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f074e0d269d44753bb889e98d59c1a67",
+      "statement": "`Dependencies` deliberately has no `config` or `settings` field, and four of its fields (`audit`, `memory`, `policy`, `assembler`) are annotated with their domain ports so mypy's strict override on `nora.app.*` proves the concrete classes conform; `tests/test_composition.py::test_dependencies_do_not_expose_settings` asserts the absence rather than trusting the comment.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/composition.py#L1017-L1046",
+          "version": "repo-lines-v1:sha256:03754a31cfa7fa1439ff4b8ea81df4667c8b5f97842a86825178236a4ce565fd:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVmMzAxM2QyNzU4MDkyODUyODczZDgyZWZjYmM5NDExYWE5OWUwNTdjYjc1ZjBkM2MyYjFiNGQ1OTJjOTJkZTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmYmQwMDkzMTRiYzI3MDg0MTY3MzRhMDJhZTVmZjM5YTFlNDhhMDUwYmU5MWY0M2IyZmFhOTIwMDJjNjJiZmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUxYTQyNmY5MGFmYTk0MDAzMDAwMmE1Mjc3YWM5ZjI4NDEzOGZlNTBkZTMzOGM0N2NkMTE0ZmExMTgyYTQxZDAifQ"
+        },
+        {
+          "resource": "repo://tests/test_composition.py#L308-L313",
+          "version": "repo-lines-v1:sha256:049082bbc4408624f24fa45c80009f3fe9d31bbc8461fbef69d0331371010bfc:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTBkY2M4MTY2NmYxYTY0ZGMxZjc0YzZiN2NiZDRkZjIzZTJjODhlZTA2NTkxYjhkMTEzMmQ2YTA0YWUxZWU0YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzAwZTYwZDI4MzViN2RmMjNhYWMxNTU3MjAyNmMwMjJhYjU3YWIxZjFiODExOWI4NmI5Y2Y2NzBjNTQwMTQ2OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNWUyNjg5ZTM0ZDQ2ZjZhZjRmMjJjY2Y2YzdjMWRhYTU2ZGJlYzcxODljNzQ0OTQyOWIyMWFkODBlYjMxY2Y2NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWQ1MmU1MzVhNmRkNDBjYzc5ZTFkOTYzNzk5Y2M1OGYwMDFhM2QwNjUyYWE0YmIxZjNlNDg2MzQ3NDI1NmVkMCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_9a9bb2e9d40144a49c5bd6aef75c89ac",
+      "statement": "`Dispatcher` lives in `nora.app` because the layers contract puts `nora.ingest` above `nora.engagement` (ingest may import engagement, the reverse import is forbidden), so the collaborator that must import both pipelines cannot live in either; like `nora.app.runtime` it receives dependencies only (`IngestPipeline`, `EngagementPipeline`, `BackgroundTasks`, optional `ParticipationTrigger`) and never `Config`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/dispatch.py#L1-L84",
+          "version": "repo-lines-v1:sha256:bf1917beaeb5c1248db769d9dbeee332a2c838e8931ef569a959ec9c9ac5bf43:eyJzZWxlY3RlZExpbmVDb3VudCI6ODQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1ZDA5MjhkZGEwOWVhYmFjMjczODZlOTliOTA4M2VjZmFhNjk5ZmExZmEwNjk0OWQxYWIxMDczOWYzMTBlMTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjYWUxMjc4ZTIyYzg4ZDI3NmRjOTIxNWI4OTUzMTY4NzRkYjMxOTEyMzg0ZmQyODNjMDU3ZTgxNTM3MzYyYzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://pyproject.toml#L245-L280",
+          "version": "repo-lines-v1:sha256:29dc45eb3fa6ee8ec0c8141b8c26cd78a86f0c581eda96aed306a1e20fcc68b7:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlM2JhZDcwYTYyNWZjYzdlZGM2OGI2Zjk2Nzk0NDQyYTAyNTRiMDNjOGQ2YTg1OGIwNGQ2YTY4OTg0ZGY4NzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5NDE2ZTA5Zjc4YmEzMTZjMDMyNTY4MjEzYjg1NWVlNzU2ZTQxNTY1ZDkxOGYwOTUxOWM4MWZkNjIwZjQwNjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg3MzBlM2NhNGY1YjNjMmFjNzJlMjM5MWJkMWM4MDkwMzNjYjE1M2JlNDU1ZGExZDQ1YzNiMjBkN2U0MTZlNjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJhNjM0YjgyNWE2YzI1MTk2NGIwMGM0Yzk3YjIwOTA1OGU1ODZkY2ZkZmQ5MTQ3YzRlNmY5YjEwNmI5OWJhZjIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1342ca6d84664927aa8b5ffe81227d74",
+      "statement": "`Dispatcher.on_message` awaits ingest inline (deterministic, constructs no Agent) and hands an admitted tag to `EngagementPipeline.run` through `background.spawn`; it does not own admission (debounce, in-flight and self-tag are the pipeline's first step), and a non-engaging message in an opted-in room is only noted with the participation trigger when `relevance_gate` is set.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/dispatch.py#L34-L84",
+          "version": "repo-lines-v1:sha256:f71dc7b49ac247c095e2d25818c18333b58994782a2cd9384318ceb3abc2ad18:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjYWUxMjc4ZTIyYzg4ZDI3NmRjOTIxNWI4OTUzMTY4NzRkYjMxOTEyMzg0ZmQyODNjMDU3ZTgxNTM3MzYyYzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg4YTRkYmYzNTcwYjQxNjM2NTllMjAwOWE0ZjNmZmQ3OTBmN2U0NzhlZDE5ZGUzMjc0YzU5NWZkMzAyYzEwZjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://nora/engagement/pipeline.py#L1-L29",
+          "version": "repo-lines-v1:sha256:2c2848b59f72fce54af40f53c24c30ffad1a3c2b5fd30935850c74c265e48eeb:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk2NjIwMzhkY2ZiOGQ0NmI3MmNkZmQzZDQzYTVkZTIwOTIwOTY2ODc0MmY4YzkzZTkwYWM2MGE2MzBkYWZlNzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVlYzQyNTdkMTY3Nzc3ZTE0NzdhZWNlOTA2OTRjYjMwMTNmYmQ2ZjM4MDdjZGM1ZWFkOWU5OGEwYTc1YmI0MzEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_cda9a60b4cd24dc1a27fc9bbcfe1f655",
+      "statement": "Architectural boundaries are enforced at build time by import-linter contracts in `pyproject.toml` (a `layers` contract, `domain is framework-free`, and a contract forbidding the listed stage packages from importing `nora.config`, with `nora.subject` deliberately exempt because it composes the real graph), with AST-level tests in `tests/test_boundaries.py` as backstop.",
+      "evidence": [
+        {
+          "resource": "repo://pyproject.toml#L188-L330",
+          "version": "repo-lines-v1:sha256:5dd0c6c247ce83690e3ab263ea1c83db7e2e677308e0a687379c1f8543ea3f5f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQzLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIwMTlmZmI2MDAxMWE4Y2IwZGU0ZDYyODY4Y2VmMTFiY2VlNjBjMzE0NTVmMzc0MWQxYjQzZDYwNDQ3ZjMyOGVjIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIwODYxYzYwMGFkMDAzMjE5MjMzN2EzZjNmYWEzNDFkYzkwZjdiOTMwNjRiNWE1MTczZTk1M2FjOWRmMTI2NjFjIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI3ZWEzYzdhZjE2YzNiOWNmMjE0NjEwNGYzMDg4ZjMxOTU5ZWNmOGY1YmYyYTM1MGQ2ZTVjMzYyMTFhZWFiZjdiIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJjZWFhOTRiYzA2OGViOTJkMzhhM2FjZGNhZjM0MGMwMmYwNTgzMTU0NGNiMTFmMjc3ZWI3NDUxZTY5ODRkNmNiIn0"
+        },
+        {
+          "resource": "repo://tests/test_boundaries.py#L195-L235",
+          "version": "repo-lines-v1:sha256:39a560cddabe28d1c99524c51c0db539898d0b15ad97a2de61bd993578004172:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNkOTk4ZDU4MzQ2MDkyMzQ3NzY5YmQ3NGZmYWE0NmI3NDM4NzRmYjU1MjYwYWU3Nzk5OWVmMzdlY2VlNjQwY2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBlMjhkN2IxOTk4ZGZhYTc5OWQ0YzM0NzE1ZmQxYTFhMzQ4YzUxNDg5NDQ1MjU1MTM5MTliNTM5NDUwYzRmMmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFlNDU5NTJjZmQxY2M2MDVmMjA3YWVkYzVkOWJhYmUxOWJlNzQyNzdlNWU2YzI1MjQ0NjBiMjhlYTczYWZlNDAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e689703d2ecf4e0b8059814a4688aacb",
+      "statement": "The startup sequence is ordered and fatal at each artifact the process cannot be correct without: `identity.toml` (persons), the reserved `memory.ai_peer` check, `policy.toml`, the database URL from the env var named by `store.database_url_env` (default `DATABASE_URL`), and `run_migrations` — each failure raised as `StartupError` with its own message.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/composition.py#L1425-L1464",
+          "version": "repo-lines-v1:sha256:4e520e4b3bd9bba8d8f1043c9db13ee6ff73aea13e344ea76e9348c8dc73df06:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkYTVjNjZlMTdiMTQ1Mzk3ODM0YjhjODU0ZGM0MTkzZTIxMjUxODBhODk5NmExNGMzMTg4MzMyNmIyZWZiY2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY4MDFjMjlhYTQzYzYyMTk5NWYwOGFkZjA4MGZlZGMwMTg5NGE1NTA4YmExNGIzZGQxNGNmYjQyZTFlN2MxMDUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM1ZjAwZjk0ZmVkNzQxZjkwOGRjODZjZTZiNWI1OWY0OTM0ZmQzMTJjYTU4ZWZjMWVlZTg3MDg2NGEyNzkwNjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA3MDkzOGY5MTNlNWI2ODcwMTUwNDI0YzJkNTg5Nzk3NDAyNjc4ZmFkNzc1YzUyZmM1MjAyNzZjYTgxMTYxOWMifQ"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L1435-L1441",
+          "version": "repo-lines-v1:sha256:d5256ddfaffc4566c783546171da8897dc5bcdec4ff5e0782ccc3551a6b7123e:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMGNjMDIxZDYyZWJiNTI2MDkyNDA2ZjRmZDQ0NDcyMzAxN2VjOGJhZGExZTFjZGM3MzIxZTYxZjg5OGUwMzMyZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTkwOWE1M2E2MThkMDI4ZTFkMzAwMGMwYTdhYmNlZWNiZTVmYjM3ZjRlNTExZWZlNDY2NDNmYWQ2ZTY2ODcyZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYmZmZDVlN2I3ZDhiYWRiNGFmMTM5ZjQ3YjgwNGI3ZjE0OTQwNzA5MmQ5NDY4NjU2NzBmMmY2ZDI5ZWQ1YTQ0MiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTkxNDY4OTRhNWViZjA0YmUwNTEzNjEzMzdiOTgxOGFjNTljMzA3YjRkNDRkZGIwOTk1YTVkYTllMzE5MTJlMyJ9"
+        },
+        {
+          "resource": "repo://nora/config.py#L596-L596",
+          "version": "repo-lines-v1:sha256:986b586ed83c37ea22f4021c9de78bc1ab5ea30f989a3329d5db045349d1b21a:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTg2YjU4NmVkODNjMzdlYTIyZjQwMjFjOWRlNzhiYzFhYjVlYTMwZjk4OWEzMzI5ZDVkYjA0NTM0OWQxYjIxYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTg2YjU4NmVkODNjMzdlYTIyZjQwMjFjOWRlNzhiYzFhYjVlYTMwZjk4OWEzMzI5ZDVkYjA0NTM0OWQxYjIxYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDExZjYxMzBkNDg1YzE1NDhlMGFhY2M5ZTIxMmNjYWEyYTAwZGFkYWU0OTQwMTE3MzFjN2JjODhhYzJkZWVhZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDBmNGNmZjY5NTE1ZWI1YTU2NGJjYzI1YTAwMDJiZjM3NzMxNDMzYjRlMTNkMTNiODE5YTIyZGQ1MjBhNjdkYiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_979ef24473d6436fae2de6eb7dec6393",
+      "statement": "`run_migrations` runs Alembic synchronously against a derived `postgresql+psycopg://` URL under a Postgres session-level advisory lock shared with the presence and analytics containers, polling for the lock and raising after a deadline so a lost race surfaces as an ordinary startup failure instead of a hang.",
+      "evidence": [
+        {
+          "resource": "repo://nora/infra/sql/migrations_runner.py#L13-L33",
+          "version": "repo-lines-v1:sha256:8f44c07e3118ddf2695d7416e1998ddd601d074408b14be5a5551cd541959be1:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVkM2I3YTZiY2M5OGRhODlhZGRiYjBiY2QzNzViNzBiZDBlMDdmYWY4YTdjNjhlMzA0YTU5YTRjNzcwMGJkNmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYyMWMxYWNmNDY4ZTFhOGEyNjA3ODBhNjA1Y2QwODlhMDAwZTFjM2Y4NmU5NTNiNGRmN2RlNWM5M2NjYTZhZWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc5YjcxNzE3MzJkNjRkMzY5ZTg4MTU0NGEyYzZmZDhlNDllYjk2NWJiODliNmJkMGU4MjMxOTA1YWRjOTdkODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhYWY3NjM3Y2I2ZTdlNWRiODVkNjM0Mjc0NjAxNGRmMDQxY2NkNTU4YTkyMGIyOWViNmFjNzE5ZDdiYWY1YzIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6cf3ac923862433b9555f6f7167370a9",
+      "statement": "All stores in the graph share one `create_sql_engine` pool, and `App.shutdown` disposes it once through `audit.aclose()`; `PresenceStore.aclose` is deliberately not also called on the shared engine.",
+      "evidence": [
+        {
+          "resource": "repo://nora/__main__.py#L464-L467",
+          "version": "repo-lines-v1:sha256:317536d2caa96d5f4f5bcba3c8f3ae3bb71c0f17bf829221678b7fb8715059ac:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiY2M5NjAxMjlkZTlhZjQwY2Y3ZjVmMWIxZWJlNmM4MGI2ODUwOWZhMTg4ZjQ4NzgzOThlZWI2NjAwN2VjYWRmYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzI1NzZkZmQ5MjMxMjJiOGUzMjAxMDQ1ZjRhOTBhMTM2ZDk5MGI3Mjc0YjI4YWYyN2NiNDZmZjg4NzNjYzQ1NyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjc1NGM5ZDEzY2Y1ZjY5MTZmYjQ5YzcwYzY0MDIyYmI0NTZiMjFhNDUzZTFiNzQyNmNjNmE0M2VhNzk0OTcyMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmMyYjgyMjAxZWJmMGU4ZDY1MTI5NjdkY2VhZmE3ZjBjYWQ3NTU5MzUzYTNmYWYxMWZkOTUzNzhhNjdlMWYwOCJ9"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L1465-L1498",
+          "version": "repo-lines-v1:sha256:4306e9b4086db4b5587b5558ead8baf396ce2a8fe21d6d318a6da88840bbe67e:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNjNDgzY2U5MzdmM2U4NTQ5Mzc3YTZhYjJjYmJiMzVlMDYwYjc0NjM5NWUwYzAyNDA0OGExZDRjMjA1ZjBmN2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc5NDA2NzYyY2E1YTE2NjdiYzAzYWEzNjBhM2ExMGNmODRlN2JjZWUxZjRhOTZlYzA1MzY0Yjc5ZjE1NzlhYjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFmNjRhNWQ1Yjg2NzJjYTljMjU4MmU2MWJjN2Q2NTFjNzJlMzNiYWYyNTE1ZDY0MjIzYzVlOTgxNjY1ZWE0NTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFhMGMzODhiMjFmZmVlZDVhZDkzMDZiOTk0MmJhNWFkNGQ1OTYzMDY5MTUwMDY3YjhjMjVlMzA2MzU2ZTkxMmYifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/audit.py#L585-L586",
+          "version": "repo-lines-v1:sha256:ab5659e6583a135728cc40c4ee5682881f6f7e3bf2a0755962b8776ca9ab9db1:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTEwYWNjNWE4ODYxZThlN2NlYWY0YzJlYmVkZTgyMDI2NWEzNDViMWVjZmE1YTI3NTI5OTNkNTQ0ZTE5NDA0YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGRmZDg1NWIxZDVmMDVjMDdiNDRlMzE4YTNkODVmZDJhYTczMzFiYjcwMjczOTE2YmU2NGE2ZWZkYjk3M2ViYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTRhNWZiZTY4MzlhYTk2ZjU0YTU3OTI4ZjMxNWI1N2JmMGUxNTVmMzU2YzM1ZDU2MTBmMjg0MmZhNTdmY2E4OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWM2OTMxNTk0MjA4ZDM5MTkwOGRmZTI3Zjc3YmY1MjgwMGYyY2FkNzZkZGU0MzdlODc5OWZkNzU3ZDBkZDIxNiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_da50aef608344a4c85adeb529ea9d998",
+      "statement": "Boot recovery runs unconditionally rather than behind the loops' flags: `heartbeat.recover` resolves crash-stranded FIRING reminders (counted, at-most-once), `compute_poller_recover` resolves stranded compute jobs and returns the rows so `_tell_about_lost_jobs` can speak an `unavailable` once a fire path exists, and `publish_idle_gauge` binds the \"not running\" sentinel so a disabled heartbeat does not export `0.0`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/composition.py#L3328-L3360",
+          "version": "repo-lines-v1:sha256:e1e9ae7d1f50882b1421443b5a963493ee2a45d1e25d14d3a023da81ce18f152:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRhOGFmNDQwMjVhNmVlZDJjYjJkNTk4MzUxNGRmMDcxODI0MDZlZTYyNDU5Zjg4YjA4Nzk4ODQ3MDY1MjdiNWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViNzExNzlhMTA1MDAzNTZlZWE1YzMyZGMyZWI2NDljYjQ5ZjZjN2NkODk2YmZkNjgzNmUxZjUzYTk1NmU2MGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE0NjBhNTc1YmE1MzgxMDYzYjFjOTQ0MWQ5NTdhZWQ4NWYyYjg1YmE4MzFkYmUyMjg3ZGEzNmRhNzU5ODBkNDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFmYzg3Y2VhYjk1MjBhY2U0MjViYWM3Zjc2MTNjZTkwNmFjNDRlMDlhZDIxYTA4YTcxYTBiZjU2MmIzYTI3ZTYifQ"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L3502-L3516",
+          "version": "repo-lines-v1:sha256:de2a359e3c8c53ef37b55d90e1e234857efb6e0baee8dd989d0fdced9f7261a8:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0MTIyMzc1ZTkyYmQyZWVmMzUyMDYyYTU4YTkwYTU3N2Y5OTBjYjBlNzE5Yjk0NmQ2MzM3ZjZkMzI2ZmMyZjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVhOGVjNmMyZGVhMDdiYjYxZTMxZDU2YjFiN2Y3M2JkNDRhNGEwODQyMjBjMjg0NGNhZGVkZWIxNzAzMGJkYTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI4NDAyMWU2OGZiOTMyNzc0NTA0MWEyNDc3NDk1MmZmY2M3MmZiZTljMTIyMTJiMDlhZTUyZGM0MWU1NDlhNWYifQ"
+        },
+        {
+          "resource": "repo://nora/app/heartbeat.py#L462-L503",
+          "version": "repo-lines-v1:sha256:2d6e4bfbf3245207051f66f10b81390469e60343122abc446e0aaae9e1c8de73:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhkOGRhMGQ1MjM2NjRiZDgxN2MwOWVjYWVlMzZjNTA0MmJjNGFmYmI1NDQ1NzM1NzYxNTc5NjMzMWQzODdiZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRhMmUyZWNkODQ0NzVhMTk1ZDNlNzRkOGJjNzdmZmZiZDc4ZmQ5YzYxZTA1MGU3NGYyNTcwMDk5YjEwZjZiNzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg2ODA5YjgzZDk0ZTQ5YWRkMWViNDVhYzExOTIzOGJiOWEyMDE2ZDU5YjkwYTU3YjhmNGQ2MzZhZjU1MDhkYjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU4NGFjOThkOTRkYjk2NTZlMDQ0OTJhNjA1NmU1OWI2MmNlMTVkNjMzZTJjMTRlYmQ2MTZlMjQyYzJlMDlmN2MifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c3eb546742364f31994e6ca92873ec8c",
+      "statement": "Optional subsystems add their own fatal boot refusals instead of starting in a state that only looks healthy: `[computer] enabled` without its bearer token, `[otp] enabled` without its secret and API token, `[cognition] enabled` without a session hook/prelude/installed skill or without `[notes] enabled`, `[lessons] enabled` with an empty doctrine-check objective, an unsupported reasoning effort, and a `[documents] public_url` that egress's own identifier scan would block.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/composition.py#L392-L408",
+          "version": "repo-lines-v1:sha256:1f17b06b08e724150bc7f8bae2dd8c9a7305311c617390e2e36308c029ef35b1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFmNDI1OWQzNWIyNjA5MzI4OGU3NzZjYzVlNmQ4NGU0MDAxYzAzZGFlNDMwNjQwYzVmYTBhOGNlYjkyNTNhYWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU3ODAxYTdjODRhNzYxODEzNzgxNGQ2ZGEwNjlhMmU0Nzg5NjAyN2JkNzkzMTJjOGNlYTRmMzUyYzkwMDM0Y2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYyNTAxNzEzOWU5OWFhNWRlMjdlZDZjOTFjY2NhOGNiNDQxMTBmNDU3MTA3MGE1YjgyZTllMTE3YjE2YjdmNzcifQ"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L4482-L4485",
+          "version": "repo-lines-v1:sha256:099ae67496ab3dfe842b97d2c9950a22208f63b18f91b268cb904542f630e7f6:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTFmZTNkYWNjYjk4MmEzMTQ2ODU5YWYzYmE1NmVkYWNkMzU0YmM3YjhkMzI1OTNhM2JmNWFhZDE5YmIzMDY5NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTEwMzQ4MWM1N2QwZjBkYzBmNzZjZDJjYzhiMzYwNGM0ZTgyOTZkYTQxMjJhZGQxOWU4MTc0NWRjN2UzMzFhNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiN2JhNzYwZDNmNzUyYWZmNmU0NGIxYjVjNTZiYWViZTI2OWQzMzgyOWRiZTUzZWIxZTZkOTIwYzg4ZGEzYzk1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGE4OWJmYTM1ZDc0NWU0YjViOGY3YTJiNDNkMWUwYzI4YmNkZGNiZGY5YTFlZmNmMDRjNzBkMTIyMWQzZGU0MyJ9"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L4645-L4651",
+          "version": "repo-lines-v1:sha256:d0961ae5bb3bbe689095c4b0b54642a8e62296ccf5cec0860d81be9104e5b325:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWRhNWM2NmUxN2IxNDUzOTc4MzRiOGM4NTRkYzQxOTNlMjEyNTE4MGE4OTk2YTE0YzMxODgzMzI2YjJlZmJjZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMmViOWRhNmZkZGUzZDY3ODJmYzIwZDlhMWIxNzNiM2FlMDM4YTMzNTNlZjgxODEwMDAxZTQ5MWZiZTlhNzZjZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDUyY2MwNDNmZjUxNDEyM2NlZDNkYTYzM2YxMzE2NjI3NGY5OTllMTY3NzcwNTg2Y2M1YzJkZTJjZWYwMDk4NiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGE3ZTg4YjE2MDJlMmMxNmEyZGEyYTFjODdlYzRiNDQ5Nzk4YjNiYmFmMWZmODhkZmRlNzlhMzZmMTQwZDU3YSJ9"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L847-L869",
+          "version": "repo-lines-v1:sha256:c9a8016686b714ca81fbcc74357afc7b299402d89fec604ce010d27104669a27:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0ZGVmYjY1YzNhY2RlOTFkZjYwZDhiODM3YWU3MzIyNGJjY2Q1MDZlZDI3ZmZhNTUzMjc1ZTNmN2UxMzEwZDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkNGUxYzg4MWUxY2E4OTQyY2RmZjJlY2FkYjVmMTAxZWQ2NTcyMTkzMTVjMDYwMzBhYTRmNDdkNzdiN2QzMWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNkYzk0YWE2NjU4ZWYwN2Q0ZTUzNWY4YWQ4ZmNhYWZiZWY1NmNkOWFiM2M0ZDg3ZjkzNGMzNTE3MjliMzM0MzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVjMDViODQyOTU4N2FiOGM3ZGI4MDEyNDUxOWFlMWUwNTEwYTg5MzQ0YzVhMjI4NTU3OGY3YzhjNDM3ZDk1ZGMifQ"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L872-L886",
+          "version": "repo-lines-v1:sha256:6ce9359799efd922fda3470d24125f9595fa43ee72d02e93933121e8480dffe9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU4NDY3OWNkMGE4NjE2MzkwMWQ5OGFkMGE1MGY2MzllYjlkNTgwZWNjNWVjYjZhMWY4Y2Y5NmQ4ZDcyMzUwOGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZmNjFmYTI1ZWEzYWI5YjcwNmE4ZGUyOTJmNjJlMGU4ZTdkNzZhMTZiZmJmZjg4NjIyNTQyMDdlZjM2YzMxNGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5ZDdjMGM0MWQwNmE4NWI3MjRlN2FlYWVkMDc4MjM1YmY5M2E5ODY4NDkzMjliYTI2MzNhNmU5ZTQ0YmQ4ZjEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0ac1aeed49774bdab7d8f0f9697c2135",
+      "statement": "Media custody degrades rather than failing: `_build_media_custody` returns `(None, None)` when `[media]` is off, the encryption-key env var is unset, or the key is not a valid base64 32-byte AES-256 key, because bytes must never be written as plaintext and losing custody must never take the daemon down; ingest then counts each attachment `not_configured`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/composition.py#L4940-L4990",
+          "version": "repo-lines-v1:sha256:d2c6c2a5acd8d73c66514b78235bc9741992a204130bf43255ecd09a1160d807:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI0MmU4OWMwNzJhZTMyYzQxODljNjkyMmZmMWMwOTliZWJlYTEzNjYxZWY2OGNiZTE3YmM1MmY1ZjkxYmJjZjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2Yzk4ZDk5NjdiNDA2YjM1Zjk2NTU3NWZmNjVkM2VkYTJkZmEyNWU3ODNmMWU0ZmZlZDU5NzQ2YjlkYzFiMWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc3ODdjNjA2NzJhNmZmM2IyNGY3ODEzMWU1N2U4YjVlMGZmZGFlYzliMDFiNGM4NDA1MDYyOTNjODM3NjIzYjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg4YTMxMTRjYTg4ODE5MTQyOGUwN2U5ODAxZWE4YjVhZTJiMmM4MjVjYjllNTM0YmZjNTY2ZTQzYWRiNzVkYTIifQ"
+        },
+        {
+          "resource": "repo://tests/test_composition.py#L316-L325",
+          "version": "repo-lines-v1:sha256:9154f5a63bd2ba31abfb952b9fb47a584b9361f5a403bb31c9258ea2e8bbd76b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcxYTU1OGVkYjdjMDdjMzJjOGQ2MTU3YjZiNTk1ODk0ODAwMDkwYWI1ZTgzYTZmMmI0ZGMyYTkxOTViMGU4Y2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYwMTNhMzQ0MTliM2IxY2IzMDlhN2Y1OTcwMGZjZjJjYWViODYwN2EzYjg2MTBiZDMwNTdiNWEwYzI0NDA0MmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ4MDg1NDE3ZjcwMmNlOTI1ZjQ1NTc0Njc0OGM5OGQ5Y2JlNzk2ZTlmMWFjNGRlMDRmNDZmMzA1NmJjZjYwZWYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_14bb5acb2f634c689d8bd05644e9c5c3",
+      "statement": "Flags gate the tick, not the store: stores such as reminders, the compute outbox, the tool-call log, the computer event/session stores, the standing store, the media index and the dream schedule clock are built unconditionally over the one engine, while only the loop consuming them is conditional — with the counterpart that a subsystem's runtime collaborator (`SandboxRuntime`, `SqlStimulusStore`, `SqlLanguageStore`, `DreamerRuntime`) is built only with its flag, which is why its loop cannot be spawned unconditionally.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/composition.py#L1200-L1215",
+          "version": "repo-lines-v1:sha256:d67be0966abf4ac1b4c0926d8b0659ae52d54075ce222cce4664b4ed06a51329:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlMjUxOGVhZGUzNmJjMjk4NGQ0NWU0NDUyM2U2Mjc3NGJlNGRmNmVjZGEzYmFiZmNmZGYwYjQ0Y2U3YTY4M2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVmNTAwN2U0NDU5MWFlMjVjZmYxYTA3NWFjMGY4YmMwZWRmNjg0MTNlMmEzYWNlNDYxOTY0MzYwOTVmY2E4YTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEyYjhiZWVmOGNhYzJiMDg3ZGNiOWVlZDQxMWRjNjJjN2RmNjgyNjRlYzJiMWQyNjMyN2RkZWYxMzI0ZjkwNjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIxMTdkNjNhNjExZTlkZjMwODQ2MjFlM2ZjNTdiMTQ0YzI2ZjY3Y2RlZGU4ODVlMTQ1MTVjOTE5ZTEwYjNjYWEifQ"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L1484-L1516",
+          "version": "repo-lines-v1:sha256:f87ce1c867a1a7f38d76f9679314920404cd1967bb40c570046ab21cc49fe157:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIwMjUxNGMwMTEzMjM3ODJkYWE2OWZkMjdjNzE2YWYzZWFkNzJiMjQyOWMxZmZhYzM1YmE0NTVmOGFmNWJhMGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlkMjBlOWUwYjFmODA5ZThmNmI4MGRiOTUwYzIzZTdlZjBiMjJkZWZhOWY5MTliMTlmY2I5ZjcyYTJiZThmYzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFjOTZkMWE0Yzk0MzkwMTYxNzA4ZDljOWU0YzNhMGZmMTg2ZDczYmEzMGZjOGJhNDc1MGMyODQzZDdkNDg5ZmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjExNmMwNjBhZGFiMWRiM2ZkMjhiNjJhOTYzOGI1YzY5MWQ4Y2EyZWU4NWMzNzJkNTJlNThjNGU2Y2M5ZWQ0ZTIifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L629-L644",
+          "version": "repo-lines-v1:sha256:78909ddd4aa0ad6d4ff5774d2e2074ef940ddfa7a9e8875aa49a558720873de3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ3YTJhMzE3ZGYzMTA5NGVmM2ZiZjI1NjY3YzNiNWYyZTJlYTU1YmQ2NzA4ZmQ2YzczNzU4NTQwMGMwNDQ1MDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5MTI4ZjlmMjU3MjIwOTM3YmMwNTc2MTFkYjEyMGI1YjI2MjRlMGQxMzBjY2NhMDE3OTdjZjkxNTRlMjhjNTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAwNmViNTAwYzc3MzhjZjJlMDNmMmFhNDcyMmZjYzQ1NmU0ZTQ3OTRkYjAxYWJkOWM5YTQ2N2I2NzcwOWYyOWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMwZjQzMGNjNmVhZTBkODcyNzdjMzRlMWQ2NmU4ZTQ5MDEwMTA2YzM1NWY0YTFkZjE4NDQ0MmZlYzMwNDc3ZTcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b403cd9c97504343a9315f8bad6d64c1",
+      "statement": "Every periodic unit follows one never-die discipline: `prune_loop`, `debounce_sweep_loop`, `computer_sweep_loop`, `computer_probe_loop`, `participation_loop`, `memory_drain_loop` and `wake_loop` wrap their work in `try/except Exception`, log, increment `nora_errors_total{stage=...}` and keep looping, so a failing pass never takes the loop or the process down.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/compute_poller.py#L255-L263",
+          "version": "repo-lines-v1:sha256:81f199c9795536929c6b6fe83d7936a752b7485d94976dc3872b9f0eced6426d:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWU3ZmVkM2E3NGQ3OGFiZmRkMDNmMDQ3ZjVkZmIyYWUyNzEzMWE0OGNkZWU2MDk5NDZmOGFkYzYxMTQwNzk0ZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjI5M2Y1Yjg0YTZmYWMwMmRlMWYwZDQ2M2Y0OGQ0ZmE3MTM2OGUxNGZhNGQ5YjgzOGJiYzgwZDRiZTE1ZWE5NyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGRkNDU2MjI5NTI1ODZkMTJkNjQwYzJiZGFkNTU5ZTJiNGQzZTc2MjQ2NzMyMThiYmY0MWRkMjkzMDMwMzQ1ZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzA0YTk0ZWRhMWYyZjAwYmZlMDRmNDNkM2RhOTI2YWM5MzRhMDE2NDNhM2U5YjJkNmQ4MTg4MWE2MDE2NWQwOCJ9"
+        },
+        {
+          "resource": "repo://nora/app/runtime.py#L109-L122",
+          "version": "repo-lines-v1:sha256:7bfd1926b19f13d368ae42bbac9bb5ef37f978fd6ae92e756d5aa1f2139e1e68:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgzOGZlZDFiODU3OWEzYjA5NmNhNjM3NWI0NDg0ODNjZTEyMGRkY2QyYTI1ZGVlMmNiODMwNTRkNmI2NDZhOTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmYjhiYTZlOGU5NmQ0ZDI5ZjA1NjgwZWZjY2E0NmQxYzIyMDEwOGNkMGRkM2FhNDhiYjJmMjY4NzUxYmU1MGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ2NDRkZmM2NzlhMjJlYTJiMDcxMzUzZmQ2OTdhMGIxMDQ2ZTVhYzEyNGJlNDRmZjM3NTJlYTJlOGIzMTVjODMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRlZGY2Zjk3ZDhlYWI5ZDE5YTA3MzA3MTgyNmY0ZmU3YWJmMTk4NmFiNjY0MDNiYWQ4ZjNhMTZkNTE1MmIxMWEifQ"
+        },
+        {
+          "resource": "repo://nora/app/runtime.py#L226-L245",
+          "version": "repo-lines-v1:sha256:cab965fe7f058d108d6c95f612ba9bd89201500fd2ab8eeb53224622082a68de:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMzN2Q0ZTc2NjdmNmY5OGUzNDBmMzRkMGE3MjdiYzhmYmI0Zjk2MTJmOWM2MWM4MjU1ZDllMWQzODlmOGZmZTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiOWNlODBiZjIwY2U3OWZjYTU5NWRiZWM5ZThjOWU0NjY1M2JlOWNhMWFhZDVlOWI1NmY2YzQ4MDliOGIyNzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ2YjgzZDE1MTZiZmZjN2MxMGUxZWZlNjJjNmQ3MTIzNWU0YWUzNGM2NTliYTFlMmM3ZGI2YWVmY2MxOGY3MmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk4YWI1YTM0ZTcwNWJkYjcxMGUwMWVmNjRhMWI5MjQ0MWRiMDEzNTA0ZTQyYTI1ZmJiOGY1YmNjOGRkNzFhMjEifQ"
+        },
+        {
+          "resource": "repo://nora/app/wake.py#L551-L563",
+          "version": "repo-lines-v1:sha256:c3b2ae621a8bb1fe3898a1f44be108c0a4b7114b179d14d33f6f21e9a56ad2a2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVjNDc5NWRhNDBjNGFkZGU3NjA4NTNhZjFkOWVlYmVkNWMyZDZmOGY0MjM5YmE0YzNkZDAyZGY0ZTQzMTY3MWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyMTkyMDdkMTVjMWE5MTk3MTQ1YWZmOWE4NmIzMDU2ZTg4YWZmMjllOTA3ODcxOTIzMTVjNmQyZTUyMDc2N2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk1ZGJiNjE0NmU3OWUwNjBkMTE0MWZlZjQwM2RiMGZkZTM0MjNjNDY5NjkxYmQ3NTIyZjgzNDJlZGUyNjQ5YmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_cea45845e39d4e24afc6dcca7657ed25",
+      "statement": "Adapter supervision is one tracked task per enabled platform, restarting `listen()` with capped exponential backoff (1 s doubling to 60 s) and counting `nora_adapter_restarts_total{platform}`, because a bare `asyncio.gather` would either take the process down on one adapter's bug or hide a dead listener behind a healthy `/health`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/__main__.py#L376-L396",
+          "version": "repo-lines-v1:sha256:abe6778c7a09cb9e1579c1fad162929b2cf99659b321099906dedaa711446424:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNiNDcyYWQ3OGMyN2FiYWFjOTEzNTNlMGNmY2QxNmE2ZjgzY2Q1OWE1NmVhZWVhNzJkNTkzMTRjOTQ2YmE3M2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY1M2NhOTczOTZjNWIwMDZjYjdjN2Q0ZDYyOGIyYTRhODE1ZjVlYjNjMjBlN2Y4NDI2MWI5YTRjZWYwZjk4MWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ1NDI2NjVmYTdhZjkzYmZlY2FhOTRkMzEwMDMwNjJiNGVhZWI0MmU4MTlhMTY4ZDAwOTliNjNlMjYyM2NlMTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVkNmYzMjUzYWM0YTRjNTVlMTk3NDE3NDQ0NmY4OTA2MDlmNTE0YzdkYjA1MjNkMjcyMjgxZjUzNmQzNzBmZjYifQ"
+        },
+        {
+          "resource": "repo://nora/app/runtime.py#L312-L350",
+          "version": "repo-lines-v1:sha256:82fa45404e0429928cefda58f1ecf196d59e97aed9b11ab2331f17a2a8b3ab18:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkwZmNhZDg3ODUwOGI5ZThjODA5NGY1ZDdjOTJmMzZmNjUzZGE1ZTExMmU4ZTNhNjY4Zjg5NDgzMWI2NjE4MTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlmNTdiNzBlOTA4MDdlMTUyNzA3OTBiZTg4YjhmNDYwYzlkODkwYmY4MTg1MmNiMTJhZWQ2NzAyY2JlM2U3OWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ4YjVkNjVmZjg1YTIwOGRiMDMwYzg5Njk2NTAxMzA5ZjdiMTA5M2MyMDY0MmVhOGQ4OGVhZDYzOGE5ZDU5NjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNhYzM5ZDU1YjFjNDA5YWVlN2MzMThhZThmZWU0ZjEyOWVlODM1OWViMjczNjU3NWJlYmI4MDcxN2E1Mzk2OWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b60def1085ee478c9285c967b2807816",
+      "statement": "`BackgroundTasks` keeps a strong reference to every fire-and-forget task (asyncio holds only a weak one) and `cancel_all` cancels and awaits each; `App.run` awaits only the adapter tasks and cancels every other tracked task in its `finally`, so no new wake or turn starts while the graph is taken apart.",
+      "evidence": [
+        {
+          "resource": "repo://nora/__main__.py#L393-L396",
+          "version": "repo-lines-v1:sha256:87561b8d0c66e34458d2143bd2c8314db61cedfb9931153c7026bea8e4b0fec1:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjU2OWNiMDkyODBlZTA3ODE5NDVlNDhkNDA0MWJkMmRmYWFlNjkxYWQyZWFiZjVkM2NiYTA4NDZjNzIxNmNhYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjUzY2E5NzM5NmM1YjAwNmNiN2M3ZDRkNjI4YjJhNGE4MTVmNWViM2MyMGU3Zjg0MjYxYjlhNGNlZjBmOTgxYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzIwM2Y3YmQ1Y2Y4ODdjZTUzNDdjYmU0NzAyNWJjOGUxY2E1ZGI3MWQwZDFlNjQxNGJjMjQwMDI2M2IzY2Q3NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNWQ2ZjMyNTNhYzRhNGM1NWUxOTc0MTc0NDQ2Zjg5MDYwOWY1MTRjN2RiMDUyM2QyNzIyODFmNTM2ZDM3MGZmNiJ9"
+        },
+        {
+          "resource": "repo://nora/app/runtime.py#L52-L96",
+          "version": "repo-lines-v1:sha256:c0453dd386834f6f18f8954801674cfeacf20b33c784cdcef65c3b026ccce578:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU1MzE4NzY1Mjc4N2U2ZTE1OWEyMzY5NTM3OTZhNmFiMmIyMWMzYWMzMWU1MGZiMjRiMjQ5NTMxOGY5MThhN2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViMDdmZjBiNWJiZTc5MjFmMTlkYmI2NjVmOGQ4ODY4ZjQxYWM1ZTdmMjcwNjljOGFjZjg5NzAxNjdlMTU3ZWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI0OWMwMWZkMmJkY2QyMjgxMmFjYjI1YjkwMzE0NzYyZjQwMzZiMmFlZDU2Y2M1NmI3ZGIwZDU2NmFlNjU2ZTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM3NzNlMDdiNWY3YjY4MWQ5ZTE0ZGU0NmJhOWZjYzA5ZWI1ZDI4ZGExODMzNDkxMmM2ZGQ5N2ZlZDdiNGQyZjYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_49d2a9663fb84a539baa70bde9922fc0",
+      "statement": "The Dreamer's clock is gated on `[dreamer] enabled` and a built cursor store, is preceded by an awaited `seed_watermarks`, and isolates failures per adaptor and per key — each cycle runs as its own tracked task with the watermark written last and a capped backoff keyed on the (adaptor, key) pair, so one failing scope or adaptor cannot starve its siblings on the same tick.",
+      "evidence": [
+        {
+          "resource": "repo://nora/__main__.py#L244-L297",
+          "version": "repo-lines-v1:sha256:48ff7be12799f79cf11503e04861f9d74e337c8e4c4cbb90666fed131c0c2f88:eyJzZWxlY3RlZExpbmVDb3VudCI6NTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwYmZkMGY3ODFiMDczMmExOTI4ZGY3NzdlN2M0MGMwNDczYjc1OWFiNjJjMDVhMDBmOGI0ZTc3ZDQxZTFkZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJkNWYxMjI0YzZkNDJlNjVhZWMzNmY2ZGNiMGIxNzZjYWQwYmNiNTQzZTVmMzcwMzM4ZDhmNjNmOTRkYTBlYzciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRlMDcyODZkNGU2ZjU1MjNkNjU1MTQxYzkyNGE4YzYwYTg0YmM1OGM3ZDM1OTQyZmU0ODFiY2MwMmY4NTBlNGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk4MzJhZmUxZTE4MDRlZWM1YjhjNjY0MTc5YTUxYWE3OGRmYTAxYzAyMzA3OWE5NGU1MzcxNjNkNTExNDMwNDkifQ"
+        },
+        {
+          "resource": "repo://nora/app/runtime.py#L1063-L1109",
+          "version": "repo-lines-v1:sha256:7475fae0685b1ca00a61d37e78a6615486b9c83eff392da164fa3ad10afe40c9:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ3ZjJjNDFkZTFjZGE4ZDJkNjZjYTFlMjM0YmE5NDU1ZWFmZTE5NTMxOWFmZjdjYjBjZTE2ZmFmMWJmNjFkZDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYxM2EwMDVkODlkZmU3MGNmMDY4YzU1MmU4ODFkNjlmMTFmOGRkOWY1N2RhMWUwM2ZkYThjMTE3NmJiNThhMDEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM0ZTk0NDA5MjA3Mjc2Mjk0ODkwNjEwMjk1YzU3NGU1M2U3OWQ4M2NlMjNjOWRhNTgyMGVkYjNjMGY0ZjZhOTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFlM2M2NjhmMWJhYTljNWI3NTRkMzU5NGVmY2MzMWNiMWFkNjkxZjIzMGI0NjMzMTE2N2EwOWI3YmMxNTYzY2YifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3325a2fb058240d196478f6d43a486ea",
+      "statement": "Two different places spawn the process's loops: `build_dependencies` spawns the ones needing a collaborator only it holds (the reminder heartbeat and the compute poller, both requiring `fire_path`, plus the Instagram summons consumer, the presence pre-flight and `_tell_about_lost_jobs`), while `App.run` spawns the rest after the HTTP server is listening.",
+      "evidence": [
+        {
+          "resource": "repo://nora/__main__.py#L190-L375",
+          "version": "repo-lines-v1:sha256:0dabdb5a93b61b071bf216ae3e4e99d254f9188c6dc8a834aa92fcf734dd0227:eyJzZWxlY3RlZExpbmVDb3VudCI6MTg2LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJlYThjZGIwYTFiZTc0NmQwZjBkMzY2OGU2ZGEzMjQ3NjA4MGYyN2IyYTUzNzc3YTY3MzZiZGRhZmNkOTdlYmZkIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIyZDVmMTIyNGM2ZDQyZTY1YWVjMzZmNmRjYjBiMTc2Y2FkMGJjYjU0M2U1ZjM3MDMzOGQ4ZjYzZjk0ZGEwZWM3IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJiOTM4YzAwNzllYmVkMjcxZjcxMmE2Y2YzMGJjZTk2NDQ1Njc4NTAyYzcxMTAyM2Q3ZjU5Y2JlZTRmYTliMjkzIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI1Y2Y3NjgxMThiZTdjNDlkN2ViZTYwODAyM2FjM2U1ZmQ2NGVmY2QzYWM1YmNiNmQxOTM0ODA2YmQxMmQ4MmMyIn0"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L3524-L3579",
+          "version": "repo-lines-v1:sha256:7074137a8b5fb72c48c0f15518cec560c0ecb9acf03b2e9b4bb8f13659a3ba63:eyJzZWxlY3RlZExpbmVDb3VudCI6NTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjYzIwODVmNGU3MTU1MTQ3YmRiMTMzMzYxYTA4ZjdlMjVlZDFjZGQxM2IwYmNlZGM1ZTgxNzUwYzJmNzZlY2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBmNzY3ZDAwMjQyMDQwOGI2YmUzMzNjZjI0MzE0ZGQ2MzM2MTgwN2YzYjhmY2Q2OTEyNmFjNmI5ZTcwOGUwZDYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMwMWFhZjAxYTA4MTI1ODEwMmZiZGExZTNhMTdhYzQwZDEzMjNkMzQ2MjVmNTA1OWFhOTlmYjE2NjQ2ZDkzYjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU3ZWU3MjVkZWZjYjAwNDhmMjE1NjY2M2NmMjNkYjdlODI1MDQ1YTQ3MGI2MjU3MjFmZmVlMjYyZjZlYzgyMTcifQ"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L3617-L3617",
+          "version": "repo-lines-v1:sha256:b9697e66b99a26911692d71b7c6d3207199c51b3d5fc153dd26452e09ef16d8f:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjk2OTdlNjZiOTlhMjY5MTE2OTJkNzFiN2M2ZDMyMDcxOTljNTFiM2Q1ZmMxNTNkZDI2NDUyZTA5ZWYxNmQ4ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjk2OTdlNjZiOTlhMjY5MTE2OTJkNzFiN2M2ZDMyMDcxOTljNTFiM2Q1ZmMxNTNkZDI2NDUyZTA5ZWYxNmQ4ZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODI2OWI5NWJkNzAyNzBhNzg1ZDQ2NjMwYTA1ZjNlMDczNDAwNzQ3ZWJhYTlmMjI0OWRlOGY3YmY2ZmJmMjQ5MCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjFlNDE0YzBlMzJhODI3YzI2MzExZjM5ZjBkNDdjNDdjYjgyNjViNTdiNDUwZmEyYTBlZWUxNWViYmJhZDZmNSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_f345f69de2d84b85996ecdc87f2dc57b",
+      "statement": "One aiohttp `web.Application` is served on `0.0.0.0:<obs.metrics.port>` (a required config field; `config.example.toml` uses 9100) and carries `/health`, `/metrics`, the `/app/v1/...` routes, the OTP routes when `[otp] enabled`, and the voice routes whose event endpoint exists only when a controller consumer was wired; the server starts before the adapters, so `/health` answers while a platform is still connecting.",
+      "evidence": [
+        {
+          "resource": "repo://nora/__main__.py#L139-L190",
+          "version": "repo-lines-v1:sha256:66b7b7e2199dc3eb02242e583f2724f3bab523c205a86e29be20761ef373661f:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFlN2ZlZDNhNzRkNzhhYmZkZDAzZjA0N2Y1ZGZiMmFlMjcxMzFhNDhjZGVlNjA5OTQ2ZjhhZGM2MTE0MDc5NGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhOGNkYjBhMWJlNzQ2ZDBmMGQzNjY4ZTZkYTMyNDc2MDgwZjI3YjJhNTM3NzdhNjczNmJkZGFmY2Q5N2ViZmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM2NjI1ZWQ0NWM3YTYwZTIyZjFkZmFmNTYwM2U5MDU0Y2U5OGRlMzk5Mjk5ZjA3M2IwZTVjZDI3MjliMzk0NmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMwY2JmMTExMzY1MWM3YzkyMThmYmNkNzlhZDQzZmRjMjlmOTUzOWU0OWUwYmE4MTJjMzRmZDkwZGRmNmM0YTIifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L3668-L3672",
+          "version": "repo-lines-v1:sha256:213cd2e0add7eef6b9b0355990284d88c81e6e79ee274c388c0e5d64a6cb7820:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWJiY2QwZmIyYTgzMDgzZDRlYWVkYmY4MmYxZDBkMzIzNGI0ZWUyZjkzOGM5ZjI2YmFmYWM5NjMwYTcyNmYxZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYmE3MzQ0ZmYwODczMDQ1MmNmMzVjNDEyZTA3NTJlMGQ2ZmE2Y2RmYTk0NjM4NDNmODY5YzE2ZjM3ZDRhNTdlNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTI1YzJhMjRiM2MwNTU3MDNlZWI1YTAwNmE0ZDhmZDg4OTkwMDcxMTYzMmMwNzEzMTIwODRjNGFjY2U3ODgwYyJ9"
+        },
+        {
+          "resource": "repo://nora/obs/health.py#L206-L216",
+          "version": "repo-lines-v1:sha256:4ca0f472857432d68cad2b9a8b79e3c73372b38c5768841c90ebfc73cdd54da9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFiYTc3ZTJkYzE3OWRiMTJhMjhiOTFlNzVkMWFjM2RiOGI5ZGNiYjE5M2U4ZTAwNDkxMWMyMGY2OTBlOTg4YzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBiMWZjY2Y3OWFlNTE2NmRlMTRlYzAyZGVmMTQxNzY3OWVmZGNmOGQxMzRiNjU0YjU5MWQyZDI5ZWJhZDc2MDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFlZmFjOWE2YjY4ZDA5NDRmZDMzNmRjOGYzOTM4YjhhMTVjZGY2YzQ2ZWJiODViNDk4MzViODIxNGNhMDE5NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://nora/obs/health.py#L49-L80",
+          "version": "repo-lines-v1:sha256:a133741d79c396c64919043a045a1d7ffa6d98b894f54c955a5cb00aa6a434dc:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk1ZTQ2NmU1ZDEzMzc1YTI3MDU4YWZlMjAyZmUwZmM0YWIwOTNlNzE2YmI1NjQ4OTM0ZTkyMTc5ZDkwM2ZmYzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM1OTI3ZTIyZWNiYTVjZDQwNWYxNjhiNDc1ZTE1ZTQwNTFjMzYxMjUyYmM2ZDA3NmMwYThkNTM5MTg4ZmQ0MzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ0NTU3MGYwNzcxMTRlZGNiM2IyYWFlYzQ5ZDgyZmI3ZmI0NGIyNjc4MmY3ZGQyYzEwMmY3MGUwOTIyOTJmNDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRmMWNlODA5NmY0NmVkZjAwZmJjMDM2MTM2YTY5ODkyMTQ2ZTdiNDE2ZWE3N2MzN2Q5NjUxM2RiYmZmMjNkYjcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_235c3388bcea4aba9ac1c1961d00b2db",
+      "statement": "Shutdown is ordered around what holds the model client and the database: `cognition_shutdown` first (sessions record themselves `cancelled` with their stimuli pending instead of vanishing mid-flight), then `subagent_backend.shutdown`, then the health runner's cleanup, then `client.close()`, then `audit.aclose()`; the first SIGTERM/SIGINT cancels `App.run` and removes the handlers so a second signal ends the process at once.",
+      "evidence": [
+        {
+          "resource": "repo://nora/__main__.py#L452-L467",
+          "version": "repo-lines-v1:sha256:62d590b729500b7f0653f2f2982691c5b8b01bcbf5013345d44a596a2e7a2599:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE2MTk1YTJhNzUyNGQ4ZTc4N2Y5M2U3ZjM4YTFkNjk0MGU3OGIzODAyZjQwYWE0OTM3NjM1YjNlYWVlOWQxYTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMyNTc2ZGZkOTIzMTIyYjhlMzIwMTA0NWY0YTkwYTEzNmQ5OTBiNzI3NGIyOGFmMjdjYjQ2ZmY4ODczY2M0NTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEyNzFkYWEwZTViYmE5MzNhYjRhMzNlNTg3MjViOTBiNjNlMWQyZGRhYzBkMDk5ZDJiZTFlZTFhZGEzM2EyNWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJjMmI4MjIwMWViZjBlOGQ2NTEyOTY3ZGNlYWZhN2YwY2FkNzU1OTM1M2EzZmFmMTFmZDk1Mzc4YTY3ZTFmMDgifQ"
+        },
+        {
+          "resource": "repo://nora/__main__.py#L499-L541",
+          "version": "repo-lines-v1:sha256:f7dfeab0285248b5194cd783d2f8092ed7922e9d9c6b0e01c3a6e90aa471dcf2:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0NzhmNDhkODBkMmVjODVkZTc5M2I3YWQ2YmQyYTMxZWU4NGYwZDI2OTQ3ODg2YTc5ZWUxYmE2MGFiZWI4NWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRiNmY4OWNkMmI4MjNlM2NjOTJhYWViNjA5NGNmNjMyMDhiZTU1NzVmZjU3OTUwMzc3ZjQzN2Q3OWEzOGVhOWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJiM2U5MmEyYWFhMzQ2ZGZkNzM3ZDc3MzIxMDI5NjFjZWZjZjQ4YTQ0OWZmOTFjMDgxZTVlNzBlZGI4MmU2N2IifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a40e249ee2dc490e8add9876cc4032ce",
+      "statement": "A `StartupError` reaching `main` prints `startup failed: …` to stderr and returns exit code 1, and there is no partial-graph teardown: `App.shutdown` (the only place the shared engine is disposed) exists only once `App` has been constructed.",
+      "evidence": [
+        {
+          "resource": "repo://nora/__main__.py#L452-L467",
+          "version": "repo-lines-v1:sha256:62d590b729500b7f0653f2f2982691c5b8b01bcbf5013345d44a596a2e7a2599:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE2MTk1YTJhNzUyNGQ4ZTc4N2Y5M2U3ZjM4YTFkNjk0MGU3OGIzODAyZjQwYWE0OTM3NjM1YjNlYWVlOWQxYTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMyNTc2ZGZkOTIzMTIyYjhlMzIwMTA0NWY0YTkwYTEzNmQ5OTBiNzI3NGIyOGFmMjdjYjQ2ZmY4ODczY2M0NTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEyNzFkYWEwZTViYmE5MzNhYjRhMzNlNTg3MjViOTBiNjNlMWQyZGRhYzBkMDk5ZDJiZTFlZTFhZGEzM2EyNWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJjMmI4MjIwMWViZjBlOGQ2NTEyOTY3ZGNlYWZhN2YwY2FkNzU1OTM1M2EzZmFmMTFmZDk1Mzc4YTY3ZTFmMDgifQ"
+        },
+        {
+          "resource": "repo://nora/__main__.py#L543-L557",
+          "version": "repo-lines-v1:sha256:7daf5f4d34b66c9ed3082e1e2eb113a2ae427d7b63dd061f73774deb9a6f4669:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFiMzk3OTMzYTI0YTgwMWVlOTIzMzI3YmQ2OWEwMTA0OWMwNzc5MTUwMjFjZjJlYzM5ZGRhNGY4MWFhODM3ZTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE2MjMzYjNmZmVhMzJhMjNkZjUzMDY1MzQzNDhmMmRlZTc3NmE1YTZmNzRmYjUzMzE3NWRkYzUzOWE4ZmU0NjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQyZjUwMmY0OTQ2NTA3MjNhMGE3YjhhZWYxM2ZiMDdmOGU0MTRiMTdmOWM3YTVmY2JmODE1Nzg3MmE3OTkxZDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNkNDEzNDBjYzIzOWExNTljZTliNjAyMmU5ZjYzMjI4MzJlMmVhZDc2Y2FlOWU0NzU0ZDIxMGViOGZiNmQ1ZTgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8aa723533d464c0cbd2d3a130f2e7f06",
+      "statement": "A CLI subcommand shares `main`'s entry point but not the daemon lifecycle: `cli.run` loads the config with `require_secrets=False` and never builds the graph or starts a loop, which is what lets the read-only control plane work from an operator shell where the LLM key is not exported.",
+      "evidence": [
+        {
+          "resource": "repo://nora/__main__.py#L543-L550",
+          "version": "repo-lines-v1:sha256:50f122c31dc8163fee500660ad6094d743f06f993b26b22cc959d6579700b897:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWIzOTc5MzNhMjRhODAxZWU5MjMzMjdiZDY5YTAxMDQ5YzA3NzkxNTAyMWNmMmVjMzlkZGE0ZjgxYWE4MzdlNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzY3NDJhNjI4ZmU0MTFjMjJhMzk3Y2I0OWM2NzBjMzUwM2RlOWQ5MzA5NDhkMjE2ZWU0ZWNkYjdkYWUwODJhYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDJmNTAyZjQ5NDY1MDcyM2EwYTdiOGFlZjEzZmIwN2Y4ZTQxNGIxN2Y5YzdhNWZjYmY4MTU3ODcyYTc5OTFkMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmZjMzkxNTk5NGMyYjVjMGJhOGJiOGM1OGM1YWYxZTk1YWIyYmRjZmNkOWQ3ZmM2OWUxNjJlMzhhYzhlMjgyOSJ9"
+        },
+        {
+          "resource": "repo://nora/app/cli.py#L513-L539",
+          "version": "repo-lines-v1:sha256:11f26870a041d478180699747a924368816d439446fed921e1149a172ba027d6:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5MmZjNDAzZWRjZTIwMjhjNzE0ZWQ0MTY5OTAxZGFjZTA2NDA0MmVkYWEwZTEzZGU2NjkwYTBjMjk3MWU3MzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3ZThhZDc4MTllZGEwMGQ3ZjAwYTRjMDE3NDJjMDQyYTdkNTY5MTA4MmFjNWFkZjA4OGExMzQwYWI3N2ExYzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk4NzhlNmFiM2E5ZmRlZDFhZThlODU4MjM5NDZjMGUzZDc2MWQ5OWVmMTU0YWNjNjNiNTEyZTlhNGIzODRjNTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM1ZGNkNDVhYTAxZjQ3NTcxZDFlYmRkNzIwMTM4NzE4YjNmNzFhYmMwNTNkYmIxN2QyNjhjNGFkMTRlNzIxNmMifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L4431-L4447",
+          "version": "repo-lines-v1:sha256:df5494ca19f7ddad5fbfd44ca532e4f64dc05c34ca3fe3bce6027b9181d5cd69:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA4ZDBkOTQ5NmI0ZDA3MTAyNDQ0ZTNmMDJlMTRmYjU0OWM0MzdmNWZmM2IyM2IyZWYxYTgxNTk0ODc1MDRlZDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2YTcxNTI1NzJlZTg0ZjEwOTA2Yzc0YjlmMmE5MjQzNGRkYWIwZTNjNDI4MTNiMDRlNTk3ZWZjZWM5NTFiMjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZhM2NmNTE5MjM1NGY3MTYxNWFjNTEwMzRiM2U5N2MyMGVkYTk5NjQzZmNhZjViYmU2ZDQxYWQ1OWJkMTIxNjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ0Mzg3YWM1NWRlNDg2ZDZkZDZjODZmMWU0MzRkNjdjMzYwNTQ1Y2YzZmM3YzNkYWI2ODJlZTk1NTVkNWVhYzcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_75f5519c5cb949df9278bed7e5bc0266",
+      "statement": "`build_assembler` is the single construction site for `TranscriptInjection`, called by both `build_dependencies` and the offline/eval harness, and `tests/architecture/test_assembler_parity.py` parses both call sites to require the same keyword set (and pins the two `FirePath(...)` sites the same way) so a collaborator added on one side cannot silently drop a prompt tier on the other.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/assembler.py#L1-L13",
+          "version": "repo-lines-v1:sha256:8c2e5fdd9f79ed1ba3cf19bf09724f49ccda91fd7942176847b7362fd43a5b52:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlNzU5YzEzNGFmYmVjOGQ2MGM5ZGFmODNhM2VmMWUyNTJiNDIwNzkwY2FmN2EzMjdhNjk0NDgxZDA1NGQ1OWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://tests/architecture/test_assembler_parity.py#L1-L42",
+          "version": "repo-lines-v1:sha256:4fa6b5c23af49cbbbd3c15a31116addf7baba98da87321bdc46dd17298ee976d:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjOTllZDgyOTdmZGRiZDVjNGY3Yjg4OTE4MDVhZTkwZmYzOTYwZjE1ZDNiYTRmMjViMDllODYzNWE4ZjMzZTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9c32fcfa55794d6d90a75e9c745b2821",
+      "statement": "The non-production entry point composes the same graph: `nora.subject.obtain` calls `build_dependencies(cfg, clock=...)` with a frozen clock and points `store.database_url_env` at a per-call variable of its own rather than borrowing and restoring the deployment's, so a subject never touches the deployment and two subjects can run concurrently.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/composition.py#L1404-L1424",
+          "version": "repo-lines-v1:sha256:6f12e175c46990023d825bc0cfd32e39f8049142d3bd7076940129f98d85a7c1:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA0N2ZmNjNjMDUxNzM4N2QzNDdkNDlkNTExMGQ2MmJkZWVmN2E0Yjc4N2VlOThmYjFlYTJkYmFlMTMwMTBhZmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2YTcxNTI1NzJlZTg0ZjEwOTA2Yzc0YjlmMmE5MjQzNGRkYWIwZTNjNDI4MTNiMDRlNTk3ZWZjZWM5NTFiMjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI3YzYyM2U4ZjU1ODgwYjQ4NTI4YjE3Yjg4ZDVhMmU5MGE4ZTM1MDA0YzI1MTg3MjBhMDY4YjUwZjU1OTZlNzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5MjRhMmEwOWY1MWUwNTJmMmY5ZjY4NzBlYWQwMzNmN2E2YzllYTA1NjRmY2FjODk0NGUzNjc3MzAwYmVhZGUifQ"
+        },
+        {
+          "resource": "repo://nora/subject/obtain.py#L577-L630",
+          "version": "repo-lines-v1:sha256:6d9d7ec7a06c934c6e7294f332d2ff3ea63a0b813fb0e47358952e0c4e486dee:eyJzZWxlY3RlZExpbmVDb3VudCI6NTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIxZWNmNzgwNDBlMDk0NmM0ZDljZjc0MTRhNjkwYmYwMGZkOWUxZGQyZThhMTRlMzA5NmNkMDk3OThhMThkYjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIwZGZlMDc0NzM2Nzc0NTlmZmVkMjUxOTcyODBkYjYyOGM0NjM0MTUzMTA4ZGZhZDMxMmI1YTQ2NjQxY2JiNWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY2Y2JkN2U0NjVjN2IyYTM3ZjM0NGIzNDI4OWY2NmJiZjJhYmI3MDQxMjg5ZTY0NDFmM2ZiNjc0OGUwYTc1NTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI4YTdiNDYwOTc2MmU5ZGZiZDk5MTVhZjM3OWFlNTY4NTUwNjZlYzFjODhmMDczM2RiMGFmY2IwNjlkOGNhNjkifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-20T05:37:18.064Z"
+  }
+}

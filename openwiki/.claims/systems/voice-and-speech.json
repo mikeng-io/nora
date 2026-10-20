@@ -1,0 +1,558 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:acd2816ce90679079bfacfaba685f9368742c6d571deaa0fcb85ef0ffe70470b",
+  "claims": [
+    {
+      "id": "claim_b8c03bd350de4802a2639c4dbf7d189f",
+      "statement": "The wake service turns speech into a message by POSTing only text — `{user_id, text, guild_id}` plus an optional `voice_channel_id` — to `POST /app/v1/voice/utterance`; no audio byte enters the `nora` process and nothing on the path stores audio.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/voice-wake/README.md#L11-L14",
+          "version": "repo-lines-v1:sha256:d7c63bdc1f0197c7ba9420960ab2290140ca7c330a211b865b8753475184a7ec:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjVmZWE2N2E0MTllNjU0OTJhMDk1NjNhMjZiNjBkMGUyNTEwYTJlZDUxMmMwOTMyZmNkM2U4Yjk4MmYyMzU4ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWJiOWI3OTE2NWMwNWYzOTU5MjkyYjQ5ZjJiNzQ4YmY3YzhiZGZkMDgyMjNiOTRhZDQzNTFhNmQ5YTQ4OTY4NSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjdiYjlmMzhmNzM5ZWI3MDE0NDc1MzQ0ZjY0YjIxOTA4MTRkMmQ5OGFhYmQ2NDZjY2MxMGI1YTQ4ZmNiMDAzOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTIyMWViZGUxYzU2NWE1NjMzMGFjMTQzYjk0ZDk4Mjc0ZDEwNjAxODljYjlmMjViOTQ5OWI3NmQ2Mjk1Mzc0ZCJ9"
+        },
+        {
+          "resource": "repo://nora/web/voice.py#L19-L31",
+          "version": "repo-lines-v1:sha256:d218a63879f1023d024858f0887172f919abd0807a87db9e6f136b17350a211c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjZjRjMmNmZjllNTMzOTk1YWQwMWU0OWUwNGFmMTU2MzFkMmViODVjNjk2YTBkMGJiMjA5MTJjYzJlMWU2ZWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEwZjg0YTYzNTA2ZmU0ZjYxZGM2MDA2ZjVmMzIxZTkyZDAzNjU4YjY1ODgwNzU2ZjA3NjJiMGUwMjM4NWIwMTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5YWVjYWI0ZGU1OTYwMWYzMjM4OGY1MGZjYTBiOWYzOGM5MjIwZWY2YmVmZjQ3OWJlNzg2MDRiZTdhZTdmNDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE3YjEwZTAyN2Q0MzRiMDc3NmYyNWI5MTJhZGI1YTk1YWQyY2IzNjQ2M2VmZTAwYjZjNTU2ZTM1YTYxZWY5NDkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_be99cc92cdb94d099bcbc5b235db6310",
+      "statement": "The utterance route resolves a Discord guild, not a channel, to the single room marked `voice = true` via `Policy.voice_room`, and that resolution is the admission check: an unresolvable guild answers 400 with nothing ingested, with no fallback to the voice channel's own id.",
+      "evidence": [
+        {
+          "resource": "repo://nora/policy.py#L291-L304",
+          "version": "repo-lines-v1:sha256:5ad5c659f2a452428d1754f715cdd93abe10bb85bb64d903c435353ebcb5b794:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA0NDY1NjgwMjgzMjY2ZjQ1NDExNWYzYjAwODg3YzlhZjA1YzdmYmY4NTRhNDFiMjZjOTU3YTZmNWM5OWVhY2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhmNDcyNzliMmQ1N2EzYmZlNTU0ODZlZTc1YmIyNzA0NDM3NDg1OGE0M2EzZTg4ZDQ3OGJkMmY4MTY5ZGYyZTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI1NDRjYTZmNmQyMmY0MzJmZTc2Mzk4NWUwY2ZkZDlkOTFlMjA0ODVmNzJmNzE1OGYwODdmZTFjNmMxNzc1YzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA5NzcyZGE3ODg3ZmI1YTZjZjg4Mzg1ZGViZWQ2ZmU4YzIxZWIwMDdkZGI0YTkyYjEyN2ViYzA1YmEzNTllZTMifQ"
+        },
+        {
+          "resource": "repo://nora/web/voice.py#L108-L130",
+          "version": "repo-lines-v1:sha256:b611548b99d8d89270fe3ef8fe96ab180a75f2603f2b11f2655853c5d8233e5f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFhZTgzZTU4Yjk5YTMzODQyOWI3Y2Y2YzUzNjRmNDU4ZjcyMjZhNmJkYzdiNzFhMGFhOTM3YWJhNzVlNjNhMTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzZTI2ZjdmZjRiNmM3ZWFkNzg1OGFhZDQwNzhhMDFjODU4YWMyNDg4M2IzYzcwOTc2ZDAwYzliOThjOGRlMmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA3MzlmNzcyZDNmM2FjMjFjOTFhZjAwMTdiNjUzMWQ3ZTc4NjEwOGEwZWZlYmJlZTNhZjczNDc3YjE2MmIyNjUifQ"
+        },
+        {
+          "resource": "repo://tests/web/test_voice.py#L81-L90",
+          "version": "repo-lines-v1:sha256:a7750f440cd9ca84d1112537eeb00c6547a821fcde6bba04e8b0b00da940401b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkNWZiMTljZWQ4MWI3N2M1YzdkZGY0NDc3MDQyMGEwMjUxN2EzYjk5NjRjNTlhY2FiMmIyNTIxNmViZDY4NjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZjOTNmZjZiYWJiMGMzMGJlNjdlYzE4MWVlNzg4YjM0Mzg0NjBhNmE0ZTgyYWY5NTQ5N2RhYzk4MzMwYTdjZmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkzNWMxN2FiMmUxNGYxZjliNGU2M2M1OGY1NDdhNTMzMDAwODlkYTdiZGQwMjEyMWVmMDNhYjZhMWU5MzU2MWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNlODM4Y2Q1NTYzNDY3MDM5YjYyYWMwZDE4ZWUwZGZmZjcwYzYwMDg5M2Q3NDMzNmRlMzY3MGVmZGY1YmFlOTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_bcf6435eaffc4d14aa34f0c1577143da",
+      "statement": "Voice is modelled as a surface of a room rather than a room of its own: `Conversation.voice` marks one room per guild whose every voice channel speaks into it, and `load_policy` refuses a second `voice = true` room in the same guild at load time.",
+      "evidence": [
+        {
+          "resource": "repo://nora/policy.py#L168-L181",
+          "version": "repo-lines-v1:sha256:a45112c4b0b92d7a9e54bfccf610c562529885c63bd1287d98995e8f80273656:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIxODMwZTA3MmQxYjdjYzU5MDY3N2UzYzc4OGQ0MjM0NzYzOGM5ZTY1ZGZhNGFkMzhlNzhiNjU3MmNjMGJkZTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVkZjdjNTU4MGY0OGE5MzA2ZGE1ZGU5NmU5YTc4ZjBlNTQwYTFjNjEyOTU2YzU3MWNiMTc2MzE2ODJiZWY2MjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIzNzU4NDU5OWZkMmRkOWNlYmIwNDJjNzg4NmE4MzVjNmUyZjQ1NTNiYTc0NGMwZTgwOWNlZDE1NTFhZWMzYTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZlZTA3MGIyNmFhNDA5YjhmYTMwMjZiYzA4YjkwZDVhMTE0YWQ2ODQ5NDE1NTM4ZTZlMDUyMTE0OGQ2ZGE1ZTUifQ"
+        },
+        {
+          "resource": "repo://nora/policy.py#L646-L669",
+          "version": "repo-lines-v1:sha256:fefe03bfe2ec47a7c4a2ef147cbd4248dde6a2bebc9b25a882358afe4f0c5c79:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRjNzRjY2Y2YmI2MDIwMmNjNzc1YzQxYTJlOTE2ZDEzM2QyODMzNzU1MjJkZTM5YmU2M2FhMWMzMTU2NzViNjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdiYzRmZjNkYWFlMTU0NGFiN2MwM2FjMWRmNTQzNmM5OGRmZTYzZjkwM2M5OWNiNzRjZDRkNjgxOTFlNDFjOTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY3M2ZkOGQwZWEzNGI1NzA2MzcxMjEyZTYyNjIxOTI1NTlkOWEzY2YyNjVjY2ZhYjJiMGI2NjA4N2E4M2M3NTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk0ZTZkZDBjZjdjZGMxYzU4MjYzN2YzYzA0YjJhNTM1YmZkNmM4MTZiMGY0YTgwZDM1NDY3YWIxNGI2OTkxMzAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_84ea78ed1de94d3d9abf6b3066ccaee0",
+      "statement": "A spoken utterance becomes an ordinary `NormalizedMessage` (`platform=\"discord\"`, `conversation_type=\"group\"`, `sender_name=None`, `voice=True`) whose `raw` keeps `voice`, `user_id`, `guild_id` and `voice_channel_id` as provenance; only the `voice` marker is read for routing, never the channel id.",
+      "evidence": [
+        {
+          "resource": "repo://nora/web/voice.py#L131-L156",
+          "version": "repo-lines-v1:sha256:8cf8e99e6399b41f7e7a8e2b4949482132c9129cbd41474237a2b0af0b6fc5dc:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU1NzI2Y2IwOGExN2U1MjgxY2NiNDk2NWQyNmYzNjZlMjVmZGQ4ZjJkNmU5Y2QxOTIyODdmNWM3NjE4MTY3M2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyMzFkYmYxYThhOGZmZjllNTI4NzQ1ZDUxOWFiODIxOWNlZWU4NTgyYTJmNzk1ZmI5NDJjZjE0ZWRmMGJjNWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI1YzlkYjc4YzRmMDA3Y2Y0NzMxNjFhZjIzNWZkNmQ3ZjIwOWU5M2ZiMzA1NjRhMjFmODdiYmU3NjZiZTMxMmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg4OGI0ODY1MDg0OTIzMWEwYjM5ZGNiZGFiYzljNjZiODMzOTk5MWRlN2NkOGNmY2U3OGJhYzk0MjQ2ZTA0NjUifQ"
+        },
+        {
+          "resource": "repo://tests/web/test_voice.py#L47-L70",
+          "version": "repo-lines-v1:sha256:5acc9fffa9df60d737e5f172a39305ef8d2aabc5b8125d345396688667168c21:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZhMTUyYTAwZjlmYzBlNzFkYTRiNzE0Y2E0YTdhNjEyNDMxYjBjMjk2ZjJlZDQyZTdkZDZhY2E0NmZmMWM5YmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFkYTNhNzAyYjhmOWUzMTE1MGU0MjY1OTc5NjBjNWEwMjJmYzc1NWNiOWFkMDlmMjhlMzlkNGJkNWNiOGUxMDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlhMjE3M2MxNGYyYTRmYTc0MWU4YTNhN2U0NmE3YjcwNDdiNTgwNWJlZTBmNmZlMmEzODFjODc2ZmZjM2E0M2UifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f0d698f3fa4d4521b775d6eea0088337",
+      "statement": "The voice route hands its message to the same `Dispatcher.on_message` callable a platform adapter's listen loop receives (production wires `ingest=deps.dispatcher.on_message`), so audit, memory feed, engage gate and reactive turn are not re-implemented for voice.",
+      "evidence": [
+        {
+          "resource": "repo://nora/__main__.py#L174-L189",
+          "version": "repo-lines-v1:sha256:065549e765539c9c17793d4fdee1ca8d13bd4e79d640d000c3ab38e0175168db:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI1YTBiYmFmMmNhZmUzMzYwNWNjMjA0OGZiODBjMjEwM2VlODU1YTdhZDljODhlYzc5YjQ1ZWM5NzU2MjEzM2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU0Mjg4ZmM2MWY1MmRmNjZlMjJjYmRhMzE4NmZiNjU0MjBjZThmZGI0NGVhODU4MTFiODUzOGE0YjYzYjM5ZTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhZDA1YWIzMGMwNWIyYmQ5ZGQ5ODA0ODU1N2Y4MDE1ZTAzYTMzMGU0N2MyMThlNTkwNTgyM2M5MjlhOGE2YjMifQ"
+        },
+        {
+          "resource": "repo://nora/app/dispatch.py#L67-L84",
+          "version": "repo-lines-v1:sha256:5d75e47845787b76e580f250b278ebc5a9641bf0a7c482274afe82060c05c734:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJjYzZhM2E0MDkxNWM0NjFkOTI1YTA2YWU3NzJhNDg4Nzg2OGFmNTYzOTAyN2FiYzY5YTVmZDVmYTVmZDk3YjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjYWUxMjc4ZTIyYzg4ZDI3NmRjOTIxNWI4OTUzMTY4NzRkYjMxOTEyMzg0ZmQyODNjMDU3ZTgxNTM3MzYyYzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEzNThkNmMzZDMzODk2YTU1NzJjNDkxZDVmY2ZhMTcyZTIxMzZhYjhiMzI4NzMxMGE5ZjAwZWM2MDBjOGM4ODQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://nora/web/voice.py#L63-L87",
+          "version": "repo-lines-v1:sha256:aaf944484811d6d8ba201ad2d7d9866ca7431b1fcb1972c1e0b5c72dd767bc57:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZjYzg2MTA2MDY4MzJiYTlkYTMyMGJhYzI2MTc1OThiZmM5N2EyNDQ0ZmY1ZTk4ZDYxZjE0ZjI4NWQzNmIyMGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA1ODIwNmYzOGFhNGI1Zjg2NWI2ZDQ3YWEwYTUwYTBlNzZmOTRlMjE1OTVhODMwMGQ3YzEwZGJjNjNlMmRiNWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVmNmZmNzM2ZTZhNzQyZDQwN2I4N2UwZDYzZDBjYTIwOWM1YTI3N2MwZWI0MjNlNDc4NjQzOGMxMjI2YTM2MjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNjYzk2ZjlhMDdhY2FmZTVlZDZiNWU1ODE2N2IxY2Y0NTFkZTc0MjUzZDhlYjlmN2Q4ZWExMjk1ZDkyYTEzOWEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_237a8e72919447ada80f28db082826fc",
+      "statement": "The route answers 202 with ingest run inline and the agent turn spawned, so a POSTed transcript produces the same artifacts as a typed message — an audit row with the speaker resolved to their person through `identity.toml` and a Honcho memory feed as that person's input.",
+      "evidence": [
+        {
+          "resource": "repo://nora/web/voice.py#L30-L32",
+          "version": "repo-lines-v1:sha256:062682b2434b6b9c34181636d0c570d43a5d92b44f398e5495f5033b576ecfb5:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTFhYTkyODY4MzRmMzU4MTlkYzcyMjBjMzA2Nzc3ZDVlODU2ZmMxNTNlMTRlODc0NGQ5Mzk1NGE1ZWUxMGJlNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDE3ODAyNWNlMjJlYzU5Y2Q2MTY1OTZhMWVjMzY4YmY2OThiYTVmMTU3Y2NkMDNjZWQ0ZmUzMDlmY2Q1ZThjOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjllYWU4NzJiMWQ5NmM5YzhlYzI4MGZlNDRiMjQ1N2FmNTgwYzVjZTZkNGQzMTRiZDZmN2EwMTRlZGNiZmQ5NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGVmYzE3OTU1NWEwNDY3YTk1YTZiZjQ3Yjk2YmE5YjU4Mjc3ZTkyOTQ1NjQ3YmQ3YjA2MGM3ZThjZjZmZWY3NCJ9"
+        },
+        {
+          "resource": "repo://tests/integration/test_voice_utterance.py#L120-L143",
+          "version": "repo-lines-v1:sha256:aad9ec61d98b7b805ee00aed2599d58b047fb9d5ed3230995d05d279da453587:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIzNDcyN2NhOWJiMTk0YWYxNjk2NzMzZjU2NTU1YThiYzMzNDg4YTU0YzE1YTllMDUzYmUyNTc2OTZhZTkwZGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAyZGViZjY0YjZjZmU3ODdmMDhjYWU5ZDc1NDBiZjkwMDg3ODM5Zjc5MmE5OTcyZmU4OWZjMjk5MTA5NTg1N2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJjMTE2NmZhNzUzNjk2N2JmZDU2NTUzMGFiNGIwMWExZTE1ZDJiMmRhYTU2MjczMjY2ZjQzNzRiMTRiYzkxYzIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_73276efb98174d6d9048bd59fb419f3e",
+      "statement": "An utterance from a guild with no `voice = true` room is refused with 400 and records nothing at all — no audit row and no memory feed — rather than answering 202 for something that was not accepted.",
+      "evidence": [
+        {
+          "resource": "repo://tests/integration/test_voice_utterance.py#L145-L221",
+          "version": "repo-lines-v1:sha256:cc5eb788dbff033676728ec42c345b561eb9805c76c6a8423bf5cbcbf3d7580c:eyJzZWxlY3RlZExpbmVDb3VudCI6NzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3ZWJlNDIzNjdlMGEyMDFhYWIzNTkzZjU2MDI2NGEzYTQ2ODQxYmY5OWQ3ZjhiYjZiNzUzOTllZGI3ZTU0MTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ5NDM1ZmQxMjhlYzBmMDcxNzU5ZjEwNDdlZDU5NzQ0NjFmOTA2NjI0M2M2NTQzYTc4ODdlZDVmMTE3MGNiMjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM0ZWViNDM4ZTQyZjhkYzUyYjAyNmMyMDMzMTc4YzU0ZGRmOWI1MDQxZmEzNWVkNjIzYzY0MzYxZTBmYjZlNDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc2YTBmZjE1ZDVkMmJhMmViZTg1YTllNDVjMGU4NDUwNDk1MWNkZTA0OGFjNTE2YTI2MjM4MTcyMWViMWQ5NTcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e94a2ce7cc3d4ba29966824567533e08",
+      "statement": "`VoiceWakePolicy` is what makes a wake transcript engage: it fires on `message.raw[\"voice\"] is True` rather than on the body text, so a transcript whose STT returned nothing still engages while a typed message containing the trigger phrase is untouched, and without the arm a transcript would land in the audit row with `no_trigger` and no turn.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/composition.py#L2052-L2058",
+          "version": "repo-lines-v1:sha256:97665a03b500f41aa8116f34e6e125bea67a1a373e4abd1b2ba7d8d36dcedf35:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjZlMGMxMGZhZDAzZWM5MDNiYWU3MmU0MTIwYjE2NDJiZDQ0YWRiZTcyNDg4ZTgzNjljOTVlODMyZDQwMTFiMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzU0NTI4NzZlMTZhNDNjNDU5MmNlZTQ2NmExMzYyOTYzMmEwNzk3ZmU1MGQzMzQ4ZmY4ZjRmZjUxMDdmY2E2ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTc4NDliNzE1MjQ0OTljOThmMzM2MmNiYzQ1YzM1NzA3ZTI5ZGI3ZTI3ZDZiNTMwMTdiYzg1ZTJiMDkxOTZhNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWJiNDM1OTEzZTU3NmRhNzRhMzdlMmJiMGM1OWJlMTRmOGY1N2JmNjdiZTQwMDQwODQyMzkzMzJjYzU2OWE1OSJ9"
+        },
+        {
+          "resource": "repo://nora/ingest/policy.py#L113-L135",
+          "version": "repo-lines-v1:sha256:ffb934d4953e259b8c9505cd5d72d35dded381ea2ae38ef5dfd4bea373993d3b:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhOWY5OWIxNGFmY2U4MWNmZjllMDAyYmQ5ODNiZWJmOTk1ZDg2ZjhlNjZlMzg4NDMyOWI4MzlkMmQ1Yzk1ZDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4NDg4MWJjYTgzOTU4YTkxYTU4Y2E0YjczNjhhNTUzNDdiOTRiMjg4YTE3MGNhY2M0NmJmYThjYzdhN2RjYjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAyNWVlY2Q5YWNhM2FiMDA1NzE3YTFiZTEyOGE3Njc0M2U5ZWU2NTllYjQ5NmQzNWEwMWIxMjI0YWNhMmU5NmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk1ZDk4MWUxNmIxOTY3MTUzOTk4YzY5MGIyZmVjMmQzMzYwNzA0ODg1YTE0ZWVjM2E3ZjRmN2EyNGRhM2Y0NDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_43d1e1b212b742e7b02961d9efb77cb6",
+      "statement": "`NormalizedMessage.voice` rides into `ConversationTarget.voice` via `NormalizedMessage.target()`, and the Discord adapter routes on the turn rather than the room, so a spoken turn is answered through the voice branch while a typed question in the same room still gets a text reply.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/models.py#L199-L221",
+          "version": "repo-lines-v1:sha256:bd9d4f7c473492ca5ad9403f3f60f8acfc0256ba91eba2426c51b7dd5e2152a2:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA2NmFhZjEyMDBjZjU4MGI3YTAwMWJlNWRhMzA2Y2EwZmI2ODkzYjFkOGNmNjdlZmQ5MGI3MDMwYjdmOWNlYjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBhMjM5YzRlYzA4NTc5NjJmYjYwNmY2ZTdiMjllZjM3ZGI4ZDAyOGJkNWI0Yjg1YWRhMzc0OThjZWZiYzMyNDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        },
+        {
+          "resource": "repo://nora/platform/discord/adapter.py#L283-L310",
+          "version": "repo-lines-v1:sha256:4c3c85be40efc767546e253effc31f240331541aa9b830ad7ddf39afb4e1e070:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdhZWFlMTI4MmJlMThhZjI4MTcxZDYwOGE1OTIwZTM2ODEwZWE3MDc4ZTliYWQ2MDI5M2NiMDIyYWNhOTI2Y2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc0NjkyZDk5ZDNlMDc0MTQ5MDJkNTg1NWVlNTY0NjY1OGJlMmRkNmJlNGQ0YTM5Zjc1NWMwNjE2NTllMmU5MmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY4ZjNjYjk4Mzk5M2M1YTJkNTI5M2Y4MmQyMDg2NzI2YmI0ODA2ODU4ZjEwZDg3YTY2MTQ5OTk2YjhhMTdmZWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f93fb685b84343a0ab5df9ebfe524550",
+      "statement": "The spoken-reply ladder is fail-closed at each rung before falling back to text: no speaker or hub stays silent, a `speakable()` refusal stays silent, and a guild with no live voice session is refused before any synthesis is paid for.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/ports.py#L1483-L1501",
+          "version": "repo-lines-v1:sha256:72ac1f6acedb277ecb82cd87f9aebdfeaf4f679fd2a2c0e1bcae55bd5d128bda:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg3YjQ0Y2JjNGJiMWMyNTQ0MjU5NWUwNTFlOGFlOTgzOTRjNWQ4YTRiZTRmOTVjNWIwMjhkNDE0MTQzMjc3Y2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE5OGIwNjNkOWI0N2U2NTM3OTYyNTU3MmNjZTE5NzY2OWQ1NzY3ZTEyYzE4YmUwNzU2NTJiOGNkOTgxY2U4ZDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQzYzYyNWY5MWRmYjhlNGMzZDFlYjFjN2NjNDU3NWNjOGE1NWJhOGE2N2E4ZmM1MjA1MjYwYTBiZDgyYTgyYjIifQ"
+        },
+        {
+          "resource": "repo://nora/platform/discord/adapter.py#L312-L353",
+          "version": "repo-lines-v1:sha256:8304add15a31fbc993c47192e71d839172e4b2a95e07ed5b781df675e5e0d49d:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFjOGViN2E1YTYwNGFiMTY2ODZlZjQzYjkzYWViMWE1MThhMmQ5MTFhNDM2M2NlNzEzYTk3MzU1ZWY3MDgwNTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZkNjZiMDZmZjJjOWYzODM4NTE1YWFjZWExMjIyY2EwYjIxYWI3MGQxNGY4MGIyZDA4MThjMWRlN2JjMDg2ZDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI3ZGVkNWIwYTlmY2RkMzUwMjQxZWExOTU5YjQ5NmM3NjVhOGZiMjVhY2JmOWYxY2M3YjEzZWY5ZjUwNDVjNmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRiY2NlODBhN2E0Y2JjYjA2NzFkMTkyYWMzOTk4YjAwOTBlNjJkNjBiYWMzZmVjMzBiMmJlOTAxNGUyZGY5M2QifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7ad9a2f92fbd4d9ab788c5d189d65446",
+      "statement": "`speakable()` is the fail-closed content gate for TTS: text containing a URL, hostname, `@handle`, hash, UUID or key-shaped base64 run is refused, because a false negative costs one reply its voice while a false positive reads a machine token aloud in a shared channel.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/ports.py#L1467-L1501",
+          "version": "repo-lines-v1:sha256:6245ec895ab58c590d2335c73d9851fa2ec550ff10b714e36dfe7cc0f980f7b1:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVkNDhlOWRjZDMyMDEwZDM2ZWQzYzE4NTcwMTEyMjMxYzZlZDFlNmU3YWQ0ZWY1NzJlMjc5YTZlMDBjZWNlZmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVlZDExNGUwMDM0YjllNDRlYzNhMjQ1OTRlMTA4NTdhZDFiY2QwZjNkODQ2M2IxZTk4YmZlOTcyYWYzYmE3MDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQzYzYyNWY5MWRmYjhlNGMzZDFlYjFjN2NjNDU3NWNjOGE1NWJhOGE2N2E4ZmM1MjA1MjYwYTBiZDgyYTgyYjIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2371da53d8af49f0a274295106b0af80",
+      "statement": "The `Speaker` port never raises into a caller's turn — transport failure, timeout, a refused request, empty text and empty audio all return an unavailable `SpeakResult`, with `empty` kept distinct from `error` — and its in-tree implementation fails over to a fallback host only when a host could not be reached, never when a host answered with a refusal.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/ports.py#L1429-L1464",
+          "version": "repo-lines-v1:sha256:281d70fe9418fef64f36538d478b60fc32ef55600e4fba603c8284a8f840f7b6:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwMzA2OWQzZjMyN2IwY2ZkMWQwODcyNzRlYzI3NTY1ODU0ZDg1MmIzMjI1NTNkMzkwMmM4OWY1M2YwMDBlZGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZiMjNhNTQzMzFlMmYyMjA4NDBiMzM3ZDJjYzViMWMyYWVkYzFhNGFmY2U5ZGFjMjU0OTMzNjVmY2JkMGI3MDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVlZDExNGUwMDM0YjllNDRlYzNhMjQ1OTRlMTA4NTdhZDFiY2QwZjNkODQ2M2IxZTk4YmZlOTcyYWYzYmE3MDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMwNTk4MTc3OTZjMjc4YTAwMDI4ZmYyODFkZTdkM2Q5Zjk5Mzg4ZjVhODZjNGM5ZGMyNzg1ZjlkYWQwNTE4NjcifQ"
+        },
+        {
+          "resource": "repo://nora/infra/tts.py#L117-L181",
+          "version": "repo-lines-v1:sha256:64f08369938926c6b3687eb49770dddc1a56b61430a35757d10b7ed560dde54f:eyJzZWxlY3RlZExpbmVDb3VudCI6NjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY3MmRhMzU3ZWNiNTU2MTU5YTFiZDllNGFmMTg3NjkyODhmZDY5ZWZjNmZiZWRjZjk1NjhlZDVmODE3NDllYzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFiODlmNGE1ODdlNmU4ZmVjNTE4YTYwYjI3ZDY2MzUxZTM4NDNhZmEwZTk4ZjA5Nzg4NmQ1ZTQ5ZWUxNmQ4Y2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk3MmU4NjczMjcyNjY1ZjcxMzY0OTRjMzFlNTJiZGRhZWIwYzNlYWZmZmE2NzE4MzRkZDZjOThkODBjZTQ0MmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRhZjYyMTJmODkzNWFkMTgwMTdmNTAyNzUzN2U1ZTQxODIyMjllZThlMGE4ZDk5NWEzMDMzNThhMTQ4OWVhNGEifQ"
+        },
+        {
+          "resource": "repo://nora/infra/tts.py#L183-L228",
+          "version": "repo-lines-v1:sha256:ae225910f98982b09ec6674e431b0f95fccf07b64ad3a70e5a90779b070ebb90:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU4NWFhNjJmMjQyYTAwMTk4Y2MyZjk5Y2U3NDgyOGZmNmNkNTIwY2E5MTFiODU3MzliODQ0ZjRjYjdlYzk1ZDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhjOTc3YmYwMmRlY2QyNWJmYjE1NmM3NGI4ZTY4ODFmMjQ3ZWE2NjAwZjg2ZDQ0OTFmZjVlMjFlMjk0NDY2ODgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZmMWM3YzM0OWM4ODY3NGM1Y2JmNWFiNTlhYzA1ZDJkNGFjMTZkNTJmOGFjZTNmYzRjNGZmNWU1NDMxNmE1NjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ab0ef80b6f684477bff5f922c8eb6104",
+      "statement": "Synthesized audio leaves through exactly one seam, `VoiceControllerHub.stream_speech`, which POSTs the clip to the controller's `/stream` scoped to the generation the hub cached for that guild; it never raises, reports `False` for no session, stale generation or an unreachable controller, and a generation conflict drops the cached session.",
+      "evidence": [
+        {
+          "resource": "repo://nora/infra/voice/hub.py#L226-L251",
+          "version": "repo-lines-v1:sha256:cb492dac7f1229ba503f97fa274389d049fb2d94cfb3b848f780ff2b02a20bd3:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3YWNhZjFiYTEwYzczNmFiZTA4YzhmZTZkN2VkYmMyY2M0NTYzOTc4MTNkOWZiODQ2ODA0ZWNjYjlkY2Q3MDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxMDQyNGJkZTNhZDkxZmY4ZGFlYTgxYTRhYTUwNGIyZmU5ZDM3OTIzZjU5Mzc5MTUyZDU0M2Q3YjRkZWFmNzEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI2OTJjMDFjZDU5ZTE1MDM3YzlhYWJhNGE0NDk5OWU3MGMxZTcwMDdhZmM1NGVmZGRjOTkzOTYxZmJmNjM5ZmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRiNTNkMDM2ODYwMzQzNDk1OTVhOGY3MDA4NGE2Mjk5MzUwZDhiOThhZWM3NDRhOTUwYTQ0NjdjMTQ3MjhkNDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_99b264261dad4f4ca9bf3c54f3d3ace1",
+      "statement": "Nora never holds the Discord voice socket: the audio-controller owns it and Nora drives it over HTTP, an invariant enforced by an architecture test that forbids `channel.connect(`, `VoiceClient` and `change_voice_state(` anywhere under `nora/` with an empty allow-list.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/voice-sidecar/README.md#L1-L17",
+          "version": "repo-lines-v1:sha256:7c9fa603458a8255c3f0a71bfe444d6754c0da5a4764c9e0de556719f0566a7c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhNmI0ZDQ4Y2M5YmU1ODdkYjg4YTVkMzAxYWMzMTk0NTQxZmQxOWQyNGE3MTljMjlmYWQ3NmM1NzQxNWU1ODEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYxNDBlNWViYWUzZWY5M2Q4ZDBlMzYxZTlhNzlmODEwZGMxOGNiOGJmZDM2MWU1ZThkMzRkMjY3ZGZkYjNmMWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBiODUwNTY1NDkyMWI4NjRjODJjOWY4ZTEyZmM5ZmJkMDM2MzdjZTZkNTRhMTJkZWQ2OWU1MDA1ZThjNjNkZTcifQ"
+        },
+        {
+          "resource": "repo://tests/architecture/test_no_discord_voice_ownership.py#L1-L27",
+          "version": "repo-lines-v1:sha256:b9c596398fb401e2d241772e7b7f7af09f5b0b046df6afbc4392b121bc83a971:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2ZDZlNzU0MzIxY2QxNTRmNTZkZDRjNjQxMTZmYWIzZTA4ODM2OTZiZmJkNzg4ZDkzOWM2MGRhNTU3Y2E4ZWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_be82b3f5b9db4724846bc72358c0c3f1",
+      "statement": "The audio-controller is a dumb pipe — no wake word, no STT, no AI, no resolve, no music queue — while still being the durable owner of connection desired-state, the bounded speech queue (one active plus four queued) and the music/speech arbitration that hard-cuts speech over music.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/voice-sidecar/README.md#L14-L17",
+          "version": "repo-lines-v1:sha256:87d6edd3e2211756d2b5b7b54700048e9f5955a01abb3e2e6698bffbad83e50b:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODQ0YzAzZWU5MjYzMWZjYWIzMGY3OWE4OGU3MzlkZjY4M2Q5NzcwYTU1ZTg2MjliNDRiOGMxYmYzZmM5NDNmMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjE0MGU1ZWJhZTNlZjkzZDhkMGUzNjFlOWE3OWY4MTBkYzE4Y2I4YmZkMzYxZTVlOGQzNGQyNjdkZmRiM2YxYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2E4M2Y2OTQwMDJjMzAxZjZmMjU0NGJlMzZiZTIzOTNiMDY4OTBhYzE4MjE0NWVlNmQxMDI5YmU1ZWQxMjI1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMGI4NTA1NjU0OTIxYjg2NGM4MmM5ZjhlMTJmYzlmYmQwMzYzN2NlNmQ1NGExMmRlZDY5ZTUwMDVlOGM2M2RlNyJ9"
+        },
+        {
+          "resource": "repo://deploy/voice-sidecar/README.md#L29-L52",
+          "version": "repo-lines-v1:sha256:942e9a86c007f1584b065cb842f0bc8b884b2e11525d84b1d20ad17875361939:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI2NzZkNGIwODgxMDc5MjI3Y2Q0ODE5NDkxYjI5YjVkMjk3MjgwYmViOTdmZWEyYWZlYzE5OWRkYTk2NzE3ZDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ5MjRjOTMzMGEyNGJiYTkxY2FkM2EwYjNmZjczMWQ0ZGExYzhiYzEwNGU1ZTBmMmNlYjJhMzdhMTBiMWM5MzciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBhMzgzZmQwYjE5N2EwMWU3Y2M5MzNiMjgwZDhkODE2Nzk0OTllOWIxMTQzYTA3OTkyMTc0MTM1Y2I5ZjYxMzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRlYzkwNjg1NjgxYjQxYzI2ZjQ3Yzg1M2RmYzljM2EzMjFhMGI0NDg2MWRmNTE3ZjZkMzQwNDdkZjcyNjVlNTQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_37d2ea35c3d94db2ba83794b9d507b78",
+      "statement": "The local STT service exposes one OpenAI-compatible `/v1/audio/transcriptions` endpoint over two selectable engines and applies OpenCC s2t, so every caller receives Traditional Chinese regardless of which engine answered.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/stt/server.py#L1-L27",
+          "version": "repo-lines-v1:sha256:cb9db1f06b2204df77bb28a1f7e65bf555da0051aa1092e55ec4705a6905ecf8:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5YzI0ZDQ5MGMyNjUxYTI3MTE2ODFkNWVhNDU5M2M2NzBmODFjNzg0YzRlN2UwZjE1NDAwZDVjZjhkYjJmYWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcxY2M1OTg1NTU2Y2UzZDQ0ZDgyN2Q5NzBkNjA4MGFhMmQ0ZTJlMmM1NTdkNzlmMjI5YzJhYzg2MGIxNmJmYzkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4ed0a0f0fc8b453387324de1fb5110f4",
+      "statement": "The wake gate has no guild identity of its own: the guild arrives once per connection in the sidecar's hello frame (a frame with a zero-length user id), which is what lets one gate serve every server.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/voice-sidecar/TRANSPORT.md#L1-L22",
+          "version": "repo-lines-v1:sha256:db4f4c9addaf7f9e35fc847f6511d6aa8252a7ac3c77539dcd8f4b93fbd3b79d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM3OGViOGNkNGQyYTRjODk3ZDFlZjc5MDUxYzY4NjhiMzA0NTg1N2ZiNmEyYjJlZjBhZTg5YWJmYmRmODQwNDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkxNzlhMTQ4MTUzZmJkZjM4ZDIwMDc1MDFhMmQ2ZGEwNmJjODVjNTlmOTRjN2Q3ZTE1YWFlODU4ZWQ2ZDhjMmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZmNTZjMGFjZmM3M2ZiODc3OGY1OTRhMjVjM2NiMzBlZjhkYzcwODZkYjJhMmY5YjU1MDQ2MjJhYjNmZjcxMzIifQ"
+        },
+        {
+          "resource": "repo://deploy/voice-wake/wakegate/service.py#L70-L80",
+          "version": "repo-lines-v1:sha256:865cebb14722d9aac1501a46206a87c00d55b921b37244a1eec9a992032ae0c7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5ZDE4M2ViMTU0ZTA5MWNhZTQ4ODQwNzI2NzgxNjI4OWU3MzRiOGJlNjJhYjM3YzdiMjkxNTJlNzc1ZjEzYjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc5M2YyMzcyM2UyNTJjYzI1ODIzZWJlM2E2YmYzNWE1MmFmNmIzZTBjNWMwZjdjMDY4NGEyOGViZGI5NDg2MmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA4NTc0Y2Q2Zjc0NmU3ZjlkYWUwNGYxMjAwMWEyN2U5MzU3MTAwOWYyZThjNGE1MDc2ZWY3YTNjYTQyNGM2ODIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5de317932fc749e6b69ca78bdac09650",
+      "statement": "Each speaking user gets their own stateful wake scorer and a two-state gate: a score at or above the threshold switches LISTENING to COLLECTING with a pre-roll as the utterance's head, so the transcript carries the wake words themselves.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/voice-wake/wakegate/gate.py#L1-L32",
+          "version": "repo-lines-v1:sha256:b04dfaa40fbcf2c3957a0d5dbd47b5e151a80c6b42a0a1cf00848c31be9d758d:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRjOThmNjhhNmVkNmUyOWRjZjJmNTI2OTFlMGE0OWJjMTk3NjQxZjg1NTE2OTM5MWM1MGJjMjFmMTAxNmNmNjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://deploy/voice-wake/wakegate/gate.py#L54-L80",
+          "version": "repo-lines-v1:sha256:b191c401ba53114be990073d311e41b9939f743800a42374e8ff7a434b3964fc:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxMGIxYTQ0YmFkOGUyMDFkZTg2NzgwNThiNDE0MDNlYzk4N2M1NzIyMDM2ZGRmZWEwN2QyMGI0NzI3N2I4YmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzZDAwY2YyNzA5NjRkNDRhMTNkZmFjODc1MmIwOWZjYzQzNWIwZjE5YjMxNmFiY2Y4MWE3YWE2NGJiMTIyZDYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE1MjU5ODc3NDdjOGY0NGNhOTYzZDJjNWRiZTk2ZWJiZGJmMzc4NTkwNWM3YWEwYTUwODNiMGY4NjdhOTE0YjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFmOWJmOTgyYWYwZTNiOTZiYTk0NTViNjNkNDU1YWE1NGFlZWRhNTRjM2IwMDRhNzNlM2Y1MWQ1Y2QyYThhOTIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ea532c58ab854cccbee219f8698ea3a9",
+      "statement": "Ending an utterance has two end-pointers — a voice-activity-detector quiet tail (with per-chunk RMS only as a fallback, which music defeats) and a wall-clock flush, because the Discord client stops sending packets after a phrase and a chunk-counting gate alone would sit collecting and swallow the next wake word.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/voice-wake/wakegate/gate.py#L9-L27",
+          "version": "repo-lines-v1:sha256:faa8a012022d994a7a70dcde05d6fc30ba6106a92f285e3c64396799a418a180:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYxODZkZGRkN2U3ZDNhZDAxODI0N2ZjZmE5ZjRlZGU0ZTgyMGNmODhiYWQ0NTRhNmExMzQxY2NjMmE5ZDdmN2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3ZmYzNDk4YWVjOGI0MGY1MTY4NWQ2MTM1ODVkMzg3ZTE4MTVkN2ZiZGIwYjgwYzUwNGExNzVjODg4OWRiYTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZhYTViYTFjNzdmOTg3ZjM0N2Y4ODI5MjUxZjMwNGI0NGFhYmQyZDlhZDMxNTc3MDhmNmQwNTg5YThhYzhlNGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBjOWFhN2U0M2ZhMDk2MTQ2MWFhZTYxYjkwNmI0MTgyYTdkZDg3N2E1N2I2ODFjOTU5MzVhMGIwMzM0ZWQ3MzEifQ"
+        },
+        {
+          "resource": "repo://deploy/voice-wake/wakegate/service.py#L21-L27",
+          "version": "repo-lines-v1:sha256:5e922bd2b61e7013c52a6d835458331ff4c6e75538dfe3420365f43b6b32ef09:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTBiMzlkNjBmZDQ2YzI5MTkyZWUwZjczMGZmZmZlODYwN2QzYWU0Yzc3MWE3YzQ0NmY1ZjUzMWUwZGJjZDI0ZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDFiMWJiYjYzZGM2ZDhiMDQxZTgxMzk2MzMxOTMzZGUyMDAyZDMzZWY5OTE2ZjU5NzI1Yjk1YmIwMDk2OTVmZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYmJkZjYyMzc4YjQzNmRjMzZlOTM0OWE4YzJkNmY2NzI4ZWVhOGRkNzNlNDkwYzBhYmUwOGEwODliY2JlOGVmMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWFhZjc2MzdjYjZlN2U1ZGI4NWQ2MzQyNzQ2MDE0ZGYwNDFjY2Q1NThhOTIwYjI5ZWI2YWM3MTlkN2JhZjVjMiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_ffd4aaf837224c039d6be0725119bc8f",
+      "statement": "The wake path's failure posture is \"no wake, no cost\": an STT failure retries once with `language` unset and then drops the utterance silently, a refused forward drops it too, and nothing is queued or retried later because the audio is transient.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/voice-wake/wakegate/stt.py#L10-L14",
+          "version": "repo-lines-v1:sha256:898b89fa6b4cae66430f3ad5c08bdee699259aa006cd9e08b53daed69eebaf1f:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTE4ZWRkNmZmNzI2MTY2NTMxN2Q1ZGY3Y2E2YjgwMThhYTRhMWQ0ZjgyMjE1MzZlMTAxOTZjZGM4MzIxY2MxYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTNmYjkzNzg4N2JjNjE5NmM4ZmQwYjg0YWJjMzA3ZTgxZGIyY2ZlNWZjZTc3OWZlMWIxNmUzZGMyY2YzNDViOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTJjM2Y5YmQyZDEzNmMwM2YzZDllNzVjYzdjNDY5MTBiYmFjYTQxYzg4ZjY3ZmYyZGFkZmQ0YjYwMzU0ZTE2OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWFhZjc2MzdjYjZlN2U1ZGI4NWQ2MzQyNzQ2MDE0ZGYwNDFjY2Q1NThhOTIwYjI5ZWI2YWM3MTlkN2JhZjVjMiJ9"
+        },
+        {
+          "resource": "repo://deploy/voice-wake/wakegate/stt.py#L48-L82",
+          "version": "repo-lines-v1:sha256:57912713429ad5d62620fd708b45baff6c36a9facca8b155f9ce1b2468e63a23:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyNWY5YTE2ODMzNGJiNmVmNzBkZDExNjJkNGJkY2U3ZTE1Njk3ZDM0Y2I5ZDdmM2I3Y2Y3MzQyYWI0MmVhZTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTYwMGE3M2QyZTAyZjM1MmI5MGZlZjFkOGQ2MzgxMWJhNGE4ZWUwYzFiZWFhN2FlNDY1OGYzNmFhMmUxOTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkwMjkzYTA1YTNjNDQ1YzU3ZmZhYjFmMjZmZTkyNTgwNDVmNzA2NzEwNzNkZWE4NzA4ZGY0MjRjNGZhNzM0N2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIwNDViOWRkZmVkMDFmOWUzZjQ2YTAwZWFmZTg5YjMyN2VhYTgxNTYwM2Y5ZTMwMWU0YzRlZWZkMGViMTc5NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b30523171cab4bc1855961175c750bc7",
+      "statement": "The voice sidecars treat `/health` as process liveness: they answer 200 while idle without a token, channel or model, and the payload distinguishes `no model` from `nobody spoke` from `woke but STT or forward failed` through state fields and per-user counters.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/voice-sidecar/README.md#L98-L106",
+          "version": "repo-lines-v1:sha256:5d24190fe2a456a90095bb808178d0ade950ba205f3d93935f43c88517ea5391:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTdkYzYyYjNiMjljYzViYTFhZTMyZGY3YTU5NTNhNmI3ZGQwOWVjZTM2NWY1Yjk3YTk1YWYzZGY0OGYzODQwZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzA5M2YzZTE4ZTM5MWEyZjk2Zjk3MmQyM2IwMDNkMGFlZmRiZDBjYWI0OThkMjZjNmI0NTFlNGIxNGRlMzMxNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGQ2MWEyOWEwOGZlZWM2YjM3MTVmMTU4MzNkNGU5ZWFiMmM2ZTIwYzdlYTk4NTdjYzFiZTA3NmViNjJjODM1ZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTkxZmIzZGIwODFkM2M3MTI2MDkwOWZhYjYyNGVkZDRmNGQ3YWU4Zjg5NDAwMmZjY2U2ZmI3YzRiOWM2M2I4NiJ9"
+        },
+        {
+          "resource": "repo://deploy/voice-wake/README.md#L72-L79",
+          "version": "repo-lines-v1:sha256:103cf15799b454af139bfe206f892a313708e820f59b98b61ecfbf348feb60f5:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTdkYzYyYjNiMjljYzViYTFhZTMyZGY3YTU5NTNhNmI3ZGQwOWVjZTM2NWY1Yjk3YTk1YWYzZGY0OGYzODQwZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODZjYWU2YzFhZWY3MjUxYTE1MGE4MjVmYzBlY2QwYTAxNjkxYjMzYjJjMDQzNjAyOTIyOWM5NTkyMWY1NTY2MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTBhMTZhMjg2NjVmMDQ2ZTM1MDFlOTQ0MmYzNjEwZjI3NzQwZTcxZjVhMzBmYzIwYmEwNmUzNTY2N2MwN2ExMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTE2ZTMyOTE3ZmFhMjQ1ZDgzMDlmM2ZlNzVlZDNiOWI0MzYyNmIzNWI2Y2Y2ZmZiNmZjZWI0OGU0Yjg1MzllNiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_e2f59778d136461298ef3b8219987cf8",
+      "statement": "The two model-holding services on the wake-to-speech path (`stt` and `voice-wake`) are configured with `mem_limit` equal to `memswap_limit` so their resident weights cannot be paged out between utterances, an invariant pinned by an architecture test.",
+      "evidence": [
+        {
+          "resource": "repo://docker-compose.yml#L946-L951",
+          "version": "repo-lines-v1:sha256:07fc4d64e7125b578f584e7145fb8a130ba3dcb98ba5b21d2fde0a325b2e726e:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTU5Y2FlYTkzYzg3ZGZmOTZlMDY4MjdkMWNiYmZlZTkyOTc4MmI1NmNhOGE5MGI2ODQ0MDAzZTY3MGIxZDU1NSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMGJiYzYxMjEyZGZiZjI1ZGY1YTlhOTdmNTAxOTA3NzhiNzc1OGMxYmIwZGJmZjkzYWVjM2Y1NDk2NDg0YmVmOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTc4Nzg1OTQxN2U3ZmM2NDkzNzNlMjA2ZTQ3ZjA3ZWU3YjA1ZTUwOGRiYzczM2ZiYzQ4YzYyYzE4NDcyMDRjYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWQ1NTkzZGQ4NjM1M2QwYjEzMjFhZWMwYjMzZTFhYThjZjRmZDhjZTI2NDE3MjNkNDlmOGYzYmYzMzI5ZDFhZCJ9"
+        },
+        {
+          "resource": "repo://tests/architecture/test_voice_path_never_swaps.py#L1-L54",
+          "version": "repo-lines-v1:sha256:3d6f4190be2456cd750b30f5e92bb0dd82dc0af7d11a7328cc5adf50c16bf0fb:eyJzZWxlY3RlZExpbmVDb3VudCI6NTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5M2E0NzAyNmZhNThkNGFkNWYzZjg3MmE5Y2I0ZTEzODlkZGQxZWVmZDkxYzYwNjJmYmUyYjU4NjUxOWQ0N2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc4ZTQ4Nzk4OTI0YTE5ZTlkZmYwMzhiZmFkODY0NzFhYmI4M2JhZDNjYjEwYWY1YjJkZDdlY2IwMGJmYmI3OGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_be906353204f47d6a6ace6ba55a4c5a8",
+      "statement": "`SenseVoiceTranscriber` talks to Nora's own local service and never raises into the ingest loop: every failure returns an unavailable `SttResult` with a reason (`error`, `timeout`, `unsupported`, `empty`), and a voice note that fails to transcribe is still recorded with a bare handle rather than dropped.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/ports.py#L1412-L1424",
+          "version": "repo-lines-v1:sha256:7391d63c30360e9231c23b81de90d3909e35b41311d2f906419fd383155c9ac4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ3MzUwYjBiZTA2OWFjNzU2NWIxOGE3MzZiNjA2OWI1YjI2ZTZhOThhOTFmZTA1YWU0Yzg1NzNhMDZjM2UwN2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBjNjBhYTgwMDMyNTg0MjQ2ZDc5YzcyM2FmMDUyODBlMjI4ZTg0Y2M3NThmNmY1MzEzODE1YjU5MDkxNWI2MDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRkN2M3NDkwM2EwOTMxZTljN2UyNTBmZjdkMGEyYzg5NjBmODcwNjgzYWUzMmRjMjQ3OTdmMTljZGI5MzVkMTMifQ"
+        },
+        {
+          "resource": "repo://nora/infra/speech.py#L10-L22",
+          "version": "repo-lines-v1:sha256:c727e75af3b9b1dfd9f8cc6e1deefd98cd9062c127278a0997425ad3b2ef5c5c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2ZjU5ZWZmYzU0NjhiODI2NmU0OTZiMTNmZDIzMTViM2Q4NjFmNzk3YWRiYTc2MDFkNGI4MmEzZTEyMDM5ZDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBkMGQ2NTNkNmVjYjdjMDhmYmNkMWYzYTBiNjRkZjllNWVmN2JiNGQ2OGMwYjA5ZTcwMTc0NDZiNzI5YTY5YzkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/infra/speech.py#L59-L118",
+          "version": "repo-lines-v1:sha256:d213f019254a05e956c7d86e378aa52b48164c44c196252c1a242cea33e76b47:eyJzZWxlY3RlZExpbmVDb3VudCI6NjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkZTliYzJhOGNmZmNmNDNkZTEzNWQ4NzQzOTlmYzM5YzdhODg2NDJmYWEwNThjODBmMWQ5NWE3Yzg5NjZhZWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1NTg0YzQ4OTkzMTEyNTA4MGQ4M2ZmZjcyZTY5NzlkN2NkOTMyNmRmODU2YjM0ODRkNzIxM2NhMGM2OTkzYTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQxZDIyOTg1NmMzNzc2NzMwMmMxMDM4MDBlYzBjYTUzMzdmMmQ0ODM0Mzg0NjA3NTAxOGIwMjE2NTk4ZjJiZDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d681ca4080c14e90aafe4588e5a7c330",
+      "statement": "A voice note's transcript rides to the comprehension subject (`media_objects.content`), not into the message body, so the sanitize and identifier screen run at render time rather than once at store time — while a wake utterance's transcript is the body, which is what makes it an ordinary message.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/stages/media.py#L185-L226",
+          "version": "repo-lines-v1:sha256:7aa4595cdb8a021609ab88370e88f0a0380d242a9d739f905e5df27b3d1f129f:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU0MTg5ZmNjNmFjNzNhMDJjNTZjMzI0ODQxZmFkMWI2MzI2MTQ4YWEwZWEwYWZjNDg3ZWQ5NDhkMDE2YmU0YjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQwMDEwNWUwYTY4NTIxYzNkMzMyNjE1MzkwZTg1OWUzOWNmMjQxMjc0YTdkNzgxZDE5NmEzYWRhMDdiMTBmZDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY4N2VlYTQ3NWY1OTM2MDEwZDk1MDEyMGM2NzgyOWY3Y2RlNWRiZjc4NDc4MTAxYWY5OTY1YjNjMjllMzQyZmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMxZjIxNjJlN2ZhY2JmMDQ4OTY2NjVhNmM5MDUyZDEzNmNkYTg4Y2Q4YmQ3ZDYxZmFiNjc5MTg1Y2Q2OGMyNTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_22e313ced89041ea9c84db5229281583",
+      "statement": "Transcription outcomes are counted on `nora_speech_transcriptions_total{platform,status}` with `empty` kept apart from `error`, so an operator can tell an outage from an ordinary silent note.",
+      "evidence": [
+        {
+          "resource": "repo://nora/ingest/stages/media.py#L215-L226",
+          "version": "repo-lines-v1:sha256:b45ab636cb940ec10fcf871d1e4b213a65ca8f0e286f3d0061a53f33fd28c72b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmN2NjOTE3N2M2MzJlYjFiYTEwNzNhNmU3NmYxOGRjNDE5MDViZGJjZjNkMzBmZjRjYzA4Nzc1OWIyYTI1MjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQwMDEwNWUwYTY4NTIxYzNkMzMyNjE1MzkwZTg1OWUzOWNmMjQxMjc0YTdkNzgxZDE5NmEzYWRhMDdiMTBmZDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQxZWFkY2Y3MzM2MDZkY2EwMTUzOWUwZTU4OGE2M2FjNjQ1NTQzYmZlMGMxMGQ3YTZmMWY2MWVlMzI4YWIzOWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMxZjIxNjJlN2ZhY2JmMDQ4OTY2NjVhNmM5MDUyZDEzNmNkYTg4Y2Q4YmQ3ZDYxZmFiNjc5MTg1Y2Q2OGMyNTAifQ"
+        },
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L1099-L1111",
+          "version": "repo-lines-v1:sha256:f3ea85402d363037570dd2048c511f2dba622c7a9390c0b46ddf3c5721fbc95e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlNDhiMDU0OGY2NjU4NmI1M2U1YThjNzExMWQyMjI0MGJjODJjZGI4NzQ5YWFmOTlmMzY2YWM1OTVhYmZhMTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwMmM0MTRiNTRjZjg2ZGZiNGY5MGRmZTdkN2JkYmZhNjY2YjdkZGRkMzJmMTI4NmYyMzBhNWI1MzI0MTgxOGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJjYzg5ZWUwY2E4ZDY1NmRkM2EzMTczY2NjNWMwNjdkZWIzZTZmY2VlYTFlZmQzOWRlM2YyZWMxOGU3MzIyY2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEzNjBhMjNkYmFlNDUwOGIxMzdjMzQwMmRmYTg0MzBmYjczZTk3ZjE5MWYwZDg1YmJkYmE3YjY0YTU1OGE2NWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_90de3df4c6d847c1bf1fc241cfaaa11d",
+      "statement": "The speech formatter runs late and only on the copy about to be spoken, so the recorded reply, audit row and memory feed keep her text exactly as written, and nothing it returns is stored anywhere but the audio.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/speech_format.py#L1-L25",
+          "version": "repo-lines-v1:sha256:89271713c6fa646303ce8e65e4a7d54b9f5746bc63e1f2e4b20c4771d22daf7d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk2MTE4MDhkYTE1MWJkYTE2NTZkMmM1ZWExMGYxMGQ1YjQzODZhOGIzODRiOGQ5NmEyMDIxNjc0NzFiMTY3MDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwOTI1YWRkNmYzOGJmZTJkNDc0NzJkZDQyMzE4YzZjNTgyZDRlZWUzYzYyZmI2MjE4MDI0YzAyMzM5MmYyN2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhYWY3NjM3Y2I2ZTdlNWRiODVkNjM0Mjc0NjAxNGRmMDQxY2NkNTU4YTkyMGIyOWViNmFjNzE5ZDdiYWY1YzIifQ"
+        },
+        {
+          "resource": "repo://nora/infra/tts.py#L24-L29",
+          "version": "repo-lines-v1:sha256:f96c7430dc2b4431a63ddf93211c82d5c71c1816535a5811a1e8cd2da341882f:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiM2E4ZmVjNmQwNTc2MjQ0ZDNiNWYwOGY4MTk0OGZkMmM5OTgxMmMxYmM0NzdhMWQ4OTQ5NzM2ZThmZGEzYzczZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiM2NlZjZmMGE5Njg5OTdjYTQ2MzFmYzdkOTc0YzNjOTRhMTQwMWQ4ZTkwNTdjY2JjMTQ2MDVlZjcwZWQ0NDUwMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTZlYTBlMjk3YTUxZDNmMmU0MGM2OGFlNTc5MmU4ZTgxNjVhZWE5ZmM2ZDdkZTZlOTQ2MDllNzI3YTFhMmRlNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWFhZjc2MzdjYjZlN2U1ZGI4NWQ2MzQyNzQ2MDE0ZGYwNDFjY2Q1NThhOTIwYjI5ZWI2YWM3MTlkN2JhZjVjMiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_75289dbd5c794cd0921c16ffd9b65dbb",
+      "statement": "The formatter may add pauses and interjection tags from a closed list but may never change a word, and a code check — not the model — decides: the candidate's letters and digits in order, plus its numbers with internal punctuation, must equal her normalised reply's, or the answer is refused.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/speech_markup.py#L1-L20",
+          "version": "repo-lines-v1:sha256:1d6918aabfb5db5eda22ee62aeae20813aca3bbd02c49b34f6e345c92b446a41:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMzNTU1ZTYyMzVmZDI0YjAzM2ViMDkyMDg4NzRiNjhjMDMxNzBmZWU5ZWMxMThhNTNmOGQxY2EwZTVmYzYwZDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/domain/speech_markup.py#L150-L194",
+          "version": "repo-lines-v1:sha256:bf329ed57a920814c26c91d40acb44a5bdafce64061fea7ab27579bb22e19ef8:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY4ZmQyMzIzYmY4MTUyOTI3NzVhMDA3M2RiOWE0MWI3Y2VhMTJhNGE5NWY2NmJkZDVmMGFmMTMzZDI1OTQ4YWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTYwMGE3M2QyZTAyZjM1MmI5MGZlZjFkOGQ2MzgxMWJhNGE4ZWUwYzFiZWFhN2FlNDY1OGYzNmFhMmUxOTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM5ODk1OGNkOTMwNzVkNzA0MWRlY2QxYzEwY2Q4ZDMzNmJhNzYyYTAxNTk0YTVhNjJjY2M1MmQ4NjUyNjAwYjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY4NjM1YThiNDNlMjk3NWExYWM3MTg4MzM0ZGU3YTNhNDRhOTA0ODBlZjU3YTVlM2Y2NDNjNDIxYTY4ZmI3M2IifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_05a40c18a2144c098d816e8e5e0520a2",
+      "statement": "Every formatter refusal — timeout, error, empty or truncated answer, changed words, bad markup, missing instruction — speaks `normalise(reply)` instead, which preserves a pinned invariant (`spoken_skeleton(normalise(t)) == spoken_skeleton(t)`), so a spoken reply is never delayed past the formatter's timeout and never dropped over formatting.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/speech_format.py#L104-L150",
+          "version": "repo-lines-v1:sha256:6ed9e9d288e26f8354c171192e541a3cb0b394230e1dcc9bbb27f7be28daead4:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIwYjYwMWQ0Y2JjYTczYjI3YWI1ZTkzOTYxOGQ3MmIyOGQ4NDk4OTBmNDRlNDQxOWM0M2FhOWY4YTQ5ZjBjOGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ0MDYxZDVlY2NlNjQ5ODZiODk4ZDY4NmY0NWRlNDI2NzIxMGIwODI2ZjI0ZGM3Njk3YmFmZDg0NTNiZDNiMzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgzZTI2ZjFmOTQzYjYwYmMyOGJjZmMwOTNhOWFjNDI4N2IwZmRiMDZmNDIwNWZmYzc0NmQ4ZTI0ZTMwNDY4MDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNkOTIyYzAxZmM1NzNiNTZlZjI1YzlkOTIyMWM3NTQyNWIwMWZmNGI3NTkxMzVjZWY1M2Y2ZGVhOGYyODIwMzIifQ"
+        },
+        {
+          "resource": "repo://nora/domain/speech_markup.py#L101-L123",
+          "version": "repo-lines-v1:sha256:093e33e7dc343005ab52960e3cab9339a80b2bc568cd9e20ff8ff43e190ea18e:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1N2Q2ZGY0NGZiZjMxM2Y4NzNiZjk3ZjM2M2ExZjE3ZGUyMjA0OTRmZmFiMGY4NmE4NWY0NzcyNzg0N2M4ZTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVhYjgyMjQ1ZGFkZTYzYWY0MTQ3ZDYxMDA2MTUzMGIwZGU2MjY3YWM0MzU4YzA2YmQ1Y2VhM2RhOTQ0NWRjMmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI3OTFiNTZjNjk5M2QwNzJiNDY0YTJjNjMzYjYyYWM1MmZjODYyZGVhOWVjMTY2MzBmYmU1NTMyNDQyYTZhNjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY1ZjkyM2NiZGJkMzNhNzQ0MjI1NmE3ODQ1NGYyNzI1YWVlZDUwNTc5OTk1ZTgwMjU4YTQ2YWM0MzgzZGQ1OWYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_47da1b79be5e4252891a493594129669",
+      "statement": "`[speech.tts.format]` selects three modes — `off` sends the reply byte-identical, `normalise` applies the deterministic pass only, `model` adds one cheap model call bounded by `timeout_seconds` and skipped outside `min_chars`..`max_chars` — and outcomes are counted on `nora_speech_format_total{outcome}` using a vocabulary derived from the same `Literal` the formatter increments.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/composition.py#L660-L704",
+          "version": "repo-lines-v1:sha256:c460a629e59b12b3ab249979e68fa9a61c57ef917578e0e138d7a52c4951f5d3:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlNWMyODE0Njk2OGMzODAzYWIxZTRjNGIwMGM2YzQ1ZGU1NTA3NzdlZjNmYzUxYWJjMmM1YzM0MGVmNzI2ZjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzZGYyYWNmMDZlOGMzZjAzYzcxMzVjNmU4YWM1YTljYTU0MzJhYmUwNmE3NGFjYTBmZGQ5YTUzYTAwOGY5ODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE1NDU0ZTQ3ODUzMGJkNjVkYjc0ZjM0NjY0MmUwZmMwMTRiNjJhYTliMDY3NjJjYmVlYzExNGMyM2I4ZDgwZDQifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L1814-L1857",
+          "version": "repo-lines-v1:sha256:a7686845a8353636e71574aebeb3b40c2c32d2c141586d6a7f15ebe61ad6f021:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3ZGQzN2E1ZGY1YmFiNjJlZTI2MmYyMGFlYWI1OTE0NjQ4YTQyODA1NjVkMmQzNzJkMmQ1ZWRjZWQ5ZWFjMGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyYWIwOTBiY2QxNjIwZmE2MmVhZWUxNTdhNzRmY2E2MzVhYTI5ZTEyY2JmZmQ2MThiNTc5MmQ4N2JjMDNhM2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU2NWM5MWQxMGY1NDlmNWEwYzI1YWQwOTc3ODhlZmI1MWRjOTJhNjBhZjMzNDY3YmQ3NDY3OGY1ZjNhMWE4OWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFjZGI5MDRjZmE2ZjE4YjBjMWFmZGVmMDQ3ZDhlNDdhZGE4YTMwNDFlNWEzOGM2OGE3ZGUwZDEzMDhiY2FiM2QifQ"
+        },
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L1553-L1565",
+          "version": "repo-lines-v1:sha256:8dc538af65ffd904ccb520f73df1e3c834bcbe58941c33f8511b3333ad829b06:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVjNTIwYzVlMWIzNWI4MjgwZWMzNTZlZTVkMmVlN2M5MzFkZDEzOTM5ODhjOTE1YjkyYzU5OTlkZTRhNmI2NGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwMmM0MTRiNTRjZjg2ZGZiNGY5MGRmZTdkN2JkYmZhNjY2YjdkZGRkMzJmMTI4NmYyMzBhNWI1MzI0MTgxOGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImExYjQyNjRkMDkwOGJkYjcyNDk4YmNmYThlMWE2NzMyNjdjZjYxMjZjYjcyOTQyZTBiY2JmNmQxMmNmN2YwYTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhlZjY5YTRjMGU0NTExOTQ0NGE4MTc1ZDY4NGI0MDVmMzI2M2VhMWQ2OTZjYWZlZGQzNzUyNjgwYTRkMWJlMWUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e6c8fd5397c84015831a6a6eb096ea95",
+      "statement": "The formatter's instruction is a separate doctrine instrument (`speech-format`, `applies_to: [speech_format]`) that Nora never reads and that never sees her doctrine, so pacing a reply cannot leak into what she says or how she writes.",
+      "evidence": [
+        {
+          "resource": "repo://nora/doctrine/instruments/speech-format.md#L1-L18",
+          "version": "repo-lines-v1:sha256:8e1738883771e726d488fc68564549e07a79aff8ec1fb2df94c99486452c51a3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY1MmQ3MTExMDNkNTBhNDM3ODMwYzZmYmNkMDRmYjRiYWI0OWEwZjgyZjZkMjZkMWM3OTFjNmU4NDg4ZGQwOTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY1MmQ3MTExMDNkNTBhNDM3ODMwYzZmYmNkMDRmYjRiYWI0OWEwZjgyZjZkMjZkMWM3OTFjNmU4NDg4ZGQwOTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlkOWEzMGRjYWU4MzBjOTgyY2ZlZmMxOWNmYTlhNjdkNjk2ZDBiYWVjMjQ1NWNkNjg2ZDE4MTE5NmQwYzI5ZjAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_34da40954dfb4d34bc150f7a6018357b",
+      "statement": "A spoken turn is described to the model through the `<spoken_turn>` block, rendered only when the message being answered was spoken, and the same flag derives the turn's `voice` tool occasion, which changes the resident tool set because a spoken request is heard as silence between model calls.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/prefill.py#L843-L852",
+          "version": "repo-lines-v1:sha256:91b8c00a7efaae5572a3f731c544e2fcbf74234d0b1843e89d95f193bc90e9c6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNkODg3ZTAxMTQ0MGFlY2JhNTE2Y2FjMGU2NzIxMzQxZmYyZTViYTBmOWY3ZWI3NGM3MjNmN2QyMmRkMTkxN2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4ODY5MDJiN2Q5YzQ3Yjk5YWYzZjI5MjdmYmU2ZjczZmIzZGEzODNkYjY1N2EwMWRjMGIxYWFkZGViNmZiNmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEyZjk2MzA4Zjg5Zjc2MTQxOTBlMDJmYzM4MTE1ODU3ZjE0ODA0ODA4MWEyYzljYWY5ZmI0YzVmMDJlMDAyNTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIzOWEzOTFiYzM0ZGQwMzIxN2E2NDQ0YzgyYzg2OGYzNGY1NDRkOGZkMTdhMWVlNzMwZGEwNGMyMTkzYTIzZWIifQ"
+        },
+        {
+          "resource": "repo://nora/agent/tools.py#L586-L605",
+          "version": "repo-lines-v1:sha256:f669601596099f098013aaffad751775dc24281f22c973951825e327fc8e3dc0:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM4N2M0N2ZkMWNhZTQzOThkYjFiZjAzZGFkMTM4MDc4OThiMmEyYzg1OGMwYTk0M2Y5MjIwMTA5MTQ1ZjUxNDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY4ZDA5ODZiZTI0YjA3MWYyNzI4YjU5NTVmMTFmYjBiNjBhYzJlMGNiNjIyYjBlOTliMGZlNmMwM2NkNjdjYzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImViZDFjZDY1NTM0YTI2YzQyMjBjZTA4MGM1MWZlNDEyM2QxNjQyZjRlMGFkMGNmNDAyM2EyM2Q2MDMyYzJiZmIifQ"
+        },
+        {
+          "resource": "repo://nora/domain/framing.py#L524-L533",
+          "version": "repo-lines-v1:sha256:e57217134c616739af9425421997f22cb30e5c1525f154f207c3203b7b93cf48:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjExZGNhZGU3OTNlNTgwY2IyMTJlYjhiMDJiMWI0NTI5NDI2YTdhYWY1MDg4MzAxMTVmM2FhNGYwYWU4MTBlOTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhZmJhMDUyN2MzOTUzYzRiNmUwZTViNTczOWJhODM2MTJmODA1M2JjZGM5NDY2NzMwMTkzY2QxZDU5MGI0MDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA4YjRmYTQxMTVhM2I2ODE3ZWJhY2ViMTM5ZDA1YTk3NGI5ZGI5MTg1MDQ1ZTRmZmZjZmNkZDdmZTJmMGU2ZjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_51f1463fb8544fb8a90d7dd1b0e6a266",
+      "statement": "`[speech.wake]` is read only by the `voice-wake` container, which loads it at boot, so a change there needs a `voice-wake` restart; the `nora` daemon validates the section but reads nothing from it, and the old `WAKE_*`/`STT_*` environment variables are ignored for the same single-source reason.",
+      "evidence": [
+        {
+          "resource": "repo://config.example.toml#L911-L927",
+          "version": "repo-lines-v1:sha256:a7dae05c1e3c23a803a3c2715ac5e2de4696c7d9a28fcfe2a00889dc70ef97f1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMzYzQ3YWFiZjc1NDIwMTE3MGUzMjhiMWE3YmM0MmU4ZTQyNmQ0YThmZDQ4ZTJiMzliMzhiZjk1Y2U1N2M4YzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkxN2IxMzM1YmIwOTA5Mjk0NWFmOTU4ZjEzZThmZTU4OTZhNGYyODRhOGMzYjFiNWVmNzdkMDQzMTk5OThmZWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM5MjA5ZGY3NWU5N2RlOTc0OTM1ZTI3ZjQzZGFkMGM5ODM1M2FkYTZkYzgwOTRlNDBjNjQ4MjEzOTA3ODkzZDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcxMTk5YmEzOGUwYWRlODEwMWUyYzNiNDM2MDBhZGZlYmVhNDljOGQxNzRiMzRkODYxZDJjOWFlOTk1OTAyYjEifQ"
+        },
+        {
+          "resource": "repo://deploy/voice-wake/README.md#L38-L70",
+          "version": "repo-lines-v1:sha256:ee1f92acfc13e5301cf3e9232cc8c91ba32adc6ff4dbbaf9551a79a0dd8cbabc:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmMjc2NGI4MjViNGI5NDE3ZGJmNjM3YTcwYjRlOTViZTAxZTBmNDU2MjYxMzQxODlmNDdkOWIwYzA0NmQwYzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0YzVhMTRlYmY0Y2YwMWIzNTNhNmNkYmZhMDdiNTVmOTk2YWQ3NzBlZDY5M2Q5MjhmMWM2YzNlZGU4Mzc2MDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdiZjZlNWE0NjRiOGY0NjQzZmExZjUwZTU5ZjA2MTgzNDNmMmRmOGQxOGQxZWU4M2NlZmMyN2RjYmVlZDgwYjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg4OTliZGNhYTBhMzc0NGQ2NjQ0MzRkZDE4ZTdhZGQ2Y2ZkMjg2NWIzN2RmMjhhZTE0ZTMzNzNlYWU1Zjg1NGIifQ"
+        },
+        {
+          "resource": "repo://nora/config.py#L2002-L2015",
+          "version": "repo-lines-v1:sha256:08f3344c9f7c7992bd446e91f5998f316d5740cfda8782b1095e0bcb90bcf051:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwZDE0NmUzMmZjZTFlYTliNzljMTg0NTMzYjRmMWQ0YzgwYjljNWVhYzdlYjc0YWUwMjA0MDEwNzRiZDg0OWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhN2UyMDc0N2YyZDVjYzllMDkzM2Q5NWM3NWZjMmI4M2JkM2ZhOWY4YzY2NTcxMDUyOTZjM2RhODUwYzM4ZjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRiNTMwZWRlNGYzZTg4MmQ2ZTg1ZTllNmE3N2JiYTI5NTk5OTk3MWU2NTk5NGU0ZTA0MWJjMDAzYjE1NzhkMmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU5NDcyODhlZWViZjU5ZWZiYmIwYzY2ZGYxNDUwNmQ0OTA0ZDMxNjI3ZTk1ZGEzZDc4YjhlZjc3YTFlMjZjNWYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_40db1232099e431ea31ade37b9d61e97",
+      "statement": "`[speech.tts] sidecars` is the join allow-list and the voice seam's wiring state: with an empty list the composition root builds no hub, the `POST /app/v1/voice/event` route does not exist at all, and every join or speech attempt fails closed.",
+      "evidence": [
+        {
+          "resource": "repo://config.example.toml#L875-L885",
+          "version": "repo-lines-v1:sha256:0d1f101e6985b297b2e375a7553edf0ba8d91caeb5fd59e32ecc2b2b3c58b9aa:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2ZTU0NWM3YWZlMjU3ZTc5MzNlMTE0MjAwNWQ3MjgwN2JhNzFkYTg4OWNiYzcxYzFmYzUzMTNlOGRjMDk0NjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMwODE3N2U2ZWIzZTNmY2Q3MGU0MzJlMzMwNjdkYzdmNTkwYjlmN2NmZGUzZjA1Y2M1NTQ0ODE1YWQ1M2FlZjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMxM2Y0MDg0ZGQwZTc0ZDdjMDU0YzJhY2QxZjBkZWNhMDM0YzI2NmE4NTRjNTcyNmQ5YzZhY2U5MTllZDg0ZmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM1NGVhMTZiZWMzMDg5OWRlYTljYzM2MTJhMTljZWYwZTRkNjUwMDdjZmNmMmFjZWNiNjliZmY1YmRjMTE1MjQifQ"
+        },
+        {
+          "resource": "repo://nora/__main__.py#L179-L189",
+          "version": "repo-lines-v1:sha256:8f048e6bdf6971f5699a49403453a09e29effd50968f7754733de35ff91a83f4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5NzExNTVhNzIwMGFkNGNjY2VmMTYzNTkxNWY3YzRkY2JmMDI0NmM1ODY3NzBlZDJjZjNiZDgxOGFhN2ExY2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNkMTk4YzU5NmNkMmMzNGE5MGI3ODEzODk0NzhlM2FkYTAxM2I0OWRmYmU0OThiYWNjMjc2MGU2OWJmOWY1MTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhZDA1YWIzMGMwNWIyYmQ5ZGQ5ODA0ODU1N2Y4MDE1ZTAzYTMzMGU0N2MyMThlNTkwNTgyM2M5MjlhOGE2YjMifQ"
+        },
+        {
+          "resource": "repo://nora/app/composition.py#L1730-L1748",
+          "version": "repo-lines-v1:sha256:0f4a5b2ae68c8657b7f4092560abe69ace62226c850e02deba1be26b04755b5f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhMjk3NjViNGY3OWNhYzM4MjdlYjBmZjY0NDQ3YmMyM2NiMTAzNDNiODE4YjJjZDkxMjMxMDM1ZGVhZmQ4MTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5YjE5ODJlOGRkNzQ4MTE4MTQ2YjM5YTJkMDA2MmY0MDgxZTM0Nzc5Yjg2NzVjMjM0YzRmYjEyNGRjMzkzOTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkzZDJiYzUxMTJmZDA4NDU4MjQ1MmJkNmJmNmE0NmEyNzIxZTJkYzMzZWRiM2U4ZTc5NDQ0ZWI5YzJlMTc4OTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ2NDM3ZWZiYzZjMGQzZmMxN2QwYmMyNzhiODQ5MDEwMDBmNjk3Y2VkNmY4ZWFhNDI1M2YxOTgzNjQyMmMwZGMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_018171aa407e4fe793dd04671012b930",
+      "statement": "`VoiceControllerClient` maps every controller failure onto exactly one of three exception types (`unavailable`, `generation conflict`, `rejected`) against a pinned response shape, so a wiring gap is reported as unavailable rather than as a silent wrong answer.",
+      "evidence": [
+        {
+          "resource": "repo://nora/infra/voice/http_controller.py#L1-L17",
+          "version": "repo-lines-v1:sha256:6fce05724c698f03b0775a09db55a724cff755dc4dc8dcbd9ccb629dcd879b52:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhMDc5ZTcwMjA1MjI4OGMzYmYxNTFmOTNhMDFjNmY2YjY1ZjhiYmE4YWY5MDllMjU3NmM0OGFkMzdmMmEwM2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/infra/voice/http_controller.py#L34-L62",
+          "version": "repo-lines-v1:sha256:ac02150ba2b930f010d24f18c0a3b610c848266e7d7aa7aa99a998a4bc4764cc:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxNTM0ZDBiMzYyM2Y1ODU3YzMwMjE1MzYxYzdiOWU1ZGZiNTEzMTliZWE3NWVkYjg0Zjg5ZTUwZmFhNGJlNjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlZTkzNjE0YThmODQwNDk0ZjI0YmI5NDk4ZGRjMDJmNzhiOTY4NTkzZjY3YTgxMjhjZmNmNjdhNTAwYTU5MzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRjOWIzOTA0Njk5NzEyY2M4OWUyZWJmZjcyYjIxYWY2ZDJlYzFiOWM5NTNmZjY2NzA3NjdiZmEyMjE5MjBkZmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ4MGVjZTNlYTUzOWE3MWExMzM3OTdhNDIzMDhmMzhkMDk5MmYxMzU4Nzc0M2QzYTJmY2U3MTI5MWNjOTlkMDkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7a444d3fc0f747aba4c24c763b7e346e",
+      "statement": "`VoiceControllerHub` caches one session per guild plus the channel it is connected to, adopts the controller's live generation at boot only when `/voice/status` names the channel asked for, and holds the cross-request state — expected playback id, a per-guild `event_seq` bookmark and an `event_id` window sized per guild — that the callback consumer relies on.",
+      "evidence": [
+        {
+          "resource": "repo://nora/infra/voice/hub.py#L1-L16",
+          "version": "repo-lines-v1:sha256:8b677ea10c256c2e594787aa33cb488b331e6b0ca180b9f9a4e73252deff1b28:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYyZWY0NmQyMDMwMDZhMWViMzRlMDhmYmZiODBlNWVhN2UzN2JlMTI0M2Y4MWIyZTVjZTUxMWE1NDFkNTBiOGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/infra/voice/hub.py#L299-L325",
+          "version": "repo-lines-v1:sha256:a348d981675f6101e84b12277476f2ee2bb76690f38d31c18633f65c0f12a520:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRlMGZmOGU1MGY3ZDI1YTI2OTJmMGViYjQxY2U4NzNmODAzOGVkZThlM2ZhZjI1M2Q5MTI3YzA5ZDYxNjZmZmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIwNDViOTQ0Njc5YTc3OTBmYTI0NjkzZDdlNGFiZmQ2NTgyNWUzNWNmZjdmMDExZWFiMmIwNTQyNTM2MjZkNWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMyZTMzZTU0NzBlMjFjODUzMjgyNmRmOWNjZjgxZmEzNDc0YjM4ZjZkYjU4Y2RlMDkwOWIwOTQ3NzEwNzE4MmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVkN2U3ZWQyMDRlYWRkNjg4MWIwNWFiYWM3NGUwNWJiZmFmMzQ1OWY1NWY4NGRmMjAzZmIyZGI1Zjg4YmFkMjAifQ"
+        },
+        {
+          "resource": "repo://nora/infra/voice/hub.py#L96-L155",
+          "version": "repo-lines-v1:sha256:944247000092e7cd41141f8f79a1fff20fc7b3efd4d1d39e71cceb67e17a9bcb:eyJzZWxlY3RlZExpbmVDb3VudCI6NjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE4MzQ5NzYzODM5Njc5YmIyNzg4MWJhZDI1ZmM2YzI5M2MzYjJkYzkwNmMzZTRiYTFjZDdjZjBkMmEwMTNkNmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJmN2JmNDhmZDQ0ZDM3YmFmNGJlMzhhMGY3MTgyZjlkZDEzMjI1YzJkYWZhOWEwMjg2OGMyNWRkYzBiMmU1YzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg1YmNhYzhiNjE0YmViNTQ0YTUwMGFjMGRiNjg1NzM0YzNjYzBlOWE2ZDdkYmY2NmYwYmQ4ZWJiZmE1NTVjYzMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d3b29b557c394ed68a512b1eeccd7634",
+      "statement": "`VoiceEventConsumer` keeps every decision on Nora's side and makes a replayed, failed or stale callback harmless: `event_id` dedupe is committed only after the transition succeeded (a failure answers 500 and stays retryable), a music event advances only when its `playback_id` matches the guild's current expected one under the guild lock, and `voice-death`/`channel-emptied` are validated against the live generation.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/voice_events.py#L1-L31",
+          "version": "repo-lines-v1:sha256:56c8aea9e66b0b85ee8635bc6bcff740be9f906fb0867245ba99b3a66b9784a6:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlM2JkNjNjMTg2ZmVkNDVmYWE0OWFkMjk3ZDFmZWQzYjNhMDI0ZWUxN2NlNjEzYmU3ODg4NzkzODZmMTljN2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/app/voice_events.py#L59-L124",
+          "version": "repo-lines-v1:sha256:d3fc11495bedc71668d70d21356c78d38ea1177d9c6c7cc1477eaae544d39a9d:eyJzZWxlY3RlZExpbmVDb3VudCI6NjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlOWI2ZTM2NmJjYTRlN2U1ZTk4NzUwY2I3OTE5NTM2Yjk4NjlkOGMzMjAwNDg2YTJiYWQ1NzlmOGMzYzM1NzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZjZTUxM2U3ZDg4YzA2YTcwZTQzNjg0OTRlM2QwZGUxNTQyZmJhMTQwZmYwM2U3NzhmMmM1OTZjZDc3MTI2MTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNkYzQ4ZTI5ODU0NmMwZWE0MGUxNGJiNDkzNmUwYWIwMGM0MmEwYjBlNThjNDBhN2U3Y2I2NzcyNWFhYmFmMzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBmYmFkODdmMWMyNDI4OWVhOGFjOTEyNGZiZTQ4NjI1OWE0NTlhNzE0Nzk0NGFkM2FhMWJmZDNjYmI4MDAzMDUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b53a638245cd46d291e4362ce974adc8",
+      "statement": "Neither voice route authenticates: the only callers are containers on the private network, and a forged POST can do exactly what any message in an admitted conversation does, since policy and the engage gate still apply downstream; the event route additionally refuses a guild Nora has no controller for with 400 to avoid a fail-open and an unbounded per-guild map.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/voice_events.py#L80-L93",
+          "version": "repo-lines-v1:sha256:e7a0ed058f9b7904713ca66d91696b0dcb806df7811657fc33e6c2f0e6414a82:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlMjdkYTQxZTQ4MDdhMjJkMzRlM2IwNTJlNzI0MjlkMjQwODA4ZmUyNzE4NTc5ZDljMDVlYTUwNDQxNTI5NzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIyODliODA4MjIxM2EwMTA4NjlkY2ZhNjM4OWM3NTc1ZTMyMTAyYWI2NjI4Mzg0OGZhNWM2OTlmMWZmYThhNmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI3ZmM0YmViZDg2YTA2MzkyYTBiOGM4YmFjMzFkODVkZDExYmNmYjMxYTZlZjAzZGRjN2Y1OTVhYWFhMDM4OTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU3NzVkOTE4MjkzNDFlMWZiMTVhYjE5YTNhOTdlMjI0YzZiNGU2NDM1OWI0OWViMmJkMWJjODk2ZjhiNDhmN2EifQ"
+        },
+        {
+          "resource": "repo://nora/web/voice.py#L24-L28",
+          "version": "repo-lines-v1:sha256:baee55b7ff44d23e7178c9bb80ccbbad593487275f34bdfceec5243deb124db7:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYmFjOWRiZTk1ZDc0ZjM4YTY2OTczYTIzNDY3ZTZlNTUxZTZhNGJmNzliMjRjMDQxMDczODI2ODk1YjFlODZkOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiY2FhOTUxM2NhZDU4ZGE0ZjQ1Njg3MTMzZDgyZjE4YTQ1Njk4ZmVkNGFmZmY0NmEwZDk5ZDVmNGY0YWMyOTgwMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTYwYWJjNDczODU1NDQ1MzIzYTViMTBlODU3OWI1OGMxYzM1N2NkMmU4N2JjMGFiOGZmZmU2NzU0MzkwNzkxYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWZiZTA0YzdjZTFiNzE2MjlmNDkzNzMyNWQzY2E3ODMzNjg5YTc3ZTc4MGZjNjQzNmE2MTNmZGQzNzYxNzFiNyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_87dc4ffd4ac2466789f8f3dd8e062ac1",
+      "statement": "`Speaker` is a single-method port — `speak(*, text: str, voice: str = \"\") -> SpeakResult` — so reply text goes in and the synthesized clip comes back as `audio` bytes (with a `media_type` beside them) on the result, never as a path or URL, because the voice mixer consumes frames in memory and the controller's player has no file concept; `voice` is a per-call override whose empty string selects the implementation's own default.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/ports.py#L1429-L1464",
+          "version": "repo-lines-v1:sha256:281d70fe9418fef64f36538d478b60fc32ef55600e4fba603c8284a8f840f7b6:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwMzA2OWQzZjMyN2IwY2ZkMWQwODcyNzRlYzI3NTY1ODU0ZDg1MmIzMjI1NTNkMzkwMmM4OWY1M2YwMDBlZGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZiMjNhNTQzMzFlMmYyMjA4NDBiMzM3ZDJjYzViMWMyYWVkYzFhNGFmY2U5ZGFjMjU0OTMzNjVmY2JkMGI3MDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVlZDExNGUwMDM0YjllNDRlYzNhMjQ1OTRlMTA4NTdhZDFiY2QwZjNkODQ2M2IxZTk4YmZlOTcyYWYzYmE3MDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMwNTk4MTc3OTZjMjc4YTAwMDI4ZmYyODFkZTdkM2Q5Zjk5Mzg4ZjVhODZjNGM5ZGMyNzg1ZjlkYWQwNTE4NjcifQ"
+        },
+        {
+          "resource": "repo://nora/infra/tts.py#L117-L150",
+          "version": "repo-lines-v1:sha256:e5ecaf9251bc0585242eb8e6c12f5192ad756ed0aa200a80bfe42530bf2c82ce:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY3MmRhMzU3ZWNiNTU2MTU5YTFiZDllNGFmMTg3NjkyODhmZDY5ZWZjNmZiZWRjZjk1NjhlZDVmODE3NDllYzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk3MmU4NjczMjcyNjY1ZjcxMzY0OTRjMzFlNTJiZGRhZWIwYzNlYWZmZmE2NzE4MzRkZDZjOThkODBjZTQ0MmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA2OGQzNjg1YTU5YzRjOGFiNzEyY2Q2OWMzMzIyNzg3ZWVkMGY2NTRiNTRjMThkYmZkMjhhNTY4MzU3NjRjNmYifQ"
+        },
+        {
+          "resource": "repo://nora/platform/discord/adapter.py#L343-L353",
+          "version": "repo-lines-v1:sha256:61899e57c26001319fa66ad7724e6073580e0cc7dbba2ec854a4fb2cf9be5667:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMxMWRmZDZiZWMwZTEyZGQ2YzdiODg0OTU1ODQ2MjA4N2E2YjgxYWZkNjYzNDYwYTM1ZjAzZGM0NDIxZDU2NzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZkNjZiMDZmZjJjOWYzODM4NTE1YWFjZWExMjIyY2EwYjIxYWI3MGQxNGY4MGIyZDA4MThjMWRlN2JjMDg2ZDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVkZWM1OTM4ZTAzMTYwZTU1NTc5MTVlNjY4YzhmMGNjOTJhM2EwYThlYTZmYzhlNjM3ODIyYjBmY2Q3NGU2N2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRiY2NlODBhN2E0Y2JjYjA2NzFkMTkyYWMzOTk4YjAwOTBlNjJkNjBiYWMzZmVjMzBiMmJlOTAxNGUyZGY5M2QifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-20T12:25:17.607Z"
+  }
+}

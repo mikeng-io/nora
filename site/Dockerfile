@@ -25,6 +25,7 @@ RUN npm ci --ignore-scripts
 COPY docs-site/ ./
 RUN npm run postinstall
 COPY openwiki/ /repo/openwiki/
+COPY assets/nora-canonical-self.png assets/nora-mini-icon.png /repo/assets/
 ARG SITE_ORIGIN
 RUN npm run build
 

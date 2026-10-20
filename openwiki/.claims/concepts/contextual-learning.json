@@ -1,0 +1,490 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:a4ec598772c270cc232fc73775035462d5b4f236648dcd58bd259115fec22f43",
+  "claims": [
+    {
+      "id": "claim_1b14d96fdb174a06adf884de7f563123",
+      "statement": "Contextual learning changes stored rows — a Standing position, Character/Culture accounts and Lessons — and never model weights or authored doctrine; response episodes are the shared unit that connects her sends with what followed them.",
+      "evidence": [
+        {
+          "resource": "repo://ARCHITECTURE.md#L28-L30",
+          "version": "repo-lines-v1:sha256:8d451f993f8a38060ab26cd79d56ccbe95dade0c15d22d86bd1116f462508282:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmJhNzc5ODdjOWE5NmNhZWZlZjlhNmJiMGJmMDViN2NhMWI0NDQwNDI3MmIyOTRiM2FiNGFkMjE2MTdiNjk0OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzhjOTU3NzY1MzIxNTcwYTBhOGNjMTRhMDE4ODAxMDYwMDkyMzIzODMzYmNjNDA1MWZmOTQyNGNlZGRmMDFmMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGM0NzI2ZWFjMjBiYTAwNjY4YjI1YjFhYWUyZWVkMWQ5ZjMzMDQxMDE0OGQ4Y2QwMzk5YzViNDY5ZWJmMzM5ZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWIxNGNmMGU3NmM5NmQ3N2EwYjNkODZhNWRlNzY0MjY1MmI1MTRiNTg2Y2Q2NGZiOGVhYmVlM2U0ZGI1MDRhZSJ9"
+        },
+        {
+          "resource": "repo://nora/domain/rollup.py#L881-L900",
+          "version": "repo-lines-v1:sha256:f96e645e590d1b3709735b752c5ed2108c79ae4e641d56a8500ef4c2e2429904:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNmNGMwMjFhZjFmYWVhYWZlNmYwMzRjMWUyOTk0NWI4ZGU0MzZhMzA5OTc4YjllYWFjYTE2OWZjNGY0ODc3MWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBiNDY4YWQwYWJkNWRmODYyMGJiOTRiZGZmZTg1ZjQyMTEwZWNkYThhZjc2NGE0ZDVjM2JhMDZiYWE1Zjc3M2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNhNWZiM2IwMDgwMzIxY2Q3ODIwMTg3MWU5YmY1NmE5OTQwNmZhOWU3NWY5NTFiOGJiMDQwZjY0NTgwOTM1YTQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_276e00f426024352ab603f13815430f6",
+      "statement": "The three learning inputs have different writers and scopes: her own finished turn's outcome (the debrief fold, landing in Standing), the unit's Rollup response episodes (computed by code and cited by Lessons and Character · Nora), and the operator's revisions (the `nora lessons` CLI, config and objectives).",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/lessons_cli.py#L1-L13",
+          "version": "repo-lines-v1:sha256:caee657fd7939e2cbc93034dfdb0a5c567e27b7af85df9e3050163d01dd8def6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ5M2VjNWViNDllYWU2NTM0ZDFkOWZhNDk5YTg1MjIxMTczZThlMTFlMzc0MDQ1ZmMzOTk4ZjMzZjgzOTk2YjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/engagement/stages/debrief.py#L1-L22",
+          "version": "repo-lines-v1:sha256:7556738301fadccc1dfce3c2f7d09a214f2798d8b3e91da269ad0b39578cdfbf:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUxY2UwODE4YmVmMTc5ZWRhYmU1MjQzOTUzM2RkMTcyODA5MDAzMTAxMzdkYTc1YWM3MGZlYTk2ZTU5ZmMyNzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNjNmIyYzhjMzE2ZDkzODJjNzllYTEwODllNmY0YmU5MWYxNTRjM2JkMjZiNjBkZDM1YmZiMGU4ZDk2OTU1MjAifQ"
+        },
+        {
+          "resource": "repo://nora/language/lessons.py#L1-L16",
+          "version": "repo-lines-v1:sha256:1c497527c23611708ec9d74226b2ab8595415fb5c8d41bb4daf032cc0932b718:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM4Y2RiNTk0NzJhNjA5ZjQ2MTY3NmJkZmM0ZDFmM2E0OWQ3Y2QxNTQwMDQ5ZmZhYzMyZGI5N2VjNDc2NjFjMTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjZmI3YmM2MmFiYTM4YjI3YTczNGM0MzMzYzIyMDgwODZiNDI4NjM1OWUwNDY4NDI3MTllNTU3OTcxMmMyN2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM3ZWQ2NTJiODcxYWY0YmFkNGYzMDY2Zjk2OGU0MTgyYTE2OWE5NWZiYjE2YTk2YTEwY2E1OTU3Njk0MTQzZGQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_65701c5dcebc4239b3aaa7f4d1fda382",
+      "statement": "Response episodes are `rollup_response` rows of the current Rollup build, one per send of hers, carrying reply, reaction, edit and follow counts plus a closed outcome vocabulary (open, responded, silent, unanswered, unknown) adjudicated against Record time rather than the wall clock.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/rollup.py#L781-L940",
+          "version": "repo-lines-v1:sha256:d68fbe01b4b063b6d5065b88994e3c85438f3907898964d5d6c761c6fd73d4cf:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYwLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI1ZjQxN2E1NDQ4NGM3ZDZkZDhhOGM1MzQzN2UxMGUzYjBmOTlkMGQzMDViYTBlYzE3ZjM4MTM0ZDY2OWVmNWEwIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIxYWQ2MjgxZWMwMGY3NTk3OWRjMWYzM2EyM2ZkMmQ5N2JlODljNDAzYTRhYWEzZjVhM2U1MzczMzRmN2UzY2U0IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIzNGZiZjU4OTQxMjlkNTQxOTdhZWExMzhkN2ExMzE5ODkyNTYxYWU0Mzc1OWUzYzFhNDE2NzI3YTA1NzAyYTQ5IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIxY2Y5MmI0ZWYyMGFmNWEyYzk5MGRlZmYwYTkxYTMxNTNlYzBkM2U1YzJjZTdkZWJhNjIyMzRiOTExYWMwZjVlIn0"
+        },
+        {
+          "resource": "repo://nora/infra/sql/character.py#L549-L584",
+          "version": "repo-lines-v1:sha256:3514735885ceedf600713105a0b5c07d3af4a54e4a3ff40fb54a76da80d2bdea:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1NmQ1ZWFmNjMzNjg1NmE5MTE3YWExNDJhNGZiZWUyYWQyYTBiNmYzZDYzZmJiMmRjNzQ1NzZlNmYwMjlmZGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhYWU4YTBjYTc2Zjk4ZjdiN2RjNzk4NDk1MWQ2M2U1N2RiM2M2NDU1NzljYTUxYmFkNmE1MzlkNjE0ZWRiYmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc4MTIwNWZkZjUzYWE2OGI5YzgxOGM4Zjk5MTYxYWE1NDVmYzk3Mzg5ZDk2MzNlOTYxNmM5Y2FkYmM4MDhmNjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZjMDJhMmNkYmRhNWVkOTEzZjkyOGFjZTI2MmI1MzAzZGQwNmUyMzUzMDVlY2M5ZmNlNDg0YmIwODAwNTM2MDkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0bb1e3dc7c7f4e3e959a8b06306a9e87",
+      "statement": "A member message that quotes none of her sends still answers one when it names her, or when it arrives within `follow_window_seconds` of her latest send in the room and mentions nobody else; it counts once, for the last send of the turn that delivered hers.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/rollup.py#L814-L878",
+          "version": "repo-lines-v1:sha256:cd5f66a8fc3d14b9c319cf91aa4daf472aa070c5c94c0fdcb05b2016e892ea5f:eyJzZWxlY3RlZExpbmVDb3VudCI6NjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMyMjFmMTBmYjY3ZmZlODEyOGYwNzk2MTlkOTMzOGFhZjc0YzYxZjkzNGY4ZjVjODVmOWFiYmNjYzJhMWFhOTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU0NTI2YWZkNzhlMmJiZGM0N2QwODZmNjliOTdhZjYwZTQ5MjAzZDNjNDlhMTAwMDNmNTQxNzEyODlmOTYxZTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjMGEwNzBkNjBhYzQ2MzEzN2NmMGU5YzU3N2Q1MTY0MGQyN2Y5ZjAzMzg2NDNjNDcwY2U3MGY2Yzc1Y2FlOGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a7cc815c058b419d947c72c62cf1ffcf",
+      "statement": "A session cites an episode as `response:<her send's id>`, and only an episode whose `is_evidence` holds may be cited: it drew a reply, reaction or edit, or an answer was expected and none came. An episode whose only responses are unquoted follows is not evidence, and `open` and `unknown` episodes are never shown to a session.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/culture.py#L311-L336",
+          "version": "repo-lines-v1:sha256:539d6eb66326f3e075795900732304091ab244d8e607dd70dc041c111488ff63:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgwOWU3NmIyMjQ5ZGNlMDQwZjQ1MzFmOThiOTQxNTdiNWJjN2JlODFjN2ZkZDUzMTY4MzlhMzBjMmQ1MGEyMTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUwNWRlYWZhY2RhYzZiNzM5OWRjMzRmMGQzYjEyYmU1NDg0NmEzZmMyNjliM2MzZThlN2I3Y2E5ZGU3ODFmZjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJlYTYxNDQ2ZDNhMGJhZjMxYjMxNTQ4MzMyOGJjOTYzNDNmNDRmOTY0NDJhMzFjYzBiYjI4ZWI2M2FmMWEwNDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE1OWQyNTRlNGRmM2Q3NGIwMDQ1OWIzZjRkMTdjYmM5ZDY2MDA0OTM0ZDQ3NTBhMTAwODhiYjllNzAxMjQwMzYifQ"
+        },
+        {
+          "resource": "repo://nora/domain/culture.py#L522-L540",
+          "version": "repo-lines-v1:sha256:0a09c60f58b55d89440d377d80a65a5e5c5327c0046c038b8c6f977fdfe9c1d0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzZDAwY2YyNzA5NjRkNDRhMTNkZmFjODc1MmIwOWZjYzQzNWIwZjE5YjMxNmFiY2Y4MWE3YWE2NGJiMTIyZDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYTA3NzEzNWUyOWMzM2VmYzU2NTIwM2ZiNjE2ZDU1OWQ5OTdlMmUyNzhiOGQxZjYyMzViMDg3NDNjOTIwYjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlhOGI5Y2MwZmJmZGU2Y2ZlMGRiNjFlMTBjOGFmYTkzNzg4NDkxZTY5ZWViZGRhMjJkNWZjOWUzODkxODNlMzYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5487afe4cd244556b0944b07e188929a",
+      "statement": "The `response` rollups are not exposed through the `rollup_read` tool, which reads only stay, trip, colocation, outing, daybook and tie; the response episodes belong to the Lessons adaptor and Character · Nora's evidence read.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/rollup_read.py#L34-L40",
+          "version": "repo-lines-v1:sha256:82e32de0a9af696ad91dac7a157cbb9fa1daeb80d1c990f2297de9f6fdeecdd0:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGNiZGRiYjhjYjkxZjRlNGJlNmE3MjNmMTc2YjA4YThlOWJlOTBkYTE1YTZjZGRiMWE4NjVkZjMxYTdhYTFhYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGMyYTc5NzcwYjliZjVlYTU5YjRlYThmOGI0MzM2Yjg5NWNiNDQ3MzBmNWY1ZGQ0YWVjODQzZWFkYTIyMzY0YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNWZjOWFjNWFmNjE3MDA1ZGZjMzkxNzFmMTY5NmQ5MDUxMzUzOTIyNGNjYTFkNDM1NWQ0NTQ0ZWEzYWY3Yzc3ZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTZhMTAwNjgxZDhkMzZmZTkyMTUxOGQ4OWUyZmNjNjU3MjRiMDA0ZjU1ZjAyZTViY2Y3NmI0MjMyMTJlNmJiMSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_25726a368e964fc6873746b34c7846ce",
+      "statement": "The debrief is a tag-path pipeline stage that runs inside the reply slot on every completed turn — delivered, silently skipped, vetoed or timed out — and before `release_and_dispatch`, using a second model rather than the one that replied, because `ReplyGuard` cancels any further model call in her own loop once the reply is committed.",
+      "evidence": [
+        {
+          "resource": "repo://nora/engagement/pipeline.py#L1161-L1210",
+          "version": "repo-lines-v1:sha256:0def85534b5f2f12e242ededf59f15204b39328432fbf643ca693164eeb43c21:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1ZjVjMDk3MGM0NWVjYjdhMDNkOTZlNGY5Y2ZlOGFjYWNmNzAxNmUzZjllZThmNWJkZjJhN2I3NjQzNTI5MjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3NzQ4MWY3NDcyZGIxNzE4NDY5NTM4MzQzNmMxZjFjMDc5NTc2MTAwMmM4ZjkxOTYxZWJkMjYyZGZkYTQ0NjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJmMDk0ZDJjMGExNzNjODI4MjBjNmNhYzFkMDJlZjA3MWU1M2MyZmM4YzY1MjVmM2ZhODRhN2ZjNWIzMTg0MDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ5YzMyZGNkODA4YjBjNmQzMzUxNjJmOWIyNTFlZjRjY2U1Yjg0ZDIxM2VkNDExYzJmYjcwM2JkYTFiNTAwNTgifQ"
+        },
+        {
+          "resource": "repo://nora/engagement/stages/debrief.py#L1-L22",
+          "version": "repo-lines-v1:sha256:7556738301fadccc1dfce3c2f7d09a214f2798d8b3e91da269ad0b39578cdfbf:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUxY2UwODE4YmVmMTc5ZWRhYmU1MjQzOTUzM2RkMTcyODA5MDAzMTAxMzdkYTc1YWM3MGZlYTk2ZTU5ZmMyNzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNjNmIyYzhjMzE2ZDkzODJjNzllYTEwODllNmY0YmU5MWYxNTRjM2JkMjZiNjBkZDM1YmZiMGU4ZDk2OTU1MjAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5c1a8da149bb4d5ebe2482bc6cd32aa5",
+      "statement": "The debrief's ordering constraint is that it reads the prior Standing first and the watermark batch (`since_including_nora` after `last_folded_row_id`) second; a failure at either read is counted `unavailable` and no fold happens, while a media-join failure degrades to the un-enriched rows without changing the outcome.",
+      "evidence": [
+        {
+          "resource": "repo://nora/engagement/stages/debrief.py#L497-L569",
+          "version": "repo-lines-v1:sha256:9f6cba23577e123afc08d486052ddd9670563ba6f704c073703ccee5b4afc0b9:eyJzZWxlY3RlZExpbmVDb3VudCI6NzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkYTVjNjZlMTdiMTQ1Mzk3ODM0YjhjODU0ZGM0MTkzZTIxMjUxODBhODk5NmExNGMzMTg4MzMyNmIyZWZiY2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxMDM0ODFjNTdkMGYwZGMwZjc2Y2QyY2M4YjM2MDRjNGU4Mjk2ZGE0MTIyYWRkMTllODE3NDVkYzdlMzMxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJkNjY0Y2NkODg4NGNhYjIxMGQzZGEwZTI2YTgwNDVkYWNhMTQyYWIyZjlhMGJiOWYzMDNkZDZiM2M0YjNiYjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI4OGJjZGU0ZTdjYWIyYWYxNTg2MzkxODFkOWVjYzdjNTgzOTYzNGY0YjkzYjJlYmY1NDZhOGI5ZmM4MDllMDQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5926b9f8f988411dae34084569363364",
+      "statement": "The debrief never truncates: an over-cap body is refused and one consolidate retry is made inside the same total timeout, and a second overflow writes nothing so the prior position stands. The prior is always rendered into the prompt, including on the retry.",
+      "evidence": [
+        {
+          "resource": "repo://nora/engagement/stages/debrief.py#L571-L640",
+          "version": "repo-lines-v1:sha256:16b37751e185b19c579a46e92403527d50a3c1247cf9597b187c346f1f364a24:eyJzZWxlY3RlZExpbmVDb3VudCI6NzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzMGI3ZTczOGFlYTMwMTRmMzU0OGNiZjVlZTczYTljM2Y1NDE3M2Y5Y2U2OWQ1MzA2MmZjMDc0YmVlYWE2ZWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVlN2JjZDM2ZWY1M2I0NDUyM2U2NWU5OGQxOTQ0OTkzZTBmZjE3NDZmNTUzNmMxYTUxMTc0NmYzZTAxZTc1NmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzMjg3OGMwNjdjMmU1NGFlYWJiZDcwODUxMjUyNzZiOGY0ZjU2MGQwMDFjMzQ4M2ZmZDlhYzliMDYwZTk3NzkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVkM2YyNjk4NmQ3OWE3MDgxOTViMWFmYzQ4ZDI0MGMzMWI2YjM4YzU0NDcwYjNlZTJkNjAzZmM5YzQyMzg4ZTIifQ"
+        },
+        {
+          "resource": "repo://nora/engagement/stages/debrief.py#L76-L82",
+          "version": "repo-lines-v1:sha256:0c2cc382150997aea9ddfe7a5d345b7ca78ec35aa7f502e28f6d981f9485a2d8:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTM0ZTk4MTBjMTVmMDZlZTllNTAxM2JjZTc0YmI0NjZhOTBkNWVjZWFjOTU0MjcyYmJiNDVlNTI1ZmRlMzE0YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTRkYjMwZDMzZDlmM2I0NGMwYzc3NmNjZmYwNWYxMDIwZGYyYzE5YjNmZjU3ZmQyYjFhMjUxZTQ1ZDc3ZjA0NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTk3ODg5NDIyNzUwZTdmMGE4NzM2ODAxZjFhNWI3Y2ZhZjUwZWMwODIwYTNkZWZmMzcxOThkNmU1NWMyODE2YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTY2NzkwZWEyNzE4Yzk0ODVlMTUxNjA3ZjVmZjMwZmM0ZTlmOWQ4ZDQzODk0MmUxNDhkMjEyNzNiOWY1MDdiOCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_6f5ac161987748e1a0436b1901ff6bf9",
+      "statement": "The debrief screens the model's body for identifiers and coordinates before the write, not before the read, because a Standing row is an input injected into every later turn and would otherwise persist by design.",
+      "evidence": [
+        {
+          "resource": "repo://nora/engagement/stages/debrief.py#L642-L656",
+          "version": "repo-lines-v1:sha256:379232b9f58b07e7dd3539827a52f17d39b2a10f9a6877d9debbff50e3781628:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1N2I5ZjI1N2U0YjQ5OWQ4ZDYyODYxMjI1NzFlZTAzODJkNGU3NmZmODFhZWI2N2FiYTljOTBhZDVkYjQzMTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVlN2JjZDM2ZWY1M2I0NDUyM2U2NWU5OGQxOTQ0OTkzZTBmZjE3NDZmNTUzNmMxYTUxMTc0NmYzZTAxZTc1NmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkzZmI3NWNjNzY4ZTAzODQ0ZmUyZWY0MDlhMGU3MDAxZjg5YmJjMmFjNTBkM2M2M2VmMjBjOWI3YTdmM2UxMjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM0YThmYmIyYzU4ZDcwMTVmMDczMGFlZjg3NzJkZTk4ZmUyYTdlNWRiOTRkZjc4NjY2ZWU5MzU2NmYzOTI2YTgifQ"
+        },
+        {
+          "resource": "repo://nora/engagement/stages/debrief.py#L84-L91",
+          "version": "repo-lines-v1:sha256:5765dc22e0f5262e2395f5ce0713dedf78f62be9d9574ee15391826f14976516:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiN2E2OTc5NWUyZGQ1OWJhZmU2ZTMzYmJiNzJlZDY5NWJlN2JmODM3NjFkNWU0MWNlNjZhZTMwYzBlOTk3MzFjNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjRmZDkyNzU3MTI1NmY5MWNiMzg0MDkyYmUwMGRmNGNlZmIxYzdmMzk0OWUxOTJmNWRkYzQ5NWEzNzhkNjlkYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmE3N2NmMDIzMDljZjM4ZWRjM2I3YzBiYzY4MWNhOTcxZDA5MTExMWUwN2MzMWZhNGFkNjI3ZDA1OWM2YTIwMSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_f68ca917673a4ba8a3d8979e1f0c9a34",
+      "statement": "The debrief is written so it cannot fail a delivered turn: its body catches `BaseException`, distinguishes `timeout`, `cancelled`, `unavailable` and `error`, assigns exactly one `nora_debrief_total{outcome}` label per exit, and observes `nora_debrief_seconds` on failures too, on a latency series kept separate from `nora_tag_latency_seconds`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/engagement/stages/debrief.py#L751-L806",
+          "version": "repo-lines-v1:sha256:68029796e168a2fa1cad77f0214cbab00a392fb1a10e5f31bb56d5bf6f02910a:eyJzZWxlY3RlZExpbmVDb3VudCI6NTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkyMjg3MTZiZWI3MWZmM2QyNTNlOTBlYTU2NGFjMTkzNDE5YzIwNDMyNDFhMmM0NjMxMDNiNTkwMWZjYTI0MDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAzYjlmMzNkNjllZmZjZjljNzU2ZjdjOWNjYjQ3NmJkNzY4NDVkYzliOWVlMDk2MzY5NmE2YmNhMTVlNTgzZTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZmMzcyMzI2MzJhZDZlNTliYjA3MzdhMzlmYzVmODJlMjY2NGU4NzljNThkYjU1YmE0MjYzNTIyNTc0OGVmZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc3ZDgzZTE1NTk1ZTI5ZDcxNzdhZjk5M2M5ZjgwZjczM2JhZGIzYWEyYjY4NDAzZTgxNTg3ZjA0YzA0ZDIwMWUifQ"
+        },
+        {
+          "resource": "repo://nora/obs/metric_specs.py#L1336-L1355",
+          "version": "repo-lines-v1:sha256:dd9487a436d671bd40712626e8aa21c14925a0c78abc39fbc3d70ee110edb61c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBmM2U0ODNhNDdkMjU1YWM1ZjFhMzkxNjAzNzQwODM0YjY2OGVjNTVlODk1ZjZmMTFhNDdmNjhmZDMwNGVlYTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZkZGNlM2RiZGRhZjY4YTc5MDgxNWFlYTk1ZjA3Y2Q5OTNkYjQyOWI4YmIyMjNhYTViOGVjYTY2OWE3NmJhZWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFlMTcxNmYyOTRiZTBjMzc5ZTljZWRjZjIyMjcxYmUxNWZmMGUyYmJhMGFhYWE0ODlkMTIxZTRlMTQzYWVmNTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYzYjg2ODhmNzZjMzc4YmE4YjRjYjBmOWMwMzc1NzdhNjRmMTkwZGRhNjY0Y2QyNmFjZDQ4NzU4ZDQzZTk4YjcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9b24b613511d455c90be27a8b7317c39",
+      "statement": "The Standing working set is validated by code after the body's own checks: `found_at` is stamped from the caller's clock and never taken from the model, a new item's `source` must equal a tool name this turn's steps showed (equality, not substring), a carry-forward past `WORKING_SET_TTL_HOURS` is dropped deterministically, and an over-budget set is refused whole with the prior set kept.",
+      "evidence": [
+        {
+          "resource": "repo://nora/engagement/stages/debrief.py#L287-L408",
+          "version": "repo-lines-v1:sha256:20e506be9ffd32c927514d2f61b8dc06411b6d5644d734d10555a4a295caceb3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIyLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI4MjlmODQwNjQwMzVmZmFhNmM1NTU3N2ZlZThhYjMyYjI2MmI3YzU3MDkxMTdhNDM5ZTk3MTBkNjA5ZWIwMzA3IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIxYmE0NDQxYzQzMWIxM2FjYjYxNjBmMWEzZjYzZTgxZGNjZWZhMGFjM2ZlOGQzYjRkN2M3ZTc1NjUzNTNjMzQ5IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI0MDM5M2Y5M2ExMTYzNGI5YjUzNDZjZDM2OTc4NDYwOTFjYWJmZDUwZTkxYTliNDZiMGUwMWRmYjk1ZmViYjhjIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI3MGNlM2YyNGFiNDdjMmY1YTlkMzM3ZjM3N2VkODU3M2ZhNTY1ODQwNzY0MDJmMWFmMDU0YTNkZWQ2MTk0NjJmIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_23f007ec6f4f487aa0ab2fca9de4bed7",
+      "statement": "Standing enforces a 4000-character absolute ceiling in the type and in a database check, above a configurable operating cap (default 1200) that the sink refuses at rather than truncating; `working_set` mirrors that split at 20 items and 2400 rendered bytes absolute over 5 items and 600 characters operating.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/standing.py#L274-L318",
+          "version": "repo-lines-v1:sha256:a968ea901eb3e876695e6766da604fc17b858ea8f725eb68247e192d4c7ee804:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJmZTQ3NzMwMTdjZTIzMzI5YmVmZmFjY2NmMGY5ZGFjZWE1NmE2YmYwNmYxNmIyNzdmNGJkZjE1NzNiOGMxYjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZlYzkwYmRhODYwYzA3MTZmMWFmYWUyYWQyMjI3MjUzZDg4YjdhZWUxNGExZThkN2RlNWJkMDlkODhhMTc0MDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBkMmEzMzU1NWY0OWI0NDQzNGRiYjU2ZjIyNjQ3ZDdjYjUyNGQ4YzkzMjg3MDNkNTQ0YjNhMDZiNjU3OWNkMWMifQ"
+        },
+        {
+          "resource": "repo://nora/domain/standing.py#L48-L125",
+          "version": "repo-lines-v1:sha256:ce720c5f9a814ae0a77a45ad633745036d9972434b6c02f0c5882aae5b899e91:eyJzZWxlY3RlZExpbmVDb3VudCI6NzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhNzViMjQ1ZTc0N2Q1YTdiNTBlZGVjYjA3NTNiMjVlYjJmN2Q0NTFhMzAxY2JiY2UwOTJjMDQ1MmNlZDQ0MWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3MzAwMDQzYmM3MWJlZTIzMGVhMDUzYWUyM2MwZmUzNjZiNDZmMzI4YjU0MWQ5Y2FiZmEyYjU0ZTM4MjVkYjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk2NDFhNzlhNDRkODU3YjliNWFmNmU5YTc5YjllZWM3NzJhZTEzY2YxOWE2MDhiNzZmMzU5MDgwYTFiYTc4OTQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7c898cf346b547aa92fbb1ccfeabbd8c",
+      "statement": "Every writer of a room's Standing goes through the one `standing_revise` verb, which enforces the allowed reasoning modes (`deduced`, `abduced`, `said`), the section schema (`where_it_stands` required, `hold_open`/`i_owe` optional but never blank) and a stale-base refusal against `standing_revision.id`; the debrief fold and the Cognition session's `standing_revise` tool are its two callers.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cognition_session.py#L2218-L2265",
+          "version": "repo-lines-v1:sha256:3797ee7b4052fd11db4e0fba6d08958fec144181419a634fcf611832ebf75166:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU3MTNmYTQzYTBkODZkMzc3MmMwYjUwYmIyNmQ2ZTRjYWQxZjYyOTNmNDJiYTU5ZmQyYjIyYzc0YTQ2NzMzNzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkNjMwMmZiMjJjZmZiOGQ2NGNmMzczMTY0OWM3NDE3NDU2ODhjYmZhNTUxZGIxNzI4NTg0NmQ2NDkyNDM4ZGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZmYjRjNGFjNGI3YjMzMWRhMmFmZjVmYjFmOWQ3YzhiNTIyZGNiNDE1YWE5MTZlOTU2NjFjNmEzYTE3NmZlODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI0ZWE2ZmQ1ZWQwYmE3NmYzYWZjNmFiM2ZmMzg3NDg4Njg1OTczMjI1YzA5ODJjODI3ZDBiNDRlZDMyZDk5MmMifQ"
+        },
+        {
+          "resource": "repo://nora/domain/standing_revise.py#L1-L108",
+          "version": "repo-lines-v1:sha256:df37a4d0a7e826c9671cb8ae630794e3b6de11f599d7f80b25c1f9e898494f95:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA4LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI4YmFhMmM5NDM1NGIwYTI3MDBhODVhZjMxNzNmZDI1MGJjOTcxZDM1YzgwYzQ4Yjc1MjAxMDBkNjFlMmYzZTZhIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0ODk2MDBhNzNkMmUwMmYzNTJiOTBmZWYxZDhkNjM4MTFiYTRhOGVlMGMxYmVhYTdhZTQ2NThmMzZhYTJlMTk4IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MCwicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI0OTY4ZWU1ZWVmNjFjMjcwN2JlNzFiMmMyOGExMjNlZjQxN2RkOGU4YWZmNDIyODAyM2E0ZTU0MTgwYzE1MTljIn0"
+        },
+        {
+          "resource": "repo://nora/infra/sql/standing_revise.py#L1-L25",
+          "version": "repo-lines-v1:sha256:61ccbc4017e253c014d4e074e4c7c37128fe4d68d27fd34da6be77f7908a5dd8:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3ZTc4NTY2ODg2ZTZlZjYxM2Q1ZGZlNTEzNTdkNDVjOWE3N2E4OGQ5ZDhlY2E4NGI0NDU2NTQzYmM1MmEzMDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1278a1a2b3034164bb8a42eb48773252",
+      "statement": "The fold advances `last_folded_row_id` on exactly one condition — a fold that read new rows — to the last row the batch read; an empty batch carries the watermark forward and every refusal path returns before the write, so a refused fold does not consume the stretch it could not use.",
+      "evidence": [
+        {
+          "resource": "repo://nora/engagement/stages/debrief.py#L694-L716",
+          "version": "repo-lines-v1:sha256:933eff857a342db699ca818156c8c2ddb5058481f914b5a743ad653797587fa4:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2ZDhiMzJlYjQ1ZTA3ZDI5MGNiNzAzYTc3MjQyYTM1MjdjNjE1MzNmOGNkOGFjZWQ2NTIxZDdkZTVjMjhhODEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjExYzg2NDliYTI2ZjU5ZTY0NWJiZmI1ZmI3N2M1NWQzMWY1MTFkMDI5Njc3ODU0YTFmNWIyZmYzZjhhZTI4ZWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE0ZTRiNGZmN2E2YWM1MzQyMDBhYmEwNzMwNTJiYjc2YWVmZDFjODE1OGY1NTZhM2VkYjZhMmFmNjFkNWE1YTgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_653f8a687d6b4f0a907dfe84a715ecf0",
+      "statement": "Character and Culture accounts share one `culture` store as an append-only revision chain per key: a head pointer plus `parent_revision_id` meaning \"the same thing, earlier\", read inside the commit transaction under `FOR UPDATE` rather than passed in by the adaptor, and nothing in that tier retires.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/culture.py#L199-L247",
+          "version": "repo-lines-v1:sha256:fb05f20023c2cfc6dd2edcfaa69e4ff1be8d16727fcffda37c5a8e87b1cf0e01:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlM2ZiMWU1OGZiYzkwNDc5NGQ1MDczMTRmYTkxYzlmMmYxOThjODhkM2ZmMzk1ZTAwODI4OTAxYzM3ZGM5MWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2YTcxNTI1NzJlZTg0ZjEwOTA2Yzc0YjlmMmE5MjQzNGRkYWIwZTNjNDI4MTNiMDRlNTk3ZWZjZWM5NTFiMjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ2Zjg2MmM4ODZjNDU0YjhlMWNkMzU2ZTQ0OGUyODJlMTA1NzAxMTVmNDg5MWEyYjk0NWE0ZGZhZDY3OWIyZjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ1N2ExN2ZhOTZlNTM4NGVmMzIwNmU1OGMxZjM2OTRhOGVmZjY1ZTM1YzczMWM2YTA1NzE2ZDlmMDFhYzRmODgifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/culture.py#L1-L23",
+          "version": "repo-lines-v1:sha256:ecf142c077d7f25fbe01a7dac9ec072775ce7481d84ce520b5363c1c37cbf658:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1ZmQ1OTlkN2IyMDU2MTk2MjZiZmE1MWRmMzk1ZWFmODNiNDJiZmE1NTFhOGI1OWZmMjQ0MGRlMzkyMjZmZmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7b96bbfc2bb246fca645bc374b098eb3",
+      "statement": "Four culture key forms share that store and chain: a room's `primary_id`, `<unit>#unit` for what the unit is, `<unit>#character:<person>` for one person in that unit, and `<unit>#nora` for what she is like there.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/culture.py#L438-L497",
+          "version": "repo-lines-v1:sha256:80dbed7c95e94ec63ccf498a5edc1f90ed1f2dc5bf9d1ce20c65db3536d2758e:eyJzZWxlY3RlZExpbmVDb3VudCI6NjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhOGJkNmQ1ZjAxZGY1YjljYzExNDYxNzkzMTAwYmQ0ZGVkMjIzMDc1MDFiMDgzYTg4ZjI2YWFlYzY3NzZlNzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3MDE0OWUwNjlhZDY3ZWNjZjQ3MzY0NmZmMWM3NTAwNTBkMzI5ZDExMDAxOGRjNTc2Njg3OGVhZmExZDYwN2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZmOTUxYmM3ZjRlYjE1MDczY2IxYjZiMDI5MGM4NTkzNTQwYWFlZDQxYmRmNmUyNzJjMGRiMjExNzRjNjIyMDgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7e08e8be321448ecabbeae349661feda",
+      "statement": "`check_revision` is the shared gate for every account write: the body must be non-empty and within `BODY_MAX_CHARS`, at least one citation must resolve to something the session was handed (a message id, a `social:<network>:<id>` item, or a `response:<n>` episode), the body may carry no shown message or item numbers, the echo rule refuses a revision citing only her own sends where it is enabled, and `min_episodes` sets a floor of evidence episodes.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/culture.py#L373-L435",
+          "version": "repo-lines-v1:sha256:3971bf6496163817c7990c0616c33665add30cfba6785c961831c2ed8b3bd105:eyJzZWxlY3RlZExpbmVDb3VudCI6NjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA2YTFjZGE1MmFkMjc0ZTQ3YjFiMjZiODU5MGFiMTY3M2U5NGJiZTk2OGVmNjNkNDg4OTVmZGY5NzBhOTZiMGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTYwMGE3M2QyZTAyZjM1MmI5MGZlZjFkOGQ2MzgxMWJhNGE4ZWUwYzFiZWFhN2FlNDY1OGYzNmFhMmUxOTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc4ZDFlMjliOWNiYWJlY2QwZWQ2NjU4YjE5MDk5YmI3MWZiODhjY2IyMzJmMzIxM2ExNWEwNTM2YjYzZDEyNDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZmNDg0Nzg4ODU3MDBjMWQ0Njg4ZDQ2MTU2YTBkMzJiM2RhNzYzNGJjOGM5MTEzYzc1MDU3ZGUxZjQ2MmM1MmUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3fe11ee6980641c79076e276165d3e62",
+      "statement": "Character session writes are staged rather than immediate: each verb call is checked as it is made, `accept` returns the staged proposals, the runtime stamps provenance, and `commit` appends — a session that settles nothing raises `AccountNotRecordableError` and holds its batch up to `MAX_CONSECUTIVE_REJECTIONS` (3) times before it is counted `abandoned` and passed.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/culture.py#L120-L150",
+          "version": "repo-lines-v1:sha256:39c94b0a12b21f907875bd202b147ea323eb47220d13c0a0e4a4e0b19032f206:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJlODE3MWQwZWM1ZTFkZGZiNTI4Y2FkODc5YzYyNGNiOGUyYzVhY2MwNjgwODk5NjM0YjNkOWU0OGMxOGEzNzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxNDk2MzY4MzEyNTE4OTAwYWQ5NTc4NzA0M2IyNTk0MDkzZThmNzg3YjRjMGYzZmNjZmU0Njg5OTE4Nzc5ODYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdmMzRlMzYxMmU0NWNhYzc2YWI5MGE3YmQ0MTU2OWVlMzBhZGNlZjZjZGQwMDViOGMyZGRlZDM5MGM2NmYzOTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwNjA5Y2Q0OTUzOTVlYzE3NzNlYTUxZDEwMGVkYzc1NDI2NWRjNjEzMzRhMDlmOWMwOTllZGM2YjE4MDBhMDkifQ"
+        },
+        {
+          "resource": "repo://nora/language/character_session.py#L1-L19",
+          "version": "repo-lines-v1:sha256:a87574d634b270d289a0a2a371d67dbae472f34fa0757d5446b564607c58feee:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE4N2VhMGE5Njk2OTM4ZmM0YzEyMDI4Yzk2MDdlZGYxMjZiN2YwYmQ1MDk4OWE1OTgwM2I3YzQ0MjI5MmFhYjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_cc71ddffefce4fc59a88405c27e5647b",
+      "statement": "Culture's `BODY_MAX_CHARS` (20,000, below the database's 32,000 ceiling) is a corruption ceiling rather than a quality refusal, deliberately far above what the model writes because a length refusal holds the watermark and re-draws; the tier's token budgets are sized instead on the longest observed account (`ACCOUNT_CHARS_OBSERVED_MAX`, converted by `ACCOUNT_OUTPUT_TOKENS`).",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/culture.py#L98-L197",
+          "version": "repo-lines-v1:sha256:425c1485f7fb1c6edc30e2de26c419eb4cd5dfb31b29bca6714eb74e056bc58f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAwLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIzNDU1MzY5MWJiYTcxNDljMmViMzgxZDZlNzVhNzcxMDk0OWU0YTA2NDU1NDg0MTgyN2YxNGZhOWRmNzI4ZDUwIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIwMWJhNDcxOWM4MGI2ZmU5MTFiMDkxYTdjMDUxMjRiNjRlZWVjZTk2NGUwOWMwNThlZjhmOTgwNWRhY2E1NDZiIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI2OThiN2FkNzFhZTU0YzY3YTIxNGFiODZlNjAzNDYyOWY2MTVjZjczNGRkZDFiMWZjYmU0ZWExODQzM2YwYTM0IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI2YzYyODhmNmNkMjhhMzZiMTljNjJjNTMyMGJmMjU4YjQ5NDNkOTZkMTFlOTJhMzZlMGJkN2YzOTlmNzgxZTcwIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_9c3bb143d6f34777a45211ebcb7645fc",
+      "statement": "A lesson is one append-only revision chain per lesson per unit: reinforcing, rewording, retiring and rolling back each append a revision, the head is the highest `seq`, and a retirement is simply a revision whose `state` is `retired`, so an operator's rollback is one more revision copying an earlier one back.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/lessons.py#L10-L16",
+          "version": "repo-lines-v1:sha256:2c8b42c6181da0e44eda00c0db28763b9c715e3404ed95e2d09ef95d4c974479:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzMzNDE3OGEyODExNDU2NDFlNDBlYjkxZmY3Nzg2ZDNlMjNiNjZkN2QzYjNlZTNlYWI2NmJhZjNkMzE3MjE5NSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNGEyYzViZjEzNjgxM2YzMTY5ODhkMjk3YTA2ZjFkZGZlODJjMzYxMTdlNjhhOWQ2OWE0MTQ1M2Q4MWJlZjA3NCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDA5ZDQ4NzIxMzcyOTI5NGFjZTQwMTUzNmM0MDYyZjQ1OTQ2NTVjNDc5MmE1OWY4YjBiMWQzYWY2ODY1M2RlYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTlmZmUzMWRiMzliNmI4Y2FjMGNmNTdhMmQ1OTgyN2JiMDk3YjNlZTQzZDA1OThjZDRmMDhkZGM0M2VjMDViNCJ9"
+        },
+        {
+          "resource": "repo://nora/infra/sql/lessons.py#L1-L12",
+          "version": "repo-lines-v1:sha256:1eed7b2feee8cee263a11bced6a1aacda60dec9a64eaab3b212ac9dea56b1324:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1OTUyYjg5N2RlZjlkOGU1ZTNlNGMzZDJhNzhlYmY3OWFmZjBkZWNhMjA1ODQ1MjYzYzYwOTQwNjgwYzNiNzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/infra/sql/lessons.py#L122-L173",
+          "version": "repo-lines-v1:sha256:8bfdfe3303a078411595e8a89da964025a57ab9f227a73074e79647be50d6770:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg5NjRhNTMwMGM0OGU5MDNmYTA5NzY4ZWNkOGEyMzc2MzQ5ZGE3YjcwYjJmZjZmZjA0N2E1M2Y3MDY5NzRlZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3YTk2OGIwNjQwMDkxMGJjM2JmNDUzYjQ3M2ZkODA4OWJhODhiZWU0NGMyMTM0ODAyNWM2ZjgwYzVjMTEwYzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFmNWFjOTQyN2VjMmMwZTUxYTZmZGVhNTQ3OWMzZjM2MjkyMWNiZmFkMWY4YTk3MTgzZDU0ZDIwZDZmZGJlZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_173ed592eaad4ec2bd8a3ddfab513129",
+      "statement": "A lesson write commits at once where a Character revision is staged, because the caps are judged against what the unit holds at that moment and a session that retires one lesson then writes another must see the retirement count; the operator's `retire`/`rollback` reach the same `LessonBook`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/language/lesson_book.py#L1-L27",
+          "version": "repo-lines-v1:sha256:de69890ffd155e4ae4722c10c5809f3e5bc0c30cb3fa0371ec3e744f63f8717b:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM0MTkzOGIwODEzMmVmMjBlMzAwNTJmNTc3NThhMzRiMjViMjM0MDA5ZDFhOTgzNTM0Y2FmODg0MjEzZWU1OWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_54db73ae14234fa2a5c47de2ebd27edf",
+      "statement": "`check_lesson` refuses a write for an empty, over-long or too-short body; an unresolved or self-only citation set; fewer than three distinct episodes unless a correction is cited; a restatement of a law rule or of a sibling active lesson (5-character run coverage of at least 0.8 after normalisation); a re-learn whose evidence is no newer than an operator retirement's floor; and either cap (12 active lessons, 2400 characters per unit).",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/lessons.py#L211-L267",
+          "version": "repo-lines-v1:sha256:a953a77dda76098626f4aeb2d4143b95535944a817e15842876a099979b57fca:eyJzZWxlY3RlZExpbmVDb3VudCI6NTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxODdmMzM2MzFhOWM1NWMzNjhkYzgzYTRlYmFjZWE3NzA2YWQ5OWUyZjI5MGRmOTAyYjE0ZWJiY2M3MTNhZDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTYwMGE3M2QyZTAyZjM1MmI5MGZlZjFkOGQ2MzgxMWJhNGE4ZWUwYzFiZWFhN2FlNDY1OGYzNmFhMmUxOTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA5ZjkzMDgzYzE5NzEyMWI5ODI3MDBiYThhZmFiZDE3MjJjZjFkM2U3NDA0NTA5ZTgwZWZhMjcyNDdmNjJmMDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk5YmEyNGJkNzAxOGY4ODcxYTM1YjMzZmU4YzlkMThkMzY0MGVkNzVmODE0Y2NiNzA1OWRhMGY1YjFjNmQ4OWYifQ"
+        },
+        {
+          "resource": "repo://nora/domain/lessons.py#L59-L125",
+          "version": "repo-lines-v1:sha256:b3265d4c936a1920a7016e673b260aa64010a008e4a4001b94ebfbe964183c80:eyJzZWxlY3RlZExpbmVDb3VudCI6NjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ0MzRhMzAyZWRiYjQzNmFjOTQzZmIzZTMyMDU1NDM5MzUyMTJjNTMzYWJhNTVlMzNiMzcwYmE1NjU3MWYxYzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg1ODBiNzY1MThkYWU5NzlmYWViZDAyMzY3YTI5MjkyYTUwZDk3NjA5MjI1MWEzOGE2Y2UzMDg4MGJhNDI4MjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFkZWViY2ZkNDg1ZDU3MDYxOGNjNzI0YzA4NzQ4YmYyNDRkNDI1ZDljMzJjZjYzZmFhZTNhMTkzMDBiNWZlZDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlhOGI5Y2MwZmJmZGU2Y2ZlMGRiNjFlMTBjOGFmYTkzNzg4NDkxZTY5ZWViZGRhMjJkNWZjOWUzODkxODNlMzYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2938e3cd42d344b799ea394aa9bc6d43",
+      "statement": "The doctrine check is a separate model call made last in a lesson write, against the law subset in `core/` and `rooms/`: `conflict` writes one Tension row and refuses with `loosens_law` naming the doctrine file only, while `error` — a timeout, a cut-off, unparseable output or no law — refuses with `check_unavailable` and records nothing, because an instrument error is not a pass.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/doctrine_check.py#L30-L37",
+          "version": "repo-lines-v1:sha256:1a970bdab70169b447b1363c194fd1819389e27b6e41f2902671c5a67ebd996c:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjM2ZmVlMzg3MmUxYjBmNzRhOGQwYjFiMzYwMDZhMTgzM2U5MzQzOTI1ZGFjNjY1ZmE2NWNmZGYzMjhhMjVjNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzc4Yzc0NzM0MmMzMzAwM2E4OGEyMTk3NDc5Yzg0N2Q3NDhkZjg0OWNhY2UzNTBhOTE2Yjc2MGUyZWE4NmNkMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTk5YzA3ZDI4MDA0N2M5NDA2N2QxODZhYzMyODFkNWEzNmUwMWNkYzU0NjNjNzU1MTcxMzdmZGU3N2RjNGRiZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOWE4YjljYzBmYmZkZTZjZmUwZGI2MWUxMGM4YWZhOTM3ODg0OTFlNjllZWJkZGEyMmQ1ZmM5ZTM4OTE4M2UzNiJ9"
+        },
+        {
+          "resource": "repo://nora/domain/doctrine_check.py#L79-L107",
+          "version": "repo-lines-v1:sha256:95f921eba7a0d4a3d00a6bd035f46f6f17e66474563ae8d174f1908f60f29e3d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZjZDgwOGEzNDMwNDIzZGYwNjFiYjQ3OGU4OWFiNWRmM2JmMTRlZmUwM2Y1MWJjNzM2MDI0NzVjMmNiYTc2NGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3YjMxNGI5ZDU1NmY4M2Y5ZTZmM2QxMzVhNDU1MjVjNGE5YTY0YTY2OWQzN2IzMmM1MTY0NjlmNTM0YWY0Y2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVlN2RlNmVlYzU3ODA0ZTI3YmY1ZmIyZmNkZmYyOTdmM2FhYjA5MTA2YTkwMjQwNzA5NDgzYWIxMjk0ZGY3NjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://nora/language/lesson_book.py#L295-L334",
+          "version": "repo-lines-v1:sha256:d21c594d17579a9fb8f7f8a003a51cbf269b48a12f1ad1627644617818024e2c:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcxNzFkYmYwMjhlYWZiYjg3ODNmNTViNTI1MTBkNTQ2ZTdmMmUyNWIwYTg1Zjc2ODFhODFhY2Y0YmNlYTdhNDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc5YTQ0NjViNWQzOWY5NGMwMjU5NGJkOGFiZjJlZjYyNDI5NTgzZWZhNmNhNjE2NTFlMGEwMWIzYTMwNjM2NzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU1ZmE4MDYzMmI3ZmNiNGY5ZDRjZDE1NzY1MDU4ZTY1ZjgwZjk0ODc2YmQxODFmY2M2NGU0NzFlNzFjZjhmNjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRkZGM1ZWZmZmI4ODY4ODI4YmQxMTNkNmJhN2U3MDgyNWUxMTA0NGFiY2MzN2RlYzMxZmQ0ODNjZWZjYzJlZDMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_89013b01ae90460290cb510b6a0ce38d",
+      "statement": "Config refuses to load when `[lessons] enabled` is set without `[dreamer] enabled`, or when the doctrine check's resolved model is the Dreamer's own model, since a judge on the writer's model grades its own homework.",
+      "evidence": [
+        {
+          "resource": "repo://nora/config.py#L4266-L4285",
+          "version": "repo-lines-v1:sha256:c4bfb567a09da2c5ab3c986b1ddb5d376e0a7b915e926cf40a94cc540c0ce1e5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlZjFjZGQwZjU3NDMzY2U1MDc3OTA3MjJlMmY1MWQ5NzM1NmNiZmZhN2IyNGRkN2NhMTM0NDgzMmQ0ZTUyNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyYWIwOTBiY2QxNjIwZmE2MmVhZWUxNTdhNzRmY2E2MzVhYTI5ZTEyY2JmZmQ2MThiNTc5MmQ4N2JjMDNhM2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU4MDUzNzAyYzBjYmFkNWY2NmIyMzk4NTg2OTJmMzE1NGUwZTU3NDVjZGM2ODY1ZDBkMTgwODlmYmMwYTMxNTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhlYmY5NjRkOWJjOTcwNWJjNzRhOWExMjQwZDIyYzU2ZjJjYTM1YWNiYzM5OTI1MWZiNjUzNDlkNzM1ZTI0ODAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6d446945cb46475f9642bc304ff158e9",
+      "statement": "A Lessons session wakes on `[lessons] wake_batch` closed episodes past its watermark, on `stale_seconds` with any new episode, on a held lesson reaching `horizon_seconds` (counted as a full batch so `commit` can retire it), or on a message read as a correction once it is `correction_quiet_seconds` old; it is handed nothing, cursor unmoved, when fewer than three episodes arrived and no correction did.",
+      "evidence": [
+        {
+          "resource": "repo://nora/language/lessons.py#L149-L251",
+          "version": "repo-lines-v1:sha256:729c9d6ecb1f81aa0c199e27d5e5c2690437046ba3c669bee2fb5b94cdb3dfdf:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAzLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIzMzBlNzNiMDI3ZjZlYmVlODEzYzRkYjRhZTM1YmVjZDQ1N2Y3YmI5NDdiNTQ0NjI3ZDg0OGE0MGJkNjllZWEzIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJjY2RlNmQ1MTFiYWQ5ZDgxM2M0Y2UyMjU3YzIxMGZkMzVlMGVlZTI0YTNmMjc1ZjkwMzY1MzMyNDJlMDgxMDc0IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJiYjA3MmYwZGNjZGE2NGE0YTNkYmI4ZTdhOTUwZTNlYTY0NTdkOTRjZmFiNmFjZTAwYzM2YmE3OTljZGI5OGQ3IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI2YzFmMDJmZDdlYzFkNDYyYzBjYjgxOGI5NDhmZmU0ZjcxNWIyYzJjNDMyNjMwYzIzMmRmZTM0ZDQyNzQzZmE5In0"
+        }
+      ]
+    },
+    {
+      "id": "claim_f2dc818ceeac40cfa8e8b2cf7cb5616b",
+      "statement": "Lessons decay is code in `commit`: a lesson whose head is older than `[lessons] horizon_seconds` after the session ran is retired, and `commit` runs on a blank run too so a horizon wake with no new episode still retires what is due.",
+      "evidence": [
+        {
+          "resource": "repo://nora/language/lessons.py#L490-L514",
+          "version": "repo-lines-v1:sha256:39cd95804b71221a1d1c13e53bda68e0a157b74e9ddb5cc3cdb5e01ef75a594d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzYmIzMzA3YWU3ZGViOThiNDVjYjhjYWY5ZjMyZDNlOWZkMTVkZDQ3OTk0MjI0MjZmYmM0MjdlOWM3YzZjMjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBhNzNlNTg4MjQxYWVhYThjMmJmYTRlODhiNzhhMTE2MDI2YjcyNWU4ZWZlNzViOTI4ZTAxYTdkODYzZDE2NzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMzZDRmZjI3MjE5MzYxYmE3NWQ1ZGZjYmUyZTQzZmFiZDI3ZWI4YzhkNTZjYWJjODk1MDJhYzIyMGVkNWZlMDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ba953093422c4b978cb228a260e4add0",
+      "statement": "A Lessons session never sees a lesson id: held lessons are rendered as handles (`L1`, `L2`, …), refusal details are rewritten to handles or to \"a lesson the operator retired\", because the Dreamer's screen refuses any verb argument carrying a UUID.",
+      "evidence": [
+        {
+          "resource": "repo://nora/language/lesson_book.py#L144-L182",
+          "version": "repo-lines-v1:sha256:89012c5544d7a9c3bfd2302c6f36516ed87f3f1291c3f922e3e13adcd21d764b:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxOWMxMDYxODFlYzJiZjM5YmQ3ODU3YjVlOTVjYjU3NDMxNTIwYzJjZTcyNGU4MTdiN2RlYjE2ODVkMmQ2MzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2MGM0M2NhOTYzZTJlNzk2ZjUyMjU1OTc4ODI2YmNhNDczNmNhZTc4MDM4YTkzNGQzZDEwM2VjZDAzY2QxZWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlkNTQwODA0OWM4OTcxZDU4MjQ0MmMxN2E2YjQ1YTUzNDJiYzU1NDZhYzhlOTc2MjY0ODRkMjUyMzlmYTIxODgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNiZTkxMWIxMDlmNzU1ZmZiN2VlZDY2NGI0MTA5NjM2NGZkZmE3MGU4MjM4NDQ0ZmI3MjY1YWJmMmNkZDQwNjQifQ"
+        },
+        {
+          "resource": "repo://nora/language/lessons.py#L30-L33",
+          "version": "repo-lines-v1:sha256:7256fef5153c4352fb45361525a63c54cdb98cd454f6a8d70aabfc407918b8d9:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGEyMGE4NzczNTI5MzBmYmM2YWIwN2MxMzg2NWM3NjgyOGJkODdiNzZkNjkwMmI2YTA3ZjU5MGFjMjU2YTExMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDY2M2IyZDBkOGVhOTlkMGZiMThlZjRhNzFkZGM1MjMzODJkMGUxNDU4MmVhNThjNjg4ZjEyY2I2YzZhYmJkNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmU5OWQ3MmVlMDA3MTA4Yjc2YWMyY2QxM2IxNDY2NWE2MzJkODljZjk1ZTA5YzcyZmFjNDIyNzc3OTI3MTk5OCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_ee5b653fc29d430ca78b6c8339920a45",
+      "statement": "The operator's `nora lessons retire` appends a retirement whose `relearn_after` is the newer of the lesson's newest cited Record id and the newest Record id now, so later evidence no newer than that floor is refused `relearn`; `rollback --to N` appends revision N again as the newest revision, undoing a retirement as well as restoring a reworded lesson, and both are dry runs without `--apply`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/cli.py#L1167-L1205",
+          "version": "repo-lines-v1:sha256:0fa5c0839bf665472a3451cba7730102dd1800472c22a6008a26f8fa28171099:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY4N2JmOWNiMTE4M2UzMjE1YjE5OTRmODhjMWVjNGIxMzNiOGI1NjZhNDU5MzhiNDNmNzMyOWM5NWI5NmNiOGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ2MmM3ZGExZTA1ZDkzZmI1OGZhYmQ4MTM2OGU5OWJlODg2MDg4NTMzZTc2OTg0ZGM4YjYxOTAxYWMwN2YxNmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIzZmZhZTdmZGU3OGIyOTlmMWEyN2Y3MTNiYzgzMzVjYzYzMjFlMGExYjEyMTgxNGQ1NjNjOTg4YWMwMDY2YTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJkYzIyMjdjNDJiYTQzNDI1NDJlODA4NjdiZjA1ODRlYzQzNWNjZmE5NTQ0MmUyZjQ4N2YyNzY3ZmRkMzZhYzQifQ"
+        },
+        {
+          "resource": "repo://nora/app/lessons_cli.py#L1-L13",
+          "version": "repo-lines-v1:sha256:caee657fd7939e2cbc93034dfdb0a5c567e27b7af85df9e3050163d01dd8def6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ5M2VjNWViNDllYWU2NTM0ZDFkOWZhNDk5YTg1MjIxMTczZThlMTFlMzc0MDQ1ZmMzOTk4ZjMzZjgzOTk2YjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/language/lesson_book.py#L336-L367",
+          "version": "repo-lines-v1:sha256:8eb531de9d1f4af78c448065a361c56d19c60915634dbc3a2ec5a644d3bc5464:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA4N2ZkOGExNmI2ZDAyOTMyYzlhMTRiNGU0ODY3NDZlYjA0ODRhNmY0Y2Y1Mjg1YjM4NGMwMDQ1N2NhY2QzOTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkwMjM4OThiM2VlMWUzZjg1YzYwMTExZjAzYzlkZmRlMjRjNjBhMDJhZjA0YzhjYmNjYTcyNDllNGFhNDAxOGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcwMjY0NGZjZGVmMzIxMGI1ZWNkMTVlNjE2MTU5ZWI3ZTlkNzc3MTcyNmRkZjNjMWM5NTIzNWNjNWFlYmFlYWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMxODYyOWIzMTZlOTNmYmI4MzRiNWFhMTU5YjI2ZWFhNzdkYzdhMTIwOTg2MjhhZDg2MDQyNWExMzg0MjkyMTQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e1d088bf59f54eaea49d7b0959923240",
+      "statement": "Re-entry is the prefill block table: `<self>` at order 1 and `<lessons>` at order 2 both sit directly after the doctrine so the law is read first and wins, `<culture>` is 54, `<unit_culture>` 55, `<character>` 56, then `<standing>` 60 and `<standing_working_set>` 65 immediately before the transcript.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/prefill.py#L124-L216",
+          "version": "repo-lines-v1:sha256:7ea530050ba51d21e9e01e752f4f8e184152b1f2b5d9fadb1808033198680a3f:eyJzZWxlY3RlZExpbmVDb3VudCI6OTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAwYTg2MmJhNTQxMDNmZjViMTgzYmZlYzU0YThkZmUwMWI0ZDNmYWNkY2UxMDNlNzJmMDhlYmQwNWMzNjY0YWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhZmJhMDUyN2MzOTUzYzRiNmUwZTViNTczOWJhODM2MTJmODA1M2JjZGM5NDY2NzMwMTkzY2QxZDU5MGI0MDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFiNzcyNjFjZjYzMTc4MjNlMWUzZWExNjg5ZTQzMzJkODBiNDI4ZTE0ZjhkMzQwNjlkZjRlNzc2ZDc2ZWMxZWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFiMmVjZjhiN2NlMzQ4ODc4MjMyNGIwOGVkMTJhYTk2MTQ5NzM1Mjc1Y2VmOTVmNmJlMmRiZDZhNzAyMWY1ZTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1ecd194b05bd4fb9aa9b0eb1bcd83a1f",
+      "statement": "`<standing>` deliberately breaks the widening-scope block order to sit last before the transcript, because it is read as a pair with the transcript (where you were, what has been said since), and it hedges itself as possibly out of date while carrying its own age.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/prefill.py#L855-L899",
+          "version": "repo-lines-v1:sha256:d479c126b8cf2db598a5c816dc6e8951cd8a772b9be6be67a9c2b3220a735c9c:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRlMjA0YzE4NWVkYmUwZGQzZWNmNDM4YjJjMWViZjVkNzI1ZWQ2NGRiNzY4NTQzNGY4NjYwNTczY2Q5ZWU3NzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA4MWY5YjBmMDc1MDhlNTVlM2M1NTFhNjZhMTk0NjU4ZDZjYmVjNzBiM2UzOTkzY2ZjYjlkMGRjYzAzNDA4MDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg0YTA0Nzc5MzZmMDhlZmZiMDUyMGViMDhiOTQzOGFhMTRmMmUxNDI2OGQ5M2I4ZTA4ZWY0ZDY1YjEzYjY3NGEifQ"
+        },
+        {
+          "resource": "repo://nora/language/standing_render.py#L1-L75",
+          "version": "repo-lines-v1:sha256:def0a5e0238000213caa13ad2ddd11e8d0ed937f96b1ad536884d70542b85d47:eyJzZWxlY3RlZExpbmVDb3VudCI6NzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0NGY3NjUzOTIzN2UzNDMwOTVlOWNlYzk5NzJiNmYzYTM2YzIwMDM2NjMzZDNiNmY1MjAxYmM3OWFhODQ3ODIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhlZDYwZjY3OTc2YmU4MWEwZjI1ODgzOTI3NTY0NTU0NjViZDE3NWI1N2E4Nzc2ZDU0YTljMDc1YjIyNmM0Y2IifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9aab729f628147d4874c21d3710322af",
+      "statement": "Lessons rendering is gated separately by `[lessons] render` and inherits R-31: a room that may not show `<self>` is not shown the unit's lessons, and the bounded read is fail-soft with a failure counted under `nora_errors_total{stage}` instead of rendering an empty block.",
+      "evidence": [
+        {
+          "resource": "repo://nora/engagement/context.py#L731-L747",
+          "version": "repo-lines-v1:sha256:1287c9ff186856942942f51177a9e05a949f69eeb3eacb6e3a7201e2e9468856:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJmZTdjMmRmNTIxYTcyNmNhNmNmZGQwNTg2NGViODdmMmI3MmVlMmM4OWFjODNlODViN2ZhZDdiYTYzY2FmOWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ5NTM4YjQxZmZkMTFmYjY5N2QwOTEzYmI2MDFlZDg4M2E0MDM2MDQxYTNkNTQ4NWEwYjUwYmUxOTk0NmU2N2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIxOGU2NGU4ZmVmNTc3NTU1NzUzYTRhZjliNjZmZGQ1N2Y2NGNiNjRiNGRkYzc2ZWI2YzkwNzY1MDA2NGM4MzkifQ"
+        },
+        {
+          "resource": "repo://nora/language/lesson_render.py#L49-L77",
+          "version": "repo-lines-v1:sha256:b849ffa32ef5f0fd1801a005f64a808486132cf388c0dfcdcdb93d7cf364bf8a:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlYWM4NWNmZTkwMGZiZWY2OWFhMDU0MDNiMjFkNGRkNWE4MmI3NWQxNTkzNTQyNmRjZTJlYjNmYjJmZDA1ZGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmMjEwNjI0YmRmYjQ2Y2E4ZWFmNGNmMDBiZjc1NDkzYmNkNzhlNDc1ZDRiODlhOGE1MTcyNTBkZDNjZTEyNTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZhYTZlNjA0MTM0YTM2MTljN2E4Y2ZjM2QyMzIyM2ZmNjY1MDE2NzNhMzJlZjU4MTZmZDkwODkxMmVhZGQyZTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7816743082d04ba2ab59a02fcb28a382",
+      "statement": "Absent learned state renders no block at all: `render_standing`, `render_lessons` and `render_culture` return nothing rather than a placeholder, because a room she has never folded is not a room she considered and concluded nothing about.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/prefill.py#L917-L925",
+          "version": "repo-lines-v1:sha256:a2499db61bbda265e7f40b5e83fa3b20e1db10abfe8b1695e5e51bf0ab0bb392:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiM2I0MjA2OGFiMGNmODI0ODhmNzI4NTgyYzUzY2Q2NDc5MmJjNzE3Yzk2NDkwZDg5NTQ5MmQxZTYxYzMzYTU2OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiN2NmOTIyYzRhNjg0OTAzNmVhOTA3M2QyYzNlMjkxMjgyODg1NDcyZjFjYWU3ZmFjMmRiZDUyNGMxMWY2NDJhNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODhhYzFjYzU4YmRlMmM3OWVhMmQ5MzZlYTk3NTc5MjdkYzRlNGJkYjBlMDc5NzQ4MjZjM2RmNmQ5YjI4ZTY4NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYmFjYmIyNmYwMWQ5MzA3M2RlOWY1ZGM1ZDg3MzlmOGUyNjFkMGU0N2JhMTE1M2Y5MmM1NjI5NWE3M2I1M2U2MiJ9"
+        },
+        {
+          "resource": "repo://nora/language/lesson_render.py#L67-L77",
+          "version": "repo-lines-v1:sha256:d18626ed88f88faf450db8522489e25a12ed6113a310862087163d5d9875a226:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI5ODZlODVlM2RkNTNlYWU1YzEwMGNhZGZiMTRjMmZmZWM2MGM3NGI1ZjRkZDU1OTFlMDEzOTQ3ODM0MzdhYmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmMjEwNjI0YmRmYjQ2Y2E4ZWFmNGNmMDBiZjc1NDkzYmNkNzhlNDc1ZDRiODlhOGE1MTcyNTBkZDNjZTEyNTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk4YWEwOWQwODAwMDFmMmVjNDdjNGU1MTg0OTBjMzIzZTMyZTA1MTEzYmJjNzIyMzBhOTM5YThiZDFkYmY1ZDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMifQ"
+        },
+        {
+          "resource": "repo://nora/language/standing_render.py#L43-L62",
+          "version": "repo-lines-v1:sha256:d55d33665832573949ae86e267fbbcf17178575724da1a7dc4578759c4b87927:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3OGMzMTlmM2Y2MGZlMjZiZGU1MjRiYzJkZDNhYzFkZmZkOGNkYzExMDgxODRjNDJjMThiMGZkYWE0YTI5MzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlN2M5NTdiY2I0NGZiNjczYzk4YjAwNTBhNzVkMzgwODJkYjgxZDkxOGRlMzEzYTNmMDdjMTIzNTMwNmQ3ZWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OTUwYmVlOGRkMjU3ODkzMjQ3NWQ3MzUxYWVlOTU2YzU0YzU3MTUzNGMyNDExMWQ5NzI3YTBlMzA5MDI2MzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY0N2M3MmQwYmM2Zjc1OWI0MjZkOWUwMDg0N2QxYTNiYTZiZTQxNmFmMWM1NWQ0NTMyOTBmY2YyODM1YmFjMDIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_13d12eac43b64edc946e314418adabe2",
+      "statement": "The decision log is the other place where what happened re-enters a prompt: it records what the loop itself did across the participation, proactive and tag paths, each reader excludes the writer that answers its own recurring question, the relevance gate neither writes nor reads by decision, and the write path is fail-soft so a store failure costs a thinner prompt rather than a dropped reply.",
+      "evidence": [
+        {
+          "resource": "repo://nora/domain/decision_log.py#L1-L58",
+          "version": "repo-lines-v1:sha256:9372dc73fb5269eaaa0a8ed8035a619037cc480ead07eb47c5ff77919e7e4089:eyJzZWxlY3RlZExpbmVDb3VudCI6NTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjllMDgxNDVmODYxZjFhZmM3Yjk2N2Y5ZjkxYzRlNTEyOTIxOTJhYmNjMzQ0MGI0NWY4YWI2OTA1ZDYzMjE5NDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFjZjcxNjU0NGFkMTUwYmQ3NzU0MjU0YjhjMWZlZTcwMDg3MWM4N2E1NWI3OTNiYWVjNzkwNjc3NThhOTk1YjEifQ"
+        },
+        {
+          "resource": "repo://nora/domain/decision_log.py#L83-L101",
+          "version": "repo-lines-v1:sha256:b5d43fee1c4afddab3f2d59021f537bc692183f37d255a269149f886850ea361:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzMTA5OWYyNTE2M2IwYjJmM2FjNWY4MzA1MzA5YWNiNTE5NDNmM2Q1NjgxYmEyMzY1M2Q3MzVkOGRhYzRmNmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRhODFmN2IzYjE1ODRiYjU0MTIzMWM0MDdiYTYzMjEzNmEwODYzNjBjYTU4MTE2NjBjNTFlOThkNjg1YzQxMjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVlODFkNmU4MzFmYzMyNDg0YTdkZDM1ZWE4OTc5MmY4Y2Q5NGNmNjMzNzFmNjUwN2ZkMTdjODAyMGIwYjJhZTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhYWY3NjM3Y2I2ZTdlNWRiODVkNjM0Mjc0NjAxNGRmMDQxY2NkNTU4YTkyMGIyOWViNmFjNzE5ZDdiYWY1YzIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_95cccc296b0a4ebf8e3a9af9acd97e01",
+      "statement": "The debrief's worst-case slot hold is asserted at startup as `[standing] timeout_seconds + STANDING_STORE_CALLS_PER_FOLD × store_timeout_seconds` not exceeding `[standing] max_slot_hold_seconds`, ungated on `enabled`, with the per-fold constant fixed at four bounded store awaits and a test counting them from the stage's own source.",
+      "evidence": [
+        {
+          "resource": "repo://nora/config.py#L4206-L4250",
+          "version": "repo-lines-v1:sha256:cb1ebe3a88037c22fe5d95da42756e5c25dd74b584d1402f07103484ff649240:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlZjFjZGQwZjU3NDMzY2U1MDc3OTA3MjJlMmY1MWQ5NzM1NmNiZmZhN2IyNGRkN2NhMTM0NDgzMmQ0ZTUyNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyYWIwOTBiY2QxNjIwZmE2MmVhZWUxNTdhNzRmY2E2MzVhYTI5ZTEyY2JmZmQ2MThiNTc5MmQ4N2JjMDNhM2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU4MDUzNzAyYzBjYmFkNWY2NmIyMzk4NTg2OTJmMzE1NGUwZTU3NDVjZGM2ODY1ZDBkMTgwODlmYmMwYTMxNTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFiMjUwN2FhN2FkYTc1YWIzZWI4MmMyODM1YTNmZjI2MTI2ZTc0Y2VkNGVjNmJhZmU4NGU1ZGIyZTM4MjhlMmUifQ"
+        },
+        {
+          "resource": "repo://nora/domain/standing.py#L65-L83",
+          "version": "repo-lines-v1:sha256:48327070ddaafa042940d892bac5d620034b49939e58a6e167d76c5ad42447c9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlZGQyOGQxZjhjMTAzMzBkYmU5YjFkNmVlMjllMTQwNjdjZWU0MTUxOWI3MDlhOTA5ZTYwN2MwNWFjOTJmNGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5YTI5YWFmNjEyNzI0MDU2NjBiMGM4M2FhMTc2OTRlODczYWVlMzE2Zjg4MWM2ZjBlMWU3NDUyMDEyNzJmZjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI1M2I4NGMwYTYzNzFiN2VjOGM5YWViNjdiMjIzMzc2NWFkZDgwNWY4NDg1ZTcyZGU3MTE0ZDMxNzkzZmQ4MWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdkNTNkMTgwODhmZDM5N2E4ODQ2NmMxMWRkZmU3ZDM5YjgzOWU4YWYyZDliYTE0OGYyM2E0ODc4NzJiNjQxNGYifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_debrief.py#L831-L843",
+          "version": "repo-lines-v1:sha256:60c215c85423a71b4b20687ad5088a42af10f1e5246b0916aab1ba33a899d0c4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiMzk0OTI5NTBmYWE0ZDRhYzZhZDFkNGVhN2YyZjEyZTY0NTc3NTk0ODBlMDFlMGJhOTEyYTdjOTU1MjA0ODIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2YTcxNTI1NzJlZTg0ZjEwOTA2Yzc0YjlmMmE5MjQzNGRkYWIwZTNjNDI4MTNiMDRlNTk3ZWZjZWM5NTFiMjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBmMDdhMGU1ZDAwNDhhODAwN2JlYWMwMzEyNzgxMWRkZjkyNmZlNDc5OTMwODNlODg5NTY2YWNlYTFkMGRhNWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNlYjRiNjE4M2I4NTY1MDMzZDg4OGU4N2M5MzViMGE1NzhjOGQ2NDFlYWU4MDBhNjIxMTE3ZmQ2Yjc0MmY2NWIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0840510bd5d2438eb010454444de1d8f",
+      "statement": "The shipped `config.example.toml` still describes five store calls per fold, including a note-proposal call, while the validator and the stage use four; the arithmetic follows the code constant, not the comment.",
+      "evidence": [
+        {
+          "resource": "repo://config.example.toml#L1058-L1067",
+          "version": "repo-lines-v1:sha256:88bebb0a5191009866842280b94d67640f6ecf203ff086bb8319cfd56fa39a5c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEyNDM1YTUyNzJjMTAwZWUyYjEyOGU3M2YwYmEwNmY0ODUwNjlkMzZhNDkzODNmZjdkNDYwMjNjMjBmM2E2N2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlhODRmNzlmN2YwOTVkMmRlMzQzZjdjYTJhMTkyNWI2NjBmNTI1NWRjMjkwZjljYWZhNWQ1NzFlNjhkYjc3ZmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5MDNkMTk1NzU1ZTE1ZGRlZDZiMGNlMWQ3ZjI0MTc2ZTQ0YzY4ZDJiZjIzM2I3NmI5ZmVmNzU5YmQyNzc1YjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFhMzg5N2Q0NTk3ZTgyOWE4MTc4NzgxODM0NGQyN2MxZjcxZjk4YTgzZWM3ZTk3NjE1ZTc5NjRmNDIxODNhZGEifQ"
+        },
+        {
+          "resource": "repo://nora/domain/standing.py#L65-L83",
+          "version": "repo-lines-v1:sha256:48327070ddaafa042940d892bac5d620034b49939e58a6e167d76c5ad42447c9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlZGQyOGQxZjhjMTAzMzBkYmU5YjFkNmVlMjllMTQwNjdjZWU0MTUxOWI3MDlhOTA5ZTYwN2MwNWFjOTJmNGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5YTI5YWFmNjEyNzI0MDU2NjBiMGM4M2FhMTc2OTRlODczYWVlMzE2Zjg4MWM2ZjBlMWU3NDUyMDEyNzJmZjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI1M2I4NGMwYTYzNzFiN2VjOGM5YWViNjdiMjIzMzc2NWFkZDgwNWY4NDg1ZTcyZGU3MTE0ZDMxNzkzZmQ4MWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdkNTNkMTgwODhmZDM5N2E4ODQ2NmMxMWRkZmU3ZDM5YjgzOWU4YWYyZDliYTE0OGYyM2E0ODc4NzJiNjQxNGYifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-20T05:37:18.064Z"
+  }
+}

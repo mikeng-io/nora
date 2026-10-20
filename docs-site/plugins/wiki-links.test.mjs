@@ -12,9 +12,27 @@ test('repository Markdown links become public directory routes', async () => {
     '[source](../../README.md)',
     '', '[cognition]: ../architecture/ambient-cognition.md',
   ].join('\n'), { fileURL: new URL('../../openwiki/concepts/continuity.md', import.meta.url) });
-  for (const target of ['/wiki/architecture/memory/#retrieval', '/wiki/architecture/ambient-cognition/', 'https://example.com/page.md', '../../README.md']) {
+  for (const target of ['/wiki/architecture/memory/#retrieval', '/wiki/architecture/ambient-cognition/', 'https://example.com/page.md']) {
     assert.ok(result.code.includes(`href="${target}"`), target);
   }
+  assert.ok(!result.code.includes('href="../../README.md"'));
+  assert.ok(result.code.includes('source'));
+});
+
+test('private repository references retain their labels without broken public links', async () => {
+  const renderer = await createMarkdownProcessor({ remarkPlugins: [wikiLinks] });
+  const result = await renderer.render([
+    '[`pipeline.py`](../../nora/ingest/pipeline.py#L303-L406)',
+    '[config][source]',
+    '[wiki][page]',
+    '', '[source]: ../../config.example.toml',
+    '[page]: ../concepts/memory-and-record.md',
+  ].join('\n'), { fileURL: new URL('../../openwiki/workflows/ingestion.md', import.meta.url) });
+  assert.ok(result.code.includes('<code>pipeline.py</code>'));
+  assert.ok(result.code.includes('config'));
+  assert.ok(!result.code.includes('../../nora/'));
+  assert.ok(!result.code.includes('../../config.example.toml'));
+  assert.ok(result.code.includes('href="/wiki/concepts/memory-and-record/"'));
 });
 
 test('generated indexes cannot produce broken public links', async () => {

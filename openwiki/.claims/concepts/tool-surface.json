@@ -1,0 +1,478 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:e662ea1e605d515759e4f7d74cc9bf46b938daa72be9f064c53b3195d388c241",
+  "claims": [
+    {
+      "id": "claim_913d53ad81fb4e63918e5610ef3ce3fb",
+      "statement": "Every loop that hands tools to a model — a tag turn, a fire turn, a Dreamer adaptor, the sub-agent worker and a public summons — takes them from `ToolRegistry.surface()`, and the returned surface derives its tools array, its per-turn shelf and its catalogue from one admitted set, so the catalogue cannot name a tool the turn cannot reach.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/registry.py#L1186-L1260",
+          "version": "repo-lines-v1:sha256:ff6922884d5169c572214434f7dd036816b491cbd046e9d5e747d9bbe03034bf:eyJzZWxlY3RlZExpbmVDb3VudCI6NzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMwMzk1NzcwZDllMTBiZjc1MDY5MmNkMDI5NmM1NDE3NzNkNWRlZjg1Y2YxNjY0ZWRkZTI4YjIwZTc3YjkyNmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRiMTE5MzMzZDVlY2Y0NDhmNTBmNGNkZWY0NWZlODEzNjI2YzY4Mjg1MTAzMDRiMGFiMjIwNzhlNTI3MDYxZWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRhYzQ0ODhjN2JjNDNmNDAwMTNlOTIwMzk2YWFlNjNiZTZmNDQyNDM0MjE0ZjQxMTM4NjA0ODVlMDcwYTQyNzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYifQ"
+        },
+        {
+          "resource": "repo://nora/agent/surface.py#L1-L27",
+          "version": "repo-lines-v1:sha256:89eb9f401d44359c924f4c035862fe74e4b3000f45c6a2f9ba6755a3255625c0:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY1ZWY3MTVkNTQyMDRhOGRjODZhMzlmOGQyMGIzZGM1ODZkMDEzMTI0NzRkOGFkNWY5MzQ2MWVjMDI4MzBhZTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjZlODcwNmI0MzA0N2YyYTZkYjY3ZjEzMjYzODU5NTYwNGU2N2YzNjk2Njg3NmNlMDE1OGYwMDUzZTZiZDEifQ"
+        },
+        {
+          "resource": "repo://nora/engagement/pipeline.py#L729-L760",
+          "version": "repo-lines-v1:sha256:60106b43eb6bcb9e68198ddaba0be03ab6f359c7c8e442f2e1d653d838790676:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlNjNkNzM1NTliYjZiYTBmMmY5ODRmMGY4YmRiYjc3ZmZmNjI2NWE0ZjVhN2VmMWI5YmVhN2UzZDBiMzZmODYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFiYmE1N2ViYmNjMmRiOWQyMWM5MGM1NjYxMTZiNTRkMjdkN2ZjOGJjOTJlMDdhMzU5NDg1NzAyMTYxMGE0NjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdlYzdjMzM0YmY3ZmYyOTNiMmM5YjZlNGZmOGE2OTU3YzFhMDZiZDBkMGM2YzE0ZWNhYzc0YzIwMmMzYWNkMzEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d35d586c3a1b47bd8dd04288736fe306",
+      "statement": "`ToolScope.admits` decides admission from five declared dimensions — platform, whether a Dreamer built the set, an optional grant ceiling, whether the occasion is a person's tag turn, and whether it is the sub-agent worker — applying the grant first, then the tag-only and worker-only sets, a `platform is None` short circuit for the declared table, the platform cut, the tag-readable loop tools and finally the Dreamer-only set.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/surface.py#L89-L131",
+          "version": "repo-lines-v1:sha256:a5ee8e8cbabd270153612ef58cdb2e36635991308d92a3b6fd05428f9a87b5ef:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY0MDExMWZhMjE4MGI2Y2NlMjZmZDU4ODZiODM1YmY4YmJmOGU0ZTcxZmE4ODViMjY4ZGJiN2VjMmVlOGE3NjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEzODBlMDllNzllNDM3NmUzZTJiNmMxYjg5OWQxZDRiZTJlMDUzOWJlYzc4YTU3OWI3ZDI5Y2E1ZjIyYjFkYTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA2ZTA5ZDU3Zjc1NDdhM2EyY2M0NGZkZDA5MGE4ZjZiNDM1NzYzMDA3MmNkNjA4MTlhYjg4ZTFkN2FiOTk2ZGYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3a1b7d84f70e4d1fa838db6fffaef439",
+      "statement": "A grant is a ceiling and never a way past another cut: `play_music` granted to a Signal room is still not admitted, because the platform check runs after the grant check.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/surface.py#L118-L131",
+          "version": "repo-lines-v1:sha256:803f49d8f390d136abae9506f63280d5828c3e251657613894369a0316d377cf:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxMjAwMzhlYWEyODg0MGUyMzk0MDU3NTNjNzkxMDUyY2U0ZjA1YjU2Y2Y4MGM3NWE3ZGNhMTJkOWFhMmQyMTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY0MDExMWZhMjE4MGI2Y2NlMjZmZDU4ODZiODM1YmY4YmJmOGU0ZTcxZmE4ODViMjY4ZGJiN2VjMmVlOGE3NjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhlNDMwNGUzYTUyZDU0NDI3NGJkMjY5YWM4Yzk2Njc2NTMwMWRkYWUwZGM0ZjlhZTdjNTQwOTVlMTRmMWI1NzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA2ZTA5ZDU3Zjc1NDdhM2EyY2M0NGZkZDA5MGE4ZjZiNDM1NzYzMDA3MmNkNjA4MTlhYjg4ZTFkN2FiOTk2ZGYifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_tool_surface.py#L115-L121",
+          "version": "repo-lines-v1:sha256:8af66af9191c950b8bd1297d6ec1eca8896a744b55f7aed94c47c3c76d90d3fc:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiM2FlMzk5ODNhZDY0MWIzY2U3ODNlZDlmMjA2NmE3ODFmOGMyNjhiZjQ3NWI1NDA5Yjc2Yzc3YjVhYWY3ODNkNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTZmNTI3ZDhjYWUwMjY0MWYxMWE4Njg5ZjI1MWRkZGZjODIyZGM3YzE4MDBiMjAwZmQwMGNjN2EzZjk3MGM3OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzYwYTU0NzEwNTBjMjNkYzU1MjgzMzRjZjk0YmI5ZjU2NzFkMGUyM2E4ZDM3NmZiYjQ0M2QxNzBlYzA2Mjk3NCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_152350d001dd4c9ca00f2dae6d5ae694",
+      "statement": "The occasion-only sets partition the table: `subagent_create`, `subagent_list`, `subagent_read`, `subagent_cancel` and `video_create` are offered only on a person's tag turn, `checkpoint_update` only to the sub-agent worker, `search_memory_workspace` and the Dreamer loop reads only to a Dreamer-built set, and `rollup_read` is the one loop read a tag turn also holds while a fire turn and a worker are refused it.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/surface.py#L58-L86",
+          "version": "repo-lines-v1:sha256:644d9e9e6986fe780595acd2fa4d100d438e06e532f58a03ec8e213b477718d7:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljM2I4NWUxZmVjZTM2OWExNzk5ZDUzNTA4NWM3OTFjNDc0MTlmYzY4Y2Q0YjEwZTU5YmQ2NWY1NTA0YjQzM2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmMzM1MGFlMzk4ZTYyNDJmYTc4OTA4OWY0OTc4Y2UwZTE1MWEwMTYxYWRmYzU2NTI4YzYxMTEwZGMyZmQ1MDYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQxYWMwNzMzMmIzYzM1OTA4MGQxMmM1NjE2YzlkZGUwNDJjZDM1MTY5MjU2ZDMyNGM3N2ZiN2ZhM2ExMTVmNWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_tool_surface.py#L382-L412",
+          "version": "repo-lines-v1:sha256:9302734b9fce66f1215b9c2c98da7918769e71e2c586b3ca6f20a675eac8c696:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5NjNkYTI2MGJjMDA3NzQ0NDE1MDcxZGZiNmY4NGM1MjNkNjJkMTlkMjZlZTk5NjBlMTg4ZDgzM2UxYjNhMjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyZjdmMjFlYTM0NTZkMDY5MDRmMzQwYjUxNzg5YTBhYjg3NzY1ODNlYzJjM2FjNjgwZTQxMWU3NjBmODgwZGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlhZjk0YzZjYTVjNDE0YjBjYzMxZWI1MmM4NWY5ZTFjZmFiNTJhZWNlODUwODM4MjM1NmZhN2RhN2I2NzU1YTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk1MDJlMzY3Yzk5NmE0MjhhZDg4NGM1MTU5ODlhMzBiNGM2NDQzYTUxODQ1ZmIxZTkxZjIxN2FhOTg3NjgxNjYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c813fee58b5d4e32b8a1160efb01dd2a",
+      "statement": "Withheld-by-wiring is a filter applied after the scope: a tool whose collaborator the composition root did not build (computer tools without a runtime, document tools without a publisher, `record_query` without its Record read, `memo_read` without memos) is absent from every surface and from the Relevance Gate's digest, and the two memory surfaces are mutually withheld so a process offers exactly one of them.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/registry.py#L320-L339",
+          "version": "repo-lines-v1:sha256:20030ef62a04099915ad643fdd4a0eea82a7506ae6a53aadc5efcccaaaaa6f26:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk5OTVlOWFlNDczOTQwYmRhNTE1Y2RkZDc3ZDRkN2ZkOWQ5ZWIxMGRjZjc2ODYyZmJhYmViNzZlMTliNGY5ZTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQxOGYwODFjOTI0ZDUzN2E4NmE3M2Y1YmM5NjljYWUwNzliYjAxMzI1ZDAzOWFmNjJhNjlmZGUyZWUwMDhiZTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRmMDIxMzFkNjNmYWRjOTZmMzczMWY4YWU1YThkODFlOGRiMDM1NWFlNmM1N2RmMGIyYjVmOTkyNTI2OTU1OWMifQ"
+        },
+        {
+          "resource": "repo://nora/agent/registry.py#L686-L692",
+          "version": "repo-lines-v1:sha256:c45b397605f5153fc9b52e204265130741463a9a48629c52e176585974d094e8:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjJlODIwNmExOWRiZmJmMjhmM2YxNmYwMTAxNDU5N2NjZTdhODRkMzI3YTI1M2M2NTQ2MWIzMzBhOTZhYzdjNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjlmODUzNGQzMzJmZTE3YmNjYmUxZDYyOTkzYjY2MGY5ODkwNTYyMGI5NTc2Yzc5ZDljNTBmNTZlZTkyYjc4YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGZjZTUzNzFhYzRjZTZhMzhlMTM2YzYzYmQ2YWE4ZDI0NzhhMzgyODM0N2JhZTM5NWQxYjc2OGM4YTMzOGFkMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWEyYzg4MzI5MjIxNzU2MWNjNGQ0MGJmNTdlNTQ5ZDJmZWVlZGEzMTkyYTg4NzMyNTM4NjlhOGM5ZTdhZWViNiJ9"
+        },
+        {
+          "resource": "repo://tests/unit/test_tool_surface.py#L426-L439",
+          "version": "repo-lines-v1:sha256:815af1e8b18d555fce59aa4ad6bacc3459e0121807ba19df68df13cfe86a0f68:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk0ZDBiNDA1OTYzZDUzYTZkN2U0MWI3NjJiYjg5MzA2OTcxYzM0ZGMzZTNjNzhiM2M2NjIwNjVjZjkyOGQyZGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5ZTk4YmI1NjdiYzA4ZWM3OWVmYTIyNjY5OWEyNzYwYjk3ZTFlN2I0YzQ0NzI3NWEwZTAwN2Q2ZjVjYTdmMGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAwODk1Mjc5NTEyN2JhNmJhYmMyMzAyYTA5YmQxMmJlMmIyYzg2ZjMwZThmMmVkZWU5N2QzNmY3ZWZhNDk4M2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdmYzliMjM4YmIxNTBjY2Q1YzM5NDc0YjBmYWY4Y2UwOWQ3NjE3NzkyYTRhZDRjMTUzM2IyNTYxN2UyNDljY2QifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e094c204decd4e97853fb203170e10b0",
+      "statement": "A native tool becomes callable only with both a `NativeTool` row and a `_spec()` entry: `budget` is positionally required on the row because the row is what R-7 admits, and `_spec()` raises `KeyError` for a name with no row, so a missing declaration fails the build rather than the model's first call.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/tools.py#L16666-L16762",
+          "version": "repo-lines-v1:sha256:0f83b64596856c61edbf80649bdec88438c9c1777c6548e175abe99136df694f:eyJzZWxlY3RlZExpbmVDb3VudCI6OTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMzOTUxNTkyZTdjOWYyZjJlNTMyM2VjNzc4YzdiMTQ4MjAxNDJhODk5OGExMTc5NDFhMGM0M2Y4MTBlODM2OTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ1NDEzNTIwM2UxMjE1N2U4Nzk1NTI5N2FlNzk3MWUwYjI5Nzk3MDQyZGNlYTRkZDRhNmVkMzEzYjgzMjg2MjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc2ZjZkNWUwN2ZiNjQ1YjM3YWRkMDNmNDEzNTE0MzNiMTJkODI2YjYzZDBmZDdjZWIyODJjZDAxMjVlYjg2ZTYifQ"
+        },
+        {
+          "resource": "repo://nora/agent/tools.py#L3307-L3336",
+          "version": "repo-lines-v1:sha256:e573e90addf345770918a902724258c545c01fbba973661d031dc01718b3de77:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3YTA5ZDVlMGJiMDk2MjJkZTQ2MzNhOGNlYTFiNGI4MjgxZjhjOGJlNTE3M2UyZjNkNzc3NDA0YjllN2E4NTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU4MWUzYTkyM2ZlOTJjNTYxZTA4ZjQ1ZDk2ZDkzMmQyYmYxNjgzYjYzYmM4NWM5ZTdkMmVhZjZjYzgzZDdkNTEifQ"
+        },
+        {
+          "resource": "repo://nora/agent/tools.py#L347-L391",
+          "version": "repo-lines-v1:sha256:7d56ee1eeaf996ee5acf92db27b0ebd9b87de5ac2980aac9fde82528fd8e0427:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYwYTE5ZjkxNzVjNGZkMTUxOWQ0OGZhNzJmMTM5Y2U1NGIwN2RjMmZhNDMyNjY2ZGI0MDJlYjY5ZjJkMzczMDEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIyM2RjY2E4OWRkYTQxNjY0ODlkNmFkNzkwMTIwZGMxZjlmYmI4ZmMyY2VkNDFmNmNhZGQ3MjYzMTA2ZjE4MDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhlOTYyZmZmMjFlMDI5NDA1NDYwNGViNjA2YTBhNGY5ZTJmN2Q2YTMwMjYzMDY3N2JlZDdhYTExZGE3YmI2MGUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_bfcedb158f494800bb033f869b4d5ec1",
+      "statement": "The `skills` row is `plugin=True`: it exists only so R-7 admits a tool another component (the `AgentSkills` plugin wired by the agent factory) builds, and the registry never builds or describes it.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/factory.py#L308-L335",
+          "version": "repo-lines-v1:sha256:6c2bfc01be0ae5c849f14fa3bf0ac8158c4941bfa7395cec5dcf6843f71bc596:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJjY2M0ZTAxNDlkODVmZGYxMjI5YWI0YzJjZDhiNWY4Yzc3NTcwNjRkMjAwYWQ1MGQwZTgwM2NiZmM2M2RiOWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMyMDRkMTlkNjI1OWRlZjEyNGNmNzVlZGRmNjlmYmNmYzhiYTFiZmQyOWVjMDBlY2FlMDFhYmVhNjhjMGE5Y2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA1ZDgxOWUwY2NlYTM5OTU1OGRkZGQ2MTc1YjI0NDAwZDlhMzVjZjE4YzkwZDY1MmM3Mjg0YzVhYjdjZjUxOWQifQ"
+        },
+        {
+          "resource": "repo://nora/agent/tools.py#L1902-L1909",
+          "version": "repo-lines-v1:sha256:254b9d8f1e38bf07e96e66867c6ba32e291d6c98aaf42be3d510f6d46caacf46:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDE2ZThiY2FmOWRkMTA3NzA0OTMwOGZhYzBkYzJkNzgxN2M2ODA3YjNiMmNmNDc1OTVhM2RkYzQxYjU2NmNmMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjAyMDg5YjI2OTBjYzg4MTJjNDg2NTk0MjY3YzI5MTBlNjhjMzIwNmEzMDYxNDA1NDU0OTExMzgyYWIyMWQ4MCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGMzZTU0MzhlZmE5OGQ5NjdhYzcwZmNiNTNiZDdlZTlkODRlNjAxN2M0ZWU2Y2Q2ZjNhNDNhMWI5ODI4ZjY3YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNWI1MzJkZmUyNjhhMTVhY2YzY2JlNTVkOTRlMDkzZmE1MzUwNWQyZjUyYmM4MGJjMTU0YWE3ODVjMTgyOGM4NyJ9"
+        },
+        {
+          "resource": "repo://nora/agent/tools.py#L375-L387",
+          "version": "repo-lines-v1:sha256:8ceb3faf31411cd4d5f3dabaad05122d31d2dc6f81e179cfb6c3b856f0e7834d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc4ZmIyMjYwMDIwMTQ3MDM1YTBkMjdlMGUyOTJkM2E0OWQ5OGYyNWQwZmFlYTNkODcwNTI1NjMyMjFiOGU4M2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2YTcxNTI1NzJlZTg0ZjEwOTA2Yzc0YjlmMmE5MjQzNGRkYWIwZTNjNDI4MTNiMDRlNTk3ZWZjZWM5NTFiMjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRlNzE4ZTNlMmMwZGU0NzkyMDdiMWI2Zjc4NDYyN2Y2MjlhMGQwYzU4NGNiYTA2NmQ2ZWI2MjBmMmNmNDM4ZGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk4YzBhNmFhMzZiMzFlNDExNWUxMzJjMzQ3MWY2ZTM4YjM3OTUwYjE5NTVkMTU3M2RlZWYxMDNiNjRjNWE2NmEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f45f9e362cd548b1a703e9dac2fb1464",
+      "statement": "Under `defer=True` the resident set is the admitted tools named by `hot_tools(occasion)` and everything else sits on a `ToolShelf` created inside `surface()` and stocked once; `load_tools` is appended to the tools array only when the shelf holds something, and `LOADER_TOOL` is excluded from the admitted set, the catalogue and `lookup_tools()` so a successful load is never counted as a lookup that found something.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/registry.py#L1231-L1255",
+          "version": "repo-lines-v1:sha256:4a10855616b58806e5f0051a91dd499922cd94f4637eadc87bd24696b533574d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkzMmIzYTdlOTBjMjcyZDdmMGNjNDE2ODRhZGM0YmI2NGVlZjVjNmJjOTE1NDU3MGVjMjQ2MDhiZGNjY2I1Y2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ5MDM2ZDJiYmViY2E2YmQwMTI4ZmE1ZWQyY2FmMWFiY2VmMWVhY2EwZWM2MzAwZmYwYmE4ZDFlNmZkMjQ4ZDAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUxNmQ4M2U5MzVlZGVhZjZiMzFhOGJkYmI0NjMxYzFhYmU2YWZjYzg1NzcxMmI1MTE3ZjZjYzcwM2MzMzJkMTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgwNmQ2ZDBhMDQwNzkyY2YxOWRiNWY3YmViZjkzYjE1ZjE4YzM2YzA5YTg2ZDIyNDM4OWRkZTJjY2ViYjJkNTEifQ"
+        },
+        {
+          "resource": "repo://nora/agent/registry.py#L675-L684",
+          "version": "repo-lines-v1:sha256:d4cc5a0104f5aa023d99ca5fce98e1e1b8724fcb8cb9a2997d84e2a40c1a640b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlY2RlOGY0ZDY0YjNmMzk2NzVjNjQ1NTY3ZDYyYTg5ZWZhNzQ4ODFhMThiMGFhZDJjODVkMjJmZjVkNTBlOWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQyNDQ0NzQ1NWFiMjg5YjcxYzdlYWE4OWIzZWY0NzBjZjEwOWYzYWIxMDBjNWY2ZDRiYjRlMzUyMWZiZTEzYTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM5ZWJlZmZmM2VhZGEyZWYwYTExM2YxY2M3MDVlMzA4YTc0ZTVhNjEyMzVhYTFiODM4ZDhhMDA5Mjk0ZmUzNTcifQ"
+        },
+        {
+          "resource": "repo://nora/agent/surface.py#L134-L157",
+          "version": "repo-lines-v1:sha256:e9f31ecf2f02b73dc534edd9ca9f1f38188f9824056ccff7b4ba0d73b2982b9e:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMyZWQwYjA2NGVhYTQxNjU0OTVmYTc1ZjcwNjU3MGYxZjU4MWM0NzI1Y2QzNzA0NjRjMDRkZjA1YTRlZjQ1ZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc2NWI2NWFhMGJmYmZlMmI3OTU3NjQzZDlhYWZlMjdhMjJjYWE5NzQ1YjQwZjJkM2Y4ZTY5YWQ5MjE0NGVlNjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRkYzg4YTEyMzIxYzFkMGVhN2Q5YzlmODFhMTJlYmJkZGI0NzIwNjU0NmM1NTgzOWY5N2VjNzNjNGRlYzU2YjIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a542bb52177a431db0220fdda1a8153c",
+      "statement": "`load_onto` answers R-27's shape — `ok` when at least one name resolved (a partial resolve included, because the resolved tools are registered), `nothing_found` when none resolved, `unavailable` when there is no registry to load onto — with `unknown` and `refused` lists and a note only for a non-ok status or a non-empty list; `LOAD_TOOLS_MAX_NAMES = 4` caps names per call and a name already resident or loaded this turn comes back as `already_loaded` rather than an error.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/surface.py#L222-L301",
+          "version": "repo-lines-v1:sha256:c6df2a744bae6f2fa0dfa694756d0a83c37bf9ff80c2c35f384c242b4e8d33f3:eyJzZWxlY3RlZExpbmVDb3VudCI6ODAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjMDc5Y2IyMTFhMWQ1ODJkZTlmNjE3OTk0NDg1MDQ2OGUyZDUyM2ExZWJlMGFiZWZhNTU4NGUwOTBlMTQ0YTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhMTFjMDU2N2QwYTVmOWU5YjEzNWY2NWNkMjUzNzJkZmQ2Mjg3NzVmN2MxZWQyNTNmOGJhZDQyZGQyZDY2NjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE3ZWY0ODk0ZWIwZmY1YTA1YTBlYWYwOTM3NThlOTY3MDc0ZmJkOWY3ZDdhMzIzNjkyMmVkOTlmYzk2ZDcwYjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_45dfc8d7aa114e37a9a5b522e853fae7",
+      "statement": "`ToolSurface.prompt_catalogue` is empty unless something is deferred and the prefill carries it as the `tool_catalogue` block only when non-empty; `[llm] defer_tools` ships `false`, so by default no catalogue reaches the prompt.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/prefill.py#L1025-L1031",
+          "version": "repo-lines-v1:sha256:2161852ade143ee9d9b13d3c8a31d644fb3293c7fa0b9b9d0bb3feaedf984df7:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZWI3MTFjNTI0N2JmMmY4Zjg3OWQ3NmUxMTlmMTRhNmU4NTIzNjIyZDc4NmU2ZjVlMmQ1NmYwZmY3YjRhNjRlOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmNmYzEzZTg3MDk5ZmUyNTViZTVhMjk1ODY3YmQ3MjY4OWE3MDA5YTc2MDFlMTEwZjlmZGMwMGZkYWU0ZDliNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGMzNzU4YWM5ZTQ2ZTc2ODExNzFjY2E2MDZlZDJhNjk4ODhhYTZiOTU3ZmM3ZTU4ZDE3MDQwN2NjNDBkMWI2YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWY0NmRhMDA2ZWVkNjkwN2E2MzE5Y2ViYWU3NTljYTBiN2RlNDhiZjRmMjkyYmY0ZDc1N2NhNTlhMzM0OWUyMiJ9"
+        },
+        {
+          "resource": "repo://nora/agent/surface.py#L196-L202",
+          "version": "repo-lines-v1:sha256:586985e0e95fc3281bb08357f1c68b75b40980058586ea3abfa0c40832496276:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjNkMDBjZjI3MDk2NGQ0NGExM2RmYWM4NzUyYjA5ZmNjNDM1YjBmMTliMzE2YWJjZjgxYTdhYTY0YmIxMjJkNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzFiOTg2YTEwNWQ1NzYwYjcyMWYyYWNhYWQ0ZmNkMDc3MWMyNGE3YWFhZmQ1NWU1MjhmOTg4ZjVjODA0ZTU1NyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWIxNWU2MzUwODE3MDE5OWRhYzAzMDEyNTEyNzljMTQwYzVkODI3NDljZTIyZWUwNjk0OTA3Y2I3MWFhMTA4OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMGE4ZWYxNWZhYTQ3NTY2MmE2NGUxMjY4MzZmOWYyNjUxNjY4ZDMxODQ3OTFlMTgyOGRkMjVmZDAzOTU1ZjAwYSJ9"
+        },
+        {
+          "resource": "repo://nora/config.py#L278-L291",
+          "version": "repo-lines-v1:sha256:e484e39ef70581c5781a5a8936091e19269c915eb546cbc312491fbb4c38c673:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMwNGYwNTkyZTI2ODU1OWE2NGU2Zjk2ZGM3ZDA4MDViMTk3MDQwMjUxMjI2Njk4YzJhYTc1ZTc5NWNhNzY1MzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE0N2I4MjUyZmRmM2VjM2VlYmM3NWYyY2U4ZjMyNjk5NjE0ZjYzZGZhMzQ2OGY3NmJjZTgzODNlZmNkNmFkM2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk4OWQwNWUxYmJiNTJhYmYyYjgwMWU4MDY4OGJhZTc2MDQ5NjlmZmI2NWM4MDIzZTdlMTIyMGU3ZmY2NTEyMzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI5NTNjOTM5NDg3OWExNDU1YmFlZDhhNGFhMWI5MmMyZTU1MmU3OWM3MmQ3OGUwMmZkZTUwMTU5NzMzNmUyYjUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e368e28a7ca0429e879939e92f8e07ec",
+      "statement": "Deferral raises the loop's `turns` cap by one through `ToolSurface.limits` because a deferred turn spends a model call on `load_tools`, while the token caps are left unchanged.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/surface.py#L204-L219",
+          "version": "repo-lines-v1:sha256:e3599361ddb2ea3f80e730bf3b037d5438e3fbd222c938a2e2abeaa604b9c388:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3OTFhZTY0MGFjMjBhN2U1ZmIwZTIzZTg3YmM4NWNkMDg5ODdiN2FjZTdjNzUyNDIwODc4NWNiYTI5MGQ3OWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ0NmM1NGU5ZWUyNGE1NTdhOTM5ZjZmM2QxYmFlYmU1YmVhNWNkM2YzMDllMjlkNjBlY2ZkZGYxNzg1NzI4NjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQyZGZmMGMxODkyNDNhMDFmYWRhYjFlYmUzOWNmMWUzNzM2OWI5OGZkYjBiZmIzZTFhYzM0MDAxZmI0ODgxZDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZkOWQ2ZWRmY2E0YTZmYWU2Yjg0MjlhYmUwMTBmMmZjNzBhMDEyZTE3MzdlNDE0MmExN2E4MjYxNjE1YzQ4ODEifQ"
+        },
+        {
+          "resource": "repo://nora/engagement/pipeline.py#L799-L800",
+          "version": "repo-lines-v1:sha256:2ca1f30522b3932b4685615a7fb6a1c4bb41a3240729fef02476f11da4518822:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTQ3ZDBkYzI5MzRmNzY5ZDkzOGE1M2RhZmU2OGViNzJkZDJmOWE0YzM1MGE1MGNjN2E1MzI3ZTRhMzk3NzM1NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjJiZWI0MGNkMjM3MzU5NTQ3NTFkNjU5YmVlYzdmODgyM2Q0ODk2YWViZmY3YjAxMmNmYTQxODg3NmQzMzk1NSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGQ5MmM4MTE1MTkzMzZiOTQyNzRmODZjYTdiZjZiZGI3ZmVlMGYwY2E2NTU1ZTVhZGU1YzBiZjU4ZmE1MzkxNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGVlODFjOGM0YjRlOGMwNTkwZGE2ZDQ4M2I1YjljYTk4M2ZmYmQ3YzRiNzlmNmJhYWQ1ZDc4MzRmOTE0YzE2ZiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_c87c54c8c44346889bdc10d2a9209707",
+      "statement": "`HOT_TOOLS` is a `frozenset` literal in `nora/agent/tools.py` that declares the resident set — `web_search`, `send_reply`, `note_read`, `web_fetch`, `now`, `search_memory` and `memory_search` — with `send_reply` resident because a turn must never have to fetch its terminal verb, `memory_search` holding `search_memory`'s slot on the graph memory surface because the two are never built together, and `play_music` left out because it is Discord-scoped; `NativeTool.hot_on` adds occasion-specific residents from the closed `TOOL_OCCASIONS` vocabulary, and `hot_tools` raises on an unknown occasion rather than reading it as a text turn with no extras.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/tools.py#L1932-L1946",
+          "version": "repo-lines-v1:sha256:e26d86401da7c23c770422f52874a2a5556b7e23fd3e66d2f22e38260657f732:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjY2NmOTY3YjY4ZmU2ZGVjZTc2MThjYzg2NDlmYzBiOTMxYTM1MzY5M2JlYmE2ZjI2MDY2NWQxMWRlYWI0NWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc0MWIxNGFmZDZiODQ2MjRiODg1MWU1MzBlMzU1NGM1MDI3N2QxZmU1NjhhNmYxN2ZkMjc1YzQwZDhlMmVmMzciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAzODk5Y2JmZjRiMWEwMmExMGZmMmU1NWNmZWJhZTUyYzg5ODJiN2Y4NTc3MzA1MzZhMDUxZmUxMTljYmE3OWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk5ZDNhMDZjYWQzNjcyM2FmYjFmYzJlMzFkYzU3MTY4MWI2NTU1YmVhY2UwNzlmZGNmMWFmNTY2Mzc1ODc1ZTIifQ"
+        },
+        {
+          "resource": "repo://nora/agent/tools.py#L1958-L1965",
+          "version": "repo-lines-v1:sha256:5ca34879f69b7f54bc7d00d86e2dd0b650e5f73dfdccffb498651511bacb3ae7:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzJjNDg1OGUyMmNjMmM5NjdiNDIxNTBmYTU1MDU2MmEyYzgzOWMyY2ViY2FhYjkxY2FiZGY2ZjRkYTAyMDAyMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjAwNThkMmY5ODJiZDU1ZDBjMmQ3MWQwNWI2Nzk0ZjJkNDU0YWQ4MTMwNWM5M2FhMjE0YWY0ZjVjNTU5M2E5MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjE2NmU0MmYxMzQzY2JkNjY4MmQ1MTE1YzA3Zjc1MDJjMjRlNDY3YTBmY2E1NTg4NTc4YzBjYzU0NGU3ZDljZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzNjZDg2ZGI3MjY3OGViMTExNDA2MDFlOGU3NWZmZjBkZTc0Y2U1MGFhMjQzYzk2ODEwZmYyY2YyM2FjNTBkYiJ9"
+        },
+        {
+          "resource": "repo://nora/agent/tools.py#L1966-L1988",
+          "version": "repo-lines-v1:sha256:000d856e5002d0c2354252ec36064aa69d07e70bea5660b7606192a560cea8a4:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRjYmU3MjQ1OTAwMzIyOGY4OWI5NjczZjRjMmViNjBmOWRkNTVhYmRiZmYwZDFhNWRhYTRiMjM5MThiMjJjNDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVjMjU0ODQ2ZTE1YWNhYjJmMWQ1MWEzMjYyMDUxN2VkYzkyMDY2ZjkyZmQ4ZDAwOWExNzUyMWFmMGNmZGQ2ODAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU2NzAzZDE3MTY2NTFjNmRhNDBiOTYzMDUzOTM3NGE3YjRmZTE4ODA0NGY2MDRmYTRiYzA3YzVkZWIxYjc0M2YifQ"
+        },
+        {
+          "resource": "repo://nora/agent/tools.py#L587-L605",
+          "version": "repo-lines-v1:sha256:0a50b267009043012d0678a55df37f56a78a9c6414d554f6dc20bd6365b546c6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJjMGM0ZmVlZDFiODYzYzQ0ZjY1YzhjZWUzOTFkZjFlMDNhZThiODkzMWE2ZTUwMDY3Y2IzZGRkMzZkMGI2ZjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM4N2M0N2ZkMWNhZTQzOThkYjFiZjAzZGFkMTM4MDc4OThiMmEyYzg1OGMwYTk0M2Y5MjIwMTA5MTQ1ZjUxNDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVhNTJlMTBjZjc3MWU4MWM3YTEzNDE0NTQ1MDJiOTU4Njc1YmZjZWMwNGFjMDlmNTAzM2Y3YTczODIxOWU4YzkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImViZDFjZDY1NTM0YTI2YzQyMjBjZTA4MGM1MWZlNDEyM2QxNjQyZjRlMGFkMGNmNDAyM2EyM2Q2MDMyYzJiZmIifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_tool_surface.py#L461-L503",
+          "version": "repo-lines-v1:sha256:609142c9911801244128796c3a6f101afe2dc92329f6d489c2499b62b3d98be5:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzYzc2NmMyMjczZWQ5YTk1MzY3N2E1YjJmNjM5MmM4YmMxNTkyZDY4ZTc4NjRiZjg4NzZlYWE0YzhjOWVlYzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhZTYzNTNiMGVmOWE1ZTI0MmI5NTg2ZDg2MDY5M2MxMjc4Njk2NWEyYWZkMjE0NTYxNDk5NzRiNDc5YWVjNTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFmMzZmYWI3MjJmMWFlNDA5OTA1MzEwNWUyY2U4ZGU1ZDc3OWI0MmYyOGNjNGIzNGYxNGU0YjFiZDc4MzFmOTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYxMzQxNGI4MGI1MzMzMGM0MTJkNDQ4MDA4M2ZlNTIwMjE4NWNhNTVhY2MxMGVmOTU1NDJhNzUzMWVlZGY4NTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a3dbec33d4d44dd0a2d52d37253e7c9b",
+      "statement": "`NATIVE_TOOL_BUDGETS` is derived from the tool table, and `ToolRegistry.budgets()` builds the guard's mapping as the table plus a `[llm.budgets]` delta plus one flat budget per MCP server folded in only for server names in `allowed_mcp`, because R-7's veto message renders the mapping's keys.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/registry.py#L583-L621",
+          "version": "repo-lines-v1:sha256:9a45c3d15f1f0d926223a3d226a4c1233223e385c1fc154673d8b55216b0a9ec:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVkNWVhZjAwNDM4NDRlY2Q4NjhmZjczZjhlYmMyZDA4ODUwOGNiNWUyN2QyODEyNDI4NmM3MjhlMDEyNWFmM2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIzNjExNGU2NWFhOTlmNzFiZmYyM2EyNWIyZTNlNzFiNmNhMWJhYTkyYmZkYjQxNWQ1N2UzZjk0MDE4ODI3ODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJiYjdjYWU5MDEzZDZiMzMxZDgxMzEzYmRhYjQ0ZTBhZjUyM2U0OGFlMTUzNDQ0OGZmYzgzOWQ2Zjc4ODlhMTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEzOTEyOTg5Y2VjODAzYjE4NDQ3ODc3MTAzYWE4ZTUyMzkyNjA3NDFmNmU0OTExZDRmMGQ5NmI5MTVhMDc0YzMifQ"
+        },
+        {
+          "resource": "repo://nora/agent/tools.py#L1912-L1918",
+          "version": "repo-lines-v1:sha256:30a9f186eaa62a62527a26195a73ababce7c0a32edebeb316d18e89a15fc5cc1:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWNiNTI0NWJhYzhlZmE1ZjdkYzRjOTcyNjlhZDIxMDJlYTljZWE5YmIwYmRjNTA0Njg1ZGZmMDZlMmZmNzNiZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDEyY2EzNDVjY2Y3NWJmOWMwODA2YmNlNjk1YmU4ZGU4MDhiNzk5ODQyNTFhN2E1NGQyMDJjZjYxMDFkZDQ1MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjAwMGNhZDU2NzZiMWYwNmRjNTg1ZTkzZTI5NWE3MmM2ZjNmZmM3MzJjMjliOWMwYjRmNzk5NDhiNGVlYjRjZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjk0MzA0YjIxNDczNTE5N2UxN2MwNWVhNzdmYTA3NjNjNzUyYTI2MzlkNmY5YjdkMjZhZmNmYjYwYzYxMGM5ZCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_efbbaa222b414c11ab772a74fcb96e78",
+      "statement": "A `[llm.budgets]` entry naming an unknown tool, or a value below 1, refuses configuration load against the live `NATIVE_TOOLS` table, so a typo cannot leave an operator certain they raised a cap that never moved.",
+      "evidence": [
+        {
+          "resource": "repo://nora/config.py#L283-L318",
+          "version": "repo-lines-v1:sha256:b7675d7df83beab0dd721068f31af58329a9f2a54e7c442e49daf8671601a618:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjllYThlYzk1ZTU3MDllOGUxOTY3NTg5MjgzMTM3NDFiYjNmZjM0NTgzNDlkYjM2NGM1NGZkMWVjZGZjZWY1N2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyYWIwOTBiY2QxNjIwZmE2MmVhZWUxNTdhNzRmY2E2MzVhYTI5ZTEyY2JmZmQ2MThiNTc5MmQ4N2JjMDNhM2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRlYzE0YWQ4ZWJjYzNlYjg5MDZhNTM4NDNmMjdjMmMwYzNlYTY3MGU2ZTM5ZTBlZDIyYzE5NTc5MWYyZjE5MTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVkNWUwYmM3ZDE3MDk3YTkyYzA1MmViZjFiNWIzYzAzN2RlOTVmYTZjNTU5NTI0NTdmZThiYTM3NjYwZTNhN2UifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_bb22e8e81c3447f89824e0590d584c46",
+      "statement": "`budgets[\"send_reply\"]` is one number with two readers — `ReplyGuard`'s R-7 ceiling and `Deliverer.message_cap` — indexed rather than defaulted, so the message cap moves by editing `NATIVE_TOOLS` and R-2's latch refuses anything past it.",
+      "evidence": [
+        {
+          "resource": "repo://nora/engagement/pipeline.py#L663-L679",
+          "version": "repo-lines-v1:sha256:0b15305fd69524a27f247f3515d9bd1ddba7e360fbc8e46fe25b1dbe4ca7e9d8:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRjNTAzMjNkZDRjMzYyZTg3OTgxY2Y5YTU5YmNhMmZmMTJjMzkxZTE5ZTg1ZDVhODE2YmViNWUwZGNkZmYyOGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRmY2Y2OWQzNTRmZWYxYTlmODNlNzI4YTM2YzE1M2VhMTc1MDM5YjgzOWVmOTkxNzc2NjliNzY1ZjVkNjE0MzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRhODQxNTAwNGI2MjIzNGEzOTVlMjhiMWFiNjAyZTQ1YjA0NzQ1NzRlM2U3YzI2MWExN2U5MTU4ZTlhMjUxY2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ3NzE0MjgzNjk4YmY0NTgwYzY0MzViZWI5ZDZkZjdhMjE2ZTljZTAyNjFkZGVjMjM0MjZiNWNjN2NlYmNiM2EifQ"
+        },
+        {
+          "resource": "repo://nora/engagement/stages/deliver.py#L136-L172",
+          "version": "repo-lines-v1:sha256:d771aac440fa9072b4885a8a5c31aa7314bd21e55496ad56a76c693cbe02c197:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRhYjM2ZDk1ZjZjZjY3YTc2OWMxNmM5ZGZiMGQ4ZWEzMThhMzM2NGYxM2RhZDU4NDBkMmMyNzM2NjZmZjM2NDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNmMmYwYjViOGRhOTRlZWM2NmU2ZGY0YjJjNjAxYWMyOTJlOTdlZDVlZjk2YzRmZTE3NmI3YWNiM2E1NDg1NzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc3OTMxNmY1ZjgwYTY0YWQ0YmU2YWFlMzdjMWY2ZTZjOGRkYmFkYTAzMjg1N2NmM2UyZDQ5ZjAwMGYyNzdkYjYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a4ad0a7c48574a9aac40c3a0625d0388",
+      "statement": "The Dreamer derives its guard mapping from the built tools (`_tool_budgets`) in three override layers (the row's number, `[llm.budgets]`, then `[dreamer.budgets.<adaptor>.tool_calls]`), so a name the tool source declined to build is default-denied rather than admitted with a ceiling it cannot spend.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/dreamer.py#L1354-L1371",
+          "version": "repo-lines-v1:sha256:97dc0c408ca3e1ceb0268741b5af697d492753dc4023b20aec813bfd496988fa:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJmZmRmN2QyY2U5MWNmYzNlY2MwZjE4OGU2M2U1NmJjMjY2ZWE3MjRkM2FkMjMzNGI5NTYyMWQ0MDIyYjgzNGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJkOWI2YmI3YzY0MTU3ZDE3YjVhY2UwNDU2OWFiOWIxNjBmYzQ5MjFiMGNiMDMwM2Y4MzJjOTQyODk0NjMwMWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU0MmU2NTBlOWRiNGE2NDE3YTdkMTZkMDM4ZmY0YmZlNTdkYzk2NmIwOGMwYmEyNWZjOTgxMzRmMWVkMzBiY2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRiNmViNjZiM2FkOWVhOGVmOTc0YzRhOGJjNzYzZGNhODMyY2MwMTg1MGM5ZjM1ODM0ZjQyMDZkMGUwZTMwNWUifQ"
+        },
+        {
+          "resource": "repo://nora/agent/dreamer.py#L1774-L1822",
+          "version": "repo-lines-v1:sha256:d06ac88614e4cd8072af44b03dd4a9c739325e3a776fb62b93a0c0673eb9397e:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwZjMwZDk2NGZkYmRjY2ZjZWVhNzg3NWZmZDBjYTgzNzUwYjlkOWZkZTEwYjhlNTMxNGMxMzk2MDYxMDQ2MDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVmYWYzMDY5ZWNkMDIzOTUxODU1M2MwODZkNzQxNzM1NWY2M2I0MDYwYmVhNzcxNGY0YmUzOWFjYmRhOTU1ZTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEwMTg0MTM0OWQ5ODdjNzJiOTY4MDRlYzgzZTBiYmU4ZGI2N2U3NTEyNWE5ZGZiZWY2Nzc0Y2YxNGFiZDE4ZmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_13df96fb713c4027b60a4a691f90cae4",
+      "statement": "The Cognition session and the sub-agent worker use the budget mapping as a membership set (`dict.fromkeys(names, 0)` with `per_tool_ceilings=False`), keeping R-7, R-99 and the result cap while per-call cost is bounded by rounds, tokens and the wall clock instead (DEC-247).",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/dream_guard.py#L160-L175",
+          "version": "repo-lines-v1:sha256:3369c8a953c2bb7a57de7dd5d7cf7e74582eee39ff62e8e3737fd9efe0a552d5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlmZDdhMDdhODNkZDE5OTZmYjUxNjg0YjQyYWVjYWY0ZTkwZmI3OGJhNzIzMGU1NDJlZDdiZDAxZDQyMzAxYmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI2MTRkNDYwZWU1YWVhMGM1NDU0ZDM0NDk5ZjY2ZmM2MmY3YjdlY2VhNDVjZGMzNGU2M2IwODExZDRmOTZkOTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIzZGQzOGVkNjBlYzhlYjA1ZjIyMmQ1NjVkMGEyMGM0NzkxMDBjMmNjMGI4YmZhYzllOTRlYTNiY2Y1MGFiZGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM2MjZmYWNhNmJmMDMzMzkzNGQ0ZGQ2YWRlMGEyMzEwNjFmNjc0MTM4OTkyZjY0YWNjMTZhNmQ0YzZkNDQ4OGIifQ"
+        },
+        {
+          "resource": "repo://nora/app/cognition_agent_runner.py#L160-L174",
+          "version": "repo-lines-v1:sha256:f15f98046d85c5e21064474f2063bed08d15dff38cc49a59b3a3fd02f17e4837:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyYTgyOTkwMTdiMTIyM2MyMTE4OGFhNzQ4NzNkOGM4MWU0ODVlMjlkZjc3OGM0MWMxYzBmZjkwMjM0ZDI0MzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE0OTY1MjViZWEwM2ZjNTgwODI2MDg0M2ZiYzJkMjYwNjQ0NDg4NGI3MGE1MmVlYjI2YjQ2Mjk0YjY3OWNmZjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhmNDU4NzM3MzdiMjQyNjZhZmFmYTkyNGY5ZmVhZTc4OGUxNDZjMTU5ZWE3NjU1NzgxOWQ5ZjlmYjZkODA4MTkifQ"
+        },
+        {
+          "resource": "repo://nora/app/subagent_runner.py#L238-L251",
+          "version": "repo-lines-v1:sha256:8368ca21ed7a13f346e8ae5e04f891de0ddd13aabd4cdbe46474f58609692acc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyYTgyOTkwMTdiMTIyM2MyMTE4OGFhNzQ4NzNkOGM4MWU0ODVlMjlkZjc3OGM0MWMxYzBmZjkwMjM0ZDI0MzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA4OGZhYjBmNzQwZTI0ZTNiYThjMjIwNzYwNzc0MWE1ZTI1YzIwNWJjNzJlZDQ4NDM1ZjgzMzBlYjIyNDNiZTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQxNjRhNjNmOWZjMWFkOTE4YjQ2Y2Y0YTJkMWNlNjVlMDllNDFkMjQ4NmU1NzllZGQwOGU4N2U4MjRiMDMwZmIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ff08a3dc91b548a6bc9948227dfd62cb",
+      "statement": "`ReplyGuard` runs on the raw `tool_use` before Strands validates it and turns a returned sentence into `event.cancel_tool`, so a refused call reaches the model as prose instead of a tool result; an absent tool is vetoed under R-7 with the mapping's names listed.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/guards.py#L1270-L1288",
+          "version": "repo-lines-v1:sha256:c3e8e10b95bbe114de82113b61ff7e2a395253987e0917d235ec82345de9e87f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZiOWEwNzliMzA1YTdjOWIyZjJhZWU1NzY2NmJmODRmOTJlNDRiMjYzMjc4Y2ZmZDhkYzlkZTJlZjZlNDE3NDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzNzlhMTNmYjM5OGU5ZGEwYTk1NTc5MDk5Y2Q4NDU3NTY5MDZlYzlkNjE4ZmExNmQwYzIyNTQ2ODMzNmVlNjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZkM2EyNjFiNGFkNTk0YTJlOWFlM2U3MjBmYjdjODRjMGMzNTQ5ZmI1NjZlNmZiYzI5NDhiNzdlZDE3YTBiNDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ2MzI3NzBlNTZlMzMxMmJmZmIwZjA2ZWQxM2ViOTkyYzhkNjFkYjlkNDJhNmE3YWVjODQzMjNjODVlY2EyNTgifQ"
+        },
+        {
+          "resource": "repo://nora/agent/guards.py#L560-L566",
+          "version": "repo-lines-v1:sha256:76f275671dd62c0770516cbb95015bdff8101436fdcf731533c86498605bb1fe:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTY1MmE1NmQ2ZDM3YjlkZGI3ZDVlNzM5OTc0ZDIxZjdlNzI5MTZiMDVlNzAwMDE1MGY2ZTU2MWU3OTM3YzJiZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiM2U3YmFjODlkNWZiY2JiZDlkMzBhMjRkZTFjZGM3YjIyYjU1YWJlYjFiOGI0MzNlMjk0MGU3ZjU5NmZmY2U3MiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDkwNmE4ZDA5MGIwYmQ1NzhhYzU3NDI2OGJlMDI1ZDUwYmQ0YjNiM2E2N2JkYjI3MmMyNTJmN2U2NzJiNTg3OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzkwYmNiOWE3YTI1ZTRhMjhkOWE1MTQ3MjlkNGRhNTA0OTVhZTAyZjY0NmVhNDJiYzZkYjlhZTc1MTYyZDg4YSJ9"
+        },
+        {
+          "resource": "repo://nora/agent/guards.py#L867-L872",
+          "version": "repo-lines-v1:sha256:176745df9cded42a86ed7382caab4ba9a2b887053840d3cf2dae2a85c29d566e:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTlkNDg1YzJhMDgyMWFkZDBiYWZiNjQ5YmYzYWM5NWRiOWZiN2UzOTZhZjY0NDliNTNlN2Y1MDEwZDFmYzhiNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTUwMzJlOTY0ZDA5MzIzNTFlNWQxODUyNjkyODFiMTcxYTNhMDliMDhiMjg2ZTY2MWVhNDcwMzIzYzgyZWI0ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjBjMmRiMjU1MDdkM2JkMGEyYmRkOTU1NWUyNTQ3MWQ2M2FiYjhlNzk4NDQ0M2JhYTc2NGFlZjFlMjk3ZmRlNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNWI2ODQ0YzM1YzFmMjA2ODZiYmJlYzIzZjNiN2M5MGIwZTgwZjJiMmQ1YWM1ZGY0MjRmMjgyODlkZDY4ZDJhOSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_3b37a6426d35464592528e9d95a2b471",
+      "statement": "R-99 vetoes a call carrying an argument the tool's own signature does not declare, returning a `bad_arguments` result naming both the arguments sent and the ones accepted, and treats a missing `param_names` table or a missing entry for the tool as 'cannot verify' rather than reject; `conversation_id` is exempt because R-3 counts an invented one without vetoing it.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/guards.py#L569-L599",
+          "version": "repo-lines-v1:sha256:2ea8d9e167bd5cac583ba7075727bd86d07589dbc6e5a5e4c2554e35a0027d25:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmYjViOWI4YWE5Y2Y0MWNmODIzMzU3NTQzMGVmYzU4NjExZWI1OTI2MGNkYmFlYWVhOTcxMzljNGE5NTVjOTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwZDc5N2MwOGUwYTlmZTRiZDljNzY0ZDNlYTJmYWRiZTk0MTM4MmFlY2FkZmJiMmJjZDJiMTg3OTExMGU1MWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU4ZDEyMmRmMDZkM2Y0ZmUxMDY2NzA4N2RjYWRhOWJjZTRhM2YyZmY1NjNkNDkxMTEyMTIzZWIyZTU0OGQ0NDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYxM2U0NWMwNzZkZDIyOTExZmFiYWMzMzQzMGFiNzM3Y2ZjZWVmZjcwYTU4NTRhMTY4ZGNkNTgzMmUzMzUwYWQifQ"
+        },
+        {
+          "resource": "repo://nora/agent/guards.py#L602-L638",
+          "version": "repo-lines-v1:sha256:bc520229a53e371441d9ba4b5de8fc7d7f986bad13688960d7b6d918be7bf06d:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZjOTQyYzViZGFlMDFlMDIwZTIxZmZiODVlMTBlNjk4ZGNhOTgzZDI5MDI5MzI0NjI1NzVkMzUzN2Y2YjI5Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEwZDUxYjkxNTM2ZjY1MmNiNTliODkwNjE0Yzg1ODgwMTZlN2QyYTYzYjRlNzc0MDIyMzllODg3M2ZlNzZlNGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU0Njg3OTI5OGU2NGEzNzhmMDlhYzQxNjg0YjBkMTYzOWU2MGFhNWVhNTcxMzA5NWNhNThiZWE0YTRkM2RjZTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEyZTg5ODBmZTMyZmUxYmU1YTNjZjhkYTlkODMyNGQ0ZGE0ZjMwNDU5MTExOGI0NDUxODMyOTcwYTNjNTVkMzkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_132d069f2c8a4c4d97f3a1a1ea7a48e0",
+      "statement": "The per-tool ceiling counts finished calls plus admitted-and-still-running ones, and its refusal text differs by tool kind (labelled R-2 for `send_reply`, whose budget is checked before R-2's latch; a distinct sentence for `skills`; 'say what was not done' for a write verb; 'answer from what you already have' for a read), and a failed call consumes no budget.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/guards.py#L1290-L1330",
+          "version": "repo-lines-v1:sha256:9eb8808bef549dbd3992c0e22997dcee1fddfb6474e13ef1b59bb23ebcb0f680:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4ZTMxZjhkNmM3NDU2Yzg0YTFlZTBiZmY4MDcwZTA0OTg4OTI1Njc1NGNmMzk5YjIzOTA2ZmI3ZmY1MzVmNzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNiZjk4ZjFkYjk3MjMzN2FkZGY2MjVkZWQzNzZjZTcwNWM2NDU2ODU2YmJmZTIyNTk1YmE2ZmQ5YTg3MTBlODIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMxMTJlYzc4ZjJmODI3OGNmZTBiZjNjNjg3MjViOGMzMzgxMjE4YzliY2MxZjIyZmMzYmM0ZDBmYTEwZjY2NDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRmODhkYzlmNTQ4MjVmMDRhZTFhNGMwNTdhZGVmNzA5NWZkYWFmYjFjZjQyOTc5ZTk3ODA5ODNhNzY3MGVhOWIifQ"
+        },
+        {
+          "resource": "repo://nora/agent/guards.py#L921-L992",
+          "version": "repo-lines-v1:sha256:383599df8c2b1f4ea216a6b0746807311b1c31076e7ddf307399253744b47df3:eyJzZWxlY3RlZExpbmVDb3VudCI6NzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0NzNmNjFiYTQ2ZTk5ODliNmU1YTQwYzkwMzljZTQ0NTAwYjkyYTAxNDM5ZTI0MWY1MDhkNzBlZTQxZmExYzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBlMjZiM2UzZTFkY2I1MGQ0OGVkZDhiNjI0YzYwNDQ0ZDhlYWY3OWQ4MDE5ODQ2N2E3OTg4OGIyZDYyNTQ5ZGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBlN2I3ZjMzMjUxZGUyMThkZmM2ZDI0NGJhMTc3YmY2ZDNkOGZjNTkwNjk2NjVmNzFiZWVkY2FlYWE4NzlhODkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_be6ddfd5736e4eb5bc5df46b9763cf40",
+      "statement": "On the tag path the guard's deny list is the whole `NATIVE_TOOLS` table, a superset of any one occasion's surface, so a name that is in the table but not on the surface passes `evaluate` and then reaches Strands' own unknown-tool answer; the Dreamer's mapping is derived from the built tools, where the two sets coincide.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/dreamer.py#L1780-L1793",
+          "version": "repo-lines-v1:sha256:81430e7bcfdf33a12cd02fbaf16b11dd10bd9f5902105d063cf83174019fc30f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5ZWEyMGRjMTJjY2E4OGUyYjMzODRhZTM2ODJiNGM0YWY3OTZkYzFhY2Q4NjMzMGZlYjZjYzYwZmE5Yzk3MmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJiOWQ1ZTI3ZjdiZDJlNTNlMDM3YzQ5NzQyZGMyOWJmNTBmNmQ2NGEwZDA2YWZlMzI0OGZjZWNmMTVjNmM0NzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdkOTllMjNkOTMwMWM1OTRkNTMyN2JiNGRhZWEyMGM3YjFjZWJlOTQ4OTQ4OWU2MjFkYzc2MjFhNzQ0YzMwYTIifQ"
+        },
+        {
+          "resource": "repo://nora/agent/guards.py#L867-L872",
+          "version": "repo-lines-v1:sha256:176745df9cded42a86ed7382caab4ba9a2b887053840d3cf2dae2a85c29d566e:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTlkNDg1YzJhMDgyMWFkZDBiYWZiNjQ5YmYzYWM5NWRiOWZiN2UzOTZhZjY0NDliNTNlN2Y1MDEwZDFmYzhiNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTUwMzJlOTY0ZDA5MzIzNTFlNWQxODUyNjkyODFiMTcxYTNhMDliMDhiMjg2ZTY2MWVhNDcwMzIzYzgyZWI0ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjBjMmRiMjU1MDdkM2JkMGEyYmRkOTU1NWUyNTQ3MWQ2M2FiYjhlNzk4NDQ0M2JhYTc2NGFlZjFlMjk3ZmRlNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNWI2ODQ0YzM1YzFmMjA2ODZiYmJlYzIzZjNiN2M5MGIwZTgwZjJiMmQ1YWM1ZGY0MjRmMjgyODlkZDY4ZDJhOSJ9"
+        },
+        {
+          "resource": "repo://nora/agent/registry.py#L597-L621",
+          "version": "repo-lines-v1:sha256:416e692147baea73786e98dd781e6b7073094b21f42caff74a60d9717aa41193:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjllZWY2YmViODkzMzlmMzU5MGVkYzEzMTg0ZTk0ZGI1NTI0MzE4MGY4YzA3MDcwMDI5MWY1ZTAwOTAxYzJhY2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIzNjExNGU2NWFhOTlmNzFiZmYyM2EyNWIyZTNlNzFiNmNhMWJhYTkyYmZkYjQxNWQ1N2UzZjk0MDE4ODI3ODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE1NWViNTViYTJiODc1ZWZmYTFiYTE5MTFiZDZjZDAyNGE3ZGUxNzQyZmEzMDE0YjY5Y2YwN2YyOGViYzg4YjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEzOTEyOTg5Y2VjODAzYjE4NDQ3ODc3MTAzYWE4ZTUyMzkyNjA3NDFmNmU0OTExZDRmMGQ5NmI5MTVhMDc0YzMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_dbc2fed9f5df4e258254e8435b548430",
+      "statement": "Over-cap tool results are clamped in the Dreamer path's after-tool hook against `TOOL_RESULT_CAPS` (8000 characters for `web_fetch` and `web_search`, 4000 for the memory verbs) with a marker naming the cap appended so a truncated result reads as truncated; the Cognition session reads the same table, and on the tag path the caps live inside the tools themselves (`LOAD_TRANSCRIPT_MAX = 60` rows, default 25).",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/dream_guard.py#L511-L537",
+          "version": "repo-lines-v1:sha256:de78def5f3d4896b66617a61c60343bac679a2d9c4788069fe036ec7de1b450d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFjM2Y1YzgxZDRhYTY2M2Y1MTM5MzhlNTAyNGQ2NWM4NWJlMzBkMGVkOWNjYmU5N2E3NmU3MmJkNDViMzY2N2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJiZWEzMTAzZmMzNGI3OWI3ZmI4ZWRmNWQxZTAyZGM1MjM3NTA0NjhmZDhkMzYzN2JlYWQyOGU3NjIwZWZjZmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNmNzZhYjAwYTNhZGMzZmQ4ZmM5MzZjYzYyYzhhNTc0MjVlODBmZGU1NTE1MTZiZGZhMmExY2Y5YTk2Y2NmZWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUxMDM0ODFjNTdkMGYwZGMwZjc2Y2QyY2M4YjM2MDRjNGU4Mjk2ZGE0MTIyYWRkMTllODE3NDVkYzdlMzMxYTYifQ"
+        },
+        {
+          "resource": "repo://nora/agent/dreamer.py#L122-L146",
+          "version": "repo-lines-v1:sha256:05a7f546c413bf62167925463de3e0d38c0733dbc0df598d06f35a4fc2b58358:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3OTFmNTFiNjM4NjBiNDE5YTdiZWI0ZTdhMTMyZTQxN2IyOGIzYTZjYzQyNTRkOWFlZmZkODc1NWJkNWM4ZTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5MTRlZGEwZWE4OTIwMDQyMzkxZGI3YzMzMTZiMzg4YTc0ZDA5MzQxMTcxNzU4MDQyMDUyN2Y5NGRmZTI4MDAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZlODM0MzhhODY2ZmIwNWNlOWE2OGFiYzA4MjgxOWI1ODI5NDM0MjQ1MTkzODMzMjk5MTBhYTMxODMyN2VhZjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFjODBmNDY5NzY4NDYyMTE3NDlkNDgzNzY3OWUxM2I5ZWEyNjU3NjU5MGJmNTQ2N2I2YjY1NmM0MmJkNDcyNzQifQ"
+        },
+        {
+          "resource": "repo://nora/agent/tools.py#L2009-L2016",
+          "version": "repo-lines-v1:sha256:69f04c12b0d2ded6cea5851a71d496d62043e8c078eaa55ea741a7875c843b5e:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzAwZTUwNGVjZWE4YjYwOGQwMGE5MTY5NjI2NzMzZTg4OTVjZTFmMTc2YzY0OTNjMTMzYTBmNGJkMjA0MTFjNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjExZDBiODM5NmZjNzJkYzllODEzYzg3MmNjN2EzMDQ1Y2I1ZWFlYWY2OWFiZjQwMzEzYjQzMTQyMTVjMDk1MiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTVhZDYyYzhiOWY2YWZkMDE2MzIwZjI4Y2IwN2UyZmVhYzVlMzFjZWY4MTUwNzQ5NzU4NWU4ZGEwNmY0NGRkZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODlmZTIxZmMyMzQwN2Q2ZWQ1OWU5NmI3MDQ1NjEzMjczOWY4OGJiNTYzNjVjMWQyODQ0MGUyYjU1NWRlNGRkZiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_0fa66c4f2d7e4c0aa34f3b5d43209d9e",
+      "statement": "`output_contract` is the one contract field with a runtime reader: `adapt()` wraps every native tool's callable, checks the result against the named contract's required keys and the declared status vocabulary, and replaces a failing result with `status=\"unavailable\"` and `reason=\"malformed_result\"`, fail-closed, while exceptions still propagate.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/ports.py#L105-L118",
+          "version": "repo-lines-v1:sha256:da516ce77903651636f6d9e962b6e5d9e346b6117b577b2cf2e926d1348b2ff7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjYWQzNzlkZDE2M2ZiMGE1OTQ5ZDNhYmRjMGEzM2VkZjI5ZTdmMGM2MGIxNWM5ZjY0NjNlNGNiMzE3YWE4N2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVlNDViNTkxMTRlNTgxMTBhNmQ0Njk1MzBjNmExNzEwM2VhYTVjYTI0ZjMzY2FjMTRkYWFmMDAzZGZmYTAzY2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        },
+        {
+          "resource": "repo://nora/agent/ports.py#L239-L313",
+          "version": "repo-lines-v1:sha256:69538b1f2b6411dc9e64c83e25b5da3427054843914756352a20b5bb91074f42:eyJzZWxlY3RlZExpbmVDb3VudCI6NzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2OGI5NDg5MDA3M2IxMTMzZTEwODY3Zjk1OGI1OTk2ZGY1NTQzYjVmZGRhNmE0MmJmNTg2ODc3MzVmZjA1MWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRlM2VlNzdmMmQyNWM5ZTE0MThkZjQzMTU0NzlhOTNmZjMyN2FlZWZlMDNmZTgxYzg0Y2MwZDMzYTlhMjdlOTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkzYTg1YWIwMjYyY2U0YzcxN2NlMWJhMDkzMjU2YTVhNjZjZDY2ZDMxYzQ1NTVmMDkxOTc5MTI3YmNkNjhmMjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdjNmIyN2FjMDg4ZTUzYTVjMDZmNmY1NjQzMTVjYzhlZGNkNGZmYzYxM2E1NThlNWIyM2JkNTVlYmI5ZWYzMjgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_24e48b0b700345eba151a0042f4e23e9",
+      "statement": "The contract triple (`side_effect_state`, `idempotency`, `retry`) must be declared explicitly on every row over closed vocabularies that deliberately exclude `not_applied`, and the enforcing test reads the source rather than the constructed dataclass because a forgotten declaration and a deliberate default are byte-identical afterwards.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/tools.py#L448-L583",
+          "version": "repo-lines-v1:sha256:68656d2b68bc66a82875beca88f95129f7f4307d38c5761e4c488110a06c7a77:eyJzZWxlY3RlZExpbmVDb3VudCI6MTM2LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIyMWJjMDI3MjMyNGNmYjQzZmQyM2MzZjY4NjlkMTg2Y2JlYTRmOWY3MWMxZTJmNmQ5NWQ5NGZmM2RhODk5NTdkIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJmMWExN2Q3ZTkzMjY0NTkwNmUxOTg0MWJmNDkxY2MzYzY0MTU2ZTQwOGYzODc2YjEzNzI0MmY1YmI5MmRmOTUxIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIwYTRjYTY0YTBhZDhjYmU5ZDc5YWM1ZWMzMjJkY2EwOTFlYTc4YzYyMGI1MWEyNmZlZmQwZGZjNjliYjI5OTcwIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI1YTUyZTEwY2Y3NzFlODFjN2ExMzQxNDU0NTAyYjk1ODY3NWJmY2VjMDRhYzA5ZjUwMzNmN2E3MzgyMTllOGM5In0"
+        },
+        {
+          "resource": "repo://tests/test_tool_contract_metadata.py#L98-L139",
+          "version": "repo-lines-v1:sha256:da30c764d7be3490d97b57a70a8c9cafade3f015e334c9200ad5ce680fe7ead6:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliN2Q1Y2I1ZGFiYWVhY2E5NGI0ZjhlNzI0ODIxNDg3NzQ3ODMxNWZjZWFiZjM0ZjZlYzg1MTYwNmY1YjMxOGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiMWIyY2VlMjc1NmNiNzQ1N2QyZGNlNjkyOTRkN2RjNjJkNmQ5NmQ5Y2VkOGIwZjAzYzZkYTU3Yjk3ZWQ2YzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNkNzU4MjI2OWExNjhjZTE4MjE0NjVhMjAzY2YwNmQ0MzNjODlhNzU3YjA0MjhkNmJmMWNjM2JiYjcxZjc0ODgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYzYzM3ZmQzOTZjNWMyOWI0YWU2Yzg5NWQ5ZjIwZjI2MzkxODEzMjI1ZGYxNzIyZmI4MjEyMzAwNjI3ZGRlMzkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0ee66eaf21dd4bbf9b77621b30a5f241",
+      "statement": "A new tool is named `<domain>_<verb>` over `[a-z0-9_]` and at most 64 characters, with the verb drawn from a documented constant in `tests/architecture/test_tool_names.py`; pre-existing names are frozen in a digest-pinned snapshot and the exempt set only shrinks through `_RENAMED_SINCE`.",
+      "evidence": [
+        {
+          "resource": "repo://docs/adr/0015-tool-surface-policy-v2.md#L144-L172",
+          "version": "repo-lines-v1:sha256:a20c36cb526392bee60ae1c18013b432680484254ad8bf0078044df5e9d6b225:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIwMmI3NmQyYTFmNmU1NDA1MWZlNmExMjE0NWJjMzA2YjQ5ZjJkNzAxMzFhNmU0Yzg5OTE3ZDExYTZjOWYxNzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjNTAxOTI4YjY5MjEzYTEwNzQ0ZDdmYmJjYjg0YzgxNDA0MGJlN2ZjNzBkNmE2MWRlNTk0MWE2M2M0OTUyOTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNiMTU3YTZkMjc2N2ZmN2Y0MTMzZWUyNzY1MTM2N2M2ZmRmZjdhYjRmZDliYTNjYjQyNjJlMmFhNDQ5MGNjYTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYzOTFjYTJlNjYzOGY3NGE2MTJkNmVkYzY3YmM1M2ZhNTBkZGQ4ZmRkNzUxMmU1MWFjYzBkNjU4YWQ1YTJkY2MifQ"
+        },
+        {
+          "resource": "repo://tests/architecture/test_tool_names.py#L20-L157",
+          "version": "repo-lines-v1:sha256:1b7202c8deea01c386c7d9b7be5d6d70df57150a995270e1336858d6c40787ef:eyJzZWxlY3RlZExpbmVDb3VudCI6MTM4LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIxNDE2N2ZlMThjOWYzODEyNTA0NDI5ZTk1M2M2MjRhZTc5ZmY4YjY5N2YyZTA0NTAyZDYyYjM2N2QyYzBkNWVmIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI1ZDVlMDVkMGJiYTBjNDFmZTIwNzkyYjVhOWY5NWJlZTY0ZDcyM2M3ZWNkZTNiNjE2Mzc1ZTg0NjA5NDkzODIwIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIyOWI4MDQ2OTgwZGMxYWM1OWVhN2Q4NGMyNjdlNGJkMjBjYWNhNzk3OGM2MGI5MTJiMjk2MjMzZGE1NGE2YzcwIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI0MThmMjZmYWQ2YzM3OTYxZTVmMGE0OWU2ODMwMDgxNmQ0YjQyZjc5ZWRkZDg3MDhhMTEwZTljMDFjZmZlZTE0In0"
+        }
+      ]
+    },
+    {
+      "id": "claim_bc44956a7123430188f54d40756a471f",
+      "statement": "Every tool declares a `level` of 1, 2 or 3 whose ceiling (80, 160, 320 cl100k tokens) is counted over the description Strands sends, and its first paragraph is its catalogue line: it must carry a when-to-call clause and fit 40 tokens together with the tool name.",
+      "evidence": [
+        {
+          "resource": "repo://docs/adr/0015-tool-surface-policy-v2.md#L174-L200",
+          "version": "repo-lines-v1:sha256:49cf2829e3b8ea7d46c210fbf90c1ccd9fef4922a9c7c2f0d2cb08b5abb1ab27:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkyYTM5MTk4NmQzNzBmODMyMjM5MWRiNzAzYTRmZmQ0NjkwMzI1YjIxMWIzZjA1N2FmMDQyMDAwMjBiNzc2N2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjczNjBlMTc0YjljNmFmOTdhY2M3MjBlMzZhODAwNDMxM2YzZDBiMTc3ZDBmZjcwM2JjNjllOWMyZTBmNDA1MzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNlYzFiMzhiMGM2NDVmYTc5NjBiMTYyMjQ4YjY4NjQxN2JlODhiOWE2YmQ2N2EwMDUyNzFlMjBjNGRmYmY1NTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUxMzgxYThkNTNhMjY1NzlhZmNlZTMyYTUzZjFmNzI3ZjBmZDg2ZDk3MGY3ZmJjY2RmYmFkMjY2YzVmM2JiY2QifQ"
+        },
+        {
+          "resource": "repo://tests/test_tool_surface_policy.py#L206-L253",
+          "version": "repo-lines-v1:sha256:83cacb246fdfa4392fbe72c327e92aacb55bf6dd91cb8fd82ae0dc8bac6126e5:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmMzQ1ODNhNTk4NzY3YmY1NmFlZmViNjVlMjAzM2ExNjUxY2M0YzhkN2U2ZjBhZjNlNWNmZDMyOTNmOTMzYjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk1NmU3MDc1OTNhZTFhMmRjZjcwYjI4NjhhM2I0OGM1MTExZjY0OGUwMTdlZDAxYjg2M2RhMzE5OWUyNmVhYjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBjMmU3MjllMThjNmIzZGVmMDk0YTI2NWRkYWRmZmM5NTNmZmQ3ZWM5YmY2NDE0NDhiNWNhNGJjZGUwNzJlMjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY0NzFiNGYzMTg3OGQzNmUwZTc2YjY2ODMyMWQ5MGMwYzYwNjZlN2FkZDdlOGFmNDdhMjI5NjMwY2U2MmI4ODcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e48cd1c4988142529ed86e262199bffe",
+      "statement": "Result interpretation belongs in the tool's own returned `note` rather than in its description, with `send_reply` the named exception because it returns a string; descriptions stay English with at most one distinct non-English run and carry no em or en dashes, a ban scoped to the descriptions and specs the tests read while the catalogue renderer still separates name from line with a dash.",
+      "evidence": [
+        {
+          "resource": "repo://docs/adr/0015-tool-surface-policy-v2.md#L198-L237",
+          "version": "repo-lines-v1:sha256:cc2d5a61330b066274a21172a679c83b340cbb5e0ccc088d9dbf7c8e91e30607:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmOGFjNjFjYTE4YTE2NzE5NjgyZDE2YTMyNTUyMmY3YzZkNjM5OGRiM2JjYjI0NDUxZGJmYmIxMDAwNDFkM2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMzZDRmN2ViMzJkZTQxZjM5NmU2YWMyMTJkNGU4NzEyMDg1ZjM5MzgzZjI1NWU0ZTNkYjdkMTVkNjc0MGRlMTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ3NmJjNzViYTViZmFlMGIxZTUwNjZmYzI5ZjA2MGEzZGE5YTQwNjk1MDE2NGQxMjlmNDJmYTllZTNlNzU0ZWIifQ"
+        },
+        {
+          "resource": "repo://nora/agent/registry.py#L755-L771",
+          "version": "repo-lines-v1:sha256:8118f50e273316683133ce62ad3ffe559829838556de21d4dcbe9df306a1dedf:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFiM2E3MjQ3MWIyYmNhMjk4ZDY5Y2JjNTI0NDViZDJhMzFlYmY3NTUzZTRiNTg2NWJjMzdmNzFlNGIxZWE2YjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMzOTVkZmQ1MjMzMTAxODQ4MDM2OGVmZTJmNmM1OTMyOTU4OWJjYzAzM2ViZjk1ZTYwN2IwNTA2MTgwZmZjMjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRkZDJiMmFjNWZhOTI2OTBlYjQzNmM4ZDFmMGNlZWMxMTZkNjY1Y2IxOTliM2JlMjY5OWYzY2E3NzY3NTdiZjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE2NjdhZjU4Y2EzMWU5YTExZmViYzlkYzc5NzM2YTBkNTMwZWMxNGMyMWZiYTdjZWFkZDNmMDAzNzYxMjdhNzkifQ"
+        },
+        {
+          "resource": "repo://tests/test_tool_surface_policy.py#L302-L339",
+          "version": "repo-lines-v1:sha256:5ad329ff15c38cafc2b29e3b9e47042662ed292055798a57add876b765efde81:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4MTljOGUwZWEyMTU3YjM0ZWY0YTRkYTk2MDY1ZjcxYjQ4MzM5OTQ3NzEyOGVhZTY5MzQyM2FmNDliNzQ0N2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmYmQwMDkzMTRiYzI3MDg0MTY3MzRhMDJhZTVmZjM5YTFlNDhhMDUwYmU5MWY0M2IyZmFhOTIwMDJjNjJiZmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQyOGU5NGQyYWUzN2Y3ZTE5OWQxMGJhMTIzYzNkNWI1ZjQ3ODViMzczOWE1ZmFkMTk4ZjEyZTdiM2QxZmI1MmUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a2617c97a3b54f7485d2786f50b102ea",
+      "statement": "MCP tools are the one kind that bypass `adapt()`: `build_mcp_tools` loads one server at a time, catches config-resolution, connection and discovery failures separately so a dead server's tools are merely absent, drops a discovered name that collides with a native or an earlier server's name, and the registry appends an allowed group's tools resident after the native ones while folding its flat budget only for `allowed_mcp`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/mcp.py#L26-L135",
+          "version": "repo-lines-v1:sha256:a6d01797509186314dab2ba9d2da2bcadf15ecc701927a942d3c591f3653201d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEwLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJmNjlhMTM5NzVjMjU2ZWM4MzIwZTIwMTYwODNjOTZkZjYzN2NhM2QzNWJlYmRlMjMxNGJlZTNhNDcxMWI1NmNhIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI3ZWM1ZTk0MGI0NTA3NzgxYWI3NjhiNGFjOWVmMzM5ODVlYmVhN2EyN2VkNWUyMWYwY2Q5MWQwNTZmYTdmYWEyIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIxMjI1NGQ3ODdkNzk3ZGQzZDY5YzRlZDBlZWEyYzdkNjc2NTQyMGQ2NjY2ODBiZDY4ZWU4Y2IxMzVjM2RkOWNkIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MCwiZm9sbG93aW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1In0"
+        },
+        {
+          "resource": "repo://nora/agent/registry.py#L1246-L1249",
+          "version": "repo-lines-v1:sha256:4ec653d220bba050ec14190749eba753d1ab90a0f561a6e29478621db810dd79:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDgzODdhYTcwMzAwMmE0M2MwNTc0NDdlM2MyOWIxMGE3NmM5MDVkODJkMjk4MjFiODc1ZTYzODdkYTRhN2Y5ZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiY2FkNzRlZGNkN2VmNTI3ZmQ5YmFhZDQxMWJhMWJlYTY0ZmQ1OWE1OTgzYjBmNGY4OWI3YTg2YWI2ZWFmYzI5ZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTUxMjAwMTUwNTE3ZDMxNWM2ZmI5NmI3OTYwYzRjZWZkYjNjNmYwYWQzM2U1Mzg5ZTc4YTlkODJmOTEwYTIwMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODliOTMyNjZlZTZmNzhmNGU5NWQ5NGIyMDMwNDYzZjA4ZWNiYTFlMjU4NTYwMmU3MWU1M2JjY2FiNTE4NmU2ZiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_6dfa8abd2f3943b8bf9631e729f712bf",
+      "statement": "`capability_digest()` is the same tool table cut for the Relevance Gate — read-only tools minus the loader, `TAG_ONLY_TOOLS`, the withheld set and the Dreamer-only loop reads — so the gate is never offered a capability a reply could not serve.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/registry.py#L728-L753",
+          "version": "repo-lines-v1:sha256:608fe07ce825f4cf47db911a54e5ea2caf0b7728282b02194e3a95e45e381e4e:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4OWEwNGE3NzA4ZTdiMmRjYWQxZWFhMjQ3OWFhYWEyMmQ0YjM2MDI5ZjBmYWNjOWIyNDQwYmNhNDg4ZGI5NWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg4YjhkNGVlY2FmNGQ2NzA3NWRlZDRiMzZhNjA1ZDhiZTU4OTBjNWVlZjQ3M2MzNGMxOWI1NWQxNmMyM2UyYmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYzY2VlODc0ZWRlZGFmMGE1NWJhNWU1YjRiZGJlYjE3NTFhZDI3MmQ1NzE1N2Y2YWMyODA5N2ZkOWY2YTdjMzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQxMGM0YWE3ZTVkMjlhZDc5Njg5ZmJhNWE1OTM5N2IyNTJmZGJkNDUyNGYzYzhmZjRiNzQwM2Q3MjNmZjQwODMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b85aa62388cd4387a1f3a0155574a295",
+      "statement": "One declaration, two consumers: the per-turn builder ships the admitted members of `HOT_TOOLS` (plus any `hot_on` extras) as resident tools and the catalogue renderers mark those names with `*` instead of `-`, so a marker cannot claim a tool is already loaded while the builder left it on the shelf; `tests/unit/test_tool_catalogue.py` pins that the declared catalogue's marked set equals `HOT_TOOLS`.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/registry.py#L1237-L1256",
+          "version": "repo-lines-v1:sha256:00a734a053df42a2dafaf1dd8cefe03850258a86481b9afddc47412594d0932d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlMzgzOGIxNDgwMDk2ODNjNWQwZmZiYTBhZTcwNTQ4Nzg0NDYxZGJlOGZiZjljYjQwMjdhM2I4YmI0Y2RlN2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIyYjlhMTlhZDE5ZjJmODU2Mjk2MjRlZDhkYzQ0OTkwNGJkZTQ3NzhjYjc3ZmIyMjliNmI1MWQ3NGZmOGIyZGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY3YTIxZmM3OTkyNGVmZDZkN2Q3NmNmNjkxMDViMTNkNTI3ZGZmNGViZmY0NDIwMmExZTk1NDQzOGU1ZDkyZDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNkNDc1ODFjMTA0YzNiZjBiNGM3NzEwMDE2NzY0MmVmYjNiNjgyODRjMjk3NzJlMDYxNGZiZTI4NWY4OTYzYWUifQ"
+        },
+        {
+          "resource": "repo://nora/agent/registry.py#L755-L771",
+          "version": "repo-lines-v1:sha256:8118f50e273316683133ce62ad3ffe559829838556de21d4dcbe9df306a1dedf:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFiM2E3MjQ3MWIyYmNhMjk4ZDY5Y2JjNTI0NDViZDJhMzFlYmY3NTUzZTRiNTg2NWJjMzdmNzFlNGIxZWE2YjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMzOTVkZmQ1MjMzMTAxODQ4MDM2OGVmZTJmNmM1OTMyOTU4OWJjYzAzM2ViZjk1ZTYwN2IwNTA2MTgwZmZjMjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRkZDJiMmFjNWZhOTI2OTBlYjQzNmM4ZDFmMGNlZWMxMTZkNjY1Y2IxOTliM2JlMjY5OWYzY2E3NzY3NTdiZjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE2NjdhZjU4Y2EzMWU5YTExZmViYzlkYzc5NzM2YTBkNTMwZWMxNGMyMWZiYTdjZWFkZDNmMDAzNzYxMjdhNzkifQ"
+        },
+        {
+          "resource": "repo://nora/agent/tools.py#L1921-L1926",
+          "version": "repo-lines-v1:sha256:052bf088a04a4905943b53891649c09186925081bf3969d0de6fb87a1ce31c68:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDk1NTkyNTIyZGE1MDkwZWM1NzY3M2I3OTQxNzc0MDA3NzQ0ZGI2ZDkzMTcxMzA0MmYxMDQ3ZGJhMmZlMjAwYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDM5YTk5NzQ5ODc2MDA1YjFhMTRhNDFkZWYxYjdjNDA4MmM3Nzk2NjMwMTJjZTk2NTViNGVlZDI1ODY3NTllNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDlmOTMwODNjMTk3MTIxYjk4MjcwMGJhOGFmYWJkMTcyMmNmMWQzZTc0MDQ1MDllODBlZmEyNzI0N2Y2MmYwNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjI2NTIzZmNmYWZhY2U4ODRiY2I4ZGM1NTliOTg5ZTM5OTZkNTNhOGUxYzJkYTUzMWM3ZmM3NzI1MGYyNzJmMSJ9"
+        },
+        {
+          "resource": "repo://tests/unit/test_tool_catalogue.py#L164-L178",
+          "version": "repo-lines-v1:sha256:f0c19d9856ad770e07402d9194d42336d90c545dec1d172ce77260443b2ce51f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM3MjdjNjUyYjE0YmM3MDA1NTAyOWRiMDg2MGNmY2ZiMjUyZGE2MTJjYmRiNjhjNzg4ZTE0NGQxNGI5YjcyYTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhhOTg2NWIxZjkxMzE5Zjc2MjViYjIzMDA5NDE4NzcwZTc1MTk2YTE1ZjNhYzA1ZmY0MDk2MTBkY2Y5YzQ5ZTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM5ODQxMDBmZjU4ZGVjYTczZDQzOWUzZmZiMTlmZTg2ZGMwYmQ4MTFmYzgzN2Q1ZjViZGI1ZDczNDIzMGI5ZGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIyZmJhZjk1Yzg1N2I5ODdiYjc3ZWEyNWFiN2YxOWFmMjJjNGRmZjAwMzFkNDg0MDA2Zjk3NDY5MjRkMWU3OTEifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-20T12:25:17.607Z"
+  }
+}
