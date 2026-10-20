@@ -1,5 +1,12 @@
 # Changelog
 
+## [6.4.1](https://github.com/mikeng-io/nora/compare/v6.4.0...v6.4.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **wiki:** render Mermaid diagrams in the public guides ([7b463e9](https://github.com/mikeng-io/nora/commit/7b463e926ee48f490da3662a2e16e58d4a8aefd0))
+
 ## [6.4.0](https://github.com/mikeng-io/nora/compare/v6.3.1...v6.4.0) (2026-10-20)
 
 
