@@ -658,3 +658,22 @@ def test_prompt_renders_source_calendar_time_without_rewriting_evidence():
     assert rendered["source_order"] == "oldest_first"
     assert rendered["lines"][0]["claim"] == row["claim"]
     assert doc == original
+
+
+def test_batch_evidence_visibility_does_not_grant_another_claims_citations():
+    doc = census_input()
+    first, sibling = doc["rows"][0], doc["rows"][3]
+    rendered = json.loads(coverage.prompt(doc, [first, sibling])[len(coverage.RULES):])
+    # Both sources are visible for deduplicated rendering, but each answer has
+    # its own complete citation roster. Availability is not eligibility.
+    assert {s["id"] for s in rendered["sources"]} == {"record-0", "record-3"}
+    assert rendered["lines"][0]["eligible_evidence_ids"] == ["record-0", "head0"]
+    assert rendered["lines"][1]["eligible_evidence_ids"] == ["record-3", "head3"]
+    labels = [
+        {"id": first["id"], "label": "derivable_missed",
+         "evidence_ids": ["record-3"], "why": "Sibling source is visible"},
+        {"id": sibling["id"], "label": "source_unresolved",
+         "evidence_ids": [], "why": "Unknown"},
+    ]
+    with pytest.raises(ValueError, match="unavailable evidence"):
+        coverage.parse_labels(json.dumps(labels), [first, sibling])

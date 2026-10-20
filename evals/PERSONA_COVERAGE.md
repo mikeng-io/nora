@@ -212,6 +212,18 @@ must be positive and at most 300 seconds. Calls are sequential, at most 16
 lines each, and never cross account/unit. Plan counts both calibration and
 measurement. One census draw is required; generic tool selection is not coverage.
 
+For a newly authorized run of the 24-call census after the recorded 90-second
+client timeouts, `--coverage-timeout 135` bounds client waits to 54 minutes.
+This uses the existing timeout option; it does not establish upstream
+cancellation or recover the original timed-out calls' unknown spend. Recompute
+the plan after evidence changes and refuse it if the 55-minute bound is exceeded.
+
+Each rendered claim also carries its complete `eligible_evidence_ids` roster.
+Shared evidence is deduplicated for display, not shared citation eligibility.
+The parser still rejects an entire batch if one answer borrows a sibling claim's
+source. This input clarification is not proof that the model will obey it;
+fresh calibration and measurement remain necessary, with original errors retained.
+
 Calibration runs first on exactly 20 root-adjudicated references. At least
 18 agreements and zero instrument errors are required; otherwise ERROR stops
 before any measurement call. This implementation always recalibrates; it
