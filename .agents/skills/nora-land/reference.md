@@ -17,9 +17,15 @@ exec "$(command -v git)" "$@"
 `$V fetch origin && $V switch -c mikeng-io/<slug> origin/master`, then `uv sync
 --extra evals`. Claude Code commits end with a `Claude-Session:` footer.
 
-## Choosing the model and effort for a subagent
+## Choosing the agent and effort for a subagent
 
-`AGENTS.md`, «Delegating to a sub-agent: which model, and how much effort», is
-the one rule: a tier table for the model and an adaptive effort table. Name
-both in every launch. (The 2026-09-24 rule that stood here, «Opus reviews»,
-was superseded by that table on 2026-09-30.)
+`AGENTS.md`, «Orchestrating: who builds, who checks, and how much effort», is
+the one rule: a lane table (Codex `gpt-6.1-sol` builds, Kimi CLI reviews, Claude
+`haiku` does mechanical work) and an adaptive effort table. Name both in every
+launch. (It replaced the Sonnet/Opus tier table on 2026-10-21, which had
+replaced the 2026-09-24 rule «Opus reviews» on 2026-09-30.)
+
+**Codex through T3 `delegate_task` (`isolation: worktree`).** The worktree is
+cut from the orchestrator's local commit, so step 1 is `git fetch origin && git
+switch -c mikeng-io/<slug> origin/master` inside it, then `uv sync --extra
+evals`; never a second `git worktree add`.

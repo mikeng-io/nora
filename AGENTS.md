@@ -191,31 +191,60 @@ rules were written down and not read at the moment they applied.
 holds the skills of the agents that build her. `tests/architecture/test_agent_skills.py`
 keeps this table and that directory in step.
 
-## Delegating to a sub-agent: which model, and how much effort
+## Orchestrating: who builds, who checks, and how much effort
 
-Say the model AND the effort in every launch; never let either
-default. Two tiers: the
-**default** tier (Claude: Sonnet) and the **strongest** tier (Claude: Opus).
-They are close in capability, so the strongest tier is spent only where a row
-below names it (operator ruling, 2026-09-30).
+**The session the operator talks to is the orchestrator, not the builder**
+(operator ruling, 2026-10-21). It comprehends the ask, writes the brief, picks
+the agent and the effort, launches, reads what comes back, decides, and lands
+and reports through the skills above. It does not write the implementation
+itself. The work goes to three lanes:
 
-| the sub-agent's task | tier |
-|---|---|
-| mechanical: renumber, rename, merge conflicts, config edit, read-back, doc sync | default |
-| build to a finished spec, off by default or additive | default |
-| fix review findings that name a file and line | default |
-| review of an off-by-default or additive change | default |
-| review of a change live on merge that touches disclosure, a lock or concurrency path, a migration on a hot table, or starts spending model calls | strongest |
-| build with no spec (design judgement), a design bundle, or its audit | strongest |
-| a default-tier build or fix drew a BLOCKER, or a data-loss finding (input silently dropped or never seen), twice in the same area | next round strongest |
-| one tier's quota is exhausted | the other, and say so in the report |
+| the task | lane | how it is launched |
+|---|---|---|
+| build, fix, debug, a design bundle, merge conflicts: anything that edits code, tests, doctrine or design | Codex, `gpt-6.1-sol` | T3 `delegate_task`: `providerInstanceId: codex`, `model: gpt-6.1-sol`, `options.reasoningEffort` = the effort table's level (it takes all five), `isolation: worktree` |
+| independent review, audit, verification of a built change or a PR | Kimi CLI (K3, 256K context) | `kimi -p "$(cat <brief>)" > <log> 2>&1`, run in a checkout of the head under review |
+| mechanical: renumber, rename, doc sync, config edit to a given value, read-back, lookup, log or diff fetch | Claude `haiku` | the native sub-agent tool with `model: haiku`, or `delegate_task` with `claudeAgent` / `claude-haiku-5-5` |
+| a light check: read a gate rc, open a cited line, compare two shas, count a log | the orchestrator itself | no launch; a launch costs more than the check |
 
-Every change still gets an independent review by a fresh agent, never the one
-that built it: resuming an agent keeps its model, so a follow-up that the table
-puts on another tier is a new launch with the old report pasted in.
+- **The builder never reviews its own work**, and neither does the
+  orchestrator that wrote its brief. Codex builds and Kimi reviews by default,
+  so a review crosses vendors. A follow-up on a different lane or effort is a
+  new launch with the old report pasted in; resuming keeps the model.
+- **A brief carries everything.** A delegated agent starts with no history: the
+  brief names the spec or the findings, the worktree and branch, the skills to
+  load (`nora-land` for a build), the tests that must pass, and what to report back.
+  A review brief adds the PR's claims and the diff command (`gh pr diff <N>`).
+- **A `delegate_task` worktree starts from the orchestrator's local commit**,
+  not `origin/master`, and this checkout's `master` lags. A build brief's first
+  step is `git fetch origin && git switch -c mikeng-io/<slug> origin/master` in
+  that worktree, in place of `nora-land` step 1's `git worktree add`.
+- **Keep Codex on the build; it drifts into checking.** `gpt-6.1-sol` is
+  over-proactive: left alone it re-reviews its own diff, runs the suite again
+  and again, invents edge cases and widens the change to guard them (operator,
+  2026-10-21). Its brief bounds that: build to the spec, run the named tests
+  and `nora-land`'s loop once, and stop. It does not run the full gate (the orchestrator runs it once, on
+  the final head), launch
+  its own reviewers, add tests or handling the spec did not ask for, or touch
+  files outside the brief; an edge case it notices goes in its report as a
+  line, not into the diff. It still checks its own work, but that is the
+  minority of the run. The orchestrator guards it, reading the diff for
+  scope creep and anything reckless, and the review lane does the checking.
+- **Kimi is told it is read-only, and that is measured, not trusted**: `-p`
+  cannot be combined with `--plan`, so `git status --short` in its checkout
+  after the run must print nothing. Its thinking stays on; it takes no effort
+  flag, so the brief's scope is the lever. Its findings are verified like any
+  other review's (`nora-land` step 7).
+- **When a lane is down, use the next and say so in the report**: implementation
+  falls back to Claude `opus` through the native tool; review falls back to a
+  fresh `gpt-6.1-sol` launch that did not build the change (or `opencode/kimi-k3`
+  through `delegate_task`); mechanical work falls back to `gpt-6.1-sol` at `low`.
+  A lane is down when its launch fails or its quota is spent, not when the
+  orchestrator would rather do the work.
+- **Say the lane AND the effort in every launch** (where the lane takes one);
+  never let either default.
 
 **Effort is adaptive: it follows the task's ambiguity and what a miss costs,
-not the tier** (operator, 2026-10-07). The tier picks the model; effort picks
+not the lane** (operator, 2026-10-07). The lane picks the model; effort picks
 how long it thinks. Start at the row's level and move it on evidence:
 
 | the sub-agent's task | effort |
@@ -226,10 +255,12 @@ how long it thinks. Start at the row's level and move it on evidence:
 | build with no spec (design judgement); a design bundle or its audit; review of a change touching disclosure (R-18, R-28, R-31), a lock or concurrency path, a hot-table migration, or one that starts spending model calls | xhigh |
 | a round after two BLOCKERs or a data-loss finding in the same area; a security or disclosure audit before publication | max |
 
-- **Escalate effort before tier.** Each BLOCKER raises the next round in the
+- **Escalate effort before model.** Each BLOCKER raises the next round in the
   same area one level, and a second BLOCKER or any data-loss finding goes to
-  `max` directly; the tier table above still decides when the model changes.
-  Each new task starts at its row's level, whatever an earlier one needed.
+  `max` directly. A third BLOCKER in the same area at `max` is the orchestrator's
+  cue to re-read the spec and the input before launching again: the brief, not
+  the model, is the usual cause. Each new task starts at its row's level,
+  whatever an earlier one needed.
 - **An explicit operator override for a session wins** («only use low»).
 - A resumed agent keeps its effort as it keeps its model: a different level
   is a new launch with the old report pasted in.
