@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:1731ebcd4f4bd64c65dd6ac2d42968af1e1b8eb5642ab1cf009579b87376840c",
+  "claims": [
+    {
+      "id": "claim_451a406733414d978832d0c534c8c6e6",
+      "statement": "Computer use requires explicit enablement and credentials, records calls, and session expiry preserves jobs, files and profiles.",
+      "evidence": [
+        {
+          "resource": "repo://config.example.toml#L453-L491",
+          "version": "repo-lines-v1:sha256:032f7b9008131608a156af9e5b42bf423ece29bf20a0984709fa0cd314ddedc0:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA0Zjc5NzgzOGE3NjRjNTZmMjQ4MTI0MzRjYzI1MmViYWRiOTRlMGMzMjQ4NDc2Y2JiN2ZiYjQyYWNkZWVhNWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRkYWVmMmE4MTA5ODZmNjY4NTE2MTEyN2VlYjQ1ZjU1YTMwMzZjN2QzY2I2MTgyZmFmMjU1MzAxMWM2ZmYzMjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQzYWJhYTMyYjhhZDg4ZDE2MDk5NGE0MWFlYjE2NTZiM2Q5Mjc1N2VkYzU2MTFmMmYwMDZjNmRhYTNlODM3MWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMwYjZmMmNkNjJiOTE5Nzc4N2JlZDMyNmUyNGRiZGEwMDAyNmZjMzk2ZDkzZmUwZjg3NDIyY2FjMzI3YjZhNTIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_bf92facc5162407a880cef5b139d79e5",
+      "statement": "Computer context is rebuilt per occasion and falls back to database state when machine reads time out.",
+      "evidence": [
+        {
+          "resource": "repo://config.example.toml#L499-L506",
+          "version": "repo-lines-v1:sha256:c4279d4d035c7ebab8752a5c98da8d1c4ff307bd9739de488e0fad3441c1d34a:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzRjYjVhYzU5NWRhNWQ0ZjM3NzM2OTFmNzZkM2ExNWYyZWJiY2MxODlhY2VkMzkzYWRiN2Q5ZmYwNGQzMWFjZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMGFhYTFmNzRmYWZhYWFkYTdhZGJkN2U2OTg2NDk5YzRmMGNmZjIyMTRhYjIyMGQxZmQ4YTlhY2EzM2M3NWNhNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzVhZGI0ZTRiNmRjYjNmZTIwNjdjNDhjMjI1ZDZlMTlmZTRkODk0YTg0Njc5ZmFmNjRkOTUxNWZmYTI5ZTc5YyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODg1MWRkM2QwYWUxMWU0OGM1MzQ3OTgzNzg3ZDFhZjQ3ZGIzMDllNWFlYjYxNGQ3YWY1MzZiMmE0MTVkMTFkNCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_78303181e7974e40bc84444e00441264",
+      "statement": "Browser task timeout and errors return unavailable.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/browse.py#L259-L271",
+          "version": "repo-lines-v1:sha256:6c4254b41acbd8d5484253db33d026fd43ae013e380902adb583e0515bec6b86:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFhMzU0MGM3OGZhZTkzOTEzNTExNDY1YmVkYTM5YWQzZTI3MTg0NTRhNGNhYjhjNTdhM2ZlODhiYzIyNjUxOGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1NjFjNzg1NGMyMWRhZGQwODU2N2NlZmM1YTg3NGIyNGM1NTFhYzI1M2RmMTY4MDdhNGQ5ZTQxYjU1MGQ4Y2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM2OGU4MTUwNjY3NWU0OTZkYTIxZGU5MDgxZjc5ODRjNjVjNzg2YjNmNmU2NWI5OGFkYjVjZTQwOTM3ZWFjNTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA5YzgzYjBjMDI0ZDQ0NzM5ZGQ1MmFhMzRmZTUwZTI3ODA5MTM5NzA2NzU5MDQ5MWMwNGZkMmEzYTE5NjJiYWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7cb1789f8f324dc292b027d59d54e1ea",
+      "statement": "Per-command resource limit fields are reserved and ignored by computerd.",
+      "evidence": [
+        {
+          "resource": "repo://config.example.toml#L476-L481",
+          "version": "repo-lines-v1:sha256:12b540735a0a9a0cab64ac6ccef0462f1ab7b686897966d5352c8e762a6ebef6:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzY1OGJlOWU1ZmE5NTRlMmJkY2U0ZGU4MmI4NjY1ZDk2NzU3M2JiMWE4OTkyMzFiYjhlZTBlNzVkMGRiOTMwNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmEzNjk4NGRkYWRjNjI4N2I0NDEyN2UwNzY0ZjU4ZjNmZmNjMDg5ZTEyNTdkNGU1NjA2MjNjZWM0MWQ2ZWNjZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTdkYTg1N2QyZDY5YWUwZWVkMDU4Zjk2ZTczODlkZjJhNjJiMzQ5NWQ1MmU1M2M3MDY5MDhkZTc0NWU3MzMxYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzAwNWEzN2Q4ZDMyMDFiZjUxOThjNzI0YTFjMTE4NDZjZGQ3NzA4ZGM5N2Y1NDBkM2Y1NDljM2Y5NDg2MTIxZSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_e2a397014fa840ccaa350f9df0d20060",
+      "statement": "Current sandbox CIDR egress denial only covers IP literals, not public names resolving to private addresses.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/computer/README.md#L41-L68",
+          "version": "repo-lines-v1:sha256:b2533f4f635d4d3a977a00dea35e0f4168b14ed0092d213e85883c666ddd8e85:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRkNjkyNDIxYzA2Y2QzZTYyYjc5NWM2Yjk2MzMxZTI1M2YyNTg1NjhiZjNiMTgyZDAyYmYxNDQzNWQwZTA5NTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMyZDFiYWVjNWRjNzcyNzIyY2RjMmY5ZGQyYjc5YzMxZDJiZWRiMjJlMGY0MTJlYjBjZDRiYzVkMDJlMWE2YTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5ZGJkZGI3ZjYzNjBhZWQwZDhiYzkzNTgyZGEwNzdkNDZhNDg4NzgyZGQxZGNhYjFlNjMxZWEwMmY2ZTVmMGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYxZTg0OTgwNDYyMmU1NjE2NzhjMTBkYzZlZDE1OWNjNjY1MDQyMGY3MjJlMmUxNDkwMzczOTRlMzc0ZmE3MjUifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-20T00:28:42.613Z"
+  }
+}

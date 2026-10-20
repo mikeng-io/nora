@@ -86,6 +86,7 @@ describes the full runtime and its boundaries.
 
 ## Start here
 
+- [Implementation wiki](https://nora.67.zone/wiki/): connected concepts and contributor workflows, maintained with OpenWiki.
 - [Architecture](ARCHITECTURE.md): runtime boundaries, data and deployment.
 - [Contributing](CONTRIBUTING.md): development checks and pull requests.
 - [Decisions](docs/adr/README.md) and [design index](design/09-decision-index.md):

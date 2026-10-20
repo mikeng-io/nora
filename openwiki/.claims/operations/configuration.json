@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:af5c1c2ca0e87f837ebc1ea766ffa29c66fc6a76856b3d36964d3143faaa66b1",
+  "claims": [
+    {
+      "id": "claim_c7c73d2f3d25486a9881ddf2ad2b6a99",
+      "statement": "Configuration, identity and policy are distinct untracked operator inputs, and example files are not a ready deployment.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L114-L128",
+          "version": "repo-lines-v1:sha256:4d28a4d06eb491fbe73a49e79dd831bbfcc77499b1edca7aedac57cb0eac302e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmMjc2NGI4MjViNGI5NDE3ZGJmNjM3YTcwYjRlOTViZTAxZTBmNDU2MjYxMzQxODlmNDdkOWIwYzA0NmQwYzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdiZTZlNjBhY2JmNzUyOWM0MzcyNGNkZGY2NTZlZWRlYWQ5M2EwMzY1ZGVhOGI3MDkxN2RmYTNkZDM3YjJjYzYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc1MTU0NjAyMTNjZTFkNDZkYWVlODViYTAyNGRkZTVmM2Y1ODBmMTMyOTVkOGMwNzI3NjQ0YzNjNmY1N2I5ZDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdmNzM5ODQ4ODU3NWMyYjE5ZGRjOGQ2NDg5MWFlMTQwOGJlNDFmNzAxNTliMjI2Mjg0MzgxNjAwNjhhMjM2NWUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2b3a9956fabf4e0abe6a5b1b811fc6c0",
+      "statement": "Policy loading refuses missing policy, duplicate rooms and empty conversation grants.",
+      "evidence": [
+        {
+          "resource": "repo://nora/policy.py#L553-L595",
+          "version": "repo-lines-v1:sha256:822a2bc7b3cc48af465720bce1bebb0bec1e42e8de13eac226a201e009b6fd84:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1MmZlNTQ3OWViNmQ2ZGY0NjBjNDU0NmU4Zjg5MmFhNGI3MmE2MjQ1MjdiMjFjOGU0NTQ3MDhjMmQ5YzMxNmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU2NWM5MWQxMGY1NDlmNWEwYzI1YWQwOTc3ODhlZmI1MWRjOTJhNjBhZjMzNDY3YmQ3NDY3OGY1ZjNhMWE4OWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ0NmNlOTg5ZGRiY2I2Njg2MWQ0MzEyZmZlNzkwM2VhNmNlNmNhZjViMWRmNTIxNzA3ZjBkNWFkZTUzZmRmMDgifQ"
+        },
+        {
+          "resource": "repo://nora/policy.py#L744-L762",
+          "version": "repo-lines-v1:sha256:a15e5c1d9b3d2e4d50b48fb3fba3d9b60c281fc183058acb164ad2f8f42f6a76:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5ZTIyNGZlNjNlMTkyNTUyZjMzMTYxNDliNDdiYjc1MTg4MzMxNDA2ZTg1NmFkOTIxODg3NjNjY2ZlYzgzMzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQxZjk3MWYzMTE1NTc4Y2ZiYmRkNDZmZmVjODc3ZTgyNDFlY2MwMTkyY2VkZWYxMDkyYmM5ODNhZDRjNDY0NjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFiYTJjM2YwMmE1N2UxYjg5NDE1MjRkZjg1YjkwZjllMjc0ZGJhODMwYjY2YWNkNDdjNTNkZGJkZmZkYzg1YjcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_895bd2727d5549d79dc6d3e3e6808eda",
+      "statement": "Compose preserves runtime state and mounts config, identity, policy, doctrine and Dreamer instructions separately from image code.",
+      "evidence": [
+        {
+          "resource": "repo://docker-compose.yml#L421-L448",
+          "version": "repo-lines-v1:sha256:c4a11f97a123050a0b55939381bd5ef9905d9873bdfcd05fd3e345a6d001d520:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxM2Y0ZDk2NjFlOWQyYzNlMWEyODllNTgzMjI5OWJlYTE0Y2RiNjRiZjg4NjYxZGY3MTdiMTJmYTAyZDAxMWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYzZTg3OWI0YmI2ODBjOWQ5ZDJkMTBiYmUzOWExNmFlNjFkOTg5NDIyMjkxNGQ5ZjkzNGRkOTRmMDkwMjg2ZDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU3NmM2NTA3MTYxYWFjNDU4Njk4NjYxNzlkNzg5OTE3OGU2ZTU5MmE1Y2IxZDg2ZGU1ODdmN2E5ZTM5YzM4NmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBlYTAzZjczYTFjYTU1ZDg5NDU4MWFlZTk5ZWRiZjM0NGNiOWQzZWJmNWNhNGExYjc5YjkzMDM2NWVlMDQ3ZGEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1e8b0cbe10c1492caf861dcf96e914a3",
+      "statement": "Current deployment remains operator-driven and rollback must account for schema and configuration compatibility.",
+      "evidence": [
+        {
+          "resource": "repo://ARCHITECTURE.md#L143-L148",
+          "version": "repo-lines-v1:sha256:0aa42b0a7fe00f7f81023e292e2c1f1d7366a0d77bba50c7be74ba51419a69cf:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYmU3ZjBjMDUyODFiMDI2YzBiYmMwZDhiZDViY2I1NTk2YzhiMzQ3YTkwMjIxYjcwMzIwYzVhOTUwOTRhYTc2OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMWVkZjk5YWI5NmYxMzQ5YzFkYjQ1NGRjN2Q3NDQzMWRlMDdjNzYyOWU5ODk0MWRlYWYxN2U0OTU4MWU5NmM1YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWNlMDFiMjk3YWFkNTNlNDc4M2NjN2IyNzlkNjQxNjNjMDFhZTg2MDAwNTA5MjEwZTllMmU1MWI1ZDI1YmJlOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjAxODA3Y2Y5NmQ3MmFjNzJjMmM1YzUwZGM4YmIxOTU4ZDAyZWVmMWUwNjFiNDM4MjJlNWUxMjIxNWI4Njc4YiJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-20T00:28:42.613Z"
+  }
+}

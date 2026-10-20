@@ -15,7 +15,18 @@ ARG SITE_ORIGIN
 ARG PUBLIC_PORTAL_ORIGIN
 RUN npm run build
 
+# The wiki is generated/reviewed in Git; image builds make no model calls.
+FROM node:22-slim AS wiki
+WORKDIR /repo/docs-site
+COPY docs-site/package.json docs-site/package-lock.json ./
+RUN npm ci --ignore-scripts
+COPY docs-site/ ./
+COPY openwiki/ /repo/openwiki/
+ARG SITE_ORIGIN
+RUN npm run build
+
 FROM caddy:2-alpine
 COPY site/Caddyfile /etc/caddy/Caddyfile
 COPY --from=build /repo/site/dist /srv
+COPY --from=wiki /repo/docs-site/dist /srv/wiki
 EXPOSE 8080

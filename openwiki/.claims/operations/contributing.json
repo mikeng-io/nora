@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:c896f9901044d51aa37cb1e4d81c82c3ef1b707d4dcfa26d105ea90dc9d99bb1",
+  "claims": [
+    {
+      "id": "claim_cf13d5257ba8437db4e486fa5e354221",
+      "statement": "Every change uses a separate worktree and a PR, with Conventional Commit subjects and explanatory bodies.",
+      "evidence": [
+        {
+          "resource": "repo://CONTRIBUTING.md#L62-L105",
+          "version": "repo-lines-v1:sha256:173b4ea342e14add1a100317d4e214f0d13a422df82d2b039d33657e56945770:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE5NmVmYjNjMTNhNmEzNGZmNDQ1MzNiNDA5ZWM3NDgyOTViZjM2YmJlYjZjY2Y4YzEwOWEyNWJiYTc4YTM3MTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3YmU3NjgzOWNhOWIyYTkwN2JlNzQzODIyNzAzZGY5OGZkNWUyYzZkM2ZkNWExZjZmZDU4MDY3ZWRhODMxOTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFiMzZhNzE0NDA3MmNlODU1ODliZmI1NjUyMWFjMDRkMDNjMDliYmRkM2YyNmE4NjBjOWFiZDlkZGYwZDMzOWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7f1c20d526a84922bdce0e4b48e017ec",
+      "statement": "The affected-test selector falls back to the full suite on unmapped changes, errors or empty output; only NONE skips tests.",
+      "evidence": [
+        {
+          "resource": "repo://Makefile#L90-L120",
+          "version": "repo-lines-v1:sha256:ac7242cf66ea31a844faf9d3eb48a6c9993d2a0852ab7aebba79ce5b1e0d06f4:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmMjUyOTM5Njg0ODEyMjcyOTY5YTRiZDlhZmI3YmI3ZjBiZmM5NTRjNDRiZWY2YTMzNWU1YTIyNThmMGI1MDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhmYzYyMDE3N2YxNjYxMDE4ZTFiNzIzNmJlZGM1ZWQ2ODVhZjI0NjFlNDgzMDM3MDc0ZjE1Mzg3MzU2NTFlMTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ1OTU2YTViOGE3ZGE0ZjNiM2VhNDM0OWNjZTVhYmZiNmVlNTgwMTE0OTMyOGYzZTYzN2E2ZTI4MjVlODRmNWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcxOTJjNjlhOGY3NzRiMDRmNTliMmM5OGJiYzA3MDhiMjQ5Nzk4NTE0ODAwYzc0ZGRkNjE4NWY5ZTY5NTZkNzYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1fb631ecfa9e4cd9a57955abd5fd23f1",
+      "statement": "The public static build is separate from native model generation, whose weekly schedule is opt-in and whose provider compatibility remains unverified.",
+      "evidence": [
+        {
+          "resource": "repo://docs-site/README.md#L35-L64",
+          "version": "repo-lines-v1:sha256:3e7df5b612515e22a98f2d8e22e05a06c56516f682cf15262af644f364963d6e:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmYTU2N2MzMjJhZmU1MWFjN2RjODc1OTdkMjllNTIwMjJkZGE4NjQxODkzZThmN2M5ZjViYTk3MDZlODAyYWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0MzlmOTVhMDJkZmUxYjg3MWI4N2JiOGRjZWFlY2U4NDc1YjYyOTg0ZmM5MjFhNTA1M2M0NjdkY2E5MWYzMTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI4MGY0YTUzMDgyNjk1N2RmYTZhZDVlNzFmM2U1ZTAxY2M0NDY0OWI1OTQ4ZThkMGU3ZjcyYTE3M2Q3Y2NmZjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ5NTdiNTk0ODA3ZGUwYzYyNDU2ODY3ZDJmMDA4YjQxYjBhNWEzNzI3NzcwZWU0MzM1ZDdmYmFiOGVkNzUyMmQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_030a14697ca04fecaa291439d5f1189a",
+      "statement": "Public visitor answers and embeddings are not implemented by the static reader.",
+      "evidence": [
+        {
+          "resource": "repo://docs-site/README.md#L70-L75",
+          "version": "repo-lines-v1:sha256:d3c8e9c7436feaebe1b71f73aa2dd257d541f27d2063f409ac9fa974cb4eca0e:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmQ0MmZhYzc3MWUzMDU0ZDc0NDhkMzFhOGUzMDU2YTA2OTAyNjU4YjZkOWI0ODY3OTQ4ZTA4MGU0NTE3MDMzZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWZiZDUyMzFmZDFjOGE2YjEyZDdkYzA5Njk3MjQ3ZTdkNGE3ZmQ2ZTdhY2Q5YjgzNWZhYWIwMjk3NGQ2ZjJkMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjAwM2ZhMWM4ZTAwM2NiODFiZTM1MDZkMzRlN2I0YTJkNDg0NTM5MGNlZWJiYzFhNGQzYTI2MDc2NmUyZjE2MiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-20T00:35:43.324Z"
+  }
+}

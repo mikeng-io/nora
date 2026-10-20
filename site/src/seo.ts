@@ -125,6 +125,8 @@ export function llmsTxt(site: URL): string {
     `- [Nora (English)](${at(LOCALES.en.path)}): ${t.meta.description}`,
     `- [Nora (繁體中文, written Cantonese)](${at(LOCALES["zh-Hant"].path)}): ${zh.meta.description}`,
     ``,
+    `- [Implementation wiki](${at("/wiki/")}): Architecture, memory, cognition and operating workflows.`,
+    ``,
     `## Optional`,
     ``,
     `- [${AUTHOR.name}](${AUTHOR.url}): ${t.footer.made}`,
