@@ -40,6 +40,21 @@ There is no longer a module-size gate. Spec §10's 300-line hard cap was
 deleted 2026-08-06 — see the Conventions section below for why, and prefer
 counting a module's responsibilities to counting its lines.
 
+**What "types clean" actually covers.** The `typecheck` target in the
+`Makefile` is the list: 13 packages, and the strict override in
+`pyproject.toml` (`[[tool.mypy.overrides]]`) names the same 13 (#121,
+re-measured 2026-09-17). Everything else under `nora/` (`agent`, `compute`,
+`platform`, `testing`, `obs` among them) is not type-checked, so a green gate
+means "those 13 are", not "this repo is". Measure a package's OWN errors by
+scoping the override to it, never by putting strict flags on the command line:
+those leak into every imported module and once inflated a count 15x
+(`pyproject.toml` carries the method).
+
+The gate is the FINAL check, not the iteration check. It takes ~8 minutes; running
+it after every edit instead of `make test-affected` costs an hour a day and buys
+nothing — AGENTS.md previously named only the serial form, and that is exactly the
+mistake it produced (2026-08-21: eight full gate runs in one session).
+
 ## The "Never" rules — with the war-stories
 
 - **Never `pip install`.** Dependencies are added with `uv add`, never raw pip
@@ -141,7 +156,9 @@ counting a module's responsibilities to counting its lines.
     removed, and a finding clears only by a pushed declaration, the private
     pseudonym registry or a human acknowledgement. It is still not a
     control against a motivated author, and not what decides a public
-    release (#167).
+    release (#167). A human acknowledgement requires LOOKING at the value.
+    Never acknowledge a value yourself: replace it with a generated one, or
+    ask your human.
 
     Falsified by attack, not by assertion: an undeclared identifier planted in
     the gate's OWN source, a table pasted into a declared path, a table at an
@@ -201,6 +218,26 @@ counting a module's responsibilities to counting its lines.
   change starts on a branch — a one-line doc fix included — and reaches `master`
   by merge, so the merge is the moment somebody decides, rather than a side
   effect of editing.
+
+  **The bind-mount source is `nora-host`'s own
+  checkout (`~/workspace/nora`), not this one** — read back 2026-09-08: the
+  compose bind sources are relative to the compose file on the host, so a merge
+  here reaches the container only when `nora-host` pulls. An older topology, in
+  which the dev checkout WAS the bind-mount source, is what the previous
+  wording described; it is superseded, and it mattered in both directions — it
+  made one session sequence a deploy around a window that did not exist, and
+  read while standing on `nora-host` it points at the wrong machine. What is
+  unchanged: on `nora-host`'s checkout an edit to `nora/doctrine` IS a deploy (it
+  hot-reloads on mtime), and `config.toml` there is live once its services are recreated.
+  **`nora/skills` is NOT** — it is `COPY`d into the image (`Dockerfile`) and the
+  compose file binds only `nora/doctrine` and `nora/dreamer`, so a skill edit
+  needs a rebuild. Editing one on the host the way you would edit doctrine
+  deploys nothing and reports nothing.
+  **Landing a merge does not move you back
+  in** — the next change starts in a new worktree too. 2026-08-21: a session
+  merged, kept editing in place, and another session was seconds from building
+  an image out of a mid-refactor tree with 16 tests red in it.
+
 - **Never run two agents against this checkout at once.** Three times on
   2026-08-06 a subagent's `git add -A` swept another session's staged work into
   its commit, and once an agent amended a commit it did not author. Nothing was
@@ -223,6 +260,30 @@ counting a module's responsibilities to counting its lines.
   `design/context-assembly/04-every-occasion.md` «How a new occasion joins»
   (DEC-273, ADR 0021).
 
+- **Never read a gate's success through a pipe.** `make gate | tail` returns
+  `tail`'s exit code, and a backgrounded `cmd; echo done` reports `echo`'s:
+  write the log, capture `RC=$?`, then read the log. Four incidents before it
+  was written down; one merged a red `master`.
+- **Never cite a file, test or function you have not opened** in this session.
+  A peer saying it will write one is not an opening, and finding a definition
+  is not finding a caller: grep for the call before repeating that it works.
+- **Never assume your migration's parent is unclaimed** — two branches cut from
+  the same head each write `down_revision = <that head>`, git merges both files
+  without a conflict, every test that does not actually migrate stays green, and
+  the container fails at boot because `upgrade "head"` refuses two heads.
+  **`uv run alembic heads` must print exactly ONE line after every merge.**
+- **Never take a DEC or R number from a chat agreement** — re-read
+  `design/09-decision-index.md` at MERGE time, not at claim time. 2026-08-21:
+  two sessions coordinated numbers carefully and a third took DEC-131 anyway;
+  it conflicted only because the rows landed on the same line. Allocation and
+  duplicate checks now live in `nora-decision`, including origin/master and
+  open PRs. The old check needed a trailing `\|` so sub-lettered rules
+  (`R-6b`, `R-10c`) were not read as their
+  parent number and the check reports 8 duplicates that are not. 2026-08-23: a
+  REAL duplicate — two rows numbered R-29 — sat on master for 15 days, reported
+  and backlogged by the session that found it, because the check that should
+  have caught it cried wolf seven times. A noisy gate is a disabled gate.
+
 ## Reaching the deployment — the detail
 
 The terse rule is in `AGENTS.md` («Reaching the deployment»); this is the why.
@@ -233,8 +294,24 @@ That is the root of every «the merge deployed itself» story above: the build
 context, the doctrine mount and the editing surface were one directory. The
 fix is structural rather than procedural — the host holds a checkout that only
 a deploy moves, and development sessions run on a separate machine. Host reads
-use `ssh nora-host`, the operator-configured SSH alias documented in `AGENTS.md`;
+use `ssh nora-host`, the operator-configured SSH alias documented below;
 changes use the locked deployment procedure.
+
+Configure `~/.ssh/config` with your own address, login and dedicated key:
+
+```sshconfig
+Host nora-host
+    HostName <deployment-hostname-or-address>
+    User <deploy-user>
+    IdentityFile ~/.ssh/nora-host
+    IdentitiesOnly yes
+```
+
+- **Key auth only.** `~/.ssh/nora-host` is a dedicated ed25519 key, installed once
+  with `ssh-copy-id`; `Host nora-host` in `~/.ssh/config` binds user, host and key.
+  **Never `sshpass`, never a password in `.env`, in chat, or in a file a session
+  reads** — a password typed into a session is transcribed into memory (this
+  happened once), and `.env` is the compose environment on both machines.
 
 **Why a dedicated key and nothing else.** On 2026-09-07 the first attempt to
 reach the host from a session found four local keys, none authorised, and a
@@ -274,6 +351,116 @@ later — a session in September read it, then reached for `docker logs nora`
 anyway. On 2026-09-09 the handler moved to stdout and the `path` setting was
 removed. The lesson is not about logging: **a surprise documented in three
 places is a surprise that should have been deleted.**
+
+## Configuration — history and validation
+
+**All three are gitignored now** — `config.toml` joined the other two on
+2026-09-07 (operator decision). It was tracked on the argument that it holds no
+secret values, and what made that untenable was collision rather than secrecy:
+the live file is a bind-mount source the operator edits in place, so every
+merge touching it fought an uncommitted working change and each session had to
+stash-merge-restore-diff by hand to keep from losing an edit. `config.example.
+toml` is now the only committed record of the config's shape, and
+`tests/test_env_template.py`'s three drift checks compare the two — but
+`config.toml` is gitignored in every dev worktree and in CI, so they SKIP
+there by design (`tests/test_env_template.py::_load_live_or_skip`); nothing
+in the established workflow (worktrees only, never the deploy checkout —
+"Reaching the deployment" above) runs them for real. What
+DOES run automatically, once per eval, is a different and narrower property:
+`evals/subject_config.materialise()` rebuilds the eval subject's config from
+the live `config.toml` and REFUSES to start the run if the two still disagree
+outside `ALLOWED_TO_DIFFER` (issue #321). It does not subsume the drift
+checks — it self-heals around a template that is stale or incomplete rather
+than requiring the checked-in text to be right, so it protects the *computed
+eval config*, not `config.example.toml` itself as the thing a human reads to
+reason about the deployment. That is still only `test_env_template.py`'s job,
+and it stays SKIP-based (a fixture would compare the template to itself,
+green forever, measuring nothing — the exact anti-pattern the file's
+docstring warns against).
+
+**No config change reaches a process unvalidated** (deploy convention §4.5,
+implemented 2026-09-08): `nora config set/get/unset/validate/path --config
+<path>` validates against the schema, prints what changed, and never touches
+`.env` — secrets stay there and are referenced by name. On the deploy host the
+CLI cannot write the live file from inside the container (`EBUSY` on the file
+bind-mount, 2026-09-09), so the live procedure is `nora-deploy` step 5: edit a
+COPY, `nora config validate` the copy through the running container, `cp` it
+into place (in place, so the mount keeps its inode), recreate, and restore the
+backup on any failure. An unvalidated hand edit of the live file is never the
+procedure: `extra = "forbid"` catches a broken file only by crash-looping.
+
+`config.toml` is ALSO bind-mounted read-only into the two voice sidecars
+(`stt`, `voice-wake`): they read `[speech.stt]` / `[speech.wake]` with stdlib
+tomllib at boot (2026-09-17 — before that, the same knobs were env vars in
+compose and disagreed with this file). The last two are bind-mounted read-only and **loaded once at
+startup** — editing either without a recreate changes nothing and warns you about
+nothing (`nora_unmapped_senders_total` is the tell). `identity.toml` takes one
+`[[persons.<id>.<platform>]]` block **per account**, all resolving to one
+`person_id` (their Honcho peer, A2/DEC-14). `policy.toml` is deny-by-default and
+Nora **refuses to start** if it is missing or allows nothing (R-5). Memory's
+hierarchy is split across them on the same lines (DEC-214): `policy.toml`
+`[units]` says which workspace each unit is in, `identity.toml` `[workspaces]`
+binds each workspace to its Honcho workspace, and `memory.workspace_id` is only
+the binding used when there is no `[units]`.
+
+## Design discipline — incidents
+
+2026-10-03: two days built delete-withdrawal cascades, lineage, a shadow
+compare and a live ledger around a loop that had never written a row. Live
+there had been 2 deletes ever, and Honcho keeps the deleted text anyway: it
+has no per-message delete. `[lineage]` was built, marked do-not-enable, and
+leaky anyway because Memory has no lineage. The unit is the read boundary.
+
+2026-08-27: one session flipped three times on the same build-vs-vendor question
+with **no new measurement between the flips** — which means it never had a
+decision, only a preference.
+
+Asking for a decision available from evidence is ping-pong: the operator
+restated this at the start of work more than a
+dozen times between 2026-09-08 and 09-22.
+
+The design-backlog example is issue #4: a per-conversation rolling summary,
+updated in place and separate from the Dreamer and Honcho.
+
+Tool policy provenance (DEC-200): ADR 0007's rules had no test and were not
+met even on the day they were written; ADR 0015 §6 names each enforcer.
+
+## Historical reading references
+
+**A `docs/superpowers/…` path is a historical citation, not a location.** That
+tree — 34 dated specs and 35 plans — was **removed 2026-09-08** along with
+`.superpowers/`; the process it named is gone and is not coming back. The paths
+still appear in design nodes and docstrings as provenance for
+where a decision was first written, and they resolve only in `git log`. Treated
+the same way as a `DEPRECATED` decision row: marked, never rewritten to point
+somewhere it does not point.
+
+**Deprecated 2026-09-07 — the knowledge tier (the "fact tier") and the language
+tier.** Both are gone: the code is deleted, the decision-index rows are marked
+(never renumbered), and every design node and spec that describes them carries a
+`DEPRECATED` banner. **Their database tables are NOT dropped** — the code goes,
+the schema stays, and dropping them is a separate explicit decision. The evidence
+that decided it is `design/dreamer-agent-loop/20-knowledge-tier.md` §0; the issue
+is #115. Nothing under `design/dreamer-agent-loop/` numbered 20, 21, 23, 24, 25,
+28, 31 or 32 describes code that exists.
+
+**Deprecated 2026-09-08 — the note tier's entity-resolution chain and the
+curator's merge half.** With nothing minting entities, `note_entity` could never
+be populated and merge was inert by construction; the registry store, the
+resolution pass and the merge verb are deleted (their tables stay). The
+curator only retires. R-75 in the decision index says which clauses survive. A
+model-judged merge returns in a separate `note-merge` adaptor (DEC-202, design
+41 §7, designed 2026-09-24, built 2026-09-25 behind a `merge_mode` key that has since been
+removed, first run in `shadow`, which wrote no note); the curator
+stayed retire-only.
+**2026-10-03 (DEC-277): `note_candidates`, the curator and `note-merge` are
+deleted; the Cognition session writes, retires (`note_retire`) and merges
+(`note_merge`) notes, and `[notes] enabled` is the only notes key left. The
+paragraph above is the history.**
+The create gate in `note_candidates` matched on anchor date alone from that
+day until **2026-09-13**, when two firings in production merged two unrelated
+occasions twice (#228); it now resolves the note title the MODEL names, and
+the date is only when the thing happens.
 
 ## The instruction is the first thing blamed and usually the wrong one
 
@@ -449,6 +636,38 @@ the root above exists.
 If work is spawned, capture the context you mean and attach it. Inheriting one
 by accident is not the same as propagating one on purpose.
 
+### Model spans, detached work, logs and metric declarations
+
+- **One spelling for "this span is a model call" — and it is Strands'
+  own, not this repo's, since 2026-09-19.** An Agent-backed call
+  (`nora.agent.structured.ask_text`/`ask_structured`) needs no
+  instrumentation code at all; a raw `chat.completions.create` call
+  instruments through `nora.agent.telemetry.start_raw_model_span`/
+  `end_raw_model_span`. A call site never writes a `gen_ai.*` or
+  `langfuse.observation.*` literal by hand, and never wraps an
+  `ask_text`/`ask_structured` call in a span of its own — the Agent already
+  opens one, and a second span around it is two overlapping traces for one
+  call (the debrief/standing fold's own incident: `4448c737` moved them onto
+  the SDK, nothing removed the hand-rolled wrapper still around the call, and
+  every fold produced two nested traces for months).
+- **Detaching a span and dropping it are two decisions.** Spawned work should
+  detach so it does not hold a trace open; that is not a reason to declare it
+  plumbing. Conflating them hid every media read from the collector for two
+  weeks while its counter recorded them.
+- **A log line is not a metric.** If the answer is "how many, how often, with
+  what outcome" it is a counter; a line that restates one every interval is a
+  third copy. 78% of the deployment's log was two such sources.
+- **Severity is a NUMBER as well as a word** — `level` sorts alphabetically, so
+  "at least a warning" is not expressible over it. `severity_number` carries
+  OTel's SeverityNumber bands; an unmapped level gets no field, never a guess.
+- **And an increment with no declaration is worse** — `Metrics.inc` raises
+  `KeyError`, which the caller's own `except Exception` then reports as the
+  failure of whatever it wrapped. `nora_peer_card_empty_total` spent a
+  deployment turning every genuinely empty card into a fake transport error.
+  `tests/architecture/test_every_recorded_metric_is_declared.py` is the gate;
+  a call site whose name it cannot read statically must be PINNED there, never
+  skipped.
+
 ### A span with only a name is worse than no span
 
 As of 2026-08-27 (`d673a7a`): ten spans on master — seven in ingest, three in
@@ -544,10 +763,12 @@ counters instead of the ten that tier's spec names — while it sat unwired
 itself. `nora_store_busy_total` scans the same way and is NOT an instance: its call site was deliberately deleted with the SQLite WAL
 apparatus (DEC-51), and the name is retained because names are append-only.
 
-Issue #56 is the gate, and it is the ONE family from 2026-08-27 with a cheap,
-total, automatable check available: an AST walk over the declared names against
-`metrics.inc(`. Until it exists the scan is one loop over
-`grep -oE '"nora_[a-z0-9_]+"' nora/obs/metric_specs.py`.
+The declared-metric gate exists:
+`tests/architecture/test_every_recorded_metric_is_declared.py` checks recorded
+names against declarations. A call site whose name it cannot read statically
+must be pinned there, never skipped. This checks increments have declarations;
+the reverse question, a declared name with no call site, still needs the scan
+over `nora/obs/metric_specs.py` and `metrics.inc(` (issue #56).
 
 ### Label vocabularies are derived, never hand-copied
 
@@ -611,15 +832,16 @@ line it names and watch it go red — per CLAUSE, not per change. One author
 truthfully reported falsifying three properties of one feature, and the fourth
 clause was the one that shipped the defect.
 
-## The five operational constraints (spec §2, verbatim)
+## The five operational constraints (spec §2, with corrections)
 
 These came from `design/08-stack-refactor-brief.md` and are preserved here
 because the spec that retired that document said they were the most
 operationally valuable text in it. Losing any of these wastes an afternoon.
 
-1. Container builds require `docker build --network=host` — BuildKit's default
+1. Direct builds require `docker build --network=host` — BuildKit's default
    bridge cannot resolve `deb.debian.org` on this host (systemd-resolved stub
-   `127.0.0.53`).
+   `127.0.0.53`). Every compose `build:` sets `network: host`, so
+   `docker compose build` needs no flag (`nora-deploy` reference notes).
 2. Honcho health uses **`GET /health`**, not `GET /v3/workspaces` (POST-only →
    405 → forever `health: starting`).
 3. **signal-cli is Nora's transport and runs in her compose project.**
@@ -693,6 +915,16 @@ operationally valuable text in it. Losing any of these wastes an afternoon.
 - Where a test LIVES, what config it LOADS and where its FAKES live are the
   three rules of the next section (issue #113), each with its own gate under
   `tests/architecture/`.
+
+### Contract database scope
+
+- **A contract suite scopes its database to the MODULE, not the test.** The
+  shared `pg_url` fixture is function-scoped: `CREATE DATABASE` + the full
+  migration chain + `DROP`, every test. At ~30 database-backed tests that
+  degrades the container enough to fail an unrelated wall-clock test in another
+  directory — the cost lands nowhere near its cause. Build once per file and
+  `TRUNCATE` between tests; the isolation these suites need is "no rows from
+  the last test", not "no schema from the last test".
 
 ## Test structure — where a test lives, what it loads, where its fakes live
 
