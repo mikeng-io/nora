@@ -12,7 +12,7 @@ import shutil
 import subprocess
 
 VISIBLE = re.compile(r"^(feat|fix|security|perf|change|doctrine|revert)(\([^)]*\))?!?:")
-RUNTIME_DIRS = ("nora/", "app/", "sidecars/", "deploy/")
+RUNTIME_DIRS = ("nora/", "app/", "site/", "docs-site/", "sidecars/", "deploy/")
 RUNTIME_FILES = {
     ".dockerignore",
     "Dockerfile",

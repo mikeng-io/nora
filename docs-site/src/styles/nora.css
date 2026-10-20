@@ -32,3 +32,15 @@
   --sl-color-gray-7: #fcfbfb;
   --sl-color-black: #f4f2f2;
 }
+
+/* Keep labels at their authored size; wide diagrams scroll within the article. */
+html pre.mermaid { justify-content: flex-start; }
+html pre.mermaid > svg {
+  max-width: none;
+  flex-shrink: 0;
+  margin-inline: auto;
+}
+html[data-theme] pre.mermaid:not([data-processed]) {
+  animation: none;
+  background: var(--sl-color-gray-6);
+}

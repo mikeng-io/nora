@@ -28,4 +28,8 @@ test('public links must resolve inside the wiki mount, including redirect destin
   assert.match(check().stderr, /Wiki home must render content instead of a redirect interstitial/);
   await writeFile(path.join(root, 'index.html'), '<h1>The systems behind Nora</h1><a href="/wiki/quickstart/">Guide</a>');
   assert.equal(check().status, 0);
+  await writeFile(path.join(root, 'graph/graph.json'), JSON.stringify({ nodes: [{ id: 'quickstart', body: '```mermaid\nflowchart TD\nA-->B\n```' }] }));
+  assert.match(check().stderr, /Mermaid blocks missing from rendered page/);
+  await writeFile(path.join(root, 'quickstart/index.html'), '<nav aria-label="Main"><a href="/wiki/quickstart/">Guide</a></nav><pre class="mermaid">flowchart TD\nA--&gt;B</pre>');
+  assert.equal(check().status, 0);
 });
