@@ -4,7 +4,12 @@ OpenWiki owns the source-grounded Markdown, Claims and update state in
 `openwiki/`. Astro Starlight renders factual pages at `/wiki/`; the source
 brief, logs, Claims and run metadata are not web routes. Its optional graph
 is exported with OpenWiki at `/wiki/graph/` and uses the upstream pinned CDN
-rendering libraries. Ordinary documentation and search are static.
+rendering libraries. Ordinary documentation and search are static. Mermaid fences
+in the Starlight reader use the bundled, lazily loaded renderer and follow its
+light/dark theme. Flowcharts, sequence diagrams and state diagrams retain readable
+intrinsic sizing with contained horizontal scrolling; loading uses a static background. The build checks every factual page against its native Mermaid
+block count so missing rendering integration fails publication. Mermaid’s KaTeX
+dependency is pinned to the patched version in the package override.
 
 ```bash
 npm ci --prefix docs-site

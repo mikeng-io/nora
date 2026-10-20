@@ -1,6 +1,7 @@
 import { defineConfig } from 'astro/config';
 import { unified } from '@astrojs/markdown-remark';
 import starlight from '@astrojs/starlight';
+import mermaid from 'astro-mermaid';
 import { readdirSync } from 'node:fs';
 import { wikiLinks } from './plugins/wiki-links.mjs';
 
@@ -16,7 +17,14 @@ export default defineConfig({
     '/operations/contributing/': '/wiki/contributing/changing-the-system/',
   },
   markdown: { processor: unified({ remarkPlugins: [wikiLinks] }) },
-  integrations: [starlight({
+  integrations: [mermaid({
+    enableLog: false,
+    mermaidConfig: {
+      flowchart: { useMaxWidth: false },
+      sequence: { useMaxWidth: false },
+      state: { useMaxWidth: false },
+    },
+  }), starlight({
     title: 'Nora · Wiki',
     components: { SiteTitle: './src/components/SiteTitle.astro' },
     favicon: new URL('/favicon.ico', process.env.SITE_ORIGIN ?? 'https://nora.67.zone').href,

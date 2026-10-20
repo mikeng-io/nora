@@ -34,6 +34,10 @@ if (ids.has('quickstart')) {
   for (const node of graph.nodes) {
     if (/(?:^|\/)index$/.test(node.id)) continue;
     if (!navigation.includes(`href="/wiki/${node.id}/"`)) throw new Error(`Wiki page missing from navigation: ${node.id}`);
+    const page = await readFile(new URL(`${node.id}/index.html`, root), 'utf8');
+    const expected = (node.body.match(/^```mermaid[ \t]*\r?$/gm) ?? []).length;
+    const rendered = (page.match(/<pre\b[^>]*class="[^"]*\bmermaid\b[^"]*"/g) ?? []).length;
+    if (rendered !== expected) throw new Error(`${node.id}: Mermaid blocks missing from rendered page (${rendered}/${expected})`);
   }
 }
 for (const node of graph.nodes) {
