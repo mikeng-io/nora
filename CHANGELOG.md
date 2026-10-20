@@ -1,5 +1,12 @@
 # Changelog
 
+## [6.3.1](https://github.com/mikeng-io/nora/compare/v6.3.0...v6.3.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **memory:** retry one cached-media account through the running Dreamer ([481d8b9](https://github.com/mikeng-io/nora/commit/481d8b9536554f5f2ec1518e8d4bd480f2b96d37))
+
 ## [6.3.0](https://github.com/mikeng-io/nora/compare/v6.2.0...v6.3.0) (2026-10-20)
 
 
