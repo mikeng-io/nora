@@ -211,7 +211,10 @@ async def test_rollup_rebuild_same_roots_is_unchanged_but_changed_bounds_are_pen
 
 
 @pytest.mark.parametrize('kind', ['image', 'video', 'sticker'])
-async def test_initial_cached_recovery_past_old_cursor_is_bounded_and_durable(env, kind):
+@pytest.mark.parametrize('legacy_body', [None, '', 'original synthetic caption'])
+async def test_initial_cached_recovery_past_old_cursor_is_bounded_and_durable(
+    env, kind, legacy_body,
+):
     from nora.agent.egress import scan_identifiers
     from nora.domain.media_join import MediaJoin
     from nora.domain.models import PersonRef
@@ -225,7 +228,10 @@ async def test_initial_cached_recovery_past_old_cursor_is_bounded_and_durable(en
     from nora.testing import InMemoryCultureStore
 
     sha = 'c' * 64
-    await message(env, body=f'[{kind} cccccc]', media=json.dumps([{'sha256': sha}]))
+    body = f'[{kind} cccccc]' if legacy_body is None else legacy_body
+    await message(env, body=body, media=json.dumps([{'sha256': sha,
+        'media_type': {'image': 'image/png', 'video': 'video/mp4',
+                       'sticker': 'image/webp'}[kind]}]))
     await message(env, ident=20, body='an old plain message')
     await message(env, ident=30, room='other-room', body='private other-room reading',
                   media=json.dumps([{'sha256': sha}]))
@@ -265,6 +271,11 @@ async def test_initial_cached_recovery_past_old_cursor_is_bounded_and_durable(en
     assert 'existing synthetic scene' in rendered and 'n="10"' in rendered
     assert 'old plain message' not in rendered and 'other-room reading' not in rendered
     assert adaptor._runs[KEY].citable.messages[10].ts == T0
+    assert batch[0].roots[0].row.body == body
+    from xml.etree import ElementTree
+    root = ElementTree.fromstring('<input>' + rendered + '</input>')  # noqa: S314 - synthetic
+    shown = json.loads(root.find('.//*[@n="10"]').text)
+    assert shown['raw_caption'] == body
     # Before a durable account settlement, a new process still sees this work.
     again, _ = await evidence().newest(key=KEY, after=boundary, limit=1)
     assert again == batch
