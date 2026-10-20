@@ -20,10 +20,17 @@
   <code>conversation</code> · <code>memory</code> · <code>voice</code> · <code>cognition</code> · <code>self-hosted</code>
 </p>
 
-Nora is an experimental, self-hosted AI companion for shared conversations. She follows
-conversations across Signal, Discord, WhatsApp and Instagram, remembers shared
-context, and replies through the Strands Agents SDK. Participation, reminders,
-voice and background cognition are configured separately and governed by room
+Nora is an experimental, self-hosted social AI agent built to participate in
+everyday life over time. She is present across Signal, Discord, WhatsApp,
+Instagram and voice, carrying a working understanding of people, conversations
+and unfinished matters beyond any individual exchange.
+
+Her continuity lives in persistent state rather than an open chat session.
+Memory carries experience forward; background cognition revisits what changes;
+participation and proactive turns decide when something needs attention; and a
+persistent sandbox workspace lets her investigate and carry out work. Responses
+to her actions inform stored lessons and her account of herself, within
+human-authored constraints. Each capability depends on configuration and room
 policy.
 
 <p align="center">
@@ -41,6 +48,21 @@ Capabilities depend on the services and room policy configured by each operator.
 Interfaces and deployment requirements can change; expect to provision your own
 model services, platform accounts and persistent storage.
 
+## A continuing presence
+
+A group discusses dinner, changes the place and leaves the booking unresolved.
+With the relevant features enabled, Nora can keep that matter in working state,
+revisit it through cognition and arrange a later look. When the occasion arrives,
+she reads the situation again: the booking may already be settled, so silence
+can be the right outcome. Any investigation can leave files in the room's
+workspace for another turn to continue. This is an illustration of how the
+parts connect, not a receipt of a particular live interaction.
+
+“Sessionless” describes this continuity: speaking turns construct fresh agents
+from relevant persistent context. Cognition and computer work still use bounded
+sessions internally. Nora's runtime and stores are self-hosted; model inference
+and connected services can be external.
+
 ## How it fits together
 
 ```mermaid
@@ -57,7 +79,8 @@ flowchart TD
     Cognition["Background cognition"] <--> State
 ```
 
-Room policy controls admission and disclosure. Background cognition maintains
+Individual agent invocations use the Strands Agents SDK; persistent stores
+supply continuity between them. Room policy controls admission and disclosure. Background cognition maintains
 scoped state alongside the conversational path. The [architecture map](ARCHITECTURE.md)
 describes the full runtime and its boundaries.
 

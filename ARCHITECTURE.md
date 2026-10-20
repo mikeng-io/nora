@@ -5,6 +5,36 @@ in [ADRs](docs/adr/README.md) and the [design index](design/09-decision-index.md
 Design proposals and historical measurements do not imply a deployed feature.
 Enabled capabilities and room grants are deployment configuration.
 
+## Continuity beyond a session
+
+Nora is a social agent whose continuity belongs to persistent state, scoped to
+people, rooms and social units. Messaging and voice are interfaces into that
+state. Each speaking turn constructs a fresh Strands agent from assembled
+context, with no SDK session manager; background cognition has its own bounded
+sessions. Sessionless operation means continuity independent of a chat session,
+not an absence of sessions inside the implementation.
+
+The connected paths run at different timescales:
+
+- Ingestion records observations and raises durable stimuli.
+- Cognition reads a grounded agenda, maintains ongoing matters and working
+  state, and can schedule its own next look or a proactive occasion.
+- Participation uses conversation windows and, when configured, a relevance
+  gate to admit an unrequested turn. A proactive occasion re-reads the situation
+  at action time and may remain silent.
+- The computer supplies a persistent, room-scoped workspace through computerd;
+  files and process state can outlive a speaking turn. Browser tasks have a
+  separate bounded agent runner.
+- Response episodes connect her sends with subsequent responses. Lessons and
+  her own character account derive contextual learning from those outcomes;
+  this changes stored context, not model weights or human-authored doctrine.
+
+The prefill brings the relevant state back into subsequent turns. Shared
+continuity does not grant shared access: the existing admission, read and
+disclosure boundaries still apply. These are implemented paths, not claims
+about which features a deployment has enabled. The memory migration's remaining
+Honcho dependency is described below.
+
 ## Runtime
 
 Platform adapters normalize Signal, Discord, WhatsApp and Instagram events.

@@ -1,7 +1,7 @@
 [project]
 name = "nora"
 version = "6.2.0"
-description = "A private ambient Signal group agent (Strands-based)"
+description = "A self-hosted, sessionless social AI agent with memory and background cognition"
 requires-python = ">=3.11"
 dependencies = [
     "strands-agents==1.50.2",
