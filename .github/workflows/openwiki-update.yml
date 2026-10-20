@@ -59,9 +59,9 @@ jobs:
           OPENWIKI_PROVIDER: openai-compatible
           OPENAI_COMPATIBLE_API_KEY: ${{ secrets.OPENWIKI_API_KEY }}
           OPENAI_COMPATIBLE_BASE_URL: ${{ vars.OPENWIKI_BASE_URL || 'https://ollama.com/v1' }}
-          OPENWIKI_MODEL_ID: ${{ vars.OPENWIKI_MODEL_ID || 'deepseek-v4.1-flash' }}
+          OPENWIKI_MODEL_ID: ${{ vars.OPENWIKI_MODEL_ID || 'deepseek-v4.1-flash:1017' }}
           OPENWIKI_OPENAI_COMPATIBLE_REASONING_EFFORT_SUPPORTED: 'true'
-          OPENWIKI_REASONING_EFFORT: medium
+          OPENWIKI_REASONING_EFFORT: high
           OPENWIKI_MAX_OUTPUT_TOKENS: '32768'
           OPENWIKI_PAGE_CONCURRENCY: '1'
           OPENWIKI_TELEMETRY_DISABLED: '1'
