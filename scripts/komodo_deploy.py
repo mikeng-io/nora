@@ -166,7 +166,7 @@ def main() -> None:
         env = {**os.environ, 'NORA_DEPLOY_LOCKED': '1'}
         os.execvpe('flock',  # noqa: S606,S607 -- existing host lock protocol
                   ['flock', '-o', '-E', '75', '-w', '900',
-                            '/tmp/nora-deploy.lock',  # noqa: S108 -- existing shared lock
+                            '/run/nora-deploy.lock',  # same host inode; non-sticky parent
                             sys.executable, __file__, *sys.argv[1:]], env)
     manifest = json.loads(Path('release.json').read_text())
     apply_release(prefix, manifest, args.runtime_root, args.project, site=args.site)
