@@ -1,5 +1,0 @@
-.cache/
-node_modules/
-out/
-# per-run Codex stderr (hook noise); the JSONL event log beside each image is kept
-art/raw/*.jsonl.err

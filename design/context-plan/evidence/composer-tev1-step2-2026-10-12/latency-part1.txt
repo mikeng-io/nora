@@ -1,8 +1,0 @@
-d1 {'seconds_median': 4.73, 'seconds_max': 6.54, 'input_tokens_median': 981.5}
-d2 {'seconds_median': 3.05, 'seconds_max': 6.5, 'input_tokens_median': 696.0}
-d1+d2 {'seconds_median': 5.27, 'seconds_max': 8.46, 'input_tokens_median': 2178.0}
-full_state/1 {'seconds_median': 3.37, 'per_question': 3.371, 'input_tokens_median': 847.5}
-full_state/2 {'seconds_median': 5.19, 'per_question': 2.595, 'input_tokens_median': 2272.0}
-full_state/4 {'seconds_median': 7.81, 'per_question': 1.953, 'input_tokens_median': 6654.0}
-full_state/8 {'seconds_median': 13.15, 'per_question': 1.643, 'input_tokens_median': 21229.5}
-(part 1 stopped here: HTTP 500 at 16 questions, the runner wedge; part 2 reran the A scaling)

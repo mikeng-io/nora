@@ -1,6 +1,0 @@
-#!/bin/sh
-# mermaid-cli with the Chromium puppeteer fetched at build time
-# (deploy/computer/Dockerfile): a command's environment may not carry the
-# image's ENV, so the wrapper sets where the browser is.
-export PUPPETEER_CACHE_DIR=/opt/nora-render/puppeteer
-exec /opt/nora-render/node_modules/.bin/mmdc "$@"

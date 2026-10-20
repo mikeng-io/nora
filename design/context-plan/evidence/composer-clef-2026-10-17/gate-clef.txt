@@ -1,6 +1,0 @@
---- relevance_gate: 40 total, 19 active, 21 parked, 0 unanchored ---
-  honcho: 19 draw workspace(s), create median 10ms (max 18ms), delete median 14ms (max 32ms)
-  passed=17 failed=2 errored=0
-  closed/where-is-named                    FAIL   did not meet expect='go'
-  world/route                              FAIL   did not meet expect='go'
-RC=1

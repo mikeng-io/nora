@@ -1,5 +1,0 @@
-Generate ONE image, square 1:1, on a TRANSPARENT background (PNG with alpha; if transparency is impossible, a flat plain #F4F2F2 background with no shadow).
-- PROPORTIONS FIRST: exactly the chibi proportions of the first reference, 2.5 to 3 heads tall, the head as wide as her shoulders plus arms, compact torso, short legs, small feet. She must not look taller or more adult than the reference.
-- Nora standing, holding her phone loosely in one hand at waist height, the index finger of the other hand touching her chin, eyes looking up and slightly to one side: the "Thinking" expression of the character sheet, minimal. Three-quarter front view.
-- Earphones in both ears, the white cable and inline remote visible.
-- Full body in frame with some margin. No other props.

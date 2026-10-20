@@ -1,7 +1,0 @@
-# `go build ./...` in this directory writes the binary here, next to the
-# source. The repo's identifier gate holds a "no binaries in this tree"
-# invariant (see the root .gitignore's voice-wake note), and a 23 MB artifact
-# that is rebuilt on every run is exactly what that rule is for: the image is
-# built from the Dockerfile, so a committed copy could only ever be a second,
-# stale answer to "what is running".
-/instagram-bridge

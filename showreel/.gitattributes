@@ -1,6 +1,0 @@
-# The showreel's heavy binaries live in Git LFS: the final renders, the raw
-# Codex images and the audio stems and mixes. Without git-lfs (the deploy
-# host has none) a checkout holds small pointer files and nothing breaks.
-renders/*.mp4 filter=lfs diff=lfs merge=lfs -text
-art/raw/*.png filter=lfs diff=lfs merge=lfs -text
-audio/**/*.wav filter=lfs diff=lfs merge=lfs -text

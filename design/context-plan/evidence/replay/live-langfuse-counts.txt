@@ -1,9 +1,0 @@
-Read-back: 2026-10-07, on norty, Langfuse 127.0.0.1:3100
-Query: /api/public/observations?name=agent.prefill&fromStartTime=2026-09-07T00:00:00Z, paged by 100 to exhaustion
-Field: metadata.attributes nora.prefill.blocks_rendered / nora.prefill.size_chars
-Observations carrying blocks_rendered: 427
-Window (startTime): 2026-09-17T02:36:51.752Z -> 2026-10-06T16:06:53.327Z
-Rendered in: peer_history 384, documents 28, computer 43, subagents 0; any optional 385
-Since 2026-09-30: 70 turns; peer_history 69, documents 28, computer 43, subagents 0
-size_chars (all rendered blocks, body only): n=427 median=13978 p90=22781 max=29427
-Per-block sizes are not recorded by the span.

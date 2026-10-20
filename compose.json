@@ -1,0 +1,683 @@
+{
+  "services": {
+    "signal-cli": {
+      "image": "ghcr.io/mikeng-io/nora-signal-cli@sha256:f28e633ea90cd1dae42f301a4b53de67ac789cc6abb1a4cb33d4b89c2625abd7",
+      "container_name": "signal-cli",
+      "restart": "unless-stopped",
+      "networks": [
+        "nora"
+      ],
+      "volumes": [
+        "${NORA_RUNTIME_ROOT:?}/state/signal-cli:/data/signal-cli"
+      ],
+      "environment": [
+        "XDG_DATA_HOME=/data"
+      ],
+      "command": [
+        "--account",
+        "${SIGNAL_ACCOUNT:?set SIGNAL_ACCOUNT in .env}",
+        "daemon",
+        "--http",
+        "0.0.0.0:18080",
+        "--receive-mode",
+        "on-start"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "curl -fsS -m 5 -X POST http://127.0.0.1:18080/api/v1/rpc -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"id\":\"hc\",\"method\":\"version\",\"params\":{}}' | grep -q '\"version\"' || exit 1"
+        ],
+        "interval": "60s",
+        "timeout": "10s",
+        "start_period": "60s",
+        "retries": 3
+      },
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    },
+    "whatsapp-bridge": {
+      "image": "ghcr.io/mikeng-io/nora-whatsapp-bridge@sha256:e6b8d47a6c444cf80513d76e006c370ff6a590af49a6e5d0d00a5d3ccde704aa",
+      "container_name": "whatsapp-bridge",
+      "restart": "unless-stopped",
+      "networks": [
+        "nora"
+      ],
+      "volumes": [
+        "${NORA_RUNTIME_ROOT:?}/state/whatsapp:/app/session"
+      ],
+      "command": [
+        "node",
+        "bridge.js",
+        "--port",
+        "18081",
+        "--session",
+        "/app/session"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "curl -fsS -m 5 http://127.0.0.1:18081/health || exit 1"
+        ],
+        "interval": "60s",
+        "timeout": "10s",
+        "start_period": "60s",
+        "retries": 3
+      },
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    },
+    "instagram-bridge": {
+      "image": "ghcr.io/mikeng-io/nora-instagram-bridge@sha256:979bfaa45ac1292d2c5ef065691d1af9ae1d8e11a975763ecc6c0904b40eb6c2",
+      "container_name": "instagram-bridge",
+      "restart": "unless-stopped",
+      "networks": [
+        "nora"
+      ],
+      "volumes": [
+        "${NORA_RUNTIME_ROOT:?}/state/instagram:/session"
+      ],
+      "extra_hosts": [
+        "host.docker.internal:host-gateway"
+      ],
+      "environment": [
+        "IG_SESSION_DIR=/session",
+        "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://host.docker.internal:4318/v1/traces",
+        "OTEL_SERVICE_NAME=instagram-bridge",
+        "INSTAGRAM_COMMENT_WRITES=${INSTAGRAM_COMMENT_WRITES:-off}",
+        "INSTAGRAM_COMMENT_DAILY_CAP=${INSTAGRAM_COMMENT_DAILY_CAP:-10}",
+        "INSTAGRAM_COMMENT_MIN_INTERVAL=${INSTAGRAM_COMMENT_MIN_INTERVAL:-90s}",
+        "INSTAGRAM_STORY_DOC_ID=${INSTAGRAM_STORY_DOC_ID:-}",
+        "INSTAGRAM_TIMELINE_DOC_ID=${INSTAGRAM_TIMELINE_DOC_ID:-}"
+      ],
+      "command": [
+        "--port",
+        "18082",
+        "--session",
+        "/session"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "curl -fsS -m 5 http://127.0.0.1:18082/health || exit 1"
+        ],
+        "interval": "60s",
+        "timeout": "10s",
+        "start_period": "60s",
+        "retries": 3
+      },
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    },
+    "nora": {
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      },
+      "image": "ghcr.io/mikeng-io/nora-nora@sha256:62edf8c8ad4231bbcf54d6150eda47b41c78a5460a6a9c140667944faec42f52",
+      "container_name": "nora",
+      "restart": "unless-stopped",
+      "stop_grace_period": "75s",
+      "networks": [
+        "nora",
+        "honcho",
+        "embedder"
+      ],
+      "extra_hosts": [
+        "host.docker.internal:host-gateway"
+      ],
+      "ports": [
+        "127.0.0.1:9100:9100"
+      ],
+      "depends_on": {
+        "signal-cli": {
+          "condition": "service_healthy"
+        },
+        "db": {
+          "condition": "service_healthy"
+        }
+      },
+      "environment": [
+        "OMNIROUTE_API_KEY=${OMNIROUTE_API_KEY:?set OMNIROUTE_API_KEY in the host environment first}",
+        "DATABASE_URL=postgresql+asyncpg://nora:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db/nora",
+        "LANGFUSE_OTLP_HEADERS=${LANGFUSE_OTLP_HEADERS:-}",
+        "SENTRY_DSN=${SENTRY_DSN:-}",
+        "GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-}",
+        "MEDIA_ENCRYPTION_KEY=${MEDIA_ENCRYPTION_KEY:-}",
+        "LIFE360_USERNAME=${LIFE360_USERNAME:-}",
+        "LIFE360_PASSWORD=${LIFE360_PASSWORD:-}",
+        "LIFE360_AUTH_TOKEN=${LIFE360_AUTH_TOKEN:-}",
+        "RUSTFS_ROOT_USER=${RUSTFS_ROOT_USER:-}",
+        "RUSTFS_ROOT_PASSWORD=${RUSTFS_ROOT_PASSWORD:-}",
+        "NORA_COMPUTER_TOKEN=${NORA_COMPUTER_TOKEN:-}",
+        "NORA_OTP_SECRET=${NORA_OTP_SECRET:-}",
+        "NORA_OTP_API_TOKEN=${NORA_OTP_API_TOKEN:-}",
+        "HKGOV_MAPS_TOKEN=${HKGOV_MAPS_TOKEN:-}",
+        "GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}",
+        "GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET:-}",
+        "GOOGLE_OAUTH_REFRESH_TOKEN=${GOOGLE_OAUTH_REFRESH_TOKEN:-}",
+        "TAVILY_API_KEY=${TAVILY_API_KEY:-}",
+        "EXA_API_KEY=${EXA_API_KEY:-}",
+        "STEAM_WEB_API_KEY=${STEAM_WEB_API_KEY:-}",
+        "GIPHY_API_KEY=${GIPHY_API_KEY:-}",
+        "KIMI_CODE_API_KEY=${KIMI_CODE_API_KEY:-}",
+        "OPENCODE_GO_API_KEY=${OPENCODE_GO_API_KEY:-}",
+        "XAI_OAUTH_REFRESH_TOKEN=${XAI_OAUTH_REFRESH_TOKEN:-}",
+        "OPENAI_CODEX_REFRESH_TOKEN=${OPENAI_CODEX_REFRESH_TOKEN:-}",
+        "DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}",
+        "MINIMAX_CN_API_KEY=${MINIMAX_CN_API_KEY:-}",
+        "PULSE_MCP_TOKEN=${PULSE_MCP_TOKEN:-}",
+        "PULSE_API_TOKEN=${PULSE_API_TOKEN:-}",
+        "PULSE_API_BASE=${PULSE_API_BASE:-}",
+        "TZ=Asia/Hong_Kong"
+      ],
+      "volumes": [
+        "${NORA_DATA_HOST_ROOT:-${NORA_RUNTIME_ROOT:?}/data}:/app/data",
+        "${NORA_RUNTIME_ROOT:?}/state:/app/state",
+        "${NORA_RUNTIME_ROOT:?}/config.toml:/app/config.toml:ro",
+        "${NORA_RUNTIME_ROOT:?}/identity.toml:/app/identity.toml:ro",
+        "${NORA_RUNTIME_ROOT:?}/policy.toml:/app/policy.toml:ro"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "curl",
+          "-fsS",
+          "http://127.0.0.1:9100/health"
+        ],
+        "interval": "30s",
+        "timeout": "5s",
+        "start_period": "20s",
+        "retries": 3
+      }
+    },
+    "app": {
+      "image": "ghcr.io/mikeng-io/nora-app@sha256:a441cfbc68d086e1068d5e0e7e5d0c51db8753489edddc4251e9d873e5335b04",
+      "container_name": "nora-app",
+      "restart": "unless-stopped",
+      "networks": [
+        "nora"
+      ],
+      "ports": [
+        "127.0.0.1:3400:3000"
+      ],
+      "depends_on": {
+        "nora": {
+          "condition": "service_healthy"
+        }
+      },
+      "environment": [
+        "NORA_API_BASE=http://nora:9100",
+        "AUTH_DISCORD_ID=${DISCORD_CLIENT_ID:?set DISCORD_CLIENT_ID in the host environment first}",
+        "AUTH_DISCORD_SECRET=${DISCORD_CLIENT_SECRET:?set DISCORD_CLIENT_SECRET in the host environment first}",
+        "AUTH_SECRET=${AUTH_SECRET:?set AUTH_SECRET in the host environment first}",
+        "AUTH_URL=${AUTH_URL:?set AUTH_URL (the public origin, e.g. https://nora.67.zone) in the host environment first}",
+        "NORA_OTP_API_TOKEN=${NORA_OTP_API_TOKEN:-}"
+      ],
+      "volumes": [
+        "${NORA_RUNTIME_ROOT:?}/identity.toml:/app/identity.toml:ro"
+      ]
+    },
+    "site": {
+      "image": "ghcr.io/mikeng-io/nora-site@sha256:c0ed9c42054fe9bfd82e3a6a0bd94f2d91e0bf40247755053c2629244d5d8fab",
+      "container_name": "nora-site",
+      "profiles": [
+        "site"
+      ],
+      "restart": "unless-stopped",
+      "ports": [
+        "127.0.0.1:3401:8080"
+      ]
+    },
+    "presence": {
+      "image": "ghcr.io/mikeng-io/nora-nora@sha256:62edf8c8ad4231bbcf54d6150eda47b41c78a5460a6a9c140667944faec42f52",
+      "container_name": "presence",
+      "restart": "unless-stopped",
+      "entrypoint": [
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        "-m",
+        "nora.presence"
+      ],
+      "command": [
+        "--config",
+        "config.toml"
+      ],
+      "networks": [
+        "nora"
+      ],
+      "ports": [
+        "127.0.0.1:9101:9101"
+      ],
+      "depends_on": {
+        "db": {
+          "condition": "service_healthy"
+        }
+      },
+      "environment": [
+        "DATABASE_URL=postgresql+asyncpg://nora:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db/nora",
+        "LIFE360_CLIENT_CREDENTIAL=${LIFE360_CLIENT_CREDENTIAL:-}",
+        "LIFE360_USERNAME=${LIFE360_USERNAME:-}",
+        "LIFE360_PASSWORD=${LIFE360_PASSWORD:-}",
+        "LIFE360_AUTH_TOKEN=${LIFE360_AUTH_TOKEN:-}",
+        "TZ=Asia/Hong_Kong"
+      ],
+      "volumes": [
+        "${NORA_RUNTIME_ROOT:?}/config.toml:/app/config.toml:ro",
+        "${NORA_RUNTIME_ROOT:?}/identity.toml:/app/identity.toml:ro"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "curl",
+          "-fsS",
+          "http://127.0.0.1:9101/health"
+        ],
+        "interval": "30s",
+        "timeout": "5s",
+        "start_period": "20s",
+        "retries": 3
+      }
+    },
+    "analytics": {
+      "image": "ghcr.io/mikeng-io/nora-nora@sha256:62edf8c8ad4231bbcf54d6150eda47b41c78a5460a6a9c140667944faec42f52",
+      "container_name": "analytics",
+      "restart": "unless-stopped",
+      "entrypoint": [
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        "-m",
+        "nora.analytics"
+      ],
+      "command": [
+        "--config",
+        "config.toml"
+      ],
+      "networks": [
+        "nora"
+      ],
+      "ports": [
+        "127.0.0.1:9103:9103"
+      ],
+      "depends_on": {
+        "db": {
+          "condition": "service_healthy"
+        }
+      },
+      "environment": [
+        "DATABASE_URL=postgresql+asyncpg://nora:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db/nora",
+        "TZ=Asia/Hong_Kong"
+      ],
+      "volumes": [
+        "${NORA_RUNTIME_ROOT:?}/config.toml:/app/config.toml:ro",
+        "${NORA_RUNTIME_ROOT:?}/identity.toml:/app/identity.toml:ro",
+        "${NORA_RUNTIME_ROOT:?}/policy.toml:/app/policy.toml:ro"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "curl",
+          "-fsS",
+          "http://127.0.0.1:9103/health"
+        ],
+        "interval": "30s",
+        "timeout": "5s",
+        "start_period": "20s",
+        "retries": 3
+      }
+    },
+    "rustfs": {
+      "image": "rustfs/rustfs:1.0.0-rc.1",
+      "container_name": "rustfs",
+      "restart": "unless-stopped",
+      "networks": [
+        "nora"
+      ],
+      "environment": [
+        "RUSTFS_ROOT_USER=${RUSTFS_ROOT_USER:?set RUSTFS_ROOT_USER in .env}",
+        "RUSTFS_ROOT_PASSWORD=${RUSTFS_ROOT_PASSWORD:?set RUSTFS_ROOT_PASSWORD in .env}"
+      ],
+      "volumes": [
+        "rustfs-data:/data"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "curl -sS -o /dev/null http://127.0.0.1:9000/ || exit 1"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "start_period": "20s",
+        "retries": 5
+      }
+    },
+    "embedder": {
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      },
+      "image": "ghcr.io/ggml-org/llama.cpp:server-b11541@sha256:bf3da52e92c083472b3d1c9f9da081f423ab9def95a87ec4bba51940382d75fd",
+      "container_name": "embedder",
+      "restart": "unless-stopped",
+      "profiles": [
+        "embedder"
+      ],
+      "networks": [
+        "embedder",
+        "embedder_host"
+      ],
+      "ports": [
+        "127.0.0.1:8092:8080"
+      ],
+      "environment": [
+        "LLAMA_MEDIA_MARKER=<__media__>"
+      ],
+      "command": [
+        "--embedding",
+        "--pooling",
+        "last",
+        "-m",
+        "/models/Qwen3-VL-Embedding-2B.Q4_K_M.gguf",
+        "--mmproj",
+        "/models/Qwen3-VL-Embedding-2B.mmproj-f16.gguf",
+        "-c",
+        "2048",
+        "-b",
+        "2048",
+        "-ub",
+        "2048",
+        "-t",
+        "4",
+        "-ngl",
+        "0",
+        "--parallel",
+        "1",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8080"
+      ],
+      "cpus": 4,
+      "mem_limit": "4g",
+      "memswap_limit": "4g",
+      "volumes": [
+        "${EMBEDDER_MODELS_DIR:-${NORA_RUNTIME_ROOT:?}/models/embedder}:/models:ro"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "curl",
+          "-fsS",
+          "http://127.0.0.1:8080/health"
+        ],
+        "interval": "30s",
+        "timeout": "5s",
+        "start_period": "120s",
+        "retries": 3
+      }
+    },
+    "db": {
+      "image": "pgvector/pgvector:pg18",
+      "restart": "unless-stopped",
+      "networks": [
+        "nora"
+      ],
+      "ports": [
+        "127.0.0.1:5435:5432"
+      ],
+      "environment": {
+        "POSTGRES_USER": "nora",
+        "POSTGRES_DB": "nora",
+        "POSTGRES_PASSWORD": "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}"
+      },
+      "volumes": [
+        "db-data:/var/lib/postgresql"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "pg_isready -U nora -d nora"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 5
+      }
+    },
+    "stt": {
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      },
+      "image": "ghcr.io/mikeng-io/nora-stt@sha256:08771432132757f19a14f5cd6a8c343c2c5df7a8b6687e8f072a4ab70b73c343",
+      "container_name": "stt",
+      "restart": "unless-stopped",
+      "networks": [
+        "nora"
+      ],
+      "mem_limit": "8g",
+      "memswap_limit": "8g",
+      "volumes": [
+        "stt-modelscope-cache:/home/stt/.cache/modelscope",
+        "stt-huggingface-cache:/home/stt/.cache/huggingface",
+        "${NORA_RUNTIME_ROOT:?}/config.toml:/app/config.toml:ro"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "curl",
+          "-fsS",
+          "http://127.0.0.1:8000/health"
+        ],
+        "interval": "30s",
+        "timeout": "5s",
+        "start_period": "900s",
+        "retries": 3
+      }
+    },
+    "voice-sidecar": {
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      },
+      "image": "ghcr.io/mikeng-io/nora-voice-sidecar@sha256:e4cfe08c09bd8498311b59334b2a5aa109624f90f0536d6338233177f70222e2",
+      "container_name": "voice-sidecar",
+      "restart": "unless-stopped",
+      "networks": [
+        "nora"
+      ],
+      "environment": [
+        "DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}",
+        "PUMP_HOST=${VOICE_PUMP_HOST:-voice-wake}",
+        "PUMP_PORT=${VOICE_PUMP_PORT:-4599}",
+        "HOST=0.0.0.0",
+        "STATE_DIR=/var/lib/audio-controller",
+        "NORA_EVENT_URL=http://nora:9100/app/v1/voice/event"
+      ],
+      "volumes": [
+        "audio-controller-state:/var/lib/audio-controller"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1:$${PORT:-4600}/health"
+        ],
+        "interval": "30s",
+        "timeout": "5s",
+        "start_period": "60s",
+        "retries": 3
+      }
+    },
+    "voice-wake": {
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      },
+      "image": "ghcr.io/mikeng-io/nora-voice-wake@sha256:16ab0c1defb34bc9e87b4783f1a964fe765765e0e3aec50e64dbdb16f57e1fc4",
+      "container_name": "voice-wake",
+      "restart": "unless-stopped",
+      "networks": [
+        "nora"
+      ],
+      "mem_limit": "2g",
+      "memswap_limit": "2g",
+      "environment": [
+        "NORA_INGEST_URL=http://nora:9100"
+      ],
+      "volumes": [
+        "${NORA_RUNTIME_ROOT:?}/config.toml:/app/config.toml:ro"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "curl",
+          "-fsS",
+          "http://127.0.0.1:4601/health"
+        ],
+        "interval": "30s",
+        "timeout": "5s",
+        "start_period": "60s",
+        "retries": 3
+      }
+    },
+    "prometheus": {
+      "image": "prom/prometheus:v3.7.3",
+      "container_name": "nora-prometheus",
+      "restart": "unless-stopped",
+      "command": [
+        "--config.file=/etc/prometheus/prometheus.yml",
+        "--storage.tsdb.path=/prometheus",
+        "--storage.tsdb.retention.time=30d",
+        "--web.enable-lifecycle"
+      ],
+      "volumes": [
+        "${NORA_RUNTIME_ROOT:?}/deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro",
+        "${NORA_RUNTIME_ROOT:?}/deploy/prometheus/rules:/etc/prometheus/rules:ro",
+        "prometheus-data:/prometheus"
+      ],
+      "networks": [
+        "nora"
+      ],
+      "ports": [
+        "127.0.0.1:9190:9090"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "wget",
+          "-qO-",
+          "http://localhost:9090/-/healthy"
+        ],
+        "interval": "30s",
+        "timeout": "5s",
+        "retries": 3
+      }
+    },
+    "alertmanager": {
+      "image": "prom/alertmanager:v0.28.1",
+      "container_name": "nora-alertmanager",
+      "restart": "unless-stopped",
+      "volumes": [
+        "${NORA_RUNTIME_ROOT:?}/deploy/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro",
+        "alertmanager-data:/alertmanager"
+      ],
+      "networks": [
+        "nora"
+      ],
+      "ports": [
+        "127.0.0.1:9193:9093"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "wget",
+          "-qO-",
+          "http://localhost:9093/-/healthy"
+        ],
+        "interval": "30s",
+        "timeout": "5s",
+        "retries": 3
+      }
+    },
+    "alert-bridge": {
+      "image": "ghcr.io/mikeng-io/nora-alert-bridge@sha256:03f76002f5211049060e26b12dfcdf8c66268c86310e3a87ef82740b1fe1c503",
+      "container_name": "nora-alert-bridge",
+      "restart": "unless-stopped",
+      "environment": [
+        "ALERT_DISCORD_CHANNEL=${ALERT_DISCORD_CHANNEL:-}",
+        "DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}"
+      ],
+      "networks": [
+        "nora",
+        "default"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request;urllib.request.urlopen('http://localhost:9110/health',timeout=3)"
+        ],
+        "interval": "30s",
+        "timeout": "5s",
+        "retries": 3
+      }
+    }
+  },
+  "networks": {
+    "nora": null,
+    "honcho": {
+      "external": true,
+      "name": "honcho_memory"
+    },
+    "embedder": {
+      "internal": true
+    },
+    "embedder_host": {
+      "driver_opts": {
+        "com.docker.network.bridge.enable_ip_masquerade": "false"
+      }
+    }
+  },
+  "volumes": {
+    "prometheus-data": null,
+    "alertmanager-data": null,
+    "db-data": null,
+    "rustfs-data": null,
+    "stt-modelscope-cache": null,
+    "stt-huggingface-cache": null,
+    "audio-controller-state": null
+  }
+}

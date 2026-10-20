@@ -1,6 +1,0 @@
-#!/bin/sh
-# nora-render on Nora's computer (deploy/computer/Dockerfile): standard-library
-# Python on the image's own python3, so a project's `pip install` never
-# touches it.
-export PUPPETEER_CACHE_DIR=/opt/nora-render/puppeteer
-exec /usr/bin/python3 /opt/nora-render/nora_render.py "$@"

@@ -1,4 +1,0 @@
-Generate ONE image, landscape 3:2 (1536x1024). A background plate: NO character in it.
-- An empty, lived-in corner of a small Hong Kong flat late at night, rendered in the same soft stylized 3D look as the references (a cosy miniature-diorama feel, soft rounded shapes, tactile materials): a low sofa with a soft grey throw and cushions on the left, a small side table with a warm fabric-shade lamp (the only key light), a mug; behind, a large window showing the out-of-focus lights of tall residential towers at night (warm white and soft amber windows in bokeh; no neon, no signage, no coloured gradients).
-- Shallow depth of field: the whole room gently soft, a background plate. Deep warm charcoal shadows (around #141112 to #241F20), warm lamp highlights. Calm, quiet, 1 a.m.
-- Keep the centre and right half uncluttered (a character and interface will be composited there). No people, no text, no logos.

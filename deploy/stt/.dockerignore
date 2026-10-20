@@ -1,5 +1,0 @@
-# Same spirit as the top-level .dockerignore: keep the image minimal.
-__pycache__/
-*.pyc
-tests/
-.pytest_cache/

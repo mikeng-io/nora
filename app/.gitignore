@@ -1,8 +1,0 @@
-node_modules
-.next
-dist
-*.tsbuildinfo
-.env*.local
-public/vendor/
-test-results/
-playwright-report/

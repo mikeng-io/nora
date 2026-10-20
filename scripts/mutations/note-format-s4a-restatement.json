@@ -1,9 +1,0 @@
-[
-  {
-    "name": "carry-forward means ALL of a line's ids, not some",
-    "file": "nora/domain/note_body.py",
-    "old": "        if ids and not any(ids <= new for new in new_lines):\n",
-    "new": "        if ids and not any(ids & new for new in new_lines):\n",
-    "target": "tests/unit/test_note_body.py::test_dropped_citations_reads_every_head_line_against_the_new_body"
-  }
-]

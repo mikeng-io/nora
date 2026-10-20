@@ -1,8 +1,0 @@
-Oct 07 01:34:47 norty ollama[9234]: llama_prepare_model_devices: using device ROCm0 (AMD Radeon Graphics) (0000:e5:00.0) - 14016 MiB free
-Oct 07 01:34:47 norty ollama[9234]: load_tensors: offloaded 25/25 layers to GPU
-Oct 07 01:37:28 norty ollama[9234]: llama_prepare_model_devices: using device ROCm0 (AMD Radeon Graphics) (0000:e5:00.0) - 13184 MiB free
-Oct 07 01:37:29 norty ollama[9234]: load_tensors: offloaded 25/25 layers to GPU
-Oct 07 01:39:26 norty ollama[9234]: llama_prepare_model_devices: using device ROCm0 (AMD Radeon Graphics) (0000:e5:00.0) - 13184 MiB free
-Oct 07 01:39:29 norty ollama[9234]: load_tensors: offloaded 33/33 layers to GPU
-Oct 07 01:43:15 norty ollama[9234]: llama_prepare_model_devices: using device ROCm0 (AMD Radeon Graphics) (0000:e5:00.0) - 14016 MiB free
-Oct 07 01:43:18 norty ollama[9234]: load_tensors: offloaded 33/33 layers to GPU

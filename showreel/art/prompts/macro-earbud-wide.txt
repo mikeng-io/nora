@@ -1,6 +1,0 @@
-Generate ONE image, landscape 3:2 (1536x1024), cinematic.
-- Extreme close-up of Nora's head seen from her left side, three-quarter from behind the cheek: her ear with the white wired earbud seated in it sits just right of the frame centre; soft strands of her messy dark-brown hair fall past it; the curve of her pink-blushed cheek and the edge of one large dark oval eye are visible at the right edge. Calm.
-- The thin white earphone cable drops from the earbud straight down and leaves the frame at the bottom edge, crisp and in focus, catching the light.
-- Very shallow depth of field: earbud and cable sharp, hair behind softly blurred. The left third of the frame is dark negative space.
-- Light: late night. One soft warm key light from the upper left like a desk lamp just out of frame, a gentle warm rim on the hair strands. Background falls into deep warm charcoal (around #141112 to #241F20, faint warm cast, never blue-black).
-- Same soft 3D mascot render quality as the references: matte skin, fine hair strands, subsurface; not a photoreal human. No props, no text.

@@ -1,9 +1,0 @@
-[
-  {
-    "name": "in_schema_form reads form rules only",
-    "file": "nora/domain/note_body.py",
-    "old": "        return broke.rule not in FORM_RULES\n",
-    "new": "        return True\n",
-    "target": "tests/unit/test_note_body.py::test_in_schema_form_reads_form_not_evidence"
-  }
-]

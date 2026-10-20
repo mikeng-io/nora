@@ -1,9 +1,0 @@
-{
-  "route": "GET /accounts",
-  "path": "/accounts?username=nonexistent_handle",
-  "status": 200,
-  "body": {
-    "items": [],
-    "next_cursor": null
-  }
-}

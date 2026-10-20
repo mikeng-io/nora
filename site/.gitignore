@@ -1,5 +1,0 @@
-node_modules/
-dist/
-.astro/
-# the 11 MB source of the CJK subset; scripts/fonts.mjs downloads it on demand
-.cache/
