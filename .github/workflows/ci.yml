@@ -29,6 +29,15 @@ jobs:
       - run: uv sync --frozen --extra evals
       - name: Static checks
         run: make lint typecheck imports
+      - name: Match the audited Periphery Compose CLI
+        run: |
+          mkdir -p "$HOME/.docker/cli-plugins"
+          curl --fail --silent --show-error --location --retry 3 \
+            https://github.com/docker/compose/releases/download/v5.5.0/docker-compose-linux-x86_64 \
+            -o "$RUNNER_TEMP/docker-compose"
+          echo "c57ab918abd5b05ca7e7d0f275875dd1330a695074f309dc9eab1b49efafcd4b  $RUNNER_TEMP/docker-compose" | sha256sum --check
+          install -m 755 "$RUNNER_TEMP/docker-compose" "$HOME/.docker/cli-plugins/docker-compose"
+          docker compose version
       - name: Architecture and documentation contracts
         run: >-
           uv run pytest -q

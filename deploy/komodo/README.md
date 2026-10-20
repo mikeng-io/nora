@@ -91,7 +91,9 @@ They are not performed by the publisher or by merging its PR.
    confirm that the database backup can be restored. Record the existing project
    name, bind paths, named volumes and enabled site profile. Keep the existing
    manual deployment path available while the Komodo schedule is off.
-2. The stock Periphery image has Docker and `flock`, but no Python. Build the
+2. The stock Periphery image has Docker and `flock`, but no Python. The audited
+   Compose CLI is 5.5.0, also checksum-pinned in CI: 2.38.2 rejects required-path
+   interpolation during secret-safe config capture. Build the
    reviewed `Periphery.Dockerfile` (the audited base plus stdlib Python), select
    that local image explicitly in the private Periphery Compose config, and
    retain its existing keys/settings. The private
