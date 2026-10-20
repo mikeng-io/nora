@@ -44,28 +44,29 @@ GitHub App supplies the write token after the model exits, so the PR triggers
 normal checks. Failure stops before a PR is created; partial runs are not
 presented as completed updates. A weekly run is off until the operator sets
 `OPENWIKI_AUTO_UPDATE=true`; manual dispatch works once credentials exist.
+For a scope expansion without runtime source changes, supply the manual
+dispatch's optional `request` field. OpenWiki uses it as planning context and
+forces a fresh plan. Ordinary scheduled updates leave it empty.
 
 Configuration:
 
-- Secret `OPENWIKI_API_KEY`: provider key, never committed or printed.
+- Secret `OPENWIKI_API_KEY`: Ollama Cloud key, never committed or printed.
 - Existing `RELEASE_APP_ID` variable and `RELEASE_APP_PRIVATE_KEY` secret:
   repository App with Contents and Pull requests write access.
 - Optional variables `OPENWIKI_BASE_URL` and `OPENWIKI_MODEL_ID` override the
-  default `https://api.minimax.cn/v1` and `MiniMax-M3.1-Flash`.
-- For the same model on Ollama Cloud, use `https://ollama.com/v1` and
-  `minimax-m3.1-flash`, with its API key. No local Ollama server is required.
+  default `https://ollama.com/v1` and `deepseek-v4.1-flash`.
+- No local Ollama server is required. When overriding the provider endpoint,
+  replace the secret with a key for that provider as well.
 
 The default uses one page worker, medium reasoning and a 32,768-token output
 ceiling per model response; the job has a 45-minute wall clock. These are not a
 currency budget. Native generation and each provider's multi-turn tool replay
 must be checked in a bounded manual run before enabling unattended updates.
-MiniMax requires reasoning content to survive tool-call replay; endpoint
-compatibility alone does not prove this. No output-quality ranking between
-MiniMax and Ollama is claimed.
+Endpoint compatibility alone does not prove successful generation or accurate
+technical content.
 
-Provider references: [MiniMax OpenAI API](https://platform.minimax.cn/docs/api-reference/text-openai-api),
-[Ollama compatibility](https://docs.ollama.com/api/openai-compatibility),
-[Ollama's M3.1 Flash](https://ollama.com/library/minimax-m3.1-flash:cloud).
+Provider references: [Ollama compatibility](https://docs.ollama.com/api/openai-compatibility),
+[Ollama's DeepSeek V4.1 Flash](https://ollama.com/library/deepseek-v4.1-flash:cloud).
 
 ## Retrieval later
 
