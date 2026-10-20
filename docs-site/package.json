@@ -6,6 +6,7 @@
     "node": ">=22.22.0"
   },
   "scripts": {
+    "postinstall": "node scripts/patch-openwiki.mjs",
     "dev": "astro dev",
     "build": "npm test && astro build && npm run graph && node scripts/check-links.mjs",
     "preview": "astro preview",

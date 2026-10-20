@@ -32,6 +32,33 @@ and `.openwikiignore`; do not edit managed Claims or update metadata manually.
 Review against current source and tests. A successful run verifies its evidence
 bookkeeping, not semantic accuracy or the live deployment.
 
+The install hook applies `patches/openwiki-0.7.2.patch` to the pinned native
+dependency using Node's standard library. It checks the package version and
+every input/output file's SHA-256, refuses unexpected bytes before writing, and
+is safe to rerun. After an install with `--ignore-scripts`, run
+`npm run postinstall --prefix docs-site` explicitly (the site Dockerfile does).
+Reassess or remove the patch when upgrading OpenWiki.
+
+On resume, a completed job with valid verified Claims but changed Markdown is
+reopened in its existing queue. Its content, Claims IDs, run ID and source
+checkpoint are retained; its Claims require explicit confirmation, revision or
+retraction through native `submit_page`. Malformed Claims, missing Markdown
+and I/O errors still fail. No hash is refreshed merely to allow resume.
+Unresolved drift outside a saved plan also retains its last verified sidecar
+hash across other submissions and failed finishes. Retrying cannot publish
+that page without explicit Claim reconciliation; the saved queue stays intact.
+Each page worker orders its tool calls and serializes reads and writes with
+submission.
+Successful submission revokes its writes, including queued operations, and
+ends the worker before another model call; rejection still permits repair and
+retry. Ordinary backends retain the native shared path queue and its read/write
+admission order. Separate page workers remain concurrent. This is process-local
+worker coordination; it does not lock out external editors or other CLI processes.
+
+`node --test docs-site/scripts/openwiki-native.test.mjs` exercises the native
+stores and worker with synthetic data and an in-process scripted model. It
+checks recovery and submission behavior, not model acceptance or wiki accuracy.
+
 ## GitHub Actions
 
 `wiki.yml` builds the wiki and public homepage on relevant PRs and master

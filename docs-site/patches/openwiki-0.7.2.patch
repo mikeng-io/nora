@@ -1,0 +1,252 @@
+diff --git a/dist/agent/docs-only-backend.js b/dist/agent/docs-only-backend.js
+index 883d2f75c912e146e2ab6cf7cbf53cb31efdba37e0a892b12cf4208750ce7917..1b6e9c662417cfb6c6d8af03062cde9baf832df704ee58aaa4dc6412a0d30a51
+--- a/dist/agent/docs-only-backend.js
++++ b/dist/agent/docs-only-backend.js
+@@ -162,6 +162,18 @@
+      * Canonical generated pages this worker may mutate, when explicitly scoped.
+      */
+     writableWikiPages;
++    // One backend per worker/page. Lifecycle submission uses its own backend,
++    // so it can repair and verify the page while this worker's writes wait.
++    pendingWrite = Promise.resolve();
++    withWriteLock(operation) {
++        // Unscoped lifecycle backends must register on the shared path queue
++        // synchronously. Only workers need submission admission/revocation.
++        if (this.writableWikiPages === undefined)
++            return operation();
++        const result = this.pendingWrite.then(operation);
++        this.pendingWrite = result.then(() => undefined, () => undefined);
++        return result;
++    }
+     constructor(options) {
+         super(options);
+         this.docsOnly = options.docsOnly === true;
+@@ -180,7 +192,7 @@
+         if (error) {
+             return { error };
+         }
+-        return withPathOperation(this.cwd, filePath, () => super.read(filePath, offset, limit));
++        return this.withWriteLock(() => withPathOperation(this.cwd, filePath, () => super.read(filePath, offset, limit)));
+     }
+     /**
+      * Read raw bytes, hard-denying the read if the path is excluded by `.openwikiignore`.
+@@ -191,7 +203,7 @@
+         if (error) {
+             return { error };
+         }
+-        return withPathOperation(this.cwd, filePath, () => super.readRaw(filePath));
++        return this.withWriteLock(() => withPathOperation(this.cwd, filePath, () => super.readRaw(filePath)));
+     }
+     /**
+      * Write a file, denying if the path is excluded by `.openwikiignore` or falls
+@@ -206,7 +218,12 @@
+         if (error) {
+             return { error };
+         }
+-        return withPathOperation(this.cwd, normalizedPath, async () => markMutation(await super.write(normalizedPath, content), normalizedPath));
++        return this.withWriteLock(() => {
++            const revoked = this.getDocsOnlyWriteError(normalizedPath);
++            if (revoked)
++                return { error: revoked };
++            return withPathOperation(this.cwd, normalizedPath, async () => markMutation(await super.write(normalizedPath, content), normalizedPath));
++        });
+     }
+     /**
+      * Edit a file in place, applying the same `.openwikiignore` and docs-only
+@@ -220,7 +237,12 @@
+         if (error) {
+             return { error };
+         }
+-        return withPathOperation(this.cwd, normalizedPath, async () => markMutation(await super.edit(normalizedPath, oldString, newString, replaceAll), normalizedPath));
++        return this.withWriteLock(() => {
++            const revoked = this.getDocsOnlyWriteError(normalizedPath);
++            if (revoked)
++                return { error: revoked };
++            return withPathOperation(this.cwd, normalizedPath, async () => markMutation(await super.edit(normalizedPath, oldString, newString, replaceAll), normalizedPath));
++        });
+     }
+     /**
+      * Deletes a generated file while enforcing ignore, ownership, and docs-only rules.
+@@ -236,7 +258,12 @@
+         if (error) {
+             return { error };
+         }
+-        return withPathOperation(this.cwd, normalizedPath, async () => markMutation(await super.delete(normalizedPath), normalizedPath));
++        return this.withWriteLock(() => {
++            const revoked = this.getDocsOnlyWriteError(normalizedPath);
++            if (revoked)
++                return { error: revoked };
++            return withPathOperation(this.cwd, normalizedPath, async () => markMutation(await super.delete(normalizedPath), normalizedPath));
++        });
+     }
+     /**
+      * List a directory, denying if the directory itself is excluded and otherwise
+@@ -318,18 +345,15 @@
+      * returned in the original input order.
+      */
+     async uploadFiles(files) {
+-        const allowedFiles = files.filter(([filePath]) => !this.isWriteBlocked(filePath));
+-        if (allowedFiles.length === files.length) {
+-            return super.uploadFiles(files);
+-        }
+-        const allowedResults = await super.uploadFiles(allowedFiles);
+-        const resultsByPath = new Map(allowedResults.map((result) => [result.path, result]));
+-        return files.map(([filePath]) => {
++        return Promise.all(files.map(([filePath, content]) => this.withWriteLock(() => {
+             if (this.isWriteBlocked(filePath)) {
+                 return { error: "permission_denied", path: filePath };
+             }
+-            return (resultsByPath.get(filePath) ?? { error: "invalid_path", path: filePath });
+-        });
++            return withPathOperation(this.cwd, filePath, async () => {
++                const [result] = await super.uploadFiles([[filePath, content]]);
++                return result ?? { error: "invalid_path", path: filePath };
++            });
++        })));
+     }
+     /**
+      * Download files, returning `permission_denied` for any ignored path while
+diff --git a/dist/agent/repository-runner.js b/dist/agent/repository-runner.js
+index 68d29cbb04efeb8afca8d9428df608efa8ddaf732f1baf6c99c93db1384c4c15..10917cdda00421b8b7d63fbbe68619e115570d7b81070a64f8717789b5b39d8f
+--- a/dist/agent/repository-runner.js
++++ b/dist/agent/repository-runner.js
+@@ -563,6 +563,7 @@
+     });
+     let submitted = false;
+     let fatalSubmissionFailure = false;
++    let toolCalls = Promise.resolve();
+     const inspectClaimsTool = new DynamicStructuredTool({
+         name: "inspect_claims",
+         description: "Return this page's complete current Claim set without opaque evidence versions. Use only before intentionally revising or removing otherwise-current content; stale or unresolved Claims already appear in the assignment.",
+@@ -573,7 +574,7 @@
+         name: "submit_page",
+         description: "Complete the assigned page after writing it. Submit only sparse Claim decisions: confirmedClaimIds for rechecked issue Claims kept unchanged, claims for revisions/additions, and retractedClaimIds for removals. Other current Claims are retained automatically. Evidence must use repo://<repository-relative-path>, optionally with #Lx-Ly.",
+         schema: ClaimReconciliationSchema,
+-        func: async (reconciliation, _runManager, config) => {
++        func: (reconciliation, _runManager, config) => wikiBackend.withWriteLock(async () => {
+             if (submitted) {
+                 throw new Error("submit_page was already called for this page worker.");
+             }
+@@ -582,6 +583,9 @@
+                     jobId: job.id,
+                     ...reconciliation,
+                 });
++                // Revoke inside the same queue as filesystem writes, including
++                // writes already issued by this model turn but still waiting.
++                wikiBackend.writableWikiPages.clear();
+                 submitted = true;
+                 return JSON.stringify(result);
+             }
+@@ -594,7 +598,7 @@
+                 fatalSubmissionFailure = true;
+                 throw error;
+             }
+-        },
++        }),
+     });
+     const backend = createAgentBackend(wikiBackend);
+     const agent = createDeepAgent({
+@@ -603,6 +607,20 @@
+         tools: [inspectClaimsTool, submitPageTool],
+         backend,
+         middleware: [
++            createMiddleware({
++                name: "OpenWikiPageSubmissionComplete",
++                // Queue at the tool boundary, before filesystem permission checks
++                // can let a later submit overtake an earlier write in this batch.
++                wrapToolCall: (request, handler) => {
++                    const result = toolCalls.then(() => handler(request));
++                    toolCalls = result.then(() => undefined, () => undefined);
++                    return result;
++                },
++                beforeModel: {
++                    canJumpTo: ["end"],
++                    hook: () => submitted ? { jumpTo: "end" } : undefined,
++                },
++            }),
+             createFilesystemMiddleware({
+                 backend,
+                 permissions: AGENT_FILESYSTEM_PERMISSIONS,
+diff --git a/dist/claims/brains/code/preflight.js b/dist/claims/brains/code/preflight.js
+index e7924cf4c7303759d754f849f2c0a020bb239ed88c42545867317f4c273892f1..99a556c94e0a3d7e489d789bfaf5a8b00c91a3061166b4b2426e607718018715
+--- a/dist/claims/brains/code/preflight.js
++++ b/dist/claims/brains/code/preflight.js
+@@ -25,6 +25,10 @@
+         if (!pageClaims) {
+             continue;
+         }
++        // Changed Markdown requires explicit Claim decisions even when its source
++        // evidence is unchanged. Never silently bless the new page with old Claims.
++        const pageChanged = pageClaims.verification !== undefined &&
++            (await store.hashPage(page)) !== pageClaims.pageVersion;
+         for (const claim of pageClaims.claims) {
+             const changedResources = [];
+             const unresolvedResources = [];
+@@ -54,12 +58,14 @@
+                     resources: unresolvedResources.sort(),
+                 });
+             }
+-            else if (changedResources.length > 0) {
++            else if (changedResources.length > 0 || pageChanged) {
+                 issues.push({
+                     page,
+                     kind: "stale",
+                     claimId: claim.id,
+-                    resources: changedResources.sort(),
++                    resources: (pageChanged
++                        ? claim.evidence.map(({ resource }) => resource)
++                        : changedResources).sort(),
+                 });
+             }
+         }
+diff --git a/dist/claims/brains/code/session.js b/dist/claims/brains/code/session.js
+index 7f00e900e98587b188f7fd2b8c579a22ef5f0fb71bdec669eb548a8a35335377..17f6ebef20e669d3512769ad335b64cac17281936f27b2ae50c64d9be532c1fc
+--- a/dist/claims/brains/code/session.js
++++ b/dist/claims/brains/code/session.js
+@@ -308,7 +308,9 @@
+         for (const pageInput of [...new Set(pages)].sort((left, right) => left.localeCompare(right))) {
+             const page = normalizeWikiPagePath(pageInput);
+             const state = this.pages.get(page);
+-            if (!state || !state.persisted || state.deleted || state.dirty)
++            // Keep the last verified hash until every drift Claim is reconciled,
++            // including pages outside the saved plan. Retries must see the debt.
++            if (!state || !state.persisted || state.deleted || state.dirty || state.issues.length > 0)
+                 continue;
+             try {
+                 await store.writePage(page, {
+diff --git a/dist/generation/repository-run.js b/dist/generation/repository-run.js
+index dd2566d784abbb7366520595ff245213ee4350e7d34f0bccfb86aa277cd2811f..5e0673c8df3bf22dbdfbd9dd3471beac30ec16d01cdb965d487b10c4f701ae52
+--- a/dist/generation/repository-run.js
++++ b/dist/generation/repository-run.js
+@@ -340,7 +340,7 @@
+  * @param root - Absolute repository root.
+  * @param state - Durable run state for the unchanged active source.
+  * @param legacyCompletedBy - Producer used for legacy completed jobs.
+- * @returns State with manifest-proven pending jobs promoted to complete.
++ * @returns State with current coverage promoted and unpaired Markdown reopened.
+  * @throws RepositoryRunError when a completed job cannot re-prove durable state.
+  */
+ async function reconcileManifestPageJobs(root, state, legacyCompletedBy) {
+@@ -352,10 +352,20 @@
+     for (const page of state.plan.pages) {
+         let current = await getCurrentRepositoryPageCompletion(root, page.path, source);
+         if (page.status === "complete" && !current) {
++            const store = new ClaimsStore(root);
++            const persisted = await store.loadPage(page.path);
++            const pageVersion = await store.hashPage(page.path);
++            if (persisted?.verification && persisted.claims.length > 0 &&
++                persisted.pageVersion !== pageVersion) {
++                // Preserve the old Claims and coverage: only a new submit_page may
++                // verify these changed bytes. Malformed state and I/O still throw.
++                pages.push({ ...page, status: "pending" });
++                changed = true;
++                continue;
++            }
+             // Deterministic finish may rewrite a completed page and its sidecar before
+             // a later failure leaves `.run.json` in place. Re-prove those exact bytes
+-            // instead of rejecting a safely resumable finish. Unpaired edits still
+-            // fail closed inside recordRepositoryPageCompletion.
++            // instead of rejecting a safely resumable finish.
+             current = await recordRepositoryPageCompletion(root, page.path, source, page.completedBy ?? legacyCompletedBy, state.runId);
+         }
+         if (page.status === "complete" &&
