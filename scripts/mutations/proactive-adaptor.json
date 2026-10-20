@@ -11,7 +11,7 @@
   "file": "nora/agent/dreamer.py",
   "old": "                adaptor, ceiling=self._tools.read_only(), grant=grant,",
   "new": "                adaptor, ceiling=self._tools.read_only(),",
-  "target": "tests/unit/test_dreamer_runtime.py -k the_per_run_check_honours_the_same_grant"
+  "target": "tests/unit/test_dreamer_runtime.py -k the_per_run_check_honours_a_home_room_grant"
  },
  {
   "name": "D2 location_trusted is threaded from the home room",
@@ -144,7 +144,7 @@
   "file": "nora/app/composition.py",
   "old": "            grants=dream_grants,",
   "new": "            grants={},",
-  "target": "tests/test_composition.py -k a_home_room_wires_the_proactive_adaptor_its_schedule_and_its_grant"
+  "target": "tests/test_composition.py -k the_culture_adaptor_is_wired_with_its_grant_and_its_OWN_room"
  },
  {
   "name": "audit: an unreachable note is a wiring gap, not a retirement",

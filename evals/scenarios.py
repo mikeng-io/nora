@@ -136,15 +136,22 @@ def _rows(name: str) -> list[dict[str, Any]]:
     rows = list(doc)
     if name == "persona_identity" and os.environ.get("NORA_EVAL_PERSONA_CASES"):
         private = yaml.safe_load(Path(os.environ["NORA_EVAL_PERSONA_CASES"]).read_text())
-        from nora.subject.persona_writer import SOURCE_VECTORS, SOURCE_VECTORS_V2, validate_sources
+        from nora.subject.persona_writer import (
+            REPRESENTATION_VECTORS,
+            SOURCE_VECTORS,
+            SOURCE_VECTORS_V2,
+            validate_sources,
+        )
         registered = {r["name"] for r in rows}
         if (not isinstance(private, dict) or not registered.issubset(private)
                 or set(private) - registered not in (
-                    set(), set(SOURCE_VECTORS), set(SOURCE_VECTORS_V2))):
+                    set(), set(SOURCE_VECTORS), set(SOURCE_VECTORS_V2),
+                    set(REPRESENTATION_VECTORS))):
             raise ValueError("private persona file must supply exactly the registered vectors")
         rows.extend({"name": name, "entry": "persona_identity", "expect": "identity",
                      "metadata": {"synthetic_evidence": True}}
-                    for name in (*SOURCE_VECTORS, *SOURCE_VECTORS_V2) if name in private)
+                    for name in (*SOURCE_VECTORS, *SOURCE_VECTORS_V2, *REPRESENTATION_VECTORS)
+                    if name in private)
         for row in rows:
             value = private[row["name"]]
             if (not isinstance(value, dict)
@@ -424,7 +431,7 @@ ROUTED_CORPORA = frozenset({"tool_selection", "tool_selection_cognition"})
 #: judging unconditionally (once a judge is configured) adds no second
 #: selection rule.
 JUDGED_CORPORA = frozenset({
-    "persona_coverage",
+    "persona_coverage", "persona_identity",
     "being_contradicted", "identity_grounding", "source_scope",
     "injections", "transcript_injection", "standing", "presence",
     # ADR 0015 §4: what she SAYS after a tool returns a status. Its opted-in

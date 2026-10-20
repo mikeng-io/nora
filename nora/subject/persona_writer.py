@@ -23,6 +23,8 @@ from nora.subject.dreaming import _samples
 from nora.subject.knowledge import arrive
 from nora.subject.obtain import Subject
 
+REPRESENTATION_VECTORS = ("categorical_report", "observed_sharing", "observed_participation")
+
 SOURCE_VECTORS_V2 = ("profile_endorsed_late", "profile_media_only_late",
                      "profile_media_only_missing")
 
@@ -35,11 +37,16 @@ def validate_sources(sources: object, now_ms: int, *, vector: str | None = None)
         raise ValueError("private persona sources require a clock and nonempty sources")
     for source in sources:
         if (not isinstance(source, dict) or set(source) not in (
-                {"body", "ts"}, {"body", "ts", "attachment"})
+                {"body", "ts"}, {"body", "ts", "attachment"}, {"body", "ts", "platform"})
                 or not isinstance(source["body"], str)
                 or (not source["body"].strip() and "attachment" not in source)
                 or type(source["ts"]) is not int or source["ts"] > now_ms):
             raise ValueError("private persona sources require nonempty body and timestamp <= clock")
+        if "platform" in source and (
+                vector not in (None, "observed_participation")
+                or not isinstance(source["platform"], str)
+                or source["platform"] not in {"signal", "discord"}):
+            raise ValueError("transport selection belongs to the participation vector")
         if "attachment" in source:
             a = source["attachment"]
             if (not isinstance(a, dict) or set(a) != {"reading", "late"}
@@ -111,6 +118,7 @@ async def run_writer(
     finally:
         await engine.dispose()
     rows = []
+    source_evidence = []
     engine = create_sql_engine(subject.database_url)
     try:
         media = SqlMediaObjectStore(engine)
@@ -123,8 +131,18 @@ async def run_writer(
                 media_type="image/png", size=1) if attachment else None)
             body = source["body"] + ((" " if source["body"] else "")
                                      + f"[image {blob.sha256[:6]}]" if blob else "")
-            rows.append(await arrive(subject, body, now_ms=source["ts"], person=person,
+            room = subject.room
+            if "platform" in source:
+                pk = chosen._keys[key]
+                matches = [(r.platform, r.key) for r in pk.rooms
+                           if r.key in pk.listed and r.platform == source["platform"]]
+                if not matches:
+                    raise ValueError("participation fixture needs a listed room on each transport")
+                room = sorted(matches)[0]
+            rows.append(await arrive(subject, body, room=room, now_ms=source["ts"], person=person,
                                      media_blobs=(blob,) if blob else ()))
+            source_evidence.append({"row": rows[-1], "body": body, "ts": source["ts"],
+                                    "platform": room[0], "author": person})
             if attachment and attachment["late"]:
                 # The actual pre-upgrade consumer already saw this caption.
                 initial = await inputs.messages(key=key, rooms=(subject.room,),
@@ -211,6 +229,7 @@ async def run_writer(
             "trace_id": current_trace_id(), "exposure": exposure, "person": person,
             "heads": [asdict(h) for h in heads], "held": [asdict(h) for h in held],
             "rows": rows, "timestamps": [s["ts"] for s in sources],
+            "source_evidence": source_evidence,
             "revision_before": before[0], "revision_after": after[0],
             "settled_at": after[1], "samples_ok": samples_ok,
             "samples_failed": samples_failed, "status": result.status,

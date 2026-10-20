@@ -1,7 +1,28 @@
 # Persona person writer acceptance
 
-This is deterministic grading of the actual Persona writer, not `tool_selection`
-and not a semantic judge. A draw obtains the existing Subject, restores the normal
+## Handoff: 2026-10-20
+
+The operator requested saving and merging the implementation despite incomplete
+model acceptance. Merging this work does not authorize deployment, Persona
+render/retrieval cutover, further paid draws, or removal of Honcho.
+
+The latest stopped n=1 after-arm confirmation passed `categorical_report`, then
+failed `observed_sharing`: the writer settled with `persona_no_change`, treating
+bare links without readable media as no personal content. There was no attempted
+write or store refusal. `observed_participation` and `birthday_retained` were not
+run because the run stopped on the first failure. Earlier draws and the original
+before baseline remain separate; they are not pooled, redrawn or regraded.
+
+Next: inspect the saved sharing input against the composed objective and existing
+Character thresholds before changing behavior. The objective already permits
+source-bounded observations of sharing; adding the same instruction again is not
+a demonstrated fix. Preserve private receipts on the eval host. Confirm any built
+fix with a newly frozen, bounded acceptance plan; deterministic tests alone do
+not establish writer acceptance.
+
+This grades the actual Persona writer separately from `tool_selection`.
+The original vectors use deterministic grading; only the optional three-case
+representation bundle adds semantic judging through the existing Judge. A draw obtains the existing Subject, restores the normal
 snapshot background, marks that restored history complete in the private sandbox,
 appends declared invented sources using the roster's account,
 seeds the held birthday via SqlPersonaStore.persona_write, and calls DreamerRuntime
@@ -296,3 +317,51 @@ positive; no redraw or judge. Endorsed and missing cases may remain paid
 UNMEASURED. The previous r3 used three invocations/six provider calls and stopped
 at cached-late FAIL; it is not a v2 acceptance result. This correction makes no
 runtime-fix, historical-release or general-quality claim.
+
+## Qualified representation treatment (model acceptance UNMEASURED)
+
+Generate a new private file with `python -m evals.persona_cases
+/tmp/persona-representation.yaml --representation` on one line. This optional
+bundle adds three invented cases to the unchanged eight-case corpus: a dated
+inclusive age-band report, three shared reels, and authored participation on two
+transports. Use `birthday_retained` as the unchanged control. No private source
+text, names or real IDs are included. Existing source-lane bundles remain separate.
+
+The participation fixture selects only existing listed rooms for the actual
+subject in the anchor's unit, using the requested platform. It creates no room or
+account. The private anchor/person must already support Signal and Discord;
+missing membership/account mappings are setup ERROR, never an expected absence.
+The source platform now appears beside the room label in real writer input.
+A reel URL establishes sharing that content, not participation on its destination.
+
+Categorical reports use the existing human told-only `attribute` shape with
+`name="statement"`, a complete qualified value, the original teller, root and
+assertion date. Observed behavior uses existing Character traits and mode rules;
+it gains no Identity attribute, ownership claim, cap exemption or decay exemption.
+Only these three vectors require `--judge`: full qualified meaning is judged
+collectively across canonical heads, permitting equivalent wording and faithful
+decomposition. Frozen properties retain the original subject, dates and full
+conjunction; ownership and usual frequency remain unknown. The judge receives
+declared source bodies/times/transports, mapped roots, author and canonical heads.
+Deterministic shape, teller, date, citation and settlement checks still bind.
+Missing, truncated, malformed or indecisive judge output is ERROR. One bounded
+structured draw uses the existing `nora-judge` client, low effort and 4096 response
+cap, with trace/model/usage accounting. The original eight vectors make no judge
+calls. Scripted tests establish wiring, not semantic model quality. Character
+acceptance does not close typed Identity coverage.
+
+For before/after, keep this extended harness/private file on both arms and restore
+only `nora/language/persona.py` and `nora/dreamer/objectives/persona-person.md`
+from the recorded pre-treatment base in the before arm. Record exact HEAD, diff
+and treatment hashes. Inspect actual `--print-input` for the three cases and
+birthday control on both arms. Sources/dates must match; only treatment input
+may differ. Physical database observation timestamps remain in raw receipts.
+
+Root owns the fresh review, final gate, any bounded paid acceptance and historical
+recovery. No model calls, merge, deploy or recovery are authorized by this section.
+
+Synthetic writer `--positions` receipts retain the normal tool inputs and results
+from the existing span exporter, appended **after** grading so those diagnostics
+do not cue the judge. They exclude provider generation output and reasoning.
+Keep these receipts private. Empty captured content is not proof of an empty call;
+a recorded trace ID does not establish external trace durability.

@@ -123,14 +123,14 @@
   "file": "nora/app/cognition_wiring.py",
   "old": "        result_caps=result_caps,\n    )\n\n    def doctrine()",
   "new": "    )\n\n    def doctrine()",
-  "target": "tests/test_composition.py -k session_mode_shadow_builds_one_runner"
+  "target": "tests/test_composition.py -k cognition_on_builds_one_runner"
  },
  {
   "name": "composition: the runner's hook reaches the evaluator",
   "file": "nora/app/composition.py",
   "old": "            on_wake=cognition_runner.wake_hook if cognition_runner is not None else None,",
   "new": "            on_wake=None,",
-  "target": "tests/test_composition.py -k session_mode_shadow_builds_one_runner"
+  "target": "tests/test_composition.py -k cognition_on_builds_one_runner"
  },
  {
   "name": "main: shutdown stops the cognition sessions first",
@@ -151,6 +151,6 @@
   "file": "nora/app/cognition_wiring.py",
   "old": "            for n, names in tools.tool_param_names().items() if n in surface.wired",
   "new": "            for n, names in tools.tool_param_names().items()",
-  "target": "tests/test_composition.py::test_session_mode_shadow_builds_one_runner_and_hands_its_hook_to_the_evaluator"
+  "target": "tests/test_composition.py::test_cognition_on_builds_one_runner_and_hands_its_hook_to_the_evaluator"
  }
 ]

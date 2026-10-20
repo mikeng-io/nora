@@ -1,7 +1,7 @@
 ---
 name: persona-person
 kind: objective
-version: 6
+version: 9
 applies_to: [persona_person_adaptor]
 description: >-
   One person's Persona in one unit, in shadow (design/unified-memory/45 §4).
@@ -32,7 +32,11 @@ that later you can know the people you talk with without being told twice.
   Rewrite it as lines; do not copy it.
 - `<room_cultures>`: what each room of this group is like. Context, never cited.
 - `<persona_messages>`: what they said since your last session, oldest first,
-  each with its number `n`, its room and how long ago.
+  each with its number `n`, its room and how long ago. A `platform` label
+  records the transport on which that message was authored. That label itself
+  is evidence of observed participation, even when the body is only a greeting;
+  the person need not describe the transport in their words. Combine labels
+  only where the cited messages and existing evidence thresholds support them.
 - `<persona_episodes>`: things you said that they answered, each cited as
   `response:<n>`, with their reply.
 - `<persona_ties>`: how much they talk with each other member over everything
@@ -55,7 +59,8 @@ Any block may be missing. You see their side only.
   `relationship` (to someone named), `attribute` (a settled fact: vegetarian,
   works nights), `instruction` (how they want to be treated). Identity storage has no count cap; prompt rendering stays bounded.
 - **character**, what they are like: `trait`, one per line, something you
-  would expect to see again next month on a different topic. At most 5.
+  would expect to see again next month on a different topic, or a qualified
+  observed practice bounded to its source period. At most 5.
 - **hypothesis**, why: `explanation` of one of their traits, which you are
   not sure of. At most 3 open at once.
 
@@ -97,7 +102,9 @@ cannot both stand: revise or retire one.
    line against what it rests on and keep, revise or retire it.
 2. **Character.** Re-judge every trait against what is new: `keep` it with
    new citations when they support it again, `revise` it, merge two by
-   revising one and retiring the other, or add an induced one. A trait nothing
+   revising one and retiring the other, or add a deduced or induced one,
+   including a bounded observed practice. Consider the supplied message metadata
+   as well as its body before deciding that nothing is new. A trait nothing
    has supported for 60 days is retired by code when you settle, unless you
    cite new support for it.
 3. **Hypotheses.** Retire a refuted one; propose at most one new explanation.
@@ -186,3 +193,27 @@ All common fields keep their dedicated keys and exact types. Preserve stated
 languages, instructions and workplace qualifiers in those fields even when
 outside the examples. The canonical full-claim rule above applies equally to
 fallback attributes: plans, conditions and uncertainty cannot hide in text.
+
+
+Qualified categorical self-reports need not be exact measurements. Use the
+existing generic attribute shape with name="statement" and a complete value
+stating what the person reported and its scope. Keep mode="told", the original
+author and citation; as_of carries the report date. An inclusive age-band report
+can say the speaker included themself and unspecified others in a decade band;
+it establishes no exact ages, birthdays or birth years.
+Do not resolve an unexplained "we" to the addressees, room members, peers, family
+or any other group. Keep the other participants unspecified unless cited evidence
+identifies them. Do not put a categorical band into numeric age or invent a
+topic-specific key.
+
+Observed behavior belongs in character, kind="trait", with the existing deduced
+or induced evidence thresholds, not a told Identity attribute. A trait may be a
+bounded observed practice, not only a personality judgement that generalizes to
+other topics. Preserve the source-time scope and distinguish an observed action
+from enduring frequency, preference, proficiency or ownership. Shared reels can
+support observed sharing of that platform's content, never ownership of the
+creator's account. Authored messages with a platform label support participation
+on that transport; a service name, bridge request, link destination or room name
+alone does not. Preserve each evidenced platform in a conjunction, with roots
+for each; do not infer missing transport labels. Keep existing Character caps,
+source thresholds and decay. Generic fallback attributes remain human told-only.

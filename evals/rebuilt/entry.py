@@ -613,9 +613,10 @@ class EntryPoint:
 
     #: What a judge grades, when a judge is configured: `"reply"` — what she
     #: said, against the reply rubric — or `"position"` — the standing position
-    #: a fold wrote, against the case's own stated property. Data here, not a
+    #: a fold wrote — or `"identity"`, canonical heads against source meaning.
+    #: Data here, not a
     #: branch on the entry's name, for the reason `drives_a_turn` is.
-    judged_on: Literal["reply", "position"] = "reply"
+    judged_on: Literal["reply", "position", "identity"] = "reply"
 
 
 #: Both entry points turn on the SAME pair, and that is not duplication: the
@@ -664,7 +665,7 @@ ENTRY_POINTS = {
     # adaptor's flag here would make one corpus's requirement look like the
     # entry point's.
     "persona_identity": EntryPoint(
-        drive=persona_identity, synthetic_sources=True,
+        drive=persona_identity, synthetic_sources=True, judged_on="identity",
         config={"dreamer.enabled": True, "persona.enabled": True},
     ),
     "dreamer": EntryPoint(drive=dreamer, config={"dreamer.enabled": True}),

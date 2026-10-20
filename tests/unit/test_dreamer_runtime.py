@@ -1323,6 +1323,35 @@ def test_a_scope_keyed_adaptor_may_hold_a_room_scoped_tool():
     ))
 
 
+async def test_the_per_run_check_honours_a_home_room_grant(monkeypatch):
+    """The same room-scoped read runs with its grant and is refused without it."""
+    sink = _Sink()
+    adaptor = _Adaptor(sink=sink, tools=frozenset({"load_transcript"}))
+    adaptor.key_kind = "unit"
+    grant = AdaptorGrant(home_room=True)
+    tools = _ToolSource(ceiling=frozenset({"load_transcript", "now"}))
+    granted, _ = _runtime(
+        monkeypatch, raw='{"observations": []}', tools=tools,
+        grants={adaptor.name: grant},
+    )
+
+    outcome = await granted.run(adaptor=adaptor, key="friends", batch=())
+
+    assert outcome.status == "nothing_found"
+    assert tools.built == [("friends", adaptor.tools, "friends")]
+    assert tools.grants == [(adaptor.name, grant)]
+    assert len(sink.commits) == 1
+
+    tools = _ToolSource(ceiling=frozenset({"load_transcript", "now"}))
+    ungranted, _ = _runtime(monkeypatch, raw='{"observations": []}', tools=tools)
+
+    outcome = await ungranted.run(adaptor=adaptor, key="friends", batch=())
+
+    assert outcome.status == "unavailable"
+    assert tools.built == []
+    assert len(sink.commits) == 1
+
+
 async def test_the_per_run_check_refuses_the_same_thing_the_startup_check_does(
     monkeypatch,
 ):

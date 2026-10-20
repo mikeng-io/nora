@@ -924,6 +924,11 @@ class PersonaPersonAdaptor:
             tellers=tellers,
         )
         labels = {r.key: r.label for r in pk.rooms}
+        platform_sets: dict[str, set[str]] = {}
+        for room in pk.rooms:
+            platform_sets.setdefault(room.key, set()).add(room.platform)
+        platforms = {key: next(iter(values)) for key, values in platform_sets.items()
+                     if len(values) == 1}
         identity_names = {k.person.person_id for k in self._keys.values() if k.unit == pk.unit}
         def identity_name(pid: str) -> str:
             return self._name_of(pid) if pid in identity_names else "someone"
@@ -999,6 +1004,7 @@ class PersonaPersonAdaptor:
                     row_id=lambda m: m.row.id,
                     attrs=lambda m: (
                         ("room", labels.get(m.room) or "unnamed room"),
+                        ("platform", platforms.get(m.room)),
                         ("age", age(m.row.ts, now)),
                         ("source_at", datetime.fromtimestamp(
                             _said(m).ts / 1000, PERSONA_HKT).isoformat()),
@@ -1016,6 +1022,7 @@ class PersonaPersonAdaptor:
                     row_id=lambda m: m.row.id,
                     attrs=lambda m: (
                         ("room", labels.get(m.room) or "unnamed room"),
+                        ("platform", platforms.get(m.room)),
                         ("by", self._name_of(m.row.person_id)),
                         ("age", age(m.row.ts, now)),
                         ("source_at", datetime.fromtimestamp(

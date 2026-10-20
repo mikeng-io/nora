@@ -19,7 +19,11 @@ def millis(date: str) -> int:
     return int(datetime.fromisoformat(date).replace(tzinfo=UTC).timestamp() * 1000)
 
 
-def case_file(*, source_lanes: bool = False, source_lanes_v2: bool = False) -> dict:
+def case_file(
+    *, source_lanes: bool = False, source_lanes_v2: bool = False, representation: bool = False,
+) -> dict:
+    if representation and (source_lanes or source_lanes_v2):
+        raise ValueError("choose one optional persona bundle")
     rows = yaml.safe_load((Path(__file__).parent / "corpora/tool_selection.yaml").read_text())
     if isinstance(rows, dict):
         rows = rows["cases"]
@@ -44,6 +48,31 @@ def case_file(*, source_lanes: bool = False, source_lanes_v2: bool = False) -> d
         "snapshot": dict(anchor), "person": "miles_novak", "clock_ms": millis("2026-10-12"),
         "sources": [{"body": body, "ts": millis(date)} for date, body in sources],
     } for name, sources in vectors.items()}
+    if representation:
+        result.update({
+            "categorical_report": {
+                "snapshot": dict(anchor), "person": "miles_novak",
+                "clock_ms": millis("2026-10-12"),
+                "sources": [{"body": "We are already in our forties.",
+                             "ts": millis("2026-09-02")}],
+            },
+            "observed_sharing": {
+                "snapshot": dict(anchor), "person": "miles_novak",
+                "clock_ms": millis("2026-10-12"),
+                "sources": [{"body": f"[shared reel https://www.instagram.com/reel/synthetic-{i}/]",
+                             "ts": millis(day)} for i, day in enumerate(
+                                 ("2026-10-01", "2026-10-03", "2026-10-05"))],
+            },
+            "observed_participation": {
+                "snapshot": dict(anchor), "person": "miles_novak",
+                "clock_ms": millis("2026-10-12"),
+                "sources": [{"body": body, "ts": millis(day), "platform": platform}
+                            for body, day, platform in (
+                                ("Hello everyone.", "2026-10-01", "signal"),
+                                ("Good evening.", "2026-10-03", "discord"),
+                                ("See you later.", "2026-10-05", "signal"))],
+            },
+        })
     if source_lanes:
         for name in ("profile_cached", "profile_missing", "profile_late"):
             result[name] = {
@@ -87,6 +116,7 @@ if __name__ == "__main__":
     with path.open("x") as output:
         output.write(yaml.safe_dump(
             case_file(source_lanes="--source-lanes" in sys.argv[2:],
-                      source_lanes_v2="--source-lanes-v2" in sys.argv[2:]),
+                      source_lanes_v2="--source-lanes-v2" in sys.argv[2:],
+                      representation="--representation" in sys.argv[2:]),
             allow_unicode=True, sort_keys=False))
     path.chmod(0o600)
