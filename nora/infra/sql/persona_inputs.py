@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import uuid
 from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
@@ -49,6 +50,8 @@ from nora.infra.sql.schema import (
 )
 from nora.infra.sql.social_stream import SqlSocialStreamStore
 
+MEDIA_RETRY = 'persona-person:media-retry'
+
 
 def _revision(value: Any) -> Any:
     return sa.func.encode(sa.func.sha256(sa.func.convert_to(
@@ -79,6 +82,39 @@ class SqlPersonaInputs:
         # Composition supplies readable_social_store, carrying current and
         # former opted-out ids. A missing reader is unavailable, never open.
         self._social = social
+
+    async def recovery_requested(self, *, key: str) -> bool:
+        """An explicit operator request, separate from evidence/cursor progress."""
+        async with self._engine.connect() as conn:
+            return bool((await conn.execute(sa.select(sa.exists().where(
+                W.c.consolidator_name == MEDIA_RETRY, W.c.scope_id == key,
+                W.c.source_revision.is_distinct_from(W.c.source_read_revision),
+            )))).scalar_one())
+
+    async def request_recovery(self, *, key: str) -> bool:
+        """Queue at most one attempt. Duplicate pending requests are idempotent."""
+        stmt = insert(W).values(consolidator_name=MEDIA_RETRY, scope_id=key,
+            last_message_id=0, source_revision=uuid.uuid4().hex)
+        async with self._engine.begin() as conn:
+            return (await conn.execute(stmt.on_conflict_do_update(
+                index_elements=[W.c.consolidator_name, W.c.scope_id],
+                set_={'source_revision': stmt.excluded.source_revision,
+                      'updated_at': sa.func.now()},
+                where=W.c.source_revision.is_not_distinct_from(W.c.source_read_revision),
+            ).returning(W.c.scope_id))).scalar_one_or_none() is not None
+
+    async def claim_recovery(self, *, key: str) -> None:
+        """Consume before reading/model work, including a failed or interrupted attempt.
+
+        This is an operator's one-shot wake, not proof of settlement. Keep the
+        token/claim in the existing watermark history; normal source receipts
+        remain pending until the normal successful settlement acknowledges them.
+        """
+        async with self._engine.begin() as conn:
+            await conn.execute(sa.update(W).where(
+                W.c.consolidator_name == MEDIA_RETRY, W.c.scope_id == key,
+                W.c.source_revision.is_distinct_from(W.c.source_read_revision),
+            ).values(source_read_revision=W.c.source_revision, updated_at=sa.func.now()))
 
     async def _pending(
         self, *, key: str, domain: str, stmt: Any, limit: int, citations: Sequence[str] = (),

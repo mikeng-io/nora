@@ -300,6 +300,8 @@ class Mention:
 
 
 class _SourceInputs(Protocol):
+    async def recovery_requested(self, *, key: str) -> bool: ...
+    async def claim_recovery(self, *, key: str) -> None: ...
     async def messages(self, *, key: str, rooms: Sequence[tuple[str, str]],
                        person: str, limit: int, after: int = 0) -> list[PersonSourceRevision]: ...
     async def media_recovery(self, *, key: str, rooms: Sequence[tuple[str, str]],
@@ -407,6 +409,9 @@ class PersonaEvidence:
         if progress < boundary:
             return self._wake_batch
         if self._source_inputs is not None:
+            if await asyncio.wait_for(self._source_inputs.recovery_requested(key=key),
+                                      timeout=self._source_timeout):
+                return self._wake_batch
             n = len(await self._sources(key, 1, max(after, boundary)))
             try:
                 recovery = await asyncio.wait_for(self._source_inputs.media_recovery(
@@ -477,6 +482,11 @@ class PersonaEvidence:
         after = max(after, boundary)
         if self._source_inputs is not None:
             self._source_handed.pop(key, None)
+            # The ordinary loop already owns this key's in-flight exclusion.
+            # Consume before any source/model failure: this wake buys one
+            # attempt, not an automatic paid retry until the backlog is empty.
+            await asyncio.wait_for(self._source_inputs.claim_recovery(key=key),
+                                   timeout=self._source_timeout)
             # Per-source revisions retain old messages and bounded leftovers;
             # the frozen historical and legacy Record positions stay separate.
             snapshots = await self._sources(key, limit, after)
