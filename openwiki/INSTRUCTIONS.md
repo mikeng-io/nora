@@ -15,8 +15,31 @@ Cover sessionless continuity; ingestion, participation and cognition; unified
 memory and Persona's incomplete Honcho cutover; contextual learning; persistent
 computer and browser work; configuration and contribution workflows. Keep these
 as connected concepts with useful cross-links. English technical prose; any
-Chinese text must be Traditional Chinese. Keep the initial scope to seven
-substantial pages including quickstart; extend only for a material missing topic.
+Chinese text must be Traditional Chinese. The initial seven pages are an entry
+point, not a scope limit. Expand and reorganize the wiki around meaningful
+subsystems when the implementation warrants a dedicated explanation.
+
+This is an implementation reference for engineers. An overview of capabilities
+is not enough. Trace representative flows from their actual entrypoints through
+decisions, tools, persistence and delivery. Explain concrete types, interfaces,
+state transitions, ordering, ownership and failure paths, with source-grounded
+Claims and focused tests. Use diagrams where they clarify those relationships;
+use tables for state and configuration contracts. Prefer working examples from
+public templates and clearly synthetic examples over vague feature summaries.
+
+Research ingestion and normalization, context assembly and explicit reply
+delivery, the participation window and Relevance Gate, stimulus scheduling and
+bounded Cognition sessions, proactive occasions, Record and indexed retrieval,
+Persona provenance and supersession, contextual learning, sandbox lifecycle,
+computer and browser execution, policy/disclosure boundaries, observability,
+evaluation and deployment. Follow callers and stores across these boundaries;
+document what actually exists, and distinguish optional, incomplete and retired
+paths. Explain relevant configuration keys and extension seams. Do not turn this
+into a file inventory or pad it to meet a page or word count.
+
+Keep quickstart concise and update its navigation map when pages change. Give
+each substantial subsystem enough depth for a reader to trace a request,
+diagnose a failure and locate the code and tests that establish the contract.
 
 Never include credentials, personal messages, identities, account identifiers,
 location histories, internal addresses or private stimuli. Do not infer facts

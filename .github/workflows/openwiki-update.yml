@@ -2,6 +2,11 @@ name: OpenWiki update
 
 on:
   workflow_dispatch:
+    inputs:
+      request:
+        description: 'Optional generation request; forces a fresh plan even without source changes'
+        required: false
+        type: string
   schedule:
     - cron: '23 3 * * 1'
 
@@ -36,12 +41,18 @@ jobs:
           test -n "$APP_ID" || { echo '::error::Configure the repository GitHub App described in docs/github-maintenance.md.'; exit 1; }
       - run: npm ci --prefix docs-site
       - name: Update repository wiki
-        run: npm run wiki:update --prefix docs-site
+        run: |
+          if [[ -n "${OPENWIKI_UPDATE_REQUEST//[[:space:]]/}" ]]; then
+            npm run wiki:update --prefix docs-site -- "$OPENWIKI_UPDATE_REQUEST"
+          else
+            npm run wiki:update --prefix docs-site
+          fi
         env:
+          OPENWIKI_UPDATE_REQUEST: ${{ inputs.request }}
           OPENWIKI_PROVIDER: openai-compatible
           OPENAI_COMPATIBLE_API_KEY: ${{ secrets.OPENWIKI_API_KEY }}
-          OPENAI_COMPATIBLE_BASE_URL: ${{ vars.OPENWIKI_BASE_URL || 'https://api.minimax.cn/v1' }}
-          OPENWIKI_MODEL_ID: ${{ vars.OPENWIKI_MODEL_ID || 'MiniMax-M3.1-Flash' }}
+          OPENAI_COMPATIBLE_BASE_URL: ${{ vars.OPENWIKI_BASE_URL || 'https://ollama.com/v1' }}
+          OPENWIKI_MODEL_ID: ${{ vars.OPENWIKI_MODEL_ID || 'deepseek-v4.1-flash' }}
           OPENWIKI_OPENAI_COMPATIBLE_REASONING_EFFORT_SUPPORTED: 'true'
           OPENWIKI_REASONING_EFFORT: medium
           OPENWIKI_MAX_OUTPUT_TOKENS: '32768'
