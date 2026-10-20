@@ -50,6 +50,9 @@ forces a fresh plan. Ordinary scheduled updates leave it empty.
 The optional manual `diagnostics` switch reports model finish reasons and
 tool-call counts from JSON provider responses. It logs no prompts, response
 text, tool arguments, credentials or arbitrary error/metadata values.
+It also reports malformed argument-JSON counts, repeated-ID booleans/counts
+without the IDs, and closed tool/error classifications when tool invocation
+throws. These observations do not change responses, retry tools or repair calls.
 
 Configuration:
 
