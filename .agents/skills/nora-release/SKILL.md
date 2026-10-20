@@ -112,8 +112,10 @@ you do.
 
 ## 4. Deploy the tag, read the stamp back
 
-Deploy through `nora-deploy`. `scripts/build-image.sh` fetches tags and stamps
-the image with `git describe --tags --match 'v[0-9]*'`. Then:
+Select the installed mode through `nora-deploy` step 0. After Komodo cutover,
+wait for the complete Release images workflow and use the native Stack; never
+rebuild from the checkout. Before cutover only, `scripts/build-image.sh` fetches
+tags and stamps the image with `git describe --tags --match 'v[0-9]*'`. Then:
 
 ```bash
 ssh nora-host 'docker exec nora /app/.venv/bin/python -c "import json; print(json.load(open(\"/app/nora/version.json\"))[\"version\"])"'

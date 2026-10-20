@@ -1,40 +1,44 @@
 ---
 name: nora-deploy
-description: Puts merged Nora code, doctrine or config live on nora-host and verifies it, with a lock that serializes deploys, deploy-checkout hygiene, rebuild and recreate, verify-deploy, config-only edits, rollback. Load when a task says deploy, ship it, make it live, rebuild, recreate, restart nora, or edit live config.toml or policy.toml. Not for reading traces, metrics or rows as evidence (nora-readback).
+description: Puts merged Nora code, doctrine or config live and proves it. Selects the installed checkout or Komodo deployment mode, serializes deployment, validates config and reads back owned services. Load for deploy, ship, rebuild, recreate, restart or live config edits. Not for trace/metric/row evidence (nora-readback).
 ---
 
 # nora-deploy
 
-Examples use the operator-configured SSH alias `nora-host` and reference
-Compose checkout `~/workspace/nora`; substitute your installation path. Background, not
-repeated here: `AGENTS.md` (Reaching the deployment, The three config files),
-the "Reaching the deployment" section of `docs/CONVENTIONS.md`, and
-`docs/runbook.md` sections 3 and 3b.
+Examples: SSH alias `nora-host`, checkout `~/workspace/nora`; substitute installed paths.
+Background: `AGENTS.md`, `docs/CONVENTIONS.md`, `docs/runbook.md` (§3/3b).
 
 - Run multi-line work as `ssh nora-host bash -s <<'EOF' ... EOF`, never a long
   `ssh nora-host '...'` (Host notes).
 - Capture every rc before reading its log: `cmd > log 2>&1; RC=$?`. Never pipe
   a step whose success matters.
 - Report each item as VERIFIED (with the reading), UNVERIFIED (why) or FAILED.
-## 0. Decide what the change needs
 
-| changed | reaches the process through | needs |
-|---|---|---|
-| `nora/` (except doctrine, dreamer), `nora/skills`, `evals/`, `pyproject.toml`, `uv.lock` | `COPY` in the `Dockerfile` | rebuild `nora:latest`, recreate `nora presence analytics` (step 3) |
-| `nora/doctrine`, `nora/dreamer` | directory bind-mount, `reload = "mtime"` in the live config | pull only (step 4), for an edit. Never for deleting or renaming a dreamer file the code maps (a skill in `AGENDA_SKILLS`, `cognition-prelude`): the running image fails at its next start or session; image and pull together |
-| `config.toml` | file mount in `nora presence analytics stt voice-wake` | host edit, recreate (step 5) |
-| `identity.toml` | file mount in `nora app presence analytics`, loaded once | host edit, recreate those |
-| `policy.toml` | file mount in `nora`, loaded once | host edit, recreate `nora` |
-| `deploy/<svc>/`, `app/` | that service's own `build:` image | `docker compose build <svc>`, recreate it |
+## 0. Select the installed deployment mode
 
-- Pull plus `restart` deploys no code: the old image keeps running (2026-09-11).
-- `--force-recreate nora` alone leaves `presence` and `analytics` on the old
-  image; both crash-looped 279 times on a new config key (2026-09-16).
-- `nora`, `voice-sidecar` and `voice-wake` images move together or not at all
-  (`docs/runbook.md` 3b). Music lives in `voice-sidecar`: restarting `nora`
-  fixes nothing there (2026-09-21).
-- A read through `docker compose exec` proves the FILE, not the process. A
-  loaded-once file is in effect only in a container started after the edit.
+Inspect production `/etc/komodo/nora-deploy/{release-deploy,release-attempt}.json`
+on the host (through existing Periphery if needed); never use rehearsal state.
+Unreadable state or unavailable Periphery is UNVERIFIED, not checkout mode.
+An outstanding attempt requires native failure recovery, even without a success receipt.
+
+**Receipt exists: Komodo owns deployment.** Use the existing production Stack and
+runtime root, following [the procedure](../../../deploy/komodo/README.md). Checkout steps do not apply:
+
+- Code, doctrine, Dreamer and runtime skills ship through a complete published
+  release bundle and native Stack deployment. A master pull alone changes none
+  of those image-owned files; never rebuild local tags or restore source mounts.
+- Config/identity/policy edits retain backups, candidate validation and in-place
+  copying. Hold the shared lock for file edits, then **release it before calling
+  the native Stack**: its wrapper acquires the same lock and validates again.
+  Use manual `DeployStack` for recreation even when Git files have not changed.
+- Compatible rollback uses the complete reviewed image/config state and manual
+  native Stack deployment, as the Komodo recovery procedure specifies; never
+  legacy retag/recreate commands. Read back every owned service and the receipt.
+
+**Both files confirmed absent: checkout mode.** Start with
+[change selection](reference.md#checkout-mode-change-selection). Recheck mode after
+acquiring the checkout lock, before mutating files or services.
+
 ## 1. The change is merged
 
 ```bash
@@ -45,11 +49,8 @@ Check: `MERGED <sha>`. Keep it as `SHA`; step 3 proves nora-host's HEAD contains
 
 ## 2. One deployer at a time
 
-Several sessions deploy to this host. Two concurrent compose recreates on
-2026-09-24 left orphan `Created` containers and STALE services. Every deploy,
-config edit and rollback in this skill holds `/tmp/nora-deploy.lock` on nora-host
-through `flock` (install util-linux on the deployment host), and also refuses to start while
-an unlocked `docker build` or `docker compose up` is running.
+Every checkout deploy, config edit and rollback holds the shared lock through
+util-linux `flock` and refuses unlocked Docker build/up (reference.md, Lock).
 
 Every locked script runs under `LOCK='flock -o -E 75 -w 900 /tmp/nora-deploy.lock'`
 (`-o`: nothing the script starts inherits the lock; reference.md, Lock).
