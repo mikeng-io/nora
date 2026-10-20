@@ -40,3 +40,4 @@ jobs:
           tests/architecture/test_doc_references_resolve.py
           tests/test_architecture_doc.py tests/test_docs.py
           tests/test_boundaries.py tests/test_deploy_assets.py
+          tests/unit/test_release_deployment.py tests/unit/test_verify_deploy.py

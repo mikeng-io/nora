@@ -83,8 +83,11 @@ workflow. [GitHub token behavior](https://docs.github.com/en/actions/how-tos/wri
 `nora-host` is a placeholder SSH alias defined by each operator; all paths and
 access details are installation-specific. Public deployment documentation describes
 the portable Compose procedure. Keep actual host inventory, account mappings,
-network addresses and private installation notes outside the repository. Releases
-do not connect to a deployment host or automatically deploy.
+network addresses and private installation notes outside the repository. The optional [Komodo release deployment](../deploy/komodo/README.md) publishes
+images and Git desired state without connecting Actions to a deployment host.
+It requires `RELEASE_IMAGES_ENABLED=true` plus a separately installed and enabled
+Komodo Stack/Procedure. Both activation and host readback are separate from release
+publication; merging the implementation does not turn automatic deployment on.
 
 ## Contribution content checks
 
