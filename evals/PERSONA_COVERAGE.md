@@ -150,7 +150,7 @@ any starvation, timeout or provider error remains an instrument ERROR. No other
 Judge grading method, model alias or gateway/runtime configuration changes.
 
 A future run requires fresh independent fix review and separate authorization.
-The existing plan remains 8 calibration + 16 measurement sequential client
+That recorded plan used 8 calibration + 16 measurement sequential client
 calls, 90 seconds each (36 minutes of bounded client waits), with a hard
 55-minute outer timeout. Neither client timeout nor outer timeout proves
 upstream cancellation. No redraw, relabel, resample or exclusions.
@@ -209,11 +209,15 @@ printf 'RC=%s\n' "$?"
 Use a new receipt filename per run. The CLI prints its no-call plan first.
 The run refuses a planned worst-case wall-clock total over 55 minutes; timeout
 must be positive and at most 300 seconds. Calls are sequential, at most 16
-lines each, and never cross account/unit. Plan counts both calibration and
+lines each, and never cross account/unit or eligible evidence scope. Claims
+share a request only when their source, head and authored-entry ID sets all
+match. Thus every displayed evidence ID is eligible for every claim in that
+request; the model is not asked to filter an ineligible sibling pool.
+Plan counts both calibration and
 measurement. One census draw is required; generic tool selection is not coverage.
 
-For a newly authorized run of the 24-call census after the recorded 90-second
-client timeouts, `--coverage-timeout 135` bounds client waits to 54 minutes.
+For the prior 24-call version after the recorded 90-second client timeouts,
+`--coverage-timeout 135` bounded client waits to 54 minutes.
 This uses the existing timeout option; it does not establish upstream
 cancellation or recover the original timed-out calls' unknown spend. Recompute
 the plan after evidence changes and refuse it if the 55-minute bound is exceeded.
@@ -223,6 +227,16 @@ Shared evidence is deduplicated for display, not shared citation eligibility.
 The parser still rejects an entire batch if one answer borrows a sibling claim's
 source. This input clarification is not proof that the model will obey it;
 fresh calibration and measurement remain necessary, with original errors retained.
+
+The roster clarification alone did not prevent two sibling-source citations in
+one subsequent batch, so batching now separates different eligibility sets.
+Offline planning on that unchanged input produces 15 calibration and 83
+measurement requests instead of 24 total. The existing 55-minute guard refuses
+that plan at 135 seconds per request before paying for any call. A larger call
+budget or a different timeout needs a separately reviewed, authorized run plan;
+there is no automatic rerun, shorter timeout or partial salvage. This scope fix
+does not change labels, gold, denominator, parser or acceptance thresholds and
+does not establish model accuracy.
 
 Calibration runs first on exactly 20 root-adjudicated references. At least
 18 agreements and zero instrument errors are required; otherwise ERROR stops

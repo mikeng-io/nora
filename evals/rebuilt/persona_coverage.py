@@ -129,9 +129,13 @@ def validate_census(doc: dict, manifest: dict | None = None) -> None:
 
 
 def batches(rows: list[dict]) -> list[list[dict]]:
-    groups: dict[int, list[dict]] = {}
+    groups: dict[tuple, list[dict]] = {}
     for row in rows:
-        groups.setdefault(row["account_index"], []).append(row)
+        # A request must not display evidence unavailable to one of its claims.
+        # Group by scope instead of asking the model to filter a shared pool.
+        scope = (row["account_index"], *(tuple(sorted(e["id"] for e in row[k]))
+                  for k in ("sources", "heads", "authored")))
+        groups.setdefault(scope, []).append(row)
     return [group[i : i + 16] for group in groups.values() for i in range(0, len(group), 16)]
 
 

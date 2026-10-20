@@ -126,7 +126,7 @@ class FakeGateway:
         if self.broken == "missing":
             out = out[:-1]
         if self.broken == "duplicate":
-            out[-1] = out[0]
+            out.append(out[0])
         raw = "not JSON" if self.broken == "malformed" else json.dumps(out)
         return SimpleNamespace(
             model="judge-physical",
@@ -155,7 +155,8 @@ def test_real_cli_roundtrip_calibrates_before_measurement(
     monkeypatch.setenv("NORA_EVAL_PERSONA_COVERAGE_RECEIPT", str(receipt))
     gateway = FakeGateway(disagree=disagree)
     monkeypatch.setattr(Judge, "_client", lambda _: gateway)
-    monkeypatch.setattr("sys.argv", ["evals", "persona_coverage", "--judge", "--positions"])
+    monkeypatch.setattr("sys.argv", ["evals", "persona_coverage", "--judge", "--positions",
+                                    "--coverage-timeout", "15"])
     drain_spend()
     assert main() == expected
     terminal = capsys.readouterr().out
@@ -186,7 +187,7 @@ async def test_broken_judge_never_reaches_measurement(tmp_path, monkeypatch, bro
     receipt = tmp_path / "receipt.json"
     monkeypatch.setenv("NORA_EVAL_PERSONA_COVERAGE_RECEIPT", str(receipt))
     out = await coverage.measure(
-        census_input(), Judge(base_url="http://invalid", timeout_seconds=90)
+        census_input(), Judge(base_url="http://invalid", timeout_seconds=15)
     )
     assert out.meets("fold") is None
     saved = json.loads(receipt.read_text())
@@ -549,7 +550,7 @@ async def test_coverage_requests_bounded_low_reasoning_without_changing_other_ju
     gateway.create = create
     monkeypatch.setattr(Judge, "_client", lambda _: gateway)
     doc = census_input()
-    rows = coverage.batches(doc["rows"])[0][:4]
+    rows = [{**doc["rows"][0], "id": f"same-scope-{i}"} for i in range(4)]
     result = await Judge(base_url="http://invalid", timeout_seconds=90).coverage_batch(
         coverage.prompt(doc, rows)
     )
@@ -677,3 +678,28 @@ def test_batch_evidence_visibility_does_not_grant_another_claims_citations():
     ]
     with pytest.raises(ValueError, match="unavailable evidence"):
         coverage.parse_labels(json.dumps(labels), [first, sibling])
+
+
+def test_requests_share_only_identical_eligible_evidence_pools():
+    doc = census_input()
+    first, sibling = doc["rows"][0], doc["rows"][3]
+    same_pool = copy.deepcopy(first)
+    same_pool["id"] = "another-claim-with-the-same-evidence"
+    grouped = coverage.batches([first, sibling, same_pool])
+    assert [[r["id"] for r in b] for b in grouped] == [
+        [first["id"], same_pool["id"]], [sibling["id"]],
+    ]
+    for batch in grouped:
+        shown = json.loads(coverage.prompt(doc, batch)[len(coverage.RULES):])
+        visible = {e["id"] for key in ("sources", "heads", "authored") for e in shown[key]}
+        assert all(visible == set(r["eligible_evidence_ids"]) for r in shown["lines"])
+    repeated = [{**first, "id": f"same-pool-{i}"} for i in range(17)]
+    assert [len(b) for b in coverage.batches(repeated)] == [16, 1]
+
+
+async def test_scoped_requests_refuse_excessive_call_time_before_client(tmp_path, monkeypatch):
+    monkeypatch.setenv("NORA_EVAL_PERSONA_COVERAGE_RECEIPT", str(tmp_path / "unused.json"))
+    monkeypatch.setattr(Judge, "_client", lambda _: pytest.fail("budget refusal paid a call"))
+    with pytest.raises(ValueError, match="exceeds 55 minutes"):
+        await coverage.measure(census_input(), Judge(base_url="http://invalid", timeout_seconds=90))
+    assert not (tmp_path / "unused.json").exists()
