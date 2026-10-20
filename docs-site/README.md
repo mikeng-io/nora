@@ -68,11 +68,12 @@ Configuration:
 - Existing `RELEASE_APP_ID` variable and `RELEASE_APP_PRIVATE_KEY` secret:
   repository App with Contents and Pull requests write access.
 - Optional variables `OPENWIKI_BASE_URL` and `OPENWIKI_MODEL_ID` override the
-  default `https://ollama.com/v1` and `deepseek-v4.1-flash`.
+  default `https://ollama.com/v1` and `deepseek-v4.1-flash:1017`.
+  Reasoning effort is `high`, one of this model tag's advertised thinking levels.
 - No local Ollama server is required. When overriding the provider endpoint,
   replace the secret with a key for that provider as well.
 
-The default uses one page worker, medium reasoning and a 32,768-token output
+The default uses one page worker, high reasoning and a 32,768-token output
 ceiling per model response; the job has a 45-minute wall clock. These are not a
 currency budget. Native generation and each provider's multi-turn tool replay
 must be checked in a bounded manual run before enabling unattended updates.
@@ -80,7 +81,7 @@ Endpoint compatibility alone does not prove successful generation or accurate
 technical content.
 
 Provider references: [Ollama compatibility](https://docs.ollama.com/api/openai-compatibility),
-[Ollama's DeepSeek V4.1 Flash](https://ollama.com/library/deepseek-v4.1-flash:cloud).
+[Ollama's DeepSeek V4.1 Flash](https://ollama.com/library/deepseek-v4.1-flash).
 
 ## Retrieval later
 
