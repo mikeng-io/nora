@@ -1,5 +1,38 @@
 # Changelog
 
+## [6.3.0](https://github.com/mikeng-io/nora/compare/v6.2.0...v6.3.0) (2026-10-20)
+
+
+### Features
+
+* **memory:** recover cached media and revised person evidence ([7f6403f](https://github.com/mikeng-io/nora/commit/7f6403fc121be65b61cc2a1d61523b139fae94f3))
+* **social:** adapt polling to posting rhythms and list Instagram posts ([31c4c80](https://github.com/mikeng-io/nora/commit/31c4c809ffb4cd7c29aa388f6bf439e2eca43a8f))
+* **social:** import full history for opted-in members ([5950e13](https://github.com/mikeng-io/nora/commit/5950e13b78a6550cf47f43e7da08eb4738641b7e))
+
+
+### Bug Fixes
+
+* **deploy:** share the host lock outside container sticky tmp ([efd3099](https://github.com/mikeng-io/nora/commit/efd30995aa61dcd9284b9b08414bfc39e1d345c3))
+* **deploy:** share the host lock outside container sticky tmp ([2606774](https://github.com/mikeng-io/nora/commit/260677497bd781c9ba6060f314770320677af1c3))
+* **memory:** bound the initial cached-reading recovery sweep ([aae84e7](https://github.com/mikeng-io/nora/commit/aae84e721abb6a1a28efefb8cffb2a1f3c37ce56))
+* **memory:** deliver rooted rollups and edits past consumed messages ([c0483be](https://github.com/mikeng-io/nora/commit/c0483bed734aa1cbb13dd580f854466cee76f921))
+* **memory:** preserve historical source boundaries and rooted inputs ([d4db2fc](https://github.com/mikeng-io/nora/commit/d4db2fc5b1d6cea92989d777bb42b1eb2f1cea84))
+* **memory:** preserve writer receipts for revised source packets ([e6283b3](https://github.com/mikeng-io/nora/commit/e6283b3e8f5459d7d9ebef2f0dc4d53414206a31))
+* **memory:** render cached attachments missing legacy caption handles ([1a800ba](https://github.com/mikeng-io/nora/commit/1a800ba292117ae9f6b7e4524bff0ed57c5c1123))
+* **memory:** retain subject response roots and question context ([e11242a](https://github.com/mikeng-io/nora/commit/e11242a317f4f8f32123481b0672597282d97ac8))
+* **persona:** clarify cached attachment text as deduction premises ([9f7c912](https://github.com/mikeng-io/nora/commit/9f7c912e7760a05962a42468cc0c87d50c9edc8f))
+
+
+### Security
+
+* **deps:** patch critical dependencies and simplify public contributions ([74aff57](https://github.com/mikeng-io/nora/commit/74aff5715a8b370709be1400fa51e719a0ba3daf))
+* **deps:** patch vulnerable dependencies across Nora services ([7796727](https://github.com/mikeng-io/nora/commit/77967278920943662f2090f4796c2ba47131ec23))
+
+
+### Changes
+
+* **web:** use Nora's selected portrait for repository and app icons ([c121330](https://github.com/mikeng-io/nora/commit/c1213308f3ae38b078f429fd43fb954a90101c33))
+
 ## [6.2.0](https://github.com/mikeng-io/nora/compare/v6.1.0...v6.2.0) (2026-10-19)
 
 
