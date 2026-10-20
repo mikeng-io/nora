@@ -7,6 +7,11 @@ on:
         description: 'Optional generation request; forces a fresh plan even without source changes'
         required: false
         type: string
+      diagnostics:
+        description: 'Log model finish reasons and tool-call counts without content'
+        required: false
+        type: boolean
+        default: false
   schedule:
     - cron: '23 3 * * 1'
 
@@ -48,6 +53,8 @@ jobs:
             npm run wiki:update --prefix docs-site
           fi
         env:
+          NODE_OPTIONS: ${{ inputs.diagnostics && '--import=./docs-site/scripts/provider-diagnostics.mjs' || '' }}
+          OPENWIKI_PROVIDER_DIAGNOSTICS: ${{ inputs.diagnostics && 'true' || 'false' }}
           OPENWIKI_UPDATE_REQUEST: ${{ inputs.request }}
           OPENWIKI_PROVIDER: openai-compatible
           OPENAI_COMPATIBLE_API_KEY: ${{ secrets.OPENWIKI_API_KEY }}

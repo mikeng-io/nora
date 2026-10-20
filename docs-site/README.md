@@ -47,6 +47,9 @@ presented as completed updates. A weekly run is off until the operator sets
 For a scope expansion without runtime source changes, supply the manual
 dispatch's optional `request` field. OpenWiki uses it as planning context and
 forces a fresh plan. Ordinary scheduled updates leave it empty.
+The optional manual `diagnostics` switch reports model finish reasons and
+tool-call counts from JSON provider responses. It logs no prompts, response
+text, tool arguments, credentials or arbitrary error/metadata values.
 
 Configuration:
 
