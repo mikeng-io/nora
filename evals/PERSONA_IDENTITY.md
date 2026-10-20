@@ -339,3 +339,9 @@ may differ. Physical database observation timestamps remain in raw receipts.
 
 Root owns the fresh review, final gate, any bounded paid acceptance and historical
 recovery. No model calls, merge, deploy or recovery are authorized by this section.
+
+Synthetic writer `--positions` receipts retain the normal tool inputs and results
+from the existing span exporter, appended **after** grading so those diagnostics
+do not cue the judge. They exclude provider generation output and reasoning.
+Keep these receipts private. Empty captured content is not proof of an empty call;
+a recorded trace ID does not establish external trace durability.

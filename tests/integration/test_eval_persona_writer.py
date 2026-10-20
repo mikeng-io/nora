@@ -407,7 +407,19 @@ async def test_representation_sources_use_composed_writer_and_store(
                       fact_value={"name": "statement", "value":
                           "Self-reported being in their forties, including unspecified peers"})
         verbs = {t.tool_name: t for t in agent["tools"]}
-        assert await verbs["persona_write"](ops=[op]) == {"status": "ok"}
+        from opentelemetry import trace
+
+        # The SDK records tool arguments/results on execute_tool spans.
+        # This scripted agent calls the real tool with that same trace shape.
+        with trace.get_tracer(__name__).start_as_current_span(
+            "execute_tool persona_write", attributes={"gen_ai.tool.name": "persona_write"},
+        ) as span:
+            span.add_event("gen_ai.tool.message", {"content": json.dumps({"ops": [op]})})
+            result = await verbs["persona_write"](ops=[op])
+            # Strands wraps a dict return in a text content block before tracing.
+            content = [{"text": json.dumps(result, ensure_ascii=False)}]
+            span.add_event("gen_ai.choice", {"message": json.dumps(content, ensure_ascii=False)})
+        assert result == {"status": "ok"}
         return SimpleNamespace(stop_reason="end_turn")
 
     monkeypatch.setattr(factory, "invoke", invoke)
@@ -426,6 +438,7 @@ async def test_representation_sources_use_composed_writer_and_store(
             assert source["sources"] == private["sources"]
             assert source["subject"] == "miles_novak"
             assert payload["samples_ok"] == 1 and payload["samples_failed"] == 0
+            assert "tool_inputs" not in payload and "tool_results" not in payload
             # A wrong/missing canonical claim is not accepted by this fixture.
             good = judge_mode == "pass" and bool(payload["heads"]) and all(
                 "Owns" not in h["text"] for h in payload["heads"])
@@ -454,7 +467,16 @@ async def test_representation_sources_use_composed_writer_and_store(
         assert graded.label == expected, (graded.reason, state_of(data, NORA_ERROR))
         assert len(calls) == (0 if judge_mode == "missing" else 1)
         if judge_mode != "missing":
-            judged = json.loads(state_of(data, NORA_POSITION))["judge"]
+            receipt = json.loads(state_of(data, NORA_POSITION))
+            [(tool, arguments)] = receipt["tool_inputs"]
+            assert tool == "persona_write"
+            [op] = json.loads(arguments)["ops"]
+            assert op["part"] == ("identity" if vector == "categorical_report" else "character")
+            [(result_tool, result_content)] = receipt["tool_results"]
+            assert result_tool == "persona_write"
+            [result_block] = json.loads(result_content)
+            assert json.loads(result_block["text"]) == {"status": "ok"}
+            judged = receipt["judge"]
             assert judged["usage_known"] is False
             assert judged["actual_model"] == "scripted-judge"
             assert judged["response_id"] == "response-1" and judged["trace_id"] == "trace-1"

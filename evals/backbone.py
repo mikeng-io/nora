@@ -1821,6 +1821,15 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                     EnvironmentState(name=NORA_STAGED_COUNT_2, state=len(repeat_outcome.staged)),
                 ]
 
+            if port.synthetic_sources and outcome.position is not None:
+                # Retain normal tool decisions for readback after the sandbox
+                # closes. Append AFTER judging so diagnostics cannot cue its verdict.
+                receipt = json.loads(outcome.position)
+                receipt.update(tool_inputs=tool_inputs, tool_results=tool_results)
+                outcome = dataclasses.replace(
+                    outcome, position=json.dumps(receipt, ensure_ascii=False, sort_keys=True),
+                )
+
             # Torn down INSIDE the sandbox's lifetime: the database is dropped
             # on exit and a pool still open on it would make the DROP hang.
             await _close(subject)
