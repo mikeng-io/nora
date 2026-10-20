@@ -17,6 +17,7 @@ export const zhHant = {
     loop: "佢點運作",
     memory: "記憶",
     form: "佢嘅樣",
+    wiki: "技術文件",
     signIn: "登入",
     menu: "章節",
     theme: "燈光",

@@ -18,6 +18,7 @@ export const en = {
     loop: "How she works",
     memory: "Memory",
     form: "Her form",
+    wiki: "Implementation wiki",
     signIn: "Sign in",
     menu: "Sections",
     theme: "Lighting",

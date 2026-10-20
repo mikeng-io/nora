@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:9b1ffaf8e87e4f41e6fb334a1051738efc1a6ee00ac2c4a2162e3cea46dd6b95",
+  "claims": [
+    {
+      "id": "claim_c2a18ccb96654ca2ab0bc6594096e0f8",
+      "statement": "Speaking agents are constructed per turn from prefill with NullConversationManager and no SDK session manager.",
+      "evidence": [
+        {
+          "resource": "repo://nora/agent/factory.py#L291-L387",
+          "version": "repo-lines-v1:sha256:ac8fff7add106480d75ab82999e2aa99807795f5c4cc013cba84e13a56864191:eyJzZWxlY3RlZExpbmVDb3VudCI6OTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ2ODk5OTMzZmE4ODBhMGVmMjZjMmE4YjQ5MDBlMzcxNzQ3ODhhZGI1YWViMDdiZWQ1NzMyNjQyYjA0NTVlMGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE2MGRjZGZmNTdiNmMyZjkyMTc1ZGE2NjQ4MDUzZTk1OGI4YmE1NzMwN2FlZDJmY2VkODQ1ZGEzYmU1ZGY2YTIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b77d133bb0404c8c833e95be28eb4ea7",
+      "statement": "Context assembly gathers persistent scoped state and performs naming and media enrichment before freezing TagContext.",
+      "evidence": [
+        {
+          "resource": "repo://nora/engagement/context.py#L261-L373",
+          "version": "repo-lines-v1:sha256:f121d4f8f6160da3927cdb13df53cba88485d6d02a9c0df0e7e074a81454a68a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEzLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJiNjYyYzU0ZTdkNWEwMGRhOTBjOGI3ODExZmZiOTkwYzgzY2NlZGQ1ZThkNjQwZmJmNzMwNWU1NTgwYjJhNWU1IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI1OTA5YTUzYTYxOGQwMjhlMWQzMDAwYzBhN2FiY2VlY2JlNWZiMzdmNGU1MTFlZmU0NjY0M2ZhZDZlNjY4NzJmIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIxYTZhMjUyM2JiYjlmYzZlOGJlNmM2MTNiYTljMjJhMmZkOGY3NzIwNGVmZDVjNTEzNDJkZDI2NTQ1MzE3NTIxIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJjZTI0YWQwMzU1MTJjNzU1MjI2ODJhZWJiODY1NWE0MjdkYzNlMDY2ZTZiZmZmNzJlYmI1ZjFkN2JkMjBjOTZmIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_f182b252652b49b18826802a00171988",
+      "statement": "Optional lessons use closed response episodes and enter prompts only through a separate render switch.",
+      "evidence": [
+        {
+          "resource": "repo://config.example.toml#L1006-L1025",
+          "version": "repo-lines-v1:sha256:95f3a5f914efbe6dc959d5e352af6f9cce8646bbdd1d9b4da2ceb8468dbb3343:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI2NWQ0NGQ0ZTgzMTUyNGU1ZjE0ZGY2MzRhMjkyZjhhNGZhN2I3NzAyYjhiNWZiNTk1OTAxZjAxMjE3ZjAwMmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJjMmE3YjYxZWZiMTZmNjk3OThhMWM0ZTJmNmZkYzg2NGQzMTE4NGIyNWY2MTQ3ODVjYjZkZWQxNWYwZGM0MGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFmYjFlZTMwY2U0MmZjMGFmNTRkNmM1ODUxN2JkMTQ5NjUyM2VlZjQ3MzQyMDhlNjllYzdjYzA0YzFkOGRkMGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQyYWNjYzBmMDU1NmJlMGE1NDE3NTJhNzA2NWYxMGMwMWI0NmFkYjJmOTU0MDM5MWVmYjBmYjNlZTliNzE3NWUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a43dd91c3ff948f1b1d513519da525aa",
+      "statement": "Nora's self-account context is unit-owned and room permission is checked before reading it.",
+      "evidence": [
+        {
+          "resource": "repo://nora/language/culture_render.py#L155-L180",
+          "version": "repo-lines-v1:sha256:d691277f3eff8a2923672b0c94e691af56d7c424975d6470f4af15c031576f75:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJmODhlZjUzMTNhMDk1NDYxNTQ1ODVlODJjN2IxN2Q2ZWFjZmNiYzkyYjc3MjkyZmRmYmMzYzIxNzVhYzA3MWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNiNmQ5ZTZiOWQ4NmMxZjlmODYyOTNhNTY1YzM1N2ViMzJlMGRlODUzMDMwZjFiZjgyZTI3YTRkYjcxZDU3ZjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE5MzU3ZGIwYjFiMjFhNzMzOGM0ZGE0NzNmYzk1NDIwNWYxZDkxZmMzN2JjMzg3MzFjNDUzOGViOTUwMjJlMGYifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-20T00:28:42.613Z"
+  }
+}

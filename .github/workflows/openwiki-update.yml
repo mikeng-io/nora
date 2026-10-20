@@ -1,0 +1,92 @@
+name: OpenWiki update
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 3 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openwiki-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    # The operator enables unattended inference only after a successful manual run.
+    if: github.event_name == 'workflow_dispatch' || vars.OPENWIKI_AUTO_UPDATE == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: master
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.22.0'
+      - name: Check generation credentials
+        env:
+          OPENWIKI_API_KEY: ${{ secrets.OPENWIKI_API_KEY }}
+          APP_ID: ${{ vars.RELEASE_APP_ID }}
+        run: |
+          test -n "$OPENWIKI_API_KEY" || { echo '::error::Set the OPENWIKI_API_KEY Actions secret.'; exit 1; }
+          test -n "$APP_ID" || { echo '::error::Configure the repository GitHub App described in docs/github-maintenance.md.'; exit 1; }
+      - run: npm ci --prefix docs-site
+      - name: Update repository wiki
+        run: npm run wiki:update --prefix docs-site
+        env:
+          OPENWIKI_PROVIDER: openai-compatible
+          OPENAI_COMPATIBLE_API_KEY: ${{ secrets.OPENWIKI_API_KEY }}
+          OPENAI_COMPATIBLE_BASE_URL: ${{ vars.OPENWIKI_BASE_URL || 'https://api.minimax.cn/v1' }}
+          OPENWIKI_MODEL_ID: ${{ vars.OPENWIKI_MODEL_ID || 'MiniMax-M3.1-Flash' }}
+          OPENWIKI_OPENAI_COMPATIBLE_REASONING_EFFORT_SUPPORTED: 'true'
+          OPENWIKI_REASONING_EFFORT: medium
+          OPENWIKI_MAX_OUTPUT_TOKENS: '32768'
+          OPENWIKI_PAGE_CONCURRENCY: '1'
+          OPENWIKI_TELEMETRY_DISABLED: '1'
+      - name: Require a fully completed OpenWiki run
+        run: node docs-site/scripts/check-completion.mjs
+      - name: Build the proposed public wiki
+        run: npm run build --prefix docs-site
+      # The model process has ended before a GitHub write credential is created.
+      - name: Create a repository-scoped documentation token
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Propose only completed documentation changes
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          test ! -f openwiki/.run.json
+          git diff --exit-code -- openwiki/INSTRUCTIONS.md
+          git add -- openwiki AGENTS.md CLAUDE.md
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name 'Nora documentation bot'
+          git config user.email 'noreply@users.noreply.github.com'
+          git switch -C openwiki/update
+          git commit -m 'docs: update the implementation wiki'
+          gh auth setup-git
+          git push --force-with-lease origin HEAD:openwiki/update
+          cat > "$RUNNER_TEMP/wiki-pr.md" <<'BODY'
+          ## What
+          Refresh the source-grounded implementation wiki with OpenWiki. Review the generated Markdown and claim changes before merging.
+
+          ## Gate on the merged tree
+          OpenWiki completed successfully and the proposed static wiki built successfully. The PR's CI and public-site build provide the remaining checks; no live deployment or model-quality acceptance is claimed.
+          BODY
+          existing=$(gh pr list --head openwiki/update --base master --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --body-file "$RUNNER_TEMP/wiki-pr.md"
+          else
+            gh pr create --base master --head openwiki/update --title 'docs: update the implementation wiki' --body-file "$RUNNER_TEMP/wiki-pr.md"
+          fi

@@ -2,7 +2,16 @@
 *
 !site/
 !assets/
+!docs-site/
+!openwiki/
 site/node_modules/
 site/dist/
 site/.astro/
 site/.cache/
+
+docs-site/node_modules/
+docs-site/dist/
+docs-site/.astro/
+openwiki/.claims/
+openwiki/.run.json
+openwiki/log.md

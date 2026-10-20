@@ -93,7 +93,7 @@ service `site`, profile `site`). It owns only these paths:
 
 ```text
 ^/$  ^/en/?$  ^/_astro/  ^/_site/  ^/favicon\.ico$  ^/robots\.txt$
-^/sitemap\.xml$  ^/llms\.txt$
+^/sitemap\.xml$  ^/llms\.txt$  ^/wiki(?:/.*)?$
 ```
 
 Nothing there collides with the portal (`/_next/`, `/api/`, `/zh-Hant/…`,
@@ -121,3 +121,15 @@ it is added there too.
 If the portal ever gets a hostname of its own, build with
 `PUBLIC_PORTAL_ORIGIN=https://<portal host>` so the sign-in links follow it,
 and `SITE_ORIGIN` for the canonical URLs.
+
+## Implementation wiki
+
+`docs-site/` renders the reviewed Markdown in `openwiki/` with Astro Starlight.
+The site Dockerfile builds it separately and serves its output at `/wiki/` in
+this same Caddy container. The build makes no inference calls. See
+[the wiki workflow](../docs-site/README.md) for generation, PR checks and the
+provider configuration. A tunnel ingress match for `/wiki` and `/wiki/…` must
+reach port 3401 before the portal's catch-all; Caddy alone cannot change it.
+
+The PR build uploads the combined homepage and wiki as a static artifact. It
+has no live deployment credentials and does not change the tunnel.

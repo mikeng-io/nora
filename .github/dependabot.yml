@@ -47,6 +47,7 @@ updates:
   - /deploy/whatsapp-bridge
   - /showreel
   - /site
+  - /docs-site
   - /voice-lab/spikes/sidecar
   schedule:
     interval: monthly

@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:dbc770a9c501a80447efb0ffe6abd8c9049ed119a308576a0eab957264ab3698",
+  "claims": [
+    {
+      "id": "claim_8cf3a1eedea1477eb5637ebf712962d3",
+      "statement": "Nora carries continuity in persistent state, while inference and connected services may be external.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L27-L38",
+          "version": "repo-lines-v1:sha256:1db8e2c45ac770ac63716fb939580d0c2c5406cf38bba546013c809c1220d552:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkMmU2MTYwNzRhYTY1MTZkZjFiYTNkZTUyZjRmMTk3YzIwNDExZDI2MTU5NjNjMjI1YTI0NmZlY2NkZTUxNTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc0ZDc1MzYxYWViOTBkNTQ0NTMwY2QyZmY2NWUzM2MxNGMzMmE1ZDBlZDY0ZTZmMGFhNzg0MzQ5YTIwN2E0ZjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzZjFhZWVhMjJhY2QyY2UxMWQ5YzE4ZTkwYzU1ZTliZTI0NTFkODUyZDNkMDRmYjkxOGUzZTZlMmMyMmZjZjMifQ"
+        },
+        {
+          "resource": "repo://README.md#L66-L69",
+          "version": "repo-lines-v1:sha256:bf76c755ebe2588aaf6643ee96f076994187452a1dde1da7fa50b393bf031eea:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjg3ZjljYmNmZjlkODQ3ZDljOGNlMGFhYzVmNDAwNjgzN2Y1OWQ4M2ZjNmIzYjhiYmIwNDVhMDVlOGU3MzQyZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiN2Q0NjY0ZTJkYTg1OWFjMjZmNzY0MTllNDlmZTYwNTBmODVhYjE4YzVjYzVmZGMxYjJhNDM5OGU0ZTRmN2UxOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2Y2NzdhNDJhMmMwNzc5ZDYyYzg2MDZhN2FhZThkMTA2NDZkZTFjMjY4YjVlODNkZGJjMzM3ZjIyZWM1ZDM5MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMGZkNjc1MDRlOWMyYTNiMmRiNThjNmIzOGRkNTRiZGE5OGY3ODRjYmM0MWQxODlmOGU3OTliNmQ0OTBhZDk5ZCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_0aab8841be6a4195942127ab2e23efd6",
+      "statement": "The dispatcher ingests a normalized observation before starting a speaking engagement or noting participation.",
+      "evidence": [
+        {
+          "resource": "repo://nora/app/dispatch.py#L67-L84",
+          "version": "repo-lines-v1:sha256:5d75e47845787b76e580f250b278ebc5a9641bf0a7c482274afe82060c05c734:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJjYzZhM2E0MDkxNWM0NjFkOTI1YTA2YWU3NzJhNDg4Nzg2OGFmNTYzOTAyN2FiYzY5YTVmZDVmYTVmZDk3YjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjYWUxMjc4ZTIyYzg4ZDI3NmRjOTIxNWI4OTUzMTY4NzRkYjMxOTEyMzg0ZmQyODNjMDU3ZTgxNTM3MzYyYzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEzNThkNmMzZDMzODk2YTU1NzJjNDkxZDVmY2ZhMTcyZTIxMzZhYjhiMzI4NzMxMGE5ZjAwZWM2MDBjOGM4ODQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6b3a549fb164462b96162a4be820753d",
+      "statement": "Contributors use Python 3.12 and uv, with database tests and live model evaluations requiring distinct dependencies and services.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L99-L110",
+          "version": "repo-lines-v1:sha256:cac4b2d82405d1459ca04fa5ad2425f26ce64d3ac11f772e6955f0034bb76937:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZiNzFhOGJjNTk1NDExNWY2M2E0YjkyMDZiYTZkZmVlZTMwZmRiN2U1OTkxYWNiYzUxOTNiMGJlNTRhNmQwZGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMxNDhhYWI2OWFlMjU0ZTlmYzkwOTgzYTkzMjczM2FhNGFjNjBiZjRmNmM3OWY3NTkxNzY3NjJmNGFmMWI0ZjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc1MTU0NjAyMTNjZTFkNDZkYWVlODViYTAyNGRkZTVmM2Y1ODBmMTMyOTVkOGMwNzI3NjQ0YzNjNmY1N2I5ZDcifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-20T00:28:42.613Z"
+  }
+}
