@@ -69,9 +69,12 @@ there, so a Docker bind sees the same file
 as the process that prepared it. Config copies are private and removed after
 validation. Do not install trusted executables inside the fetched release clone.
 The runtime root itself can remain read-only to Periphery. Also bind the
-**existing host lock file** `/tmp/nora-deploy.lock` to that exact container path,
-as in `periphery.override.example.yml`. Container-local `/tmp` would otherwise
-create an unrelated lock and allow simultaneous manual/Komodo deployment. Create
+**existing host lock file** `/tmp/nora-deploy.lock` to container
+`/run/nora-deploy.lock`, as in `periphery.override.example.yml`. This keeps the
+same host inode while avoiding Linux sticky-directory protection: a root-run
+Periphery cannot open another user's lock in `/tmp` when `fs.protected_regular=2`.
+A container-local file would create an unrelated lock and allow simultaneous
+manual/Komodo deployment. Create
 the lock once as the deployment operator if absent; never replace or delete it.
 
 Komodo normally captures resolved `docker compose config`. The wrapper handles
