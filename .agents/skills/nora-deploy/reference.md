@@ -80,3 +80,26 @@ a containerd shim, and every later deploy timed out on a lock no deploy held.
 Exit 75 is a held lock. If no `docker build` or `docker compose up` is running
 and `fuser -v /tmp/nora-deploy.lock` names a long-lived process, the lock
 leaked from a script without `-o`: tell that process's owner; never kill it.
+
+## Checkout-mode change selection
+
+Only after SKILL step 0 confirms checkout mode; Komodo installations use the native Stack.
+
+
+| changed | reaches the process through | needs |
+|---|---|---|
+| `nora/` (except doctrine, dreamer), `nora/skills`, `evals/`, `pyproject.toml`, `uv.lock` | `COPY` in the `Dockerfile` | rebuild `nora:latest`, recreate `nora presence analytics` (step 3) |
+| `nora/doctrine`, `nora/dreamer` | directory bind-mount, `reload = "mtime"` in the live config | pull only (step 4), for an edit. Never for deleting or renaming a dreamer file the code maps (a skill in `AGENDA_SKILLS`, `cognition-prelude`): the running image fails at its next start or session; image and pull together |
+| `config.toml` | file mount in `nora presence analytics stt voice-wake` | host edit, recreate (step 5) |
+| `identity.toml` | file mount in `nora app presence analytics`, loaded once | host edit, recreate those |
+| `policy.toml` | file mount in `nora`, loaded once | host edit, recreate `nora` |
+| `deploy/<svc>/`, `app/` | that service's own `build:` image | `docker compose build <svc>`, recreate it |
+
+- Pull plus `restart` deploys no code: the old image keeps running (2026-09-11).
+- `--force-recreate nora` alone leaves `presence` and `analytics` on the old
+  image; both crash-looped 279 times on a new config key (2026-09-16).
+- `nora`, `voice-sidecar` and `voice-wake` images move together or not at all
+  (`docs/runbook.md` 3b). Music lives in `voice-sidecar`: restarting `nora`
+  fixes nothing there (2026-09-21).
+- A read through `docker compose exec` proves the FILE, not the process. A
+  loaded-once file is in effect only in a container started after the edit.

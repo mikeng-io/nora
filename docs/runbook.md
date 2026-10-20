@@ -5,6 +5,13 @@ alias you configure for your deployment host (see `AGENTS.md`, Reaching the
 deployment). Paths under `~/workspace/` are example installation paths; substitute
 your own. Loopback addresses refer to the host where each command runs.
 
+Before deployment, config recreation or rollback, select the installed mode in
+[the nora-deploy skill](../.agents/skills/nora-deploy/SKILL.md). A production Komodo
+success receipt or pending attempt routes deployment and recovery through the
+[native Stack](../deploy/komodo/README.md), including code, doctrine and recreation. The checkout build, source-pull, retag and
+recreate procedures below apply only before that cutover; read-only diagnostics
+still apply in either mode.
+
 ## 1. "Nora is silent — is she broken or just quiet?"
 
 Silence is the default behavior (S1) — Nora only ever speaks when tagged, so most silence
