@@ -325,6 +325,13 @@ def add_subcommands(
     history.add_argument("--restart", action="store_true")
     history.add_argument("--apply", action="store_true")
     history.set_defaults(func=cmd_persona_history)
+    retry_media = memory_sub.add_parser(
+        "persona-retry-media", parents=[parent],
+        help="queue one normal Dreamer attempt for one account's pending cached media",
+    )
+    retry_media.add_argument("--key", required=True, help="one scoped Persona account key")
+    retry_media.add_argument("--apply", action="store_true", help="queue; otherwise read-only")
+    retry_media.set_defaults(func=cmd_persona_retry_media)
     backfill = memory_sub.add_parser(
         "backfill", parents=[parent],
         help="replay one unit's recorded human messages into its own Honcho "
@@ -942,6 +949,50 @@ async def cmd_persona_history(args: argparse.Namespace) -> int:
                 )) if pk is not None else None,
                 "cached_media_dry_run": True,
             }))
+    finally:
+        await engine.dispose()
+    return 0
+
+
+async def cmd_persona_retry_media(args: argparse.Namespace) -> int:
+    """Queue a wake; never compose Nora, call a model, or reset evidence cursors."""
+    import sqlalchemy as sa
+
+    from nora.app.composition import character_person_keys
+    from nora.infra.sql.persona_inputs import SqlPersonaInputs
+    from nora.infra.sql.schema import CONSOLIDATION_WATERMARK as W
+
+    cfg = _config(args)
+    if not (cfg.dreamer.enabled and cfg.culture.enabled and cfg.persona.enabled):
+        raise CliError("the Persona Dreamer must be enabled before requesting recovery")
+    keys = character_person_keys(_policy(cfg), _persons(cfg))
+    if args.key not in keys:
+        raise CliError("unknown or unlisted Persona account")
+    pk = keys[args.key]
+    engine = (create_sql_engine(_database_url(cfg)) if args.apply
+              else create_readonly_sql_engine(_database_url(cfg)))
+    try:
+        async with engine.connect() as conn:
+            rows = (await conn.execute(sa.select(
+                W.c.consolidator_name, W.c.last_message_id).where(
+                    W.c.scope_id == args.key, W.c.consolidator_name.in_([
+                        'persona-person:history-boundary', 'persona-person:history'])))).all()
+        history = {r.consolidator_name: r.last_message_id for r in rows}
+        boundary = history.get('persona-person:history-boundary')
+        if boundary is None or history.get('persona-person:history', 0) < boundary:
+            raise CliError("historical recovery must complete first; no cursors were reset")
+        source = SqlPersonaInputs(engine)
+        status = await source.media_recovery(key=args.key,
+            rooms=[(r.platform, r.key) for r in pk.rooms if r.key in pk.listed],
+            person=pk.person.person_id)
+        applied = False
+        if args.apply:
+            if not status['pending_cached']:
+                raise CliError("no pending cached media; no recovery was requested")
+            applied = await source.request_recovery(key=args.key)
+        print(json.dumps({'pending_cached': status['pending_cached'],
+            'requested': await source.recovery_requested(key=args.key), 'applied': applied,
+            'meaning': 'one attempt; inspect the normal trace and source receipts'}))
     finally:
         await engine.dispose()
     return 0
