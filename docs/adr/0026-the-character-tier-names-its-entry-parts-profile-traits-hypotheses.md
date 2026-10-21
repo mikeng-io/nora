@@ -35,16 +35,17 @@ call one Notebook row an **entry**. Its parts are **profile** (who they are),
 is now only for platform accounts.
 
 For the Dreamer, 05 §1 rule 3 requires **one writer per tier**. Today two
-adaptor families write Character: `character-*` writes live prose through
-`character_revise`; `persona-*` writes shadow typed lines through
-`persona_write`, with `persona-verdict` judging hypotheses. The target is
+adaptor families write Character: `culture` (the room adaptor) and
+`character-*` write live prose through `character_revise`; `persona-*` writes
+shadow typed lines through `persona_write`, with `persona-verdict` judging
+hypotheses. The target is
 **one `character-*` family** (person, room, unit, nora, verdict) writing typed
 profile/traits/hypotheses lines. The prose adaptors retire at the switch.
 Building that target is outside this ADR's implementation.
 
 **The rename is deferred, not done.** Docs use the names above; existing code
 names stay until **one later migration PR**, before
-[design/unified-memory/00, «Sequence», step 8](../../design/unified-memory/00-design.md).
+[design/unified-memory/00, «Sequence», step 8](../../design/unified-memory/00-intent.md).
 The deferred scope includes `persona_line`, `persona_key`, `persona_dispute`,
 migrations 0117–0125, `nora/{domain,language,infra/sql,subject}/persona*.py`,
 `persona-*.md` objectives, `<persona_lines>` prompt blocks and `[persona]`

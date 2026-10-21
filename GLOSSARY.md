@@ -26,8 +26,8 @@ Ordered by how much confusion each has actually caused.
   state, not in an SDK chat session. Each speaking turn assembles relevant
   context for a fresh agent. Bounded cognition, browser and computer sessions
   still exist; the term does not mean a continuously running model.
-- **Learning** — revising evidence-backed accounts and lessons used as future
-  context. It is not model retraining or permission to rewrite doctrine.
+- **Learning** — revising evidence-backed Character entries and lessons used as
+  future context. It is not model retraining or permission to rewrite doctrine.
 
 ## Identity — three different things
 
@@ -92,7 +92,7 @@ dates and kinds; the index, no Honcho behind it), and none of `ask_memory`,
 `search_memory`, `search_memory_workspace`, `who_said` or `about`: the graph
 surface holds no Honcho tool. A profile question there is `memory_search`
 with `person`. `remember` is on both: a Honcho conclusion off the graph, a
-Persona `told` line on it (DEC-317). `load_transcript` is on both. `who_said` is deprecated: the
+Character `told` line on it (DEC-317). `load_transcript` is on both. `who_said` is deprecated: the
 graph surface does without it, and it goes with the rest of the Honcho
 surface at step 9.
 
@@ -127,13 +127,13 @@ is why `nora/infra`'s two clients have opposite error contracts.
   every read is keyed `(observer, observed)` (DEC-66), so `about` reads
   `(nora → person)` — her model of them — and `(nora → nora)` is her model of
   herself, distilled from her own replies (no longer injected: the `<self>`
-  block is the Character · Nora account instead). Measured 2026-08-06 as
+  block is the Character · Nora entry instead). Measured 2026-08-06 as
   ~88% *events* rather than *traits*; built on anyway, deliberately, and
   framed as a record she may contradict rather than a description.
-- **self block** — the `<self>` block: her Character · Nora account for the
+- **self block** — the `<self>` block: her Character · Nora entry for the
   turn's unit (design/self-growth/20), capped in lines, first in the tag, fire
   and Cognition prompts, directly after the doctrine. No block while the unit
-  has no account. It replaced the `<self_card>` block (her Honcho conclusions
+  has no entry. It replaced the `<self_card>` block (her Honcho conclusions
   about herself, DEC-96), retired by DEC-292.
 - **peer card** — a Honcho endpoint (`HonchoClient.peer_card`), Honcho's own
   model-authored distillation of who a person is, injected as `<peer_card>`
@@ -175,7 +175,7 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   become.
 
   **The live adaptors** are the four that `[culture] enabled` turns on:
-  `culture` (a room's account), and `character-person`, `character-unit` and
+  `culture` (a room's entry), and `character-person`, `character-unit` and
   `character-nora` (the Character sessions, below, DEC-290). Since 2026-10-03
   (DEC-277) the note-candidates, note-curation, note-merge and proactive
   adaptors are deleted: the Cognition session is the one background writer of notes,
@@ -185,22 +185,22 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   node numbered 20, 21, 23, 24, 25, 28, 31 or 32 in that bundle describes code
   that no longer exists.
 
-- **culture** — her account of what a room has BECOME: how they talk, how
+- **culture** — her entry about what a room has BECOME: how they talk, how
   things get decided, what they call themselves (design/culture-tier/,
   DEC-207). The `culture` adaptor reads the room's own messages when it has
   said enough (DEC-288: `[culture] wake_batch` new human messages, or any new
   one once `stale_seconds` have passed; a silent room never fires) and appends
-  ONE short account to a chain (`culture`/`culture_revision`, keyed on the
+  ONE short entry to a chain (`culture`/`culture_revision`, keyed on the
   room's `primary_id`). It writes through `character_revise`, citing the
-  messages it rests on, and reads no presence and no Standing: its account is
-  evidence for accounts that render in other rooms (R-31). Every
+  messages it rests on, and reads no presence and no Standing: its entry is
+  evidence for entries that render in other rooms (R-31). Every
   occasion in a room reads it as `<culture>` except the Relevance Gate; the
   public summons reads no room and no culture. It is a
   baseline, not a rule: a window read against it becomes a deviation. Not
   `<room>`, which is the operator's statement of what a room is FOR.
 
   **Culture IS the Character tier's room case** (DEC-290,
-  `design/cognition-loop/10-tiers.md` §5): a room's account keeps its
+  `design/cognition-loop/10-tiers.md` §5): a room's entry keeps its
   `primary_id` key, and the person, unit and Nora cases hang off the unit
   (**Character**, below). "Her own standing there", which this entry used to
   claim, was Standing's question, not Character's, and the room fold no longer
@@ -373,9 +373,10 @@ no entry.
   **hypotheses** (why), using **told / deduced / induced / abduced** modes.
   "Account" is now only for platform accounts.
   [ADR 0026](docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md)
-  records the naming and deferred code rename. Today `character-*` writes live
-  prose through `character_revise`, while `persona-*` writes shadow typed
-  lines through `persona_write`, with `persona-verdict` judging hypotheses.
+  records the naming; the code rename is deferred. Today `culture` (the room
+  adaptor) and `character-*` write live prose through `character_revise`,
+  while `persona-*` writes shadow typed lines through `persona_write`, with
+  `persona-verdict` judging hypotheses.
   The target is **one `character-*` adaptor family** (person, room, unit,
   nora, verdict) writing typed profile/traits/hypotheses lines; the prose
   adaptors retire at the switch. The existing live prose implementation
