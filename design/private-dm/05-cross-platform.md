@@ -86,8 +86,40 @@ cryptographic separation, not a mathematical guarantee of no hash collisions.
 
 Use `/workspace/<dm_hash>/`, the existing `c-<dm_hash first 12 hex>` user from
 `deploy/computer/computerd.py::scope_user` (line 147), and 0o700 ownership from
-`Computer._ensure_scope` (line 471). This is person+unit scope, not a global
-per-person directory. Both admitted platforms share its files/browser profile.
+`Computer._ensure_scope` (line 471), subject to the shared owner-allocation
+prerequisite below. This is person+unit scope, not a global per-person directory.
+Both admitted platforms share its files/browser profile.
+
+**Shared prerequisite — fail closed on Unix owner-name collisions.** Distinct
+full scope hashes can share their first 12 hex characters, so `scope_user`
+assigns them the same Unix name. 0o700 does not isolate directories owned by the
+same UID. The shipped `deploy/computer/computerd.py::Owner.ids` (line 166)
+reuses an existing user by name without verifying its full scope. This latent
+risk already affects unit and legacy room scopes; it is not a DM-only defect,
+and #164/#168 did not fix it. DM enablement requires this shared fix first:
+
+- Keep `c-<12 hex>`. Record each owner name's **full scope** in one persistent,
+  root-owned map outside writable workspaces (root-only directory 0o700, map
+  0o600). Atomically check/reserve that mapping under one allocation lock shared
+  by every creator/binder, before mkdir, user creation/reuse, chown, cached owner
+  reuse or scope/session binding. Computerd, migration, restore and privileged
+  broker helpers must honour the same check; a Nora-only admission check is
+  insufficient.
+- A reservation, existing directory or Unix user attributable to a different
+  full scope refuses the operation and emits an operator-visible alert. An
+  existing user/directory whose full-scope ownership cannot be established also
+  refuses; never infer identity from the 12-hex prefix, overwrite the map, reuse
+  the UID for another scope or fall back to the anchor's owner. Keep both scopes'
+  data and ownership untouched. Same full-scope reuse requires the matching map
+  entry and directory/user ownership, not merely a matching user name.
+- Seed the map for existing unit/room workspaces only from a checked complete
+  full-scope/user/directory inventory; duplicate claims or unaccounted existing
+  users block binding pending reconciliation. Restore must reconstruct/check
+  that root-only allocation state before attaching any workspace. This is the
+  minimum shared check, not a change to hashing or Unix user naming. The
+  [collision acceptance case](04-build-and-acceptance.md#2-deterministic-proof-and-actual-inputs)
+  must pass before claiming group-to-DM filesystem isolation.
+
 The unchanged `SCOPE_RE` in computerd and archive_check accepts 16–64 lowercase
 hex; `deploy/computer/migrate_unit_scope.py::inventory` (line 77) accepts exactly
 32 through `SCOPE` (line 27). The DM hash fits all three. The existing

@@ -1,5 +1,10 @@
 # Group computer work belongs to the unit
 
+> Current status (2026-10-21): implemented in #164, released in v6.5.0 and
+> migrated live. See the [implemented index](_index.yaml) and
+> [cutover runbook](01-migration.md) for current evidence and operational limits.
+> The original proposal below is retained unchanged as historical design.
+
 Status: proposed, 2026-10-21. Operator decisions are settled; implementation,
 migration and enablement are not delivered by this documentation change.
 Decision recorded at merge: take the number from origin/master when behaviour

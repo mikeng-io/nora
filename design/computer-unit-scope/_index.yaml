@@ -8,7 +8,7 @@ status: implemented
 timestamp: '2026-10-21'
 governance: operator-directed
 origin: Operator ruling that work must resume across a unit's group transports.
-revision: '2026-10-21; records shipped implementation and live cutover; 00-contract.md is the original design, unchanged.'
+revision: '2026-10-21; records shipped implementation and live cutover; 00-contract.md retains the original design beneath a current-status banner.'
 docs:
   - 00-contract.md
   - 01-migration.md
@@ -25,5 +25,5 @@ implementation:
 edges:
   - {src: 00-contract, dst: ../sandbox-runtime/00-design.md, rel: amends, provenance: proposed}
   - {src: 00-contract, dst: ../subagent/00-design.md, rel: amends, provenance: proposed}
-  - {src: 01-migration, dst: 00-contract, rel: implements, provenance: shipped-pr-164}
+  - {src: 01-migration, dst: 00-contract, rel: sequences, provenance: documented-cutover-pr-164-pr-168}
   - {src: 00-contract, dst: ../private-dm/00-contract.md, rel: prerequisite_for, provenance: satisfied-pr-164-v6.5.0}
