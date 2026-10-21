@@ -69,7 +69,7 @@ async def test_build_app_wires_everything(env):
 
 async def test_missing_secret_refuses_to_start(env, monkeypatch):
     monkeypatch.delenv("OMNIROUTE_API_KEY", raising=False)
-    with pytest.raises(StartupError, match="OMNIROUTE_API_KEY"):
+    with pytest.raises(StartupError, match=r"llm\.api_key_env: env_missing_or_empty"):
         await build_app(env)
 
 
@@ -291,10 +291,11 @@ async def test_the_retention_sweep_is_spawned_when_the_flag_is_on(env, monkeypat
     also pins the DEFAULT: absent means enabled, i.e. today's behaviour."""
     import tomllib
 
+    import tomli_w
     cfg = tomllib.loads(env.read_text())
-    assert "prune_enabled" not in cfg["store"], (
-        "this test's point is the DEFAULT; the fixture must not set the flag"
-    )
+    del cfg["store"]["prune_enabled"]
+    env.write_text(tomli_w.dumps(cfg))
+    assert "prune_enabled" not in tomllib.loads(env.read_text())["store"]
 
     assert await _run_briefly_and_record_prune_wiring(env, monkeypatch), (
         "an unset prune_enabled must keep spawning the retention sweep"

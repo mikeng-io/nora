@@ -1,0 +1,37 @@
+[
+  {
+    "name": "config validation error cannot stringify private Pydantic input",
+    "file": "nora/config.py",
+    "old": "raise ConfigError(rules) from None",
+    "new": "raise ConfigError(str(exc)) from None",
+    "target": "tests/unit/test_config_private_env.py::test_config_never_echoes_unknown_keys_or_parser_errors"
+  },
+  {
+    "name": "policy validation error cannot stringify private Pydantic input",
+    "file": "nora/policy.py",
+    "old": "except ValidationError:\n        raise PolicyError(\"policy: schema\") from None",
+    "new": "except ValidationError as exc:\n        raise PolicyError(str(exc)) from None",
+    "target": "tests/unit/test_config_private_env.py::test_policy_never_echoes_keys_values_or_toml_errors"
+  },
+  {
+    "name": "analytics policy failure must refuse startup",
+    "file": "nora/analytics/composition.py",
+    "old": "raise AnalyticsStartupError(str(exc)) from None",
+    "new": "units = ()",
+    "target": "tests/unit/test_analytics_composition.py::test_enabled_analytics_refuses_missing_empty_or_invalid_policy"
+  },
+  {
+    "name": "STT missing mounted config must refuse startup",
+    "file": "deploy/stt/config_toml.py",
+    "old": "    try:\n        with path.open(\"rb\") as fh:",
+    "new": "    if not path.is_file():\n        return FALLBACK_MODEL\n    try:\n        with path.open(\"rb\") as fh:",
+    "target": "tests/unit/test_config_private_env.py::test_speech_readers_refuse_missing_and_malformed_files"
+  },
+  {
+    "name": "voice-wake missing mounted config must refuse startup",
+    "file": "deploy/voice-wake/wakegate/config_toml.py",
+    "old": "    try:\n        with path.open(\"rb\") as fh:",
+    "new": "    if not path.is_file():\n        return {}, {}\n    try:\n        with path.open(\"rb\") as fh:",
+    "target": "tests/unit/test_config_private_env.py::test_speech_readers_refuse_missing_and_malformed_files"
+  }
+]

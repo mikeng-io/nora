@@ -80,3 +80,32 @@ def test_a_life360_membership_without_a_circle_id_refuses_to_start(tmp_path):
     persons = load_persons(p)
     with pytest.raises(AnalyticsStartupError, match="m-miles"):
         _subjects_from_identity(persons)
+
+
+@pytest.mark.parametrize("policy_text", [
+    None, "", 'default = "allow"',
+    '[[conversations]]\nid = "SYNTHETIC_PRIVATE_POLICY_SENTINEL"',
+])
+def test_enabled_analytics_refuses_missing_empty_or_invalid_policy(
+    minimal_config, tmp_path, policy_text, caplog, monkeypatch,
+):
+    from nora.analytics.composition import AnalyticsStartupError
+    identity = tmp_path / "identity.toml"
+    identity.write_text(
+        '[persons.synthetic]\nname = "Synthetic"\n'
+        '[[persons.synthetic.life360]]\nmember_id = "synthetic-member"\n'
+        'circle_id = "synthetic-circle"\n'
+    )
+    policy = tmp_path / "policy.toml"
+    if policy_text is not None:
+        policy.write_text(policy_text)
+    cfg = minimal_config.model_copy(update={
+        "identity_file": identity, "policy_file": policy,
+        "analytics": minimal_config.analytics.model_copy(update={"enabled": True}),
+    })
+    # A reverted fail-open reader must still never reach a host database.
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    # No migrations or network mock: policy refusal occurs before either is used.
+    with pytest.raises(AnalyticsStartupError, match="policy:") as error:
+        build_rollup(cfg)
+    assert "SYNTHETIC_PRIVATE_POLICY_SENTINEL" not in str(error.value) + caplog.text

@@ -1,7 +1,7 @@
 """config.toml is the one source for the wake gate's model knobs.
 
 Pins: (1) `[speech.wake]` + `[speech.stt]` values reach `Config`; (2) a missing
-file or section falls back to the code defaults (fresh clone boots); (3) env
+file refuses startup while a missing section retains defaults; (3) env
 does NOT override a config.toml knob (compose `STT_MODEL=sensevoice` must not
 diverge from the example's `noise-detection`);
 (4) a malformed file raises instead of silently defaulting.
@@ -37,11 +37,10 @@ def test_toml_values_reach_config(tmp_path: Path) -> None:
     assert not hasattr(cfg, "conversation_id")
 
 
-def test_missing_file_and_missing_section_fall_back_to_code_defaults(tmp_path: Path) -> None:
+def test_missing_file_refuses_start_but_missing_section_keeps_defaults(tmp_path: Path) -> None:
     d = Config()
-    absent = build_config(tmp_path / "nope.toml", env={})
-    assert (absent.threshold, absent.stt_model) == (d.threshold, d.stt_model)
-    assert absent.stt_url == d.stt_url
+    with pytest.raises(RuntimeError, match="config: unreadable"):
+        build_config(tmp_path / "nope.toml", env={})
     partial = tmp_path / "config.toml"
     partial.write_text("[speech.stt]\nendpoint = 'http://stt:8000'\n", encoding="utf-8")
     cfg = build_config(partial, env={})
@@ -62,7 +61,9 @@ def test_env_no_longer_overrides_model_knobs(tmp_path: Path) -> None:
 
 def test_env_still_owns_identity_and_binds(tmp_path: Path) -> None:
     env = {"WAKE_LISTEN_PORT": "4700", "NORA_INGEST_URL": "http://n:1"}
-    cfg = build_config(tmp_path / "nope.toml", env=env)
+    path = tmp_path / "config.toml"
+    path.write_text("")
+    cfg = build_config(path, env=env)
     assert (cfg.listen_port, cfg.nora_url) == (4700, "http://n:1")
 
 

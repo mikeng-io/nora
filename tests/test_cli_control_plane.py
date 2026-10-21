@@ -721,7 +721,7 @@ async def test_the_daemon_still_needs_its_key(env, monkeypatch):
     from nora.config import ConfigError, load
 
     monkeypatch.delenv("OMNIROUTE_API_KEY", raising=False)
-    with pytest.raises(ConfigError, match="OMNIROUTE_API_KEY"):
+    with pytest.raises(ConfigError, match=r"llm\.api_key_env: env_missing_or_empty"):
         load(env["path"])
 
 

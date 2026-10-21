@@ -4,8 +4,8 @@ The file is the operator's single source for "ports, models, timeouts"
 (AGENTS.md, the three config files). Compose bind-mounts it read-only at
 `/app/config.toml`, exactly as it does for the nora container; this module
 reads `[speech.wake]` and the shared `[speech.stt]` endpoint/language/timeout
-once at startup. A missing file or section falls back to the code defaults
-in `service.Config`, so a fresh clone still boots healthy-but-idle.
+once at startup. A missing file refuses startup. Missing sections retain the code defaults
+in `service.Config`. No development opt-out exists.
 
 Deliberately no env override for these keys: two sources can give two answers.
 What stays in env is deployment identity and bind addresses — see `__main__`.
@@ -31,14 +31,16 @@ def load_sections(path: Path = DEFAULT_PATH) -> tuple[dict[str, Any], dict[str, 
     Raises on a malformed file: a broken config.toml must not be silently
     replaced by defaults.
     """
-    if not path.is_file():
-        log.warning("config.toml not found at %s — using built-in defaults", path)
-        return {}, {}
-    with path.open("rb") as fh:
-        data = tomllib.load(fh)
+    try:
+        with path.open("rb") as fh:
+            data = tomllib.load(fh)
+    except (OSError, UnicodeError):
+        raise RuntimeError("config: unreadable") from None
+    except tomllib.TOMLDecodeError:
+        raise RuntimeError("config: invalid_toml") from None
+
     speech = data.get("speech", {}) or {}
     wake = dict(speech.get("wake", {}) or {})
     stt = dict(speech.get("stt", {}) or {})
-    log.info("config.toml loaded from %s: [speech.wake] keys=%s, [speech.stt] keys=%s",
-             path, sorted(wake), sorted(stt))
+    log.info("config: speech sections loaded")
     return wake, stt

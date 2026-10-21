@@ -47,7 +47,7 @@ from pathlib import Path
 import tomlkit
 from tomlkit.exceptions import TOMLKitError
 
-from nora.config import Config, ConfigError, load
+from nora.config import Config, ConfigError, load, validate_schema
 
 # ── deferred imports (circular-import break) ───────────────────────────────
 
@@ -220,8 +220,8 @@ def _validate_candidate(path: Path, doc: tomlkit.container.Container) -> None:
         load(tmp, require_secrets=False)
     except ConfigError as exc:
         raise _cli_error(f"change rejected: {exc}") from exc
-    except OSError as exc:
-        raise _cli_error(f"could not validate candidate config: {exc}") from exc
+    except OSError:
+        raise _cli_error("config: candidate_unreadable") from None
     finally:
         tmp.unlink(missing_ok=True)
 
@@ -317,13 +317,15 @@ def _cmd_unset(args: argparse.Namespace) -> int:
 
 
 def _cmd_validate(args: argparse.Namespace) -> int:
-    _load_config(args)
-    path = Path(args.config)
     try:
-        load(path, require_secrets=False)
+        if getattr(args, "schema_only", False):
+            validate_schema(Path(args.config))
+            print("schema valid; runtime env unresolved")
+        else:
+            load(Path(args.config), require_secrets=False)
+            print("config: valid")
     except ConfigError as exc:
-        raise _cli_error(str(exc)) from exc
-    print(f"ok — {path} is valid")
+        raise _cli_error(str(exc)) from None
     return 0
 
 
@@ -388,6 +390,8 @@ def add_config_subcommands(
         "validate", parents=[parent],
         help="check the file parses and passes the schema",
     )
+    validate.add_argument("--schema-only", action="store_true",
+                          help="check source schema only; does not validate runtime env")
     validate.set_defaults(func=cmd_config_validate)
 
     path = config_sub.add_parser(

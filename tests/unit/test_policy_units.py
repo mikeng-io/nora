@@ -84,22 +84,22 @@ def test_without_units_every_unit_is_in_the_one_implicit_workspace(tmp_path):
 
 def test_a_unit_with_no_workspace_refuses_to_start_once_units_exist(tmp_path):
     partial = '\n[units.alpha]\nworkspace = "one"\n[units.beta]\nworkspace = "one"\n'
-    with pytest.raises(PolicyError, match=r"declares \[units\] but not \['gamma'\]"):
+    with pytest.raises(PolicyError, match="unit_workspace_missing"):
         _load(tmp_path, _ROOMS + partial)
 
 
 def test_a_unit_entry_no_room_uses_refuses_to_start(tmp_path):
-    with pytest.raises(PolicyError, match=r"\[units\.delta\] but no conversation"):
+    with pytest.raises(PolicyError, match="unit_workspace_unused"):
         _load(tmp_path, _ROOMS + _UNITS + '\n[units.delta]\nworkspace = "two"\n')
 
 
 def test_a_unit_entry_without_a_workspace_is_refused(tmp_path):
-    with pytest.raises(PolicyError, match="workspace"):
+    with pytest.raises(PolicyError, match="policy: schema"):
         _load(tmp_path, _ROOMS + _UNITS.replace('workspace = "two"', ""))
 
 
 def test_a_workspace_name_honcho_would_refuse_is_refused_at_startup(tmp_path):
-    with pytest.raises(PolicyError, match=r"\^\[a-zA-Z0-9_-\]\+\$"):
+    with pytest.raises(PolicyError, match="policy: schema"):
         _load(tmp_path, _ROOMS + _UNITS.replace('"two"', '"two words"'))
 
 
@@ -115,7 +115,7 @@ label = "Alpha's second Signal room"
 persons = "*"
 unit = "alpha"
 """
-    with pytest.raises(PolicyError, match=r"unit 'alpha' has two signal rooms"):
+    with pytest.raises(PolicyError, match="unit_platform_unique"):
         _load(tmp_path, _ROOMS + second + units)
 
 

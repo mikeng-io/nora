@@ -285,23 +285,29 @@ async def test_an_id_never_reaches_a_tool_result(env):
 
 
 def _example_config(**over):
-    import tomllib
+    import tempfile
     from pathlib import Path
 
-    from nora.config import Config
+    import tomlkit
 
-    root = Path(__file__).resolve().parents[2]
-    data = tomllib.loads((root / "config.example.toml").read_text(encoding="utf-8"))
-    for section, values in over.items():
-        data.setdefault(section, {}).update(values)
-    return Config.model_validate(data, context={"base": root})
+    from nora.config import load
+    from tests.builders import copy_example_config
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = copy_example_config(Path(directory))
+        data = tomlkit.parse(path.read_text())
+        for section, values in over.items():
+            data[section].update(values)
+        path.write_text(tomlkit.dumps(data))
+        return load(path, require_secrets=False)
 
 
 def test_lessons_ship_off_and_need_the_dreamer():
     assert _example_config().lessons.enabled is False
-    with pytest.raises(ValueError, match=r"\[lessons\] enabled = true needs \[dreamer\]"):
+    from nora.config import ConfigError
+    with pytest.raises(ConfigError, match="value_error"):
         _example_config(lessons={"enabled": True}, dreamer={"enabled": False})
-    with pytest.raises(ValueError, match="the Dreamer's own model"):
+    with pytest.raises(ConfigError, match="value_error"):
         _example_config(lessons={"enabled": True}, dreamer={"enabled": True})
     on = _example_config(lessons={"enabled": True, "check_model": "judge"},
                          dreamer={"enabled": True})

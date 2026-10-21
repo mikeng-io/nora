@@ -177,10 +177,16 @@ def test_a_deployment_key_the_example_never_mentions_is_written_not_lost():
     it False, and the example omits it: a sandbox would have pruned its own
     seeded rows mid-run.
     """
-    assert "store.prune_enabled" not in dict(_flat(
-        tomllib.loads((_REPO_ROOT / "config.example.toml").read_text(encoding="utf-8"))
-    )), "the example now states it; this test needs a different absent key"
-    assert _eval_config()["store.prune_enabled"] is False
+    from evals.subject_config import build
+    # The public example now states this setting. Remove it explicitly so the
+    # regression still measures a missing source key rather than template drift.
+    example = (_REPO_ROOT / "config.example.toml").read_text(encoding="utf-8")
+    example = "\n".join(line for line in example.splitlines()
+                        if not line.startswith("prune_enabled ="))
+    assert "store.prune_enabled" not in dict(_flat(tomllib.loads(example)))
+    generated = dict(_flat(tomllib.loads(build(example, _DEPLOYMENT_FIXTURE))))
+    assert generated["store.prune_enabled"] is False
+
 
 
 def test_an_enabled_adapter_is_adopted_but_its_credentials_are_not():
@@ -454,3 +460,27 @@ def test_without_the_subagent_the_generated_config_is_unchanged_by_it():
     taken = adopted(deployment)
     assert taken["compute.enabled"] is False
     assert all(taken[k] is False for k in FORCE_OFF)
+
+
+def test_eval_generator_accepts_literal_private_inputs_without_template_refs(tmp_path):
+    from evals.subject_config import build
+    from nora.config import load
+    example = (_REPO_ROOT / "config.example.toml").read_text()
+    generated = build(example, '''
+[agent.handles]
+signal = "@synthetic"
+[platforms.signal]
+account = "+12025550123"
+[doctrine]
+canary = "SYNTHETIC-CANARY"
+[tools.mcp.pulse]
+base_url = "https://example.invalid/pulse/mcp"
+''')
+    target = tmp_path / "config.toml"
+    target.write_text(generated)
+    cfg = load(target, require_secrets=False, env={})
+    assert cfg.agent.handles == {"signal": "@synthetic"}
+    assert cfg.platforms.signal.account == ""  # sandbox replaces this before any startup lookup
+    assert cfg.doctrine.canary == "SYNTHETIC-CANARY"
+    assert cfg.tools.mcp["pulse"].base_url == "https://example.invalid/pulse/mcp"
+    assert cfg.documents.public_url == ""

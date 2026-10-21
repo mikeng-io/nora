@@ -25,7 +25,7 @@ send_alerts = true
 ignore_services = ["site", "embedder"]
 env_file_path = ".komodo.env"
 environment = "NORA_RUNTIME_ROOT=/srv/nora-runtime"
-additional_env_files = [{ path = "/srv/nora-runtime/.env", track = false }]
+additional_env_files = [{ path = "/srv/nora/.env", track = false }]
 config_files = [{ path = "release.json", requires = "Redeploy" }]
 # Wrapper ignores the supplied up selection and applies only its installed owned cohort.
 # Add --site only on installations where the public site is already enabled.

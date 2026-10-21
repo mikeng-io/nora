@@ -85,6 +85,18 @@ def doctrine_store() -> DoctrineStore:
     return build_test_doctrine_store()
 
 
+@pytest.fixture(autouse=True)
+def private_config_environment(monkeypatch):
+    """Explicit synthetic host values for tests that load the PUBLIC example.
+
+    Resolver refusal tests pass env={} or remove individual variables. Never
+    relax the runtime loader to accommodate an unresolved test fixture.
+    """
+    from tests.builders import PRIVATE_CONFIG_ENV
+    for name, value in PRIVATE_CONFIG_ENV.items():
+        monkeypatch.setenv(name, value)
+
+
 @pytest.fixture
 def example_config_path(tmp_path: Path) -> Path:
     """R-B: a test's config file is a copy of `config.example.toml` in

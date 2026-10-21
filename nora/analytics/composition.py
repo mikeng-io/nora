@@ -158,14 +158,11 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
             "block exists in identity.toml — there is nothing to derive; "
             "refusing to start"
         )
-    # The unit rollups need the rooms and their units (policy.toml). Without
-    # it the presence Rollup still runs and the unit rollups compute nothing:
-    # a unit's membership is never guessed.
+    # Enabled analytics owns unit rollups too; missing policy refuses startup.
     try:
         units = _units_from_policy(load_policy(cfg.policy_file), persons)
     except PolicyError as exc:
-        log.warning("policy.toml unreadable (%s) — the unit rollups compute nothing", exc)
-        units = ()
+        raise AnalyticsStartupError(str(exc)) from None
 
     database_url = os.environ.get(cfg.store.database_url_env, "")
     if not database_url:

@@ -134,6 +134,8 @@ control. Secrets such as `OMNIROUTE_API_KEY` are environment values, never
 values to paste into documentation. Example files are starting points, not a
 ready-to-run production deployment: platform accounts, memory and model
 services must be provisioned and policy must explicitly allow the intended rooms.
+[Private value references](docs/config-private-values.md) describes the bounded
+env interface and offline `--schema-only` validation.
 
 Nora's character is in `nora/doctrine/`, including `rooms/voice.md`. A deployment
 that bind-mounts `nora/doctrine` can hot-reload it with `doctrine.reload = "mtime"`:

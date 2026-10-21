@@ -23,12 +23,15 @@ FALLBACK_MODEL = "sensevoice"
 
 
 def preload_model(path: Path = DEFAULT_PATH) -> str:
-    """`[speech.wake].stt_model` from config.toml, else the built-in fallback."""
-    if not path.is_file():
-        log.warning("config.toml not found at %s — pre-loading %s", path, FALLBACK_MODEL)
-        return FALLBACK_MODEL
-    with path.open("rb") as fh:
-        data = tomllib.load(fh)
+    """`[speech.wake].stt_model` from config.toml, defaulting only when the section is absent."""
+    try:
+        with path.open("rb") as fh:
+            data = tomllib.load(fh)
+    except (OSError, UnicodeError):
+        raise RuntimeError("config: unreadable") from None
+    except tomllib.TOMLDecodeError:
+        raise RuntimeError("config: invalid_toml") from None
+
     model = ((data.get("speech") or {}).get("wake") or {}).get("stt_model") or FALLBACK_MODEL
-    log.info("config.toml %s: pre-loading [speech.wake].stt_model=%s", path, model)
+    log.info("config: stt preload selected")
     return str(model)

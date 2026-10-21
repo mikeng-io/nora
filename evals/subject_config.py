@@ -263,6 +263,28 @@ def build(example_toml: str, deployment_toml: str) -> str:
         match = _KEY.match(line)
         if match and not stripped.startswith("#"):
             full = f"{section}.{match.group(2)}" if section else match.group(2)
+            # Private refs and literals are alternate SOURCE interfaces. Do not
+            # inherit a template ref beside the deployment's literal (or vice versa).
+            if ".handles_env." in full:
+                counterpart = full.replace(".handles_env.", ".handles.")
+                if full not in take:
+                    continue
+            elif ".handles." in full:
+                counterpart = full.replace(".handles.", ".handles_env.")
+            else:
+                counterpart = full[:-4] if full.endswith("_env") else full + "_env"
+            if counterpart in take and full not in take:
+                continue
+            if full == "platforms.signal.account_env":
+                # The sandbox replaces the account after loading, without calling
+                # the deployment's daemon; a skipped ref must not require host PII.
+                out.append('account = ""')
+                seen.add("platforms.signal.account")
+                continue
+            if full.endswith("_env") and full not in take:
+                default = config_default(counterpart)
+                if default is not None:
+                    continue  # an omitted optional deployment field uses its default
             seen.add(full)
             if full in take:
                 line = f"{match.group(1)}{match.group(2)}{match.group(3)}{_fmt(take[full])}"

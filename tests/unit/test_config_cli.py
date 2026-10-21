@@ -118,7 +118,7 @@ def test_set_unknown_tool_fails_closed(cfg_path: Path, capsys):
     double-validation is not decoration."""
     rc = run_cli("config", "set", "llm.budgets.new_tool", "3", "--config", str(cfg_path))
     assert rc != 0
-    assert "names an unknown tool" in capsys.readouterr().err
+    assert "config.validation[0].llm: value_error" in capsys.readouterr().err
 
 
 def test_set_quoted_string_stays_string(cfg_path: Path):
@@ -139,7 +139,7 @@ def test_set_preserves_comments(cfg_path: Path):
     # The load-bearing rationale comments must survive the write — a comment
     # kill in a 75KB config would be the silent loss this CLI exists to stop.
     assert "empty means the table unchanged" in text
-    assert "empty = derive from the signal-cli daemon" in text
+    assert "Display text only; never matched against anyone" in text
     assert "# name or a value below 1 is a startup failure." in text
 
 

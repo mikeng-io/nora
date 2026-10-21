@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from nora.config import Config, LLMConfig, load
+from nora.config import Config, LLMConfig, load, validate_schema
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -365,7 +365,9 @@ def test_config_example_still_loads_through_the_config_model(tmp_path, monkeypat
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     dst = tmp_path / "config.toml"
     shutil.copy(ROOT / "config.example.toml", dst)
-    cfg = load(dst)
+    from tests.builders import PRIVATE_CONFIG_ENV as ENV
+    validate_schema(dst)
+    cfg = load(dst, env={**ENV, "OMNIROUTE_API_KEY": "test-key"})
     # Spot-check the drifted values actually landed in the typed model, rather
     # than trusting that "it loaded" means "it loaded what we think".
     # Literals pinned to the template values; update them together with the template.
@@ -507,7 +509,8 @@ def test_every_secret_name_the_config_defaults_reaches_the_container_that_reads_
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     dst = tmp_path / "config.toml"
     shutil.copy(ROOT / "config.example.toml", dst)
-    found = dict(names(load(dst)))
+    from tests.builders import PRIVATE_CONFIG_ENV as ENV
+    found = dict(names(load(dst, env={**ENV, "OMNIROUTE_API_KEY": "test-key"})))
     # Each top-level section's own default too, factories included: a section
     # the example leaves out still ships its defaults. (A bare `Config()`
     # does not construct; ten fields are required.)
@@ -542,3 +545,38 @@ def test_every_secret_name_the_config_defaults_reaches_the_container_that_reads_
     assert not missing, (
         "secret names not passed to the container that reads them: " + "; ".join(missing)
     )
+
+
+def test_public_example_represents_every_serialisable_setting(tmp_path):
+    """Check the schema's settings coverage without reading private deployment data.
+
+    Null optional fields have no TOML representation. Cognition/worker budgets
+    deliberately forbid explicitly setting the shared class's call ceilings.
+    """
+    from tests.builders import PRIVATE_CONFIG_ENV
+    source = tomllib.loads((ROOT / "config.example.toml").read_text())
+    path = tmp_path / "config.toml"
+    shutil.copy(ROOT / "config.example.toml", path)
+    cfg = load(path, require_secrets=False, env=PRIVATE_CONFIG_ENV)
+    effective = cfg.model_dump(mode="json")
+    missing = []
+
+    def walk(defaults, declared, prefix=""):
+        for key, value in defaults.items():
+            field = f"{prefix}.{key}" if prefix else key
+            if value is None:
+                continue
+            if prefix in ("dreamer.budgets.cognition", "dreamer.budgets.subagent") and key in (
+                "max_memory_calls", "max_tool_calls", "tool_calls",
+            ):
+                continue
+            if field == "agent.handles":
+                assert set(value) == set(source["agent"]["handles_env"])
+                continue
+            if key not in declared and key + "_env" not in declared:
+                missing.append(field)
+            elif isinstance(value, dict):
+                walk(value, declared.get(key, {}), field)
+
+    walk(effective, source)
+    assert missing == []

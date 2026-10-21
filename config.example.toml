@@ -1,6 +1,10 @@
 # All example names, account IDs, nicknames and room mappings in this file are
 # synthetic pseudonyms; replace them with your own installation values.
 
+# Future owner migration (with revised mounts):
+# identity_file = "/app/data/identity.toml"
+# policy_file = "/app/data/policy.toml"
+# See docs/config-private-values.md; current developer paths follow.
 identity_file = "identity.toml"
 policy_file = "policy.toml"   # who may talk to her, and where; see policy.example.toml
 
@@ -11,20 +15,22 @@ policy_file = "policy.toml"   # who may talk to her, and where; see policy.examp
 # [engagement].trigger.text, doctrine files, ai_peer and workspace_id.
 name = "nora"
 
-# Her own public handle on each network, shown in <presence> so she knows what
+# Host-private handles on each network, shown in <presence> so she knows what
 # people call her. Display text only; never matched against anyone.
 # Declare one only where it cannot be read live: Instagram (bridge /health) and
 # Discord (read at startup) take a value here only as a fallback.
-[agent.handles]
-signal = "@nora.000"
-whatsapp = "@noraexample"
-x = "@noraexample"
-threads = "@noraexample"
+
+[agent.handles_env]
+signal = "NORA_HANDLE_SIGNAL"
+whatsapp = "NORA_HANDLE_WHATSAPP"
+x = "NORA_HANDLE_X"
+threads = "NORA_HANDLE_THREADS"
+discord = "NORA_HANDLE_DISCORD"
 
 [platforms.signal]
 base_url = "http://127.0.0.1:18080"
-account = ""                     # empty = derive from the signal-cli daemon
 enabled = true                   # false with no other platform enabled refuses to start
+account_env = "NORA_SIGNAL_ACCOUNT"
 
 [platforms.discord]
 enabled = false                  # off by default
@@ -66,6 +72,7 @@ people_in_window_conclusions = 3
 people_in_window_speakers = 4
 # Wall-clock bound in seconds on the whole batch of participation memory reads.
 read_timeout_seconds = 5.0
+ai_peer = "nora"
 
 [llm]
 base_url = "http://localhost:20128/v1"
@@ -131,9 +138,11 @@ cooldown_minutes = 10
 # Mirror every participation verdict (speak and silence) to shadow_channel.
 # Works on top of `enabled` and the room opt-in.
 shadow = false
+shadow_platform = "discord"
+shadow_channel_env = "NORA_PARTICIPATION_SHADOW_CHANNEL"
 # Mirror destination in shadow_platform's id shape; on discord that is
 # "<guild_id>/<channel_id>", and a bare channel id is refused at startup.
-# shadow_channel = "1234567890123456789/9876543210987654321"  # required when shadow = true
+# shadow_channel_env names the destination; required when shadow = true
 # shadow_platform = "discord"              # the mirror's platform
 
 [proactive]
@@ -167,9 +176,11 @@ transcript_rows = 40
 # true: the gate runs on every closed window and only "go" verdicts are posted
 # to shadow_channel; Nora takes no turn. false: a "go" runs a participation turn.
 shadow = true
+shadow_platform = "discord"
+shadow_channel_env = "NORA_RELEVANCE_SHADOW_CHANNEL"
 # Destination in shadow_platform's id shape; on discord "<guild_id>/<channel_id>",
 # never a bare channel id.
-# shadow_channel = "1234567890123456789/9876543210987654321"  # required when enabled AND shadow
+# shadow_channel_env names the destination; required when enabled AND shadow
 # shadow_platform = "discord"
 
 [reaction]
@@ -217,6 +228,7 @@ prompt_window = 20
 # `context_window * quote_window_multiplier`. Beyond the cap the reply renders unthreaded.
 quote_margin = 10
 quote_window_multiplier = 3
+prune_enabled = true
 # Whether the retention sweep runs (every 300s, pruning to `max_per_conversation`).
 # Default true when the key is absent.
 #
@@ -315,11 +327,15 @@ join_timeout_seconds = 3.0
 # and a video makes up to chunk_max sequential model calls. Raise it if new media
 # is slow to become readable; lower it if container memory spikes on photo bursts.
 comprehension_max_concurrent = 4
+sticker_prompt_max_tokens = 1024
+sticker_timeout_seconds = 20.0
+sticker_description_max_chars = 200
 
 # Where the (always encrypted) blobs land (DEC-136). Off by default: blobs go to
 # `store.data_dir/media`. On, an S3-compatible store takes over; credentials are
 # named by env var (DEC-8). If it is misconfigured or unreachable, writes fall
 # back to the filesystem.
+
 [media.rustfs]
 enabled = false
 endpoint = ""              # e.g. "http://rustfs:9000"
@@ -442,9 +458,9 @@ api_key_env = "GOOGLE_MAPS_API_KEY"
 # never here.
 [tools.mcp.pulse]
 enabled = false
-base_url = "https://orion.tail0a1b2c3d.ts.net/pulse/mcp"
 token_env = "PULSE_MCP_TOKEN"
 budget = 5
+base_url_env = "NORA_PULSE_BASE_URL"
 
 # Deferred delivery: a background poller that tells a room when a promised job has
 # finished. Supported backends are the optional sub-agent worker and MiniMax video
@@ -452,6 +468,7 @@ budget = 5
 # [compute]; delivery also needs the fire path. With no backend, no poller starts.
 [compute]
 enabled = false
+poll_tick_seconds = 10.0
 # poll_tick_seconds = 10      # seconds between poller checks for a finished job; a lateness bound, not a deadline
 
 # Nora's computer (DEC-243, ADR 0019): the `computer_*` tools run commands and
@@ -465,6 +482,15 @@ enabled = false
 # Every call is recorded in the `computer_events` audit table.
 [computer]
 enabled = false
+base_url = "http://172.17.0.1:18765"
+token_env = "NORA_COMPUTER_TOKEN"
+request_timeout_seconds = 30.0
+run_timeout_seconds = 120
+max_run_timeout_seconds = 900
+max_output_chars = 8000
+max_read_chars = 20000
+export_max_bytes = 26214400
+import_max_bytes = 26214400
 # base_url = "http://172.17.0.1:18765"
 # token_env = "NORA_COMPUTER_TOKEN"
 # request_timeout_seconds = 30   # every call except a run
@@ -562,6 +588,41 @@ enabled = false
 # `[[persons.<id>.life360]]` block with `member_id` and `circle_id` (`nora
 # presence members` prints both); circles are grouped by circle_id. Startup
 # refuses if enabled with no life360 block, or a block without a circle_id.
+
+[computer.limits]
+
+[computer.sessions]
+idle_expiry_hours = 24
+max_running_days = 7
+lapsed_visible_hours = 24
+sweep_interval_seconds = 300.0
+idle_after_minutes = 30
+
+[computer.context]
+active_days = 7
+recent_file_days = 7
+max_open_sessions = 5
+max_lapsed_sessions = 3
+max_tmux = 5
+max_processes = 5
+max_files = 8
+max_runs = 5
+max_links = 3
+max_tokens = 400
+read_timeout_seconds = 1.5
+state_cache_seconds = 30.0
+
+[computer.browse]
+enabled = false
+model = ""
+max_tokens = 4096
+temperature = 0.2
+max_steps = 25
+timeout_seconds = 240.0
+turns = 40
+output_tokens = 12000
+total_tokens = 400000
+read_chars = 6000
 [presence]
 enabled = false
 client_credential_env = "LIFE360_CLIENT_CREDENTIAL"
@@ -585,6 +646,12 @@ metrics_port = 9101
 # leaves where_is read-only, answering from the last stored fix.
 refresh_url = ""
 refresh_timeout_seconds = 8
+geocode_api_key_env = "GOOGLE_MAPS_API_KEY"
+geocode_provider = "google"
+hkgov_geocode_url = ""
+hkgov_token_env = "HKGOV_MAPS_TOKEN"
+hkgov_lang_zh = "zh"
+hkgov_lang_en = "en"
 # Reverse-geocode backend: "google" (default; needs GOOGLE_MAPS_API_KEY) or
 # "hkgov" (HK-gov LandsD ArcGIS locator). Both are optional; with no credential
 # there is no geocoder and fixes keep the coordinate or Life360 label. For
@@ -624,6 +691,41 @@ embed_images_per_hour = 120
 # Off by default; turning it on is an operator decision. Computation knobs only.
 [analytics]
 enabled = false
+tick_seconds = 120.0
+safety_lag = 600
+settled_seconds = 900.0
+max_age_seconds = 86400.0
+batch_limit = 400
+backfill_batch_limit = 20000
+backfill_threshold = 4000
+grace_seconds = 60.0
+stay_radius_m = 120.0
+stay_min_dwell_seconds = 600.0
+cluster_eps_m = 100.0
+cluster_min_samples = 3
+min_nights = 3
+min_weekdays = 3
+label_freshness_days = 45
+place_match_radius_m = 150.0
+stay_wander_radius_m = 400.0
+anomaly_min_samples = 5
+anomaly_z_threshold = 3.0
+corridor_max_edit_distance = 2
+corridor_min_samples = 3
+corridor_cluster_batch_limit = 500
+min_trip_fixes = 2
+max_trip_duration_seconds = 10800.0
+colocation_radius_m = 150.0
+colocation_min_overlap_seconds = 600.0
+response_window_seconds = 3600.0
+follow_window_seconds = 120.0
+follow_names = ["nora"]
+stimulus_horizon_seconds = 3600.0
+deviation_silence_days = 2
+deviation_stimuli_per_person_per_day = 1
+health_max_poll_gap_seconds = 900.0
+tz_name = "Asia/Hong_Kong"
+metrics_port = 9103
 # tick_seconds = 120
 # safety_lag = 600            # unprocessed fixes (not messages) held back
 # settled_seconds = 900       # no new fix for this long closes a stay
@@ -672,6 +774,10 @@ enabled = false
 enabled = false
 # The search backend (DEC-157); everything else is the same whichever you pick.
 provider = "tavily"              # "tavily" | "exa"
+max_results = 5
+content_max_chars = 1500
+extract_max_chars = 3000
+timeout_seconds = 12.0
 # Provider-neutral caps on what re-enters the model's input on every later call.
 # max_results = 5                 # at most 20
 # content_max_chars = 1500        # per-result snippet clamp
@@ -680,6 +786,11 @@ provider = "tavily"              # "tavily" | "exa"
 
 [search.tavily]
 api_key_env = "TAVILY_API_KEY"   # names the env var; the key never lives here (DEC-8)
+url = "https://api.tavily.com/search"
+extract_url = "https://api.tavily.com/extract"
+search_depth = "basic"
+extract_depth = "basic"
+min_score = 0.1
 # url = "https://api.tavily.com/search"
 # extract_url = "https://api.tavily.com/extract"
 # search_depth = "basic"         # "basic" (1 credit) | "advanced" (2, richer)
@@ -691,6 +802,10 @@ api_key_env = "TAVILY_API_KEY"   # names the env var; the key never lives here (
 
 [search.exa]
 api_key_env = "EXA_API_KEY"      # names the env var; the key never lives here (DEC-8)
+url = "https://api.exa.ai/search"
+contents_url = "https://api.exa.ai/contents"
+type = "auto"
+fetch_max_age_hours = 24
 # url = "https://api.exa.ai/search"
 # contents_url = "https://api.exa.ai/contents"
 # type = "auto"                   # instant | fast | auto | deep-lite | deep | deep-reasoning
@@ -720,6 +835,7 @@ enabled = false
 # (DEC-8). If enabled with the variable unset, a warning is logged and the Steam
 # half stays unavailable.
 api_key_env = "STEAM_WEB_API_KEY"
+timeout_seconds = 8.0
 # Bounds the single batched GetPlayerSummaries call a question costs. It runs on
 # the reply path, so a dead Steam API costs seconds and an `unavailable`.
 # timeout_seconds = 8.0
@@ -736,6 +852,11 @@ enabled = false
 # network use `http://host.docker.internal:19826`; the loopback value below
 # suits host networking.
 bridge_url = "http://127.0.0.1:19826"
+timeout_seconds = 90.0
+content_max_chars = 4000
+story_expiry_enabled = false
+story_media_keep_days = 7
+story_media_keep_max_days = 30
 # timeout_seconds = 90.0                  # keep above the bridge's ~75 s subprocess timeout
 # content_max_chars = 4000                # retrieved-text clamp
 # A story frame's media bytes, kept in custody by [social.poll], are deleted
@@ -765,6 +886,8 @@ bridge_url = "http://127.0.0.1:19826"
 #
 # Keep `enabled` written out so a mistyped key in this section is caught at load.
 enabled = false
+base_url = "http://instagram-bridge:18082"
+timeout_seconds = 30.0
 # base_url = "http://instagram-bridge:18082"   # private compose `nora` network; publishes nothing
 # timeout_seconds = 30.0
 
@@ -781,9 +904,11 @@ enabled = false
 # nothing unless its own INSTAGRAM_COMMENT_WRITES=on, which Nora cannot set.
 enabled = false
 mode = "dry_run"
+max_age_minutes = 60.0
+handle_env = "NORA_INSTAGRAM_SUMMONS_HANDLE"
 # poll_seconds                # deprecated, ignored
 # max_age_minutes = 60.0      # an older summons is recorded stale, never answered
-# handle = "noraexample"      # her username, removed from the question
+# handle_env names her username, removed from the question
 
 [social.poll]
 # The social stream's poller: each member's Instagram account (a person listed in
@@ -804,6 +929,21 @@ mode = "dry_run"
 # that recorded new items then raises one `social` stimulus for the person,
 # with [cognition] enabled. The day is [cognition] timezone's.
 enabled = false
+tick_seconds = 600.0
+floor_minutes = 30.0
+activity_multiplier = 3.0
+ceiling_hours = 6.0
+hourly_budget = 60
+back_off_start_minutes = 15.0
+back_off_max_hours = 6.0
+jitter_seconds = 10.0
+perception_daily_cap = 200
+backfill_full_history = false
+backfill_max_days = 90.0
+backfill_max_items = 50
+backfill_pages_per_tick = 2
+relist_pages_per_tick = 2
+recount_interval_hours = 24.0
 # tick_seconds = 600.0            # how often the poller looks for members due
 # activity_multiplier = 3.0       # learned posting rhythm during current activity
 # floor_minutes = 30.0            # no member probed more often than this
@@ -836,6 +976,10 @@ enabled = false
 # URLs from her own network (http(s) only, globally routable addresses only,
 # redirects re-validated per hop, byte and time limits applied).
 enabled = false
+timeout_seconds = 3.0
+max_bytes = 262144
+image = true
+image_max_bytes = 262144
 # timeout_seconds = 3.0     # total fetch timeout; the reply path is waiting on it
 # max_bytes = 262144        # bytes of the document read (og tags are in <head>)
 # image = true              # also fetch og:image (the costlier half)
@@ -846,6 +990,9 @@ enabled = false
 # default; keyless, so enabling needs no key and has no cost.
 enabled = false
 provider = "hko"           # only "hko" exists
+url = "https://data.weather.gov.hk/weatherAPI/opendata/weather.php"
+lang = "tc"
+timeout_seconds = 8.0
 # url = "https://data.weather.gov.hk/weatherAPI/opendata/weather.php"
 # lang = "tc"              # HKO language: tc | en | sc
 # timeout_seconds = 8.0
@@ -861,6 +1008,7 @@ endpoint = "http://stt:8000"   # the deploy/stt service on the private nora netw
 model = "noise-detection"      # STT engine: "noise-detection" (Cantonese whisper)
                                # or "sensevoice" (FunASR)
 language = "yue"               # the engine's own language code, not BCP-47
+timeout_seconds = 30.0
 
 # Setting enabled = true lets a 「喂 Nora」 wake answer aloud in the voice
 # channel; leave false until voice answers are wanted.
@@ -879,6 +1027,11 @@ provider = ""                  # "" = no speaker; set "minimax_cn" to speak. The
 #     { guild = "<guild_id>", endpoint = "http://voice-sidecar:4600" },
 #     { guild = "<other_id>", endpoint = "http://voice-sidecar:4600" },
 #   ]
+# Two-controller source shape (leave [] for no voice controllers):
+# sidecars = [
+#   {guild_env = "NORA_TTS_GUILD_PRIMARY", endpoint = "http://voice-sidecar:4600"},
+#   {guild_env = "NORA_TTS_GUILD_SECONDARY", endpoint = "http://voice-sidecar-secondary:4600"},
+# ]
 sidecars = []
 # voice = "Cantonese_CuteGirl" # a native Cantonese voice
 speed = 1.0                    # speaking rate, 0.5 to 2.0
@@ -888,8 +1041,13 @@ emotion = ""                   # e.g. "fluent"; "" lets MiniMax match the text.
                                # "whisper" is refused (unsupported)
 text_normalization = false     # vendor digit/English normalization (slightly slower)
 pronunciation = []             # entries "original/replacement", e.g. "RV/(aa1)(wai1)"; [] = off
+voice = ""
+api_key_env = "MINIMAX_CN_API_KEY"
+duck_gain = 0.25
+duck_ramp_ms = 150
 # duck_gain = 0.25             # music volume while she speaks (0<x<1); currently unread
 # duck_ramp_ms = 150           # ramp time for ducking, ms; currently unread
+
 [speech.tts.format]
 # Fits a spoken reply to the TTS voice; only the spoken copy changes, never the
 # recorded reply. mode:
@@ -1068,6 +1226,8 @@ model = ""
 # Reasoning budget for the fold. One of: none, minimal, low, medium, high,
 # xhigh, max (checked at startup). Empty = inherit [llm] reasoning_effort.
 reasoning_effort = "none"
+working_set_max_items = 5
+working_set_max_chars = 600
 
 [music]
 # Discord music bot. Optional, off by default. On, with [platforms.discord]
@@ -1097,6 +1257,12 @@ autoplay_prewarm_seconds = 0.0
 # phone number (or Signal ACI), never by person_id.
 # Optional, off by default: no service is built and /app/v1/otp/* is not mounted.
 enabled = false
+secret_env = "NORA_OTP_SECRET"
+api_token_env = "NORA_OTP_API_TOKEN"
+ttl_seconds = 300
+max_attempts = 5
+max_per_hour = 5
+max_per_day = 10
 # secret_env = "NORA_OTP_SECRET"        # HMAC key codes are hashed under; required when enabled
 # api_token_env = "NORA_OTP_API_TOKEN"  # bearer the portal sends; required when enabled
 # ttl_seconds = 300                     # how long a code lives
@@ -1109,8 +1275,8 @@ dir = "nora/doctrine"
 reload = "mtime"                      # mtime | startup
 strict = true
 language_hint = "yue-Hant-HK"         # BCP 47 (RFC 5646): Cantonese, Traditional Han, Hong Kong
-canary = "CHANGE-ME-PER-DEPLOYMENT"   # fixed string; R-6 leak sentinel
 display_name = "Nora"
+canary_env = "NORA_DOCTRINE_CANARY"
 
 [dreamer]
 # The Dreamer's instruction corpus: `doctrine/` (one file, applies to every run) and
@@ -1176,9 +1342,11 @@ output_tokens = 6000
 # room members. Past the ceiling a read returns `unavailable` with a reason. Must be
 # raised together with the per-tool ceiling below: this one binds first for memory tools.
 max_memory_calls = 12
+timeout_seconds = 120.0
 
 # Per-tool call ceilings for this fold. A key naming a verb the adaptor does not
 # declare refuses startup.
+
 [dreamer.budgets.culture.tool_calls]
 lookup_person = 12
 
@@ -1195,10 +1363,39 @@ total_tokens = 10240000
 output_tokens = 120000
 timeout_seconds = 3600.0
 
+# Public historical budget names remain ordinary settings, inert while the Dreamer is off.
+[dreamer.budgets.note-candidates]
+turns = 4
+total_tokens = 64000
+output_tokens = 12000
+timeout_seconds = 120.0
+max_memory_calls = 2
+
+tool_calls = {}
+
+[dreamer.budgets.note-curation]
+turns = 4
+total_tokens = 64000
+output_tokens = 12000
+timeout_seconds = 120.0
+max_memory_calls = 2
+
+tool_calls = {}
+
+[dreamer.budgets.proactive]
+turns = 4
+total_tokens = 64000
+output_tokens = 12000
+timeout_seconds = 120.0
+max_memory_calls = 2
+
+tool_calls = {}
+
 # Sub-agent worker budget (DEC-247): rounds, tokens and a wall clock only. Per-tool
 # keys (`max_memory_calls`, `max_tool_calls`, `tool_calls`) are refused at load.
 # Required when `[subagent]` is enabled. Starting values, not tuned. A stop at a bound
 # ends the job failed with that reason. Do not state these limits in the prompt.
+
 [dreamer.budgets.subagent]
 turns = 200
 total_tokens = 10240000
@@ -1211,6 +1408,7 @@ timeout_seconds = 3600.0
 # "shadow" (records what would be withheld, renders everything), "on" (drops failing
 # sections). Leave "off" (DEC-231): separate rooms by unit, not by filter, and Memory
 # carries no lineage anyway.
+
 [lineage]
 mode = "off"
 
@@ -1226,10 +1424,10 @@ enabled = false
 # no turn is offered any of the three.
 [documents]
 enabled = false
+public_url_env = "NORA_DOCUMENTS_PUBLIC_URL"
 # Web app's public origin, used to give the room a link to a document
 # (`<public_url>/documents/<12-hex handle>`). Origin only: no path, query, fragment or
 # login. Empty: no link; she points to Documents by title.
-public_url = ""
 
 
 # Opening shared file links (Google Doc, Sheet, Slides, Drive). A posted link is always
@@ -1341,6 +1539,8 @@ register_lines = 40
 # at most `own_sends_max` of the newest are shown.
 own_send_lookback_seconds = 1800.0
 own_sends_max = 6
+rollup_delay_seconds = 60.0
+session_timeout_seconds = 3900.0
 
 # The Assess adaptor: reports and metrics only, never a tier write.
 # Off by default; `nora assess run-nightly` is refused until `mode` is "on".
@@ -1404,6 +1604,10 @@ headers_env = ""                      # env var NAME holding auth headers; reuse
 enabled = true
 model = "ollamacloud/glm-5.3-flash"
 provider = "omniroute"
+api_key_env = ""
+chunk_seconds = 90
+chunk_max = 10
+max_bytes = 0
 
 [media.describe.audio]
 # Describes an audio blob (`media_fetch`, automatic comprehension of audio
@@ -1413,6 +1617,10 @@ provider = "omniroute"
 enabled = true
 model = "mimo-v2.6-flash"
 provider = "opencode-go"
+api_key_env = ""
+chunk_seconds = 90
+chunk_max = 10
+max_bytes = 0
 
 [media.describe.video]
 # Describes video. Must use a direct provider:
@@ -1435,3 +1643,4 @@ max_bytes = 104857600
 # a clip whose audio cannot be decoded is read silent.
 chunk_seconds = 90
 chunk_max = 10
+api_key_env = ""

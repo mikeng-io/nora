@@ -267,6 +267,21 @@ services:
       db:
         condition: service_healthy
     environment:
+      # Full config loader: private refs resolve in every process.
+      - NORA_HANDLE_SIGNAL=${NORA_HANDLE_SIGNAL:-}
+      - NORA_HANDLE_WHATSAPP=${NORA_HANDLE_WHATSAPP:-}
+      - NORA_HANDLE_X=${NORA_HANDLE_X:-}
+      - NORA_HANDLE_THREADS=${NORA_HANDLE_THREADS:-}
+      - NORA_HANDLE_DISCORD=${NORA_HANDLE_DISCORD:-}
+      - NORA_SIGNAL_ACCOUNT=${NORA_SIGNAL_ACCOUNT:-}
+      - NORA_INSTAGRAM_SUMMONS_HANDLE=${NORA_INSTAGRAM_SUMMONS_HANDLE:-}
+      - NORA_PARTICIPATION_SHADOW_CHANNEL=${NORA_PARTICIPATION_SHADOW_CHANNEL:-}
+      - NORA_RELEVANCE_SHADOW_CHANNEL=${NORA_RELEVANCE_SHADOW_CHANNEL:-}
+      - NORA_TTS_GUILD_PRIMARY=${NORA_TTS_GUILD_PRIMARY:-}
+      - NORA_TTS_GUILD_SECONDARY=${NORA_TTS_GUILD_SECONDARY:-}
+      - NORA_PULSE_BASE_URL=${NORA_PULSE_BASE_URL:-}
+      - NORA_DOCUMENTS_PUBLIC_URL=${NORA_DOCUMENTS_PUBLIC_URL:-}
+      - NORA_DOCTRINE_CANARY=${NORA_DOCTRINE_CANARY:-}
       # Never hardcoded — must already be exported in the shell that runs `docker
       # compose up` (see .env.example). Compose fails fast if it's unset.
       - OMNIROUTE_API_KEY=${OMNIROUTE_API_KEY:?set OMNIROUTE_API_KEY in the host environment first}
@@ -533,6 +548,21 @@ services:
         # SERVING Postgres, not merely a spawned container.
         condition: service_healthy
     environment:
+      # Full config loader: private refs resolve in every process.
+      - NORA_HANDLE_SIGNAL=${NORA_HANDLE_SIGNAL:-}
+      - NORA_HANDLE_WHATSAPP=${NORA_HANDLE_WHATSAPP:-}
+      - NORA_HANDLE_X=${NORA_HANDLE_X:-}
+      - NORA_HANDLE_THREADS=${NORA_HANDLE_THREADS:-}
+      - NORA_HANDLE_DISCORD=${NORA_HANDLE_DISCORD:-}
+      - NORA_SIGNAL_ACCOUNT=${NORA_SIGNAL_ACCOUNT:-}
+      - NORA_INSTAGRAM_SUMMONS_HANDLE=${NORA_INSTAGRAM_SUMMONS_HANDLE:-}
+      - NORA_PARTICIPATION_SHADOW_CHANNEL=${NORA_PARTICIPATION_SHADOW_CHANNEL:-}
+      - NORA_RELEVANCE_SHADOW_CHANNEL=${NORA_RELEVANCE_SHADOW_CHANNEL:-}
+      - NORA_TTS_GUILD_PRIMARY=${NORA_TTS_GUILD_PRIMARY:-}
+      - NORA_TTS_GUILD_SECONDARY=${NORA_TTS_GUILD_SECONDARY:-}
+      - NORA_PULSE_BASE_URL=${NORA_PULSE_BASE_URL:-}
+      - NORA_DOCUMENTS_PUBLIC_URL=${NORA_DOCUMENTS_PUBLIC_URL:-}
+      - NORA_DOCTRINE_CANARY=${NORA_DOCTRINE_CANARY:-}
       # Same DATABASE_URL shape as nora's: the two processes share one store.
       - DATABASE_URL=postgresql+asyncpg://nora:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db/nora
       # Life360 creds are `:-` not `:?` on purpose: a compose-level `:?` failure
@@ -582,6 +612,21 @@ services:
         # startup, so it needs a SERVING Postgres, not merely a spawned one.
         condition: service_healthy
     environment:
+      # Full config loader: private refs resolve in every process.
+      - NORA_HANDLE_SIGNAL=${NORA_HANDLE_SIGNAL:-}
+      - NORA_HANDLE_WHATSAPP=${NORA_HANDLE_WHATSAPP:-}
+      - NORA_HANDLE_X=${NORA_HANDLE_X:-}
+      - NORA_HANDLE_THREADS=${NORA_HANDLE_THREADS:-}
+      - NORA_HANDLE_DISCORD=${NORA_HANDLE_DISCORD:-}
+      - NORA_SIGNAL_ACCOUNT=${NORA_SIGNAL_ACCOUNT:-}
+      - NORA_INSTAGRAM_SUMMONS_HANDLE=${NORA_INSTAGRAM_SUMMONS_HANDLE:-}
+      - NORA_PARTICIPATION_SHADOW_CHANNEL=${NORA_PARTICIPATION_SHADOW_CHANNEL:-}
+      - NORA_RELEVANCE_SHADOW_CHANNEL=${NORA_RELEVANCE_SHADOW_CHANNEL:-}
+      - NORA_TTS_GUILD_PRIMARY=${NORA_TTS_GUILD_PRIMARY:-}
+      - NORA_TTS_GUILD_SECONDARY=${NORA_TTS_GUILD_SECONDARY:-}
+      - NORA_PULSE_BASE_URL=${NORA_PULSE_BASE_URL:-}
+      - NORA_DOCUMENTS_PUBLIC_URL=${NORA_DOCUMENTS_PUBLIC_URL:-}
+      - NORA_DOCTRINE_CANARY=${NORA_DOCTRINE_CANARY:-}
       - DATABASE_URL=postgresql+asyncpg://nora:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db/nora
       - TZ=Asia/Hong_Kong
     volumes:

@@ -10,8 +10,10 @@ from __future__ import annotations
 import os
 import re
 import tomllib
+from collections.abc import Mapping
+from copy import deepcopy
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import urlsplit
 
 from pydantic import (
@@ -79,7 +81,7 @@ def _shadow_channel_shape_error(*, section: str, platform: str, channel: str) ->
     return (
         f"[{section}] shadow_channel must be \"<guild_id>/<channel_id>\" on "
         f"discord (the same shape policy.toml uses for a Discord room), not "
-        f"{channel!r} — a bare channel id sends to /channels//messages, which "
+        "a bare channel id sends to /channels//messages, which "
         f"Discord refuses with HTTP 405"
     )
 
@@ -1786,7 +1788,7 @@ class SidecarEntry(SpeechEntryConfigBase):
         value = value.strip()
         if not value or "/" in value:
             raise ValueError(
-                f"sidecars entry guild {value!r} must be a bare Discord guild "
+                "sidecars entry guild must be a bare Discord guild "
                 "id, not \"<guild_id>/<channel_id>\" — an entry maps a GUILD "
                 "to the audio-controller that owns its voice connection "
                 "(design/voice-channel/07 §12.5). Where a guild's SPEECH is "
@@ -1991,7 +1993,7 @@ class SpeechTtsConfig(BaseModel):
         for entry in self.sidecars:
             if entry.guild in seen:
                 raise ValueError(
-                    f"[speech.tts] sidecars lists guild {entry.guild!r} twice — "
+                    "[speech.tts] sidecars lists a guild twice — "
                     "one guild has exactly one audio-controller "
                     "(design/voice-channel/07 §12.5)"
                 )
@@ -4428,37 +4430,206 @@ class Config(BaseModel):
 
 
 
-def load(path: Path, *, require_secrets: bool = True) -> Config:
-    """Parse and validate config.toml.
+# Only schema-owned names may appear in diagnostics. Pydantic locations can
+# also contain arbitrary map keys, which must never cross the error boundary.
+_PUBLIC_CONFIG_FIELDS = frozenset(
+    field for model in tuple(globals().values())
+    if isinstance(model, type) and issubclass(model, BaseModel)
+    for field in model.model_fields
+)
 
-    `require_secrets` defaults to True and that is the daemon's behaviour,
-    unchanged: a missing LLM key must be a startup failure, because a Nora who
-    starts without one is a Nora who is silently unable to answer.
 
-    The read-only operator control plane (`nora groups`, `nora persons
-    pending`) passes False, and the reason is the 3am path it exists for: the
-    key lives in `.env`, which docker compose injects into the CONTAINER, so an
-    operator running these commands from his own shell — typically with the
-    container stopped, which is exactly when he needs them — has no such
-    variable exported. Neither command constructs an LLM client or reaches the
-    provider at all, so refusing to list group ids over a credential that
-    nothing on that path uses would be a self-inflicted outage of the tool
-    brought in to diagnose an outage.
-    """
-    path = Path(path).expanduser().resolve()
-    if not path.exists():
-        raise ConfigError(f"config file not found: {path}")
-    with path.open("rb") as f:
+def _safe_config_location(location: tuple[str | int, ...]) -> str:
+    return ".".join(
+        str(part) if isinstance(part, int) or part in _PUBLIC_CONFIG_FIELDS else "entry"
+        for part in location
+    ) or "root"
+
+
+# Deliberately bounded: these are the only deployment values lifted into env.
+# The runtime model never gains reference fields; consumers see the same values.
+PRIVATE_ENV_FIELDS: dict[str, str] = {
+    **{f"agent.handles.{network}": f"NORA_HANDLE_{network.upper()}"
+       for network in ("signal", "whatsapp", "x", "threads", "discord")},
+    "platforms.signal.account": "NORA_SIGNAL_ACCOUNT",
+    "social.instagram.summons.handle": "NORA_INSTAGRAM_SUMMONS_HANDLE",
+    "participation.shadow_channel": "NORA_PARTICIPATION_SHADOW_CHANNEL",
+    "relevance_gate.shadow_channel": "NORA_RELEVANCE_SHADOW_CHANNEL",
+    "speech.tts.sidecars.0.guild": "NORA_TTS_GUILD_PRIMARY",
+    "speech.tts.sidecars.1.guild": "NORA_TTS_GUILD_SECONDARY",
+    "tools.mcp.pulse.base_url": "NORA_PULSE_BASE_URL",
+    "documents.public_url": "NORA_DOCUMENTS_PUBLIC_URL",
+    "doctrine.canary": "NORA_DOCTRINE_CANARY",
+}
+_ENV_NAME = re.compile(r"[A-Z][A-Z0-9_]*", re.ASCII)
+
+
+def _private_value_shape(path: str, value: str) -> None:
+    rule = None
+    if not value.strip() or any(not c.isprintable() for c in value):
+        rule = "nonempty_printable"
+    elif path.endswith(".guild") and not re.fullmatch(r"[0-9]{17,20}", value):
+        rule = "decimal_guild"
+    elif path == "platforms.signal.account" and not re.fullmatch(r"\+[1-9][0-9]{6,14}", value):
+        rule = "e164_account"
+    elif (path.startswith("agent.handles.") or path.endswith(".handle")) and (
+        any(c.isspace() for c in value) or not value.lstrip("@")
+    ):
+        rule = "handle_shape"
+    elif path == "tools.mcp.pulse.base_url":
         try:
-            data = tomllib.load(f)
-        except tomllib.TOMLDecodeError as exc:
-            raise ConfigError(f"invalid TOML in {path}: {exc}") from exc
+            parts = urlsplit(value)
+            valid = (parts.scheme in ("http", "https") and parts.hostname
+                     and parts.port != 0 and parts.username is None
+                     and parts.password is None and not parts.fragment
+                     and not parts.query and "\\" not in value
+                     and not any(c.isspace() for c in value))
+        except ValueError:
+            valid = False
+        if not valid:
+            rule = "http_url"
+    if rule:
+        raise ConfigError(f"{path}: {rule}") from None
+
+
+def _resolve_private_values(
+    data: dict[str, Any], env: Mapping[str, str], *, schema_only: bool = False,
+) -> dict[str, Any]:
+    """Resolve exactly the supported refs once; never mutate source TOML.
+
+    Optional absent fields stay absent. A declared ref is mandatory even for an
+    inactive feature and even when the caller does not need the LLM credential.
+    Shape checks happen before values reach Pydantic (which retains inputs).
+    """
+    resolved = deepcopy(data)
+    agent = resolved.get("agent")
+    if isinstance(agent, dict) and "handles_env" in agent:
+        agent.setdefault("handles", {})
+    synthetic: dict[str, str] = {}
+    for index, path in enumerate(PRIVATE_ENV_FIELDS):
+        parts = path.split(".")
+        section: Any = resolved
+        for part in parts[:-1]:
+            if isinstance(section, list):
+                section = (section[int(part)]
+                           if part.isdecimal() and int(part) < len(section) else None)
+            elif isinstance(section, dict):
+                section = section.get(part)
+            else:
+                section = None
+            if section is None:
+                break
+        if not isinstance(section, dict):
+            continue  # ordinary schema validation rejects malformed sections
+        field = parts[-1]
+        if path.startswith("agent.handles."):
+            # The source interface is a sibling map, not signal_env per handle.
+            agent = resolved["agent"]
+            refs = agent.get("handles_env", {})
+            networks = {"signal", "whatsapp", "x", "threads", "discord"}
+            if not isinstance(refs, dict) or set(refs) - networks:
+                raise ConfigError("agent.handles_env: network_keys") from None
+            ref_field = field
+            ref_section = refs
+        else:
+            ref_field, ref_section = field + "_env", section
+        if ref_field not in ref_section:
+            continue
+        if field in section:
+            raise ConfigError(f"{path}: literal_ref_collision") from None
+        ref = ref_section[ref_field]
+        if not isinstance(ref, str) or _ENV_NAME.fullmatch(ref) is None:
+            raise ConfigError(f"{path}: env_name") from None
+        value = (synthetic.setdefault(ref, _schema_placeholder(path, index))
+                 if schema_only else env.get(ref))
+        if not isinstance(value, str) or not value.strip():
+            raise ConfigError(f"{path}: env_missing_or_empty") from None
+        _private_value_shape(path, value)
+        if field == "shadow_channel" and _shadow_channel_shape_error(
+            section=parts[0], platform=section.get("shadow_platform", "discord"), channel=value,
+        ):
+            raise ConfigError(f"{path}: shadow_channel_shape") from None
+        section[field] = value
+        del ref_section[ref_field]
+    agent = resolved.get("agent")
+    if isinstance(agent, dict) and "handles_env" in agent:
+        # Create the effective map even if no literal handles table was supplied.
+        refs = agent.pop("handles_env")
+        if refs:
+            raise ConfigError("agent.handles_env: network_keys") from None
+    return resolved
+
+
+def _source_path(path: Path) -> Path:
     try:
-        cfg = Config.model_validate(data, context={"base": path.parent})
+        return Path(path).expanduser().resolve()
+    except (OSError, RuntimeError, ValueError):
+        raise ConfigError("config: invalid_path") from None
+
+
+def _read_source(path: Path) -> dict[str, Any]:
+    try:
+        with path.open("rb") as stream:
+            return tomllib.load(stream)
+    except tomllib.TOMLDecodeError:
+        raise ConfigError("config: invalid_toml") from None
+    except (OSError, UnicodeError, ValueError):
+        raise ConfigError("config: unreadable") from None
+
+
+def _validate_source(
+    data: dict[str, Any], path: Path, env: Mapping[str, str], *, schema_only: bool = False,
+) -> Config:
+    data = _resolve_private_values(data, env, schema_only=schema_only)
+    try:
+        return Config.model_validate(data, context={"base": path.parent})
     except ValidationError as exc:
-        raise ConfigError(str(exc)) from exc
-    if require_secrets and not os.environ.get(cfg.llm.api_key_env):
-        raise ConfigError(
-            f"environment variable {cfg.llm.api_key_env} is not set — refusing to start"
+        # msg/ctx are unsafe, and loc can carry private map keys. Keep only
+        # schema-owned field names and list indices, plus a fixed rule code.
+        errors = exc.errors(include_input=False, include_context=False)
+        rules = "; ".join(
+            f"config.validation[{i}].{_safe_config_location(e['loc'])}: {e['type']}"
+            for i, e in enumerate(errors)
         )
+        raise ConfigError(rules) from None
+
+
+def _schema_placeholder(field: str, index: int) -> str:
+    if field.endswith(".guild"):
+        return str(10000000000000000 + index)
+    if field.endswith("shadow_channel"):
+        return "10000000000000001/10000000000000002"
+    if field == "platforms.signal.account":
+        return "+12025550123"
+    if field.endswith("base_url") or field.endswith("public_url"):
+        return "https://example.invalid"
+    if field.startswith("agent.handles.") or field in (
+        "social.instagram.summons.handle", "doctrine.canary",
+    ):
+        return "synthetic-value"
+    raise ConfigError("config.schema_only: unmapped_ref") from None
+
+
+def validate_schema(path: Path) -> None:
+    """Validate source/cross-field rules; NEVER return a runtime Config.
+
+    Shape-valid synthetic refs are distinct per sidecar. Host startup always
+    uses load(), which cannot synthesize missing environment values.
+    """
+    path = _source_path(path)
+    _validate_source(_read_source(path), path, {}, schema_only=True)
+
+
+def load(path: Path, *, require_secrets: bool = True,
+         env: Mapping[str, str] | None = None) -> Config:
+    """Load a runtime config; declared private refs always require real values.
+
+    require_secrets=False relaxes only the LLM credential for offline commands.
+    An explicit env mapping isolates preflight from the parent process environment.
+    """
+    path = _source_path(path)
+    environment = os.environ if env is None else env
+    cfg = _validate_source(_read_source(path), path, environment)
+    if require_secrets and not environment.get(cfg.llm.api_key_env):
+        raise ConfigError("llm.api_key_env: env_missing_or_empty") from None
     return cfg
