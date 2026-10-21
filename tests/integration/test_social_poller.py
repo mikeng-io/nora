@@ -1799,6 +1799,33 @@ async def test_empty_backfill_requires_the_probe_to_confirm_an_empty_grid(
         assert standing["ada"].done
 
 
+@pytest.mark.parametrize("full_history", [False, True])
+@pytest.mark.parametrize("is_private,following", [(False, False), (True, False)])
+async def test_empty_terminal_page_at_a_cursor_finishes_a_zero_item_walk(
+    world, full_history, is_private, following,
+) -> None:
+    quiet(world, BEA)
+    world.source.probes[ADA] = probe(posts=5, is_private=is_private, following=following)
+    world.source.pages[ADA] = Page(items=(), next_cursor=None)
+    world.source.after["older-page"] = Page(items=(), next_cursor=None)
+    await world.store.record_poll(
+        network="instagram", person="ada", stage="probe", outcome="unchanged",
+        media_count=5, total_clips_count=0, advanced_counts=True,
+    )
+    await world.store.record_poll(
+        network="instagram", person="ada", stage="backfill", outcome="read_ok",
+        cursor="older-page",
+    )
+    await world.poller(backfill_full_history=full_history).tick()
+    assert await backfilled(world, "ada") == 0
+    standing = await world.store.backfills(network="instagram", full_history=full_history)
+    assert standing["ada"].end_reason == "grid_end"
+    assert standing["ada"].done
+    calls = len(world.source.reads("items"))
+    await ticks(world, world.poller(backfill_full_history=full_history), 1)
+    assert len(world.source.reads("items")) == calls, "restart must not reopen the walk"
+
+
 async def test_full_history_reopens_a_legacy_bounded_walk_and_stays_finished(world) -> None:
     quiet(world, BEA)
     grid(world, ADA, 80, every=timedelta(days=3))

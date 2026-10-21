@@ -696,11 +696,11 @@ class SocialPoller:
         elif page.next_cursor is None:
             # Settle a known inaccessible grid; unexplained missing posts
             # stay on the existing first-page retry queue.
-            if not page.items and backfilled == 0 and probe is not None \
+            if not paged and not page.items and backfilled == 0 and probe is not None \
                     and probe.is_private is True and probe.following is False:
                 end = "private_not_followed"
             else:
-                end = "unreadable" if not page.items and backfilled == 0 \
+                end = "unreadable" if not paged and not page.items and backfilled == 0 \
                     and media_count is not None and media_count > 0 else "grid_end"
         if end is None:
             return page.next_cursor, None
