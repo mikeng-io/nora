@@ -235,7 +235,7 @@ def quiet(world: World, *accounts: str) -> None:
     counts are recorded by the first probe (cold start makes a list read due,
     and an empty first page completes it)."""
     for account in accounts:
-        world.source.probes[account] = probe()
+        world.source.probes[account] = probe(posts=0)
         world.source.pages[account] = Page(items=(), next_cursor=None)
 
 
@@ -1538,8 +1538,7 @@ async def test_backfill_and_rewalk_pages_record_counts_with_no_call_of_their_own
 async def recount_world(world: World) -> SocialPoller:
     """Ada and bea each listed once at the start, ada's one post counted at
     3 likes; the recount on at its default interval."""
-    world.source.probes[BEA] = probe()
-    world.source.pages[BEA] = Page(items=(), next_cursor=None)
+    quiet(world, BEA)
     world.source.probes[ADA] = probe(posts=1)
     world.source.pages[ADA] = Page(items=(counted(post(world, "p1"), 3),), next_cursor=None)
     poller = world.poller(recount_interval_hours=24)
@@ -1754,6 +1753,77 @@ async def test_an_adaptive_probe_reserves_its_two_possible_reads_before_admissio
     assert world.probes() == [], "probe plus two reads must fit beside the three-call reserve"
     await world.poller(hourly_budget=7).tick()
     assert world.probes() == [ADA], "sufficient spare budget still permits the read"
+
+
+@pytest.mark.parametrize("full_history", [False, True])
+@pytest.mark.parametrize("posts,is_private,following,reason,done", [
+    (0, False, False, "grid_end", True),
+    (5, None, None, "unreadable", False),
+    (5, True, None, "unreadable", False),
+    (5, None, False, "unreadable", False),
+    (5, False, False, "unreadable", False),
+    (5, True, True, "unreadable", False),
+    (5, True, False, "private_not_followed", True),
+])
+async def test_empty_backfill_requires_the_probe_to_confirm_an_empty_grid(
+    world, full_history, posts, is_private, following, reason, done,
+) -> None:
+    quiet(world, BEA)
+    world.source.probes[ADA] = probe(posts=posts, is_private=is_private, following=following)
+    world.source.pages[ADA] = Page(items=(), next_cursor=None)
+    await world.poller(backfill_full_history=full_history).tick()
+    assert await world.items() == {}
+    standing = await world.store.backfills(network="instagram", full_history=full_history)
+    assert standing["ada"].done is done
+    # A new poller must retry the first page through the existing backfill
+    # queue, retaining the distinction when the bridge still returns empty.
+    calls = len(world.source.reads("items"))
+    await ticks(world, world.poller(backfill_full_history=full_history), 1)
+    assert len(world.source.reads("items")) == calls + (not done)
+    async with world.engine.connect() as conn:
+        reasons = (await conn.execute(
+            sa.select(SOCIAL_POLL.c.end_reason)
+            .where(SOCIAL_POLL.c.person == "ada", SOCIAL_POLL.c.stage == "backfill")
+            .order_by(SOCIAL_POLL.c.recorded_at, SOCIAL_POLL.c.id),
+        )).scalars().all()
+    assert reasons == [reason] * (1 if done else 2)
+    standing = await world.store.backfills(network="instagram", full_history=full_history)
+    assert standing["ada"].done is done
+    if not done:
+        grid(world, ADA, posts)
+        await ticks(world, world.poller(backfill_full_history=full_history), 2)
+        # Bounded recovery uses the first page only for its cursor; a full
+        # walk also captures the formerly unreadable first page.
+        assert await backfilled(world, "ada") == (posts if full_history else 0)
+        standing = await world.store.backfills(network="instagram", full_history=full_history)
+        assert standing["ada"].done
+
+
+@pytest.mark.parametrize("full_history", [False, True])
+@pytest.mark.parametrize("is_private,following", [(False, False), (True, False)])
+async def test_empty_terminal_page_at_a_cursor_finishes_a_zero_item_walk(
+    world, full_history, is_private, following,
+) -> None:
+    quiet(world, BEA)
+    world.source.probes[ADA] = probe(posts=5, is_private=is_private, following=following)
+    world.source.pages[ADA] = Page(items=(), next_cursor=None)
+    world.source.after["older-page"] = Page(items=(), next_cursor=None)
+    await world.store.record_poll(
+        network="instagram", person="ada", stage="probe", outcome="unchanged",
+        media_count=5, total_clips_count=0, advanced_counts=True,
+    )
+    await world.store.record_poll(
+        network="instagram", person="ada", stage="backfill", outcome="read_ok",
+        cursor="older-page",
+    )
+    await world.poller(backfill_full_history=full_history).tick()
+    assert await backfilled(world, "ada") == 0
+    standing = await world.store.backfills(network="instagram", full_history=full_history)
+    assert standing["ada"].end_reason == "grid_end"
+    assert standing["ada"].done
+    calls = len(world.source.reads("items"))
+    await ticks(world, world.poller(backfill_full_history=full_history), 1)
+    assert len(world.source.reads("items")) == calls, "restart must not reopen the walk"
 
 
 async def test_full_history_reopens_a_legacy_bounded_walk_and_stays_finished(world) -> None:
@@ -1973,3 +2043,41 @@ async def test_recovery_reserves_the_whole_source_second_for_fresh_news(world):
     assert set(await world.items()) == {"older-second"}, (
         "whole-second source timestamps cannot place this second before the probe"
     )
+
+
+@pytest.mark.parametrize("full_history", [False, True])
+@pytest.mark.parametrize("access", [{"is_private": True, "following": True},
+                                    {"is_private": False, "following": False}])
+async def test_private_unfollowed_grid_reopens_only_after_access_is_confirmed(
+    world, full_history, access,
+) -> None:
+    quiet(world, BEA)
+    grid(world, ADA, 5)
+    visible = world.source.pages[ADA]
+    world.source.probes[ADA] = probe(posts=5, is_private=True, following=False)
+    world.source.pages[ADA] = Page(items=(), next_cursor=None)
+    await world.poller(backfill_full_history=full_history, relist_pages_per_tick=2,
+                       recount_interval_hours=24).tick()
+    calls = world.source.reads("items").count(ADA)
+    # Across restarts, changed counts, an unknown access probe, and the
+    # recount deadline, no item path may re-read the settled private grid.
+    for hours, flags in [(6, {"is_private": True, "following": False}),
+                         (30, {"is_private": None, "following": None})]:
+        world.clock.at(hours=hours)
+        world.source.probes[ADA] = probe(posts=6, **flags)
+        await world.poller(backfill_full_history=full_history, relist_pages_per_tick=2,
+                       recount_interval_hours=24).tick()
+        assert world.source.reads("items").count(ADA) == calls
+        assert (await world.store.backfills(
+            network="instagram", full_history=full_history,
+        ))["ada"].done
+    world.clock.at(hours=36)
+    world.source.pages[ADA] = visible
+    world.source.probes[ADA] = probe(posts=5, **access)
+    await world.poller(backfill_full_history=full_history, relist_pages_per_tick=2,
+                       recount_interval_hours=24).tick()
+    assert world.source.reads("items").count(ADA) > calls
+    assert await backfilled(world, "ada") == (5 if full_history else 0)
+    assert (await world.store.backfills(
+        network="instagram", full_history=full_history,
+    ))["ada"].done

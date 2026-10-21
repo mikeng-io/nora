@@ -562,8 +562,13 @@ and daily perception allowance all remain in force. There is no separate
 crawler and no burst of historical-news stimuli.
 
 Each successful back-fill page now records its `end_reason` on `social_poll`
-(`0125_social_backfill_end`): `grid_end`, `max_days`, `max_items`, or NULL
-while continuing. In full-history mode an old terminal page with no reason,
+(`0125_social_backfill_end`): `grid_end`, `max_days`, `max_items`,
+`unreadable`, `private_not_followed`, or NULL while continuing.
+`unreadable` means an empty first page despite a positive profile count and
+reopens through first-page recovery. `private_not_followed` settles an empty
+first page for a known private account Nora does not follow; an answered probe
+showing public access or following reopens it through the same recovery path.
+An empty terminal page after a cursor is `grid_end`, even with zero imported items. In full-history mode an old terminal page with no reason,
 or one stopped at a bound, reopens from the first page: the old cursor was
 discarded, so it cannot safely resume at that depth. The recovery first page
 recovers previously omitted items published by the answered probe preceding
@@ -650,7 +655,7 @@ future measured login or storage limit would reopen that choice.
   (pages, by outcome), `nora_social_backfill_items_total{outcome}`
   (`recorded`, `known`, `past_limit`) and
   `nora_social_backfill_ended_total{reason}` (`grid_end`, `max_items`,
-  `max_days`, `bad_cursor`). Paging past the first page has not been read
+  `max_days`, `bad_cursor`, `unreadable`, `private_not_followed`). Paging past the first page has not been read
   live.
 
 ## 8. Build order

@@ -103,7 +103,7 @@ async def test_probe_reads_the_marker_and_both_counts(bridge) -> None:
     fake, source = bridge
     assert await source.probe(account=_ACCOUNT) == Probe(
         latest_reel_media=1700000000, media_count=42, total_clips_count=2,
-        counts_available=True,
+        counts_available=True, is_private=True, following=True,
     )
     assert fake.calls[0][:2] == ("GET", f"/accounts/{_IGID}")
 
@@ -114,7 +114,7 @@ async def test_probe_with_the_social_half_failed_has_no_counts(bridge) -> None:
     got = await source.probe(account=_ACCOUNT)
     assert got == Probe(
         latest_reel_media=1700000000, media_count=None, total_clips_count=None,
-        counts_available=False, rate_limited=False,
+        counts_available=False, rate_limited=False, following=True,
     )
 
 
@@ -493,3 +493,22 @@ async def test_counts_a_bridge_did_not_send_or_sent_wrong_are_unknown(bridge) ->
     assert isinstance(got, Page)
     assert [i.counts for i in got.items] == [ItemCounts(), ItemCounts()]
     assert not any(i.counts.known for i in got.items)
+
+
+@pytest.mark.parametrize("private,following", [(True, False), (False, True), (None, None),
+                                               ("false", 0)])
+async def test_probe_preserves_boolean_access_flags_and_unknowns(bridge, private, following):
+    fake, source = bridge
+    body = fake.answers["account"]["body"]
+    if private is None:
+        body["social"].pop("is_private")
+    else:
+        body["social"]["is_private"] = private
+    if following is None:
+        body.pop("following")
+    else:
+        body["following"] = following
+    got = await source.probe(account=_ACCOUNT)
+    assert isinstance(got, Probe)
+    assert got.is_private is (private if isinstance(private, bool) else None)
+    assert got.following is (following if isinstance(following, bool) else None)

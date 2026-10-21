@@ -118,6 +118,9 @@ class Probe:
     total_clips_count: int | None
     counts_available: bool
     rate_limited: bool = False
+    #: Access flags are None when the bridge did not say, never assumed false.
+    is_private: bool | None = None
+    following: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -206,8 +209,12 @@ POLL_OUTCOMES: tuple[str, ...] = get_args(PollOutcome)
 
 #: Why a member's back-fill ended (§7): the grid ended (`next_cursor` null),
 #: the item limit was reached, a page held nothing inside the day limit, or
-#: its cursor was judged bad.
-BackfillEnd = Literal["grid_end", "max_items", "max_days", "bad_cursor"]
+#: its cursor was judged bad, or an empty walk contradicted a positive probe
+#: count (`unreadable`, retried rather than treated as completion), or a
+#: private grid Nora does not follow (`private_not_followed`, settled until access changes).
+BackfillEnd = Literal[
+    "grid_end", "max_items", "max_days", "bad_cursor", "unreadable", "private_not_followed",
+]
 BACKFILL_ENDS: tuple[str, ...] = get_args(BackfillEnd)
 
 #: A back-fill cursor is judged bad once the pages sent at it were refused
