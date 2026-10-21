@@ -124,6 +124,28 @@ belongs to Standing. Neither is made a Character dimension merely because a
 legacy account contained it. The other dimensions in §1 remain available to
 collectives where applicable even if 12 §4 lacked a heading for them.
 
+### Where the other aspects of a life belong
+
+**Operator completeness amendment, 2026-10-22:** the nine dimensions are not
+nine exhaustive profile fields. Knowledge belongs to `skill` when demonstrated
+as an ability to explain or apply it, or `topic` when the evidence shows
+engagement only. Memberships and affiliations belong to profile
+`relationship`/`attribute` when stated, or `social` for an observed recurring
+interaction pattern; participation alone does not establish membership.
+Life stage, occupation and possessions belong to profile attributes only when
+told, never inferred from habits, appearance, places or media. The bus-driver
+example below remains an explicitly uncertain hypothesis, never an inferred
+occupation asserted in profile.
+
+**Proposed sensitive-category rule, awaiting the operator:** health, religion,
+sexuality, politics and finances are never inferred, never stored as traits or
+hypotheses, and stored in profile only when the subject themself explicitly
+told it, with the original speech act, time and scope preserved. This restriction
+would take precedence over all nine dimensions and the affiliation mapping;
+third-party statements, observed interests and outside evidence cannot bypass
+it. It is a recommendation, not a claim about today's validator or permission
+to widen disclosure. The operator position is recorded in §7.
+
 ## 2. Slot templates and storage
 
 ### Traits
@@ -160,10 +182,13 @@ validation alone cannot establish entailment or correct classification.
 
 ### The trait-versus-event rule
 
-**Keep the existing stronger floor:** at least **three distinct supporting
-occasions across at least two HKT calendar days**, for every trait, including
-`deduced` traits. This exceeds two occasions and agrees with 45 §3's induced
-floor. An occasion is a distinct underlying act/interaction or bounded episode,
+**Proposed stricter common floor, not today's contract:** at least **three
+distinct supporting occasions across at least two HKT calendar days**, for
+every trait, including `deduced` traits. Today 45 §3 permits an `induced`
+trait from **one Rollup aggregate key**, and a `deduced` line from **at least
+two premises** without this recurrence floor. The proposal removes both
+exceptions to the common occasion/day requirement; it retains the separate
+premise-validity checks. An occasion is a distinct underlying act/interaction or bounded episode,
 not the fire-turn “occasion” (code `Event`), and not a message count: replies, attachments and duplicate reports of the same
 occasion count once. A multi-day single trip remains one occasion. Distinct
 media or authors alone never establish recurrence.
@@ -282,8 +307,8 @@ medium-specific writer or unbounded external-search loop is introduced.
 | Rollup pattern | Existing deterministic episode/aggregate builders store intervals, counts, computed patterns and roots/build identity. | Code folds repeated evidence; it does not name motives or occupations. Not every medium needs a new aggregate: chat/Instagram/media can use existing eligible episodes/counts or feed deduplicated Record occasions directly to the next rung. |
 | Trait | The existing Character writer stores one `habit`, `topic`, `style` or other applicable dimension with §2's slots and code-computed strength. | A recurring pattern, not the raw route, post, message or photograph. Context and exceptions constrain it. Recurrence and all disclosure checks apply before admission. |
 | Abduced hypothesis | The same writer stores an explanation linked by `draws_on`, proposed cause, alternative and an observable prediction/window. | A possible cause, not a new profile fact. It says what would distinguish it from the alternative and which outside observation, if needed, would test it. |
-| Independent check | The existing judge reads eligible evidence in the window; a permitted external lookup has its query, source URL, retrieved content, retrieval time and source publication/effective time when available retained with the existing Record tool result and trace. | The result is evidence about its actual proposition. Missing dates stay unknown; a search snippet is a locator until the source is read. Private roots remain private; public evidence does not inherit permission to reveal them. |
-| Verdict | The existing verdict write records confirmed/refuted/expired/unknown, judge identity/time and the evidence references used. | Confirm only the specified prediction, not all causal assertions or a person's identity. No automatic profile promotion; retained evidence lets another reader reconstruct the judgement. |
+| Independent check (proposed external path) | A phase-4 evidence-collection runner owned by the independent verdict adaptor, never the Character writer, performs an authorized lookup and hands retained evidence to the judge. Its query, source URL, retrieved content, retrieval time and available publication/effective time are retained through the existing Record tool-result + trace path. This runner and judge-input extension do not exist today. | The result is evidence about its actual proposition. Missing dates stay unknown; a search snippet is a locator until the source is read. Private roots remain private; public evidence does not inherit permission to reveal them. |
+| Verdict | Today's write records confirmed/refuted/expired/unknown and judge identity/time. Phase 4 must add a proposed `verdict_evidence_refs` column on the superseding verdict row and extend the verdict write to persist references to the retained evidence. No evidence-reference write exists today. | Confirm only the specified prediction, not all causal assertions or a person's identity. No automatic profile promotion; retained evidence lets another reader reconstruct the judgement. |
 
 Presence already has the lower rungs: the presence Rollup in
 [`nora/analytics/rollup.py`](../../nora/analytics/rollup.py) folds fixes into
@@ -305,6 +330,39 @@ claim needs its own direct grounding before it could enter profile. Instagram
 publication rhythms, chat interaction patterns and repeated media-demonstrated
 activities climb the same ladder with their own roots and typed dimensions;
 no compulsory presence-shaped intermediate store is imposed on them.
+
+**Current implementation limit (2026-10-22):**
+[`nora/language/persona_verdict.py`](../../nora/language/persona_verdict.py)
+sets `tools = frozenset()`: the judge has no read tools and is handed the
+window's rows, nothing else. In
+[`nora/infra/sql/persona.py`](../../nora/infra/sql/persona.py), `record_verdict`
+accepts key/line identity, verdict, verdict_by and now_ms; it has no
+evidence-reference argument or corresponding persistence path. Retaining a
+web result somewhere does not make it available to that judge or cited by its
+verdict. **Both external evidence acquisition/delivery and durable verdict
+references are phase-4 work, not existing capabilities.**
+
+**Proposed phase-4 path:** an evidence-collection runner in the independent
+verdict adaptor executes a bounded lookup only after the outbound payload
+policy is authorized. The Character writer neither runs the lookup nor selects
+the verdict; it supplies only the hypothesis and its predeclared observable.
+The runner retains the exact permitted query, source URL, retrieved content,
+retrieval time and any available source publication/effective time in the
+existing Record tool-result + trace path, then resolves those retained results
+into the judge's scoped input. The model judge may remain tool-less: the new
+runner/input path, rather than a writer-provided summary, supplies the evidence.
+
+Add a proposed `verdict_evidence_refs` column to the **new superseding verdict
+row**, and extend `record_verdict` and its caller to accept and persist it in
+the same verdict transaction. References point to the retained Record tool
+results, with their trace provenance, not merely a URL or the writer's prose;
+validate that each resolves to the evidence actually delivered to this judge.
+The external-verdict path cannot commit a confirmation without durable,
+resolvable supporting references. Failed/unavailable lookups retain their
+attempt provenance and lead to unknown, never a fabricated supporting reference.
+This extends the existing append-only verdict path, not a second evidence store
+or writer-owned grading path. None of this schema, runner or write plumbing is
+built by this docs change.
 
 **Proposed extension to 45 §3 (not built): external evidence is a permitted
 hypothesis-verdict source**, beside a Rollup count or described event. Retain
@@ -413,8 +471,13 @@ structure, not semantic acceptance. The Q1 switch gate remains unchanged.
   relative-date handling and source-message visibility; new-message readings
   still have no consumer at this phase.
 - **Phase 4:** trait kinds, content slots, support computation, hypothesis
-  explanation slots, caps/renderer, external-evidence verdict provenance and re-evidencing, together with the one
-  ADR 0026 Character rename migration and writer rework.
+  explanation slots, caps/renderer and re-evidencing, together with the one
+  ADR 0026 Character rename migration and writer rework. External checks require
+  the new independent verdict-adaptor lookup runner and evidence delivery to the
+  currently tool-less judge, plus a new `verdict_evidence_refs` column on the
+  superseding verdict row and the `record_verdict`/caller changes that persist
+  it atomically. Neither acquisition/delivery nor reference persistence exists
+  today; lookup execution remains conditional on the operator's payload rule.
 
 No objective, tool or schema changes here. No Q1–Q5 wording, answerability bar,
 reply replay or operator-owned switch decision is changed.
@@ -430,6 +493,11 @@ reply replay or operator-owned switch decision is changed.
   rule above, never coordinates or a person's identity. This awaits the
   operator's decision under R-28/DEC-227 and R-31; it is not a new egress
   exception and no outside lookup is authorized by this docs change.
+- **Sensitive categories:** recommend never inferring health, religion,
+  sexuality, politics or finances, never making them traits or hypotheses,
+  and storing them only as profile facts explicitly told by the subject
+  themself, under existing source/scope rules. This is an open operator position,
+  not an implemented restriction or a newly granted disclosure permission.
 - **Sizing and decay:** recommend §4's starting values, then size from frozen
   support intervals and rendered omissions. The repo supplies no measurement
   justifying a final budget or horizon for these nine kinds.
