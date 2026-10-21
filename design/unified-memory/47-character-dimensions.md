@@ -443,8 +443,8 @@ prediction, leave it unknown. No lookup is run here.
 **Starting values, to size on the frozen sample:** replace five total traits
 with **nine total current traits per entry**, pooled across dimensions. No
 per-dimension quota or minimum; several lines may cover one dimension while
-others stay absent. Keep three hypotheses whose windows are open, including
-ones confirmed early. Profile storage stays uncapped as in 75.
+others stay absent. Keep three hypotheses whose windows are open.
+Profile storage stays uncapped as in 75.
 
 The rendered card has a **1,200-character total budget**, including labels,
 context, support summaries, profile and hypothesis text. Each trait/hypothesis
