@@ -385,7 +385,7 @@ itself. The work goes to three lanes:
 | the task | lane | how it is launched |
 |---|---|---|
 | build, fix, debug, a design bundle, merge conflicts: anything that edits code, tests, doctrine or design | Codex, `gpt-6.1-sol` | T3 `delegate_task`: `providerInstanceId: codex`, `model: gpt-6.1-sol`, `options.reasoningEffort` = the effort table's level (it takes all five), `isolation: worktree` |
-| independent review, audit, verification of a built change or a PR | Kimi, `kimi-code/k3-256k` | T3 `delegate_task`: `providerInstanceId: acpRegistry_kimi_cli`, `model: default`, `role: review`, `isolation: worktree`; or the CLI, `kimi -m kimi-code/k3-256k -p "$(cat <brief>)" > <log> 2>&1`, run in a checkout of the head under review |
+| independent review, audit, verification of a built change or a PR | Kimi, `kimi-code/k3-256k` | T3 `delegate_task`: `providerInstanceId: acpRegistry_kimi_cli`, `model: default`, `role: review`, `isolation: worktree`; when that route is down, the CLI, `kimi -m kimi-code/k3-256k -p "$(cat <brief>)" > <log> 2>&1`, run in a checkout of the head under review |
 | mechanical: renumber, rename, doc sync, config edit to a given value, read-back, lookup, log or diff fetch | Claude `haiku` | the native sub-agent tool with `model: haiku`, or `delegate_task` with `claudeAgent` / `claude-haiku-5-5` |
 | a light check: read a gate rc, open a cited line, compare two shas, count a log | the orchestrator itself | no launch; a launch costs more than the check |
 
