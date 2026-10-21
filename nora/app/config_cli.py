@@ -43,6 +43,7 @@ import os
 import re
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import tomlkit
 from tomlkit.exceptions import TOMLKitError
@@ -70,7 +71,7 @@ def _load_config(args: argparse.Namespace) -> Config:
 
 def _navigate(
     doc: tomlkit.container.Container, dotted: str
-) -> tuple[tomlkit.container.Container | dict[object, object] | list, str | int]:
+) -> tuple[tomlkit.container.Container | dict[object, object], str]:
     """Walk `a.b.c` into `doc`, returning (container, leaf_key).
 
     Raises a CliError with a helpful message when an intermediate section
@@ -80,7 +81,7 @@ def _navigate(
     parts = dotted.split(".")
     if not parts or not all(parts):
         raise _cli_error(f"bad dotted key: {dotted!r}")
-    current = doc
+    current: Any = doc
     for part in parts[:-1]:
         if isinstance(current, (list, tomlkit.items.AoT)):
             try:
@@ -96,7 +97,9 @@ def _navigate(
             raise _cli_error(
                 f"{'.'.join(parts[: parts.index(part) + 1])} is a scalar, not a table"
             )
-    return current, int(parts[-1]) if isinstance(current, list) else parts[-1]
+    if not isinstance(current, dict | tomlkit.container.Container):
+        raise _cli_error("key must name a field; include the field after the array index")
+    return current, parts[-1]
 
 
 def _get_value(doc: tomlkit.container.Container, dotted: str) -> object:
