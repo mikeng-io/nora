@@ -1425,17 +1425,18 @@ cd ~/workspace/honcho && docker compose up -d api </dev/null
 docker exec nora curl -fsS -m 5 http://honcho:8000/health </dev/null   # {"status":"ok"}
 
 # 3. nora's live config: [memory] base_url = "http://honcho:8000". This is a
-#    config-only edit (nora-deploy step 3: edit a COPY, `nora config validate`
-#    it through the container, cp it in place, recreate). Read it back:
-cd ~/workspace/nora
-docker compose up -d --force-recreate nora </dev/null
-docker compose exec -T nora /app/.venv/bin/python -c \
+#    config-only edit: follow the validated-copy procedure under the lock in
+#    nora-deploy step 3 (linked below), then release the lock before running
+#    native DeployStack on nora-releases. Read it back from the container:
+docker exec nora /app/.venv/bin/python -c \
   'from pathlib import Path; from nora.config import load; print(load(Path("config.toml"), require_secrets=False).memory.base_url)' </dev/null
 
 # 4. Only now close the door. In the honcho compose, service `api`:
 #        ports: ["127.0.0.1:8000:8000"]        # was "8000:8000"
 cd ~/workspace/honcho && docker compose up -d api </dev/null
 ```
+
+For step 3, follow [nora-deploy’s config-only procedure](../.agents/skills/nora-deploy/SKILL.md#3-config-only-change).
 
 Doing step 4 before step 3 shuts nora out of memory: every peer write fails,
 and the failure reads as Honcho being down.

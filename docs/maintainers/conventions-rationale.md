@@ -213,9 +213,11 @@ mistake it produced (2026-08-21: eight full gate runs in one session).
   which the dev checkout WAS the bind-mount source, is what the previous
   wording described; it is superseded, and it mattered in both directions — it
   made one session sequence a deploy around a window that did not exist, and
-  read while standing on `nora-host` it points at the wrong machine. What is
-  unchanged: on `nora-host`'s checkout an edit to `nora/doctrine` IS a deploy (it
-  hot-reloads on mtime), and `config.toml` there is live once its services are recreated.
+  read while standing on `nora-host` it points at the wrong machine. In checkout
+  mode an edit to `nora/doctrine` on `nora-host` was a deploy (it hot-reloaded on
+  mtime). Under the installed release path, doctrine changes reach production
+  only through a release image. `config.toml` there is still live once its
+  services are recreated.
   **`nora/skills` is NOT** — it is `COPY`d into the image (`Dockerfile`) and the
   compose file binds only `nora/doctrine` and `nora/dreamer`, so a skill edit
   needs a rebuild. Editing one on the host the way you would edit doctrine
