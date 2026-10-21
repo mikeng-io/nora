@@ -8,7 +8,7 @@ status: proposed
 timestamp: '2026-10-21'
 governance: operator-directed
 origin: Operator rulings on cross-platform continuity, default platform admission and private computer work.
-revision: 2026-10-21; adds cross-platform transcript, computer and subagents to the first integrated slice.
+revision: '2026-10-21; shipped unit scope is satisfied; owner-map and backup omission/reconciliation repairs remain unbuilt; backup policy archives every regular file.'
 docs:
   - 00-contract.md
   - 01-current-flow.md
@@ -19,9 +19,22 @@ docs:
 open_questions: []
 implementation_status: not-built
 prerequisites:
-  - ../computer-unit-scope/00-contract.md
+  - path: ../computer-unit-scope/00-contract.md
+    status: satisfied
+    evidence: '#164; v6.5.0; operator-verified 2026-10-21 migration; #168 health gate correction'
+    readback: ../computer-unit-scope/01-migration.md
+  - path: 05-cross-platform.md
+    name: full-scope owner-map guard
+    status: unbuilt
+    evidence: 'Shared unit/room/DM allocation guard is specified, not implemented; required before creation or binding and DM enablement.'
+    acceptance: 04-build-and-acceptance.md
+  - path: 04-build-and-acceptance.md
+    name: backup omission and source-to-archive reconciliation repair
+    status: unbuilt
+    evidence: 'Shared unit/DM backup repair is specified, not implemented; required before DM enablement.'
 edges:
-  - {src: 05-cross-platform, dst: ../computer-unit-scope/00-contract.md, rel: depends_on, provenance: operator-directed}
+  - {src: 05-cross-platform, dst: ../computer-unit-scope/00-contract.md, rel: builds_on, provenance: satisfied-pr-164-v6.5.0}
+  - {src: 04-build-and-acceptance, dst: ../computer-unit-scope/01-migration.md, rel: incorporates, provenance: cutover-lessons-pr-168}
   - {src: 05-cross-platform, dst: 00-contract, rel: extends, provenance: operator-directed}
   - {src: 05-cross-platform, dst: 02-storage, rel: extends, provenance: proposed}
   - {src: 05-cross-platform, dst: 03-execution, rel: extends, provenance: proposed}

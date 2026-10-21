@@ -2,7 +2,7 @@
 
 Status: inspected source, not live verification. Original flow inspection:
 2026-10-20; transport/computer seams refreshed against origin/master
-`5856cd9f08cb16f273e7d992e7e9bc42d9606a36`, 2026-10-21. The documentation
+`c5e67becb4c77d50ef376d786b8a1b13648ecc2a`, 2026-10-21. The documentation
 branch adds no runtime changes. The knowledge graph supplied symbol discovery; the source in the checkout was checked because
 graph entries can refer to older worktrees.
 
@@ -74,6 +74,35 @@ boundary for mutations that can become shared.
 currently enumerate shared accounts. They should continue showing the same
 canonical unit account, while private source citations/reasons remain protected
 even when the curated line is visible.
+
+## Shipped computer baseline
+
+Unit scope is implemented by #164, released in v6.5.0; the operator-verified
+live disk migration and #168 corrections are recorded in the
+[runbook](../computer-unit-scope/01-migration.md). Source on the SHA above:
+
+- `nora/domain/computer.py::computer_scope` is the legacy room hash (line 70);
+  `computer_unit_scope` hashes the exact policy name with `unit:` (line 78).
+- `nora/agent/tools.py::build_tool_specs` binds a scope only for group turns
+  (lines 14602–14603); a DM currently has no computer-ready scope. Its job branch
+  uses `job:<id>` (line 14833); other calls use
+  `nora/domain/computer_leases.py::lease_key` (line 48), which always returns
+  `scope:<scope>` independently of session identity.
+- `nora/infra/sql/computer_sessions.py::SqlComputerSessionStore.for_scope`
+  (line 112) selects effective workspace scope, including migrated rows via
+  `_workspace_scope` (line 35). `nora/domain/computer_sessions.py::ComputerSession`
+  carries historical origin separately from effective workspace scope.
+- `nora/engagement/computer_context.py::ComputerContextReader._read` (line 115)
+  resolves a unit and reads its sessions/events/state; it needs a bound DM
+  branch, not an unlisted-room fallback. Tool session listings and browser
+  calls already use the bound computer scope (tools lines 15242 and 15687).
+- `deploy/computer/computerd.py::scope_user` (line 147) and
+  `Computer._ensure_scope` (line 471) provide the existing `c-<12 hex>` owner
+  and 0o700 directory. Scope syntax, inventory and backup/restore compatibility
+  are specified with the proposed DM hash in [cross-platform work](05-cross-platform.md).
+
+No new VM, runtime or session store is required. The admission binding, DM-aware
+context selection, unit-read broker and curated file publication remain DM work.
 
 ## Current rules that remain
 

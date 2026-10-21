@@ -2,18 +2,28 @@ kind: design_index
 bundle: computer-unit-scope
 title: One computer workspace per unit for group rooms
 description: >
-  Proposed replacement of room-scoped computer workspaces with unit-scoped
-  workspaces, including leases, browser state, session reads and lossless migration.
-status: proposed
+  Implemented unit-scoped group workspaces, leases, browser state and session
+  reads; the live room-to-unit disk migration completed on 2026-10-21.
+status: implemented
 timestamp: '2026-10-21'
 governance: operator-directed
 origin: Operator ruling that work must resume across a unit's group transports.
+revision: '2026-10-21; records shipped implementation and live cutover; 00-contract.md retains the original design beneath a current-status banner.'
 docs:
   - 00-contract.md
+  - 01-migration.md
 open_questions: []
-implementation_status: not-built
-decision: decision recorded at merge; no behavioural row in this documentation change
+implementation_status: implemented
+implementation:
+  pull_request: https://github.com/mikeng-io/nora/pull/164
+  merge_commit: 811d6b08c5f31e4bb01013072d1d00c4c6baf474
+  release: v6.5.0
+  release_commit: 34c10198279bada9fe46682b75049e39e976e7e9
+  deployment: 'Komodo production; operator-verified 2026-10-21, not re-probed by this docs revision'
+  migration: '2026-10-21; 3 room workspaces to 2 unit workspaces; 3405 files read as new owner; 6 sessions bound (operator-verified)'
+  runbook_fix: https://github.com/mikeng-io/nora/pull/168
 edges:
   - {src: 00-contract, dst: ../sandbox-runtime/00-design.md, rel: amends, provenance: proposed}
   - {src: 00-contract, dst: ../subagent/00-design.md, rel: amends, provenance: proposed}
-  - {src: 00-contract, dst: ../private-dm/00-contract.md, rel: prerequisite_for, provenance: operator-directed}
+  - {src: 00-contract, dst: 01-migration, rel: sequences, provenance: documented-cutover-pr-164-pr-168}
+  - {src: 00-contract, dst: ../private-dm/00-contract.md, rel: prerequisite_for, provenance: satisfied-pr-164-v6.5.0}

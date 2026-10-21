@@ -1,5 +1,43 @@
 # Offline group computer cutover
 
+Status: implemented by [#164](https://github.com/mikeng-io/nora/pull/164)
+(merge `811d6b08c`), released in
+[v6.5.0](https://github.com/mikeng-io/nora/releases/tag/v6.5.0)
+(`34c101982`) and deployed through Komodo. The operator-verified 2026-10-21
+cutover moved 3 room workspaces into 2 unit workspaces, read 3405 files as their
+new owner and bound 6 sessions. This revision records that supplied live evidence;
+it performs no host access. The original contract remains a historical design.
+[#168](https://github.com/mikeng-io/nora/pull/168) (merge `e6fdf3d86`)
+corrected both health gates below to match the actual single-spaced status line.
+
+## Lessons from the live cutover
+
+The “Also” section of #168 records these operational limits:
+
+- sbx cannot resolve scope users created after sandbox boot. Host-side execution
+  as any unit or future DM user must enter as root and switch inside the VM:
+  `sbx exec -u root nora-computer runuser -u <scope-user> -- …`.
+  Batch owner reads per scope, rather than starting one sbx exec per file.
+- `deploy/computer/archive_check.py::problems` refuses absolute/out-of-scope
+  links: venv interpreter links and Chrome's `browser/*/SingletonSocket` were
+  moved aside, as were stale `.tmp/` sockets refused by
+  `deploy/computer/migrate_unit_scope.py::snapshot`. They were preserved under
+  `/var/lib/computer-unit-migration/`, not silently dropped. This is a shared
+  unit/DM backup follow-up, not fixed by the migration: a workspace venv can
+  make an otherwise completed backup fail its restore check. The required
+  backup preparation and restore proof are in
+  [DM acceptance](../private-dm/04-build-and-acceptance.md#2-deterministic-proof-and-actual-inputs).
+  Keep archive validation fail-closed; never allow arbitrary external links.
+- The executable HOST command below uses `docker run` on Nora's captured
+  immutable image ID for Komodo, with the installed policy and database network.
+  Capture that ID and inspect the network **before stopping Nora**. Checkout
+  mode may instead use `docker compose run` after building reviewed source;
+  in Komodo that command tries to build `nora:latest`, so do not use it there.
+- Each sbx exec leaked roughly ten host gnome-keyring file descriptors. #168
+  records an immediate soft-limit increase from 1024 to 4096 via prlimit; the
+  operator reports a systemd `LimitNOFILE` drop-in as the persistent mitigation.
+  Batching reduces calls; raising the limit does not fix the leak.
+
 These commands are an operator runbook, **not evidence of a live migration**.
 Do not enable the new Nora image until every check below succeeds. Pause the
 Komodo release poll first if installed. Use the installed deployment mode from
@@ -35,6 +73,27 @@ Inside the locked shell, set its own failure flags before running any stage
 set -euo pipefail
 umask 077
 cd "$RUNTIME"
+```
+
+Before stopping admission, capture the existing container's immutable image ID
+and its compose network from `docker inspect nora`. The network is the compose
+project's `<project>_nora` network (`nora_nora` on this host), not the shared
+Honcho or embedder network. Do not guess it from a directory/project name;
+refuse an absent or ambiguous inspected match. Keep these variables in the
+locked shell for the HOST command below. These are non-secret readbacks:
+
+```bash
+IMG=$(docker inspect -f '{{.Image}}' nora)
+NORA_NETWORK=$(docker inspect -f '{{json .NetworkSettings.Networks}}' nora | python3 -c '
+import json,sys
+names=[name for name in json.load(sys.stdin) if name.endswith("_nora")]
+assert len(names)==1, "expected one inspected compose nora network"
+print(names[0])
+')
+test -n "$IMG"
+test -n "$NORA_NETWORK"
+printf '%s\n' "$IMG" > "$D/nora-image-id.txt"
+printf '%s\n' "$NORA_NETWORK" > "$D/nora-network.txt"
 ```
 
 Allow active subagent jobs to finish before stopping Nora. Then stop admission
@@ -142,12 +201,56 @@ plan for explicit operator mapping. No default unit is guessed.
 ```bash
 VM=(sbx exec -u root nora-computer /opt/computerd/venv/bin/python /opt/computerd/migrate_unit_scope.py)
 "${VM[@]}" inventory > "$D/inventory.json"
-HOST=(docker compose run --rm --no-deps -T --user "$(id -u):$(id -g)" -v "$SOURCE:/migration:ro" -v "$D:/migration-state" -e PYTHONPATH=/migration --entrypoint /app/.venv/bin/python nora /migration/scripts/migrate_computer_unit_scope.py)
+# Read only POSTGRES_PASSWORD from the runtime .env. It never resolves the whole
+# compose file, so an unrelated missing required variable cannot abort the step
+# after admission has stopped, and the value is never echoed.
+# Capture its output; never echo the password or turn shell tracing back on.
+set +x
+POSTGRES_PASSWORD=$(python3 - "$RUNTIME/.env" <<'PY'
+import shlex, sys
+vals = []
+for line in open(sys.argv[1], encoding="utf-8"):
+    line = line.strip()
+    if line.startswith("export "):
+        line = line[len("export "):].lstrip()
+    if line.startswith("POSTGRES_PASSWORD="):
+        vals.append(line.split("=", 1)[1])
+if len(vals) != 1:
+    sys.exit("expected exactly one POSTGRES_PASSWORD in the runtime .env")
+parts = shlex.split(vals[0])
+if len(parts) != 1 or not parts[0]:
+    sys.exit("POSTGRES_PASSWORD is empty or malformed")
+print(parts[0])
+PY
+)
+test -n "$POSTGRES_PASSWORD"
+migration_host() {
+    docker run --rm --network "$NORA_NETWORK" --user "$(id -u):$(id -g)" \
+      --env-file <(printf 'DATABASE_URL=postgresql+asyncpg://nora:%s@db/nora\n' "$POSTGRES_PASSWORD") \
+      -e PYTHONPATH=/migration -v "$SOURCE:/migration:ro" -v "$D:/migration-state" \
+      -v "$RUNTIME/policy.toml:/app/policy.toml:ro" \
+      --entrypoint /app/.venv/bin/python "$IMG" \
+      /migration/scripts/migrate_computer_unit_scope.py "$@"
+}
+HOST=(migration_host)
 "${HOST[@]}" plan --policy /app/policy.toml --inventory /migration-state/inventory.json --output /migration-state/host-plan.json --vm-mapping /migration-state/mapping.json
 sbx cp "$D/mapping.json" nora-computer:/var/lib/computer-unit-migration/mapping.json
 "${VM[@]}" plan --input /var/lib/computer-unit-migration/mapping.json > "$D/disk-plan.json"
 sbx cp "$D/disk-plan.json" nora-computer:/var/lib/computer-unit-migration/disk-plan.json
 ```
+
+The function creates the env-file process substitution for each actual Docker
+invocation; storing its descriptor path in an array would close it before later
+HOST calls. The password is supplied through that descriptor, not Docker's
+command-line arguments, a printed config or a persistent secret file. The snippet above reads only that one key from `"$RUNTIME/.env"` and fails closed if it
+is missing, duplicated, empty or malformed. Keep tracing off.
+The service/user/database shape is from `docker-compose.yml` (lines 737–745),
+and `scripts/migrate_computer_unit_scope.py::run` reads DATABASE_URL (line 95).
+
+Checkout-mode secondary option: after building the reviewed source, use
+`docker compose run --rm --no-deps -T` for the nora service with the same source,
+state and policy mounts and Python entry point. That is not the Komodo command;
+Komodo uses the inspected network and pre-stop image ID above.
 
 Inspect both plans before applying. `plan` inventories bytes, hidden paths,
 symlink text, modes and SHA-256 digests without making users or moving files.
@@ -193,12 +296,16 @@ import hashlib,json,subprocess,sys
 plan=json.load(open(sys.argv[1]))
 for old,new in plan['mapping'].items():
     user='c-'+new[:12]
-    for path,entry in plan['sources'][old]['entries'].items():
-        if entry['kind']!='file': continue
-        code='import hashlib,pathlib,sys; assert hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest()==sys.argv[2]'
-        subprocess.run(['sbx','exec','-u',user,'nora-computer','python3','-c',code,
-                        '/workspace/'+new+'/rooms/'+old+'/'+path,entry['sha256']],check=True)
-    subprocess.run(['sbx','exec','-u','c-'+old[:12],'nora-computer',
+    files={p:e['sha256'] for p,e in plan['sources'][old]['entries'].items() if e['kind']=='file'}
+    code="""import hashlib,json,pathlib,sys
+root=pathlib.Path(sys.argv[1])
+for path,digest in json.load(sys.stdin).items():
+    assert hashlib.sha256((root/path).read_bytes()).hexdigest()==digest
+"""
+    subprocess.run(['sbx','exec','-u','root','nora-computer','runuser','-u',user,'--',
+                    'python3','-c',code,'/workspace/'+new+'/rooms/'+old],
+                   input=json.dumps(files),text=True,check=True)
+    subprocess.run(['sbx','exec','-u','root','nora-computer','runuser','-u','c-'+old[:12],'--',
                     'test','!','-r','/workspace/'+new+'/rooms/'+old],check=True)
 print(json.dumps({'plan_sha256':hashlib.sha256(json.dumps(plan,sort_keys=True).encode()).hexdigest(),
                   'owner_readback_verified':True},sort_keys=True))
