@@ -19,5 +19,12 @@
     "old": "if _read(root, [new, \"rooms\", old], ids) != document[\"sources\"][old]:\n            raise ValueError(f\"destination changed: {old}\")",
     "new": "if False:\n            raise ValueError(f\"destination changed: {old}\")",
     "target": "tests/infra/computer/test_unit_scope_migration.py::test_corrupt_destination_never_retires_sources"
+  },
+  {
+    "name": "fresh plans cannot omit a source quarantined before its journal update",
+    "file": "deploy/computer/migrate_unit_scope.py",
+    "old": "        if \".unit-migration-sources\" in os.listdir(fd):\n            quarantine = os.open(\".unit-migration-sources\", DIR, dir_fd=fd)\n            try:\n                if os.listdir(quarantine):\n                    raise ValueError(\"quarantined sources require original plan/journal reconciliation\")\n            finally:\n                os.close(quarantine)\n",
+    "new": "",
+    "target": "tests/infra/computer/test_unit_scope_migration.py::test_interrupted_retirement_blocks_fresh_inventory_and_plan"
   }
 ]

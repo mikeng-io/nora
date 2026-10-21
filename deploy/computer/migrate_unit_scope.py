@@ -76,6 +76,13 @@ def _read(root: Path, parts: list[str], owner: tuple[int, int] | None = None) ->
 def inventory(root: Path) -> list[str]:
     fd = os.open(root, DIR)
     try:
+        if ".unit-migration-sources" in os.listdir(fd):
+            quarantine = os.open(".unit-migration-sources", DIR, dir_fd=fd)
+            try:
+                if os.listdir(quarantine):
+                    raise ValueError("quarantined sources require original plan/journal reconciliation")
+            finally:
+                os.close(quarantine)
         scopes = sorted(s for s in os.listdir(fd) if s not in {".tmux", ".unit-migration-sources"})
         if any(not SCOPE.fullmatch(s) for s in scopes):
             raise ValueError("unrecognised workspace entry; operator mapping required")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import sys
 from pathlib import Path
@@ -75,6 +76,34 @@ def test_corrupt_destination_never_retires_sources(migration, disk):
     with pytest.raises(ValueError, match="destination changed"):
         migration.migrate(root, document, journal, action="retire", isolate=False)
     assert all((root / s / ".hidden").read_bytes() == b"secret\x00bytes" for s in mapping)
+
+
+def test_interrupted_retirement_blocks_fresh_inventory_and_plan(migration, disk, monkeypatch):
+    root, mapping, journal = disk
+    (root / ".unit-migration-sources").mkdir(mode=0o700)
+    document = migration.plan(root, mapping)  # an empty quarantine is harmless
+    migration.migrate(root, document, journal, action="apply", isolate=False)
+    old, unit = next(iter(mapping.items()))
+    rename = os.rename
+
+    def interrupted(*args, **kwargs):
+        rename(*args, **kwargs)
+        raise OSError("interrupted after rename, before journal update")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(migration.os, "rename", interrupted)
+        with pytest.raises(OSError, match="interrupted after rename"):
+            migration.migrate(root, document, journal, action="retire", isolate=False)
+    assert json.loads(journal.read_text())["retired"] == []
+    assert not (root / old).exists()
+    assert migration._read(root, [".unit-migration-sources", old]) == document["sources"][old]
+    assert migration._read(root, [unit, "rooms", old]) == document["sources"][old]
+    remaining = {s: u for s, u in mapping.items() if s != old}
+    with pytest.raises(ValueError, match="quarantined sources require original plan/journal"):
+        migration.inventory(root)
+    with pytest.raises(ValueError, match="quarantined sources require original plan/journal"):
+        migration.plan(root, remaining)
+    assert all((root / s).exists() for s in remaining)
 
 
 def test_unmapped_interrupted_and_conflicting_moves_preserve_sources(migration, disk):

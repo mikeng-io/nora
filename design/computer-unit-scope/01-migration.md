@@ -26,6 +26,14 @@ export SOURCE RUNTIME COMPUTER_SCOPE_SHA D
 export NORA_ENV_FILE="$RUNTIME/.env" NORA_COMPOSE_DIR="$RUNTIME"
 # Enter the locked shell; run the following stages inside it.
 flock -o -E 75 -w 900 /tmp/nora-deploy.lock bash
+```
+
+Inside the locked shell, set its own failure flags before running any stage
+(the parent shell's `set` options are not inherited):
+
+```bash
+set -euo pipefail
+umask 077
 cd "$RUNTIME"
 ```
 
@@ -39,7 +47,6 @@ as completed.
 docker compose stop -t 900 nora presence analytics
 test "$(docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT count(*) FROM compute_jobs WHERE state IN ('"'"'pending'"'"', '"'"'firing'"'"')"')" = 0
 docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > "$D/database.sql"
-"$SOURCE/deploy/computer/nora-computer" backup
 sbx exec -u root nora-computer ps -eo uid,pid,ppid,args > "$D/vm-processes-before.txt"
 systemctl --user stop nora-computer.service
 sbx exec -u root nora-computer mkdir -p /var/lib/computer-unit-migration
@@ -64,6 +71,67 @@ for p in pathlib.Path("/workspace").iterdir():
     if result.returncode not in (0,1): raise SystemExit(result.returncode)
 '
 ```
+
+The normal workspace backup **excludes every scope's browser directory**. After
+the clean termination above, take a separate complete browser archive, including
+hidden files and symlink text, with no browser exclusions. All processes must
+have exited before taking either backup; if they have not, leave admission
+paused and finish draining them. Keep both archives host-private: the browser
+archive contains credentials and is outside the nightly rotation.
+
+```bash
+# Refuse any remaining scope processes before archiving the quiescent disk.
+sbx exec -u root nora-computer /opt/computerd/venv/bin/python -c '
+import sys
+sys.path.insert(0,"/opt/computerd")
+from pathlib import Path
+from migrate_unit_scope import inventory, _drained
+scopes=inventory(Path("/workspace"))
+_drained({s:s for s in scopes})
+'
+WORKSPACE_BACKUP=$(NORA_COMPUTER_BACKUP_DIR="$D/workspace" "$SOURCE/deploy/computer/nora-computer" backup)
+test -n "$WORKSPACE_BACKUP"
+test -f "$WORKSPACE_BACKUP"
+printf '%s\n' "$WORKSPACE_BACKUP" > "$D/workspace-backup-path.txt"
+VM_BACKUP=$(sbx exec -u root nora-computer mktemp -d /tmp/nora-unit-rollback.XXXXXX)
+sbx exec -u root nora-computer bash -c '
+set -euo pipefail
+umask 077
+for d in /workspace/*/browser; do
+    if [ -e "$d" ] || [ -L "$d" ]; then
+        printf "%s\0" "${d#/workspace/}"
+    fi
+done > "$1/browser-paths"
+tar --null -C /workspace -czpf "$1/browser-profiles.tar.gz" -T "$1/browser-paths"
+# GNU tar compares the archived bytes, modes, owners and links with the disk.
+tar -C /workspace -dzf "$1/browser-profiles.tar.gz"
+' bash "$VM_BACKUP"
+BROWSER_SHA=$(sbx exec -u root nora-computer sha256sum "$VM_BACKUP/browser-profiles.tar.gz" | cut -d' ' -f1)
+sbx cp "nora-computer:$VM_BACKUP/browser-profiles.tar.gz" "$D/browser-profiles.tar.gz"
+chmod 600 "$D/browser-profiles.tar.gz"
+printf '%s  browser-profiles.tar.gz\n' "$BROWSER_SHA" > "$D/browser-profiles.tar.gz.sha256"
+(cd "$D" && sha256sum -c browser-profiles.tar.gz.sha256)
+tar -tzf "$D/browser-profiles.tar.gz" > "$D/browser-archive-members.txt"
+# Preflight the EXACT archives that rollback will feed to restore.
+python3 "$SOURCE/deploy/computer/archive_check.py" "$WORKSPACE_BACKUP" > "$D/workspace-restore-check.txt"
+python3 "$SOURCE/deploy/computer/archive_check.py" "$D/browser-profiles.tar.gz" > "$D/browser-restore-check.txt"
+sbx exec -u root nora-computer rm -rf "$VM_BACKUP"
+sbx exec -u root nora-computer test ! -e "$VM_BACKUP"
+```
+
+Any backup, comparison or restore-validator failure aborts before data is copied
+or retired. If a validator refuses an absolute/out-of-room link, retain its
+report and both original archives; do not disable the validator or extract the
+refused archive as root. No migration data has moved, so keep the legacy disk
+and old image/config. The operator must review the named links and preserve
+their original text in private evidence, then explicitly choose whether to
+relocate them off the working disk or replace them with safe in-room links.
+Only after that choice, take new backups and repeat both preflights. If the
+legacy disk itself needs recovery from a refused archive, inspect it in a
+disposable isolated VM as an unprivileged user and recover regular files into
+fresh room directories without following links; recreate reviewed links
+separately. The refused archive is never passed to the privileged restore path.
+On failure, also remove any retained `$VM_BACKUP` after verifying the host copy.
 
 ## Inventory and dry-run
 
@@ -163,10 +231,31 @@ is an error, never an empty success. The root-only
 a cross-filesystem rename. Keep it and the verified disk/database backups.
 
 If interrupted between rename and journal write, reconcile the quarantine entry
-against the plan and database backup before any retry; do not delete or overwrite
-a conflicting destination. A partial copy is intentionally refused. Restore the
-workspace using `nora-computer restore <verified archive> --force` and the saved
-session metadata/database using the deployment recovery procedure, then restore
-the compatible old image/config. Never resume admission with half the mapping
-bound. Keep all backups until successful live readback; restoring a chosen legacy
-browser profile is a separate explicit operator choice.
+against the **original** plan/journal and database backup, verifying its complete
+snapshot and the destination's digests/ownership before any retry. Fresh inventory
+and planning refuse every nonempty quarantine, including a completed retirement;
+they cannot silently omit a source whose journal update was interrupted. Retain
+the original plan and journal for verified repeats. Do not delete or overwrite a
+conflicting destination. A partial copy is intentionally refused.
+
+For rollback, use the two exact archives preflighted above, with admission and
+computerd still stopped. In the same locked shell (or after re-establishing its
+variables and failure flags):
+
+```bash
+WORKSPACE_BACKUP=$(cat "$D/workspace-backup-path.txt")
+python3 "$SOURCE/deploy/computer/archive_check.py" "$WORKSPACE_BACKUP"
+python3 "$SOURCE/deploy/computer/archive_check.py" "$D/browser-profiles.tar.gz"
+(cd "$D" && sha256sum -c browser-profiles.tar.gz.sha256)
+"$SOURCE/deploy/computer/nora-computer" restore "$WORKSPACE_BACKUP" --force
+"$SOURCE/deploy/computer/nora-computer" restore "$D/browser-profiles.tar.gz" --force
+```
+
+Restore the saved session metadata/database using the deployment recovery
+procedure, then restore the compatible old image/config. The second restore
+returns all legacy browser directories to their original scope paths; it does
+not choose a profile for the new unit browser. Quarantine and migrated copies
+remain held while the old mapping is restored; do not expose them through a new
+mapping. Never resume admission with half the mapping bound. Keep all backups
+until successful live readback; restoring a chosen legacy browser profile into
+the new unit browser is a separate explicit operator choice.
