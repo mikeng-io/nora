@@ -53,6 +53,8 @@ statements a Record home and leaves the Notebook to judge.
 
 ## What a message reading holds
 
+> 2026-10-22 (operator brief; proposed): [47 §2](47-character-dimensions.md#2-slot-templates-and-storage) makes each claim structured: about whom, what, event date/interval resolved against message time (unknown stays unknown), optional stated named place or abstract setting, speech act and source message ids. Assertion time and build time stay distinct from event time. This lands in phase 2; the source-tied lifecycle below stays.
+
 A message reading is a **Record item**, kind **message reading**, next to
 the messages it reads. It states what was said:
 
@@ -106,6 +108,8 @@ not turn a Rollup into model-written synthesis.
 
 ## Character is the card; Views answer from everything
 
+> **Decided (operator, 2026-10-22):** [47](47-character-dimensions.md#decided-operator-2026-10-22) records all four rulings and the governing store-what-evidence-supports principle. Named-place claims belong in Character; a code-set line `location` flag only keeps the existing room location setting / DisclosureGuard working on reads. Sensitive categories have no special handling, dedicated-key deduction and told-only fallbacks stand, and the minimal public outbound payload is accepted. Phase 4 implements the decision; Q1–Q5 below remain unchanged.
+
 With statements in readings, a Character entry is again the **bounded
 synthesis Nora sees in every prompt**, with profile, traits and hypotheses.
 It is not the whole memory. The person session reads readings; messages
@@ -126,14 +130,14 @@ forward work is:
 
 1. **This design revision.**
 2. **Message readings on new messages**, in the Record; nothing reads them
-   yet.
+   yet. Claim slots and event-time resolution follow [47](47-character-dimensions.md) in this phase.
 3. **History readings**, about two months; Honcho observations are measurement
    reference only for the first measure, with nothing imported. Decide any
    source-rechecked seed on that result (Q3).
 4. **Character rework and the ADR 0026 rename in ONE migration**: one
    `character-*` writer family (person, room, unit, nora, verdict), reading
    readings and writing typed profile/traits/hypotheses lines. Prose
-   adaptors retire at the switch.
+   adaptors retire at the switch. Trait dimensions, slots, support checks and hypothesis explanation slots from [47](47-character-dimensions.md) land in this phase.
 5. **Answering**: `memory_search` + pre-fetch over readings + Rollup + entries,
    then the gates below.
 6. **The switch** (`[memory_index] enabled`), the operator's call. Honcho's
