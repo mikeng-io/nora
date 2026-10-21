@@ -73,10 +73,11 @@ provenance. Session IDs and audit references remain stable across migration.
 Use `scope:<unit-scope>` for non-job group computer busy checks/acquisition,
 even when a computer session exists. Signal and Discord calls in one unit
 serialize through one key; different session IDs cannot split the lock.
-Preserve current live bounded wait/background refusal and release-in-finally
-semantics in `nora/domain/computer_leases.py::ComputerLeases.acquire`.
-Reads keep their current lease behaviour. This is computer-operation exclusion,
-not serialization of all group conversation turns or long-running OS processes.
+Preserve current live bounded wait/background refusal in
+`nora/domain/computer_leases.py::ComputerLeases.acquire`. Release-in-finally is
+the existing caller-side behaviour, not part of acquire. Reads keep their
+current lease behaviour. This is computer-operation exclusion, not serialization
+of all group conversation turns or long-running OS processes.
 
 Subagent jobs keep their own `job:<id>` lease and project-folder convention.
 They use the launching unit's workspace but results still report to the room
