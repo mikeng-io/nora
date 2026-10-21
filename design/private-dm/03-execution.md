@@ -5,12 +5,13 @@ provenance; this file assigns enforcement to existing components.
 
 ## 1. Identity, admission and audience
 
-Extend `nora/persons_file.py` / `Persons` with optional default_unit and proposed
-per-platform `dm_platforms.<platform>.enabled` (omitted means true); compose
-validation against explicit policy membership. Add `[dm] enabled` default false
-beside the person allowlist. Enabling requires graph/Persona readers and the
-curation write boundary to be wired; never fall back to a legacy Honcho feed.
-Identity/policy are startup-loaded; validate copies and recreate for changes.
+Extend `nora/persons_file.py` (`_PersonEntry`) and `nora/persons.py` (`Persons`)
+with optional default_unit and proposed per-platform
+`dm_platforms.<platform>.enabled` (omitted means true); compose validation
+against explicit policy membership. Add `[dm] enabled` default false beside the
+person allowlist. Enabling requires graph/Persona readers and the curation write
+boundary to be wired; never fall back to a legacy Honcho feed. Identity/policy
+are startup-loaded; validate copies and recreate for changes.
 
 At the pre-audit scope stage, resolve the WhatsApp or Signal sender and direct peer
 independently to the same known person, validate direct target and anchor, then
