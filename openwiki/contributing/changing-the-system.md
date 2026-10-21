@@ -129,7 +129,7 @@ flowchart TD
   F -- "red" --> E
   F -- "green" --> G["Conventional Commit"]
   G --> H["PR from the template"]
-  H --> I["independent review"]
+  H --> I["review at the adaptive level"]
   I --> J["authored merge commit"]
   J --> K["read back master and the running system"]
 ```

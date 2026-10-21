@@ -128,7 +128,8 @@ gh pr view <N> --json baseRefName,headRefOid       # master, and == git rev-pars
   merged tree`, `Closes`; delete what does not apply. Never
   `Summary` or `Test plan`, both retired (still in 11 of the last 140 PRs).
 - Gate section: the real outcome (GATE_RC, pass count, origin/master sha merged
-  in); a pre-existing unrelated failure is named with its issue number.
+  in); a pre-existing unrelated failure is named with its issue number; the
+  review level and, after step 7, the triage line.
 - A deployment that bind-mounts `nora/doctrine` or `nora/dreamer` can hot-reload
   changes on mtime; mention this operator option when relevant.
 - `Closes #N` only when this PR fully resolves it; otherwise `issue #N`.
@@ -141,6 +142,8 @@ gh pr view <N> --json baseRefName,headRefOid       # master, and == git rev-pars
 - Otherwise, a fresh agent that did not write the change: DeepSeek for light,
   Kimi for full, both launched through T3 (lane and effort: `AGENTS.md`).
   Give it the diff (`gh pr diff <N>`) and the PR's claims.
+- Triage every finding (`AGENTS.md` «Triage decides what blocks»). Only a
+  BLOCKER buys another round, and that round reviews the fix diff only.
 - Verify each finding before acting on or dismissing it: open the line, run the
   test, revert the fix and watch the named test fail.
 - A clean review is not a pass: one plus a green gate missed an empty-body read
