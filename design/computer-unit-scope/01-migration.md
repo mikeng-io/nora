@@ -188,8 +188,8 @@ the frozen plan, and prove the old scope user cannot enter the unit directory.
 These commands print only digests/status, never file bodies:
 
 ```bash
-python3 - "$D/disk-plan.json" <<'PY'
-import json,subprocess,sys
+python3 - "$D/disk-plan.json" > "$D/live-owner-readback.json" <<'PY'
+import hashlib,json,subprocess,sys
 plan=json.load(open(sys.argv[1]))
 for old,new in plan['mapping'].items():
     user='c-'+new[:12]
@@ -200,8 +200,29 @@ for old,new in plan['mapping'].items():
                         '/workspace/'+new+'/rooms/'+old+'/'+path,entry['sha256']],check=True)
     subprocess.run(['sbx','exec','-u','c-'+old[:12],'nora-computer',
                     'test','!','-r','/workspace/'+new+'/rooms/'+old],check=True)
-print('owner readback and isolation verified')
+print(json.dumps({'plan_sha256':hashlib.sha256(json.dumps(plan,sort_keys=True).encode()).hexdigest(),
+                  'owner_readback_verified':True},sort_keys=True))
 PY
+```
+
+Only after this live owner/isolation readback succeeds, retire the quarantined
+source copies. This command requires the matching readback receipt and original
+journal, refuses any unaccounted or unverified-retired source, and rechecks every
+destination's digests/ownership before removing anything. It checks all remaining
+quarantine snapshots before deleting them and verifies the directory is removed.
+The original workspace/browser rollback archives and database backup in `$D`
+are retained; this step never deletes them. Keep admission and computerd stopped.
+
+```bash
+sbx cp "$D/live-owner-readback.json" nora-computer:/var/lib/computer-unit-migration/live-owner-readback.json
+"${VM[@]}" retire-quarantine "${ARGS[@]}" --live-readback /var/lib/computer-unit-migration/live-owner-readback.json > "$D/quarantine-retired.json"
+sbx exec -u root nora-computer test ! -e /workspace/.unit-migration-sources
+"${VM[@]}" inventory > "$D/inventory-after-retirement.json"
+# Prove the resulting working disk produces a restorable normal backup.
+POST_MIGRATION_BACKUP=$(NORA_COMPUTER_BACKUP_DIR="$D/post-migration" "$SOURCE/deploy/computer/nora-computer" backup)
+test -n "$POST_MIGRATION_BACKUP"
+test -f "$POST_MIGRATION_BACKUP"
+python3 "$SOURCE/deploy/computer/archive_check.py" "$POST_MIGRATION_BACKUP" > "$D/post-migration-restore-check.txt"
 systemctl --user start nora-computer.service
 "$SOURCE/deploy/computer/nora-computer" status
 ```
@@ -228,21 +249,44 @@ Leave admission and the release poll paused. A conflicting/partial destination,
 changed source, non-drained process, metadata mismatch or wrong digest/ownership
 is an error, never an empty success. The root-only
 `/workspace/.unit-migration-sources/` quarantine stays on the same disk, avoiding
-a cross-filesystem rename. Keep it and the verified disk/database backups.
+a cross-filesystem rename. Keep it until the verified retirement step above;
+always retain the verified disk/database backups.
 
 If interrupted between rename and journal write, reconcile the quarantine entry
 against the **original** plan/journal and database backup, verifying its complete
 snapshot and the destination's digests/ownership before any retry. Fresh inventory
 and planning refuse every nonempty quarantine, including a completed retirement;
-they cannot silently omit a source whose journal update was interrupted. Retain
+they cannot silently omit a source whose journal update was interrupted. After
+successful live readback, `retire-quarantine` clears completed retirement and
+unblocks fresh inventory/planning. Retain
 the original plan and journal for verified repeats. Do not delete or overwrite a
 conflicting destination. A partial copy is intentionally refused.
 
-For rollback, use the two exact archives preflighted above, with admission and
-computerd still stopped. In the same locked shell (or after re-establishing its
-variables and failure flags):
+Rollback covers failure both before computerd starts and after it is running.
+Use the same locked shell, or re-establish the exported variables and acquire
+the same `flock ... bash` shell above; set its own strict flags. Stop admission,
+drain jobs, stop computerd (also safe when already stopped), and terminate and
+verify all scope-user processes before restoring either archive. A failed drain
+aborts rollback with admission paused; never restore under active writers.
 
 ```bash
+set -euo pipefail
+cd "$RUNTIME"
+docker compose stop -t 900 nora presence analytics
+test "$(docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT count(*) FROM compute_jobs WHERE state IN ('"'"'pending'"'"', '"'"'firing'"'"')"')" = 0
+systemctl --user stop nora-computer.service
+sbx exec -u root nora-computer /opt/computerd/venv/bin/python -c '
+import pathlib,pwd,subprocess,sys
+sys.path.insert(0,"/opt/computerd")
+from migrate_unit_scope import SCOPE, _drained
+scopes=[p.name for p in pathlib.Path("/workspace").iterdir() if SCOPE.fullmatch(p.name)]
+for scope in scopes:
+    try: user=pwd.getpwnam("c-"+scope[:12])
+    except KeyError: continue
+    result=subprocess.run(["pkill","-TERM","-u",str(user.pw_uid)])
+    if result.returncode not in (0,1): raise SystemExit(result.returncode)
+_drained({s:s for s in scopes})
+'
 WORKSPACE_BACKUP=$(cat "$D/workspace-backup-path.txt")
 python3 "$SOURCE/deploy/computer/archive_check.py" "$WORKSPACE_BACKUP"
 python3 "$SOURCE/deploy/computer/archive_check.py" "$D/browser-profiles.tar.gz"
@@ -252,7 +296,16 @@ python3 "$SOURCE/deploy/computer/archive_check.py" "$D/browser-profiles.tar.gz"
 ```
 
 Restore the saved session metadata/database using the deployment recovery
-procedure, then restore the compatible old image/config. The second restore
+procedure, then restore the compatible old image/config with Nora admission
+still stopped. Start computerd and read back its status before resuming Nora
+admission through the installed deployment recovery procedure:
+
+```bash
+systemctl --user start nora-computer.service
+"$SOURCE/deploy/computer/nora-computer" status
+```
+
+The second archive restore
 returns all legacy browser directories to their original scope paths; it does
 not choose a profile for the new unit browser. Quarantine and migrated copies
 remain held while the old mapping is restored; do not expose them through a new

@@ -1,6 +1,7 @@
 """Offline, privileged workspace migration. No policy names/room IDs enter the VM.
 
-inventory -> plan -> apply -> verify -> retire. Admission must remain stopped
+inventory -> plan -> apply -> verify -> retire -> retire-quarantine after readback.
+Admission must remain stopped
 through host metadata binding and readback. The plan and receipt live OUTSIDE
 /workspace and must be retained with the backups. Copy first, verify all moves,
 then retire sources separately. A partial copy is a conflict, never overwritten.
@@ -164,7 +165,8 @@ def _drained(mapping: dict[str, str]) -> None:
 
 
 def migrate(
-    root: Path, document: dict, journal: Path, *, action: str, isolate: bool = True
+    root: Path, document: dict, journal: Path, *, action: str, isolate: bool = True,
+    live_readback: dict | None = None,
 ) -> dict:
     """Run only while computerd/Nora admission and old scope processes are stopped."""
     if isolate and os.geteuid() != 0:
@@ -191,6 +193,15 @@ def migrate(
     )
     if state["plan_sha256"] != signature:
         raise ValueError("journal belongs to another plan")
+    if action == "retire-quarantine":
+        if live_readback != {"plan_sha256": signature, "owner_readback_verified": True}:
+            raise ValueError("successful live owner readback for this plan is required")
+        if (
+            not journal.exists()
+            or set(state["completed"]) != set(mapping)
+            or set(state["retired"]) != set(mapping)
+        ):
+            raise ValueError("journal must account for every source as verified and retired")
 
     def save() -> None:
         temporary = journal.with_suffix(".next")
@@ -269,6 +280,31 @@ def migrate(
                 os.close(root_fd)
             state["retired"].append(old)
             save()
+    if action == "retire-quarantine":
+        root_fd = os.open(root, DIR)
+        try:
+            if ".unit-migration-sources" in os.listdir(root_fd):
+                quarantine = os.open(".unit-migration-sources", DIR, dir_fd=root_fd)
+                try:
+                    sources = os.listdir(quarantine)
+                    if set(sources) - set(state["retired"]):
+                        raise ValueError("quarantined source is not accounted for in journal")
+                    # Check every entry before deleting any; destinations were verified above.
+                    for old in sources:
+                        expected = document["sources"][old]
+                        if _read(root, [".unit-migration-sources", old]) != expected:
+                            raise ValueError(f"quarantined source changed: {old}")
+                    for old in sources:
+                        shutil.rmtree(old, dir_fd=quarantine)
+                    if os.listdir(quarantine):
+                        raise ValueError("quarantine retirement incomplete")
+                finally:
+                    os.close(quarantine)
+                os.rmdir(".unit-migration-sources", dir_fd=root_fd)
+            if ".unit-migration-sources" in os.listdir(root_fd):
+                raise ValueError("quarantine retirement incomplete")
+        finally:
+            os.close(root_fd)
     return {
         "plan_sha256": signature,
         "verified": True,
@@ -279,10 +315,13 @@ def migrate(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["inventory", "plan", "apply", "verify", "retire"])
+    parser.add_argument(
+        "action", choices=["inventory", "plan", "apply", "verify", "retire", "retire-quarantine"]
+    )
     parser.add_argument("--root", type=Path, default=Path("/workspace"))
     parser.add_argument("--input", type=Path)
     parser.add_argument("--journal", type=Path)
+    parser.add_argument("--live-readback", type=Path)
     args = parser.parse_args()
     if args.action == "inventory":
         result = inventory(args.root)
@@ -291,7 +330,12 @@ def main() -> None:
         result = (
             plan(args.root, document)
             if args.action == "plan"
-            else migrate(args.root, document, args.journal, action=args.action)
+            else migrate(
+                args.root, document, args.journal, action=args.action,
+                live_readback=(
+                    json.loads(args.live_readback.read_text()) if args.live_readback else None
+                ),
+            )
         )
     print(json.dumps(result, sort_keys=True))
 

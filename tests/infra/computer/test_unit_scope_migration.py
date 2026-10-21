@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -104,6 +105,95 @@ def test_interrupted_retirement_blocks_fresh_inventory_and_plan(migration, disk,
     with pytest.raises(ValueError, match="quarantined sources require original plan/journal"):
         migration.plan(root, remaining)
     assert all((root / s).exists() for s in remaining)
+
+
+def test_retire_quarantine_unblocks_inventory_and_produces_a_restorable_backup(migration, disk):
+    root, mapping, journal = disk
+    document = migration.plan(root, mapping)
+    migration.migrate(root, document, journal, action="apply", isolate=False)
+    retired = migration.migrate(root, document, journal, action="retire", isolate=False)
+    readback = {"plan_sha256": retired["plan_sha256"], "owner_readback_verified": True}
+    # Full rollback archives live outside /workspace and must survive cleanup.
+    backups = [journal.parent / name for name in ("workspace.tar.gz", "browser-profiles.tar.gz")]
+    for backup in backups:
+        backup.write_bytes(b"retained rollback archive")
+    for _ in range(2):  # a verified cleanup repeat is harmless
+        result = migration.migrate(
+            root, document, journal, action="retire-quarantine", isolate=False,
+            live_readback=readback,
+        )
+        assert result["verified"] is True
+        assert not (root / ".unit-migration-sources").exists()
+        assert migration.inventory(root) == sorted(set(mapping.values()))
+    unit = next(iter(mapping.values()))
+    assert unit in migration.plan(root, {unit: computer_unit_scope("new-team")})["sources"]
+    for old, unit in mapping.items():
+        assert migration._read(root, [unit, "rooms", old]) == document["sources"][old]
+    assert all(backup.read_bytes() == b"retained rollback archive" for backup in backups)
+    # Match backup_in_vm: exclude only top-level browser profiles and .tmux.
+    (root / unit / "browser").mkdir()
+    (root / unit / "browser/live-profile").write_bytes(b"excluded")
+    (root / ".tmux").mkdir(exist_ok=True)
+    (root / ".tmux/socket-placeholder").write_bytes(b"excluded")
+    archive = journal.parent / "post-migration.tar.gz"
+    subprocess.run(  # noqa: S603 - fixed tar argv on a synthetic disk
+        ["tar", "--exclude=./.tmux", f"--exclude=./{unit}/browser",
+         "-C", str(root), "-czf", str(archive), "."],
+        env={**os.environ, "COPYFILE_DISABLE": "1"},  # no macOS metadata in the Linux shape
+        check=True,
+    )
+    checked = subprocess.run(  # noqa: S603 - repo validator, synthetic archive
+        [sys.executable, str(ROOT / "deploy/computer/archive_check.py"), str(archive)],
+        capture_output=True, text=True,
+    )
+    assert checked.returncode == 0, checked.stdout + checked.stderr
+
+
+@pytest.mark.parametrize(
+    ("failure", "reason"),
+    [
+        ("unaccounted-item", "not accounted for in journal"),
+        ("incomplete-journal", "journal must account for every source"),
+        ("unverified-journal", "journal must account for every source"),
+        ("missing-readback", "successful live owner readback"),
+        ("wrong-plan-readback", "successful live owner readback"),
+        ("changed-destination", "destination changed"),
+        ("changed-quarantine", "quarantined source changed"),
+    ],
+)
+def test_retire_quarantine_refuses_without_complete_verified_accounting(
+    migration, disk, failure, reason
+):
+    root, mapping, journal = disk
+    document = migration.plan(root, mapping)
+    migration.migrate(root, document, journal, action="apply", isolate=False)
+    retired = migration.migrate(root, document, journal, action="retire", isolate=False)
+    readback = {"plan_sha256": retired["plan_sha256"], "owner_readback_verified": True}
+    quarantine = root / ".unit-migration-sources"
+    old, unit = next(iter(mapping.items()))
+    state = json.loads(journal.read_text())
+    if failure == "unaccounted-item":
+        (quarantine / ("f" * 32)).mkdir()
+    elif failure == "incomplete-journal":
+        state["retired"].remove(old)
+    elif failure == "unverified-journal":
+        state["completed"].remove(old)
+    elif failure == "missing-readback":
+        readback = None
+    elif failure == "wrong-plan-readback":
+        readback["plan_sha256"] = "another plan"
+    elif failure == "changed-destination":
+        (root / unit / "rooms" / old / "report.txt").write_bytes(b"changed")
+    elif failure == "changed-quarantine":
+        (quarantine / old / "report.txt").write_bytes(b"changed")
+    journal.write_text(json.dumps(state))
+    before = migration._read(root, [quarantine.name])
+    with pytest.raises(ValueError, match=reason):
+        migration.migrate(
+            root, document, journal, action="retire-quarantine", isolate=False,
+            live_readback=readback,
+        )
+    assert migration._read(root, [quarantine.name]) == before
 
 
 def test_unmapped_interrupted_and_conflicting_moves_preserve_sources(migration, disk):
