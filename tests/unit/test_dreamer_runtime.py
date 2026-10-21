@@ -1083,7 +1083,7 @@ def test_a_scope_keyed_grant_for_an_unknown_room_falls_back_closed_and_says_so(
         )
 
     assert metrics.get(
-        "nora_dream_home_room_missing_total", adaptor="culture", unit="",
+        "nora_dream_home_room_missing_total", adaptor="culture",
     ) == 1
     said = [r.getMessage() for r in caplog.records]
     assert any("'g-unknown'" in m and "scope" in m for m in said), said
@@ -1158,11 +1158,8 @@ def test_the_missing_home_room_is_counted_every_pass_and_logged_once(caplog):
         )
 
     assert metrics.get(
-        "nora_dream_home_room_missing_total", adaptor="proactive", unit="wedding",
-    ) == 3
-    assert metrics.get(
-        "nora_dream_home_room_missing_total", adaptor="proactive", unit="friends",
-    ) == 1
+        "nora_dream_home_room_missing_total", adaptor="proactive",
+    ) == 4
     said = [r.getMessage() for r in caplog.records if "names none" in r.getMessage()]
     assert len(said) == 2, "once per unit, not once per pass"
     assert any("'wedding'" in m for m in said)

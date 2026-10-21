@@ -704,8 +704,8 @@ class MobilityRollup:
             return anomalous
         except Exception:
             log.exception(
-                "place/corridor derivation failed for %s — the fold is committed; "
-                "the next run derives again", subject_id,
+                "place/corridor derivation failed — the fold is committed; "
+                "the next run derives again",
             )
             return []
 

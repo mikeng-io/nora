@@ -11,7 +11,7 @@ tests:
   # rule still fires 2h + 15m after the last fix.
   - interval: 1m
     input_series:
-      - series: 'nora_presence_fixes_total{job="presence",circle="c1"}'
+      - series: 'nora_presence_fixes_total{job="presence",wire_state="live"}'
         values: '0+5x60 0x240'
     alert_rule_test:
       - eval_time: 150m
@@ -33,7 +33,7 @@ tests:
   # restart in the middle: never fires.
   - interval: 30m
     input_series:
-      - series: 'nora_presence_fixes_total{job="presence",circle="c1"}'
+      - series: 'nora_presence_fixes_total{job="presence",wire_state="live"}'
         values: '0 1 2 3 4 5 6 0 1 2 3 4 5 6 7 8 9'
     alert_rule_test:
       - eval_time: 4h

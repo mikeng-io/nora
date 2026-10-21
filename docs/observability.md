@@ -630,3 +630,28 @@ Recorded here so they are findings rather than surprises.
   up next. `design/13`'s native redaction lever governs this content too
   (`Tracer._redact` runs on both the Agent path and this raw-span path), so
   turning it on would cover both at once.
+
+### Metric identity boundary
+
+Prometheus labels contain operational categories only. Person/account ids, room
+ids or labels, circle ids, unit names and Dreamer scope keys stay out of the
+registry. Counters sum across these dimensions, preserving kind, outcome,
+platform and other operational categories. No metric names were removed.
+
+Age gauges (`nora_analytics_rollup_age_seconds`,
+`nora_presence_last_collection_age_seconds`, `nora_stimulus_pending_age_seconds`)
+export `aggregate="max"`; `nora_presence_circle_subset_ok` exports the minimum
+check per platform with `aggregate="min"`. Notebook entries and music playback
+counts sum the last reading per entity with `aggregate="sum"`. The fixed
+aggregate label also preserves absence before any measurement. Private keys
+used to replace prior readings remain only in process memory.
+
+Analytics also exports `nora_analytics_subjects` and
+`nora_analytics_rollup_failures_total` (failed subject attempts, including all
+subjects when a run raises). MusicWedged uses `nora_music_wedged_guilds > 0`:
+compare playback per guild before summing, so a healthy guild cannot mask a
+failure. Unknown polls are excluded and keep their separate unreadable alert.
+Controller failure reasons are free text and are dropped from labels.
+Other music and presence alert thresholds are unchanged; counts now cover the
+whole process. No checked-in Grafana dashboard or Alertmanager route selects
+the removed labels. Per-subject metric diagnosis is deliberately dropped.

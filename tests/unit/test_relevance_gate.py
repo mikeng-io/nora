@@ -500,31 +500,18 @@ def test_every_declared_error_kind_is_reachable():
         ),
     ],
 )
-async def test_every_counted_path_names_the_room_it_refused(
+async def test_every_counted_path_aggregates_without_exporting_the_room(
     client, records, series, labels,
 ):
-    """A verdict
-    that cannot be joined to a room is a refusal nothing can grade.
-
-    EVERY path, not the happy one, and that is the point — `Metrics.inc`
-    fills a declared label the caller omitted with `""` rather than raising
-    (`nora.obs.metrics._full_labels`), so a missed emit site produces a series
-    that LOOKS attributable and is not. Reading the label back per path is the
-    only thing that fails when someone adds a ninth path and forgets.
-
-    Asserted as `== 1` against the exact id — `Metrics.get` sums over
-    unspecified dimensions, so an assertion that omitted `conversation_id`
-    would pass against a series labelled `""` and prove nothing.
-    """
+    """Every counted path preserves its outcome without exporting a room id."""
     metrics = Metrics()
     kw = {"metrics": metrics}
     if records is not None:
         kw["records"] = records
     gate = _gate(client, **kw)
     await gate.decide(platform="discord", conversation_id="g/42")
-    assert metrics.get(series, platform="discord", conversation_id="g/42", **labels) == 1
-    # And nothing landed on the unattributable series.
-    assert metrics.get(series, conversation_id="") == 0
+    assert metrics.get(series, platform="discord", **labels) == 1
+    assert "g/42" not in metrics.render()
 
 
 async def test_the_gate_cannot_count_without_naming_the_room():

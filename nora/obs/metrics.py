@@ -19,7 +19,7 @@ dropped or rejected).
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Mapping
 
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, generate_latest
 
@@ -33,7 +33,22 @@ from .metric_specs import (
 __all__ = ["DECLARED_NAMES", "Metrics"]
 
 
-def _obs_key(name: str, labels: dict[str, object]) -> tuple[str, tuple[tuple[str, str], ...]]:
+# Private keys stay in process, never in a CollectorRegistry. Each gauge reduces
+# the latest reading per configured entity, so a healthy entity cannot overwrite
+# a failing one. The fixed aggregate label preserves ABSENT before the first read.
+_PRIVATE_GAUGES: dict[str, tuple[tuple[str, ...], Callable[[Iterable[float]], float]]] = {
+    "nora_analytics_rollup_age_seconds": (("subject",), max),
+    "nora_presence_last_collection_age_seconds": (("circle",), max),
+    "nora_presence_circle_subset_ok": (("circle", "conversation"), min),
+    "nora_note_index_entries": (("unit",), sum),
+    "nora_stimulus_pending_age_seconds": (("unit",), max),
+    "nora_music_expected_playing": (("guild_id",), sum),
+    "nora_music_controller_playing": (("guild_id",), sum),
+    "nora_music_wedged_guilds": (("guild_id",), sum),
+}
+
+
+def _obs_key(name: str, labels: Mapping[str, object]) -> tuple[str, tuple[tuple[str, str], ...]]:
     return (name, tuple(sorted((k, str(v)) for k, v in labels.items())))
 
 
@@ -81,6 +96,7 @@ class Metrics:
             )
             for spec in _HISTOGRAMS
         }
+        self._private_gauges: dict[tuple, dict[tuple, float]] = defaultdict(dict)
         # Raw observations, kept so tests can read back exact recorded values
         # (p95 assertions, elapsed-time comparisons); prometheus-client's
         # Histogram only tracks bucket counts + sum. Never rendered by `render()`.
@@ -105,6 +121,13 @@ class Metrics:
             gauge.inc(value)
 
     def gauge(self, name: str, value: float, **labels: object) -> None:
+        if name in _PRIVATE_GAUGES:
+            private_names, reduce = _PRIVATE_GAUGES[name]
+            labels["aggregate"] = reduce.__name__
+            public = _full_labels(self._gauge_labels[name], labels)
+            readings = self._private_gauges[_obs_key(name, public)]
+            readings[tuple(str(labels.get(k, "")) for k in private_names)] = value
+            value = reduce(readings.values())
         gauge = self._gauges[name]
         labelnames = self._gauge_labels[name]
         if labelnames:

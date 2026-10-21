@@ -1,0 +1,29 @@
+rule_files:
+- ../rules/nora.yml
+evaluation_interval: 1m
+tests:
+- interval: 1m
+  input_series:
+  - series: nora_music_wedged_guilds{aggregate="sum"}
+    values: 1x5
+  alert_rule_test:
+  - eval_time: 3m
+    alertname: MusicWedged
+    exp_alerts:
+    - exp_labels:
+        aggregate: sum
+        severity: critical
+      exp_annotations:
+        summary: nora thinks music is playing, the controller disagrees
+        description: "nora holds a current track and the audio controller reports no audio moving\
+          \ (status not playing, position frozen, or autopaused). CAPTURE THE SIDECAR LOG BEFORE\
+          \ RESTARTING ANYTHING \u2014 every previous occurrence was diagnosed from nothing because\
+          \ the restart that restored service destroyed the evidence."
+- interval: 1m
+  input_series:
+  - series: nora_music_wedged_guilds{aggregate="sum"}
+    values: '0x5'
+  alert_rule_test:
+  - eval_time: 3m
+    alertname: MusicWedged
+    exp_alerts: []

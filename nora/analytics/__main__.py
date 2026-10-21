@@ -99,6 +99,8 @@ async def _tick(
         failed = set(report.failed)
     except Exception:
         log.exception("analytics rollup run failed — retried next tick")
+    deps.metrics.gauge("nora_analytics_subjects", len(deps.subjects))
+    deps.metrics.inc("nora_analytics_rollup_failures_total", len(failed))
     for subject in deps.subjects:
         sid = subject.subject_id
         first_seen.setdefault(sid, now_s)

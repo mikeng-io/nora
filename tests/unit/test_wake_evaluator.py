@@ -146,7 +146,7 @@ async def test_a_rollup_stimulus_alone_never_wakes_the_unit():
         clock.advance(3 * POLICY.max_age_seconds)
         assert await ev.tick() == []
     assert store.wakes == []
-    assert metrics.get("nora_stimulus_pending_age_seconds", unit="nora") == 0.0
+    assert metrics.get("nora_stimulus_pending_age_seconds") == 0.0
     assert [k for _, k in await _pending(store, clock=clock)] == ["rollup"] * 6
 
 
@@ -663,7 +663,7 @@ async def test_an_inert_time_stimulus_does_not_age_the_backlog_gauge():
     ev, store, clock = _floor_setup(floors_ready=False)
     await _time_floor(store, clock, hours_old=5)
     assert await ev.tick() == []                          # nothing woke: it IS inert
-    assert ev._metrics.get(AGE, unit="nora") == 0.0
+    assert ev._metrics.get(AGE) == 0.0
 
 
 async def test_the_backlog_gauge_still_counts_a_time_stimulus_once_its_kind_is_ready():
@@ -672,7 +672,7 @@ async def test_the_backlog_gauge_still_counts_a_time_stimulus_once_its_kind_is_r
     ev, store, clock = _floor_setup(floors_ready=True)
     await _time_floor(store, clock, hours_old=5)
     await ev.tick()
-    assert ev._metrics.get(AGE, unit="nora") == 5 * 3600
+    assert ev._metrics.get(AGE) == 5 * 3600
 
 
 async def test_the_backlog_gauge_skips_the_inert_kind_and_keeps_the_next_oldest():
@@ -683,7 +683,7 @@ async def test_the_backlog_gauge_skips_the_inert_kind_and_keeps_the_next_oldest(
         at_ms=clock.ms - 3_600_000, platform="signal", conversation_id="g1",
     ), recorded_at_ms=clock.ms - 3_600_000)
     await ev.tick()
-    assert ev._metrics.get(AGE, unit="nora") == 3600
+    assert ev._metrics.get(AGE) == 3600
 
 
 def test_the_inert_kinds_are_time_only_while_tracked_and_no_skill_ships():

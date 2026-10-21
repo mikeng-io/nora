@@ -553,14 +553,11 @@ async def test_the_index_gauge_reports_how_many_notes_she_was_actually_shown():
     # Bound to what reached the context, not to a number written beside it: a
     # gauge that agreed with a constant while `ctx.notes` disagreed would be
     # measuring the test.
-    assert metrics.get("nora_note_index_entries", unit="ridgeline") == len(ctx.notes) == 3
+    assert metrics.get("nora_note_index_entries") == len(ctx.notes) == 3
 
 
 async def test_the_index_gauge_is_labelled_so_two_units_do_not_overwrite():
-    """The label is the reason this gauge means anything on this deployment.
-    `friends` and `ridgeline` are separate notebooks; unlabelled, whichever room
-    tagged last would own the reading and the exported number would mean «the
-    size of the notebook consulted most recently»."""
+    """Notebook sizes sum across units, rather than the last room winning."""
     store = FakeNoteStore({
         "ridgeline": (_note("n1", "ridgeline", "9 Sept dinner"),),
         "friends": tuple(_note(f"f{i}", "friends", f"note {i}") for i in range(4)),
@@ -576,8 +573,7 @@ async def test_the_index_gauge_is_labelled_so_two_units_do_not_overwrite():
         await assembler.assemble(
             request=_request(_msg(conversation_id=conversation_id)))
 
-    assert metrics.get("nora_note_index_entries", unit="ridgeline") == 1
-    assert metrics.get("nora_note_index_entries", unit="friends") == 4
+    assert metrics.get("nora_note_index_entries") == 5
 
 
 async def test_an_empty_notebook_reads_zero_rather_than_going_absent():
@@ -597,8 +593,8 @@ async def test_an_empty_notebook_reads_zero_rather_than_going_absent():
     # `get(...) == 0` is true of a gauge that was never published and cannot
     # tell this state from the one the test below covers. Asserting membership
     # in `snapshot()` is what makes the zero a measurement.
-    assert ("nora_note_index_entries", (("unit", "ridgeline"),)) in metrics.snapshot()
-    assert metrics.get("nora_note_index_entries", unit="ridgeline") == 0
+    assert ("nora_note_index_entries", (("aggregate", "sum"),)) in metrics.snapshot()
+    assert metrics.get("nora_note_index_entries") == 0
 
 
 async def test_a_failed_read_leaves_the_gauge_absent_rather_than_zero():
@@ -617,7 +613,7 @@ async def test_a_failed_read_leaves_the_gauge_absent_rather_than_zero():
 
     await assembler.assemble(request=_request())
 
-    assert ("nora_note_index_entries", (("unit", "ridgeline"),)) not in metrics.snapshot()
+    assert ("nora_note_index_entries", (("aggregate", "sum"),)) not in metrics.snapshot()
     assert metrics.get("nora_errors_total", stage="notes", platform="signal") == 1
 
 

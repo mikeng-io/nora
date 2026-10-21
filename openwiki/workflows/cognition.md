@@ -565,7 +565,7 @@ The signals that answer "why did she not look at this" ([observability](../opera
 | signal | what it says |
 |---|---|
 | `nora_stimulus_total{kind,cue}` | a producer appended a row; flat means the trigger never held |
-| `nora_stimulus_pending_age_seconds{unit}` | the oldest stimulus that *could* wake the unit — inert and riding kinds excluded, 0 when none is pending; absent until the evaluator's first tick |
+| `nora_stimulus_pending_age_seconds{aggregate="max"}` | maximum age across units of a stimulus that *could* wake one — inert and riding kinds excluded, 0 when none is pending; absent until the evaluator's first tick |
 | `nora_cognition_wake_total{reason,mode}`, `nora_cognition_wake_deferred_total{brake}` | a wake was recorded, or a trigger was held by `single_flight`, `cooldown`, `backoff` or `concurrency` |
 | `nora_cognition_session_total{mode}`, `nora_cognition_session_ended_total{outcome}`, `nora_cognition_session_skipped_total{reason}` | a session started, ended `closed`/`failed`/`timeout`/`cancelled`, or was skipped (no home room, empty agenda) |
 | `nora_cognition_session_limit_total{limit}`, `nora_cognition_unit_tokens_total{unit_kind}` | which bound cut a loop, and what the unit's agenda cost by kind |

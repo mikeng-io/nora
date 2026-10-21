@@ -591,7 +591,7 @@ are separate and live with their feature.
 
 There is no health command and no cognition alert (removed 2026-10-03). Read the rows: `cognition_wake_outcome` (outcome,
 cause, detail per wake), `cognition_session`, and `stimulus` for what waits. The gauge
-`nora_stimulus_pending_age_seconds{unit}` is the oldest stimulus that could wake a unit.
+`nora_stimulus_pending_age_seconds{aggregate="max"}` is the maximum age across units of a stimulus that could wake one.
 Use `/app/.venv/bin/python`, not `uv run`, in the container: `uv run` installs the dev
 extras over the live venv.
 

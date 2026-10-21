@@ -63,7 +63,7 @@ groups:
         for: 10m
         labels: { severity: critical }
         annotations:
-          summary: "presence has not collected circle {{ $labels.circle }} for {{ $value | humanizeDuration }}"
+          summary: "presence has at least one circle not collected for {{ $value | humanizeDuration }}"
           description: >-
             Everything Nora says about where people are or have been stops at
             the last successful read. Check the presence container log for
@@ -179,17 +179,15 @@ groups:
       # a wedged controller sat green for days while a person in the room was
       # the only thing that noticed.
       #
-      # `unless` rather than a subtraction: a guild whose controller gauge is
-      # ABSENT (nora could not read it — see UNKNOWN) must not satisfy this.
-      # Unreadable is not the same claim as not-playing, and treating it as
-      # one is the fail-open reading the whole watch exists to remove; the
-      # MusicControllerUnreadable rule below covers that case separately.
+      # Pair each guild's belief and measured verdict IN PROCESS, then count
+      # failures. Comparing summed beliefs/controllers would let a healthy guild
+      # mask a wedged one. Unknown polls are excluded and alerted separately.
       - alert: MusicWedged
-        expr: (nora_music_expected_playing == 1) unless (nora_music_controller_playing == 1)
+        expr: nora_music_wedged_guilds > 0
         for: 2m
         labels: { severity: critical }
         annotations:
-          summary: "guild {{ $labels.guild_id }}: nora thinks music is playing, the controller disagrees"
+          summary: "nora thinks music is playing, the controller disagrees"
           description: >-
             nora holds a current track and the audio controller reports no audio
             moving (status not playing, position frozen, or autopaused).
@@ -204,7 +202,7 @@ groups:
         for: 0m
         labels: { severity: warning }
         annotations:
-          summary: "guild {{ $labels.guild_id }}: the audio controller could not be read for 10 minutes"
+          summary: "the audio controller could not be read for 10 minutes"
 
       # The loud failure the silent one hides behind. A track that keeps
       # failing to start burns the queue two retries at a time.
@@ -213,7 +211,7 @@ groups:
         for: 0m
         labels: { severity: warning }
         annotations:
-          summary: "guild {{ $labels.guild_id }}: 3+ music streams failed in 15 minutes (reason {{ $labels.reason }})"
+          summary: "3+ music streams failed in 15 minutes"
 
   - name: computer
     rules:

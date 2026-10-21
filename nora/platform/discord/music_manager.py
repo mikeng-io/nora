@@ -900,6 +900,7 @@ class MusicPlayerManager:
                 # Drop the belief to 0 rather than leaving the last value
                 # standing: a stale 1 here would keep the divergence alert
                 # firing forever after a track legitimately ended.
+                self._metrics.gauge("nora_music_wedged_guilds", 0.0, guild_id=guild_id)
                 self._metrics.gauge("nora_music_expected_playing", 0.0, guild_id=guild_id)
                 self._metrics.gauge("nora_music_controller_playing", 0.0, guild_id=guild_id)
             return PlaybackVerdict.OK
@@ -921,24 +922,24 @@ class MusicPlayerManager:
         return verdict
 
     def _record_liveness(self, guild_id: str, verdict: PlaybackVerdict) -> None:
-        """The two series an alert can be written against.
+        """Count measured divergence before aggregating guilds.
 
-        `expected` is nora's belief; `controller` is what the controller
-        reports. Their DIVERGENCE is the failure itself, not a proxy for it —
-        which is why both are published rather than one derived 'healthy'
-        flag that would have to decide, in code, what the alert should
-        decide.
-
-        On UNKNOWN the controller gauge is NOT set to 0. A gauge that could
-        not be measured must not assert a value: 0 would read as 'definitely
-        not playing' and is exactly the fail-open reading this whole watch
-        exists to remove."""
+        Belief and controller counts remain useful totals, but cannot be
+        compared to detect a single wedged guild. Unknown clears this guild's
+        measured-wedged flag and increments the separate unreadable counter;
+        it leaves the last controller measurement unchanged.
+        """
         metrics = self._metrics
         if metrics is None:
             return
         try:
             metrics.inc("nora_music_liveness_total", guild_id=guild_id, verdict=verdict.value)
             metrics.gauge("nora_music_expected_playing", 1.0, guild_id=guild_id)
+            metrics.gauge(
+                "nora_music_wedged_guilds",
+                float(verdict in (PlaybackVerdict.WEDGED, PlaybackVerdict.ENDED)),
+                guild_id=guild_id,
+            )
             if verdict is PlaybackVerdict.UNKNOWN:
                 return
             playing = 1.0 if verdict in (PlaybackVerdict.OK, PlaybackVerdict.PAUSED) else 0.0

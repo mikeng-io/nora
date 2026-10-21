@@ -106,5 +106,5 @@ def test_the_rules_file_passes_promtool_check() -> None:
 
 
 def test_the_computer_rules_pass_their_promtool_cases() -> None:
-    result = _promtool("test", "rules", "computer.test.yml", "presence.test.yml")
+    result = _promtool("test", "rules", "computer.test.yml", "presence.test.yml", "music.test.yml")
     assert result.returncode == 0, result.stdout + result.stderr

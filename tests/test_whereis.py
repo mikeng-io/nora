@@ -469,7 +469,7 @@ def test_the_startup_invariant_holds_when_group_is_a_subset_of_the_circle():
         metrics=metrics,
     )
     assert ok is True
-    assert metrics.get("nora_presence_circle_subset_ok", circle=CIRCLE_ID) == 1.0
+    assert metrics.get("nora_presence_circle_subset_ok") == 1.0
 
 
 def test_the_startup_invariant_alarms_the_day_group_is_not_a_subset():
@@ -480,7 +480,7 @@ def test_the_startup_invariant_alarms_the_day_group_is_not_a_subset():
         metrics=metrics,
     )
     assert ok is False
-    assert metrics.get("nora_presence_circle_subset_ok", circle=CIRCLE_ID) == 0.0
+    assert metrics.get("nora_presence_circle_subset_ok") == 0.0
 
 
 # ── the DEC-59 wiring: `whereis` as a native tool over this seam ─────────────

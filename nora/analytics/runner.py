@@ -109,7 +109,7 @@ class RollupRunner:
         )
         folds: dict[str, FoldRun] = {}
         failed: list[str] = []
-        for subject in self._subjects:
+        for ordinal, subject in enumerate(self._subjects, start=1):
             try:
                 folds[subject.subject_id] = await rollup.run_once(
                     subject_id=subject.subject_id, person_ids=list(subject.person_ids),
@@ -119,7 +119,7 @@ class RollupRunner:
             except Exception:
                 # Isolated: this person's fold did not commit, so the next
                 # run folds the same events again from the same state.
-                log.exception("presence fold failed for %s", subject.subject_id)
+                log.exception("presence fold failed for subject #%d", ordinal)
                 failed.append(subject.subject_id)
         mark = await self._rollups.mark(through_ms=through_ms)
         anomalous: dict[str, Sequence[Stay]] = {
@@ -156,7 +156,7 @@ class RollupRunner:
                 build_id=build_id, through_ms=through_ms, raise_stimuli=False,
             )
             if report.failed:
-                raise RuntimeError(f"folds failed for {list(report.failed)}")
+                raise RuntimeError(f"folds failed for {len(report.failed)} subject(s)")
             if switch:
                 # Inside the try: a switch that fails rolls back whole, and
                 # the build it leaves `building` is abandoned, not orphaned.

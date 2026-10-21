@@ -284,7 +284,7 @@ Owned by [cognition](../workflows/cognition.md). The rows are `cognition_wake_ou
 | the session could not finish inside its bounds | `nora_cognition_session_limit_total{limit}` and `nora_cognition_session_ended_total{outcome="failed"}` | a failed wake returns its stimuli to pending and applies the failure backoff |
 | the unit stopped re-waking on input it cannot process | `nora_cognition_stimuli_struck_total{reason="failed"}` | code strikes the stimuli a unit failed `max_consecutive_failures` sessions in a row |
 | a restart ate the session | `nora_cognition_wake_reclaimed_total` above 0 at start, and `cognition_wake_outcome` rows with `outcome = 'cancelled'` and a `restart` detail | a `cancelled` outcome neither counts toward the backoff nor strikes a stimulus |
-| there is a backlog nobody is draining | `nora_stimulus_pending_age_seconds{unit}` climbing; `0` means nothing pending, and the series is **absent** until the evaluator's first tick | |
+| there is a backlog nobody is draining | `nora_stimulus_pending_age_seconds{aggregate="max"}` climbing; `0` means nothing pending, and the series is **absent** until the evaluator's first tick | |
 
 `nora_cognition_wake_total{reason,mode}` is the positive control: it names the reason a wake
 did fire (`settled`, `strong_cue`, `batch`, `max_age`, `time`, `self`). Without it, "no wake"

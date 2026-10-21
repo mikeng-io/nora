@@ -320,7 +320,7 @@ rather than a topic. Procedure stays where §5.3 put it: in the tool description
 and in the latch's own veto.
 
 **It is falsifiable now, which it was not before §6.1.**
-`nora_note_index_entries{unit}` leaving `0` is the fix working. Staying at
+`nora_note_index_entries{aggregate="sum"}` leaving `0` is the fix working. Staying at
 `0` while `nora_note_candidates_total` climbs is *she recognises and does not
 act* — the inert-skill failure, visible for the first time. If the line does not
 move the gauge, the empty-state block becomes the SECOND experiment rather than
@@ -388,15 +388,14 @@ branches were appending to the same numbered list.)
 |---|---|
 | `nora_note_candidates_total{trigger}` | `nora.agent.tools`, inside `record_miss`'s `else` — it counts a miss that was **written**, so the series reconciles against `note_candidate`'s row count instead of attesting to itself |
 | `nora_note_update_refused_total{reason}` | `nora.agent.guards` (`not_read`) and `nora.agent.tools` (`title_moved`, `stale_head`) |
-| `nora_note_index_entries{unit}` | `nora.engagement.context::TranscriptInjection._notes` |
+| `nora_note_index_entries{aggregate="sum"}` | `nora.engagement.context::TranscriptInjection._notes` |
 
 **Two things the spec named but did not decide.**
 
-**The gauge is labelled by UNIT.** The spec's name is unlabelled, and on
-this deployment that makes it meaningless: `friends` and `ridgeline` are separate
-notebooks (§3/DEC-105), so whichever room tagged last would own the reading and
-the exported number would mean *"the size of whichever notebook was consulted
-most recently"*. Same argument as `nora_dream_evidence_lost_total{scope}`.
+**The gauge sums the latest reading per unit.** Separate notebooks must not
+become a last-writer-wins reading. Unit keys remain in process memory;
+`aggregate="sum"` exports their total without a private unit label. Likewise,
+`nora_dream_evidence_lost_total` counts across scopes without exporting scope keys.
 
 **The refusal counter carries THREE reasons, not the two the spec implies,
 because `not_read` fires in two different places for two different reasons.**

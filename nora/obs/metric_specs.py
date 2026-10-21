@@ -132,14 +132,12 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "(ok|wedged|ended|paused|unknown). A wedged verdict means nora "
         "believes a track is playing and the controller is provably "
         "producing no sound; unknown means she could not read it.",
-        ("guild_id", "verdict"),
+        ("verdict",),
     ),
     _CounterSpec(
         "nora_music_stream_failed_total",
-        "Streams that failed after nora believed they were playing, by "
-        "reason. Carries the controller's own reason string, plus the "
-        "liveness-* reasons the watch raises itself.",
-        ("guild_id", "reason"),
+        "Streams that failed after nora believed they were playing, across guilds. "
+        "The controller reason is free text and is never a metric label.",
     ),
     _CounterSpec(
         "nora_messages_total",
@@ -571,10 +569,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # the state that fix carried (live / stale).
     _CounterSpec(
         "nora_presence_fixes_total",
-        "Distinct location fixes written to presence_fixes, by circle and the "
+        "Distinct location fixes written to presence_fixes, by the "
         "wire_state the fix carried (live / stale). A change-recorder count: a "
         "still member does not increment it (design/19 §1).",
-        ("circle", "wire_state"),
+        ("wire_state",),
     ),
     # Every circle READ, by how it resolved. `unavailable` (transport / non-200)
     # must never be summed with `ok`; `banned` (a fresh token refused) and
@@ -582,18 +580,18 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # `banned` is legible as a ban risk.
     _CounterSpec(
         "nora_presence_reads_total",
-        "Life360 circle reads, by circle and outcome "
+        "Life360 circle reads, by outcome "
         "(ok / unavailable / challenge / banned).",
-        ("circle", "status"),
+        ("status",),
     ),
     # The saved-places refresh: at most hourly per circle, riding the member
     # cycle. Counted separately from `nora_presence_reads_total` so a places-only
     # breakage (endpoint moved, shape changed) is visible on its own.
     _CounterSpec(
         "nora_presence_place_reads_total",
-        "Life360 saved-place reads, by circle and outcome "
+        "Life360 saved-place reads, by outcome "
         "(ok / unavailable / challenge / banned).",
-        ("circle", "status"),
+        ("status",),
     ),
     # Per member per cycle, so «sharing off» is a KNOWN STATE, not a gap. A member
     # who turned sharing off writes no fix row, so WITHOUT this series they would be
@@ -706,13 +704,13 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # (`python -m nora.analytics`).
     _CounterSpec(
         "nora_analytics_stays_total",
-        "Stays written to presence_stays, by subject.",
-        ("subject",),
+        "Stays written to presence_stays, across subjects.",
+        (),
     ),
     _CounterSpec(
         "nora_analytics_places_total",
-        "Derived places upserted, by subject and kind (home/work).",
-        ("subject", "kind"),
+        "Derived places upserted, by kind (home/work).",
+        ("kind",),
     ),
     # A rise is the tell that Life360's behaviour or the cadence changed; nothing
     # here should trend upward under a stable population.
@@ -720,12 +718,12 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "nora_analytics_unlabeled_total",
         "Times a cluster resolved to unlabeled instead of home/work, or an "
         "existing place expired to unlabeled on a freshness recheck.",
-        ("subject",),
+        (),
     ),
     _CounterSpec(
         "nora_analytics_occupancy_bins_total",
-        "Hour-of-week occupancy bins updated (Tier 3), by subject.",
-        ("subject",),
+        "Hour-of-week occupancy bins updated (Tier 3), across subjects.",
+        (),
     ),
     # A rise here is EXPECTED as the corpus grows. Unlike
     # nora_analytics_unlabeled_total, this is not a health signal; it is the anomaly
@@ -735,13 +733,13 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Newly closed stays that are unusual against the subject's own history "
         "(duration/arrival/departure robust |z| above anomaly_z_threshold at "
         "that place, a never-visited place, or somewhere other than where the "
-        "hour-of-week forecast put them), by subject and kind.",
-        ("subject", "kind"),
+        "hour-of-week forecast put them), by kind.",
+        ("kind",),
     ),
     _CounterSpec(
         "nora_analytics_trips_total",
-        "Trips written to presence_trips (Tier 5), by subject.",
-        ("subject",),
+        "Trips written to presence_trips (Tier 5), across subjects.",
+        (),
     ),
     # `outcome` makes "no corridor has EVER been created" readable. A series
     # counting attach OPERATIONS alone could not tell "one corridor, reconfirmed
@@ -749,10 +747,14 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # clustering pass, not once per trip attached to it.
     _CounterSpec(
         "nora_analytics_corridors_total",
-        "Corridors touched by clustering (Tier 5), by subject and outcome "
+        "Corridors touched by clustering (Tier 5), by outcome "
         "(created = a brand-new corridor row; reconfirmed = an existing one "
         "gained samples).",
-        ("subject", "outcome"),
+        ("outcome",),
+    ),
+    _CounterSpec(
+        "nora_analytics_rollup_failures_total",
+        "Subject folds that failed, including every subject when the whole run raises.",
     ),
     # Each Rollup stimulus the unit rollups tried to raise. `duplicate` is the
     # steady state for a co-location still starting on the next run (the stimulus
@@ -1153,8 +1155,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_dream_evidence_lost_total",
         "Dream-loop scopes where messages were pruned before this "
-        "consolidator ever read them, by scope.",
-        ("scope",),
+        "consolidator ever read them, counted across scopes.",
+        (),
     ),
     # The Dreamer runtime. R-27's three states, at the run. A run that FAILED is
     # `unavailable` and is counted, never silently absent: the Dreamer has nobody
@@ -1195,7 +1197,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Dreamer builds that wanted a home room and found none declared for "
         "the unit: the adaptor ran with no acts and no room. A standing "
         "config gap, counted every pass; the log says it once.",
-        ("adaptor", "unit"),
+        ("adaptor",),
     ),
     # `CultureAdaptor` calls an injected `resolve_names`
     # (`Persons.name_transcript`) before rendering a sender's name, and a raising
@@ -1572,34 +1574,18 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "mode only the go verdicts are delivered anywhere; this series is the "
         "only place the no_go rate is observable at all, which is what keeps "
         "an undelivered verdict from being an unmeasured one.",
-        # `conversation_id` makes a REFUSAL JOINABLE TO A ROOM. Without it a `no_go`
-        # says only «somewhere on Signal», and the two measures that grade the gate
-        # against something other than its own opinion, HOLDING refusal (it refused room
-        # R while she demonstrably held something for R) and override (a human tagged her
-        # in R within minutes of a `no_go`), are uncomputable. The gate has the id in
-        # hand at every emit site.
-        #
-        # Cardinality is bounded by `Policy.conversations`, a configured roster and not
-        # user input, the same population every per-room store keys on. It does NOT touch
-        # DEC-179: the gate neither reads nor writes `decision_log`, and a counter cannot
-        # give per-verdict timing, so `override` stays approximate until something
-        # durable carries it.
-        ("verdict", "platform", "conversation_id"),
+        ("verdict", "platform"),
     ),
     _CounterSpec(
         "nora_relevance_gate_errors_total",
         "Gate calls that produced no usable verdict and therefore FAILED "
-        "CLOSED to no_go, by kind, platform and conversation. The vocabulary "
+        "CLOSED to no_go, by kind and platform. The vocabulary "
         "is `nora.ingest.relevance_gate.GATE_ERROR_KINDS` and is deliberately "
         "not restated here — a hand-copied vocabulary is what drifts. A "
         "SUSTAINED count here is the gate being down while looking exactly "
         "like a quiet room, which is the one failure this series exists to "
         "make visible.",
-        # Labelled for the same reason as the verdict series above: a fail-closed
-        # no_go REFUSES THE ROOM just as a chosen one does, so a HOLDING measure blind to
-        # this series under-counts refusals by the outage rate. The two series stay
-        # SEPARATE (R-23); giving both the same join key does not weaken that.
-        ("kind", "platform", "conversation_id"),
+        ("kind", "platform"),
     ),
     # The culture tier's only counter. The vocabulary is
     # `nora.language.culture.CULTURE_OUTCOMES` and is deliberately not restated here.
@@ -2163,17 +2149,23 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
     ),
     _GaugeSpec(
         "nora_music_expected_playing",
-        "1 when nora believes a track is currently playing for the guild.",
-        ("guild_id",),
+        "Number of guilds where nora believes a track is currently playing.",
+        ("aggregate",),
     ),
     _GaugeSpec(
         "nora_music_controller_playing",
-        "1 when the audio controller reports audio actually moving for the "
-        "guild (status playing, position advancing, not autopaused). 0 when "
-        "it reports otherwise. ABSENT, never 0, when nora could not read it "
-        "— a gauge that cannot be measured must not assert a value.",
-        ("guild_id",),
+        "Number of guilds last measured producing audio (playing, position advancing, "
+        "not autopaused). Retains the last measurement on an unreadable poll; "
+        "absent before any measurement. Unknown polls are counted separately.",
+        ("aggregate",),
     ),
+    _GaugeSpec(
+        "nora_music_wedged_guilds",
+        "Number of guilds whose latest measured playback verdict is wedged or ended; "
+        "unknown is excluded and alerted separately.",
+        ("aggregate",),
+    ),
+    _GaugeSpec("nora_analytics_subjects", "Number of configured analytics subjects."),
     _GaugeSpec("nora_last_event_age_seconds", "Seconds since the last ingest event."),
     # The per-platform answer to the question the line above answers, as a
     # separate series rather than a label: that series is UNLABELLED on purpose (the
@@ -2228,31 +2220,27 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
     # hide (a quiet circle looks identical).
     _GaugeSpec(
         "nora_presence_last_collection_age_seconds",
-        "Seconds since this circle's last SUCCESSFUL collection. Climbing means "
+        "Maximum seconds since a circle's last SUCCESSFUL collection. Climbing means "
         "the daemon is up but not collecting.",
-        ("circle",),
+        ("aggregate",),
     ),
     # The climbing-age liveness shape of `nora_presence_last_collection_age_seconds`,
     # applied to the rollup: set after every successful run_once, so a stalled daemon
     # shows a climbing age rather than a frozen derivation count.
     _GaugeSpec(
         "nora_analytics_rollup_age_seconds",
-        "Seconds since this subject's last successful analytics rollup run. "
+        "Maximum seconds since a subject's last successful analytics rollup run. "
         "Climbing means the daemon is up but not deriving.",
-        ("subject",),
+        ("aggregate",),
     ),
     # The R-21 startup invariant: 1 when the Signal group is a SUBSET of the
     # Life360 circle (disclosure holds by construction), 0 when it is not. Published
     # at startup and whenever it is checked; alert on `== 0`.
     _GaugeSpec(
         "nora_presence_circle_subset_ok",
-        "1 when the conversation's people are a subset of the circle (R-21 holds "
-        "by construction), 0 the day someone outside the circle is in the group. "
-        "Labelled by CONVERSATION as well as circle: the pre-flight checks every "
-        "allowlisted room, so a circle-only series was last-writer-wins across "
-        "them — a failing room could be overwritten by a passing one and the "
-        "alarm silently lost.",
-        ("circle", "platform", "conversation"),
+        "Minimum subset check across rooms and circles by platform (R-21 holds "
+        "by construction), 0 the day someone outside the circle is in the group.",
+        ("platform", "aggregate"),
     ),
     # THERE IS DELIBERATELY NO `nora_reminders_pending` HERE. A declared but
     # unpublished gauge renders `0.0`, which reads as "no backlog" and is
@@ -2289,10 +2277,11 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
     ),
     _GaugeSpec(
         "nora_note_index_entries",
-        "Standing notes rendered into <notes> for a unit on the last tag "
+        "Sum of Standing notes last rendered into <notes> across reached units; "
+        "each unit on the last tag "
         "it handled. Absent when [notes] is off; 0 means the notebook is "
         "wired and empty.",
-        ("unit",),
+        ("aggregate",),
     ),
     # 1 once a summons write came back `writes_blocked`: Instagram answered a
     # comment with an action block and the bridge latched writes off until an
@@ -2305,12 +2294,12 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
     ),
     _GaugeSpec(
         "nora_stimulus_pending_age_seconds",
-        "Age of a unit's oldest pending stimulus that could wake it (a reply "
+        "Maximum age across units of the oldest pending stimulus that could wake it (a reply "
         "to Nora inside reply_quiet_seconds does not count), set by the wake "
         "evaluator each tick; 0 when nothing is pending "
         "(design/cognition-loop/20-observe.md §4). ABSENT until the "
         "evaluator's first tick for the unit.",
-        ("unit",),
+        ("aggregate",),
     ),
     # Nora's computer, as Nora sees it (DEC-261). LABELLED on purpose, with one
     # value (`computerd`): an unlabelled gauge is exported at 0 from the moment it is

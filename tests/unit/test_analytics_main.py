@@ -56,7 +56,7 @@ async def test_a_tick_builds_to_the_wall_clock_less_the_grace(monkeypatch):
 async def test_a_run_that_raises_does_not_take_the_daemon_down():
     metrics = Metrics()
     await _tick(_deps(_FakeRunner(fail=set(), explode=True), metrics, "a"), {}, {})
-    assert metrics.get("nora_analytics_rollup_age_seconds", subject="a") == 0.0
+    assert metrics.get("nora_analytics_rollup_age_seconds") == 0.0
 
 
 async def test_liveness_gauge_climbs_for_a_subject_that_keeps_failing(monkeypatch):
@@ -73,10 +73,10 @@ async def test_liveness_gauge_climbs_for_a_subject_that_keeps_failing(monkeypatc
     first_seen: dict[str, float] = {}
 
     await main_mod._tick(deps, last_success, first_seen)
-    assert metrics.get("nora_analytics_rollup_age_seconds", subject="ok") == 0.0
-    assert metrics.get("nora_analytics_rollup_age_seconds", subject="bad") == 0.0
+    assert metrics.get("nora_analytics_rollup_age_seconds") == 0.0
 
     clock["t"] += 300.0  # 5 minutes later, "bad" is STILL failing
     await main_mod._tick(deps, last_success, first_seen)
-    assert metrics.get("nora_analytics_rollup_age_seconds", subject="ok") == 0.0
-    assert metrics.get("nora_analytics_rollup_age_seconds", subject="bad") == 300.0
+    assert metrics.get("nora_analytics_rollup_age_seconds") == 300.0
+    assert metrics.get("nora_analytics_rollup_failures_total") == 2
+    assert metrics.get("nora_analytics_subjects") == 2

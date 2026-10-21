@@ -1926,9 +1926,9 @@ async def test_the_wedge_reaches_prometheus_as_a_divergence_not_a_verdict() -> N
     await manager.reconcile_liveness()   # first poll: no delta yet
     await manager.reconcile_liveness()   # second: the position never moved
 
-    assert metrics.get("nora_music_expected_playing", guild_id="guild-1") == 1.0
-    assert metrics.get("nora_music_controller_playing", guild_id="guild-1") == 0.0
-    assert metrics.get("nora_music_liveness_total", guild_id="guild-1", verdict="wedged") >= 1.0
+    assert metrics.get("nora_music_expected_playing") == 1.0
+    assert metrics.get("nora_music_controller_playing") == 0.0
+    assert metrics.get("nora_music_liveness_total", verdict="wedged") >= 1.0
 
 
 async def test_an_unreadable_controller_leaves_the_playing_gauge_unset() -> None:
@@ -1956,6 +1956,6 @@ async def test_an_unreadable_controller_leaves_the_playing_gauge_unset() -> None
     )
     await manager.reconcile_liveness()
 
-    assert metrics.get("nora_music_liveness_total", guild_id="guild-1", verdict="unknown") == 1.0
+    assert metrics.get("nora_music_liveness_total", verdict="unknown") == 1.0
     rendered = metrics.render()
-    assert 'nora_music_controller_playing{guild_id="guild-1"}' not in rendered
+    assert 'nora_music_controller_playing{aggregate="sum"}' not in rendered
