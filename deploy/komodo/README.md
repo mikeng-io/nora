@@ -1,12 +1,16 @@
 # Release deployment with Komodo
 
-Status: repository implementation, **disabled until installation and rehearsal**.
-The release publisher requires `RELEASE_IMAGES_ENABLED=true`; the example Komodo
-Procedure has its schedule disabled. Merging this change deploys nothing.
+Status: **installed in production**, verified on 2026-10-21. Stack `nora-releases`
+is deployed by the enabled `nora-release-poll` Procedure, which calls
+`DeployStackIfChanged` every ten minutes. v6.5.0 deployed this way without host
+commands. The example resources keep their schedule disabled for new installations;
+the first-install bootstrap below is not the normal production deploy procedure.
 
 ## Ownership and flow
 
-1. Release Please publishes a stable `vX.Y.Z` release. Its GitHub App token
+1. A fix PR merges to master. Release Please opens a release PR; while the
+   repository is private, the maintainer merges it manually, creating the stable
+   `vX.Y.Z` tag and GitHub Release. Its GitHub App token
    triggers `Release images`; the `GITHUB_TOKEN` fallback cannot trigger that
    follow-on workflow. Manual dispatch accepts an already-published stable tag
    from master. The release must contain this publisher implementation.
@@ -53,6 +57,13 @@ exclusions when enabling `--site`; the wrapper then enables the profile for both
 resolution and recreation. Remove `embedder` only where that separate infrastructure
 profile is already running.
 
+Production's runtime root is still `~/workspace/nora`: it holds `config.toml`,
+`policy.toml`, `identity.toml`, `.env`, `data/` and `state/` outside git. Database,
+RustFS, Prometheus, Alertmanager and embedder still use that Compose root, and
+the computer unit's `ExecStart` points there. **Do not delete or reset this live
+runtime root.** Doctrine and Dreamer are baked into the release image; a host
+`git pull` does not change them.
+
 Set the runtime root to the **existing** directory; do not substitute a new empty
 state directory, move account stores, or change the Compose project name. Named
 volumes and existing networks keep their identities. External data/model root
@@ -85,7 +96,7 @@ into Core logs. An external env file uses `track=false` so Komodo does not store
 its contents. `.komodo.env` is a separate generated file containing only the
 runtime-root setting; it must never replace the existing private `.env`.
 
-## Installation and activation
+## First-install bootstrap: installation and activation
 
 These are operator actions after reviewing the final code and disposable test.
 They are not performed by the publisher or by merging its PR.
@@ -153,9 +164,12 @@ owned services must have zero restarts after recreation. Nora's running manifest
 must match the selected release version and source SHA.
 
 There is no blind automatic rollback. Startup runs database migrations, so an
-older image may be incompatible. For a compatible rollback, review a deployment-
-branch commit selecting a previous complete image/config/instruction state and
-run the native Stack manually with polling paused. After inspecting the failure
+older image may be incompatible. For a compatible rollback, revert the selecting
+commit on `deployments` to select a previous complete image bundle, then wait for
+the poller or run native `DeployStack` manually. The wrapper refuses only an
+identical failed fingerprint and does not enforce version order. A revert does
+not roll back the database schema (migrations upgrade to head on start), nor does
+it roll back host config; review both for compatibility first. After inspecting the failure
 and deciding to retry the same candidate, remove only the shared control
 directory's `release-attempt.json` marker while holding the shared deploy lock,
 then run the Procedure manually. Never clear it concurrently with an attempt. The publisher refuses old

@@ -54,7 +54,9 @@ error. The opt-out does not suppress findings or authorize private data. See the
 ## Branch naming
 
 We use trunk-based development (GitHub Flow) plus GitOps: short-lived branches
-reach `master` through pull requests; Git records deployment desired state.
+reach `master` through pull requests. The `deployments` branch records desired
+application state for the installed Komodo release Stack; rollback reverts the
+selecting commit there. It does not roll back database schema or host config.
 There is no `develop` branch. Use **`<type>/<kebab-slug>`** for maintainers, agents
 and fork contributors alike, with a type from the commit table below, for example
 `docs/public-readiness` or `fix/message-delivery`. Describe the change in the slug.
@@ -95,7 +97,7 @@ hooks with `--no-verify`, name the reason in the commit body.
 
 There is no release fragment: commit subjects are the release notes.
 release-please builds the changelog from `feat`, `fix`, `security`, `perf`,
-`change` and `doctrine` subjects.
+`change`, `doctrine` and `revert` subjects (`scripts/release_scope.py`).
 
 ## Pull requests
 

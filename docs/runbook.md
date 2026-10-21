@@ -251,6 +251,13 @@ enabled participation, proactive and scheduled paths before concluding she is qu
 
 ## 2. "A doctrine edit broke her"
 
+Production Stack `nora-releases` uses image-baked doctrine and Dreamer. A host
+`git pull` changes neither. Ship corrections through the release path below.
+The hot-reload instructions that follow apply only to legacy source mounts.
+
+### Legacy checkout mode: "A doctrine edit broke her"
+
+
 A deployment that bind-mounts `nora/doctrine` can hot-reload its files on every
 tag with `doctrine.reload = "mtime"`, without a restart. But a bad edit (broken
 frontmatter, missing required key, unparseable YAML) fails to parse.
@@ -278,12 +285,38 @@ frontmatter, missing required key, unparseable YAML) fails to parse.
 
 ## 3. "Rollback"
 
+The normal path is the installed Komodo Stack `nora-releases`. A fix merges to
+master, then the maintainer manually merges release-please's release PR while
+the repo is private. The tag and GitHub Release trigger `release-images.yml`;
+a complete image build commits `compose.json` and `release.json` to `deployments`.
+The enabled `nora-release-poll` Procedure calls `DeployStackIfChanged` every ten
+minutes. The installed wrapper deploys and writes `release-deploy.json`.
+v6.5.0 deployed this way without host commands on 2026-10-21.
+
+Rollback: revert the selecting commit on `deployments`, then wait for the poller
+or run native `DeployStack` manually. The wrapper refuses only an identical failed
+fingerprint and does not enforce version order. This does **not** roll back the
+database schema (migrations upgrade to head on startup) or host config. Check
+compatibility before selecting an older bundle; otherwise roll forward or use a
+coordinated database restore (section 9). Preserve failed-attempt evidence;
+see [Komodo recovery](../deploy/komodo/README.md#failure-and-recovery).
+
+`~/workspace/nora` is still the live runtime root for private config, `.env`,
+`data/` and `state/`; database, RustFS, Prometheus, Alertmanager and embedder still
+use it as their Compose root, and the computer unit's `ExecStart` points there.
+**Do not delete or reset it.**
+
+### Legacy checkout mode: local image rollback
+
+The following is checkout-era reference only; it does not apply to production's
+installed release stack. See the [legacy deploy reference](../.agents/skills/nora-deploy/reference.md#legacy-checkout-mode).
+
 Nora runs as a **Docker container**, not under systemd. The per-phase tags this
 section used to retag (`nora:p0`, `nora:p1a`, …) no longer exist on the deploy
 host, which held only `nora:latest` on 2026-09-24. A deploy run through the
 `nora-deploy` agent skill tags every VERIFIED image `nora:sha-<sha>` and logs it
 to `~/nora-backups/deploys.log`, so rolling back one deploy is a retag of the
-previous logged line, no rebuild and no git checkout. The skill's step 6 is the
+previous logged line, no rebuild and no git checkout. The legacy reference's step 6 is the
 procedure: it holds the deploy lock, and it refuses when a migration landed
 between the two commits (the image runs `alembic upgrade head` at start, so an
 older image cannot run on a newer schema; roll forward with a revert PR).
@@ -301,7 +334,19 @@ expecting an old schema. Use a schema-compatible verified image, or roll forward
 through a reviewed revert PR. A database restore requires a coordinated backup
 and matching application/configuration revision; see section 9.
 
-## 3b. After every deploy: `scripts/verify-deploy.py`
+## 3b. After every Komodo deploy
+
+Compare `deployments`' `release.json` (version, source SHA and image digests),
+`/etc/komodo/nora-deploy/release-deploy.json`, all owned services' live images,
+and Nora's `/app/nora/version.json` stamp. Confirm service health and zero
+restarts after recreation. The wrapper performs these checks under the shared
+lock; a publication workflow or a prior receipt alone is not live proof.
+See [the installed deploy procedure](../.agents/skills/nora-deploy/SKILL.md).
+
+### Legacy checkout mode: `scripts/verify-deploy.py`
+
+The following rebuild/recreate commands and local-tag checks are checkout-era
+reference only. Do not run them against the installed production release stack.
 
 ```bash
 scripts/build-image.sh
@@ -310,7 +355,7 @@ python3 scripts/verify-deploy.py        # LAST, and it must exit 0
 ```
 
 Run it under the deploy lock and with the rollback tag: the `nora-deploy`
-agent skill's step 3 is this block with both.
+legacy reference's step 3 is this block with both.
 
 **Three containers run `nora:latest`** — `nora`, `presence` and `analytics`,
 same image, different commands. `--force-recreate nora` recreates ONE of them.
@@ -568,6 +613,8 @@ stimulus, so a restart never penalises a unit. Read the cause in
 `cognition_wake_outcome`: `outcome = 'cancelled' AND detail LIKE 'restart%'`. **Not
 covered:** a tag turn or a Dreamer pass in flight at the stop ends with the process, as
 before; the stop does not wait out a 360 s turn.
+
+Monitoring reload remains outside the Komodo application release path.
 
 **Putting a rule change live.** The rules are bind-mounted
 (`./deploy/prometheus/rules:/etc/prometheus/rules`) and Prometheus runs with
@@ -881,6 +928,8 @@ rebuilds those peers' cards; it refuses rather than refresh early, and can be
 run again. Irreversible; step 1 is refused until a backfill dry run for the
 unit would feed nothing. `nora.app.memory_detach` has the rest.
 
+**Historical, one-time DEC-214 migration notes — not the current release path.**
+
 **The DEC-214 cutover, in this order.** On `master`'s image, `policy.toml` and
 `identity.toml` are `extra = "forbid"`, so writing `[units]`/`[workspaces]`
 into the LIVE files before the new image runs crash-loops the old one on its
@@ -893,7 +942,7 @@ copies of `identity.toml`. Every command is on the deploy host, in
 ```bash
 D=state/dec214; mkdir -p "$D"
 
-# 1. Build the new image. Do NOT recreate yet (nora-deploy step 3, build line only).
+# 1. Build the new image. Do NOT recreate yet (legacy nora-deploy reference step 3, build line only).
 docker compose build nora > /tmp/nora-build.log 2>&1; echo "BUILD_RC=$?"
 
 # 2. Write the new config under $D, and a config that points at it. A config's
@@ -999,7 +1048,22 @@ correlate against, one person's ids may appear as several entries.
 
 ## 8b. "She says the wrong version" (or can't check)
 
-She reads her version off `nora/version.json`, baked by `scripts/build-image.sh`
+Compare the selected `deployments` branch's `release.json` version and source
+SHA with `/etc/komodo/nora-deploy/release-deploy.json` and the live image stamp:
+
+```bash
+docker exec nora /app/.venv/bin/python -c \
+  'import json; print(json.load(open("/app/nora/version.json")))'
+```
+
+All three must identify the selected release; also compare manifest image digests
+with every owned service's running image and health. A newer GitHub Release may
+still be building or awaiting the next ten-minute poll. Read publication and
+Komodo failure state before claiming success; do not rebuild the host checkout.
+
+### Legacy checkout mode: version diagnosis
+
+In legacy checkout mode, she reads her version off `nora/version.json`, baked by `scripts/build-image.sh`
 from `git describe --tags --match 'v[0-9]*'` (DEC-314). She posts nothing about
 a new version: the startup upgrade note was retired with DEC-314, and
 `version_announcements` is a retired table nothing reads. Read the stamp first:
@@ -1222,6 +1286,7 @@ names below are placeholders; the real ones are on the deploy host
   unknown or disconnected profile fails with exit 69 rather than falling back.
   After reinstalling the extension a profile gets a new id: re-alias it with
   `opencli profile list` and `opencli profile rename <id> nora`.
+
 - `nora-social-bridge.service` — `python -m nora.infra.social` (unit in
   `deploy/social-bridge/`), the read-only HTTP seam the container calls on
   `http://host.docker.internal:19826` (the docker0 gateway — Nora's container
@@ -1232,6 +1297,8 @@ names below are placeholders; the real ones are on the deploy host
   LAN interface, because there is no authentication on `/read`; the allowlist
   is the boundary. It runs the CHECKOUT's code, so it tracks master — an edit
   on master is a deploy here after a restart.
+
+The host social bridge remains outside the Komodo release path.
 
 The virtual display is the fix, not a preference: Browser Bridge drives real
 Chrome window APIs, and GNOME RDP reports zero monitors while no client is
@@ -1358,7 +1425,7 @@ cd ~/workspace/honcho && docker compose up -d api </dev/null
 docker exec nora curl -fsS -m 5 http://honcho:8000/health </dev/null   # {"status":"ok"}
 
 # 3. nora's live config: [memory] base_url = "http://honcho:8000". This is a
-#    config-only edit (nora-deploy step 5: edit a COPY, `nora config validate`
+#    config-only edit (nora-deploy step 3: edit a COPY, `nora config validate`
 #    it through the container, cp it in place, recreate). Read it back:
 cd ~/workspace/nora
 docker compose up -d --force-recreate nora </dev/null
@@ -1410,7 +1477,7 @@ docker logs --since 1h honcho-api-1 </dev/null 2>&1 \
 **Rollback**, in this order (the order is the whole point):
 
 1. Put `[memory] base_url` back to `"http://host.docker.internal:8000"` in nora's
-   live `config.toml` (the config-only edit, `nora-deploy` step 5) and recreate
+   live `config.toml` (the config-only edit, `nora-deploy` step 3) and recreate
    nora on it. Do this FIRST.
 2. Only then publish `8000:8000` again in the honcho compose and `up -d api`.
 3. Only after that recreate nora from an OLD compose file if you must.
