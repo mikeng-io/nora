@@ -603,7 +603,8 @@ class SocialPoller:
             backfilled=0 if first else None, days=False,
         )
         cursor, end_reason = (
-            self._onward(page, backfilled=recorded, paged=False) if first else (None, None)
+            self._onward(page, backfilled=recorded, paged=False, media_count=probe.media_count)
+            if first else (None, None)
         )
         await self._record(
             member, stage, "read_ok", ms, media_count=probe.media_count,
@@ -655,7 +656,7 @@ class SocialPoller:
         return count
 
     def _onward(
-        self, page: Page, *, backfilled: int, paged: bool,
+        self, page: Page, *, backfilled: int, paged: bool, media_count: int | None = None,
     ) -> tuple[str | None, BackfillEnd | None]:
         """Where the back-fill goes on after `page`: its next cursor, or None
         when the walk ends on it (the grid ended, the item limit is reached,
@@ -674,7 +675,10 @@ class SocialPoller:
                 and (any if paged else all)(i.taken_at < horizon for i in page.items):
             end = "max_days"
         elif page.next_cursor is None:
-            end = "grid_end"
+            # An empty walk cannot attest completion when the profile says
+            # posts exist. Leave it on the existing first-page retry queue.
+            end = "unreadable" if not page.items and backfilled == 0 \
+                and media_count is not None and media_count > 0 else "grid_end"
         if end is None:
             return page.next_cursor, None
         self._metrics.inc("nora_social_backfill_ended_total", network=self._network, reason=end)
@@ -768,8 +772,11 @@ class SocialPoller:
                 member, page, origin="backfill", read_id=read_id, backfilled=at.items,
                 before=at.probe_at if at.cursor is None else None,
             )
+        counts = await self._store.last_counts(network=self._network, person=member.person) \
+            if not page.items and at.items == 0 else None
         cursor, end_reason = self._onward(
             page, backfilled=at.items + recorded, paged=at.cursor is not None,
+            media_count=counts.media_count if counts is not None else None,
         )
         await self._record(
             member, "backfill", "read_ok", ms, read_id=read_id,

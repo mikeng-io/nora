@@ -206,8 +206,9 @@ POLL_OUTCOMES: tuple[str, ...] = get_args(PollOutcome)
 
 #: Why a member's back-fill ended (§7): the grid ended (`next_cursor` null),
 #: the item limit was reached, a page held nothing inside the day limit, or
-#: its cursor was judged bad.
-BackfillEnd = Literal["grid_end", "max_items", "max_days", "bad_cursor"]
+#: its cursor was judged bad, or an empty walk contradicted a positive probe
+#: count (`unreadable`, retried rather than treated as completion).
+BackfillEnd = Literal["grid_end", "max_items", "max_days", "bad_cursor", "unreadable"]
 BACKFILL_ENDS: tuple[str, ...] = get_args(BackfillEnd)
 
 #: A back-fill cursor is judged bad once the pages sent at it were refused

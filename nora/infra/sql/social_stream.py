@@ -598,7 +598,8 @@ class SqlSocialStreamStore:
         page the bridge's while it answered nothing: neither is the
         cursor's. In full-history mode, only a recorded `grid_end` or an
         abandoned/bad cursor is done: bounded or legacy terminal pages reopen
-        from the first page, whose known items the poller deduplicates."""
+        from the first page, whose known items the poller deduplicates.
+        An `unreadable` empty walk reopens in either mode."""
         p, i = SOCIAL_POLL, SOCIAL_ITEM
         # ponytail: every probe, list read and back-fill row of the network, folded
         # here; a list read is rare and a back-fill a handful of pages a
@@ -643,7 +644,8 @@ class SqlSocialStreamStore:
             elif r.outcome == "read_ok":
                 out[r.person] = Backfill(
                     items=0, cursor=r.cursor,
-                    done=r.cursor is None and (not full_history or r.end_reason == "grid_end"),
+                    done=r.cursor is None and r.end_reason != "unreadable"
+                    and (not full_history or r.end_reason == "grid_end"),
                     last_at=r.recorded_at,
                     probe_at=probes.get(r.person) if r.advanced_counts else was.probe_at,
                 )
