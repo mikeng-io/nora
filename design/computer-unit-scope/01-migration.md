@@ -224,10 +224,16 @@ test -n "$POST_MIGRATION_BACKUP"
 test -f "$POST_MIGRATION_BACKUP"
 python3 "$SOURCE/deploy/computer/archive_check.py" "$POST_MIGRATION_BACKUP" > "$D/post-migration-restore-check.txt"
 systemctl --user start nora-computer.service
-"$SOURCE/deploy/computer/nora-computer" status
+status_line=$("$SOURCE/deploy/computer/nora-computer" status)
+printf '%s\n' "$status_line"
+case "$status_line" in
+  *" computerd=healthy "*" egress=ok "*) ;;
+  *) echo "computerd not healthy; leaving Nora admission paused" >&2; exit 1 ;;
+esac
 ```
 
-Keep Nora admission stopped until all these commands pass. Then deploy the
+Keep Nora admission stopped until all these commands pass, and resume it only
+after the status gate above passes. Then deploy the
 reviewed merged image through **nora-deploy's installed mode**, after the operator
 ping. In checkout mode the skill builds/recreates `nora presence analytics` under
 this lock. In Komodo mode release this lock before the native manual `DeployStack`
@@ -297,12 +303,17 @@ python3 "$SOURCE/deploy/computer/archive_check.py" "$D/browser-profiles.tar.gz"
 
 Restore the saved session metadata/database using the deployment recovery
 procedure, then restore the compatible old image/config with Nora admission
-still stopped. Start computerd and read back its status before resuming Nora
-admission through the installed deployment recovery procedure:
+still stopped. Start computerd and read back its status; admission resumes only
+after this gate passes, through the installed deployment recovery procedure:
 
 ```bash
 systemctl --user start nora-computer.service
-"$SOURCE/deploy/computer/nora-computer" status
+status_line=$("$SOURCE/deploy/computer/nora-computer" status)
+printf '%s\n' "$status_line"
+case "$status_line" in
+  *" computerd=healthy "*" egress=ok "*) ;;
+  *) echo "computerd not healthy; leaving Nora admission paused" >&2; exit 1 ;;
+esac
 ```
 
 The second archive restore
