@@ -44,7 +44,7 @@ _IGID = "10000001"
 _ACCOUNT = Account(id=_IGID)
 _PROBE = Probe(
     latest_reel_media=1700000000, media_count=42, total_clips_count=2,
-    counts_available=True,
+    counts_available=True, is_private=True, following=True,
 )
 
 
