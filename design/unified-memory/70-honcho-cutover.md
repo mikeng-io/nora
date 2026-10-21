@@ -41,6 +41,8 @@ Rebuild may project shadow rows; projection alone never makes them readable.
 
 ## 3. The flip (operator, on `norty`)
 
+> 2026-10-21 (cutover precondition): **Nora can answer what Honcho could** — the new Views and Honcho's dialectic answer the same frozen question set, judged blind — replaces Character-line fact coverage. The ≥80-pair reply replay stays ([45 §6](45-persona-adaptor.md#6-what-honcho-knew-is-re-derived-and-that-is-measured)). Q1 in [18](18-message-readings.md) leaves answerability thresholds and question construction open, so this is not a passed gate or permission to flip. The revised forward sequence in [00](00-intent.md#sequence) puts answering and both gates before the operator's `[memory_index] enabled` switch; Honcho's feed stops later. The procedure below records the earlier prompt-switch implementation.
+
 1. Edit a COPY of the live `config.toml`: `[persona] render = true`.
    `nora config validate` the copy through the running container, `cp` it into
    place (in place, so the bind-mount keeps its inode), recreate — the

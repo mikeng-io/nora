@@ -65,6 +65,7 @@ retrieval layer exists means they are searchable from their first row.
 | node | adds |
 |---|---|
 | [10](10-honcho-audit.md) | the measured inventory of what Honcho does for Nora today, every call site, how often each read runs live, and what replaces each |
+| [18](18-message-readings.md) | 2026-10-21: every message batch is read once on arrival into the Record; Honcho maps onto the existing layers, Character is the bounded card, and answerability gates the switch |
 | [15](15-memory-map.md) | every store as part of the one memory: notes, memos, media, presence episodes, social items, with what each remembers and how it is indexed and corrected |
 | [20](20-embedding-bakeoff.md) | the retrieval-stack bake-off: trigram vs BM25, bge-m3 vs EmbeddingGemma 2 (released 2026-10-06) vs WeMM-Embedding, fused, then reranked, on Nora's own mixed Cantonese and English corpus |
 | [25](25-memory-graph.md) | the memory graph (one node per item in any store, a closed set of edge relations, citations written with their entries) and the one retrieval service over it: scope, seed, expand, rerank, with push / pre-fetch / pull injection |
@@ -77,18 +78,20 @@ retrieval layer exists means they are searchable from their first row.
 
 ## The shape after Honcho (as ruled 2026-10-15)
 
+> 2026-10-21 (message readings; ADR 0026): the diagram now places message readings in the Record and uses Character entry parts profile, traits and hypotheses. [18](18-message-readings.md) decomposes Honcho into these existing layers.
+
 ```
  AUTHORED   doctrine, policy, identity.toml            (not indexed)
     │
- RECORD     messages · media readings · links · social items · disputes ·
+ RECORD     messages · message readings · media readings · links · social items · disputes ·
     │       feedback      ingestion writes the row and project()s its node + edges
     ▼
  ROLLUP     outings · stays · trips · response episodes   rhythm · ties (by key only)
     │          each current build projects its episodes + `during` edges
     ▼
- NOTEBOOK   Register (notes, memos, events)   Persona (identity · character ·
-            hypotheses)   Lessons   Standing      each written by its one writer;
-            memos, events, lessons, Persona (and notes, once built) store their
+ NOTEBOOK   Register (notes, memos, events)   Character (profile · traits · hypotheses)
+            Lessons   Standing      each written by its one writer;
+            memos, events, lessons, Character (and notes, once built) store their
             citations with the entry, projected as `cites` edges; Standing has none
     │
     │      ┄┄┄┄┄┄┄┄┄┄  MEMORY INDEX  (outside the layers: derived, rebuildable,
@@ -97,7 +100,7 @@ retrieval layer exists means they are searchable from their first row.
     │                    memory_edge: closed relation set, copied from the stores
     │                    ▲
     ▼                    │ one retrieval service: scope → seed → expand → rerank
- VIEWS      push (the speaker's and the room's Persona, open notes, Standing)
+ VIEWS      push (the speaker's and the room's Character entries, open notes, Standing)
             · pre-fetch · ask_memory
 ```
 
@@ -164,6 +167,8 @@ writes with a mode. Two things are open:
   kept from being self-graded is [45](45-persona-adaptor.md) §3.
 
 ## Sequence
+
+> 2026-10-21 (built history and revised forward order): steps 0–8 below are retained as history. The index and projection, pre-fetch, note citations, typed writer, shadow adaptor and prompt-switch implementation are built as recorded in this bundle; implementation is not gate acceptance or a live switch receipt. The forward phases after that history replace the old steps 9–11.
 
 Amended 2026-10-15 (operator): step 0 has run, and the steps between the
 index and Honcho's exit are now listed in their order.
@@ -255,17 +260,26 @@ index and Honcho's exit are now listed in their order.
    ([45](45-persona-adaptor.md) §6).
 8. **Switch the prompts**: `<persona>` replaces `peer_card`, `peer_history`
    and `<person_account>`.
-9. **Honcho out**: each read replaced or dropped per the audit, the feed and
-   `remember` rerouted, the routing deleted, and with it the workspace
-   (DEC-214): the unit is the only boundary ([35](35-persona.md) row 6,
-   ruled 2026-10-16); `policy.toml`'s `[units.<u>] workspace`, `identity.toml`'s
-   `[workspaces]` and the routing go, and the portal's viewer scope moves to
-   the unit. The Honcho client itself is
-   deleted only after the switch has held for 14 days with the gates' readings
-   unchanged, so the rollback until then is a config flip.
-10. **Acts get outcomes** ([50](50-learning-from-acts.md)), before:
-11. cognition-loop step 5 (social and play), writing into the index from its
-    first row; step 6 (faces); then personalisation.
+
+### Forward phases — 2026-10-21
+
+1. **This design revision** ([18](18-message-readings.md)).
+2. **Message readings on new messages.** Record items, run on every batch;
+   nothing reads them yet.
+3. **History readings** (about two months), plus the Honcho seed check
+   (18 Q3, still open; recommend reference only for the first measure).
+4. **Character rework and the ADR 0026 rename in ONE migration.** One
+   `character-*` writer family (person, room, unit, nora, verdict) reads
+   readings and writes typed profile/traits/hypotheses lines; prose adaptors
+   retire at the switch.
+5. **Answering.** `ask_memory` over readings + Rollup + entries, then the
+   answerability and reply gates (45 §6, amended 2026-10-21).
+6. **The switch** (`[memory_index] enabled`), the operator's call. Honcho's
+   feed stops later; the later hold/removal procedure remains in
+   [70](70-honcho-cutover.md).
+
+Readings and backfill do **not** wait for the rename. New code uses ADR 0026
+names only; existing code identifiers stay unchanged by this docs revision.
 
 ## Not in this bundle
 

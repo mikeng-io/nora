@@ -18,7 +18,11 @@ description: >
   BM25; bge-m3, EmbeddingGemma 2, WeMM-Embedding; fusion; reranker) and
   October 2026 prior art. The Persona adaptor, the prompt switch and the
   index projection are built (steps 6 and 8); 70 prepares step 9, the Honcho
-  cutover, which is not executed.
+  cutover, which is not executed. Amended 2026-10-21: every message batch
+  is read once on arrival into the Record; Honcho maps onto the existing
+  layers, Character entries are bounded profile/traits/hypotheses cards,
+  and answerability through Views replaces Character-line fact coverage
+  as the switch gate, with Q1–Q5 still open.
 status: proposed
 governance: operator-directed
 timestamp: '2026-10-14'
@@ -31,6 +35,7 @@ members:
   - 00-intent.md
   - 10-honcho-audit.md
   - 15-memory-map.md
+  - 18-message-readings.md
   - 20-embedding-bakeoff.md
   - 25-memory-graph.md
   - 30-identity-and-character.md
@@ -43,6 +48,27 @@ members:
   - 75-typed-identity.md
   - 76-typed-identity-build.md
   - 40-prior-art.md
+open_questions:
+  - id: Q1
+    question: "Answerability thresholds and question-set construction"
+    status: open
+    recommendation: "Freeze before any run; error <5% stays; parity bar proposed by the operator."
+  - id: Q2
+    question: "Character session shape: pushed bundle or bounded tool-using session?"
+    status: open
+    recommendation: "Push readings since the last session, with read tools over older readings and messages, bounded iterations, and one persona_write-style settle."
+  - id: Q3
+    question: "Source-rechecked Honcho explicit observations as seed readings, or measurement reference only?"
+    status: open
+    recommendation: "Reference only for the first measure; decide seed on that measure."
+  - id: Q4
+    question: "Reading model and budget; runtime model is DeepSeek V4.1 Flash"
+    status: open
+    recommendation: "Record a per-batch cost estimate from live message volume; 18 records a historical volume-based formula, with current volume, token usage and route prices still unmeasured."
+  - id: Q5
+    question: "Reading granularity: per message or per batch with interleaved context as Honcho?"
+    status: open
+    recommendation: "No recommendation specified; keep both options open."
 edges:
   - {src: 00-intent, dst: ../cognition-loop/05-data-model, rel: depends_on, provenance: asserted}
   - {src: 00-intent, dst: ../cognition-loop/10-tiers, rel: depends_on, provenance: asserted}
@@ -53,6 +79,11 @@ edges:
   - {src: 20-embedding-bakeoff, dst: ../dreamer-agent-loop/24-embedding-seam, rel: extends, provenance: asserted}
   - {src: 20-embedding-bakeoff, dst: ../conversational-recall/10-findings, rel: depends_on, provenance: asserted}
   - {src: 15-memory-map, dst: ../cognition-loop/05-data-model, rel: extends, provenance: asserted}
+  - {src: 18-message-readings, dst: 00-intent, rel: extends, provenance: asserted}
+  - {src: 18-message-readings, dst: 10-honcho-audit, rel: depends_on, provenance: asserted}
+  - {src: 18-message-readings, dst: 45-persona-adaptor, rel: supersedes, provenance: asserted}
+  - {src: 18-message-readings, dst: ../cognition-loop/05-data-model, rel: extends, provenance: asserted}
+  - {src: 18-message-readings, dst: ../cognition-loop/25-rollup, rel: extends, provenance: asserted}
   - {src: 25-memory-graph, dst: 15-memory-map, rel: depends_on, provenance: asserted}
   - {src: 25-memory-graph, dst: 20-embedding-bakeoff, rel: depends_on, provenance: asserted}
   - {src: 25-memory-graph, dst: ../context-plan/15-what-the-composer-decides, rel: follows, provenance: asserted}

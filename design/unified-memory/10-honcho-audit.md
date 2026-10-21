@@ -140,3 +140,26 @@ did not, so that "Honcho out" (00 step 4) leaves nothing calling it:
 | `conclude` in eval seeding | `nora/subject/knowledge.py:812` | **re-pointed** to seeding a Persona line. |
 
 With §4 and §5 together, every Honcho call site in `nora/` has a fate.
+
+## 6. Honcho's architecture, mapped
+
+> 2026-10-21 (operator audit): Honcho v3.1.2 on norty (`~/workspace/honcho/src`) has three stages. This supplements the earlier call-site snapshot; [18](18-message-readings.md) records the resulting design revision.
+
+1. **Deriver** (`src/deriver/prompts.py`): every message batch, a cheap model
+   extracts all explicit atomic facts, with no cap.
+2. **Dreamer** (`src/dreamer/specialists.py`): tool-using deduction and
+   induction specialists, 10–12 iterations, plus peer-card refresh. The
+   deployed configuration requires 50 new observations and 60 minutes idle,
+   with at least 8 hours between runs.
+3. **Dialectic**: a query-time agent over observations and messages.
+
+Honcho has **no abduction and no code Rollup**. Its stages map into our
+existing layers; Memory no longer sits beside the flow:
+
+| Honcho | ours | layer |
+|---|---|---|
+| deriver (explicit facts) | message readings | Record |
+| (none) | Rollup | Rollup |
+| dreamer deduction / induction (+ our abduction) | Character entries: traits, hypotheses | Notebook |
+| peer card | Character entry profile | Notebook |
+| dialectic | `ask_memory` / pre-fetch over readings, Rollup and entries | Views |

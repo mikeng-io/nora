@@ -351,6 +351,8 @@ no entry.
   items (`10-tiers.md` §1's words). Written by code. This is what "the
   record store" / "the RECORD" above already names — never "a database row"
   in general.
+> 2026-10-21 (message readings): **reading** — a perception of a Record item: a media reading says what was shown; a message reading says what was said, about whom and how, tied to source message ids. Every Record item is perceived once on arrival; text is a medium like any other. Code runs message readings on every batch; they record statements, not truth, and are versioned, rebuildable and superseded rather than deleted. See [18 · Message readings](design/unified-memory/18-message-readings.md).
+
 - **Rollup** — the computed layer: **episodes** (a Rollup row for one bounded
   happening, with a start, an end and participants — a stay, a co-location,
   an outing, a person's day) and **aggregates** (a Rollup row of counts,

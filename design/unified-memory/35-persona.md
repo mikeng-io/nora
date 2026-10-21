@@ -25,6 +25,8 @@ Operator, 2026-10-15, answering 30 §8:
 
 ## 1. What Persona is
 
+> 2026-10-21 (message readings; ADR 0026): statements now live in the Record as [message readings](18-message-readings.md). Character entries are the bounded card Nora sees in every prompt, with profile, traits and hypotheses; they are judgements, not the whole memory. Answers come from Views over readings, Rollup and entries. The historical body and existing code names below are preserved; new text follows [ADR 0026](../../docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md).
+
 One account per entity: an actor (a human, Nora, another agent) or a
 collective (a room, the unit). Three parts, each with its own reasoning modes
 and its own way of changing:

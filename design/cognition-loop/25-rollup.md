@@ -30,6 +30,8 @@ prose, fully deterministic. This node generalises it to every stream.
 
 ## 2. The rule: a pure projection
 
+> 2026-10-21 (message readings): a Rollup may compute over [readings](../unified-memory/18-message-readings.md), which are Record items; the Rollup itself remains code only.
+
 - **No model writes a Rollup row.** A model-extracted claim is how the
   knowledge tier died (#115: 5 rows in 11 days,
   design/dreamer-agent-loop/20-knowledge-tier.md §0). A code aggregate over

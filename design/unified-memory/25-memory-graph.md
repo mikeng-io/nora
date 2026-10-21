@@ -319,6 +319,8 @@ The only other new moving part is the embedding worker.
 
 **What gets a node, and with what text:**
 
+> 2026-10-21 (message readings): each [message reading](18-message-readings.md) is projected as a Record node with an edge to each message it reads. Its searchable text states about whom, the claim and how it was said; the source messages remain citable. Readings carry their version and supersession provenance; the index remains derived and rebuildable. This records the design, not a new implemented edge identifier.
+
 | layer | item | searchable text | vector |
 |---|---|---|---|
 | Record | message | the body, re-projected on edit | yes |

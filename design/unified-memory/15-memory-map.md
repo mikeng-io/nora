@@ -24,9 +24,11 @@ does not need a new topology. It needs three changes to that one:
 
 ## Every store
 
+> 2026-10-21 (message readings): the messages row now includes its [readings](18-message-readings.md), separate Record items stating what was said rather than facts asserted as truth.
+
 | store | layer · tier | memory of | indexed as | how it is corrected |
 |---|---|---|---|---|
-| messages, edits, deletes, reactions | Record | what was said | one row per message, its own time; an edit re-projects it | a platform delete sets `messages.hidden_at`: the message is never quoted, never a hit, and its node is dropped. What was derived from it stays and cites "a message since deleted" ([35](35-persona.md) §5; there is no retraction cascade since 2026-10-03) |
+| messages, edits, deletes, reactions, and their message readings | Record | what was said, about whom and how, tied to the source message ids | one node per message and per reading, linked to the messages it reads; each retains its time; an edit re-projects the message | a platform delete sets `messages.hidden_at`: the message is never quoted, never a hit, and its node is dropped. What was derived from it stays and cites "a message since deleted" ([35](35-persona.md) §5; there is no retraction cascade since 2026-10-03) |
 | media bytes and their readings (`media_objects`: the reading in `title`, `description`, `content`, keyed by `sha256`, no room, UPSERTed) | Record | what was shown | one node per **attachment** `(message, sha256)`, scoped by its message, with the reading copied in; a media vector only if [20](20-embedding-bakeoff.md) justifies it | a re-read UPSERTs the reading, and every attachment of that `sha256` is re-projected. There is no `media_descriptions` table: that module is a cache over `media_objects` and `sticker_index` |
 | stickers (`sticker_index`) | Record | what she can send | no: a send-side catalogue, not a memory of anyone | — |
 | external files | Record (the link only) | that a file was shared, and what was said about it | the link and its message | — (content is never kept, [external-files/00](../external-files/00-design.md)) |
@@ -44,6 +46,8 @@ does not need a new topology. It needs three changes to that one:
 | Tension | operator-only | — | **never**: code guarantees she cannot read it (cognition-loop/10 §1), and an index row would break that | — |
 | doctrine, `identity.toml`, config, policy | Authored | what the humans fixed | no: it is served whole and wins over anything derived | edited by hand |
 | a turn's blocks, a portal page | Views | — | no: never stored as data | — |
+
+> 2026-10-21 (reading lifecycle): a message reading is versioned like a Rollup build, rebuildable from the Record, and superseded rather than deleted. The messages row's platform-delete rule above still describes the source message; this revision adds no withdrawal cascade.
 
 ## Three rules the index keeps
 

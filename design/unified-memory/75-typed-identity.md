@@ -20,6 +20,8 @@ No second identity database or Dreamer, no new warehouse service.
 
 ## Identity contract
 
+> 2026-10-21 (message readings; ADR 0026): statements now live in the Record as [message readings](18-message-readings.md). Character entries are the bounded card Nora sees in every prompt, with profile, traits and hypotheses; they are judgements, not the whole memory. Answers come from Views over readings, Rollup and entries. The historical body and existing code names below are preserved; new text follows [ADR 0026](../../docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md).
+
 Extend existing persona_line identity rows with fact_key (text), fact_value
 (JSONB), valid_from and valid_until (nullable epoch ms). Existing as_of is the
 source assertion/evidence time, never synthesized from backfill wall-clock
