@@ -1,5 +1,8 @@
 # Nora operator runbook
 
+All example names, account IDs, nicknames and room mappings in this file are
+synthetic pseudonyms; replace them with your own installation values.
+
 Operational scenarios and reference commands. SSH examples use `nora-host`, an
 alias you configure for your deployment host (see `AGENTS.md`, Reaching the
 deployment). Paths under `~/workspace/` are example installation paths; substitute
@@ -14,8 +17,9 @@ still apply in either mode.
 
 ## 1. "Nora is silent — is she broken or just quiet?"
 
-Silence is the default behavior (S1) — Nora only ever speaks when tagged, so most silence
-is correct. To tell "quiet" from "broken":
+Silence is the default behavior. Tags, enabled participation/proactive paths and
+scheduled delivery can all produce replies; each has its own health signals.
+To tell "quiet" from "broken":
 
 1. Check the silent failure rate:
    `nora_silent_failures_total{audience="tag"} / nora_tags_total`, scraped
@@ -89,7 +93,8 @@ is correct. To tell "quiet" from "broken":
      | grep -E 'nora_silent_failures_total\{audience="tag"|nora_tags_total'
    ```
 
-2. Check `GET /health` — `200` means healthy, `503` means degraded:
+2. Check `GET /health` — `503` means a required health check failed;
+   `200` can still include a degraded platform:
 
    ```bash
    curl -s http://127.0.0.1:9100/health | python -m json.tool
@@ -105,10 +110,9 @@ is correct. To tell "quiet" from "broken":
    breaking change for anything reading it. (Until 2026-09-09 the stated reason was
    that `deploy/watchdog.sh` parsed it; that script is deleted, and the
    additive-only rule is the one that still holds. `nora_last_event_age_seconds`
-   stays unlabelled and Signal's for the same reason — DEC-102.) `platforms` has one entry per ENABLED platform, and **every one of
-   them counts toward the status code** — so a 503 with a perfectly green `sse` means a
-   non-Signal platform is down, and reading only the four keys above would leave you
-   concluding nothing explains it. A platform that is not enabled is ABSENT from
+   stays unlabelled and Signal's for the same reason — DEC-102.) `platforms` has one entry per ENABLED platform, and a disconnected, non-degraded
+   platform makes health fail. A degraded adapter is reported in `degraded` and
+   `detail` without making HTTP status fail, so inspect those fields even on 200. A platform that is not enabled is ABSENT from
    `platforms` entirely; a platform that is enabled and has never connected is present
    with `connected: false`. Those are different facts and the block distinguishes them.
 
@@ -242,12 +246,13 @@ is correct. To tell "quiet" from "broken":
    above exist so that state can never be invisible again.
 
 If the silent-failure rate is low, `/health` is `200`, neither denial counter is moving,
-and `nora_identity_aliases` is above 1, she's just quiet — nobody has tagged her.
+and `nora_identity_aliases` is above 1, the tag path shows no failure. Check the
+enabled participation, proactive and scheduled paths before concluding she is quiet.
 
 ## 2. "A doctrine edit broke her"
 
-Doctrine files (`nora/doctrine/*.md`) are hot-reloaded on every tag when
-`doctrine.reload: mtime` — editing them never needs a restart. But a bad edit (broken
+A deployment that bind-mounts `nora/doctrine` can hot-reload its files on every
+tag with `doctrine.reload = "mtime"`, without a restart. But a bad edit (broken
 frontmatter, missing required key, unparseable YAML) fails to parse.
 
 1. Check the reload-failure counter:
@@ -290,54 +295,11 @@ keys in `config.toml` first (section 3b).
 be exported by hand — it comes from the gitignored `.env` file in the repo root, which
 `docker compose` reads automatically.
 
-### Rolling further back, to the pre-rewrite v1 codebase
-
-A retag only reaches back as far as the images that were kept. Going all the way
-back to the pre-Strands-rewrite v1 codebase means checking out the old source and
-rebuilding, not just swapping tags — this needs network access and takes minutes, not
-seconds:
-
-```bash
-docker compose stop nora
-git checkout master
-cp data/messages.db.v1.bak data/messages.db      # restore the pre-migration v1 database
-docker build --network=host -t nora:latest .     # plain `docker compose build`/`up --build`
-                                                  # stalls: the default BuildKit bridge can't
-                                                  # resolve deb.debian.org on this host
-docker compose up -d --no-build
-```
-
-`git checkout master` returns the working tree to the v1 codebase. The v2 migration
-(the schema Alembic now manages, previously the retired `nora.store.db.init`) is additive,
-so `messages.db` after v2 has run may contain columns/rows the v1 binary doesn't expect —
-restore `messages.db.v1.bak` (the backup taken before the v1→v2 schema migration, per
-Task 44 Step 1) rather than pointing v1 at a v2-migrated file.
-
-> **Historical note (pre-Postgres):** the v1 path above is SQLite-era in full — v1 ran
-> against `data/messages.db`, so restoring its `.bak` is still exactly right FOR v1.
-> Everything recorded after the 2026-08-07 Postgres cutover (DEC-51) lives in the `db`
-> service's volume and would not travel back with it.
-
-### Rolling back the persistence phase (Alembic)
-
-The persistence phase replaced the additive `nora/store/db.py` migration with versioned
-Alembic revisions. Rolling back *this* phase specifically — not all the way to v1 — is:
-
-```bash
-docker compose stop nora
-git revert <persistence-phase-merge-commit>
-docker build --network=host -t nora:latest .
-docker compose up -d --no-build
-docker compose exec db psql -U nora -d nora -c 'DROP TABLE alembic_version'
-```
-
-> **Historical note (pre-Postgres):** this procedure was written for the SQLite era
-> (`sqlite3 data/messages.db "DROP TABLE alembic_version"`, plus a warning not to clear
-> `PRAGMA user_version`). The store moved to PostgreSQL on 2026-08-07 (DEC-51); the
-> `user_version` guard was a SQLite concept and no longer applies. Rolling back past the
-> Postgres cutover itself is a different operation: the old `data/messages.db` file is
-> still on disk, untouched by the cutover, but everything recorded AFTER the cutover
-> lives only in Postgres.
+Historical SQLite-era rollback instructions do not apply to the current
+PostgreSQL store. Do not clear Alembic's version table or check out `master`
+expecting an old schema. Use a schema-compatible verified image, or roll forward
+through a reviewed revert PR. A database restore requires a coordinated backup
+and matching application/configuration revision; see section 9.
 
 ## 3b. After every deploy: `scripts/verify-deploy.py`
 
@@ -447,7 +409,8 @@ commands below are unchanged and still the right first moves.
 1. Check signal-cli first — it's the more common cause:
 
    ```bash
-   curl -i http://127.0.0.1:18080/api/v1/check
+   docker compose exec -T nora /app/.venv/bin/python -c \
+     'import urllib.request; print(urllib.request.urlopen("http://signal-cli:18080/api/v1/check", timeout=5).status)'
    ```
 
    If that's not a healthy 200, restart or investigate signal-cli itself before touching
@@ -856,60 +819,14 @@ intermittent one. The fix is the request shape itself (the carry above). See `do
 
 ## 7. "Where do eval results live?"
 
-**Langfuse, as of 2026-08-05 — verified end-to-end.** DEC-6: `strands-agents-evals`
-stays the *runner*; Langfuse is the *store* for datasets, dataset runs and scores.
-
-**Datasets** (one per corpus, seeded from the YAML in `evals/`):
-`nora-trigger`, `nora-no-trigger` (12 items each), `nora-adversarial` (10:
-the union of the three GATED adversarial corpora — the three measured-gap
-corpora wired in 2026-09-17 export nothing, the same as every other live
-suite) — keyed
-`<corpus>/<case-name>`. Langfuse item IDs are unique **per project across all
-datasets**, which is why the ids are namespaced; a bare case name would let one
-corpus silently overwrite another's item.
-
-**Exporting a run** needs **both** switches — belt and braces, so an ordinary local
-eval never talks to the network:
-```bash
-uv run python -m evals.run --suite all --export-langfuse   # CLI flag
-# and config.toml: [evals.langfuse] enabled = true
-```
-`config.example.toml` deliberately keeps `enabled = false`: a fresh install should
-not assume a Langfuse exists.
-
-**Reading results:** each run becomes a dataset run; each evaluator contributes a
-BOOLEAN score (`replies_at_least_once`, `no_send_without_trigger`, `tool_budget`,
-`no_redundant_read`, `honcho_fed_once_per_reply`), plus `a8_silent_failure` for the
-A8 SLO. Langfuse's mean-of-run aggregation turns that last one into the
-`<1% silent failure` ratio directly. Re-running with the same run name **updates in
-place** rather than duplicating — ids are deterministic UUID5 over
-`(run_id, item_id, name)`.
-
-**The export can never fail the gate.** `NullEvalSink` is the default and
-`LangfuseEvalSink` swallows every transport error; a run against an unreachable
-Langfuse still prints its verdict and exits with the same code. That independence
-is deliberate — an observability store must not be able to break CI.
-
-**SUPERSEDED 2026-09-18, then again 2026-09-20.** `--suite all` and the whole
-`python -m evals.run` CLI are gone (`design/evaluation/` Step 5). The old
-`python -m evals.rebuilt evals/corpora/<name>.yaml` CLI that replaced it is
-ALSO gone (`design/evaluation/10-the-scenario-map.md` §15/16, the corpus
-port) — the suite is now `python -m evals <name>` (a corpus NAME, not a file
-path; `--list` shows every one, `--class`/`--all` select more than one), and
-`make eval-participation` / `eval-gate` /
-`eval-adversarial-corpora` are the wrappers, updated to match. Read
-`design/evaluation/06-first-full-run.md` before quoting any number from it —
-four corpora are currently ungradable without a judge, and the judge is too
-slow to run at corpus scale. The paragraph below is kept as history. The export is
-working correctly — it is faithfully recording a real failing verdict.
-
-**Two wire-format traps, both found only by pushing to the live instance:**
-- `POST /api/public/dataset-run-items` returns **404** without a `traceId`. The
-  sink now supplies a deterministic one.
-- Scores go to `/api/public/scores`. `/api/public/v2/scores` exists but has **no
-  POST route** (405). Both failures were silent, because the sink swallows errors
-  by design — which is why the sink now logs the response body, not just the status.
-
+The current entry point is `uv run python -m evals <corpus-name>`.
+`uv run python -m evals --list` lists the selectable corpora without running one;
+`--class` and `--all` select broader runs. Live runs need the configured model,
+source clone and backing services and can spend model calls. Use the
+[eval SOP](eval-sop.md) for setup and the results/trace readback procedure.
+The runner prints measurements; retain its output and exit code with the source
+revision. Langfuse traces are separate evidence, not a substitute for the runner's
+verdict. A timeout or error is never a pass.
 
 ## 8. "Who is this, and which group is that?" — the control plane
 
@@ -1099,20 +1016,16 @@ git -C ~/workspace/nora describe --tags --match 'v[0-9]*'
 | `vX.Y.Z-N-g<sha>` | the checkout is N commits past the release | nothing, if that is what is deployed. The release itself is `nora-release` |
 | an older `vX.Y.Z` than GitHub shows | the tag was not fetched when the image was built | `build-image.sh` fetches tags; a failed fetch warns and stamps from local tags. Fetch, then rebuild |
 
-## 8c. Deferred delivery (`compute_jobs`, idle)
+## 8c. Deferred delivery (`compute_jobs`)
 
-Nothing writes a `compute_jobs` row today. The artifact tool and the
-per-job container backend were retired in S3b (design/sandbox-runtime decision
-4); files now leave through `computer_export` and documents through
-`document_publish`. The outbox, `ComputeJobPoller` and boot recovery are kept as
-the generic deferred-delivery path a future `delegate_task` will use, so the
-evidence below still applies the day something writes a row. R-5 keeps every
-failure of that delivery out of the room, so the counter and the table are the
-only evidence.
+Sub-agent jobs and MiniMax video generation write the deferred-delivery
+outbox when their backends are enabled. `ComputeJobPoller` polls those backends
+and delivers completed work through the fire path in the originating room.
+Inspect both the job row and delivery counter when a promised result is missing.
 
 ```bash
 curl -s localhost:9100/metrics | grep nora_compute_jobs_delivered_total
-docker exec nora-db psql -U nora -d nora -c \
+docker compose exec -T db psql -U nora -d nora -c \
   'select id, state, created_at, completed_at, error from compute_jobs
    order by created_at desc limit 10;'
 ```
@@ -1127,8 +1040,10 @@ docker exec nora-db psql -U nora -d nora -c \
 **Nothing here is retried.** One job, one delivery, ever — the same
 at-most-once rule reminders hold.
 
-**`[compute] enabled = true` builds nothing.** No backend adapter ships, so the
-poller is not spawned and composition logs a warning at boot. Set it to `false`.
+The poller needs `[compute] enabled = true`, an enabled backend and a live fire
+path. `[subagent]` needs its Dreamer model and budgets; `[video_gen]` needs the
+MiniMax key and media storage. Enabling compute alone with no backend logs a
+warning and starts no poller. Check the relevant backend's configuration first.
 
 ## 9. "Where does everything live?" (read this first, months later)
 
@@ -1167,24 +1082,54 @@ gitignored and bind-mounted read-only into the container.
 startup (Q4). An edit alone changes nothing, and nothing warns you — this is the single
 most likely way to lose an hour. `nora_unmapped_senders_total` is the tell.
 
-**`data/` vs `state/` is deliberate.** Nora's container mounts `./data`; it does
-NOT mount `./state`. She has no business reading Signal identity keys, so they
-sit outside her reach.
+**Storage and credentials.** Compose mounts `./data` at `/app/data` and the
+whole `./state` directory at `/app/state` in Nora. Signal session material is
+therefore within that mount too; do not assume the container cannot read it.
+PostgreSQL uses the `db-data` named volume; RustFS blobs use `rustfs-data`.
+OAuth refresh state and messaging sessions must be preserved as credentials.
+Optional audio-controller state is in its own named volume.
 
-**What is irreplaceable:** `state/signal-cli/data/` — that is the device
-registration. Lose it and you re-link a device (QR scan from the primary phone).
-Everything else regenerates: `stickers/` and `avatars/` are caches that were
-7.6MB and 560KB and were pruned on 2026-08-05; signal-cli refetches them on
-demand.
+**Back up a coordinated set.** Stop writers, dump PostgreSQL and copy both bind
+mounts and object storage. Keep the backup outside the checkout, access-restricted
+and encrypted at rest. Record the deployed image/source revision with it. The
+commands below assume the default `./data` bind source; include any configured
+`NORA_DATA_HOST_ROOT` and additional external stores separately.
 
-**Back up:**
 ```bash
-tar czf ~/backups/nora-state-$(date +%Y%m%d).tar.gz -C ~/workspace/nora state data
+BACKUP="$HOME/backups/nora-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$BACKUP"
+chmod 700 "$BACKUP"
+docker compose stop
+docker compose start db
+docker compose exec -T db pg_dump -U nora -d nora -Fc > "$BACKUP/postgres.dump"
+docker compose stop db
+tar czf "$BACKUP/config-state-data.tar.gz" .env config.toml identity.toml policy.toml state data
+docker compose cp rustfs:/data "$BACKUP/rustfs"
+# If voice is installed, preserve its desired-state volume too:
+# docker compose cp voice-sidecar:/var/lib/audio-controller "$BACKUP/audio-controller"
 ```
 
-**Restore:** stop the stack, extract over `state/`, start. The account is
-identified by `state/signal-cli/data/accounts.json` and the account-specific files
-beside it. Preserve the complete directory rather than selecting account filenames.
+Check every command's exit code and inspect the archive and dump before resuming
+the installed deployment mode. Back up the external memory backend and sandbox
+workspace through their own procedures; neither is included in this Compose dump.
+A restore rehearsal on isolated storage is the verification that the set works.
+
+**Restore:** stop the stack and use the matching image/configuration revision.
+Keep the current data until the restore is verified. Restore the archive in the
+installation directory, then copy the RustFS contents into its stopped service
+and restore the database (containers/volumes must already exist):
+
+```bash
+tar xzf "$BACKUP/config-state-data.tar.gz"
+docker compose cp "$BACKUP/rustfs/." rustfs:/data
+# If saved: docker compose cp "$BACKUP/audio-controller/." voice-sidecar:/var/lib/audio-controller
+docker compose start db
+docker compose exec -T db pg_restore -U nora -d nora --clean --if-exists --no-owner < "$BACKUP/postgres.dump"
+```
+
+Resume through the installed deployment mode, then verify health, account linkage
+and a permitted message. Preserve the complete `state/signal-cli/` directory;
+selecting individual account files can lose the device registration.
 
 **Before a signal-cli upgrade:** create and verify a backup outside the checkout,
 for example `~/backups/signal-cli-<timestamp>/signal-cli-data.tar.gz`. Store
@@ -1246,7 +1191,7 @@ to the previous version.
 The browser runtime behind the X and LinkedIn tools (DEC-201) is four pieces on the
 host, all systemd **user** services or user installs — none of them is the
 Nora container, and Nora runs fine with all of them down (the tool answers
-`unavailable`). See `ARCHITECTURE.md` §1's browser-boundary note.
+`unavailable`). See [Architecture — State and trust boundaries](../ARCHITECTURE.md#state-and-trust-boundaries).
 
 The Tailscale address, the OpenCLI profile alias and the host user in the unit
 names below are placeholders; the real ones are on the deploy host

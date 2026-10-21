@@ -1,5 +1,8 @@
 # Glossary
 
+All example names, account IDs, nicknames and room mappings in this file are
+synthetic pseudonyms; replace them with your own installation values.
+
 Words in this repo that mean something specific, and words that have collided.
 
 Written 2026-08-06, after a naming discussion surfaced three terms doing double
@@ -259,32 +262,16 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   must be Nora's: marked `nora_owner` in its metadata, or absent or empty
   (then claimed); anything else refuses startup.
 
-- **Standing** — Nora's held position toward a subject: today, one paragraph
-  per room, what she currently thinks, distinct from what was said, plus its
-  **working set** (below). It is *derived* state, written by the debrief path
-  (`nora/engagement/stages/debrief.py`, which has created no notes since
-  DEC-202) after each tag turn, and by the Cognition session (DEC-277,
-  2026-10-03; the ingest-spawned event/rollup fold is deleted), stored through `StandingStore`,
-  and screened for egress before it is written — not before it is read,
-  because a screen a cache hit skips is not a screen. Standing is an
-  **input** to a later turn, never an output of the current one. Since
-  2026-09-24 it is also where she keeps what she found on a turn and has
-  not yet given the room — the compact of her work in that room
-  (design/standing-compact/) — folded by ONE model call.
-
-  **Today's fold keeps no history beyond its head**, so anything that must
-  survive belongs in a note. `design/cognition-loop/10-tiers.md` §1 and
-  `12-schemas.md` §5 change this: the head stops being a lossy fold, and each
-  section carries its own support and age, and may hold an undated position
-  that persists across folds — `I hold open`, `What I am following`. The
-  ROOM schema (`Where it stands`, `I hold open`, `I owe`, `Found, not yet
-  given`) ships live at migration step 3, written by both the debrief and the
-  ingest fold through one shape; UNIT and PERSON Standing, new subjects, ship
-  at step 8. Not built yet; described above as it runs today.
-
-  Standing is Nora's held **position** — do not read it as status or a queue
-  position. And do not read `NoteStore.standing()` — the query for
-  not-retired notes — as this tier; the two collided once (39 D8).
+- **Standing** — Nora's held position toward a subject, distinct from a
+  transcript, status or queue. Room Standing is built: the debrief and Cognition
+  paths revise the same typed head through `standing_revise`, with append-only
+  revision history and provenance. Its four sections are `Where it stands`,
+  `I hold open`, `I owe` and `Found, not yet given` (the working set below).
+  Sections carry support and age; held positions can persist across folds.
+  Standing is screened before writing and supplies context to later turns.
+  Unit and person subjects are defined separately in the Cognition design;
+  this room entry does not claim every proposed subject is implemented.
+  `NoteStore.standing()` means non-retired notes and is a different query.
 
 - **working set** — the part of Standing that holds what she found on a turn
   and has not yet given the room: options, findings, a shortlist (#445,
@@ -704,4 +691,4 @@ both keyings and so nothing compares them.**
 
 R-19 is **reserved but never assigned** (design/11). Never take the next free
 number from memory or from chat: re-read the index at merge time
-(`CONTRIBUTING.md` «Numbering discipline»).
+(`docs/maintainers/conventions.md` «Numbering discipline»).

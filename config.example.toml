@@ -1,3 +1,6 @@
+# All example names, account IDs, nicknames and room mappings in this file are
+# synthetic pseudonyms; replace them with your own installation values.
+
 identity_file = "identity.toml"
 policy_file = "policy.toml"   # who may talk to her, and where; see policy.example.toml
 
@@ -444,8 +447,9 @@ token_env = "PULSE_MCP_TOKEN"
 budget = 5
 
 # Deferred delivery: a background poller that tells a room when a promised job has
-# finished. No backend adapter ships today, so `enabled = true` builds nothing and
-# logs a warning at boot. Leave it false.
+# finished. Supported backends are the optional sub-agent worker and MiniMax video
+# generation. Enable the relevant backend and its credentials/budgets as well as
+# [compute]; delivery also needs the fire path. With no backend, no poller starts.
 [compute]
 enabled = false
 # poll_tick_seconds = 10      # seconds between poller checks for a finished job; a lateness bound, not a deadline
@@ -656,17 +660,10 @@ enabled = false
 # tz_name = "Asia/Hong_Kong"
 # metrics_port = 9103
 
-# Web search and page fetch for the `search`/`fetch` tools (DEC-57). The section
-# is optional and every key has a default; without it search is off.
-#
-# Off by default. Turn it on only when Firecrawl's egress is network-isolated so
-# it cannot reach Nora's internals (Honcho, signal-cli, OmniRoute); that
-# isolation is the primary SSRF control. While off, both tools answer
-# `unavailable`.
-#
-# `firecrawl_api_version` is the scrape route version of the deployed instance.
-# The three caps bound the input-token cost of retrieved text, which is re-sent
-# on every later model call.
+# Optional web search and page fetch through remote Tavily or Exa APIs.
+# Off by default; enable the section and supply the selected provider's key.
+# Both tools answer `unavailable` while disabled or without a usable provider.
+# Provider-neutral caps bound text re-sent on later model calls.
 [search]
 # web_search + web_fetch (DEC-73, DEC-116): web_search returns ranked results
 # with content, web_fetch opens a specific link; both crawl from the provider's
@@ -989,8 +986,9 @@ nora_wake_batch = 100
 batch_limit = 300
 
 [persona]
-# The Persona sessions, in SHADOW (design/unified-memory/45): one Dreamer
-# session per (unit, listed person) writes typed lines nothing reads yet. Woken
+# Persona sessions: one Dreamer session per (unit, listed person) writes typed
+# lines. Prompts read them only when enabled and render are both true; otherwise
+# the sessions write in shadow. Woken
 # like the person's Character session ([culture] person_wake_batch and
 # stale_seconds) and at once by a fact a turn's `remember` wrote about them.
 # Each person's first session is the backfill. Needs [dreamer] and [culture].

@@ -118,10 +118,10 @@ runtime, `identity.toml` maps accounts to people, and `policy.toml` grants acces
 Secrets stay in host-owned environment/state. OAuth refresh state and platform
 registrations are persistent data and must survive image replacement.
 
-Doctrine and Dreamer content are currently read-only directory bind mounts.
-Other application code and runtime skills come from the image. A pull on the
-host can therefore change instructions without changing the image; a future
-immutable deployment must version both together.
+A deployment that bind-mounts `nora/doctrine` and `nora/dreamer` can hot-reload
+that content on mtime. Other application code and runtime skills come from the
+image. Operators using this option must track the mounted content alongside
+the image revision when reconstructing running behaviour.
 
 ## Deployment and operations
 

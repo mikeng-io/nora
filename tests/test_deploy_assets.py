@@ -50,7 +50,8 @@ def test_the_install_script_creates_a_shell_less_system_user():
 def test_the_deploy_readme_documents_the_rollback():
     text = (DEPLOY / "README.md").read_text()
     assert "rollback" in text.lower()
-    assert "messages.db" in text
+    assert "PostgreSQL" in text
+    assert "compatible with both schema and config" in text
 
 
 def test_migrations_are_declared_as_package_data():

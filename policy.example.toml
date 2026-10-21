@@ -1,3 +1,6 @@
+# All example names, account IDs, nicknames and room mappings in this file are
+# synthetic pseudonyms; replace them with your own installation values.
+
 # Who and where Nora answers. Copy to `policy.toml` (gitignored). Read once at
 # startup: a change needs a restart.
 #

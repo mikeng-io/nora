@@ -368,8 +368,8 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     # a delete loses the record of what the delete removed.
     #
     # The OPERATOR-facing docs (`docs/runbook.md`, `docs/eval-sop.md`,
-    # `docs/maintainers/conventions-rationale.md`, the `make eval-*` targets) name `python -m evals`,
-    # because those tell somebody to run a command.
+    # `docs/maintainers/conventions-rationale.md`, the `make eval-*` targets)
+    # name `python -m evals`, because those tell somebody to run a command.
     **{
         (doc, "evals/run.py"): (
             "the old eval CLI, deleted 2026-09-18; this line records what was "
