@@ -1,5 +1,25 @@
 # Changelog
 
+## [6.5.0](https://github.com/mikeng-io/nora/compare/v6.4.2...v6.5.0) (2026-10-21)
+
+
+### Features
+
+* **computer:** share group workspaces and browser state across each unit ([d54cea5](https://github.com/mikeng-io/nora/commit/d54cea5ce662a9d82bbab808bed680ec175e2b48))
+
+
+### Bug Fixes
+
+* **computer:** preserve rollback profiles and refuse interrupted retirement plans ([a51ddb8](https://github.com/mikeng-io/nora/commit/a51ddb8d48f63af6e5230252932093bedfe9a218))
+* **computer:** retire verified migration quarantine and stop before rollback ([a086c11](https://github.com/mikeng-io/nora/commit/a086c11b3771aec8c7a300ee444a86b302fe7860))
+* **deps:** patch certifi and Vite security vulnerabilities ([517edcf](https://github.com/mikeng-io/nora/commit/517edcf51cd1d355910fc316f79c6bb67ab1bdfe))
+* **voice-lab:** require STT_URL and surface curl failures ([bfee4fc](https://github.com/mikeng-io/nora/commit/bfee4fc48f1d792aa50aa54bfdce12dec200386e))
+
+
+### Security
+
+* **deps:** override vulnerable Pillow and PyNaCl caps ([ea763e5](https://github.com/mikeng-io/nora/commit/ea763e5bf508a611069b73fe33b8e56f7e7c0d69))
+
 ## [6.4.2](https://github.com/mikeng-io/nora/compare/v6.4.1...v6.4.2) (2026-10-21)
 
 
