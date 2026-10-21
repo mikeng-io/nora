@@ -267,7 +267,8 @@ index and Honcho's exit are now listed in their order.
 2. **Message readings on new messages.** Record items, run on every batch;
    nothing reads them yet.
 3. **History readings** (about two months), plus the Honcho seed check
-   (18 Q3, still open; recommend reference only for the first measure).
+   (18 Q3, decided: measurement reference only for the first measure, nothing
+   imported; decide any source-rechecked seed on that result).
 4. **Character rework and the ADR 0026 rename in ONE migration.** One
    `character-*` writer family (person, room, unit, nora, verdict) reads
    readings and writes typed profile/traits/hypotheses lines; prose adaptors

@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Message readings — every Record item is perceived once on arrival"
-description: "Read every message batch into the Record, decompose Honcho into the existing layers, restore Character as the bounded card, and gate the switch on answerability; record the remaining questions without deciding them."
+description: "Read every message batch into the Record, decompose Honcho into the existing layers, restore Character as the bounded card, and gate the switch on answerability; record the operator’s decisions on Q1–Q5."
 timestamp: '2026-10-21'
 edges:
   - {dst: 00-intent, rel: extends, provenance: asserted}
@@ -13,7 +13,7 @@ edges:
 
 # Message readings
 
-> 2026-10-21 (operator): the decisions below are settled design, not an implementation or switch receipt. Q1–Q5 remain open. New text follows [ADR 0026](../../docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md): Notebook rows are judgements, Character is the tier, one row is an entry, and its parts are profile, traits and hypotheses. “Persona” is retired as vocabulary; existing code names stay in backticks.
+> 2026-10-21 (operator): the decisions below are settled design, not an implementation or switch receipt. Q1–Q5 are decided below. New text follows [ADR 0026](../../docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md): Notebook rows are judgements, Character is the tier, one row is an entry, and its parts are profile, traits and hypotheses. “Persona” is retired as vocabulary; existing code names stay in backticks.
 
 ## Context
 
@@ -109,8 +109,9 @@ not turn a Rollup into model-written synthesis.
 With statements in readings, a Character entry is again the **bounded
 synthesis Nora sees in every prompt**, with profile, traits and hypotheses.
 It is not the whole memory. The person session reads readings; messages
-remain citable ([45 §4](45-persona-adaptor.md#4-the-adaptor)). Session shape
-is still Q2, not settled here.
+remain citable ([45 §4](45-persona-adaptor.md#4-the-adaptor)). Under Q2, the session is pushed readings since its last session, has read tools
+over older readings and messages with bounded iterations, and ends in one
+settle write (today `persona_write`); still one writer per tier, no new writer.
 
 Answers come from **Views over readings, Rollup and entries**, through
 `memory_search` + pre-fetch. Nora’s own turn does the reasoning Honcho’s
@@ -126,7 +127,9 @@ forward work is:
 1. **This design revision.**
 2. **Message readings on new messages**, in the Record; nothing reads them
    yet.
-3. **History readings**, about two months, plus the Honcho seed check (Q3).
+3. **History readings**, about two months; Honcho observations are measurement
+   reference only for the first measure, with nothing imported. Decide any
+   source-rechecked seed on that result (Q3).
 4. **Character rework and the ADR 0026 rename in ONE migration**: one
    `character-*` writer family (person, room, unit, nora, verdict), reading
    readings and writing typed profile/traits/hypotheses lines. Prose
@@ -145,43 +148,35 @@ names only; this revision changes no existing code identifier.
 Views and Honcho's dialectic answer it, and judge the answers blind. This
 supersedes [45 §6 items 4–5](45-persona-adaptor.md#6-what-honcho-knew-is-re-derived-and-that-is-measured)
 in part: Character-line coverage is no longer the switch gate. The old text
-is retained. Q1 leaves the answerability thresholds and construction open.
+is retained. Under Q1, build and freeze the set before any run, with no editing
+after the first answer is seen. Pass requires blind judgement that the new
+Views are at least as good as Honcho’s dialectic on ≥80% of questions AND
+an error rate <5% (answers asserting something their sources do not support).
+Both must hold.
 
 The **80-pair reply replay stays**, including its existing at-least-55%
 preference bar (45 §6 item 6). Neither gate is run or claimed passed by this
 docs revision.
 
-## Open questions
+## Decided questions
 
-These are open, also recorded in [_index.yaml](_index.yaml); recommendations
-are not decisions.
+These decisions are also recorded in [_index.yaml](_index.yaml).
 
 ### Q1 — Answerability thresholds and question-set construction
 
-**Open.** Recommend freezing the set **before any run**, keeping **error
-<5%**, and having the operator propose the parity bar. Do not reuse the
-old card-coverage percentages as answerability thresholds.
+**Decided (operator, 2026-10-21).** The question set is built and frozen **before any run**; it is not edited after the first answer is seen. Pass requires the new Views' answer to be judged blind as **at least as good as Honcho's dialectic on ≥80%** of questions, AND the new Views' **error rate <5%**. An error is an answer asserting something its sources do not support. Both must hold.
 
 ### Q2 — Character session shape
 
-**Open.** Today the session is one call with a pushed bundle. Recommend
-Honcho's pattern: push readings since the last session, supply read tools
-over older readings and messages with bounded iterations, and keep one
-`persona_write`-style settle. This recommendation does not add another
-writer or implement a session change.
+**Decided (operator, 2026-10-21).** The session follows Honcho's pattern: it is pushed the readings since its last session, has read tools over older readings and messages with a **bounded number of iterations**, and ends in **one** settle write (today `persona_write`). There is still one writer per tier; no new writer.
 
 ### Q3 — Honcho seed
 
-**Open.** Either import explicit Honcho observations as readings only where
-each is re-checked against its source message, or use them solely as the
-measurement reference. Recommend **reference only for the first measure**;
-decide seeding on that measure. No unchecked observation is imported by
-this revision.
+**Decided (operator, 2026-10-21).** Honcho's observations are used **only as the measurement reference** for the first measure (the Q1 gate and coverage comparisons). Nothing is imported. Whether to seed, only with each observation re-checked against its source message, is decided on that first measure's result.
 
 ### Q4 — Reading model and budget
 
-**Open.** The runtime model recorded in the operator's brief is **DeepSeek
-V4.1 Flash**; that does not settle the reading model or its budget.
+**Decided (operator, 2026-10-21).** The reading model is **DeepSeek V4.1 Flash**. The budget is not set now: the first deliverable of phase 2 is to measure real input/output tokens over **one day of live messages**, then fill in the existing formula C = (I × Pᵢ + O × Pₒ) / 1,000,000 and set the budget from that measurement.
 
 A per-batch cost estimate must use live message volume and measured input
 and output tokens. The available live-volume snapshot in
@@ -195,14 +190,12 @@ For mean **B messages/batch**, that rate estimates **111/B reading
 calls/day**. If a batch uses **I input tokens**, **O output tokens**, and
 the chosen route charges **Pᵢ / Pₒ per million tokens**, its estimated cost
 is **C = (I × Pᵢ + O × Pₒ) / 1,000,000 per batch**, or **(111/B) × C per
-day** at that historical rate. Batch size/context is Q5; token measurements,
+day** at that historical rate. Batch granularity/context is decided in Q5; token measurements,
 current live volume and route prices are not supplied by this brief, so a
 numeric currency estimate and a budget remain **unmeasured**, not zero or
-approved. Refresh those inputs for the per-batch estimate before settling Q4.
+approved. Refresh those inputs for the per-batch estimate and set the budget
+from the phase 2 one-day measurement.
 
 ### Q5 — Reading granularity
 
-**Open.** Per message, or per batch with interleaved context as Honcho does?
-The decision to run on every arriving batch does not decide the granularity
-of items inside the reading. No recommendation was specified for this
-choice; neither option is selected here.
+**Decided (operator, 2026-10-21).** Readings are **per batch, with the surrounding conversation as context**, as Honcho does: a reply like “me too” only means something in context, and this uses fewer calls. Every claim in a reading is still tied to its own source message ids, so per-message citation and the visibility retirement rule are unchanged.

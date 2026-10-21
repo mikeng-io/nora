@@ -196,7 +196,7 @@ dispute, or a told line about them by someone else.
 
 **Reads:**
 
-> 2026-10-21 (message readings): the person session reads the [readings](18-message-readings.md) of the person's new messages and eligible mentions; the original messages stay citable. Readings retain who said what, how and when, with their source message ids. This amends the message inputs below; the pushed-bundle versus bounded-tool session shape remains open (Q2 in 18).
+> 2026-10-21 (message readings): the person session reads the [readings](18-message-readings.md) of the person's new messages and eligible mentions; the original messages stay citable. Readings retain who said what, how and when, with their source message ids. This amends the message inputs below; Q2 in 18 decides the session is pushed readings since its last session, has read tools over older readings and messages with bounded iterations, and ends in one settle write (today `persona_write`); still one writer per tier, no new writer.
 
 | input | today | after |
 |---|---|---|
@@ -560,7 +560,7 @@ every room of the unit for the unit's account.
 
 ## 6. What Honcho knew is re-derived, and that is measured
 
-> 2026-10-21 (switch gate, superseded-in-part): §6 items 4–5 no longer require Character lines to cover Honcho's facts. The gate is **Nora can answer what Honcho could**: a frozen question set answered by the new Views over readings, Rollup and entries and by Honcho's dialectic, judged blind. Answerability thresholds and question construction remain open (Q1 in [18](18-message-readings.md)); the recommendation is to freeze before any run, keep error <5%, and have the operator propose the parity bar. Item 6, the ≥80-pair reply replay and its ≥55% preference bar, stays. The earlier coverage text and implementation clarifier below are retained as history, not the new switch criterion.
+> 2026-10-21 (switch gate, superseded-in-part): §6 items 4–5 no longer require Character lines to cover Honcho's facts. The gate is **Nora can answer what Honcho could**: a frozen question set answered by the new Views over readings, Rollup and entries and by Honcho's dialectic, judged blind. Q1 in [18](18-message-readings.md) decides the set is built and frozen before any run, with no editing after the first answer is seen; pass requires blind judgement that the new Views are at least as good as Honcho’s dialectic on ≥80% of questions AND an error rate <5% (answers asserting something their sources do not support). Both must hold. Item 6, the ≥80-pair reply replay and its ≥55% preference bar, stays. The earlier coverage text and implementation clarifier below are retained as history, not the new switch criterion.
 
 1. **Shadow first, and shadow changes no prompt** (amended 2026-10-15). The
    adaptor writes Persona under a **shadow key**; the live Character head
