@@ -1,5 +1,7 @@
 # Typed Identity and complete historical recovery
 
+> 2026-10-21 (18 / ADR 0026): the status and contract below describe the earlier implementation. [18](18-message-readings.md) places source statements in Record message readings and restores Character entries as bounded profile, traits and hypotheses cards; [10 §6](10-honcho-audit.md#6-honchos-architecture-mapped) maps Honcho into the layers. Answerability and the reply replay, rather than Character-line fact coverage, gate the switch.
+
 Status: implemented locally; independent review and live acceptance pending, 2026-10-19. This amends
 35 and 45 on the operator's instruction: Identity is queryable factual data,
 Character is recurring behavior, and one Persona session owns both. It does

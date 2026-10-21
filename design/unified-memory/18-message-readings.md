@@ -6,7 +6,7 @@ timestamp: '2026-10-21'
 edges:
   - {dst: 00-intent, rel: extends, provenance: asserted}
   - {dst: 10-honcho-audit, rel: depends_on, provenance: asserted}
-  - {dst: 45-persona-adaptor, rel: supersedes, provenance: asserted}
+  - {dst: 45-persona-adaptor, rel: extends, provenance: asserted}
   - {dst: ../cognition-loop/05-data-model, rel: extends, provenance: asserted}
   - {dst: ../cognition-loop/25-rollup, rel: extends, provenance: asserted}
 ---
@@ -68,8 +68,10 @@ A reading is a reading of an item, **not a fact asserted as truth**. “Asked
 whether”, “planned to” and “someone else said” do not become self-reports or
 settled facts by being recorded. Original messages remain citable. A reading
 is versioned like a Rollup build, rebuildable from the Record, and superseded
-rather than deleted. Its projection is a node with an edge to each message
-it reads ([25](25-memory-graph.md)); the index remains derived.
+rather than deleted. Its projection is a node with an `attached_to` edge to
+each message it reads ([25](25-memory-graph.md)); the index remains derived.
+
+A message reading’s visibility is scoped to its source messages: a reader must be eligible to read every source message. When any source message is hidden (forget/delete) or edited, the reading’s live projection is invalidated: its node is retired, and the reading is re-read from eligible sources on the next build. A reading never outlives the eligibility of what it reads; retained versions are provenance, not live retrieval results.
 
 ## When it runs, and why this is not #115
 
@@ -95,7 +97,7 @@ Memory no longer sits beside the flow. See also
 | (none) | Rollup | Rollup |
 | dreamer deduction / induction (+ our abduction) | Character entries: traits, hypotheses | Notebook |
 | peer card | Character entry profile | Notebook |
-| dialectic | `ask_memory` / pre-fetch over readings, Rollup and entries | Views |
+| dialectic | `memory_search` + pre-fetch over readings, Rollup and entries; Nora’s own turn does the reasoning Honcho’s dialectic agent does | Views |
 
 Authored still fixes the rules. A Rollup may compute over readings because
 they are Record items, but its computation remains **code only**
@@ -111,8 +113,9 @@ remain citable ([45 §4](45-persona-adaptor.md#4-the-adaptor)). Session shape
 is still Q2, not settled here.
 
 Answers come from **Views over readings, Rollup and entries**, through
-`ask_memory` and pre-fetch. This keeps source statements available without
-requiring the Character card to repeat all of them. Notebook entries remain
+`memory_search` + pre-fetch. Nora’s own turn does the reasoning Honcho’s
+dialectic agent does; no new tool is introduced. This keeps source statements
+available without requiring the Character card to repeat all of them. Notebook entries remain
 judgements, never independent evidence.
 
 ## Phases, in order
@@ -128,8 +131,8 @@ forward work is:
    `character-*` writer family (person, room, unit, nora, verdict), reading
    readings and writing typed profile/traits/hypotheses lines. Prose
    adaptors retire at the switch.
-5. **Answering**: `ask_memory` over readings + Rollup + entries, then the
-   gates below.
+5. **Answering**: `memory_search` + pre-fetch over readings + Rollup + entries,
+   then the gates below.
 6. **The switch** (`[memory_index] enabled`), the operator's call. Honcho's
    feed stops later ([70](70-honcho-cutover.md)).
 

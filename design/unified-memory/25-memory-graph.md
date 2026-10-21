@@ -70,7 +70,7 @@ set, each with its writer:
 | `authored_by` | message, social item, her artifact → person (Nora for her own) | ingestion |
 | `in_room` | message, link, entry → room | ingestion, write verb |
 | `shared_by` | link, media, a social item's medium → person | ingestion; the social stream's projection |
-| `attached_to` | media → message or link; link → message; a social item's medium, and its tagged place, → its social item | ingestion; the media lane for a reel read from a link (§6 step 3); the social stream's projection (§7a) |
+| `attached_to` | message reading → message; media → message or link; link → message; a social item's medium, and its tagged place, → its social item | ingestion; the media lane for a reel read from a link (§6 step 3); the social stream's projection (§7a) |
 | `during` | message, media → episode | Rollup builder |
 | `about` | entry → entity (person, room, unit, Nora, place) | write verb |
 | `cites` | an entry that stores citations (memo, event, lesson, Persona line, note; never Standing) → Record row, Rollup key or episode | write verb |
@@ -319,7 +319,7 @@ The only other new moving part is the embedding worker.
 
 **What gets a node, and with what text:**
 
-> 2026-10-21 (message readings): each [message reading](18-message-readings.md) is projected as a Record node with an edge to each message it reads. Its searchable text states about whom, the claim and how it was said; the source messages remain citable. Readings carry their version and supersession provenance; the index remains derived and rebuildable. This records the design, not a new implemented edge identifier.
+> 2026-10-21 (18 / ADR 0026): each [message reading](18-message-readings.md) is projected as a Record node with the existing `attached_to` relation to each message it reads (§2); no new relation. Its searchable text states about whom, the claim and how it was said; the source messages remain citable. Its visibility is scoped to all its source messages. When any source is hidden (forget/delete) or edited, the reading’s live projection is invalidated: its node is retired and it is re-read from eligible sources on the next build. A reading never outlives the eligibility of what it reads. Retained versions carry supersession provenance; the index remains derived and rebuildable. This is the design, not an implementation receipt.
 
 | layer | item | searchable text | vector |
 |---|---|---|---|

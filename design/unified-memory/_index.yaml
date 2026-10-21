@@ -56,7 +56,7 @@ open_questions:
   - id: Q2
     question: "Character session shape: pushed bundle or bounded tool-using session?"
     status: open
-    recommendation: "Push readings since the last session, with read tools over older readings and messages, bounded iterations, and one persona_write-style settle."
+    recommendation: "Push readings since the last session, with read tools over older readings and messages, bounded iterations, and one `persona_write`-style settle."
   - id: Q3
     question: "Source-rechecked Honcho explicit observations as seed readings, or measurement reference only?"
     status: open
@@ -81,7 +81,7 @@ edges:
   - {src: 15-memory-map, dst: ../cognition-loop/05-data-model, rel: extends, provenance: asserted}
   - {src: 18-message-readings, dst: 00-intent, rel: extends, provenance: asserted}
   - {src: 18-message-readings, dst: 10-honcho-audit, rel: depends_on, provenance: asserted}
-  - {src: 18-message-readings, dst: 45-persona-adaptor, rel: supersedes, provenance: asserted}
+  - {src: 18-message-readings, dst: 45-persona-adaptor, rel: extends, provenance: asserted}
   - {src: 18-message-readings, dst: ../cognition-loop/05-data-model, rel: extends, provenance: asserted}
   - {src: 18-message-readings, dst: ../cognition-loop/25-rollup, rel: extends, provenance: asserted}
   - {src: 25-memory-graph, dst: 15-memory-map, rel: depends_on, provenance: asserted}

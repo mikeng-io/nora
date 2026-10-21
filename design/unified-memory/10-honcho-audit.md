@@ -97,6 +97,8 @@ estimates were stale by three orders of magnitude, so these are `count(*)`.
 
 ## 4. What replaces each, and what is not yet known
 
+> 2026-10-21 (18 / ADR 0026): [18](18-message-readings.md) and [§6](#6-honchos-architecture-mapped) amend the replacements below: source statements live in Record message readings, Character entries are the bounded card, and Views use `memory_search` + pre-fetch, with Nora’s own turn doing the reasoning Honcho’s dialectic agent does. The old `feed` and explicit-conclusion rows are historical: in the revised design every batch gets a reading; Q3 leaves source-rechecked seeding open and recommends Honcho as measurement reference only for the first measure. No unchecked conclusion becomes evidence.
+
 | Honcho output | replaced by | open |
 |---|---|---|
 | `search_memory`, `search_memory_workspace` (Cognition's main use) | the derived index, scoped per room or unit, lexical + vector ([00](00-intent.md) part 1) | the bake-off ([20](20-embedding-bakeoff.md)); parity with Honcho's search measured on the Cognition session's own recorded queries |
@@ -162,4 +164,4 @@ existing layers; Memory no longer sits beside the flow:
 | (none) | Rollup | Rollup |
 | dreamer deduction / induction (+ our abduction) | Character entries: traits, hypotheses | Notebook |
 | peer card | Character entry profile | Notebook |
-| dialectic | `ask_memory` / pre-fetch over readings, Rollup and entries | Views |
+| dialectic | `memory_search` + pre-fetch over readings, Rollup and entries; Nora’s own turn does the reasoning Honcho’s dialectic agent does | Views |

@@ -14,6 +14,8 @@ deleted message makes nobody forget (§5), and shadow changes no prompt (§4).
 
 Operator, 2026-10-15, answering 30 §8:
 
+> 2026-10-21 (18 / ADR 0026): [18](18-message-readings.md) amends the per-person-facts ruling below: statements live in Record message readings; Character entries hold the bounded profile, traits and hypotheses card. Views answer from readings, Rollup and entries; the Notebook is judgement, not the statement store.
+
 | 30 §8 | ruling |
 |---|---|
 | 0, 1. Where per-person facts live once Honcho goes | In the Notebook, as **one account per entity that composes identity and character**. They answer one thing, who this entity is to Nora, and are not split into two tiers. |

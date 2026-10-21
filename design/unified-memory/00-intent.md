@@ -101,7 +101,7 @@ retrieval layer exists means they are searchable from their first row.
     │                    ▲
     ▼                    │ one retrieval service: scope → seed → expand → rerank
  VIEWS      push (the speaker's and the room's Character entries, open notes, Standing)
-            · pre-fetch · ask_memory
+            · pre-fetch · memory_search
 ```
 
 Honcho no longer sits beside the flow: its every use has a fate in
@@ -272,8 +272,9 @@ index and Honcho's exit are now listed in their order.
    `character-*` writer family (person, room, unit, nora, verdict) reads
    readings and writes typed profile/traits/hypotheses lines; prose adaptors
    retire at the switch.
-5. **Answering.** `ask_memory` over readings + Rollup + entries, then the
-   answerability and reply gates (45 §6, amended 2026-10-21).
+5. **Answering.** `memory_search` + pre-fetch over readings + Rollup + entries;
+   Nora’s own turn does the reasoning Honcho’s dialectic agent does. The
+   answerability and reply gates follow (45 §6, amended 2026-10-21).
 6. **The switch** (`[memory_index] enabled`), the operator's call. Honcho's
    feed stops later; the later hold/removal procedure remains in
    [70](70-honcho-cutover.md).

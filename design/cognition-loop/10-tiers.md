@@ -16,6 +16,8 @@ edges:
 > 2026-10-03 (DEC-277): the shadow period is over. The Cognition session writes live (`[cognition] enabled`) and is the one background writer of notes, events, Standing and her reminders. The clocked note/proactive adaptors, the shadow machinery and `[cognition] mode` / `session_mode` / `shadow_session_seconds` named here are deleted; wording below that describes them is the plan as written, not current behaviour. See `70-migration.md`.
 
 
+> 2026-10-21 (18 / ADR 0026): [18](../unified-memory/18-message-readings.md) amends the topology below: Honcho is decomposed into the existing layers; Memory no longer sits beside the flow. Statements live in Record message readings, Character entries are bounded cards, and Views retrieve over the layers.
+
 **The topology and the vocabulary are [05](05-data-model.md)** (operator
 2026-10-01, DEC-249): five layers in flow order, Authored → Record → Rollup →
 Notebook → Views, with Memory (Honcho) beside them, and the hierarchy
@@ -52,6 +54,9 @@ Outside these, and neither the Record, the Rollup nor a tier:
   (DEC-291):** what is *given* narrows to its law bucket; until the cut the whole
   doctrine is still served and still wins, and the law subset is what the
   doctrine check reads ([self-growth/31](../self-growth/31-doctrine-audit.md)).
+
+> 2026-10-21 (18 / ADR 0026): the Memory bullet below is historical. [18](../unified-memory/18-message-readings.md) gives source statements a Record home as message readings and decomposes Honcho into Record, Notebook and Views; it no longer owns a separate model beside the layers.
+
 - **Memory** — Honcho, and only Honcho: a third party's derived model of
   people. Read as a hint, never cited. `remember` still writes a person's own
   settled claim about themselves into it.
@@ -281,6 +286,8 @@ In the data model it is a Character entry like any person's, on the same
 machinery ([05](05-data-model.md) §4).
 
 ## 6. The words
+
+> 2026-10-21 (18 / ADR 0026): [18](../unified-memory/18-message-readings.md) amends the **layer**, **Memory** and lowercase **memory** definitions in the historical table below: Honcho no longer sits beside the layers or owns what people said. Source statements live in Record message readings, bounded Character entries are Notebook judgements, and Views retrieve over readings, Rollup and entries.
 
 | word | means exactly | never means |
 |---|---|---|

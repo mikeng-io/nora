@@ -212,6 +212,8 @@ read by the retrieval service, not by a cascade ([25](25-memory-graph.md) §1).
 
 *(All answered 2026-10-15 in [35](35-persona.md).)*
 
+> 2026-10-21 (18 / ADR 0026): [18](18-message-readings.md) amends the historical answers below: source statements live in Record message readings, while Character entries are bounded Notebook judgements with profile, traits and hypotheses, following [ADR 0026](../../docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md).
+
 0. The DEC-249 amendment above: per-person facts move from Memory into the
    Notebook. Without it, Identity has no lawful home once Honcho goes.
    *(Ruled: into Persona, 35 §1.)*

@@ -34,6 +34,9 @@ removing Honcho are not in this step ([00](00-intent.md) «Sequence»).
 6. **`mentions` needs identity resolution** from `identity.toml`, which a pure
    projector cannot do; deferred to Persona's step. `authored_by` uses the
    already-resolved `messages.person_id`.
+
+> 2026-10-21 (18 / ADR 0026): item 7 below is the earlier tool plan. [18](18-message-readings.md) uses the built [65 §5](65-build-step-3-vectors.md#5-one-memory-surface-and-its-verb-2026-10-16-dec-316) surface: `memory_search` + pre-fetch; readings join its inputs, and Nora’s own turn reasons over the results.
+
 7. **`ask_memory` already has a `depth`** (a reasoning-level Literal) and a
    required `person`. Hop depth maps onto it (low 2, medium 3, high and max 4).
    A person-free single verb changes the tool's text: a later `nora-tool` PR
