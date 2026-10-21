@@ -210,6 +210,51 @@ async def test_rollup_rebuild_same_roots_is_unchanged_but_changed_bounds_are_pen
                                person=PERSON, limit=6) == []
 
 
+async def test_rollup_pending_page_computes_each_root_revision_once(env):
+    from sqlalchemy.dialects import postgresql
+
+    await message(env, ident=9, person='person-b', ts=T0 - 1)
+    await message(env, quoted_ts=T0 - 1)
+    async with env.begin() as conn:
+        await conn.execute(sa.insert(ROLLUP_BUILD).values(id=1, status='current',
+            code_version='synthetic', params_sha256='a' * 64, through_ms=T0 + 10))
+        await conn.execute(sa.insert(ROLLUP_TIE).values(build_id=1, unit='unit',
+            valid_from_ms=T0, valid_to_ms=T0 + 10, as_of_ms=T0,
+            lineage=[['message', None, 'signal:room-a']], person_a=PERSON,
+            person_b='person-b', iso_week='2026-W38', replies_ab=1, replies_ba=0,
+            mentions_ab=0, mentions_ba=0, reactions_ab=0, reactions_ba=0, colocation_ms=0))
+
+    queries = []
+
+    def capture(conn, clauseelement, multiparams, params, execution_options):
+        if 'rollup_tie' in str(clauseelement):
+            queries.append(clauseelement)
+
+    sa.event.listen(env.sync_engine, 'before_execute', capture)
+    try:
+        [revision] = await source_inputs(env).rollup(
+            key=KEY, unit='unit', rooms=ROOMS, person=PERSON, limit=1)
+    finally:
+        sa.event.remove(env.sync_engine, 'before_execute', capture)
+    assert [root.row.id for root in revision.roots] == [10]
+    assert dict(revision.properties)['replies_ab'] == '1'
+    [query] = queries
+    sql = str(query.compile(dialect=postgresql.dialect(),
+                            compile_kwargs={'literal_binds': True}))
+    async with env.connect() as conn:
+        [explain] = (await conn.exec_driver_sql(
+            'EXPLAIN (ANALYZE, VERBOSE, FORMAT JSON) ' + sql)).scalar_one()
+
+    def revision_evaluations(node):
+        own = (node['Actual Loops'] if node['Node Type'] == 'Aggregate'
+               and any('jsonb_agg(' in value for value in node.get('Output', ())) else 0)
+        return own + sum(revision_evaluations(child) for child in node.get('Plans', ()))
+
+    # A real revision must be computed, but pending checks, ordering and output
+    # must reuse it. Duplicated subplans caused 830 JIT functions and a 6.9s read.
+    assert revision_evaluations(explain['Plan']) == 1
+
+
 @pytest.mark.parametrize('kind', ['image', 'video', 'sticker'])
 @pytest.mark.parametrize('legacy_body', [None, '', 'original synthetic caption'])
 async def test_initial_cached_recovery_past_old_cursor_is_bounded_and_durable(

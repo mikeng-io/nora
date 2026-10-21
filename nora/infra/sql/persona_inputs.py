@@ -619,7 +619,9 @@ class SqlPersonaInputs:
             ).where(t.unit == unit, t.build_id == current_build_id(), predicate)
             # Reject incomplete/oversized roots BEFORE the bounded page. They
             # remain unacknowledged and a later readable revision is rediscovered.
-            q = stmt.subquery()
+            # Flattening repeats the correlated roots in filters, pending-revision
+            # checks and ordering; JIT compilation alone exceeded the source timeout.
+            q = stmt.cte('rollup_roots').prefix_with('MATERIALIZED')
             stmt = sa.select(q).where(
                 sa.func.cardinality(q.c.root_ids).between(1, 100),
                 sa.or_(*(q.c[f] != 0 for f in fields)),
