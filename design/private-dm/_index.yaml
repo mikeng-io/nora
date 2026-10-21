@@ -2,22 +2,30 @@ kind: design_index
 bundle: private-dm
 title: Private DM anchored to a person's default unit
 description: >
-  WhatsApp text DM proposal: private Record stays protected while existing unit
-  Persona and Cognition curate suitable understanding into shared Notebook state.
+  WhatsApp and Signal share one private transcript and computer workspace per
+  person and anchor unit; unit Persona/Cognition retain curated publication.
 status: proposed
-timestamp: '2026-10-20'
+timestamp: '2026-10-21'
 governance: operator-directed
-origin: Operator clarification of shared unit Persona/Cognition and curated DM learning.
-revision: 2026-10-20; supersedes isolated private Persona and blanket DM learning exclusion.
+origin: Operator rulings on cross-platform continuity, default platform admission and private computer work.
+revision: 2026-10-21; adds cross-platform transcript, computer and subagents to the first integrated slice.
 docs:
   - 00-contract.md
   - 01-current-flow.md
   - 02-storage.md
   - 03-execution.md
   - 04-build-and-acceptance.md
+  - 05-cross-platform.md
 open_questions: []
 implementation_status: not-built
+prerequisites:
+  - ../computer-unit-scope/00-contract.md
 edges:
+  - {src: 05-cross-platform, dst: ../computer-unit-scope/00-contract.md, rel: depends_on, provenance: operator-directed}
+  - {src: 05-cross-platform, dst: 00-contract, rel: extends, provenance: operator-directed}
+  - {src: 05-cross-platform, dst: 02-storage, rel: extends, provenance: proposed}
+  - {src: 05-cross-platform, dst: 03-execution, rel: extends, provenance: proposed}
+  - {src: 04-build-and-acceptance, dst: 05-cross-platform, rel: verifies, provenance: proposed}
   - {src: 01-current-flow, dst: 00-contract, rel: grounds, provenance: inspected-source}
   - {src: 02-storage, dst: 00-contract, rel: realizes, provenance: proposed}
   - {src: 03-execution, dst: 02-storage, rel: depends_on, provenance: proposed}

@@ -1,10 +1,16 @@
 # Private DM — shared unit understanding, curated publication
 
-Status: **revised proposal, not implemented**, 2026-10-20. The operator clarified
+Status: proposed, **not implemented**, revised 2026-10-21. The operator clarified
 that Persona and Cognition are shared within a unit; private conversations may
 contribute curated understanding to Rollup/Notebook. This replaces the earlier
 proposal's separate private Persona and blanket prohibition on DM-derived
 shared learning. No runtime/configuration change or acceptance is implied.
+
+Revision 2026-10-21: WhatsApp + Signal, one cross-platform transcript, private
+computer work and subagents are in the first integrated PR. This reverses the
+earlier computer/export/unsolicited-private-job deferral, subject to the private
+publication and deferred-send rules below. Prerequisite:
+[unit-scoped computer workspaces](../computer-unit-scope/00-contract.md).
 
 Implementation: [issue #124](https://github.com/mikeng-io/nora/issues/124).
 
@@ -15,6 +21,7 @@ Implementation: [issue #124](https://github.com/mikeng-io/nora/issues/124).
 3. [Storage](02-storage.md): private Record binding and publication provenance.
 4. [Execution](03-execution.md): curation, ordinary turns and component effects.
 5. [Build and acceptance](04-build-and-acceptance.md): implementation and proof.
+6. [Cross-platform work](05-cross-platform.md): transcript, workspaces and deferred sends.
 
 `design/private-dm.md` remains a pointer, not a second specification. Every
 schema/tool/test addition below is proposed; nothing in this bundle is a runtime
@@ -98,10 +105,17 @@ fails startup. Identity and policy changes require validated copies/recreate.
 
 Conversational DMs also require `[dm] enabled = true` (new, default false) and
 the existing DM person allowlist. The switch prevents a previously inert
-nonempty allowlist from activating on upgrade. Unknown senders are never
-recorded. A known identity alone grants no DM or unit access.
+nonempty allowlist from activating on upgrade. Within that grant, every linked
+platform is enabled by default; proposed per-person `dm_platforms.<platform>.enabled`
+in `identity.toml` permits an explicit false opt-out. First admitted transports
+are WhatsApp and Signal; Discord/Instagram remain deferred. Operator-authored
+account IDs alone link identities; display names never match. Unknown senders
+are never recorded. A known identity alone grants no DM or unit access.
 
-Raw history is bound to person plus selected unit across verified accounts.
+Raw history is one transcript per person plus selected unit (`dm_scope_id`)
+across verified accounts and platforms. Read pages by that scope, interleaved
+with per-line platform markers, and serialize turns on it. Replies stay on
+the inbound platform/target; quote/edit/touch pointers remain platform-local.
 Changing the default starts/resumes that unit's private partition; it neither
 replays old-unit DM history nor copies already-curated Persona into another
 unit. Existing publications stay in their original unit under ordinary
@@ -112,18 +126,27 @@ No silent deletion cascade is introduced.
 
 ## 5. Reuse and initial capability
 
-WhatsApp text is the proposed first transport. The normal normalisation,
-ingest, engagement, context-block formats, model runner and guarded delivery
+WhatsApp and Signal text are the first transports in one integrated PR. Normal
+normalisation, ingest, engagement, context-block formats, model runner and guarded delivery
 remain. The audience is one authenticated human; no group roster, home room,
 location opt-in or group tool grant is borrowed.
 
 Use the existing tool registry with scoped capabilities. Text replies, safe
-retrieval and curated memory operations are in scope. Video generation,
-media/voice and unsolicited private sends are deferred engineering choices.
-They are not inherent incompatibilities with DMs. General unit Cognition and
-curated learning are **in scope**, rather than disabled as in the old proposal.
+retrieval, curated memory, computer/export and subagents are in scope. A DM
+workspace is keyed by person+unit, never globally by person. It may read the
+anchor unit workspace; writing there is explicit curated publication. Groups
+have no DM workspace access. Browser cookies/logins are private evidence too.
+Subagent results are deferred sends to their launching platform/target with
+permission rechecks and no retargeting. Computer/subagent spend has a shared
+per-person DM budget across platforms/units. See [the full contract](05-cross-platform.md).
+Video generation and inbound media/voice remain deferred; scoped computer file
+returns are included. General unit Cognition and curated learning are **in scope**, rather than disabled as in the old proposal.
 
 ## 6. Costs and reopening
+
+Compromise of any one admitted linked account exposes the whole person+unit
+private transcript and DM workspace, including its browser state. Platform
+opt-out blocks that platform; platform markers are provenance, not isolation.
 
 Curation can omit a useful fact, or mistakenly publish a private one. Shared
 Persona can change after a DM, including after a subject's dispute; that is
