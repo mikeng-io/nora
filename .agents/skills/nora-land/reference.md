@@ -20,7 +20,7 @@ exec "$(command -v git)" "$@"
 ## Choosing the agent and effort for a subagent
 
 `AGENTS.md`, «Orchestrating: who builds, who checks, and how much effort», is
-the one rule: a lane table (Codex `gpt-6.1-sol` builds, Kimi CLI reviews, Claude
+the one rule: a lane table (Codex `gpt-6.1-sol` builds, Kimi reviews, Claude
 `haiku` does mechanical work) and an adaptive effort table. Name both in every
 launch. (It replaced the Sonnet/Opus tier table on 2026-10-21, which had
 replaced the 2026-09-24 rule «Opus reviews» on 2026-09-30.)
