@@ -24,7 +24,7 @@ import os
 from pathlib import Path
 
 from .config_toml import DEFAULT_PATH, load_sections
-from .service import Config, WakeService
+from .config import Config
 
 log = logging.getLogger(__name__)
 
@@ -57,6 +57,8 @@ def build_config(config_path: Path = DEFAULT_PATH, env: dict[str, str] | None = 
 
 
 def main() -> None:
+    from .service import WakeService
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",

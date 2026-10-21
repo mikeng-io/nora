@@ -78,7 +78,7 @@ def test_a_life360_membership_without_a_circle_id_refuses_to_start(tmp_path):
         '[[persons.miles_novak.life360]]\nmember_id = "m-miles"\n'
     )
     persons = load_persons(p)
-    with pytest.raises(AnalyticsStartupError, match="m-miles"):
+    with pytest.raises(AnalyticsStartupError, match=r"memberships \[0\]"):
         _subjects_from_identity(persons)
 
 

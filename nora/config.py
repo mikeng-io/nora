@@ -26,6 +26,7 @@ from pydantic import (
     model_validator,
 )
 
+from nora.config_diagnostics import validation_summary
 from nora.domain.external_files import PROVIDERS as EXTERNAL_FILE_PROVIDERS
 from nora.domain.ports import (
     DEFAULT_DREAM_STORE_TIMEOUT_SECONDS,
@@ -306,16 +307,13 @@ class LLMConfig(BaseModel):
 
         for name, value in self.budgets.items():
             if name not in NATIVE_TOOLS:
-                known = ", ".join(sorted(NATIVE_TOOLS))
                 raise ValueError(
-                    f"[llm.budgets] names an unknown tool {name!r}. "
-                    f"Known tools: {known}"
+                    '[llm.budgets] names an unknown tool; use a name from the tool registry'
                 )
             if value < 1:
                 raise ValueError(
-                    f"[llm.budgets] {name} = {value}: a budget below 1 would "
-                    "make the tool unreachable. Remove the tool instead of "
-                    "starving it."
+                    '[llm.budgets] a budget below 1 would make the '
+                    'tool unreachable. Remove the tool instead of starving it.'
                 )
         return self
 
@@ -650,9 +648,8 @@ class StoreConfig(BaseModel):
         _resolve_context_field(self, "data_dir", info)
         if self.prompt_window is not None and self.prompt_window > self.context_window:
             raise ValueError(
-                f"[store] prompt_window ({self.prompt_window}) cannot exceed "
-                f"context_window ({self.context_window}): it is a slice of what "
-                "was read, not a second read"
+                '[store] prompt_window (<value>) cannot exceed context_window '
+                '(<value>): it is a slice of what was read, not a second read'
             )
         return self
 
@@ -1299,10 +1296,9 @@ class AnalyticsConfig(BaseModel):
         moves."""
         if self.corridor_cluster_batch_limit < self.corridor_min_samples:
             raise ValueError(
-                "analytics.corridor_cluster_batch_limit "
-                f"({self.corridor_cluster_batch_limit}) is below "
-                f"corridor_min_samples ({self.corridor_min_samples}) — no "
-                "corridor could ever be created"
+                'analytics.corridor_cluster_batch_limit (<value>) is below '
+                'corridor_min_samples (<value>) — no corridor could ever be '
+                'created'
             )
         return self
 
@@ -1971,7 +1967,7 @@ class SpeechTtsConfig(BaseModel):
             original, sep, replacement = entry.partition("/")
             if not sep or not original.strip() or not replacement.strip() or "/" in replacement:
                 raise ValueError(
-                    f"[speech.tts] pronunciation entry {entry!r} is not "
+                    '[speech.tts] pronunciation entry <value> is not '
                     "'original/replacement' (one slash, both sides non-empty)"
                 )
         return value
@@ -2474,11 +2470,11 @@ class StandingConfig(BaseModel):
     def _max_chars_stays_under_the_database_ceiling(self) -> StandingConfig:
         if self.max_chars > STANDING_BODY_CEILING_CHARS:
             raise ValueError(
-                f"[standing] max_chars = {self.max_chars} is above the "
-                f"database ceiling of {STANDING_BODY_CEILING_CHARS} "
-                f"(standing_body_fits_the_ceiling_check). The ceiling is DDL "
-                f"and cannot be raised from config; every fold above it would "
-                f"be refused by Postgres at write time."
+                f'[standing] max_chars is above the database ceiling of '
+                f'{STANDING_BODY_CEILING_CHARS} (standing_body_fits_the_ceiling_check). '
+                'The ceiling is '
+                'DDL and cannot be raised from config; every fold above it would '
+                'be refused by Postgres at write time.'
             )
         return self
 
@@ -2490,19 +2486,16 @@ class StandingConfig(BaseModel):
         operating caps instead of `body`'s one."""
         if self.working_set_max_items > WORKING_SET_CEILING_ITEMS:
             raise ValueError(
-                f"[standing] working_set_max_items = "
-                f"{self.working_set_max_items} is above the database ceiling "
-                f"of {WORKING_SET_CEILING_ITEMS} "
-                f"(standing_working_set_fits_the_ceiling_check). The ceiling "
-                f"is DDL and cannot be raised from config."
+                '[standing] working_set_max_items = <value> is above the database '
+                'ceiling of <value> (standing_working_set_fits_the_ceiling_check).'
+                ' The ceiling is DDL and cannot be raised from config.'
             )
         if self.working_set_max_chars > WORKING_SET_CEILING_BYTES:
             raise ValueError(
-                f"[standing] working_set_max_chars = "
-                f"{self.working_set_max_chars} is above the database ceiling "
-                f"of {WORKING_SET_CEILING_BYTES} bytes "
-                f"(standing_working_set_fits_the_ceiling_check). The ceiling "
-                f"is DDL and cannot be raised from config."
+                '[standing] working_set_max_chars = <value> is above the database '
+                'ceiling of <value> bytes '
+                '(standing_working_set_fits_the_ceiling_check). The ceiling is DDL'
+                ' and cannot be raised from config.'
             )
         return self
 
@@ -2858,7 +2851,7 @@ class VideoGenConfig(BaseModel):
             )
         left, sep, right = text.partition(":")
         if not (sep and left.isdigit() and right.isdigit() and int(left) and int(right)):
-            raise ValueError(f'[video_gen] ratio must be "W:H", e.g. "3:4"; got {value!r}')
+            raise ValueError('[video_gen] ratio must be "W:H", e.g. "3:4"; got <value>')
         return text
 
 
@@ -3041,12 +3034,12 @@ class DreamBudgetConfig(BaseModel):
     @field_validator("tool_calls")
     @classmethod
     def _positive_tool_calls(cls, value: dict[str, int]) -> dict[str, int]:
-        for name, ceiling in value.items():
+        for _name, ceiling in value.items():
             if ceiling < 1:
                 raise ValueError(
-                    f"tool_calls[{name!r}] = {ceiling} — a ceiling below 1 is a "
-                    "tool the adaptor holds and may never call; drop it from "
-                    "the adaptor's subset instead, where it is visible"
+                    'tool_calls[<value>] = <value> — a ceiling below 1 is a tool the '
+                    "adaptor holds and may never call; drop it from the adaptor's "
+                    'subset instead, where it is visible'
                 )
         return value
 
@@ -3399,7 +3392,7 @@ class CognitionConfig(BaseModel):
             hh, _, mm = floor.partition(":")
             if not (hh.isdigit() and mm.isdigit() and len(mm) == 2
                     and 0 <= int(hh) < 24 and 0 <= int(mm) < 60):
-                raise ValueError(f"time_floors entry {floor!r} is not HH:MM")
+                raise ValueError('time_floors entry <value> is not HH:MM')
         return value
 
     @field_validator("timezone")
@@ -3410,7 +3403,7 @@ class CognitionConfig(BaseModel):
         try:
             ZoneInfo(value)
         except (ZoneInfoNotFoundError, ValueError) as exc:
-            raise ValueError(f"unknown timezone {value!r}") from exc
+            raise ValueError('unknown timezone <value>') from exc
         return value
 
 
@@ -3482,7 +3475,7 @@ class AssessConfig(BaseModel):
         hh, _, mm = value.partition(":")
         if not (hh.isdigit() and mm.isdigit() and len(mm) == 2
                 and 0 <= int(hh) < 24 and 0 <= int(mm) < 60):
-            raise ValueError(f"nightly_at {value!r} is not HH:MM")
+            raise ValueError('nightly_at <value> is not HH:MM')
         return value
 
     @field_validator("timezone")
@@ -3493,7 +3486,7 @@ class AssessConfig(BaseModel):
         try:
             ZoneInfo(value)
         except (ZoneInfoNotFoundError, ValueError) as exc:
-            raise ValueError(f"unknown timezone {value!r}") from exc
+            raise ValueError('unknown timezone <value>') from exc
         return value
 
 
@@ -3644,8 +3637,7 @@ class ExternalFilesConfig(BaseModel):
         unknown = sorted(set(value) - set(EXTERNAL_FILE_PROVIDERS))
         if unknown:
             raise ValueError(
-                f"[external_files] sources names {unknown}; the known providers "
-                f"are {list(EXTERNAL_FILE_PROVIDERS)}"
+                '[external_files] sources names <value>; the known providers are <value>'
             )
         if len(set(value)) != len(value):
             raise ValueError("[external_files] sources names a provider twice")
@@ -3812,13 +3804,13 @@ class AgentConfig(BaseModel):
         for network, handle in value.items():
             if network != network.strip().lower() or not network:
                 raise ValueError(
-                    f"[agent.handles] key {network!r} must be a lowercase network "
-                    "key such as \"signal\" or \"whatsapp\""
+                    '[agent.handles] key <value> must be a lowercase network key such '
+                    'as "signal" or "whatsapp"'
                 )
             if not handle.strip().lstrip("@"):
                 raise ValueError(
-                    f"[agent.handles] {network} is empty; delete the key instead "
-                    "of declaring a handle with nothing in it"
+                    '[agent.handles] <value> is empty; delete the key instead of '
+                    'declaring a handle with nothing in it'
                 )
         return value
 
@@ -4170,11 +4162,10 @@ class Config(BaseModel):
         """
         if self.reminders.min_lead_seconds <= self.heartbeat.tick_seconds:
             raise ValueError(
-                f"[reminders] min_lead_seconds = {self.reminders.min_lead_seconds} "
-                f"must be greater than [heartbeat] tick_seconds = "
-                f"{self.heartbeat.tick_seconds}: a reminder set with the minimum "
-                "lead would come due inside the tick that is already running, and "
-                "would be answered later than she promised."
+                '[reminders] min_lead_seconds = <value> must be greater than '
+                '[heartbeat] tick_seconds = <value>: a reminder set with the '
+                'minimum lead would come due inside the tick that is already '
+                'running, and would be answered later than she promised.'
             )
         return self
 
@@ -4197,11 +4188,10 @@ class Config(BaseModel):
         """
         if self.reminders.min_interval_seconds < self.heartbeat.tick_seconds:
             raise ValueError(
-                f"[reminders] min_interval_seconds = "
-                f"{self.reminders.min_interval_seconds} must be at least "
-                f"[heartbeat] tick_seconds = {self.heartbeat.tick_seconds}: a "
-                "series may not repeat faster than she wakes up to check, or "
-                "occurrences pile up and fire late in clumps."
+                '[reminders] min_interval_seconds = <value> must be at least '
+                '[heartbeat] tick_seconds = <value>: a series may not repeat '
+                'faster than she wakes up to check, or occurrences pile up and '
+                'fire late in clumps.'
             )
         return self
 
@@ -4240,14 +4230,11 @@ class Config(BaseModel):
         )
         if hold > self.standing.max_slot_hold_seconds:
             raise ValueError(
-                f"[standing] would hold a conversation's slot for up to "
-                f"{hold:g}s — [standing] timeout_seconds "
-                f"({self.standing.timeout_seconds:g})"
-                f" + {STANDING_STORE_CALLS_PER_FOLD} x store_timeout_seconds "
-                f"({self.standing.store_timeout_seconds:g}) — which is over "
-                f"[standing] max_slot_hold_seconds "
-                f"({self.standing.max_slot_hold_seconds:g}). Lower a timeout or "
-                f"raise the budget deliberately; do not leave them disagreeing."
+                "[standing] would hold a conversation's slot for up to <value>s — "
+                '[standing] timeout_seconds (<value>) + <value> x '
+                'store_timeout_seconds (<value>) — which is over [standing] '
+                'max_slot_hold_seconds (<value>). Lower a timeout or raise the '
+                'budget deliberately; do not leave them disagreeing.'
             )
         return self
 
@@ -4281,8 +4268,9 @@ class Config(BaseModel):
         judge = self.lessons.check_model or self.llm.model
         if self.lessons.enabled and judge == self.dreamer_model():
             raise ValueError(
-                f"[lessons] check_model resolves to {judge!r}, the Dreamer's own model: "
-                "the doctrine check must be a model other than the one writing lessons"
+                "[lessons] check_model resolves to <value>, the Dreamer's own "
+                'model: the doctrine check must be a model other than the one '
+                'writing lessons'
             )
         return self
 
@@ -4304,9 +4292,10 @@ class Config(BaseModel):
         )
         if stale:
             raise ValueError(
-                f"[dreamer.budgets.cognition] sets {', '.join(stale)}: a Cognition session "
-                "has no call ceiling of any kind (DEC-247); it is bounded by turns, "
-                "total_tokens, output_tokens and timeout_seconds. Delete the key(s)"
+                '[dreamer.budgets.cognition] sets <value>: a Cognition session has'
+                ' no call ceiling of any kind (DEC-247); it is bounded by turns, '
+                'total_tokens, output_tokens and timeout_seconds. Delete the '
+                'key(s)'
             )
         return self
 
@@ -4344,9 +4333,10 @@ class Config(BaseModel):
         )
         if stale:
             raise ValueError(
-                f"[dreamer.budgets.subagent] sets {', '.join(stale)}: a sub-agent has no call "
-                "ceiling of any kind (DEC-247, amended); it is bounded by turns, "
-                "total_tokens, output_tokens and timeout_seconds. Delete the key(s)"
+                '[dreamer.budgets.subagent] sets <value>: a sub-agent has no call '
+                'ceiling of any kind (DEC-247, amended); it is bounded by turns, '
+                'total_tokens, output_tokens and timeout_seconds. Delete the '
+                'key(s)'
             )
         return self
 
@@ -4418,32 +4408,15 @@ class Config(BaseModel):
         minimum = self._dream_unit_hold_known_minimum()
         if explicit <= minimum:
             raise ValueError(
-                f"[dreamer] max_unit_hold_seconds ({explicit:g}) does not "
-                f"exceed the known-bounded minimum it must wrap: "
-                f"{minimum:g}s (model budget, both of #60's store bounds, "
-                f"and the media join's own bound — see Config."
-                f"_dream_unit_hold_known_minimum). Lower a timeout/sample "
-                f"count, raise max_unit_hold_seconds deliberately, or leave "
-                f"it unset to derive one; do not leave them disagreeing."
+                '[dreamer] max_unit_hold_seconds (<value>) does not exceed the '
+                'known-bounded minimum it must wrap: <value>s (model budget, both '
+                "of #60's store bounds, and the media join's own bound — see "
+                'Config._dream_unit_hold_known_minimum). Lower a timeout/sample '
+                'count, raise max_unit_hold_seconds deliberately, or leave it '
+                'unset to derive one; do not leave them disagreeing.'
             )
         return self
 
-
-
-# Only schema-owned names may appear in diagnostics. Pydantic locations can
-# also contain arbitrary map keys, which must never cross the error boundary.
-_PUBLIC_CONFIG_FIELDS = frozenset(
-    field for model in tuple(globals().values())
-    if isinstance(model, type) and issubclass(model, BaseModel)
-    for field in model.model_fields
-)
-
-
-def _safe_config_location(location: tuple[str | int, ...]) -> str:
-    return ".".join(
-        str(part) if isinstance(part, int) or part in _PUBLIC_CONFIG_FIELDS else "entry"
-        for part in location
-    ) or "root"
 
 
 # Deliberately bounded: these are the only deployment values lifted into env.
@@ -4572,26 +4545,38 @@ def _read_source(path: Path) -> dict[str, Any]:
         with path.open("rb") as stream:
             return tomllib.load(stream)
     except tomllib.TOMLDecodeError:
-        raise ConfigError("config: invalid_toml") from None
+        raise ConfigError(
+            f'{path}'
+            ': config: invalid_toml; repair TOML syntax using '
+            'config.example.toml'
+        ) from None
+    except FileNotFoundError:
+        raise ConfigError(
+            f'{path}'
+            ': config: not_found; create the file from config.example.toml'
+        ) from None
     except (OSError, UnicodeError, ValueError):
-        raise ConfigError("config: unreadable") from None
+        raise ConfigError(
+            f'{path}'
+            ': config: unreadable; check file permissions and encoding'
+        ) from None
 
 
 def _validate_source(
     data: dict[str, Any], path: Path, env: Mapping[str, str], *, schema_only: bool = False,
 ) -> Config:
-    data = _resolve_private_values(data, env, schema_only=schema_only)
+    try:
+        data = _resolve_private_values(data, env, schema_only=schema_only)
+    except ConfigError as exc:
+        raise ConfigError(f"{path}: {exc}") from None
     try:
         return Config.model_validate(data, context={"base": path.parent})
     except ValidationError as exc:
-        # msg/ctx are unsafe, and loc can carry private map keys. Keep only
-        # schema-owned field names and list indices, plus a fixed rule code.
-        errors = exc.errors(include_input=False, include_context=False)
-        rules = "; ".join(
-            f"config.validation[{i}].{_safe_config_location(e['loc'])}: {e['type']}"
-            for i, e in enumerate(errors)
-        )
-        raise ConfigError(rules) from None
+        raise ConfigError(
+            f'{path}'
+            ': config.validation: '
+            f'{validation_summary(exc, Config, data)}'
+        ) from None
 
 
 def _schema_placeholder(field: str, index: int) -> str:

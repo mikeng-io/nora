@@ -51,7 +51,7 @@ def test_get_scalar(cfg_path: Path, capsys):
 def test_get_string(cfg_path: Path, capsys):
     rc = run_cli("config", "get", "platforms.signal.account", "--config", str(cfg_path))
     assert rc == 0
-    assert capsys.readouterr().out.strip() == ""  # example carries an empty default
+    assert capsys.readouterr().out.strip() == "<redacted>"
 
 
 def test_get_missing_key_fails(cfg_path: Path, capsys):
@@ -118,7 +118,7 @@ def test_set_unknown_tool_fails_closed(cfg_path: Path, capsys):
     double-validation is not decoration."""
     rc = run_cli("config", "set", "llm.budgets.new_tool", "3", "--config", str(cfg_path))
     assert rc != 0
-    assert "config.validation[0].llm: value_error" in capsys.readouterr().err
+    assert "config.validation: llm: value_error" in capsys.readouterr().err
 
 
 def test_set_quoted_string_stays_string(cfg_path: Path):
@@ -215,14 +215,13 @@ def test_set_secret_env_field_accepts_env_name(cfg_path: Path):
     assert cfg.llm.api_key_env == "OMNIROUTE_API_KEY"
 
 
-def test_set_secret_env_redacts_output(cfg_path: Path, capsys):
+def test_set_secret_env_keeps_reference_name_visible(cfg_path: Path, capsys):
     rc = run_cli(
         "config", "set", "llm.api_key_env", "SOME_KEY", "--config", str(cfg_path),
     )
     assert rc == 0
     out = capsys.readouterr().out
-    assert "SOME_KEY" not in out
-    assert "redacted" in out
+    assert "SOME_KEY" in out
 
 
 def test_no_temp_files_left_after_success(cfg_path: Path):

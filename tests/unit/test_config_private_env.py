@@ -161,7 +161,7 @@ def test_schema_only_cannot_supply_runtime_defaults(example_config_path):
     'bad = "' + SENTINEL + '\\q"',
 ])
 def test_policy_never_echoes_keys_values_or_toml_errors(tmp_path, text):
-    path = tmp_path / (SENTINEL + ".toml")
+    path = tmp_path / "policy.toml"
     path.write_text(text)
     with pytest.raises(PolicyError, match="policy:") as error:
         load_policy(path)

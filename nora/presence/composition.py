@@ -49,17 +49,17 @@ def _circles_from_identity(persons: Persons) -> list[CircleSpec]:
     both refuse to start. The resolved `person_id`s per circle ARE the R-21
     disclosure roster."""
     by_circle: dict[str, dict[str, str]] = {}
-    unplaced: list[str] = []
-    for membership in persons.life360:
+    unplaced: list[int] = []
+    for membership_no, membership in enumerate(persons.life360):
         if membership.circle_id is None:
-            unplaced.append(membership.member_id)
+            unplaced.append(membership_no)
             continue
         by_circle.setdefault(membership.circle_id, {})[membership.member_id] = (
             membership.person_id
         )
     if unplaced:
         raise PresenceStartupError(
-            f"Life360 member id(s) {unplaced} have a [[persons.<id>.life360]] block "
+            f"identity.life360 memberships {unplaced}: missing circle_id; a membership "
             "with no circle_id in identity.toml — they cannot be placed in a circle "
             "to collect; add circle_id or remove the block (design/19 §3)"
         )
@@ -100,7 +100,10 @@ def build_collector(cfg: Config) -> PresenceDependencies:
         persons = load_persons(cfg.identity_file)
     except PersonsError as exc:
         raise PresenceStartupError(f"identity.toml error: {exc}") from exc
-    circles = _circles_from_identity(persons)  # raises if none / any unplaced
+    try:
+        circles = _circles_from_identity(persons)
+    except PresenceStartupError as exc:
+        raise PresenceStartupError(f"{cfg.identity_file}: {exc}") from None
 
     credential = os.environ.get(presence.client_credential_env, "")
     username = os.environ.get(presence.username_env, "")

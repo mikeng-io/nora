@@ -827,7 +827,7 @@ def test_a_budget_override_naming_an_unknown_tool_refuses_to_start():
     the same class as a `peer_card` endpoint that answers `[]` forever.
     Validated against the LIVE registry, so it cannot go stale when a tool is
     added or removed."""
-    with pytest.raises(ValidationError, match="unknown tool 'send_replies'"):
+    with pytest.raises(ValidationError, match="unknown tool"):
         _llm_config(budgets={"send_replies": 8})
 
 

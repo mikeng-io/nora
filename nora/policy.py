@@ -28,6 +28,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from nora.config_diagnostics import validation_summary
+
 # Not a person_id: the wildcard admitting anyone in a conversation.
 EVERYONE = "*"
 
@@ -497,8 +499,7 @@ class _ConversationEntry(BaseModel):
     def _check_persons(cls, value: list[str] | str) -> list[str] | str:
         if isinstance(value, str) and value != EVERYONE:
             raise ValueError(
-                f"persons must be a list of person_ids or the string "
-                f'"{EVERYONE}"; got {value!r}'
+                'persons must be a list of person_ids or the string "<value>"; got <value>'
             )
         return value
 
@@ -520,9 +521,9 @@ class _UnitEntry(BaseModel):
     def _check_workspace(cls, value: str) -> str:
         if not _WORKSPACE_NAME.match(value):
             raise ValueError(
-                f"workspace {value!r} must match ^[a-zA-Z0-9_-]+$ — a workspace "
-                "with no binding in identity.toml is used verbatim as its "
-                "Honcho workspace id, and Honcho refuses any other character"
+                'workspace <value> must match ^[a-zA-Z0-9_-]+$ — a workspace with '
+                'no binding in identity.toml is used verbatim as its Honcho '
+                'workspace id, and Honcho refuses any other character'
             )
         return value
 
@@ -556,17 +557,27 @@ def load_policy(path: Path) -> Policy:
         with path.open("rb") as f:
             data = tomllib.load(f)
     except tomllib.TOMLDecodeError:
-        raise PolicyError("policy: invalid_toml") from None
+        raise PolicyError(
+            f'{path}'
+            ': policy: invalid_toml; repair TOML syntax using '
+            'policy.example.toml'
+        ) from None
+    except FileNotFoundError:
+        raise PolicyError(
+            f'{path}'
+            ': policy: not_found; create policy.example.toml as policy.toml; '
+            'Nora refuses to start without one'
+        ) from None
     except (OSError, UnicodeError, RuntimeError, ValueError):
-        raise PolicyError("policy: unreadable") from None
+        raise PolicyError(f"{path}: policy: unreadable; check permissions and encoding") from None
     try:
         parsed = _PolicyFile.model_validate(data)
-    except ValidationError:
-        raise PolicyError("policy: schema") from None
+    except ValidationError as exc:
+        raise PolicyError(f"{path}: policy: {validation_summary(exc, _PolicyFile, data)}") from None
 
     conversations: list[Conversation] = []
     by_id: dict[tuple[str, str], Conversation] = {}
-    for entry in parsed.conversations:
+    for i, entry in enumerate(parsed.conversations):
         ids = frozenset([entry.id, *entry.also_ids])
         persons = None if entry.persons == EVERYONE else frozenset(entry.persons)
         convo = Conversation(
@@ -582,7 +593,16 @@ def load_policy(path: Path) -> Policy:
         for cid in ids:
             key = (entry.platform, cid)
             if key in by_id:
-                raise PolicyError("policy: duplicate_id") from None
+                raise PolicyError(
+                    f'{path}'
+                    ': policy: duplicate_id; conversations['
+                    f'{i}'
+                    '].id and conversations['
+                    f'{conversations.index(by_id[key])}'
+                    '].id: conversation id listed twice — the second entry would be '
+                    'unreachable, so one of the two allowlists is doing nothing; '
+                    'remove one or correct the id'
+                ) from None
             by_id[key] = convo
 
     # EVERY ALLOWED ROOM CARRIES A LABEL. `UnitRoom.label`
@@ -597,9 +617,16 @@ def load_policy(path: Path) -> Policy:
     # instead of from this file. Refused here, in `policy.toml`'s own
     # refuse-to-start shape (R-5), the same way a second home room already
     # is — never left to the render-time floor to paper over.
-    for convo in conversations:
+    for i, convo in enumerate(conversations):
         if not convo.label:
-            raise PolicyError("policy: label_required") from None
+            raise PolicyError(
+                f'{path}'
+                ': policy: label_required; conversations['
+                f'{i}'
+                '].label: Every allowed room needs a label: two unlabelled rooms '
+                'otherwise render as the same room. Add label = "..." to this '
+                'conversation'
+            ) from None
 
     # ONE home room per unit. Two would make «which room does the
     # unit-keyed adaptor stand in» a guess, and a guessed room is a
@@ -607,12 +634,20 @@ def load_policy(path: Path) -> Policy:
     # have the operator make. Refused at startup, in `policy.toml`'s own
     # refuse-to-start shape (R-5), never resolved by picking the first.
     homes: dict[str, Conversation] = {}
-    for convo in conversations:
+    for i, convo in enumerate(conversations):
         if not convo.home_room:
             continue
         other = homes.get(convo.unit)
         if other is not None:
-            raise PolicyError("policy: duplicate_home_room") from None
+            raise PolicyError(
+                f'{path}'
+                ': policy: duplicate_home_room; conversations['
+                f'{i}'
+                '].home_room and conversations['
+                f'{conversations.index(other)}'
+                '].home_room: A unit has exactly one home room, the room its '
+                'proactive adaptor stands in; mark one'
+            ) from None
         homes[convo.unit] = convo
 
     # ONE voice room per guild. `voice = true` claims every voice channel in a guild, so two
@@ -620,18 +655,39 @@ def load_policy(path: Path) -> Policy:
     # operator having written two different answers to "where does speech go",
     # and picking one would put a spoken plan in a room nobody chose.
     voice_by_guild: dict[tuple[str, str], Conversation] = {}
-    for convo in conversations:
+    for i, convo in enumerate(conversations):
         if not convo.voice:
             continue
         if convo.platform != "discord":
-            raise PolicyError("policy: voice_platform") from None
+            raise PolicyError(
+                f'{path}'
+                ': policy: voice_platform; conversations['
+                f'{i}'
+                '].voice: Voice is resolved by GUILD; only Discord rooms have one '
+                '— set voice = false or use a Discord room'
+            ) from None
         guild_id, sep, channel_id = convo.primary_id.partition("/")
         if not sep or not guild_id or not channel_id:
-            raise PolicyError("policy: voice_room_shape") from None
+            raise PolicyError(
+                f'{path}'
+                ': policy: voice_room_shape; conversations['
+                f'{i}'
+                '].id: voice = true requires "<guild_id>/<channel_id>"; the guild '
+                'half matches spoken utterances, so an id without one can never be'
+                ' reached; correct the id'
+            ) from None
         key = (convo.platform, guild_id)
         other = voice_by_guild.get(key)
         if other is not None:
-            raise PolicyError("policy: duplicate_voice_room") from None
+            raise PolicyError(
+                f'{path}'
+                ': policy: duplicate_voice_room; conversations['
+                f'{i}'
+                '].voice and conversations['
+                f'{conversations.index(other)}'
+                '].voice: Every voice channel in a guild speaks into exactly one '
+                'room; mark one'
+            ) from None
         voice_by_guild[key] = convo
 
     # ONE music room per guild. Mirrors the voice block above, and for the same structural reason
@@ -641,17 +697,36 @@ def load_policy(path: Path) -> Policy:
     # "where do the announcements go", and picking one would put them in a
     # room nobody chose.
     music_by_guild: dict[tuple[str, str], Conversation] = {}
-    for convo in conversations:
+    for i, convo in enumerate(conversations):
         if convo.music_channel is None:
             continue
         if convo.platform != "discord":
-            raise PolicyError("policy: music_platform") from None
+            raise PolicyError(
+                f'{path}'
+                ': policy: music_platform; conversations['
+                f'{i}'
+                '].music_channel: Music is a Discord voice-channel capability '
+                'resolved by GUILD; omit music_channel or use a Discord room'
+            ) from None
         guild_id, sep, channel_id = convo.primary_id.partition("/")
         if not sep or not guild_id or not channel_id:
-            raise PolicyError("policy: music_room_shape") from None
+            raise PolicyError(
+                f'{path}'
+                ': policy: music_room_shape; conversations['
+                f'{i}'
+                '].id: music_channel requires the declaring room id to be '
+                '"<guild_id>/<channel_id>"; correct the id so playing sessions can'
+                ' be matched'
+            ) from None
         if not _is_snowflake(convo.music_channel):
-            raise PolicyError("policy: music_channel_shape") from None
-        # The destination must NOT be a listed room. The whole reason this is a
+            raise PolicyError(
+                f'{path}'
+                ': policy: music_channel_shape; conversations['
+                f'{i}'
+                '].music_channel: Use a bare channel snowflake — ASCII digits, '
+                "17-20 of them — in this room's guild, not a guild/channel pair or"
+                ' a channel name'
+            ) from None     # The destination must NOT be a listed room. The whole reason this is a
         # field rather than a `voice = true`-shaped flag is that an
         # announcement channel is an OUTBOUND target and not a conversation —
         # `[[conversations]]` carries `persons`, `unit`, `location`,
@@ -663,18 +738,40 @@ def load_policy(path: Path) -> Policy:
         destination = (convo.platform, f"{guild_id}/{convo.music_channel}")
         listed = by_id.get(destination)
         if listed is not None:
-            raise PolicyError("policy: music_channel_is_room") from None
+            raise PolicyError(
+                f'{path}'
+                ': policy: music_channel_is_room; conversations['
+                f'{i}'
+                '].music_channel and conversations['
+                f'{conversations.index(listed)}'
+                '].music_channel: An announcement channel is written to and never '
+                'read from; point it at a channel that is not in this file — or '
+                'omit it, which announces where each session started'
+            ) from None
         key = (convo.platform, guild_id)
         other = music_by_guild.get(key)
         if other is not None:
-            raise PolicyError("policy: duplicate_music_channel") from None
+            raise PolicyError(
+                f'{path}'
+                ': policy: duplicate_music_channel; conversations['
+                f'{i}'
+                '].music_channel and conversations['
+                f'{conversations.index(other)}'
+                '].music_channel: A guild has one voice connection and one player,'
+                ' so its announcements land in exactly one channel; keep one'
+            ) from None
         music_by_guild[key] = convo
 
-    _refuse_two_rooms_on_one_platform(conversations)
+    _refuse_two_rooms_on_one_platform(conversations, path)
     unit_workspace = _unit_workspaces(parsed.units, conversations, path)
 
     if not conversations:
-        raise PolicyError("policy: no_conversations") from None
+        raise PolicyError(
+            f'{path}'
+            ': policy: no_conversations; conversations: allows no '
+            'conversations, so Nora would ingest and answer nothing; run `nora'
+            ' groups` for the ids and add an allowed conversation'
+        ) from None
     return Policy(
         conversations=tuple(conversations),
         dm_persons=frozenset(parsed.dm.get("persons", [])),
@@ -686,7 +783,7 @@ def load_policy(path: Path) -> Policy:
     )
 
 
-def _refuse_two_rooms_on_one_platform(conversations: list[Conversation]) -> None:
+def _refuse_two_rooms_on_one_platform(conversations: list[Conversation], path: Path) -> None:
     """A unit holds AT MOST ONE room per platform (DEC-105, DEC-214).
 
     Breaching it is costly to undo by hand (messages, notes and a culture
@@ -697,11 +794,20 @@ def _refuse_two_rooms_on_one_platform(conversations: list[Conversation]) -> None
     file, `[units]` or not: the invariant is the unit's, not the workspace's.
     """
     seen: dict[tuple[str, str], Conversation] = {}
-    for convo in conversations:
+    for i, convo in enumerate(conversations):
         key = (convo.unit, convo.platform)
         other = seen.get(key)
         if other is not None:
-            raise PolicyError("policy: unit_platform_unique") from None
+            raise PolicyError(
+                f'{path}'
+                ': policy: unit_platform_unique; conversations['
+                f'{i}'
+                '].unit and conversations['
+                f'{conversations.index(other)}'
+                '].unit: A unit holds at most one room per platform; anything '
+                'addressing it would otherwise be guessing. Give the rooms '
+                'different units or keep one'
+            ) from None
         seen[key] = convo
 
 
@@ -725,8 +831,20 @@ def _unit_workspaces(
     used = {convo.unit for convo in conversations}
     missing = sorted(used - set(units))
     if missing:
-        raise PolicyError("policy: unit_workspace_missing") from None
+        raise PolicyError(
+            f'{path}'
+            ': policy: unit_workspace_missing; conversations['
+            f'{next((i for i, c in enumerate(conversations) if c.unit in missing))}'
+            '].unit: a conversation unit has no workspace entry; add its '
+            '[units] workspace binding'
+        ) from None
     unused = sorted(set(units) - used)
     if unused:
-        raise PolicyError("policy: unit_workspace_unused") from None
+        raise PolicyError(
+            f'{path}'
+            ': policy: unit_workspace_unused; units['
+            f'{list(units).index(unused[0])}'
+            ']: a unit entry has no rooms; remove it or add a conversation in '
+            'that unit'
+        ) from None
     return {unit: entry.workspace for unit, entry in units.items()}

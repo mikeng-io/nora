@@ -314,7 +314,7 @@ def test_unknown_top_level_key_is_a_startup_failure(tmp_path):
         "[[persons.miles.signal]]\n"
         "phone = \"+85212345678\"\n"
     )
-    with pytest.raises(PersonsError, match="unexpected_top_level_key"):
+    with pytest.raises(PersonsError, match="entry: extra_forbidden"):
         load_persons(p)
 
 
@@ -329,7 +329,7 @@ def test_unknown_field_in_a_person_entry_is_a_startup_failure(tmp_path):
         "[[persons.miles.signal]]\n"
         "phone = \"+85212345678\"\n"
     )
-    with pytest.raises(PersonsError, match="unexpected_field"):
+    with pytest.raises(PersonsError, match=r"persons\[0\].entry: extra_forbidden"):
         load_persons(p)
 
 

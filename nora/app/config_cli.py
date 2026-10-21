@@ -47,7 +47,7 @@ from pathlib import Path
 import tomlkit
 from tomlkit.exceptions import TOMLKitError
 
-from nora.config import Config, ConfigError, load, validate_schema
+from nora.config import PRIVATE_ENV_FIELDS, Config, ConfigError, load, validate_schema
 
 # ── deferred imports (circular-import break) ───────────────────────────────
 
@@ -70,7 +70,7 @@ def _load_config(args: argparse.Namespace) -> Config:
 
 def _navigate(
     doc: tomlkit.container.Container, dotted: str
-) -> tuple[tomlkit.container.Container | dict[object, object], str]:
+) -> tuple[tomlkit.container.Container | dict[object, object] | list, str | int]:
     """Walk `a.b.c` into `doc`, returning (container, leaf_key).
 
     Raises a CliError with a helpful message when an intermediate section
@@ -82,15 +82,21 @@ def _navigate(
         raise _cli_error(f"bad dotted key: {dotted!r}")
     current = doc
     for part in parts[:-1]:
+        if isinstance(current, (list, tomlkit.items.AoT)):
+            try:
+                current = current[int(part)]
+            except (ValueError, IndexError):
+                raise _cli_error("array index is out of range; use a listed index") from None
+            continue
         if part not in current:
             path_so_far = ".".join(parts[: parts.index(part) + 1])
             raise _cli_error(f"no [{path_so_far}] section in {dotted!r}")
         current = current[part]
-        if not isinstance(current, dict | tomlkit.container.Container):
+        if not isinstance(current, (dict, tomlkit.container.Container, list, tomlkit.items.AoT)):
             raise _cli_error(
                 f"{'.'.join(parts[: parts.index(part) + 1])} is a scalar, not a table"
             )
-    return current, parts[-1]
+    return current, int(parts[-1]) if isinstance(current, list) else parts[-1]
 
 
 def _get_value(doc: tomlkit.container.Container, dotted: str) -> object:
@@ -103,8 +109,7 @@ def _get_value(doc: tomlkit.container.Container, dotted: str) -> object:
 def _render_value(value: object) -> str:
     """Render a TOML value for `get` output.
 
-    Strings print raw so `nora config get platforms.signal.account` shows
-    the phone number without quotes; bools print lower-case TOML style;
+    Strings print raw after private-field redaction; bools print lower-case TOML style;
     tables/arrays print as TOML.
     """
     if isinstance(value, str):
@@ -195,7 +200,7 @@ def _cmd_get(args: argparse.Namespace) -> int:
     path = Path(args.config)
     _text, doc = _read_doc(path)
     value = _get_value(doc, args.key)
-    print(_render_value(value))
+    print(_display_source(value, args.key))
     return 0
 
 
@@ -236,12 +241,26 @@ def _is_secret_env_key(dotted: str) -> bool:
     return dotted.lower().endswith(_SECRET_ENV_SUFFIXES)
 
 
-def _render_display(value: object, secret: bool = False) -> str:
-    """Render a value for operator output; redact when the key names an env
-    reference (the field must hold an env-var NAME, not a secret VALUE)."""
-    if secret:
-        return "<redacted — set in .env, not via config CLI>"
-    return _render_value(value)
+def _display_source(value: object, dotted: str) -> str:
+    """Redact private literals, including reads of their containing tables."""
+    if dotted in PRIVATE_ENV_FIELDS:
+        return "<redacted>"
+    if isinstance(value, (dict, tomlkit.container.Container)):
+        return tomlkit.dumps({
+            key: _redact_source(child, f"{dotted}.{key}")
+            for key, child in value.items()
+        }).strip()
+    return _render_value(_redact_source(value, dotted))
+
+
+def _redact_source(value: object, dotted: str) -> object:
+    if dotted in PRIVATE_ENV_FIELDS:
+        return "<redacted>"
+    if isinstance(value, (dict, tomlkit.container.Container)):
+        return {key: _redact_source(child, f"{dotted}.{key}") for key, child in value.items()}
+    if isinstance(value, (list, tomlkit.items.Array, tomlkit.items.AoT)):
+        return [_redact_source(child, f"{dotted}.{i}") for i, child in enumerate(value)]
+    return value
 
 
 def _cmd_set(args: argparse.Namespace) -> int:
@@ -279,11 +298,11 @@ def _cmd_set(args: argparse.Namespace) -> int:
         raise _cli_error(f"change rejected: invalid resulting config: {exc}") from exc
 
     if old is None:
-        print(f"set {args.key} = {_render_display(value, secret=secret)}")
+        print(f"set {args.key} = {_display_source(value, args.key)}")
     else:
         print(
-            f"{args.key}: {_render_display(old, secret=secret)} -> "
-            f"{_render_display(value, secret=secret)}"
+            f"{args.key}: {_display_source(old, args.key)} -> "
+            f"{_display_source(value, args.key)}"
         )
     print("restart to apply: docker compose up -d --force-recreate nora")
     return 0
@@ -310,7 +329,7 @@ def _cmd_unset(args: argparse.Namespace) -> int:
 
     print(
         f"unset {args.key} "
-        f"(was {_render_display(old, secret=_is_secret_env_key(args.key))})"
+        f"(was {_display_source(old, args.key)})"
     )
     print("restart to apply: docker compose up -d --force-recreate nora")
     return 0

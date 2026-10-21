@@ -53,15 +53,19 @@ def _check_account(platform: str, account: dict[str, str | int]) -> None:
             continue                      # non-matchable: label, or life360 circle_id
         if kind == DISPLAY_NAME_KIND:
             raise ValueError(
-                f"{platform}.{DISPLAY_NAME_KIND} is never matchable "
-                "(design/10 §1.3) — display names are user-controlled and "
-                "spoofable; they are shown to the operator, never used to "
-                "resolve a sender to a person"
+                f'{platform}'
+                '.'
+                f'{DISPLAY_NAME_KIND}'
+                ' is never matchable (design/10 §1.3) — display names are user-'
+                'controlled and spoofable; they are shown to the operator, never '
+                'used to resolve a sender to a person'
             )
         if kind not in allowed:
             raise ValueError(
-                f"{platform}.{kind!r} is not a valid id kind (design/10 "
-                f"§3.1); expected one of {sorted(allowed)}"
+                f'{platform}'
+                '.<value> is not a valid id kind (design/10 §3.1); expected one of'
+                ' '
+                f'{sorted(allowed)}'
             )
         matchable += 1
     if not matchable:
@@ -69,9 +73,11 @@ def _check_account(platform: str, account: dict[str, str | int]) -> None:
         # reverse index, so it would sit in the file looking like a mapping
         # while resolving no one — silent, and invisible under R-5.
         raise ValueError(
-            f"the {platform} account {account.get(ACCOUNT_LABEL_KEY, '')!r} "
-            f"lists no matchable id — give it at least one of "
-            f"{sorted(allowed)}, or remove the block"
+            'the '
+            f'{platform}'
+            ' account <value> lists no matchable id — give it at least one of '
+            f'{sorted(allowed)}'
+            ', or remove the block'
         )
 
 
@@ -173,14 +179,16 @@ class _PersonEntry(BaseModel):
         for platform in PLATFORM_FIELDS:
             if isinstance(data.get(platform), dict):
                 raise ValueError(
-                    f"`[persons.<id>.{platform}]` is now an array of tables, "
-                    f"one per ACCOUNT — write `[[persons.<id>.{platform}]]` "
-                    "(double brackets). A person may hold several accounts on "
-                    "one platform (a dual-SIM personal/work pair, a second "
-                    "Discord), and they all resolve to the same person_id and "
-                    "share one Honcho peer card (A2). List that account's id "
-                    "forms inside the block; see "
-                    "design/10-preview-identity.toml."
+                    '`[persons.<id>.'
+                    f'{platform}'
+                    ']` is now an array of tables, one per ACCOUNT — write '
+                    '`[[persons.<id>.'
+                    f'{platform}'
+                    ']]` (double brackets). A person may hold several accounts on one '
+                    'platform (a dual-SIM personal/work pair, a second Discord), and '
+                    'they all resolve to the same person_id and share one Honcho peer '
+                    "card (A2). List that account's id forms inside the block; see "
+                    'design/10-preview-identity.toml.'
                 )
         return data
 
@@ -193,8 +201,11 @@ class _PersonEntry(BaseModel):
         """
         for platform in PLATFORM_FIELDS:
             accounts = getattr(self, platform) or ()
-            for account in accounts:
-                _check_account(platform, account)
+            for account_no, account in enumerate(accounts):
+                try:
+                    _check_account(platform, account)
+                except ValueError as exc:
+                    raise ValueError(f"{platform}[{account_no}]: {exc}") from None
             if len(accounts) < 2:
                 continue
             # A second, independent tripwire on the silent copy-paste failure
@@ -203,17 +214,22 @@ class _PersonEntry(BaseModel):
             labels = [str(a.get(ACCOUNT_LABEL_KEY, "")).strip() for a in accounts]
             if not all(labels):
                 raise ValueError(
-                    f"{platform} has {len(accounts)} accounts, so each needs a "
-                    f'`{ACCOUNT_LABEL_KEY} = "…"` naming it (e.g. "personal", '
-                    '"business"). It is never matched on — it is what '
-                    "`nora persons pending` prints back to you."
+                    f'{platform}'
+                    ' has '
+                    f'{len(accounts)}'
+                    ' accounts, so each needs a `'
+                    f'{ACCOUNT_LABEL_KEY}'
+                    ' = "…"` naming it (e.g. "personal", "business"). It is never '
+                    'matched on — it is what `nora persons pending` prints back to '
+                    'you.'
                 )
             if len(set(labels)) != len(labels):
                 raise ValueError(
-                    f"{platform} accounts have duplicate "
-                    f"{ACCOUNT_LABEL_KEY}s {sorted(labels)} — give each one a "
-                    "distinct name, or you cannot tell them apart in "
-                    "`nora persons pending`"
+                    f'{platform}'
+                    ' accounts have duplicate '
+                    f'{ACCOUNT_LABEL_KEY}'
+                    's <value> — give each one a distinct name, or you cannot tell '
+                    'them apart in `nora persons pending`'
                 )
         return self
 
@@ -237,10 +253,9 @@ class _WorkspaceBinding(BaseModel):
     def _check_honcho_workspace(cls, value: str) -> str:
         if not _PERSON_ID_RE.match(value):
             raise ValueError(
-                f"honcho_workspace {value!r} must match ^[a-zA-Z0-9_-]+$ — "
-                "Honcho refuses any other workspace id with a 422, at feed "
-                "time and off the reply path, so every write would be lost "
-                "without a sound"
+                'honcho_workspace <value> must match ^[a-zA-Z0-9_-]+$ — Honcho '
+                'refuses any other workspace id with a 422, at feed time and off '
+                'the reply path, so every write would be lost without a sound'
             )
         return value
 
@@ -262,7 +277,7 @@ class _PersonsFile(BaseModel):
         for person_id in value:
             if not _PERSON_ID_RE.match(person_id):
                 raise ValueError(
-                    f"person_id {person_id!r} must match ^[a-zA-Z0-9_-]+$ "
-                    "(it is used verbatim as the Honcho peer id)"
+                    'person_id <value> must match ^[a-zA-Z0-9_-]+$ (it is used '
+                    'verbatim as the Honcho peer id)'
                 )
         return value

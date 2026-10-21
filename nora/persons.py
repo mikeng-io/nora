@@ -26,6 +26,8 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from nora.config_diagnostics import validation_summary
+
 from .domain.identity import ACCOUNT_LABEL_KEY, metadata_keys
 from .domain.models import ConversationTarget, NormalizedMessage, PersonRef, TranscriptRow
 from .persons_file import PLATFORM_FIELDS, _PersonsFile
@@ -355,17 +357,29 @@ def instagram_username_key(handle: str) -> str:
 
 def load_persons(path: Path) -> Persons:
     path = Path(path).expanduser()
-    if not path.exists():
-        raise PersonsError(f"persons file not found: {path}")
-    with path.open("rb") as f:
-        try:
+    try:
+        with path.open("rb") as f:
             data = tomllib.load(f)
-        except tomllib.TOMLDecodeError as exc:
-            raise PersonsError(f"invalid TOML in {path}: {exc}") from exc
+    except FileNotFoundError:
+        raise PersonsError(
+            f'{path}'
+            ': identity: not_found (not found); create identity.toml'
+        ) from None
+    except tomllib.TOMLDecodeError:
+        raise PersonsError(f"{path}: identity: invalid_toml; repair TOML syntax") from None
+    except (OSError, UnicodeError, ValueError):
+        raise PersonsError(
+            f'{path}'
+            ': identity: unreadable; check permissions and encoding'
+        ) from None
     try:
         parsed = _PersonsFile.model_validate(data)
     except ValidationError as exc:
-        raise PersonsError(str(exc)) from exc
+        raise PersonsError(
+            f'{path}'
+            ': identity: '
+            f'{validation_summary(exc, _PersonsFile, data)}'
+        ) from None
 
     by_person: dict[str, PersonRef] = {}
     index: dict[tuple[str, str], str] = {}
@@ -373,6 +387,7 @@ def load_persons(path: Path) -> Persons:
     instagram_handles: dict[str, str] = {}
     instagram_igids: dict[str, set[str]] = {}
     instagram_usernames: dict[str, set[str]] = {}
+    person_indices = {pid: i for i, pid in enumerate(parsed.persons)}
     for person_id, entry in parsed.persons.items():
         # `name` is what Nora calls them out loud. Fall back through the
         # structured parts before the person_id, so a file that gives only
@@ -463,39 +478,37 @@ def load_persons(path: Path) -> Persons:
                     previous = claimed_by.get(dedup_key)
                     if previous is not None and previous != account_no:
                         raise PersonsError(
-                            f"{person_id!r} lists ({platform}, {id_value}) in "
-                            f"two different account blocks (#{previous + 1} and "
-                            f"#{account_no + 1}) — did you copy the block and "
-                            "forget to edit this id? The account whose real id "
-                            "is missing would silently resolve to nobody."
+                            f"{path}: persons[{person_indices[person_id]}].{platform}"
+                            f"[{previous}] and [{account_no}]: two different account blocks "
+                            "claim the same id; edit the copied id or remove one block — "
+                            "the account whose real id is missing would silently resolve to nobody."
                         )
                     claimed_by[dedup_key] = account_no
 
                     existing = index.get(key)
                     if existing is not None and existing != person_id:
                         raise PersonsError(
-                            f"duplicate ({platform}, {id_value}) mapped to both "
-                            f"{existing!r} and {person_id!r} — an ambiguous identity "
-                            "would silently misattribute Honcho memory"
+                            f"{path}: persons[{person_indices[existing]}] and "
+                            f"persons[{person_indices[person_id]}].{platform}[{account_no}]: "
+                            "duplicate account id — an ambiguous identity would silently "
+                            "misattribute Honcho memory; remove one mapping or correct the id"
                         )
                     index[key] = person_id
 
     subject_aliases: dict[str, str] = {}
     for person_id, entry in parsed.persons.items():
-        for former in entry.former_person_ids:
+        for former_no, former in enumerate(entry.former_person_ids):
             if former in parsed.persons:
                 raise PersonsError(
-                    f"former_person_ids entry {former!r} on "
-                    f"[persons.{person_id}] collides with a LIVE "
-                    f"[persons.{former}] block — a former id must not also "
-                    "be a live person_id; remove one or the other"
+                    f"{path}: persons[{person_indices[person_id]}].former_person_ids[{former_no}] "
+                    f"collides with LIVE persons[{person_indices[former]}] — a former id must not "
+                    "also be a live person_id; remove one or the other"
                 )
             if former in subject_aliases:
                 raise PersonsError(
-                    f"former_person_ids entry {former!r} is claimed by both "
-                    f"[persons.{subject_aliases[former]}] and "
-                    f"[persons.{person_id}] — an ambiguous merge is refused "
-                    "rather than silently resolved to one of them"
+                    f"{path}: persons[{person_indices[person_id]}].former_person_ids[{former_no}] "
+                    f"and persons[{person_indices[subject_aliases[former]]}].former_person_ids: "
+                    "ambiguous merge; remove the duplicate former id claim"
                 )
             subject_aliases[former] = person_id
 

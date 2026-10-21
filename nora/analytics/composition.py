@@ -79,19 +79,19 @@ def _subjects_from_identity(persons: Persons) -> tuple[Subject, ...]:
     guessing."""
     by_current: dict[str, list[str]] = {}
     circles_for: dict[str, list[str]] = {}
-    unplaced: list[str] = []
-    for membership in persons.life360:
+    unplaced: list[int] = []
+    for membership_no, membership in enumerate(persons.life360):
         subject = persons.subject_id_for(membership.person_id)
         by_current.setdefault(subject, []).append(membership.person_id)
         if membership.circle_id is None:
-            unplaced.append(f"{membership.member_id} (person_id={membership.person_id!r})")
+            unplaced.append(membership_no)
             continue
         circles_for.setdefault(subject, [])
         if membership.circle_id not in circles_for[subject]:
             circles_for[subject].append(membership.circle_id)
     if unplaced:
         raise AnalyticsStartupError(
-            f"Life360 member id(s) {unplaced} have a [[persons.<id>.life360]] "
+            f"identity.life360 memberships {unplaced}: missing circle_id; a membership "
             "block with no circle_id in identity.toml — analytics cannot "
             "derive a circle_id to write stays/places under for their "
             "subject; add circle_id or remove the block (design/19 §3)"
@@ -151,7 +151,10 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
         persons = load_persons(cfg.identity_file)
     except PersonsError as exc:
         raise AnalyticsStartupError(f"identity.toml error: {exc}") from exc
-    subjects = _subjects_from_identity(persons)
+    try:
+        subjects = _subjects_from_identity(persons)
+    except AnalyticsStartupError as exc:
+        raise AnalyticsStartupError(f"{cfg.identity_file}: {exc}") from None
     if not subjects:
         raise AnalyticsStartupError(
             "analytics.enabled is true but no [[persons.<id>.life360]] "
