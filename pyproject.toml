@@ -14,7 +14,7 @@ dependencies = [
     "prometheus-client>=0.26.0",
     "structlog>=26.1.0",
     "opentelemetry-exporter-otlp-proto-http>=1.44.0",
-    "pillow>=12.3.0",
+    "pillow>=13.0.0",
     "cryptography>=50.0.0",
     "asyncpg>=0.31.0",
     "psycopg[binary]>=3.3.4",
@@ -67,6 +67,16 @@ nora = "nora.__main__:main"
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
+
+[tool.uv]
+override-dependencies = [
+    # strands-agents-tools 0.8.5 caps Pillow at <13.0.0; GHSA-8g5g-8vmr-9782.
+    # Remove once upstream lifts the cap.
+    "pillow>=13.0.0",
+    # discord-py[voice] 2.7.1 caps PyNaCl at <1.6; GHSA-mrfv-m5wm-5w6w.
+    # Remove once upstream lifts the cap.
+    "pynacl>=1.6.2",
+]
 
 [tool.setuptools.packages.find]
 include = ["nora*"]
