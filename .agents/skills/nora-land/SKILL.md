@@ -1,6 +1,6 @@
 ---
 name: nora-land
-description: Lands a Nora change from first edit to merged master, covering a new worktree from origin/master, the test loop, the gate read by its exit code, a Conventional Commit that is the release note, a PR from the template, independent review, an authored merge commit and the post-merge read-back. Load when starting work, committing, opening a PR or merging. Not for deploying to nora-host (nora-deploy).
+description: Lands a Nora change from first edit to merged master, covering a new worktree from origin/master, the test loop, the gate read by its exit code, a Conventional Commit that is the release note, a PR from the template, an adaptive review, an authored merge commit and the post-merge read-back. Load when starting work, committing, opening a PR or merging. Not for deploying to nora-host (nora-deploy).
 ---
 
 # nora-land
@@ -134,10 +134,12 @@ gh pr view <N> --json baseRefName,headRefOid       # master, and == git rev-pars
 - `Closes #N` only when this PR fully resolves it; otherwise `issue #N`.
 - A fix reports its mutation result (`docs/maintainers/conventions.md` Proving a fix).
 
-## 7. Review, by someone who is not the author
+## 7. Review, when the change earns one
 
-- A fresh subagent, another tool or another model, never the session that
-  wrote it (which lane and effort: `AGENTS.md`; by default Kimi through T3).
+- Whether and at which level: `AGENTS.md` «Review is adaptive». Level
+  none: go straight to step 8. The PR's Gate section names the row.
+- Otherwise, a fresh agent that did not write the change: DeepSeek for light,
+  Kimi for full, both launched through T3 (lane and effort: `AGENTS.md`).
   Give it the diff (`gh pr diff <N>`) and the PR's claims.
 - Verify each finding before acting on or dismissing it: open the line, run the
   test, revert the fix and watch the named test fail.
