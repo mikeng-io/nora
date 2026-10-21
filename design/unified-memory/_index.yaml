@@ -18,7 +18,11 @@ description: >
   BM25; bge-m3, EmbeddingGemma 2, WeMM-Embedding; fusion; reranker) and
   October 2026 prior art. The Persona adaptor, the prompt switch and the
   index projection are built (steps 6 and 8); 70 prepares step 9, the Honcho
-  cutover, which is not executed.
+  cutover, which is not executed. Amended 2026-10-21: every message batch
+  is read once on arrival into the Record; Honcho maps onto the existing
+  layers, Character entries are bounded profile/traits/hypotheses cards,
+  and answerability through Views replaces Character-line fact coverage
+  as the switch gate, with Q1–Q5 decided.
 status: proposed
 governance: operator-directed
 timestamp: '2026-10-14'
@@ -31,6 +35,7 @@ members:
   - 00-intent.md
   - 10-honcho-audit.md
   - 15-memory-map.md
+  - 18-message-readings.md
   - 20-embedding-bakeoff.md
   - 25-memory-graph.md
   - 30-identity-and-character.md
@@ -43,6 +48,27 @@ members:
   - 75-typed-identity.md
   - 76-typed-identity-build.md
   - 40-prior-art.md
+open_questions:
+  - id: Q1
+    question: "Answerability thresholds and question-set construction"
+    status: decided
+    decision: "The question set is built and frozen before any run; it is not edited after the first answer is seen. Pass requires the new Views' answer to be judged blind as at least as good as Honcho's dialectic on ≥80% of questions, AND the new Views' error rate <5%. An error is an answer asserting something its sources do not support. Both must hold."
+  - id: Q2
+    question: "Character session shape: pushed bundle or bounded tool-using session?"
+    status: decided
+    decision: "The session follows Honcho's pattern: it is pushed the readings since its last session, has read tools over older readings and messages with a bounded number of iterations, and ends in one settle write (today `persona_write`). There is still one writer per tier; no new writer."
+  - id: Q3
+    question: "Source-rechecked Honcho explicit observations as seed readings, or measurement reference only?"
+    status: decided
+    decision: "Honcho's observations are used only as the measurement reference for the first measure (the Q1 gate and coverage comparisons). Nothing is imported. Whether to seed, only with each observation re-checked against its source message, is decided on that first measure's result."
+  - id: Q4
+    question: "Reading model and budget"
+    status: decided
+    decision: "The reading model is DeepSeek V4.1 Flash. The budget is not set now: the first deliverable of phase 2 is to measure real input/output tokens over one day of live messages, then fill in the existing formula C = (I × Pᵢ + O × Pₒ) / 1,000,000 and set the budget from that measurement."
+  - id: Q5
+    question: "Reading granularity: per message or per batch with interleaved context as Honcho?"
+    status: decided
+    decision: "Readings are per batch, with the surrounding conversation as context, as Honcho does: a reply like “me too” only means something in context, and this uses fewer calls. Every claim in a reading is still tied to its own source message ids, so per-message citation and the visibility retirement rule are unchanged."
 edges:
   - {src: 00-intent, dst: ../cognition-loop/05-data-model, rel: depends_on, provenance: asserted}
   - {src: 00-intent, dst: ../cognition-loop/10-tiers, rel: depends_on, provenance: asserted}
@@ -53,6 +79,11 @@ edges:
   - {src: 20-embedding-bakeoff, dst: ../dreamer-agent-loop/24-embedding-seam, rel: extends, provenance: asserted}
   - {src: 20-embedding-bakeoff, dst: ../conversational-recall/10-findings, rel: depends_on, provenance: asserted}
   - {src: 15-memory-map, dst: ../cognition-loop/05-data-model, rel: extends, provenance: asserted}
+  - {src: 18-message-readings, dst: 00-intent, rel: extends, provenance: asserted}
+  - {src: 18-message-readings, dst: 10-honcho-audit, rel: depends_on, provenance: asserted}
+  - {src: 18-message-readings, dst: 45-persona-adaptor, rel: extends, provenance: asserted}
+  - {src: 18-message-readings, dst: ../cognition-loop/05-data-model, rel: extends, provenance: asserted}
+  - {src: 18-message-readings, dst: ../cognition-loop/25-rollup, rel: extends, provenance: asserted}
   - {src: 25-memory-graph, dst: 15-memory-map, rel: depends_on, provenance: asserted}
   - {src: 25-memory-graph, dst: 20-embedding-bakeoff, rel: depends_on, provenance: asserted}
   - {src: 25-memory-graph, dst: ../context-plan/15-what-the-composer-decides, rel: follows, provenance: asserted}

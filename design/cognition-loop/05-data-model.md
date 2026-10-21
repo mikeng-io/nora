@@ -39,6 +39,8 @@ and how it is derived.
 | **Notebook** | Nora's judgement: entries that aggregate what the Record and Rollup show, in four tiers (§2) | the subconscious, one writer per tier: Cognition (Register, Standing), the Character adaptor (Character), the Lessons adaptor (Lessons) (§7); the operator may retire or correct, never author (rule 6) | judged by a model, citing the Record and Rollup | revised, withdrawn, versioned; hidden on forget | no |
 | **Views** | per-reader slices: a turn's blocks, a session's agenda, a portal page, an operator page | one assembly path, code (§6) | assembled at read time under lineage and withdrawal | **never stored as data**; a View may be recorded as provenance (a session's situation, a trace), never read back as input | no |
 
+> 2026-10-21 (unified-memory revision): Memory beside the flow is being decomposed into the existing Record, Rollup, Notebook and Views per [18 · Message readings](../unified-memory/18-message-readings.md); no new layer is added. The historical description follows.
+
 **Beside the flow: Memory.** Honcho: per-person understanding, and what people
 say about themselves (`remember`). Outside our system; fed from the Record
 (messages and the perceptions of media, which are Record items); may be read
@@ -120,14 +122,19 @@ note, "Cy usually pays late" is a Character line (it rests on an aggregate),
 "I owe them the receipt" is Standing, "when they split a bill, give the
 per-head amount first" is a lesson.
 
-**Raw statements live in the Record; per-person facts live in Memory; the
-Notebook aggregates.** The Notebook stores no statement-level provenance (who
-said what, to whom): that is the Record's and Memory's job. Where a body says
-who settled something (a memo's `Kept` line, [12](12-schemas.md) §3), the name
-is read from the cited message when the View renders it, never stored.
-Nothing here is a knowledge graph: no bare fact is stored as truth, and no
-store of extracted facts or entity clusters is built ([80](80-prior-art.md)
-§5; the deprecated fact tier, #115, was one).
+> 2026-10-21 (message readings): statements live in the Record as [message readings](../unified-memory/18-message-readings.md); the Notebook aggregates them into judgements. This replaces “per-person facts live in Memory”.
+
+**Raw statements and their readings live in the Record; the Notebook
+aggregates.** Every message batch is read once on arrival by a model,
+unconditionally scheduled by code. Its reading says about whom, the claim
+and how (stated by the person / said by another / planned / asked / reported),
+tied to its message ids. A reading records what was said, not a fact asserted
+as truth; it is versioned like a Rollup build, rebuildable from the Record,
+and superseded, not deleted. This is not #115's fact store: that model chose
+what to save (5 rows in 11 days), while code runs a reading on every batch.
+Statement-level provenance stays in the Record. Where a body says who settled
+something (a memo's `Kept` line, [12](12-schemas.md) §3), the name is read from
+the cited message when the View renders it, never stored.
 
 ## 3. The entry
 

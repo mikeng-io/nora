@@ -289,6 +289,8 @@ What V2 decided where the plan above left room (DEC-315; the code is
 
 ## 5. One memory surface, and its verb (2026-10-16, DEC-316)
 
+> 2026-10-21 (18 / ADR 0026): [18](18-message-readings.md) extends what this surface searches: message readings join the Record inputs. The `memory_search` tool surface and pre-fetch stand; Nora’s own turn does the reasoning Honcho’s dialectic agent does. No new tool.
+
 The index is read through ONE tool, `memory_search(query, person?, since?,
 until?, kinds?)`, and only on the memory graph's tool surface.
 `[memory_index] enabled` selects the surface wherever tools are built (a

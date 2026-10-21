@@ -3,6 +3,8 @@
 Goal: deliver 75's approved contract as one integrated change, keeping live
 Persona in shadow until measured cutover acceptance.
 
+> 2026-10-21 (18 / ADR 0026): the architecture and build steps below are the earlier plan. [18](18-message-readings.md) moves source statements to Record message readings and restores bounded Character entries; [ADR 0026](../../docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md) names their parts profile, traits and hypotheses and defers existing code-name changes to one migration. Readings and backfill do not wait for that rename.
+
 Architecture: reuse persona_line, plan_write, SqlPersonaStore and the existing
 person/collective adaptor runtime. Typed facts share the account transaction
 with character/hypotheses. Historical extraction uses the same writer with a

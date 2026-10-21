@@ -47,6 +47,8 @@ of the three learned:
 
 ## 1. Storage
 
+> 2026-10-21 (message readings; ADR 0026): statements now live in the Record as [message readings](18-message-readings.md). Character entries are the bounded card Nora sees in every prompt, with profile, traits and hypotheses; they are judgements, not the whole memory. Answers come from Views over readings, Rollup and entries. The historical body and existing code names below are preserved; new text follows [ADR 0026](../../docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md).
+
 Keys are today's culture keys: `{unit}#character:{person}`, `{unit}#unit`,
 `{unit}#nora`, and a room's `primary_id` (GLOSSARY).
 
@@ -193,6 +195,8 @@ room (Culture) and Nora accounts follow the same shape with their own inputs.
 dispute, or a told line about them by someone else.
 
 **Reads:**
+
+> 2026-10-21 (message readings): the person session reads the [readings](18-message-readings.md) of the person's new messages and eligible mentions; the original messages stay citable. Readings retain who said what, how and when, with their source message ids. This amends the message inputs below; Q2 in 18 decides the session is pushed readings since its last session, has read tools over older readings and messages with bounded iterations, and ends in one settle write (today `persona_write`); still one writer per tier, no new writer.
 
 | input | today | after |
 |---|---|---|
@@ -555,6 +559,8 @@ unit's rooms that list them, and in no other unit
 every room of the unit for the unit's account.
 
 ## 6. What Honcho knew is re-derived, and that is measured
+
+> 2026-10-21 (switch gate, superseded-in-part): §6 items 4–5 no longer require Character lines to cover Honcho's facts. The gate is **Nora can answer what Honcho could**: a frozen question set answered by the new Views over readings, Rollup and entries and by Honcho's dialectic, judged blind. Q1 in [18](18-message-readings.md) decides the set is built and frozen before any run, with no editing after the first answer is seen; pass requires blind judgement that the new Views are at least as good as Honcho’s dialectic on ≥80% of questions AND an error rate <5% (answers asserting something their sources do not support). Both must hold. Item 6, the ≥80-pair reply replay and its ≥55% preference bar, stays. The earlier coverage text and implementation clarifier below are retained as history, not the new switch criterion.
 
 1. **Shadow first, and shadow changes no prompt** (amended 2026-10-15). The
    adaptor writes Persona under a **shadow key**; the live Character head

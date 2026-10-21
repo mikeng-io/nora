@@ -14,6 +14,8 @@ deleted message makes nobody forget (§5), and shadow changes no prompt (§4).
 
 Operator, 2026-10-15, answering 30 §8:
 
+> 2026-10-21 (18 / ADR 0026): [18](18-message-readings.md) amends the per-person-facts ruling below: statements live in Record message readings; Character entries hold the bounded profile, traits and hypotheses card. Views answer from readings, Rollup and entries; the Notebook is judgement, not the statement store.
+
 | 30 §8 | ruling |
 |---|---|
 | 0, 1. Where per-person facts live once Honcho goes | In the Notebook, as **one account per entity that composes identity and character**. They answer one thing, who this entity is to Nora, and are not split into two tiers. |
@@ -24,6 +26,8 @@ Operator, 2026-10-15, answering 30 §8:
 | 6. The workspace (DEC-214) | **Ruled 2026-10-16: retired; the unit is the only boundary.** A workspace exists to put several units' people in one Honcho tenant, and the unit-boundary ruling in row 4 already stops anything crossing units, so nothing would enforce it. It is removed at step 9 of [00](00-intent.md) «Sequence», with Honcho. Removed with it: `policy.toml` `[units.<u>] workspace` and its startup check, `identity.toml` `[workspaces]`, and the routing; the portal's viewer scope (`workspaces_of_person`) moves to the unit. Cost, accepted: what a person says about themselves in one unit no longer reaches another unit their workspace shares today; only turning lineage on for Persona would bring that back. |
 
 ## 1. What Persona is
+
+> 2026-10-21 (message readings; ADR 0026): statements now live in the Record as [message readings](18-message-readings.md). Character entries are the bounded card Nora sees in every prompt, with profile, traits and hypotheses; they are judgements, not the whole memory. Answers come from Views over readings, Rollup and entries. The historical body and existing code names below are preserved; new text follows [ADR 0026](../../docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md).
 
 One account per entity: an actor (a human, Nora, another agent) or a
 collective (a room, the unit). Three parts, each with its own reasoning modes

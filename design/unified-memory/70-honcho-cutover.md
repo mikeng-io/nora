@@ -41,6 +41,8 @@ Rebuild may project shadow rows; projection alone never makes them readable.
 
 ## 3. The flip (operator, on `norty`)
 
+> 2026-10-21 (18 / ADR 0026): **Nora can answer what Honcho could** — the new Views and Honcho's dialectic answer the same frozen question set, judged blind — replaces Character-line fact coverage. The ≥80-pair reply replay stays ([45 §6](45-persona-adaptor.md#6-what-honcho-knew-is-re-derived-and-that-is-measured)). Q1 in [18](18-message-readings.md) decides the set is built and frozen before any run, with no editing after the first answer is seen; pass requires blind judgement that the new Views are at least as good as Honcho’s dialectic on ≥80% of questions AND an error rate <5% (answers asserting something their sources do not support). Both must hold; this is not a passed gate or permission to flip. The revised forward sequence in [00](00-intent.md#sequence) puts answering and both gates before the operator's `[memory_index] enabled` switch; Honcho's feed stops later. The `[persona] render` procedure below is the earlier prompt-switch procedure, superseded in part by [18’s gate](18-message-readings.md#the-switch-gate). Views use `memory_search` + pre-fetch over readings, Rollup and entries; Nora’s own turn does the reasoning Honcho’s dialectic agent does, with no new tool.
+
 1. Edit a COPY of the live `config.toml`: `[persona] render = true`.
    `nora config validate` the copy through the running container, `cp` it into
    place (in place, so the bind-mount keeps its inode), recreate — the
@@ -75,6 +77,8 @@ readings unchanged. During the hold, watch:
 
 Each row cites the disposition already ruled in [10](10-honcho-audit.md) §4–§5.
 Land as one integrated change per the ponytail rule, after the hold:
+
+> 2026-10-21 (18 / ADR 0026): the historical tool-removal mapping below is amended by [18](18-message-readings.md): Honcho’s dialectic maps to the built `memory_search` + pre-fetch surface, with reasoning in Nora’s own turn; no new tool is introduced.
 
 1. **Prompt reads deleted**: the early-out Honcho paths in
    `nora/engagement/context.py` and `nora/app/fire.py` (`peer_card`,
