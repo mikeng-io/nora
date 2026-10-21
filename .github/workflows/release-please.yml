@@ -1,4 +1,4 @@
-# Release metadata only; deployment is a separate operator procedure.
+# Release metadata; release-images publishes deployments for the installed Komodo poller.
 name: release-please
 
 on:

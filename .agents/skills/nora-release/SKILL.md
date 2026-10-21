@@ -1,38 +1,20 @@
 ---
 name: nora-release
-description: Cuts a Nora release the DEC-314 way. release-please on GitHub keeps one release PR built from Conventional Commits; merging it tags vX.Y.Z and publishes the GitHub Release. Then deploy the tag and read the stamp back. Load when a task says release, cut a version, tag, changelog, release PR, release-please, or what version is live. Not for an ordinary deploy (nora-deploy).
+description: Cuts a Nora release the DEC-314 way. release-please on GitHub keeps one release PR built from Conventional Commits; merging it tags vX.Y.Z and publishes the GitHub Release. Then read back automatic Komodo deployment. Load when a task says release, cut a version, tag, changelog, release PR, release-please, or what version is live. Not for an ordinary deploy (nora-deploy).
 ---
 
 # nora-release
 
-Release Please queues its generated PR for automatic merge after required checks,
-then publishes the tag and Release. Read them back; deploy separately when asked. Why it works this way: DEC-314 in `design/09-decision-index.md`.
-Releasing and deploying are separate steps: a release is a tag and a GitHub
-Release, and a deploy is a rebuilt image. A release posts nothing to any room.
+Release Please opens the release PR. **While the repository is private, the
+maintainer merges it manually; auto-merge is not active.** Merging publishes the
+tag and GitHub Release. `release-images.yml` then publishes the complete image
+bundle to `deployments`; the enabled Komodo poller deploys it automatically.
+Read back publication and deployment separately. A release posts nothing to rooms.
 The startup upgrade note was retired along with `release-fragments/` and
 scripts/release.py.
 
-## Once, before enabling automatic releases
-
-Apply the public settings and install the free release App as described in
-`docs/maintainers/github.md`. Publishing the repository is a separate action.
-The SSH alias below is an operator-defined placeholder, not a host inventory.
-
-## Legacy first-release prerequisites
-
-```bash
-gh api repos/mikeng-io/nora/actions/permissions/workflow   # can_approve_pull_request_reviews: true
-ssh nora-host "grep -n '^\[version\]' ~/workspace/nora/config.toml"   # must print nothing
-```
-
-- If the setting is false, release-please cannot open its PR. Fix it under
-  *Settings → Actions → General → Allow GitHub Actions to create and approve
-  pull requests*.
-- If the live `config.toml` still has `[version]`, DEC-314's image refuses to
-  start, because the config is `extra="forbid"`. Remove the section through
-  `nora-deploy` step 5 BEFORE the recreate. The old image is fine without it.
-- Until `v6.0.0` is tagged, every build is unstamped. Merge the first release
-  PR before the next deploy.
+Public-repository App/auto-merge setup is future activation guidance in
+`docs/maintainers/github.md`, not the current private-repository procedure.
 
 ## 0. Where the release notes come from
 
@@ -71,16 +53,13 @@ the commits imply, and the CHANGELOG lines describe what users will see.
   (`gh release edit vX.Y.Z --notes-file …`), or fix it in the next release's
   commits.
 
-## 2. Automatic merge, or the manual bootstrap path
+## 2. Maintainer merges the release PR
 
-See `docs/maintainers/github.md`: a repository-scoped GitHub App opens the PR so
-its checks run unattended, then queues auto-merge. Required CI/security checks and
-resolved conversations gate it. No branch-rule bypass is granted. Docs/design-only
-commits do not qualify; `scripts/release_scope.py` checks real runtime paths and
-visible commit types since the latest release. Runtime doctrine/skills count.
-
-Without the App, or while private, the manual path remains available:
-
+While private, the maintainer uses the manual path below after checks pass.
+After publication and App setup, `docs/maintainers/github.md` describes future
+auto-merge activation. Docs/design-only commits do not qualify for release;
+`scripts/release_scope.py` checks runtime paths and visible commit types since
+the latest release. Runtime doctrine/skills count.
 
 ```bash
 gh pr view <N> --json headRefOid,mergeable,files --jq '.headRefOid, .mergeable, [.files[].path]'
@@ -106,25 +85,40 @@ is on the merge commit. A `No entries modified` warning in the run log means
 the `uv.lock` updater missed. Then `test_release_config_matches_the_repo.py`
 fails on master, so fix the jsonpath in its own PR.
 
-**After v6.0.0 only:** delete `release-as` from `release-please-config.json`
-in a PR. `test_a_release_as_pin_is_ahead_of_the_released_version` is red until
-you do.
+## 4. Read back automatic deployment
 
-## 4. Deploy the tag, read the stamp back
+Wait for `release-images.yml` to finish all images and commit `compose.json` and
+`release.json` to `deployments`. Production's enabled `nora-release-poll` checks
+every ten minutes with `DeployStackIfChanged` on `nora-releases`; manual native
+`DeployStack` is available when needed. The installed wrapper writes
+`release-deploy.json` after verified deployment. v6.5.0 used this path without
+host commands on 2026-10-21.
 
-Select the installed mode through `nora-deploy` step 0. After Komodo cutover,
-wait for the complete Release images workflow and use the native Stack; never
-rebuild from the checkout. Before cutover only, `scripts/build-image.sh` fetches
-tags and stamps the image with `git describe --tags --match 'v[0-9]*'`. Then:
+Follow `nora-deploy` step 0 and compare the selected `deployments` manifest,
+production receipt, every owned service's image/health and live Nora stamp.
+A published tag alone does not prove deployment. Never rebuild the checkout in
+Komodo mode; doctrine and Dreamer are baked into the image.
+
+## Archive: pre-v6.0.0 first-release prerequisites
+
+Historical one-time bootstrap only; not steps for an installed release stack.
 
 ```bash
-ssh nora-host 'docker exec nora /app/.venv/bin/python -c "import json; print(json.load(open(\"/app/nora/version.json\"))[\"version\"])"'
+gh api repos/mikeng-io/nora/actions/permissions/workflow   # can_approve_pull_request_reviews: true
+ssh nora-host "grep -n '^\[version\]' ~/workspace/nora/config.toml"   # must print nothing
 ```
 
-PASS: `vX.Y.Z` exactly. `vX.Y.Z-N-g<sha>` means the deploy checkout is N
-commits past the tag, which is honest but not the release. A missing file means
-the build ran unstamped: read the build log for the refusal (a dirty tree, or
-no tag fetched).
+- If the setting is false, release-please cannot open its PR. Fix it under
+  *Settings → Actions → General → Allow GitHub Actions to create and approve
+  pull requests*.
+- If the live `config.toml` still has `[version]`, DEC-314's image refuses to
+  start, because the config is `extra="forbid"`. Remove the section through
+  the legacy `nora-deploy` reference step 5 BEFORE the recreate. The old image is fine without it.
+- Until `v6.0.0` is tagged, every build is unstamped. Merge the first release
+  PR before the next deploy.
+
+After v6.0.0, the one-time cleanup was to delete `release-as` from
+`release-please-config.json` in a PR; the version-pin test guarded that cleanup.
 
 ## Never
 

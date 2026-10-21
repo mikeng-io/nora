@@ -2,7 +2,8 @@
 
 ## Current runtime
 
-The reference installation uses the root Docker Compose project on a Linux host.
+Production application deploys use the installed Komodo Stack `nora-releases`
+on a Linux host; infrastructure retains the legacy root Docker Compose project.
 It assumes model/memory services, persistent storage and separately provisioned
 platform accounts. Start from `config.example.toml`, `identity.example.toml` and
 `policy.example.toml`; configure only the capabilities you intend to operate.
@@ -12,28 +13,30 @@ data before upgrading.
 
 The operator/agent
 procedure is [nora-deploy](../.agents/skills/nora-deploy/SKILL.md); operational
-recovery is in the [runbook](../docs/runbook.md). The procedure serializes
-changes with a host lock, builds a version-stamped image, validates live config,
-recreates `nora`, `presence` and `analytics` together, and reads back their state.
-Voice changes also coordinate the voice services. Verified images are recorded
-for recovery; old phase tags are not the current rollback mechanism.
+recovery is in the [runbook](../docs/runbook.md). The installed wrapper serializes
+changes with the shared host lock, validates config and reads back every owned service and the success receipt.
 
 The Compose file uses bridge networks, persistent volumes and private host
 configuration. The separate `honcho_memory` network must already exist.
-A deployment that bind-mounts `nora/doctrine` and `nora/dreamer` can hot-reload
-them on mtime; image replacement alone then does not determine all behaviour.
 
 ## Release deployment with Komodo
 
-The off-by-default [Komodo release deployment](komodo/README.md) publishes
-version-stamped images from stable releases, selects exact image digests on a
-separate Git branch, and uses a native Stack with a locked validation/readback
-wrapper. It replaces the earlier unimplemented custom-reconciler proposal.
-Neither the publisher nor the host schedule is enabled by merging its code.
-The current operator/agent deployment remains in use until the documented
-installation, disposable rehearsal and explicit production cutover complete.
+The installed [Komodo release deployment](komodo/README.md) is the normal path:
+merge a fix PR, manually merge release-please's release PR while the repository
+is private, then let `release-images.yml` publish all images and commit
+`compose.json` and `release.json` to `deployments`. The enabled
+`nora-release-poll` Procedure checks every ten minutes and deploys `nora-releases`
+through the installed wrapper, which writes `release-deploy.json`.
+Rollback selects a previous bundle by reverting the selecting commit on
+`deployments`; it does not revert schema migrations or host config.
 
-## First installation
+Doctrine and Dreamer are baked into these images; host pulls do not change them.
+`~/workspace/nora` is still the live runtime root for private config, `.env`,
+`data/`, `state/`, infrastructure Compose services and the computer unit's
+`ExecStart`. **Do not delete or reset it.** Checkout rebuild/pull deployment is
+legacy; it must not run concurrently with or replace the installed release path.
+
+## Legacy checkout bootstrap: first installation
 
 This is a configurable stack, not a preconfigured hosted service. Prerequisites:
 Docker Engine with Docker Compose on Linux; GnuPG (`gpg`) for verifying the
@@ -122,8 +125,11 @@ redirects or DNS rebinding.
 
 ## Container-era sidecars in this tree
 
-The live deployment runs from the repo-root `docker-compose.yml`; several of
-its services are built from subtrees here (`stt/`, `voice-sidecar/`, …). The newest:
+The repo-root `docker-compose.yml` still runs database, RustFS, Prometheus,
+Alertmanager and embedder infrastructure from the legacy runtime root. Komodo
+owns application services through the generated `deployments` Compose manifest;
+their release images are built from subtrees here (`stt/`, `voice-sidecar/`, …).
+The newest:
 
 * **`voice-sidecar/`** — the Node audio-controller (design/voice-channel/07):
   the SOLE holder of the Discord voice connection. Joins a channel,

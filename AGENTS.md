@@ -490,7 +490,12 @@ The schema gate, import cache and typecheck scope are in `docs/maintainers/conve
 ## Reaching the deployment
 
 Development is local; `nora-host` is the operator-configured SSH alias for a
-**deploy target, not a dev checkout** (`~/workspace/nora`, or your install path).
+**deploy target, not a dev checkout**. The installed Komodo release Stack
+`nora-releases` owns application deploys from the `deployments` branch; its enabled
+poller checks every ten minutes. `~/workspace/nora` is the legacy live runtime
+root for config, `.env`, `data/`, `state/`, infrastructure Compose services and
+the computer unit's `ExecStart`. **Do not delete or reset it.** Doctrine and
+Dreamer are image-baked in Komodo mode; a host pull does not change them.
 Load **`nora-deploy`** to select deployment mode, lock, validate and deploy;
 load **`nora-readback`** for database access, container logs and evidence.
 Read host status before any pull; preserve unpushed commits on a branch, never
@@ -526,7 +531,10 @@ when there is no `[units]`. History and drift-check limits: `docs/maintainers/co
 
 Load **`nora-release`**: release-please alone publishes tags and GitHub Releases;
 no release fragments, hand tags or room announcements. Subjects are changelog lines:
-`feat`/`fix`/`security`/`perf`/`change`/`doctrine`/`revert`. A deploy is separate.
+`feat`/`fix`/`security`/`perf`/`change`/`doctrine`/`revert`. While private, the
+maintainer merges the release PR manually. `release-images.yml` publishes the
+complete bundle to `deployments`, then the installed Komodo poller deploys it
+automatically. Publication and verified deployment remain separate states.
 
 ## Adding or changing a tool
 

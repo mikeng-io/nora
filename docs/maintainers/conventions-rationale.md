@@ -201,6 +201,11 @@ mistake it produced (2026-08-21: eight full gate runs in one session).
   by merge, so the merge is the moment somebody decides, rather than a side
   effect of editing.
 
+  **Checkout-era history:** the following source-mount account predates the
+  installed Komodo release path; doctrine and Dreamer are now image-baked.
+  The host checkout remains a live config/infrastructure runtime root; do not
+  delete or reset it.
+
   **The bind-mount source is `nora-host`'s own
   checkout (`~/workspace/nora`), not this one** — read back 2026-09-08: the
   compose bind sources are relative to the compose file on the host, so a merge
@@ -208,9 +213,11 @@ mistake it produced (2026-08-21: eight full gate runs in one session).
   which the dev checkout WAS the bind-mount source, is what the previous
   wording described; it is superseded, and it mattered in both directions — it
   made one session sequence a deploy around a window that did not exist, and
-  read while standing on `nora-host` it points at the wrong machine. What is
-  unchanged: on `nora-host`'s checkout an edit to `nora/doctrine` IS a deploy (it
-  hot-reloads on mtime), and `config.toml` there is live once its services are recreated.
+  read while standing on `nora-host` it points at the wrong machine. In checkout
+  mode an edit to `nora/doctrine` on `nora-host` was a deploy (it hot-reloaded on
+  mtime). Under the installed release path, doctrine changes reach production
+  only through a release image. `config.toml` there is still live once its
+  services are recreated.
   **`nora/skills` is NOT** — it is `COPY`d into the image (`Dockerfile`) and the
   compose file binds only `nora/doctrine` and `nora/dreamer`, so a skill edit
   needs a rebuild. Editing one on the host the way you would edit doctrine
@@ -269,6 +276,10 @@ mistake it produced (2026-08-21: eight full gate runs in one session).
 ## Reaching the deployment — the detail
 
 The terse rule is in `AGENTS.md` («Reaching the deployment»); this is the why.
+
+**Checkout-era history:** the following explains the earlier checkout deployment
+model. The installed Komodo release stack now owns application deployment;
+`~/workspace/nora` remains the live config/infrastructure runtime root.
 
 **Two machines, one direction.** Until 2026-09-07 sessions ran on the host
 itself, committing directly in the checkout the container bind-mounts.
@@ -365,7 +376,7 @@ implemented 2026-09-08): `nora config set/get/unset/validate/path --config
 <path>` validates against the schema, prints what changed, and never touches
 `.env` — secrets stay there and are referenced by name. On the deploy host the
 CLI cannot write the live file from inside the container (`EBUSY` on the file
-bind-mount, 2026-09-09), so the live procedure is `nora-deploy` step 5: edit a
+bind-mount, 2026-09-09), so the checkout-era procedure is legacy `nora-deploy` reference step 5: edit a
 COPY, `nora config validate` the copy through the running container, `cp` it
 into place (in place, so the mount keeps its inode), recreate, and restore the
 backup on any failure. An unvalidated hand edit of the live file is never the
