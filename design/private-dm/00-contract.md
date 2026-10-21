@@ -9,8 +9,12 @@ shared learning. No runtime/configuration change or acceptance is implied.
 Revision 2026-10-21: WhatsApp + Signal, one cross-platform transcript, private
 computer work and subagents are in the first integrated PR. This reverses the
 earlier computer/export/unsolicited-private-job deferral, subject to the private
-publication and deferred-send rules below. Prerequisite:
-[unit-scoped computer workspaces](../computer-unit-scope/00-contract.md).
+publication and deferred-send rules below. The
+[unit-scoped computer prerequisite](../computer-unit-scope/00-contract.md) is
+satisfied: #164 shipped in v6.5.0, with the operator-verified 2026-10-21 live
+migration and #168 health-gate correction recorded in the
+[cutover runbook](../computer-unit-scope/01-migration.md). DMs extend that shipped
+implementation; DM support itself remains unbuilt.
 
 Implementation: [issue #124](https://github.com/mikeng-io/nora/issues/124).
 

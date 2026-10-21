@@ -1,5 +1,42 @@
 # Offline group computer cutover
 
+Status: implemented by [#164](https://github.com/mikeng-io/nora/pull/164)
+(merge `811d6b08c`), released in
+[v6.5.0](https://github.com/mikeng-io/nora/releases/tag/v6.5.0)
+(`34c101982`) and deployed through Komodo. The operator-verified 2026-10-21
+cutover moved 3 room workspaces into 2 unit workspaces, read 3405 files as their
+new owner and bound 6 sessions. This revision records that supplied live evidence;
+it performs no host access. The original contract remains a historical design.
+[#168](https://github.com/mikeng-io/nora/pull/168) (merge `e6fdf3d86`)
+corrected both health gates below to match the actual single-spaced status line.
+
+## Lessons from the live cutover
+
+The “Also” section of #168 records these operational limits:
+
+- sbx cannot resolve scope users created after sandbox boot. Host-side execution
+  as any unit or future DM user must enter as root and switch inside the VM:
+  `sbx exec -u root nora-computer runuser -u <scope-user> -- …`.
+  Batch owner reads per scope, rather than starting one sbx exec per file.
+- `deploy/computer/archive_check.py::problems` refuses absolute/out-of-scope
+  links: venv interpreter links and Chrome's `browser/*/SingletonSocket` were
+  moved aside, as were stale `.tmp/` sockets refused by
+  `deploy/computer/migrate_unit_scope.py::snapshot`. They were preserved under
+  `/var/lib/computer-unit-migration/`, not silently dropped. This is a shared
+  unit/DM backup follow-up, not fixed by the migration: a workspace venv can
+  make an otherwise completed backup fail its restore check. The required
+  backup preparation and restore proof are in
+  [DM acceptance](../private-dm/04-build-and-acceptance.md#2-deterministic-proof-and-actual-inputs).
+  Keep archive validation fail-closed; never allow arbitrary external links.
+- In Komodo mode, the HOST command below must use `docker run` on the existing
+  Nora container's immutable image digest, with the installed environment,
+  policy, database network and migration mounts. The shown `docker compose run`
+  form is checkout-mode only: in Komodo it tries to build `nora:latest`.
+- Each sbx exec leaked roughly ten host gnome-keyring file descriptors. #168
+  records an immediate soft-limit increase from 1024 to 4096 via prlimit; the
+  operator reports a systemd `LimitNOFILE` drop-in as the persistent mitigation.
+  Batching reduces calls; raising the limit does not fix the leak.
+
 These commands are an operator runbook, **not evidence of a live migration**.
 Do not enable the new Nora image until every check below succeeds. Pause the
 Komodo release poll first if installed. Use the installed deployment mode from
@@ -193,12 +230,16 @@ import hashlib,json,subprocess,sys
 plan=json.load(open(sys.argv[1]))
 for old,new in plan['mapping'].items():
     user='c-'+new[:12]
-    for path,entry in plan['sources'][old]['entries'].items():
-        if entry['kind']!='file': continue
-        code='import hashlib,pathlib,sys; assert hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest()==sys.argv[2]'
-        subprocess.run(['sbx','exec','-u',user,'nora-computer','python3','-c',code,
-                        '/workspace/'+new+'/rooms/'+old+'/'+path,entry['sha256']],check=True)
-    subprocess.run(['sbx','exec','-u','c-'+old[:12],'nora-computer',
+    files={p:e['sha256'] for p,e in plan['sources'][old]['entries'].items() if e['kind']=='file'}
+    code="""import hashlib,json,pathlib,sys
+root=pathlib.Path(sys.argv[1])
+for path,digest in json.load(sys.stdin).items():
+    assert hashlib.sha256((root/path).read_bytes()).hexdigest()==digest
+"""
+    subprocess.run(['sbx','exec','-u','root','nora-computer','runuser','-u',user,'--',
+                    'python3','-c',code,'/workspace/'+new+'/rooms/'+old],
+                   input=json.dumps(files),text=True,check=True)
+    subprocess.run(['sbx','exec','-u','root','nora-computer','runuser','-u','c-'+old[:12],'--',
                     'test','!','-r','/workspace/'+new+'/rooms/'+old],check=True)
 print(json.dumps({'plan_sha256':hashlib.sha256(json.dumps(plan,sort_keys=True).encode()).hexdigest(),
                   'owner_readback_verified':True},sort_keys=True))

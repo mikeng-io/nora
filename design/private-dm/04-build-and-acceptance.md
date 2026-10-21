@@ -7,8 +7,13 @@ paid evaluations, enablement and deployment are separate work.
 
 ## 1. Build the integrated feature
 
-1. Land and verify the [unit-scoped computer prerequisite](../computer-unit-scope/00-contract.md)
-   before the DM implementation. Refresh the [source trace](01-current-flow.md),
+Completed prerequisite (former step 1): [unit-scoped computer workspaces](../computer-unit-scope/00-contract.md)
+shipped in #164 and v6.5.0; the operator-verified 2026-10-21 migration is recorded
+with #168's health correction in [the runbook](../computer-unit-scope/01-migration.md).
+Do not rebuild it or rerun its migration as part of the DM feature. The remaining
+integrated build steps are:
+
+1. Refresh the [source trace](01-current-flow.md),
    identity/default/opt-out validation and WhatsApp + Signal text flows. Add
    Signal inbound DMs; preserve group/OTP behaviour and the global DM switch
    default false. Every linked platform is on by default within an active grant;
@@ -24,8 +29,10 @@ paid evaluations, enablement and deployment are separate work.
 4. Wrap every DM-derived native write, correction/verdict and aggregate with
    the publication check/atomic receipt. Protect private source provenance
    across renderer, tool, graph, portal, citation and explanation reads.
-5. Enable DM computer/export and subagents with private person+unit workspaces,
-   unit-read/publish-write access, per-person budget and bound deferred delivery.
+5. Extend the shipped computer binding/session/context seams for DM computer,
+   export and subagents: [dm_hash and scope lease](05-cross-platform.md#3-computer-browser-and-export-are-in-the-first-slice),
+   unit-read/publish-write broker, per-person budget and bound deferred delivery.
+   Use runuser for new scope-user launchers and meet backup safety below.
    Reuse context blocks, tools, guarded sends and telemetry sanitisation.
    Inspect every raw DM consumer and native mutation caller. One integrated
    PR ships the capability; do not enable an unsafe intermediate DM path.
@@ -81,10 +88,54 @@ Additional first-PR acceptance cases (all required, using synthetic identities):
 | Platform-local pointers | Identical remote IDs/timestamps on the two platforms do not cross-deduplicate, quote, edit or touch; wrong-target pointers refuse |
 | Admission and opt-out | Linked WhatsApp/Signal accounts are admitted by default under the grant; an explicit platform false blocks inbound and deferred sends without disabling the other; display-name matches admit nobody |
 | Default change and workspace isolation | New anchor selects a distinct transcript/workspace; groups and other people/anchors cannot read DM files/cookies/logins via tools, sessions or arbitrary commands |
+| Scope/lease/session reuse | Canonical dm_scope UUID yields the specified 32-hex dm_hash on both platforms; SCOPE_RE, inventory and archive_check accept its layout; non-job calls with different session IDs contend on scope:<dm_hash>, while a group retains scope:<unit_hash> and jobs retain job:<id>; session/context/browser reads use only the bound scope |
+| New-user execution | Create a DM user after sandbox boot; root-entry runuser executes with that user's UID/GID and reads its files; a different unit/DM user cannot enter the directory; missing user or failed execution is unavailable, never empty success |
 | Unit read and publish-write | DM successfully reads anchor-unit files; unguarded write fails; explicit safe curated publication reaches the unit; held/private content leaves unit files unchanged |
 | DM browser and subagent | Work begun via one admitted platform resumes privately via the other; job output and browser state stay in that dm_scope |
 | Deferred recheck/no retarget | Revoke grant, change anchor, alter direct target or opt out while a job runs: delivery refuses, does not use another account/unit, retains private outcome; unchanged authority sends once to the launching target |
 | Per-person budget | Simultaneous jobs/computer calls share one person budget across platforms/anchors; exhausted admission refuses before spend, no account-switch reset; another person retains their own budget |
+
+### Backup safety — required before DM enablement
+
+Choose **backup preparation that excludes regenerable environments and runtime
+artifacts**, keeping `deploy/computer/archive_check.py::problems` unchanged.
+Its same-scope link and file-type restrictions protect root extraction; adding
+exceptions for arbitrary external symlinks would weaken that real boundary.
+Banning venvs or browsers would contradict computer use. Instead extend the
+existing `deploy/computer/nora-computer` exclusion mechanism
+(`backup_in_vm`, shell function at line 360), not the scope syntax or archive format:
+
+- Identify venv directories by their environment metadata, exclude the
+  regenerable environment (including absolute interpreter links), and preserve
+  the dependency/rebuild instructions and all user-authored files outside it.
+  A rebuildable dependency description is required; if one is absent, refuse
+  the backup as unavailable rather than silently omit an unrecoverable env.
+  Keep user work outside disposable environments; no blanket exclusion by a
+  guessed directory name and no arbitrary link dereferencing as root.
+- Normal backups already exclude the top-level scope browser directory.
+  Archives that do include browser data, such as cutover rollback archives,
+  must be taken after browser shutdown and omit only regenerable Chrome
+  singleton/socket artifacts. Preserve profile data privately. Exclude runtime
+  sockets under `.tmp/` from backups after checking they carry no user data;
+  migration still requires drained processes and explicit relocation of stale
+  sockets before its existing snapshot, never a silent planner bypass.
+- These are archive exclusions, not permission to delete working files or
+  overwrite the old backup. Record exclusions/rebuild instructions with the
+  private backup receipt; an unknown artifact or failed classification/check
+  is an error. Retain the previous verified backup on failure.
+
+This is a **shared unit/DM follow-up**, not delivered by #164/#168 or this docs
+revision. Require one synthetic end-to-end backup/restore case with a venv whose
+interpreter links outside the scope, Chrome singleton artifacts and a stale
+`.tmp/` socket. Produce the actual archive with the backup path, pass unchanged
+archive_check (exit 0), restore in an isolated VM, recreate the environment and
+read every retained regular file as its new scope owner via root-entry runuser,
+checking digests and runnable dependencies. Check an included private browser
+profile survives a rollback archive while normal backup still excludes it.
+A malicious external/cross-scope link outside the explicitly excluded disposable
+artifacts must still be refused; error/timeout is not a restore pass. Missing
+rebuild instructions, lost user files, failed owner reads or failure to restore
+blocks DM enablement. A successful tar alone cannot satisfy this item.
 
 Inspect actual model inputs for a frozen synthetic journey: private DM reply,
 raw-capable curation, ordinary group Cognition and group response. Confirm the
@@ -121,7 +172,8 @@ and external trace persistence separately.
 Before enabling, inspect/back up live database and config files, validate
 identity/policy copies through their loaders/default resolver, and require
 [dm] enabled plus admitted identities, default platform admission/explicit opt-outs,
-verified unit workspace prerequisite, DM budgets and graph/Persona/curation composition.
+the satisfied unit workspace prerequisite, verified DM backup/restore safety,
+DM budgets and graph/Persona/curation composition.
 Do not use deployment-config validation as a substitute for identity/policy
 validation. Existing inert DM grants must not activate on an ordinary upgrade.
 
@@ -138,7 +190,7 @@ subject to dispute/revision/retirement. No automatic forgetting/cascade or rever
 migration. Binary downgrade needs proof that old readers cannot see protected
 raw rows/session artifacts; staying on the new schema/binary is the routine undo.
 
-Issue #124 stays open after this documentation PR. The proposal's defining
+Issue #124 stays open after this documentation revision. The proposal's defining
 change is one unit Persona/shared Cognition with curated publication, replacing
 the old isolated-private-Persona and no-DM-Cognition defaults. The 2026-10-21
 revision also replaces WhatsApp-only transport and computer/export/private-job

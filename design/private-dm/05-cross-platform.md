@@ -1,9 +1,12 @@
 # One private conversation across linked platforms
 
 Status: proposed, 2026-10-21. Operator decisions, not runtime receipts.
-This extends [the contract](00-contract.md) and depends on the integrated
-[unit-scoped workspace change](../computer-unit-scope/00-contract.md), including
-its migration. Decision recorded at merge; no behavioural number is reserved.
+This extends [the contract](00-contract.md) on the shipped
+[unit-scoped workspace implementation](../computer-unit-scope/00-contract.md).
+That prerequisite is satisfied by #164, v6.5.0 and the operator-verified
+2026-10-21 migration; [the runbook](../computer-unit-scope/01-migration.md)
+records #168 and the cutover lessons. DM-specific changes remain proposed.
+Decision recorded at merge; no behavioural number is reserved.
 
 ## 1. Accounts are entry points to one person+unit scope
 
@@ -70,12 +73,52 @@ private result send. It does not enable arbitrary proactive private outreach.
 The internal raw-capable Cognition curation phase keeps its restricted effects;
 computer tools are not a bypass for [publication](00-contract.md#2-the-publication-boundary).
 
-Proposed workspace derivation: first 32 hex of SHA-256 over UTF-8
-`dm:<dm_scope_id>`. Use `/workspace/<dm-hash>/`, its own `c-<hash12>` Unix user
-and 0o700 directory in the existing microVM. It is a user scope of person+unit,
-not one global per-person directory. All admitted platforms for that scope use
-the same files, computer session and browser profile. Bound scope chooses all
-computer/session/browser reads; group session listings never include DM rows.
+The shipped `nora/domain/computer.py::computer_unit_scope` (line 78) takes
+`sha256(UTF-8("unit:" + exact_policy_unit_name)).hexdigest()[:32]`;
+`computer_scope` (line 70) retains the legacy `platform:conversation_id` room
+hash for migration/provenance only. Proposed DM derivation follows that style:
+`dm_hash = sha256(UTF-8("dm:" + str(dm_scope_id))).hexdigest()[:32]`, with the
+UUID rendered in canonical lowercase hyphenated form. The `dm:` domain tag is
+inside the hash, never a literal directory prefix. It separates the DM input
+namespace from `unit:` and supported room-platform prefixes; no room or unit
+identifier is reused as a DM key. As with existing truncated hashes, this is
+cryptographic separation, not a mathematical guarantee of no hash collisions.
+
+Use `/workspace/<dm_hash>/`, the existing `c-<dm_hash first 12 hex>` user from
+`deploy/computer/computerd.py::scope_user` (line 147), and 0o700 ownership from
+`Computer._ensure_scope` (line 471). This is person+unit scope, not a global
+per-person directory. Both admitted platforms share its files/browser profile.
+The unchanged `SCOPE_RE` in computerd and archive_check accepts 16–64 lowercase
+hex; `deploy/computer/migrate_unit_scope.py::inventory` (line 77) accepts exactly
+32 through `SCOPE` (line 27). The DM hash fits all three. The existing
+`deploy/computer/nora-computer` backup scope count and archive layout need no
+DM naming exception; browser directories remain excluded from normal backup.
+The legacy room-to-unit migration planner must never remap a DM hash into a
+unit: inventory recognition is not migration authority. No new migration of
+already migrated unit workspaces is needed for DMs.
+
+Extend the existing `nora/agent/tools.py::build_tool_specs` binding (lines
+14602–14603): groups retain `computer_unit_scope`; an admitted DM binds its
+server-resolved dm_hash. All commands, file/export and browser calls use that
+bound scope, never the anchor's scope. Reuse
+`nora/infra/sql/computer_sessions.py::SqlComputerSessionStore.continue_or_open`
+and `for_scope` (lines 56 and 112); new DM sessions store dm_hash while keeping
+their creation platform/target as protected provenance. Migrated group rows
+still use the existing effective `_workspace_scope` (line 35). Extend
+`nora/engagement/computer_context.py::ComputerContextReader._read` (line 115)
+to select the admitted DM scope for sessions/events/state. Group context and
+`computer_session_list` keep selecting only the unit scope; by-ID event/detail
+reads must check that same bound workspace before returning private data.
+Unknown/missing DM authority returns unavailable, never an anchor-unit fallback.
+
+Host-side commands as a DM user must use
+`sbx exec -u root nora-computer runuser -u <dm-user> -- …`, including broker,
+backup/restore readback and operational helpers; direct sbx user lookup fails
+for users created after sandbox boot (#168). Ordinary computerd execution
+retains its existing `Computer._user` UID/GID drop (line 465), rather than
+introducing sbx into Nora or giving DM commands root. Any new process launcher
+that switches by scope-user name uses runuser inside the VM. Batch host readback
+per scope to limit sbx calls.
 
 | Access | Permission |
 |---|---|
@@ -107,10 +150,21 @@ on the pinned private target; a public link, shared document or group file is
 an explicit publication, not an automatic way around curation. Group readers
 receive only the published artifact, never DM source paths or browser profiles.
 
-Non-job computer mutation/browser leases use the DM workspace key independently
-of the anchor unit's key. The dm_scope turn slot still serializes conversation
-turns. Subagents retain `job:<id>` leases and their existing project convention;
-these job leases do not promise filesystem exclusion from the DM turn.
+Non-job computer mutation/browser leases use `scope:<dm_hash>`, by passing
+dm_hash to the unchanged `nora/domain/computer_leases.py::lease_key` (line 48;
+`scope_key` at line 44), independently of the anchor unit's lease. A different
+session cannot split that lock. Keep the existing bounded live wait/background
+refusal and read behaviour. The separate `dm:<dm_scope_id>` turn slot serializes
+whole DM turns; it is not a computer lease. Subagents retain `job:<id>` from
+`nora/agent/tools.py::build_tool_specs` (line 14833), their project convention
+and job/audit records rather than a live-turn computer session. Job leases do
+not promise filesystem exclusion from the DM turn or another job.
+
+The hash fits the unchanged backup/restore format; ordinary venv/browser
+artifacts are a separate existing backup-safety defect. The required shared
+backup preparation and restore acceptance are in
+[build and acceptance](04-build-and-acceptance.md#2-deterministic-proof-and-actual-inputs).
+DM enablement cannot treat a tar creation receipt as a restorable backup.
 
 ## 4. Subagent completion is a deferred private send
 
