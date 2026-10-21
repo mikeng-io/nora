@@ -5,6 +5,8 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -326,3 +328,55 @@ def test_interrupted_copy_is_held_for_reconciliation_without_retiring_any_source
     with pytest.raises(ValueError, match="conflicting or interrupted"):
         migration.migrate(root, document, journal, action="apply", isolate=False)
     assert all((root / old).exists() for old in mapping)
+
+
+GATE_RUNBOOK = ROOT / "design/computer-unit-scope/01-migration.md"
+NORA_COMPUTER = ROOT / "deploy/computer/nora-computer"
+REAL_STATUS_LINE = "sandbox=running computerd=healthy egress=ok endpoint=http://172.17.0.1:18765"
+UNHEALTHY_LINES = [
+    "sandbox=running computerd=down egress=ok endpoint=x",
+    "sandbox=running computerd=up egress=ok endpoint=x",
+    "sandbox=running computerd=healthy egress=WRONG endpoint=x",
+    "sandbox=running computerd=healthy egress=unknown endpoint=x",
+]
+
+
+def _gate_blocks():
+    return re.findall(
+        r'^case "\$status_line" in\n.*?^esac$', GATE_RUNBOOK.read_text(), flags=re.S | re.M
+    )
+
+
+def _run_gate(block, status_line):
+    script = f"status_line={shlex.quote(status_line)}\n{block}"
+    return subprocess.run(  # noqa: S603 - fixed bash argv, the case block is read from the repo runbook
+        ["bash", "-c", script], capture_output=True, text=True
+    )
+
+
+def test_both_runbook_gates_admit_the_real_status_line_and_refuse_every_unhealthy_one():
+    blocks = _gate_blocks()
+    assert len(blocks) == 2
+    for block in blocks:
+        assert _run_gate(block, REAL_STATUS_LINE).returncode == 0
+        for line in UNHEALTHY_LINES:
+            result = _run_gate(block, line)
+            assert result.returncode == 1, (line, result.stderr)
+            assert "computerd not healthy" in result.stderr
+
+
+def test_real_status_line_is_the_one_cmd_status_prints():
+    source = NORA_COMPUTER.read_text()
+    match = re.search(r'echo "(sandbox=[^"]*)"', source)
+    assert match, "cmd_status echo format not found"
+    template = match.group(1)
+    assert re.findall(r"(\w+)=", template) == ["sandbox", "computerd", "egress", "endpoint"]
+    assert "  " not in template
+    rendered = (
+        template.replace("$state", "running")
+        .replace("$health", "healthy")
+        .replace("$egress", "ok")
+        .replace("$HOST_IP", "172.17.0.1")
+        .replace("$HOST_PORT", "18765")
+    )
+    assert rendered == REAL_STATUS_LINE

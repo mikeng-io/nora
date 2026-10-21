@@ -227,7 +227,7 @@ systemctl --user start nora-computer.service
 status_line=$("$SOURCE/deploy/computer/nora-computer" status)
 printf '%s\n' "$status_line"
 case "$status_line" in
-  *" computerd=healthy "*" egress=ok "*) ;;
+  *" computerd=healthy egress=ok "*) ;;
   *) echo "computerd not healthy; leaving Nora admission paused" >&2; exit 1 ;;
 esac
 ```
@@ -311,7 +311,7 @@ systemctl --user start nora-computer.service
 status_line=$("$SOURCE/deploy/computer/nora-computer" status)
 printf '%s\n' "$status_line"
 case "$status_line" in
-  *" computerd=healthy "*" egress=ok "*) ;;
+  *" computerd=healthy egress=ok "*) ;;
   *) echo "computerd not healthy; leaving Nora admission paused" >&2; exit 1 ;;
 esac
 ```
