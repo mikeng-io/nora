@@ -384,13 +384,14 @@ itself. The work goes to three lanes:
 | the task | lane | how it is launched |
 |---|---|---|
 | build, fix, debug, a design bundle, merge conflicts: anything that edits code, tests, doctrine or design | Codex, `gpt-6.1-sol` | T3 `delegate_task`: `providerInstanceId: codex`, `model: gpt-6.1-sol`, `options.reasoningEffort` = the effort table's level (it takes all five), `isolation: worktree` |
-| independent review, audit, verification of a built change or a PR | Kimi, `kimi-code/k3-256k` | T3 `delegate_task`: `providerInstanceId: acpRegistry_kimi_cli`, `model: kimi-code/k3-256k`, `role: review`, `isolation: worktree`; when that route is down, the CLI, `kimi -m kimi-code/k3-256k -p "$(cat <brief>)" > <log> 2>&1`, run in a checkout of the head under review |
+| full review, audit, verification of a built change or a PR (the review table below says when) | Kimi, `kimi-code/k3-256k` | T3 `delegate_task`: `providerInstanceId: acpRegistry_kimi_cli`, `model: kimi-code/k3-256k`, `role: review`, `isolation: worktree`; when that route is down, the CLI, `kimi -m kimi-code/k3-256k -p "$(cat <brief>)" > <log> 2>&1`, run in a checkout of the head under review |
+| light review (the review table below says when) | DeepSeek Harness, `deepseek-v4.1-flash:1017` | T3 `delegate_task`: `providerInstanceId: acpLocal_dsh`, `model: ["ollama-cloud","deepseek-v4.1-flash:1017"]`, `role: review`, `isolation: worktree`. `model: default` resolves to the same model today (2026-10-22); pin it anyway. The profile routes to Ollama Cloud (`~/.dsh/profiles/acp/cordis.patch.yml`); `deepseek-official` has no key stored and fails to open a session |
 | mechanical: renumber, rename, doc sync, config edit to a given value, read-back, lookup, log or diff fetch | Claude `haiku` | the native sub-agent tool with `model: haiku`, or `delegate_task` with `claudeAgent` / `claude-haiku-5-5` |
 | a light check: read a gate rc, open a cited line, compare two shas, count a log | the orchestrator itself | no launch; a launch costs more than the check |
 
-- **The builder never reviews its own work**, and neither does the
-  orchestrator that wrote its brief. Codex builds and Kimi reviews by default,
-  so a review crosses vendors. A follow-up on a different lane or effort is a
+- **When a change gets a review, the builder never does it**, and neither
+  does the orchestrator that wrote its brief. Codex builds, and Kimi or
+  DeepSeek reviews, so a review crosses vendors. A follow-up on a different lane or effort is a
   new launch with the old report pasted in; resuming keeps the model.
 - **A brief carries everything.** A delegated agent starts with no history: the
   brief names the spec or the findings, the worktree and branch, the skills to
@@ -430,12 +431,35 @@ itself. The work goes to three lanes:
   other review's (`nora-land` step 7).
 - **When a lane is down, use the next and say so in the report**: implementation
   falls back to Claude `opus` through the native tool; review falls back to the
-  Kimi CLI, then a fresh `gpt-6.1-sol` launch that did not build the change; mechanical work falls back to `gpt-6.1-sol` at `low`.
+  Kimi CLI, then a fresh `gpt-6.1-sol` launch that did not build the change; light
+  review falls back to Kimi; mechanical work falls back to `gpt-6.1-sol` at `low`.
   A 429/403 quota error means the lane is down; use the fallback above.
   A lane is down when its launch fails or its quota is spent, not when the
   orchestrator would rather do the work.
 - **Say the lane AND the effort in every launch** (where the lane takes one);
   never let either default.
+
+**Review is adaptive: it follows what a miss would cost, not a rule that
+every change gets one** (operator, 2026-10-22). The top-tier builders rarely
+make serious errors in small changes, and a review round on every change was
+overloading the work. The orchestrator picks the row when the gate is green,
+and states the row in the PR's Gate section:
+
+| the change | review |
+|---|---|
+| no runtime effect: agent tooling config (`.mcp.json`, `.codex/`, `.claude/`, `.agents/`), docs outside `nora/`, CI or Makefile tweaks; or a small code change (a few dozen lines, one area) that is additive or off by default, with a green gate | none: the gate and the read-back are the check |
+| additive or off-by-default code beyond that; tests only; fixes to findings that named a file and line | light: DeepSeek, one round |
+| live on merge: a default, prompt, doctrine, tool text, routing or model setting changes behaviour | full: Kimi |
+| touches disclosure (R-18, R-28, R-31), a lock or concurrency path, a hot-table migration, security, or starts spending model calls | full: Kimi at the effort table's `xhigh` |
+
+- **Escalate on evidence, not on habit.** A row goes up one level when the
+  build surprised you: a first fix missed, the diff reaches past its brief,
+  or the gate went red and was fixed by something other than the spec. A
+  second round runs only when the first one found a BLOCKER.
+- **None is not unchecked.** The gate, the read-back and the orchestrator's
+  own read of the diff still run. A load-bearing fix still proves itself
+  with `nora-prove-fix`.
+- **The operator can always ask for a review**, or waive one.
 
 **Effort is adaptive: it follows the task's ambiguity and what a miss costs,
 not the lane** (operator, 2026-10-07). The lane picks the model; effort picks
