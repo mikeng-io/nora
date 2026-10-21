@@ -29,4 +29,3 @@ class Config:
     # controller knows which one it is connected to, and the field is optional
     # provenance on nora's side.
     idle_timeout_s: float = 600.0
-
