@@ -27,7 +27,7 @@ edges, written from the resolved `messages.mention_persons_json`), the
 response episodes they answered, their social items (at most
 `SOCIAL_ITEMS_MAX` a wake, with a post's or reel's latest counts, cited
 `social:<network>:<item id>` — evidence about its author alone), their Rollup
-ties summed over every week (never co-location: no presence, R-31), the
+ties and named-place presence Rollup observations, the
 disputes of its lines raised since it last settled (35 §2), and the unit's
 room cultures.
 
@@ -598,8 +598,15 @@ def _screened_by_the_runtime(_text: str) -> str | None:
 
 
 def _said(m: RoomMessage) -> Said:
+    # A quoted response/attachment is not another occasion. Shared media bytes
+    # retain one root across repeated messages.
+    media = sorted(shas_in(m.row.media_json))
+    occasion = (f"message:{m.room}:{m.row.quoted_ts}" if m.row.quoted_ts else
+                "media:" + ",".join(media) if media else f"message:{m.room}:{m.row.ts}")
     return Said(ts=m.row.edit.ts if m.row.edit is not None else m.row.ts,
-                person_id=m.row.person_id, room=m.room)
+                person_id=m.row.person_id, room=m.room, occasion=occasion,
+                happened_at=m.row.quoted_ts or m.row.ts,
+                medium="media" if media else "chat")
 
 
 def _line_attrs(line: PersonaLine, handle: str, now: datetime,
@@ -626,7 +633,8 @@ class PersonaPersonAdaptor:
     #: Unread: answers through `verbs`, never an envelope.
     envelope_key = "persona"
     #: The person session's read tools (`CHARACTER_PERSON_TOOLS`): memory on
-    #: the selected surface, `lookup_person`, `group_members`; no presence.
+    #: the selected surface, `lookup_person`, `group_members`; presence comes
+    #: through scoped Rollup inputs.
     tools: frozenset[str] = CHARACTER_PERSON_TOOLS
     store_calls_per_tick = PERSONA_STORE_CALLS_PER_TICK
 
@@ -648,6 +656,7 @@ class PersonaPersonAdaptor:
         screen: Callable[[str], str | None] | None = None,
         render_chars: int = 0,
         handle_owners: Callable[[str], frozenset[str]] = lambda _handle: frozenset(),
+        coordinate_screen: Callable[[str], bool] | None = None,
     ) -> None:
         """`social` is the readable social store the session's items and their
         counts come from (45 §4: the person account's alone); `screen` is
@@ -658,6 +667,7 @@ class PersonaPersonAdaptor:
         withheld reading in `character._shows`. `handle_owners` says whose
         Instagram username a handle is (by default nobody's, so every handle
         in a caption is redacted)."""
+        self._coordinate_screen = coordinate_screen
         self._persona = persona
         self._media_join = media_join
         self._render = render
@@ -864,14 +874,16 @@ class PersonaPersonAdaptor:
         for e in episodes:
             for r in e.replies:
                 if r.person_id == person:
-                    said[r.id] = Said(ts=r.ts, person_id=r.person_id, room=e.room)
+                    said[r.id] = Said(ts=r.ts, person_id=r.person_id, room=e.room,
+                        occasion=f"response:{e.send_id}", medium="act")
                     replies.setdefault(e.send_id, said[r.id])
         tie_keys = {other: rollup_citation("tie", f"{pk.unit}|{','.join(sorted((person, other)))}")
                     for other, *_ in ties}
         account = Account(key=key, entity_kind="human", unit=pk.unit, subject=person)
         rollups: dict[str, list[PersonSourceRevision]] = {}
         for source_revision in selected:
-            if source_revision.domain == "rollup" and source_revision.citable is not None:
+            if (source_revision.domain == "rollup" and source_revision.citable is not None
+                    and not source_revision.evidence):
                 rollups.setdefault(source_revision.citable, []).append(source_revision)
         rollup_roots = {c: tuple(dict.fromkeys(str(x.row.id) for r in rows for x in r.roots))
                         for c, rows in rollups.items()}
@@ -901,6 +913,7 @@ class PersonaPersonAdaptor:
         self._runs[key] = _Run(
             account=account,
             citable=PersonaCitable(
+                sources={c: s for r in selected for c, s in r.evidence},
                 messages=said, interpretation_only=frozenset(interpretation_only),
                 episodes={e.send_id: replies[e.send_id] for e in episodes
                           if e.send_id in replies} | {
@@ -915,7 +928,8 @@ class PersonaPersonAdaptor:
                 # `social_not_author`/`unlisted_room` refusals).
                 social={f"{r.item.network}:{r.item.item_id}": Said(
                     ts=int(r.item.taken_at.timestamp() * 1000),
-                    person_id=person, room=None,
+                    person_id=person, room=None, medium="social",
+                    occasion=f"social:{r.item.network}:{r.item.item_id}",
                 ) for r in shown},
                 listed_rooms=frozenset(pk.listed),
             ),
@@ -1072,6 +1086,7 @@ class PersonaPersonAdaptor:
                 name="persona_source_revisions", **_at("persona_source_revisions"),
                 body=render_elements(selected, tag="source", attrs=lambda r, _i: (
                     ("domain", r.domain), ("handle", r.source), ("state", r.state),
+                    ("subject", self._name_of(r.subject) if r.subject else None),
                     ("revision", r.revision), ("recorded", r.recorded_at),
                     ("cite", r.citable),
                 ), body=lambda r: json.dumps({
@@ -1084,7 +1099,13 @@ class PersonaPersonAdaptor:
                     if r.domain == "register" else "Record or deterministic Rollup",
                 }, ensure_ascii=False)),
             ))
-        return assemble([p for p in parts if p is not None], sep="\n\n")
+        return self._checked_input(key, assemble([p for p in parts if p is not None], sep="\n\n"))
+
+    def _checked_input(self, key: str, text: str) -> str:
+        if self._coordinate_screen is not None and self._coordinate_screen(text):
+            self.evidence.forget(key)
+            raise AccountNotRecordableError("coordinate in Character input; source remains pending")
+        return text
 
     def _episode(
         self, e: Episode, person: str, labels: Mapping[str, str], bodies: Mapping[int, str],

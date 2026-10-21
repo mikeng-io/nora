@@ -175,7 +175,7 @@ async def test_a_written_line_is_a_node_in_its_accounts_scope(engine):
         _UNIT, None, ["member-b"], "live",
     )
     assert (node.text, node.at_ms) == (
-        "occupation: cycles to work (asserted 1970-01-01T00:00:01+00:00)", 1000)
+        "Occupation: cycles to work (asserted 1970-01-01T00:00:01+00:00) [told]", 1000)
     assert await _edges(engine, sid) == {
         ("persona_line", sid, "about", "person", "member-b"),
         ("persona_line", sid, "cites", "message", mid),
@@ -457,7 +457,7 @@ async def test_fallback_projection_and_hydration_share_structured_value_and_asse
         persona_render=True)
     index = SqlMemoryIndex(engine)
     [node] = await index.about("member-b", scope, limit=10)
-    assert node.identity_fact == {"key": "attribute", "value": value,
+    assert node.identity_fact == {"key": "attribute", "value": value, "mode": "told",
         "as_of": _citable(mid).messages[int(mid)].ts, "valid_from": None, "valid_until": None}
     packet, _ = render_packet([Hit(node, 1, (Step("persona_line", how="about"),))],
         name_of=lambda _: "Kit", room_label=lambda _: "Friends",
@@ -467,3 +467,30 @@ async def test_fallback_projection_and_hydration_share_structured_value_and_asse
     live = {k: n.text for k, n in (await _nodes(engine)).items()}
     await memory_index.rebuild(engine)
     assert {k: n.text for k, n in (await _nodes(engine)).items()} == live
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+async def test_location_profile_search_uses_existing_presence_scope(engine, legacy):
+    from nora.domain.memory_index import MemoryScope
+    from nora.infra.sql.memory_read import SqlMemoryIndex
+
+    mid = await _said(engine)
+    await _unit_proven(engine)
+    result = await _store(engine).persona_write(account=ACCOUNT,
+        ops=[replace(_told("conflicting prose", mid), fact_key="residence",
+                     fact_value="Lotus District")], citable=_citable(mid), now_ms=NOW,
+        written_by_session="synthetic", apply_decay=False)
+    assert result.status == "ok"
+    if legacy:
+        # Simulate an old row's default flag without rewriting its typed slot.
+        async with engine.begin() as conn:
+            await conn.execute(sa.update(PERSONA_LINE).values(location=False))
+    scope = MemoryScope(units=(_UNIT,), rooms=(_ROOM,),
+        listed_here=frozenset({"member-b"}), people_here=frozenset({"member-b"}),
+        exclude_strict=False, presence_persons=frozenset(), social_off=frozenset(),
+        persona_render=True)
+    index = SqlMemoryIndex(engine)
+    assert not await index.about("member-b", scope, limit=10)
+    [node] = await index.about("member-b", replace(scope,
+        presence_persons=frozenset({"member-b"})), limit=10)
+    assert node.location and "Lotus District" in node.text

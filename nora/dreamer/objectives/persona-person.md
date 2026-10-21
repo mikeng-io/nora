@@ -1,7 +1,7 @@
 ---
 name: persona-person
 kind: objective
-version: 9
+version: 10
 applies_to: [persona_person_adaptor]
 description: >-
   One person's Persona in one unit, in shadow (design/unified-memory/45 §4).
@@ -58,9 +58,9 @@ Any block may be missing. You see their side only.
 - **identity**, who they are: `name` (what they are called), `role`,
   `relationship` (to someone named), `attribute` (a settled fact: vegetarian,
   works nights), `instruction` (how they want to be treated). Identity storage has no count cap; prompt rendering stays bounded.
-- **character**, what they are like: `trait`, one per line, something you
+- **character**, what they are like: one of the nine dimensions below, one per line, something you
   would expect to see again next month on a different topic, or a qualified
-  observed practice bounded to its source period. At most 5.
+  observed practice bounded to its source period. At most 9.
 - **hypothesis**, why: `explanation` of one of their traits, which you are
   not sure of. At most 3 open at once.
 
@@ -76,8 +76,8 @@ refuses a line whose evidence cannot carry its mode.
 - `deduced`: it follows from at least two premises: messages, episodes, ties,
   or lines you hold, named in `draws_on`. Never from a hypothesis, never from
   a line that is not current.
-- `induced`: a pattern, character only. At least three messages or episodes
-  across at least two different days, or one tie.
+- `induced`: a pattern, character only. At least three distinct occasions
+  across at least two different days, with dated occasion roots.
 - `abduced`: a hypothesis. It explains a current induced trait (name it in
   `draws_on`), and says what it predicts: `prediction` in words,
   `prediction_observable` — exactly `rollup:<kind>:<subject>` where what it
@@ -206,8 +206,8 @@ or any other group. Keep the other participants unspecified unless cited evidenc
 identifies them. Do not put a categorical band into numeric age or invent a
 topic-specific key.
 
-Observed behavior belongs in character, kind="trait", with the existing deduced
-or induced evidence thresholds, not a told Identity attribute. A trait may be a
+Observed behavior belongs in character with a dimension and its content slots,
+with three distinct occasions on two HKT days for deduced or induced traits, not a told Identity attribute. A trait may be a
 bounded observed practice, not only a personality judgement that generalizes to
 other topics. Preserve the source-time scope and distinguish an observed action
 from enduring frequency, preference, proficiency or ownership. Shared reels can
@@ -217,3 +217,47 @@ on that transport; a service name, bridge request, link destination or room name
 alone does not. Preserve each evidenced platform in a conjunction, with roots
 for each; do not infer missing transport labels. Keep existing Character caps,
 source thresholds and decay. Generic fallback attributes remain human told-only.
+
+## Structured Character content (47)
+
+You are reading dated Record messages (who said what, oldest first), cached media
+readings attributed to their sharer, social items and perceptions attributed to their
+publisher, and deterministic presence observations with their actual intervals.
+Presence contains named places, stays, rhythms and labelled corridors, never raw fixes.
+Register and previous account prose supply context only; resolve their cited roots.
+A single occasion is not a trait. Replies, attachments, reposts and multiple reports
+of one occasion count once. Every trait, deduced or induced, needs three distinct
+occasions on two HKT days. A single Rollup key is not an exemption; unreadable
+roots mean unavailable support. Code computes strength, source medium and location;
+never supply these fields. Do not infer a job, ownership, residence or liking from
+an image, travel route or participation alone. Store supported named-place claims;
+the existing room location setting applies at read time.
+
+Use `content`, a prose-slot object, for every new trait and explanation. Text is a
+code projection of slots. Each trait requires `statement` and `context` plus the
+slots below. Never put raw chat quotes, street addresses, coordinates or one-off
+event logs in content. Supported named venues, districts and routes are allowed.
+Non-empty explicit `unknown` is allowed. Optional `exceptions` keeps
+evidenced limits. Values are prose, never a closed vocabulary. These invented
+examples illustrate slot values, not facts to copy:
+
+| kind | extra required slots | invented example |
+|---|---|---|
+| topic | interest, depth, stance | football tactics; compares formations; stance unknown |
+| habit | action, rhythm, setting | reviews reading; weekend evenings; book club |
+| skill | capability, level | debugs SQL; independently in observed exercises |
+| preference | object, polarity | routine updates; favours short written summaries |
+| disposition | trigger, response | confusion; slows down and asks questions |
+| style | language, register, length, timing, medium | Cantonese; informal; brief; unknown; text |
+| value | priority, tradeoff | accessibility; accepts extra travel for accessible venues |
+| social | counterpart, role, pattern | newcomers and regulars; mediator; resolves disagreements |
+| goal | aim, horizon, pursuit | finishes a language course; next year; repeated study |
+
+Room/unit skill is invalid; collective disposition is observed response, not an inner
+feeling. Collective practices never assert every member has a trait. Profile keeps
+its existing `fact_key`/`fact_value` contract and visible told/deduced mode.
+An explanation requires `content.proposed_cause` and `content.alternative`, plus
+existing `draws_on`, prediction, observable and future window. Invented example:
+perhaps brief replies reflect limited evening time; alternatively prefers brevity;
+predicts longer replies in a quieter window. Hypotheses stay hypotheses, even if
+confirmed. You never judge them yourself.

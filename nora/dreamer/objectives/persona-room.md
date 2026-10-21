@@ -1,7 +1,7 @@
 ---
 name: persona-room
 kind: objective
-version: 2
+version: 3
 applies_to: [persona_room_adaptor]
 description: >-
   One room's Persona, in shadow (design/unified-memory/45 §4). Reads the
@@ -40,8 +40,8 @@ are never evidence about a room.
 
 - **identity**, what the room is: `name` (what it is called), `purpose`
   (what it is for), `norm` (a rule the room holds). Identity storage has no count cap; prompt rendering stays bounded.
-- **character**, what the room is like: `trait`, one per line, something you
-  would expect to see again next month on a different topic. At most 5.
+- **character**, what the room is like: one of the nine dimensions below, one per line, something you
+  would expect to see again next month on a different topic. At most 9.
 - **hypothesis**, why: `explanation` of one of its traits, which you are
   not sure of. At most 3 open at once.
 
@@ -55,7 +55,7 @@ refuses a line whose evidence cannot carry its mode.
 - `deduced`: it follows from at least two premises: messages or lines you
   hold, named in `draws_on`. Never from a hypothesis, never from a line that
   is not current.
-- `induced`: a pattern, character only. At least three messages across at
+- `induced`: a pattern, character only. At least three distinct occasions across at
   least two different days.
 - `abduced`: a hypothesis. It explains a current induced trait (name it in
   `draws_on`), and says what it predicts: `prediction` in words,
@@ -118,3 +118,47 @@ legacy untyped claims using original cited evidence; retire disproven claims,
 revise grounded ones into typed values, leave uncertain ones explicitly unresolved.
 No uncited memory conclusion is a settled fact. Preserve correction history by
 revising the held line; name rival claims with conflicts_with for precedence.
+
+## Structured Character content (47)
+
+You are reading dated Record messages (who said what, oldest first), cached media
+readings attributed to their sharer, social items and perceptions attributed to their
+publisher, and deterministic presence observations with their actual intervals.
+Presence contains named places, stays, rhythms and labelled corridors, never raw fixes.
+Register and previous account prose supply context only; resolve their cited roots.
+A single occasion is not a trait. Replies, attachments, reposts and multiple reports
+of one occasion count once. Every trait, deduced or induced, needs three distinct
+occasions on two HKT days. A single Rollup key is not an exemption; unreadable
+roots mean unavailable support. Code computes strength, source medium and location;
+never supply these fields. Do not infer a job, ownership, residence or liking from
+an image, travel route or participation alone. Store supported named-place claims;
+the existing room location setting applies at read time.
+
+Use `content`, a prose-slot object, for every new trait and explanation. Text is a
+code projection of slots. Each trait requires `statement` and `context` plus the
+slots below. Never put raw chat quotes, street addresses, coordinates or one-off
+event logs in content. Supported named venues, districts and routes are allowed.
+Non-empty explicit `unknown` is allowed. Optional `exceptions` keeps
+evidenced limits. Values are prose, never a closed vocabulary. These invented
+examples illustrate slot values, not facts to copy:
+
+| kind | extra required slots | invented example |
+|---|---|---|
+| topic | interest, depth, stance | football tactics; compares formations; stance unknown |
+| habit | action, rhythm, setting | reviews reading; weekend evenings; book club |
+| skill | capability, level | debugs SQL; independently in observed exercises |
+| preference | object, polarity | routine updates; favours short written summaries |
+| disposition | trigger, response | confusion; slows down and asks questions |
+| style | language, register, length, timing, medium | Cantonese; informal; brief; unknown; text |
+| value | priority, tradeoff | accessibility; accepts extra travel for accessible venues |
+| social | counterpart, role, pattern | newcomers and regulars; mediator; resolves disagreements |
+| goal | aim, horizon, pursuit | finishes a language course; next year; repeated study |
+
+Room/unit skill is invalid; collective disposition is observed response, not an inner
+feeling. Collective practices never assert every member has a trait. Profile keeps
+its existing `fact_key`/`fact_value` contract and visible told/deduced mode.
+An explanation requires `content.proposed_cause` and `content.alternative`, plus
+existing `draws_on`, prediction, observable and future window. Invented example:
+perhaps brief replies reflect limited evening time; alternatively prefers brevity;
+predicts longer replies in a quieter window. Hypotheses stay hypotheses, even if
+confirmed. You never judge them yourself.

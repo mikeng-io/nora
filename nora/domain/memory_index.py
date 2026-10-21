@@ -15,6 +15,8 @@ from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, NamedTuple, Protocol, get_args
 
+from nora.domain.memory_item import is_location_fact
+
 __all__ = [
     "ATTACHMENT_KINDS",
     "EMBEDDED_KINDS",
@@ -304,6 +306,7 @@ class IndexedNode:
     state: str = "live"
     # Canonical typed truth is read from Persona, never reconstructed from prose.
     identity_fact: Mapping[str, Any] | None = None
+    location: bool = False
     named_persons: frozenset[str] = frozenset()
 
     @property
@@ -484,6 +487,13 @@ def in_scope(node: IndexedNode, scope: MemoryScope) -> bool:
         return False
     if node.exclude_persons and (
         scope.exclude_strict or set(node.exclude_persons) & scope.people_here
+    ):
+        return False
+    location = node.location or (node.identity_fact is not None and is_location_fact(
+        node.identity_fact.get("key"), node.identity_fact.get("value")))
+    if location and not (
+        set(node.persons) <= scope.presence_persons if node.persons else
+        bool(scope.listed_here) and scope.listed_here <= scope.presence_persons
     ):
         return False
     if node.kind in SOCIAL_KINDS and set(node.persons) & scope.social_off:

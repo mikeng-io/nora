@@ -1,27 +1,10 @@
-"""Reads and renders Persona accounts into `<persona>` blocks
-(design/unified-memory/45 §5).
+"""Read Persona heads and wrap the shared Character card in prompt blocks.
 
-One block per entity in the turn, replacing `<peer_card>`, `<peer_history>`
-and `<person_account>` (and the collective `<culture>`, `<unit_culture>` and
-`<self>` views) on the graph memory surface, when `[persona] render` is on.
-Until that switch the persona tables are written in shadow and nothing here
-runs (45 §6: shadow changes no prompt).
-
-The read mirrors `read_culture` (DEC-207): one bounded, counted, fail-soft
-read shared by every occasion, each occasion naming its `stage`. The render
-mirrors `render_character`: every block carries a `written` age when it holds
-written lines, a body cut says how many characters it dropped, and the
-persons of a turn share one block budget.
-
-What a block says (45 §5): `identity:` lines (authored first, with no mode,
-then told lines with their teller named), `character:` traits, and `open
-questions:` the hypotheses — a hypothesis is a question, never a fact (45
-§3), so it renders only here, only while its prediction window is open, and
-it is given a question mark when its text lacks one. A `disputed` line is
-marked as such and keeps rendering (35 §2: awaiting weighing); a `hidden`
-line never renders (the subject disputed it); an `outranked` line lost on
-precedence and is never rendered as a current fact. No ids, and no dates
-beyond what a line itself says.
+The existing render switch and read timeout still apply. Assembly filters
+location through the room flag and DisclosureGuard before this renderer;
+the shared formatter renders profile facts, dated dimensions and open
+hypotheses. Authored identity remains the leading account text. Account and
+turn budgets omit whole lines so modes, exceptions and predictions survive.
 """
 
 from __future__ import annotations
@@ -31,6 +14,8 @@ import logging
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime
 from typing import Protocol
+
+from nora.domain.character_card import format_card
 
 from ..domain.blocks import ContextBlock
 from ..domain.persona import PersonaLine, PersonaView, identity_text
@@ -159,50 +144,28 @@ def _body(
     """The block body and the newest rendered line's `written_at` (None when
     only authored lines render: an authored line carries no time, and a
     fabricated one would read as freshness the account does not have)."""
-    identity: list[str] = list(view.authored)
-    character: list[str] = []
-    questions: list[str] = []
-    written: int | None = None
-    for line in view.lines:
-        if line.state not in _RENDERED_STATES:
-            continue
-        disputed = " (disputed)" if line.state == "disputed" else ""
-        if line.part == "hypothesis":
-            # A hypothesis renders only while its prediction window is open
-            # (45 §2: it holds its slot until then), and as a QUESTION (45
-            # §3), whatever its verdict: confirmed stays a hypothesis.
-            if line.prediction_window_end is None or line.prediction_window_end <= now_ms:
-                continue
-            text = " ".join(line.text.split())
-            if not text.endswith(_TERMINAL_PUNCT):
-                text += "?"
-            questions.append(text + disputed)
-        elif line.part == "identity":
-            if line.fact_key is None:
-                continue
-            if line.valid_until is not None and line.valid_until <= now_ms:
-                continue
-            if line.valid_from is not None and line.valid_from > now_ms:
-                continue
-            identity.append(_identity_text(line, name_of) + disputed)
-        else:
-            character.append(" ".join(line.text.split()) + disputed)
-        if written is None or line.written_at > written:
-            written = line.written_at
-    sections = []
-    if identity:
-        sections.append("identity: " + " · ".join(identity))
-    if character:
-        sections.append("character: " + "; ".join(character))
-    if questions:
-        sections.append("open questions: " + " · ".join(questions))
-    return "\n".join(sections), written
+    body = format_card(view.lines, now_ms=now_ms, name_of=name_of, location=True)
+    authored = "\n".join(view.authored)
+    body = "\n".join(x for x in (authored, body) if x)
+    written = max((x.written_at for x in view.lines
+                   if x.state in _RENDERED_STATES and x.text), default=None)
+    return body, written
 
 
 def _cut(body: str, room: int) -> str:
     """`body` cut to `room` characters, saying how many it dropped."""
-    dropped = len(body) - room
-    return body if dropped <= 0 else f"{body[:room]}\n[{dropped} more characters not shown]"
+    if len(body) <= room:
+        return body
+    kept: list[str] = []
+    for line in body.splitlines():
+        candidate = "\n".join([*kept, line])
+        dropped = len(body) - len(candidate)
+        if len(candidate) + len(f"\n[{dropped} more characters not shown]") > room:
+            break
+        kept.append(line)
+    text = "\n".join(kept)
+    marker = f"[{len(body) - len(text)} more characters not shown]"
+    return "\n".join([*kept, marker]) if len(marker) <= room else ""
 
 
 def account_text(
@@ -244,7 +207,10 @@ def render_persona(
     attrs: tuple[tuple[str, str], ...] = (("of", view.of),)
     if written is not None:
         attrs += (("written", _age(written, now)),)
-    return ContextBlock(name="persona", attrs=attrs, body=escape(_cut(body, cap)))
+    shown = _cut(body, cap)
+    if not shown:
+        return None
+    return ContextBlock(name="persona", attrs=attrs, body=escape(shown))
 
 
 def render_persona_people(

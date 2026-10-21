@@ -115,6 +115,10 @@ _UNJOINED_BY_OWN_SQL = {
 #: reader added later and never listed here passes both gates silently — the
 #: exact failure this file exists to catch, one AST shape further down.
 _NOT_A_RAW_READER = {
+    "nora/app/persona_spike.py": (
+        "operator window pages feed PersonaPersonAdaptor's existing MediaJoin; "
+        "the read-only report resolves cached attachment fields as cited evidence, not a transcript"
+    ),
     # `nora/infra/sql/audit.py` DEFINES `recent`/`since`/`since_including_nora`/
     # `unattributed` — it is the thing `_discovered_readers` finds callers of,
     # not a caller bypassing them. Its own `MESSAGES.c.body` selects are the

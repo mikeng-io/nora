@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from nora.domain.memory_item import TRAIT_SLOTS
 from nora.subject.persona_writer import run_writer, validate_sources
 
 from .domain import Case, Outcome
@@ -110,7 +111,7 @@ def check_identity(vector: str, receipt: dict[str, Any]) -> tuple[str, ...]:
             failures.append("observed behavior lost source roots")
         for h in traits:
             cited = set(h["citations"])
-            if (h["kind"] != "trait" or h["mode"] not in {"deduced", "induced"}
+            if (h["kind"] not in TRAIT_SLOTS or h["mode"] not in {"deduced", "induced"}
                     or h["told_by"] is not None or h["fact_key"] is not None
                     or h["fact_value"] is not None or not h["text"].strip()
                     or not cited or not cited <= roots.keys()

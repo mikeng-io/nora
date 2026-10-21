@@ -187,9 +187,12 @@ async def test_a_rooms_first_session_rewrites_the_prose_culture_head(env):
     assert 'cites="41"' in out  # the person session's rendering: the session
     # may cite what the prose head cited; the row itself is in the messages
     [write] = [v for v in adaptor.verbs(key=ROOM) if v.__name__ == "persona_write"]
+    reads.add_message(id=44, platform="signal", room=ROOM, person_id="ada", ts=T0 + 2 * DAY)
+    batch, _ = await adaptor.evidence.newest(key=ROOM, after=0, limit=10)
+    await adaptor.inputs(key=ROOM, batch=batch)
     result = await write(ops=[
         {"op": "add", "part": "character", "kind": "trait", "text": "games midweek",
-         "mode": "deduced", "citations": ["41", "42"]},
+         "mode": "deduced", "citations": ["41", "42", "44"]},
     ])
     assert result["status"] == "ok", result
     assert await _settle(adaptor, ROOM) == 1
@@ -357,10 +360,8 @@ async def test_nora_wakes_on_closed_episodes_and_cites_them_never_her_send(env):
         {"op": "add", "part": "character", "kind": "trait", "text": "game nights land",
          "mode": "deduced", "citations": ["response:41", "42"]},
     ])
-    assert deduced["status"] == "ok", deduced
-    assert await _settle(adaptor, key) == 1
-    heads = await SqlPersonaStore(env, screen=lambda _t: None).account_heads(key=key)
-    assert [h.kind for h in heads] == ["trait"]
+    assert deduced["status"] == "refused", deduced
+    assert deduced["refusals"][0]["reason"] == "deduced_premises"
 
 
 async def test_a_collective_hypothesis_joins_the_units_docket(env):
@@ -381,6 +382,7 @@ async def test_a_collective_hypothesis_joins_the_units_docket(env):
         account=account, citable=said, now_ms=T0 + DAY, written_by_session="t",
         apply_decay=False,
         ops=[AddOp(part="hypothesis", kind="explanation", text="weekday nights are short",
+                   content={"proposed_cause": "limited time", "alternative": "prefers brevity"},
                    mode="abduced", citations=("1",), draws_on=("P1",),
                    prediction="a short game midweek",
                    prediction_observable="someone proposes a weeknight game",

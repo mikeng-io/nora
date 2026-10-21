@@ -23,6 +23,22 @@ Character is the tier; person, room, unit and Nora are kinds; an entry has
 profile, traits and hypotheses parts. Existing implementation names below
 are references to the deferred migration, not new vocabulary.
 
+### Implementation in the Character-card build
+
+The implementation PR builds the §0 accuracy contract, §1 dimensions, §2 trait
+and explanation slots, the source assembly in §3, and §4's shared card, pooled
+trait cap and evidence-based decay. Runtime tables and verbs retain their
+`persona` names; old prose rows remain history rather than being classified
+mechanically. The domain envelope is `nora/domain/memory_item.py`; the shared
+formatter is `nora/domain/character_card.py`.
+
+§5 has deterministic regressions and explicit spike/report tooling, including
+an optional different-model pattern/event check. No frozen model acceptance,
+source-coverage parity, production sizing, switch, backfill or deployment is
+claimed. Phase-2 readings, the runtime rename, outside lookups and
+`verdict_evidence` remain outside this PR. Existing portal authentication applies
+to the caller's own card; room reads retain the location flag and live guard.
+
 ## 0. What stays
 
 **Governing principle — operator, 2026-10-22 (clarification): STORE what the

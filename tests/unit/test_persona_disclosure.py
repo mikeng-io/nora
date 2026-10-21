@@ -74,8 +74,10 @@ def _policy(convo: Conversation) -> Policy:
 
 def _line(text: str, *, exclude: tuple[str, ...] = (), key: str = "u1#unit") -> PersonaLine:
     return PersonaLine(
-        id="l1", persona_key=key, part="character", kind="observation",
-        text=text, mode="observed", citations=(), state="current", unit="u1",
+        id="l1", persona_key=key, part="character", kind="topic",
+        text=text, mode="induced", content={"statement": text, "context": "unknown",
+            "interest": "books", "depth": "unknown", "stance": "unknown"},
+        citations=(), state="current", unit="u1",
         written_at=1, written_by_session="s", exclude_persons=exclude,
     )
 

@@ -321,10 +321,22 @@ def add_subcommands(
         "persona-history", parents=[parent],
         help="historical Persona coverage receipts; optionally restart one account's pass",
     )
-    history.add_argument("--key", help="one scoped Persona account key")
+    history.add_argument("--key", action="append", help="scoped Persona key; repeatable")
+    history.add_argument("--since", help="first HKT date, YYYY-MM-DD")
+    history.add_argument("--until", help="last HKT date, inclusive")
     history.add_argument("--restart", action="store_true")
     history.add_argument("--apply", action="store_true")
     history.set_defaults(func=cmd_persona_history)
+    report = memory_sub.add_parser("persona-report", parents=[parent],
+                                  help="read-only Character counts; card only on explicit request")
+    report.add_argument("--key", action="append", required=True)
+    report.add_argument("--since")
+    report.add_argument("--until")
+    report.add_argument("--format", choices=["counts", "card"], default="counts")
+    report.add_argument("--sessions", type=Path, help="private recorded session receipts JSON file")
+    report.add_argument("--judge", action="store_true", help="run the independent configured judge")
+    report.set_defaults(func=cmd_persona_report)
+
     retry_media = memory_sub.add_parser(
         "persona-retry-media", parents=[parent],
         help="queue one normal Dreamer attempt for one account's pending cached media",
@@ -894,6 +906,12 @@ async def cmd_persona_history(args: argparse.Namespace) -> int:
     from nora.infra.sql.persona_inputs import SqlPersonaInputs
     from nora.infra.sql.schema import CONSOLIDATION_WATERMARK as W
 
+    if getattr(args, "since", None) or getattr(args, "until", None):
+        return await cmd_persona_window(args)
+    requested = [args.key] if isinstance(args.key, str) else args.key or []
+    if args.restart and len(requested) != 1:
+        raise CliError("--restart requires exactly one --key")
+    key = requested[0] if requested else None
     if args.restart and not args.key:
         raise CliError("--restart requires --key")
     cfg = _config(args)
@@ -902,7 +920,7 @@ async def cmd_persona_history(args: argparse.Namespace) -> int:
     try:
         if args.restart and args.apply:
             async with engine.begin() as conn:
-                await conn.execute(sa.delete(W).where(W.c.scope_id == args.key,
+                await conn.execute(sa.delete(W).where(W.c.scope_id == key,
                     W.c.consolidator_name.in_([
                         "persona-person:history", "persona-person:history-boundary"])))
         async with engine.connect() as conn:
@@ -916,7 +934,7 @@ async def cmd_persona_history(args: argparse.Namespace) -> int:
         for key in keys:
             by_key.setdefault(key, {})
         if args.key:
-            by_key = {args.key: by_key.get(args.key, {})}
+            by_key = {k: by_key.get(k, {}) for k in requested}
         store = SqlPersonaStore(engine, screen=lambda _: None)
         receipts = SqlCharacterEvidence(engine)
         for key, state in sorted(by_key.items()):
@@ -949,6 +967,153 @@ async def cmd_persona_history(args: argparse.Namespace) -> int:
                 )) if pk is not None else None,
                 "cached_media_dry_run": True,
             }))
+    finally:
+        await engine.dispose()
+    return 0
+
+
+def _persona_tracing(cfg: Config) -> None:
+    """Use the daemon's existing trace destination for explicitly requested model work."""
+    if cfg.obs.tracing.enabled:
+        from nora.agent.telemetry import setup_agent_tracing
+        from nora.obs.tracing import build_sampler
+        setup_agent_tracing(sampler=build_sampler(), service_name="nora",
+            exporter=cfg.obs.tracing.exporter, endpoint=cfg.obs.tracing.endpoint,
+            headers_env=cfg.obs.tracing.headers_env)
+
+
+async def cmd_persona_window(args: argparse.Namespace) -> int:
+    from datetime import datetime
+
+    from nora.app.composition import character_person_keys
+    from nora.app.persona_spike import history_days, window
+    from nora.domain.persona import PERSONA_HKT
+    from nora.infra.sql.persona_inputs import SqlPersonaInputs
+    from nora.infra.sql.social_stream import readable_social_store
+    try:
+        since, until = window(args.since, args.until)
+    except ValueError as exc:
+        raise CliError(str(exc)) from exc
+    if since is None or until is None or not args.key:
+        raise CliError("window recovery requires --since, --until and at least one --key")
+    if args.restart:
+        raise CliError("window recovery does not reset the normal history cursor")
+    cfg = _config(args)
+    keys = character_person_keys(_policy(cfg), _persons(cfg))
+    if any(k not in keys for k in args.key):
+        raise CliError("unknown or unlisted Persona key")
+    engine = create_readonly_sql_engine(_database_url(cfg))
+    deps = None
+    runtime = None
+    adaptor = None
+    try:
+        if args.apply:
+            from nora.app.composition import build_dependencies
+            _persona_tracing(cfg)
+            deps = await build_dependencies(cfg)
+            runtime = deps.dreamer_runtime
+            if runtime is None:
+                raise CliError("Persona history needs the configured Dreamer runtime")
+            adaptor = next((a for a in deps.dream_adaptors
+                            if a.name == "persona-person"), None)
+            if adaptor is None:
+                raise CliError("Persona person writer is not enabled")
+        sources = SqlPersonaInputs(engine, social=readable_social_store(engine, _persons(cfg)))
+        for key in args.key:
+            pk = keys[key]
+            seen_days: set[int] = set()
+            async for day, batch in history_days(engine,
+                rooms=[(r.platform, r.key) for r in pk.rooms if r.key in pk.listed],
+                person=pk.person.person_id, since=since, until=until):
+                extra = []
+                if day not in seen_days:
+                    extra = [*await sources.presence_revisions(key=key, unit=pk.unit,
+                        person=pk.person.person_id, limit=100, since_ms=day,
+                        until_ms=day + 86400000, include_settled=True),
+                        *await sources.social(key=key, persons=(pk.person.person_id,),
+                        limit=100, since_ms=day, until_ms=day + 86400000, include_settled=True)]
+                    seen_days.add(day)
+                receipt = {"key": key, "day": datetime.fromtimestamp(day / 1000,
+                           tz=PERSONA_HKT).date().isoformat(),
+                           "messages": len(batch), "other_sources": len(extra),
+                           "dry_run": not args.apply}
+                if runtime is not None and adaptor is not None:
+                    from typing import Any, cast
+
+                    from nora.obs.tracing import span
+                    with span("persona-spike", **{"nora.dreamer.key": key,
+                              "nora.persona.person_day": receipt["day"]}):
+                        outcome = await runtime.run(adaptor=adaptor, key=key,
+                                                    batch=cast(Any, [*batch, *extra]))
+                    receipt.update(status=outcome.status, written=outcome.written)
+                    print(json.dumps(receipt))
+                    if outcome.status == "unavailable":
+                        return 1  # do not skip a failed page
+                else:
+                    print(json.dumps(receipt))
+    finally:
+        await engine.dispose()
+        if deps is not None:
+            if deps.cognition_shutdown is not None:
+                await deps.cognition_shutdown()
+            if deps.subagent_backend is not None:
+                await deps.subagent_backend.shutdown()
+            await deps.client.close()
+            await deps.audit.aclose()
+    return 0
+
+
+async def cmd_persona_report(args: argparse.Namespace) -> int:
+    import functools
+    import os
+
+    from nora.app.persona_spike import (
+        event_judge,
+        read_session_observations,
+        recorded_sessions,
+        report,
+        window,
+    )
+    try:
+        since, until = window(args.since, args.until)
+    except ValueError as exc:
+        raise CliError(str(exc)) from exc
+    cfg = _config(args)
+    judge = None
+    persons = _persons(cfg)
+    def name_of(pid: str) -> str:
+        person = persons.by_person.get(pid)
+        return person.name if person else "unknown participant"
+    if args.judge:
+        _persona_tracing(cfg)
+        from nora.agent.structured import build_structured_model
+        if cfg.evals.judge_model == cfg.dreamer_model():
+            raise CliError("events-as-traits judge must differ from the writer model")
+        model = build_structured_model(base_url=cfg.llm.base_url,
+            api_key=os.environ.get(cfg.llm.api_key_env, ""), model_id=cfg.evals.judge_model,
+            max_tokens=128, temperature=0)
+        judge = functools.partial(event_judge, model=model, name_of=name_of)
+    observations = (json.loads(args.sessions.read_text()) if args.sessions else
+        await read_session_observations(host=cfg.evals.langfuse.host,
+            headers_env=cfg.evals.langfuse.headers_env, since=since, until=until))
+    if isinstance(observations, dict):
+        observations = observations.get("data")
+    sessions = recorded_sessions(observations) if observations is not None else None
+    engine = create_readonly_sql_engine(_database_url(cfg))
+    from nora.infra.sql.persona_inputs import SqlPersonaInputs
+    from nora.infra.sql.social_stream import readable_social_store
+    source_inputs = SqlPersonaInputs(engine, social=readable_social_store(engine, _persons(cfg)))
+    try:
+        for key in args.key:
+            payload = await report(engine, key=key, since=since, until=until,
+                card=args.format == "card", judge=judge, sessions=sessions,
+                source_inputs=source_inputs, name_of=name_of)
+            if args.format == "card":
+                print(key + "\n" + payload["card"])
+                if args.judge:
+                    print(json.dumps({"events_as_traits": payload["events_as_traits"]}))
+            else:
+                print(json.dumps(payload, ensure_ascii=False))
     finally:
         await engine.dispose()
     return 0

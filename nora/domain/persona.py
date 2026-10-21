@@ -2,7 +2,8 @@
 
 An account is who an entity is to Nora, in three parts: **identity** (who or
 what it is), **character** (what it is like) and **hypotheses** (why it is
-like that). Identity carries named typed values (75); other lines are prose.
+like that). Identity carries named typed values (75); traits and explanations
+carry prose slots (47).
 The part, kind, reasoning mode,
 citations and state are typed and checked, and what it says is not
 enumerated (45 §0: the structure is the container, the content is prose).
@@ -20,7 +21,7 @@ The reasoning-mode rules are 45 §3's table, enforced here at write time:
 - `deduced` (identity, character): at least 2 premises (citations plus
   `draws_on` lines), none `abduced`, every premise line current.
 - `induced` (character): at least 3 instances on at least 2 calendar days
-  (HKT), or one Rollup aggregate key.
+  (HKT), resolved from distinct occasion roots; an aggregate is no exemption.
 
 - `abduced` (hypothesis): at least one current `induced` trait it explains
   (`draws_on`), a prediction, its observable and a window end still ahead.
@@ -44,6 +45,8 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta, timezone
 from typing import Literal, Protocol
+
+from nora.domain.memory_item import TRAIT_SLOTS, MemoryItem, content_text, is_location_fact
 
 __all__ = [
     "ACTOR_IDENTITY_KINDS",
@@ -103,7 +106,7 @@ COLLECTIVE_IDENTITY_KINDS = frozenset({"name", "purpose", "norm"})
 
 KINDS_BY_PART: Mapping[str, frozenset[str]] = {
     "identity": ACTOR_IDENTITY_KINDS | COLLECTIVE_IDENTITY_KINDS,
-    "character": frozenset({"trait"}),
+    "character": frozenset({"trait", *TRAIT_SLOTS}),
     "hypothesis": frozenset({"explanation"}),
 }
 
@@ -143,7 +146,7 @@ LINE_MAX_CHARS = 300
 #: Current lines per part (45 §2). Starting values, to be sized on what the
 #: shadow sessions produce (00 «Sequence» step 6). For `hypothesis` the count
 #: is lines whose prediction window is still open, whatever their state.
-CAPS: Mapping[str, int] = {"character": 5, "hypothesis": 3}
+CAPS: Mapping[str, int] = {"character": 9, "hypothesis": 3}
 
 #: A trait unsupported this long is retired at the next session (45 §2).
 TRAIT_DECAY_MS = 60 * 24 * 3600 * 1000
@@ -214,6 +217,8 @@ PERSONA_REFUSALS = frozenset(
         "verdict_not_open",
         "verdict_window_open",
         "invalid_fact",
+        "content_slots",
+        "support_unavailable",
     }
 )
 
@@ -246,6 +251,10 @@ class Said:
     ts: int
     person_id: str | None
     room: str | None
+    occasion: str | None = None
+    happened_at: int | None = None
+    medium: str = "chat"
+    location: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -269,6 +278,8 @@ class PersonaCitable:
     rollup_roots: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     rollup_as_of: Mapping[str, int] = field(default_factory=dict)
     interpretation_only: frozenset[int] = frozenset()
+    sources: Mapping[str, Said] = field(default_factory=dict)
+    social_subjects: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -316,6 +327,29 @@ class PersonaLine:
     fact_value: object = None
     valid_from: int | None = None
     valid_until: int | None = None
+    content: Mapping[str, str] = field(default_factory=dict)
+    location: bool = False
+    source_medium: tuple[str, ...] = ()
+    strength: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        # Nullable/defaulted migration fields do not reclassify old history.
+        # The typed location slot remains authoritative on every read.
+        if is_location_fact(self.fact_key, self.fact_value):
+            object.__setattr__(self, "location", True)
+
+    @property
+    def memory_item(self) -> MemoryItem:
+        return MemoryItem(
+            subject=self.persona_key, part=self.part, kind=self.fact_key or self.kind,
+            content=({"fact_key": self.fact_key, "fact_value": self.fact_value}
+                     if self.part == "identity" else self.content),
+            mode=self.mode, citations=self.citations,
+            said_at=self.as_of, happened_at=(self.last_supported_at
+                if self.part == "character" else None),
+            source_medium=self.source_medium, location=self.location, strength=self.strength,
+        )
+
 
 
 #: A row `plan_write` asks the store to insert; the same shape as a stored line.
@@ -360,6 +394,7 @@ class AddOp:
     fact_value: object = None
     valid_from: int | None = None
     valid_until: int | None = None
+    content: Mapping[str, str] | None = None
     op: Literal["add"] = "add"
 
 
@@ -382,6 +417,7 @@ class ReviseOp:
     fact_value: object = None
     valid_from: int | None = None
     valid_until: int | None = None
+    content: Mapping[str, str] | None = None
     op: Literal["revise"] = "revise"
 
 
@@ -611,7 +647,7 @@ def parse_ops(raw: object) -> tuple[tuple[PersonaOp, ...], tuple[PersonaRefusal,
                     AddOp(
                         part=str(item["part"]),
                         kind=str(item["kind"]),
-                        text=str(item["text"]),
+                        text=str(item.get("text", "")),
                         mode=str(item["mode"]),
                         citations=citations,
                         draws_on=draws_on,
@@ -624,6 +660,7 @@ def parse_ops(raw: object) -> tuple[tuple[PersonaOp, ...], tuple[PersonaRefusal,
                         fact_value=item.get("fact_value"),
                         valid_from=item.get("valid_from"),
                         valid_until=item.get("valid_until"),
+                        content=item.get("content"),
                     )
                 )
             elif kind == "keep":
@@ -641,6 +678,7 @@ def parse_ops(raw: object) -> tuple[tuple[PersonaOp, ...], tuple[PersonaRefusal,
                         fact_value=item.get("fact_value"),
                         valid_from=item.get("valid_from"),
                         valid_until=item.get("valid_until"),
+                        content=item.get("content"),
                     )
                 )
             elif kind == "retire":
@@ -683,6 +721,9 @@ def _resolve(
             return PersonaRefusal(
                 "line_in_citations", f"{raw!r} is a line; a line another rests on goes in "
                 "`draws_on`, never in `citations`")
+        if raw in citable.sources:
+            said.append(citable.sources[raw])
+            continue
         episode = _EPISODE.fullmatch(raw)
         rollup = _ROLLUP.fullmatch(raw)
         social = _SOCIAL.fullmatch(raw)
@@ -711,7 +752,8 @@ def _resolve(
         # evidence about its author alone (never a person it tags or
         # mentions), and only where the author is listed in a room of this
         # unit.
-        if subject is None or s.person_id != subject:
+        if ((subject is None and s.person_id not in citable.social_subjects)
+                or (subject is not None and s.person_id != subject)):
             return PersonaRefusal(
                 "social_not_author", "a social item is evidence only about the person who "
                 "posted it; cite it on their account, never on anyone else's")
@@ -719,14 +761,34 @@ def _resolve(
             return PersonaRefusal(
                 "unlisted_room", "this person is listed in no room of this unit, so their "
                 "social items are not evidence here")
+    if any(not isinstance(s.ts, int) or (s.happened_at is not None
+           and not isinstance(s.happened_at, int)) for s in (*said, *items)):
+        return PersonaRefusal("support_unavailable", "citation dating is unavailable")
     if citable.listed_rooms is not None:
         for s in said:
-            if s.room not in citable.listed_rooms:
+            if (s.room not in citable.listed_rooms
+                    and not (s.medium == "presence"
+                             and (subject is None or s.person_id == subject)
+                             and citable.listed_rooms)):
                 return PersonaRefusal(
                     "unlisted_room", "a citation was said in a room this person is not "
                     "listed in, so it is not evidence about them")
     return _Evidence(said=tuple(said + items), messages=tuple(messages), rollup_keys=tuple(keys),
                      unrooted_rollups=sum(k not in citable.rollup_roots for k in keys))
+
+
+def _occasions(said: Sequence[Said]) -> dict[str, Said]:
+    """One earliest known event/assertion time per underlying occasion."""
+    roots: dict[str, Said] = {}
+    for source in said:
+        key = source.occasion or f"{source.room}:{source.ts}"
+        previous = roots.get(key)
+        stamp = source.happened_at if source.happened_at is not None else source.ts
+        if previous is None or stamp < (
+            previous.happened_at if previous.happened_at is not None else previous.ts
+        ):
+            roots[key] = source
+    return roots
 
 
 def _hkt_day(ts_ms: int) -> date:
@@ -769,6 +831,18 @@ def _check_line(
     ):
         return PersonaRefusal("part_kind", f"`{line.kind}` is not a kind of `{line.part}` "
                               f"for a {account.entity_kind}")
+    if collective and line.kind == "skill":
+        return PersonaRefusal("part_kind", "skill applies only to actors")
+    if line.kind in TRAIT_SLOTS or line.part == "hypothesis":
+        required = (("statement", "context", *TRAIT_SLOTS[line.kind])
+                    if line.kind in TRAIT_SLOTS else ("proposed_cause", "alternative"))
+        allowed_slots = set(required) | ({"exceptions"} if line.part == "character" else set())
+        if not isinstance(line.content, Mapping) or set(line.content) - allowed_slots or any(
+            not isinstance(line.content.get(k), str) or not line.content[k].strip()
+            for k in required
+        ) or any(not isinstance(v, str) or not v.strip() for v in line.content.values()):
+            return PersonaRefusal("content_slots", "required non-empty prose slots: " +
+                                  ", ".join(required) + "; explicit unknown is allowed")
     if line.mode not in MODES_BY_PART[line.part]:
         allowed = ", ".join(sorted(MODES_BY_PART[line.part]))
         return PersonaRefusal("mode_part", f"a `{line.part}` line is {allowed}, "
@@ -845,16 +919,6 @@ def _check_line(
         if count < DEDUCED_MIN_PREMISES:
             return PersonaRefusal("deduced_premises", f"a deduction rests on at least "
                                   f"{DEDUCED_MIN_PREMISES} premises; it has {count}")
-    elif line.mode == "induced":
-        if not evidence.rollup_keys:
-            if len(evidence.said) < INDUCED_MIN_INSTANCES:
-                return PersonaRefusal(
-                    "induced_instances", f"an induction rests on at least "
-                    f"{INDUCED_MIN_INSTANCES} instances or one Rollup aggregate key; it has "
-                    f"{len(evidence.said)}")
-            if len({_hkt_day(s.ts) for s in evidence.said}) < INDUCED_MIN_DAYS:
-                return PersonaRefusal("induced_one_day", "its instances fall on one day "
-                                      "(HKT); a pattern needs at least two")
     elif line.mode == "abduced":
         if not line.prediction:
             return PersonaRefusal("abduced_prediction", "a hypothesis carries a prediction")
@@ -870,6 +934,17 @@ def _check_line(
                    for p in premises):
             return PersonaRefusal("abduced_explains_nothing", "a hypothesis explains at "
                                   "least one current induced trait; link it in `draws_on`")
+    if line.part == "character":
+        if evidence.unrooted_rollups or not evidence.said:
+            return PersonaRefusal("support_unavailable",
+                                  "Rollup support needs dated occasion roots")
+        occasions = _occasions(evidence.said)
+        if len(occasions) < INDUCED_MIN_INSTANCES:
+            return PersonaRefusal("induced_instances", "a trait needs three distinct occasions")
+        if len({_hkt_day(s.happened_at if s.happened_at is not None else s.ts)
+                for s in occasions.values()}) < INDUCED_MIN_DAYS:
+            return PersonaRefusal("induced_one_day", "a trait needs two HKT days")
+
     return None
 
 
@@ -943,7 +1018,7 @@ def plan_write(
         old: PersonaLine | None, ev: _Evidence, cites: Sequence[str],
     ) -> tuple[int, int]:
         """`support_count` and `last_supported_at` after this evidence: a
-        Rollup aggregate supports as of now, a row as of when it was said."""
+        resolved root supports as of its evidence time, never its rebuild time."""
         def roots(refs: Sequence[str]) -> set[str]:
             return {root for ref in refs for root in citable.rollup_roots.get(ref, (ref,))}
         supplied = roots(cites)
@@ -960,6 +1035,9 @@ def plan_write(
         return old.support_count + len(fresh), max(stamps)
 
     def _stamp(citation: str) -> int:
+        if citation in citable.sources:
+            source = citable.sources[citation]
+            return source.happened_at if source.happened_at is not None else source.ts
         episode = _EPISODE.fullmatch(citation)
         social = _SOCIAL.fullmatch(citation)
         if citation.isdigit() and int(citation) in citable.messages:
@@ -1010,6 +1088,29 @@ def plan_write(
             cites = rooted((*target.citations, *op.citations))
             count, last = support(target, ev, op.citations)
             new = successor(target, citations=cites, support_count=count, last_supported_at=last)
+            if target.part == "character" and target.content:
+                previous = target.strength.get("roots")
+                if not isinstance(previous, Mapping):
+                    refusals.append(PersonaRefusal("support_unavailable",
+                        "re-evidence this legacy trait before adding support", i))
+                    continue
+                roots = dict(previous)
+                for root, source in _occasions(ev.said).items():
+                    timestamp = (source.happened_at if source.happened_at is not None
+                                 else source.ts)
+                    earlier = roots.get(root)
+                    roots[root] = min(earlier, timestamp) if isinstance(earlier, int) else timestamp
+                if ev.unrooted_rollups:
+                    refusals.append(PersonaRefusal("support_unavailable",
+                        "Rollup support needs dated occasion roots", i))
+                    continue
+                times = [t for t in roots.values() if isinstance(t, int)]
+                new = replace(new, support_count=len(roots), last_supported_at=max(times),
+                    strength={"occasions": len(roots), "days": len({_hkt_day(t) for t in times}),
+                              "first": min(times), "last": max(times), "roots": roots},
+                    location=target.location or any(s.location for s in ev.said),
+                    source_medium=tuple(sorted(set(target.source_medium)
+                                               | {s.medium for s in ev.said})))
             inserts.append(new)
             after.pop(target.id)
             after[new.id] = new
@@ -1038,6 +1139,7 @@ def plan_write(
             cites = op.citations
             candidate_fields = {
                 "text": op.text.strip() if op.text is not None else old.text,
+                "content": op.content if op.content is not None else old.content,
                 "mode": op.mode or old.mode,
                 "citations": rooted(cites),
                 "fact_key": op.fact_key if op.fact_key is not None else old.fact_key,
@@ -1078,6 +1180,7 @@ def plan_write(
                 id=str(uuid.uuid4()),
                 persona_key=account.key,
                 part=op.part,
+                content=op.content if op.content is not None else {},
                 kind=op.kind,
                 text=op.text.strip(),
                 mode=op.mode,
@@ -1100,6 +1203,41 @@ def plan_write(
                 valid_until=op.valid_until,
                 as_of=max((x.ts for x in ev.said), default=None),
             )
+        sources = _occasions(ev.said)
+        if candidate.part == "character":
+            earlier = old.strength.get("roots") if old is not None else None
+            if isinstance(earlier, Mapping):
+                for root, source in sources.items():
+                    known = earlier.get(root)
+                    actual = source.happened_at if source.happened_at is not None else source.ts
+                    if isinstance(known, int) and known < actual:
+                        sources[root] = replace(source, happened_at=known)
+            ev = replace(ev, said=tuple(sources.values()))
+        stamps = [s.happened_at if s.happened_at is not None else s.ts
+                  for s in sources.values()]
+        if not isinstance(candidate.content, Mapping) or any(
+            not isinstance(k, str) or not isinstance(v, str)
+            for k, v in candidate.content.items()
+        ):
+            refusals.append(PersonaRefusal(
+                "content_slots", "content is a prose slot object", i))
+            continue
+        if candidate.content:
+            candidate = replace(candidate, text=content_text(candidate.content))
+        candidate = replace(candidate,
+            location=(candidate.location or candidate.fact_key == "residence"
+                      or any(s.location for s in ev.said) or any(p.location for p in prem)
+                      or any(candidate.content.get(k, "").lower() not in
+                             ("", "unknown", "unspecified", "in the group", "online")
+                             for k in ("setting", "where"))),
+            support_count=len(sources) if candidate.part == "character" else count,
+            last_supported_at=max(stamps, default=last),
+            source_medium=tuple(sorted({s.medium for s in ev.said})),
+            strength={"occasions": len(sources), "days": len({_hkt_day(t) for t in stamps}),
+                      "first": min(stamps, default=None), "last": max(stamps, default=None),
+                      "roots": {key: s.happened_at if s.happened_at is not None else s.ts
+                                for key, s in sources.items()}},
+        )
         bad = _check_line(
             candidate,
             account=account,
@@ -1203,8 +1341,14 @@ def plan_write(
         decayed: set[str] = set()
         for line in list(after.values()):
             fresh_add = line.id not in by_id and line.supersedes is None
-            if (line.part != "character" or line.state not in HELD_STATES or fresh_add
-                    or (line.last_supported_at or line.written_at) >= now_ms - TRAIT_DECAY_MS):
+            horizon_closed = (line.kind == "goal" and isinstance(line.valid_until, int)
+                              and line.valid_until <= now_ms)
+            if (line.part != "character" or line.state not in HELD_STATES
+                    or (fresh_add and not horizon_closed)
+                    or (not horizon_closed
+                        and (line.last_supported_at or line.written_at) >= now_ms - (
+                        3 * TRAIT_DECAY_MS if line.kind in ("skill", "value")
+                        else TRAIT_DECAY_MS))):
                 continue
             after.pop(line.id)
             if line.id in by_id:  # untouched: its successor retires it
@@ -1405,7 +1549,7 @@ def format_fact(
 def identity_text(line: PersonaLine, *, name_of: Callable[[str], str] | None = None) -> str:
     """Typed truth, carrying source/effective time; legacy prose is never promoted."""
     if line.part != "identity":
-        return line.text
+        return content_text(line.content) if line.content else line.text
     if line.fact_key is None:
         return ""
     return format_fact(line.fact_key, line.fact_value, name_of=name_of,

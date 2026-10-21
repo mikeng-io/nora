@@ -884,3 +884,34 @@ async def test_memory_rebuild_embeddings_only_clears_vectors_and_reports_counts(
         assert "--other-models applies only with --embeddings-only" in capsys.readouterr().err
     finally:
         await engine.dispose()
+
+
+async def test_persona_window_and_report_are_read_only_until_explicit_apply(
+    env, capsys, monkeypatch,
+):
+    import sqlalchemy as sa
+
+    from nora.app.composition import character_person_keys
+    from nora.infra.sql.schema import PERSONA_LINE
+    cfg = cli._config(build_parser().parse_args(["memory", "persona-history",
+                                               "--config", str(env["path"])]))
+    monkeypatch.delenv(cfg.evals.langfuse.headers_env, raising=False)
+    [key] = character_person_keys(cli._policy(cfg), cli._persons(cfg))
+    async def no_runtime(_cfg):
+        pytest.fail("dry-run must never compose a runtime")
+    monkeypatch.setattr("nora.app.composition.build_dependencies", no_runtime)
+    assert await invoke(env, "memory", "persona-history", "--key", key,
+                        "--since", "2026-10-01", "--until", "2026-10-02") == 0
+    output = capsys.readouterr().out
+    assert '"dry_run": true' in output
+    assert await invoke(env, "memory", "persona-report", "--key", key) == 0
+    output = capsys.readouterr().out
+    assert '"part_kind": {}' in output and '"card"' not in output
+    engine = create_sql_engine(env["url"])
+    try:
+        async with engine.connect() as conn:
+            count = (await conn.execute(
+                sa.select(sa.func.count()).select_from(PERSONA_LINE))).scalar()
+            assert count == 0
+    finally:
+        await engine.dispose()
