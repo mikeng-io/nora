@@ -220,10 +220,16 @@ def test_cli_ref_names_visible(example_config_path, capsys):
     assert "NORA_DOCTRINE_CANARY" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("failure", ["kind", "label", "former_live", "former_duplicate"])
+@pytest.mark.parametrize(
+    "failure", ["kind", "label", "duplicate_account", "former_live", "former_duplicate"]
+)
 def test_identity_semantic_remedies(tmp_path, failure):
     path = tmp_path / "identity.toml"
     texts = {
+        "duplicate_account": (
+            f'[[persons.{SENTINEL}.signal]]\nphone = "{SENTINEL}"\nlabel = "first"\n'
+            f'[[persons.{SENTINEL}.signal]]\nphone = "{SENTINEL}"\nlabel = "second"\n'
+        ),
         "kind": f'[[persons.{SENTINEL}.signal]]\n{SENTINEL} = "{SENTINEL}"\n',
         "label": (
             f'[[persons.{SENTINEL}.signal]]\nphone = "first"\nlabel = "{SENTINEL}"\n'
@@ -242,6 +248,7 @@ def test_identity_semantic_remedies(tmp_path, failure):
     assert str(path) in message and "persons[0]" in message
     assert SENTINEL not in message
     assert {
+        "duplicate_account": "edit the copied id",
         "kind": "expected one of",
         "label": "distinct name",
         "former_live": "remove one or the other",
