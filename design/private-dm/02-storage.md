@@ -24,6 +24,15 @@ DM input/output requires the binding; OTP templates retain their independent
 bounded path. Older unbound DM rows are not guessed into an anchor. Restore
 and schema-parity checks must cover the table/field/index/history registration.
 
+This binding is the transcript key across platforms, not just an ownership tag.
+Proposed selector: `recent_for_dm_scope(dm_scope_id, before_id, limit)` on
+SqlRecordStore, with scope-bound authorization before returning text. Page by
+stable Record ID so same-time deliveries interleave deterministically; render
+each row with time, speaker and platform. Do not concatenate two independently
+paged wire-chat histories or call `SqlRecordStore.recent` by conversation ID.
+Deduplication and quote/edit/touch hydration include platform plus the original
+wire target and original DM scope, never a timestamp/remote ID alone.
+
 Raw group reads explicitly exclude DMs. Owner-authorised private reads require
 the exact scope ID, including quote/edit/touch/citation hydration in SQL before
 text is returned. Same wire chat, guessed Record ID or timestamp is insufficient.
@@ -118,3 +127,16 @@ a source group message is pruned; already-disclosed knowledge is not erased.
 Fresh shared reads still enforce current exclusions/location policy. Unit/DM
 revocation denies private history; a default change selects another partition.
 Published unit understanding stays put until normal dispute/revision/retirement.
+
+## 5. Private computer and deferred-job binding
+
+[Cross-platform work](05-cross-platform.md) defines the DM workspace keyed by
+`dm_scope_id`, its own 0o700 Unix-user boundary and explicit unit-read/publish-write
+access. Keep filesystem/browser data private like raw Record; private copies do
+not become shared merely because their input came from the unit. A default-unit
+change selects a distinct scope/workspace; no transcript or file rebinding.
+
+Deferred job payloads retain the launching owner, DM scope, anchor unit, platform
+and direct target durably beside the existing job identity. Workspace identity
+is not a destination. Budget admission/spend is keyed by person across DM
+platforms and anchors, rather than reset by choosing another linked account.

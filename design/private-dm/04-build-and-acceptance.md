@@ -1,16 +1,22 @@
 # Integrated build and acceptance
 
-Status: plan, not a receipt. All new test names and migrations below are
-proposed. The operator authorised this design revision only; implementation,
+Status: proposed plan, not a receipt. Revision 2026-10-21 includes cross-platform
+transcript, computer/export and subagents in the first integrated PR. All new
+test names and migrations below are proposed. The operator authorised this design revision only; implementation,
 paid evaluations, enablement and deployment are separate work.
 
 ## 1. Build the integrated feature
 
-1. Refresh the [source trace](01-current-flow.md), identity/default validation
-   and WhatsApp text flow against the actual current tree. Preserve group/OTP
-   behaviour and keep conversational DM enablement false by default.
+1. Land and verify the [unit-scoped computer prerequisite](../computer-unit-scope/00-contract.md)
+   before the DM implementation. Refresh the [source trace](01-current-flow.md),
+   identity/default/opt-out validation and WhatsApp + Signal text flows. Add
+   Signal inbound DMs; preserve group/OTP behaviour and the global DM switch
+   default false. Every linked platform is on by default within an active grant;
+   Discord/Instagram transport support remains deferred.
 2. Add the raw dm_scope/Record binding and private graph/point-read selectors.
-   Include actual metadata/migration parity and history/snapshot integration.
+   Include scope-paged interleaved transcript, platform markers, one scope turn
+   slot across transports and reply-platform pinning. Include actual
+   metadata/migration parity and history/snapshot integration.
    Do not introduce private Persona accounts or synthetic private policy units.
 3. Bind private input to the existing unit Persona/Cognition evidence paths.
    Add scoped internal curation capability and private agenda/session artifacts;
@@ -18,7 +24,9 @@ paid evaluations, enablement and deployment are separate work.
 4. Wrap every DM-derived native write, correction/verdict and aggregate with
    the publication check/atomic receipt. Protect private source provenance
    across renderer, tool, graph, portal, citation and explanation reads.
-5. Reuse context blocks, tools, guarded sends and telemetry sanitisation.
+5. Enable DM computer/export and subagents with private person+unit workspaces,
+   unit-read/publish-write access, per-person budget and bound deferred delivery.
+   Reuse context blocks, tools, guarded sends and telemetry sanitisation.
    Inspect every raw DM consumer and native mutation caller. One integrated
    PR ships the capability; do not enable an unsafe intermediate DM path.
 
@@ -63,6 +71,21 @@ Proposed coverage:
   from the original bundle. Revocation closes raw access; prior published
   understanding remains in its original unit until corrected/retired.
 
+Additional first-PR acceptance cases (all required, using synthetic identities):
+
+| Case | Required observation |
+|---|---|
+| Cross-platform continuity | WhatsApp then Signal for the same person+unit read one interleaved transcript; every line marks its platform; pagination loses/duplicates no rows |
+| Concurrent inbound turns | Simultaneous WhatsApp/Signal inputs cannot run two turns over one dm_scope; the second assembles after the first completes; another scope can progress |
+| Reply-platform pinning | Reply, retry and fallback use only the admitted inbound platform/target; a linked account on another platform is never substituted |
+| Platform-local pointers | Identical remote IDs/timestamps on the two platforms do not cross-deduplicate, quote, edit or touch; wrong-target pointers refuse |
+| Admission and opt-out | Linked WhatsApp/Signal accounts are admitted by default under the grant; an explicit platform false blocks inbound and deferred sends without disabling the other; display-name matches admit nobody |
+| Default change and workspace isolation | New anchor selects a distinct transcript/workspace; groups and other people/anchors cannot read DM files/cookies/logins via tools, sessions or arbitrary commands |
+| Unit read and publish-write | DM successfully reads anchor-unit files; unguarded write fails; explicit safe curated publication reaches the unit; held/private content leaves unit files unchanged |
+| DM browser and subagent | Work begun via one admitted platform resumes privately via the other; job output and browser state stay in that dm_scope |
+| Deferred recheck/no retarget | Revoke grant, change anchor, alter direct target or opt out while a job runs: delivery refuses, does not use another account/unit, retains private outcome; unchanged authority sends once to the launching target |
+| Per-person budget | Simultaneous jobs/computer calls share one person budget across platforms/anchors; exhausted admission refuses before spend, no account-switch reset; another person retains their own budget |
+
 Inspect actual model inputs for a frozen synthetic journey: private DM reply,
 raw-capable curation, ordinary group Cognition and group response. Confirm the
 intended private input reaches curation, the useful curated result reaches the
@@ -97,7 +120,8 @@ and external trace persistence separately.
 
 Before enabling, inspect/back up live database and config files, validate
 identity/policy copies through their loaders/default resolver, and require
-[dm] enabled plus admitted identities and graph/Persona/curation composition.
+[dm] enabled plus admitted identities, default platform admission/explicit opt-outs,
+verified unit workspace prerequisite, DM budgets and graph/Persona/curation composition.
 Do not use deployment-config validation as a substitute for identity/policy
 validation. Existing inert DM grants must not activate on an ordinary upgrade.
 
@@ -116,4 +140,6 @@ raw rows/session artifacts; staying on the new schema/binary is the routine undo
 
 Issue #124 stays open after this documentation PR. The proposal's defining
 change is one unit Persona/shared Cognition with curated publication, replacing
-the old isolated-private-Persona and no-DM-Cognition defaults.
+the old isolated-private-Persona and no-DM-Cognition defaults. The 2026-10-21
+revision also replaces WhatsApp-only transport and computer/export/private-job
+deferral with [the integrated cross-platform contract](05-cross-platform.md).

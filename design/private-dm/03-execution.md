@@ -5,13 +5,14 @@ provenance; this file assigns enforcement to existing components.
 
 ## 1. Identity, admission and audience
 
-Extend `nora/persons_file.py` / `Persons` with optional default_unit; compose
+Extend `nora/persons_file.py` / `Persons` with optional default_unit and proposed
+per-platform `dm_platforms.<platform>.enabled` (omitted means true); compose
 validation against explicit policy membership. Add `[dm] enabled` default false
 beside the person allowlist. Enabling requires graph/Persona readers and the
 curation write boundary to be wired; never fall back to a legacy Honcho feed.
 Identity/policy are startup-loaded; validate copies and recreate for changes.
 
-At the pre-audit scope stage, resolve the WhatsApp sender and direct peer
+At the pre-audit scope stage, resolve the WhatsApp or Signal sender and direct peer
 independently to the same known person, validate direct target and anchor, then
 bind DmScope once. Unknown/denied/mismatched/ambiguous/unsupported input is
 refused before Record, custody, projection, feeds or model calls. The initial
@@ -19,16 +20,20 @@ slice rejects media before custody. Redeliveries and edit/touch targets retain
 original scope and existing author checks.
 
 Reuse the deterministic engagement policy, with an eligible DM addressing Nora
-without a mention. Preserve budgets, deduplication, wire-conversation slots and
-queue semantics. Build the audience as one authenticated human, not a degraded
-roster fallback or a borrowed group audience. The default unit grants context,
+without a mention. Preserve budgets, deduplication and queue semantics; add one
+turn slot keyed by `dm_scope_id` across platforms before transcript assembly. Hold it through
+reply audit/delivery and private working-state update so two platforms cannot
+run concurrent turns over one transcript. Retain wire keys for deduplication,
+edits/touches and actual delivery; they do not define the DM turn lock. Build
+the audience as one authenticated human, not a degraded roster fallback or a borrowed group audience. The default unit grants context,
 not location permission or another room's tool grants.
 
 ## 2. Context and canonical Persona
 
-Reuse TranscriptInjection and existing block formats. The DM assembles its own
-private history plus the default unit's permitted group context and canonical
-curated Persona/Notebook. There is no second private Persona block. Confidential
+Reuse TranscriptInjection and existing block formats, with scope-paged,
+interleaved platform-marked transcript rows. The DM assembles its own private
+history plus the default unit's permitted group context and canonical curated
+Persona/Notebook. There is no second private Persona block. Confidential
 self-details remain available through private Record, not an uncurated shared
 Identity line. Existing listed-subject, exclusion and location rules remain;
 never widen a DM to the group's whole roster to expose restricted accounts.
@@ -94,10 +99,14 @@ Reuse the registry's capabilities rather than building a separate agent.
 DM text tools include send_reply, memory_search, record_query, load_transcript,
 about, remember and persona_dispute with the bound readers/writers above.
 Required tool discovery can activate only permitted tools; execution/ReplyGuard
-also enforces the set. Direct DM relay/group writes, location, video generation,
-media/voice and unsolicited private jobs are deferred in this slice. A later
-capability can reuse its implementation once scope, cost and destination are
-proved. These deferrals do not imply that curation must be disabled.
+also enforces the set. Computer use, scoped export and subagents are enabled
+in the first slice as [cross-platform work](05-cross-platform.md) specifies.
+This reverses their earlier deferral for ordinary authorised DM turns; internal
+raw-capable curation still cannot use computer/export/callbacks to bypass
+publication. Direct DM relay/unguarded group writes, location, video generation
+and inbound media/voice remain deferred; scoped computer file returns are included.
+Private job results are allowed deferred sends, not a grant for arbitrary
+unsolicited private jobs.
 
 | Existing consumer | Required behaviour |
 |---|---|
@@ -131,9 +140,12 @@ and leaves the candidate uncommitted. No extra always-on review agent is require
 ## 6. Delivery and operational privacy
 
 Retain deliver.build → Deliverer → sender, audit-first delivery and egress guards.
-Recheck active owner, grant, anchor and direct target before each DM send;
-queued work cannot retarget after a default change. Ordinary group sends can
-consume curated premises through existing guards, never raw curation output.
+Recheck active owner, DM grant, anchor, launching platform opt-out and direct
+target before each DM send, including subagent results. Pin the actual platform
+and target from inbound admission; another linked account is not a fallback.
+Queued work cannot retarget after a default change. Deferred results enter the
+same scope turn slot before reading transcript/composing their DM reply.
+Ordinary group sends can consume curated premises through existing guards, never raw curation output.
 
 Before any root span, logger context or provider metadata, replace DM wire IDs
 with an opaque turn ID; resolved sessions may correlate with the opaque scope

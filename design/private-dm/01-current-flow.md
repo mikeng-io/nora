@@ -1,26 +1,29 @@
 # Current flow and first transport
 
-Status: inspected source, not live verification. Baseline:
-`7b23140e2b36cd7f45bcfa58636b9c3c94e595fa` (`origin/master` when inspected,
-2026-10-20). The documentation branch adds no runtime changes. The knowledge
-graph supplied symbol discovery; the source in the checkout was checked because
+Status: inspected source, not live verification. Original flow inspection:
+2026-10-20; transport/computer seams refreshed against origin/master
+`5856cd9f08cb16f273e7d992e7e9bc42d9606a36`, 2026-10-21. The documentation
+branch adds no runtime changes. The knowledge graph supplied symbol discovery; the source in the checkout was checked because
 graph entries can refer to older worktrees.
 
 ## Transport choice
 
-Choose **WhatsApp text** for the first integrated implementation.
+The operator selected **WhatsApp + Signal text** for the first integrated PR.
 `nora/platform/whatsapp/parser.py::parse_event` already normalises direct chats
 as `conversation_type="dm"`; `conversation_id_for` canonicalises the chat JID.
 `nora/platform/whatsapp/send.py::WhatsAppSender.send` accepts a DM only when its
 address belongs to the identity-derived recipient set. `nora/app/otp.py` already
 uses guarded direct delivery for codes. None proves conversational DM safety.
 
-Signal has direct-send groundwork but drops inbound non-group conversation
-messages; Discord's earlier bundle deliberately deferred DMs. Expanding either
-before proving private scope increases transport work without testing a new
-privacy property. Reopen the choice if a synthetic WhatsApp inbound/reply probe
-cannot preserve authenticated sender and direct destination. No registration,
-pairing or account change is part of this design work.
+Signal has direct-send groundwork but
+`nora/platform/signal/parser.py::parse_event` returns None when groupId is absent
+(lines 419–421). Add authenticated inbound DM normalisation in this slice;
+preserve group, self-send, edit and touch handling. Discord still drops DMs at
+`nora/platform/discord/parser.py::parse_discord_message`; Instagram defaults unknown
+is_group to group in `nora/platform/instagram/parser.py::parse_event`. Those
+transports are deferred. No registration, pairing or account change is part of
+this design work. [Cross-platform contract](05-cross-platform.md) fixes identity,
+reply routing and serialization for the two initial transports.
 
 ## End-to-end seams and gaps
 
@@ -29,13 +32,13 @@ not proposed modules or claims that the listed changes have shipped.
 
 | Step | Current owner and observed behaviour | Required change |
 |---|---|---|
-| Normalise | `nora/platform/whatsapp/parser.py::parse_event` preserves sender, chat, stanza ID, edit/touch pointers | Validate direct peer resolves to sender; reject unsupported media before custody |
+| Normalise | `nora/platform/whatsapp/parser.py::parse_event` preserves DM identity/pointers; `nora/platform/signal/parser.py::parse_event` drops DMs | Add Signal inbound DMs; validate direct peer/sender; reject unsupported media before custody |
 | Admit/record | `nora/ingest/pipeline.py::_run` calls `stages/scope.py::run` before identity/media/audit | Resolve and carry private scope before every persistent or spawned operation |
 | Scope | `nora/ingest/stages/scope.py::run` refuses unknown DM senders but still requires a listed conversation | Branch to DM person allowlist + selected-unit validation; never require a fake shared conversation |
 | Audit | `nora/infra/sql/audit.py::SqlRecordStore.append` inserts Record and projects its graph node in one transaction | Store private scope on inbound and outbound rows; partition transcript and point lookups |
 | Stimulate/feed | `nora/ingest/stages/stimulus.py` resolves a unit from the conversation; `memory_feed.py` spawns Honcho writes | Bound private stimulus wakes unit curation; no raw Honcho feed or ordinary shared agenda text |
 | Engage | `nora/ingest/policy.py` has mention/text/reply/voice policies; sender permission follows Record | Admit eligible text DMs directly, with existing budgets/debounce/queue semantics |
-| Assemble | `nora/engagement/context.py::TranscriptInjection.assemble` gathers transcript, Persona and unit blocks | Bind reads to the carried private scope and explicit read-only shared scope |
+| Assemble | `nora/engagement/context.py::TranscriptInjection.assemble` gathers transcript, Persona and unit blocks | Page one dm_scope transcript across platforms, mark each line, serialize turns by scope; shared reads stay bounded |
 | Resolve audience | `nora/agent/room.py::Room.scope` normally reads a platform roster; `lineage.py::render_room` looks in policy | DM audience is its authenticated peer, never a group roster or unknown-room fallback |
 | Retrieve | `nora/agent/memory_search.py::scope_for` builds unit/room/person scope; SQL applies it per hop; `SqlRecordQuery` reads supplied rooms | Give private and shared retrieval separate bounded selectors; never let a wire chat ID span anchors |
 | Learn | `nora/language/persona.py::PersonaEvidence` / `PersonaPersonAdaptor` and `SqlCharacterEvidence` read rooms and watermarks | Reuse the same unit account/writer; admit subject-bound DM evidence through curation before shared mutation |
@@ -47,8 +50,11 @@ not proposed modules or claims that the listed changes have shipped.
 
 `messages` has `conversation_type` but no selected-unit or private-owner
 binding. `SqlRecordStore.recent` takes only a conversation ID, so changing the
-default unit cannot safely reuse it unchanged. A platform's DM chat ID does not
-change when the operator changes the person's default unit.
+default unit cannot safely reuse it unchanged. Nor can a single wire chat
+selector provide cross-platform continuity: the proposed reader pages by
+`dm_scope_id`, with a stable Record cursor and each row's platform/target intact.
+A platform's DM chat ID does not change when the operator changes the person's
+default unit.
 
 `nora/infra/sql/memory_index.py::_project_message` derives `origin_room` from
 platform and conversation ID. That too would combine DM partitions unless it
