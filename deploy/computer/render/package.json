@@ -9,5 +9,8 @@
     "@mermaid-js/mermaid-cli": {
       "katex": "^0.18.2"
     }
+  },
+  "engines": {
+    "node": ">=24"
   }
 }

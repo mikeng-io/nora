@@ -7,19 +7,26 @@
 # sbx's `shell` agent does NOT run this image's ENTRYPOINT (spike round 2), so
 # none is set: `nora-computer ensure` starts computerd, as root, with `sbx exec`.
 #
-# Everything fetched is pinned: the base image and uv by digest, computerd's
-# Python dependencies by hash (requirements.txt, from `uv pip compile
-# --generate-hashes`). Bump them deliberately, in one commit, with a rebuild.
+# Ubuntu and uv are pinned by digest, computerd's Python dependencies by
+# hash (requirements.txt, from `uv pip compile --generate-hashes`). Bump those
+# deliberately with a rebuild. Node is the exception: its Node 24 / trixie
+# tag floats patch updates, refreshed by `nora-computer build` with --pull.
+FROM node:24-trixie-slim AS node
+
 FROM ubuntu@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
 
 ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
 RUN apt-get update && apt-get install -y --no-install-recommends \
         bash ca-certificates coreutils curl file git jq less procps sqlite3 tmux unzip zip \
         python3 python3-venv python3-pip \
-        nodejs npm \
+        libstdc++6 libatomic1 \
         ffmpeg imagemagick pandoc poppler-utils \
         fonts-noto-cjk fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/*
+
+# Official Node binaries and npm, with their runtime libraries installed above.
+# Keep Ubuntu's distro Python for computerd and the system tools.
+COPY --from=node /usr/local/ /usr/local/
 
 # uv for per-project environments (a project's .venv and lockfile persist
 # under /workspace; the system Python does not). 0.12.21, by digest.

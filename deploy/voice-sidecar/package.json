@@ -5,7 +5,7 @@
   "description": "Audio-controller for Nora's Discord voice channel: sole owner of the voice connection \u2014 per-user PCM to the wake seam, TTS playback, music via ffmpeg \u2014 driven by nora over an HTTP control plane.",
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "scripts": {
     "start": "node src/service.mjs",

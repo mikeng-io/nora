@@ -36,6 +36,17 @@ Doctrine and Dreamer are baked into these images; host pulls do not change them.
 `ExecStart`. **Do not delete or reset it.** Checkout rebuild/pull deployment is
 legacy; it must not run concurrently with or replace the installed release path.
 
+## Container runtime maintenance
+
+Node build/runtime stages use `node:24-trixie-slim`; Python services use
+`python:3.12-slim-trixie`. Instagram keeps `golang:1.27-bookworm` with a Debian
+bookworm runtime. Runtime patches float within these families; canonical release,
+legacy image and computer builds use `--pull` to refresh base images. Rebuild,
+test and redeploy to apply updates; running containers do not update themselves.
+The computer is managed separately via `nora-computer build` and the
+[computer lifecycle](computer/README.md): its Ubuntu digest, distro Python and
+Chrome pins stay independent, with official Node 24 copied from the Node stage.
+
 ## Legacy checkout bootstrap: first installation
 
 This is a configurable stack, not a preconfigured hosted service. Prerequisites:

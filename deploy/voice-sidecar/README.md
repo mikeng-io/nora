@@ -146,15 +146,17 @@ dependency upgrades.
 
 ## Container
 
-`Dockerfile` mirrors `deploy/stt/`: `node:22-slim`, curl for the
-HEALTHCHECK, non-root user uid/gid 1000, `npm ci` from the lockfile, no
-build-time secret. The compose service (`voice-sidecar` in the repo-root
-`docker-compose.yml`) publishes NO ports — it is reachable only on the
-private `nora` network, and the wake gate will reach it there in stage 3.
+`Dockerfile` uses `node:24-trixie-slim`, curl for the HEALTHCHECK, ffmpeg
+for playback, and python3/make/g++ for native audio source fallback when a
+compatible prebuild is unavailable. It uses a non-root user uid/gid 1000,
+`npm ci` from the lockfile, and no build-time secret. The compose service
+(`voice-sidecar` in the repo-root `docker-compose.yml`) publishes NO ports —
+it is reachable only on the private `nora` network, and the wake gate will
+reach it there in stage 3.
 
 ## Notes
 
-- Node 22+, plain ESM JS, no build step.
+- Node 24+, plain ESM JS, no build step.
 - The scoped npm override keeps `@discordjs/node-pre-gyp` on patched `tar` 7.
   This is the install-time prebuild downloader used by `@discordjs/opus`;
   upstream still requests vulnerable `tar` 6. Remove the override when upstream

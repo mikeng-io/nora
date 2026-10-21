@@ -1,7 +1,7 @@
-FROM node:20-slim
+FROM node:24-trixie-slim
 WORKDIR /app
 COPY bridge.js bridge_helpers.js package.json package-lock.json ./
-# curl is load-bearing, not decoration: node:20-slim ships neither curl nor
+# curl is load-bearing, not decoration: node:24-trixie-slim ships neither curl nor
 # wget, and the compose healthcheck curls /health. Without it the container
 # boots but reports unhealthy forever (design 01; review B1).
 RUN apt-get update && apt-get install -y --no-install-recommends curl \

@@ -2,7 +2,7 @@
 # full toolchain, the runtime stage only the traced server, its static
 # assets and public/. `docker build --network=host` on the deploy host
 # (AGENTS.md, operational constraint 1).
-FROM node:22-slim AS build
+FROM node:24-trixie-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -10,7 +10,7 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
-FROM node:22-slim
+FROM node:24-trixie-slim
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
 COPY --from=build --chown=node:node /app/.next/standalone ./

@@ -557,7 +557,7 @@ cmd_build() {
     # --network=host: BuildKit's default bridge cannot resolve package mirrors on
     # the deploy host (operational constraint 1, the same reason every compose
     # `build:` sets it).
-    docker build --network=host -t "$IMAGE" "$HERE" || { rm -f "$tar"; exit 4; }
+    docker build --pull --network=host -t "$IMAGE" "$HERE" || { rm -f "$tar"; exit 4; }
     docker save "$IMAGE" -o "$tar" && sbx template load "$tar" </dev/null; local rc=$?
     rm -f "$tar"
     [ "$rc" = 0 ] || exit 5
