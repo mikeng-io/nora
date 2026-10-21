@@ -88,14 +88,20 @@ adding a type requires updating both this table and the `TYPES` map in
 | `security` | a security-relevant fix |
 
 
-Write a specific description and a body explaining what changed and why, with
-measurements where relevant. Hooks reject missing or undeclared types, `wip:`
-and default merge subjects. User-visible subjects become release notes.
+The subject is a full, specific clause. The body carries the why: what was
+broken, what was measured, what shipped, and what it does not cover. Hooks reject
+missing or undeclared types, `wip:` and default merge subjects. If you bypass
+hooks with `--no-verify`, name the reason in the commit body.
+
+There is no release fragment: commit subjects are the release notes.
+release-please builds the changelog from `feat`, `fix`, `security`, `perf`,
+`change` and `doctrine` subjects.
 
 ## Pull requests
 
 Target `master`. Use the [PR template](.github/pull_request_template.md), with a
-Conventional Commit title and these headings in order:
+Conventional Commit title, appending `(#N, DEC-M)` when it closes an issue or
+lands an indexed decision, and these headings in order:
 
 - **What**: concrete changes and supporting artifacts, one block per piece.
 - **Also**: findings left outside the change; omit when empty.
@@ -109,7 +115,8 @@ unknown changes or selector failures run the whole suite. For a fork, fetch
 upstream master into `origin/master` before running it (keep `origin` as your fork):
 `git fetch upstream master:refs/remotes/origin/master`.
 During iteration, run the tests you touched. `make full-gate` is the unconditional
-full run. Report failures explicitly; a pre-existing failure is not a pass.
+full run. Name a pre-existing unrelated gate failure with its issue number;
+never absorb it into "tests pass".
 The contribution-content workflow checks populated headings and their order;
 it does not verify the truth of a claimed result.
 

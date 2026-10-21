@@ -16,6 +16,8 @@ sources:
     resource: repo://AGENTS.md
   - id: openwiki-source-f317ee207e1653d2033c81a4
     resource: repo://CONTRIBUTING.md
+  - id: openwiki-source-maintainer-conventions
+    resource: repo://docs/maintainers/conventions.md
   - id: openwiki-source-fd5b3a4de1612e2fd957354b
     resource: repo://docs/adr/0015-tool-surface-policy-v2.md
   - id: openwiki-source-497e3148324d45b2125f1e80
@@ -119,7 +121,7 @@ somebody decides ([`AGENTS.md`](../../AGENTS.md) §Never).
 ```mermaid
 flowchart TD
   A["idea or defect"] --> B{"being done now"}
-  B -- "yes" --> C["worktree on example-owner/slug"]
+  B -- "yes" --> C["worktree on <type>/<kebab-slug>"]
   B -- "no" --> D["GitHub issue: a candidate"]
   D --> C
   C --> E["the change plus its seam test"]
@@ -287,7 +289,7 @@ contradicting RFC 2119 keyword is a category error), and `check_authority_graph`
 work happens in a worktree. The shared watcher keeps serving the last good scan when a live
 edit breaks a file and counts a reload failure, but a broken corpus at *startup* raises in
 strict mode ([`nora/instructions/reload.py`](../../nora/instructions/reload.py)). A PR touching
-`nora/doctrine` or `nora/dreamer` carries a **Deploy note** because it reaches production at
+`nora/doctrine` or `nora/dreamer` describes in **What** that it reaches production at
 that host's next pull with no image rebuild.
 
 **Review evidence.** The version bump and the repinned digest in the same commit, the
@@ -418,7 +420,7 @@ nothing only on an explicit `NONE`. `make full-gate` is the unconditional serial
 
 ### Branches, commits and merges
 
-- **Branch** `example-owner/<kebab-slug>`, cut from `origin/master` after a fetch.
+- **Branch** `<type>/<kebab-slug>`, cut from `origin/master` after a fetch.
 - **Commit subject** `type(scope): description`, with a closed 17-type list enforced by
   `scripts/check_commit_subject.py` through the `commit-msg` and `pre-push` hooks that
   `make hooks` installs. Adding a type means extending the table in
@@ -440,7 +442,7 @@ nothing only on an explicit `NONE`. `make full-gate` is the unconditional serial
 ### The PR body
 
 File it through [`.github/pull_request_template.md`](../../.github/pull_request_template.md):
-`What`, `Also`, `Gate on the merged tree`, `Deploy note`, `Closes`, in that order, deleting
+`What`, `Also`, `Gate on the merged tree`, `Closes`, in that order, deleting
 what does not apply. `Summary` and `Test plan` are retired headings, not synonyms. The set
 and order are pinned by `tests/architecture/test_contribution_conventions.py`, so changing a
 heading deliberately means changing the template, the pin and the `CONTRIBUTING.md`
@@ -452,7 +454,7 @@ prompts); it checks structure, **not the truth of a claimed gate result**.
 
 A fix is not done when the gate is green. It is done when reverting the exact production
 line turns a **named** test red, and that result is reported beside the gate output
-([`CONTRIBUTING.md`](../../CONTRIBUTING.md) §Proving a fix). Two harness rules, each of which
+([`maintainer conventions`](../../docs/maintainers/conventions.md#proving-a-fix-mutation) §Proving a fix: mutation). Two harness rules, each of which
 silently turns "caught" into a lie: `pytest` exit code 5 means nothing was collected, and a
 mutant must die from the reverted behaviour rather than from a `NameError` in the
 replacement text. Tooling is `scripts/mutate.py` with a table under `scripts/mutations/`;
@@ -481,7 +483,7 @@ the decision index and a named test in `tests/test_acceptance_rules.py::RULE_TES
 ## The decision-record chain
 
 Four artefacts, four different jobs, and using the wrong one is how reasoning gets lost
-([`CONTRIBUTING.md`](../../CONTRIBUTING.md) §Issue → ADR → decision row,
+([`maintainer conventions`](../../docs/maintainers/conventions.md#issue--adr--decision-row) §Issue → ADR → decision row,
 [`docs/adr/README.md`](../../docs/adr/README.md)):
 
 ```mermaid

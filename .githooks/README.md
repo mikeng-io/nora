@@ -43,8 +43,8 @@ them). Two things worth knowing before you trust it:
   `$TMPDIR/nora-pii-pycache`, where a planted `.pyc` ran in place of the
   source).
 
-The rule these enforce lives in `CONTRIBUTING.md` §Commit messages / §Merge
-strategy. The checker is the typing aid; the doc is the contract. To change
+The rule these enforce lives in `CONTRIBUTING.md` §Commit messages and
+`docs/maintainers/conventions.md` §Merge strategy. The checker is the typing aid; the doc is the contract. To change
 either, change both in one commit.
 
 ## Identifiers (#283)

@@ -36,7 +36,8 @@ installation, disposable rehearsal and explicit production cutover complete.
 ## First installation
 
 This is a configurable stack, not a preconfigured hosted service. Prerequisites:
-Docker Engine with Docker Compose on Linux; a messaging account or bot for at
+Docker Engine with Docker Compose on Linux; GnuPG (`gpg`) for verifying the
+signal-cli download; a messaging account or bot for at
 least one supported platform; an OpenAI-compatible model endpoint; and an
 external Honcho memory backend. Compose supplies PostgreSQL and RustFS storage.
 Optional speech, computer, social and portal features need their own services
