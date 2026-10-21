@@ -147,6 +147,10 @@ class InstagramSocialSource:
             latest_reel_media=marker, media_count=media_count, total_clips_count=clips,
             counts_available=media_count is not None and clips is not None,
             rate_limited=isinstance(error, str) and error.startswith("429"),
+            is_private=social.get("is_private") if payload.get("social_available") is True
+            and isinstance(social, dict) and isinstance(social.get("is_private"), bool) else None,
+            following=payload.get("following")
+            if isinstance(payload.get("following"), bool) else None,
         )
 
     async def _story(self, account: Account) -> StorySnapshot | Failed:

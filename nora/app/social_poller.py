@@ -245,6 +245,8 @@ class SocialPoller:
         self._answered_tick = False
         # Persons whose list was read this tick: one list page a member a tick.
         self._listed: set[str] = set()
+        # Latest answered access flags; an absent probe remains unknown.
+        self._probes: dict[str, Probe] = {}
 
     async def run(self) -> None:
         log.info(
@@ -527,6 +529,7 @@ class SocialPoller:
             backed = await self._start_back_off("rate_limited")
             await self._record_failure(member, "probe", "backed_off", ms, probe=probe)
             return backed
+        self._probes[member.person] = probe
         await self._clean_probe()
         self._hold.pop(member.person, None)
         self._answered[member.person] = now
@@ -537,6 +540,18 @@ class SocialPoller:
             member, "probe", due.outcome, ms, probe=probe,  # type: ignore[arg-type]
             advanced_counts=not due.partial and not due.items_due,
         )
+        standing = await self._store.backfills(
+            network=self._network, full_history=self._settings.backfill_full_history,
+        )
+        at = standing.get(member.person)
+        if at is not None and at.end_reason == "private_not_followed":
+            if probe.is_private is False or probe.following is True:
+                # Reuse first-page recovery, with this probe's publication boundary.
+                await self._record(
+                    member, "backfill", "read_ok", 0, probe=probe,
+                    end_reason="unreadable", advanced_counts=True,
+                )
+            return None
         if due.story_due and self._may_read(Cap.STORY, "story", now):
             stop = await self._read_story(member, probe)
             if stop is not None:
@@ -603,7 +618,10 @@ class SocialPoller:
             backfilled=0 if first else None, days=False,
         )
         cursor, end_reason = (
-            self._onward(page, backfilled=recorded, paged=False, media_count=probe.media_count)
+            self._onward(
+                page, backfilled=recorded, paged=False, media_count=probe.media_count,
+                probe=probe,
+            )
             if first else (None, None)
         )
         await self._record(
@@ -657,6 +675,7 @@ class SocialPoller:
 
     def _onward(
         self, page: Page, *, backfilled: int, paged: bool, media_count: int | None = None,
+        probe: Probe | None = None,
     ) -> tuple[str | None, BackfillEnd | None]:
         """Where the back-fill goes on after `page`: its next cursor, or None
         when the walk ends on it (the grid ended, the item limit is reached,
@@ -675,10 +694,14 @@ class SocialPoller:
                 and (any if paged else all)(i.taken_at < horizon for i in page.items):
             end = "max_days"
         elif page.next_cursor is None:
-            # An empty walk cannot attest completion when the profile says
-            # posts exist. Leave it on the existing first-page retry queue.
-            end = "unreadable" if not page.items and backfilled == 0 \
-                and media_count is not None and media_count > 0 else "grid_end"
+            # Settle a known inaccessible grid; unexplained missing posts
+            # stay on the existing first-page retry queue.
+            if not page.items and backfilled == 0 and probe is not None \
+                    and probe.is_private is True and probe.following is False:
+                end = "private_not_followed"
+            else:
+                end = "unreadable" if not page.items and backfilled == 0 \
+                    and media_count is not None and media_count > 0 else "grid_end"
         if end is None:
             return page.next_cursor, None
         self._metrics.inc("nora_social_backfill_ended_total", network=self._network, reason=end)
@@ -777,6 +800,7 @@ class SocialPoller:
         cursor, end_reason = self._onward(
             page, backfilled=at.items + recorded, paged=at.cursor is not None,
             media_count=counts.media_count if counts is not None else None,
+            probe=self._probes.get(member.person),
         )
         await self._record(
             member, "backfill", "read_ok", ms, read_id=read_id,
@@ -849,6 +873,7 @@ class SocialPoller:
         waiting = sorted(
             (m for m in roster
              if (b := standing.get(m.person)) is not None and b.done
+             and b.end_reason != "private_not_followed"
              and (r := walks.get(m.person)) is not None and not r.done
              and m.person not in self._listed),
             key=lambda m: (walks[m.person].last_at or datetime.min.replace(tzinfo=UTC),
@@ -908,9 +933,14 @@ class SocialPoller:
             return
         now = self._clock()
         last = await self._store.last_list_reads(network=self._network)
+        standing = await self._store.backfills(
+            network=self._network, full_history=self._settings.backfill_full_history,
+        )
         waiting = sorted(
             (m for m in roster
              if (at := last.get(m.person)) is not None
+             and ((b := standing.get(m.person)) is None
+                  or b.end_reason != "private_not_followed")
              and now - at >= timedelta(hours=hours) and m.person not in self._listed),
             key=lambda m: (last[m.person], m.person),
         )

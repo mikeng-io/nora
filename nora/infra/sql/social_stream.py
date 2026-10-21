@@ -221,6 +221,7 @@ class Backfill:
     failures: int = 0
     last_at: datetime | None = None
     probe_at: datetime | None = None
+    end_reason: BackfillEnd | None = None
 
 
 @dataclass(frozen=True)
@@ -596,10 +597,11 @@ class SqlSocialStreamStore:
         themselves, so it stops even when no `abandoned` row was written. A
         halt (`halted`) is the login's or the query's, and an `unavailable`
         page the bridge's while it answered nothing: neither is the
-        cursor's. In full-history mode, only a recorded `grid_end` or an
-        abandoned/bad cursor is done: bounded or legacy terminal pages reopen
+        cursor's. In full-history mode, a recorded `grid_end`, `private_not_followed`
+        or an abandoned/bad cursor is done: bounded or legacy terminal pages reopen
         from the first page, whose known items the poller deduplicates.
-        An `unreadable` empty walk reopens in either mode."""
+        An `unreadable` empty walk reopens in either mode; a private grid Nora
+        does not follow stays done until the poller records confirmed access."""
         p, i = SOCIAL_POLL, SOCIAL_ITEM
         # ponytail: every probe, list read and back-fill row of the network, folded
         # here; a list read is rare and a back-fill a handful of pages a
@@ -645,7 +647,8 @@ class SqlSocialStreamStore:
                 out[r.person] = Backfill(
                     items=0, cursor=r.cursor,
                     done=r.cursor is None and r.end_reason != "unreadable"
-                    and (not full_history or r.end_reason == "grid_end"),
+                    and (not full_history or r.end_reason in ("grid_end", "private_not_followed")),
+                    end_reason=r.end_reason,
                     last_at=r.recorded_at,
                     probe_at=probes.get(r.person) if r.advanced_counts else was.probe_at,
                 )
@@ -659,7 +662,7 @@ class SqlSocialStreamStore:
                         was.cursor is not None
                         and cursor_is_bad(rejected=rejected, failures=failures)
                     ),
-                    last_at=r.recorded_at, probe_at=was.probe_at,
+                    last_at=r.recorded_at, probe_at=was.probe_at, end_reason=was.end_reason,
                 )
         return {
             person: replace(out.get(person, Backfill(items=0)), items=int(counts.get(person, 0)))
