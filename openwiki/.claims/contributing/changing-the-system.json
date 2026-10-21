@@ -4,7 +4,7 @@
   "claims": [
     {
       "id": "claim_38c2e9bdd1574c59a4f61bc49047d414",
-      "statement": "Cora's contributor documents are split by job: AGENTS.md carries the terse rules for working inside the repository (the gate, the Never list, operational constraints), docs/CONVENTIONS.md carries the reasoning and war-stories behind them, CONTRIBUTING.md carries the branch, commit, PR and issue conventions for getting work into the repository, and each .agents/skills/SKILL.md carries one recurring task's procedure.",
+      "statement": "Cora's contributor documents are split by job: AGENTS.md carries the terse rules for working inside the repository (the gate, the Never list, operational constraints), docs/maintainers/conventions-rationale.md carries the reasoning and war-stories behind them, CONTRIBUTING.md carries the branch, commit, PR and issue conventions for getting work into the repository, and each .agents/skills/SKILL.md carries one recurring task's procedure.",
       "evidence": [
         {
           "resource": "repo://AGENTS.md#L1-L18",
@@ -15,7 +15,7 @@
           "version": "repo-lines-v1:sha256:9da0ac1be8f746b4de0dbc41ec521538b034730891b9d6a17a81b8959de8fdd5:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMGQzZmE2ZDU4ZDk5ZGNkY2JjYTRlOTY5MWZjN2E0NGI0NWQ3MmM3NDQzZmRkYjMzYWQxMGNkNWMwOWIxZmFhZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjdhMjgzOTk4ZDhhZDIxYzFkMjM5YjhhZjg5YWQyOTE1YTRiZWY4ZTQ3NzFjMDE3ZGI2MjhkNjI3Y2U2NDE0NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWJlYjJkMTA5NGFkMzk2NzgyYjI3MzUxZDJjNzg0ODUzMWQ1ZDAxNTBiYjg4MGJmZDRmNjAzNjkzYmI5ZWM2OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2QzYzIwMjc3ZDQyZWUxODgzMTFkNzcyMWI3OGVmMTUyMjYxYzk2ZTlkYTU3ZTQwMmY0YzdjYjY4MzhhYzk3NiJ9"
         },
         {
-          "resource": "repo://docs/CONVENTIONS.md#L1-L8",
+          "resource": "repo://docs/maintainers/conventions-rationale.md#L1-L8",
           "version": "repo-lines-v1:sha256:40efee1ecdd00fdf8fbee8e9ef9b9070bfef3103bb0f278cb86fd4185f9da2be:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDBiMmFjN2E4NzFmM2NkM2Y3MmFlY2Y0YTg0ZTc1ZjlmZjJmNDA2OTAyNTAzYTkyYTZkOWM5MzZmYjU2NWU5MiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTNmYzU5MDg1NDc1ZjVhZmZlNzE1MmE0OTIxYzZjYTQ5NWRhYmFhM2FiMjQxZmMwMDk3ZjE1ZDJiNzI1NWJiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTI3OGNkNzQ3MGU1ODAzYmY2ZTY5ZjkxYzViZTU4OTM0YWY3OWNiMDAxN2FlNzVjZTUwNGQwOGNjOWNjMjZkNyJ9"
         }
       ]

@@ -6,7 +6,7 @@ description: Puts merged Nora code, doctrine or config live and proves it. Selec
 # nora-deploy
 
 Examples: SSH alias `nora-host`, checkout `~/workspace/nora`; substitute installed paths.
-Background: `AGENTS.md`, `docs/CONVENTIONS.md`, `docs/runbook.md` (§3/3b).
+Background: `AGENTS.md`, `docs/maintainers/conventions-rationale.md`, `docs/runbook.md` (§3/3b).
 
 - Run multi-line work as `ssh nora-host bash -s <<'EOF' ... EOF`, never a long
   `ssh nora-host '...'` (Host notes).
@@ -101,7 +101,7 @@ is tagged and logged, so a failed one is never a rollback target (step 6). On fa
   still has; nothing was recreated. Fix it through step 5, then rerun (reference.md).
 - `CHECKOUT_NOT_CLEAN`: the checkout holds another session's work (22 and 7
   unpushed commits, 2026-09-09). Push it first
-  (`git push origin HEAD:refs/heads/mikeng-io/<slug>`), land it by PR, rerun.
+  (`git push origin HEAD:refs/heads/<type>/<slug>`), land it by PR, rerun.
   Never `reset`, never force.
 - `FETCH_FAILED`, `FF_FAILED`, `UP_RC` nonzero: reference.md, Other step 3 failures.
 - `VD_RC=1`: `STALE` names a container to recreate, `DOWN` says

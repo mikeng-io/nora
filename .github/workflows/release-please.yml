@@ -63,4 +63,4 @@ jobs:
             --body "Release Please metadata; required checks gate automatic publication."
       - name: Report manual bootstrap requirement
         if: vars.RELEASE_APP_ID == ''
-        run: echo '::notice::Install the free release GitHub App and configure public branch protection to enable unattended releases. See docs/github-maintenance.md.'
+        run: echo '::notice::Install the free release GitHub App and configure public branch protection to enable unattended releases. See docs/maintainers/github.md.'

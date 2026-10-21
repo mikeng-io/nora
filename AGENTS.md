@@ -4,7 +4,7 @@
 Cursor, or anything else that reads an [`AGENTS.md`](https://agents.md).
 `CLAUDE.md` points here so the vendor-neutral rules have one copy.
 
-This is the terse rule set. **`docs/CONVENTIONS.md`** preserves the reasoning,
+This is the terse rule set. **`docs/maintainers/conventions-rationale.md`** preserves the reasoning,
 war-stories and specific values; read it when a rule needs its "why".
 **`CONTRIBUTING.md`** carries branch, commit, PR and issue conventions.
 **`.agents/skills/`** carries the procedures for recurring tasks.
@@ -43,7 +43,7 @@ UACP's CMS applied to Nora. It is a **constraint, not a procedure**.
   and it answers wrong at a rate nothing reports.
 
   **When a model judges badly, read its input before rewriting its instruction.**
-  Measurements and incidents: `docs/CONVENTIONS.md`.
+  Measurements and incidents: `docs/maintainers/conventions-rationale.md`.
 - **Serialize** — fix the result into **canonical, typed state with provenance**.
   Her reply is the one authored surface (strict-silence: only a `send_reply` tool
   call delivers; the never-silent fallback is delivered but explicitly kept out
@@ -91,9 +91,8 @@ evaluation reuses this framework instead of growing a bespoke one.
 
 ## Build the least that works
 
-Nora is a private, experimental project among friends, not a production
-service. It must stay maintainable (clear code, a green gate, true docs, one
-deploy path); it does not need production ceremony. Distilled from
+Nora is an experimental, self-hosted project. It must stay maintainable
+(clear code, a green gate, true docs, one deploy path); it does not need production ceremony. Distilled from
 [ponytail](https://github.com/DietrichGebert/ponytail) (MIT), and active on
 every task: writing, fixing, reviewing, designing.
 
@@ -115,7 +114,7 @@ can happen: a live count, an incident, or a real trust boundary (an identifier
 or coordinate egressing, a room reading another room, a credential). Then check
 that the store that matters honours it. If the harm has never happened and
 nothing breaks without the guard, leave it out and note the ceiling in one
-line. The delete-withdrawal incident is in `docs/CONVENTIONS.md`.
+line. The delete-withdrawal incident is in `docs/maintainers/conventions-rationale.md`.
 
 - **A boundary is drawn by scope, never by a filter inside it.** The unit is
   the read boundary (DEC-231): if two rooms must not share what is said, they
@@ -241,7 +240,7 @@ the decision.
 - **Never claim a merge, deploy or fix without reading back the state you claim**
   — `git log -1`, `docker exec … import config`, the metric endpoint. Every time.
   A fix needs the exact production line reverted and a NAMED test red:
-  `nora-prove-fix` and `CONTRIBUTING.md` «Proving a fix» carry the harness rules.
+  `nora-prove-fix` and `docs/maintainers/conventions.md` «Proving a fix» carry the harness rules.
 - **Never read a gate's success through a pipe.** Capture its rc before reading
   its log; a background notice reports the last command's rc (`nora-land`).
 - **Never cite a file, test or function you have not opened** in this session.
@@ -264,7 +263,7 @@ the decision.
 ## Instruments and spans
 
 Read **`docs/observability.md`** before adding an instrument; incidents are there
-and in `docs/CONVENTIONS.md`, catalogued in `design/dreamer-agent-loop/02-instrument-blindness.md`.
+and in `docs/maintainers/conventions-rationale.md`, catalogued in `design/dreamer-agent-loop/02-instrument-blindness.md`.
 
 - **One root span per entry point, and stages are its CHILDREN.** Sibling spans
   with no root are not one trace with gaps — they are N traces.
@@ -309,7 +308,7 @@ and in `docs/CONVENTIONS.md`, catalogued in `design/dreamer-agent-loop/02-instru
 - **Pair every zero-assertion with a positive control.** `== 0` is also true of
   a stage that crashed; assert something only a run that RAN produces.
 
-## Conventions (short — full text in `docs/CONVENTIONS.md`)
+## Conventions (short — full text in `docs/maintainers/conventions-rationale.md`)
 
 - **One stage, one module, one public entry point** — about RESPONSIBILITIES, not
   lines (a 400-line module doing one thing is fine; count what it is responsible
@@ -335,7 +334,7 @@ and in `docs/CONVENTIONS.md`, catalogued in `design/dreamer-agent-loop/02-instru
   scaffolding only; `tests/architecture/test_port_fakes_live_in_nora_testing.py`
   is the gate and its `_ALLOWED` list only shrinks. Issue #113 for all three.
 
-## The five operational constraints (full text in `docs/CONVENTIONS.md`)
+## The five operational constraints (full text in `docs/maintainers/conventions-rationale.md`)
 
 1. Direct builds require `docker build --network=host` (the bridge cannot resolve
    `deb.debian.org` here); compose `build:` sets `network: host`, so
@@ -396,10 +395,11 @@ itself. The work goes to three lanes:
 - **A brief carries everything.** A delegated agent starts with no history: the
   brief names the spec or the findings, the worktree and branch, the skills to
   load (`nora-land` for a build), the tests that must pass, and what to report back.
-  A review brief adds the PR's claims and the diff command (`gh pr diff <N>`).
+  A review brief adds the PR's claims and the diff command (`gh pr diff <N>`),
+  and must say: **do not spawn sub-agents; do the work yourself**.
 - **A `delegate_task` worktree starts from the orchestrator's local commit**,
-  not `origin/master`, and this checkout's `master` lags. A build brief's first
-  step is `git fetch origin && git switch -c mikeng-io/<slug> origin/master` in
+  not `origin/master`. A build brief's first
+  step is `git fetch origin && git switch -c <type>/<slug> origin/master` in
   that worktree, in place of `nora-land` step 1's `git worktree add`.
 - **Keep Codex on the build; it drifts into checking.** `gpt-6.1-sol` is
   over-proactive: left alone it re-reviews its own diff, runs the suite again
@@ -423,13 +423,15 @@ itself. The work goes to three lanes:
   brief's first step is `git fetch origin && git switch --detach origin/<head
   branch>`.
 - **Kimi is told it is read-only, and that is measured, not trusted**: neither
-  route has a read-only switch (`-p` cannot be combined with `--plan`), so
+  route has a read-only switch (`-p` cannot be combined with `--plan`, `--auto`
+  or `-y`), so
   `git status --short` in its checkout after the run must print nothing. Its thinking stays on; it takes no effort
   flag, so the brief's scope is the lever. Its findings are verified like any
   other review's (`nora-land` step 7).
 - **When a lane is down, use the next and say so in the report**: implementation
   falls back to Claude `opus` through the native tool; review falls back to the
   Kimi CLI, then a fresh `gpt-6.1-sol` launch that did not build the change; mechanical work falls back to `gpt-6.1-sol` at `low`.
+  A 429/403 quota error means the lane is down; use the fallback above.
   A lane is down when its launch fails or its quota is spent, not when the
   orchestrator would rather do the work.
 - **Say the lane AND the effort in every launch** (where the lane takes one);
@@ -460,14 +462,14 @@ how long it thinks. Start at the row's level and move it on evidence:
 ## Reading order
 
 1. `README.md` — what Nora is, how to run her.
-2. `docs/CONVENTIONS.md` — gate reasoning, war-stories, constraints and conventions.
+2. `docs/maintainers/conventions-rationale.md` — gate reasoning, war-stories, constraints and conventions.
 3. `ARCHITECTURE.md` — the map: topology, package table, ports, a walk of one
    ambient message and one tag.
 4. `design/09-decision-index.md` — one line per decision, pointing at the
    document that made it and the test that enforces it.
 5. `design/*.md` — the topology documents the decision index points into.
-6. `CONTRIBUTING.md` — branch, commit, PR and issue conventions, and the
-   issue → ADR → decision-row flow.
+6. `CONTRIBUTING.md` — public setup, branches, commits and PRs;
+   `docs/maintainers/conventions.md` — merge, numbering and decision flow.
 7. `docs/adr/` — Nygard-form ADRs: why a decision was made and what it cost.
 8. `DESIGN.md` — the visual system for every Nora surface (portal, social,
    imagery, 3D): palette, type, shape, motion. Read it before touching `app/`
@@ -475,7 +477,7 @@ how long it thinks. Start at the row's level and move it on evidence:
 9. `docs/observability.md`, `docs/eval-sop.md`, `docs/runbook.md` — how to
    instrument, measure behaviour, and operate her. Read the one the task touches.
 
-Historical paths and deprecated tiers: `docs/CONVENTIONS.md` «Historical reading references».
+Historical paths and deprecated tiers: `docs/maintainers/conventions-rationale.md` «Historical reading references».
 
 ## Gate commands
 
@@ -483,7 +485,7 @@ Load **`nora-land`** for setup, the fast loop, final gate and rc read-back.
 Run the final gate once on the final head; use focused tests while iterating.
 Docs-only changes use its affected-test procedure, never hand-picked readers.
 `make gate` runs static checks and affected tests; `make full-gate` runs all.
-The schema gate, import cache and typecheck scope are in `docs/CONVENTIONS.md`.
+The schema gate, import cache and typecheck scope are in `docs/maintainers/conventions-rationale.md`.
 
 ## Reaching the deployment
 
@@ -493,7 +495,7 @@ Load **`nora-deploy`** to select deployment mode, lock, validate and deploy;
 load **`nora-readback`** for database access, container logs and evidence.
 Read host status before any pull; preserve unpushed commits on a branch, never
 reset them. Deploys must not overlap. Key auth only: never `sshpass` or passwords
-in `.env`, chat or session-readable files. Setup: `docs/CONVENTIONS.md`.
+in `.env`, chat or session-readable files. Setup: `docs/maintainers/conventions-rationale.md`.
 The host's `config.toml` is authoritative: read it before asserting a live flag.
 
 ## The three config files
@@ -518,7 +520,7 @@ resolving to one `person_id` (Honcho peer, A2/DEC-14). Policy is deny-by-default
 Nora **refuses to start** if it is missing or allows nothing (R-5).
 Memory hierarchy (DEC-214): policy `[units]` maps units to workspaces; identity
 `[workspaces]` binds each to Honcho; `memory.workspace_id` is only the fallback
-when there is no `[units]`. History and drift-check limits: `docs/CONVENTIONS.md`.
+when there is no `[units]`. History and drift-check limits: `docs/maintainers/conventions-rationale.md`.
 
 ## Releases
 

@@ -7,11 +7,11 @@ only.
 ## The change
 
 Commit `da439d67` on branch `feat/vision-timeout-derivation`, in
-`/home/norty/workspace/nora-wt-timeout-fix`. Review `git diff 58fb9f85..HEAD`
+`/home/<deploy-user>/workspace/nora-wt-timeout-fix`. Review `git diff 58fb9f85..HEAD`
 (base = the design-only tip).
 
 Repo: **Nora**, a Python 3.13 async agent (Strands Agents SDK) for Discord/Telegram.
-Conventions are strict and documented in `AGENTS.md` and `docs/CONVENTIONS.md` —
+Conventions are strict and documented in `AGENTS.md` and `docs/maintainers/conventions-rationale.md` —
 read them before judging style. Comments in this codebase explain *why* and cite
 `file:line`; that is house style, not noise.
 
@@ -111,7 +111,7 @@ per-call `model` / `provider` / `max_bytes` seam.
    caller, and say whether any is now un-callable or subtly wrong. The suite passes,
    so look for what the suite does **not** cover.
 
-9. **Conformance with the repo.** `AGENTS.md` and `docs/CONVENTIONS.md` — does the
+9. **Conformance with the repo.** `AGENTS.md` and `docs/maintainers/conventions-rationale.md` — does the
    change follow them? In particular: is `config.example.toml` prose accurate now
    (it was edited); is `nora/config.py`'s comment accurate; did anything need a
    release fragment or a DEC entry under the repo's own rules?
@@ -122,7 +122,7 @@ Findings ordered by severity (**BLOCKING / MAJOR / MINOR**), each with:
 - the file and line,
 - what is wrong,
 - the evidence or counter-argument (run something if it helps — the repo venv is
-  `/home/norty/workspace/nora/.venv/bin/python`, and `pytest` works from the
+  `/home/<deploy-user>/workspace/nora/.venv/bin/python`, and `pytest` works from the
   worktree root),
 - what would fix it.
 

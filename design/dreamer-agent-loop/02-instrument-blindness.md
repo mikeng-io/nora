@@ -26,7 +26,7 @@ CLAUDE.md carries this rule:
 
 **It now carries eight more, and this node is what they were derived from.**
 CLAUDE.md's *Instruments and spans* section states them one line each and
-`docs/CONVENTIONS.md`'s *Instruments and spans — the war-stories* carries the
+`docs/maintainers/conventions-rationale.md`'s *Instruments and spans — the war-stories* carries the
 measurement behind each; neither repeats the catalogue below, and this node
 stays the place the instances live. The rules, by shape: one root span per entry
 point; spawned work does not inherit the caller's span; a span with only a name;
@@ -630,7 +630,7 @@ by a different session, at a different time, reproduced it exactly.
 
 2026-08-28 — **the discipline left this node and became a rule set.** Eight
 rules, one line each in CLAUDE.md's *Instruments and spans* section with the
-measurement in `docs/CONVENTIONS.md`. Every one was verified against the code
+measurement in `docs/maintainers/conventions-rationale.md`. Every one was verified against the code
 before it was written — which turned up one correction worth recording here,
 because it is the family's own shape: **`asyncio.create_task` DOES copy the
 current context**, so the rule is not «context is lost at a spawn». It copies

@@ -135,7 +135,7 @@ python3 scripts/pii_denylist_build.py --identity <identity.toml> --map <scrub ma
 ```
 
 It prints counts, never values, and writes mode 600. Without it every commit
-is an ERROR. A machine that genuinely has no access to the real values (a
+is an ERROR. A machine that genuinely has no access to the real values (an outside contributor or a
 fresh CI runner) sets `NORA_PII_DENYLIST_ABSENT=<reason>`; the reason is
 printed on every run and only the shape rules apply.
 

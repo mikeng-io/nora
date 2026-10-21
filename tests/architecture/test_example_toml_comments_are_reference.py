@@ -2,7 +2,7 @@
 
 A comment says what a section or key is and what an operator must know to set
 it. History, dates, issue numbers, measurements and review stories belong to
-git and the issue (`docs/CONVENTIONS.md` «Comments describe, git records»).
+git and the issue (`docs/maintainers/conventions-rationale.md` «Comments describe, git records»).
 This gates the markers of a log, never the length: a length cap is satisfied
 by deleting the comments an operator needs.
 """

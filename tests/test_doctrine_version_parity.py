@@ -7,7 +7,7 @@ is logged on EVERY tag and is the operator-facing handle for «which doctrine is
 she running», so a version that means two different documents depending on when
 you looked is a defect.
 
-This is `docs/CONVENTIONS.md`'s unguarded-copy class with the copy and the
+This is `docs/maintainers/conventions-rationale.md`'s unguarded-copy class with the copy and the
 original in ONE file: `version` is a restatement of «what this document is»,
 it stays plausible after the body moves, and it fails somewhere else later —
 in a log line, during an incident, when somebody is trying to work out what she

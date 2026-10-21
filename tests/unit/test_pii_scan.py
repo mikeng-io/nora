@@ -182,7 +182,7 @@ def test_an_owner_name_that_spells_the_org_stem_never_fires_inside_the_org():
     """The owner's name, written with a separator, is denied (the test
     above); with the separator gone it is the org's stem, so separator-free
     matching would find it inside `mikeng-io`, `mikeng.io` and the project email
-    and refuse every `mikeng-io/<slug>` branch. Project identity is blanked
+    and refuse repository URLs. Project identity is blanked
     before matching, like a keep-phrase; the name on its own still fires."""
     stem = _ORG.removesuffix("-io")
     owner = f"{stem[:4].title()} {stem[4:].title()}"

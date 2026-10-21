@@ -43,7 +43,7 @@ jobs:
           APP_ID: ${{ vars.RELEASE_APP_ID }}
         run: |
           test -n "$OPENWIKI_API_KEY" || { echo '::error::Set the OPENWIKI_API_KEY Actions secret.'; exit 1; }
-          test -n "$APP_ID" || { echo '::error::Configure the repository GitHub App described in docs/github-maintenance.md.'; exit 1; }
+          test -n "$APP_ID" || { echo '::error::Configure the repository GitHub App described in docs/maintainers/github.md.'; exit 1; }
       - run: npm ci --prefix docs-site
       - name: Update repository wiki
         run: |

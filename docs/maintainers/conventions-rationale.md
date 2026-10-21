@@ -72,31 +72,13 @@ mistake it produced (2026-08-21: eight full gate runs in one session).
   real server**, including the shapes it returns for the wrong call. If
   reverting the code under test does not turn the test red, the test is
   decorative.
-- **Never paste production rows into a fixture.** Measured 2026-09-10, while
-  costing out a public release. `tests/fixtures/presence_corpus_sample.py` was
-  a `SELECT person_id, ts, lat, lng, accuracy_m, wire_state, recorded_at FROM
-  presence_fixes` run against `nora-db-1` and pasted in whole — 11,431 rows for
-  six people named by their real `person_id`s, its docstring stating «all real,
-  pasted verbatim (via a CSV->tuple transcription script, no values altered)».
-  The reasoning in that docstring is the part worth reading, because it is
-  careful and it is what made this land: a narrower slice «is not safe to
-  hand-pick without risking silently cherry-picking away exactly the ambiguous
-  data these tests exist to prove is handled correctly». That argument is
-  correct about TESTING and never asks the other question.
+- **Never paste production rows into a fixture.** A production-data fixture
+  once passed review because preserving test coverage was mistaken for permission
+  to publish the source data. Use a synthetic generator instead.
 
-  Parsed back, the corpus answers it. Each of the six has one ~11-metre cell
-  holding 3 to 11 distinct nights of overnight fixes across a 12-day window —
-  a residence, per person, by name. Two of the six share a cell, which is a
-  household. Twelve days of movement each, at a fidelity nobody in that group
-  agreed to publish.
-
-  `a32acc90 test(mobility): replace real-corpus fixture with a synthetic
-  generator` did the right thing and did not finish it: **deleting a file is
-  not deleting an object.** Blob `87ea7fcb` stayed reachable from `master` and
-  from `origin/master` for three weeks afterwards, and would have been
-  published intact by making the repository public — which is also why a
-  force-pushed history rewrite is not the remedy on GitHub, where unreachable
-  objects stay fetchable by SHA.
+  **Deleting a file is not deleting an object.** A committed blob remains in
+  history, clones and archives after its path is removed. Review what enters Git
+  before committing; a clean current tree does not establish safe history.
 
   Three lessons, in the order they bite:
 
@@ -115,7 +97,7 @@ mistake it produced (2026-08-21: eight full gate runs in one session).
     keeping written down because it is easy to make again. It read `git
     ls-files`, i.e. the INDEX, while the incident above is about a blob that
     survived `git rm`. Replaying that incident exactly — add corpus, commit,
-    `git rm`, commit — left it green with eleven thousand real fixes reachable
+    `git rm`, commit — left it green with production data reachable
     from `HEAD~1`. It also failed OPEN four ways: one appended non-UTF-8 byte,
     a `.svg` rename, a symlink, or a UTF-16 encoding each took a payload past
     it silently, while its own docstring named that exact shape as the one that
@@ -785,7 +767,8 @@ It is now `EvidenceState = Literal[...]` with `EVIDENCE_STATES =
 get_args(EvidenceState)`, enforced TWICE — statically, and at runtime by
 `NoteCuratorAdaptor._inc`'s `_VOCABULARIES` check *(adaptor deleted 2026-10-03, DEC-277; the pattern stands)* (every increment's label is
 checked against the derived set before the counter is touched) — because
-`nora/language/` is outside `make gate`'s mypy scope (issue #61) and **a static-only guard in an unchecked package is a
+`nora/language/` was then outside the mypy scope (issue #61); it is now included
+in `make typecheck` and **a static-only guard in an unchecked package is a
 claim rather than a check** (`443bbca` F3).
 
 Where mypy does reach, the derivation alone is enough: `nora/domain/facts.py`

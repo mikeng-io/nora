@@ -11,24 +11,24 @@ the log or the read-back, never an exit code alone. Go end to end; stop only
 for a blocker or a fact only the operator holds (a decision is not input).
 
 ```bash
-SLUG=<kebab-slug>; WT=<new-worktree-path>        # WT outside every checkout
+TYPE=<commit-type>; SLUG=<kebab-slug>; WT=<new-worktree-path>        # WT outside every checkout
 LOG=${TMPDIR:-/tmp}/land-$SLUG; mkdir -p "$LOG"   # fixed, OUTSIDE the worktree
 ```
 
-Shell state may not survive between calls (Claude Code's Bash): re-set `SLUG`
+Shell state may not survive between calls (Claude Code's Bash): re-set `TYPE`, `SLUG`
 and `LOG` in every call; carry results in files (`$LOG/gate.rc`), not variables.
 
 ## 1. Start: a new worktree on a new branch
 
 ```bash
 git fetch origin
-git worktree add -b "mikeng-io/$SLUG" "$WT" origin/master
+git worktree add -b "$TYPE/$SLUG" "$WT" origin/master
 cd "$WT" || exit 1
 uv sync --extra evals        # = make setup; without it pytest dies at COLLECTION
 git status -sb; git config core.hooksPath
 ```
 
-Check: `## mikeng-io/<slug>...origin/master`, no ahead/behind; hooksPath ends
+Check: `## <type>/<slug>...origin/master`, no ahead/behind; hooksPath ends
 in `.githooks` (empty: `make hooks`, once per clone covers every worktree).
 
 - Cut from `origin/master` after a fetch, never local `master`: it lags, and a
@@ -125,14 +125,14 @@ gh pr view <N> --json baseRefName,headRefOid       # master, and == git rev-pars
 - A bare `git merge origin/master` writes a default subject the hook refuses.
 - Title: append `(#N, DEC-M)` only when it closes an issue or lands a decision.
 - Body: the template headings exactly, in order: `What`, `Also`, `Gate on the
-  merged tree`, `Deploy note`, `Closes`; delete what does not apply. Never
+  merged tree`, `Closes`; delete what does not apply. Never
   `Summary` or `Test plan`, both retired (still in 11 of the last 140 PRs).
 - Gate section: the real outcome (GATE_RC, pass count, origin/master sha merged
   in); a pre-existing unrelated failure is named with its issue number.
-- Deploy note: only for `nora/doctrine` or `nora/dreamer`, bind-mounted on the
-  deploy host and live at its next pull, no rebuild.
+- A deployment that bind-mounts `nora/doctrine` or `nora/dreamer` can hot-reload
+  changes on mtime; mention this operator option when relevant.
 - `Closes #N` only when this PR fully resolves it; otherwise `issue #N`.
-- A fix reports its mutation result (`CONTRIBUTING.md` Proving a fix).
+- A fix reports its mutation result (`docs/maintainers/conventions.md` Proving a fix).
 
 ## 7. Review, by someone who is not the author
 
@@ -185,7 +185,7 @@ make decision-numbers > "$LOG/dn.txt" 2>&1; grep -vc '^==' "$LOG/dn.txt" # must 
 ```
 
 No more edits here: the next change is step 1, a new worktree. Cleanup:
-`CONTRIBUTING.md` Cleanup. Deploying: nora-deploy.
+`docs/maintainers/conventions.md` Cleanup. Deploying: nora-deploy.
 
 ## Tool notes
 

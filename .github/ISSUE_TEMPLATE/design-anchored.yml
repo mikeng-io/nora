@@ -1,12 +1,12 @@
-name: Gap (design-anchored — a design document already specified this)
-description: The bundle and section exist; this issue tracks building to that spec.
+name: Maintainers — Gap (design-anchored — a design document already specified this)
+description: "Maintainers only: The bundle and section exist; this issue tracks building to that spec."
 labels: ["design-anchored"]
 body:
   - type: markdown
     attributes:
       value: |
         Title is still `<Area>: <the gap>`. Every heading below is declared in
-        `CONTRIBUTING.md` §Issues; the reasoning lives there.
+        `docs/maintainers/conventions.md` §Issues; the reasoning lives there.
 
   - type: dropdown
     id: area

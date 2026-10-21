@@ -2,12 +2,12 @@
 
 **How Nora is instrumented, and where to look when something is missing.**
 
-`AGENTS.md` carries the terse rules and `docs/CONVENTIONS.md` the war-stories
+`AGENTS.md` carries the terse rules and `docs/maintainers/conventions-rationale.md` the war-stories
 behind them; neither says how the pieces fit together, which is the gap this
 file exists to close. It is the map — what the three signals are for, how a
 span physically reaches a collector, what makes a span a *generation*, and how
 to read any of it back. Rules are stated here only where the how-to needs them;
-their reasoning stays in `CONVENTIONS.md` and is linked, never copied, because
+their reasoning stays in `docs/maintainers/conventions-rationale.md` and is linked, never copied, because
 two copies drift and the one that drifts is the one you did not read
 (`docs/adr/0010-agents-md-is-the-entry-point.md`).
 
@@ -41,7 +41,7 @@ matter.
 trace reaches it when the work under it *can contain a model call*. Everything
 else Nora does — sequencing ingest stages, writing a row, resolving an identity,
 counting a refusal — is plumbing, and plumbing's questions are Prometheus'.
-That is R-76; `CONVENTIONS.md` has the argument and the numbers.
+That is R-76; `docs/maintainers/conventions-rationale.md` has the argument and the numbers.
 
 **Three states on every instrument, never two** — `ok` / `nothing_found` /
 `unavailable`. A wiring gap is `unavailable` ("I could not check"), never

@@ -4,9 +4,9 @@ Implement the missing stage-3 wiring so a Discord voice channel user can say
 「喂 Nora <command>」 and Nora answers in the same voice channel (ducked TTS),
 while the typed-message reactive path receives the transcript as a user input.
 
-Work ONLY in the nora repo worktree: `/home/norty/workspace/nora-wt-voice-design`
+Work ONLY in the nora repo worktree: `/home/<deploy-user>/workspace/nora-wt-voice-design`
 (branch `feat/voice-channel-design`). Commit your changes to this branch.
-Do NOT touch `/home/norty/workspace/nora` (master) or any other repo.
+Do NOT touch `/home/<deploy-user>/workspace/nora` (master) or any other repo.
 
 ## What already exists (verified, do not rebuild)
 
@@ -27,10 +27,10 @@ Do NOT touch `/home/norty/workspace/nora` (master) or any other repo.
   `nora/infra/tts.py MiniMaxTtsSpeaker`; wired in `nora/app/composition.py`
   (line ~1518) only when `[speech.tts].enabled=true` in config.toml.
   `speakable(text)` gate lives in `nora/domain/ports.py:1010`.
-- **Wake model**: `/home/norty/workspace/voice-lab/data/modal-output-v3/喂Nora.onnx`
+- **Wake model**: `/home/<deploy-user>/workspace/voice-lab/data/modal-output-v3/喂Nora.onnx`
   (205,430 bytes, openWakeWord 16×96 input, ONNX runtime).
   Training/validation scripts + the int16 harness live in
-  `/home/norty/workspace/voice-lab/scripts/` (do not re-train; this is
+  `/home/<deploy-user>/workspace/voice-lab/scripts/` (do not re-train; this is
   integration only).
 - **Nora adapter** (typed Discord): `nora/platform/discord/adapter.py`
   `DiscordAdapter.listen(on_message)` → `parse_discord_message` →
@@ -121,7 +121,7 @@ Body: `{user_id, text, conversation_id}` (JSON). Behaviour:
 - `uv add` for dependencies — never raw pip.
 - Commit in small focused commits on `feat/voice-channel-design`; do not
   merge, do not push to master, do not touch other profiles/repos.
-- Follow `docs/CONVENTIONS.md` (one stage one module; no `*_fn` test hooks;
+- Follow `docs/maintainers/conventions-rationale.md` (one stage one module; no `*_fn` test hooks;
   contract suites for ports).
 - Do NOT modify `deploy/voice-sidecar/` (stage 2 is done and verified).
 - Do NOT modify `~/workspace/voice-lab/` (training lab, out of scope here).
@@ -135,7 +135,7 @@ Body: `{user_id, text, conversation_id}` (JSON). Behaviour:
 2. Wake gate logic unit test: feed a synthetic PCM window through the
    resample + model path with the v3 ONNX — assert it scores > threshold for
    a TTS 「喂 Nora」 clip if one is available under
-   `/home/norty/workspace/voice-lab/oww-data/output/喂Nora/positive_train/`
+   `/home/<deploy-user>/workspace/voice-lab/oww-data/output/喂Nora/positive_train/`
    (read-only), or mark that test skipped when the file is absent.
 3. Nora endpoint integration test: POST a fake utterance and assert an
    ingest row is created (check the audit table) and 202 returned.

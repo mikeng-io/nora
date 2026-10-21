@@ -511,7 +511,7 @@ each), DEC-231 (the unit read boundary, settling §4), and the missing index
 rows for R-31 and DEC-176 — all in `design/09-decision-index.md`. GLOSSARY.md
 is rewritten to [10](10-tiers.md)'s words, resolving its 14 conflicts. Numbers
 are as taken from `origin/master` when this branch was written and may be
-renumbered at merge (`CONTRIBUTING.md` "Numbering discipline").
+renumbered at merge (`docs/maintainers/conventions.md` "Numbering discipline").
 
 **Step 1b built 2026-09-28** (branch `mikeng-io/cognition-step1b-history`,
 DEC-232, number to be re-read at merge): `row_history` and its trigger on

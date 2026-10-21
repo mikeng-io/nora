@@ -1,7 +1,7 @@
 """Count the markers of a log in Python comments and docstrings, per file.
 
 A comment or docstring describes what the code is; the commit and the issue
-are the log (`docs/CONVENTIONS.md` «Comments describe, git records»). The two
+are the log (`docs/maintainers/conventions-rationale.md` «Comments describe, git records»). The two
 unambiguous markers of a log are a calendar date and an issue or PR number.
 `tests/architecture/test_comments_carry_no_new_log.py` holds every tracked
 file to the count in `tests/architecture/log_marker_baseline.json`, which may

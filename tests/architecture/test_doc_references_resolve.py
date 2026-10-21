@@ -368,7 +368,7 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     # a delete loses the record of what the delete removed.
     #
     # The OPERATOR-facing docs (`docs/runbook.md`, `docs/eval-sop.md`,
-    # `docs/CONVENTIONS.md`, the `make eval-*` targets) name `python -m evals`,
+    # `docs/maintainers/conventions-rationale.md`, the `make eval-*` targets) name `python -m evals`,
     # because those tell somebody to run a command.
     **{
         (doc, "evals/run.py"): (
@@ -467,12 +467,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "channel went the sidecar route, design/voice-channel/05) — the brief is a "
         "historical record of the proposal, not a link to fix"
     ),
-    ("docs/CONVENTIONS.md", "tests/fixtures/presence_corpus_sample.py"): (
-        "the war-story's subject: 11,431 real GPS fixes, deleted from the tree by "
-        "a32acc90 and the whole point of the entry. The dangling path IS the "
-        "record — naming the file is how the next reader finds the blob that "
-        "outlived it, and rewriting the reference would erase what happened"
-    ),
     ("design/discord-integration/00-overview.md", "deploy/watchdog.sh"): (
         "the shell watchdog was deleted 2026-09-09 once Prometheus covered its one "
         "condition with a real delivery path; this design records the reasoning as it "
@@ -482,9 +476,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ("design/whatsapp-adoption/01-bridge-container.md", "deploy/watchdog.sh"): (
         "same deletion, same reason — a historical decision record, not a broken link"
     ),
-    ("deploy/README.md", "deploy/egress.sh"): (
-        "documented as the versioned egress governance script; not tracked in this checkout"
-    ),
     ("design/08-stack-refactor-brief.md", "nora/store/db.py"): (
         "pre-refactor handoff brief describing the SQLite-era code the brief itself "
         "proposed replacing; nora/store/ no longer exists post-refactor"
@@ -492,9 +483,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ("design/08-stack-refactor-brief.md", "nora/store/migrate.py"): (
         "pre-refactor handoff brief describing the SQLite-era code the brief itself "
         "proposed replacing; nora/store/ no longer exists post-refactor"
-    ),
-    ("docs/runbook.md", "nora/store/db.py"): (
-        "same pre-refactor path as design/08-stack-refactor-brief.md; runbook not yet updated"
     ),
     ("design/09-decision-index.md", ".github/workflows/gates.yml"): (
         "A12 names a CI gate file; this repo deliberately runs no CI (operator decision) "

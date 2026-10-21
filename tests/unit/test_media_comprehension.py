@@ -606,7 +606,7 @@ async def test_a_whole_read_carries_no_caveat_into_memory():
 async def test_a_write_that_did_not_land_is_not_counted_ok():
     """`SqlMediaObjectStore.comprehend` answers False on any database failure
     and the job must not count `ok` on it — the «a tick that wrote nothing
-    reporting ok» shape CONVENTIONS.md names.
+    reporting ok» shape docs/maintainers/conventions-rationale.md names.
 
     The FEED goes with it: Honcho would otherwise hold a description of bytes
     `media_objects` has no row for, and a redelivery would feed the same words

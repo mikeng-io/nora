@@ -23,7 +23,7 @@ sources:
   - id: openwiki-source-ad966d6b0a022a609a8c370f
     resource: repo://docs/adr/README.md
   - id: openwiki-source-11b18e07136242b17793ba1a
-    resource: repo://docs/CONVENTIONS.md
+    resource: repo://docs/maintainers/conventions-rationale.md
   - id: openwiki-source-ca26bcc1d57e01e525bd703e
     resource: repo://nora/agent/dreamer.py
   - id: openwiki-source-30349f3247150dbe36ca063a
@@ -100,7 +100,7 @@ It is a contributor's page. The terse rules an agent working *inside* the repo m
 violate (the gate, the "Never" list, the operational constraints) are
 [`AGENTS.md`](../../AGENTS.md); the branch, commit, PR and issue conventions for getting
 work *into* the repo are [`CONTRIBUTING.md`](../../CONTRIBUTING.md); the reasoning and the
-war-stories behind every terse rule are [`docs/CONVENTIONS.md`](../../docs/CONVENTIONS.md).
+war-stories behind every terse rule are [`docs/maintainers/conventions-rationale.md`](../../docs/maintainers/conventions-rationale.md).
 The per-task procedures are the agent skills under
 [`.agents/skills/`](../../.agents/skills/), one per recurring task. This page links to all
 four rather than restating them, and adds the part that is spread across them: which

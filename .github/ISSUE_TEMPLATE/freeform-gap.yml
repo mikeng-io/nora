@@ -1,5 +1,5 @@
-name: Gap (freeform — proposing the decision)
-description: Something is wrong or missing, and no design document has specified it yet. The issue is the candidate.
+name: Maintainers — Gap (freeform — proposing the decision)
+description: "Maintainers only: Something is wrong or missing, and no design document has specified it yet. The issue is the candidate."
 labels: ["freeform"]
 body:
   - type: markdown
@@ -8,7 +8,7 @@ body:
         Stated as a fact about what is wrong, not as a task — and the title is
         `<Area>: <the gap>` (e.g. `Note tier: discharge pipeline — route settled
         note content on close`). The full reasoning behind every heading below
-        lives in `CONTRIBUTING.md` §Issues.
+        lives in `docs/maintainers/conventions.md` §Issues.
 
   - type: dropdown
     id: area
