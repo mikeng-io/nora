@@ -1,12 +1,17 @@
 {
-  "mcpServers": {
-    "strands": {
-      "type": "stdio",
-      "command": "uvx",
-      "args": [
-        "strands-agents-mcp-server"
-      ],
-      "env": {}
-    }
-  }
+	"mcpServers": {
+		"strands": {
+			"type": "stdio",
+			"command": "uvx",
+			"args": ["strands-agents-mcp-server"],
+			"env": {}
+		},
+		"codebase-memory-mcp": {
+			"command": "/Users/mike/.local/bin/codebase-memory-mcp"
+		},
+		"aikido": {
+			"command": "npx",
+			"args": ["-y", "@aikidosec/mcp@latest"]
+		}
+	}
 }

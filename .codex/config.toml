@@ -1,0 +1,3 @@
+[mcp_servers.aikido]
+command = "npx"
+args = ["-y", "@aikidosec/mcp@latest"]
