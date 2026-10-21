@@ -1,11 +1,15 @@
 """Gate generated clips with the STT container: positives must transcribe to the wake phrase, negatives must not.
 usage: gate_stt.py <gen_dir with manifest.json>  → writes gate.json + prints per-text survival."""
 import sys, os, json, re, subprocess, collections, wave
+URL=os.environ.get("STT_URL")
+if not URL:
+    sys.exit("STT_URL is required; set it to the STT transcription endpoint.")
 D=sys.argv[1]; man=json.load(open(os.path.join(D,"manifest.json")))
 POS=re.compile(r"nora|nova|喂 ?ra|諾拉|娜拉|nara|lora",re.I)
-URL=os.environ.get("STT_URL", "http://<stt-host>:8000/v1/audio/transcriptions")
 def stt(p):
-    r=subprocess.run(["curl","-s","-F",f"file=@{p}","-F","language=yue",URL],capture_output=True,text=True)
+    r=subprocess.run(["curl","-sS","-F",f"file=@{p}","-F","language=yue",URL],capture_output=True,text=True)
+    if r.returncode:
+        sys.exit(f"STT curl failed (exit {r.returncode}): {r.stderr.strip()}")
     try: return json.loads(r.stdout).get("text","")
     except Exception: return ""
 surv=collections.Counter(); tot=collections.Counter(); out=[]
