@@ -1,5 +1,15 @@
 # Changelog
 
+## [6.4.2](https://github.com/mikeng-io/nora/compare/v6.4.1...v6.4.2) (2026-10-21)
+
+
+### Bug Fixes
+
+* **persona:** keep rollup source reads within their timeout ([e55ba7d](https://github.com/mikeng-io/nora/commit/e55ba7df6332dc3be2919813f87fad645db1b8a0))
+* **social:** finish empty terminal pages after a cursor ([a948571](https://github.com/mikeng-io/nora/commit/a94857117db1696c380ce6676d181b91d5864db6))
+* **social:** retry empty backfills when the profile reports posts ([0ea6c58](https://github.com/mikeng-io/nora/commit/0ea6c5830bc87c2c235ce987a444e7cb7c98543a))
+* **social:** stop retrying private grids Nora does not follow ([027b715](https://github.com/mikeng-io/nora/commit/027b715467651dab1064e0a2f7a68278de3962b4))
+
 ## [6.4.1](https://github.com/mikeng-io/nora/compare/v6.4.0...v6.4.1) (2026-10-20)
 
 
