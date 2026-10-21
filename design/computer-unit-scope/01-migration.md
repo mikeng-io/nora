@@ -28,10 +28,11 @@ The “Also” section of #168 records these operational limits:
   backup preparation and restore proof are in
   [DM acceptance](../private-dm/04-build-and-acceptance.md#2-deterministic-proof-and-actual-inputs).
   Keep archive validation fail-closed; never allow arbitrary external links.
-- In Komodo mode, the HOST command below must use `docker run` on the existing
-  Nora container's immutable image digest, with the installed environment,
-  policy, database network and migration mounts. The shown `docker compose run`
-  form is checkout-mode only: in Komodo it tries to build `nora:latest`.
+- The executable HOST command below uses `docker run` on Nora's captured
+  immutable image ID for Komodo, with the installed policy and database network.
+  Capture that ID and inspect the network **before stopping Nora**. Checkout
+  mode may instead use `docker compose run` after building reviewed source;
+  in Komodo that command tries to build `nora:latest`, so do not use it there.
 - Each sbx exec leaked roughly ten host gnome-keyring file descriptors. #168
   records an immediate soft-limit increase from 1024 to 4096 via prlimit; the
   operator reports a systemd `LimitNOFILE` drop-in as the persistent mitigation.
@@ -72,6 +73,27 @@ Inside the locked shell, set its own failure flags before running any stage
 set -euo pipefail
 umask 077
 cd "$RUNTIME"
+```
+
+Before stopping admission, capture the existing container's immutable image ID
+and its compose network from `docker inspect nora`. The network is the compose
+project's `<project>_nora` network (`nora_nora` on this host), not the shared
+Honcho or embedder network. Do not guess it from a directory/project name;
+refuse an absent or ambiguous inspected match. Keep these variables in the
+locked shell for the HOST command below. These are non-secret readbacks:
+
+```bash
+IMG=$(docker inspect -f '{{.Image}}' nora)
+NORA_NETWORK=$(docker inspect -f '{{json .NetworkSettings.Networks}}' nora | python3 -c '
+import json,sys
+names=[name for name in json.load(sys.stdin) if name.endswith("_nora")]
+assert len(names)==1, "expected one inspected compose nora network"
+print(names[0])
+')
+test -n "$IMG"
+test -n "$NORA_NETWORK"
+printf '%s\n' "$IMG" > "$D/nora-image-id.txt"
+printf '%s\n' "$NORA_NETWORK" > "$D/nora-network.txt"
 ```
 
 Allow active subagent jobs to finish before stopping Nora. Then stop admission
@@ -179,12 +201,42 @@ plan for explicit operator mapping. No default unit is guessed.
 ```bash
 VM=(sbx exec -u root nora-computer /opt/computerd/venv/bin/python /opt/computerd/migrate_unit_scope.py)
 "${VM[@]}" inventory > "$D/inventory.json"
-HOST=(docker compose run --rm --no-deps -T --user "$(id -u):$(id -g)" -v "$SOURCE:/migration:ro" -v "$D:/migration-state" -e PYTHONPATH=/migration --entrypoint /app/.venv/bin/python nora /migration/scripts/migrate_computer_unit_scope.py)
+# Read POSTGRES_PASSWORD from the runtime .env through Compose's dotenv loader.
+# Capture its output; never echo the password or turn shell tracing back on.
+set +x
+POSTGRES_PASSWORD=$(env -u POSTGRES_PASSWORD docker compose --env-file "$RUNTIME/.env" config --format json | python3 -c '
+import json,sys
+print(json.load(sys.stdin)["services"]["db"]["environment"]["POSTGRES_PASSWORD"])
+')
+test -n "$POSTGRES_PASSWORD"
+migration_host() {
+    docker run --rm --network "$NORA_NETWORK" --user "$(id -u):$(id -g)" \
+      --env-file <(printf 'DATABASE_URL=postgresql+asyncpg://nora:%s@db/nora\n' "$POSTGRES_PASSWORD") \
+      -e PYTHONPATH=/migration -v "$SOURCE:/migration:ro" -v "$D:/migration-state" \
+      -v "$RUNTIME/policy.toml:/app/policy.toml:ro" \
+      --entrypoint /app/.venv/bin/python "$IMG" \
+      /migration/scripts/migrate_computer_unit_scope.py "$@"
+}
+HOST=(migration_host)
 "${HOST[@]}" plan --policy /app/policy.toml --inventory /migration-state/inventory.json --output /migration-state/host-plan.json --vm-mapping /migration-state/mapping.json
 sbx cp "$D/mapping.json" nora-computer:/var/lib/computer-unit-migration/mapping.json
 "${VM[@]}" plan --input /var/lib/computer-unit-migration/mapping.json > "$D/disk-plan.json"
 sbx cp "$D/disk-plan.json" nora-computer:/var/lib/computer-unit-migration/disk-plan.json
 ```
+
+The function creates the env-file process substitution for each actual Docker
+invocation; storing its descriptor path in an array would close it before later
+HOST calls. The password is supplied through that descriptor, not Docker's
+command-line arguments, a printed config or a persistent secret file. Compose
+reads it from `"$RUNTIME/.env"`; clearing an inherited POSTGRES_PASSWORD for the
+config command prevents that variable overriding the file. Keep tracing off.
+The service/user/database shape is from `docker-compose.yml` (lines 737–745),
+and `scripts/migrate_computer_unit_scope.py::run` reads DATABASE_URL (line 95).
+
+Checkout-mode secondary option: after building the reviewed source, use
+`docker compose run --rm --no-deps -T` for the nora service with the same source,
+state and policy mounts and Python entry point. That is not the Komodo command;
+Komodo uses the inspected network and pre-stop image ID above.
 
 Inspect both plans before applying. `plan` inventories bytes, hidden paths,
 symlink text, modes and SHA-256 digests without making users or moving files.

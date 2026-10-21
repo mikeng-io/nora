@@ -124,7 +124,9 @@ The unchanged `SCOPE_RE` in computerd and archive_check accepts 16–64 lowercas
 hex; `deploy/computer/migrate_unit_scope.py::inventory` (line 77) accepts exactly
 32 through `SCOPE` (line 27). The DM hash fits all three. The existing
 `deploy/computer/nora-computer` backup scope count and archive layout need no
-DM naming exception; browser directories remain excluded from normal backup.
+DM naming exception. The shipped backup currently excludes browser directories;
+the required [backup repair](04-build-and-acceptance.md#2-deterministic-proof-and-actual-inputs)
+replaces that blanket exclusion and archives every regular file privately.
 The legacy room-to-unit migration planner must never remap a DM hash into a
 unit: inventory recognition is not migration authority. No new migration of
 already migrated unit workspaces is needed for DMs.

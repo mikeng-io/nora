@@ -104,70 +104,60 @@ Additional first-PR acceptance cases (all required, using synthetic identities):
 
 ### Backup safety — required before DM enablement
 
-Choose **backup preparation that excludes only proven regenerable files and
-runtime artifacts**, keeping `deploy/computer/archive_check.py::problems` unchanged.
-Its same-scope link and file-type restrictions protect root extraction; adding
-exceptions for arbitrary external symlinks would weaken that real boundary.
-Banning venvs or browsers would contradict computer use. Instead extend the
-existing `deploy/computer/nora-computer` exclusion mechanism
-(`backup_in_vm`, shell function at line 360), not the scope syntax or archive format:
+Choose **archive every regular file; omit only unsafe symlinks and
+sockets/FIFOs**, keeping `deploy/computer/archive_check.py::problems` unchanged.
+This replaces the earlier installer-manifest classification and refusal of user
+files inside venvs. Rebuild hints do not authorise omitting regular files.
+Extend the existing `deploy/computer/nora-computer` backup preparation
+(`backup_in_vm`, shell function at line 360), not archive_check's trust boundary:
 
-- Environment metadata and rebuild instructions alone do not make a whole
-  venv disposable. Require a source-to-archive inventory of **every path**,
-  including hidden files and symlink text, before exclusions. Each source path
-  must be accounted for by a matching archived entry or an explicit omission
-  with its evidence/rebuild rule in the private backup receipt; reconcile that
-  inventory against the actual archive. A missing/unclassified path is a failed
-  backup, not an excluded directory.
-- Archive identified environment configuration/metadata unchanged; its presence
-  alone authorises no exclusion of other contents. Within a venv, omit only
-  files the environment's own installer manifest attributes to installed
-  packages, known interpreter links, or identified
-  regenerable caches. Verify manifest attribution against the installed file's
-  recorded content where available; edited, mismatching or unverifiable package
-  files are not proven disposable. Do not trust a guessed directory name or
-  arbitrarily dereference a link as root. Require dependency/rebuild instructions
-  for omitted installed state; absent instructions refuse the backup. **Any
-  unaccounted file inside the venv, including a user-authored file, refuses the backup**
-  rather than disappearing behind a whole-directory exclusion. Retain that
-  working file and the previous verified backup; operator reconciliation can
-  move user work outside the environment before a fresh attempt.
-- Normal backups already exclude the top-level scope browser directory.
-  Archives that do include browser data, such as cutover rollback archives,
-  must be taken after browser shutdown and omit only regenerable Chrome
-  singleton/socket artifacts. Preserve profile data privately. Exclude runtime
-  sockets under `.tmp/` from backups after checking they carry no user data;
-  migration still requires drained processes and explicit relocation of stale
-  sockets before its existing snapshot, never a silent planner bypass.
-- These are archive exclusions, not permission to delete working files or
-  overwrite the old backup. The source-to-archive inventory must account for
-  every omitted venv, browser and socket path, with explicit evidence for the
-  applicable exclusion (normal backup's entire browser subtree is already an
-  intentional credential-store exclusion). An unknown artifact or failed
-  classification/check is an error. Retain the previous verified backup on
-  failure.
+- Inventory every path in each scoped workspace, including hidden files, entry
+  types, regular-file digests and exact symlink text, without following links.
+  Archive **every regular file**, including all files inside venvs and private
+  browser profiles. Preserve directories and links accepted by archive_check;
+  do not exclude whole environments, caches or browser directories. The shipped
+  backup's blanket browser exclusion is source baseline, not the repaired policy.
+  Backups containing profiles remain private credential-bearing artifacts;
+  stop browsers before a consistent profile backup.
+- Omit only symlinks rejected by archive_check's target rule (absolute targets
+  or targets resolving outside the same full scope), plus sockets and FIFOs.
+  Examples are a venv's bin/python link to a system interpreter and Chrome's
+  absolute Singleton links. Do not dereference them or copy their targets.
+  Record **each omitted path and its exact link text or socket/FIFO type** in
+  the private backup receipt. No installer manifest or package-file content
+  classification is needed. Regular files are never omission candidates.
+- Reconcile the complete source inventory against the **actual archive plus
+  receipt**: every path must be archived with matching content/type or have an
+  exact, allowed omission record. An unaccounted path, a mismatching record,
+  an omitted entry that is not a symlink/socket/FIFO, or a symlink omitted
+  despite passing the target rule fails the backup. Unsupported devices or
+  invalid hard links are errors, not new omission classes. Run unchanged
+  archive_check on the reconciled archive; its other path/link/type restrictions
+  still apply. Preserve the previous verified backup and working files on any
+  failure. Migration still requires drained processes and explicit relocation
+  of stale sockets before its existing snapshot, not a planner bypass.
+- Restore every archived regular file with its matching digest and scope owner.
+  Omitted venv interpreter links are recreated by re-running the venv tool;
+  record the original link text and that rebuild hint with the receipt. Keep
+  all archived environment/user files; the tool must not clear them. Recreate
+  browser singleton/runtime artifacts by normal process startup. Missing hints
+  or failed link reconstruction are unavailable, not proof of a complete restore.
 
 This is a **shared unit/DM follow-up**, not delivered by #164/#168 or this docs
-revision. Require one synthetic end-to-end backup/restore case with a venv whose
-interpreter links outside the scope, installer-manifest-attributed packages,
-Chrome singleton artifacts and a stale `.tmp/` socket. **Plant a user file inside
-that venv: backup must refuse, preserving the file and previous verified backup.**
-An edited/unverifiable package file or unaccounted omitted path must also refuse.
-After moving the user file into the backed-up project tree and reconciling any
-other refusal, require a successful backup as the positive control. Reconcile
-its actual archive and all omissions against the complete source inventory;
-every source path must be either archived with matching content/type or an
-explicitly justified disposable/credential exclusion. Pass unchanged
-archive_check (exit 0), restore in an isolated VM, recreate the environment and
-read the archived regular files as the new scope owner via root-entry runuser,
-checking their digests against the source inventory and runnable dependencies
-against rebuild instructions. Verify the planted user file survives at its new
-project path. Check an included private browser profile survives a rollback
-archive while normal backup still excludes it. A malicious external/cross-scope
-link outside the explicitly excluded disposable artifacts must still be refused;
-error/timeout is not a restore pass. Missing rebuild instructions, unaccounted
-paths, lost user files, failed owner reads or failure to restore blocks DM
-enablement. A successful tar alone cannot satisfy this item.
+revision. Require one synthetic end-to-end backup/restore case with an external
+venv interpreter symlink, Chrome absolute singleton links, sockets and a FIFO.
+Plant a user-authored regular file **inside the venv**: it must be archived and
+restored in place with its source digest, alongside every other regular file.
+Reconcile all source paths with actual archive entries or exact omission
+records; deliberately drop a regular file or its accounting and require backup
+failure. Omission of a regular file must fail even with a receipt entry. Pass
+unchanged archive_check (exit 0) for the valid archive and restore in an isolated
+VM; verify archived files as the new owner via root-entry runuser, recreate the
+interpreter links with the recorded venv-tool hint and confirm dependencies run.
+Verify browser profile regular files survive privately. A malicious cross-scope
+**hard link**, which is not in the omitted symlink/socket/FIFO class, must still
+fail archive_check. An unaccounted path or failed reconciliation/restore blocks
+DM enablement; a tar creation receipt alone cannot satisfy this item.
 
 Inspect actual model inputs for a frozen synthetic journey: private DM reply,
 raw-capable curation, ordinary group Cognition and group response. Confirm the
