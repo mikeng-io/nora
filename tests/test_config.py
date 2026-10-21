@@ -1817,10 +1817,15 @@ def test_the_wakes_timeout_stays_above_the_sessions_by_the_margin(toml_path):
     from nora.app.cognition_session import SESSION_TIMEOUT_MARGIN_SECONDS
 
     cfg = load(toml_path)
-    assert (
-        cfg.dreamer.budgets["cognition"].timeout_seconds
-        <= cfg.cognition.session_timeout_seconds - SESSION_TIMEOUT_MARGIN_SECONDS
-    )
+    # The example now states this key. Keep checking the omitted-key default
+    # as well, so making the example complete cannot mask a broken default.
+    for timeout in (
+        cfg.cognition.session_timeout_seconds, CognitionConfig().session_timeout_seconds,
+    ):
+        assert (
+            cfg.dreamer.budgets["cognition"].timeout_seconds
+            <= timeout - SESSION_TIMEOUT_MARGIN_SECONDS
+        )
 
 
 @pytest.mark.parametrize("key", ["max_memory_calls = 6\n", "max_tool_calls = 60\n", None])
