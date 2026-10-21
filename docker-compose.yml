@@ -89,7 +89,7 @@ services:
       # operational constraint 1 as signal-cli above: BuildKit's default
       # bridge cannot resolve deb.debian.org on this host (systemd-resolved
       # stub 127.0.0.53), and this Dockerfile's `apt-get install curl` (the
-      # healthcheck below curls /health; node:20-slim ships NO curl — the
+      # healthcheck below curls /health; node:24-trixie-slim ships NO curl — the
       # design review's B1) would otherwise stall/fail the build.
       network: host
     image: whatsapp-bridge:0.1.0
