@@ -11,7 +11,7 @@
   "file": "nora/engagement/debrief_render.py",
   "old": "    return _stamp(ContextBlock(\n        name=\"standing_prior\",\n        attrs=((\"written\", age(\n            prior.updated_at, datetime.fromtimestamp(now_ms / 1000, tz=UTC),\n        )),),\n        body=escape(prior.body.strip()),\n    ))",
   "new": "    return _stamp(ContextBlock(\n        name=\"standing_prior\",\n        body=escape(prior.body.strip()),\n    ))",
-  "target": "tests/unit/test_debrief_render.py -k the_rollup_prior_carries_when_it_was_written_against_now_ms"
+  "target": "tests/unit/test_debrief_render.py -k the_prior_carries_when_it_was_written_against_the_turns_time"
  },
  {
   "name": "standing-compact §2: the tag path's age is against the TURN, not the wall clock",
