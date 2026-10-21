@@ -51,9 +51,10 @@ is doctrine, never that tier.)
 - **person** — a human being. Identified by **`person_id`** (`miles_novak`), which
   is stable, operator-assigned, and is also their Honcho peer id (A2, DEC-14).
 - **`PersonRef`** — the resolved record: person_id, name, first/last, aliases.
-- **platform account** — one platform login, always spelled out this way and
-  never bare "account" (`design/cognition-loop/10-tiers.md` §6 gives "account"
-  to a Character row's body instead). **One person may hold several** (DEC-14);
+- **platform account** — one platform login, always spelled out this way.
+  "Account" is now only for platform accounts, never a Character entry
+  ([ADR 0026](docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md)).
+  **One person may hold several** (DEC-14);
   the Ridgeline room holds three platform accounts and two people, one of whom
   is Nora.
 - **alias** — a nickname the *operator* wrote in `identity.toml` (阿豹妹,
@@ -366,18 +367,26 @@ no entry.
   the fire-turn *occasion* — that is code `Event` (`nora.domain.events.Event`,
   DEC-139, see *occasion* below), a different thing with the same English
   word. Written by the Cognition adaptor and the tag path until the cut-over, then by the Cognition adaptor alone (DEC-249).
-- **Character** — what a **person**, a **room** (culture's new home, above),
-  the **unit** or **Nora** is like and how it behaves. **account** is the
-  body of one Character row — always "platform account" for a login (the
-  *platform account* entry above). Written only by the Character sessions,
-  through `character_revise`. Built as DEC-290 (design/self-growth/10): ONE
-  Dreamer session per (unit, entity), stored in the `culture` chain under four
-  key shapes: a room's `primary_id`, `{unit}#character:{person_id}`,
-  `{unit}#unit` and `{unit}#nora`.
-  - **person session** (`character-person`) — one person's account in one
+- **Character** — the Notebook tier for a **person**, a **room** (culture's
+  home, above), the **unit** or **Nora**. One row is an **entry**, a judgement
+  with **profile** (who they are), **traits** (what they are like) and
+  **hypotheses** (why), using **told / deduced / induced / abduced** modes.
+  "Account" is now only for platform accounts.
+  [ADR 0026](docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md)
+  records the naming and deferred code rename. Today `character-*` writes live
+  prose through `character_revise`, while `persona-*` writes shadow typed
+  lines through `persona_write`, with `persona-verdict` judging hypotheses.
+  The target is **one `character-*` adaptor family** (person, room, unit,
+  nora, verdict) writing typed profile/traits/hypotheses lines; the prose
+  adaptors retire at the switch. The existing live prose implementation
+  below was built as DEC-290 (design/self-growth/10): one Dreamer session per
+  (unit, entity), stored in the `culture` chain under four key shapes:
+  a room's `primary_id`, `{unit}#character:{person_id}`, `{unit}#unit` and
+  `{unit}#nora`.
+  - **person session** (`character-person`) — one person's entry in one
     unit, woken by `[culture] person_wake_batch` (100) of their messages across
     the unit's rooms or the stale rule. Handed their newest messages, the
-    unit's CITED room cultures and its previous account; memory is a tool
+    unit's CITED room cultures and its previous entry; memory is a tool
     (`ask_memory`, `search_memory`), never a pre-fetch and never a citation.
     Renders as `<character>` in the rooms of the unit that list the person.
   - **unit session** (`character-unit`) — what the unit is across its rooms,
@@ -393,8 +402,12 @@ no entry.
     checks the body (non-empty, within the cap, the R-18/R-28 screen) and that
     every citation is a Record row id the session was shown or a
     `response:<id>` episode it was shown; a refusal names its reason. **`character_no_change`**
-    closes an entity with its account unchanged. A session that settles
+    closes an entity with its entry unchanged. A session that settles
     neither holds its batch and is given up on the third try.
+- **Persona (retired term)** — use **Character** for the tier, **person** for
+  the kind and **entry** for one row. See
+  [ADR 0026](docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md),
+  restoring DEC-29's rejection of "persona" (see **Doctrine**).
 - **Lessons** — what Nora has learned about how to act in a unit: short
   prescriptive lines, each with the outcomes that taught it. Written only by
   the Lessons adaptor, through `lesson_write`/`lesson_retire`; a session that

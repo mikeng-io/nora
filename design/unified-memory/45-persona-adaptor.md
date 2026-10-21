@@ -1,5 +1,7 @@
 # The Persona adaptor: schema, reasoning modes, writes and curation
 
+> 2026-10-21 (ADR 0026): "Persona" is retired. The Character tier has person, room, unit and Nora kinds; one row is an entry with profile, traits and hypotheses parts. The target is one typed-line `character-*` adaptor family, retiring the prose adaptors at the switch. Code renaming is deferred to one migration PR before step 8; the body below preserves the earlier vocabulary. See [ADR 0026](../../docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md).
+
 Status: **built in shadow**, amended 2026-10-19 by [75](75-typed-identity.md).
 The live render switch remains subject to historical coverage and reply acceptance. **Amended 2026-10-15 (operator)** on an audit:
 line-to-line citations become links (§3), hypotheses are graded by something
