@@ -201,13 +201,28 @@ plan for explicit operator mapping. No default unit is guessed.
 ```bash
 VM=(sbx exec -u root nora-computer /opt/computerd/venv/bin/python /opt/computerd/migrate_unit_scope.py)
 "${VM[@]}" inventory > "$D/inventory.json"
-# Read POSTGRES_PASSWORD from the runtime .env through Compose's dotenv loader.
+# Read only POSTGRES_PASSWORD from the runtime .env. It never resolves the whole
+# compose file, so an unrelated missing required variable cannot abort the step
+# after admission has stopped, and the value is never echoed.
 # Capture its output; never echo the password or turn shell tracing back on.
 set +x
-POSTGRES_PASSWORD=$(env -u POSTGRES_PASSWORD docker compose --env-file "$RUNTIME/.env" config --format json | python3 -c '
-import json,sys
-print(json.load(sys.stdin)["services"]["db"]["environment"]["POSTGRES_PASSWORD"])
-')
+POSTGRES_PASSWORD=$(python3 - "$RUNTIME/.env" <<'PY'
+import shlex, sys
+vals = []
+for line in open(sys.argv[1], encoding="utf-8"):
+    line = line.strip()
+    if line.startswith("export "):
+        line = line[len("export "):].lstrip()
+    if line.startswith("POSTGRES_PASSWORD="):
+        vals.append(line.split("=", 1)[1])
+if len(vals) != 1:
+    sys.exit("expected exactly one POSTGRES_PASSWORD in the runtime .env")
+parts = shlex.split(vals[0])
+if len(parts) != 1 or not parts[0]:
+    sys.exit("POSTGRES_PASSWORD is empty or malformed")
+print(parts[0])
+PY
+)
 test -n "$POSTGRES_PASSWORD"
 migration_host() {
     docker run --rm --network "$NORA_NETWORK" --user "$(id -u):$(id -g)" \
