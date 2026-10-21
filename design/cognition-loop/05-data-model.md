@@ -14,6 +14,8 @@ edges:
 
 # 05 · Data model
 
+> 2026-10-21 (ADR 0026): Layer › Tier › Kind › Entry stays canonical. Character keeps person, room, unit and Nora kinds; its entries have profile, traits and hypotheses parts, and "account" now means only platform account. "Persona" is retired; one typed-line `character-*` writer family is the target, with the code rename deferred to one migration PR before the prompt switch. The body below is preserved. See [ADR 0026](../../docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md).
+
 > 2026-10-03 (DEC-277): the shadow period is over. The Cognition session writes live (`[cognition] enabled`) and is the one background writer of notes, events, Standing and her reminders. The clocked note/proactive adaptors, the shadow machinery and `[cognition] mode` / `session_mode` / `shadow_session_seconds` named here are deleted; wording below that describes them is the plan as written, not current behaviour. See `70-migration.md`.
 
 
