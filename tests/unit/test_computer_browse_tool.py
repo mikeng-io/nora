@@ -17,7 +17,7 @@ import pytest
 
 from nora.agent.room import Room
 from nora.agent.tools import build_tool_specs
-from nora.domain.computer import BrowseOutcome, ComputerToolSettings, computer_scope
+from nora.domain.computer import BrowseOutcome, ComputerToolSettings, computer_unit_scope
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.testing import (
@@ -46,6 +46,7 @@ def _browse(persons, *, browser, computer=True, events=None, settings=None):
         persons=persons, self_ids=frozenset({"+85290000100"}),
     )
     specs = build_tool_specs(
+        unit_for=lambda platform, cid: cid,
         store=None, conversation_id=GROUP, conversation_type="group",
         persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
         room=room, transit_source=None,
@@ -67,7 +68,7 @@ async def test_the_task_runs_in_this_rooms_browser(persons):
     runner = FakeBrowserRunner()
     call = _browse(persons, browser=runner)
     await call(objective="find the opening hours", start_url="https://example.com")
-    assert runner.calls == [(computer_scope("signal", GROUP), "find the opening hours",
+    assert runner.calls == [(computer_unit_scope(GROUP), "find the opening hours",
                              "https://example.com")]
 
 
@@ -133,7 +134,7 @@ async def test_every_call_is_audited_and_the_answer_stored(persons):
     assert finished.status == "ok"
     assert finished.result["steps"] == 4 and finished.result["url"] == "https://example.com"
     assert "answer" in finished.output_ref
-    assert finished.scope == computer_scope("signal", GROUP)
+    assert finished.scope == computer_unit_scope(GROUP)
 
 
 async def test_an_off_call_is_audited_too(persons):

@@ -188,6 +188,12 @@ class ComputerEventStore(Protocol):
         shape, so a fake clock needs no special-casing."""
         ...
 
+    async def for_scope(
+        self, *, scope: str, since: datetime, limit: int,
+    ) -> list[ComputerEvent]:
+        """Recent audit rows for a bound unit workspace; origin stays unchanged."""
+        ...
+
     async def for_session(self, *, session_id: UUID, limit: int) -> list[ComputerEvent]:
         """The newest `limit` rows of one computer session, newest first:
         what a session's progress is derived from (`derive_progress`)."""

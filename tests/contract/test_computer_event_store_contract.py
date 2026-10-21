@@ -223,3 +223,15 @@ async def test_recent_can_be_narrowed_to_one_platform(store):
                               platform="discord")
     assert [r.platform for r in rows] == ["discord"]
     assert len(await store.recent(conversation_id="conv-1", since=EPOCH, limit=10)) == 2
+
+
+async def test_scope_read_spans_transports_without_rewriting_origin_or_leaking_another_unit(store):
+    signal = _event(scope='a' * 32)
+    discord = _event(scope='a' * 32, platform='discord', conversation_id='discord-room')
+    other = _event(scope='b' * 32)
+    for event in (signal, discord, other):
+        await store.append(event)
+    rows = await store.for_scope(scope='a' * 32, since=EPOCH, limit=20)
+    assert {r.id for r in rows} == {signal.id, discord.id}
+    assert {(r.platform, r.conversation_id) for r in rows} == {
+        ('signal', 'conv-1'), ('discord', 'discord-room')}

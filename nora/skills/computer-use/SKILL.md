@@ -10,7 +10,7 @@ description: >-
 
 # Working on your computer
 
-Your computer is a machine of your own, one workspace per room, that keeps
+Your computer is a machine of your own, one shared workspace per group unit, that keeps
 its files between turns. The `<computer>` block tells you what is on it now:
 open tasks, running jobs, recent files and commands, and the links you made.
 Read it before you start, so you continue work instead of redoing it.

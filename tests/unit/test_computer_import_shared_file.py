@@ -34,7 +34,7 @@ import pytest
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.agent.tools import _COMPUTER_BUSY_LIVE, _COMPUTER_OFF, NATIVE_TOOLS, build_tool_specs
-from nora.domain.computer import ComputerToolSettings, computer_scope
+from nora.domain.computer import ComputerToolSettings, computer_unit_scope
 from nora.domain.computer_leases import ComputerLeases
 from nora.domain.external_files import file_refs_in
 from nora.domain.media import MediaBlob
@@ -115,7 +115,7 @@ class _Computer:
     def files(self) -> dict[str, bytes]:
         if self.runtime is None:
             return {}
-        return self.runtime.files_by_scope.get(computer_scope("signal", GROUP), {})
+        return self.runtime.files_by_scope.get(computer_unit_scope(GROUP), {})
 
     def rows(self) -> list:
         return [e for e in self.events.events if e.tool == "computer_import"]
@@ -136,6 +136,7 @@ def _tools(source, computer: _Computer, store=None, blobs=None) -> dict:
     room = Room(platform="signal", conversation_id=GROUP, roster_source=None,
                 persons=_NoPersons())
     specs = build_tool_specs(
+        unit_for=lambda platform, cid: cid,
         store=store or FakeRecordStore(), conversation_id=GROUP, conversation_type="group",
         persons=_NoPersons(), honcho=None, deliverer=None, metrics=Metrics(),
         room=room, transit_source=None, blob_store=blobs or FakeBlobStore(),

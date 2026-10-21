@@ -1547,6 +1547,7 @@ async def build_dependencies(
                 lapsed_visible=timedelta(hours=cfg.computer.sessions.lapsed_visible_hours),
             ),
             clock=lambda: datetime.now(UTC), metrics=metrics,
+            unit_for=_note_unit_of(allowlist),
         )
     # The durable half of the reasoning-strip counter (`reasoning_strip_log`,
     # ADR 0013), REUSING `engine` for the same reason the three stores above do.

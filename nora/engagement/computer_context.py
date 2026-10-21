@@ -30,7 +30,7 @@ import time
 from collections.abc import Callable
 from datetime import datetime, timedelta
 
-from nora.domain.computer import SandboxStatus, StateResult, anything_running, computer_scope
+from nora.domain.computer import SandboxStatus, StateResult, anything_running, computer_unit_scope
 from nora.domain.computer_context import (
     ComputerContextCaps,
     ComputerView,
@@ -65,8 +65,10 @@ class ComputerContextReader:
         self, *, sessions: ComputerSessionStore, events: ComputerEventStore,
         runtime: SandboxRuntime, caps: ComputerContextCaps,
         clock: Callable[[], datetime], metrics: object,
+        unit_for: Callable[[str, str], str | None] | None = None,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
+        self._unit_for = unit_for
         self._sessions = sessions
         self._events = events
         self._runtime = runtime
@@ -111,15 +113,18 @@ class ComputerContextReader:
             return None
 
     async def _read(self, platform: str, conversation_id: str) -> ComputerView | None:
+        unit = self._unit_for(platform, conversation_id) if self._unit_for else None
+        if not unit:
+            return None
+        scope = computer_unit_scope(unit)
         now = self._clock()
         caps = self._caps
-        rows = await self._events.recent(
-            conversation_id=conversation_id, since=now - timedelta(days=caps.active_days),
-            limit=EVENTS_READ, platform=platform,
+        rows = await self._events.for_scope(
+            scope=scope, since=now - timedelta(days=caps.active_days), limit=EVENTS_READ,
         )
         used = any(r.actor != "sweeper" for r in rows)
-        sessions = await self._sessions.for_room(
-            platform=platform, conversation_id=conversation_id, limit=SESSIONS_READ,
+        sessions = await self._sessions.for_scope(
+            scope=scope, limit=SESSIONS_READ,
         )
         open_rows = [s for s in sessions if s.status != EXPIRED]
         lapsed_rows = [
@@ -129,7 +134,7 @@ class ComputerContextReader:
         ]
         if not used and not open_rows and not lapsed_rows:
             return None
-        state = await self._state(computer_scope(platform, conversation_id))
+        state = await self._state(scope)
         machine_read = state is not None
         tmux = state.tmux if state is not None else None
         processes = state.processes if state is not None else None

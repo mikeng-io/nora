@@ -36,7 +36,7 @@ from nora.doctrine.loader import DoctrineStore
 from nora.domain.computer import (
     BytesResult,
     ComputerToolSettings,
-    computer_scope,
+    computer_unit_scope,
 )
 from nora.domain.computer_exports import sniff_export_type
 from nora.domain.media import MediaBlob, resolve_room_media
@@ -86,7 +86,7 @@ class _World:
         self.metrics = Metrics()
 
     def put(self, conversation_id: str, path: str, data: bytes) -> None:
-        scope = computer_scope("signal", conversation_id)
+        scope = computer_unit_scope(conversation_id)
         self.runtime.files_by_scope.setdefault(scope, {})[path] = data
 
     def rows(self, tool: str) -> list:
@@ -104,6 +104,7 @@ def _tools(world: _World, persons, *, conversation_id: str = GROUP, fire_turn: b
         persons=persons, self_ids=frozenset({"+85290000100"}),
     )
     specs = build_tool_specs(
+        unit_for=lambda platform, cid: cid,
         store=world.records, conversation_id=conversation_id, conversation_type="group",
         persons=persons, honcho=None, deliverer=deliverer, metrics=world.metrics,
         room=room, transit_source=None, blob_store=world.blobs, fire_turn=fire_turn,
@@ -483,6 +484,7 @@ async def test_an_export_with_the_computer_off_is_still_two_rows(persons):
     room = Room(platform="signal", conversation_id=GROUP,
                 roster_source=FakeRosterSource(groups={GROUP: ()}), persons=persons)
     specs = build_tool_specs(
+        unit_for=lambda platform, cid: cid,
         store=None, conversation_id=GROUP, conversation_type="group", persons=persons,
         honcho=None, deliverer=None, metrics=Metrics(), room=room, transit_source=None,
         computer=None, computer_events=world.events, computer_exports=world.exports,
@@ -572,7 +574,7 @@ async def test_import_copies_a_sent_file_into_the_inbox(persons):
     out = await _tools(world, persons)["computer_import"](code=f"[file {key[:6]}]")
     assert out["status"] == "ok"
     assert out["path"] == f"inbox/{key[:12]}.csv"
-    scope = computer_scope("signal", GROUP)
+    scope = computer_unit_scope(GROUP)
     assert world.runtime.files_by_scope[scope][out["path"]] == b"a,b\n1,2\n"
     _, finished = _two_rows(world, "computer_import")
     assert (finished.status, finished.result["path"]) == ("ok", out["path"])
@@ -588,7 +590,7 @@ async def test_import_writes_only_under_inbox_whatever_the_name_says(persons, fi
     key = await _sent_in_room(world, b"hello", media_type="text/plain", filename=filename)
     out = await _tools(world, persons)["computer_import"](code=key[:6])
     assert out["status"] == "ok"
-    written = set(world.runtime.files_by_scope[computer_scope("signal", GROUP)])
+    written = set(world.runtime.files_by_scope[computer_unit_scope(GROUP)])
     assert written == {out["path"]}
     assert out["path"].startswith("inbox/")
     assert "/" not in out["path"].removeprefix("inbox/")

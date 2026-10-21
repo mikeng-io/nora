@@ -29,7 +29,7 @@ from nora.domain.computer import (
     ComputerToolSettings,
     RunResult,
     SandboxStatus,
-    computer_scope,
+    computer_unit_scope,
 )
 from nora.domain.models import PersonRef
 from nora.obs.logging import bind_tag_id, clear_tag_id
@@ -71,6 +71,7 @@ def _tools(persons, *, computer=None, events=None, settings=None, metrics=None,
         persons=persons, self_ids=frozenset({"+85290000100"}), tagger=tagger,
     )
     specs = build_tool_specs(
+        unit_for=lambda platform, cid: cid,
         store=None, conversation_id=conversation_id, conversation_type="group",
         persons=persons, honcho=None, deliverer=None,
         metrics=metrics if metrics is not None else Metrics(),
@@ -114,14 +115,14 @@ async def test_the_workspace_is_the_turns_room_and_the_model_cannot_move_it(pers
     await here["computer_write"](path="a.txt", content="mine")
     await there["computer_write"](path="a.txt", content="theirs")
     with pytest.raises(TypeError):
-        await here["computer_run"](command="ls", scope=computer_scope("signal", OTHER_GROUP))
+        await here["computer_run"](command="ls", scope=computer_unit_scope(OTHER_GROUP))
 
-    assert runtime.files_by_scope[computer_scope("signal", GROUP)]["a.txt"] == b"mine"
-    assert runtime.files_by_scope[computer_scope("signal", OTHER_GROUP)]["a.txt"] == b"theirs"
+    assert runtime.files_by_scope[computer_unit_scope(GROUP)]["a.txt"] == b"mine"
+    assert runtime.files_by_scope[computer_unit_scope(OTHER_GROUP)]["a.txt"] == b"theirs"
     read = await here["computer_read"](path="a.txt")
     assert read["content"] == "mine"
     assert {e.scope for e in events.events if e.conversation_id == GROUP} == {
-        computer_scope("signal", GROUP),
+        computer_unit_scope(GROUP),
     }
 
 
@@ -237,7 +238,7 @@ async def test_write_then_edit_then_read_round_trips(persons):
 async def test_a_binary_file_comes_back_without_content(persons):
     runtime = FakeSandboxRuntime()
     tools = _tools(persons, computer=runtime, events=FakeComputerEventStore())
-    runtime.files_by_scope[computer_scope("signal", GROUP)] = {"img.png": b"\x89PNG\xff\xfe"}
+    runtime.files_by_scope[computer_unit_scope(GROUP)] = {"img.png": b"\x89PNG\xff\xfe"}
     out = await tools["computer_read"](path="img.png")
     assert out["status"] == "ok"
     assert out["binary"] is True
@@ -293,7 +294,7 @@ async def test_the_audit_row_records_who_when_how_and_what(persons):
     # who
     assert (row.actor, row.requester_person_id, row.tag_id) == ("tag", "miles", "tag-42")
     assert (row.platform, row.conversation_id, row.conversation_type) == ("signal", GROUP, "group")
-    assert row.scope == computer_scope("signal", GROUP)
+    assert row.scope == computer_unit_scope(GROUP)
     # when
     assert start.started_at == row.started_at <= row.finished_at <= row.created_at
     # how

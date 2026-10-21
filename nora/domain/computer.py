@@ -1,5 +1,5 @@
 """Nora's computer: the result types of `SandboxRuntime` and the
-one rule that turns a room into a workspace.
+scope keys for the unit workspace and legacy room migration.
 
 Every result carries a `status` in R-27's vocabulary plus `denied`:
 
@@ -68,10 +68,16 @@ class ComputerCallObserver(Protocol):
 
 
 def computer_scope(platform: str, conversation_id: str) -> str:
-    """The workspace key for one room: a hash, so no platform id ever reaches
-    the VM, and chosen by Nora's code from the turn, never by the model."""
+    """Legacy room hash, retained only for migration and historical provenance.
+    Group turns use computer_unit_scope; no raw platform ID reaches the VM.
+    """
     digest = hashlib.sha256(f"{platform}:{conversation_id}".encode()).hexdigest()
     return digest[:32]
+
+
+def computer_unit_scope(unit: str) -> str:
+    """Opaque group workspace key, from the exact policy unit name."""
+    return hashlib.sha256(f"unit:{unit}".encode()).hexdigest()[:32]
 
 
 @dataclass(frozen=True)

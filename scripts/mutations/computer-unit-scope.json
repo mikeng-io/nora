@@ -1,0 +1,23 @@
+[
+  {
+    "name": "unit key uses the exact domain prefix",
+    "file": "nora/domain/computer.py",
+    "old": "return hashlib.sha256(f\"unit:{unit}\".encode()).hexdigest()[:32]",
+    "new": "return hashlib.sha256(unit.encode()).hexdigest()[:32]",
+    "target": "tests/unit/test_computer_unit_scope.py::test_the_unit_key_hashes_the_exact_domain_prefixed_policy_name"
+  },
+  {
+    "name": "sessions cannot split the unit lease",
+    "file": "nora/domain/computer_leases.py",
+    "old": "    return scope_key(scope)\n",
+    "new": "    return session_key(session_id) if session_id is not None else scope_key(scope)\n",
+    "target": "tests/unit/test_computer_unit_scope.py::test_different_sessions_in_one_unit_cannot_split_the_lease"
+  },
+  {
+    "name": "no source retirement after a destination digest mismatch",
+    "file": "deploy/computer/migrate_unit_scope.py",
+    "old": "if _read(root, [new, \"rooms\", old], ids) != document[\"sources\"][old]:\n            raise ValueError(f\"destination changed: {old}\")",
+    "new": "if False:\n            raise ValueError(f\"destination changed: {old}\")",
+    "target": "tests/infra/computer/test_unit_scope_migration.py::test_corrupt_destination_never_retires_sources"
+  }
+]

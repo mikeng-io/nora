@@ -1733,9 +1733,9 @@ class ComputeBackend(Protocol):
 
 @runtime_checkable
 class BrowserRunner(Protocol):
-    """A whole browser task done for Nora by a sub-agent in this room's browser:
+    """A whole browser task done for Nora by a sub-agent in this unit's browser:
     one call in, one `BrowseOutcome` out, however many page actions happen in
-    between. `scope` is `computer_scope(...)`, chosen by Nora's code. It never raises: every
+    between. `scope` is `computer_unit_scope(...)`, chosen by Nora's code. It never raises: every
     failure is an outcome with status `unavailable` and a reason."""
 
     async def browse(self, *, scope: str, objective: str,
@@ -1750,7 +1750,7 @@ class SandboxRuntime(Protocol):
     `FakeSandboxRuntime` is its in-memory twin, and both pass
     `tests/contract/test_sandbox_runtime_contract.py`.
 
-    `scope` is `nora.domain.computer.computer_scope(platform, conversation_id)`,
+    `scope` is `nora.domain.computer.computer_unit_scope(unit)`,
     derived by Nora's code from the turn, never chosen by the model. Paths are
     relative to that scope's directory.
 

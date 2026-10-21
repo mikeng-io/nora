@@ -24,7 +24,7 @@ import pytest
 
 from nora.agent.room import Room
 from nora.agent.tools import build_tool_specs
-from nora.domain.computer import ComputerToolSettings, RunResult, SandboxStatus, computer_scope
+from nora.domain.computer import ComputerToolSettings, RunResult, SandboxStatus, computer_unit_scope
 from nora.domain.computer_leases import ComputerLeases
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
@@ -37,7 +37,7 @@ from nora.testing import (
 )
 
 GROUP = "g-sessions"
-SCOPE = computer_scope("signal", GROUP)
+SCOPE = computer_unit_scope(GROUP)
 
 
 @pytest.fixture
@@ -64,6 +64,7 @@ def _tools(persons, *, runtime, events, sessions, leases=None, question="",
         persons=persons, self_ids=frozenset({"+85290000100"}),
     )
     specs = build_tool_specs(
+        unit_for=lambda platform, cid: cid,
         store=None, conversation_id=GROUP, conversation_type="group",
         persons=persons, honcho=None, deliverer=None,
         metrics=metrics if metrics is not None else Metrics(),
