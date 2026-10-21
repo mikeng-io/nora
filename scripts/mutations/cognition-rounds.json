@@ -86,8 +86,8 @@
  {
   "name": "a cognition block with a call ceiling loads (silently inert)",
   "file": "nora/config.py",
-  "old": "        if stale:\n            raise ValueError(\n                f\"[dreamer.budgets.cognition] sets",
-  "new": "        if False:\n            raise ValueError(\n                f\"[dreamer.budgets.cognition] sets",
+  "old": "        if stale:\n            raise ValueError(\n                '[dreamer.budgets.cognition] sets <value>: a Cognition session has'",
+  "new": "        if False:\n            raise ValueError(\n                '[dreamer.budgets.cognition] sets <value>: a Cognition session has'",
   "target": "tests/test_config.py::test_a_cognition_block_that_sets_a_call_ceiling_refuses_to_load"
  },
  {

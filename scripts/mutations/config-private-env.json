@@ -2,15 +2,15 @@
   {
     "name": "config validation error cannot stringify private Pydantic input",
     "file": "nora/config.py",
-    "old": "raise ConfigError(rules) from None",
-    "new": "raise ConfigError(str(exc)) from None",
+    "old": "    except ValidationError as exc:\n        raise ConfigError(\n            f'{path}'\n            ': config.validation: '\n            f'{validation_summary(exc, Config, data)}'\n        ) from None",
+    "new": "    except ValidationError as exc:\n        raise ConfigError(str(exc)) from None",
     "target": "tests/unit/test_config_private_env.py::test_config_never_echoes_unknown_keys_or_parser_errors"
   },
   {
     "name": "policy validation error cannot stringify private Pydantic input",
     "file": "nora/policy.py",
-    "old": "except ValidationError:\n        raise PolicyError(\"policy: schema\") from None",
-    "new": "except ValidationError as exc:\n        raise PolicyError(str(exc)) from None",
+    "old": "    except ValidationError as exc:\n        raise PolicyError(f\"{path}: policy: {validation_summary(exc, _PolicyFile, data)}\") from None",
+    "new": "    except ValidationError as exc:\n        raise PolicyError(str(exc)) from None",
     "target": "tests/unit/test_config_private_env.py::test_policy_never_echoes_keys_values_or_toml_errors"
   },
   {
