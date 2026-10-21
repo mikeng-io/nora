@@ -1846,7 +1846,8 @@ class FakeComputerEventStore:
     still answer. `(operation_id, phase)` is unique, as in the table.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, sessions: FakeComputerSessionStore | None = None) -> None:
+        self._sessions = sessions
         self.events: list[ComputerEvent] = []
         self.fail: set[str] = set()
         # Set to an unset `asyncio.Event` to make a `finished` append wait on
@@ -1873,6 +1874,16 @@ class FakeComputerEventStore:
     def finished(self) -> list[ComputerEvent]:
         """The `finished` rows, in order: what a test asserts outcomes on."""
         return [e for e in self.events if e.phase == "finished"]
+
+    async def for_scope(
+        self, *, scope: str, since: datetime, limit: int,
+    ) -> list[ComputerEvent]:
+        scopes = {scope}
+        if self._sessions is not None:
+            scopes.update(s.scope for s in self._sessions.sessions.values()
+                          if s.workspace_scope == scope)
+        rows = [e for e in self.events if e.scope in scopes and e.created_at >= since]
+        return sorted(rows, key=lambda e: e.created_at, reverse=True)[:limit]
 
     async def for_session(self, *, session_id: UUID, limit: int) -> list[ComputerEvent]:
         rows = [e for e in self.events if e.session_id == session_id]
@@ -1914,8 +1925,10 @@ class FakeComputerSessionStore:
     ) -> tuple[ComputerSession, bool] | None:
         self._check()
         now = ensure_utc_event(now, field="now")
-        for sid, s in self.sessions.items():
-            if s.scope == scope and s.status == OPEN:
+        for sid, s in sorted(self.sessions.items(),
+                             key=lambda item: (item[1].last_activity_at, item[0].int),
+                             reverse=True):
+            if s.workspace_scope == scope and s.status == OPEN:
                 touched = replace(s, updated_at=max(s.updated_at, now),
                                   last_activity_at=max(s.last_activity_at, now))
                 self.sessions[sid] = touched
@@ -1936,13 +1949,13 @@ class FakeComputerSessionStore:
                       key=lambda s: s.last_activity_at)
         return rows[:limit]
 
-    async def for_room(
-        self, *, platform: str, conversation_id: str, limit: int,
+    async def for_scope(
+        self, *, scope: str, limit: int,
     ) -> list[ComputerSession]:
         self._check()
         rows = sorted(
             (s for s in self.sessions.values()
-             if s.platform == platform and s.conversation_id == conversation_id),
+             if s.workspace_scope == scope),
             key=lambda s: s.last_activity_at, reverse=True,
         )
         return rows[:limit]

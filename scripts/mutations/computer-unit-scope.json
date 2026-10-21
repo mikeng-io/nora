@@ -1,0 +1,37 @@
+[
+  {
+    "name": "unit key uses the exact domain prefix",
+    "file": "nora/domain/computer.py",
+    "old": "return hashlib.sha256(f\"unit:{unit}\".encode()).hexdigest()[:32]",
+    "new": "return hashlib.sha256(unit.encode()).hexdigest()[:32]",
+    "target": "tests/unit/test_computer_unit_scope.py::test_the_unit_key_hashes_the_exact_domain_prefixed_policy_name"
+  },
+  {
+    "name": "sessions cannot split the unit lease",
+    "file": "nora/domain/computer_leases.py",
+    "old": "    return scope_key(scope)\n",
+    "new": "    return session_key(session_id) if session_id is not None else scope_key(scope)\n",
+    "target": "tests/unit/test_computer_unit_scope.py::test_different_sessions_in_one_unit_cannot_split_the_lease"
+  },
+  {
+    "name": "no source retirement after a destination digest mismatch",
+    "file": "deploy/computer/migrate_unit_scope.py",
+    "old": "if _read(root, [new, \"rooms\", old], ids) != document[\"sources\"][old]:\n            raise ValueError(f\"destination changed: {old}\")",
+    "new": "if False:\n            raise ValueError(f\"destination changed: {old}\")",
+    "target": "tests/infra/computer/test_unit_scope_migration.py::test_corrupt_destination_never_retires_sources"
+  },
+  {
+    "name": "fresh plans cannot omit a source quarantined before its journal update",
+    "file": "deploy/computer/migrate_unit_scope.py",
+    "old": "        if \".unit-migration-sources\" in os.listdir(fd):\n            quarantine = os.open(\".unit-migration-sources\", DIR, dir_fd=fd)\n            try:\n                if os.listdir(quarantine):\n                    raise ValueError(\"quarantined sources require original plan/journal reconciliation\")\n            finally:\n                os.close(quarantine)\n",
+    "new": "",
+    "target": "tests/infra/computer/test_unit_scope_migration.py::test_interrupted_retirement_blocks_fresh_inventory_and_plan"
+  },
+  {
+    "name": "verified quarantine retirement removes sources before normal backups resume",
+    "file": "deploy/computer/migrate_unit_scope.py",
+    "old": "    if action == \"retire-quarantine\":\n        root_fd = os.open(root, DIR)\n        try:\n            if \".unit-migration-sources\" in os.listdir(root_fd):\n                quarantine = os.open(\".unit-migration-sources\", DIR, dir_fd=root_fd)\n                try:\n                    sources = os.listdir(quarantine)\n                    if set(sources) - set(state[\"retired\"]):\n                        raise ValueError(\"quarantined source is not accounted for in journal\")\n                    # Check every entry before deleting any; destinations were verified above.\n                    for old in sources:\n                        expected = document[\"sources\"][old]\n                        if _read(root, [\".unit-migration-sources\", old]) != expected:\n                            raise ValueError(f\"quarantined source changed: {old}\")\n                    for old in sources:\n                        shutil.rmtree(old, dir_fd=quarantine)\n                    if os.listdir(quarantine):\n                        raise ValueError(\"quarantine retirement incomplete\")\n                finally:\n                    os.close(quarantine)\n                os.rmdir(\".unit-migration-sources\", dir_fd=root_fd)\n            if \".unit-migration-sources\" in os.listdir(root_fd):\n                raise ValueError(\"quarantine retirement incomplete\")\n        finally:\n            os.close(root_fd)\n",
+    "new": "",
+    "target": "tests/infra/computer/test_unit_scope_migration.py::test_retire_quarantine_unblocks_inventory_and_produces_a_restorable_backup"
+  }
+]

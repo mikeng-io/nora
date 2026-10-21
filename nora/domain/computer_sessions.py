@@ -4,8 +4,8 @@
 tool would be skipped, because a model rarely performs an optional act. So:
 
 - **Open.** A computer tool call in a room with no open session opens one,
-  in the same tool path, before its `started` audit row. At most one session
-  is open per room (scope), which a partial unique index enforces
+  in the same tool path, before its `started` audit row. At most one newly opened session
+  is open per unit (scope), which a partial unique index enforces
   (migration `0082`).
 - **Continue.** Any computer call in that room while it is open continues
   it: `last_activity_at` and `updated_at` move, and the call's audit rows
@@ -97,7 +97,7 @@ def cut(text: str, limit: int) -> str:
 
 @dataclass(frozen=True, slots=True)
 class ComputerSession:
-    """One task on the computer in one room.
+    """One task on the computer, with its creation room as provenance.
 
     `stopped_at_detail` holds what the session was seen holding, written by
     the sweeper: `{"tmux": [names]}` today (a path and a browser URL are
@@ -127,6 +127,15 @@ class ComputerSession:
             raise ValueError("an expired session has expired_at; an open one has none")
         if self.expired_reason is not None and self.expired_reason not in EXPIRY_REASONS:
             raise ValueError(f"unknown expiry reason {self.expired_reason!r}")
+
+    @property
+    def workspace_scope(self) -> str:
+        """Migrated sessions retain their original scope as provenance."""
+        return str(self.stopped_at_detail.get("workspace_scope", self.scope))
+
+    @property
+    def resume_prefix(self) -> str:
+        return str(self.stopped_at_detail.get("resume_prefix", ""))
 
     @property
     def held_tmux(self) -> tuple[str, ...]:
@@ -266,18 +275,19 @@ class ComputerSessionStore(Protocol):
         opened with `objective`. True when it was opened by this call. None
         when there is none and `open_new` is false: a background actor only
         continues a session a live turn opened (design §15.4). Atomic: two
-        concurrent calls in one room get ONE session between them."""
+        concurrent calls in one unit get ONE session between them. Migrated
+        room tasks remain separate; reuse the most recently active open task."""
         ...
 
     async def open_sessions(self, *, limit: int) -> list[ComputerSession]:
         """Every open session, the longest idle first: the sweeper's read."""
         ...
 
-    async def for_room(
-        self, *, platform: str, conversation_id: str, limit: int,
+    async def for_scope(
+        self, *, scope: str, limit: int,
     ) -> list[ComputerSession]:
-        """A room's sessions, open and expired, the most recently active
-        first."""
+        """The unit workspace's sessions, including migrated room sessions,
+        open and expired, the most recently active first."""
         ...
 
     async def note_resources(

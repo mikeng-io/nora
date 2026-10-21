@@ -76,7 +76,7 @@ from ..domain.computer import (
     ComputerToolSettings,
     SandboxStatus,
     anything_running,
-    computer_scope,
+    computer_unit_scope,
 )
 from ..domain.computer_events import (
     CANCELLED,
@@ -14592,14 +14592,15 @@ Args:
         )
 
     # Nora's computer (DEC-243). The workspace
-    # key is derived ONCE, here, from the turn: never a model argument (the
+    # key is derived ONCE, here, from the turn's policy unit: never a model argument (the
     # DEC-24 rule `bound_conversation_id` follows), so no call can name another
-    # room's workspace. `computer_scope` hashes it, so no platform id reaches
+    # unit's workspace. `computer_unit_scope` hashes it, so no platform id reaches
     # the VM either. `room` is `None` only when the registry builds the
     # declared table for its catalogue (no turn); nothing is called on those.
     computer_bounds = computer_settings or ComputerToolSettings()
     computer_platform = room.platform if room is not None else ""
-    bound_computer_scope = computer_scope(computer_platform, bound_conversation_id)
+    computer_unit = _unit() if room is not None and conversation_type == "group" else None
+    bound_computer_scope = computer_unit_scope(computer_unit) if computer_unit else ""
     computer_limits = dict(computer_bounds.limits) or None
     # WHO, for the audit, from the same provenance `remind` reads: a Dreamer
     # pass names its adaptor, a fire turn has no tagger, anything else is a
@@ -14614,7 +14615,8 @@ Args:
     # output go to. Missing any one, every tool answers `unavailable` and
     # nothing reaches the VM (the operator's complete-trail requirement).
     computer_ready = (
-        computer is not None and computer_events is not None and blob_store is not None
+        bool(bound_computer_scope)
+        and computer is not None and computer_events is not None and blob_store is not None
     )
 
     def _computer_requester() -> str | None:
@@ -14810,8 +14812,8 @@ Args:
     async def _computer_lease(
         tool: str, operation_id: UUID, session_id: UUID | None,
     ) -> AsyncIterator[str | None]:
-        """The lease on this room's task around a call: the session's
-        key, or the scope's when the call has no session. A live turn waits
+        """The lease on this unit's workspace around a call, independent
+        of session identity. A live turn waits
         its bound; a background pass never waits. Yields None when held (or
         when no lease table is wired), else `"live"` or `"background"`: the
         call was refused, one `busy` row is written, and the caller answers
@@ -14868,7 +14870,7 @@ Args:
             ), tool=tool)
 
     async def computer_run(command: str, timeout_seconds: int | None = None) -> dict:
-        """Run a bash command on your own computer, in this room's workspace.
+        """Run a bash command on your own computer, in this unit's shared workspace.
         Call this for data work (statistics, fitting, parsing), code, or
         finding files.
 
@@ -14967,7 +14969,7 @@ Args:
             }
 
     async def computer_read(path: str, offset_lines: int = 0) -> dict:
-        """Read a file in your computer's workspace for this conversation.
+        """Read a file in your computer's workspace shared by this unit.
         Use this instead of cat or head when you will act on the file.
 
         Returns `status`: ok, nothing_found, refused or unavailable, with a
@@ -15209,7 +15211,7 @@ Args:
     async def computer_session_list(
         status: Literal["open", "lapsed", "expired", "all"] = "all", limit: int = 10,
     ) -> dict:
-        """List your computer tasks in this room: what each was for, how far
+        """List your computer tasks in this unit: what each was for, how far
         it got, how long ago. Call this when somebody asks what you did on
         your computer.
 
@@ -15237,8 +15239,8 @@ Args:
             idle_after = timedelta(minutes=computer_bounds.idle_after_minutes)
             lapsed_visible = timedelta(hours=computer_bounds.lapsed_visible_hours)
             try:
-                rows = await computer_sessions.for_room(
-                    platform=computer_platform, conversation_id=bound_conversation_id,
+                rows = await computer_sessions.for_scope(
+                    scope=bound_computer_scope,
                     limit=_SESSION_LIST_READ,
                 )
             except Exception:
@@ -15258,6 +15260,8 @@ Args:
                       "expired": {"lapsed", "expired"}}.get(status)
             chosen: list[dict[str, object]] = []
             for row in rows:
+                if row.workspace_scope != bound_computer_scope:
+                    continue
                 shown = shown_status(row, now=now, idle_after=idle_after,
                                      lapsed_visible=lapsed_visible,
                                      tmux_running=running if row.status != EXPIRED else False)
@@ -15275,6 +15279,8 @@ Args:
                         now=now,
                     ) if events is not None else "unknown: its record could not be read",
                 }
+                if row.resume_prefix:
+                    entry["resume_prefix"] = row.resume_prefix
                 if row.expired_at is not None:
                     entry["stopped"] = age(row.expired_at, now)
                 chosen.append(entry)
@@ -16442,7 +16448,7 @@ Args:
             deliverable: What done looks like: what exists, and where.
             decisions: What was settled with the room, each {question, answer, by}; `by`
                 is who decided, or `nora` for an assumption you made.
-            inputs: Paths in this room's computer workspace the job works from.
+            inputs: Paths in this unit's shared computer workspace the job works from.
             document_ids: Documents to revise, from your documents view or a publish.
         """
         tool = "subagent_create"

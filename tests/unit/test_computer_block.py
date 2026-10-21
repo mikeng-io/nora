@@ -20,7 +20,7 @@ import pytest
 import tiktoken
 
 from nora.agent.prefill import build_prefill
-from nora.domain.computer import StateFile, TmuxSession, computer_scope
+from nora.domain.computer import StateFile, TmuxSession, computer_unit_scope
 from nora.domain.computer_context import (
     ComputerContextCaps,
     ComputerView,
@@ -37,7 +37,7 @@ from nora.testing import FakeComputerEventStore, FakeComputerSessionStore, FakeS
 
 NOW = datetime(2026, 9, 30, 12, tzinfo=UTC)
 ROOM = "g-block"
-SCOPE = computer_scope("signal", ROOM)
+SCOPE = computer_unit_scope(ROOM)
 AGE = re.compile(r"(\d+ (min|h|d)( \d+ min)? ago|just now)")
 
 
@@ -109,6 +109,7 @@ class CountingRuntime(FakeSandboxRuntime):
 
 def _reader(runtime, sessions, events, caps=None):
     return ComputerContextReader(
+        unit_for=lambda platform, cid: cid,
         sessions=sessions, events=events, runtime=runtime,
         caps=caps or ComputerContextCaps(), clock=lambda: NOW, metrics=Metrics(),
     )
@@ -179,7 +180,8 @@ async def test_a_lapsed_task_shows_within_its_window_and_is_gone_after():
     assert block is not None
     assert "lapsed task, stopped 23 h ago (no activity; files kept)" in block.body
     assert "book a table" in block.body
-    later = ComputerContextReader(sessions=sessions, events=events, runtime=runtime,
+    later = ComputerContextReader(
+        unit_for=lambda platform, cid: cid, sessions=sessions, events=events, runtime=runtime,
                                   caps=ComputerContextCaps(), metrics=Metrics(),
                                   clock=lambda: NOW + timedelta(hours=2))
     assert await later.read(platform="signal", conversation_id=ROOM) is None
@@ -319,6 +321,7 @@ async def test_a_slow_machine_does_not_delay_the_block_past_its_budget():
     sessions, metrics = FakeComputerSessionStore(), Metrics()
     await _open_session(sessions)
     reader = ComputerContextReader(
+        unit_for=lambda platform, cid: cid,
         sessions=sessions, events=FakeComputerEventStore(), runtime=SlowRuntime(5.0),
         caps=ComputerContextCaps(read_timeout_seconds=0.2), clock=lambda: NOW,
         metrics=metrics,
@@ -349,6 +352,7 @@ async def test_a_good_machine_read_is_kept_for_the_cache_window():
     await _open_session(sessions)
     runtime, tick = SlowRuntime(0.0), [0.0]
     reader = ComputerContextReader(
+        unit_for=lambda platform, cid: cid,
         sessions=sessions, events=FakeComputerEventStore(), runtime=runtime,
         caps=ComputerContextCaps(state_cache_seconds=30), clock=lambda: NOW,
         metrics=Metrics(), monotonic=lambda: tick[0],

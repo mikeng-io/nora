@@ -31,6 +31,8 @@ from nora.domain.computer_sessions import (
 from nora.infra.sql.schema import COMPUTER_SESSIONS
 
 T = COMPUTER_SESSIONS
+# Migration leaves the original scope, session IDs and state untouched.
+_workspace_scope = sa.func.coalesce(T.c.stopped_at_detail["workspace_scope"].astext, T.c.scope)
 #: The most tmux names a session records as held; more is a runaway, not a task.
 MAX_HELD_TMUX = 20
 
@@ -87,7 +89,10 @@ class SqlComputerSessionStore:
     async def _touch(conn: AsyncConnection, scope: str, now: datetime) -> ComputerSession | None:
         row = (await conn.execute(
             sa.update(T)
-            .where(T.c.scope == scope, T.c.status == OPEN)
+            .where(T.c.id == (
+                sa.select(T.c.id).where(_workspace_scope == scope, T.c.status == OPEN)
+                .order_by(T.c.last_activity_at.desc(), T.c.id.desc()).limit(1).scalar_subquery()
+            ), T.c.status == OPEN)
             .values(
                 updated_at=sa.func.greatest(T.c.updated_at, now),
                 last_activity_at=sa.func.greatest(T.c.last_activity_at, now),
@@ -104,12 +109,12 @@ class SqlComputerSessionStore:
         async with self._engine.connect() as conn:
             return [_row(r) for r in (await conn.execute(stmt)).all()]
 
-    async def for_room(
-        self, *, platform: str, conversation_id: str, limit: int,
+    async def for_scope(
+        self, *, scope: str, limit: int,
     ) -> list[ComputerSession]:
         stmt = (
             sa.select(T)
-            .where(T.c.platform == platform, T.c.conversation_id == conversation_id)
+            .where(_workspace_scope == scope)
             .order_by(T.c.last_activity_at.desc()).limit(limit)
         )
         async with self._engine.connect() as conn:

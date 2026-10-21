@@ -1,8 +1,7 @@
-"""Leases on Nora's computer: who may change a room's work right now.
+"""Leases on Nora's computer: who may change a unit's work right now.
 
-**Lock the thing being changed, not the room.** A lease is keyed on the
-computer session a call belongs to (`session_key`), and on the scope for a
-call that has no session (`scope_key`: its session could not be opened).
+**Lock the workspace, independently of sessions.** Every non-job group call
+uses `scope_key` for the unit. Subagent jobs keep their own `job:<id>` key.
 `computer_run`, `computer_write` and `computer_edit` take one around the
 call; reads and the observed-state read take none.
 
@@ -47,11 +46,12 @@ def scope_key(scope: str) -> str:
 
 
 def lease_key(scope: str, session_id: UUID | None) -> str:
-    """THE key a call on a room's workspace locks:
-    its session's when the room has one open, else the scope's. One
-    function for every caller (the computer tools), so
-    a reader and a writer of the same room can never lock different keys."""
-    return session_key(session_id) if session_id is not None else scope_key(scope)
+    """The unit workspace's key, independent of session identity.
+
+    Keep session_id in the shared caller signature; it is audit provenance,
+    never an alternative lock. Subagent callers use their own job key.
+    """
+    return scope_key(scope)
 
 
 @dataclass(frozen=True)

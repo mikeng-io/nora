@@ -37,7 +37,7 @@ from nora.app.cognition_session import AdaptorBudget
 from nora.app.documents_service import DocumentService
 from nora.app.subagent_backend import SubagentBackend
 from nora.app.subagent_runner import SubagentRunner, load_system_prompt
-from nora.domain.computer import computer_scope
+from nora.domain.computer import computer_unit_scope
 from nora.domain.computer_leases import ComputerLeases, lease_key
 from nora.domain.models import PersonRef
 from nora.domain.ports import JobStatus, LaunchRequest
@@ -58,7 +58,7 @@ from nora.testing import (
 ROOT = Path(__file__).resolve().parents[2]
 MILES = PersonRef(person_id="miles", name="Miles Novak", honcho_peer_id="miles")
 PLATFORM, ROOM = "signal", "g-worker"
-SCOPE = computer_scope(PLATFORM, ROOM)
+SCOPE = computer_unit_scope(ROOM)
 
 
 class _Persons:
@@ -141,6 +141,7 @@ class _Rig:
             is_person=lambda person_id: person_id == "miles", public_url="",
         )
         self.registry = ToolRegistry(
+        unit_for=lambda platform, cid: cid,
             documents=documents, computer=self.sandbox, computer_events=self.events,
             blobs=FakeBlobStore(), computer_leases=self.leases,
             computer_exports=FakeComputerExportStore(),

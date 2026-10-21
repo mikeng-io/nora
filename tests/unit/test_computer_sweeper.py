@@ -12,7 +12,7 @@ import pytest
 
 from nora.app.computer_sweeper import ComputerSessionSweeper, SweepRules
 from nora.app.runtime import computer_sweep_loop
-from nora.domain.computer_leases import ComputerLeases, session_key
+from nora.domain.computer_leases import ComputerLeases, lease_key
 from nora.obs.metrics import Metrics
 from nora.testing import FakeComputerEventStore, FakeComputerSessionStore, FakeSandboxRuntime
 
@@ -147,7 +147,7 @@ async def test_expiry_is_a_compare_and_set_a_late_call_keeps_it_open(world):
 async def test_a_call_holding_the_lease_defers_the_sweep(world):
     clock, _, sessions, _, leases, _, sweeper = world
     s = await _open(sessions)
-    held = await leases.acquire(session_key(s.id), live=True)
+    held = await leases.acquire(lease_key(s.workspace_scope, s.id), live=True)
     clock.at = T0 + timedelta(days=2)
     assert await sweeper.sweep_once() == 0
     assert sessions.sessions[s.id].status == "open"

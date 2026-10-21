@@ -78,6 +78,8 @@ def _session(line: SessionLine, now: datetime, *, lapsed: bool) -> _Line:
         head = f"open task, {line.shown}, last active {age(s.last_activity_at, now)}"
     progress = (progress_text(line.progress, now=now) if line.progress is not None
                 else "progress unknown: its record could not be read")
+    if s.resume_prefix:
+        progress += f"; resume files under {s.resume_prefix} (old absolute paths are historical)"
     return _Line(f"{head} · opened {age(s.created_at, now)} · {objective} · {progress}",
                  s.last_activity_at if not lapsed else (s.expired_at or s.updated_at))
 

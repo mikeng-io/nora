@@ -1,6 +1,6 @@
 # 0019 · Nora's computer runs in an sbx microVM, behind computerd
 
-- **Status:** accepted (2026-09-30, operator)
+- **Status:** accepted (2026-09-30, operator); Decision 4 superseded by [0025](0025-group-computer-workspaces-belong-to-units.md)
 - **Date:** 2026-09-30
 - **Replaces, in stages:** Smith's per-job containers (`LocalDockerBackend`,
   `nora/compute/smith/`). This ADR ships the computer; the tools and Smith's

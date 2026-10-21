@@ -14,7 +14,7 @@ from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.computer_events import ComputerEvent, normalise_computer_event
-from nora.infra.sql.schema import COMPUTER_EVENTS
+from nora.infra.sql.schema import COMPUTER_EVENTS, COMPUTER_SESSIONS
 
 _FIELDS = (
     "id", "operation_id", "phase", "created_at", "started_at", "finished_at", "actor",
@@ -62,6 +62,20 @@ class SqlComputerEventStore:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
         return [_row_to_event(r) for r in rows]
+
+    async def for_scope(
+        self, *, scope: str, since: datetime, limit: int,
+    ) -> list[ComputerEvent]:
+        legacy = sa.select(COMPUTER_SESSIONS.c.scope).where(
+            COMPUTER_SESSIONS.c.stopped_at_detail["workspace_scope"].astext == scope,
+        )
+        stmt = (sa.select(COMPUTER_EVENTS)
+                .where(sa.or_(COMPUTER_EVENTS.c.scope == scope,
+                              COMPUTER_EVENTS.c.scope.in_(legacy)),
+                       COMPUTER_EVENTS.c.created_at >= since)
+                .order_by(COMPUTER_EVENTS.c.created_at.desc()).limit(limit))
+        async with self._engine.connect() as conn:
+            return [_row_to_event(r) for r in (await conn.execute(stmt)).all()]
 
     async def for_session(self, *, session_id: UUID, limit: int) -> list[ComputerEvent]:
         stmt = (

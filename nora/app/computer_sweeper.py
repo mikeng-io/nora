@@ -44,7 +44,7 @@ from datetime import datetime, timedelta
 
 from nora.domain.computer import SandboxStatus, StateResult, anything_running
 from nora.domain.computer_events import ComputerEvent, ComputerEventStore
-from nora.domain.computer_leases import ComputerLeases, session_key
+from nora.domain.computer_leases import ComputerLeases, lease_key
 from nora.domain.computer_sessions import ComputerSession, ComputerSessionStore
 from nora.domain.ports import SandboxRuntime
 from nora.obs.metrics import Metrics
@@ -84,9 +84,11 @@ class ComputerSessionSweeper:
         states: dict[str, StateResult] = {}
         expired = 0
         for session in await self._sessions.open_sessions(limit=SWEEP_BATCH):
-            if session.scope not in states:
-                states[session.scope] = await self._runtime.state(scope=session.scope)
-            state = states[session.scope]
+            if session.workspace_scope not in states:
+                states[session.workspace_scope] = await self._runtime.state(
+                    scope=session.workspace_scope,
+                )
+            state = states[session.workspace_scope]
             if (state.status is not SandboxStatus.OK or state.tmux is None
                     or state.processes is None):
                 log.info("computer sweep skipped a room it cannot see (%s)",
@@ -124,7 +126,7 @@ class ComputerSessionSweeper:
             )
         if reason is None:
             return False
-        lease = await self._leases.try_acquire(session_key(session.id))
+        lease = await self._leases.try_acquire(lease_key(session.workspace_scope, session.id))
         if lease is None:
             return False  # a call is in flight: it is not idle; next pass
         try:
@@ -164,7 +166,7 @@ class ComputerSessionSweeper:
                 created_at=now, started_at=now, finished_at=now, actor="sweeper",
                 requester_person_id=None, platform=session.platform,
                 conversation_id=session.conversation_id, conversation_type="",
-                tag_id="", scope=session.scope, tool="computer_session", path="direct",
+                tag_id="", scope=session.workspace_scope, tool="computer_session", path="direct",
                 trace_id="", span_id="", status="expired",
                 result={"status": "expired", **result}, session_id=session.id,
             ))

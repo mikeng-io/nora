@@ -87,7 +87,7 @@ async def test_a_call_in_a_room_with_no_open_session_opens_exactly_one(store):
     assert (session.status, session.objective, session.scope) == ("open", "fit it", SCOPE)
     assert session.created_at == session.last_activity_at == T0
     assert session.created_by_tag == "tag-1" and session.actor == "tag"
-    rooms = await store.for_room(platform="signal", conversation_id="conv-1", limit=10)
+    rooms = await store.for_scope(scope=SCOPE, limit=10)
     assert [s.id for s in rooms] == [session.id]
 
 
@@ -139,7 +139,7 @@ async def test_the_next_call_after_an_expiry_opens_a_new_session_and_keeps_the_o
                        now=T0 + timedelta(hours=25))
     fresh, opened = await _open(store, now=T0 + timedelta(hours=30), objective="next task")
     assert opened is True and fresh.id != session.id
-    rooms = await store.for_room(platform="signal", conversation_id="conv-1", limit=10)
+    rooms = await store.for_scope(scope=SCOPE, limit=10)
     assert [(s.id, s.status) for s in rooms] == [(fresh.id, "open"), (session.id, "expired")]
     assert await store.open_sessions(limit=10) == [fresh]
 
@@ -161,7 +161,7 @@ async def test_resources_are_noted_without_moving_activity(store):
     await store.expire(session.id, seen_last_activity_at=T0, reason="jobs_ended",
                        now=later)
     await store.note_resources(session.id, tmux=["late"], now=later)
-    [expired] = await store.for_room(platform="signal", conversation_id="conv-1", limit=10)
+    [expired] = await store.for_scope(scope=SCOPE, limit=10)
     assert expired.held_tmux == ("scrape", "fit", "plot")
 
 
@@ -182,3 +182,16 @@ async def test_a_background_caller_only_continues_never_opens(store):
         actor="dreamer:proactive", tag_id="", now=later, open_new=False)
     assert got is not None and got[0].id == opened.id and got[1] is False
     assert got[0].last_activity_at == later
+
+
+async def test_scope_listing_and_reuse_span_creation_rooms_without_changing_provenance(store):
+    session, _ = await _open(store)
+    same, opened = await store.continue_or_open(
+        platform='discord', conversation_id='discord-room', scope=SCOPE,
+        objective='new message', actor='fire', tag_id='tag-2', now=T0 + timedelta(minutes=1))
+    other, _ = await _open(store, scope=OTHER, conversation_id='other')
+    assert not opened and same.id == session.id
+    assert (same.platform, same.conversation_id, same.actor, same.created_by_tag) == (
+        'signal', 'conv-1', 'tag', 'tag-1')
+    assert [r.id for r in await store.for_scope(scope=SCOPE, limit=10)] == [session.id]
+    assert [r.id for r in await store.for_scope(scope=OTHER, limit=10)] == [other.id]
