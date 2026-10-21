@@ -26,7 +26,12 @@ description: >
   trait dimensions, named prose slots for traits and hypothesis explanations,
   structured reading claims, citation-computed recurrence and bounded cards;
   maps collective sections and composes observations into traits and hypotheses
-  checked against independent evidence, with privacy positions left open.
+  checked against independent evidence. Decided by the operator, 2026-10-22:
+  store evidence-supported claims without category/medium/sensitivity bans;
+  location includes named places, with a code-set line flag preserving existing
+  room location reads; minimal public outbound payload accepted; no special
+  handling for sensitive categories; dedicated-key deduction and told-only
+  fallback rules stand. Implementation and an enforcing DEC row land in phase 4.
 status: proposed
 governance: operator-directed
 timestamp: '2026-10-14'

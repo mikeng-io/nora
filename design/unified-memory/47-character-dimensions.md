@@ -12,7 +12,7 @@ edges:
 
 # Character dimensions and claim slots
 
-Status: **proposed, docs only**, 2026-10-22. No schema, validator, renderer,
+Status: **design proposed; four positions DECIDED by the operator, docs only**, 2026-10-22. No schema, validator, renderer,
 objective or live state is changed. This is the content contract for phases
 2 and 4 of [18](18-message-readings.md), not an implementation receipt.
 
@@ -24,6 +24,21 @@ profile, traits and hypotheses parts. Existing implementation names below
 are references to the deferred migration, not new vocabulary.
 
 ## 0. What stays
+
+**Governing principle — operator, 2026-10-22 (clarification): STORE what the
+evidence supports, without storage-side bans by category, medium or sensitivity.**
+People have already shared this data with Nora; she analyses and rolls it up.
+The operator's reasoning is that Honcho already stores location as part of a
+person, such as working at a named building: location IS part of Character,
+and without curating this material the entry holds almost nothing.
+
+The remaining content constraints concern **accuracy**, not hiding: citations,
+visible told/deduced/induced/abduced mode, the trait-versus-event occasion floor,
+abstraction to a pattern or named place rather than raw coordinates or quoted
+chat, and hypotheses remaining hypotheses until independently judged. Reads
+keep the room settings already in force; this decision introduces no new
+disclosure policy. R-28 and the accepted outbound payload rule govern what
+leaves the system, not what may be stored.
 
 [45 §0](45-persona-adaptor.md#0-this-reverses-prose-no-schema-deliberately)
 keeps the lessons of DEC-184/DEC-290: **slots are named; their contents are
@@ -139,18 +154,55 @@ kinds. Today's contract distinguishes dedicated keys from fallback attributes:
 profile facts such as occupation to be `deduced` from at least two eligible
 premises, subject to its other checks. The `told`-only rule in 75 applies to
 fallback `attribute` values; it is not a universal ban on deduced profile facts.
-A stricter no-inference rule for occupation, life stage and possessions is
-proposed in §7, not an operator amendment to today's contract. The bus-driver
-example below remains a hypothesis: a route match is not evidence of occupation.
+The operator rejected a stricter no-inference rule for occupation, life stage
+and possessions; the existing dedicated-key/fallback distinction stands.
+A route match alone still does not establish occupation: deduction needs its
+normal independent premises, as decided below.
 
-**Proposed sensitive-category rule, awaiting the operator:** health, religion,
-sexuality, politics and finances are never inferred, never stored as traits or
-hypotheses, and stored in profile only when the subject themself explicitly
-told it, with the original speech act, time and scope preserved. This restriction
-would take precedence over all nine dimensions and the affiliation mapping;
-third-party statements, observed interests and outside evidence cannot bypass
-it. It is a recommendation, not a claim about today's validator or permission
-to widen disclosure. The operator position is recorded in §7.
+### Decided (operator, 2026-10-22)
+
+1. **LOCATION — storage block REJECTED.** Location belongs in Character like
+   any other supported claim: told (for example, working at a named building),
+   deduced, and presence-derived from Rollup stays, places and corridors.
+   Usual workplace, home area, regular places and commute route may be stored
+   at the level of a named building, venue, district or route/line, never raw
+   coordinates or a raw trace. A habit's `setting` may name the place.
+   Residence is a location key under this same rule. Storage is unconditional
+   with respect to the reading room's location permission; accuracy and the
+   usual evidence rules still apply. Presence is a full input to the composition ladder.
+
+   Every location-bearing line carries a typed `location` flag set by code
+   from its evidence sources and place-bearing slots, never supplied by the
+   model. Derived lines retain the flag when their sources or linked premises
+   carry location. It exists only to keep the **existing** room `location`
+   setting / live DisclosureGuard working on prompt rendering, retrieval
+   (`memory_search`/Views) and portal reads exactly as it does now. This is
+   not a new disclosure filter or a new permission model. R-31 and 45 §4a's
+   former Character input exclusion are amended for Character: store the
+   supported line, apply the existing setting when reading it. This decision
+   changes design, not today's implementation; §6 lists the phase-4 enforcement.
+2. **OUTBOUND LOOKUP PAYLOAD — ACCEPTED.** Send only the minimal public
+   description and public question: public place, street, stop or line names.
+   Never send coordinates, a person's name/identity/handle, private address,
+   raw trace or individual timestamps. This is an egress rule, not a storage ban.
+3. **SENSITIVE CATEGORIES — told-only restriction REJECTED.** Health,
+   religion, sexuality, politics and finances follow the same rules as every
+   other line. Told, deduced, induced and abduced are available in their normal
+   parts with visible mode and the normal evidence floors. There is no special
+   storage ban, category tag, handling or disclosure restriction. The existing
+   contract in 75 for gender, sex and birthday remains unchanged; residence
+   follows the location decision above.
+4. **OCCUPATION / LIFE STAGE / POSSESSIONS — told-only restriction REJECTED.**
+   Today's contract stands: dedicated keys may be deduced under 45 §3;
+   fallback attributes remain told-only. An abduced explanation such as bus
+   driver can lead to a **new deduced profile fact** when independent evidence
+   meets 45 §3's deduction rules: for example, evidence independently checked
+   by a confirmed verdict plus another eligible premise. A confirmed verdict
+   is not permission to re-label the abduced line or use it as a factual
+   premise; use the independently checked evidence behind it and the additional
+   premise, preserving citations and `draws_on` under the normal rules.
+   A public route match alone does not meet those rules. The original
+   hypothesis and its verdict remain in history; no automatic promotion occurs.
 
 ## 2. Slot templates and storage
 
@@ -164,7 +216,7 @@ context; unknown is not an empty required string or an invented circumstance.
 | subject | Existing entry key, resolved by code to its kind and readable display name. Never a model-written identifier in text. |
 | dimension | The line's `kind`, one of §1's nine; no duplicate field inside content. |
 | statement | Non-empty prose stating the recurring pattern, abstracted from the observations. |
-| context | Non-empty prose saying when, in what abstract setting and with whom it holds, to the extent supported; explicitly mark unspecified aspects. No street address or coordinates. |
+| context | Non-empty prose saying when, in what setting (a named place when supported) and with whom it holds, to the extent supported; explicitly mark unspecified aspects. No street address or coordinates. |
 | strength | Code-computed distinct occasions, first/last evidence time and distinct HKT days, resolved from citations; never accepted from model output. Unknown/unreadable roots give unavailable support, not zero or guessed times. |
 | exceptions | Optional non-empty prose for evidenced limits or counter-patterns. An exception is not silently discarded to preserve a tidy trait. |
 
@@ -173,7 +225,7 @@ Dimension-specific required prose slots:
 | dimension | extra slots |
 |---|---|
 | topic | `interest`, `depth`, `stance` (explicitly unknown when not supported) |
-| habit | `action`, `rhythm`, `setting` (an abstract place or explicitly unspecified) |
+| habit | `action`, `rhythm`, `setting` (a supported named place, abstract setting or explicitly unspecified) |
 | skill | `capability`, `level` (what the evidence demonstrates, not a credential inferred from interest) |
 | preference | `object`, `polarity` (favours, avoids, mixed or a qualified prose description) |
 | disposition | `trigger`, `response` |
@@ -233,8 +285,8 @@ Assent is not confirmation; confirmed explanations remain hypotheses.
 
 Each claim in a batch reading carries `about` (resolved subject links, with
 unresolved references explicit), `what` (prose preserving the source's claim),
-`happened_at` (a date/interval or explicit unknown), `where` (optional abstract
-place, only when stated), `how` (the existing speech act), and the existing
+`happened_at` (a date/interval or explicit unknown), `where` (optional named place or abstract
+setting, only when stated), `how` (the existing speech act), and the existing
 source message ids. Authors and assertion timestamps are obtained from those
 messages, not confused with the event's time or the reading's build time.
 
@@ -251,7 +303,7 @@ is abstracted only as far as its meaning supports; otherwise omit the place.
 Use **one JSONB content slot object per line**, alongside existing typed columns,
 and an analogous per-claim object inside the versioned reading payload.
 Keep subject/dimension, citations, mode, state, `draws_on`, prediction fields
-and computed support outside the content object. Do not store a second full
+computed support and the code-set `location` flag outside the content object. Do not store a second full
 model-written `text` that can contradict slots: any retained text column is a
 code-rendered projection. Profile's `fact_key`/`fact_value` and effective dates
 stay [75](75-typed-identity.md)'s contract, not this prose object.
@@ -289,19 +341,19 @@ not authorization or proof that every input path is built.
 | evidence medium and real store | dimensions it may support | abstraction and limits |
 |---|---|---|
 | Chat: `messages`, edits/reactions, and proposed Record message readings | all nine, when the content demonstrates the property | Atomic speech acts become patterns only over qualifying occasions; a self-description alone is not observed skill/value. Never copy messages, ids or one-off plans into traits. |
-| Media: `media_objects` readings (`title`, `description`, `content`) through message attachments; `social_item` and `social_perception` through readable social items | topic, habit, skill, preference, disposition, style, value, social, goal, only where actually evidenced | Depiction/sharing is not ownership, residence, expertise or liking. Resolve author and attachment/item roots; copies of the same bytes or occasion add no support. Social location remains separately gated. |
-| Presence: Record fixes/polls through Rollup `presence_stays`, trips, outings and co-locations | habit and social; goal only with separate evidence of aim | Episodes may yield an abstract place category and time-of-week rhythm, never coordinates, addresses or inferred residence. **Blocked for the shared Character card** by 45 §4a's location ceiling; abstraction does not grant disclosure permission. Raw fixes are never writer input. |
+| Media: `media_objects` readings (`title`, `description`, `content`) through message attachments; `social_item` and `social_perception` through readable social items | topic, habit, skill, preference, disposition, style, value, social, goal, only where actually evidenced | Depiction/sharing alone does not establish ownership, residence, expertise or liking; evaluate the actual evidence and visible mode. Resolve author and attachment/item roots; copies of the same bytes or occasion add no support. Named social places may support location-bearing Character lines; the existing read setting still applies. |
+| Presence: Record fixes/polls through Rollup `presence_stays`, trips, outings and co-locations | habit and social; goal only with separate evidence of aim | Rollup episodes and patterns support named usual workplace, home area, regular places and commute route, plus time-of-week rhythm. Store supported lines with the code-set `location` flag; reads keep the existing room location setting / DisclosureGuard. The writer uses Rollup patterns, not raw coordinate traces. |
 | Notes/memos/events: Notebook Register head revisions | context for any dimension, not independent support | An open plan, cancellation or settled affair qualifies context. Resolve its citations to eligible Record/Rollup roots; do not count the summary as another witness or promote intention into achievement. |
 | Acts/outcomes: recorded sends/tool results/artifacts, `rollup_response`, and the proposed social-act episode in [50](50-learning-from-acts.md) | style, social, disposition, preference; skill, value, habit, goal, topic when demonstrated | Abstract repeated action/reception in its context. Silence is not dislike; unreadable outcome is unknown. Learning about Nora never assigns her action to a member, and positive reaction never proves correctness. |
-| Rollup counts: place, rhythm, tie, play-profile aggregate keys | habit, social, topic/style where the measured property supports them | Describe the measured pattern over its actual interval; counts do not establish liking, motive, skill or value. Location-bearing aggregates stay blocked. Require root-based support; a new build is not new evidence. |
+| Rollup counts: place, rhythm, tie, play-profile aggregate keys | habit, social, topic/style where the measured property supports them | Describe the measured pattern over its actual interval; counts do not establish liking, motive, skill or value. Location-bearing aggregates may support stored Character claims; their lines carry the code-set `location` flag for the existing read setting. Require root-based support; a new build is not new evidence. |
 
 The existing media above keep their owning stores. **Amended recommendation,
 2026-10-22:** external hypothesis checks need one new append-only Record table,
 `verdict_evidence`, owned by the independent verdict adaptor, as specified below.
 This explicitly replaces this node's earlier “no new evidence store” claim for
 that external path only. The memory index locates items and typed links; it is
-not a witness. Every input keeps source eligibility, unit scope,
-subject membership and disclosure checks. Notebook entries and Nora's earlier
+not a witness. Existing source/unit read settings continue to apply; they
+are not new bans on storing supported Character claims. Notebook entries and Nora's earlier
 conclusions never manufacture independent corroboration.
 
 ### The composition ladder — observations to checked explanations
@@ -315,17 +367,18 @@ medium-specific writer or unbounded external-search loop is introduced.
 |---|---|---|
 | Record observation | Existing messages/readings, attachment/media readings, social items and presence fixes/polls keep their owners. External lookup attempts/results would be new Record rows in proposed `verdict_evidence`, owned by the independent verdict adaptor. | Source-specific detail stays in its scoped store with authorship and source/assertion time. Reading claims preserve speech acts; raw observations never become public card text. |
 | Rollup pattern | Existing deterministic episode/aggregate builders store intervals, counts, computed patterns and roots/build identity. | Code folds repeated evidence; it does not name motives or occupations. Not every medium needs a new aggregate: chat/Instagram/media can use existing eligible episodes/counts or feed deduplicated Record occasions directly to the next rung. |
-| Trait | The existing Character writer stores one `habit`, `topic`, `style` or other applicable dimension with §2's slots and code-computed strength. | A recurring pattern, not the raw route, post, message or photograph. Context and exceptions constrain it. Recurrence and all disclosure checks apply before admission. |
+| Trait | The existing Character writer stores one `habit`, `topic`, `style` or other applicable dimension with §2's slots and code-computed strength. | A recurring pattern, not the raw route, post, message or photograph. Context and exceptions constrain it. Recurrence governs trait storage; existing room settings apply when reading the line. |
 | Abduced hypothesis | The same writer stores an explanation linked by `draws_on`, proposed cause, alternative and an observable prediction/window. | A possible cause, not a new profile fact. It says what would distinguish it from the alternative and which outside observation, if needed, would test it. |
-| Independent check (proposed external path) | A phase-4 evidence-collection runner owned by the independent verdict adaptor, never the Character writer, performs an authorized lookup and hands retained evidence to the judge. Its query, source URL, retrieved content, retrieval time, outcome and available publication/effective time would be retained in new append-only `verdict_evidence` rows, linked to the trace. The table, append path, scoped reference resolver, retention and judge-input extension do not exist today. | The result is evidence about its actual proposition. Missing dates stay unknown; a search snippet is a locator until the source is read. Private roots remain private; public evidence does not inherit permission to reveal them. |
+| Independent check (proposed external path) | A phase-4 evidence-collection runner owned by the independent verdict adaptor, never the Character writer, performs an authorized lookup and hands retained evidence to the judge. Its query, source URL, retrieved content, retrieval time, outcome and available publication/effective time would be retained in new append-only `verdict_evidence` rows, linked to the trace. The table, append path, scoped reference resolver, retention and judge-input extension do not exist today. | The result is evidence about its actual proposition. Missing dates stay unknown; a search snippet is a locator until the source is read. Reads use existing room settings; source publicity alone does not change those settings. |
 | Verdict | Today's write records confirmed/refuted/expired/unknown and judge identity/time. Phase 4 must add a proposed `verdict_evidence_refs` column on the superseding verdict row and extend the verdict write to persist references to the retained evidence. No evidence-reference write exists today. | Confirm only the specified prediction, not all causal assertions or a person's identity. No automatic profile promotion; retained evidence lets another reader reconstruct the judgement. |
 
 Presence already has the lower rungs: the presence Rollup in
 [`nora/analytics/rollup.py`](../../nora/analytics/rollup.py) folds fixes into
 stays, trips, places, occupancy, rhythm and corridors, reached through
-`routine_read` / `where_been` (DEC-216). **The next rungs below are conditional
-on resolving 45 §4a's location privacy ceiling and R-31, not authorized by this
-design.** An invented repeated weekday corridor lasting hours can support
+`routine_read` / `where_been` (DEC-216). **Decided (operator, 2026-10-22):
+the presence rungs compose into stored Character claims under the same accuracy
+rules as other media.** Named places/routes are retained; the code-set
+`location` flag keeps the existing room read setting working. An invented repeated weekday corridor lasting hours can support
 an abstract habit such as “regularly travels a fixed route on weekdays”.
 “Drives a fixed route on weekday shifts” additionally needs evidence of
 driving and shifts; coordinates alone show neither. An abduction could be
@@ -336,7 +389,7 @@ An authorized lookup could check a public bus-line source. A matching line
 confirms that prediction only: it **does not prove the person drives a bus**.
 A contrary result can refute that prediction; inaccessible or insufficiently
 specific evidence yields unknown, never confirmation by plausibility. A job
-claim needs its own direct grounding before it could enter profile. Instagram
+claim needs the normal told or deduced grounding before it can enter profile. Instagram
 publication rhythms, chat interaction patterns and repeated media-demonstrated
 activities climb the same ladder with their own roots and typed dimensions;
 no compulsory presence-shaped intermediate store is imposed on them.
@@ -371,16 +424,15 @@ already satisfies the contract. It is a narrow table for hypothesis checks,
 not a second general memory system or model-written knowledge tier.
 
 The table carries an immutable row reference and attempt reference, the scoped
-hypothesis/entry and unit, judge-run identity, eligible audience/source scope,
+hypothesis/entry and unit, judge-run identity, existing read-scope metadata,
 permitted query, source URL, content when retrieved, attempt/retrieval time,
 source publication/effective time when known, outcome/error and trace reference.
-Absent content or dates stay absent, never a successful empty result. Scope is
-at least as restrictive as the hypothesis and every input authorizing the lookup;
-a public URL does not make the private reason for checking it public.
+Absent content or dates stay absent, never a successful empty result. Existing unit/room read settings apply to these rows as to the hypothesis;
+this adds no category-based storage ban or new disclosure policy.
 
 **Proposed phase-4 append and read path:** an evidence-collection runner in the
-independent verdict adaptor executes a bounded lookup only after the outbound
-payload policy is authorized. The Character writer neither runs the lookup nor
+independent verdict adaptor executes a bounded lookup under the accepted
+outbound payload rule. The Character writer neither runs the lookup nor
 selects the verdict; it supplies only the hypothesis and predeclared observable.
 The runner appends an attempt row before executing the permitted lookup, then
 an outcome row linked to that attempt for success, failure, timeout or
@@ -411,10 +463,8 @@ ones, for at least the lifetime of the referencing hypothesis/verdict revision
 history; outstanding attempts remain until that hypothesis history retires
 under its retention policy. Do not inherit the recall cache's window or trace
 expiry. Phase 4 must implement this retention alongside append and scoped lookup.
-If an explicit privacy purge removes evidence, resolution must report it
-unavailable and historical verification remains unmeasured; neither a URL nor a
-trace may reconstruct missing private content. Retention grants no wider read
-permission. None of this table, runner, resolver, retention or verdict-write
+If evidence is missing, resolution reports unavailable and historical
+verification remains unmeasured; a URL or trace cannot stand in for its content. None of this table, runner, resolver, retention or verdict-write
 plumbing is built by this docs change.
 
 **Proposed extension to 45 §3 (not built): external evidence is a permitted
@@ -428,15 +478,12 @@ window give unknown. Expired means the observable was checkably absent in its
 window, not that a search failed. The external result cannot corroborate the
 private observation by merely repeating text supplied in the query.
 
-**Proposed outbound rule — operator decision required:** an outside lookup
-may send only a minimal, unlinked public description, such as abstracted public
-street or stop names and a public service question. Never send coordinates to
+**Decided outbound rule (operator, 2026-10-22):** send only minimal public
+place/street/stop/line names and the public question, never coordinates to
 another tool (R-28/DEC-227), a person's name/identity/handle, private address,
-raw route trace, individual timestamps or a query tying the public pattern to
-someone. Street/stop labels are still location information: this proposal
-neither permits reverse-geocoding coordinates via another tool nor overrides
-R-31 or the durable-claim block. If an allowed abstract query cannot test the
-prediction, leave it unknown. No lookup is run here.
+raw trace or individual timestamps. This governs egress, not storage. If that
+query cannot test a prediction, the verdict is unknown rather than guessed.
+No lookup is run by this docs change.
 
 ## 4. Caps, rendering and decay
 
@@ -476,16 +523,17 @@ intervals, card omissions and answer quality; no production sizing is claimed.
 
 **Comprehend:** freeze eligible inputs, source revisions, scopes, timestamps,
 root/occasion mappings and the composed model input. Include counter-evidence.
-Interpret each source once into the existing typed assembly. Never infer a
-person's identity, residence or ownership from indirect clues.
+Interpret each source once into the existing typed assembly. Judge identity,
+residence, ownership and every other claim by the evidence and its visible mode,
+without turning a possibility into an asserted fact.
 
 **Measure:** the build must refuse a write atomically for missing/empty slots,
 inapplicable kinds, unreadable support or a failed occasion/day floor. Compute
 strength from citations in code, including aggregates; the model cannot submit
 counts. Extend the existing R-18/R-28 screen to every prose slot and the complete
 canonical rendering: no identifiers, coordinates, street addresses, quoted chats
-or raw event log in a trait. A habit's abstract setting is still subject to
-R-31; merely removing coordinates is insufficient. Rejected output never
+or raw event log in a trait. Named places are valid content; compute the
+line's `location` flag so existing room location reads continue to work. Rejected output never
 advances source progress (45 §4a).
 
 Syntactic screens cannot decide whether prose is abstract enough or entailed.
@@ -533,41 +581,27 @@ structure, not semantic acceptance. The Q1 switch gate remains unchanged.
   `verdict_evidence_refs` column on the superseding verdict row and the
   `record_verdict`/caller changes that persist validated references atomically.
   None of this evidence storage, delivery, resolver, retention or reference
-  persistence exists today; lookup execution remains conditional on the
-  operator's payload rule.
+  persistence exists today; lookup execution follows the accepted outbound
+  payload rule.
+
+  Implement code-set `location` on location-bearing lines, including location
+  carried through sources/slots/linked premises. Store supported named-place
+  lines independently of the reading room's location setting; keep that existing
+  setting / DisclosureGuard working in prompt render, `memory_search`/Views
+  and portal reads. Amend R-31 and 45 §4a's Character input exclusion through
+  an enforcing DEC row **with the phase-4 build**, not in this docs change.
+  Add only the negative read regressions needed to prove the existing setting
+  still holds on the new lines: a location-disabled or DisclosureGuard-denied
+  room does not read a flagged line through those existing surfaces, while a
+  permitted room reads the same stored named-place line. Include an unflagged
+  positive control. This is verification of the existing setting, not a new
+  disclosure filter, permission policy or negative-read-test program.
 
 No objective, tool or schema changes here. No Q1–Q5 wording, answerability bar,
 reply replay or operator-owned switch decision is changed.
 
 ## 7. Open positions
 
-- **Presence-derived durable patterns:** recommend retaining the blocked
-  default. An abstract setting still reveals whereabouts; only the operator's decision on a design proving
-  the existing disclosure rule in every receiving room can reopen admission.
-  The presence ladder is conditional on that decision, including durable
-  trait/hypothesis storage; no implied permission comes from abstraction.
-- **External lookup payload:** recommend the minimal public street/stop-name
-  rule above, never coordinates or a person's identity. This awaits the
-  operator's decision under R-28/DEC-227 and R-31; it is not a new egress
-  exception and no outside lookup is authorized by this docs change.
-- **Occupation, life stage and possessions:** propose requiring told evidence,
-  never inference from habits, appearance, places or media, for profile claims
-  about these aspects. This would narrow today's dedicated-key deduction path
-  for occupation; fallback attributes are already told-only. It is an open
-  operator decision, not an amendment or a claim about today's validator.
-- **Sensitive categories:** recommend never inferring health, religion,
-  sexuality, politics or finances, never making them traits or hypotheses,
-  and storing them only as profile facts explicitly told by the subject
-  themself, under existing source/scope rules. For 75's existing `gender`, `sex`
-  and `birthday` keys, recommend the same subject-told-only/no-inference rule
-  and no trait/hypothesis route; this would be an explicit constraint on those
-  dedicated keys, not their deletion or an assertion that they are fallback
-  attributes. Propose the same source restriction for `residence`, while treating
-  it as location: a self-report alone does not settle R-31 or the unresolved
-  location ceiling for durable Character claims. The operator must decide how
-  the proposal applies to all four existing keys and residence's admission;
-  neither that policy nor a migration is decided here. This is an open operator
-  position, not an implemented restriction or newly granted disclosure permission.
 - **Sizing and decay:** recommend §4's starting values, then size from frozen
   support intervals and rendered omissions. The repo supplies no measurement
   justifying a final budget or horizon for these nine kinds.

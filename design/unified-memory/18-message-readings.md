@@ -53,7 +53,7 @@ statements a Record home and leaves the Notebook to judge.
 
 ## What a message reading holds
 
-> 2026-10-22 (operator brief; proposed): [47 §2](47-character-dimensions.md#2-slot-templates-and-storage) makes each claim structured: about whom, what, event date/interval resolved against message time (unknown stays unknown), optional stated abstract place, speech act and source message ids. Assertion time and build time stay distinct from event time. This lands in phase 2; the source-tied lifecycle below stays.
+> 2026-10-22 (operator brief; proposed): [47 §2](47-character-dimensions.md#2-slot-templates-and-storage) makes each claim structured: about whom, what, event date/interval resolved against message time (unknown stays unknown), optional stated named place or abstract setting, speech act and source message ids. Assertion time and build time stay distinct from event time. This lands in phase 2; the source-tied lifecycle below stays.
 
 A message reading is a **Record item**, kind **message reading**, next to
 the messages it reads. It states what was said:
@@ -107,6 +107,8 @@ they are Record items, but its computation remains **code only**
 not turn a Rollup into model-written synthesis.
 
 ## Character is the card; Views answer from everything
+
+> **Decided (operator, 2026-10-22):** [47](47-character-dimensions.md#decided-operator-2026-10-22) records all four rulings and the governing store-what-evidence-supports principle. Named-place claims belong in Character; a code-set line `location` flag only keeps the existing room location setting / DisclosureGuard working on reads. Sensitive categories have no special handling, dedicated-key deduction and told-only fallbacks stand, and the minimal public outbound payload is accepted. Phase 4 implements the decision; Q1–Q5 below remain unchanged.
 
 With statements in readings, a Character entry is again the **bounded
 synthesis Nora sees in every prompt**, with profile, traits and hypotheses.

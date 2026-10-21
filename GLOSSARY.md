@@ -193,7 +193,11 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   ONE short entry to a chain (`culture`/`culture_revision`, keyed on the
   room's `primary_id`). It writes through `character_revise`, citing the
   messages it rests on, and reads no presence and no Standing: its entry is
-  evidence for entries that render in other rooms (R-31). Every
+  evidence for entries that render in other rooms (historical R-31 exclusion).
+  **Decided 2026-10-22:** [47](design/unified-memory/47-character-dimensions.md#decided-operator-2026-10-22)
+  admits supported named-place Character lines in phase 4; the code-set line
+  flag only preserves the existing per-room location setting on reads. The
+  preceding sentence describes today's prose adaptor, not a storage ban. Every
   occasion in a room reads it as `<culture>` except the Relevance Gate; the
   public summons reads no room and no culture. It is a
   baseline, not a rule: a window read against it becomes a deviation. Not
@@ -380,6 +384,13 @@ no entry.
   home, above), the **unit** or **Nora**. One row is an **entry**, a judgement
   with **profile** (who they are), **traits** (what they are like) and
   **hypotheses** (why), using **told / deduced / induced / abduced** modes.
+  **Decided (operator, 2026-10-22):** store what evidence supports without
+  category, medium or sensitivity bans; named-place location claims include
+  residence. Code-set line `location` keeps the existing room location setting /
+  DisclosureGuard working on reads; it adds no new disclosure policy. Sensitive
+  categories have no special handling. Dedicated profile keys may be deduced;
+  fallback attributes remain told-only; gender/sex/birthday keep the existing
+  contract. The four rulings are in [47](design/unified-memory/47-character-dimensions.md#decided-operator-2026-10-22).
   "Account" is now only for platform accounts.
   [ADR 0026](docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md)
   records the naming; the code rename is deferred. Today `culture` (the room

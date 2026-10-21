@@ -140,7 +140,7 @@ and the refusal says which cap.
 
 ## 3. The reasoning modes, enforced
 
-> 2026-10-22 (operator addition; proposed): [47's composition ladder](47-character-dimensions.md#the-composition-ladder--observations-to-checked-explanations) extends the independent hypothesis judge's evidence sources below to retained external evidence, with query/source/time provenance. It preserves prediction-window verdicts and unknown on unavailable evidence; the proposed outbound payload rule awaits the operator, and presence-derived durable claims remain blocked by §4a. No live lookup or verdict path changes here.
+> 2026-10-22 (external path proposed; operator policy decided): [47's composition ladder](47-character-dimensions.md#the-composition-ladder--observations-to-checked-explanations) extends the independent hypothesis judge's evidence sources below to retained external evidence, with query/source/time provenance. It preserves prediction-window verdicts and unknown on unavailable evidence; the outbound payload rule is accepted, and the operator’s location decision in 47 admits stored named-place claims with the code-set flag that keeps the existing room location setting working. No live lookup or verdict path changes here.
 
 **This is the one amended "allowed in" table for Persona** (2026-10-15); it
 amends cognition-loop/10 §4 for this tier, and [35](35-persona.md) §1 defers
@@ -212,7 +212,7 @@ dispute, or a told line about them by someone else.
 | **their response episodes** (how they answered Nora) | no | yes ([50](50-learning-from-acts.md)), under the same rule |
 | **their Rollup aggregates** (rhythm, ties) | no | yes, as evidence for induction |
 | open disputes and `remember` items about them | no | yes |
-| **their social items** (posts, reels and story frames: what each is, when posted, its caption and media readings, and a post's or reel's counts, [cognition-loop/22](../cognition-loop/22-social-stream.md) §5) | person Character only, at most 6 a wake (cognition-loop/22 §6) | yes, through the readable social store (opt-out and gone or hidden enforced), cited `social:<network>:<item id>`; an item has no room, so it counts as evidence in a unit that lists its author; never its place (R-31: the account renders in rooms whose `location` flags differ). The social input is added once step 6's adaptor lands |
+| **their social items** (posts, reels and story frames: what each is, when posted, its caption and media readings, and a post's or reel's counts, [cognition-loop/22](../cognition-loop/22-social-stream.md) §5) | person Character only, at most 6 a wake (cognition-loop/22 §6) | yes, through the readable social store (opt-out and gone or hidden enforced), cited `social:<network>:<item id>`; an item has no room, so it counts as evidence in a unit that lists its author; named places become location-bearing Character input under the 2026-10-22 decision in [47](47-character-dimensions.md#decided-operator-2026-10-22), with a code-set flag preserving the existing room location read setting (phase 4; not built). The social input is added once step 6's adaptor lands |
 | the unit's room cultures | yes | yes |
 
 The mentions input is the one that matters most for Honcho parity (§6): today
@@ -325,8 +325,8 @@ pipeline, new warehouse, general signal framework or network-specific writer.
 |---|---|---|
 | own messages and eligible mentions, with attached media readings | Record; preserve author, assertion time and message/attachment association. A reading describes that attachment, not the whole person; sharing or depicting something does not establish ownership, residence or a stable preference. | Messages/mentions are built. Complete chat-media input and late-reading delivery are a separate active ingestion task, not shipped by this amendment. |
 | social items: posts, reels, story frames; caption, media readings and available counts | Record, directly citable through the existing social citation. Author's publication is not a self-report of every depicted fact; counts describe audience response at their read time, not zero when unknown. | Direct person input is built: network-neutral `SocialSource` → readable `PersonSocialItem` → person writer. Keep this path; no compulsory Rollup or Register summary, and no Instagram-specific adaptor. |
-| stays, trips, outings, response episodes and aggregates (rhythm, ties) | Deterministic Rollup over Record; carry interval, current build/revision and underlying roots. An aggregate is evidence of its computed property, not a new independent witness. | Response episodes and non-location ties are built. Wider episodes/aggregates are proposed; location-bearing inputs remain blocked below. |
-| presence fixes and polls | Record, but not person-writer input. Use permitted Rollup projections only, subject to the location ceiling below. | No raw-fix input or presence tool is added. |
+| stays, trips, outings, response episodes and aggregates (rhythm, ties) | Deterministic Rollup over Record; carry interval, current build/revision and underlying roots. An aggregate is evidence of its computed property, not a new independent witness. | Response episodes and non-location ties are built. Wider episodes/aggregates, including location-bearing inputs, land in phase 4 under the operator decision below; no new storage exclusion applies. |
+| presence fixes and polls | Record, but not person-writer input. Use Rollup patterns for supported named-place claims under the operator decision below; raw traces are not Character content. | No raw-fix input or presence tool is added. |
 | notes, memos, events | Notebook Register current heads: contextual state, effective dates, links and roots. Resolve the entry's actual citations to readable Record/Rollup before grounding a claim; never cite the entry as evidence. | Proposed person context; do not turn model-authored summaries into told facts or count them as corroboration. |
 | held Persona, room accounts and memory index | Notebook accounts are context; the index is derived/disposable discovery machinery, neither authority nor citable source. Follow a pointer to its owning store and recheck scope/state. | Existing context is retained; index availability or a graph hit does not prove source availability. |
 
@@ -424,34 +424,16 @@ invalidation, automatic retraction or purge: [35](35-persona.md) §5 still
 holds, including retained conclusions citing a since-deleted message. Hidden
 source content is never re-rendered as fresh support.
 
-### Location privacy ceiling — unresolved and blocked
+### Location — decided by the operator, 2026-10-22
 
-§4 and [social-stream §6](../cognition-loop/22-social-stream.md) deliberately
-exclude person location: the same account renders in rooms with different
-`location` flags. **Unit membership alone does not authorize presence in
-every room.** Keep the no-person-location default. No raw coordinates,
-location tags or presence-derived durable claims are authorized here; stays
-are not evidence of residence. The index's separate gated `social_location`
-node ([25](25-memory-graph.md) §7a) remains separate and gated.
+> **DECIDED (operator, 2026-10-22, including clarification):** [47](47-character-dimensions.md#decided-operator-2026-10-22) supersedes §4a's presence exclusion and amends R-31 for Character. Store what evidence supports, including told, deduced and Rollup-derived named places, usual workplace/home area, regular places and commute route. The same entry can render in rooms with different location settings; code-set `location` on each location-bearing line exists only to keep the existing room `location` flag / live DisclosureGuard applying to prompt, retrieval/Views and portal reads exactly as now. Storage is independent of that room setting. No new disclosure filter or policy is introduced. Residence is a location key under the same rule. The enforcing DEC row and the read regressions proving the existing setting still holds land with the phase-4 build listed in 47 §6; none is added here.
 
-Any proposed location-bearing Rollup projection must honor the existing
-presence read boundary (room location permission and live DisclosureGuard)
-end to end, including later prompt, portal and retrieval reads of derived
-Persona output. A successful read in one room cannot authorize durable output
-in another. Until that can be guaranteed, withhold location-bearing inputs
-and person outputs in this extension. Caption/perception prose can itself
-contain a place: social-stream §6 explicitly cannot separate a location
-sticker's prose today. That ceiling is not a privacy guarantee; widening
-inputs must not launder such text through a Rollup or Register summary.
-
-The open design question is how location-derived durable claims could retain
-valid per-reader presence authorization across the shared account's whole
-read path. Neither a chosen home room, unit scope nor a model instruction
-answers it. No blanket documentation approval is needed; implementation of
-this subset waits for a concrete boundary-preserving design and its negative
-read tests. This holds unless end-to-end evidence demonstrates those reads
-honor the existing presence boundary; it does not reopen the operator's
-location policy or authorize enabling lineage.
+This replaces the former storage block, not the accuracy constraints: claims
+need evidence, visible mode and the applicable recurrence floor, and retain
+named places rather than raw coordinates or traces. The accepted outbound
+lookup payload rule and R-28 govern what leaves the system. The separate
+`social_location` index node ([25](25-memory-graph.md) §7a) keeps its existing
+read behavior. This is decided design, not a receipt that phase 4 is built.
 
 ### Targeted acceptance and implementation order
 
@@ -465,20 +447,22 @@ coverage acceptance path with synthetic cases, not another model harness:
 | changed bounded Rollup versus rebuild of the same evidence | Only relevant changes are reconsidered within budget; identical roots do not increase support or refresh age. |
 | note/memo/event repeats a held Persona conclusion; another entry links to actual roots | Repetition supplies no independent support; eligible roots resolve and may support the exact claim, with entry state kept as context. |
 | revised intention, cancelled event or settled memo | Context preserves effective window and current state; no automatic durable Identity fact or claim that a cancelled event occurred. |
-| another unit, unlisted-room mention, location-disabled room or denied presence read | No cross-boundary evidence; no durable location claim through shared Persona, Register prose or a graph neighbour. Include an allowed non-location positive control. |
+| existing unit/room read scope; location-disabled room or denied presence read | Keep existing read settings working. A supported named-place Character line is stored; prompt, retrieval/Views and portal reads apply the existing room location setting / DisclosureGuard through its code-set flag. A permitted room reads the same stored line. Include an unflagged positive control. |
 | trimmed/unread/unavailable source, write conflict and restart | Only rendered and durably settled revisions advance; retry retains unread work, domain cursors never skip one another. |
 
 First complete the separate chat-media ingestion gap without depending on its
-unmerged work. Then integrate the non-location sources against this finalized
-contract, inspect actual offline rendered inputs before any model acceptance,
-and use the existing bounded acceptance procedure. Location remains blocked
-as above. The timestamp repair merged in PR #107 improves source dates; the
+unmerged work. Integrate the sources against the finalized contract, including
+phase 4's supported named-place inputs and existing room read behavior, inspect
+actual offline rendered inputs before model acceptance, and use the existing
+bounded acceptance procedure. The timestamp repair merged in PR #107 improves source dates; the
 reported calibration of 16/20 with zero errors does not pass the 18/20 bar,
 and the full 179-line coverage run remains unmeasured. No further acceptance
 reruns precede integrated ingestion. This docs amendment runs no models and
 claims neither model acceptance nor runtime integration.
 
 ### Non-location implementation receipt — PR #109
+
+> Historical implementation receipt: the source exclusions below describe this build, not the decided phase-4 storage policy. The operator decision above admits supported location-bearing Character lines; that implementation remains to be built.
 
 The integrated person path uses `SqlPersonaInputs` at the existing
 `PersonaEvidence` / `PersonaPersonAdaptor` seam. It reads owning stores with
@@ -535,8 +519,9 @@ and unreadable material and never proves extraction quality. Running the
 writer recovery later still spends its ordinary model calls; this build ran
 no paid acceptance or live backfill.
 
-The location ceiling above remains blocked. Deterministic input/progress
-checks are implementation evidence only: model acceptance, coverage, reply
+The operator's location decision above is design; phase 4's input/flag/read
+wiring is not built by this receipt. Deterministic input/progress checks are
+implementation evidence only: model acceptance, coverage, reply
 replay, deployment and live cached-media counts remain separate measurements.
 
 ## 5. Rendering
