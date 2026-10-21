@@ -126,16 +126,22 @@ collectives where applicable even if 12 §4 lacked a heading for them.
 
 ### Where the other aspects of a life belong
 
-**Operator completeness amendment, 2026-10-22:** the nine dimensions are not
+**Coverage mapping, 2026-10-22:** the nine dimensions are not
 nine exhaustive profile fields. Knowledge belongs to `skill` when demonstrated
 as an ability to explain or apply it, or `topic` when the evidence shows
 engagement only. Memberships and affiliations belong to profile
 `relationship`/`attribute` when stated, or `social` for an observed recurring
 interaction pattern; participation alone does not establish membership.
-Life stage, occupation and possessions belong to profile attributes only when
-told, never inferred from habits, appearance, places or media. The bus-driver
-example below remains an explicitly uncertain hypothesis, never an inferred
-occupation asserted in profile.
+Life stage, occupation and possessions concern profile, not additional trait
+kinds. Today's contract distinguishes dedicated keys from fallback attributes:
+[75](75-typed-identity.md) gives occupation a dedicated typed key, and
+[45 §3](45-persona-adaptor.md#3-the-reasoning-modes-enforced) permits dedicated
+profile facts such as occupation to be `deduced` from at least two eligible
+premises, subject to its other checks. The `told`-only rule in 75 applies to
+fallback `attribute` values; it is not a universal ban on deduced profile facts.
+A stricter no-inference rule for occupation, life stage and possessions is
+proposed in §7, not an operator amendment to today's contract. The bus-driver
+example below remains a hypothesis: a route match is not evidence of occupation.
 
 **Proposed sensitive-category rule, awaiting the operator:** health, religion,
 sexuality, politics and finances are never inferred, never stored as traits or
@@ -289,8 +295,12 @@ not authorization or proof that every input path is built.
 | Acts/outcomes: recorded sends/tool results/artifacts, `rollup_response`, and the proposed social-act episode in [50](50-learning-from-acts.md) | style, social, disposition, preference; skill, value, habit, goal, topic when demonstrated | Abstract repeated action/reception in its context. Silence is not dislike; unreadable outcome is unknown. Learning about Nora never assigns her action to a member, and positive reaction never proves correctness. |
 | Rollup counts: place, rhythm, tie, play-profile aggregate keys | habit, social, topic/style where the measured property supports them | Describe the measured pattern over its actual interval; counts do not establish liking, motive, skill or value. Location-bearing aggregates stay blocked. Require root-based support; a new build is not new evidence. |
 
-No new evidence store is introduced. The memory index locates items and typed
-links; it is not a witness. Every input keeps source eligibility, unit scope,
+The existing media above keep their owning stores. **Amended recommendation,
+2026-10-22:** external hypothesis checks need one new append-only Record table,
+`verdict_evidence`, owned by the independent verdict adaptor, as specified below.
+This explicitly replaces this node's earlier “no new evidence store” claim for
+that external path only. The memory index locates items and typed links; it is
+not a witness. Every input keeps source eligibility, unit scope,
 subject membership and disclosure checks. Notebook entries and Nora's earlier
 conclusions never manufacture independent corroboration.
 
@@ -303,11 +313,11 @@ medium-specific writer or unbounded external-search loop is introduced.
 
 | rung | what is stored and by whom | abstraction and provenance |
 |---|---|---|
-| Record observation | Existing messages/readings, attachment/media readings, social items, presence fixes/polls, and recorded tool calls/results. Ingestion or the existing result recorder owns them. | Source-specific detail stays in its scoped store with authorship and source/assertion time. Reading claims preserve speech acts; raw observations never become public card text. |
+| Record observation | Existing messages/readings, attachment/media readings, social items and presence fixes/polls keep their owners. External lookup attempts/results would be new Record rows in proposed `verdict_evidence`, owned by the independent verdict adaptor. | Source-specific detail stays in its scoped store with authorship and source/assertion time. Reading claims preserve speech acts; raw observations never become public card text. |
 | Rollup pattern | Existing deterministic episode/aggregate builders store intervals, counts, computed patterns and roots/build identity. | Code folds repeated evidence; it does not name motives or occupations. Not every medium needs a new aggregate: chat/Instagram/media can use existing eligible episodes/counts or feed deduplicated Record occasions directly to the next rung. |
 | Trait | The existing Character writer stores one `habit`, `topic`, `style` or other applicable dimension with §2's slots and code-computed strength. | A recurring pattern, not the raw route, post, message or photograph. Context and exceptions constrain it. Recurrence and all disclosure checks apply before admission. |
 | Abduced hypothesis | The same writer stores an explanation linked by `draws_on`, proposed cause, alternative and an observable prediction/window. | A possible cause, not a new profile fact. It says what would distinguish it from the alternative and which outside observation, if needed, would test it. |
-| Independent check (proposed external path) | A phase-4 evidence-collection runner owned by the independent verdict adaptor, never the Character writer, performs an authorized lookup and hands retained evidence to the judge. Its query, source URL, retrieved content, retrieval time and available publication/effective time are retained through the existing Record tool-result + trace path. This runner and judge-input extension do not exist today. | The result is evidence about its actual proposition. Missing dates stay unknown; a search snippet is a locator until the source is read. Private roots remain private; public evidence does not inherit permission to reveal them. |
+| Independent check (proposed external path) | A phase-4 evidence-collection runner owned by the independent verdict adaptor, never the Character writer, performs an authorized lookup and hands retained evidence to the judge. Its query, source URL, retrieved content, retrieval time, outcome and available publication/effective time would be retained in new append-only `verdict_evidence` rows, linked to the trace. The table, append path, scoped reference resolver, retention and judge-input extension do not exist today. | The result is evidence about its actual proposition. Missing dates stay unknown; a search snippet is a locator until the source is read. Private roots remain private; public evidence does not inherit permission to reveal them. |
 | Verdict | Today's write records confirmed/refuted/expired/unknown and judge identity/time. Phase 4 must add a proposed `verdict_evidence_refs` column on the superseding verdict row and extend the verdict write to persist references to the retained evidence. No evidence-reference write exists today. | Confirm only the specified prediction, not all causal assertions or a person's identity. No automatic profile promotion; retained evidence lets another reader reconstruct the judgement. |
 
 Presence already has the lower rungs: the presence Rollup in
@@ -342,34 +352,77 @@ web result somewhere does not make it available to that judge or cited by its
 verdict. **Both external evidence acquisition/delivery and durable verdict
 references are phase-4 work, not existing capabilities.**
 
-**Proposed phase-4 path:** an evidence-collection runner in the independent
-verdict adaptor executes a bounded lookup only after the outbound payload
-policy is authorized. The Character writer neither runs the lookup nor selects
-the verdict; it supplies only the hypothesis and its predeclared observable.
-The runner retains the exact permitted query, source URL, retrieved content,
-retrieval time and any available source publication/effective time in the
-existing Record tool-result + trace path, then resolves those retained results
-into the judge's scoped input. The model judge may remain tool-less: the new
-runner/input path, rather than a writer-provided summary, supplies the evidence.
+**There is no existing durable lookup-evidence path to reuse.**
+[`nora/domain/tool_call_log.py`](../../nora/domain/tool_call_log.py) records only
+successful calls to cacheable tools, scoped to one conversation and read back
+only by `recall_lookups` in that same conversation. Its port exposes recent
+entries, not lookup by evidence reference. The writer in
+[`nora/agent/guards.py`](../../nora/agent/guards.py) skips non-ok outcomes.
+That cache cannot supply failed attempts or the scoped references needed here;
+trace availability alone is not durable Record evidence. Its conversation
+boundary must not be widened to serve this design.
+
+**Proposed phase-4 storage choice:** add one append-only **Record** table,
+`verdict_evidence`, owned by the independent verdict adaptor. Prefer it over
+extending the conversation recall cache: the owners, read boundary, outcomes
+and retention differ. This is a new evidence store, explicitly amending the
+earlier “no second evidence store” statement, not a claim that existing plumbing
+already satisfies the contract. It is a narrow table for hypothesis checks,
+not a second general memory system or model-written knowledge tier.
+
+The table carries an immutable row reference and attempt reference, the scoped
+hypothesis/entry and unit, judge-run identity, eligible audience/source scope,
+permitted query, source URL, content when retrieved, attempt/retrieval time,
+source publication/effective time when known, outcome/error and trace reference.
+Absent content or dates stay absent, never a successful empty result. Scope is
+at least as restrictive as the hypothesis and every input authorizing the lookup;
+a public URL does not make the private reason for checking it public.
+
+**Proposed phase-4 append and read path:** an evidence-collection runner in the
+independent verdict adaptor executes a bounded lookup only after the outbound
+payload policy is authorized. The Character writer neither runs the lookup nor
+selects the verdict; it supplies only the hypothesis and predeclared observable.
+The runner appends an attempt row before executing the permitted lookup, then
+an outcome row linked to that attempt for success, failure, timeout or
+unavailability, without rewriting either row. A started attempt without an
+outcome is incomplete, not successful evidence. A failed append cannot be
+replaced by a trace-only receipt or allow an uncited verdict to commit.
+
+Phase 4 must add a **scoped reference lookup** over `verdict_evidence`: both
+judge-input assembly and `verdict_evidence_refs` validation resolve immutable
+row references through the same reader. It checks the requested unit,
+hypothesis/entry, audience/source eligibility and row availability before
+returning content; it never fetches another conversation's recall cache.
+The model judge may remain tool-less: the runner resolves the retained rows
+into its input and records exactly which references it received. A failed or
+unreadable reference yields unavailable evidence, never guessed content.
 
 Add a proposed `verdict_evidence_refs` column to the **new superseding verdict
-row**, and extend `record_verdict` and its caller to accept and persist it in
-the same verdict transaction. References point to the retained Record tool
-results, with their trace provenance, not merely a URL or the writer's prose;
-validate that each resolves to the evidence actually delivered to this judge.
-The external-verdict path cannot commit a confirmation without durable,
-resolvable supporting references. Failed/unavailable lookups retain their
-attempt provenance and lead to unknown, never a fabricated supporting reference.
-This extends the existing append-only verdict path, not a second evidence store
-or writer-owned grading path. None of this schema, runner or write plumbing is
-built by this docs change.
+row**, and extend `record_verdict` and its caller to validate and persist it in
+the same verdict transaction. References identify `verdict_evidence` rows,
+whose trace links are supplementary provenance, not a substitute for retained
+content. Validate that each reference resolves under scope and was delivered
+to this judge. Confirmation requires durable supporting outcome rows;
+failed/unavailable attempts are retained and referenced as the reason for an
+unknown verdict, never as positive support.
+
+**Proposed retention:** keep attempts and outcomes, including failed/unavailable
+ones, for at least the lifetime of the referencing hypothesis/verdict revision
+history; outstanding attempts remain until that hypothesis history retires
+under its retention policy. Do not inherit the recall cache's window or trace
+expiry. Phase 4 must implement this retention alongside append and scoped lookup.
+If an explicit privacy purge removes evidence, resolution must report it
+unavailable and historical verification remains unmeasured; neither a URL nor a
+trace may reconstruct missing private content. Retention grants no wider read
+permission. None of this table, runner, resolver, retention or verdict-write
+plumbing is built by this docs change.
 
 **Proposed extension to 45 §3 (not built): external evidence is a permitted
 hypothesis-verdict source**, beside a Rollup count or described event. Retain
 the independent judge and closed-window timing. The observable names the public
 property, its time relevance and what would confirm or refute it before the
-lookup. Read and retain the source through existing permitted web tooling and
-Record/trace provenance; no new external-evidence warehouse. Outages, unreadable
+lookup. Read through permitted web tooling and retain the source in the proposed
+`verdict_evidence` Record table with its trace link, not in the recall cache. Outages, unreadable
 sources, ambiguous matches and undated evidence that cannot establish the
 window give unknown. Expired means the observable was checkably absent in its
 window, not that a search failed. The external result cannot corroborate the
@@ -473,11 +526,15 @@ structure, not semantic acceptance. The Q1 switch gate remains unchanged.
 - **Phase 4:** trait kinds, content slots, support computation, hypothesis
   explanation slots, caps/renderer and re-evidencing, together with the one
   ADR 0026 Character rename migration and writer rework. External checks require
-  the new independent verdict-adaptor lookup runner and evidence delivery to the
-  currently tool-less judge, plus a new `verdict_evidence_refs` column on the
-  superseding verdict row and the `record_verdict`/caller changes that persist
-  it atomically. Neither acquisition/delivery nor reference persistence exists
-  today; lookup execution remains conditional on the operator's payload rule.
+  the new independent verdict-adaptor lookup runner; the new append-only Record
+  table `verdict_evidence` and append path including failed/unavailable attempts;
+  its scoped reference lookup shared by judge-input assembly and verdict-reference
+  validation; and retention independent of recall-cache/trace expiry. Add a new
+  `verdict_evidence_refs` column on the superseding verdict row and the
+  `record_verdict`/caller changes that persist validated references atomically.
+  None of this evidence storage, delivery, resolver, retention or reference
+  persistence exists today; lookup execution remains conditional on the
+  operator's payload rule.
 
 No objective, tool or schema changes here. No Q1–Q5 wording, answerability bar,
 reply replay or operator-owned switch decision is changed.
@@ -493,11 +550,24 @@ reply replay or operator-owned switch decision is changed.
   rule above, never coordinates or a person's identity. This awaits the
   operator's decision under R-28/DEC-227 and R-31; it is not a new egress
   exception and no outside lookup is authorized by this docs change.
+- **Occupation, life stage and possessions:** propose requiring told evidence,
+  never inference from habits, appearance, places or media, for profile claims
+  about these aspects. This would narrow today's dedicated-key deduction path
+  for occupation; fallback attributes are already told-only. It is an open
+  operator decision, not an amendment or a claim about today's validator.
 - **Sensitive categories:** recommend never inferring health, religion,
   sexuality, politics or finances, never making them traits or hypotheses,
   and storing them only as profile facts explicitly told by the subject
-  themself, under existing source/scope rules. This is an open operator position,
-  not an implemented restriction or a newly granted disclosure permission.
+  themself, under existing source/scope rules. For 75's existing `gender`, `sex`
+  and `birthday` keys, recommend the same subject-told-only/no-inference rule
+  and no trait/hypothesis route; this would be an explicit constraint on those
+  dedicated keys, not their deletion or an assertion that they are fallback
+  attributes. Propose the same source restriction for `residence`, while treating
+  it as location: a self-report alone does not settle R-31 or the unresolved
+  location ceiling for durable Character claims. The operator must decide how
+  the proposal applies to all four existing keys and residence's admission;
+  neither that policy nor a migration is decided here. This is an open operator
+  position, not an implemented restriction or newly granted disclosure permission.
 - **Sizing and decay:** recommend §4's starting values, then size from frozen
   support intervals and rendered omissions. The repo supplies no measurement
   justifying a final budget or horizon for these nine kinds.
