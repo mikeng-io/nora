@@ -3,7 +3,7 @@ usage: gate_stt.py <gen_dir with manifest.json>  → writes gate.json + prints p
 import sys, os, json, re, subprocess, collections, wave
 D=sys.argv[1]; man=json.load(open(os.path.join(D,"manifest.json")))
 POS=re.compile(r"nora|nova|喂 ?ra|諾拉|娜拉|nara|lora",re.I)
-URL="http://192.168.16.16:8000/v1/audio/transcriptions"
+URL=os.environ.get("STT_URL", "http://<stt-host>:8000/v1/audio/transcriptions")
 def stt(p):
     r=subprocess.run(["curl","-s","-F",f"file=@{p}","-F","language=yue",URL],capture_output=True,text=True)
     try: return json.loads(r.stdout).get("text","")

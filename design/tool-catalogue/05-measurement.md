@@ -36,7 +36,7 @@ per-turn block, which would mean the layout assumption is approximate.
 The decomposition is sound because each part was measured. The cache agreement
 is corroboration, not proof.
 
-Langfuse is at `192.168.1.10:3100`; credentials are in norty's
+Langfuse is at `<langfuse-host>`; credentials are in the operator-managed
 `nora/.env` under `LANGFUSE_OTLP_HEADERS` (URL-encoded, strip the
 `Authorization=Basic ` prefix and unquote).
 

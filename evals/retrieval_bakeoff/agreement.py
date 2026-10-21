@@ -7,7 +7,7 @@ and no text. Images at the HF budget the scored run used (280, the card's
 default) and at 70, the latter information only. Run on the deploy host
 from the bake-off venv, with Ollama serving `embeddinggemma-2:latest`:
 
-    nice -n 10 /home/norty/nora-bakeoff/venv/bin/python -I agreement.py > out.json
+    nice -n 10 /home/<deploy-user>/nora-bakeoff/venv/bin/python -I agreement.py > out.json
 """
 
 import base64

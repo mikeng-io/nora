@@ -1,6 +1,6 @@
 # Design brief — vision timeout derivation: divide by the SERIAL factor
 
-**Worktree:** `/home/norty/workspace/nora-wt-timeout-fix`
+**Worktree:** `/home/<deploy-user>/workspace/nora-wt-timeout-fix`
 **Branch:** `feat/vision-timeout-derivation` (cut from `feat/media-read-lane-design` @ `58fb9f85`)
 **Base design docs:** `design/media-read-lane/07-timeout-derivation.md` (read it — it is the authority for the formula)
 
@@ -177,10 +177,10 @@ uses an explicit `timeout_seconds=0.3`, so it must still work.
 
 ## 7. Environment
 
-- Python: `/home/norty/workspace/nora/.venv/bin/python` (3.13) — use it, not system python.
-- Run tests from the worktree root: `/home/norty/workspace/nora-wt-timeout-fix`.
+- Python: `/home/<deploy-user>/workspace/nora/.venv/bin/python` (3.13) — use it, not system python.
+- Run tests from the worktree root: `/home/<deploy-user>/workspace/nora-wt-timeout-fix`.
 - `config.toml` is **gitignored** and exists only in the master tree
-  (`/home/norty/workspace/nora/config.toml`) — read it for reference, **never edit it**.
+  (`/home/<deploy-user>/workspace/nora/config.toml`) — read it for reference, **never edit it**.
 - Repo conventions are strict: comments explain **why** and cite `file:line`; the
   codebase is heavily documented and a bare change without rationale will be rejected
   in review. Match the surrounding style.

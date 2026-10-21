@@ -1,6 +1,6 @@
 # openWakeWord internals and alternatives for 「喂 Nora」 (2026-09-16)
 
-Source: local clone `/home/norty/workspace/voice-lab/oww-src` (upstream `368c037`, 2025-12-30, plus **uncommitted local edits** to `train.py`/`data.py`), GitHub API, linked docs.
+Source: local clone `/home/<deploy-user>/workspace/voice-lab/oww-src` (upstream `368c037`, 2025-12-30, plus **uncommitted local edits** to `train.py`/`data.py`), GitHub API, linked docs.
 
 ## 1. How openWakeWord works
 

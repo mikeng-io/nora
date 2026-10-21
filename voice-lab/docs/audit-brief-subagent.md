@@ -12,13 +12,13 @@ Training an openWakeWord custom wake word on Modal T4. Training completed but me
 Strong suspicion: `steps` config did NOT propagate — log shows **seq1 tqdm total = 2,000** while MODAL_WAKE_STEPS=20000. Verify by reading train.py's config flow: how `config["steps"]` reaches `auto_train(steps=...)`; check whether the Modal-rewritten YAML actually changed `steps`; check whether train.py has a default of 2000 that swallowed our value.
 
 ## Files (read everything relevant)
-- /home/norty/workspace/voice-lab/oww-src/openwakeword/train.py — official training script (auto_train at ~line 261; main at ~line 794)
-- /home/norty/workspace/voice-lab/oww-src/openwakeword/data.py — augmentation + clip gen
-- /home/norty/workspace/voice-lab/oww-data/喂Nora.yml — source config (steps: 50000)
-- /home/norty/workspace/voice-lab/scripts/modal_train_wakeword.py — Modal wrapper (cfg["steps"] = STEP_COUNT rewrite at ~line 140; run cmd at ~line 210)
+- /home/<deploy-user>/workspace/voice-lab/oww-src/openwakeword/train.py — official training script (auto_train at ~line 261; main at ~line 794)
+- /home/<deploy-user>/workspace/voice-lab/oww-src/openwakeword/data.py — augmentation + clip gen
+- /home/<deploy-user>/workspace/voice-lab/oww-data/喂Nora.yml — source config (steps: 50000)
+- /home/<deploy-user>/workspace/voice-lab/scripts/modal_train_wakeword.py — Modal wrapper (cfg["steps"] = STEP_COUNT rewrite at ~line 140; run cmd at ~line 210)
 - /tmp/modal-train.log — full training log (metrics at ~line 3456-3458; STEP_COUNT=20000 at line 10; "Starting training sequence 1..." at line 2153; seq1 tqdm totals near 3428-3452)
-- /home/norty/workspace/voice-lab/oww-data/output/喂Nora.onnx — trained model (206KB)
-- /home/norty/workspace/voice-lab/scripts/real_audio_gate.py — gate harness (uses Model(wakeword_models=[onnx], inference_framework="onnx", enable_speex_noise_suppression=True, vad_threshold=0.5) with 512-sample windows)
+- /home/<deploy-user>/workspace/voice-lab/oww-data/output/喂Nora.onnx — trained model (206KB)
+- /home/<deploy-user>/workspace/voice-lab/scripts/real_audio_gate.py — gate harness (uses Model(wakeword_models=[onnx], inference_framework="onnx", enable_speex_noise_suppression=True, vad_threshold=0.5) with 512-sample windows)
 
 ## Verified facts
 - Data split: positive_train 13,590 / positive_test 1,710 / negative_train 15,274 / negative_test 2,180 — all 16k mono WAV.

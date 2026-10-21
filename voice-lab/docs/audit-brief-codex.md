@@ -7,13 +7,13 @@ Attack the claim "the model is dead because steps didn't propagate (seq1 ran 2,0
 openWakeWord custom wake word 「喂 Nora」 trained on Modal T4 (torch 2.1.2 CUDA, speechbrain 0.5.14 with a runtime source patch int(rotation_index) on reverberate, RIR mono16k 300, bg 550, pos 13,590/1,710, neg 15,274/2,180, dnn layer 32, batch 50/50, augmentation_rounds 1). Final metrics 0.678 acc / 0.336 recall / 482 FP-hr. Real gate 0 fires, all predicts 0.0.
 
 ## Files
-- /home/norty/workspace/voice-lab/oww-src/openwakeword/train.py
-- /home/norty/workspace/voice-lab/oww-src/openwakeword/data.py
-- /home/norty/workspace/voice-lab/oww-data/喂Nora.yml
-- /home/norty/workspace/voice-lab/scripts/modal_train_wakeword.py
+- /home/<deploy-user>/workspace/voice-lab/oww-src/openwakeword/train.py
+- /home/<deploy-user>/workspace/voice-lab/oww-src/openwakeword/data.py
+- /home/<deploy-user>/workspace/voice-lab/oww-data/喂Nora.yml
+- /home/<deploy-user>/workspace/voice-lab/scripts/modal_train_wakeword.py
 - /tmp/modal-train.log
-- /home/norty/workspace/voice-lab/oww-data/output/喂Nora.onnx
-- /home/norty/workspace/voice-lab/scripts/real_audio_gate.py
+- /home/<deploy-user>/workspace/voice-lab/oww-data/output/喂Nora.onnx
+- /home/<deploy-user>/workspace/voice-lab/scripts/real_audio_gate.py
 
 ## Deliverable (English, terse, adversarial)
 1. Attack verdict on the steps hypothesis (evidence)

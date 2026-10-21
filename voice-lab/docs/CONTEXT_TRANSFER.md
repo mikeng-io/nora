@@ -96,7 +96,7 @@ git clone https://github.com/dscripka/openWakeWord.git oww-src
 cd oww-src && git apply ../oww-src-working-tree.patch && cd ..
 
 # data (LARGE — not in git, ~2.5GB+): rsync from norty host or regenerate
-# rsync -av norty:/home/norty/workspace/voice-lab/{oww-data,data,clips} ./
+# rsync -av norty:/home/<deploy-user>/workspace/voice-lab/{oww-data,data,clips} ./
 # - oww-data/output/喂Nora.onnx (SEP 15 BAD artifact - do NOT deploy)
 # - /tmp/modal-train.log = V3 train log (forensic evidence)
 
@@ -111,7 +111,7 @@ MODAL_WAKE_STEPS=50000 .venv/bin/modal run scripts/modal_train_wakeword.py::main
 
 ## 5. CONTEXT NOTES
 
-- **Current production** (`nora-wt-voice-design` deploy target `/home/norty/workspace/nora`):
+- **Current production** (`nora-wt-voice-design` deploy target `/home/<deploy-user>/workspace/nora`):
   still running SEP-15 broken `喂Nora.onnx` (threshold 0.5). Do NOT deploy V4 until
   acceptance passes — the gate will refuse it at the pipeline level.
 - **V4 V3 artifact mtime anomaly**: V4 bundle contained an onnx with mtime Sep-15 23:56;

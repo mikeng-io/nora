@@ -10,12 +10,12 @@ Training an openWakeWord custom wake word via Modal T4. Training completed but:
 - Known positive training clips score 0.0 (VAD on and off)
 
 ## Files (read all)
-- /home/norty/workspace/voice-lab/oww-src/openwakeword/train.py (auto_train ~line 261; main ~line 794; steps default? search "def auto_train" and "steps=")
-- /home/norty/workspace/voice-lab/oww-data/喂Nora.yml (source config, steps: 50000)
-- /home/norty/workspace/voice-lab/scripts/modal_train_wakeword.py (Modal wrapper; cfg["steps"] = STEP_COUNT rewrite; run cmd)
+- /home/<deploy-user>/workspace/voice-lab/oww-src/openwakeword/train.py (auto_train ~line 261; main ~line 794; steps default? search "def auto_train" and "steps=")
+- /home/<deploy-user>/workspace/voice-lab/oww-data/喂Nora.yml (source config, steps: 50000)
+- /home/<deploy-user>/workspace/voice-lab/scripts/modal_train_wakeword.py (Modal wrapper; cfg["steps"] = STEP_COUNT rewrite; run cmd)
 - /tmp/modal-train.log (metrics at ~3456-3458; STEP_COUNT=20000 at line 10; seq markers 2153/3221/3343; tqdm seq1 totals 3428-3452)
-- /home/norty/workspace/voice-lab/oww-data/output/喂Nora.onnx
-- /home/norty/workspace/voice-lab/scripts/real_audio_gate.py
+- /home/<deploy-user>/workspace/voice-lab/oww-data/output/喂Nora.onnx
+- /home/<deploy-user>/workspace/voice-lab/scripts/real_audio_gate.py
 
 ## Verified
 - Splits: pos_train 13,590 / pos_test 1,710 / neg_train 15,274 / neg_test 2,180 — all 16k mono WAV.

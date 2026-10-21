@@ -88,7 +88,7 @@ written, if:
 stripped (EXIF, GPS, XMP, ICC comments), resized to a maximum side of 512 px,
 JPEG quality 85. The sha256 of the processed bytes is the item's content hash.
 Images are never committed: they live at
-`/home/norty/nora-bakeoff/media/<sha256>.jpg` on the deploy host, with a copy
+`/home/<deploy-user>/nora-bakeoff/media/<sha256>.jpg` on the deploy host, with a copy
 outside every checkout on the development machine. A file that is missing or
 whose bytes do not hash to its `sha256` is an ERROR for that item, never a
 miss.
