@@ -242,9 +242,8 @@ sbx cp "$D/disk-plan.json" nora-computer:/var/lib/computer-unit-migration/disk-p
 The function creates the env-file process substitution for each actual Docker
 invocation; storing its descriptor path in an array would close it before later
 HOST calls. The password is supplied through that descriptor, not Docker's
-command-line arguments, a printed config or a persistent secret file. Compose
-reads it from `"$RUNTIME/.env"`; clearing an inherited POSTGRES_PASSWORD for the
-config command prevents that variable overriding the file. Keep tracing off.
+command-line arguments, a printed config or a persistent secret file. The snippet above reads only that one key from `"$RUNTIME/.env"` and fails closed if it
+is missing, duplicated, empty or malformed. Keep tracing off.
 The service/user/database shape is from `docker-compose.yml` (lines 737–745),
 and `scripts/migrate_computer_unit_scope.py::run` reads DATABASE_URL (line 95).
 
