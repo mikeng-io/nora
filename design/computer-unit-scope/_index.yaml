@@ -1,0 +1,19 @@
+kind: design_index
+bundle: computer-unit-scope
+title: One computer workspace per unit for group rooms
+description: >
+  Proposed replacement of room-scoped computer workspaces with unit-scoped
+  workspaces, including leases, browser state, session reads and lossless migration.
+status: proposed
+timestamp: '2026-10-21'
+governance: operator-directed
+origin: Operator ruling that work must resume across a unit's group transports.
+docs:
+  - 00-contract.md
+open_questions: []
+implementation_status: not-built
+decision: decision recorded at merge; no behavioural row in this documentation change
+edges:
+  - {src: 00-contract, dst: ../sandbox-runtime/00-design.md, rel: amends, provenance: proposed}
+  - {src: 00-contract, dst: ../subagent/00-design.md, rel: amends, provenance: proposed}
+  - {src: 00-contract, dst: ../private-dm/00-contract.md, rel: prerequisite_for, provenance: operator-directed}
