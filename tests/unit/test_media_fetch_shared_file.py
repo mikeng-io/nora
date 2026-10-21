@@ -150,6 +150,7 @@ class _World:
         if video:
             models["video"] = "test/video-model"
         specs = build_tool_specs(
+            unit_for=lambda platform, cid: cid,
             store=store or FakeRecordStore(), conversation_id=GROUP,
             conversation_type="group", persons=_NoPersons(), honcho=None, deliverer=None,
             metrics=Metrics(),

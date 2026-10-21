@@ -229,6 +229,9 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         "describe", "enqueue", "get", "history", "lookup", "mark", "put", "read",
         "recent", "record", "resolve", "rsvps_for", "save", "search",
         "sweep_firing", "apply",
+        # Computer session selection and audit reads both use the bound unit scope.
+        # Their independent contract suites drive the two production stores.
+        "for_scope",
         # Persona source reads share register/settle names with other owners.
         "register", "settle",
         # `SqlDocumentStore.set_state` (DEC-255) shares the name with another store's.

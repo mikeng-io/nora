@@ -49,10 +49,6 @@ _NOT_A_BUILDER = {
     # blob a room sent, and when), never a rendered transcript: no row body reaches a
     # model through it except a shared item's own link, read by `media_fetch`.
     "nora/domain/media.py": "resolves media codes from media_json, hands no transcript to a model",
-    # `recent` here is `ComputerEventStore`'s,
-    # the computer audit (commands and their exit codes), never a message
-    # row; no transcript body reaches the `<computer>` block through it.
-    "nora/engagement/computer_context.py": "reads computer audit rows, not messages",
     # The OPERATOR's surface, not a model's: `nora persons pending` lists rows
     # whose sender maps to nobody so a human can add them to identity.toml. A
     # human reading `[image a3f2c1]` in a CLI table is not being told a photo
