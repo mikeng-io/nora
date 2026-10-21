@@ -47,6 +47,8 @@ of the three learned:
 
 ## 1. Storage
 
+> 2026-10-22 (operator brief; proposed): [47](47-character-dimensions.md) defines the phase-4 trait kinds and JSONB prose slots, hypothesis explanation slots and citation-computed support. It amends the `kind` and free-prose contract below together with the ADR 0026 rename; existing storage is unchanged.
+
 > 2026-10-21 (message readings; ADR 0026): statements now live in the Record as [message readings](18-message-readings.md). Character entries are the bounded card Nora sees in every prompt, with profile, traits and hypotheses; they are judgements, not the whole memory. Answers come from Views over readings, Rollup and entries. The historical body and existing code names below are preserved; new text follows [ADR 0026](../../docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md).
 
 Keys are today's culture keys: `{unit}#character:{person}`, `{unit}#unit`,
@@ -113,6 +115,8 @@ and `draws_on` become edges inside the write's own `begin()` block
 
 ## 2. The parts, their kinds and their caps
 
+> 2026-10-22 (operator brief; proposed): [47 §1–§4](47-character-dimensions.md#1-the-dimensions) replaces generic `trait` with nine trait kinds in the traits part, proposes nine pooled traits, keeps three open-window hypotheses, and defines a bounded card and dimension-specific decay. Its three-occasion/two-HKT-day floor applies to every trait, including deduced lines and aggregate-supported lines; it amends §3’s aggregate shortcut. The historical caps and built rules below remain until phase 4.
+
 | part | kinds | cap (current lines) | decays |
 |---|---|---|---|
 | identity | `name`, `role`, `relationship`, `attribute`, `instruction` (actors); `name`, `purpose`, `norm` (collectives) | unbounded storage, bounded rendering | no; replaced only by a later told line or a dispute the adaptor accepts |
@@ -135,6 +139,8 @@ lines; Culture's `Names and where they came from` section (cognition-loop/12
 and the refusal says which cap.
 
 ## 3. The reasoning modes, enforced
+
+> 2026-10-22 (operator addition; proposed): [47's composition ladder](47-character-dimensions.md#the-composition-ladder--observations-to-checked-explanations) extends the independent hypothesis judge's evidence sources below to retained external evidence, with query/source/time provenance. It preserves prediction-window verdicts and unknown on unavailable evidence; the proposed outbound payload rule awaits the operator, and presence-derived durable claims remain blocked by §4a. No live lookup or verdict path changes here.
 
 **This is the one amended "allowed in" table for Persona** (2026-10-15); it
 amends cognition-loop/10 §4 for this tier, and [35](35-persona.md) §1 defers

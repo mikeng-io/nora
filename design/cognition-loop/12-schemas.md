@@ -80,6 +80,8 @@ own `reasoning`, `confidence` and `lineage` ([10](10-tiers.md) §3). Body:
 
 ## 4. Character
 
+> 2026-10-22 (operator addition; proposed): [47 · Character dimensions](../unified-memory/47-character-dimensions.md) supersedes this section for person, room, unit and Nora, mapping every proposed heading to a dimension, profile field or context. These Character headings were not built; the culture objective still requires prose with “No headings”. Phase 4 changes that contract with the Character rework. This amendment does not supersede §4a Lessons or change its implementation.
+
 Paragraphs, not lists: an account says *what it is and why*, and the culture
 store's measured lesson is that a list turns an account into a log of what
 happened (`nora/dreamer/objectives/culture.md`, "an account, not a record").

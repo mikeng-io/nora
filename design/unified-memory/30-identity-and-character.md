@@ -87,6 +87,8 @@ operator is asking for.
 
 ## 3. The schema
 
+> 2026-10-22 (operator brief; proposed): [47](47-character-dimensions.md) defines named prose slots for traits and hypothesis explanations in phase 4, alongside ADR 0026’s profile/traits/hypotheses names. Profile typed facts remain [75](75-typed-identity.md)’s; citations, modes and state remain columns, not the fixed-heading markup described historically below. Reading claim slots belong to phase 2 in [18](18-message-readings.md).
+
 The entry columns are cognition-loop/05 §3's (home, entity, body, citations,
 reasoning, confidence, visibility). The body is fixed-heading Markdown under
 cognition-loop/12's grammar. **One line per fact**, each ending in its

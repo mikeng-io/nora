@@ -362,6 +362,13 @@ no entry.
   presence part of this layer. (The Standing rollup fold and its
   `rollup_max_folds` / `nora_standing_rollup_folds_total` were deleted
   2026-10-03, DEC-277.)
+- **Character dimension** — a closed trait `kind` answering one generic question
+  about a person, room, unit or Nora, with named slots whose contents remain
+  prose. Proposed 2026-10-22 in [47](design/unified-memory/47-character-dimensions.md):
+  topic, habit, skill, preference, disposition, style, value, social and goal.
+  Applicability and evidence govern admission; no entry must fill all dimensions.
+  A supporting occasion there means an underlying evidence act/interaction,
+  never the fire-turn occasion below.
 - **Register** — the unit's affairs: **note** (unchanged, DEC-213), **memo**
   (a settled thing the unit wants kept, that does not close — distinct from
   `remember`, which is about the speaker alone), **event** (a dated thing

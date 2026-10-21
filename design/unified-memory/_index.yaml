@@ -22,7 +22,11 @@ description: >
   is read once on arrival into the Record; Honcho maps onto the existing
   layers, Character entries are bounded profile/traits/hypotheses cards,
   and answerability through Views replaces Character-line fact coverage
-  as the switch gate, with Q1–Q5 decided.
+  as the switch gate, with Q1–Q5 decided. Proposed 2026-10-22: nine generic
+  trait dimensions, named prose slots for traits and hypothesis explanations,
+  structured reading claims, citation-computed recurrence and bounded cards;
+  maps collective sections and composes observations into traits and hypotheses
+  checked against independent evidence, with privacy positions left open.
 status: proposed
 governance: operator-directed
 timestamp: '2026-10-14'
@@ -41,6 +45,7 @@ members:
   - 30-identity-and-character.md
   - 35-persona.md
   - 45-persona-adaptor.md
+  - 47-character-dimensions.md
   - 50-learning-from-acts.md
   - 60-build-step-3.md
   - 65-build-step-3-vectors.md
@@ -93,6 +98,8 @@ edges:
   - {src: 35-persona, dst: ../cognition-loop/05-data-model, rel: extends, provenance: asserted}
   - {src: 45-persona-adaptor, dst: 35-persona, rel: depends_on, provenance: asserted}
   - {src: 45-persona-adaptor, dst: ../self-growth/10-character, rel: supersedes, provenance: asserted}
+  - {src: 47-character-dimensions, dst: 45-persona-adaptor, rel: extends, provenance: asserted}
+  - {src: 47-character-dimensions, dst: 18-message-readings, rel: extends, provenance: asserted}
   - {src: 50-learning-from-acts, dst: 45-persona-adaptor, rel: depends_on, provenance: asserted}
   - {src: 50-learning-from-acts, dst: ../self-growth/40-lessons, rel: extends, provenance: asserted}
   - {src: 60-build-step-3, dst: 25-memory-graph, rel: realizes, provenance: asserted}
