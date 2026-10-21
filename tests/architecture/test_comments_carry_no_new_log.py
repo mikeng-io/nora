@@ -1,7 +1,7 @@
 """Python comments and docstrings gain no new log, and the old log only shrinks.
 
 A date or an issue number in a comment is history the commit already holds
-(`docs/CONVENTIONS.md` «Comments describe, git records»). Each tracked file is
+(`docs/maintainers/conventions-rationale.md` «Comments describe, git records»). Each tracked file is
 held to its count in `log_marker_baseline.json`: above it fails (a new log
 entry), below it fails too, so a cleanup lowers the baseline in the same
 commit (`python scripts/log_markers.py --write`) and the progress is recorded.

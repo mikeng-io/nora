@@ -66,7 +66,7 @@ def make_tracing_config(**kw: Any) -> TracingConfig:
 def copy_example_config(tmp_path: Path) -> Path:
     """Copy the committed template into `tmp_path` and return the copy's path.
 
-    R-B (`docs/CONVENTIONS.md` «Test structure»): this is the ONE
+    R-B (`docs/maintainers/conventions-rationale.md` «Test structure»): this is the ONE
     place in the suite that knows the template's name. A test reaches it
     through the `example_config_path` / `example_config` fixtures in
     `tests/conftest.py` — never by spelling `config.example.toml` itself — and

@@ -113,7 +113,7 @@
       "statement": "A plumbing trace is unexported rather than deleted: what its root carried moves to Prometheus, with nora_ingest_outcomes_total{platform, conversation_type, outcome} carrying an ingest's ending, so reversing the decision for one entry point is a single declaration on that root rather than a return to exporting everything.",
       "evidence": [
         {
-          "resource": "repo://docs/CONVENTIONS.md#L400-L414",
+          "resource": "repo://docs/maintainers/conventions-rationale.md#L400-L414",
           "version": "repo-lines-v1:sha256:5522894dc2d2dcef62b127608ee068c79641ad7ef635d716bafad9887dd44e3d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM3ZDZlMWMzOGYyMmI5NTBiYTY3MTU0ZmI4NmY3N2YxNTRmZjI4NDcyYTZiZDAwNmQxNjVhNGNkOWU3OTBkMWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1ZmNhOTYwMjJiN2VmYWYxZjQ2YTc4NjVlNDZhZmVmZGRmMjI0NzQzMzViNjlkMWIxMzc4N2MyMWEyNzAwYjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI3MTI5NzBlY2Y0YmVkOWRiNDI4NDIyZDIwYTUzY2VmYTFiM2FkMmMwYTJlZTFkMGZlYmEzMzIyZWJjNTIzYmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlkMDliOTBmMzJhOWY4NjI5NDFhZjQzZWVlNjRkNmMyMjMyNWE2NWQ1MjRhNzAwOTJmNzIyNGRlMTEwOTJmYmIifQ"
         },
         {

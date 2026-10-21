@@ -538,7 +538,7 @@ fixture, and only the handful of modules pinned in the gate — those whose subj
 deployment, plus the one file that copies the template — read the real file. The gate reads the AST
 rather than grepping, so a message string that mentions the filename is not an offence
 ([`tests/architecture/test_config_comes_from_the_template.py`](../../tests/architecture/test_config_comes_from_the_template.py),
-rule R-B in [`docs/CONVENTIONS.md`](../../docs/CONVENTIONS.md)). [Changing the
+rule R-B in [`docs/maintainers/conventions-rationale.md`](../../docs/maintainers/conventions-rationale.md)). [Changing the
 system](../contributing/changing-the-system.md) carries the workflow; [deployment](deployment.md)
 carries the host procedure.
 

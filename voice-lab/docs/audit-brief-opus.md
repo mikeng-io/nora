@@ -22,15 +22,15 @@ You are an adversarial reviewer. Given everything below, ATTACK the current diag
 5. What would you do completely differently (fresh eyes)?
 
 ## Files
-- /home/norty/workspace/voice-lab/oww-src/openwakeword/train.py (auto_train ~261, best_val_fp at 37/291/311, train_model ~434-521, export_model 419)
-- /home/norty/workspace/voice-lab/oww-src/openwakeword/data.py
-- /home/norty/workspace/voice-lab/oww-data/喂Nora.yml
-- /home/norty/workspace/voice-lab/scripts/modal_train_wakeword.py
+- /home/<deploy-user>/workspace/voice-lab/oww-src/openwakeword/train.py (auto_train ~261, best_val_fp at 37/291/311, train_model ~434-521, export_model 419)
+- /home/<deploy-user>/workspace/voice-lab/oww-src/openwakeword/data.py
+- /home/<deploy-user>/workspace/voice-lab/oww-data/喂Nora.yml
+- /home/<deploy-user>/workspace/voice-lab/scripts/modal_train_wakeword.py
 - /tmp/modal-train.log (metrics line 3456-3458)
-- /home/norty/workspace/voice-lab/scripts/real_audio_gate.py, gate_int16.py, discrimination_check.py, verify_truncation.py
-- /home/norty/workspace/voice-lab/oww-data/output/喂Nora.onnx
-- /home/norty/workspace/voice-lab/oww-data/features/validation_set_features.npy (481345,96)
-- Python: /home/norty/workspace/voice-lab/.venv-train/bin/python (torch/onnx/onnxruntime/numpy)
+- /home/<deploy-user>/workspace/voice-lab/scripts/real_audio_gate.py, gate_int16.py, discrimination_check.py, verify_truncation.py
+- /home/<deploy-user>/workspace/voice-lab/oww-data/output/喂Nora.onnx
+- /home/<deploy-user>/workspace/voice-lab/oww-data/features/validation_set_features.npy (481345,96)
+- Python: /home/<deploy-user>/workspace/voice-lab/.venv-train/bin/python (torch/onnx/onnxruntime/numpy)
 
 ## Deliverable
 Terse English bullets, evidence-first, verdict on each attack target, then your own recommendation ranked by impact/cost. No file modifications. If you cannot verify, say UNVERIFIED.

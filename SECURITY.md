@@ -7,10 +7,11 @@ when it is available for this repository. Include the affected revision, impact
 and a minimal synthetic reproduction. Do not send credentials, personal messages,
 account identifiers or location histories.
 
-If private reporting is unavailable, open an issue requesting a private reporting
-channel without including vulnerability details, and wait for the maintainer to
-provide one. Keep exploit details out of public issues and pull requests until a
-fix and disclosure have been coordinated.
+If private reporting is unavailable, email the maintainer at
+[iam@mikeng.io](mailto:iam@mikeng.io) to request a private reporting channel.
+This route also accepts Code of Conduct reports. Keep sensitive details out of
+the initial request. Keep exploit details out of public issues and pull requests
+until a fix and disclosure have been coordinated.
 
 ## Scope and maintenance
 

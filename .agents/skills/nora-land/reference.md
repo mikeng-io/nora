@@ -14,7 +14,7 @@ exec "$(command -v git)" "$@"
 
 `command -v` takes whichever git PATH gives (`/usr/bin/git` or Homebrew's
 `/opt/homebrew/bin/git`). The subagent starts on a harness branch: step 1 is
-`$V fetch origin && $V switch -c mikeng-io/<slug> origin/master`, then `uv sync
+`$V fetch origin && $V switch -c <type>/<slug> origin/master`, then `uv sync
 --extra evals`. Claude Code commits end with a `Claude-Session:` footer.
 
 ## Choosing the agent and effort for a subagent
@@ -27,5 +27,5 @@ replaced the 2026-09-24 rule «Opus reviews» on 2026-09-30.)
 
 **Codex through T3 `delegate_task` (`isolation: worktree`).** The worktree is
 cut from the orchestrator's local commit, so step 1 is `git fetch origin && git
-switch -c mikeng-io/<slug> origin/master` inside it, then `uv sync --extra
+switch -c <type>/<slug> origin/master` inside it, then `uv sync --extra
 evals`; never a second `git worktree add`.

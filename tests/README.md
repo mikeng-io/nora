@@ -1,7 +1,7 @@
 # tests/
 
 What each directory means, so a new test has a home. The reasoning, the
-measurements and the war-stories are in `docs/CONVENTIONS.md` under **Test
+measurements and the war-stories are in `docs/maintainers/conventions-rationale.md` under **Test
 structure**; this is the map.
 
 A directory names **what makes the test true**, not what the test is about.

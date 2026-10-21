@@ -12,7 +12,7 @@ timestamp: '2026-09-04'
 02-identity-and-policy, viz) on branch `design/whatsapp-adoption` (worktree
 `nora-wt-whatsapp-adoption`, commits 1febd507 / 92e31db2 / 3b11d425 / 05b7e956).
 
-**Method:** file-by-file cross-check against `/home/norty/workspace/nora`
+**Method:** file-by-file cross-check against `/home/<deploy-user>/workspace/nora`
 (master) — CLAUDE.md, docker-compose.yml, nora/domain/identity.py,
 nora/platform/registry.py, nora/obs/health.py, design/09-decision-index.md,
 config.toml, deploy/signal-cli/Dockerfile, Dockerfile — plus live probes

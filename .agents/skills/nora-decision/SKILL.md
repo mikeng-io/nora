@@ -5,7 +5,7 @@ description: Records a Nora decision the repo's way, choosing the next DEC, R or
 
 # Recording a decision
 
-The reasons live in `CONTRIBUTING.md` (sections «Issues», «Issue → ADR → decision
+The reasons live in `docs/maintainers/conventions.md` (sections «Issues», «Issue → ADR → decision
 row», «Numbering discipline»), `docs/adr/README.md`, the header of
 `design/09-decision-index.md`, and `AGENTS.md` («Decisions change on EVIDENCE, not
 on argument», and the «Never take a DEC or R number from a chat agreement» rule).
@@ -37,7 +37,7 @@ branch's worktree.
    that and file nothing. (2026-09-16: #272 duplicated a sequence
    `design/culture-tier/` already held; closed the same day.)
 3. **Write the body to a file.** Title `<Area>: <the gap>`, stated as a fact.
-   Body in one of the two shapes in `CONTRIBUTING.md` «Issues».
+   Body in one of the two shapes in `docs/maintainers/conventions.md` «Issues».
 4. **Scrub the draft.** Issues, comments and PR bodies are outside the history
    scrub, which rewrites git objects only. Describe what a room did; never quote
    a message or name a member; cite `file:line`, row ids, tag ids, metric names.
@@ -49,7 +49,7 @@ branch's worktree.
    gh issue view <N> --json title,body
    ```
    Pass `--label design-anchored` or `--label freeform` for the shape you used
-   (`CONTRIBUTING.md` «Issues»); both labels exist since 2026-09-24.
+   (`docs/maintainers/conventions.md` «Issues»); both labels exist since 2026-09-24.
 
 ## 2. Writing an ADR
 

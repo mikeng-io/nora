@@ -55,7 +55,7 @@ uv run python -m evals --coverage-export /tmp/persona-coverage-input.json \
   --coverage-inventory /tmp/persona-honcho-coverage-r1 \
   --coverage-semantic /tmp/persona-honcho-semantic-r1 \
   --coverage-recovery /tmp/persona-attributes-deploy-recovery \
-  --coverage-identity /home/norty/workspace/nora/identity.toml
+  --coverage-identity /home/<deploy-user>/workspace/nora/identity.toml
 # Root retains the exporter-reported manifest_hash independently of editable input.
 export NORA_EVAL_PERSONA_COVERAGE_MANIFEST=/tmp/persona-coverage-census.manifest.private.json
 export NORA_EVAL_PERSONA_COVERAGE_MANIFEST_HASH=<exporter-reported-manifest_hash>

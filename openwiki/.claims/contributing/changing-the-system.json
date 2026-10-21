@@ -1,28 +1,28 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:d1c7dde614b58bafd78a165131c3898c85fd7b756a5380bf59a71d707bcb2012",
+  "pageVersion": "sha256:7a23dba3531ebb502f2a8fbf29781df64427ec40acf143a4ab43f90f116352a2",
   "claims": [
     {
       "id": "claim_38c2e9bdd1574c59a4f61bc49047d414",
-      "statement": "Cora's contributor documents are split by job: AGENTS.md carries the terse rules for working inside the repository (the gate, the Never list, operational constraints), docs/CONVENTIONS.md carries the reasoning and war-stories behind them, CONTRIBUTING.md carries the branch, commit, PR and issue conventions for getting work into the repository, and each .agents/skills/SKILL.md carries one recurring task's procedure.",
+      "statement": "Cora's contributor documents are split by job: AGENTS.md carries the terse rules for working inside the repository (the gate, the Never list, operational constraints), docs/maintainers/conventions-rationale.md carries the reasoning and war-stories behind them, CONTRIBUTING.md carries the branch, commit, PR and issue conventions for getting work into the repository, and each .agents/skills/SKILL.md carries one recurring task's procedure.",
       "evidence": [
         {
           "resource": "repo://AGENTS.md#L1-L18",
           "version": "repo-lines-v1:sha256:81563006bf371b1b73ea0b5841bd06b5d3cab7ef6481f493913d88d989a20b92:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJjN2Y0NDA4YTJmOTM4NjU1OGZmNGJiYjNlNDM4NTZiNTE2Y2I4NzNjOWRmNGM0MGVlY2Q5YzhlOGY3YzRlMWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMzNzYxODRiNGM5YjU0OWMyYzdkNjI2NWEzZmU0MzRjYzc4MjYzZGZiNTdiMzQ0NDdiZTNkODZlOTA2ZDI1MDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI1MDM1NjEzYTQwNDc2ZDNmMTk4ZWZmZmU4MGMzMzRmNGI4NzhkYWYzZTM4NWVkMDgyZjFmMmYwZTM2M2FlZjMifQ"
         },
         {
-          "resource": "repo://CONTRIBUTING.md#L20-L24",
-          "version": "repo-lines-v1:sha256:9da0ac1be8f746b4de0dbc41ec521538b034730891b9d6a17a81b8959de8fdd5:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMGQzZmE2ZDU4ZDk5ZGNkY2JjYTRlOTY5MWZjN2E0NGI0NWQ3MmM3NDQzZmRkYjMzYWQxMGNkNWMwOWIxZmFhZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjdhMjgzOTk4ZDhhZDIxYzFkMjM5YjhhZjg5YWQyOTE1YTRiZWY4ZTQ3NzFjMDE3ZGI2MjhkNjI3Y2U2NDE0NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWJlYjJkMTA5NGFkMzk2NzgyYjI3MzUxZDJjNzg0ODUzMWQ1ZDAxNTBiYjg4MGJmZDRmNjAzNjkzYmI5ZWM2OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2QzYzIwMjc3ZDQyZWUxODgzMTFkNzcyMWI3OGVmMTUyMjYxYzk2ZTlkYTU3ZTQwMmY0YzdjYjY4MzhhYzk3NiJ9"
+          "resource": "repo://CONTRIBUTING.md#L1-L11",
+          "version": "repo-lines-v1:sha256:c62145b620f11566ca3128e075a23ea50b6e066559366d86adb9e3de1c1c7850:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkOTBmNThmMDIyZTFlY2JmYzY0MjUzODg4OWZhYWI1NGE2OGI3MmE1MDYzNmRhNGU0YzQ2Yzk1NTRmMjMwYWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY4ZWNmZGRhZDYwY2IzNzlmNjFhODI2YmYwN2NkY2VhZmNjY2FlMGUwMDFiMTU1ODRiMzM0OTE1OWNmODhlNzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU2ODE3MzI2NGExYjg2YzJlMWVmY2ZiMTZhNTk2OTRiNGI4OWUxNWJhOGJkODhmOTI0NmMzZTU1ZTdmNTM5ZGYifQ"
         },
         {
-          "resource": "repo://docs/CONVENTIONS.md#L1-L8",
+          "resource": "repo://docs/maintainers/conventions-rationale.md#L1-L8",
           "version": "repo-lines-v1:sha256:40efee1ecdd00fdf8fbee8e9ef9b9070bfef3103bb0f278cb86fd4185f9da2be:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDBiMmFjN2E4NzFmM2NkM2Y3MmFlY2Y0YTg0ZTc1ZjlmZjJmNDA2OTAyNTAzYTkyYTZkOWM5MzZmYjU2NWU5MiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTNmYzU5MDg1NDc1ZjVhZmZlNzE1MmE0OTIxYzZjYTQ5NWRhYmFhM2FiMjQxZmMwMDk3ZjE1ZDJiNzI1NWJiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTI3OGNkNzQ3MGU1ODAzYmY2ZTY5ZjkxYzViZTU4OTM0YWY3OWNiMDAxN2FlNzVjZTUwNGQwOGNjOWNjMjZkNyJ9"
         }
       ]
     },
     {
       "id": "claim_c503053638b9485c88b0261d45e680c8",
-      "statement": "Every change, including a one-line doc fix, starts in its own worktree on an example-owner/<kebab-slug> branch cut from origin/master and reaches master by merge; editing, committing or merging on master in the checkout is forbidden because the deploy host's own checkout is the bind-mount source for nora/doctrine and nora/dreamer, so on master there is no step between changing a file and its being live.",
+      "statement": "Every change, including a one-line doc fix, starts in its own worktree on an <type>/<kebab-slug> branch cut from origin/master and reaches master by merge; editing, committing or merging on master in the checkout is forbidden because the deploy host's own checkout is the bind-mount source for nora/doctrine and nora/dreamer, so on master there is no step between changing a file and its being live.",
       "evidence": [
         {
           "resource": "repo://.agents/skills/nora-land/SKILL.md#L21-L42",
@@ -33,8 +33,8 @@
           "version": "repo-lines-v1:sha256:6d92e5888b8c4338af9593323d699a204da08ce25abce00e96eb7b0ddfe4b9e7:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRmNzE4ZjkwYTY0NmJmZjUyODAzZTY3MmFjZTdiMDU0YTg2NGZhZDY5ZmQxMWU1OTYzYmEzZjIxOGM2YThlN2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1N2U5YmY0OTQ0OTVjZGU2OThiNmI3ZGJiNWM4YWY3NmRlODM4NWFhNWE4NTJhOGFmOTQ0MTMxZDNkNWJmMzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA3NmY3N2E2MDQyZWFiOWEyODVhODNmODMxNGI4YTg2ODhhMmQ2YjE4ZDVkNWNiZjQ2YWRmZGVkNTM0ZTQxYWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJlMzNkYWY4MzNlYTA3NWJmYjAxZGJhNWZmZWYwNzY1YjY3ZWRhNjI4OGM1MDk3ZTVmMmUzMDZlNDJiNDk0ZTEifQ"
         },
         {
-          "resource": "repo://CONTRIBUTING.md#L44-L63",
-          "version": "repo-lines-v1:sha256:1c6b88d49003975687d8c203cff398a2adc9c64e12c654b31f1d9890280b59cc:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIxMWZiZTRhOTYzNzJiYTM5ODVhNTU4NGVhZThhYjc5MzFkOTFlNzlhMWI3MjE1NGJkNzBjYTczMjJmNjYxMDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk0MjgyZmE3OTU2ODVlZmRkZjEyYzJhYTc4MjZkMjUwZWZiNTU2YmNjY2Q1ODQyYjhmMzJkZTlkNmUxZTY0NjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAzNDY2MmVmZWFiZTRkNWNkOTM0ZGIyMDVhODJkNTM3NDk5NjRjNThiMjQ4NjNhMzExZmJmZmI2M2FmOTFjMGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU3YjZjNmE4OTRjODJlMjAwMzZlZmYwZDNkNzRiYjgzMGNkYThiZmNmNmFkZGRjYzQ1ZGY3N2VmZWFhN2ZhMmQifQ"
+          "resource": "repo://CONTRIBUTING.md#L54-L61",
+          "version": "repo-lines-v1:sha256:20efd93ec1dcab3e4892f336e3e3e40496d7703744b5ebcdfe1177bd96f93f52:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjExZmJlNGE5NjM3MmJhMzk4NWE1NTg0ZWFlOGFiNzkzMWQ5MWU3OWExYjcyMTU0YmQ3MGNhNzMyMmY2NjEwMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWY3ODExMmZkMDVhNDg3N2RiNmE3ZmUwNWY3OTUwZjUwMTEyMWVlNWYyYWY2MDU5NTVmNWMxNTdlNDI1ZTJkYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDBiMzkyYWI2N2NjNzEzMjU1MzMxMmJhZTc3Y2NhNmQ4NzcxMjgxNjM5OTMyMWNiYWQ5MDE0N2IzNjI1ZDE5OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTdiNmM2YTg5NGM4MmUyMDAzNmVmZjBkM2Q3NGJiODMwY2RhOGJmY2Y2YWRkZGNjNDVkZjc3ZWZlYWE3ZmEyZCJ9"
         }
       ]
     },
@@ -75,12 +75,12 @@
           "version": "repo-lines-v1:sha256:14f51770a044262dfc4e206617f434dbbb7721c4018fc4f51c1ae48acdf42985:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjExYmFmYjc2ZTE3Mjc4NTdkYWJiNGVlZjRmODIyYTQ3NjA2YTEyOWM5MDIyODdjMGE0ZmY2YTE5NjY0NWIzZWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJjZmU0NTM0YjE1ZTVlZTIzYzY4OTkyMDQyNjlmMzg4ODZiNDU5ZjRiNjcxOWQ1MGFkZTBhODQ2ZGNhNmM1NjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI5Y2VjNmQwOWEyZjkzYjY2YWVlMmYyYTliN2U0MDI1NjAwMzcyMjQ2NmQ1YTg5YjUzMTBjYjdhNTRkODVlNGIifQ"
         },
         {
-          "resource": "repo://CONTRIBUTING.md#L204-L207",
-          "version": "repo-lines-v1:sha256:e102ecf5d3988e1550a5d57fba2526d2833215c1de0cdbb128b30355c9eedadb:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGIzYjY5NzUxMWJjYTJjNDQ1ZGRmMzQ0ODBkNTZlYjU3M2I3ZGQ2NzIwNDdhZmEzYzA4NmE1ZTVjOTI0MzhmNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNGY2MmNlZmE5ODY0YWJjMDllMTRmODEzODczNTE5MTVlZjhkZTJlN2RhNTAzZjE4ZjNjODc2ZDYwOTZmZTVmNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiY2YzNDhhNWNiNmM3MDllMzExNzc4YTUxNzBlYzU2NTc0ZDNhNDk0YjJhNWFkODhiMDRmMWI1YTNlNzk2NTQzNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWZlZjNlNDljMDM0NzQwNDk4ZTlhMTRiZDE2ZWNlM2UwYzdiNjhmMmJlZTE4MTlhZWRlY2FkMjMzODBhMjI1MCJ9"
+          "resource": "repo://CONTRIBUTING.md#L96-L98",
+          "version": "repo-lines-v1:sha256:82808177203f78f0ba4715bce9dbb6925f7d5d66123138e9cd7636f7e2a2221b:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjkwNjEwNWI3NDNjOTA0OWJkYjFmNzJjZTE5OTc1MDkxYTJlZTBjNDc3YjNiNDVmNGNiMjVhODZiOWRjYmE0NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDA1MmUwODU1NDEyMTgzMDc5MTQ2YWE3ZmViNzM4MzQzMmM0NWM1MDBlNWU3MWVkOGQ4MzlmNWQxODQyYWY0YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjAwNzZlMTQ4Y2U0MzdjOTk0NThiMzNlMWU2YWI0NzljZTJiMGVhZGFkZDEwYWI5ZDE2OTUyOTg5NzVhYTU1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWNjM2Q0MGFmOGIwMDExYTUxNzgwYjVjZjA4ZGRiNmUxZDQwN2U2YTVmM2MzMTM1ODUzNGNhNTc2YzgyMDAyYyJ9"
         },
         {
-          "resource": "repo://CONTRIBUTING.md#L65-L107",
-          "version": "repo-lines-v1:sha256:7e6c8156765bde1ebb7b20e170ea45a20582a24acbfb6ccd8f2d778999fa311e:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmYTQ4OWE4YWY5NWNhODA1MzQ1OWJiN2UzOTcxN2ZmY2Q1MGY1N2UwZTg1YmFiZTI1Y2I3YTg0OTVjOGQ3MWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVhNzU5MjNiNGE4NzVkYjcxMGZhOGJjMTUwOTA1ZmMxYjc2NDE3ZTM1OTEyNjk1Mzg5OTU0NDAyNjYyNmM5NzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIwYzI1ZTFlZjEyM2EwZDFlZTk1OTczY2MwMDk3NzMyOTVkMzEwZTg2Nzg1NWJhYjQzZDM5ZWE4OTViNmExNDUifQ"
+          "resource": "repo://CONTRIBUTING.md#L63-L94",
+          "version": "repo-lines-v1:sha256:fdf1ca6830772bf64356c136d85daf41855313d7cfb49eaf74a77e9099c04411:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmYTQ4OWE4YWY5NWNhODA1MzQ1OWJiN2UzOTcxN2ZmY2Q1MGY1N2UwZTg1YmFiZTI1Y2I3YTg0OTVjOGQ3MWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMzOTE4ZjU4NjgyZTFmMDVlNDU5NTUxOTA4ZjRlMzk2NTdiMjQ2MDczMzNhNzE4YzBjMDY2NDY0ZDMxMmFiNzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQyOWVjYTc4MDZlMzljYjYwZTU0ZmJhZmZmY2Q1OWM4ZDE1MWZmZDNlNzE0NDIzYzI4MGY2OGJmMTUwNGI3MTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRiZGJmZWZmNWU5ZTc5N2ZjZjEyNGYxYTllMDNjZDAzZTQ0YWNlODY4ZDY5OWY1OTBjMDdhMGZhNWM1ODQxNjUifQ"
         }
       ]
     },
@@ -93,18 +93,18 @@
           "version": "repo-lines-v1:sha256:ec1e360677a5abdefe81363f01a43de09008518aad7bf497c05366b2cc9c9387:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ0YzQ3NWU4ODIyNjk0OTViZWVlOGNjYWU5MDA2N2U4MDg3NDRmOWUzZTBiMmZjMjQwYTBkNzAyNDUwNTViZjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRlYmU5ZWQzMmJlMjFmOTA0ZjkwNGJjNzBhMDg0Njc0MGFhY2JjNzE3ZTBmNDdkYjcyYTcxMWM2MDI1Yjc4NDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjczZjAwNjBjYTQ4ZGI4MzBmZDdiMmMyNmU1NTliYjRjYmE2YWU2NTdhZTA1ZTAzNzNkZGVmMTk0Zjg2YTkxOWEifQ"
         },
         {
-          "resource": "repo://CONTRIBUTING.md#L141-L169",
-          "version": "repo-lines-v1:sha256:858b87dc70b1b3d8bd2a9132f07c71001efdb1de36aa64f744928a6f30ad3660:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE2ODcwZDNiM2UzMjI1NGUyZThkMDYxOTQ2YzJlYWQwM2U0YWM1ZjNmMzY5YTE0YTUyNWVkODViYjkyYTg3MjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljMDMzOGVmMmVjYzU5NTU1ZjZkM2QxZmFkNTg0OGNjZmZmOTRhNmQ0ZGMxMDc5ZDE4ZmI5YmFlYWE2NWI2M2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZhYjlkZDFkNzAwMWRhNmE5OGU0NjAwZGYwZWZiYTc0YTMyMDdjMGEzMmQwMWM0NzAyYmFmZjdlYWE0YzRhYWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVjYzNkNDBhZjhiMDAxMWE1MTc4MGI1Y2YwOGRkYjZlMWQ0MDdlNmE1ZjNjMzEzNTg1MzRjYTU3NmM4MjAwMmMifQ"
+          "resource": "repo://docs/maintainers/conventions.md#L7-L31",
+          "version": "repo-lines-v1:sha256:a8d5a9c67629b205c420d05110d76539c9fe1fbf4f5270537a1cf409615190d6:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE2ODcwZDNiM2UzMjI1NGUyZThkMDYxOTQ2YzJlYWQwM2U0YWM1ZjNmMzY5YTE0YTUyNWVkODViYjkyYTg3MjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljMDMzOGVmMmVjYzU5NTU1ZjZkM2QxZmFkNTg0OGNjZmZmOTRhNmQ0ZGMxMDc5ZDE4ZmI5YmFlYWE2NWI2M2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI1ZWQwOTg1MjIyOWI4ZjhlMmM4ZmU3OTU1MGYyODFiMDAzMjkzNzFlMjJkMWE5MzgwZDlhZGU4YWQ5ZGZjYzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRkZGUyOGZiZDhjNmVlNjJmZTkwOWFhNmQwNDgzZTc0NmEzYWM4MDkwMWRjZTRmNmM2YmMwYTU0OGE4NDA0OTYifQ"
         }
       ]
     },
     {
       "id": "claim_e5a7f24b0f494c88b6d1e56d10ef2081",
-      "statement": "A PR body is filed through .github/pull_request_template.md with the headings What, Also, Gate on the merged tree, Deploy note and Closes in that order, Summary and Test plan being retired headings rather than synonyms; the heading set and order are pinned by an architecture test so a deliberate change moves template, pin and CONTRIBUTING paragraph together, and the Contribution content workflow validates live titles and bodies structurally without judging whether a claimed gate result is true.",
+      "statement": "A PR body is filed through .github/pull_request_template.md with the headings What, Also, Gate on the merged tree and Closes in that order, Summary and Test plan being retired headings rather than synonyms; the heading set and order are pinned by an architecture test so a deliberate change moves template, pin and CONTRIBUTING paragraph together, and the Contribution content workflow validates live titles and bodies structurally without judging whether a claimed gate result is true.",
       "evidence": [
         {
-          "resource": "repo://CONTRIBUTING.md#L171-L241",
-          "version": "repo-lines-v1:sha256:2476ade2e7ce31879a48a151f4c858672026358fe18e8cddc8d0a10bbe973875:eyJzZWxlY3RlZExpbmVDb3VudCI6NzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUzZGYwOTU4NmM3MTVlMDU2MGNhMzBkMGZlNWE2YWE3MjI2NDA2YWFiYjMwMDBjM2E4YjVjZTI2YTE1ZTgxZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU0YWI3MGRhNzA4MWYyNzg1YTAyMTQwYzRkNTI1NzA0OGVkNDhlZWI3MzdiNzI2OWFmMDg5NzdjZWJjZGE0YzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVjMzA0N2ZlNTNjOGEwZDhkNTA5Y2ZhZmRmOWQxYjJmZmQ2ZjU1Mjc5ZmY2OWFiMTZkYzBmNGI1MGNiNDg0YTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdlOTU3Y2VkMGIzNGRkODBjNTFlNzMzNWUxZmM4MGVkNjdlODQyYWQzZGM3ZWU1MzBkZjFlZjViMDBkYzA0NjQifQ"
+          "resource": "repo://CONTRIBUTING.md#L100-L121",
+          "version": "repo-lines-v1:sha256:c1fef6771e56d1b1ffef58c8c74818fc31aed7feaaca63462c7185ad82daa041:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUzZGYwOTU4NmM3MTVlMDU2MGNhMzBkMGZlNWE2YWE3MjI2NDA2YWFiYjMwMDBjM2E4YjVjZTI2YTE1ZTgxZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdiOTdjY2I3YmI5ZjNkYmI3ZjUwZTk2NWZkMzFlOTc3MjVmNzE0ZWE1NDdjOWIyMmFmYzllYjcwNjgzMjllOWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNkNGJhNDk3NGVmYmJlNTcyNTY4MDJkMDAxYzk0MzU3ZTM2YzdjZWUxNGRlZDVjYzg1NDZlMDMyZGM4ODc0NGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ5OWJjOTkyYTJmMzBlOTNjNGZhMGM1M2VlOTNhMTAzYTRlMWRhYTBhODNlOWQ2YWFhZjczYzE3OGUzMGYxN2QifQ"
         },
         {
           "resource": "repo://tests/architecture/test_contribution_conventions.py#L1-L11",
@@ -121,8 +121,8 @@
       "statement": "A fix counts as done only when reverting the exact production line turns a named test red, reported beside the gate output; the harness must assert a green, collecting baseline (pytest exit code 5 means nothing was collected) and a mutant must die from the reverted behaviour rather than a NameError in the replacement, and mutation tables are driven by scripts/mutate.py yet deliberately excluded from make gate.",
       "evidence": [
         {
-          "resource": "repo://CONTRIBUTING.md#L260-L320",
-          "version": "repo-lines-v1:sha256:05b47547d409229ab483f667a94da0210476fa1da087b7c6f804db565a3500f9:eyJzZWxlY3RlZExpbmVDb3VudCI6NjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5NGY3NGQyNjI5NjIwNmRkYzZiYzdmOWViOWYyNTlmNGFjODk0NDJlYmJiYzFlMWU3M2Q1ZDI5YzJmMmZlNGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2Y2UzNDA5ZGEwZjc3ZTIzNmVjZDM3NWNjMzRmMTMxOTliOTU0NjIwOGMxODMxNGU2OTIxMzljNDg4ZmQ5MjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQzMGNmNTgzYjhiZDU0YTEzOWU4YzEwYTI2ODI3MDcwYjI4M2VkYzBkZTA0MjhmODQ5NDk2YWFiY2RkN2Y4M2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ5OWJjOTkyYTJmMzBlOTNjNGZhMGM1M2VlOTNhMTAzYTRlMWRhYTBhODNlOWQ2YWFhZjczYzE3OGUzMGYxN2QifQ"
+          "resource": "repo://docs/maintainers/conventions.md#L79-L95",
+          "version": "repo-lines-v1:sha256:7132d1c039a982ec0a57ab723a749c17be54be88009e986cb26294e23c18acc0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5NGY3NGQyNjI5NjIwNmRkYzZiYzdmOWViOWYyNTlmNGFjODk0NDJlYmJiYzFlMWU3M2Q1ZDI5YzJmMmZlNGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFkYmJkYTBiZjU1YjBlM2Q3NTdiM2QyNTcxMzA2MGQ4ODBmOTUyNTJmZmM5MWZkMjkwODY2ZTFmNDIyN2YzN2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQzMGNmNTgzYjhiZDU0YTEzOWU4YzEwYTI2ODI3MDcwYjI4M2VkYzBkZTA0MjhmODQ5NDk2YWFiY2RkN2Y4M2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ5OWJjOTkyYTJmMzBlOTNjNGZhMGM1M2VlOTNhMTAzYTRlMWRhYTBhODNlOWQ2YWFhZjczYzE3OGUzMGYxN2QifQ"
         }
       ]
     },
@@ -431,8 +431,8 @@
       "statement": "The decision chain assigns distinct jobs: a GitHub issue is a candidate that is not yet decided or built, an ADR records a decision with a cost in Nygard form whose consequences must include what got worse, and a decision-index row records a landed decision plus the test that enforces it, with a trivial decision getting a row and nothing more.",
       "evidence": [
         {
-          "resource": "repo://CONTRIBUTING.md#L458-L475",
-          "version": "repo-lines-v1:sha256:4845de614730f7e29526cbafd78056acaac637c493b9d571cf318112e9f05861:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1MGNlNzJhMzdkMTljYzFkZGI1OWJjYTAyNzQwMjdiODdmOTBhMzgwMjM4MDVjYWZmZjk1NWYyOWUwYTQ1Y2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY5ODQ3MzBkZWVkNDg2YmFlMDMyODJmYmI2YmVhMTMzMTQ4M2NkZDAxMWU4NGZhMzgxZDdkZDYyZTQ2YzcwODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM5MWM4NDBjZDNkY2VmMzY2ZGY3Mzc3YjQwNTk3MmMwMTlkMjJhMTcxNTk0YzYyNGU4Mzg0ZWRkZTVkZDM0ZWEifQ"
+          "resource": "repo://docs/maintainers/conventions.md#L233-L249",
+          "version": "repo-lines-v1:sha256:42d9ed56a4e06c509c09aaf2b8e8f0518528d7bc38590b48a7c52141f56b8ea2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1MGNlNzJhMzdkMTljYzFkZGI1OWJjYTAyNzQwMjdiODdmOTBhMzgwMjM4MDVjYWZmZjk1NWYyOWUwYTQ1Y2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhY2M5YzQ0MTc1NTA1OGQwZmM4YjBlYjViN2MzYTliNzA0ZmQ4YjIwNTcxMGZhZDNhMGU1NjgzZDQ1OTQyZjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY5ODQ3MzBkZWVkNDg2YmFlMDMyODJmYmI2YmVhMTMzMTQ4M2NkZDAxMWU4NGZhMzgxZDdkZDYyZTQ2YzcwODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE3ODIyYTMyMzUzMzIxMjEyODhiZmU3ODQ1NGZjYTNhYjFhMGViMGMyNDQ1NjZkNzhmZjhhNGMxNTNhN2EyMGEifQ"
         },
         {
           "resource": "repo://docs/adr/README.md#L1-L33",
@@ -477,7 +477,7 @@
           "version": "repo-lines-v1:sha256:b0319b511a66003de623bf500dee0709859ade94a4b0665dcc023a6a728b93e4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZiYzFiMmY4MWFiZTZiMzNmODkzYTVhOTY2ODUwMDE5NTkwYzY2ZTQ1OTYxMDgxYWM2NzQ4MjEyZDdjZjViODgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjNWZhZWNkNjA0ZDMyODZmNjIzMzZiNTMwZGJhMDY2M2MwMGVlZjlmNjllYzIwMWFkNmNhMmVmMDc4NzIyNWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkyOWVjYThhZTVmMTc5ZjE0YTlmNGQ2OGExNGMxN2UzN2NmODlmYjFlZTA3OWFmN2YyMjRkZmQyNzNiZWE1NmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZkODc1NjYwY2ZlMTkxYmU3NjgzMjdkOTA1MTExNDQ4NzFmMjc1OTViMTlkMGU1MDhjZTQ2Mzc4NjY4YTQ3NWEifQ"
         },
         {
-          "resource": "repo://CONTRIBUTING.md#L476-L482",
+          "resource": "repo://docs/maintainers/conventions.md#L251-L257",
           "version": "repo-lines-v1:sha256:ea4c49f899623abe1151769f477430d1b5eaf64c82ec8ff3ba07de5637eac45f:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjJiNDQ2YzFlNTRhZDYxM2QzMzc2ZDlmNGI2Y2IyNWE3NmQzZTk3ZDgyYjM3NmRkNWNhNDU0ZmUzMGMxMzQ1NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjNmYjY1MGM1MDVkZmNhYTM4MTFhMGNlYzNkZjljNTdmY2U1ZTk4MGQ0MzlmM2IzMjE5NzE5N2ZkNWU5NmIxOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDI3ZDg2YjhhZDMzNDg4NzdjNDhjNjJjNjdjNDM0OGNiN2I0ZmZiNjZmYjM4ZDAxZGIzOTIwZjk0YTFhYzE3OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmNmZDViMDMzZTY3MjhkYTBlZjQ3MzU4ZDI3Zjg2YzM3NDAwOWVmNzRmNzFlMThhYjNmZmVlYmVjNjAyM2MyMCJ9"
         }
       ]
@@ -536,9 +536,5 @@
         }
       ]
     }
-  ],
-  "verification": {
-    "by": "openwiki/0.7.2",
-    "at": "2026-10-20T12:25:17.607Z"
-  }
+  ]
 }

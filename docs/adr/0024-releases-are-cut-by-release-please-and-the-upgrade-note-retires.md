@@ -22,7 +22,7 @@ manual path remains while private or until the App is configured.
 This replaces the manual approval in original Decision 2 below. The trade-off is
 that a checked code merge can now publish without another human action. Branch
 rules and an App token (rather than bypassing checks with the workflow token)
-are required. See `../github-maintenance.md` for setup and GitHub's documented
+are required. See `../maintainers/github.md` for setup and GitHub's documented
 bot-token restrictions. Reopen this decision if an ineligible change publishes a
 version or a release PR bypasses its required checks.
 

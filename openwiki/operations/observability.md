@@ -11,7 +11,7 @@ sources:
   - id: openwiki-source-5cfdd8d3c2a9600ebe0e65d6
     resource: repo://deploy/prometheus/rules/nora.yml
   - id: openwiki-source-11b18e07136242b17793ba1a
-    resource: repo://docs/CONVENTIONS.md
+    resource: repo://docs/maintainers/conventions-rationale.md
   - id: openwiki-source-d7644d9029aaf56c189e640b
     resource: repo://docs/observability.md
   - id: openwiki-source-51d7df884438dface0649069

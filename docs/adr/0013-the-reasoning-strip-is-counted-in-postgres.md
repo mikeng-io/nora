@@ -41,7 +41,7 @@ discarded.
 **Nothing anywhere counted it.** A dropped-reasoning turn was indistinguishable,
 in every metric the system kept, from a turn that reasoned fine. There is no
 `reasoning_strip_count` anywhere in the tree today; the signal lived only inside
-a third-party logger, and `docs/CONVENTIONS.md`'s own rule — *a log line is not
+a third-party logger, and `docs/maintainers/conventions-rationale.md`'s own rule — *a log line is not
 a metric* — names that as the defect it is.
 
 Two things moved on the same day and changed who is exposed:

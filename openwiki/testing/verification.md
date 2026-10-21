@@ -7,7 +7,7 @@ sources:
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
   - id: openwiki-source-11b18e07136242b17793ba1a
-    resource: repo://docs/CONVENTIONS.md
+    resource: repo://docs/maintainers/conventions-rationale.md
   - id: openwiki-source-757a10f130b0beef897cbbe3
     resource: repo://docs/eval-sop.md
   - id: openwiki-source-c13014ba4303c0e072c15b76
@@ -207,7 +207,7 @@ names what makes the test true, not what the test is about**
 | `.` (root) | legacy — takes no NEW test files | — |
 
 Three rules sit under that table, each with its own gate. The reasoning and the
-war-stories are in [`docs/CONVENTIONS.md`](../../docs/CONVENTIONS.md#L697-L738).
+war-stories are in [`docs/maintainers/conventions-rationale.md`](../../docs/maintainers/conventions-rationale.md#L697-L738).
 
 **R-A — where a test lives.** `tests/architecture/test_tests_root_takes_no_new_files.py`
 pins exactly what is on disk in `tests/` root, generated from a real listing rather than
@@ -218,7 +218,7 @@ The list only shrinks; relocating a file is the intended way it shortens. The ga
 would forbid collecting a container fixture outside `integration/`/`infra/` is
 *deliberately deferred* with the move of the root's files, because `contract/`
 legitimately collects `pg_url` for its SQL implementations today
-([`docs/CONVENTIONS.md`](../../docs/CONVENTIONS.md#L731-L738)).
+([`docs/maintainers/conventions-rationale.md`](../../docs/maintainers/conventions-rationale.md#L731-L738)).
 
 **R-B — where a test gets its config.** Two fixtures in `tests/conftest.py` are the only
 routes: `example_config_path` (a copy of `config.example.toml` in `tmp_path`) and
@@ -237,7 +237,7 @@ went blind fails instead of passing green
 The failure this rule was written from: unit tests of the eval harness loaded the real
 deployment config, so they went red the day the operator enabled an export — a false
 dependency on the operator's choices
-([`docs/CONVENTIONS.md`](../../docs/CONVENTIONS.md#L751-L759)).
+([`docs/maintainers/conventions-rationale.md`](../../docs/maintainers/conventions-rationale.md#L751-L759)).
 
 **R-C — where a fake lives.** A class in `tests/` that defines every public method of a
 port in `nora/domain/ports.py`, with exactly the port's parameter names, must live in
@@ -370,7 +370,7 @@ ANDed them, so a two-word query returned every row matching either word. No offl
 could have found it, because every offline test ran against a fake that had invented its
 own semantics — and a byte-for-byte duplicate of the memory fake had been living in
 `tests/fakes.py`, outside every suite
-([`docs/CONVENTIONS.md`](../../docs/CONVENTIONS.md#L803-L825)).
+([`docs/maintainers/conventions-rationale.md`](../../docs/maintainers/conventions-rationale.md#L803-L825)).
 
 ## Integration tests and the container-backed infra tests
 
@@ -645,7 +645,7 @@ package reporting `[build failed]` collects nothing and is BROKEN, never caught
 
 - **A new behavioural rule** gets a row in the decision index and a named test registered
   in `tests/test_acceptance_rules.py::RULE_TESTS`
-  ([`docs/CONVENTIONS.md`](../../docs/CONVENTIONS.md#L691-L695)). That registry is checked
+  ([`docs/maintainers/conventions-rationale.md`](../../docs/maintainers/conventions-rationale.md#L691-L695)). That registry is checked
   by collecting the suite (`pytest --collect-only`) and asserting every named test exists,
   so a rule cannot point at a test that was renamed away
   ([`tests/test_acceptance_rules.py`](../../tests/test_acceptance_rules.py#L468-L477)).

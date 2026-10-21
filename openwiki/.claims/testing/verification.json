@@ -83,7 +83,7 @@
       "statement": "The test-directory rule is that a directory names what makes a test true rather than what it is about: `unit/` for pure logic, `contract/` for one suite over N implementations, `integration/` for the wired pipeline, `infra/` for a real adapter against its real backend, `architecture/` for a property of the source and `web/` for the aiohttp surface; `tests/` root is legacy and takes no new test files, and the gate forbidding container fixtures outside `integration/`/`infra/` is deliberately deferred with the planned move because `contract/` legitimately collects `pg_url` today.",
       "evidence": [
         {
-          "resource": "repo://docs/CONVENTIONS.md#L718-L738",
+          "resource": "repo://docs/maintainers/conventions-rationale.md#L718-L738",
           "version": "repo-lines-v1:sha256:7c4cc68ae9b1cb13337cfc778aec9978e89edb7c3980e0a1da51ab98abadd563:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyOGMyMGQzOTQwZjlhYWYxMDUyMTk2YjBlYTE3NjQ3OWYwYjA1ZWFlNTNlNjZlNDFjODEyY2ViM2M5OGY5NTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmN2NjZWQ5OTRkMTQyMTViNzY5MTg3MTg1YzFkY2JhM2Y0YzhlNTY4NGRhNzg5M2YyZDFmNTY1NDQ4MDU0NGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI4MjAxMGZjYzg4NzY2ZTlmNmNiZjE0NDRlMjYyNGY1NjBiN2FjZWIwNWMxMDhiNWVlNzk2YTk4NmE0ODMzNjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY5ZTlkYjE1YTkyZjM4OTVlM2FmM2JmMzVmZDE2NzE3OGY1YTBhMjY5N2NlMmMyMmNmMTI4OGNiZGE5NjQ3NzAifQ"
         },
         {
@@ -121,7 +121,7 @@
       "statement": "R-B exists because unit tests of the eval harness loaded the deployment's config through `load_eval_config` and went red when the operator enabled an export, and its pins are checked both ways so a pinned file that stopped reading the real config fails rather than silently widening the gate.",
       "evidence": [
         {
-          "resource": "repo://docs/CONVENTIONS.md#L751-L759",
+          "resource": "repo://docs/maintainers/conventions-rationale.md#L751-L759",
           "version": "repo-lines-v1:sha256:0b6d662d281c4d30a9fa01525e6281635529871ab130ef38d9efa94f37696504:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjI2ZDA5YWMzN2NjNzkwMDk0NjkyMzRmMTNhYmY0OGJlOGI4ZDA4OGU0MTA3ZmM4MjE3MWRlODdiMDAxNTQzZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODBkYzFmMWYxMzYyZjQ2YjNiYzM3MWY3N2Y3NjMwMjIyNGM2NzIzMWEyMjg3MWE3NDFmNTJhZTFmODQ3YjQyYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiN2Q1ODYxMTJmYjgwM2QzNGE0YjM4NjIwNWJkOTM0MDM0MDk0YzE0NTFkNDU4Y2IyODgwODk5OWQ2YzdlMDVkNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzM5ZWUyZDczYmQ3ZDAzMGY3MjViZjNmYzY3ZjZjMWVmMDEzMDI4ZDA5ZWM4ZDhiNDJjZjZlZDcyZWUyNTM5YiJ9"
         },
         {
@@ -275,7 +275,7 @@
       "statement": "The shared-fake-and-contract-suite rule has already caught production: a two-word query returned every row matching either word because `SqlMediaObjectStore.search` combined words with `or_` while its own docstring said it ANDed them, found only when a shared fake and its suite were written against the SQL store, and a duplicate memory fake living outside every suite was deleted.",
       "evidence": [
         {
-          "resource": "repo://docs/CONVENTIONS.md#L803-L825",
+          "resource": "repo://docs/maintainers/conventions-rationale.md#L803-L825",
           "version": "repo-lines-v1:sha256:5311dea9d1145eabaee40433a6ee1a2097bdd02ba788924231cc82aae0b1c200:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3YzExYTFkMzQ5NzNhMjMxMDA4N2FhN2NkNzM3NTBhNTQ0NmRmMzU0NjU2NjU5NjFiZTA3NDMzMjZiNTlkODEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyMDRjNGY0NmQxMGNkN2ExYmEwMTdkYzRiMDY5MGQ1YjIyMzU3NDI0N2Q2ZDVkN2JjYTBjZTdkZDM1MTJjN2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZmZmQ3YzA3YWNmN2U4YzZiMzFjOTcxYzUzNDYzOTg5MTNiMzk4MmNjMzkxMTI0MzFmMjEzNzIyY2EwOTBlNGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUwYjNiOGZhZWM3OWQ4ZWVmOTkwYzIzMWViNjlmNzdkNmRlMThjOTRjODExNDVlNDhkYTQ0ZmUwMTMwMzQ3NmEifQ"
         }
       ]
@@ -527,7 +527,7 @@
       "statement": "A new behavioural rule is registered in `tests/test_acceptance_rules.py::RULE_TESTS` alongside its decision-index row, and the registry is checked by collecting the suite (`pytest --collect-only`) so a rule cannot point at a renamed-away test; a rule that is strictly behavioural instead pins the corpus that measures it.",
       "evidence": [
         {
-          "resource": "repo://docs/CONVENTIONS.md#L691-L695",
+          "resource": "repo://docs/maintainers/conventions-rationale.md#L691-L695",
           "version": "repo-lines-v1:sha256:38444cc9f6d8886121c3ef5db46524f8191a5827b492103c71cb572efc0ce3e1:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjRhMjJkNDBjM2EyNjVlMDczZGVjYzUxYmYzZWRjNjQ4NDhiN2ZjNmNlYzY0MGU4ODljMDdiNzk0ZDUwNGQwNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzYxY2Y1Y2Q1NzBhMGY3Y2Q0OTNhN2VkMjZhMWEyM2Y1ZjMzY2IzYzhiODMwMGQxMTEyYjhiMjFjNjkzMDRmNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjRiODQ4MzY2ZmYwNjBjYzZiYmQ2ZmFmYzk2M2E2YWU4NDNjM2RjYzQ3MWNkZDFmYWZhOTc0OWYyZGZjNDk2MiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDcwYTFlZGI0YjNjMzA1NWIxYjU1MTk2MGE1ZjQ1MjA2YjViYTczZmQ0NDk4NzkyODVlZGYyZGY2NWFiZGU0NCJ9"
         },
         {

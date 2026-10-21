@@ -167,7 +167,7 @@ logs:
 ps:
 	docker compose ps
 
-# --- branch hygiene (CONTRIBUTING.md: "Cleanup") ---
+# --- branch hygiene (docs/maintainers/conventions.md: "Cleanup") ---
 # Reports only. Deleting is a decision, and a branch with a live worktree or an
 # uncommitted change belongs to whoever is working in it.
 

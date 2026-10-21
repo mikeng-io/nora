@@ -7,7 +7,7 @@ description: Runs Nora's eval suite (python -m evals on the deploy host) as a be
 
 A change to what a model reads, or to which tool it reaches for, is decided by a
 before/after on labelled cases, never by one example. The reasoning is `AGENTS.md`
-"The spine" and `docs/CONVENTIONS.md` "The instruction is the first thing blamed
+"The spine" and `docs/maintainers/conventions-rationale.md` "The instruction is the first thing blamed
 and usually the wrong one"; do not retell it, apply it.
 
 **Eval required:** `nora/doctrine/` or an objective, a tool's name, description or

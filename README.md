@@ -95,6 +95,14 @@ describes the full runtime and its boundaries.
 - [Operator runbook](docs/runbook.md): detailed implementation and recovery notes.
 - [Agent instructions](AGENTS.md): procedures for coding agents.
 
+## Quickstart
+
+Follow the [deployment guide](deploy/README.md) for the Compose setup. You need
+Docker with Docker Compose on a Linux host, PostgreSQL supplied by Compose,
+at least one provisioned messaging platform account, an OpenAI-compatible model
+endpoint and a memory backend. Configure the example files for your own services
+and explicitly allow the intended rooms before starting Nora.
+
 ## Development
 
 Use Python 3.12 and [uv](https://docs.astral.sh/uv/). From a checkout:
@@ -127,8 +135,8 @@ values to paste into documentation. Example files are starting points, not a
 ready-to-run production deployment: platform accounts, memory and model
 services must be provisioned and policy must explicitly allow the intended rooms.
 
-Nora's character is in `nora/doctrine/`, including `rooms/voice.md`. With the
-current deployment's read-only bind mounts and `doctrine.reload = "mtime"`,
+Nora's character is in `nora/doctrine/`, including `rooms/voice.md`. A deployment
+that bind-mounts `nora/doctrine` can hot-reload it with `doctrine.reload = "mtime"`:
 a valid edit is picked up on the next read with **no restart**. Broken reloads
 retain the last good version. Runtime skills are baked into the image and need
 a rebuild. Changes to character and constraints follow the ownership rules in
@@ -158,7 +166,8 @@ and focused proposals. Include the revision, relevant configuration keys and a
 minimal synthetic example. Keep credentials, personal conversations, account
 identifiers and location data out of issues, logs and screenshots. See
 [Contributing](CONTRIBUTING.md) for development checks and [Security](SECURITY.md)
-for vulnerability reports. Maintenance is on a best-effort basis.
+for vulnerability reports. Follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+Maintenance is on a best-effort basis.
 
 ## License
 
@@ -166,4 +175,4 @@ Nora is licensed under the [MIT License](LICENSE). Third-party components retain
 their respective licenses.
 
 Repository security, release automation and the free public setup are documented
-in [GitHub maintenance](docs/github-maintenance.md).
+in [GitHub maintenance](docs/maintainers/github.md).

@@ -7,7 +7,7 @@ is logged on EVERY tag and is the operator-facing handle for «which doctrine is
 she running», so a version that means two different documents depending on when
 you looked is a defect.
 
-This is `docs/CONVENTIONS.md`'s unguarded-copy class with the copy and the
+This is `docs/maintainers/conventions-rationale.md`'s unguarded-copy class with the copy and the
 original in ONE file: `version` is a restatement of «what this document is»,
 it stays plausible after the body moves, and it fails somewhere else later —
 in a log line, during an incident, when somebody is trying to work out what she
@@ -169,10 +169,11 @@ def test_the_pinned_sha_is_the_digest_of_what_the_prompt_actually_carries():
     bytes cut out of the assembled prompt.
 
     An `!=` assertion (`section.sha256 != whole_file`) would not do.
-    `CONTRIBUTING.md`'s «Proving a fix» names "an `!=` assertion any wrong value
-    satisfies" as a real gap: a body-only digest is also `!=` the whole-file
-    digest, so it would stay GREEN while claiming to guard the pin's bytes. It
-    rules out exactly one wrong method out of an unbounded set.
+    `docs/maintainers/conventions.md`'s «Proving a fix: mutation» names "an `!=`
+    assertion any wrong value satisfies" as a real gap: a body-only digest is
+    also `!=` the whole-file digest, so it would stay GREEN while claiming to
+    guard the pin's bytes. It rules out exactly one wrong method out of an
+    unbounded set.
 
     What is asserted instead is the property the pin is FOR: take the section
     out of `Doctrine.doctrine_text` — the real assembly, the string handed to

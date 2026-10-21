@@ -43,8 +43,8 @@ them). Two things worth knowing before you trust it:
   `$TMPDIR/nora-pii-pycache`, where a planted `.pyc` ran in place of the
   source).
 
-The rule these enforce lives in `CONTRIBUTING.md` §Commit messages / §Merge
-strategy. The checker is the typing aid; the doc is the contract. To change
+The rule these enforce lives in `CONTRIBUTING.md` §Commit messages and
+`docs/maintainers/conventions.md` §Merge strategy. The checker is the typing aid; the doc is the contract. To change
 either, change both in one commit.
 
 ## Identifiers (#283)
@@ -135,7 +135,7 @@ python3 scripts/pii_denylist_build.py --identity <identity.toml> --map <scrub ma
 ```
 
 It prints counts, never values, and writes mode 600. Without it every commit
-is an ERROR. A machine that genuinely has no access to the real values (a
+is an ERROR. A machine that genuinely has no access to the real values (an outside contributor or a
 fresh CI runner) sets `NORA_PII_DENYLIST_ABSENT=<reason>`; the reason is
 printed on every run and only the shape rules apply.
 

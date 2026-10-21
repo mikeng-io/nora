@@ -381,7 +381,7 @@ def test_the_working_sets_own_ttl_expiry_renders_absent():
 
 def test_a_live_working_set_item_renders_with_its_source_and_age():
     """The positive control `test_the_working_sets_own_ttl_expiry_renders_
-    absent` needs, per CONVENTIONS.md's "pair every zero-assertion with a
+    absent` needs, per docs/maintainers/conventions-rationale.md's "pair every zero-assertion with a
     positive control": an item just INSIDE the TTL renders, carrying the
     tool that returned it and the plan it bears on."""
     now = datetime.fromtimestamp(_NOW_MS / 1000, tz=UTC)

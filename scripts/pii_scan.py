@@ -435,7 +435,7 @@ _PROJECT_TOKENS = {_tokens_of(v) for v in PROJECT_IDENTITY}
 # Project identity in TEXT is blanked before denylist matching, like a
 # keep-phrase: matching drops separators, so an owner's name whose letters
 # spell the org stem would otherwise fire inside the org, the domain and the
-# project email (every `mikeng-io/<slug>` branch would be refused).
+# project email (repository URLs would otherwise be refused).
 # Only the org, the domain and the project email: the bare stem is also a
 # personal handle (`@stem`, `github.com/stem`), and another mailbox at the
 # domain (`x@domain`) is a person, so neither is blanked. Not glued to a

@@ -38,7 +38,7 @@ CodeQL and dependency review deliberately skip while private, avoiding paid
 private-repository security features. After publication, manually dispatch Security
 and open a small PR to establish and verify all required check names. The existing
 fast CI still runs while private. It checks static contracts and selected tests;
-it does not run the complete suite. Keep the local full gate before landing code.
+it does not run the complete suite. Run the local `make gate` once on the final head before landing code.
 
 Native scanning detects supported credential patterns. The completed private PII
 scrub and local identifier gate remain separate; never upload the private denylist
@@ -90,7 +90,7 @@ workflow. [GitHub token behavior](https://docs.github.com/en/actions/how-tos/wri
 `nora-host` is a placeholder SSH alias defined by each operator; all paths and
 access details are installation-specific. Public deployment documentation describes
 the portable Compose procedure. Keep actual host inventory, account mappings,
-network addresses and private installation notes outside the repository. The optional [Komodo release deployment](../deploy/komodo/README.md) publishes
+network addresses and private installation notes outside the repository. The optional [Komodo release deployment](../../deploy/komodo/README.md) publishes
 images and Git desired state without connecting Actions to a deployment host.
 It requires `RELEASE_IMAGES_ENABLED=true` plus a separately installed and enabled
 Komodo Stack/Procedure. Both activation and host readback are separate from release

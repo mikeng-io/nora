@@ -97,7 +97,7 @@ Production DB exists (0 rows, v2 schema). Do **not** drop/rebuild:
 - **signal-cli daemon (PID 4164282) is neutral/shared** — never touch it;
   it's not owned by Nora, logs to a shell redirect artifact only.
 - Legacy Hermes gateway is archived at
-  `/home/norty/backups/nora-legacy-profile-20260804/` — do not reference the
+  `/home/<deploy-user>/backups/nora-legacy-profile-20260804/` — do not reference the
   old `~/.hermes/profiles/nora/` path.
 - Deps are managed by `uv` (`pyproject.toml` + `uv.lock`, `uv sync --frozen`
   in Dockerfile). Add new deps via `uv add`, not raw pip.

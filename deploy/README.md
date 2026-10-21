@@ -20,8 +20,8 @@ for recovery; old phase tags are not the current rollback mechanism.
 
 The Compose file uses bridge networks, persistent volumes and private host
 configuration. The separate `honcho_memory` network must already exist.
-Doctrine and Dreamer directories are live mounts from the deploy checkout;
-image replacement alone does not determine all running behaviour.
+A deployment that bind-mounts `nora/doctrine` and `nora/dreamer` can hot-reload
+them on mtime; image replacement alone then does not determine all behaviour.
 
 ## Release deployment with Komodo
 
@@ -33,65 +33,92 @@ Neither the publisher nor the host schedule is enabled by merging its code.
 The current operator/agent deployment remains in use until the documented
 installation, disposable rehearsal and explicit production cutover complete.
 
-## Historical bare-metal / systemd reference
+## First installation
 
-This document and the systemd unit (`deploy/nora.service`) describe a **bare-metal**
-deployment path. The reference Compose installation described above runs as a
-Docker container (`Dockerfile` + `docker-compose.yml` at the repo root; see the
-"Deployment" section of the root `README.md`). This path is kept for reference and as a
-rollback option if the container approach ever needs to be abandoned; the commands below
-(`systemctl start/stop nora`) only apply if you are actually running Nora this way.
+This is a configurable stack, not a preconfigured hosted service. Prerequisites:
+Docker Engine with Docker Compose on Linux; GnuPG (`gpg`) for verifying the
+signal-cli download; a messaging account or bot for at
+least one supported platform; an OpenAI-compatible model endpoint; and an
+external Honcho memory backend. Compose supplies PostgreSQL and RustFS storage.
+Optional speech, computer, social and portal features need their own services
+and credentials.
 
-## Install
+1. Clone the repository and copy the inputs:
 
-    sudo ./deploy/install.sh
-    sudo ./deploy/egress.sh apply     # Firecrawl SSRF egress policy (see Egress below)
-    sudo systemctl start nora
+   ```bash
+   cp config.example.toml config.toml
+   cp identity.example.toml identity.toml
+   cp policy.example.toml policy.toml
+   cp .env.example .env
+   ```
 
-## Rollback
+2. Replace the synthetic examples with your own accounts and policy grants.
+   Disable unused platforms and optional integrations. Configure service URLs
+   reachable **from the Nora container**: for example, `http://signal-cli:18080`
+   for Signal, `/app/data` for `[store] data_dir`, and your memory service's DNS
+   alias on the shared network. Container loopback does not reach the host;
+   use `host.docker.internal` for a host model service where configured.
+   Provision Honcho separately, then create `honcho_memory` with
+   `docker network create --internal honcho_memory` if absent and attach the
+   memory API to it. This repository does not bootstrap that backend.
 
-If a deploy misbehaves, roll back to the previous version:
+3. Fill the required Compose environment variables. `POSTGRES_PASSWORD`,
+   `RUSTFS_ROOT_USER`, `RUSTFS_ROOT_PASSWORD`, `OMNIROUTE_API_KEY` and
+   `SIGNAL_ACCOUNT` are required by the checked-in Compose file. Portal variables
+   `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `AUTH_SECRET` and `AUTH_URL` are
+   also interpolated by Compose even when selecting other services. Use your own
+   values; `.env.example` lists these separately from optional integrations.
+   The model key's variable name does not require an OmniRoute deployment: set
+   `[llm] base_url` and `model` for your OpenAI-compatible endpoint.
 
-    sudo systemctl stop nora
-    cd <deployment-checkout> && git checkout <previous-tag>
-    sudo systemctl start nora
+4. Provision the selected platform before starting Nora. For Signal, link or
+   register the account with signal-cli and preserve its complete
+   `state/signal-cli/` directory; see the [Signal notes](../docs/runbook.md#9-where-does-everything-live-read-this-first-months-later).
+   For Discord, create a bot application, enable Message Content intent, invite
+   it to the intended server and set `DISCORD_BOT_TOKEN`. Map the platform's
+   account IDs in `identity.toml` and allow only the intended rooms in
+   `policy.toml`. Do not reuse the example identities.
 
-The audit database is never touched by a rollback — but schema changes are versioned
-Alembic revisions (`nora/infra/sql/migrations_runner.py`), not additive
-`CREATE TABLE IF NOT EXISTS` statements, so an older binary reading a newer schema is
-not guaranteed to work; see `docs/runbook.md` §3 for the persistence-phase rollback
-procedure (`git revert` + `DROP TABLE alembic_version`). Since the 2026-08-07 Postgres
-cutover (DEC-51) the store lives in the `db` compose service, not `data/messages.db` —
-this bare-metal path predates that and would need its own database decision if revived.
+5. Validate configuration and prepare the images. With Python 3.12 and uv:
 
-## Egress
+   ```bash
+   uv sync --frozen --extra evals
+   uv run nora config validate --config config.toml
+   ./deploy/signal-cli/fetch.sh
+   ./scripts/build-image.sh
+   docker compose build signal-cli
+   docker compose up -d db rustfs signal-cli nora
+   ```
 
-`deploy/egress.sh` is the versioned egress governance (container-era, 2026-08-07). It
-takes a subcommand:
+   This starts a Signal-oriented subset. Add your configured platform bridge or
+   optional services explicitly. Keep model/memory services available before
+   starting Nora. The image entry point runs database migrations at startup.
 
-    sudo ./deploy/egress.sh apply     # install the Firecrawl SSRF egress policy
-    sudo ./deploy/egress.sh verify    # print the three checks to confirm it
-    sudo ./deploy/egress.sh down      # remove it
+6. Read back health and logs, then tag Nora from an allowed room:
 
-**What it closes.** `web_fetch`'s scraper (Firecrawl) fetches a model-chosen URL, so a
-page that redirects or DNS-rebinds to an internal address would make Firecrawl fetch
-Nora's own internals and hand the body back to the group (SSRF). Measured 2026-08-07:
-from inside `firecrawl-api`, OmniRoute (`172.17.0.1:20128`) answered 307 and Honcho
-(`:8000`) answered 404 — real, sensitive, reachable. Nora's code blocks the direct and
-post-redirect paths; this script is the airtight closure — `DOCKER-USER` rules that deny
-the Firecrawl surface containers (`firecrawl-api`, `playwright`) all private/host ranges
-while preserving their own backend subnet and the public internet. **It is the gate
-`config.toml [search] fetch_enabled = true` waits on.** Re-run after any Firecrawl or
-Nora `compose up` (container IPs can change; the hooks match by IP).
+   ```bash
+   docker compose ps
+   curl -fsS http://127.0.0.1:9100/health
+   docker compose logs --tail 100 nora
+   ```
 
-**Still open (not this script):** a general per-service egress floor for the rest — `db`
-needs no egress, `presence` needs exactly Life360 + Geocoding, `nora` needs its named
-externals. This script scopes only the Firecrawl SSRF surface, which is the one with a
-live untrusted-input path.
+   Inspect degraded platform details even with HTTP 200. Confirm the message is
+   received and a reply delivered; the [runbook](../docs/runbook.md) explains
+   policy denials and silent failures. Do not publish raw logs or production rows.
 
-The old BARE-METAL floor (iptables `uid-owner nora` OUTPUT rules for the pre-container
-systemd deployment) is preserved in git history; it did not constrain containers and is
-superseded here.
+## Upgrades, recovery and fetching
+
+Back up configuration, PostgreSQL and persistent storage before an upgrade.
+Follow the installed deployment mode in the [operator procedure](../.agents/skills/nora-deploy/SKILL.md)
+and the [runbook's rollback constraints](../docs/runbook.md#3-rollback).
+An older image must remain compatible with both schema and config; never clear
+Alembic's version table to force a rollback.
+
+`web_search` and `web_fetch` use the configured remote Tavily or Exa provider.
+Enable `[search]` and supply that provider's API key. The former local Firecrawl
+egress script is retired. Any separately operated local scraper needs its own
+network isolation: a model-selected URL must not reach private services through
+redirects or DNS rebinding.
 
 ## Container-era sidecars in this tree
 
@@ -113,21 +140,8 @@ its services are built from subtrees here (`stt/`, `voice-sidecar/`, …). The n
   Nora's `/app/v1/voice/utterance` as text. Audio is transient end to end.
   See `deploy/voice-wake/README.md`.
 
-## Watchdog — retired 2026-09-09
+## Monitoring
 
-`deploy/watchdog.sh` polled `/health` and alerted if the SSE listener had been silent
-for more than 300 seconds. It is **deleted**, and what replaced it is
-`deploy/prometheus/` + `deploy/alertmanager/` + `deploy/alert-bridge/`.
-
-Two reasons, and the second is why it was never worth keeping as a fallback:
-
-* **Its condition is now a rule.** `PlatformSilent` in
-  `deploy/prometheus/rules/nora.yml` watches the same silence per platform, at a
-  threshold chosen not to cry wolf on a quiet night — plus five more absences the
-  script never looked at.
-* **It had no delivery path.** Its alert channel was `echo >&2` and a non-zero exit,
-  so even scheduled it would have produced a failed systemd unit — which is exactly
-  what nobody noticed for the sixteen days `nora-egress.service` sat in `failed`.
-  Alerts now reach the Discord review channel, and a delivered one says so.
-
-Kept in git history. See `docs/observability.md` for the whole path an alert takes.
+See [observability](../docs/observability.md) for Prometheus, Alertmanager and
+delivery diagnostics. Health and dependency metrics answer different questions;
+monitor both.

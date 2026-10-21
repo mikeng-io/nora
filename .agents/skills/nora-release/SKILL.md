@@ -15,7 +15,7 @@ scripts/release.py.
 ## Once, before enabling automatic releases
 
 Apply the public settings and install the free release App as described in
-`docs/github-maintenance.md`. Publishing the repository is a separate action.
+`docs/maintainers/github.md`. Publishing the repository is a separate action.
 The SSH alias below is an operator-defined placeholder, not a host inventory.
 
 ## Legacy first-release prerequisites
@@ -73,7 +73,7 @@ the commits imply, and the CHANGELOG lines describe what users will see.
 
 ## 2. Automatic merge, or the manual bootstrap path
 
-See `docs/github-maintenance.md`: a repository-scoped GitHub App opens the PR so
+See `docs/maintainers/github.md`: a repository-scoped GitHub App opens the PR so
 its checks run unattended, then queues auto-merge. Required CI/security checks and
 resolved conversations gate it. No branch-rule bypass is granted. Docs/design-only
 commits do not qualify; `scripts/release_scope.py` checks real runtime paths and

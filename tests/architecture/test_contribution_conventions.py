@@ -46,7 +46,6 @@ PR_HEADINGS = [
     "What",
     "Also",
     "Gate on the merged tree",
-    "Deploy note",
     "Closes",
 ]
 SHAPE_LABELS = {"design-anchored", "freeform"}
@@ -189,7 +188,7 @@ def test_contributing_declares_the_same_types_the_checker_enforces() -> None:
     assert types_block, "TYPES map not found in the checker"
     declared_in_script = set(re.findall(r'^\s+"(\w+)":', types_block.group(1), re.M))
     doc = (ROOT / "CONTRIBUTING.md").read_text()
-    sec = doc[doc.index("## Commit messages"):doc.index("## Merge strategy")]
+    sec = doc[doc.index("## Commit messages"):doc.index("## Pull requests")]
     declared_in_doc = set(re.findall(r"^\|\s*`(\w+)`\s*\|", sec, re.M))
     assert "merge" in declared_in_doc, "sanity: the table itself was not parsed"
     doc_only = sorted(declared_in_doc - declared_in_script)
@@ -226,7 +225,7 @@ def test_every_declared_type_is_actually_enforced() -> None:
         " the census comments in this file and CONTRIBUTING.md")
 
     doc = (ROOT / "CONTRIBUTING.md").read_text()
-    sec = doc[doc.index("## Commit messages"):doc.index("## Merge strategy")]
+    sec = doc[doc.index("## Commit messages"):doc.index("## Pull requests")]
 
     for ty in declared:
         without = {k: v for k, v in mod.TYPES.items() if k != ty}
