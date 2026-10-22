@@ -379,7 +379,11 @@ keeps this table and that directory in step.
 (operator ruling, 2026-10-21). It comprehends the ask, writes the brief, picks
 the agent and the effort, launches, reads what comes back, decides, and lands
 and reports through the skills above. It does not write the implementation
-itself. The work goes to three lanes:
+itself. It runs on Claude **Sonnet 5.5** by default and on Opus 5.5 for a
+design or hard-judgement session (operator, 2026-10-22). The Pro plan's
+5-hour and weekly limits are shared across models, Opus also has its own
+weekly cap and costs more per prompt, and the orchestrator's seat is the
+longest-running context of any lane. The work goes to these lanes:
 
 | the task | lane | how it is launched |
 |---|---|---|
@@ -390,8 +394,9 @@ itself. The work goes to three lanes:
 | a light check: read a gate rc, open a cited line, compare two shas, count a log | the orchestrator itself | no launch; a launch costs more than the check |
 
 - **When a change gets a review, the builder never does it**, and neither
-  does the orchestrator that wrote its brief. Codex builds, and Kimi or
-  DeepSeek reviews, so a review crosses vendors. A follow-up on a different lane or effort is a
+  does the orchestrator that wrote its brief. The reviewer's vendor differs
+  from the builder's: Kimi reviews what GPT built, a fresh `gpt-6.1-sol`
+  reviews what Kimi built, and DeepSeek takes a light review of either. A follow-up on a different lane or effort is a
   new launch with the old report pasted in; resuming keeps the model.
 - **A brief carries everything.** A delegated agent starts with no history: the
   brief names the spec or the findings, the worktree and branch, the skills to
@@ -423,10 +428,12 @@ itself. The work goes to three lanes:
   worktree starts from the orchestrator's local commit, so a review
   brief's first step is `git fetch origin && git switch --detach origin/<head
   branch>`.
-- **Kimi is told it is read-only, and that is measured, not trusted**: neither
-  route has a read-only switch (`-p` cannot be combined with `--plan`, `--auto`
-  or `-y`), so
-  `git status --short` in its checkout after the run must print nothing. Its thinking stays on; it takes no effort
+- **A reviewer is told it is read-only, and that is measured, not trusted.**
+  No review route has a read-only switch (Kimi's `-p` cannot be combined
+  with `--plan`, `--auto` or `-y`), and T3 does not report which worktree a
+  task used. So every review brief ends by asking for `pwd` and
+  `git status --short`, and the orchestrator checks that `git status
+  --short` in that checkout prints nothing. Kimi's thinking stays on; it takes no effort
   flag, so the brief's scope is the lever. Its findings are verified like any
   other review's (`nora-land` step 7).
 - **When a lane is down, use the next and say so in the report**: implementation
@@ -436,6 +443,17 @@ itself. The work goes to three lanes:
   A 429/403 quota error means the lane is down; use the fallback above.
   A lane is down when its launch fails or its quota is spent, not when the
   orchestrator would rather do the work.
+- **Kimi builds on trial** (operator, 2026-10-22). GPT's quota runs out
+  first, so 3 to 5 builds to a finished spec, additive or off by default,
+  go to `kimi-code/k3-256k`. Each one gets a review by a fresh `gpt-6.1-sol`
+  at `medium`, whatever the review table's row: the trial is a measurement,
+  and a build nobody reviewed measures nothing. While GPT is down, no trial
+  build launches, because its reviewer would have to be Kimi. The
+  report records what the review found and any defect found after merge.
+  If Kimi's builds come back as clean as GPT's, spec'd builds move to Kimi
+  and its plan grows instead of GPT's. If not, Kimi stays on review.
+  MiniMax is not a lane: never M3, and M3.1-Flash only if the operator
+  asks for it by name.
 - **Say the lane AND the effort in every launch** (where the lane takes one);
   never let either default.
 
@@ -443,23 +461,58 @@ itself. The work goes to three lanes:
 every change gets one** (operator, 2026-10-22). The top-tier builders rarely
 make serious errors in small changes, and a review round on every change was
 overloading the work. The orchestrator picks the row when the gate is green,
-and states the row in the PR's Gate section:
+and states the row in the PR's Gate section. **When several rows match, the
+highest one wins**: a 20-line change to an R-31 check is the last row, not
+the first.
 
 | the change | review |
 |---|---|
-| no runtime effect: agent tooling config (`.mcp.json`, `.codex/`, `.claude/`, `.agents/`), docs outside `nora/`, CI or Makefile tweaks; or a small code change (a few dozen lines, one area) that is additive or off by default, with a green gate | none: the gate and the read-back are the check |
-| additive or off-by-default code beyond that; tests only; fixes to findings that named a file and line | light: DeepSeek, one round |
+| no runtime effect: agent tooling config (`.mcp.json`, `.codex/`, `.claude/`, `.agents/`), docs outside `nora/`; or a small code change (a few dozen lines, one area) that is additive or off by default, with a green gate | none: the gate and the read-back are the check |
+| additive or off-by-default code beyond that; tests only; fixes to findings that named a file and line; anything that changes what checks a change: the gate, `Makefile`, CI, `.githooks/`, test selection (`scripts/affected_tests.py`) | light: DeepSeek |
 | live on merge: a default, prompt, doctrine, tool text, routing or model setting changes behaviour | full: Kimi |
 | touches disclosure (R-18, R-28, R-31), a lock or concurrency path, a hot-table migration, security, or starts spending model calls | full: Kimi at the effort table's `xhigh` |
 
 - **Escalate on evidence, not on habit.** A row goes up one level when the
   build surprised you: a first fix missed, the diff reaches past its brief,
   or the gate went red and was fixed by something other than the spec. A
-  second round runs only when the first one found a BLOCKER.
+  BLOCKER from a light review sends the next round to Kimi.
 - **None is not unchecked.** The gate, the read-back and the orchestrator's
   own read of the diff still run. A load-bearing fix still proves itself
   with `nora-prove-fix`.
 - **The operator can always ask for a review**, or waive one.
+
+**Triage decides what blocks, and only a BLOCKER buys another round**
+(operator, 2026-10-22). Review loops kept finding new small issues, because
+every round reviewed the whole scope with a fresh reader, the brief asked
+for findings, the reviewer graded its own severity, and every finding was
+fixed. A finding counts only if it names a reachable path (real input,
+caller or config), the harm on that path, and whether this diff caused it.
+The orchestrator, not the reviewer, sets the verdict. When two verdicts
+fit, the higher one wins: a crash, data loss or disclosure is a BLOCKER
+however rare its path.
+
+| verdict | test | action |
+|---|---|---|
+| BLOCKER | reachable today; wrong output, data loss, disclosure, a crash or a weakened gate; caused by this diff | fix, then another round |
+| FIX-IF-CHEAP | real and in this diff, bounded harm or a rare path | fix in this PR if it takes minutes, else an issue; no new round |
+| ISSUE | real, but pre-existing or outside the diff | an issue; merge anyway |
+| DROP | hypothetical, a contrived input, style, unrelated | one line in the PR, nothing else |
+
+- **A round with no BLOCKER ends review.**
+- **A fix round reviews the fix diff only** (`git diff <reviewed-sha>..HEAD`),
+  never the whole PR again: a fresh reader of the whole scope always finds
+  something new.
+- **Two rounds at most.** Round 2 reviews the fix diff one effort level
+  up (the effort table below). A BLOCKER in round 2 is fixed and proved
+  with `nora-prove-fix`, and then the orchestrator re-reads the spec and
+  reports to the operator, who decides on any round 3. Nothing launches it
+  automatically.
+- **The review brief says**: report only findings with a reachable path;
+  `NONE` is a valid and expected answer; mark anything outside the diff
+  `PRE-EXISTING`; at most 6 findings, most severe first, so a cap never
+  hides a BLOCKER.
+- **The PR's Gate section records the level and the triage** («light; 1
+  BLOCKER fixed, 2 FIX-IF-CHEAP, 1 ISSUE #N, 2 DROP»).
 
 **Effort is adaptive: it follows the task's ambiguity and what a miss costs,
 not the lane** (operator, 2026-10-07). The lane picks the model; effort picks
