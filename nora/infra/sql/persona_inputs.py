@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 import uuid
 from collections.abc import Sequence
 from datetime import datetime
@@ -721,9 +722,11 @@ class SqlPersonaInputs:
             return [PersonSourceRevision(domain="rollup", source="presence:unavailable",
                 revision="", state="unavailable", recorded_at="unknown")]
         mobility = SqlMobilityStore(self._engine)
-        places = await mobility.places_with_aggregates(subject_id=person)
-        corridors = await mobility.corridors_for_subject(subject_id=person)
-        rhythm = await mobility.rhythm_bins(subject_id=person, window_ms=180 * 86400000)
+        until_ms = min(until_ms, int(time.time() * 1000))
+        places = await mobility.places_with_aggregates(subject_id=person, until_ms=until_ms)
+        corridors = await mobility.corridors_for_subject(subject_id=person, until_ms=until_ms)
+        rhythm = await mobility.rhythm_bins(subject_id=person, window_ms=180 * 86400000,
+                                            until_ms=until_ms)
         # Explicit projection: coordinates/raw fixes never cross this seam.
         routine = {
             "places": [{k: p[k] for k in ("kind", "label", "stay_count",
@@ -732,14 +735,19 @@ class SqlPersonaInputs:
                            "first": c.first_seen_ts, "last": c.last_seen_ts} for c in corridors],
             "rhythm": rhythm,
         }
-        out = []
+        # Context has no citation/evidence: it cannot mint an occasion. One
+        # snapshot per call (one day per windowed history call), not per stay.
+        routine_json = json.dumps(routine, ensure_ascii=False)
+        out = [PersonSourceRevision(domain="rollup", source=f"presence:routine:{person}",
+            subject=person, revision=hashlib.sha256(routine_json.encode()).hexdigest(),
+            state="computed", recorded_at="unknown", as_of=until_ms,
+            properties=(("routine", routine_json),))] if any(routine.values()) else []
         for row, revision in rows:
             cite = f"presence:{row.kind}:{person}:{row.valid_from_ms}"
             fields = {k: v for k, v in row.fields.items()
                       if k in ("place_kind", "place_label", "place_saved", "distance_m",
                                "avg_speed_kmh")}
-            properties = (("observation", json.dumps(fields, ensure_ascii=False)),
-                          ("routine", json.dumps(routine, ensure_ascii=False)))
+            properties = (("observation", json.dumps(fields, ensure_ascii=False)),)
             out.append(PersonSourceRevision(domain="rollup", source=cite, revision=revision,
                 subject=person,
                 state="computed", recorded_at="unknown", citable=cite,

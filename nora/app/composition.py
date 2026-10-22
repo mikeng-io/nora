@@ -4582,7 +4582,14 @@ async def build_dependencies(
                 # THE SWITCH (45 §5): when `[persona] render` is on, her
                 # Persona account replaces the prose one; the SAME reader the
                 # tag and fire paths hold.
-                self_persona=unit_self_persona_reader(persona_reader, allowlist),
+                self_persona=unit_self_persona_reader(
+                    persona_reader, allowlist, lineage=lineage,
+                    room_for=lambda platform, conversation_id: Room(
+                        platform=platform, conversation_id=conversation_id,
+                        roster_source=rosters.get(platform), persons=persons,
+                        self_ids=registry.self_aliases(),
+                    ),
+                ),
                 metrics=metrics,
             )
 

@@ -255,3 +255,44 @@ async def test_unit_self_reader_cannot_clear_exclusions_without_live_rosters():
     pending = read("u1")
     assert pending is not None
     assert [line.text for line in await pending] == ["public observation"]
+
+
+@pytest.mark.parametrize("locations,allowed", [((False, False), False),
+    ((True, False), False), ((True, True), True)])
+async def test_cognition_self_location_passes_presence_in_every_target_room(locations, allowed):
+    from dataclasses import replace
+
+    from nora.agent.whereis import Circle
+    from nora.app.cognition_grounding import unit_self_persona_reader
+    from nora.domain.culture import nora_character_key
+    from nora.domain.persona import PersonaView
+    from nora.language.persona_render import render_persona
+
+    rooms = tuple(replace(_LISTED, ids=frozenset({cid}), primary_id=cid, location=location)
+                  for cid, location in zip(("g1", "g2"), locations, strict=True))
+    policy = Policy(conversations=rooms,
+        _by_id={(c.platform, c.primary_id): c for c in rooms})
+    private = replace(_line("visits Lotus Library"), location=True,
+                      strength={"location_subjects": ["ada"]})
+    unknown = replace(private, strength={})
+    public = _line("public observation")
+    reader = _Heads({nora_character_key("u1"): (private, unknown, public)})
+    roster = FakeRosterSource(groups=dict.fromkeys(("g1", "g2"), _ROSTER_CLEAN.groups["g1"]))
+    def room_for(platform, conversation_id):
+        return Room(platform=platform, conversation_id=conversation_id,
+                    roster_source=roster, persons=_PERSONS)
+    read = unit_self_persona_reader(reader, policy,
+        lineage=LineagePolicy.from_policy(policy, circles=(Circle(
+            circle_id="fictional", person_ids=frozenset({"ada", "ben"})),)),
+        room_for=room_for)
+    pending = read("u1")
+    if len(set(locations)) > 1:
+        assert pending is None
+        return
+    assert pending is not None
+    lines = await pending
+    assert lines == ((private, public) if allowed else (public,))
+    block = render_persona(PersonaView(entity="self", of="you", lines=lines),
+                           name_of=lambda pid: pid, now=NOW)
+    assert block is not None
+    assert ("Lotus Library" in str(block)) == allowed

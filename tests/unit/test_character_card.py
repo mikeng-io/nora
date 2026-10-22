@@ -272,3 +272,15 @@ def test_confirmation_carries_location_evidence_for_an_open_hypothesis():
     assert confirmed.location
     assert confirmed.source_medium == ("chat", "presence")
     assert confirmed.strength["location_subjects"] == ["p-kit"]
+
+
+def test_reply_cited_directly_and_through_episode_or_rollup_is_one_occasion():
+    for aggregate in ("response:500", TIE):
+        rooted = replace(CITABLE, episodes={500: CITABLE.messages[101]},
+                         rollup_roots={aggregate: ("101",)})
+        # The alias of reply 101 cannot turn two occasions into three.
+        assert _reasons(_plan([trait(citations=("101", aggregate, "102"))],
+                              citable=rooted)) == ["induced_instances"]
+        [line] = _plan([trait(citations=("101", aggregate, "102", "103"))],
+                       citable=rooted).inserts
+        assert line.support_count == 3 and line.strength["occasions"] == 3
