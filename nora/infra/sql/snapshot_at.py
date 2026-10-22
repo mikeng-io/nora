@@ -515,7 +515,7 @@ async def _reset_sequences(conn: AsyncConnection, table: str) -> None:
     relation = sa.table(table, schema="public")
     for column in serials:
         # Catalog names are identifiers, not SQL: let the dialect escape them.
-        maximum = sa.func.max(sa.column(column))
+        maximum: sa.ColumnElement[int] = sa.func.max(sa.column(column))
         await conn.execute(
             sa.select(sa.func.setval(
                 sa.func.pg_get_serial_sequence(sa.bindparam("t"), sa.bindparam("c")),
