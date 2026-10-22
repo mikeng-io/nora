@@ -110,7 +110,7 @@ def _agent(model: Any, tools: list[Any], names: list[str], executor: Any) -> Any
 async def test_a_batch_runs_at_most_the_limit_at_once_and_keeps_its_result_order():
     names = [f"slow{i}" for i in range(5)]
     gauge = _Gauge()
-    executor = factory.BoundedToolExecutor(2)
+    executor = factory.BoundedToolExecutor(factory.ToolSlots(2))
     agent = _agent(_BatchModel(names, "b"), _tools(gauge, names, [0.02, 0.01, 0.03, 0.005, 0.0]),
                    names, executor)
     await asyncio.wait_for(agent.invoke_async("go"), timeout=5)
@@ -125,7 +125,7 @@ async def test_overlapping_turns_share_one_limit():
     gauge_a, gauge_b = _Gauge(), _Gauge()
     names_a = [f"a{i}" for i in range(3)]
     names_b = [f"c{i}" for i in range(3)]
-    executor = factory.BoundedToolExecutor(2)
+    executor = factory.BoundedToolExecutor(factory.ToolSlots(2))
     agent_a = _agent(_BatchModel(names_a, "x"), _tools(gauge_a, names_a, [0.02] * 3), names_a,
                      executor)
     agent_b = _agent(_BatchModel(names_b, "y"), _tools(gauge_b, names_b, [0.02] * 3), names_b,
@@ -141,7 +141,7 @@ async def test_cancelling_a_turn_releases_every_slot_it_held():
     same executor runs, and the executor reads idle."""
     names = ["hang0", "hang1"]
     gauge = _Gauge()
-    executor = factory.BoundedToolExecutor(2)
+    executor = factory.BoundedToolExecutor(factory.ToolSlots(2))
     agent = _agent(_BatchModel(names, "h"), _tools(gauge, names, [None, None]), names, executor)
     turn = asyncio.create_task(agent.invoke_async("go"))
     for _ in range(200):
@@ -161,11 +161,53 @@ async def test_cancelling_a_turn_releases_every_slot_it_held():
     assert executor.in_flight == 0
 
 
+async def test_background_work_leaves_a_slot_free_for_a_user_turn_while_eight_run():
+    """Eight long-running background tools (a Dreamer's, a sub-agent's) against 8 slots with 2
+    reserved: background holds at most 6, so a user-facing turn's tool gets a slot at once and
+    finishes inside its timeout while the eight still run."""
+    names_bg = [f"bg{i}" for i in range(8)]
+    names_tag = ["reply"]
+    gauge_bg, gauge_tag = _Gauge(), _Gauge()
+    slots = factory.ToolSlots(8, reserve=2)
+    background = factory.BoundedToolExecutor(slots, background=True)
+    interactive = factory.BoundedToolExecutor(slots)
+    dream = _agent(_BatchModel(names_bg, "d"), _tools(gauge_bg, names_bg, [None] * 8), names_bg,
+                   background)
+    tag = _agent(_BatchModel(names_tag, "t"), _tools(gauge_tag, names_tag, [0.0]), names_tag,
+                 interactive)
+    background_turn = asyncio.create_task(dream.invoke_async("go"))
+    for _ in range(200):
+        if gauge_bg.running == 6:
+            break
+        await asyncio.sleep(0.005)
+    assert gauge_bg.running == 6
+    try:
+        await asyncio.wait_for(tag.invoke_async("go"), timeout=2)
+        assert gauge_tag.peak == 1
+        assert slots.in_flight == 6
+    finally:
+        gauge_bg.gate.set()
+    await asyncio.wait_for(background_turn, timeout=5)
+    assert gauge_bg.peak == 6
+    assert slots.in_flight == 0 and slots.waiting == 0
+
+
+async def test_the_slots_refuse_a_reserve_that_leaves_background_work_nothing():
+    try:
+        factory.ToolSlots(2, reserve=2)
+    except ValueError:
+        return
+    raise AssertionError("a reserve that leaves no background slot must be refused")
+
+
 async def test_every_production_agent_takes_the_one_shared_executor_by_default():
-    """The tag, dream and sub-agent loops all default to `shared_tool_executor()`, so overlapping
-    turns of different kinds draw on the same limit, not one each."""
+    """The tag takes the interactive executor; the dream and sub-agent loops take the background
+    one. Both draw on the same slots, so the process holds one limit, not one per kind."""
     shared = factory.shared_tool_executor()
+    background = factory.shared_background_executor()
     assert shared is factory.shared_tool_executor()
+    assert background is factory.shared_background_executor()
+    assert background is not shared and background.slots is shared.slots
     guard = _guard([])
     model = _BatchModel([], "n")
     tag = factory.create_agent(
@@ -179,13 +221,13 @@ async def test_every_production_agent_takes_the_one_shared_executor_by_default()
         model=model, system_prompt="p", tools=[], guard=guard, progress=guard,
         skills_dir=SKILLS_DIR, trace_attributes={}, retry=RETRY,
     )
-    assert tag.tool_executor is shared and dream.tool_executor is shared
-    assert sub.tool_executor is shared
+    assert tag.tool_executor is shared
+    assert dream.tool_executor is background and sub.tool_executor is background
 
 
 async def test_the_executor_refuses_a_limit_that_admits_nothing():
     try:
-        factory.BoundedToolExecutor(0)
+        factory.ToolSlots(0)
     except ValueError:
         return
     raise AssertionError("a limit of 0 must be refused")
