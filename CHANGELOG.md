@@ -1,5 +1,26 @@
 # Changelog
 
+## [6.6.0](https://github.com/mikeng-io/nora/compare/v6.5.1...v6.6.0) (2026-10-22)
+
+
+### Features
+
+* **character:** compose structured cards from dated source evidence ([bf7bd55](https://github.com/mikeng-io/nora/commit/bf7bd55c3202af7d4ace2c6fb5ca20008bdcf141))
+
+
+### Bug Fixes
+
+* **character:** bind collective location reads to cited subjects ([b5fb271](https://github.com/mikeng-io/nora/commit/b5fb271b4fd7b65c87d1e2d4337ffbe9894fc006))
+* **character:** bound routine history and filter Cognition location lines ([bd46c0b](https://github.com/mikeng-io/nora/commit/bd46c0b6e5b09eb4e1564c2e919f626f7f9ad3cd))
+* **character:** retain historical routines and settle unchanged revisions ([9248715](https://github.com/mikeng-io/nora/commit/924871523146d0ecb8cac846a26684fef559c45e))
+* **deploy:** retain private failures and retry safe preflight ([cc3ca23](https://github.com/mikeng-io/nora/commit/cc3ca23b497bfd4fb66c4d512278ea4aeb08dd63))
+* **snapshot:** annotate the sequence maximum SQL expression ([3e6639e](https://github.com/mikeng-io/nora/commit/3e6639ec3c4a8ba71fb940a1ceb8dd2113e86ee6))
+
+
+### Security
+
+* patch STT dependency, quote snapshot identifiers and add CSP ([d396646](https://github.com/mikeng-io/nora/commit/d396646c4029961a5a1261b93244509c67fa3952))
+
 ## [6.5.1](https://github.com/mikeng-io/nora/compare/v6.5.0...v6.5.1) (2026-10-22)
 
 
