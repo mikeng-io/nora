@@ -1,0 +1,35 @@
+name: PR triage
+
+on:
+  pull_request_target:
+    branches: [master]
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      number:
+        description: Pull request number
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      # This privileged job NEVER checks out or executes PR source. The title and the
+      # changed paths come from the API and only select labels from a fixed list.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: master
+          persist-credentials: false
+      - name: Label and assign the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -m scripts.triage_pr

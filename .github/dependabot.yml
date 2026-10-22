@@ -1,11 +1,19 @@
 # Security fixes are grouped per ecosystem across the listed directories.
 # Keep routine version updates limited to the existing monthly Actions group.
+# Every update is assigned to the maintainer and carries the repo's own labels: the triage
+# workflow cannot label a Dependabot PR (its token is read-only), so this file does it.
 version: 2
 updates:
 - package-ecosystem: github-actions
   directory: /
   schedule:
     interval: monthly
+  assignees:
+  - mikeng-io
+  labels:
+  - dependencies
+  - 'type: build'
+  - 'area: deps'
   open-pull-requests-limit: 2
   groups:
     github-actions:
@@ -22,6 +30,12 @@ updates:
   - /deploy/voice-wake
   schedule:
     interval: monthly
+  assignees:
+  - mikeng-io
+  labels:
+  - dependencies
+  - 'type: build'
+  - 'area: deps'
   open-pull-requests-limit: 0
   groups:
     uv-security:
@@ -33,6 +47,12 @@ updates:
   - /deploy/computer
   schedule:
     interval: monthly
+  assignees:
+  - mikeng-io
+  labels:
+  - dependencies
+  - 'type: build'
+  - 'area: deps'
   open-pull-requests-limit: 0
   groups:
     pip-security:
@@ -51,6 +71,12 @@ updates:
   - /voice-lab/spikes/sidecar
   schedule:
     interval: monthly
+  assignees:
+  - mikeng-io
+  labels:
+  - dependencies
+  - 'type: build'
+  - 'area: deps'
   open-pull-requests-limit: 0
   groups:
     npm-security:
@@ -62,6 +88,12 @@ updates:
   - /deploy/instagram-bridge
   schedule:
     interval: monthly
+  assignees:
+  - mikeng-io
+  labels:
+  - dependencies
+  - 'type: build'
+  - 'area: deps'
   open-pull-requests-limit: 0
   groups:
     gomod-security:
