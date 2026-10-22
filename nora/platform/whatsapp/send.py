@@ -46,6 +46,7 @@ import aiohttp
 from ...domain.media import parse_media_type
 from ...domain.models import ConversationTarget
 from ...domain.ports import LinkPreview, Mention, OutboundAttachment, SendResult, TextStyle
+from ...infra.service_auth import service_auth_headers
 
 log = logging.getLogger("nora.whatsapp.send")
 
@@ -117,7 +118,10 @@ class WhatsAppSender:
         try:
             async with (
                 aiohttp.ClientSession(timeout=self._timeout) as session,
-                session.post(f"{self._base_url}{path}", json=payload) as resp,
+                session.post(
+                    f"{self._base_url}{path}", json=payload,
+                    headers=service_auth_headers(),
+                ) as resp,
             ):
                 if resp.status == 200:
                     return SendResult(ok=True, timestamp=_sent_timestamp(await resp.json()))

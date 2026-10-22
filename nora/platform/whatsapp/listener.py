@@ -33,6 +33,8 @@ from collections.abc import Awaitable, Callable
 
 import aiohttp
 
+from ...infra.service_auth import service_auth_headers
+
 log = logging.getLogger("nora.whatsapp.listener")
 
 
@@ -78,7 +80,9 @@ class WhatsAppListener:
         timeout = aiohttp.ClientTimeout(total=None, sock_read=None)
         async with (
             aiohttp.ClientSession(timeout=timeout) as session,
-            session.get(self._url, headers={"Accept": "text/event-stream"}) as resp,
+            session.get(self._url, headers={
+                **service_auth_headers(), "Accept": "text/event-stream",
+            }) as resp,
         ):
             resp.raise_for_status()
             self.connected = True

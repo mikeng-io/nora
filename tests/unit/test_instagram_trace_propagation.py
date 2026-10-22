@@ -131,3 +131,13 @@ async def test_a_social_read_carries_the_turns_trace(bridge, what, path):
         await client.read(platform="instagram", what=what, target="10000001", limit=1)
     assert seen and seen[0][0] == path
     assert seen[0][1] is not None and _trace_id(span) in seen[0][1]
+
+
+def test_the_bridge_token_rides_the_same_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Network membership is not caller authentication. The token is on every
+    own-service call, and absent rather than empty when the deployment has not
+    set it (the bridge then refuses to start)."""
+    monkeypatch.setenv("NORA_BRIDGE_TOKEN", "tok-test")
+    assert propagation_headers()["Authorization"] == "Bearer tok-test"
+    monkeypatch.delenv("NORA_BRIDGE_TOKEN")
+    assert "Authorization" not in propagation_headers()

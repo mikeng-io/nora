@@ -12,7 +12,7 @@
  * allowlist/mode gating, polls, and the Hermes env coupling.
  */
 
-import { createDecipheriv, hkdfSync } from 'node:crypto';
+import { createDecipheriv, hkdfSync, timingSafeEqual } from 'node:crypto';
 import { mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
@@ -769,4 +769,20 @@ export function createSilentLogger() {
 
 export function ensureDir(dir) {
   mkdirSync(dir, { recursive: true });
+}
+
+// -- Bridge authentication ---------------------------------------------------
+
+/**
+ * True only for the compose healthcheck (`GET /health`, no account data) or a
+ * request carrying the exact shared bearer. An empty configured token answers
+ * false for every non-health route: the bridge refuses to start without one,
+ * and this stays fail-closed if that check is ever bypassed.
+ */
+export function authorizedBridgeRequest(method, pathname, authorization, token) {
+  if (method === 'GET' && pathname === '/health') return true;
+  if (!token || typeof authorization !== 'string') return false;
+  const expected = `Bearer ${token}`;
+  if (authorization.length !== expected.length) return false;
+  return timingSafeEqual(Buffer.from(authorization), Buffer.from(expected));
 }

@@ -103,6 +103,11 @@ services:
       # ./data (Nora must not read transport credentials). chmod 700; never
       # commit.
       - ./state/whatsapp:/app/session
+    environment:
+      # Shared bearer for Nora's calls to this bridge. Network membership is
+      # not authentication: any co-networked container can reach the account
+      # routes, so the bridge refuses to start without this.
+      - NORA_BRIDGE_TOKEN=${NORA_BRIDGE_TOKEN:?set NORA_BRIDGE_TOKEN in the host environment first}
     command: ["node", "bridge.js", "--port", "18081", "--session", "/app/session"]
     healthcheck:
       # Proves the bridge's HTTP layer serves. It CANNOT prove the WhatsApp
@@ -153,6 +158,7 @@ services:
     extra_hosts: ["host.docker.internal:host-gateway"]
     environment:
       - IG_SESSION_DIR=/session
+      - NORA_BRIDGE_TOKEN=${NORA_BRIDGE_TOKEN:?set NORA_BRIDGE_TOKEN in the host environment first}
       # Tracing (design/instagram-adoption/16 §Tracing): OTLP to the host's
       # collector, the same endpoint Nora exports to. The collector routes the
       # spans to Jaeger (and to Langfuse when a trace carries a model call).
@@ -179,7 +185,7 @@ services:
       # up — the bridge emits SSE heartbeats, Nora's /health publishes the
       # per-platform last_event_age_seconds, and deploy/watchdog.sh alerts on
       # it aging.
-      test: ["CMD-SHELL", "curl -fsS -m 5 http://127.0.0.1:18082/health || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS -m 5 -H \"Authorization: Bearer $$NORA_BRIDGE_TOKEN\" http://127.0.0.1:18082/health || exit 1"]
       interval: 60s
       timeout: 10s
       start_period: 60s
@@ -270,6 +276,11 @@ services:
       # Never hardcoded — must already be exported in the shell that runs `docker
       # compose up` (see .env.example). Compose fails fast if it's unset.
       - OMNIROUTE_API_KEY=${OMNIROUTE_API_KEY:?set OMNIROUTE_API_KEY in the host environment first}
+      # Shared bearer for the WhatsApp and Instagram bridges. Required, and the
+      # same value in all three services: the bridges refuse to start without
+      # it, so an upgrade that forgets it fails loudly rather than serving
+      # account routes unauthenticated.
+      - NORA_BRIDGE_TOKEN=${NORA_BRIDGE_TOKEN:?set NORA_BRIDGE_TOKEN in the host environment first}
       # The Postgres record store (cutover 2026-08-07, DEC-51). asyncpg-shaped;
       # the sync/Alembic driver is derived from it; Nora runs migrations at
       # startup. Password from .env (DEC-8), never inlined.

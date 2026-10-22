@@ -14,7 +14,11 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from nora.domain.identity import Identifier
-from nora.platform.instagram.self_id import InstagramIdentityError, derive_identity
+from nora.platform.instagram.self_id import (
+    InstagramIdentityError,
+    derive_identity,
+    read_username,
+)
 
 NORA_FBID = "18247361241432477"
 NORA_IGID = "79597894900"
@@ -26,6 +30,7 @@ async def bridge():
     box, so each test states the WIRE it is defending against."""
     box: dict = {
         "status": 200,
+        "auth": [],
         "body": {
             "ok": True, "session": "authenticated", "connected": True, "seq": 22,
             "self": {"fbid": NORA_FBID, "igid": NORA_IGID, "username": "not_____nora"},
@@ -33,6 +38,7 @@ async def bridge():
     }
 
     async def health(request: web.Request) -> web.Response:
+        box["auth"].append(request.headers.get("Authorization"))
         return web.json_response(box["body"], status=box["status"])
 
     app = web.Application()
@@ -134,3 +140,15 @@ async def test_an_unreachable_bridge_raises_rather_than_returning_a_blank():
     returned instead would put `""` in the self-alias set."""
     with pytest.raises(Exception):  # noqa: B017 — any failure, none of them silent
         await derive_identity("http://127.0.0.1:1", timeout=0.2)
+
+
+async def test_both_health_probes_carry_the_bridge_token(bridge, monkeypatch):
+    """The bridge now authenticates /health too, so the identity and username
+    probes must send the same bearer Nora sends to every other bridge route."""
+    box, base_url = bridge
+    monkeypatch.setenv("NORA_BRIDGE_TOKEN", "probe-token")
+
+    await derive_identity(base_url)
+    assert await read_username(base_url) == "not_____nora"
+
+    assert box["auth"] == ["Bearer probe-token", "Bearer probe-token"]

@@ -11,6 +11,8 @@ import logging
 
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
+from .service_auth import service_auth_headers
+
 log = logging.getLogger("nora.infra.trace_propagation")
 
 #: W3C Trace Context, explicitly, not the global propagator. The bridge
@@ -38,5 +40,7 @@ def propagation_headers() -> dict[str, str]:
         _W3C.inject(carrier)
     except Exception:  # a broken propagator must not break a send
         log.debug("trace context could not be propagated", exc_info=True)
-        return {}
-    return carrier
+        carrier = {}
+    # The same helper is the one place a call to Nora's own bridge learns the
+    # shared token, so a new call site cannot forget it.
+    return {**carrier, **service_auth_headers()}

@@ -18,6 +18,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import {
+  authorizedBridgeRequest,
   buildLidMap,
   buildMediaPayload,
   createEventBuffer,
@@ -704,4 +705,15 @@ test('a reaction or revoke naming no target is dropped', () => {
   const base = { key: { id: 'X', remoteJid: '152099000000000000@g.us', participant: '1@s.whatsapp.net' }, messageTimestamp: 1 };
   assert.equal(extractMessageEvent({ ...base, message: { reactionMessage: { text: '👍' } } }), null);
   assert.equal(extractMessageEvent({ ...base, message: { protocolMessage: { type: 0 } } }), null);
+});
+
+// -- Bridge authentication ---------------------------------------------------
+
+test('health is open; every other route needs the exact bearer', () => {
+  assert.equal(authorizedBridgeRequest('GET', '/health', undefined, 't0k'), true);
+  assert.equal(authorizedBridgeRequest('GET', '/events', undefined, 't0k'), false);
+  assert.equal(authorizedBridgeRequest('GET', '/events', 'Bearer wrong', 't0k'), false);
+  assert.equal(authorizedBridgeRequest('GET', '/events', 'Bearer t0k', 't0k'), true);
+  assert.equal(authorizedBridgeRequest('GET', '/health', undefined, ''), true);
+  assert.equal(authorizedBridgeRequest('GET', '/events', 'Bearer ', ''), false);
 });
