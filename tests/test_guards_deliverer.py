@@ -613,11 +613,17 @@ async def test_emphasis_cannot_smuggle_an_identifier_past_r18(store, doctrine):
 
 
 async def test_emphasis_cannot_smuggle_a_phone_number_past_r18(store, doctrine):
-    """The same hole with the other pattern — a member's real phone number."""
+    """The same hole with the other pattern — a member's real phone number.
+
+    Converted, the number is followed by the letter `a`. The old `\\b` boundary
+    read that letter as part of the digits and let the converted form pass;
+    the phone pattern now ends at the first non-digit, so the converted form is
+    refused too (`nora.agent.egress`, ASCII neighbours). Both forms are still
+    checked, so the delivery outcome and its counter are unchanged."""
     metrics = Metrics()
     d = _deliverer(store, doctrine, SinkSender(), metrics)
     smuggled = "*+85298765432*a"
-    assert scan_reply(render_markdown(smuggled).text) is None
+    assert scan_reply(render_markdown(smuggled).text) == "phone"
     assert await d.deliver(smuggled) is False
     assert metrics.get("nora_egress_blocks_total", kind="phone") == 1
 

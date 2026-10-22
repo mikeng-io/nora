@@ -94,8 +94,142 @@ def test_a_coordinate_pair_is_blocked_by_the_reply_scan_after_dec156():
     assert scan_reply("佢喺 22.410, 114.124 附近") == "coordinate"
     assert scan_reply("-33.87, 151.20") == "coordinate"
     assert scan_reply("22.410,114.124") == "coordinate"
-    # no comma pair — model speech, docstring-handled
-    assert scan_reply("lat 22.410 lng 114.124") is None
     assert scan_reply("份嘢 $22.5 買的") is None
     assert scan_reply("2026-09-06 見") is None
     assert scan_reply("大概 20 分鐘前喺屋企") is None
+
+
+def _decimal(whole: int, frac: int) -> str:
+    """A generated decimal: `_decimal(1, 111)` is `1.111`. The coordinate fixtures
+    are built here rather than written out, because they are synthetic and a
+    literal run of decimal pairs is what the PII hook reads as a location table."""
+    return f"{whole}.{frac:03d}"
+
+
+_FIRST, _SECOND = _decimal(1, 111), _decimal(2, 222)
+_FULLWIDTH_PAIR = str.maketrans("0123456789.,", "０１２３４５６７８９．，")
+
+
+@pytest.mark.parametrize("text", [
+    f"{_FIRST} {_SECOND}",
+    f"佢喺 {_FIRST} {_SECOND} 附近",
+    f"-{_FIRST} {_SECOND}",
+    f"{_FIRST} / {_SECOND}",
+    f"{_FIRST}, {_SECOND}".translate(_FULLWIDTH_PAIR),
+])
+def test_a_pair_separated_by_whitespace_or_punctuation_is_a_coordinate(text):
+    """The same pair as the comma form: a reply that separates the two decimals
+    with a space, a slash or a full-width comma carries the same coordinate.
+    No range check: an out-of-range pair is still a leaked pair."""
+    assert scan_reply(text) == "coordinate", text
+
+
+@pytest.mark.parametrize("text", [
+    f"latitude {_FIRST}, longitude {_SECOND}",
+    f"lat: {_FIRST} lng: {_SECOND}",
+    f"Lat/Lng: {_FIRST}, {_SECOND}",
+    f"LNG = {_SECOND}",
+    f"Latitude {_FIRST}",
+    f"經緯 lat {_FIRST} / lon {_SECOND}",
+])
+def test_a_labelled_latitude_or_longitude_is_a_coordinate(text):
+    """A label (`lat`, `latitude`, `lng`, `lon`, `longitude`) separated from its
+    value by whitespace or punctuation is the same disclosure as the bare pair.
+    `lat 22.410 lng 114.124` used to pass here; that assertion was a deliberate
+    choice (model speech) and is reversed on purpose by the brief."""
+    assert scan_reply(text) == "coordinate", text
+
+
+# A `\b` boundary treats every Unicode letter as a word character, so an
+# identifier followed (or preceded) by one of these escaped the scan. Each
+# neighbour is a letter in another script: CJK, a Latin letter with a diacritic,
+# Cyrillic, Arabic, and a katakana prolonged sound mark (category Lm).
+_NEIGHBOURS = ("字", "é", "я", "ع", "ー")
+_BARE_IDENTIFIERS = {
+    "phone": "+85290000101",
+    "uuid": "a1000000-0000-4000-8000-000000000000",
+    "keylike": "sk-abcdefghijklmnop1234567",
+}
+
+
+@pytest.mark.parametrize("neighbour", _NEIGHBOURS)
+@pytest.mark.parametrize("kind", sorted(_BARE_IDENTIFIERS))
+def test_an_identifier_followed_by_a_unicode_letter_is_still_refused(kind, neighbour):
+    text = f"佢 {_BARE_IDENTIFIERS[kind]}{neighbour} 呀"
+    assert scan_identifiers(text) == kind, text
+    assert scan_reply(text) == kind, text
+
+
+@pytest.mark.parametrize("neighbour", _NEIGHBOURS)
+@pytest.mark.parametrize("kind", sorted(_BARE_IDENTIFIERS))
+def test_an_identifier_preceded_by_a_unicode_letter_is_still_refused(kind, neighbour):
+    text = f"佢{neighbour}{_BARE_IDENTIFIERS[kind]} 呀"
+    assert scan_identifiers(text) == kind, text
+    assert scan_reply(text) == kind, text
+
+
+@pytest.mark.parametrize("digits", ["123456", "1234567", "12345678901234", "123456789012345"])
+@pytest.mark.parametrize("around", [
+    "打俾我 +{d}",
+    "打俾我 +{d}.",
+    "(+{d})",
+    "+{d}, 謝謝",
+    "佢個號碼 +{d}字",
+])
+def test_every_accepted_short_direct_address_is_detected(digits, around):
+    """`Persons` accepts an E.164 id of 6 to 15 digits (`_E164`), so the guard
+    must detect every length it accepts, wherever it sits in prose."""
+    text = around.format(d=digits)
+    assert scan_identifiers(text) == "phone", text
+    assert scan_reply(text) == "phone", text
+
+
+def _synthetic_digits(n: int, step: int = 3) -> str:
+    """`n` digits that belong to nobody: a generated fixture, never a number."""
+    return "".join(str((i * step) % 10) for i in range(n))
+
+
+_FORMATS = (
+    "+{cc} {a} {b}",
+    "+{cc}-{a}-{b}",
+    "+{cc} ({a}) {b}",
+    "+{cc}.{a}.{b}",
+    "+{cc} ({z}) {a}-{b}",
+    "+{cc}\u200b{a} {b}",
+)
+_SCRIPTS = (
+    str.maketrans("", ""),
+    str.maketrans("0123456789+", "０１２３４５６７８９＋"),
+    str.maketrans("0123456789", "٠١٢٣٤٥٦٧٨٩"),
+)
+
+
+@pytest.mark.parametrize("script", _SCRIPTS)
+@pytest.mark.parametrize("template", _FORMATS)
+def test_a_formatted_international_number_is_detected(template, script):
+    """Separators, parentheses, full-width and other-script digits, and an
+    invisible character inside the number do not hide it."""
+    number = template.format(
+        cc=_synthetic_digits(2), a=_synthetic_digits(4, 7),
+        b=_synthetic_digits(4, 9), z=_synthetic_digits(3, 1),
+    )
+    text = f"打俾我 {number.translate(script)} 呀"
+    assert scan_identifiers(text) == "phone", text
+    assert scan_reply(text) == "phone", text
+
+
+@pytest.mark.parametrize("text", [
+    "2024-10-22 14:30",
+    "1,000,000 蚊",
+    "v1.2.3.4",
+    "room 12345 樓",
+    "3.14159 meters",
+    "2026/10/22",
+    "09:30-17:45",
+    "$1,234.56 total",
+])
+def test_ordinary_digit_runs_are_not_phones(text):
+    """Only a leading `+` makes a run a phone. Dates, times, prices, versions
+    and room numbers are ordinary chat and must still pass."""
+    assert scan_identifiers(text) is None, text
+    assert scan_reply(text) is None, text

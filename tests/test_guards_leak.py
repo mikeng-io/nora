@@ -117,3 +117,30 @@ def test_leak_guard_allows_an_escaped_or_ordinary_angle_bracket(guard):
     angle brackets are chat content."""
     for reply in ["&lt;m n=\"1\"&gt; is how it looks", "3 < 5 and <b>", "<mine> n=2"]:
         assert guard.check(reply) is None, reply
+
+
+# Invisible format characters (zero-width space and joiner, word joiner, BOM,
+# directional marks and overrides, a variation selector) carry nothing a reader
+# sees, so inserting one into a verbatim span or the canary used to dodge the
+# comparison while the text still read as the leak.
+INVISIBLE = ("\u200b", "\u2060", "\ufeff", "\u200e", "\u202e", "\u2066", "\ufe0f", "\U000e0100")
+
+
+@pytest.mark.parametrize("ch", INVISIBLE)
+def test_an_invisible_character_inside_the_canary_is_still_the_canary(guard, ch):
+    canary = "CANARY-7f3a"
+    for i in range(1, len(canary)):
+        text = f"the code is {canary[:i]}{ch}{canary[i:]}"
+        assert guard.check(text) == "canary", (repr(ch), i)
+
+
+@pytest.mark.parametrize("ch", INVISIBLE)
+def test_an_invisible_character_inside_a_verbatim_doctrine_span_is_still_a_leak(guard, ch):
+    span = BODY[:60]
+    for i in range(len(span) + 1):
+        text = f"Here are my rules: {span[:i]}{ch}{span[i:]}"
+        assert guard.check(text) == "doctrine_span", (repr(ch), i)
+
+
+def test_an_invisible_character_in_ordinary_reply_does_not_make_it_a_leak(guard):
+    assert guard.check("今晚七點半\u200b應該得，你 book 咗未？") is None

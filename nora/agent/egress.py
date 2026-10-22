@@ -41,30 +41,34 @@ from __future__ import annotations
 
 import logging
 import re
+import unicodedata
 
 from ..doctrine.loader import Doctrine
 from .markdown import strip_markdown
 from .punctuation import undash
 
-# E.164 as Signal actually presents it: a leading +, country code, 7-14 more
-# digits. Requires the +, so "call me at 12345678" stays sendable while the
-# canonical form a sender id or a contact record carries does not.
+# E.164 as Signal actually presents it: a leading +, then 6 to 15 digits, which
+# is the span `Persons` accepts as an E.164 id (`nora.persons._E164`), so every
+# direct address the guard can be handed is detected. The digits may carry
+# separators (`+852 9000 0101`, `+1 (415) 555-0123`). Requires the +, so "call
+# me at 12345678" stays sendable. The neighbours are ASCII-only: a `\b` boundary
+# would let a CJK or other Unicode letter directly after the number escape.
 _WS = re.compile(r"\s+")
 
 log = logging.getLogger("nora.guards")
 
-_E164 = re.compile(r"\+\d{8,15}\b")
+_E164 = re.compile(r"\+[0-9](?:[\s.()\-]*[0-9]){5,14}(?![0-9])")
 
 # An ACI/PNI. A bare UUID is never something the group needs said out loud —
 # it is an identifier only Nora ever sees, which is exactly why it leaking
-# would be hers to have leaked.
+# would be hers to have leaked. ASCII neighbours, as above.
 _UUID = re.compile(
-    r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
-    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
+    r"(?<![0-9A-Za-z_])[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(?![0-9A-Za-z_])"
 )
 
 # Conventional secret prefixes. Cheap to check and unambiguous when they hit.
-_KEYLIKE = re.compile(r"\b(?:sk|pk|api|ghp|gho|xox[abps])[-_][A-Za-z0-9_-]{16,}\b")
+_KEYLIKE = re.compile(r"(?<![0-9A-Za-z_])(?:sk|pk|api|ghp|gho|xox[abps])[-_][A-Za-z0-9_-]{16,}")
 
 # Identifiers first, so that when a reply carries both a number and the word
 # `claude`, `nora_egress_blocks_total{kind}` names the exposure that would have
@@ -82,20 +86,51 @@ _IDENTIFIER_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 # from this module (a second import direction would be circular). Range is NOT
 # checked: an out-of-range pair is still a leaked coordinate, and blocking it
 # too is the safe direction.
-_COORD_PAIR = re.compile(r"-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d+")
+_DEC = r"-?[0-9]{1,3}\.[0-9]+"
+_LABEL = r"(?:lat(?:itude)?|lng|lon(?:gitude)?)"
+# Two decimals with only separators and labels between them: a comma, a space or
+# a slash between two decimals, or a `lat`/`lng` label before either.
+_COORD_PAIR = re.compile(rf"{_DEC}(?:[\s,;:/|=()\[\]]|{_LABEL})*{_DEC}", re.IGNORECASE)
+# A labelled decimal on its own: `lat: 22.410`, `LNG = 114.124`.
+_COORD_LABELLED = re.compile(
+    rf"(?<![0-9A-Za-z_]){_LABEL}[\s:=/|()\[\]]*{_DEC}", re.IGNORECASE,
+)
 
-# The reply scan is the identifier scan PLUS the coordinate pair: identifiers
+# The reply scan is the identifier scan PLUS the coordinate forms: identifiers
 # are the floor at every exit, and coordinates are a reply-only exposure
 # because DEC-156 puts lat/lng into the model's context.
 _REPLY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     *_IDENTIFIER_PATTERNS,
     ("coordinate", _COORD_PAIR),
+    ("coordinate", _COORD_LABELLED),
 )
+
+#: Variation selectors (U+FE00..U+FE0F and U+E0100..U+E01EF): they change how a
+#: glyph is drawn, never what it says.
+_VARIATION_RANGES = (("\ufe00", "\ufe0f"), ("\U000e0100", "\U000e01ef"))
+
+
+def _canonical(text: str) -> str:
+    """The form every disclosure check compares. Whatever a reader sees is
+    unchanged, so a single character cannot change the verdict: NFKC (full-width
+    letters and digits, compatibility forms), every decimal digit of any script
+    as its ASCII value, and the invisible format characters (category `Cf`) and
+    variation selectors removed. ASCII text is already canonical."""
+    if text.isascii():
+        return text
+    out: list[str] = []
+    for ch in unicodedata.normalize("NFKC", text):
+        category = unicodedata.category(ch)
+        if category == "Cf" or any(lo <= ch <= hi for lo, hi in _VARIATION_RANGES):
+            continue
+        out.append(str(unicodedata.decimal(ch)) if category == "Nd" else ch)
+    return "".join(out)
 
 
 def _first_match(text: str, patterns: tuple[tuple[str, re.Pattern[str]], ...]) -> str | None:
     if not text:
         return None
+    text = _canonical(text)
     for kind, pattern in patterns:
         if pattern.search(text):
             return kind
@@ -148,6 +183,7 @@ class LeakGuard:
 
     def __init__(self, doctrine: Doctrine, canary: str, min_span: int = 40) -> None:
         self._canary = canary
+        self._canon_canary = _canonical(canary)
         self._min_span = min_span
         # The haystack speaks the SAME dialect as the candidate. DEC-82 removes
         # Markdown SYNTAX from replies (emphasis becomes a style range, the
@@ -164,20 +200,42 @@ class LeakGuard:
         # haystack that kept the dash.
         self._haystack = _normalize(undash(strip_markdown(doctrine.doctrine_text)))
         self._raw_haystack = _normalize(undash(doctrine.doctrine_text))
+        # The same two haystacks in canonical form, for the canonical candidate
+        # (`check`): a zero-width character inside a verbatim span is not a
+        # different span.
+        self._canon_haystack = _canonical(self._haystack)
+        self._canon_raw_haystack = _canonical(self._raw_haystack)
 
     def check(self, text: str) -> str | None:
         if not text:
             return None
-        if self._canary and self._canary in text:
+        # Both forms are checked, the text as given and its canonical form, so a
+        # canary or a verbatim span with an invisible character or a full-width
+        # digit inside it still matches, and the original-form check is kept.
+        canon = _canonical(text)
+        if (self._canary and self._canary in text) or (
+            self._canon_canary and self._canon_canary in canon
+        ):
             return "canary"
-        if _TRANSCRIPT_TAG.search(text):
+        if _TRANSCRIPT_TAG.search(text) or _TRANSCRIPT_TAG.search(canon):
             return "prompt_markup"
-        candidate = _normalize(text)
-        if len(candidate) < self._min_span:
-            return None
-        for start in range(0, len(candidate) - self._min_span + 1):
-            span = candidate[start:start + self._min_span]
-            if span in self._haystack or span in self._raw_haystack:
+        for candidate, haystacks in (
+            (_normalize(text), (self._haystack, self._raw_haystack)),
+            (_normalize(canon), (self._canon_haystack, self._canon_raw_haystack)),
+        ):
+            span = _verbatim_span(candidate, haystacks, self._min_span)
+            if span is not None:
                 log.error("doctrine_leak_blocked: verbatim span %r", span[:60])
                 return "doctrine_span"
         return None
+
+
+def _verbatim_span(candidate: str, haystacks: tuple[str, str], min_span: int) -> str | None:
+    """The first `min_span` window of `candidate` that a haystack holds verbatim."""
+    if len(candidate) < min_span:
+        return None
+    for start in range(0, len(candidate) - min_span + 1):
+        span = candidate[start:start + min_span]
+        if any(span in haystack for haystack in haystacks):
+            return span
+    return None
