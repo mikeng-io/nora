@@ -1,4 +1,6 @@
 # Release metadata; release-images publishes deployments for the installed Komodo poller.
+# scripts/release_plan.py opens the release PR from git reachability (ADR 0025);
+# the release-please action only tags and publishes it once that PR is merged.
 name: release-please
 
 on:
@@ -25,9 +27,6 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Find unreleased runtime changes
-        id: scope
-        run: python3 scripts/release_scope.py >> "$GITHUB_OUTPUT"
       - name: Create a repository-scoped release token
         if: vars.RELEASE_APP_ID != ''
         id: app
@@ -39,28 +38,60 @@ jobs:
           permission-administration: read
           permission-contents: write
           permission-pull-requests: write
+      # Tag first: the plan below measures from the newest tag, so a release PR that
+      # just merged must be tagged before it is measured, or it would be planned twice.
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         id: release
         with:
           token: ${{ steps.app.outputs.token || secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-          skip-github-pull-request: ${{ steps.scope.outputs.eligible != 'true' }}
-      - name: Queue the generated release PR for merge after required checks
-        if: steps.app.outputs.token != '' && steps.release.outputs.pr != '' && !github.event.repository.private
+          skip-github-pull-request: true
+      - name: Open or update the release PR from unreleased runtime changes
+        id: plan
+        if: steps.app.outputs.token != ''
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_PR: ${{ steps.release.outputs.pr }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_HEAD: release-please--branches--master--components--nora
         run: |
-          # Refuse to merge unattended until the public required-check policy exists.
-          gh api repos/"$GH_REPO"/branches/master/protection/required_status_checks \
-            --jq '.contexts | index("checks") != null' | grep -qx true
-          number=$(jq -r '.number' <<< "$RELEASE_PR")
-          sha=$(gh pr view "$number" --json headRefOid --jq .headRefOid)
-          gh pr merge "$number" --auto --merge --match-head-commit "$sha" \
-            --subject "merge: publish release (#$number)" \
-            --body "Release Please metadata; required checks gate automatic publication."
+          set -euo pipefail
+          # checkout dropped its credentials (persist-credentials: false) and the repo is
+          # private, so every git remote operation below needs the helper first.
+          gh auth setup-git
+          git fetch --tags --force origin
+          python3 -m scripts.release_plan --out "$RUNNER_TEMP/release" | tee "$RUNNER_TEMP/plan.txt" >> "$GITHUB_OUTPUT"
+          grep -qx 'eligible=true' "$RUNNER_TEMP/plan.txt" || exit 0
+          version=$(sed -n 's/^version=//p' "$RUNNER_TEMP/plan.txt")
+          git config user.name 'Nora release bot'
+          git config user.email 'noreply@users.noreply.github.com'
+          git switch -C "$PR_HEAD"
+          git add -- .release-please-manifest.json CHANGELOG.md nora/__init__.py pyproject.toml uv.lock
+          git commit -m "chore(master): release $version"
+          git push --force origin "HEAD:$PR_HEAD"
+          number=$(gh pr list --head "$PR_HEAD" --base master --state open --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh pr edit "$number" --title "$(cat "$RUNNER_TEMP/release/title.txt")" --body-file "$RUNNER_TEMP/release/body.md"
+          else
+            number=$(gh pr create --base master --head "$PR_HEAD" --label 'autorelease: pending' \
+              --title "$(cat "$RUNNER_TEMP/release/title.txt")" --body-file "$RUNNER_TEMP/release/body.md" | grep -oE '[0-9]+$')
+          fi
+          echo "pr=$number" >> "$GITHUB_OUTPUT"
+      - name: Queue the generated release PR for merge after required checks
+        if: steps.plan.outputs.pr != ''
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_PR: ${{ steps.plan.outputs.pr }}
+        run: |
+          # Refuse to merge unattended until the required-check policy exists.
+          gh api repos/"$GH_REPO"/rules/branches/master \
+            --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | index("checks") != null' | grep -qx true
+          sha=$(gh pr view "$RELEASE_PR" --json headRefOid --jq .headRefOid)
+          gh pr merge "$RELEASE_PR" --auto --merge --match-head-commit "$sha" \
+            --subject "merge: publish release (#$RELEASE_PR)" \
+            --body "Release metadata; required checks gate automatic publication."
       - name: Report manual bootstrap requirement
         if: vars.RELEASE_APP_ID == ''
         run: echo '::notice::Install the free release GitHub App and configure public branch protection to enable unattended releases. See docs/maintainers/github.md.'

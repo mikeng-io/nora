@@ -26,17 +26,15 @@ python3 scripts/configure_public_github.py --apply
 Run it with an owner/admin `gh` login, after these workflows are merged. It enables
 native secret scanning/push protection, Dependabot security updates and private
 vulnerability reporting; restricts Actions to GitHub-owned actions plus the two
-named external actions; keeps workflow tokens read-only by default; requires PRs,
-resolved conversations and PR-content, CI, dependency-review and four CodeQL checks;
-blocks force pushes/deletion on master, including admins; and prevents updating
-or deleting release tags. It allows merge commits only and enables auto-merge.
-No extra human approval is required for a solo-maintained repository. The check
-names are bound to the GitHub Actions App, rather than arbitrary status producers.
-The release App has no branch-rule bypass.
+named external actions; and keeps workflow tokens read-only by default. The merge
+rules (required checks, no force-push, immutable release tags) are separate and
+work while private: see Merge rules below. The check names are bound to the GitHub
+Actions App, rather than arbitrary status producers. The release App has no
+branch-rule bypass.
 
 CodeQL and dependency review deliberately skip while private, avoiding paid
 private-repository security features. After publication, manually dispatch Security
-and open a small PR to establish and verify all required check names. The existing
+and open a small PR to confirm those checks report. The existing
 fast CI still runs while private. It checks static contracts and selected tests;
 it does not run the complete suite. Run the local `make gate` once on the final head before landing code.
 
@@ -63,12 +61,13 @@ This is a separate identifier from the App ID. The metadata job checks the live
 PR author's user ID; it receives no App key or installation token. Private Apps
 cannot be discovered through `/apps/{slug}` using that job's repository token.
 
-Release Please creates/updates the version PR. The App queues that PR for a real
-merge commit; required checks must pass before GitHub merges it. The resulting
-master run publishes the tag and GitHub Release. Installing this App does not
-permit deployment. Without the App, the existing manual release-PR workflow
-continues and prints a setup notice. Automatic merging is disabled while private
-and fails if branch protection does not require CI.
+`scripts/release_plan.py` creates/updates the version PR from the commits reachable from
+`master` and not from the last tag (ADR 0027); the release-please action only tags and
+publishes it once it is merged. The App queues that PR for a real merge commit; required
+checks must pass before GitHub merges it, and queuing is refused unless the `master` ruleset
+requires `checks`. The resulting master run publishes the tag and GitHub Release. Installing
+this App does not permit deployment. Without the App, the existing manual release-PR workflow
+continues and prints a setup notice.
 
 Only `feat`, `fix`, `security`, `perf`, `change`, `doctrine` and `revert` commits
 with changes to runtime inputs qualify for creating/updating a release PR.
@@ -84,6 +83,24 @@ for all such commits, including root Markdown files.
 The App is required for unattended PR checks: PRs created with `GITHUB_TOKEN`
 can await workflow approval, and its pushes normally do not trigger another
 workflow. [GitHub token behavior](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
+
+## Merge rules
+
+On a private repository these need GitHub Pro (or Team for an organisation); on a public one
+they are free. Run with an owner/admin `gh` login:
+
+```bash
+python3 scripts/configure_github_rules.py            # show the policy
+python3 scripts/configure_github_rules.py --apply    # write it, then read it all back
+```
+
+`master` needs a pull request, merge commits only, resolved conversations, an up-to-date branch
+and the `checks` and `PR content` statuses; force-push and deletion are blocked, and `v*` tags
+cannot be moved or deleted. There are no bypass actors, so the owner cannot merge a failing PR
+either; the way out is editing the ruleset in the repository settings. Only checks that report
+on every pull request may be required: CodeQL and dependency review are skipped while private
+and the wiki build is path-filtered, so none of them is. Add Aikido's PR check here only after
+a PR shows the name it reports under.
 
 ## Deployment documentation
 

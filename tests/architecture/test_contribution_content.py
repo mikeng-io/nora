@@ -51,6 +51,27 @@ def test_incomplete_or_placeholder_pr_fails(title, body):
     assert content.pr_problems(pr(title=title, body=body), "owner/repo")
 
 
+@pytest.mark.parametrize(
+    "branch,ok",
+    [
+        ("fix/message-delivery", True),
+        ("security/aikido-high-triage", True),
+        ("docs/openwiki-update", True),
+        ("mikeng-io/aikido-high-triage", False),  # owner-named, the form an agent used
+        ("fix/Message_Delivery", False),
+        ("fix/", False),
+        ("fix", False),
+        ("wip/thing", False),
+        ("fix/a/b", False),
+        ("ordinary-branch", False),
+    ],
+)
+def test_branch_name_follows_the_declared_type_slug_convention(branch, ok):
+    item = pr()
+    item["head"]["ref"] = branch
+    assert (content.pr_problems(item, "owner/repo") == []) is ok
+
+
 def test_code_examples_do_not_invent_sections_or_placeholders():
     body = BODY + "\n```md\n## Summary\nTBD\n```\n<https://example.com>\n"
     assert not content.pr_problems(pr(body=body), "owner/repo")
