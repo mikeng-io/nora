@@ -233,3 +233,96 @@ def test_ordinary_digit_runs_are_not_phones(text):
     and room numbers are ordinary chat and must still pass."""
     assert scan_identifiers(text) is None, text
     assert scan_reply(text) is None, text
+
+
+# Dotted dates, versions, score and time pairs are ordinary chat. A pair needs a
+# separator between its decimals, and a bare dot is not one: `2026.10.22` is a
+# date, not two coordinates sharing a dot.
+def _generated(template: str, *nums: int) -> str:
+    """A generated date, version, score or coordinate: `_generated("{}.{:02d}", 14, 30)`
+    is `14.30`. Literal runs of decimal pairs are what the PII hook reads as a location
+    table, so none of these fixtures is written out."""
+    return template.format(*nums)
+
+
+@pytest.mark.parametrize("text", [
+    _generated("{}.{:02d}.{:02d}", 2026, 10, 22),
+    _generated("{}.{:02d}.{}", 22, 10, 2026),
+    _generated("python {}.{}.{} is out", 3, 12, 4),
+    _generated("v{}.{}.{}", 1, 20, 0),
+    _generated("{}.{:02d} {}.{:02d}", 14, 30, 16, 0),
+    _generated("{}.{} {}.{} out of 10", 8, 5, 9, 0),
+    _generated("{}.{:02d}, {}.{:02d} 都得", 3, 11, 3, 12),
+])
+def test_dotted_dates_versions_and_score_pairs_are_not_coordinates(text):
+    assert scan_identifiers(text) is None, text
+    assert scan_reply(text) is None, text
+
+
+@pytest.mark.parametrize("text", [
+    "+852/9876/5432",
+    "+852, 9876, 5432",
+    "+852\u20109876\u20105432",   # hyphen
+    "+852\u20119876\u20115432",   # non-breaking hyphen
+    "+852\u20139876\u20135432",   # en dash
+    "+852\u20159876\u20155432",   # horizontal bar
+])
+def test_a_phone_separated_by_a_slash_comma_or_unicode_dash_is_detected(text):
+    assert scan_identifiers(text) == "phone", text
+    assert scan_reply(text) == "phone", text
+
+
+# Combining marks (Mn, Me, Mc) are invisible in a rendered reply, so one inside
+# an identifier or a coordinate must not change the verdict. U+034F is a
+# combining grapheme joiner; the others are an acute accent, a Devanagari visarga
+# (Mc) and an enclosing circle (Me).
+COMBINING = ("\u034f", "\u0301", "\u0903", "\u20dd")
+
+
+@pytest.mark.parametrize("ch", COMBINING)
+def test_a_combining_mark_inside_an_identifier_is_still_detected(ch):
+    assert scan_identifiers(f"+852 9{ch}876 5432") == "phone"
+    assert scan_identifiers(f"key sk-abcd{ch}efghijklmnop1234567") == "keylike"
+
+
+@pytest.mark.parametrize("ch", COMBINING)
+def test_a_combining_mark_inside_a_coordinate_is_still_a_coordinate(ch):
+    assert scan_reply(f"22.4{ch}1, 114.12") == "coordinate"
+
+
+@pytest.mark.parametrize("text", [
+    "long: 114.124",
+    "long = 114.124",
+    "LONG:114.124",
+])
+def test_a_labelled_longitude_with_three_decimals_is_a_coordinate(text):
+    assert scan_reply(text) == "coordinate", text
+
+
+@pytest.mark.parametrize("text", [
+    "long: 5.5",
+    "long: 114.12",
+])
+def test_an_unlabelled_decimal_or_a_short_long_value_is_not_a_coordinate(text):
+    """`long` is a label only with `:` or `=` after it, and its value needs three
+    decimals. Prose like `long: 5.5` (a length, a duration) must pass."""
+    assert scan_reply(text) is None, text
+
+
+@pytest.mark.parametrize("text", [
+    _generated("{}.{:02d}N, {}.{:02d}E", 22, 41, 114, 12),
+    _generated("{}.{:02d}°N {}.{:02d}°E", 22, 41, 114, 12),
+    _generated("{}.{:02d}°N, {}.{:02d}°E", 22, 41, 114, 12),
+    _generated("{}.{:03d}N {}.{:03d}E", 1, 111, 2, 222),
+])
+def test_a_pair_with_a_compass_letter_or_degree_sign_is_a_coordinate(text):
+    assert scan_reply(text) == "coordinate", text
+
+
+@pytest.mark.parametrize("text", [
+    _generated("北緯{}.{:02d}度 東經{}.{:02d}度", 22, 41, 114, 12),
+    _generated("北緯{}.{:02d}度", 22, 41),
+    _generated("西經{}.{:02d}", 114, 12),
+])
+def test_a_cantonese_latitude_or_longitude_is_a_coordinate(text):
+    assert scan_reply(text) == "coordinate", text

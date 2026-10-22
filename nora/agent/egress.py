@@ -57,7 +57,10 @@ _WS = re.compile(r"\s+")
 
 log = logging.getLogger("nora.guards")
 
-_E164 = re.compile(r"\+[0-9](?:[\s.()\-]*[0-9]){5,14}(?![0-9])")
+# Separators between digits: space, dot, brackets, slash, comma, a minus sign and
+# every dash from U+2010 to U+2015 (hyphen, non-breaking, figure, en, em, bar).
+_SEP = r"[\s.()\-/,\u2010-\u2015\u2212]"
+_E164 = re.compile(rf"\+[0-9](?:{_SEP}*[0-9]){{5,14}}(?![0-9])")
 
 # An ACI/PNI. A bare UUID is never something the group needs said out loud —
 # it is an identifier only Nora ever sees, which is exactly why it leaking
@@ -88,13 +91,32 @@ _IDENTIFIER_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 # too is the safe direction.
 _DEC = r"-?[0-9]{1,3}\.[0-9]+"
 _LABEL = r"(?:lat(?:itude)?|lng|lon(?:gitude)?)"
-# Two decimals with only separators and labels between them: a comma, a space or
-# a slash between two decimals, or a `lat`/`lng` label before either.
-_COORD_PAIR = re.compile(rf"{_DEC}(?:[\s,;:/|=()\[\]]|{_LABEL})*{_DEC}", re.IGNORECASE)
+# A compass letter or a degree sign after a decimal: `22.41N`, `114.12°E`.
+_SUFFIX = r"°?(?:(?-i:[NSEW])(?![A-Za-z]))?"
+# One element of a pair. `_WIDE` is a longitude's or latitude's width: a three-digit
+# integer part (longitude runs to 180) or a fraction of three or more digits. A pair
+# needs one of them, so a score, a time or a version (`14.30 16.00`, `3.11, 3.12`)
+# is not a coordinate, while `22.41, 114.12` and `1.111 2.222` are.
+_WIDE = rf"-?(?:[0-9]{{1,3}}\.[0-9]{{3,}}|[0-9]{{3}}\.[0-9]+){_SUFFIX}"
+_NARROW = rf"{_DEC}{_SUFFIX}"
+# Between the two elements, at least one separator or label: a dot is not one, so
+# `2026.10.22` (a date) is not a pair. The outer ends are not part of a longer
+# number or a version (`1.2.3.4`), but a sentence's full stop is still allowed.
+_JOIN = rf"(?:[\s,;:/|=()\[\]]|{_LABEL})+"
+_COORD_PAIR = re.compile(
+    rf"(?<![0-9])(?<![0-9]\.)(?:{_WIDE}{_JOIN}{_NARROW}|{_NARROW}{_JOIN}{_WIDE})(?![0-9])(?!\.[0-9])",
+    re.IGNORECASE,
+)
 # A labelled decimal on its own: `lat: 22.410`, `LNG = 114.124`.
 _COORD_LABELLED = re.compile(
     rf"(?<![0-9A-Za-z_]){_LABEL}[\s:=/|()\[\]]*{_DEC}", re.IGNORECASE,
 )
+# `long` is not in `_LABEL` (it would take `long: 5.5`, a length, as a coordinate).
+# It is a label only with `:` or `=`, and only a value of three decimals is one.
+_COORD_LONG = re.compile(r"(?<![0-9A-Za-z_])long\s*[:=]\s*-?[0-9]{1,3}\.[0-9]{3,}", re.IGNORECASE)
+# The Cantonese form: 北緯 (north latitude), 南緯, 東經 (east longitude), 西經. The
+# words name a coordinate, so a decimal after one is not ordinary chat.
+_COORD_HEMISPHERE = re.compile(rf"(?:北緯|南緯|東經|西經)\s*{_DEC}")
 
 # The reply scan is the identifier scan PLUS the coordinate forms: identifiers
 # are the floor at every exit, and coordinates are a reply-only exposure
@@ -103,25 +125,37 @@ _REPLY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     *_IDENTIFIER_PATTERNS,
     ("coordinate", _COORD_PAIR),
     ("coordinate", _COORD_LABELLED),
+    ("coordinate", _COORD_LONG),
+    ("coordinate", _COORD_HEMISPHERE),
 )
 
 #: Variation selectors (U+FE00..U+FE0F and U+E0100..U+E01EF): they change how a
 #: glyph is drawn, never what it says.
 _VARIATION_RANGES = (("\ufe00", "\ufe0f"), ("\U000e0100", "\U000e01ef"))
+#: Categories a reader does not see: format characters (`Cf`) and the combining
+#: marks (`Mn`, `Me`, `Mc`) that sit on a base letter.
+_INVISIBLE_CATEGORIES = frozenset({"Cf", "Mn", "Me", "Mc"})
 
 
-def _canonical(text: str) -> str:
+def _canonical(text: str, *, split: bool = False) -> str:
     """The form every disclosure check compares. Whatever a reader sees is
     unchanged, so a single character cannot change the verdict: NFKC (full-width
     letters and digits, compatibility forms), every decimal digit of any script
-    as its ASCII value, and the invisible format characters (category `Cf`) and
-    variation selectors removed. ASCII text is already canonical."""
+    as its ASCII value, and the invisible characters removed: format (`Cf`),
+    variation selectors and combining marks (`Mn`, `Me`, `Mc`). ASCII text is
+    already canonical.
+
+    `split` decomposes first (NFKD), so a mark on a letter with a precomposed form
+    (`A` plus an acute, which NFKC would compose into `Á`) is still a mark and is
+    removed. The identifier patterns do not use it: their lookarounds are ASCII-only,
+    and a decomposed `é` would read to them as an ASCII `e`. The LeakGuard
+    comparisons have no lookarounds, so they can."""
     if text.isascii():
         return text
     out: list[str] = []
-    for ch in unicodedata.normalize("NFKC", text):
+    for ch in unicodedata.normalize("NFKD" if split else "NFKC", text):
         category = unicodedata.category(ch)
-        if category == "Cf" or any(lo <= ch <= hi for lo, hi in _VARIATION_RANGES):
+        if category in _INVISIBLE_CATEGORIES or any(lo <= ch <= hi for lo, hi in _VARIATION_RANGES):
             continue
         out.append(str(unicodedata.decimal(ch)) if category == "Nd" else ch)
     return "".join(out)
@@ -183,7 +217,7 @@ class LeakGuard:
 
     def __init__(self, doctrine: Doctrine, canary: str, min_span: int = 40) -> None:
         self._canary = canary
-        self._canon_canary = _canonical(canary)
+        self._canon_canary = _canonical(canary, split=True)
         self._min_span = min_span
         # The haystack speaks the SAME dialect as the candidate. DEC-82 removes
         # Markdown SYNTAX from replies (emphasis becomes a style range, the
@@ -203,8 +237,8 @@ class LeakGuard:
         # The same two haystacks in canonical form, for the canonical candidate
         # (`check`): a zero-width character inside a verbatim span is not a
         # different span.
-        self._canon_haystack = _canonical(self._haystack)
-        self._canon_raw_haystack = _canonical(self._raw_haystack)
+        self._canon_haystack = _canonical(self._haystack, split=True)
+        self._canon_raw_haystack = _canonical(self._raw_haystack, split=True)
 
     def check(self, text: str) -> str | None:
         if not text:
@@ -212,7 +246,7 @@ class LeakGuard:
         # Both forms are checked, the text as given and its canonical form, so a
         # canary or a verbatim span with an invisible character or a full-width
         # digit inside it still matches, and the original-form check is kept.
-        canon = _canonical(text)
+        canon = _canonical(text, split=True)
         if (self._canary and self._canary in text) or (
             self._canon_canary and self._canon_canary in canon
         ):

@@ -690,6 +690,12 @@ class SummonsOccasion:
             # `ambiguous`, as `_write_state` keeps it after a 503 and a retry.
             state = "ambiguous" if prior_code in _RETRY_503 else "refused"
             code = prior_code if state == "ambiguous" else refusal
+            if state == "ambiguous" and disclosure is not None:
+                # The kind only, never the text: an operator sees why it was refused.
+                log.error(
+                    "summons %s: a %s disclosure refused a row whose prior write got a "
+                    "503; it stays ambiguous", summons_id, disclosure,
+                )
             await self._ledger.finish(
                 summons_id, state, now=now, person_id=person_id,
                 reply_text=None if disclosure else body, clear_reply=disclosure is not None,

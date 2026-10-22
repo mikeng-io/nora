@@ -142,5 +142,24 @@ def test_an_invisible_character_inside_a_verbatim_doctrine_span_is_still_a_leak(
         assert guard.check(text) == "doctrine_span", (repr(ch), i)
 
 
+# A combining mark (Mn, Me, Mc) is invisible in a rendered reply like the
+# characters above, so it must not dodge the canary or a verbatim span either.
+COMBINING = ("\u034f", "\u0301", "\u0903", "\u20dd")
+
+
+@pytest.mark.parametrize("ch", COMBINING)
+def test_a_combining_mark_inside_the_canary_is_still_the_canary(guard, ch):
+    text = f"my canary is CANA{ch}RY-7f3a ok"
+    assert guard.check(text) == "canary", repr(ch)
+
+
+@pytest.mark.parametrize("ch", COMBINING)
+def test_a_combining_mark_inside_a_verbatim_doctrine_span_is_still_a_leak(guard, ch):
+    span = BODY[:60]
+    for i in range(len(span) + 1):
+        text = f"Here are my rules: {span[:i]}{ch}{span[i:]}"
+        assert guard.check(text) == "doctrine_span", (repr(ch), i)
+
+
 def test_an_invisible_character_in_ordinary_reply_does_not_make_it_a_leak(guard):
     assert guard.check("今晚七點半\u200b應該得，你 book 咗未？") is None

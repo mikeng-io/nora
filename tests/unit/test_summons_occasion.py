@@ -23,6 +23,7 @@ The guards below, each pinned by a named test:
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -800,6 +801,26 @@ async def test_a_staged_reply_is_checked_again_when_its_flush_is_retried(world):
     assert (out.state, out.bridge_code) == ("refused", "canary")
     assert len(world.fake.posts()) == 1
     assert (await world.ledger.get(staged.id)).state == "refused"
+
+
+async def test_a_disclosure_refusal_after_a_503_logs_its_kind_and_not_the_text(world, caplog):
+    """A prior 503 may have posted, so a refusal of that row stays `ambiguous`,
+    and the operator needs to see WHY it was refused: the kind of disclosure,
+    never the text that carried it."""
+    from dataclasses import replace
+
+    world.fake.write = envelope("unavailable")
+    occasion = world.occasion(mode="live", turns=_replies(REPLY))
+    await occasion.run(_card())
+    staged = await world.ledger.awaiting_flush()
+    assert staged is not None and staged.bridge_code == "unavailable"
+    leaked = replace(staged, reply_text="The code is CANARY-7f3a, use it.")
+    with caplog.at_level(logging.ERROR, logger="nora.app.summons"):
+        out = await occasion.flush_staged(leaked)
+    assert out.state == "ambiguous"
+    messages = [r.getMessage() for r in caplog.records if r.name == "nora.app.summons"]
+    assert any("canary" in m for m in messages), messages
+    assert not any("CANARY-7f3a" in m for m in messages), messages
 
 
 async def test_a_refused_staged_disclosure_leaves_no_text_in_the_ledger_row(world):
