@@ -10,6 +10,8 @@
 	encode zstd gzip
 
 	header {
+		# Baseline CSP: preserve Astro/Starlight inline scripts and resource loads.
+		Content-Security-Policy "base-uri 'self'; object-src 'none'; frame-ancestors 'none'"
 		X-Content-Type-Options nosniff
 		Referrer-Policy strict-origin-when-cross-origin
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"
@@ -29,6 +31,7 @@
 	file_server
 
 	handle_errors 404 {
+		header Content-Security-Policy "base-uri 'self'; object-src 'none'; frame-ancestors 'none'"
 		rewrite * /404.html
 		file_server
 	}
