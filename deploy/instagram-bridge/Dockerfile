@@ -5,7 +5,7 @@
 # (CA certificates to speak TLS to instagram.com, and curl for the compose
 # healthcheck).
 
-FROM golang:1.27-bookworm AS build
+FROM golang:1.27.3-bookworm AS build
 WORKDIR /src
 
 # go.mod and go.sum first so the module download layer survives a code edit.
