@@ -210,11 +210,11 @@
   "target": "tests/unit/test_cognition_session_units.py"
  },
  {
-  "name": "minor 1: units without a home room are dropped from the evaluator",
+  "name": "minor 1: a unit without a home room is gauged but not woken",
   "file": "nora/app/composition.py",
-  "old": "            cognition_session_units = frozenset(cognition_wakeable)\n",
-  "new": "            cognition_session_units = frozenset(cognition_wakeable)\n            cognition_units = lambda: tuple(cognition_wakeable)  # noqa: E731\n",
-  "target": "tests/test_composition.py::test_cognition_on_builds_one_runner_and_hands_its_hook_to_the_evaluator tests/test_composition.py::test_units_without_a_home_room_are_gauged_and_never_woken"
+  "old": "            units=lambda: sorted(cognition_session_units or ()), metrics=metrics,",
+  "new": "            units=lambda: sorted(unit_scopes()), metrics=metrics,",
+  "target": "tests/test_composition.py::test_units_without_a_home_room_are_gauged_and_never_woken"
  },
  {
   "name": "minor 1: shadow boots with no unit that can run a session",
