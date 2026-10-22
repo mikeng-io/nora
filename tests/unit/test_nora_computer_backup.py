@@ -252,6 +252,39 @@ def test_a_restore_over_existing_rooms_is_refused_unless_forced(host: Host) -> N
     assert forced.returncode == 0, forced.stdout + forced.stderr
 
 
+def test_a_restore_does_not_follow_a_symlink_already_in_a_room(
+    host: Host, tmp_path: Path,
+) -> None:
+    """The archive check refuses links the ARCHIVE carries. A link already in
+    the VM is the other half: the room controls it, and a root extraction into
+    /workspace would write through it. Restore stages the archive in a fresh
+    tree and renames each room over the old one, so the planted link is
+    replaced, not traversed."""
+    import hashlib
+    import io
+
+    archive = _backup(host)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (host.vm / "workspace" / ROOM_A / "escape").symlink_to(outside)
+    poisoned = tmp_path / "poisoned.tar.gz"
+    with tarfile.open(archive, "r:gz") as source, tarfile.open(poisoned, "w:gz") as target:
+        for member in source:
+            target.addfile(member, source.extractfile(member))
+        payload = b"owned"
+        member = tarfile.TarInfo(f"{ROOM_A}/escape/pwned")
+        member.size = len(payload)
+        target.addfile(member, io.BytesIO(payload))
+    Path(f"{poisoned}.sha256").write_text(
+        f"{hashlib.sha256(poisoned.read_bytes()).hexdigest()}  {poisoned}\n",
+    )
+
+    result = host.run("restore", str(poisoned), "--force")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not (outside / "pwned").exists()
+    assert (host.vm / "workspace" / ROOM_A / "escape" / "pwned").read_text() == "owned"
+
+
 def test_an_archive_without_its_checksum_is_not_restored(host: Host) -> None:
     archive = _backup(host)
     Path(f"{archive}.sha256").unlink()

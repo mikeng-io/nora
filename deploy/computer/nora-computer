@@ -525,14 +525,30 @@ cmd_restore() {
     # host's copy: what was copied is what is extracted.
     sbx exec -u root "$NAME" sh -c '
         [ "$(sha256sum "$1/archive.tar.gz" | cut -d" " -f1)" = "$2" ] || exit 4
-        tar -C /workspace -xzpf "$1/archive.tar.gz" || exit 1
-        for d in /workspace/*/; do
+        # Extract into a private staging directory, never /workspace itself.
+        # /workspace already holds the rooms a live restore is replacing, and a
+        # room controls symlinks inside its own directory: extracting "through"
+        # one of those would write outside the room as root. The archive is
+        # checked for archive-local links (archive_check.py), but only a fresh
+        # root-owned staging tree closes the link that is already on the VM.
+        stage=$(mktemp -d /workspace/.restore.XXXXXX) || exit 5
+        cleanup() { rm -rf -- "$stage"; }
+        trap cleanup EXIT
+        tar -C "$stage" -xzpf "$1/archive.tar.gz" || exit 1
+        for d in "$stage"/*/; do
+            [ -d "$d" ] || continue
             scope=$(basename "$d")
             case "$scope" in *[!0-9a-f]*|"") continue ;; esac
             [ "${#scope}" -ge 16 ] && [ "${#scope}" -le 64 ] || continue
             user=c-$(printf %s "$scope" | cut -c1-12)
             id -u "$user" >/dev/null 2>&1 || useradd --system --no-create-home --user-group \
                 --shell /usr/sbin/nologin --home-dir /nonexistent "$user" || exit 2
+            # Replace the room. rm -rf on a symlink removes the LINK, not its
+            # target; the destination name is then gone, so the rename cannot
+            # put the staged tree "inside" a room-planted directory. A room
+            # cannot recreate that name: /workspace itself is root-owned.
+            rm -rf -- "/workspace/$scope" || exit 3
+            mv -- "$d" "/workspace/$scope" || exit 3
             chown -hR "$user:$user" "/workspace/$scope" || exit 3
         done' sh "$vmdir" "$got" </dev/null
     rc=$?
