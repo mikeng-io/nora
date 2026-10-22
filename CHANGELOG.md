@@ -1,5 +1,12 @@
 # Changelog
 
+## [6.6.3](https://github.com/mikeng-io/nora/compare/v6.6.2...v6.6.3) (2026-10-22)
+
+
+### Security
+
+* **deps:** pin patched undici, pino, dompurify, es-module-lexer and vitest ([31b2579](https://github.com/mikeng-io/nora/commit/31b2579daa420deeee7a9c4141e13d97e3900f48))
+
 ## [6.6.2](https://github.com/mikeng-io/nora/compare/v6.6.1...v6.6.2) (2026-10-22)
 
 
