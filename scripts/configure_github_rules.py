@@ -35,6 +35,10 @@ REPO_SETTINGS = {
 }
 
 
+def checks_wanted() -> list[dict]:
+    return [{"context": name, "integration_id": GITHUB_ACTIONS_APP_ID} for name in REQUIRED]
+
+
 def branch_ruleset() -> dict:
     return {
         "name": BRANCH_RULESET,
@@ -61,10 +65,7 @@ def branch_ruleset() -> dict:
                 "parameters": {
                     "strict_required_status_checks_policy": True,
                     "do_not_enforce_on_create": False,
-                    "required_status_checks": [
-                        {"context": name, "integration_id": GITHUB_ACTIONS_APP_ID}
-                        for name in REQUIRED
-                    ],
+                    "required_status_checks": checks_wanted(),
                 },
             },
         ],
@@ -108,9 +109,19 @@ def problems(repo_state: dict, branch: dict, tag: dict) -> list[str]:
         found.append(f"required checks are {contexts}, wanted {REQUIRED}")
     if not checks.get("strict_required_status_checks_policy"):
         found.append("required checks do not need an up-to-date branch")
+    wanted = {c["context"]: c["integration_id"] for c in checks_wanted()}
+    seen = {c["context"]: c.get("integration_id") for c in checks.get("required_status_checks", [])}
+    if seen != wanted:
+        found.append(f"required checks are bound to {seen}, wanted {wanted}")
     pull = by_type.get("pull_request", {}).get("parameters", {})
     if pull.get("allowed_merge_methods") != ["merge"]:
         found.append(f"merge methods are {pull.get('allowed_merge_methods')}, wanted ['merge']")
+    for key in ("dismiss_stale_reviews_on_push", "required_review_thread_resolution"):
+        if not pull.get(key):
+            found.append(f"pull request rule {key} is off")
+    for ruleset, want in ((branch, branch_ruleset()), (tag, tag_ruleset())):
+        if ruleset.get("conditions") != want["conditions"]:
+            found.append(f"{want['name']}: applies to {ruleset.get('conditions')}")
     if not {"deletion", "non_fast_forward"} <= by_type.keys():
         found.append("force-push or deletion of the default branch is not blocked")
     if {rule["type"] for rule in tag.get("rules", [])} != {"update", "deletion"}:

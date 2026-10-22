@@ -185,3 +185,14 @@ def test_a_file_that_does_not_hold_the_old_version_is_an_error(repo, plan):
     (repo / "nora/__init__.py").write_text('__version__ = "0.9.0"\n')
     with pytest.raises(ValueError, match="expected exactly one match"):
         plan.apply(repo, "1.0.0", "1.0.1", "## [1.0.1](x) (2026-01-01)\n")
+
+
+def test_git_credentials_are_set_before_the_first_remote_operation_in_the_plan_step():
+    """checkout drops its token and the repository is private, so `git fetch` without the
+    helper fails on every push to master and no release PR is ever planned."""
+    workflow = (ROOT / ".github/workflows/release-please.yml").read_text(encoding="utf-8")
+    step = workflow[workflow.index("Open or update the release PR") :]
+    step = step[: step.index("- name: Queue the generated release PR")]
+    remote = [step.index(op) for op in ("git fetch", "git push") if op in step]
+    assert remote, "the plan step no longer talks to the remote"
+    assert step.index("gh auth setup-git") < min(remote)

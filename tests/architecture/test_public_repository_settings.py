@@ -111,6 +111,24 @@ def test_a_matching_readback_passes_and_every_drift_is_named():
     tag["rules"] = [{"type": "deletion"}]
     assert any("immutable" in p for p in rules.problems(repo_state, branch, tag))
 
+    repo_state, branch, tag = _readback(rules)
+    for rule in branch["rules"]:
+        if rule["type"] == "pull_request":
+            rule["parameters"]["required_review_thread_resolution"] = False
+    assert any(
+        "required_review_thread_resolution" in p for p in rules.problems(repo_state, branch, tag)
+    )
+
+    repo_state, branch, tag = _readback(rules)
+    for rule in branch["rules"]:
+        if rule["type"] == "required_status_checks":
+            rule["parameters"]["required_status_checks"][0]["integration_id"] = 1
+    assert any("bound to" in p for p in rules.problems(repo_state, branch, tag))
+
+    repo_state, branch, tag = _readback(rules)
+    branch["conditions"] = {"ref_name": {"include": ["refs/heads/other"], "exclude": []}}
+    assert any("applies to" in p for p in rules.problems(repo_state, branch, tag))
+
 
 def test_nothing_is_written_without_apply(monkeypatch):
     rules = _rules()

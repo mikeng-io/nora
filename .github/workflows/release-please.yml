@@ -57,6 +57,9 @@ jobs:
           PR_HEAD: release-please--branches--master--components--nora
         run: |
           set -euo pipefail
+          # checkout dropped its credentials (persist-credentials: false) and the repo is
+          # private, so every git remote operation below needs the helper first.
+          gh auth setup-git
           git fetch --tags --force origin
           python3 -m scripts.release_plan --out "$RUNNER_TEMP/release" | tee "$RUNNER_TEMP/plan.txt" >> "$GITHUB_OUTPUT"
           grep -qx 'eligible=true' "$RUNNER_TEMP/plan.txt" || exit 0
@@ -66,7 +69,6 @@ jobs:
           git switch -C "$PR_HEAD"
           git add -- .release-please-manifest.json CHANGELOG.md nora/__init__.py pyproject.toml uv.lock
           git commit -m "chore(master): release $version"
-          gh auth setup-git
           git push --force origin "HEAD:$PR_HEAD"
           number=$(gh pr list --head "$PR_HEAD" --base master --state open --json number --jq '.[0].number // empty')
           if [ -n "$number" ]; then

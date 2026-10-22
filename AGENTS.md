@@ -606,10 +606,12 @@ when there is no `[units]`. History and drift-check limits: `docs/maintainers/co
 
 ## Releases
 
-Load **`nora-release`**: release-please alone publishes tags and GitHub Releases;
-no release fragments, hand tags or room announcements. Subjects are changelog lines:
-`feat`/`fix`/`security`/`perf`/`change`/`doctrine`/`revert`. While private, the
-maintainer merges the release PR manually. `release-images.yml` publishes the
+Load **`nora-release`**: `scripts/release_plan.py` opens the release PR from the
+commits reachable since the last tag and release-please tags and publishes it once
+merged (ADR 0027); no release fragments, hand tags or room announcements. Subjects
+are changelog lines: `feat`/`fix`/`security`/`perf`/`change`/`doctrine`/`revert`.
+The release App queues the PR to merge once the `master` ruleset's checks pass;
+without the App the maintainer merges it. `release-images.yml` publishes the
 complete bundle to `deployments`, then the installed Komodo poller deploys it
 automatically. Publication and verified deployment remain separate states.
 
