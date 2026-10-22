@@ -98,12 +98,14 @@ class FakeGatheringStore:
 
     async def list_for_conversation(
         self, *, conversation_id: str, status: GatheringStatus | None = None,
-        unit_id: str = "", include_legacy: bool = False,
+        unit_id: str = "", platform: str | None = None,
     ) -> Sequence[Gathering]:
         out = [
             e for e in self._events.values()
             if e.conversation_id == conversation_id
-            and (not unit_id or e.unit_id == unit_id or (include_legacy and e.unit_id == ""))
+            and e.unit_id == unit_id
+            and e.platform
+            and (platform is None or e.platform == platform)
             and (status is None or e.status == status)
         ]
         return sorted(out, key=lambda e: e.created_at)
@@ -154,18 +156,15 @@ class FakeGatheringStore:
 
     async def search(
         self, *, unit_id: str, place: str | None = None, person: str | None = None,
-        start=None, end=None, room_ids: Sequence[str] = (),
+        start=None, end=None,
     ) -> Sequence[Gathering]:
         rsvpd_ids = (
             {r.event_id for r in self._rsvps if r.person_id == person}
             if person else set()
         )
-        legacy_room_ids = frozenset(room_ids)
         out = []
         for e in self._events.values():
-            in_unit = e.unit_id == unit_id
-            in_legacy_room = e.unit_id == "" and e.conversation_id in legacy_room_ids
-            if not (in_unit or in_legacy_room):
+            if e.unit_id != unit_id or not e.platform:
                 continue
             if place and place.lower() not in (
                 (e.venue_name or "") + (e.venue_text or "")

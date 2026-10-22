@@ -75,6 +75,7 @@ def _row_to_event(r: Row[Any]) -> Gathering:
             reminder_id=r.reminder_id,
             created_at=r.created_at,
             unit_id=r.unit_id,
+            platform=r.platform,
             end=r.end,
             people=tuple(r.people or ()),
             reasoning=r.reasoning,
@@ -150,6 +151,7 @@ def _event_values(event: Gathering) -> dict[str, Any]:
         "reminder_id": event.reminder_id,
         "created_at": event.created_at,
         "unit_id": event.unit_id,
+        "platform": event.platform,
         "end": event.end,
         "people": list(event.people),
         "reasoning": event.reasoning,
@@ -249,23 +251,26 @@ class SqlGatheringStore:
 
     async def list_for_conversation(
         self, *, conversation_id: str, status: GatheringStatus | None = None,
-        unit_id: str = "", include_legacy: bool = False,
+        unit_id: str = "", platform: str | None = None,
     ) -> Sequence[Gathering]:
-        """This room's events. `unit_id`, when given, is a second scope check:
-        conversation ids are an id space per platform, so the same string can
-        name rooms in two units.
+        """This room's events, scoped by the PERSISTED owner: `conversation_id`
+        and `unit_id` are always checked, and `platform` when the caller names
+        one (a room read always does). Conversation ids are an id space per
+        platform, so the same string can name rooms in two units.
 
-        A pre-migration row (`unit_id=""`) has no recorded owner. It is fetched
-        ONLY when `include_legacy` is set, which the service does after
-        `legacy_room_admissible` proves this room's id maps to exactly this
-        caller in `policy.toml`. Without that proof the row is quarantined, not
-        universally admitted."""
-        stmt = sa.select(EVENTS).where(EVENTS.c.conversation_id == conversation_id)
-        if unit_id:
-            scope = EVENTS.c.unit_id == unit_id
-            if include_legacy:
-                scope = sa.or_(scope, EVENTS.c.unit_id == "")
-            stmt = stmt.where(scope)
+        There is no legacy widening. A row with no stored platform is
+        quarantined: current `policy.toml` cannot say who owned it when it was
+        written, and a room that moved would otherwise take its history."""
+        stmt = (
+            sa.select(EVENTS)
+            .where(EVENTS.c.conversation_id == conversation_id)
+            .where(EVENTS.c.unit_id == unit_id)
+            # An empty platform is an unresolved historical row: quarantined,
+            # never returned even when this caller names no platform.
+            .where(EVENTS.c.platform != "")
+        )
+        if platform is not None:
+            stmt = stmt.where(EVENTS.c.platform == platform)
         stmt = stmt.order_by(EVENTS.c.created_at)
         if status is not None:
             stmt = stmt.where(EVENTS.c.status == status.value)
@@ -401,31 +406,22 @@ class SqlGatheringStore:
 
     async def search(
         self, *, unit_id: str, place: str | None = None, person: str | None = None,
-        start: Any = None, end: Any = None, room_ids: Sequence[str] = (),
+        start: Any = None, end: Any = None,
     ) -> Sequence[Gathering]:
         """Unit-wide: `event_search`'s store side (`place?`, `person?`,
         `interval?`). `place` matches
         `venue_name`/`venue_text` by containment; `person` matches the
         creator or an RSVP; `start`/`end` bound `events.when`.
 
-        B3: `room_ids`, when the caller passes any, widens the match to also
-        catch a pre-migration row (`unit_id=""`) whose `conversation_id` is
-        one of the unit's own rooms — units live in `policy.toml`, not the
-        DB, so the migration backfilled every existing event to
-        `unit_id=""` and this is the only way one is found unit-wide again.
-        `GatheringService.search_events` passes only ids whose policy
-        assignment is unambiguous for this unit. `room_ids=()` keeps the old,
-        exact `unit_id == unit_id` match."""
-        unit_clause: Any = EVENTS.c.unit_id == unit_id
-        if room_ids:
-            unit_clause = sa.or_(
-                unit_clause,
-                sa.and_(
-                    EVENTS.c.unit_id == "",
-                    EVENTS.c.conversation_id.in_(room_ids),
-                ),
-            )
-        stmt = sa.select(EVENTS).where(unit_clause)
+        The unit is the read boundary (DEC-231), so every persisted platform in
+        it is in scope. A row with no stored platform is quarantined: the old
+        `room_ids` widening inferred historical ownership from current policy
+        and is gone."""
+        stmt = sa.select(EVENTS).where(EVENTS.c.unit_id == unit_id)
+        # A row with no stored platform is quarantined. The unit read is
+        # platform-blind otherwise (DEC-231), so this is the only place the
+        # quarantine is enforced for a unit-wide search.
+        stmt = stmt.where(EVENTS.c.platform != "")
         if place:
             needle = f"%{place}%"
             stmt = stmt.where(sa.or_(

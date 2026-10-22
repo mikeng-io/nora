@@ -1117,7 +1117,8 @@ class Dependencies:
     rooms_of: Callable[[str], frozenset[RoomKey]]
     # Whether a member of a room may see an event of it they neither made nor
     # answered on the portal's Plans (`nora.app.gatherings.room_event_shown`,
-    # bound to the process's lineage policy).
+    # bound to the process's lineage policy AND its trusted room claims, so the
+    # membership grant also checks the event's persisted owner).
     room_event_shown: Callable[[Any, str, str, str], bool]
     # (platform, conversation_id) -> the room's policy label, for the portal's document
     # rows; "" for a room the policy does not name.
@@ -2486,7 +2487,6 @@ async def build_dependencies(
         route_source=route_client,
         honcho=memory,
         ai_peer=cfg.memory.ai_peer,
-        room_claims=event_room_claims,
         place_areas=place_areas,
     )
     # `media_fetch` (DEC-56) reads a stored blob back through MiMo. Its two
@@ -4520,7 +4520,7 @@ async def build_dependencies(
                     return ()
                 return await note_store.standing(unit=unit)
 
-            _open_events = open_events_reader(event_store, event_room_claims)
+            _open_events = open_events_reader(event_store)
 
             # The unit -> its rooms' every id form, for the grounding read: a
             # stimulus naming a room outside its unit is never read (DEC-231).
@@ -4549,8 +4549,10 @@ async def build_dependencies(
                 for conv in allowlist.conversations for cid in conv.ids
             }
 
-            async def _room_events(unit: str, conversation_id: str) -> Sequence[Any]:
-                return await _open_events(unit, conversation_id)
+            async def _room_events(
+                unit: str, platform: str, conversation_id: str,
+            ) -> Sequence[Any]:
+                return await _open_events(unit, platform, conversation_id)
 
             grounder = build_grounder(
                 # NOT `tool_registry`'s `record`, which is None unless `[record_query]
@@ -4708,7 +4710,7 @@ async def build_dependencies(
         index_state=memory_index_reader.index_state,
         documents=documents_store, document_service=document_service,
         rooms_of=functools.partial(rooms_named, allowlist),
-        room_event_shown=functools.partial(room_event_shown, lineage),
+        room_event_shown=functools.partial(room_event_shown, lineage, event_room_claims),
         room_label=functools.partial(room_label, allowlist),
         blobs=blobs, artifacts=computer_exports,
         dispatcher=dispatcher, adapter=adapter, registry=registry,

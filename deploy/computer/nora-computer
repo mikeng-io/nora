@@ -533,13 +533,26 @@ cmd_restore() {
         # one of those would write outside the room as root. The archive is
         # checked for archive-local links (archive_check.py), but only a fresh
         # root-owned staging tree closes the link that is already on the VM.
-        stage=$(mktemp -d /workspace/.restore.XXXXXX) || exit 5
+        #
+        # The wrapper is BETWEEN the archive and /workspace. A backup tars `.`,
+        # so tar applies the workspace mode (0755 in a normal archive) to the
+        # directory it extracts into; if that were the wrapper, every room user
+        # could traverse the staged rooms. The wrapper stays root-owned 0700 and
+        # tar writes into its child, so the archive `.` metadata can only change
+        # the child. Extraction also preserves numeric owners, and after a
+        # recreate an archived uid can belong to a DIFFERENT live room: the
+        # wrapper is what keeps that room out until each staged tree is chowned
+        # to its computerd user, which happens BEFORE it is published.
+        stage_root=$(mktemp -d /workspace/.restore.XXXXXX) || exit 5
+        stage="$stage_root/tree"
+        mkdir -m 0700 "$stage" || { rm -rf -- "$stage_root"; exit 5; }
+        chmod 0700 "$stage_root" || { rm -rf -- "$stage_root"; exit 5; }
         # The old rooms are moved here, not deleted: deletion happens only
         # after the replacement is at the exact destination with the right
         # owner. A failed install puts them back, or leaves them here.
-        old=$(mktemp -d /workspace/.restore-old.XXXXXX) || { rm -rf -- "$stage"; exit 5; }
+        old=$(mktemp -d /workspace/.restore-old.XXXXXX) || { rm -rf -- "$stage_root"; exit 5; }
         cleanup() {
-            rm -rf -- "$stage"
+            rm -rf -- "$stage_root"
             [ -d "$old" ] || return 0
             if [ -z "$(ls -A "$old")" ]; then
                 rm -rf -- "$old"
@@ -570,6 +583,11 @@ cmd_restore() {
             user=c-$(printf %s "$scope" | cut -c1-12)
             id -u "$user" >/dev/null 2>&1 || useradd --system --no-create-home --user-group \
                 --shell /usr/sbin/nologin --home-dir /nonexistent "$user" || exit 2
+            # Repair ownership IN THE WRAPPER, before anything is published:
+            # the staged tree may still carry an archived numeric uid that now
+            # belongs to a different live room, and no room may see it. A
+            # failure here leaves the old room untouched.
+            chown -hR "$user:$user" "$d" || exit 3
             dest=/workspace/$scope
             # Move the old room ASIDE, never `rm -rf` first: the destination
             # name stays absent only for the instant between these two renames,
@@ -587,18 +605,8 @@ cmd_restore() {
                 fi
                 exit 3
             fi
-            if ! chown -hR "$user:$user" "$dest"; then
-                # The replacement exists but is not the room yet. Remove it and
-                # put the old one back; if the rollback cannot, `cleanup` keeps
-                # the old data and names it.
-                rm -rf -- "$dest" || true
-                if [ ! -e "$dest" ] && [ ! -L "$dest" ] && [ -e "$old/$scope" ]; then
-                    mv -T -- "$old/$scope" "$dest" || true
-                fi
-                exit 3
-            fi
-            # Only a replacement that landed AND was chowned makes the old copy
-            # disposable. A failed removal is not a failed restore.
+            # Only a replacement that landed with the right owner makes the old
+            # copy disposable. A failed removal is not a failed restore.
             rm -rf -- "$old/$scope" || echo "restore: could not remove old copy $old/$scope" >&2
         done' sh "$vmdir" "$got" </dev/null
     rc=$?

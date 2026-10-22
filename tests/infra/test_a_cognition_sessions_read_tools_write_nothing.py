@@ -195,10 +195,6 @@ class World:
         events = GatheringService(
             store=SqlGatheringStore(engine), route_source=None, honcho=self.memory,
             ai_peer="nora",
-            room_claims={
-                cid: frozenset({("u1", "signal")})
-                for cid in ("ROOM-A", "ROOM-B", "ROOM-C")
-            },
         )
         circle = Circle(
             circle_id="c1", person_ids=frozenset({"p1", "p2"}),

@@ -46,7 +46,7 @@ def _event(**over: Any) -> Gathering:
         "venue_address": None, "venue_rating": None, "venue_price_level": "",
         "venue_maps_url": None, "venue_resolved_at": None,
         "status": GatheringStatus.PROPOSED, "reminder_id": None, "created_at": T0,
-        "unit_id": "u",
+        "unit_id": "u", "platform": "signal",
     }
     base.update(over)
     return Gathering(**base)
@@ -217,7 +217,9 @@ async def test_a_session_is_shown_and_may_move_every_event_before_happened():
     for s in GatheringStatus:
         await store.create(_event(status=s, title=s.value))
     read = open_events_reader(store)
-    assert {e.title for e in await read("u", "ga")} == {"staged", "proposed", "confirmed"}
+    assert {e.title for e in await read("u", "signal", "ga")} == {
+        "staged", "proposed", "confirmed",
+    }
 
 
 async def test_a_session_cannot_read_another_units_event_with_the_same_room_id():
@@ -228,29 +230,31 @@ async def test_a_session_cannot_read_another_units_event_with_the_same_room_id()
     await store.create(_event(title="theirs", unit_id="unit-b"))
 
     read = open_events_reader(store)
-    assert {e.title for e in await read("unit-a", "ga")} == {"ours"}
+    assert {e.title for e in await read("unit-a", "signal", "ga")} == {"ours"}
 
 
-async def test_a_legacy_event_is_read_only_when_policy_assigns_the_room_to_exactly_this_caller():
-    """The pre-migration row carries no `unit_id`; policy is the only owner
-    record. Exactly one owner admits it, two units (or two platforms of one
-    unit) quarantine it — never "belongs to whoever asks"."""
+async def test_a_session_cannot_read_the_other_platforms_event_with_the_same_room_id():
+    """The same conversation string on two platforms is two rooms. The stored
+    platform, not the id, decides which one a signal read sees."""
     store = FakeGatheringStore()
-    await store.create(_event(title="ambiguous", unit_id=""))
+    await store.create(_event(title="signal", unit_id="unit-a", platform="signal"))
+    await store.create(_event(title="whatsapp", unit_id="unit-a", platform="whatsapp"))
 
-    ambiguous_units = open_events_reader(store, {
-        "ga": frozenset({("unit-a", "signal"), ("unit-b", "signal")}),
-    })
-    assert not await ambiguous_units("unit-a", "ga")
+    read = open_events_reader(store)
+    assert {e.title for e in await read("unit-a", "signal", "ga")} == {"signal"}
+    assert {e.title for e in await read("unit-a", "whatsapp", "ga")} == {"whatsapp"}
 
-    ambiguous_platforms = open_events_reader(store, {
-        "ga": frozenset({("unit-a", "signal"), ("unit-a", "whatsapp")}),
-    })
-    assert not await ambiguous_platforms("unit-a", "ga")
 
-    owned = open_events_reader(store, {"ga": frozenset({("unit-a", "signal")})})
-    assert {e.title for e in await owned("unit-a", "ga")} == {"ambiguous"}
-    assert not await owned("unit-b", "ga")
+async def test_a_legacy_event_with_no_stored_platform_is_quarantined():
+    """A pre-`0127` row has no durable platform owner. It is invisible even to
+    the unit and room it was written in, because current policy cannot say what
+    the policy was then. Nothing infers one."""
+    store = FakeGatheringStore()
+    await store.create(_event(title="legacy", unit_id="", platform=""))
+
+    read = open_events_reader(store)
+    assert not await read("unit-a", "signal", "ga")
+    assert not await read("", "signal", "ga")
 
 
 # -- how an abduced field is voiced -------------------------------

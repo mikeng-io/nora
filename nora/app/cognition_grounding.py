@@ -400,7 +400,7 @@ def build_grounder(
     persons: Any,
     media_join: Any | None,
     note_index: Callable[[str], Awaitable[Sequence[Note]]],
-    events_in: Callable[[str, str], Awaitable[Sequence[Gathering]]],
+    events_in: Callable[[str, str, str], Awaitable[Sequence[Gathering]]],
     lineage: LineagePolicy,
     unit_rooms: Callable[[str], Collection[tuple[str, str]]],
     ai_display_name: str = "Nora",
@@ -550,7 +550,7 @@ def build_grounder(
             target = lineage.render_room(
                 platform=room.platform, conversation_id=room.conversation_id,
             )
-            for e in await events_in(unit, room.conversation_id):
+            for e in await events_in(unit, room.platform, room.conversation_id):
                 if applies and not all(visible_sections(
                     e.lineage, _EVENT_SHOWN_FIELDS, target,
                     origin=room_key(room.platform, room.conversation_id),

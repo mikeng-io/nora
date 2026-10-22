@@ -54,12 +54,5 @@
     "old": "        if current.status in TERMINAL_STATUSES:\n            # The same set `update_event` refuses on:",
     "new": "        if current.status is GatheringStatus.CANCELLED:\n            # The same set `update_event` refuses on:",
     "target": "tests/test_gatherings_service.py -k test_rsvp_refuses_on_every_terminal_status"
-  },
-  {
-    "name": "events backfill-units --apply actually writes unit_id, not just counts it",
-    "file": "nora/app/events_backfill.py",
-    "old": "                await store.update(replace(event, unit_id=convo.unit))",
-    "new": "                pass",
-    "target": "tests/unit/test_events_backfill.py -k test_apply_sets_unit_id_through_the_normal_update_path"
   }
 ]

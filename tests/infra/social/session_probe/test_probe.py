@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+import subprocess
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -51,7 +52,10 @@ class FakeWorld:
         self.calls.append(list(argv))
         if argv[:2] == ["docker", "exec"] and len(argv) >= 6 and argv[3:5] == ["sh", "-c"]:
             script = argv[5]
-            if "Authorization: Bearer $NORA_BRIDGE_TOKEN" not in script:
+            if (
+                'printf "Authorization: Bearer %s\\n" "$NORA_BRIDGE_TOKEN"' not in script
+                or "-H @-" not in script
+            ):
                 return RunResult(1, "", "curl: (22) 401 Unauthorized")
             if not self.running:  # exec into a stopped container fails
                 return RunResult(1, "", "container is not running")
@@ -155,8 +159,8 @@ def test_the_health_probe_authenticates_from_the_container_without_the_token_in_
     world, bridge_dir, tmp_path,
 ):
     """/health is protected (a bare curl is a 401, which would read as
-    `unreachable`). The container's own shell expands NORA_BRIDGE_TOKEN, so the
-    value is neither passed to docker nor recorded."""
+    `unreachable`). The token reaches curl on stdin, so it is neither passed to
+    docker, recorded, nor visible in a process listing inside the container."""
     world.health = '{"session":"authenticated"}'
     world.token = "tok-never-in-argv"  # noqa: S105 - a fake, never a real credential
     p, cfg = make(world, bridge_dir, tmp_path)
@@ -166,8 +170,47 @@ def test_the_health_probe_authenticates_from_the_container_without_the_token_in_
     assert health_calls, world.calls
     for argv in world.calls:
         assert world.token not in " ".join(argv)
-    assert "Authorization: Bearer $NORA_BRIDGE_TOKEN" in health_calls[0][5]
+    script = health_calls[0][5]
+    assert 'printf "Authorization: Bearer %s\\n" "$NORA_BRIDGE_TOKEN"' in script
+    assert "-H @-" in script
     assert world.token not in cfg.state_file.read_text()
+
+
+def test_the_bridge_health_script_keeps_the_token_out_of_curls_actual_argv(
+    world, bridge_dir, tmp_path,
+):
+    """The outer docker argv is not the only process list that matters: curl
+    runs inside the bridge container. Run the probe's real `sh -c` script with a
+    synthetic token and a curl that records its argv, and assert the expansion
+    never appears there while the header does arrive on stdin."""
+    world.health = '{"session":"authenticated"}'
+    p, _ = make(world, bridge_dir, tmp_path)
+    p._bridge_health()  # type: ignore[attr-defined]
+    script = next(
+        c[5] for c in world.calls
+        if c[:2] == ["docker", "exec"] and c[3:5] == ["sh", "-c"]
+    )
+
+    stub = tmp_path / "bin"
+    stub.mkdir()
+    curl = stub / "curl"
+    curl.write_text(
+        "#!/bin/sh\n"
+        f'printf \'%s\\n\' "$@" > "{tmp_path}/curl-argv"\n'
+        f'cat > "{tmp_path}/curl-stdin"\n'
+        "printf '{\"session\":\"authenticated\"}'\n",
+    )
+    curl.chmod(0o755)
+    token = "synthetic-bridge-token-never-argv"  # noqa: S105 - a fake
+    env = dict(os.environ, NORA_BRIDGE_TOKEN=token, PATH=f"{stub}:{os.environ['PATH']}")
+    done = subprocess.run(  # noqa: S603 - the script is probe.py's own sh -c text
+        ["sh", "-c", script], env=env, capture_output=True, text=True, check=False,
+    )
+    assert done.returncode == 0, done.stderr
+    argv = (tmp_path / "curl-argv").read_text().splitlines()
+    assert "-H" in argv and "@-" in argv
+    assert not any(token in arg for arg in argv)
+    assert (tmp_path / "curl-stdin").read_text() == f"Authorization: Bearer {token}\n"
 
 
 def test_logged_out_bridge_with_newer_chrome_cookie_is_synced(world, bridge_dir, tmp_path):

@@ -3,7 +3,7 @@
 `list` and `show` only read, through the read-only engine every report here uses.
 `retire` and `rollback` WRITE (one `lesson_revision` row each, through
 `LessonBook`, the same book a session's verbs use) and are a dry run unless
-`--apply`, like `nora events backfill-units`. Nothing is ever deleted:
+`--apply`, like `nora memory rebuild --dry-run`. Nothing is ever deleted:
 
 - `retire` appends a retirement by the operator. A lesson the operator retired
   is not learned again from outcomes no newer than the retirement

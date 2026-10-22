@@ -61,15 +61,22 @@ and remains UNVERIFIED against Aikido's actual target.
   `default-src 'self'`, object/frame/form restrictions and the explicit
   allowances Next hydration, inline styles and the map tiles need.
   `site/Caddyfile:12-23` carries the equivalent baseline for the static site,
-  and `:37-40` for its 404 handler. Both Caddy policies also add
+  and `:46-53` for its 404 handler. Both Caddy policies also add
   `'wasm-unsafe-eval'` to `script-src` and `worker-src 'self' blob:` so the
-  wiki's Pagefind search can compile WASM and start its index worker.
-- **Verification:** built `docs-site` with Pagefind; under the new policy the
-  search dialog loaded `pagefind-worker.js`, `wasm.en.pagefind` and returned
-  **5 results for `security`**, with no WASM/worker CSP violation. Under the old policy the
-  same build logged `Failed to load the Pagefind WASM: CompileError ...
-  violates ... script-src 'self' 'unsafe-inline'` and stayed on
-  `Searching for security...`.
+  wiki's Pagefind search can compile WASM and start its index worker. The
+  OpenWiki graph page has its own, narrower policy at `:29-31`: it needs the
+  SRI-pinned jsDelivr scripts and Google Fonts origins its meta tag already
+  names, and a meta CSP is enforced IN ADDITION to the header, so serving the
+  baseline there would leave an empty canvas. `>` replaces the header for
+  `/wiki/graph/*` only; every other wiki page keeps the baseline.
+- **Verification:** built `docs-site`, served it behind the real Caddyfile with
+  the two path policies, and opened both pages in a browser. The graph loaded
+  all 38 pages, ForceGraph/Marked/DOMPurify/Mermaid were present, and the graph
+  canvas held 24,467 distinct sampled colours (a drawn graph, not an empty
+  canvas), with no CSP console entry. Pagefind loaded its worker and WASM and
+  returned **27 results for `policy`**; under a policy with the same baseline
+  but no `'wasm-unsafe-eval'`, the same build stayed on `Searching for
+  policy...` with zero result links.
 - **Attribution:** UNVERIFIED. The live origin response was observed, but the
   scanner's target is not retrievable.
 - **Trust boundary:** browser execution in a visitor's origin. A missing policy
@@ -152,23 +159,39 @@ that runs. Their remediation is testable without the scanner's target.
   directly under `/workspace`; `deploy/computer/archive_check.py` only validates
   links inside the archive, not links already on the VM.
 - **Fix:** extract into a fresh root-owned
-  `mktemp -d /workspace/.restore.XXXXXX`, then hold
-  `/workspace/.restore.lock` EXCLUSIVELY while replacing each room (every
-  computerd `run`/`state`/file operation holds it SHARED). Move the old room
-  aside to a private `.restore-old.*` directory, rename the staged tree onto the
-  EXACT destination with `mv -T` (a directory a writer recreated there fails the
-  rename instead of nesting the tree inside it), `chown -hR` without following
-  links, and delete the old copy only after both succeed. A failed move or chown
-  puts the old room back; if the destination is occupied, the old data is kept
-  and named. A process that outlives its command (`nohup`, a tmux pane) is outside
-  the lease, so long-lived room work must stop before a `--force` restore.
+  `mktemp -d /workspace/.restore.XXXXXX` whose mode is `0700`, and tar into a
+  CHILD `tree` directory, never the wrapper. The archive's own `.` entry is
+  accepted but can only change the child's mode; the wrapper stays root-private,
+  so a room cannot traverse the staging root even while extraction is running.
+  Then hold `/workspace/.restore.lock` EXCLUSIVELY while replacing each room
+  (every computerd `run`/`state`/file operation holds it SHARED). Move the old
+  room aside to a private `.restore-old.*` directory, `chown -hR` the staged tree
+  to the room's dedicated user BEFORE publishing (so the room never appears with
+  root-owned files), rename it onto the EXACT destination with `mv -T` (a
+  directory a writer recreated there fails the rename instead of nesting the tree
+  inside it), and delete the old copy only after both succeed. A failed move or
+  chown puts the old room back; if the destination is occupied, the old data is
+  kept and named. A process that outlives its command (`nohup`, a tmux pane) is
+  outside the lease, so long-lived room work must stop before a `--force`
+  restore. Archived numeric UIDs are reassigned to that user, not preserved as
+  host ids.
 - **Test:** `test_a_restore_does_not_follow_a_symlink_already_in_a_room` plants
   `room/escape -> outside` and asserts the outside file is untouched;
+  `test_an_archive_whose_root_is_a_link_is_refused` proves the accepted `.`
+  exception is a directory only;
   `test_a_restore_holds_the_exclusive_lease_while_it_swaps_a_room` proves the
-  lock is held; `test_a_destination_that_reappears_is_not_nested_inside_and_the_old_room_is_kept`
+  lock is held;
+  `test_restore_stages_behind_a_root_private_wrapper_and_repairs_owner_before_publish`
+  builds an archive whose `.` is `0755`/uid 0 and whose room is uid 4321, pauses
+  at `chown`, and asserts the wrapper is `0700`, the child is `0755`, the chown
+  precedes the staged `mv`, and the published file is the room user's;
+  `test_a_destination_that_reappears_is_not_nested_inside_and_the_old_room_is_kept`
   proves the race fails closed with the old data preserved; and
   `test_a_failed_room_move_puts_the_old_room_back_instead_of_deleting_it` proves
-  an injected move failure does not lose the old room.
+  an injected move failure does not lose the old room. The real
+  second-uid read across two Unix accounts is **UNVERIFIED** in this local
+  harness; the `0700` wrapper plus the pre-publish chown are the structural
+  proof.
 - **Trust boundary:** root filesystem write from a room-controlled path. The
   room is untrusted; the archive validator is not a substitute for a clean
   extraction root and a recoverable replace.
@@ -183,25 +206,41 @@ that runs. Their remediation is testable without the scanner's target.
   `conversation_id`; `nora/app/cognition_wiring.py:402-417`,
   `nora/agent/tools.py:12864` and `nora/app/composition.py:4527-4528` threaded
   the room but not the unit.
-- **Fix:** `list_for_conversation` takes `unit_id` and `include_legacy`; a
-  legacy `unit_id=""` row is admitted only when policy assigns its room to
-  exactly one `(unit, platform)` owner, and otherwise stays quarantined. Every
-  read and every mutation (list, search, update, status, RSVP, cancel, venue,
-  and the creation-time preliminary read) passes unit/platform and checks
-  through `event_in_scope`, so a row from another unit or platform with the same
-  room id is `GatheringNotFoundError`. The reader carries
-  `(unit, conversation_id)` through `open_events_reader`, `upcoming_reader`,
-  `build_cognition_runner.open_events` and `composition._room_events`.
-- **Test:** `tests/unit/test_event_evidence_d.py` covers the foreign-unit read
-  and the unambiguous/ambiguous legacy cases; `tests/test_gatherings_service.py`
-  covers every event mutation against a foreign event and an ambiguous legacy
-  event; `tests/contract/test_gathering_store_contract.py` proves the store
-  quarantines legacy rows unless asked.
+- **Fix:** ownership is persisted, not inferred. `events` now carries
+  `platform` beside `unit_id` (migration `0127_event_platform`, which adds the
+  column and backfills nothing), and `Gathering`/`event_in_scope` require the
+  row's stored `(unit_id, platform, conversation_id)` to match the caller. A
+  row with no stored platform is quarantined: it is never returned and never
+  mutated, even when current `policy.toml` names the room. Every read and every
+  mutation (list, search, agenda/upcoming, update, status, RSVP, cancel, venue,
+  and the creation-time preliminary read) passes unit/platform through
+  `event_in_scope`, so a row from another unit or platform with the same room
+  id is `GatheringNotFoundError`. `search` is unit-wide only across rows that
+  have a persisted platform; the old `room_ids` widening and the
+  `nora events backfill-units` command are deleted because both attributed a
+  historical row from the CURRENT policy, which cannot say what the policy was
+  when the row was written. The portal's room-membership grant
+  (`room_event_shown`) resolves exactly one trusted `(unit, platform)` for the
+  claimed room from `policy.toml` and then checks the event's PERSISTED owner;
+  a room that moved does not carry its old events, while the separate
+  creator/RSVP grant still shows a person the events they made or answered.
+- **Test:** `tests/unit/test_event_evidence_d.py` covers foreign-unit and
+  foreign-platform reads and a row with no stored platform;
+  `tests/test_gatherings_service.py` covers every mutation against a foreign
+  unit, the same room id on another platform, a row with no stored platform,
+  and an omitted platform failing closed;
+  `tests/contract/test_gathering_store_contract.py` proves the SQL and fake
+  stores round-trip the platform and quarantine unresolved rows;
+  `tests/web/test_api.py` proves a room moved to another unit shows neither its
+  old list nor its old detail in the portal. Historical rows are preserved,
+  not deleted.
 - **Trust boundary:** DEC-231's unit = read boundary. The conversation id is an
-  id space per platform, not a unit-scoped key. Ambiguous legacy ownership fails
-  closed instead of belonging to whoever asks.
-- **Reversal:** legacy `unit_id=""` rows stay quarantined until a migration
-  assigns them an owner; do not relax the ambiguity check while they exist.
+  id space per platform, not a unit-scoped key. Current policy is not evidence
+  of historical ownership; unresolved rows fail closed instead of belonging to
+  whoever asks.
+- **Reversal:** unresolved rows stay quarantined until an explicit,
+  evidence-based migration assigns them an owner. Do not restore a
+  policy-inference backfill while they exist.
 
 ### 8765_44824 — Unauthenticated Instagram bridge (high, ai_pentest)
 
@@ -219,15 +258,21 @@ that runs. Their remediation is testable without the scanner's target.
   compose healthcheck and Nora's identity/username probes send the same bearer;
   Python calls use `nora/infra/service_auth.py`, merged into
   `propagation_headers()` so every existing Instagram bridge call site carries
-  it. The session probe's `/health` check now authenticates too: the container's
-  own `sh` expands `NORA_BRIDGE_TOKEN`, so the token is never in the probe's
-  argv, state file or a diagnostic.
+  it. The session probe's `/health` check now authenticates too. Both compose
+  healthchecks and the probe hand the bearer to curl on STDIN (`-H @-`), not as
+  an expanded `Authorization` header in curl's argv: the container shell expands
+  `NORA_BRIDGE_TOKEN` into a `printf` pipe, so a process listing inside the
+  bridge sees the value in neither curl's nor docker's arguments, and it is not
+  written to the state file or a diagnostic.
 - **Test:** `internal/transport/http/auth_test.go` covers health-protected,
   missing/wrong/right bearer and the unconfigured fail-closed case;
   `tests/unit/test_instagram_self_id.py::test_both_health_probes_carry_the_bridge_token`,
   `tests/unit/test_instagram_trace_propagation.py::test_the_bridge_token_rides_the_same_headers`,
-  and
-  `tests/infra/social/session_probe/test_probe.py::test_the_health_probe_authenticates_from_the_container_without_the_token_in_argv`.
+  `tests/infra/social/session_probe/test_probe.py::test_the_bridge_health_script_keeps_the_token_out_of_curls_actual_argv`
+  runs the probe's real `sh -c` script with a synthetic token and a curl that
+  records its argv, and
+  `tests/architecture/test_bridge_healthchecks_do_not_leak_the_token_into_argv.py`
+  does the same for both compose healthchecks.
 - **Trust boundary:** caller identity inside the private network. Network
   membership is not authentication; a compromised sidecar is the reversal
   condition for treating the network as sufficient.
@@ -461,13 +506,19 @@ a public/model/fixture value. None of the above does.
   is clean on every changed Python file.
 - Go: `go vet ./...` and `go test ./...` in `deploy/instagram-bridge` exit `0`.
 - Node: `node --test deploy/whatsapp-bridge/bridge.test.mjs` is 43 tests,
-  36 pass / 7 fail on **both** Node 24.11.1 and Node 26.8.1. The 7 are the
-  pre-existing edit-key failures; no decryption helper was touched by this
-  branch. They are reported, not hidden.
-- Wiki: `npm ci && npm run build` in `docs-site` exits `0`. Under the new Caddy
-  policy the built Pagefind search loaded its worker and WASM and returned 5
-  results for `security`; under the old policy the same build logged a CSP
-  `CompileError` for the Pagefind WASM and never left `Searching…`.
+  36 pass / 7 fail on **both** Node 24.11.1 and Node 26.8.1. The 7 are **not
+  all edit-key failures**: 3 are JID normalization/resolution/redaction
+  (`normalizeJid`, `resolveIdentity`, `redactJid`), 2 are edit-key byte/order
+  assertions, and 2 are edit decryption paths. The same 7 names fail on the
+  base commit `9d9223c1fc7ca972bc94b5b0ba7d176adb0c8724` with the same installed
+  dependencies, so they predate this branch; the exact causal attribution to
+  the scanner's target remains **UNVERIFIED**. No decryption helper was touched
+  by this branch. They are reported, not hidden.
+- Wiki: `npm ci && npm run build` in `docs-site` exits `0`. Served behind the
+  real Caddyfile, the graph page loaded all 38 pages and drew its canvas
+  (24,467 distinct sampled colours), and Pagefind loaded its worker and WASM
+  and returned 27 results for `policy`. Without `'wasm-unsafe-eval'` the same
+  build stayed on `Searching for policy...` with zero result links.
 - Full gate: the final `make gate` receipt is posted on PR #188 and bound to
   that head's commit SHA and tree. This file deliberately does not restate a
   local log path or an unbound pass count.

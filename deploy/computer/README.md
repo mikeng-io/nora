@@ -211,14 +211,19 @@ copied to the VM). It refuses when the VM's `/workspace` already holds rooms
 (restoring over them would overwrite files; `--force` if that is meant). It copies the
 archive into a private `mktemp -d` directory in the VM (never a fixed shared path),
 checks the digest AGAIN inside the VM on the file tar will read (exit 4 if it
-differs, nothing extracted), extracts as root preserving modes into a private
-staging directory, and removes it. Each room is then REPLACED, not deleted first:
-the installer holds `/workspace/.restore.lock` exclusively (every computerd room
-operation holds it shared, so no command is mid-write), renames the old room aside,
-renames the staged tree onto the EXACT destination (`mv -T`; a directory a writer
-recreated there makes it fail rather than nest the new tree inside it), and only
-after `chown -hR` to `c-<first 12 hex of the scope>` succeeds deletes the old copy
-(a link is never followed). A failed move or chown puts the old room back; if the
+differs, nothing extracted), extracts as root preserving modes into the CHILD of
+a root-owned `0700` staging wrapper, and removes both. The wrapper is what makes
+the staging private: a backup tars `.`, so tar applies `/workspace`'s own mode
+(0755) to the directory it extracts into, and after a recreate an archived uid can
+belong to a different live room. Ownership is repaired with `chown -hR` to
+`c-<first 12 hex of the scope>` on the staged tree BEFORE it is published. Each
+room is then REPLACED, not deleted first: the installer holds
+`/workspace/.restore.lock` exclusively (every computerd room operation holds it
+shared, so no command is mid-write), renames the old room aside, renames the
+staged tree onto the EXACT destination (`mv -T`; a directory a writer recreated
+there makes it fail rather than nest the new tree inside it), and deletes the old
+copy only after the replacement has landed (a link is never followed). A failed
+chown leaves the old room untouched; a failed move puts it back. If the
 destination is occupied by a writer outside computerd, the old data is kept in a
 `.restore-old.*` directory and the failure line names it. A process that outlives
 its command (`nohup`, a tmux pane) is outside that lease, so stop long-lived room

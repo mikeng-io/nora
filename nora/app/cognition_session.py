@@ -317,7 +317,7 @@ class CognitionSessionOutcome:
 # ---------------------------------------------------------------------------
 
 OpenNoteTitles = Callable[[str], Awaitable[Sequence[str]]]
-OpenEvents = Callable[[str, str], Awaitable[Sequence[Gathering]]]
+OpenEvents = Callable[[str, str, str], Awaitable[Sequence[Gathering]]]
 #: `(platform, conversation_id)` -> the room's Standing head WITH the id of the
 #: `standing_revision` row that is it (`SqlStandingStore.read_head`): the token a
 #: `standing_revise` call asserts as its base (DEC-250).
@@ -2587,7 +2587,7 @@ class CognitionSessionRunner:
         cited = {_bare_row(r) for r in subject_rows}
         abduced = any(
             str(e.id) in cited and _is_abduced(e)
-            for e in await self._open_events(unit, conversation_id)
+            for e in await self._open_events(unit, platform, conversation_id)
         ) if cited else False
         return RemindContext(
             room_proactive=proactive, abduced_subject=abduced,

@@ -418,7 +418,7 @@ def _grounder(records: _Records, *, unit_rooms: set[tuple[str, str]] | None = No
     async def notes(unit: str) -> Sequence[Note]:
         return ()
 
-    async def events(unit: str, cid: str) -> Sequence[Gathering]:
+    async def events(unit: str, platform: str, cid: str) -> Sequence[Gathering]:
         return ()
 
     return build_grounder(
@@ -524,7 +524,7 @@ async def test_the_register_lines_are_built_from_the_units_rows():
                      closing_condition="c", established_in="room-a", created_at=1,
                      head_revision_id="r1", anchor_date=20260930),)
 
-    async def events(unit: str, cid: str) -> Sequence[Gathering]:
+    async def events(unit: str, platform: str, cid: str) -> Sequence[Gathering]:
         return ()
 
     ground = build_grounder(
@@ -570,7 +570,7 @@ async def _pushed(notes: Sequence[Note], events: Sequence[Gathering], *, mode: s
     async def note_index(unit: str) -> Sequence[Note]:
         return notes
 
-    async def events_in(unit: str, cid: str) -> Sequence[Gathering]:
+    async def events_in(unit: str, platform: str, cid: str) -> Sequence[Gathering]:
         return events if cid == "room-a" else ()
 
     ground = build_grounder(
@@ -720,7 +720,7 @@ def _own_grounder(records: _Records, **kw: Any) -> Any:
     async def notes(unit: str) -> Sequence[Note]:
         return ()
 
-    async def events(unit: str, cid: str) -> Sequence[Gathering]:
+    async def events(unit: str, platform: str, cid: str) -> Sequence[Gathering]:
         return ()
 
     return build_grounder(
@@ -1089,7 +1089,7 @@ async def test_her_pending_reminder_is_shown_on_the_note_it_is_linked_to():
     async def notes(unit: str) -> Sequence[Note]:
         return (note,)
 
-    async def no_events(unit: str, cid: str) -> Sequence[Gathering]:
+    async def no_events(unit: str, platform: str, cid: str) -> Sequence[Gathering]:
         return ()
 
     async def pending() -> Sequence[Reminder]:

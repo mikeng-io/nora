@@ -87,7 +87,7 @@ async def test_build_gathering_payload_includes_rsvps():
     )
     await svc.rsvp(
         event_id=ev.id,
-        conversation_id="signal:group-1",
+        conversation_id="signal:group-1", platform="signal",
         person_id="daisy",
         response=RSVPResponse.YES,
     )
@@ -175,6 +175,7 @@ async def test_a_surprise_is_never_shown_to_the_person_it_is_kept_from():
     )
     surprise = replace(ev, exclude_persons=("miles",))
     off = LineagePolicy()
-    assert room_event_shown(off, ev, "miles", "signal", "group-1")
-    assert not room_event_shown(off, surprise, "miles", "signal", "group-1")
-    assert room_event_shown(off, surprise, "daisy", "signal", "group-1")
+    claims = {"group-1": frozenset({("", "signal")})}
+    assert room_event_shown(off, claims, ev, "miles", "signal", "group-1")
+    assert not room_event_shown(off, claims, surprise, "miles", "signal", "group-1")
+    assert room_event_shown(off, claims, surprise, "daisy", "signal", "group-1")

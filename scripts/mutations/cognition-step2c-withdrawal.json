@@ -7,13 +7,6 @@
     "target": "tests/infra/test_withdrawal.py -k test_hide_message"
   },
   {
-    "name": "events backfill-units dry run actually reports the legacy count, not zero",
-    "file": "nora/app/events_backfill.py",
-    "old": "        would_set = room.updated if report.applied else room.legacy",
-    "new": "        would_set = room.updated",
-    "target": "tests/unit/test_events_backfill.py -k test_render_dry_run_reports_the_legacy_count_not_updated"
-  },
-  {
     "name": "PR #622 review: message_facts' main select actually excludes a hidden message from the daybook/tie/response rollups",
     "file": "nora/infra/sql/rollups.py",
     "old": "            .where(\n                self._in_rooms(unit.rooms),\n                MESSAGES.c.id <= mark.message_id,\n                MESSAGES.c.hidden_at.is_(None),\n            )\n",

@@ -273,6 +273,11 @@ exit 0
 """
 _CHOWN = r"""#!/bin/bash
 echo "chown $*" >> "$STUB_DIR/vm-users.log"
+echo "chown $*" >> "$STUB_DIR/vm-order.log"
+if [ "${STUB_VM_CHOWN_MODE:-}" = block ]; then
+    touch "$STUB_DIR/vm-chown-started"
+    sleep "${STUB_VM_CHOWN_SLEEP:-1}"
+fi
 exit 0
 """
 
@@ -326,6 +331,8 @@ args = [a for a in raw if a not in ("-T", "--")]
 if not target:
     os.execv("/bin/mv", ["/bin/mv", *raw])
 src, dst = args[-2], args[-1]
+with open(os.path.join(os.environ["STUB_DIR"], "vm-order.log"), "a") as fh:
+    fh.write("mv %s %s\n" % (src, dst))
 mode = os.environ.get("STUB_VM_MV_MODE", "")
 if mode and "/.restore." in src:
     # The staged tree -> /workspace/<scope> rename is the only one controlled
@@ -474,6 +481,11 @@ class Host:
 
     def vm_user_calls(self) -> list[str]:
         path = self.dir / "vm-users.log"
+        return path.read_text().splitlines() if path.exists() else []
+
+    def vm_order_log(self) -> list[str]:
+        """`chown` and staged `mv` in the order the restore ran them."""
+        path = self.dir / "vm-order.log"
         return path.read_text().splitlines() if path.exists() else []
 
     @property

@@ -50,7 +50,6 @@ def _service(
     store=None,
     route_source=None,
     honcho=None,
-    room_claims=None,
     place_areas=None,
 ) -> GatheringService:
     return GatheringService(
@@ -59,7 +58,6 @@ def _service(
         honcho=honcho or _FakeHoncho(),
         ai_peer="nora",
         now=lambda: NOW,
-        room_claims=room_claims,
         place_areas=place_areas,
     )
 
@@ -194,7 +192,7 @@ async def test_rsvp_records_a_response():
     )
     r = await svc.rsvp(
         event_id=ev.id,
-        conversation_id="signal:group-1",
+        conversation_id="signal:group-1", platform="signal",
         person_id="daisy",
         response=RSVPResponse.YES,
     )
@@ -215,7 +213,7 @@ async def test_list_events_filters_by_status():
         title="B",
         platform="signal",
     )
-    await svc.cancel_event(event_id=a.id, conversation_id="signal:group-1")
+    await svc.cancel_event(event_id=a.id, conversation_id="signal:group-1", platform="signal")
 
     proposed = await svc.list_events(
         conversation_id="signal:group-1",
@@ -235,7 +233,7 @@ async def test_suggest_venue_ranks_by_mention_and_fails_closed_when_empty():
     )
     out = await svc.suggest_venue(
         event_id=ev.id,
-        conversation_id="signal:group-1",
+        conversation_id="signal:group-1", platform="signal",
         roster_person_ids=["miles", "daisy", "sam"],
     )
     assert out.status == "ok"
@@ -255,7 +253,7 @@ async def test_suggest_venue_nothing_found_when_every_person_is_empty():
     )
     out = await svc.suggest_venue(
         event_id=ev.id,
-        conversation_id="signal:group-1",
+        conversation_id="signal:group-1", platform="signal",
         roster_person_ids=["miles", "daisy"],
     )
     assert out.status == "nothing_found"
@@ -292,6 +290,7 @@ async def test_create_event_raises_when_two_open_events_already_exist():
         status=GatheringStatus.PROPOSED,
         reminder_id=None,
         created_at=NOW,
+        platform="signal",
     )
     await store.create(second)
 
@@ -325,6 +324,7 @@ def _proposed_event(*, title: str, when: datetime | None) -> Gathering:
         status=GatheringStatus.PROPOSED,
         reminder_id=None,
         created_at=NOW,
+        platform="signal",
     )
 
 
@@ -375,7 +375,7 @@ async def test_update_event_refuses_on_a_cancelled_event():
         title="Dinner",
         platform="signal",
     )
-    await svc.cancel_event(event_id=ev.id, conversation_id="signal:group-1")
+    await svc.cancel_event(event_id=ev.id, conversation_id="signal:group-1", platform="signal")
 
     with pytest.raises(GatheringCancelledError):
         await svc.update_event(
@@ -398,12 +398,12 @@ async def test_rsvp_refuses_on_a_cancelled_event():
         title="Dinner",
         platform="signal",
     )
-    await svc.cancel_event(event_id=ev.id, conversation_id="signal:group-1")
+    await svc.cancel_event(event_id=ev.id, conversation_id="signal:group-1", platform="signal")
 
     with pytest.raises(GatheringCancelledError):
         await svc.rsvp(
             event_id=ev.id,
-            conversation_id="signal:group-1",
+            conversation_id="signal:group-1", platform="signal",
             person_id="daisy",
             response=RSVPResponse.YES,
         )
@@ -427,7 +427,7 @@ async def test_update_event_refuses_on_every_terminal_status(terminal):
         platform="signal",
     )
     await svc.set_event_status(
-        event_id=ev.id, conversation_id="signal:group-1", status=terminal,
+        event_id=ev.id, conversation_id="signal:group-1", platform="signal", status=terminal,
     )
 
     with pytest.raises(GatheringCancelledError) as exc_info:
@@ -450,13 +450,13 @@ async def test_rsvp_refuses_on_every_terminal_status(terminal):
         platform="signal",
     )
     await svc.set_event_status(
-        event_id=ev.id, conversation_id="signal:group-1", status=terminal,
+        event_id=ev.id, conversation_id="signal:group-1", platform="signal", status=terminal,
     )
 
     with pytest.raises(GatheringCancelledError) as exc_info:
         await svc.rsvp(
             event_id=ev.id,
-            conversation_id="signal:group-1",
+            conversation_id="signal:group-1", platform="signal",
             person_id="daisy",
             response=RSVPResponse.YES,
         )
@@ -494,7 +494,7 @@ async def test_cancel_event_refuses_a_mismatched_conversation_id():
     with pytest.raises(GatheringNotFoundError):
         await svc.cancel_event(
             event_id=ev.id,
-            conversation_id="signal:some-other-group",
+            conversation_id="signal:some-other-group", platform="signal",
         )
 
 
@@ -509,7 +509,7 @@ async def test_rsvp_refuses_a_mismatched_conversation_id():
     with pytest.raises(GatheringNotFoundError):
         await svc.rsvp(
             event_id=ev.id,
-            conversation_id="signal:some-other-group",
+            conversation_id="signal:some-other-group", platform="signal",
             person_id="daisy",
             response=RSVPResponse.YES,
         )
@@ -526,7 +526,7 @@ async def test_suggest_venue_refuses_a_mismatched_conversation_id():
     with pytest.raises(GatheringNotFoundError):
         await svc.suggest_venue(
             event_id=ev.id,
-            conversation_id="signal:some-other-group",
+            conversation_id="signal:some-other-group", platform="signal",
             roster_person_ids=["miles"],
         )
 
@@ -609,7 +609,7 @@ async def test_list_events_for_person_includes_created_and_rsvpd():
     )
     await svc.rsvp(
         event_id=theirs.id,
-        conversation_id="discord:group-2",
+        conversation_id="discord:group-2", platform="signal",
         person_id="miles",
         response=RSVPResponse.YES,
     )
@@ -648,7 +648,7 @@ async def test_get_event_for_person_returns_event_when_rsvpd():
     )
     await svc.rsvp(
         event_id=ev.id,
-        conversation_id="signal:group-1",
+        conversation_id="signal:group-1", platform="signal",
         person_id="miles",
         response=RSVPResponse.MAYBE,
     )
@@ -720,108 +720,163 @@ def _legacy_event(*, conversation_id: str, title: str) -> Gathering:
     )
 
 
-async def test_search_events_finds_legacy_event_via_room_claims():
-    store = FakeGatheringStore()
-    svc = _service(
-        store=store,
-        room_claims={"signal:room-a": frozenset({("friends", "signal")})},
-    )
-    legacy = await store.create(
-        _legacy_event(conversation_id="signal:room-a", title="Pre-migration dinner"),
-    )
-
-    found = await svc.search_events(unit_id="friends", conversation_id="signal:room-a")
-    assert legacy.id in {e.id for e in found}
-
-
-async def test_search_events_never_leaks_a_legacy_event_from_another_units_room():
-    store = FakeGatheringStore()
-    svc = _service(
-        store=store,
-        room_claims={"signal:room-a": frozenset({("friends", "signal")})},
-    )
-    other_unit_legacy = await store.create(_legacy_event(
-        conversation_id="signal:room-z", title="Someone else's pre-migration dinner",
-    ))
-
-    found = await svc.search_events(unit_id="friends", conversation_id="signal:room-a")
-    assert other_unit_legacy.id not in {e.id for e in found}
-
-
-async def test_a_legacy_event_is_quarantined_when_two_units_claim_its_room():
-    """No `unit_id` in the row and two units naming the same id: there is no
-    evidence which one said it, so it is shown to NEITHER, not to whoever
-    asks."""
+async def test_a_legacy_row_is_quarantined_from_room_and_unit_reads():
+    """A row with no stored platform has no durable owner. Current policy is
+    not evidence of what the policy was when it was written, so it is shown to
+    NEITHER a room read nor a unit-wide search, not to whoever asks now."""
     store = FakeGatheringStore()
     legacy = await store.create(_legacy_event(
         conversation_id="signal:room-a", title="Pre-migration dinner",
     ))
-    svc = _service(store=store, room_claims={
-        "signal:room-a": frozenset({("friends", "signal"), ("work", "signal")}),
-    })
+    svc = _service(store=store)
 
     assert not await svc.list_events(
         conversation_id="signal:room-a", unit_id="friends", platform="signal",
     )
     assert legacy.id not in {
         e.id for e in await svc.search_events(
-            unit_id="friends", conversation_id="signal:room-a",
+            unit_id="friends", conversation_id="signal:room-a", platform="signal",
         )
     }
 
 
-def _event_mutations(svc: GatheringService, event_id: uuid.UUID):
-    """Every write that authorizes a bare event id, as the FRIENDS caller."""
+async def test_a_row_with_a_persisted_platform_is_listed_and_searchable():
+    """The positive control: a row written with its owner is visible to that
+    room and to the unit-wide search, so the quarantine above is not a read that
+    simply never works."""
+    store = FakeGatheringStore()
+    svc = _service(store=store)
+    event = await svc.create_event(
+        conversation_id="signal:room-a", requester_person_id="miles",
+        title="Dinner", platform="signal", unit_id="friends",
+    )
+
+    assert [e.id for e in await svc.list_events(
+        conversation_id="signal:room-a", unit_id="friends", platform="signal",
+    )] == [event.id]
+    assert event.id in {
+        e.id for e in await svc.search_events(
+            unit_id="friends", conversation_id="signal:room-z", platform="signal",
+        )
+    }
+
+
+async def test_a_room_moved_to_another_unit_does_not_take_its_old_events():
+    """The historical reassignment: a row written by `work` stays `work`'s when
+    `policy.toml` later gives the same room id to `friends`. `friends` neither
+    reads nor mutates it, and `work` still does — the row's own persisted
+    owner, not the current assignment, decides."""
+    store = FakeGatheringStore()
+    work = _service(store=store)
+    event = await work.create_event(
+        conversation_id="signal:room-a", requester_person_id="miles",
+        title="Work dinner", platform="signal", unit_id="work",
+    )
+    friends = _service(store=store, honcho=_FakeHoncho())
+
+    assert not await friends.list_events(
+        conversation_id="signal:room-a", unit_id="friends", platform="signal",
+    )
+    assert event.id not in {
+        e.id for e in await friends.search_events(
+            unit_id="friends", conversation_id="signal:room-a", platform="signal",
+        )
+    }
+    for _name, call in _event_mutations(friends, event.id).items():
+        with pytest.raises(GatheringNotFoundError):
+            await call()
+    assert (await store.get(event.id)).unit_id == "work"
+    assert [e.id for e in await work.list_events(
+        conversation_id="signal:room-a", unit_id="work", platform="signal",
+    )] == [event.id]
+
+
+def _event_mutations(
+    svc: GatheringService, event_id: uuid.UUID, *, platform: str = "signal",
+    unit_id: str = "friends",
+):
+    """Every write that authorizes a bare event id, as the caller named."""
     return {
         "event_revise": lambda: svc.update_event(
             event_id=event_id, conversation_id="signal:room-a",
-            platform="signal", unit_id="friends", venue_text="elsewhere",
+            platform=platform, unit_id=unit_id, venue_text="elsewhere",
         ),
         "event_rsvp": lambda: svc.rsvp(
             event_id=event_id, conversation_id="signal:room-a",
             person_id="miles", response=RSVPResponse.YES,
-            platform="signal", unit_id="friends",
+            platform=platform, unit_id=unit_id,
         ),
         "event_set_status": lambda: svc.set_event_status(
             event_id=event_id, conversation_id="signal:room-a",
             status=GatheringStatus.CONFIRMED,
-            platform="signal", unit_id="friends",
+            platform=platform, unit_id=unit_id,
         ),
         "suggest_venue": lambda: svc.suggest_venue(
             event_id=event_id, conversation_id="signal:room-a",
-            roster_person_ids=(), platform="signal", unit_id="friends",
+            roster_person_ids=(), platform=platform, unit_id=unit_id,
         ),
     }
+
+
+async def test_every_event_mutation_refuses_the_same_room_id_on_another_platform():
+    """A platform move is a room move: the conversation string alone never
+    authorizes a write. The row keeps its persisted platform, and the same
+    room id on whatsapp cannot revise, answer, status-move or venue it."""
+    store = FakeGatheringStore()
+    event = await _service(store=store).create_event(
+        conversation_id="signal:room-a", requester_person_id="miles",
+        title="Work dinner", platform="signal", unit_id="work",
+    )
+    svc = _service(store=store, honcho=_FakeHoncho())
+    for name, call in _event_mutations(
+        svc, event.id, platform="whatsapp", unit_id="work",
+    ).items():
+        with pytest.raises(GatheringNotFoundError):
+            await call()
+        assert (await store.get(event.id)).platform == "signal", name
 
 
 async def test_every_event_mutation_refuses_another_units_event_with_the_same_room_id():
     """The row's own `unit_id` is authoritative: a foreign unit's id never
     passes because the conversation string happens to match."""
     store = FakeGatheringStore()
-    claims = {"signal:room-a": frozenset({("friends", "signal"), ("work", "signal")})}
-    foreign = await _service(store=store, room_claims=claims).create_event(
+    foreign = await _service(store=store).create_event(
         conversation_id="signal:room-a", requester_person_id="miles",
         title="Work dinner", platform="signal", unit_id="work",
     )
-    svc = _service(store=store, honcho=_FakeHoncho(), room_claims=claims)
+    svc = _service(store=store, honcho=_FakeHoncho())
     for name, call in _event_mutations(svc, foreign.id).items():
         with pytest.raises(GatheringNotFoundError):
             await call()
         assert (await store.get(foreign.id)).unit_id == "work", name
 
 
-async def test_every_event_mutation_refuses_an_ambiguous_legacy_event():
-    """A `unit_id=""` row two units claim is quarantined for WRITES too: the
-    authorizer cannot prove it is this caller's, so it refuses like an unknown
-    id rather than letting the first asker mutate it."""
+async def test_every_event_mutation_refuses_a_row_with_no_stored_platform():
+    """A `unit_id=""`/`platform=""` row is quarantined for WRITES too: there is
+    no persisted owner to prove it is this caller's, so it refuses like an
+    unknown id rather than letting the first asker mutate it."""
     store = FakeGatheringStore()
     legacy = await store.create(_legacy_event(
         conversation_id="signal:room-a", title="Pre-migration dinner",
     ))
-    svc = _service(store=store, honcho=_FakeHoncho(), room_claims={
-        "signal:room-a": frozenset({("friends", "signal"), ("work", "signal")}),
-    })
+    svc = _service(store=store, honcho=_FakeHoncho())
     for _name, call in _event_mutations(svc, legacy.id).items():
         with pytest.raises(GatheringNotFoundError):
             await call()
     assert not await store.rsvps_for(legacy.id)
+
+
+async def test_an_omitted_platform_is_not_a_wildcard_on_a_mutation():
+    """An internal caller that forgot to resolve the platform must fail closed,
+    not fall back to "any platform": `set_event_status` defaults to `""`, which
+    matches no persisted row, so a signal event is still refused."""
+    svc = _service()
+    event = await svc.create_event(
+        conversation_id="signal:room-a", requester_person_id="miles",
+        title="Dinner", platform="signal", unit_id="work",
+    )
+    with pytest.raises(GatheringNotFoundError):
+        await svc.set_event_status(
+            event_id=event.id, conversation_id="signal:room-a",
+            unit_id="work", status=GatheringStatus.CONFIRMED,
+        )

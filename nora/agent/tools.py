@@ -4245,7 +4245,7 @@ class EventsCollaborator(Protocol):
 
     async def set_event_status(
         self, *, event_id: UUID, conversation_id: str, status: GatheringStatus,
-        base_revision_id: UUID | None = None, platform: str | None = None,
+        base_revision_id: UUID | None = None, platform: str = "",
         unit_id: str = "", message_ids: Sequence[int] = (),
     ) -> Gathering: ...
 
