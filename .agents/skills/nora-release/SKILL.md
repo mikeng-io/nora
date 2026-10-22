@@ -1,11 +1,11 @@
 ---
 name: nora-release
-description: Cuts a Nora release the DEC-314 way. release-please on GitHub keeps one release PR built from Conventional Commits; merging it tags vX.Y.Z and publishes the GitHub Release. Then read back automatic Komodo deployment. Load when a task says release, cut a version, tag, changelog, release PR, release-please, or what version is live. Not for an ordinary deploy (nora-deploy).
+description: Cuts a Nora release the DEC-314 way. scripts/release_plan.py keeps one release PR from the Conventional Commits since the last tag; merging it tags vX.Y.Z and publishes the GitHub Release. Then read back Komodo deploy. Load for release, cut a version, tag, changelog, release PR, release-please, what version is live. Not for an ordinary deploy (nora-deploy).
 ---
 
 # nora-release
 
-Release Please opens the release PR. **While the repository is private, the
+`scripts/release_plan.py` opens the release PR (ADR 0027); release-please tags it. **Unless the `master` ruleset and the release App are in place, the
 maintainer merges it manually; auto-merge is not active.** Merging publishes the
 tag and GitHub Release. `release-images.yml` then publishes the complete image
 bundle to `deployments`; the enabled Komodo poller deploys it automatically.
@@ -46,8 +46,8 @@ the commits imply, and the CHANGELOG lines describe what users will see.
   release. If a `feat`/`fix` did land, read the newest run's log. If it failed
   creating the PR, the repo setting *Actions → General → Allow GitHub Actions
   to create and approve pull requests* is off.
-- **Wrong version**: land a commit on master (through `nora-land`) whose body
-  ends in `Release-As: X.Y.Z`. Release-please rewrites the PR on the next push.
+- **Wrong version**: `Release-As:` footers are no longer read (ADR 0027). Fix the
+  commit subjects that drove the bump; the PR is rewritten on the next push.
 - **Wrong wording**: never edit the PR branch, because the next push to master
   overwrites it. Edit the GitHub Release body after step 3
   (`gh release edit vX.Y.Z --notes-file …`), or fix it in the next release's

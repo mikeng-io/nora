@@ -17,7 +17,7 @@ import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 
-from scripts.check_commit_subject import SUBJECT_RE, check_subject
+from scripts.check_commit_subject import SUBJECT_RE, TYPES_RE, check_message, check_subject
 
 ROOT = Path(__file__).resolve().parents[1]
 PR_HEADINGS = re.findall(
@@ -41,6 +41,7 @@ PUBLIC_ISSUES = {
     ],
     "enhancement": ["Problem", "Proposed solution"],
 }
+BRANCH_RE = re.compile(rf"(?:{TYPES_RE})/[a-z0-9]+(?:-[a-z0-9]+)*")
 MARKER = "<!-- nora-contribution-feedback -->"
 PLACEHOLDER = re.compile(
     r"^(?:TODO|TBD|PENDING(?:_[A-Z]+)*|\.{3}|"
@@ -107,7 +108,34 @@ def substantive(text: str) -> bool:
     )
 
 
-def pr_problems(item: dict, repository: str, release_login: str = "") -> list[str]:
+# release-please swaps `pending` for `tagged` once it publishes the merged release PR; that
+# label change re-runs this check, which must still recognise the PR as the release PR.
+RELEASE_LABELS = frozenset({"autorelease: pending", "autorelease: tagged"})
+
+# GitHub's own "Update branch" button writes this subject; no local hook can see it.
+UPDATE_BRANCH_RE = re.compile(r"^Merge branch '[^']+' into \S+$")
+MAX_COMMIT_ERRORS = 5
+
+
+def commit_problems(commits: list[dict]) -> list[str]:
+    """Subject and body rules for every commit a PR carries, judged by the same function
+    the local commit-msg and pre-push hooks use, so a `--no-verify` commit is still seen."""
+    errors = []
+    for commit in commits:
+        message = commit["commit"]["message"]
+        subject = message.splitlines()[0] if message else ""
+        if len(commit.get("parents", [])) > 1 and UPDATE_BRANCH_RE.match(subject):
+            continue
+        for problem in check_message(message):
+            errors.append(f"Commit {commit['sha'][:7]}: {problem.splitlines()[0]}")
+    if len(errors) > MAX_COMMIT_ERRORS:
+        errors = [*errors[:MAX_COMMIT_ERRORS], f"...and {len(errors) - MAX_COMMIT_ERRORS} more."]
+    return errors
+
+
+def pr_problems(
+    item: dict, repository: str, release_login: str = "", commits: list[dict] | None = None
+) -> list[str]:
     title, body = item["title"].strip(), item.get("body") or ""
     errors = []
     if not SUBJECT_RE.fullmatch(title) or check_subject(title):
@@ -121,7 +149,7 @@ def pr_problems(item: dict, repository: str, release_login: str = "") -> list[st
         owned_bot
         and login in {"github-actions[bot]", release_login}
         and item["head"]["ref"].startswith("release-please--branches--master")
-        and any(x["name"] == "autorelease: pending" for x in item["labels"])
+        and any(x["name"] in RELEASE_LABELS for x in item["labels"])
     )
     if release:
         if not (
@@ -139,6 +167,13 @@ def pr_problems(item: dict, repository: str, release_login: str = "") -> list[st
                 "The dependency PR must contain Dependabot's generated update description."
             )
         return errors
+    if commits is not None:
+        errors.extend(commit_problems(commits))
+    if not BRANCH_RE.fullmatch(item["head"]["ref"]):
+        errors.append(
+            "Name the branch `<type>/<kebab-slug>` with a declared commit type, "
+            "e.g. `fix/message-delivery` (CONTRIBUTING.md, Branch naming)."
+        )
     found = sections(body)
     names = [name for name, _ in found]
     if len(set(names)) != len(names):
@@ -148,7 +183,7 @@ def pr_problems(item: dict, repository: str, release_login: str = "") -> list[st
     elif names != sorted(names, key=PR_HEADINGS.index):
         errors.append("Keep PR sections in the order shown in the template.")
     mapping = dict(found)
-    for name in ("What", "Gate on the merged tree"):
+    for name in ("What", "Gate on the merged tree", "Authored by"):
         if not substantive(mapping.get(name, "")):
             errors.append(f"Fill in `## {name}` with actual information/results.")
     if has_placeholders(title + "\n" + body) or PLACEHOLDER.fullmatch(
@@ -263,7 +298,16 @@ def check_pr(github, repository: str, number: int, event_head: str = "") -> int:
         user_id = os.environ.get("RELEASE_APP_BOT_USER_ID", "")
         author = item["user"]["login"]
         login = author if user_id.isdecimal() and str(item["user"].get("id")) == user_id else ""
-        errors = pr_problems(item, repository, release_login=login)
+        commits, page = [], 1
+        while page <= 10:
+            batch = github(
+                "GET", f"/repos/{repository}/pulls/{number}/commits?per_page=100&page={page}"
+            )
+            commits.extend(batch)
+            if len(batch) < 100:
+                break
+            page += 1
+        errors = pr_problems(item, repository, release_login=login, commits=commits)
         summary = (
             "\n".join(f"- {error}" for error in errors)
             or "Title and body follow the contribution rules."

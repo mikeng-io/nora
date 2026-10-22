@@ -34,7 +34,7 @@ jobs:
           ref: master
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
       - name: Check generation credentials
@@ -83,18 +83,21 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           GH_REPO: ${{ github.repository }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          APP_BOT_ID: ${{ vars.RELEASE_APP_BOT_USER_ID }}
         run: |
           set -eu
           test ! -f openwiki/.run.json
           git diff --exit-code -- openwiki/INSTRUCTIONS.md
           git add -- openwiki AGENTS.md CLAUDE.md
           if git diff --cached --quiet; then exit 0; fi
-          git config user.name 'Nora documentation bot'
-          git config user.email 'noreply@users.noreply.github.com'
-          git switch -C openwiki/update
+          test -n "$APP_SLUG" && test -n "$APP_BOT_ID"
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${APP_BOT_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
+          git switch -C docs/openwiki-update
           git commit -m 'docs: update the implementation wiki'
           gh auth setup-git
-          git push --force-with-lease origin HEAD:openwiki/update
+          git push --force-with-lease origin HEAD:docs/openwiki-update
           cat > "$RUNNER_TEMP/wiki-pr.md" <<'BODY'
           ## What
           Refresh the source-grounded implementation wiki with OpenWiki. Review the generated Markdown and claim changes before merging.
@@ -102,9 +105,9 @@ jobs:
           ## Gate on the merged tree
           OpenWiki completed successfully and the proposed static wiki built successfully. The PR's CI and public-site build provide the remaining checks; no live deployment or model-quality acceptance is claimed.
           BODY
-          existing=$(gh pr list --head openwiki/update --base master --json number --jq '.[0].number // empty')
+          existing=$(gh pr list --head docs/openwiki-update --base master --json number --jq '.[0].number // empty')
           if [ -n "$existing" ]; then
             gh pr edit "$existing" --body-file "$RUNNER_TEMP/wiki-pr.md"
           else
-            gh pr create --base master --head openwiki/update --title 'docs: update the implementation wiki' --body-file "$RUNNER_TEMP/wiki-pr.md"
+            gh pr create --base master --head docs/openwiki-update --title 'docs: update the implementation wiki' --body-file "$RUNNER_TEMP/wiki-pr.md"
           fi

@@ -21,9 +21,9 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: contribution-${{ github.event.pull_request.number || github.event.issue.number || inputs.number }}-${{ inputs.kind || (github.event_name == 'pull_request_target' && 'pr' || 'issue') }}
-  cancel-in-progress: true
+# No concurrency group: a run cancelled by a newer event leaves a cancelled `pr-metadata`
+# check on the same commit, and the merge rules treat that as unsatisfied even though a
+# newer run is green. Every run reads the live title and body, so none can go stale.
 
 jobs:
   pr-metadata:
@@ -46,7 +46,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_APP_BOT_USER_ID: ${{ vars.RELEASE_APP_BOT_USER_ID }}
         run: python3 -m scripts.check_contribution_content
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         if: always()
         continue-on-error: true
         with:
@@ -73,7 +73,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 -m scripts.check_contribution_content
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         if: always()
         continue-on-error: true
         with:

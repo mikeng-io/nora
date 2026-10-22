@@ -125,7 +125,10 @@ gh pr view <N> --json baseRefName,headRefOid       # master, and == git rev-pars
 - A bare `git merge origin/master` writes a default subject the hook refuses.
 - Title: append `(#N, DEC-M)` only when it closes an issue or lands a decision.
 - Body: the template headings exactly, in order: `What`, `Also`, `Gate on the
-  merged tree`, `Closes`; delete what does not apply. Never
+  merged tree`, `Authored by`, `Closes`; delete what does not apply (`What`,
+  `Gate on the merged tree` and `Authored by` are required). `Authored by` names
+  human or agent, the tool and model for an agent, and who reviewed it. Labels and
+  the assignee are set by the PR triage workflow; do not set them by hand. Never
   `Summary` or `Test plan`, both retired (still in 11 of the last 140 PRs).
 - Gate section: the real outcome (GATE_RC, pass count, origin/master sha merged
   in); a pre-existing unrelated failure is named with its issue number; the

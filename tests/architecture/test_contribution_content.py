@@ -10,7 +10,8 @@ from scripts import check_contribution_content as content
 
 BODY = (
     "## What\nFix a documentation typo.\n\n## Gate on the merged tree\n"
-    "make gate: exit 0; 50 passed.\n"
+    "make gate: exit 0; 50 passed.\n\n"
+    "## Authored by\nagent: Claude in Claude Code; reviewed by Kimi.\n"
 )
 
 
@@ -49,6 +50,27 @@ def test_valid_human_pr():
 )
 def test_incomplete_or_placeholder_pr_fails(title, body):
     assert content.pr_problems(pr(title=title, body=body), "owner/repo")
+
+
+@pytest.mark.parametrize(
+    "branch,ok",
+    [
+        ("fix/message-delivery", True),
+        ("security/aikido-high-triage", True),
+        ("docs/openwiki-update", True),
+        ("mikeng-io/aikido-high-triage", False),  # owner-named, the form an agent used
+        ("fix/Message_Delivery", False),
+        ("fix/", False),
+        ("fix", False),
+        ("wip/thing", False),
+        ("fix/a/b", False),
+        ("ordinary-branch", False),
+    ],
+)
+def test_branch_name_follows_the_declared_type_slug_convention(branch, ok):
+    item = pr()
+    item["head"]["ref"] = branch
+    assert (content.pr_problems(item, "owner/repo") == []) is ok
 
 
 def test_code_examples_do_not_invent_sections_or_placeholders():
@@ -159,9 +181,11 @@ def test_bug_reports_accept_code_and_logs_without_treating_fenced_headings_as_fi
         "### Version and environment\nNora 6.2.0, Linux, Node 22.\n",
     }
     assert content.issue_problems(item) == []
-    item["body"] = item["body"].replace(
-        "### Expected behavior\nThe service remains available.\n", ""
-    ).replace("node src/service.mjs", "node src/service.mjs\n### Expected behavior\nSpoofed")
+    item["body"] = (
+        item["body"]
+        .replace("### Expected behavior\nThe service remains available.\n", "")
+        .replace("node src/service.mjs", "node src/service.mjs\n### Expected behavior\nSpoofed")
+    )
     assert any("Expected behavior" in error for error in content.issue_problems(item))
 
 
@@ -201,6 +225,13 @@ def test_design_issue_accepts_both_form_fields_and_the_documented_prose_anchor()
     assert not content.issue_problems(item)
 
 
+def commit(message, parents=1, sha="abcdef1234"):
+    return {"sha": sha, "commit": {"message": message}, "parents": [{}] * parents}
+
+
+GOOD_COMMITS = [commit("docs: clarify setup\n")]
+
+
 class GitHub:
     """Only the real endpoints this flow may call exist; wrong calls fail."""
 
@@ -213,6 +244,8 @@ class GitHub:
         self.calls.append((method, path, body))
         if (method, path) == ("GET", "/repos/owner/repo/pulls/104"):
             return self.item
+        if method == "GET" and path == "/repos/owner/repo/pulls/104/commits?per_page=100&page=1":
+            return getattr(self, "commits", GOOD_COMMITS)
         if method == "POST" and path == "/repos/owner/repo/check-runs":
             assert body["head_sha"] == self.item["head"]["sha"]
             return {"id": 7}
@@ -302,8 +335,16 @@ def test_issue_feedback_updates_once_and_clears_only_its_own_comment_after_corre
 @pytest.mark.parametrize(
     "case",
     [
-        "valid", "renamed", "unconfigured", "wrong-id", "missing-id",
-        "human", "fork", "branch", "label", "body",
+        "valid",
+        "renamed",
+        "unconfigured",
+        "wrong-id",
+        "missing-id",
+        "human",
+        "fork",
+        "branch",
+        "label",
+        "body",
     ],
 )
 def test_private_release_bot_uses_the_pinned_user_identity(monkeypatch, case):
@@ -357,10 +398,9 @@ def test_privileged_metadata_jobs_use_only_default_branch_code():
     workflow = yaml.safe_load(
         (content.ROOT / ".github/workflows/contribution-content.yml").read_text()
     )
-    assert (
-        "inputs.kind || (github.event_name == 'pull_request_target' && 'pr' || 'issue')"
-        in workflow["concurrency"]["group"]
-    )
+    # A run cancelled by a newer event leaves a cancelled `pr-metadata` check on the same
+    # commit, and the merge rules treat that as unsatisfied even when a newer run is green.
+    assert "concurrency" not in workflow
     for job in workflow["jobs"].values():
         for step in job["steps"]:
             if step.get("uses", "").startswith("actions/checkout@"):
@@ -415,3 +455,53 @@ def test_metadata_read_failure_replaces_old_success_on_event_head():
         content.check_pr(github, "owner/repo", 104, event_head="event-head")
     assert calls[-1][2]["head_sha"] == "event-head"
     assert calls[-1][2]["conclusion"] == "failure"
+
+
+def test_authored_by_is_required_for_a_human_pr():
+    body = BODY.split("## Authored by")[0]
+    assert any("Authored by" in e for e in content.pr_problems(pr(body=body), "owner/repo"))
+
+
+def test_every_commit_of_a_pr_is_judged_by_the_hooks_own_rules():
+    """`--no-verify` skips the local hooks; the PR check does not."""
+    bad = [commit("fix: do a thing\n", sha="1111111"), commit("did stuff\n", sha="2222222")]
+    problems = content.pr_problems(pr(), "owner/repo", commits=bad)
+    assert any(p.startswith("Commit 1111111") and "body" in p for p in problems)
+    assert any(p.startswith("Commit 2222222") and "type" in p for p in problems)
+    assert content.pr_problems(pr(), "owner/repo", commits=GOOD_COMMITS) == []
+
+
+def test_githubs_update_branch_merge_is_not_held_to_the_authored_merge_rule():
+    update = commit("Merge branch 'master' into docs/setup\n", parents=2)
+    assert content.pr_problems(pr(), "owner/repo", commits=[update]) == []
+    plain = commit("Merge branch 'master' into docs/setup\n", parents=1)
+    assert content.pr_problems(pr(), "owner/repo", commits=[plain])
+
+
+def test_commit_errors_are_capped_so_a_long_branch_does_not_flood_the_summary():
+    many = [commit("did stuff\n", sha=f"{n:07d}") for n in range(12)]
+    errors = content.commit_problems(many)
+    assert len(errors) == content.MAX_COMMIT_ERRORS + 1 and errors[-1].startswith("...and 7")
+
+
+def test_a_bad_commit_fails_the_published_check():
+    github = GitHub(pr())
+    github.commits = [commit("fix: do a thing\n")]
+    assert content.check_pr(github, "owner/repo", 104) == 1
+    assert github.calls[-1][2]["conclusion"] == "failure"
+
+
+@pytest.mark.parametrize("label", ["autorelease: pending", "autorelease: tagged"])
+def test_a_release_pr_stays_a_release_pr_after_release_please_tags_it(label):
+    """Tagging swaps the label and that re-runs the check on the merged PR; it must not
+    be judged as a human PR and fail."""
+    item = release_pr()
+    item["labels"] = [{"name": label}]
+    assert content.pr_problems(item, "owner/repo", release_login="github-actions[bot]") == []
+
+
+def test_a_human_cannot_claim_the_release_shape_with_the_tagged_label():
+    item = release_pr()
+    item["labels"] = [{"name": "autorelease: tagged"}]
+    item["user"] = {"login": "contributor", "type": "User"}
+    assert content.pr_problems(item, "owner/repo")
