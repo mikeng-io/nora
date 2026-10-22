@@ -1,7 +1,9 @@
 # Security fixes are grouped per ecosystem across the listed directories.
-# Keep routine version updates limited to the existing monthly Actions group.
+# Keep routine version updates limited to the monthly Actions and base-image groups.
 # Every update is assigned to the maintainer and carries the repo's own labels: the triage
 # workflow cannot label a Dependabot PR (its token is read-only), so this file does it.
+# Security-only ecosystems commit as `security(deps)`, a user-visible type, so a patched
+# dependency triggers a release by itself; Actions bumps stay the hidden `build(deps)`.
 version: 2
 updates:
 - package-ecosystem: github-actions
@@ -23,6 +25,36 @@ updates:
       applies-to: security-updates
       patterns:
       - '*'
+- package-ecosystem: docker
+  directories:
+  - /
+  - /app
+  - /deploy/alert-bridge
+  - /deploy/computer
+  - /deploy/instagram-bridge
+  - /deploy/komodo
+  - /deploy/signal-cli
+  - /deploy/stt
+  - /deploy/voice-sidecar
+  - /deploy/voice-wake
+  - /deploy/whatsapp-bridge
+  - /site
+  schedule:
+    interval: monthly
+  assignees:
+  - mikeng-io
+  labels:
+  - dependencies
+  - 'type: security'
+  - 'area: deps'
+  commit-message:
+    prefix: security
+    include: scope
+  open-pull-requests-limit: 3
+  groups:
+    base-images:
+      patterns:
+      - '*'
 - package-ecosystem: uv
   directories:
   - /
@@ -34,8 +66,11 @@ updates:
   - mikeng-io
   labels:
   - dependencies
-  - 'type: build'
+  - 'type: security'
   - 'area: deps'
+  commit-message:
+    prefix: security
+    include: scope
   open-pull-requests-limit: 0
   groups:
     uv-security:
@@ -51,8 +86,11 @@ updates:
   - mikeng-io
   labels:
   - dependencies
-  - 'type: build'
+  - 'type: security'
   - 'area: deps'
+  commit-message:
+    prefix: security
+    include: scope
   open-pull-requests-limit: 0
   groups:
     pip-security:
@@ -75,8 +113,11 @@ updates:
   - mikeng-io
   labels:
   - dependencies
-  - 'type: build'
+  - 'type: security'
   - 'area: deps'
+  commit-message:
+    prefix: security
+    include: scope
   open-pull-requests-limit: 0
   groups:
     npm-security:
@@ -92,8 +133,11 @@ updates:
   - mikeng-io
   labels:
   - dependencies
-  - 'type: build'
+  - 'type: security'
   - 'area: deps'
+  commit-message:
+    prefix: security
+    include: scope
   open-pull-requests-limit: 0
   groups:
     gomod-security:

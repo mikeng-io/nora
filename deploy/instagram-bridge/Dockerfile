@@ -5,7 +5,7 @@
 # (CA certificates to speak TLS to instagram.com, and curl for the compose
 # healthcheck).
 
-FROM golang:1.27.3-bookworm AS build
+FROM golang:1.27.3-bookworm@sha256:972b4110ba0f47539a975c31e52c64765e1ff19f2d74469ae4a595c6676e80a5 AS build
 WORKDIR /src
 
 # go.mod and go.sum first so the module download layer survives a code edit.
@@ -40,7 +40,7 @@ COPY internal ./internal
 RUN go vet ./... && IG_BRIDGE_IMAGE_BUILD=1 go test ./... && \
     CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/instagram-bridge ./cmd/instagram-bridge
 
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
 
 # ca-certificates is not optional: every request to instagram.com is TLS and a
 # slim image ships no trust store, so without it the bridge fails at LoadIndex
