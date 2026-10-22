@@ -83,6 +83,9 @@ class VideoDesk:
         # which the next create does before it reads the cap. Not durable: a restart during a
         # database outage loses them, and that residual is named in the PR, not papered over.
         self._unrecorded: list[ComputeJob] = []
+        # One reconcile at a time: the fast path reconciles without the create lock, so two of
+        # them could both see a held row missing from the table and both insert it.
+        self._reconcile_lock = asyncio.Lock()
 
     def _day_start(self) -> datetime:
         local = self._clock().astimezone(self._tz)
@@ -91,14 +94,19 @@ class VideoDesk:
     async def used_today(self, *, platform: str, conversation_id: str) -> int:
         """This room's clips since local midnight; other rooms' rows are not counted.
 
-        Held rows are counted too, so a failed write cannot reopen the cap in this process.
+        Every cap read reconciles first, so a held row the store has taken back is counted once,
+        from the table. Held rows are counted too, so a failed write cannot reopen the cap in
+        this process, and only those from today: a held row from yesterday is not today's clip.
         They are read BEFORE the table: a row reconciled during the read is then counted twice,
         which fails closed, never once-too-few."""
+        await self._reconcile()
+        day_start = self._day_start()
         held = sum(
             1 for r in self._unrecorded
             if r.platform == platform and r.conversation_id == conversation_id
+            and r.created_at >= day_start
         )
-        rows = await self._jobs.kind_since(kind=VIDEO_KIND, since=self._day_start())
+        rows = await self._jobs.kind_since(kind=VIDEO_KIND, since=day_start)
         return held + sum(
             1 for r in rows
             if r.platform == platform and r.conversation_id == conversation_id
@@ -119,15 +127,17 @@ class VideoDesk:
     async def _reconcile(self) -> None:
         """Write held rows, oldest first, stopping at the first that still fails. A row the
         table already holds (its write landed but the call raised) is dropped, not re-inserted."""
-        while self._unrecorded:
-            row = self._unrecorded[0]
-            try:
-                if await self._jobs.get(row.id) is None:
-                    await self._jobs.create(row)
-            except Exception:
-                log.exception("video_create: a held row is still unwritten; retried next create")
-                return
-            self._unrecorded.pop(0)
+        async with self._reconcile_lock:
+            while self._unrecorded:
+                row = self._unrecorded[0]
+                try:
+                    if await self._jobs.get(row.id) is None:
+                        await self._jobs.create(row)
+                except Exception:
+                    log.exception(
+                        "video_create: a held row is still unwritten; retried next create")
+                    return
+                self._unrecorded.pop(0)
 
     async def _record_uncertain(
         self, *, platform: str, conversation_id: str, conversation_type: str,
@@ -183,7 +193,6 @@ class VideoDesk:
                 return VideoOutcome("started", id=self._turn_jobs[key], repeated=True)
             if tag_id and key in self._turn_spent:
                 return VideoOutcome("unavailable", reason=self._turn_spent[key])
-            await self._reconcile()
             try:
                 used = await self.used_today(platform=platform, conversation_id=conversation_id)
             except Exception:

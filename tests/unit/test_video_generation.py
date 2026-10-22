@@ -816,6 +816,83 @@ async def test_a_refused_start_writes_no_row_and_spends_no_cap():
     assert await store.kind_since(kind=VIDEO_KIND, since=NOW - timedelta(days=1)) == []
 
 
+class _Fitting(_Starter):
+    """A backend whose `prepare` fits every reference: it returns the request unchanged, so a
+    clip takes the fast path that runs before the lock."""
+
+    async def prepare(self, request: VideoRequest) -> VideoRequest | VideoStart:
+        return request
+
+
+CLIP_REQUEST = VideoRequest("x", references=(VideoReference("a" * 64, b"clip", kind="video"),))
+
+
+async def _make_clip(desk: VideoDesk, tag: str, room: str = ROOM) -> Any:
+    return await desk.create(
+        platform=PLATFORM, conversation_id=room, conversation_type="group",
+        requester_person_id="miles", tag_id=tag, request=CLIP_REQUEST)
+
+
+async def test_a_held_clip_is_written_by_the_next_fitted_turn_even_when_the_room_is_at_cap():
+    """The provider accepted the clip and its row failed to write. The next turn's fitted clip
+    takes the fast path, which answers a room at its cap before the lock: that answer must not
+    skip the reconcile, or the held row is never written and the poller never delivers the clip."""
+    store = _FlakyStore()
+    starter = _Fitting()
+    desk = _desk(store, starter, cap=1)
+    first = await _make_clip(desk, tag="t1")
+    assert (first.status, first.reason) == ("unavailable", "row_not_written")
+    store.down = False
+    second = await _make_clip(desk, tag="t2")
+    assert second.status == "at_cap"
+    rows = await store.kind_since(kind=VIDEO_KIND, since=NOW - timedelta(days=1))
+    assert [r.backend_job_id for r in rows] == ["T1@1"]
+    assert len(starter.calls) == 1
+
+
+async def test_concurrent_fitted_turns_write_a_recovered_row_exactly_once():
+    """Two fitted turns reconcile at once on the fast path. Both see the held row missing from the
+    table and both would insert it, so the reconcile runs one at a time."""
+
+    class _Counting(_FlakyStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.writes = 0
+
+        async def create(self, job: ComputeJob) -> None:
+            if self.down:
+                raise RuntimeError("db down")
+            await asyncio.sleep(0)               # the write yields, so the two can interleave
+            self.writes += 1
+            await super().create(job)
+
+    store = _Counting()
+    desk = _desk(store, _Fitting(), cap=1)
+    assert (await _make_clip(desk, tag="t1")).status == "unavailable"
+    store.down = False
+    store.writes = 0
+    first, second = await asyncio.gather(
+        _make_clip(desk, tag="t2"), _make_clip(desk, tag="t3"))
+    assert (first.status, second.status) == ("at_cap", "at_cap")
+    assert store.writes == 1
+
+
+async def test_a_held_clip_from_yesterday_does_not_count_against_today():
+    """A row held since 23:00 local yesterday is not a clip of today: the day predicate applies to
+    held rows as it does to table rows, so a room with no clip today is not refused `at_cap`."""
+    store = _FlakyStore()
+    starter = _Starter()
+    clock = [NOW - timedelta(hours=13)]          # 23:00 HKT yesterday; the store stays down
+    desk = VideoDesk(
+        jobs=store, backend=starter, clock=lambda: clock[0], tz=HKT, max_per_room_per_day=1)
+    first = await _make(desk, tag="t1")
+    assert (first.status, first.reason) == ("unavailable", "row_not_written")
+    clock[0] = NOW                               # 12:00 HKT today
+    second = await _make(desk, tag="t2")
+    assert (second.status, second.reason) == ("unavailable", "row_not_written")
+    assert len(starter.calls) == 2
+
+
 # ---- the tool --------------------------------------------------------------------------------
 
 
