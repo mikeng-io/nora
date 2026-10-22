@@ -165,7 +165,8 @@ async def test_inputs_renders_the_items_with_counts_and_makes_them_citable() -> 
     run = adaptor._runs[KEY]
     assert run.citable.social == {
         "instagram:abc": Said(ts=int(item.taken_at.timestamp() * 1000),
-                              person_id="ada", room=None),
+                              person_id="ada", room=None, medium="social",
+                              occasion="social:instagram:abc"),
     }
     # And only the handed items move the cursor.
     assert evidence._reads[KEY].reach == 10

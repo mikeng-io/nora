@@ -17,7 +17,8 @@ entity's own inputs:
   room answered her. Her sends are read for their time and never made
   citable.
 
-No presence is read (R-31), and no stimulus wake exists here: a turn's
+Named presence and social sources share the person evidence shape. No stimulus wake exists here:
+a turn's
 `told` line or dispute names a PERSON's account, never a collective's, so
 there is nothing to wake on but the evidence count and the stale rule.
 """
@@ -26,7 +27,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Literal, Protocol
 
@@ -37,6 +38,7 @@ from nora.domain.blocks import (
     render_elements,
     render_group,
     render_row_window,
+    restamp,
 )
 from nora.domain.culture import Episode, RoomMessage
 from nora.domain.persona import (
@@ -47,8 +49,16 @@ from nora.domain.persona import (
     handles_for,
     identity_text,
 )
+from nora.domain.persona_inputs import PersonSourceRevision
 from nora.domain.prompt import age, escape
-from nora.language.character import CharacterRoom, room_cultures_block
+from nora.language.character import (
+    CharacterRoom,
+    _caption,
+    _Shown,
+    _shows,
+    _within_budget,
+    room_cultures_block,
+)
 from nora.language.culture import CULTURE_TOOLS
 from nora.language.persona import (
     PersonaPersonAdaptor,
@@ -93,6 +103,8 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("previous_character", 20, "turn"),
     ("persona_messages", 40, "turn"),
     ("persona_episodes", 50, "turn"),
+    ("social_items", 55, "turn"),
+    ("persona_source_revisions", 60, "turn"),
 )
 _ROW: dict[str, tuple[int, BlockKey]] = {name: (order, key) for name, order, key in _BLOCKS}
 
@@ -156,7 +168,11 @@ class CollectiveEvidence:
         keys: Mapping[str, CollectiveKey],
         kind: Literal["room", "unit", "nora"],
         render: bool = False,
+        source_inputs: Any = None,
+        members: Mapping[str, tuple[str, ...]] | None = None,
     ) -> None:
+        self._source_inputs = source_inputs
+        self._members = members or {}
         self._store = store
         self._keys = keys
         self._kind = kind
@@ -187,6 +203,17 @@ class CollectiveEvidence:
             rooms=[(r.platform, r.key) for r in ck.rooms], after=after)
 
     async def newest(self, *, key: str, after: int, limit: int) -> tuple[Sequence[Any], int]:
+        batch, cursor = await self._newest(key=key, after=after, limit=limit)
+        extra: list[Any] = []
+        if self._source_inputs is not None:
+            ck = self._keys[key]
+            for person in self._members.get(key, ()):
+                extra.extend(await self._source_inputs.rollup(key=key, unit=ck.unit,
+                    rooms=[(r.platform, r.key) for r in ck.rooms], person=person, limit=limit))
+                extra.extend(await self._source_inputs.social(key=key, persons=(person,), limit=6))
+        return [*batch, *extra], cursor
+
+    async def _newest(self, *, key: str, after: int, limit: int) -> tuple[Sequence[Any], int]:
         ck = self._keys[key]
         self._held[key] = after
         if self._kind == "unit":
@@ -210,10 +237,16 @@ class CollectiveEvidence:
         return False
 
     def handed(self, key: str, items: Sequence[Any]) -> None:
-        pass
+        self._handed = getattr(self, "_handed", {})
+        self._handed[key] = tuple(x for x in items if isinstance(x, PersonSourceRevision))
+
+    async def settle(self, *, key: str) -> None:
+        if self._source_inputs is not None:
+            await self._source_inputs.settle(key=key,
+                revisions=getattr(self, "_handed", {}).pop(key, ()))
 
     def forget(self, key: str) -> None:
-        pass
+        getattr(self, "_handed", {}).pop(key, None)
 
     def gave_up(self, key: str) -> None:
         pass
@@ -240,6 +273,9 @@ class PersonaCollectiveAdaptor(PersonaPersonAdaptor):
         metrics: Metrics | None = None,
         clock: Callable[[], datetime] | None = None,
         render: bool = False,
+        media_join: Any = None,
+        screen: Callable[[str], str | None] | None = None,
+        coordinate_screen: Callable[[str], bool] | None = None,
     ) -> None:
         super().__init__(
             persona=persona,
@@ -251,7 +287,8 @@ class PersonaCollectiveAdaptor(PersonaPersonAdaptor):
             clock_ms=clock_ms,
             metrics=metrics,
             clock=clock,
-            render=render,
+            render=render, media_join=media_join, screen=screen,
+            coordinate_screen=coordinate_screen,
         )
         # Re-stated, not re-read: the store-calls walk
         # (tests/architecture/test_dream_store_calls_are_declared.py) reads a
@@ -284,11 +321,15 @@ class PersonaCollectiveAdaptor(PersonaPersonAdaptor):
         revision, settled_at = await self._persona.account_state(key=key)
         heads = await self._persona.account_heads(key=key)
         allowed = frozenset(r.key for r in ck.rooms)
+        revisions = [x for x in batch if isinstance(x, PersonSourceRevision)]
+        roots = [m for x in revisions for m in x.roots]
+        batch = [*batch, *roots]
+        social = [x for x in revisions if x.social is not None]
         messages = [m for m in batch if isinstance(m, RoomMessage)
                     and m.room in allowed and not m.row.is_nora]
         episodes = [e for e in batch if isinstance(e, Episode) and e.room in allowed
                     and e.outcome not in ("open", "unknown") and e.is_evidence]
-        if not (messages or episodes or (self._kind == "unit" and batch)):
+        if not (messages or episodes or revisions or (self._kind == "unit" and batch)):
             return ""
         # THE BACKFILL (35 §4), the person session's rule: until a session
         # first settles the account it is handed the prose head under the same
@@ -328,12 +369,38 @@ class PersonaCollectiveAdaptor(PersonaPersonAdaptor):
         replies = [RoomMessage(room=e.room, row=r) for e in episodes
                    for r in e.replies if not r.is_nora]
         said = {m.row.id: _said(m) for m in [*messages, *replies]}
+        for episode in episodes:
+            for reply in episode.replies:
+                if not reply.is_nora:
+                    said[reply.id] = Said(reply.ts, reply.person_id, episode.room,
+                        occasion=f"response:{episode.send_id}", medium="act")
+        shown, social_block = _within_budget([
+            _Shown(item=r.social, caption=_caption(r.social.caption, person=r.subject or "",
+                owners=self._handle_owners), counts=r.counts,
+                shows=_shows(r.social, screen=self._screen, render_chars=4000,
+                    metrics=self._metrics, person=r.subject or "", owners=self._handle_owners)
+                if self._screen is not None else None)
+            for r in social if r.social is not None], self._clock())
+        shown_ids = {(x.item.network, x.item.item_id) for x in shown}
+        revisions = [r for r in revisions if r.social is None
+                     or (r.social.network, r.social.item_id) in shown_ids]
+        social = [r for r in revisions if r.social is not None]
+        self.evidence.handed(key, revisions)
+        if self._media_join is not None:
+            enriched = await self._media_join.enrich(tuple(m.row for m in messages), path="dreamer")
+            messages = [replace(m, row=row) for m, row in zip(messages, enriched, strict=True)]
         self._runs[key] = _Run(
             account=Account(key=key, entity_kind=self._kind, unit=ck.unit),
             citable=PersonaCitable(
                 messages=said,
-                episodes={e.send_id: Said(stamps[e.send_id], None, e.room)
-                          for e in episodes},
+                sources={c: source for r in revisions for c, source in r.evidence},
+                social={f"{x.social.network}:{x.social.item_id}": Said(
+                    int(x.social.taken_at.timestamp() * 1000),
+                    x.subject, None, occasion=f"social:{x.social.network}:{x.social.item_id}",
+                    medium="social") for x in social if x.social is not None},
+                social_subjects=frozenset(x.subject for x in social if x.subject is not None),
+                episodes={e.send_id: Said(stamps[e.send_id], None, e.room,
+                          occasion=f"response:{e.send_id}", medium="act") for e in episodes},
                 listed_rooms=allowed,
             ),
             revision=revision, heads=heads, batch_start=self.evidence.held(key),
@@ -434,4 +501,15 @@ class PersonaCollectiveAdaptor(PersonaPersonAdaptor):
                 ),
             ),
         ]
-        return assemble([p for p in parts if p is not None], sep="\n\n")
+        if social_block is not None:
+            parts.append(restamp(social_block, _ROW))
+        if revisions:
+            import json
+            parts.append(ContextBlock(name="persona_source_revisions",
+                **_at("persona_source_revisions"),
+                body=escape(json.dumps([{"source": r.source, "cite": r.citable,
+                    "from": self._name_of(r.subject) if r.subject else "computed",
+                    "as_of": r.as_of, "from_time": r.effective_from,
+                    "to_time": r.effective_until, "properties": dict(r.properties)}
+                    for r in revisions], ensure_ascii=False))))
+        return self._checked_input(key, assemble([p for p in parts if p is not None], sep="\n\n"))

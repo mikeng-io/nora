@@ -401,6 +401,11 @@ async def test_representation_sources_use_composed_writer_and_store(
                   if vector == "observed_sharing" else
                   "Observed participating on Signal and Discord; account ownership "
                   "and usual frequency unknown")}
+        if vector != "categorical_report":
+            op.update(kind="style", content={"statement": op["text"],
+                "context": "observed source interval; frequency unknown", "language": "unknown",
+                "register": "unknown", "length": "unknown", "timing": "unknown",
+                "medium": "chat"})
         if vector == "categorical_report":
             op.update(part="identity", kind="attribute", mode="told", told_by="Miles",
                       text="source-reported categorical statement", fact_key="attribute",

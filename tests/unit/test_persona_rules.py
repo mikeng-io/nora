@@ -215,8 +215,9 @@ def _deduced(cites=("101",), draws=()) -> AddOp:
 
 def test_a_deduction_needs_two_premises() -> None:
     assert _reasons(_plan([_deduced()])) == ["deduced_premises"]
-    assert not _plan([_deduced(cites=("101", "102"))]).refused
-    assert not _plan([_deduced(draws=("P1",))], (_line(1),)).refused
+    assert _reasons(_plan([_deduced(cites=("101", "102"))])) == ["induced_instances"]
+    assert not _plan([_deduced(cites=("101", "102", "103"))]).refused
+    assert _reasons(_plan([_deduced(draws=("P1",))], (_line(1),))) == ["induced_instances"]
 
 
 def test_a_hypothesis_is_never_a_premise() -> None:
@@ -243,8 +244,8 @@ def test_an_induction_spans_two_hong_kong_days() -> None:
     assert not _plan([_induced(cites=("301", "302", "101"))]).refused
 
 
-def test_one_rollup_aggregate_key_is_enough_for_an_induction() -> None:
-    assert not _plan([_induced(cites=(TIE,))]).refused
+def test_one_rollup_aggregate_key_needs_dated_occasion_roots() -> None:
+    assert _reasons(_plan([_induced(cites=(TIE,))])) == ["support_unavailable"]
 
 
 # --- abduced --------------------------------------------------------------------
@@ -255,7 +256,9 @@ def _abduced(draws=("P1",), **kw) -> AddOp:
               "prediction_observable": "a short game chosen on a weekday evening",
               "prediction_window_end": NOW + 30 * DAY} | kw
     return AddOp(part="hypothesis", kind="explanation", text="weekday evenings are short",
-                 mode="abduced", citations=("101",), draws_on=draws, **fields)
+                 mode="abduced", citations=("101",), draws_on=draws,
+                 content={"proposed_cause": "limited evenings", "alternative": "prefers brevity"},
+                 **fields)
 
 
 def test_a_hypothesis_carries_prediction_observable_and_an_open_window() -> None:
@@ -287,7 +290,7 @@ def test_a_new_hypothesis_starts_open() -> None:
 def test_told_by_the_subject_outranks_an_induced_trait_and_both_stay() -> None:
     held = (_line(1),)  # induced
     op = AddOp(part="character", kind="trait", text="x", mode="deduced",
-               citations=("101", "102"), conflicts_with="P1")
+               citations=("101", "102", "103"), conflicts_with="P1")
     plan = _plan([op], held)
     assert not plan.refused
     lowered = [x for x in plan.inserts if x.supersedes == held[0].id]
@@ -330,8 +333,8 @@ def test_rewording_an_outranked_line_does_not_win_it_back() -> None:
 # --- caps and decay -------------------------------------------------------------
 
 
-def test_a_sixth_trait_is_over_the_cap_unless_one_is_retired() -> None:
-    held = tuple(_line(n) for n in range(1, 6))
+def test_a_tenth_trait_is_over_the_cap_unless_one_is_retired() -> None:
+    held = tuple(_line(n) for n in range(1, 10))
     assert _reasons(_plan([_induced()], held)) == ["over_cap"]
     assert not _plan([_induced(), RetireOp(line="P1", why="stale")], held).refused
 
@@ -427,7 +430,7 @@ def test_a_revision_keeps_premises_revised_since_through_their_chain() -> None:
     plan = plan_write(
         account=HUMAN, heads=(newer, deduced),
         ops=[ReviseOp(line=next(h for h, i in handles_for((newer, deduced)).items()
-                                if i == deduced.id), citations=("102",))],
+                                if i == deduced.id), citations=("101", "102", "103"))],
         citable=CITABLE, now_ms=NOW, written_by_session="t", screen=lambda _t: None,
         apply_decay=False, aliases={premise.id: newer.id},
     )
@@ -479,7 +482,7 @@ def test_social_items_are_induced_instances_counted_on_hong_kong_days() -> None:
 
 
 def test_a_social_item_is_a_deduced_premise() -> None:
-    assert not _plan([_deduced(cites=("101", _item("7001")))], citable=SOCIAL).refused
+    assert not _plan([_deduced(cites=("101", "102", _item("7001")))], citable=SOCIAL).refused
     assert _reasons(_plan([_deduced(cites=(_item("7001"),))], citable=SOCIAL)) == [
         "deduced_premises"]
 
@@ -685,22 +688,22 @@ def test_quantity_contract_preserves_assertion_without_computing_age_or_birthday
 def test_rollup_rebuild_and_alias_with_same_roots_cannot_add_support_or_refresh_age():
     other = rollup_citation('daybook', UNIT + '|' + SUBJECT)
     citable = replace(CITABLE, rollup_keys=frozenset({TIE, other}),
-        rollup_roots={TIE: ('101', '102'), other: ('101', '102')})
+        rollup_roots={TIE: ('101', '102', '103'), other: ('101', '102', '103')})
     first = _plan([AddOp(part='character', kind='trait', text='a repeated pattern',
         mode='induced', citations=(TIE,))], citable=citable)
     assert not first.refused
     line = first.inserts[0]
-    assert line.support_count == 2 and line.last_supported_at == CITABLE.messages[102].ts
-    assert line.as_of == CITABLE.messages[102].ts
+    assert line.support_count == 3 and line.last_supported_at == CITABLE.messages[103].ts
+    assert line.as_of == CITABLE.messages[103].ts
     second = _plan([KeepOp(line='P1', citations=(other, '101'))], heads=(line,), citable=citable)
     assert not second.refused
-    assert second.inserts[0].support_count == 2
+    assert second.inserts[0].support_count == 3
     assert second.inserts[0].last_supported_at == line.last_supported_at
     # A genuinely new root can support the same aggregate, once.
-    newer = replace(citable, rollup_roots={TIE: ('101', '102', '103')})
+    newer = replace(citable, rollup_roots={TIE: ('101', '102', '103', '201')})
     added = _plan([KeepOp(line='P1', citations=(TIE,))], heads=(line,), citable=newer)
-    assert added.inserts[0].support_count == 3
-    assert added.inserts[0].last_supported_at == CITABLE.messages[103].ts
+    assert added.inserts[0].support_count == 4
+    assert added.inserts[0].last_supported_at == CITABLE.messages[201].ts
 
 
 def test_same_root_through_rollup_is_not_two_deduction_premises_and_reading_is_not_told():

@@ -2,12 +2,14 @@
 
 Progress is per account/domain/source at consolidation_watermark. A content
 revision changes when the computable input changes, not when a Rollup is rebuilt.
-Failed reads raise and leave that domain pending. No presence store is read.
+Failed reads raise and leave that domain pending. Presence uses the existing
+coordinate-free Rollup read shape and named routine metadata.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import time
 import uuid
 from collections.abc import Sequence
 from datetime import datetime
@@ -19,12 +21,15 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.culture import Episode, RoomMessage
 from nora.domain.notes import anchor_bounds_ms
+from nora.domain.persona import Said
 from nora.domain.persona_inputs import PersonSourceRevision
 from nora.domain.rollup import Citation
+from nora.domain.rollup_read import RollupReadQuery
 from nora.domain.social_stream import PersonSocialItem, Reading, RecordedCounts, to_us
 from nora.infra.sql.audit import _latest_edit, transcript_row, transcript_select
 from nora.infra.sql.character import _in_rooms
-from nora.infra.sql.mobility import current_build_id
+from nora.infra.sql.mobility import SqlMobilityStore, current_build_id
+from nora.infra.sql.rollup_read import SqlRollupRead, _row
 from nora.infra.sql.rollups import SqlRollupStore
 from nora.infra.sql.schema import (
     CONSOLIDATION_WATERMARK as W,
@@ -321,6 +326,8 @@ class SqlPersonaInputs:
 
     async def social(
         self, *, key: str, persons: Sequence[str], limit: int, citations: Sequence[str] = (),
+        since_ms: int | None = None, until_ms: int | None = None,
+        include_settled: bool = False,
     ) -> list[PersonSourceRevision]:
         if self._social is None:
             raise RuntimeError("readable social store is unavailable")
@@ -342,7 +349,7 @@ class SqlPersonaInputs:
             latest.c.reposts, latest.c.likes_hidden, latest.c.recorded_at,
         )
         stmt = sa.select(
-            i.network, i.item_id, i.kind, i.collab, i.taken_at, i.origin, i.recorded_at,
+            i.network, i.item_id, i.kind, i.collab, i.taken_at, i.origin, i.recorded_at, i.person,
             sa.case((denied, None), else_=i.caption).label('caption'),
             sa.case((denied, None), else_=i.media_ref).label('media_ref'),
             denied.label('denied'), perception.c.outcome.label('perception_outcome'),
@@ -353,8 +360,12 @@ class SqlPersonaInputs:
             _revision(snapshot).label('revision'),
         ).select_from(SOCIAL_ITEM.outerjoin(latest, sa.true()).outerjoin(
             perception, sa.true())).where(i.person.in_(persons))
+        if since_ms is not None:
+            stmt = stmt.where(i.taken_at >= datetime.fromtimestamp(since_ms / 1000).astimezone())
+        if until_ms is not None:
+            stmt = stmt.where(i.taken_at < datetime.fromtimestamp(until_ms / 1000).astimezone())
         rows = await self._pending(key=key, domain='social', stmt=stmt, limit=limit,
-                                   citations=citations)
+                                   citations=citations, include_settled=include_settled)
         # All these are permitted item attachments, never arbitrary body handles.
         shas = sorted({sha for r in rows if not r.denied for sha in (r.media_ref or '').split(',')
                        if sha})
@@ -363,7 +374,7 @@ class SqlPersonaInputs:
                 MEDIA_OBJECTS.c.sha256.in_(shas)))).all() if shas else []
         readings = {r.sha256: Reading(r.title, r.description, r.content) for r in found}
         return [PersonSourceRevision(
-            domain='social', source=r.source, revision=r.revision,
+            domain='social', source=r.source, revision=r.revision, subject=r.person,
             state='withheld' if r.denied else 'readable', recorded_at=_stamp(r.recorded_at),
             social=None if r.denied else PersonSocialItem(
                 network=r.network, item_id=r.item_id, kind=r.kind, collab=r.collab,
@@ -526,13 +537,15 @@ class SqlPersonaInputs:
         self, *, key: str, unit: str, rooms: Sequence[tuple[str, str]], person: str, limit: int,
         citations: Sequence[str] = (), row_ids: dict[str, Sequence[int]] | None = None,
     ) -> list[PersonSourceRevision]:
-        """Bounded non-location computed properties with their actual message roots.
+        """Named presence occasions and message aggregates with their actual roots.
 
-        Project only message counts, reply/mention ties and quoted responses.
-        Reaction/social counts need different Record root types and are omitted;
-        no presence property, table or Notebook prose is read. Validate computed
-        counts against the readable roots before making an aggregate citable.
+        Project message counts, reply/mention ties and quoted responses beside
+        coordinate-free presence revisions. Reaction counts and Notebook prose
+        are omitted. Validate message counts against readable roots before
+        making an aggregate citable.
         """
+        presence = (await self.presence_revisions(key=key, unit=unit, person=person, limit=limit)
+                    if not citations and row_ids is None else [])
         out: list[PersonSourceRevision] = []
         m = MESSAGES.c
         parent = MESSAGES.alias('parent')
@@ -678,5 +691,75 @@ class SqlPersonaInputs:
                     citable=r.citation,
                 ))
                 if len(out) >= limit:
-                    return out
+                    return [*presence, *out]
+        return [*presence, *out]
+
+    async def presence_revisions(self, *, key: str, unit: str, person: str,
+                       limit: int, since_ms: int = 0, until_ms: int = 2**62,
+                       include_settled: bool = False) -> list[PersonSourceRevision]:
+        """The existing coordinate-free Rollup shape plus named routine metadata.
+
+        Source identity and revision exclude build time. Each bounded stay/trip
+        is one occasion; place/rhythm/corridor summaries add no occasions.
+        """
+        reader = SqlRollupRead(self._engine)
+        rows: list[tuple[Any, str]] = []
+        # The same safe SELECT as rollup_read, with pending-revision filtering
+        # before LIMIT so acknowledged early stays cannot starve later ones.
+        for kind in ("stay", "trip"):
+            query = RollupReadQuery(kind=kind, unit=unit, subjects=(person,),
+                                   start_ms=since_ms, end_ms=until_ms, limit=limit)
+            shape = reader._select(query).subquery()
+            source = (sa.literal(f"presence:{kind}:{person}:")
+                      + sa.cast(shape.c.valid_from_ms, sa.Text))
+            values = sa.func.to_jsonb(shape.table_valued())
+            stmt = sa.select(shape, source.label("source"), source.label("citation"),
+                             _revision(values).label("revision"))
+            pending = await self._pending(key=key, domain="rollup", stmt=stmt, limit=limit,
+                                          include_settled=include_settled)
+            rows.extend((_row(kind, r), r.revision) for r in pending)
+        if await SqlRollupStore(self._engine).current_build() is None:
+            return [PersonSourceRevision(domain="rollup", source="presence:unavailable",
+                revision="", state="unavailable", recorded_at="unknown")]
+        mobility = SqlMobilityStore(self._engine)
+        until_ms = min(until_ms, int(time.time() * 1000))
+        places = await mobility.places_with_aggregates(subject_id=person, until_ms=until_ms)
+        corridors = await mobility.corridors_for_subject(subject_id=person, until_ms=until_ms)
+        rhythm = await mobility.rhythm_bins(subject_id=person, window_ms=180 * 86400000,
+                                            until_ms=until_ms)
+        # Explicit projection: coordinates/raw fixes never cross this seam.
+        routine = {
+            "places": [{k: p[k] for k in ("kind", "label", "stay_count",
+                        "first_seen_ts", "last_seen_ts")} for p in places],
+            "corridors": [{"sequence": list(c.sequence), "samples": c.sample_count,
+                           "first": c.first_seen_ts, "last": c.last_seen_ts} for c in corridors],
+            "rhythm": rhythm,
+        }
+        # Context has no citation/evidence: it cannot mint an occasion. One
+        # snapshot per call (one day per windowed history call), not per stay.
+        routine_json = json.dumps(routine, ensure_ascii=False)
+        routine_source = f"presence:routine:{person}"
+        routine_revision = hashlib.sha256(routine_json.encode()).hexdigest()
+        pending_routine = await self._pending(key=key, domain="rollup", limit=1,
+            include_settled=include_settled, stmt=sa.select(
+                sa.literal(routine_source).label("source"),
+                sa.literal(routine_revision).label("revision")))
+        out = [PersonSourceRevision(domain="rollup", source=routine_source,
+            subject=person, revision=routine_revision,
+            state="computed", recorded_at="unknown", as_of=until_ms,
+            properties=(("routine", routine_json),))] if pending_routine and any(
+                routine.values()) else []
+        for row, revision in rows:
+            cite = f"presence:{row.kind}:{person}:{row.valid_from_ms}"
+            fields = {k: v for k, v in row.fields.items()
+                      if k in ("place_kind", "place_label", "place_saved", "distance_m",
+                               "avg_speed_kmh")}
+            properties = (("observation", json.dumps(fields, ensure_ascii=False)),)
+            out.append(PersonSourceRevision(domain="rollup", source=cite, revision=revision,
+                subject=person,
+                state="computed", recorded_at="unknown", citable=cite,
+                effective_from=row.valid_from_ms, effective_until=row.valid_to_ms,
+                as_of=row.valid_from_ms, properties=properties,
+                evidence=((cite, Said(row.valid_from_ms, person, None, occasion=cite,
+                    happened_at=row.valid_from_ms, medium="presence", location=True)),)))
         return out

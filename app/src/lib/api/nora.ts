@@ -65,6 +65,7 @@ export const PersonaDisputeSchema = z.object({
 });
 export type PersonaDispute = z.infer<typeof PersonaDisputeSchema>;
 export const PersonaAccountSchema = z.object({
+  card: z.string().optional(),
   unit: z.string(),
   lines: z.array(PersonaLineSchema),
   disputes: z.array(PersonaDisputeSchema),

@@ -4906,6 +4906,10 @@ PERSONA_LINE = sa.Table(
     sa.Column("persona_key", sa.Text, nullable=False),
     sa.Column("part", sa.Text, nullable=False),
     sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("content", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+    sa.Column("location", sa.Boolean, nullable=False, server_default=sa.false()),
+    sa.Column("source_medium", pg.ARRAY(sa.Text), nullable=False, server_default=sa.text("'{}'")),
+    sa.Column("strength", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
     sa.Column("text", sa.Text, nullable=False),
     sa.Column("mode", sa.Text, nullable=False),
     sa.Column("citations", pg.ARRAY(sa.Text), nullable=False),
@@ -4938,7 +4942,9 @@ PERSONA_LINE = sa.Table(
     ),
     sa.CheckConstraint(
         "(part = 'identity' AND kind IN ('name', 'role', 'relationship', 'attribute', "
-        "'instruction', 'purpose', 'norm')) OR (part = 'character' AND kind = 'trait') "
+        "'instruction', 'purpose', 'norm')) OR (part = 'character' AND kind IN "
+        "('trait', 'topic', 'habit', 'skill', 'preference', 'disposition', 'style', "
+        "'value', 'social', 'goal')) "
         "OR (part = 'hypothesis' AND kind = 'explanation')",
         name="ck_persona_line_kind_part",
     ),

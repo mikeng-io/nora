@@ -196,7 +196,9 @@ class SqlMobilityStore:
 
     # -- the readers the agent, the tools and the portal use -----------------
 
-    async def places_with_aggregates(self, *, subject_id: str) -> list[dict[str, Any]]:
+    async def places_with_aggregates(
+        self, *, subject_id: str, until_ms: int | None = None,
+    ) -> list[dict[str, Any]]:
         """Read derived places and their stay aggregates for one subject.
 
         Aggregates follow `presence_stays.place_id` — the link the rollup
@@ -219,10 +221,15 @@ class SqlMobilityStore:
             )
             .limit(_MAX_ANALYTICS_PLACES)
         )
+        if until_ms is not None:
+            places_stmt = places_stmt.where(
+                PRESENCE_DERIVED_PLACES.c.first_seen_ts <= until_ms,
+            )
         agg_stmt = (
             sa.select(
                 PRESENCE_STAYS.c.place_id,
                 sa.func.count().label("stay_count"),
+                sa.func.max(PRESENCE_STAYS.c.ended_ts).label("last_seen_ts"),
                 sa.func.coalesce(
                     sa.func.sum(
                         sa.func.greatest(
@@ -239,6 +246,13 @@ class SqlMobilityStore:
             )
             .group_by(PRESENCE_STAYS.c.place_id)
         )
+        if until_ms is not None:
+            agg_stmt = agg_stmt.where(PRESENCE_STAYS.c.started_ts <= until_ms,
+                                      PRESENCE_STAYS.c.ended_ts <= until_ms)
+            eligible = agg_stmt.subquery()
+            places_stmt = (places_stmt.join(eligible,
+                eligible.c.place_id == PRESENCE_DERIVED_PLACES.c.id).order_by(None)
+                .order_by(eligible.c.last_seen_ts.desc(), PRESENCE_DERIVED_PLACES.c.id.asc()))
         async with self._engine.connect() as conn:
             places = (await conn.execute(places_stmt)).all()
             aggs = {r.place_id: r for r in (await conn.execute(agg_stmt)).all()}
@@ -257,14 +271,16 @@ class SqlMobilityStore:
                     "radius_m": place.radius_m,
                     "confidence": place.confidence,
                     "first_seen_ts": place.first_seen_ts,
-                    "last_seen_ts": place.last_seen_ts,
+                    "last_seen_ts": (agg.last_seen_ts if agg is not None and until_ms is not None
+                                     else place.last_seen_ts),
                     "stay_count": int(agg.stay_count) if agg is not None else 0,
                     "total_dwell_ms": int(agg.total_dwell_ms) if agg is not None else 0,
                 }
             )
         return out
 
-    async def rhythm_bins(self, *, subject_id: str, window_ms: int) -> list[dict[str, int]]:
+    async def rhythm_bins(self, *, subject_id: str, window_ms: int,
+                          until_ms: int | None = None) -> list[dict[str, int]]:
         """Stays inside a trailing window, dwell SPLIT across the local
         hours-of-week each one covers.
 
@@ -273,10 +289,10 @@ class SqlMobilityStore:
         and none on the small hours. `hour_of_week_bins` is the same split
         Tier 3's occupancy uses, clipped to the window; `stay_count` counts the stays
         that touch a bin."""
-        window_ms = min(max(window_ms, 0), _MAX_ANALYTICS_WINDOW_MS)
+        window_ms = min(max(window_ms, 0), 180 * 86400000)
         if window_ms == 0:
             return []
-        now_ms = int(time.time() * 1000)
+        now_ms = int(time.time() * 1000) if until_ms is None else until_ms
         cutoff_ms = now_ms - window_ms
         build = await self._read_build()
         stmt = (
@@ -289,6 +305,9 @@ class SqlMobilityStore:
             .order_by(PRESENCE_STAYS.c.started_ts.desc())
             .limit(_MAX_ANALYTICS_POINTS)
         )
+        if until_ms is not None:
+            stmt = stmt.where(PRESENCE_STAYS.c.started_ts <= until_ms,
+                              PRESENCE_STAYS.c.ended_ts <= until_ms)
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
 
@@ -524,7 +543,8 @@ class SqlMobilityStore:
             for r in rows
         ]
 
-    async def corridors_for_subject(self, *, subject_id: str) -> list[StoredCorridor]:
+    async def corridors_for_subject(self, *, subject_id: str,
+                                    until_ms: int | None = None) -> list[StoredCorridor]:
         build = await self._read_build()
         stmt = (
             sa.select(PRESENCE_CORRIDORS)
@@ -534,6 +554,26 @@ class SqlMobilityStore:
             )
             .order_by(PRESENCE_CORRIDORS.c.id.asc())
         )
+        if until_ms is not None:
+            samples = (sa.select(
+                PRESENCE_TRIPS.c.corridor_id,
+                sa.func.count().label("sample_count"),
+                sa.func.min(PRESENCE_TRIPS.c.started_ts).label("first_seen_ts"),
+                sa.func.max(PRESENCE_TRIPS.c.ended_ts).label("last_seen_ts"),
+            ).where(
+                PRESENCE_TRIPS.c.subject_id == subject_id,
+                self._in_build(build, PRESENCE_TRIPS),
+                PRESENCE_TRIPS.c.started_ts <= until_ms,
+                PRESENCE_TRIPS.c.ended_ts <= until_ms,
+            ).group_by(PRESENCE_TRIPS.c.corridor_id).subquery())
+            stmt = (sa.select(PRESENCE_CORRIDORS.c.id, PRESENCE_CORRIDORS.c.subject_id,
+                PRESENCE_CORRIDORS.c.sequence, samples.c.sample_count,
+                samples.c.first_seen_ts, samples.c.last_seen_ts)
+                .join(samples, samples.c.corridor_id == PRESENCE_CORRIDORS.c.id)
+                .where(PRESENCE_CORRIDORS.c.subject_id == subject_id,
+                       self._in_build(build, PRESENCE_CORRIDORS),
+                       PRESENCE_CORRIDORS.c.first_seen_ts <= until_ms)
+                .order_by(PRESENCE_CORRIDORS.c.id.asc()))
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
         return [

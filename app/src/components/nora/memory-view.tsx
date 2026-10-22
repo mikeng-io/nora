@@ -225,6 +225,7 @@ function PersonaAccountPanel({ account }: { account: PersonaAccount }) {
         description={t("personaLede")}
       />
       <div className="grid gap-1 divide-y divide-hairline border-t border-hairline">
+        {account.card && <p className="whitespace-pre-line text-body">{account.card}</p>}
         {section(t("personaIdentity"), account.lines.filter((l) => l.part === "identity"))}
         {section(t("personaCharacter"), account.lines.filter((l) => l.part === "character"))}
         {section(t("personaQuestions"), account.lines.filter((l) => l.part === "hypothesis"))}

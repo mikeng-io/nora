@@ -76,7 +76,9 @@ async def _hypothesis(env: Any, *, observable: str, window_end: int,
     added = await env.store.persona_write(
         account=account, citable=citable, now_ms=T0 + 1, written_by_session="t",
         apply_decay=False,
-        ops=[AddOp(part="hypothesis", kind="explanation", text="winding down",
+        ops=[AddOp(part="hypothesis", kind="explanation",
+        content={"proposed_cause": "relaxing after work", "alternative": "enjoys games"},
+        text="winding down",
                    mode="abduced", citations=("1",), draws_on=("P1",),
                    prediction=prediction, prediction_observable=observable,
                    prediction_window_end=window_end)])
