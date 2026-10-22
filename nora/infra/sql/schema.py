@@ -1731,6 +1731,10 @@ EVENTS = sa.Table(
     # 0074_event_revision: unit-wide, per-field reasoning/confidence/lineage/
     # as_of, and the compare-and-swap cache over `event_revision`.
     sa.Column("unit_id", sa.Text, nullable=False, server_default=sa.text("''")),
+    # 0128_event_platform: the other half of the persisted owner. An empty
+    # value is an unresolved historical row: quarantined by `event_in_scope`,
+    # never attributed through a current `policy.toml` assignment.
+    sa.Column("platform", sa.Text, nullable=False, server_default=sa.text("''")),
     sa.Column("end", sa.DateTime(timezone=True), nullable=True),
     sa.Column(
         "people", pg.ARRAY(sa.Text), nullable=False, server_default=sa.text("'{}'"),

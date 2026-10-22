@@ -10,6 +10,11 @@ export const routing = defineRouting({
   locales: ["zh-Hant", "en"],
   defaultLocale: "zh-Hant",
   localePrefix: "always",
+  // The locale preference is not a secret (HttpOnly would buy nothing the
+  // rendered page does not already say), but it IS browser state and must not
+  // ride a plaintext request: mark it Secure. NextAuth's session cookies are
+  // already HttpOnly; Secure; SameSite=Lax independently of this.
+  localeCookie: { secure: true },
 });
 
 export type Locale = (typeof routing.locales)[number];

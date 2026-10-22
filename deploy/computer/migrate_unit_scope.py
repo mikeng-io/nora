@@ -84,7 +84,19 @@ def inventory(root: Path) -> list[str]:
                     raise ValueError("quarantined sources require original plan/journal reconciliation")
             finally:
                 os.close(quarantine)
-        scopes = sorted(s for s in os.listdir(fd) if s not in {".tmux", ".unit-migration-sources"})
+        entries = os.listdir(fd)
+        if any(
+            s != ".restore.lock"
+            and (s.startswith(".restore.") or s.startswith(".restore-old."))
+            for s in entries
+        ):
+            raise ValueError(
+                "a restore is staged or in progress; finish it before migrating",
+            )
+        scopes = sorted(
+            s for s in entries
+            if s not in {".tmux", ".unit-migration-sources", ".restore.lock"}
+        )
         if any(not SCOPE.fullmatch(s) for s in scopes):
             raise ValueError("unrecognised workspace entry; operator mapping required")
         for scope in scopes:

@@ -34,6 +34,7 @@ import { existsSync } from 'node:fs';
 import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, proto } from '@whiskeysockets/baileys';
 
 import {
+  authorizedBridgeRequest,
   buildLidMap,
   buildMediaPayload,
   createEventBuffer,
@@ -65,9 +66,14 @@ const PORT = parseInt(getArg('port', '18081'), 10);
 const SESSION_DIR = path.resolve(getArg('session', path.join(process.env.HOME || '~', '.nora', 'whatsapp', 'session')));
 const PAIR_MODE = args.includes('--pair');
 const PAIR_PHONE = String(getArg('phone', '')).replace(/\D/g, '');
+const BRIDGE_TOKEN = process.env.NORA_BRIDGE_TOKEN || '';
 
 if (PAIR_MODE && !PAIR_PHONE) {
   console.error('[bridge] --pair requires --phone <digits> (international format, no +)');
+  process.exit(2);
+}
+if (!PAIR_MODE && !BRIDGE_TOKEN) {
+  console.error('[bridge] NORA_BRIDGE_TOKEN is not set; refusing to start an unauthenticated bridge');
   process.exit(2);
 }
 
@@ -525,9 +531,17 @@ async function handleReact(req, res) {
 }
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, 'http://bridge');
-  const route = `${req.method} ${url.pathname}`;
+  let route = `${req.method} ${req.url}`;
   try {
+    // The guard is inside this try too: a malformed request must answer
+    // (401/400), never reject the handler and take the bridge down.
+    const url = new URL(req.url, 'http://bridge');
+    route = `${req.method} ${url.pathname}`;
+    if (!authorizedBridgeRequest(
+      req.method, url.pathname, req.headers.authorization, BRIDGE_TOKEN,
+    )) {
+      return sendJson(res, 401, { error: 'unauthorized' });
+    }
     switch (route) {
       case 'GET /health': return handleHealth(req, res);
       case 'GET /events': return handleEvents(req, res);

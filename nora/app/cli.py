@@ -7,9 +7,8 @@ store; each one that writes says so where it is registered. Among them:
 `memory carry-conclusions` and `memory detach-unit`, each only with `--apply`
 (Honcho, DEC-214), `memory rebuild` (the memory index, unless `--dry-run`),
 `lessons retire` and `lessons rollback` (one lesson revision, only with
-`--apply`), `snapshot --into` (a separate empty sandbox database),
-`events backfill-units` (the `events` table) and `assess run-nightly` (an
-`assess_report` row).
+`--apply`), `snapshot --into` (a separate empty sandbox database), and
+`assess run-nightly` (an `assess_report` row).
 
 The read commands answer «which group does this ID belong to» without
 amending D6: they only READ. Adoption stays a hand-edit of `identity.toml`
@@ -59,8 +58,6 @@ from nora.app import config_cli, lessons_cli, report
 from nora.app.assess_run import AssessDisabledError
 from nora.app.assess_run import render as assess_render
 from nora.app.assess_run import run_nightly as assess_run_nightly
-from nora.app.events_backfill import backfill_unit_ids
-from nora.app.events_backfill import render as render_events_backfill
 from nora.app.memory_backfill import BackfillRefusedError, backfill_unit
 from nora.app.memory_backfill import render as render_backfill
 from nora.app.memory_carry import CarryRefusedError, carry_conclusions
@@ -395,8 +392,8 @@ def add_subcommands(
     )
     detach.set_defaults(func=cmd_memory_detach)
     # `memory rebuild`: WRITES
-    # the memory index through a writable engine, like `events
-    # backfill-units`; the stores it reads are never written.
+    # the memory index through a writable engine, like `assess run-nightly`;
+    # the stores it reads are never written.
     rebuild = memory_sub.add_parser(
         "rebuild", parents=[parent],
         help="re-project every store into the memory index (also its first "
@@ -440,29 +437,9 @@ def add_subcommands(
     )
     places.set_defaults(func=cmd_memory_backfill_places)
 
-    # `events backfill-units` (DEC-237): the THIRD command here that WRITES — unlike `memory
-    # backfill`'s Honcho-only write, this one writes the `events` table
-    # itself (through `GatheringStore.update`, the same path `update_event`
-    # writes through), so it needs a WRITABLE engine, not the read-only one
-    # every other command in this module opens. A dry run by default; see
-    # `nora.app.events_backfill`.
-    events = subparsers.add_parser(
-        "events", parents=[parent], help="Gathering/event maintenance (operator only)",
-    )
-    events_sub = events.add_subparsers(dest="events_command", required=True)
-    backfill_units = events_sub.add_parser(
-        "backfill-units", parents=[parent],
-        help="set unit_id on every pre-migration event (unit_id='') from its "
-             "conversation's policy.toml unit (a dry run unless --apply)",
-    )
-    backfill_units.add_argument(
-        "--apply", action="store_true", help="write; without it nothing is changed",
-    )
-    backfill_units.set_defaults(func=cmd_events_backfill_units)
-
     # `assess run-nightly` (DEC-240): the Assess adaptor's deterministic
-    # data-quality checks. WRITABLE engine like `events backfill-units`,
-    # because `--record` (the default) writes one `assess_report` row; the
+    # data-quality checks. WRITABLE engine, because `--record` (the default)
+    # writes one `assess_report` row; the
     # checks themselves never write a tier (`nora.app.assess_run`'s own
     # docstring). Refused when `[assess] mode` is `"off"`.
     assess = subparsers.add_parser(
@@ -1164,7 +1141,8 @@ async def cmd_persona_retry_media(args: argparse.Namespace) -> int:
 
 
 async def cmd_memory_rebuild(args: argparse.Namespace) -> int:
-    """`nora memory rebuild [--dry-run]`. A WRITABLE engine, like `events backfill-units`:
+    """`nora memory rebuild [--dry-run]`. A WRITABLE engine, like
+    `assess run-nightly`:
     it writes the memory index (`nora.infra.sql.memory_index.rebuild`), never
     a store. Prints counts per kind only, never an id or a text. Exit 1 when
     a source stayed unprojected, so a script reads «incomplete» as a failure."""
@@ -1187,8 +1165,8 @@ async def cmd_memory_rebuild(args: argparse.Namespace) -> int:
 
 async def cmd_memory_backfill_places(args: argparse.Namespace) -> int:
     """`nora memory backfill-places [--apply] [--per-second N] [--limit N]`
-    (`nora.app.place_backfill`). A WRITABLE engine, like `events
-    backfill-units`. Venue areas come from the Geocoding API with the route
+    (`nora.app.place_backfill`). A WRITABLE engine, like `assess
+    run-nightly`. Venue areas come from the Geocoding API with the route
     key, cached geocodes' from the configured reverse geocoder. Prints counts
     only. Exit 1 when a lookup or a write failed."""
     from nora.app.composition import reverse_geocoder
@@ -1258,26 +1236,6 @@ def render_rebuild(result: memory_index.RebuildReport) -> list[str]:
     else:
         lines.append(f"unprojected: {result.unprojected}; index status complete")
     return lines
-
-
-async def cmd_events_backfill_units(args: argparse.Namespace) -> int:
-    """`nora events backfill-units [--apply]` (DEC-237). Opens a WRITABLE engine (`create_sql_
-    engine`, not `create_readonly_sql_engine`): unlike every other command
-    in this module it writes the `events` table itself, through
-    `GatheringStore.update` — the same path `update_event` writes through —
-    so `row_history` records it like any other write. See
-    `nora.app.events_backfill` for what is read, skipped and written."""
-    cfg = _config(args)
-    policy = _policy(cfg)
-    engine = create_sql_engine(_database_url(cfg))
-    store = SqlGatheringStore(engine)
-    try:
-        result = await backfill_unit_ids(policy=policy, store=store, apply=bool(args.apply))
-    finally:
-        await store.aclose()
-    for line in render_events_backfill(result):
-        print(line)
-    return 1 if result.failed else 0
 
 
 async def _lesson_of(store: SqlLessonStore, lesson_id: str) -> Lesson:

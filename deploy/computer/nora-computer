@@ -366,7 +366,9 @@ backup_in_vm() {
             ex="$ex --exclude=./$(basename "$(dirname "$d")")/browser"
         done
         # shellcheck disable=SC2086
-        tar $ex --exclude=./.tmux -C /workspace -czf "$out" .
+        tar $ex --exclude=./.tmux --exclude=./.restore.lock \
+            --exclude="./.restore.*" --exclude="./.restore-old.*" \
+            -C /workspace -czf "$out" .
         rc=$?
         [ "$rc" -le 1 ] || exit "$rc"
         chmod 600 "$out" || exit 1
@@ -525,21 +527,93 @@ cmd_restore() {
     # host's copy: what was copied is what is extracted.
     sbx exec -u root "$NAME" sh -c '
         [ "$(sha256sum "$1/archive.tar.gz" | cut -d" " -f1)" = "$2" ] || exit 4
-        tar -C /workspace -xzpf "$1/archive.tar.gz" || exit 1
-        for d in /workspace/*/; do
+        # Extract into a private staging directory, never /workspace itself.
+        # /workspace already holds the rooms a live restore is replacing, and a
+        # room controls symlinks inside its own directory: extracting "through"
+        # one of those would write outside the room as root. The archive is
+        # checked for archive-local links (archive_check.py), but only a fresh
+        # root-owned staging tree closes the link that is already on the VM.
+        #
+        # The wrapper is BETWEEN the archive and /workspace. A backup tars `.`,
+        # so tar applies the workspace mode (0755 in a normal archive) to the
+        # directory it extracts into; if that were the wrapper, every room user
+        # could traverse the staged rooms. The wrapper stays root-owned 0700 and
+        # tar writes into its child, so the archive `.` metadata can only change
+        # the child. Extraction also preserves numeric owners, and after a
+        # recreate an archived uid can belong to a DIFFERENT live room: the
+        # wrapper is what keeps that room out until each staged tree is chowned
+        # to its computerd user, which happens BEFORE it is published.
+        stage_root=$(mktemp -d /workspace/.restore.XXXXXX) || exit 5
+        stage="$stage_root/tree"
+        mkdir -m 0700 "$stage" || { rm -rf -- "$stage_root"; exit 5; }
+        chmod 0700 "$stage_root" || { rm -rf -- "$stage_root"; exit 5; }
+        # The old rooms are moved here, not deleted: deletion happens only
+        # after the replacement is at the exact destination with the right
+        # owner. A failed install puts them back, or leaves them here.
+        old=$(mktemp -d /workspace/.restore-old.XXXXXX) || { rm -rf -- "$stage_root"; exit 5; }
+        cleanup() {
+            rm -rf -- "$stage_root"
+            [ -d "$old" ] || return 0
+            if [ -z "$(ls -A "$old")" ]; then
+                rm -rf -- "$old"
+            else
+                echo "restore: old room data kept in $old" >&2
+            fi
+        }
+        trap cleanup EXIT
+        tar -C "$stage" -xzpf "$1/archive.tar.gz" || exit 1
+
+        # Quiesce every computerd-mediated room operation for the replacement.
+        # The same file is locked SHARED by `run`, `state`, file operations and
+        # browser start; the installer holds it EXCLUSIVE. A room process that
+        # outlives its command (nohup, a tmux pane) is NOT covered by this lease
+        # (see the backup/restore note in README).
+        lock=/workspace/.restore.lock
+        umask 077
+        : >> "$lock" || exit 5
+        chmod 600 "$lock" || exit 5
+        exec 9>>"$lock" || exit 5
+        flock -w 300 9 || { echo "restore: timed out waiting for room operations to quiesce" >&2; exit 5; }
+
+        for d in "$stage"/*/; do
+            [ -d "$d" ] || continue
             scope=$(basename "$d")
             case "$scope" in *[!0-9a-f]*|"") continue ;; esac
             [ "${#scope}" -ge 16 ] && [ "${#scope}" -le 64 ] || continue
             user=c-$(printf %s "$scope" | cut -c1-12)
             id -u "$user" >/dev/null 2>&1 || useradd --system --no-create-home --user-group \
                 --shell /usr/sbin/nologin --home-dir /nonexistent "$user" || exit 2
-            chown -hR "$user:$user" "/workspace/$scope" || exit 3
+            # Repair ownership IN THE WRAPPER, before anything is published:
+            # the staged tree may still carry an archived numeric uid that now
+            # belongs to a different live room, and no room may see it. A
+            # failure here leaves the old room untouched.
+            chown -hR "$user:$user" "$d" || exit 3
+            dest=/workspace/$scope
+            # Move the old room ASIDE, never `rm -rf` first: the destination
+            # name stays absent only for the instant between these two renames,
+            # and the old data is still on disk if the replacement cannot land.
+            if [ -e "$dest" ] || [ -L "$dest" ]; then
+                mv -T -- "$dest" "$old/$scope" || exit 3
+            fi
+            # `mv -T` renames onto the destination NAME. Without -T, a directory
+            # that reappeared at `dest` would become a parent and the staged tree
+            # would be nested INSIDE it (the old restore bug). With -T it fails
+            # instead, and the old room goes back.
+            if ! mv -T -- "$d" "$dest"; then
+                if [ ! -e "$dest" ] && [ ! -L "$dest" ] && [ -e "$old/$scope" ]; then
+                    mv -T -- "$old/$scope" "$dest" || true
+                fi
+                exit 3
+            fi
+            # Only a replacement that landed with the right owner makes the old
+            # copy disposable. A failed removal is not a failed restore.
+            rm -rf -- "$old/$scope" || echo "restore: could not remove old copy $old/$scope" >&2
         done' sh "$vmdir" "$got" </dev/null
     rc=$?
     vm_rmdir "$vmdir"; clean_rc=$?
     if [ "$rc" != 0 ]; then
         record_event restore failed stage=extract rc="$rc" sha256="$got"
-        log "restore FAILED inside the VM (rc=$rc; 4 is the digest not matching in the VM); /workspace may be partly restored"
+        log "restore FAILED inside the VM (rc=$rc; 4 is the digest not matching in the VM). The old room data is still on disk: the installer puts it back when the destination is free, or leaves it in the .restore-old directory named above"
         exit "$rc"
     fi
     if [ "$clean_rc" != 0 ]; then

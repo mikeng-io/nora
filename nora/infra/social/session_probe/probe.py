@@ -146,8 +146,18 @@ class Probe:
     # ---- measurements -----------------------------------------------------
     def _bridge_health(self) -> tuple[BridgeSession, bool | None]:
         """(raw session, `connected` when /health carries a boolean)."""
+        # The bridge protects /health with the bearer token its own environment
+        # already holds (compose sets NORA_BRIDGE_TOKEN). The token reaches curl
+        # on STDIN (`-H @-`), never in argv: a process listing inside the bridge
+        # container is readable by anything running there, and an expanded
+        # Authorization header in curl's argv would hand it over. The `printf`
+        # format is a constant, so the value is not an argument either. A
+        # missing token is a 401, which is `unreachable` — the correct
+        # fail-closed reading of a misconfigured bridge.
         res = self._run(
-            ["docker", "exec", self._cfg.container, "curl", "-sS", "-m", "5",
+            ["docker", "exec", self._cfg.container, "sh", "-c",
+             'printf "Authorization: Bearer %s\\n" "$NORA_BRIDGE_TOKEN" | '
+             'curl -sS -m 5 -H @- '
              f"http://127.0.0.1:{self._cfg.bridge_port}/health"],
             15.0, None,
         )

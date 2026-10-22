@@ -44,6 +44,11 @@ def problems(path: str) -> list[str]:
             name = member.name
             norm = posixpath.normpath(name)
             if norm == ".":
+                # The archive root is the one member that lands on the staging
+                # child itself. Accept its mode, reject any other type: a `.`
+                # symlink or hard link would aim root extraction elsewhere.
+                if not member.isdir():
+                    found.append(f"{name!r}: the archive root is not a directory")
                 continue
             if name.startswith("/") or ".." in name.split("/"):
                 found.append(f"{name!r}: an absolute or .. path")

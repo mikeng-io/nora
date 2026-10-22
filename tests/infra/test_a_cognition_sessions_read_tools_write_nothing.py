@@ -194,7 +194,7 @@ class World:
         )
         events = GatheringService(
             store=SqlGatheringStore(engine), route_source=None, honcho=self.memory,
-            ai_peer="nora", unit_room_ids=lambda unit: ("ROOM-A", "ROOM-B", "ROOM-C"),
+            ai_peer="nora",
         )
         circle = Circle(
             circle_id="c1", person_ids=frozenset({"p1", "p2"}),

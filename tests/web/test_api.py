@@ -602,7 +602,7 @@ async def client_with_events(aiohttp_client):
     )
     await events_service.rsvp(
         event_id=event.id,
-        conversation_id="signal:group-1",
+        conversation_id="signal:group-1", platform="signal",
         person_id="daisy",
         response=RSVPResponse.YES,
     )
@@ -651,7 +651,9 @@ async def test_the_events_routes_show_a_member_every_event_of_their_room(aiohttp
         skills_dir=NO_SKILLS_DIR, events=events_service,
         doctrine_store=build_test_doctrine_store(),
         rooms_of=lambda p: frozenset({("signal", "group-1")}) if p == "miles" else frozenset(),
-        room_event_shown=lambda e, v, pl, c: room_event_shown(LineagePolicy(), e, v, pl, c),
+        room_event_shown=lambda e, v, pl, c: room_event_shown(
+            LineagePolicy(), {"group-1": frozenset({("", "signal")})}, e, v, pl, c,
+        ),
     )
     web_client = await aiohttp_client(app)
     listed = await (await web_client.get("/app/v1/events?personId=miles")).json()
@@ -661,6 +663,40 @@ async def test_the_events_routes_show_a_member_every_event_of_their_room(aiohttp
     assert await (await web_client.get("/app/v1/events?personId=sam")).json() == []
     outside = await web_client.get(f"/app/v1/events/{event.id}?personId=sam")
     assert outside.status == 404
+
+
+async def test_the_events_routes_do_not_show_a_rooms_old_event_after_it_moved_unit(aiohttp_client):
+    """The room membership grant also checks the event's stored owner. When
+    `policy.toml` gives the same room id to another unit, the room's member must
+    not inherit the previous unit's events in the list or the detail — the event
+    keeps the unit that wrote it."""
+    from nora.agent.lineage import LineagePolicy
+    from nora.app.gatherings import room_event_shown
+
+    events_service = GatheringService(
+        store=FakeGatheringStore(), route_source=None, honcho=None, ai_peer="nora",
+    )
+    event = await events_service.create_event(
+        conversation_id="group-1", requester_person_id="cognition:u",
+        title="Work offsite", platform="signal", unit_id="work",
+    )
+    app = web.Application()
+    register_web_routes(
+        app, store=FakeRecordStore(), honcho=FakeMemoryStore(), reminders=FakeReminderStore(),
+        persons=Persons(by_person={"miles": MILES, "sam": SAM}, index={}),
+        ai_peer="nora", started_at=0.0, games_client=None, presence=None,
+        presence_circles=(), skills_dir=NO_SKILLS_DIR, events=events_service,
+        doctrine_store=build_test_doctrine_store(),
+        rooms_of=lambda p: frozenset({("signal", "group-1")}) if p == "miles" else frozenset(),
+        room_event_shown=lambda e, v, pl, c: room_event_shown(
+            LineagePolicy(), {"group-1": frozenset({("friends", "signal")})},
+            e, v, pl, c,
+        ),
+    )
+    web_client = await aiohttp_client(app)
+    assert await (await web_client.get("/app/v1/events?personId=miles")).json() == []
+    detail = await web_client.get(f"/app/v1/events/{event.id}?personId=miles")
+    assert detail.status == 404
 
 
 async def test_events_list_route_returns_the_seeded_event(client_with_events):

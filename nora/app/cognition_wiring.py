@@ -40,7 +40,12 @@ from nora.agent.dreamer import (
     cognition_grant,
 )
 from nora.domain.cognition_session import COGNITION_ADAPTOR, Room
-from nora.domain.gatherings import OPEN_STATUSES, Gathering, GatheringStore
+from nora.domain.gatherings import (
+    OPEN_STATUSES,
+    Gathering,
+    GatheringStore,
+    event_in_scope,
+)
 from nora.domain.note_body import NORA_NAMES
 from nora.domain.ports import CognitionStore, StimulusStore
 from nora.domain.reminders import ReminderCaps
@@ -401,20 +406,31 @@ def units_with_home_rooms(
 
 def open_events_reader(
     store: GatheringStore,
-) -> Callable[[str], Awaitable[Sequence[Gathering]]]:
+) -> Callable[[str, str, str], Awaitable[Sequence[Gathering]]]:
     """A room's events a session may still move, and is shown: every status
     before `happened` (`OPEN_STATUSES`: staged, proposed, confirmed), so a
-    confirmed event can reach `happened` or `cancelled`."""
-    async def read(conversation_id: str) -> Sequence[Gathering]:
+    confirmed event can reach `happened` or `cancelled`. The unit AND platform
+    are passed with the room because a conversation id alone is only unique
+    within one unit's and one platform's id space.
+
+    The read is scoped by the row's persisted owner (`event_in_scope`); a row
+    with no stored platform is quarantined, never attributed from the current
+    `policy.toml` assignment."""
+    async def read(unit: str, platform: str, conversation_id: str) -> Sequence[Gathering]:
         return [
-            e for e in await store.list_for_conversation(conversation_id=conversation_id)
+            e for e in await store.list_for_conversation(
+                conversation_id=conversation_id, unit_id=unit, platform=platform,
+            )
             if e.status in OPEN_STATUSES
+            and event_in_scope(
+                e, unit_id=unit, conversation_id=conversation_id, platform=platform,
+            )
         ]
     return read
 
 
 def upcoming_reader(
-    read_events: Callable[[str], Awaitable[Sequence[Gathering]]],
+    read_events: Callable[[str, str, str], Awaitable[Sequence[Gathering]]],
     unit_rooms: Callable[[str], Collection[tuple[str, str, Collection[str]]]],
     *, days: float,
     room_proactive: Callable[[str, str], bool] = lambda platform, conversation_id: True,
@@ -439,7 +455,8 @@ def upcoming_reader(
             for conversation_id in sorted({primary_id, *forms}):
                 starts = [
                     int(e.when.timestamp() * 1000)
-                    for e in await read_events(conversation_id) if e.when is not None
+                    for e in await read_events(unit, platform, conversation_id)
+                    if e.when is not None
                 ]
                 if any(now_ms <= at <= now_ms + horizon_ms for at in starts):
                     found.append((platform, primary_id))
@@ -466,7 +483,7 @@ def build_cognition_runner(
     ai_peer: str,
     room_proactive: Callable[[str, str], bool],
     reminder_caps: ReminderCaps,
-    open_events_in: Callable[[str], Awaitable[Sequence[Gathering]]],
+    open_events_in: Callable[[str, str, str], Awaitable[Sequence[Gathering]]],
     standing_of: Callable[[str, str], Awaitable[StandingHead | None]],
     roster_of: Callable[[str, str], Awaitable[Mapping[str, str] | None]] | None = None,
     nora_names: frozenset[str] = NORA_NAMES,
@@ -530,8 +547,10 @@ def build_cognition_runner(
     skills.resolved_for(sorted(skills.by_kind))
     home_rooms = _by_home_room(homes)
 
-    async def open_events(unit: str, conversation_id: str) -> Sequence[Gathering]:
-        return await open_events_in(conversation_id)
+    async def open_events(
+        unit: str, platform: str, conversation_id: str,
+    ) -> Sequence[Gathering]:
+        return await open_events_in(unit, platform, conversation_id)
 
     async def prior(platform: str, conversation_id: str) -> StandingHead | None:
         return await standing_of(platform, conversation_id)

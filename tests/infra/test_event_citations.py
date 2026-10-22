@@ -281,8 +281,8 @@ async def test_a_tag_turn_s_event_cites_the_message_that_raised_it_and_rests_on_
     assert event.lineage.section("status") == (message(ROOM_A),)
     assert event.lineage.section("start") == ()            # it stated no time
     moved = await service.update_event(
-        event_id=event.id, conversation_id="ga", platform="signal", venue_text="place one",
-        message_ids=(mid,),
+        event_id=event.id, conversation_id="ga", platform="signal", unit_id="u",
+        venue_text="place one", message_ids=(mid,),
     )
     assert moved.lineage.section("place") == (message(ROOM_A),)
 

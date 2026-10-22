@@ -14,7 +14,7 @@ The counters are per check, never per row: the metric answers "is this check
 red", the report's `failing` count answers "how red". Fail and error are
 separate series because a check that never reached a verdict is not a check
 that found a violation. `--no-record` prints without writing, the same dry-run
-shape `nora.app.events_backfill` uses.
+shape `nora memory rebuild --dry-run` uses.
 
 Refused: the whole run, when `[assess] mode` is `"off"` (`nora.config.
 AssessConfig`). The flag is not scoped per check; a partial run under a flag

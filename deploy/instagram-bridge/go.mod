@@ -1,6 +1,6 @@
 module instagram-bridge
 
-go 1.27.1
+go 1.27.3
 
 require (
 	github.com/google/go-querystring v1.2.0

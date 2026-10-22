@@ -12,7 +12,7 @@
  * allowlist/mode gating, polls, and the Hermes env coupling.
  */
 
-import { createDecipheriv, hkdfSync } from 'node:crypto';
+import { createDecipheriv, hkdfSync, timingSafeEqual } from 'node:crypto';
 import { mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
@@ -769,4 +769,24 @@ export function createSilentLogger() {
 
 export function ensureDir(dir) {
   mkdirSync(dir, { recursive: true });
+}
+
+// -- Bridge authentication ---------------------------------------------------
+
+/**
+ * True only for the compose healthcheck (`GET /health`, no account data) or a
+ * request carrying the exact shared bearer. An empty configured token answers
+ * false for every non-health route: the bridge refuses to start without one,
+ * and this stays fail-closed if that check is ever bypassed.
+ */
+export function authorizedBridgeRequest(method, pathname, authorization, token) {
+  if (method === 'GET' && pathname === '/health') return true;
+  if (!token || typeof authorization !== 'string') return false;
+  // Compare BYTE lengths, not JavaScript string lengths. A non-ASCII header can
+  // have the expected string length and a different UTF-8 byte length, and
+  // `timingSafeEqual` throws ERR_CRYPTO_TIMING_SAFE_EQUAL_LENGTH on that.
+  const got = Buffer.from(authorization, 'utf8');
+  const expected = Buffer.from(`Bearer ${token}`, 'utf8');
+  if (got.length !== expected.length) return false;
+  return timingSafeEqual(got, expected);
 }

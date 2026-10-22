@@ -47,6 +47,8 @@ def _event(**overrides) -> Gathering:
         "status": GatheringStatus.PROPOSED,
         "reminder_id": None,
         "created_at": now,
+        "unit_id": "",
+        "platform": "signal",
     }
     defaults.update(overrides)
     return Gathering(**defaults)
@@ -138,6 +140,46 @@ async def test_list_for_conversation_scopes_to_conversation(store):
 
     out = await store.list_for_conversation(conversation_id="signal:group-3")
     assert [e.id for e in out] == [here.id]
+
+
+async def test_a_rows_platform_round_trips_and_scopes_its_room_read(store):
+    """The persisted platform is read back and is part of the room scope: the
+    same conversation string on two platforms is two rooms, and a signal read
+    does not see the whatsapp row."""
+    signal_row = _event(
+        conversation_id="signal:group-3", unit_id="u", platform="signal",
+    )
+    whatsapp_row = _event(
+        conversation_id="signal:group-3", unit_id="u", platform="whatsapp",
+    )
+    await store.create(signal_row)
+    await store.create(whatsapp_row)
+
+    assert (await store.get(signal_row.id)).platform == "signal"
+    signal_read = await store.list_for_conversation(
+        conversation_id="signal:group-3", unit_id="u", platform="signal",
+    )
+    assert [e.id for e in signal_read] == [signal_row.id]
+    whatsapp_read = await store.list_for_conversation(
+        conversation_id="signal:group-3", unit_id="u", platform="whatsapp",
+    )
+    assert [e.id for e in whatsapp_read] == [whatsapp_row.id]
+
+
+async def test_list_for_conversation_quarantines_a_row_with_no_stored_platform(store):
+    """A row with no persisted platform has no durable owner, so it is never
+    returned — not even with a current policy claim. The positive control is
+    the owned row, so the negative cannot pass by returning nothing at all."""
+    unit = f"unit-{uuid4()}"
+    unresolved = _event(conversation_id="signal:group-5", unit_id=unit, platform="")
+    owned = _event(conversation_id="signal:group-5", unit_id=unit, platform="signal")
+    await store.create(unresolved)
+    await store.create(owned)
+
+    scoped = await store.list_for_conversation(
+        conversation_id="signal:group-5", unit_id=unit, platform="signal",
+    )
+    assert [e.id for e in scoped] == [owned.id]
 
 
 async def test_list_for_person_includes_events_i_created(store):
@@ -390,40 +432,38 @@ async def test_search_is_unit_wide_and_filters_by_place_person_and_interval(stor
     assert [e.id for e in by_interval] == [in_room_b.id]
 
 
-async def test_search_room_ids_finds_legacy_events_without_leaking_other_units(store):
-    """The migration backfills every pre-existing event to `unit_id=""` (units
-    live in `policy.toml`, not the DB, so the migration cannot fill it).
-    `room_ids` is how the caller — which resolves the unit's rooms from policy
-    — gets those rows back into a unit-wide search. The negative matters as
-    much as the positive: a legacy row in a room the caller did NOT name
-    (another unit's room) must never be returned, or `room_ids` becomes a
-    cross-unit leak."""
+async def test_search_is_unit_wide_but_quarantines_rows_with_no_stored_platform(store):
+    """The unit is the read boundary (DEC-231): every persisted platform in it
+    is returned. A row with no stored platform is quarantined — the old
+    `room_ids` widening resolved those from current policy, which cannot say
+    who owned them when they were written. Both the signal and the whatsapp
+    row are positive controls, so the quarantine cannot pass by matching
+    nothing."""
     unit = f"unit-{uuid4()}"
-    legacy_in_unit = _event(
-        id=uuid4(), conversation_id="signal:room-a", unit_id="",
-        title="Pre-migration dinner",
+    unresolved = _event(
+        id=uuid4(), conversation_id="signal:room-a", unit_id=unit, platform="",
+        title="Pre-platform dinner",
     )
-    legacy_in_other_unit = _event(
-        id=uuid4(), conversation_id="discord:room-z", unit_id="",
-        title="Someone else's pre-migration dinner",
+    signal_row = _event(
+        id=uuid4(), conversation_id="signal:room-b", unit_id=unit, platform="signal",
+        title="Signal dinner",
     )
-    backfilled = _event(
-        id=uuid4(), conversation_id="signal:room-b", unit_id=unit,
-        title="Post-migration dinner",
+    whatsapp_row = _event(
+        id=uuid4(), conversation_id="whatsapp:room-z", unit_id=unit, platform="whatsapp",
+        title="WhatsApp dinner",
     )
-    await store.create(legacy_in_unit)
-    await store.create(legacy_in_other_unit)
-    await store.create(backfilled)
+    other_unit = _event(
+        id=uuid4(), conversation_id="signal:room-c", unit_id=f"unit-{uuid4()}",
+        platform="signal", title="Someone else's dinner",
+    )
+    for event in (unresolved, signal_row, whatsapp_row, other_unit):
+        await store.create(event)
 
-    found = await store.search(unit_id=unit, room_ids=("signal:room-a", "signal:room-b"))
-    assert {e.id for e in found} == {legacy_in_unit.id, backfilled.id}
-    assert legacy_in_other_unit.id not in {e.id for e in found}, (
-        "a legacy unit_id='' event in a room outside room_ids must never "
-        "leak into another unit's search"
+    found = await store.search(unit_id=unit)
+    assert {e.id for e in found} == {signal_row.id, whatsapp_row.id}
+    assert unresolved.id not in {e.id for e in found}, (
+        "a row with no stored platform must stay quarantined, not be attributed "
+        "through the room's current policy assignment"
     )
-
-    # No room_ids at all: back to the exact unit_id match — a legacy
-    # event is invisible unless the caller explicitly resolved its room.
-    without_room_ids = await store.search(unit_id=unit)
-    assert {e.id for e in without_room_ids} == {backfilled.id}
+    assert other_unit.id not in {e.id for e in found}
 

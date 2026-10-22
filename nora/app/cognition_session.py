@@ -317,7 +317,7 @@ class CognitionSessionOutcome:
 # ---------------------------------------------------------------------------
 
 OpenNoteTitles = Callable[[str], Awaitable[Sequence[str]]]
-OpenEvents = Callable[[str, str], Awaitable[Sequence[Gathering]]]
+OpenEvents = Callable[[str, str, str], Awaitable[Sequence[Gathering]]]
 #: `(platform, conversation_id)` -> the room's Standing head WITH the id of the
 #: `standing_revision` row that is it (`SqlStandingStore.read_head`): the token a
 #: `standing_revise` call asserts as its base (DEC-250).
@@ -2143,7 +2143,8 @@ class CognitionSessionRunner:
             meta, ids = checked
             return await _event_write("event_revise", lambda: self._events.update_event(
                 event_id=event_uuid, conversation_id=conversation_id, when=due,
-                venue_text=venue_text or None, platform=platform, base_revision_id=base,
+                venue_text=venue_text or None, platform=platform,
+                unit_id=unit, base_revision_id=base,
                 message_ids=ids, reasoning=reasoning, confidence=confidence,
                 field_meta=meta,
             ), platform, conversation_id, item)
@@ -2211,7 +2212,8 @@ class CognitionSessionRunner:
             meta, ids = checked
             return await _event_write("event_set_status", lambda: self._events.set_event_status(
                 event_id=event_uuid, conversation_id=conversation_id, status=parsed,
-                base_revision_id=base, platform=platform, message_ids=ids,
+                base_revision_id=base, platform=platform, unit_id=unit,
+                message_ids=ids,
                 reasoning=reasoning, confidence=confidence, field_meta=meta,
             ), platform, conversation_id, item)
 
@@ -2585,7 +2587,7 @@ class CognitionSessionRunner:
         cited = {_bare_row(r) for r in subject_rows}
         abduced = any(
             str(e.id) in cited and _is_abduced(e)
-            for e in await self._open_events(unit, conversation_id)
+            for e in await self._open_events(unit, platform, conversation_id)
         ) if cited else False
         return RemindContext(
             room_proactive=proactive, abduced_subject=abduced,

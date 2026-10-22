@@ -24,9 +24,11 @@ RoomShown = Callable[[Gathering, str, str, str], bool]
 def _room_forms(rooms_of: RoomsOf | None, person_id: str) -> dict[str, RoomKey]:
     """Each conversation id an event of the viewer's rooms can be stored under,
     the bare id and its `platform:` form, mapped to the room it names. `events`
-    has no platform column, so a bare id would match a same-id room on another
-    platform; no two live platforms' id shapes coincide (Signal base64, WhatsApp
-    `@g.us`, Discord `guild/channel`, Instagram digits)."""
+    now stores the platform too, but the form is still tried because a row's
+    `conversation_id` may be the bare id; the membership grant
+    (`room_event_shown`) then requires the event's stored owner to match the
+    room the form resolves to, so a same-id room on another platform cannot
+    hand over its events."""
     if rooms_of is None:
         return {}
     return {

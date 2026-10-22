@@ -33,4 +33,13 @@ FROM caddy:2-alpine
 COPY site/Caddyfile /etc/caddy/Caddyfile
 COPY --from=build /repo/site/dist /srv
 COPY --from=wiki /repo/docs-site/dist /srv/wiki
+# The site listens on 8080 and has admin/persist_config off, so it never needs
+# root. The official caddy image has no unprivileged account (it runs as root),
+# so create one, give it the state dirs it would otherwise have to create as
+# root, then drop privileges.
+RUN addgroup -S caddy \
+    && adduser -S -D -H -G caddy caddy \
+    && mkdir -p /data/caddy /config/caddy \
+    && chown -R caddy:caddy /data /config
+USER caddy
 EXPOSE 8080

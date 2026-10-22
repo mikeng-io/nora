@@ -63,6 +63,7 @@ import argparse
 import asyncio
 import contextlib
 import errno
+import fcntl
 import fnmatch
 import hashlib
 import heapq
@@ -84,6 +85,13 @@ from typing import IO, Any, TypeGuard
 from aiohttp import WSMsgType, web
 
 SCOPE_RE = re.compile(r"^[0-9a-f]{16,64}$")
+
+#: The root-owned file `nora-computer restore` takes EXCLUSIVE while it
+#: replaces room directories. Every room operation takes it SHARED: a restore
+#: waits for a command to finish, and no command starts under a directory
+#: being renamed away. It lives at the root of `/workspace`, which no scope
+#: user can write, and is opened `O_NOFOLLOW` below.
+RESTORE_LOCK = ".restore.lock"
 
 # Server-side ceilings. A request may ask for less, never more.
 MAX_OUTPUT_CHARS = 100_000
@@ -206,6 +214,9 @@ class Computer:
         self.root = root
         self._token = token
         self.owner = Owner(isolate=isolate_scopes)
+        # The directory the API serves; the CLI's default exists in the image,
+        # and a test root may not until its first write.
+        self.root.mkdir(mode=0o755, parents=True, exist_ok=True)
         # Where each scope's tmux server keeps its socket: `TMUX_TMPDIR` is
         # `<tmux_root>/<scope>` for every command and every tmux read, so a
         # room's `tmux new -d` and the state read find the same server, and
@@ -223,6 +234,52 @@ class Computer:
         # is `0o700`), writable by computerd alone; set explicitly, because
         # `mkdir`'s mode is cut by the umask and an existing one keeps its own.
         os.chmod(self.tmux_root, 0o755)  # noqa: S103 - a directory, root-writable only
+        self._restore_lock = root / RESTORE_LOCK
+        try:
+            fd = os.open(
+                self._restore_lock,
+                os.O_RDONLY | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC,
+                0o600,
+            )
+        except OSError as exc:
+            raise ValueError(
+                f"{self._restore_lock}: cannot open the restore lock: {exc}",
+            ) from None
+        try:
+            st = os.fstat(fd)
+            if not stat.S_ISREG(st.st_mode) or st.st_uid != os.geteuid():
+                raise ValueError(
+                    f"{self._restore_lock}: the restore lock must be a regular "
+                    "file owned by computerd's user",
+                )
+        finally:
+            os.close(fd)
+
+    @contextlib.asynccontextmanager
+    async def room_lease(self) -> AsyncIterator[None]:
+        """Hold the shared half of the restore lease for one room operation.
+        `nora-computer restore` holds the exclusive half while it swaps a room
+        directory; `asyncio.to_thread` keeps the blocking flock off the loop."""
+        fd = await asyncio.to_thread(self._lease)
+        try:
+            yield
+        finally:
+            await asyncio.to_thread(self._release, fd)
+
+    def _lease(self) -> int:
+        fd = os.open(self._restore_lock, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_SH)
+        except OSError:
+            os.close(fd)
+            raise
+        return fd
+
+    @staticmethod
+    def _release(fd: int) -> None:
+        with contextlib.suppress(OSError):
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
 
     # -- request plumbing -------------------------------------------------
 
@@ -1198,44 +1255,45 @@ def create_app(
         if not computer.authorised(request):
             return web.json_response({"status": "unauthorised"}, status=401)
         op = request.match_info["op"]
-        try:
-            if op == "put":
-                scope, raw = request.query.get("scope"), request.query.get("path")
+        async with computer.room_lease():
+            try:
+                if op == "put":
+                    scope, raw = request.query.get("scope"), request.query.get("path")
+                    try:
+                        data = await request.read()
+                    except web.HTTPRequestEntityTooLarge:
+                        raise RefusedError("body is too large") from None
+                    if not computer.valid_scope(scope):
+                        raise RefusedError("scope must be a lowercase hex key")
+                    return answer(await asyncio.to_thread(computer._store, scope, raw, data))
                 try:
-                    data = await request.read()
-                except web.HTTPRequestEntityTooLarge:
-                    raise RefusedError("body is too large") from None
+                    body = await request.json()
+                except ValueError:
+                    raise RefusedError("body must be JSON") from None
+                if not isinstance(body, dict):
+                    raise RefusedError("body must be a JSON object")
+                scope = body.get("scope")
                 if not computer.valid_scope(scope):
                     raise RefusedError("scope must be a lowercase hex key")
-                return answer(await asyncio.to_thread(computer._store, scope, raw, data))
-            try:
-                body = await request.json()
-            except ValueError:
-                raise RefusedError("body must be JSON") from None
-            if not isinstance(body, dict):
-                raise RefusedError("body must be a JSON object")
-            scope = body.get("scope")
-            if not computer.valid_scope(scope):
-                raise RefusedError("scope must be a lowercase hex key")
-            if op == "run":
-                return answer(await computer.run(scope, body))
-            if op == "state":
-                return answer({**await computer.state(scope, body), **browsers.status(scope)})
-            if op == "browser_stop":
-                stopped = await browsers.stop(scope)
-                return answer({"status": "ok" if stopped else "nothing_found"})
-            handler = file_ops.get(op)
-            if handler is None:
-                return web.json_response({"status": "unknown operation"}, status=404)
-            return answer(await asyncio.to_thread(handler, scope, body))
-        except RefusedError as exc:
-            return web.json_response({"status": "denied", "reason": str(exc)})
-        except MissingError as exc:
-            return web.json_response({"status": "nothing_found", "reason": str(exc),
-                                      "entries": []})
-        except (OSError, UnicodeDecodeError, ValueError) as exc:
-            return web.json_response({"status": "unavailable",
-                                      "reason": f"{type(exc).__name__}: {exc}"})
+                if op == "run":
+                    return answer(await computer.run(scope, body))
+                if op == "state":
+                    return answer({**await computer.state(scope, body), **browsers.status(scope)})
+                if op == "browser_stop":
+                    stopped = await browsers.stop(scope)
+                    return answer({"status": "ok" if stopped else "nothing_found"})
+                handler = file_ops.get(op)
+                if handler is None:
+                    return web.json_response({"status": "unknown operation"}, status=404)
+                return answer(await asyncio.to_thread(handler, scope, body))
+            except RefusedError as exc:
+                return web.json_response({"status": "denied", "reason": str(exc)})
+            except MissingError as exc:
+                return web.json_response({"status": "nothing_found", "reason": str(exc),
+                                          "entries": []})
+            except (OSError, UnicodeDecodeError, ValueError) as exc:
+                return web.json_response({"status": "unavailable",
+                                          "reason": f"{type(exc).__name__}: {exc}"})
 
     async def browser_cdp(request: web.Request) -> web.StreamResponse:
         """The room's browser, as a CDP websocket: each text frame is one CDP
@@ -1249,7 +1307,10 @@ def create_app(
             return web.json_response({"status": "denied",
                                       "reason": "scope must be a lowercase hex key"})
         try:
-            browser = await browsers.get(scope)
+            # Starting Chrome writes the room; it must not land under a
+            # directory the installer is about to rename away.
+            async with computer.room_lease():
+                browser = await browsers.get(scope)
         except RefusedError as exc:
             return web.json_response({"status": "denied", "reason": str(exc)})
         except OSError as exc:

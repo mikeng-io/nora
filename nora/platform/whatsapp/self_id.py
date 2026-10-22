@@ -21,6 +21,7 @@ from __future__ import annotations
 import aiohttp
 
 from ...domain.identity import Identifier
+from ...infra.service_auth import service_auth_headers
 from .jid import lid_form, phone_form
 
 
@@ -43,7 +44,9 @@ async def derive_identity(
     """
     async with (
         aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session,
-        session.get(f"{base_url.rstrip('/')}/self") as resp,
+        session.get(
+            f"{base_url.rstrip('/')}/self", headers=service_auth_headers(),
+        ) as resp,
     ):
         if resp.status != 200:
             raise WhatsAppIdentityError(f"GET /self returned HTTP {resp.status}")

@@ -56,6 +56,7 @@ import (
 	"instagram-bridge/internal/observability"
 	"instagram-bridge/internal/session"
 	"instagram-bridge/internal/stream"
+	httptransport "instagram-bridge/internal/transport/http"
 
 	"github.com/rs/zerolog"
 )
@@ -65,6 +66,7 @@ func main() {
 		port       = flag.Int("port", envInt("IG_BRIDGE_PORT", 18082), "HTTP port (private nora network only)")
 		sessionDir = flag.String("session", envStr("IG_SESSION_DIR", "/session"), "directory holding cookies + reconnection state")
 		verbose    = flag.Bool("v", false, "log the protocol client's own output")
+		token      = envStr("NORA_BRIDGE_TOKEN", "")
 	)
 	flag.Parse()
 	observability.SetupLogging(*verbose)
@@ -77,6 +79,10 @@ func main() {
 		os.Exit(2)
 	}
 
+	if token == "" {
+		slog.Error("NORA_BRIDGE_TOKEN is not set; refusing to start an unauthenticated bridge")
+		os.Exit(2)
+	}
 	store := session.Store{Dir: *sessionDir}
 	self, _ := store.LoadSelf()
 	commentPolicy, problems := commentPolicyFromEnv(os.Getenv)
@@ -124,7 +130,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", *port),
-		Handler: handler,
+		Handler: httptransport.RequireToken(token)(handler),
 		// No write timeout: /events is a long-lived SSE stream and any write
 		// deadline would sever it on a quiet room. Read timeouts are set
 		// instead, since request bodies are bounded and fast.

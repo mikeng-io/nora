@@ -316,6 +316,11 @@ class Gathering:
     #: until a caller resolves one (the tool layer's `_unit()`), matching
     #: `note`'s own "no unit means unavailable" convention rather than raising.
     unit_id: str = ""
+    #: The OTHER half of the persisted owner (`0128_event_platform`): the
+    #: platform the write was said on. Empty on a row that predates the column
+    #: (or was written before durable platform ownership existed); such a row
+    #: is quarantined by `event_in_scope`, never attributed from current policy.
+    platform: str = ""
     #: The dated thing's end, alongside `when` as its start.
     end: datetime | None = None
     #: Who is coming — deduced or abduced from co-location/RSVPs, or told.
@@ -489,6 +494,46 @@ def still_open_gatherings(
     return [e for e in events if e.when is None or e.when >= now]
 
 
+#: Conversation id -> every `(unit, platform)` pair `policy.toml` assigns it.
+#: The PORTAL uses this to resolve a member room's trusted `(unit, platform)`;
+#: it is never proof of who owns a persisted row. The row itself carries the
+#: owner since `0128_event_platform`.
+RoomClaims = Mapping[str, frozenset[tuple[str, str]]]
+
+
+def event_in_scope(
+    event: Gathering, *, unit_id: str, conversation_id: str,
+    platform: str | None = None,
+) -> bool:
+    """Whether `event` may be read or mutated as `(unit_id, platform,
+    conversation_id)`.
+
+    The ROW is the ownership record: the `(unit_id, platform)` pair persisted
+    with it names who wrote it. A row whose `platform` is empty has no durable
+    platform identity — it predates `0128_event_platform` and `policy.toml`
+    cannot establish what the policy was when it was written, because the room
+    may since have moved. Such a row is QUARANTINED: preserved in the table,
+    never shown or mutated through an inferred owner. The same applies to a row
+    with an empty `unit_id` and a set platform: that is the deliberately
+    unpartitioned development scope, and only a `unit_id=""` caller sees it.
+    Both halves must match; one current policy assignment is not evidence.
+
+    `platform=None` is the unit-wide reader (`event_search`, the agenda and
+    the wake look-ahead): the unit is the read boundary (DEC-231), so any
+    persisted platform in that unit is in scope. A platform-scoped read also
+    requires the row's platform."""
+    if event.conversation_id != conversation_id:
+        return False
+    if not event.platform:
+        # No durable platform owner: unresolved historical row, quarantined.
+        return False
+    if event.unit_id != unit_id:
+        return False
+    if platform is None:
+        return True
+    return event.platform == platform
+
+
 @runtime_checkable
 class GatheringStore(Protocol):
     async def create(
@@ -504,8 +549,12 @@ class GatheringStore(Protocol):
 
     async def list_for_conversation(
         self, *, conversation_id: str, status: GatheringStatus | None = None,
+        unit_id: str = "", platform: str | None = None,
     ) -> Sequence[Gathering]:
-        """A room's events."""
+        """A room's events, scoped by the PERSISTED owner: the row's
+        `conversation_id`, `unit_id` and (when named) `platform` must match.
+        There is no `include_legacy` widening: a row with no stored platform
+        is quarantined, never admitted through a current-policy inference."""
 
     async def list_for_person(
         self, *, person_id: str, conversation_ids: Collection[str] = (),
@@ -527,17 +576,12 @@ class GatheringStore(Protocol):
     async def search(
         self, *, unit_id: str, place: str | None = None, person: str | None = None,
         start: datetime | None = None, end: datetime | None = None,
-        room_ids: Sequence[str] = (),
     ) -> Sequence[Gathering]:
-        """Unit-wide (`unit_id == unit_id`), PLUS any
-        row with the backfilled `unit_id=""` whose
-        `conversation_id` is in `room_ids`: the unit's own rooms, resolved
-        by the CALLER from `policy.toml` (units are not in the DB, so the
-        column could not be filled for events that predate it).
-        `room_ids=()` is the honest default: no legacy row is ever matched
-        by accident when a caller has not resolved the unit's rooms. Never a
-        cross-unit leak: a legacy row in another unit's room is never in
-        `room_ids`, so it is never returned."""
+        """Unit-wide (`unit_id == unit_id`). This is the unit read boundary
+        (DEC-231): every persisted platform in that unit is in scope, and a row
+        with no stored platform is quarantined (never matched by the old
+        `room_ids` widening, which inferred historical ownership from current
+        policy)."""
 
     async def aclose(self) -> None: ...
 

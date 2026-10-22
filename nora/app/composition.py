@@ -328,12 +328,16 @@ _REASONING_EFFORTS: frozenset[str] = frozenset(
 )
 
 
-def _unit_room_ids(allowlist: Policy) -> dict[str, tuple[str, ...]]:
-    """Unit -> its rooms' primary ids, from `policy.toml`."""
-    out: dict[str, tuple[str, ...]] = {}
+def _room_claims(allowlist: Policy) -> dict[str, frozenset[tuple[str, str]]]:
+    """Conversation id -> every `(unit, platform)` pair policy.toml assigns it,
+    across every id form the room has had. Events store the conversation id
+    and the unit but never the platform, so this is the record that tells a
+    legacy `unit_id=""` row (or an id two units share) who owns it."""
+    out: dict[str, set[tuple[str, str]]] = {}
     for conv in allowlist.conversations:
-        out[conv.unit] = (*out.get(conv.unit, ()), conv.primary_id)
-    return out
+        for cid in conv.ids:
+            out.setdefault(cid, set()).add((conv.unit, conv.platform))
+    return {cid: frozenset(owners) for cid, owners in out.items()}
 
 
 def _presence_reader(
@@ -954,6 +958,38 @@ def character_unit_keys(allowlist: Any) -> dict[str, UnitKey]:
     }
 
 
+def scope_home_rooms(allowlist: Any) -> dict[str, HomeRoom]:
+    """`conversation id -> the room it names`, for every id form in policy.
+
+    A scope-keyed adaptor's key IS a conversation id, so this map is the whole
+    authorization context for its home-room grant. Two rooms can answer to the
+    same string (numeric ids are one id space per platform, but policy is not):
+    silently keeping the last one would run one unit's adaptor in another's
+    room. Refuse the collision at startup instead; a legacy policy that needs
+    both rooms must disambiguate them in `policy.toml` first.
+    """
+    out: dict[str, HomeRoom] = {}
+    seen: dict[str, tuple[str, str, str]] = {}
+    for conv in allowlist.conversations:
+        home = HomeRoom(
+            unit=conv.unit, platform=conv.platform,
+            conversation_id=conv.primary_id, conversation_type="group",
+            location_trusted=conv.location,
+        )
+        identity = (conv.unit, conv.platform, conv.primary_id)
+        for cid in conv.ids:
+            prior = seen.get(cid)
+            if prior is not None and prior != identity:
+                raise StartupError(
+                    "two policy rooms share a conversation id "
+                    f"({prior[1]} in {prior[0]!r} and {conv.platform} in "
+                    f"{conv.unit!r}); an id must name one room"
+                )
+            seen[cid] = identity
+            out[cid] = home
+    return out
+
+
 def social_person_units(allowlist: Any) -> dict[str, tuple[str, ...]]:
     """Each person LISTED by id in a room, and the units of the rooms that list
     them, in policy order: the units a social item of theirs is charged to and
@@ -1082,7 +1118,8 @@ class Dependencies:
     rooms_of: Callable[[str], frozenset[RoomKey]]
     # Whether a member of a room may see an event of it they neither made nor
     # answered on the portal's Plans (`nora.app.gatherings.room_event_shown`,
-    # bound to the process's lineage policy).
+    # bound to the process's lineage policy AND its trusted room claims, so the
+    # membership grant also checks the event's persisted owner).
     room_event_shown: Callable[[Any, str, str, str], bool]
     # (platform, conversation_id) -> the room's policy label, for the portal's document
     # rows; "" for a room the policy does not name.
@@ -2433,13 +2470,10 @@ async def build_dependencies(
     # already threaded to `TranscriptInjection`/`ToolRegistry` below.
     event_store = SqlGatheringStore(engine)
     # Events stored before units existed carry `unit_id=""` — units live in
-    # `policy.toml`, not the DB, so the column cannot be filled — and
-    # `search_events`'s unit-wide filter would never find one: it reads a
-    # unit's rooms from policy instead.
-    event_unit_rooms = _unit_room_ids(allowlist)
-
-    def _event_unit_room_ids(unit_id: str) -> tuple[str, ...]:
-        return event_unit_rooms.get(unit_id, ())
+    # `policy.toml`, not the DB, so the column cannot be filled — and policy
+    # also knows the platform each id belongs to, which the row does not. The
+    # service admits a legacy row only when this map names exactly one owner.
+    event_room_claims = _room_claims(allowlist)
 
     # A venue's district and city come from the Geocoding API by the place id
     # `place_info` resolved it to, with the route key (a Places id is that
@@ -2454,7 +2488,6 @@ async def build_dependencies(
         route_source=route_client,
         honcho=memory,
         ai_peer=cfg.memory.ai_peer,
-        unit_room_ids=_event_unit_room_ids,
         place_areas=place_areas,
     )
     # `media_fetch` (DEC-56) reads a stored blob back through MiMo. Its two
@@ -4340,15 +4373,7 @@ async def build_dependencies(
             # disagree about which room an id names.
             # Inert for an adaptor with no home-room grant, exactly as
             # `home_rooms` is.
-            scope_rooms={
-                cid: HomeRoom(
-                    unit=conv.unit, platform=conv.platform,
-                    conversation_id=conv.primary_id, conversation_type="group",
-                    location_trusted=conv.location,
-                )
-                for conv in allowlist.conversations
-                for cid in conv.ids
-            },
+            scope_rooms=scope_home_rooms(allowlist),
             rosters=rosters,
             # EVERY platform's aliases, for `_presence_preflight`'s reason: a
             # home room's roster must skip Nora's own account rather than
@@ -4530,8 +4555,10 @@ async def build_dependencies(
                 for conv in allowlist.conversations for cid in conv.ids
             }
 
-            async def _room_events(unit: str, conversation_id: str) -> Sequence[Any]:
-                return await _open_events(conversation_id)
+            async def _room_events(
+                unit: str, platform: str, conversation_id: str,
+            ) -> Sequence[Any]:
+                return await _open_events(unit, platform, conversation_id)
 
             grounder = build_grounder(
                 # NOT `tool_registry`'s `record`, which is None unless `[record_query]
@@ -4696,7 +4723,7 @@ async def build_dependencies(
         index_state=memory_index_reader.index_state,
         documents=documents_store, document_service=document_service,
         rooms_of=functools.partial(rooms_named, allowlist),
-        room_event_shown=functools.partial(room_event_shown, lineage),
+        room_event_shown=functools.partial(room_event_shown, lineage, event_room_claims),
         room_label=functools.partial(room_label, allowlist),
         blobs=blobs, artifacts=computer_exports,
         dispatcher=dispatcher, adapter=adapter, registry=registry,

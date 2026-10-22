@@ -4229,38 +4229,42 @@ class EventsCollaborator(Protocol):
         self, *, event_id: UUID, conversation_id: str,
         when: datetime | None = None, venue_text: str | None = None,
         person_names: frozenset[str] | None = None, platform: str,
-        base_revision_id: UUID | None = None, message_ids: Sequence[int] = (),
+        unit_id: str = "", base_revision_id: UUID | None = None,
+        message_ids: Sequence[int] = (),
     ) -> Gathering: ...
 
     async def rsvp(
         self, *, event_id: UUID, conversation_id: str, person_id: str,
-        response: RSVPResponse,
+        response: RSVPResponse, platform: str = "", unit_id: str = "",
     ) -> RSVP: ...
 
     async def cancel_event(
         self, *, event_id: UUID, conversation_id: str,
+        platform: str = "", unit_id: str = "",
     ) -> Gathering: ...
 
     async def set_event_status(
         self, *, event_id: UUID, conversation_id: str, status: GatheringStatus,
-        base_revision_id: UUID | None = None, platform: str | None = None,
-        message_ids: Sequence[int] = (),
+        base_revision_id: UUID | None = None, platform: str = "",
+        unit_id: str = "", message_ids: Sequence[int] = (),
     ) -> Gathering: ...
 
     async def list_events(
         self, *, conversation_id: str, status: GatheringStatus | None = None,
+        unit_id: str = "", platform: str = "",
     ) -> Sequence[Gathering]: ...
 
     async def search_events(
         self, *, unit_id: str, conversation_id: str, place: str | None = None,
         person: str | None = None, start: datetime | None = None,
-        end: datetime | None = None,
+        end: datetime | None = None, platform: str = "",
     ) -> Sequence[Gathering]: ...
 
     async def suggest_venue(
         self, *, event_id: UUID, conversation_id: str,
         roster_person_ids: Sequence[str],
         person_names: frozenset[str] | None = None,
+        platform: str = "", unit_id: str = "",
     ) -> VenueSuggestions: ...
 
 
@@ -12857,12 +12861,14 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 out = await events.search_events(
                     unit_id=_unit() or "", conversation_id=bound_conversation_id,
                     place=place or None, person=person or None,
+                    platform=room.platform,
                 )
                 if parsed_status is not None:
                     out = [e for e in out if e.status is parsed_status]
             else:
                 out = await events.list_events(
                     conversation_id=bound_conversation_id, status=parsed_status,
+                    unit_id=_unit() or "", platform=room.platform,
                 )
         except Exception:
             log.exception("event_search failed")
@@ -12986,6 +12992,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 event_id=UUID(event_id), conversation_id=bound_conversation_id,
                 when=due_at, venue_text=venue_text or None,
                 person_names=_route_person_names, platform=room.platform,
+                unit_id=_unit() or "",
                 base_revision_id=UUID(base_revision_id) if base_revision_id else None,
                 message_ids=room.trigger_message_ids,
             )
@@ -13053,6 +13060,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             await events.rsvp(
                 event_id=UUID(event_id), conversation_id=bound_conversation_id,
                 person_id=tagger.person_id, response=RSVPResponse(response),
+                platform=room.platform, unit_id=_unit() or "",
             )
         except GatheringNotFoundError:
             _record(metrics, "event_rsvp", "refused", reason="not_found")
@@ -13117,7 +13125,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 event_id=UUID(event_id), conversation_id=bound_conversation_id,
                 status=parsed_status,
                 base_revision_id=UUID(base_revision_id) if base_revision_id else None,
-                platform=room.platform, message_ids=room.trigger_message_ids,
+                platform=room.platform, unit_id=_unit() or "",
+                message_ids=room.trigger_message_ids,
             )
         except GatheringNotFoundError:
             _record(metrics, "event_set_status", "refused", reason="not_found")
@@ -13188,6 +13197,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 event_id=UUID(event_id), conversation_id=bound_conversation_id,
                 roster_person_ids=[p.person_id for p in roster.people],
                 person_names=_route_person_names,
+                platform=room.platform, unit_id=_unit() or "",
             )
         except GatheringNotFoundError:
             _record(metrics, "suggest_venue", "refused", reason="not_found")

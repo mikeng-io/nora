@@ -131,7 +131,9 @@ async def test_events_commit_with_their_stated_mode_and_move_on_the_live_service
 
     stores, _ = await session(behave)
     assert [a["status"] for a in answers] == ["ok", "ok"]
-    (event,) = await stores.gatherings.list_for_conversation(conversation_id=A.conversation_id)
+    (event,) = await stores.gatherings.list_for_conversation(
+        conversation_id=A.conversation_id, unit_id="u", platform=A.platform,
+    )
     assert event.created_by == PROVENANCE and event.status is GatheringStatus.CONFIRMED
     assert {m.field: m.reasoning for m in event.field_meta}["start"] == "abduced"
 
@@ -154,7 +156,9 @@ async def test_an_event_with_a_time_owns_no_reminder():
 
     stores, _ = await session(behave)
     assert [a["status"] for a in answers] == ["ok", "ok"]
-    (event,) = await stores.gatherings.list_for_conversation(conversation_id=A.conversation_id)
+    (event,) = await stores.gatherings.list_for_conversation(
+        conversation_id=A.conversation_id, unit_id="u", platform=A.platform,
+    )
     assert event.when is not None and event.reminder_id is None
     assert list(await stores.reminders.all_pending(limit=100)) == []
 
@@ -380,7 +384,8 @@ async def test_the_upcoming_reader_names_each_room_once_inside_the_horizon():
         "room-c": [_E(NOW + day)],
     }
 
-    async def events(conversation_id):
+    async def events(unit, platform, conversation_id):
+        assert (unit, platform) == ("unit-1", "signal")
         return by_id.get(conversation_id, [])
 
     rooms = [

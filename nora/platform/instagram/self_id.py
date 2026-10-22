@@ -48,6 +48,7 @@ from __future__ import annotations
 import aiohttp
 
 from ...domain.identity import Identifier
+from ...infra.service_auth import service_auth_headers
 from .ids import fbid_form, igid_form
 
 #: The one `session` value that means Nora can send, react and hear. The other
@@ -85,7 +86,9 @@ async def derive_identity(
     """
     async with (
         aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session,
-        session.get(f"{base_url.rstrip('/')}/health") as resp,
+        session.get(
+            f"{base_url.rstrip('/')}/health", headers=service_auth_headers(),
+        ) as resp,
     ):
         if resp.status != 200:
             raise InstagramIdentityError(f"GET /health returned HTTP {resp.status}")
@@ -136,7 +139,9 @@ async def read_username(
     try:
         async with (
             aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session,
-            session.get(f"{base_url.rstrip('/')}/health") as resp,
+            session.get(
+            f"{base_url.rstrip('/')}/health", headers=service_auth_headers(),
+        ) as resp,
         ):
             if resp.status != 200:
                 return None

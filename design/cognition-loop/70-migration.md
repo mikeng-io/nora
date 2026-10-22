@@ -334,18 +334,15 @@ are identified by that deploy row. The daemon writes all four
   and written from the tag path's own unit resolver (`_unit()`,
   `nora.agent.tools`, the same one `note_create` shares), but existing rows
   backfill to `''` — the database alone cannot resolve a room to a unit.
-  **Closed two ways in step 2b-events (review round, built 2026-09-29):**
-  READ side, `GatheringStore.search` takes `room_ids` (the caller's own
-  `policy.toml` resolution of the unit's rooms) and widens the unit-wide
-  match to also catch a `unit_id=''` row in one of them, never another
-  unit's; WRITE side, `nora events backfill-units [--apply]`
-  (`nora.app.events_backfill`) sets `unit_id` on a legacy row from its
-  room's `policy.toml` unit, through the normal `GatheringStore.update`
-  path. The cross-room de-duplication of legacy per-room events into one
-  row is still **not built here**: `unit_id` no longer stays permanently
-  blank, but merging same-gathering rows from different rooms of a unit
-  into one is a separate, unbuilt step this row still hands off rather
-  than guesses at. `reasoning` and
+  **SUPERSEDED IN PART 2026-10-22 (Aikido high-triage, PR #188):** the
+  read-side `room_ids` widening and the `nora events backfill-units` write
+  side are deleted. A row's owner is its persisted `(unit_id, platform)`; a
+  row with no stored platform is quarantined and is never attributed from the
+  current `policy.toml` (migration `0128_event_platform`, which backfills
+  nothing and preserves every row). The cross-room de-duplication of legacy
+  per-room events into one row is still **not built here**: merging
+  same-gathering rows from different rooms of a unit into one is a separate,
+  unbuilt step this row still hands off rather than guesses at. `reasoning` and
   `lineage` follow `0073`'s row-level simplification (`lineage` sectioned by
   FIELD name, reusing `nora.domain.lineage.Lineage`); no writer states either
   yet (step 3 is the first). **Step 3's first writer (DEC-253, migration

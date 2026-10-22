@@ -16,8 +16,8 @@
  {
   "name": "M4: a session reads withdrawn events",
   "file": "nora/app/cognition_wiring.py",
-  "old": "            e for e in await store.list_for_conversation(conversation_id=conversation_id)\n",
-  "new": "            e for e in await store.list_for_conversation(conversation_id=conversation_id, include_unsupported=True)\n",
+  "old": "            if e.status in OPEN_STATUSES",
+  "new": "            if True",
   "target": "tests/unit/test_event_evidence_d.py::test_a_session_is_shown_and_may_move_every_event_before_happened"
  },
  {
@@ -107,8 +107,8 @@
  {
   "name": "review #669: event_set_status hands the tag path no message id",
   "file": "nora/agent/tools.py",
-  "old": "                platform=room.platform, message_ids=room.trigger_message_ids,\n",
-  "new": "                platform=room.platform,\n",
+  "old": "                platform=room.platform, unit_id=_unit() or \"\",\n                message_ids=room.trigger_message_ids,\n",
+  "new": "                platform=room.platform, unit_id=_unit() or \"\",\n",
   "target": "tests/test_gathering_tools.py::test_a_tag_turn_s_event_writes_cite_the_message_that_raised_the_turn"
  },
  {

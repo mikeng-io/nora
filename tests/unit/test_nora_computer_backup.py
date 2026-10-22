@@ -198,12 +198,14 @@ def test_a_restore_after_a_recreate_puts_every_room_back_byte_for_byte(host: Hos
     archive = _backup(host)
     before = {p.relative_to(host.vm / "workspace"): p.read_bytes()
               for p in (host.vm / "workspace").rglob("*")
-              if p.is_file() and "/browser/Default" not in str(p) and ".tmux" not in str(p)}
+              if p.is_file() and "/browser/Default" not in str(p) and ".tmux" not in str(p)
+              and p.name != ".restore.lock"}
     _wipe(host)                                       # what a recreate does
     result = host.run("restore", str(archive))
     assert result.returncode == 0, result.stdout + result.stderr
     after = {p.relative_to(host.vm / "workspace"): p.read_bytes()
-             for p in (host.vm / "workspace").rglob("*") if p.is_file()}
+             for p in (host.vm / "workspace").rglob("*")
+             if p.is_file() and p.name != ".restore.lock"}
     assert after == before
     assert host.vm_tmp_files() == []
     assert [e["status"] for e in host.events() if e["event"] == "restore"] == ["ok"]
@@ -212,8 +214,8 @@ def test_a_restore_after_a_recreate_puts_every_room_back_byte_for_byte(host: Hos
 def test_a_restore_rebuilds_ownership_the_way_computerd_makes_users(host: Host) -> None:
     """The per-room users do not exist in a new VM and computerd creates them on
     first use with whatever uid is free, so uids in the archive mean nothing.
-    Each room's directory is handed to `c-<first 12 hex>`, created the way
-    computerd creates it."""
+    Each STAGED room's directory is handed to `c-<first 12 hex>` before it is
+    renamed into /workspace, created the way computerd creates it."""
     archive = _backup(host)
     _wipe(host)
     host.run("restore", str(archive))
@@ -221,9 +223,92 @@ def test_a_restore_rebuilds_ownership_the_way_computerd_makes_users(host: Host) 
     for scope in (ROOM_A, ROOM_B):
         user = f"c-{scope[:12]}"
         assert any(c.startswith("useradd ") and c.endswith(user) for c in calls), calls
-        assert f"chown -hR {user}:{user} {host.vm}/workspace/{scope}" in calls
+        assert any(
+            c.startswith(f"chown -hR {user}:{user} ") and f"/tree/{scope}" in c
+            for c in calls
+        ), calls
     # Only rooms: computerd's `.tmux` and any stray directory are not scopes.
     assert not any(".tmux" in c for c in calls)
+
+
+def test_restore_stages_behind_a_root_private_wrapper_and_repairs_owner_before_publish(
+    host: Host, tmp_path: Path,
+) -> None:
+    """A normal backup tars `.`, so the archive applies /workspace's 0755 to the
+    directory tar extracts into; it also preserves numeric owners, which after a
+    recreate can name a DIFFERENT live room. Accepted archive metadata must not
+    make the staged rooms reachable: the outer wrapper stays 0700 root-only, tar
+    writes into its child, and the staged tree is chowned before its rename.
+
+    The wrapper's 0700 with no group/other bits is the traversal boundary: an
+    archived uid that now belongs to another room still cannot reach a sibling's
+    staged files through it. A real second-uid read needs root/Linux and is
+    UNVERIFIED here; this asserts the boundary and the publish ordering that make
+    it hold."""
+    import hashlib
+    import io
+    import tarfile
+    import threading
+    import time
+
+    archive = tmp_path / "normal-workspace.tar.gz"
+    with tarfile.open(archive, "w:gz") as tar:
+        dot = tarfile.TarInfo(".")
+        dot.type, dot.mode, dot.uid, dot.gid = tarfile.DIRTYPE, 0o755, 0, 0
+        tar.addfile(dot)
+        room = tarfile.TarInfo(ROOM_A)
+        room.type, room.mode, room.uid, room.gid = tarfile.DIRTYPE, 0o700, 4321, 4321
+        tar.addfile(room)
+        payload = b"another room's archived files\n"
+        member = tarfile.TarInfo(f"{ROOM_A}/inbox/a.txt")
+        member.size, member.mode, member.uid, member.gid = len(payload), 0o644, 4321, 4321
+        tar.addfile(member, io.BytesIO(payload))
+    Path(f"{archive}.sha256").write_text(
+        f"{hashlib.sha256(archive.read_bytes()).hexdigest()}  {archive}\n",
+    )
+    _wipe(host)
+
+    result: dict[str, subprocess.CompletedProcess[str]] = {}
+
+    def restore() -> None:
+        result["run"] = host.run(
+            "restore", str(archive), STUB_VM_CHOWN_MODE="block", STUB_VM_CHOWN_SLEEP="1.0",
+        )
+
+    thread = threading.Thread(target=restore)
+    thread.start()
+    marker = host.dir / "vm-chown-started"
+    deadline = time.monotonic() + 20
+    while not marker.exists() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert marker.exists(), "the restore never reached the staged owner repair"
+    wrappers = [p for p in (host.vm / "workspace").glob(".restore.*") if p.is_dir()]
+    assert len(wrappers) == 1, wrappers
+    wrapper = wrappers[0]
+    assert wrapper.stat().st_mode & 0o777 == 0o700
+    assert wrapper.stat().st_mode & 0o077 == 0, "another room could traverse the wrapper"
+    child = wrapper / "tree"
+    assert child.is_dir()
+    assert child.stat().st_mode & 0o777 == 0o755, "the archive's `.` mode reached the child"
+    assert (child / ROOM_A / "inbox" / "a.txt").read_text() == "another room's archived files\n"
+    thread.join(timeout=60)
+    assert not thread.is_alive()
+    assert result["run"].returncode == 0, result["run"].stdout + result["run"].stderr
+
+    order = host.vm_order_log()
+    chown_at = next(
+        i for i, line in enumerate(order)
+        if line.startswith("chown ") and f"/tree/{ROOM_A}" in line
+    )
+    mv_at = next(
+        i for i, line in enumerate(order)
+        if line.startswith("mv ") and f"/tree/{ROOM_A}" in line
+    )
+    assert chown_at < mv_at, "the staged room was published before its owner was repaired"
+    assert not wrappers[0].exists()
+    assert (host.vm / "workspace" / ROOM_A / "inbox" / "a.txt").read_text() == (
+        "another room's archived files\n"
+    )
 
 
 def test_the_useradd_a_restore_runs_is_the_one_computerd_runs() -> None:
@@ -250,6 +335,116 @@ def test_a_restore_over_existing_rooms_is_refused_unless_forced(host: Host) -> N
     assert _copied_in(host) == []                     # nothing was copied in
     forced = host.run("restore", str(archive), "--force")
     assert forced.returncode == 0, forced.stdout + forced.stderr
+
+
+def test_a_restore_does_not_follow_a_symlink_already_in_a_room(
+    host: Host, tmp_path: Path,
+) -> None:
+    """The archive check refuses links the ARCHIVE carries. A link already in
+    the VM is the other half: the room controls it, and a root extraction into
+    /workspace would write through it. Restore stages the archive in a fresh
+    tree and renames each room over the old one, so the planted link is
+    replaced, not traversed."""
+    import hashlib
+    import io
+
+    archive = _backup(host)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (host.vm / "workspace" / ROOM_A / "escape").symlink_to(outside)
+    poisoned = tmp_path / "poisoned.tar.gz"
+    with tarfile.open(archive, "r:gz") as source, tarfile.open(poisoned, "w:gz") as target:
+        for member in source:
+            target.addfile(member, source.extractfile(member))
+        payload = b"owned"
+        member = tarfile.TarInfo(f"{ROOM_A}/escape/pwned")
+        member.size = len(payload)
+        target.addfile(member, io.BytesIO(payload))
+    Path(f"{poisoned}.sha256").write_text(
+        f"{hashlib.sha256(poisoned.read_bytes()).hexdigest()}  {poisoned}\n",
+    )
+
+    result = host.run("restore", str(poisoned), "--force")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not (outside / "pwned").exists()
+    assert (host.vm / "workspace" / ROOM_A / "escape" / "pwned").read_text() == "owned"
+
+
+def test_a_restore_holds_the_exclusive_lease_while_it_swaps_a_room(host: Host) -> None:
+    """computerd takes the same lock SHARED around `run`/`state`/file ops, so a
+    restore that holds it exclusively cannot rename a directory out from under
+    a command. This is the lock, not the absence of one: while the shimmed
+    rename is paused, a non-blocking exclusive open must be refused."""
+    import fcntl
+    import threading
+    import time
+
+    archive = _backup(host)
+    result: dict[str, subprocess.CompletedProcess[str]] = {}
+
+    def restore() -> None:
+        result["run"] = host.run(
+            "restore", str(archive), "--force",
+            STUB_VM_MV_MODE="block", STUB_VM_MV_SLEEP="1.0",
+        )
+
+    thread = threading.Thread(target=restore)
+    thread.start()
+    marker = host.dir / "vm-mv-started"
+    deadline = time.monotonic() + 20
+    while not marker.exists() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert marker.exists(), "the restore never reached the room rename"
+    with (
+        open(host.vm / "workspace" / ".restore.lock", "rb") as lock,
+        pytest.raises(BlockingIOError),
+    ):
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    thread.join(timeout=60)
+    assert not thread.is_alive()
+    assert result["run"].returncode == 0, result["run"].stdout + result["run"].stderr
+
+
+def test_a_destination_that_reappears_is_not_nested_inside_and_the_old_room_is_kept(
+    host: Host,
+) -> None:
+    """The old restore did `rm -rf` then plain `mv`: a writer recreating the
+    destination between them made the staged room land INSIDE it. Now the
+    exact-destination rename fails, the old room is not deleted, and the
+    installer names the `.restore-old` directory that holds it."""
+    archive = _backup(host)
+    (host.vm / "workspace" / ROOM_A / "inbox" / "a.txt").write_text("changed after backup")
+
+    result = host.run("restore", str(archive), "--force", STUB_VM_MV_MODE="recreate")
+
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "old room data kept in" in result.stderr, result.stderr
+    destination = host.vm / "workspace" / ROOM_A
+    assert (destination / "raced.txt").exists(), "the writer's directory was replaced"
+    assert not (destination / ROOM_A).exists(), "the staged room was nested inside the destination"
+    kept = list((host.vm / "workspace").glob(".restore-old.*"))
+    assert kept, "the old room data was not kept"
+    assert any(
+        (backup / ROOM_A / "inbox" / "a.txt").read_text() == "changed after backup"
+        for backup in kept
+    )
+
+
+def test_a_failed_room_move_puts_the_old_room_back_instead_of_deleting_it(host: Host) -> None:
+    """The old restore deleted the room before the move, so a failed move lost
+    it. The replacement now lands first; on failure the old room is restored
+    from the aside directory and the staging/backup directories are cleaned."""
+    archive = _backup(host)
+    before = (host.vm / "workspace" / ROOM_A / "inbox" / "a.txt").read_text()
+
+    result = host.run("restore", str(archive), "--force", STUB_VM_MV_MODE="fail")
+
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert (host.vm / "workspace" / ROOM_A / "inbox" / "a.txt").read_text() == before
+    assert not [p for p in (host.vm / "workspace").glob(".restore.*") if p.is_dir()], \
+        "staging directory left behind"
+    assert not list((host.vm / "workspace").glob(".restore-old.*")), \
+        "an empty backup was left behind"
 
 
 def test_an_archive_without_its_checksum_is_not_restored(host: Host) -> None:
@@ -562,6 +757,22 @@ def test_a_write_through_a_symlink_that_is_in_the_archive_is_refused(
     result = host.run("restore", str(archive))
     assert result.returncode == 3, result.stdout + result.stderr
     assert "written through the symlink" in result.stderr
+
+
+def test_an_archive_whose_root_is_a_link_is_refused(
+    host: Host, tmp_path: Path,
+) -> None:
+    """`.` is the one member allowed outside a room, because it lands on the
+    staging child. That exception is a DIRECTORY only: a `.` symlink or hard
+    link would aim the root extraction at another path."""
+    def build(tar):
+        _link(tar, ".", "/etc")
+        _member(tar, f"{ROOM_A}/file")
+
+    archive = _hostile(tmp_path / "root-link.tar.gz", build)
+    result = host.run("restore", str(archive))
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert "the archive root is not a directory" in result.stderr
 
 
 def test_a_real_backup_passes_the_archive_check(host: Host) -> None:

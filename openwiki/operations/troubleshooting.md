@@ -391,7 +391,6 @@ guarantee rather than a promise:
 | `nora memory persona-retry-media` | queue one media retry for one account | only with `--apply` |
 | `nora memory backfill` / `carry-conclusions` / `backfill-places` | replay one unit's messages into its Honcho workspace; copy pre-cutover facts; give venues their district | only with `--apply` |
 | `nora memory detach-unit` | delete a moved unit's rooms from the workspace it left (step 1), then rebuild the recorded peers' cards (step 2) | step 1 only with `--apply`, irreversible; `--refresh-cards` is step 2, writes, and refuses to be combined with `--apply` |
-| `nora events backfill-units` | set `unit_id` on every pre-migration event | only with `--apply` |
 | `nora lessons retire` / `rollback` | retire a lesson, or put an earlier revision back as newest | only with `--apply` |
 | `nora memory rebuild` | re-project every store into the memory index | **writes by default**; `--dry-run` counts only |
 | `nora assess run-nightly` | run every nightly data-quality check and print the report | **writes an `assess_report` row by default**; `--no-record` prints only |

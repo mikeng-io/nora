@@ -30,6 +30,7 @@ import aiohttp
 
 from ...domain.models import ConversationTarget
 from ...domain.ports import ReactionResult
+from ...infra.service_auth import service_auth_headers
 
 log = logging.getLogger("nora.whatsapp.react")
 
@@ -73,7 +74,10 @@ class WhatsAppReactor:
         try:
             async with (
                 aiohttp.ClientSession(timeout=self._timeout) as session,
-                session.post(f"{self._base_url}/react", json=payload) as resp,
+                session.post(
+                    f"{self._base_url}/react", json=payload,
+                    headers=service_auth_headers(),
+                ) as resp,
             ):
                 if resp.status == 200:
                     return ReactionResult(ok=True, supported=True)

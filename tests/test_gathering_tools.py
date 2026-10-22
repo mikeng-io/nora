@@ -224,7 +224,9 @@ async def test_update_event_translates_a_cancelled_event_fix_i2():
         title="Dinner",
         platform="signal",
     )
-    await events.cancel_event(event_id=ev.id, conversation_id=GROUP)
+    await events.cancel_event(
+        event_id=ev.id, conversation_id=GROUP, platform="signal",
+    )
     out = await tools["event_revise"](event_id=str(ev.id), venue_text="Soi 29")
     assert out["status"] == "refused"
 

@@ -139,7 +139,9 @@ def test_retire_quarantine_unblocks_inventory_and_produces_a_restorable_backup(m
     (root / ".tmux/socket-placeholder").write_bytes(b"excluded")
     archive = journal.parent / "post-migration.tar.gz"
     subprocess.run(  # noqa: S603 - fixed tar argv on a synthetic disk
-        ["tar", "--exclude=./.tmux", f"--exclude=./{unit}/browser",
+        ["tar", "--exclude=./.tmux", "--exclude=./.restore.lock",
+         "--exclude=./.restore.*", "--exclude=./.restore-old.*",
+         f"--exclude=./{unit}/browser",
          "-C", str(root), "-czf", str(archive), "."],
         env={**os.environ, "COPYFILE_DISABLE": "1"},  # no macOS metadata in the Linux shape
         check=True,
