@@ -115,29 +115,33 @@ class VideoDesk:
 
     async def _persist(self, row: ComputeJob) -> bool:
         """Write `row`. On failure it is held for `_reconcile` and False is returned: the
-        caller must not report a clip as recorded that the table does not hold."""
+        caller must not report a clip as recorded that the table does not hold. A cancellation
+        mid-write (a BaseException) holds the row too, because the provider has already accepted
+        the clip, and then propagates."""
         try:
             await self._jobs.create(row)
             return True
-        except Exception:
-            log.exception("video_create: the row for %s was not written; held to retry", row.id)
+        except BaseException as exc:
             self._unrecorded.append(row)
+            if not isinstance(exc, Exception):
+                raise
+            log.exception("video_create: the row for %s was not written; held to retry", row.id)
             return False
 
     async def _reconcile(self) -> None:
-        """Write held rows, oldest first, stopping at the first that still fails. A row the
-        table already holds (its write landed but the call raised) is dropped, not re-inserted."""
+        """Write every held row that is still missing, oldest first. A row that still fails stays
+        held and does not stop the rows behind it; a row the table already holds (its write landed
+        but the call raised) is dropped, not re-inserted."""
         async with self._reconcile_lock:
-            while self._unrecorded:
-                row = self._unrecorded[0]
+            for row in list(self._unrecorded):
                 try:
                     if await self._jobs.get(row.id) is None:
                         await self._jobs.create(row)
                 except Exception:
                     log.exception(
                         "video_create: a held row is still unwritten; retried next create")
-                    return
-                self._unrecorded.pop(0)
+                    continue
+                self._unrecorded.remove(row)
 
     async def _record_uncertain(
         self, *, platform: str, conversation_id: str, conversation_type: str,

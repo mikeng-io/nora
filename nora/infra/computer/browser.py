@@ -364,9 +364,13 @@ class BrowserPage:
             raise BrowserError(f"{ref} is no longer on the page")
         return str(object_id)
 
-    async def _call_on(self, ref: str, function: str, *args: Any) -> Any:
+    async def _call_on(self, ref: str, function: str, *args: Any, live: str = "") -> Any:
+        object_id = await self._object(ref)
+        if live:
+            # Resolving the node awaits: a revocation that lands there must send nothing.
+            self.policy.live(live)
         got = await self._page("Runtime.callFunctionOn", {
-            "objectId": await self._object(ref), "functionDeclaration": function,
+            "objectId": object_id, "functionDeclaration": function,
             "arguments": [{"value": a} for a in args], "returnByValue": True,
         })
         if "exceptionDetails" in got:
@@ -428,8 +432,7 @@ class BrowserPage:
             xs, ys = quad[0::2], quad[1::2]
         except (BrowserError, KeyError, TypeError, IndexError):
             # No layout box (an element drawn by script, or hidden): a DOM click.
-            self.policy.live("click")
-            await self._call_on(ref, "function() { this.click(); }")
+            await self._call_on(ref, "function() { this.click(); }", live="click")
         else:
             # The box's centre, kept inside the part that is on screen: an
             # element taller than the window has its centre off it.
@@ -458,7 +461,7 @@ class BrowserPage:
             else if (this.isContentEditable) { this.textContent = ''; }
             else { return; }
             this.dispatchEvent(new Event('input', {bubbles: true}));
-        }""")
+        }""", live="type")
         self.policy.live("type")
         await self._page("Input.insertText", {"text": text})
         if submit:
@@ -482,7 +485,7 @@ class BrowserPage:
               }
             }
             return null;
-        }""", option)
+        }""", option, live="select")
         if chosen is None:
             raise BrowserError(f"{ref} has no option {option!r}")
         await self.settle(before)  # a change handler may reload the page

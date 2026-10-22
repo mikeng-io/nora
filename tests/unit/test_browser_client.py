@@ -222,6 +222,61 @@ async def test_a_revoked_page_dispatches_nothing_at_all():
     assert _dispatched(cdp) == [] and "Page.navigate" not in cdp.methods()
 
 
+async def test_a_revocation_during_a_dom_click_fallback_sends_no_click():
+    """A click with no layout box is a DOM click: `this.click()` runs in the page. The policy is
+    checked before the node is resolved, and resolving it awaits, so a revocation that lands in
+    that await must still stop the call: nothing is sent to the page."""
+
+    class RevokeOnResolve(FakeCdp):
+        page: BrowserPage | None = None
+
+        async def call(self, method: str, params: dict[str, Any] | None = None, **kwargs: Any):
+            if method == "DOM.getBoxModel":
+                self.calls.append((method, params or {}))
+                return {}                       # no layout box: the DOM click fallback
+            if method == "DOM.resolveNode" and "DOM.getBoxModel" in self.methods():
+                self.page.revoke()              # the task ends while the node is resolved
+            return await super().call(method, params, **kwargs)
+
+    cdp = RevokeOnResolve(nodes=[_node("button", "Hidden", 5)])
+    page = _page(cdp)
+    cdp.page = page
+    await page.snapshot()
+    with pytest.raises(ActionRefusedError):
+        await page.click("e1")
+    assert not _calls_with(cdp, "Runtime.callFunctionOn", "this.click()")
+
+
+@pytest.mark.parametrize(("action", "marker"), [
+    (lambda page: page.select("e1", "Two"), "this.options"),
+    (lambda page: page.type_text("e1", "hello"), "this.value = ''"),
+])
+async def test_a_revocation_during_an_element_call_sends_nothing_to_the_element(action, marker):
+    """Select and type-into resolve the element after their policy check, as a click does. A
+    revocation during that resolve must send no call that changes the element."""
+
+    class RevokeOnResolve(FakeCdp):
+        page: BrowserPage | None = None
+
+        async def call(self, method: str, params: dict[str, Any] | None = None, **kwargs: Any):
+            if method == "DOM.resolveNode" and self.page is not None:
+                self.page.revoke()
+            return await super().call(method, params, **kwargs)
+
+    cdp = RevokeOnResolve(nodes=[_node("combobox", "Pick", 6)])
+    page = _page(cdp)
+    cdp.page = page
+    await page.snapshot()
+    with pytest.raises(ActionRefusedError):
+        await action(page)
+    assert not _calls_with(cdp, "Runtime.callFunctionOn", marker)
+
+
+def _calls_with(cdp: FakeCdp, method: str, text: str) -> list[dict[str, Any]]:
+    """The params of each `method` call whose declaration names `text`."""
+    return [p for m, p in cdp.calls if m == method and text in str(p.get("functionDeclaration"))]
+
+
 # -- reads run in an isolated world -------------------------------------------
 
 

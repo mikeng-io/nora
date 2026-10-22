@@ -896,6 +896,76 @@ async def test_a_held_clip_from_yesterday_does_not_count_against_today():
 # ---- the tool --------------------------------------------------------------------------------
 
 
+class _Hanging(FakeComputeJobStore):
+    """The first write hangs until its caller cancels it (the process is cut mid-write); the
+    writes after it land, as a recovered store's do."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.hung = False
+        self.entered = asyncio.Event()
+
+    async def create(self, job: ComputeJob) -> None:
+        if not self.hung:
+            self.hung = True
+            self.entered.set()
+            await asyncio.Event().wait()
+        await super().create(job)
+
+
+async def test_a_clip_cancelled_mid_write_is_held_so_the_next_turn_is_at_cap():
+    """The provider accepted clip 1 and the task was cancelled while its row was being written.
+    A cancellation is a BaseException, so `_persist`'s `except Exception` never held the row: the
+    next turn read the table, found nothing, and started clip 2 past a cap of one. The row must be
+    held before the cancellation propagates; the next turn's reconcile writes it exactly once."""
+    store = _Hanging()
+    starter = _Starter()
+    desk = _desk(store, starter, cap=1)
+    write = asyncio.create_task(_make(desk, tag="t1"))
+    await store.entered.wait()
+    write.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await write
+    second = await _make(desk, tag="t2")
+    assert (second.status, second.used, second.cap) == ("at_cap", 1, 1)
+    assert (await _make(desk, tag="t3")).status == "at_cap"
+    rows = await store.kind_since(kind=VIDEO_KIND, since=NOW - timedelta(days=1))
+    assert [r.backend_job_id for r in rows] == ["T1@1"]
+    assert len(starter.calls) == 1
+
+
+class _Refusing(FakeComputeJobStore):
+    """Every write fails while `down` is set; afterwards, writes for `refused_room` still fail."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.down = True
+        self.refused_room: str | None = None
+
+    async def create(self, job: ComputeJob) -> None:
+        if self.down or job.conversation_id == self.refused_room:
+            raise RuntimeError("db down")
+        await super().create(job)
+
+
+async def test_a_held_row_that_keeps_failing_does_not_block_the_rows_behind_it():
+    """Two clips are held, room A's first and room B's second. The store then refuses room A's
+    row for good. Reconcile must still write B's row: a failing head that stops the loop starves
+    every room behind it. A's row stays held, so A's cap still counts it."""
+    store = _Refusing()
+    starter = _Starter()
+    desk = _desk(store, starter, cap=1)
+    assert (await _make(desk, tag="a1")).reason == "row_not_written"
+    assert (await _make(desk, tag="b1", room=OTHER_ROOM)).reason == "row_not_written"
+    store.down = False
+    store.refused_room = ROOM
+    assert await desk.used_today(platform=PLATFORM, conversation_id=OTHER_ROOM) == 1
+    rows = await store.kind_since(kind=VIDEO_KIND, since=NOW - timedelta(days=1))
+    assert [r.conversation_id for r in rows] == [OTHER_ROOM]
+    assert await desk.used_today(platform=PLATFORM, conversation_id=ROOM) == 1
+    assert len(starter.calls) == 2
+
+
 class _Media:
     """The transcript rows `_held_media` reads: blobs held in this room, with the media type
     ingest recorded for each."""
