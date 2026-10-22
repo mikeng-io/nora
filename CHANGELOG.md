@@ -1,5 +1,22 @@
 # Changelog
 
+## [6.6.1](https://github.com/mikeng-io/nora/compare/v6.6.0...v6.6.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* **security:** close the Aikido high-triage review findings ([142e275](https://github.com/mikeng-io/nora/commit/142e2759e59cb8722c53a0f5d4056427c34e6a7e))
+* **security:** quarantine unresolved events and keep bridge tokens off argv ([5cbda28](https://github.com/mikeng-io/nora/commit/5cbda28d38ecf52490d106e1519a593fcd3366f1))
+
+
+### Security
+
+* **bridge:** require a bearer token on every transport route ([542d4aa](https://github.com/mikeng-io/nora/commit/542d4aaa9196fd788c15f539c5ad022c701d11de))
+* **cognition:** scope event reads to the unit and refuse ambiguous room ids ([4e1d70a](https://github.com/mikeng-io/nora/commit/4e1d70affeeba9d01b21fe10338e18e2dfdcc95c))
+* **computer:** stage restores outside the workspace tree ([7ef970a](https://github.com/mikeng-io/nora/commit/7ef970a5a646bba4b28b06afca9cd498245d9c85))
+* **deps:** update the Instagram bridge to Go 1.27.3 ([71927c5](https://github.com/mikeng-io/nora/commit/71927c5ce332708a14fb835c31d52df2da3af8f1))
+* **web:** send CSP and HSTS and run the site as non-root ([ff7a383](https://github.com/mikeng-io/nora/commit/ff7a383d23085112eed8fd09821cc6563baa9dcc))
+
 ## [6.6.0](https://github.com/mikeng-io/nora/compare/v6.5.1...v6.6.0) (2026-10-22)
 
 
