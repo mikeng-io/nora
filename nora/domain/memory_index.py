@@ -255,7 +255,7 @@ class MemoryScope:
     - `exclude_strict`: the room cannot vouch for who is in it (a `*` room,
       an unmapped account, an unreadable or degraded roster): any node with
       an `exclude_persons` is out (`nora.agent.lineage.excluded`'s rule).
-    - `presence_persons`: listed persons whose presence passes here (the
+    - `presence_persons`: known circle persons whose presence passes here (the
       room's `location` flag AND the live DisclosureGuard): an episode, or a
       social item's tagged place (`PRESENCE_KINDS`), is in scope only if
       every person of it is one.
@@ -308,6 +308,7 @@ class IndexedNode:
     identity_fact: Mapping[str, Any] | None = None
     location: bool = False
     named_persons: frozenset[str] = frozenset()
+    location_subjects: tuple[str, ...] = ()
 
     @property
     def key(self) -> tuple[str, str]:
@@ -491,11 +492,10 @@ def in_scope(node: IndexedNode, scope: MemoryScope) -> bool:
         return False
     location = node.location or (node.identity_fact is not None and is_location_fact(
         node.identity_fact.get("key"), node.identity_fact.get("value")))
-    if location and not (
-        set(node.persons) <= scope.presence_persons if node.persons else
-        bool(scope.listed_here) and scope.listed_here <= scope.presence_persons
-    ):
-        return False
+    if location:
+        subjects = set(node.persons or node.location_subjects)
+        if not subjects or not subjects <= scope.presence_persons:
+            return False
     if node.kind in SOCIAL_KINDS and set(node.persons) & scope.social_off:
         return False
     return not (

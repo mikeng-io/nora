@@ -23,6 +23,8 @@ in Python, which the contract suite holds to the same answers):
     AND (n.kind NOT IN ('social', 'social_media', 'social_location')
          OR NOT n.persons && $social_off)
 
+Location-bearing collective Persona lines check their code-recorded source
+subjects against that same presence permission; an absent subject is unknown.
 The presence line is `PRESENCE_KINDS`: an episode, and the place a social
 item is tagged with, which is a node of its own so that this line can gate
 it while the item stays readable by its caption. The last line is a
@@ -209,6 +211,7 @@ def _in_scope(n: Any, scope: MemoryScope) -> sa.ColumnElement[bool]:
             ~n.c.exclude_persons.overlap(_array(scope.people_here)),
         ),
     )
+    source_subjects = PERSONA_LINE.c.strength["location_subjects"]
     return sa.and_(
         n.c.state == "live",
         n.c.kind.not_in(HUB_KINDS),
@@ -218,8 +221,12 @@ def _in_scope(n: Any, scope: MemoryScope) -> sa.ColumnElement[bool]:
                 _persona_location(PERSONA_LINE.c),
                 ~sa.case((sa.func.cardinality(n.c.persons) > 0,
                           n.c.persons.contained_by(_array(scope.presence_persons))),
-                         else_=sa.literal(bool(scope.listed_here) and
-                                          scope.listed_here <= scope.presence_persons)),
+                         else_=sa.func.coalesce(sa.and_(
+                             sa.func.jsonb_typeof(source_subjects) == "array",
+                             source_subjects != sa.literal_column("'[]'::jsonb"),
+                             source_subjects.contained_by(
+                                 sa.func.to_jsonb(_array(scope.presence_persons))),
+                         ), sa.false())),
             ))),
         sa.or_(
             n.c.unit == sa.any_(_array(scope.units)),
@@ -316,6 +323,7 @@ def _node(r: Any, scope: MemoryScope | None = None) -> IndexedNode:
         exclude_persons=tuple(r.exclude_persons or ()), lineage=r.lineage,
         sha256=r.sha256, state=r.state, identity_fact=r.identity_fact,
         location=bool(r.location),
+        location_subjects=tuple(r.location_subjects or ()),
         named_persons=scope.listed_here if scope is not None else frozenset(),
     )
 
@@ -340,6 +348,9 @@ def _columns(n: Any) -> list[Any]:
         n.c.persons, n.c.exclude_persons, n.c.lineage, n.c.sha256, n.c.state, fact,
         sa.exists().where(sa.cast(p.id, sa.Text) == n.c.source_id,
                           n.c.kind == "persona_line", _persona_location(p)).label("location"),
+        sa.select(p.strength["location_subjects"]).where(
+            sa.cast(p.id, sa.Text) == n.c.source_id,
+            n.c.kind == "persona_line").correlate(n).scalar_subquery().label("location_subjects"),
     ]
 
 

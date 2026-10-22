@@ -491,8 +491,11 @@ def scope_for(
         here.persons is not None and live is not None and live.available
         and not live.degraded and live.unnamed == 0
     )
+    # Collective cards retain the actual cited presence subjects. Ordinary
+    # person nodes still require membership in listed_here inside every read.
+    candidates = listed | frozenset(p for members in target.circles for p in members)
     presence = frozenset(
-        p for p in listed
+        p for p in candidates
         if section_permits((LineageEntry(PRESENCE, subject=p),), target, origin=None)
     )
     return MemoryScope(

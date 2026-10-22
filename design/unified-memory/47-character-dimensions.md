@@ -626,3 +626,9 @@ reply replay or operator-owned switch decision is changed.
   apart; freeze sample size and remaining thresholds before the phase-4 run.
   Those cannot be sized from this docs-only work. A green shape validator is
   never a replacement for that measurement or Q1.
+
+Collective-card location provenance records the actual cited subjects in the
+code-computed strength metadata. Prompt and index reads apply the existing
+presence permission to those subjects, never to a guessed viewer roster;
+unknown subjects remain unreadable. Confirmation carries new source location
+and medium metadata forward for every part, including an open hypothesis.

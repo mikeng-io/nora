@@ -339,6 +339,16 @@ class PersonaLine:
             object.__setattr__(self, "location", True)
 
     @property
+    def location_subjects(self) -> tuple[str, ...]:
+        from nora.domain.culture import split_culture_key
+        _, _, subject = split_culture_key(self.persona_key)
+        if subject is not None:
+            return (subject,)
+        subjects = self.strength.get("location_subjects")
+        return (tuple(p for p in subjects if isinstance(p, str))
+                if isinstance(subjects, (list, tuple)) else ())
+
+    @property
     def memory_item(self) -> MemoryItem:
         return MemoryItem(
             subject=self.persona_key, part=self.part, kind=self.fact_key or self.kind,
@@ -1014,6 +1024,11 @@ def plan_write(
             written_by_session=written_by_session, **changes,  # type: ignore[arg-type]
         )
 
+    def location_subjects(ev: _Evidence, held: Sequence[PersonaLine] = ()) -> list[str]:
+        spatial = tuple(s for s in ev.said if s.location) or ev.said
+        return sorted({s.person_id for s in spatial if s.person_id is not None}
+                      | {p for line in held if line.location for p in line.location_subjects})
+
     def support(
         old: PersonaLine | None, ev: _Evidence, cites: Sequence[str],
     ) -> tuple[int, int]:
@@ -1087,7 +1102,12 @@ def plan_write(
                     continue
             cites = rooted((*target.citations, *op.citations))
             count, last = support(target, ev, op.citations)
-            new = successor(target, citations=cites, support_count=count, last_supported_at=last)
+            people = location_subjects(ev, (target,))
+            new = successor(target, citations=cites, support_count=count, last_supported_at=last,
+                location=target.location or any(s.location for s in ev.said),
+                strength={**target.strength, "location_subjects": people},
+                source_medium=tuple(sorted(set(target.source_medium)
+                                           | {s.medium for s in ev.said})))
             if target.part == "character" and target.content:
                 previous = target.strength.get("roots")
                 if not isinstance(previous, Mapping):
@@ -1107,10 +1127,8 @@ def plan_write(
                 times = [t for t in roots.values() if isinstance(t, int)]
                 new = replace(new, support_count=len(roots), last_supported_at=max(times),
                     strength={"occasions": len(roots), "days": len({_hkt_day(t) for t in times}),
-                              "first": min(times), "last": max(times), "roots": roots},
-                    location=target.location or any(s.location for s in ev.said),
-                    source_medium=tuple(sorted(set(target.source_medium)
-                                               | {s.medium for s in ev.said})))
+                              "first": min(times), "last": max(times), "roots": roots,
+                              "location_subjects": people})
             inserts.append(new)
             after.pop(target.id)
             after[new.id] = new
@@ -1235,6 +1253,8 @@ def plan_write(
             source_medium=tuple(sorted({s.medium for s in ev.said})),
             strength={"occasions": len(sources), "days": len({_hkt_day(t) for t in stamps}),
                       "first": min(stamps, default=None), "last": max(stamps, default=None),
+                      "location_subjects": location_subjects(
+                          ev, (*prem, *((old,) if old is not None else ()))),
                       "roots": {key: s.happened_at if s.happened_at is not None else s.ts
                                 for key, s in sources.items()}},
         )

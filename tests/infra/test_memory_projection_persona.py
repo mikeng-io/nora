@@ -494,3 +494,35 @@ async def test_location_profile_search_uses_existing_presence_scope(engine, lega
     [node] = await index.about("member-b", replace(scope,
         presence_persons=frozenset({"member-b"})), limit=10)
     assert node.location and "Lotus District" in node.text
+
+
+async def test_collective_location_search_uses_the_cited_presence_subject(engine):
+    from nora.domain.memory_index import MemoryScope
+    from nora.domain.persona import Said
+    from nora.infra.sql.memory_read import SqlMemoryIndex
+    from tests.unit.test_character_card import trait
+
+    await _unit_proven(engine)
+    refs = {f"presence:stay:member-b:{n}": Said(NOW - n * 86400000, "member-b", None,
+        occasion=f"visit:{n}", medium="presence", location=True) for n in (1, 2, 3)}
+    op = trait(citations=tuple(refs))
+    result = await _store(engine).persona_write(
+        account=Account(unit_culture_key(_UNIT), "unit", _UNIT),
+        ops=[replace(op, content={**op.content, "interest": "Lotus Library"})],
+        citable=PersonaCitable(sources=refs), now_ms=NOW,
+        written_by_session="synthetic", apply_decay=False)
+    assert result.status == "ok"
+    [head] = await _store(engine).account_heads(key=unit_culture_key(_UNIT))
+    assert head.location
+    scope = MemoryScope(units=(_UNIT,), rooms=(_ROOM,),
+        listed_here=frozenset({"viewer"}), people_here=frozenset({"viewer"}),
+        exclude_strict=False, presence_persons=frozenset({"viewer"}),
+        social_off=frozenset(), persona_render=True)
+    index = SqlMemoryIndex(engine)
+    assert not await index.seed(["Lotus"], scope, limit=10)
+    allowed = replace(scope, presence_persons=frozenset({"viewer", "member-b"}))
+    [hit] = await index.seed(["Lotus"], allowed, limit=10)
+    assert hit.node.location_subjects == ("member-b",)
+    async with engine.begin() as conn:
+        await conn.execute(sa.update(PERSONA_LINE).values(strength={}))
+    assert not await index.seed(["Lotus"], allowed, limit=10)

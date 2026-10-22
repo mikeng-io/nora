@@ -81,13 +81,15 @@ def test_one_aggregate_is_not_an_exemption_and_roots_are_positive_control():
 def test_model_strength_and_location_are_ignored_and_projection_is_canonical():
     raw = {"op": "add", "part": "character", "kind": "topic", "text": "fiction",
            "mode": "induced", "content": dict(trait().content),
-           "citations": ["101", "102", "103"], "strength": {"occasions": 900},
+           "citations": ["101", "102", "103"],
+           "strength": {"occasions": 900, "location_subjects": ["unrelated-person"]},
            "location": True}
     ops, refused = parse_ops([raw])
     assert not refused
     [line] = _plan(list(ops)).inserts
     assert line.strength == {"occasions": 3, "days": 3,
                              "first": CITABLE.messages[101].ts, "last": CITABLE.messages[103].ts,
+                             "location_subjects": ["p-kit"],
                              "roots": {f"room-a:{CITABLE.messages[i].ts}": CITABLE.messages[i].ts
                                        for i in (101, 102, 103)}}
     assert line.support_count == 3 and not line.location
@@ -216,3 +218,57 @@ def test_slot_contract_has_no_arbitrary_extra_fields():
         "content_slots"]
     bounded = replace(op, content={**op.content, "exceptions": "quiet weeks differ"})
     assert not _plan([bounded]).refused
+
+
+async def test_collective_location_uses_cited_subjects_not_the_viewer_roster():
+    from types import SimpleNamespace
+
+    from nora.agent.lineage import persona_lines_for
+    from nora.agent.memory_search import scope_for
+    from nora.domain.lineage import LiveRoom, RenderRoom, RoomFacts
+    from nora.domain.memory_index import IndexedNode, in_scope
+    from nora.domain.persona import Account
+
+    refs = {f"presence:stay:p-kit:{n}": Said(NOW - n * 86400000, "p-kit", None,
+        occasion=f"visit:{n}", medium="presence", location=True) for n in (1, 2, 3)}
+    [line] = _plan([trait(citations=tuple(refs))], account=Account("u1#unit", "unit", "u1"),
+                  citable=replace(CITABLE, sources=refs)).inserts
+    class Room:
+        async def scope(self):
+            return SimpleNamespace(people=[SimpleNamespace(person_id="p-lee")],
+                                   unnamed=0, available=True, degraded=False)
+    target = RenderRoom(room=RoomFacts("signal", frozenset({"room-a"}), "u1",
+        frozenset({"p-lee"}), location=True), circles=(frozenset({"p-lee"}),))
+    assert not await persona_lines_for((line,), target, Room())
+    shared = replace(target, circles=(frozenset({"p-lee", "p-kit"}),))
+    assert await persona_lines_for((line,), shared, Room()) == (line,)
+    assert line.strength["location_subjects"] == ["p-kit"]
+    assert not await persona_lines_for((replace(line, strength={}),), shared, Room())
+    scope = scope_for(shared.with_live(LiveRoom(person_ids=frozenset({"p-lee"}),
+        unnamed=0, available=True, degraded=False)), social_off=())
+    scope = replace(scope, persona_render=True)
+    assert "p-kit" in scope.presence_persons
+    assert not in_scope(IndexedNode("stay", "visit", persons=("p-kit",)), scope)
+    node = IndexedNode("persona_line", "collective", unit="u1", location=True,
+                       location_subjects=("p-kit",))
+    assert in_scope(node, scope)
+    assert not in_scope(replace(node, location_subjects=()), scope)
+
+
+
+def test_confirmation_carries_location_evidence_for_an_open_hypothesis():
+    from nora.domain.persona import KeepOp
+
+    held = replace(_line(2), part="hypothesis", kind="explanation", mode="abduced",
+        content={"proposed_cause": "limited evenings", "alternative": "prefers brevity"},
+        prediction="longer replies in quiet weeks", prediction_window_end=NOW + 86400000,
+        location=False, source_medium=("chat",))
+    cite = "presence:stay:p-kit:visit"
+    evidence = replace(CITABLE, sources={cite: Said(NOW, "p-kit", None,
+        occasion="one-visit", medium="presence", location=True)})
+    plan = _plan([KeepOp(line="P1", citations=(cite,))], (held,), citable=evidence)
+    assert not plan.refused
+    [confirmed] = plan.inserts
+    assert confirmed.location
+    assert confirmed.source_medium == ("chat", "presence")
+    assert confirmed.strength["location_subjects"] == ["p-kit"]

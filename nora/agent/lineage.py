@@ -335,10 +335,7 @@ async def persona_lines_for(
             return False
         if not line.location:
             return True
-        from nora.domain.culture import split_culture_key
-        _, _, subject = split_culture_key(line.persona_key)
-        subjects = ((subject,) if subject else
-                    tuple(target.room.persons or ()) if target.room else ())
+        subjects = line.location_subjects
         return bool(subjects) and all(_presence(
             LineageEntry(PRESENCE, person, None), target) for person in subjects)
     return tuple(line for line in lines if permitted(line))

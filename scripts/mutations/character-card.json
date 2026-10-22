@@ -152,5 +152,40 @@
     "old": "if cfg.evals.judge_model == cfg.dreamer_model():",
     "new": "if False:",
     "target": "tests/test_cli_control_plane.py::test_character_report_requires_a_separately_configured_judge"
+  },
+  {
+    "name": "collective prompt disclosure uses actual cited subjects",
+    "file": "nora/agent/lineage.py",
+    "old": "subjects = line.location_subjects",
+    "new": "subjects = tuple(target.room.persons or ()) if target.room else ()",
+    "target": "tests/unit/test_character_card.py::test_collective_location_uses_cited_subjects_not_the_viewer_roster"
+  },
+  {
+    "name": "collective SQL reads check the cited presence subjects",
+    "file": "nora/infra/sql/memory_read.py",
+    "old": "source_subjects.contained_by(\n                                 sa.func.to_jsonb(_array(scope.presence_persons)))",
+    "new": "sa.true()",
+    "target": "tests/infra/test_memory_projection_persona.py::test_collective_location_search_uses_the_cited_presence_subject"
+  },
+  {
+    "name": "existing circle permissions cover a collective source without widening listed nodes",
+    "file": "nora/agent/memory_search.py",
+    "old": "p for p in candidates",
+    "new": "p for p in listed",
+    "target": "tests/unit/test_character_card.py::test_collective_location_uses_cited_subjects_not_the_viewer_roster"
+  },
+  {
+    "name": "confirmation carries newly cited location evidence",
+    "file": "nora/domain/persona.py",
+    "old": "location=target.location or any(s.location for s in ev.said),",
+    "new": "location=target.location,",
+    "target": "tests/unit/test_character_card.py::test_confirmation_carries_location_evidence_for_an_open_hypothesis"
+  },
+  {
+    "name": "dense search remains compilable for the real planner check",
+    "file": "nora/infra/sql/memory_read.py",
+    "old": "sa.func.to_jsonb(_array(scope.presence_persons))",
+    "new": "sa.cast(sorted(scope.presence_persons), pg.JSONB)",
+    "target": "tests/integration/test_memory_dense_seed.py::test_the_planner_scans_the_hnsw_index_with_the_scope_inside"
   }
 ]
