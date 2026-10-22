@@ -340,9 +340,10 @@ class GatheringService:
 
     async def list_events(
         self, *, conversation_id: str, status: GatheringStatus | None = None,
+        unit_id: str = "",
     ) -> Sequence[Gathering]:
         return await self._store.list_for_conversation(
-            conversation_id=conversation_id, status=status,
+            conversation_id=conversation_id, status=status, unit_id=unit_id,
         )
 
     async def search_events(

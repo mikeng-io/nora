@@ -953,6 +953,38 @@ def character_unit_keys(allowlist: Any) -> dict[str, UnitKey]:
     }
 
 
+def scope_home_rooms(allowlist: Any) -> dict[str, HomeRoom]:
+    """`conversation id -> the room it names`, for every id form in policy.
+
+    A scope-keyed adaptor's key IS a conversation id, so this map is the whole
+    authorization context for its home-room grant. Two rooms can answer to the
+    same string (numeric ids are one id space per platform, but policy is not):
+    silently keeping the last one would run one unit's adaptor in another's
+    room. Refuse the collision at startup instead; a legacy policy that needs
+    both rooms must disambiguate them in `policy.toml` first.
+    """
+    out: dict[str, HomeRoom] = {}
+    seen: dict[str, tuple[str, str, str]] = {}
+    for conv in allowlist.conversations:
+        home = HomeRoom(
+            unit=conv.unit, platform=conv.platform,
+            conversation_id=conv.primary_id, conversation_type="group",
+            location_trusted=conv.location,
+        )
+        identity = (conv.unit, conv.platform, conv.primary_id)
+        for cid in conv.ids:
+            prior = seen.get(cid)
+            if prior is not None and prior != identity:
+                raise StartupError(
+                    "two policy rooms share a conversation id "
+                    f"({prior[1]} in {prior[0]!r} and {conv.platform} in "
+                    f"{conv.unit!r}); an id must name one room"
+                )
+            seen[cid] = identity
+            out[cid] = home
+    return out
+
+
 def social_person_units(allowlist: Any) -> dict[str, tuple[str, ...]]:
     """Each person LISTED by id in a room, and the units of the rooms that list
     them, in policy order: the units a social item of theirs is charged to and
@@ -4334,15 +4366,7 @@ async def build_dependencies(
             # disagree about which room an id names.
             # Inert for an adaptor with no home-room grant, exactly as
             # `home_rooms` is.
-            scope_rooms={
-                cid: HomeRoom(
-                    unit=conv.unit, platform=conv.platform,
-                    conversation_id=conv.primary_id, conversation_type="group",
-                    location_trusted=conv.location,
-                )
-                for conv in allowlist.conversations
-                for cid in conv.ids
-            },
+            scope_rooms=scope_home_rooms(allowlist),
             rosters=rosters,
             # EVERY platform's aliases, for `_presence_preflight`'s reason: a
             # home room's roster must skip Nora's own account rather than
@@ -4525,7 +4549,7 @@ async def build_dependencies(
             }
 
             async def _room_events(unit: str, conversation_id: str) -> Sequence[Any]:
-                return await _open_events(conversation_id)
+                return await _open_events(unit, conversation_id)
 
             grounder = build_grounder(
                 # NOT `tool_registry`'s `record`, which is None unless `[record_query]

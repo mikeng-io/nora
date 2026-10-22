@@ -4249,6 +4249,7 @@ class EventsCollaborator(Protocol):
 
     async def list_events(
         self, *, conversation_id: str, status: GatheringStatus | None = None,
+        unit_id: str = "",
     ) -> Sequence[Gathering]: ...
 
     async def search_events(
@@ -12863,6 +12864,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             else:
                 out = await events.list_events(
                     conversation_id=bound_conversation_id, status=parsed_status,
+                    unit_id=_unit() or "",
                 )
         except Exception:
             log.exception("event_search failed")

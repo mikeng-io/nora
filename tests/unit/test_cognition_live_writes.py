@@ -380,7 +380,8 @@ async def test_the_upcoming_reader_names_each_room_once_inside_the_horizon():
         "room-c": [_E(NOW + day)],
     }
 
-    async def events(conversation_id):
+    async def events(unit, conversation_id):
+        assert unit == "unit-1"
         return by_id.get(conversation_id, [])
 
     rooms = [

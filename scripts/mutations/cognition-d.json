@@ -16,8 +16,8 @@
  {
   "name": "M4: a session reads withdrawn events",
   "file": "nora/app/cognition_wiring.py",
-  "old": "            e for e in await store.list_for_conversation(conversation_id=conversation_id)\n",
-  "new": "            e for e in await store.list_for_conversation(conversation_id=conversation_id, include_unsupported=True)\n",
+  "old": "            if e.status in OPEN_STATUSES",
+  "new": "            if True",
   "target": "tests/unit/test_event_evidence_d.py::test_a_session_is_shown_and_may_move_every_event_before_happened"
  },
  {

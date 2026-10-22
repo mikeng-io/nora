@@ -504,6 +504,7 @@ class GatheringStore(Protocol):
 
     async def list_for_conversation(
         self, *, conversation_id: str, status: GatheringStatus | None = None,
+        unit_id: str = "",
     ) -> Sequence[Gathering]:
         """A room's events."""
 

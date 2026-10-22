@@ -249,12 +249,18 @@ class SqlGatheringStore:
 
     async def list_for_conversation(
         self, *, conversation_id: str, status: GatheringStatus | None = None,
+        unit_id: str = "",
     ) -> Sequence[Gathering]:
-        stmt = (
-            sa.select(EVENTS)
-            .where(EVENTS.c.conversation_id == conversation_id)
-            .order_by(EVENTS.c.created_at)
-        )
+        """This room's events. `unit_id`, when given, is a second scope check:
+        conversation ids are an id space per platform, so the same string can
+        name rooms in two units. A pre-migration row (`unit_id=""`) still
+        belongs to the room it names and is kept."""
+        stmt = sa.select(EVENTS).where(EVENTS.c.conversation_id == conversation_id)
+        if unit_id:
+            stmt = stmt.where(sa.or_(
+                EVENTS.c.unit_id == unit_id, EVENTS.c.unit_id == "",
+            ))
+        stmt = stmt.order_by(EVENTS.c.created_at)
         if status is not None:
             stmt = stmt.where(EVENTS.c.status == status.value)
         async with self._engine.connect() as conn:

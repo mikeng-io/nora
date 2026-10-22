@@ -217,7 +217,18 @@ async def test_a_session_is_shown_and_may_move_every_event_before_happened():
     for s in GatheringStatus:
         await store.create(_event(status=s, title=s.value))
     read = open_events_reader(store)
-    assert {e.title for e in await read("ga")} == {"staged", "proposed", "confirmed"}
+    assert {e.title for e in await read("u", "ga")} == {"staged", "proposed", "confirmed"}
+
+
+async def test_a_session_cannot_read_another_units_event_with_the_same_room_id():
+    """Conversation ids are an id space per platform. Filtering only by the id
+    let a second unit's event with the same id into this unit's agenda."""
+    store = FakeGatheringStore()
+    await store.create(_event(title="ours", unit_id="unit-a"))
+    await store.create(_event(title="theirs", unit_id="unit-b"))
+
+    read = open_events_reader(store)
+    assert {e.title for e in await read("unit-a", "ga")} == {"ours"}
 
 
 # -- how an abduced field is voiced -------------------------------
