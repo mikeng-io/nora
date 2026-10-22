@@ -1,5 +1,13 @@
 # Changelog
 
+## [6.5.1](https://github.com/mikeng-io/nora/compare/v6.5.0...v6.5.1) (2026-10-22)
+
+
+### Security
+
+* **containers:** patch Prometheus and complete runtime validation ([9d64b46](https://github.com/mikeng-io/nora/commit/9d64b468ef5b0d93a18bb77a1cdad0254ced03e3))
+* **containers:** upgrade Node services to supported Node 24 ([c0faa25](https://github.com/mikeng-io/nora/commit/c0faa251ff3035a3ed018d452d8be280b02a4dc0))
+
 ## [6.5.0](https://github.com/mikeng-io/nora/compare/v6.4.2...v6.5.0) (2026-10-21)
 
 
