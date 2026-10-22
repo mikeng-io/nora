@@ -99,11 +99,9 @@ def test_malformed_config_raises(tmp_path: Path, wake_config) -> None:
         build_config(bad, env={})
 
 
-REPO_EXAMPLE = Path(__file__).resolve().parents[2] / "config.example.toml"
-
-
-@pytest.mark.skipif(not REPO_EXAMPLE.is_file(), reason="repo config.example.toml not present")
-def test_code_defaults_equal_the_committed_example_defaults(wake_config) -> None:
+def test_code_defaults_equal_the_committed_example_defaults(
+    wake_config, example_config_path
+) -> None:
     _build_config, _config_type = wake_config
     """A live config.toml without [speech.wake] runs on the CODE defaults; the example
     file is the operator's record of those defaults; if they diverge the wake path
@@ -111,7 +109,7 @@ def test_code_defaults_equal_the_committed_example_defaults(wake_config) -> None
     Config()."""
     import tomllib
 
-    wake = tomllib.loads(REPO_EXAMPLE.read_text(encoding="utf-8"))["speech"]["wake"]
+    wake = tomllib.loads(example_config_path.read_text(encoding="utf-8"))["speech"]["wake"]
     d = _config_type()
     mapping = {
         "threshold": d.threshold,

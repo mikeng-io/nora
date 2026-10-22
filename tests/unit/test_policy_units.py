@@ -94,13 +94,14 @@ def test_a_unit_entry_no_room_uses_refuses_to_start(tmp_path):
 
 
 def test_a_unit_entry_without_a_workspace_is_refused(tmp_path):
-    with pytest.raises(PolicyError, match="policy: schema"):
+    with pytest.raises(PolicyError, match=r"units\[2\].workspace: missing: Field required"):
         _load(tmp_path, _ROOMS + _UNITS.replace('workspace = "two"', ""))
 
 
 def test_a_workspace_name_honcho_would_refuse_is_refused_at_startup(tmp_path):
-    with pytest.raises(PolicyError, match="policy: schema"):
+    with pytest.raises(PolicyError, match=r"units\[2\].workspace.*must match") as error:
         _load(tmp_path, _ROOMS + _UNITS.replace('"two"', '"two words"'))
+    assert "two words" not in str(error.value)
 
 
 @pytest.mark.parametrize("units", ["", _UNITS], ids=["no-units", "with-units"])

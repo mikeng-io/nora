@@ -299,7 +299,7 @@ type = "forbidden"
 # PR 648, 2026-10-01). Every other top-level name is forbidden here instead.
 source_modules = ["nora.documents"]
 forbidden_modules = [
-    "nora.agent", "nora.analytics", "nora.app", "nora.config",
+    "nora.agent", "nora.analytics", "nora.app", "nora.config", "nora.config_diagnostics",
     "nora.doctrine", "nora.domain", "nora.dreamer", "nora.engagement", "nora.infra",
     "nora.ingest", "nora.instructions", "nora.language", "nora.obs", "nora.persons",
     "nora.persons_file", "nora.platform",

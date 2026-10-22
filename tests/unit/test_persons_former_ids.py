@@ -7,20 +7,14 @@ from nora.persons import PersonsError, load_persons
 
 def test_a_person_with_no_former_ids_resolves_to_itself(tmp_path):
     p = tmp_path / "identity.toml"
-    p.write_text(
-        '[persons.miles_novak]\nname = "Miles"\n'
-    )
+    p.write_text('[persons.miles_novak]\nname = "Miles"\n')
     persons = load_persons(p)
     assert persons.subject_id_for("miles_novak") == "miles_novak"
 
 
 def test_a_former_id_resolves_to_the_current_person_id(tmp_path):
     p = tmp_path / "identity.toml"
-    p.write_text(
-        '[persons.clara_lawson]\n'
-        'name = "Clara"\n'
-        'former_person_ids = ["clara_yates"]\n'
-    )
+    p.write_text('[persons.clara_lawson]\nname = "Clara"\nformer_person_ids = ["clara_yates"]\n')
     persons = load_persons(p)
     assert persons.subject_id_for("clara_yates") == "clara_lawson"
     assert persons.subject_id_for("clara_lawson") == "clara_lawson"
@@ -44,8 +38,9 @@ def test_a_former_id_claimed_by_two_people_refuses_to_load(tmp_path):
         '[persons.a]\nname = "A"\nformer_person_ids = ["x"]\n'
         '[persons.b]\nname = "B"\nformer_person_ids = ["x"]\n'
     )
-    with pytest.raises(PersonsError, match="x"):
+    with pytest.raises(PersonsError, match="ambiguous merge; remove the duplicate") as error:
         load_persons(p)
+    assert "persons[0]" in str(error.value) and "persons[1]" in str(error.value)
 
 
 def test_a_former_id_that_collides_with_a_live_person_id_refuses_to_load(tmp_path):
@@ -54,8 +49,12 @@ def test_a_former_id_that_collides_with_a_live_person_id_refuses_to_load(tmp_pat
         '[persons.miles_novak]\nname = "Miles"\n'
         '[persons.delia_lindberg]\nname = "Delia"\nformer_person_ids = ["miles_novak"]\n'
     )
-    with pytest.raises(PersonsError, match="miles_novak"):
+    with pytest.raises(
+        PersonsError, match=r"persons\[1\].former_person_ids\[0\].*LIVE persons\[0\]"
+    ) as error:
         load_persons(p)
+    assert "miles_novak" not in str(error.value)
+    assert "remove one or the other" in str(error.value)
 
 
 def test_former_ids_for_returns_every_retired_id_for_the_current_owner(tmp_path):
@@ -66,13 +65,14 @@ def test_former_ids_for_returns_every_retired_id_for_the_current_owner(tmp_path)
     # subject_id_for alone can never surface a former id.
     p = tmp_path / "identity.toml"
     p.write_text(
-        '[persons.clara_lawson]\n'
+        "[persons.clara_lawson]\n"
         'name = "Clara"\n'
         'former_person_ids = ["clara_yates", "clara_walsh"]\n'
     )
     persons = load_persons(p)
     assert set(persons.former_ids_for("clara_lawson")) == {
-        "clara_yates", "clara_walsh",
+        "clara_yates",
+        "clara_walsh",
     }
 
 
@@ -95,9 +95,9 @@ def test_an_opted_out_person_is_off_under_every_id_they_were_recorded_under(tmp_
     # recorded before a rename carries the retired id and must stay out.
     p = tmp_path / "identity.toml"
     p.write_text(
-        '[persons.clara_lawson]\n'
+        "[persons.clara_lawson]\n"
         'name = "Clara"\n'
-        'social = false\n'
+        "social = false\n"
         'former_person_ids = ["clara_yates"]\n'
         '[persons.miles_novak]\nname = "Miles"\n'
     )

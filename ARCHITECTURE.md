@@ -96,6 +96,7 @@ and configuration to the runtime.
 | `obs/` | Health, metrics, logging and tracing |
 | `subject/`, `testing/` | Evaluation subject and shared test doubles |
 | `config.py` | Validated deployment configuration |
+| `config_diagnostics.py` | Safe schema coordinates and value-free validation explanations shared by private TOML loaders. |
 | `persons.py`, `persons_file.py` | Identity resolution and identity-file loading |
 | `policy.py` | Room membership and grants |
 | `tag.py` | Trigger matching and debounce helpers |
