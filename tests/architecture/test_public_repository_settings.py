@@ -78,7 +78,7 @@ def _readback(rules):
 def test_rules_require_exactly_the_checks_that_report_on_every_pr_and_allow_no_bypass():
     rules = _rules()
     branch = rules.branch_ruleset()
-    assert rules.REQUIRED == ["checks", "PR content"]
+    assert rules.REQUIRED == ["checks", "pr-metadata"]
     assert branch["bypass_actors"] == [] and rules.tag_ruleset()["bypass_actors"] == []
     contexts = [
         c["context"]
@@ -88,7 +88,7 @@ def test_rules_require_exactly_the_checks_that_report_on_every_pr_and_allow_no_b
     ]
     # CodeQL and dependency-review are skipped while private and the wiki build is
     # path-filtered: requiring any of them would block every PR that never reports one.
-    assert contexts == ["checks", "PR content"]
+    assert contexts == ["checks", "pr-metadata"]
 
 
 def test_a_matching_readback_passes_and_every_drift_is_named():

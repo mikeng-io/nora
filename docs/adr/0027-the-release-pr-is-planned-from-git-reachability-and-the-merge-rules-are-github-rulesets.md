@@ -47,7 +47,7 @@ Read from the repository and the Actions logs on 2026-10-22:
    before planning so a just-merged release is never planned twice.
 3. **The merge rules are rulesets, applied by `scripts/configure_github_rules.py`.** `master`
    needs a pull request, merge commits only, resolved conversations, an up-to-date branch, and
-   the `checks` and `PR content` statuses; force-push and deletion are blocked; `v*` tags
+   the `checks` and `pr-metadata` jobs; force-push and deletion are blocked; `v*` tags
    cannot be moved or deleted. There are **no bypass actors**: the owner cannot merge a failing
    PR either. The script reads every setting back and fails on any drift.
 4. **`PR content` also checks the branch name** against `<type>/<kebab-slug>` with a declared
@@ -76,6 +76,12 @@ Read from the repository and the Actions logs on 2026-10-22:
   only way out is editing the ruleset in GitHub's settings, which the owner can still do.
 - **An up-to-date branch is required.** Each merge makes every other open PR stale until it is
   updated, and its checks run again.
+- **A check made through the Checks API cannot be required.** The first apply required the
+  `PR content` check run, which the contribution workflow creates with `POST /check-runs`.
+  GitHub's merge evaluation reported "Required status check 'PR content' is expected" for it
+  although it was green, and no PR could merge. The job that runs the same script,
+  `pr-metadata`, fails on a bad title, body or branch and is accepted, so that is what is
+  required. The `PR content` run stays as the readable summary.
 - **Two release tools exist side by side** until release-please's own PR step is deleted from
   the config, which this ADR does not do.
 
