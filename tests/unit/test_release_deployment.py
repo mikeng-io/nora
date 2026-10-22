@@ -79,7 +79,7 @@ def test_host_validation_failure_never_recreates_services_or_records_success(tmp
     (tmp_path / 'config.toml').write_text('[example]\nenabled=true\n')
     commands = []
 
-    def execute(command, *, output=False):
+    def execute(command, *, stage, output=False):
         import json
         commands.append(command)
         if command[0:2] == ['docker', 'compose'] and 'config' in command:
@@ -97,7 +97,7 @@ def test_host_validation_failure_never_recreates_services_or_records_success(tmp
     monkeypatch.setattr(wrapper, '__file__', str(tmp_path / 'komodo_deploy.py'))
     monkeypatch.setattr(wrapper, 'run', execute)
     with pytest.raises(RuntimeError, match='invalid candidate config'):
-        wrapper.deploy(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
+        wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
     assert not any('up' in command for command in commands)
     assert not (tmp_path / 'release-deploy.json').exists()
 
@@ -119,7 +119,7 @@ def test_failed_health_readback_preserves_the_previous_success_receipt(tmp_path,
     monkeypatch.setattr(wrapper, '__file__', str(tmp_path / 'komodo_deploy.py'))
     commands = []
 
-    def execute(command, *, output=False):
+    def execute(command, *, stage, output=False):
         commands.append(command)
         if 'config' in command and command[0:2] == ['docker', 'compose']:
             resolved = copy.deepcopy(compose)
@@ -133,7 +133,7 @@ def test_failed_health_readback_preserves_the_previous_success_receipt(tmp_path,
 
     monkeypatch.setattr(wrapper, 'run', execute)
     with pytest.raises(RuntimeError, match='stale presence'):
-        wrapper.deploy(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
+        wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
     up = next(command for command in commands if 'up' in command)
     assert '--no-deps' in up and '--no-build' in up
     assert not {'db', 'rustfs', 'prometheus', 'site'} & set(up)
@@ -242,7 +242,7 @@ def test_site_profile_is_enabled_before_real_candidate_resolution(tmp_path, monk
     class PullReached(Exception):
         pass
 
-    def execute(command, *, output=False):
+    def execute(command, *, stage, output=False):
         if command[-3:] == ['config', '--format', 'json']:
             result = subprocess.run(  # noqa: S603 -- real, network-free Compose resolution
                 command, env=os.environ, text=True, capture_output=True, check=True)
@@ -254,51 +254,196 @@ def test_site_profile_is_enabled_before_real_candidate_resolution(tmp_path, monk
 
     monkeypatch.setattr(wrapper, 'run', execute)
     with pytest.raises(PullReached):
-        wrapper.deploy(['docker', 'compose', '-p', 'nora', '-f', 'compose.json'],
-                       manifest, tmp_path, 'nora', site=True)
+        wrapper.apply_release(['docker', 'compose', '-p', 'nora', '-f', 'compose.json'],
+                              manifest, tmp_path, 'nora', site=True)
 
 
-@pytest.mark.parametrize('failure', [RuntimeError, SystemExit, KeyboardInterrupt])
-def test_failed_or_interrupted_candidate_cannot_be_applied_again(tmp_path, monkeypatch, failure):
+@pytest.fixture
+def release_runtime(tmp_path, monkeypatch):
+    """Exercise the transaction with command-specific subprocess responses."""
+    import json
+    import subprocess
+
     wrapper = load('komodo_deploy')
     bundle = load('release_bundle')
-    _, manifest = bundle.render(source(), images(bundle), 'v6.3.1', 'b' * 40)
+    compose, manifest = bundle.render(source(), images(bundle), 'v6.3.1', 'b' * 40)
+    compose['name'] = 'nora'
+    compose['services']['nora']['volumes'] = [
+        {'target': '/app/config.toml', 'source': str(tmp_path / 'config.toml')}]
+    (tmp_path / 'config.toml').write_text('[example]\nenabled=true\n')
+    (tmp_path / 'verify-deploy.py').write_text(
+        'def _docker(*args):\n'
+        '    raise SystemExit("PRIVATE_STDERR")\n'
+        'def verify_services(project, images):\n'
+        '    assert project == "nora" and "presence" in images\n'
+        '    _docker("ps")\n')
     monkeypatch.setattr(wrapper, '__file__', str(tmp_path / 'komodo_deploy.py'))
     calls = []
+    fault = {}
 
-    def attempt(*args, **kwargs):
-        assert (tmp_path / 'release-attempt.json').exists()
-        calls.append(args[1]['version'])
-        if len(calls) == 1:
-            raise failure('failed attempt')
+    def execute(command, **kwargs):
+        if command[:2] == ['docker', 'run']:
+            stage, stdout = 'config-validation', b''
+        elif command[1] == 'ps':
+            stage, stdout = 'readback', b''
+        elif command[2] == 'config':
+            stage, stdout = 'compose-config', json.dumps(compose).encode()
+        elif command[2] == 'exec':
+            stage, stdout = 'stamp-readback', json.dumps(manifest).encode()
+        else:
+            stage, stdout = {'pull': 'pull', 'up': 'recreate'}[command[2]], b''
+        calls.append(stage)
+        if stage in ('recreate', 'readback', 'stamp-readback'):
+            assert (tmp_path / 'release-attempt.json').exists()
+        if stage == fault.get('stage'):
+            failure = fault.get('exception')
+            if failure:
+                raise failure('interrupted command')
+            return subprocess.CompletedProcess(command, 23, b'PRIVATE_STDOUT', b'PRIVATE_STDERR')
+        return subprocess.CompletedProcess(command, 0, stdout, b'')
 
-    monkeypatch.setattr(wrapper, 'deploy', attempt)
-    with pytest.raises(failure):
+    monkeypatch.setattr(wrapper.subprocess, 'run', execute)
+    return wrapper, manifest, calls, fault
+
+
+@pytest.mark.parametrize('stage', ['compose-config', 'pull', 'config-validation'])
+def test_preflight_failure_can_retry_the_identical_release(
+        release_runtime, tmp_path, capsys, stage):
+    import json
+
+    wrapper, manifest, calls, fault = release_runtime
+    receipt = tmp_path / 'release-deploy.json'
+    receipt.write_text('previous successful deployment')
+    fault['stage'] = stage
+    with pytest.raises(wrapper.CommandError) as error:
         wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
-    with pytest.raises(RuntimeError, match='blocked'):
-        wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
-    assert calls == ['v6.3.1']
-    # An unrelated metadata field cannot bypass the guard.
-    with pytest.raises(RuntimeError, match='blocked'):
-        wrapper.apply_release(['docker', 'compose'], dict(manifest, annotation='changed'),
-                              tmp_path, 'nora', site=False)
-    # A newer release may roll forward; success clears the outstanding marker.
-    next_release = dict(manifest, version='v6.3.2', commit='c' * 40)
-    wrapper.apply_release(['docker', 'compose'], next_release, tmp_path, 'nora', site=False)
-    assert calls == ['v6.3.1', 'v6.3.2']
+    captured = capsys.readouterr()
+    public = str(error.value) + captured.out + captured.err
+    assert 'PRIVATE_STDOUT' not in public and 'PRIVATE_STDERR' not in public
+    assert f'{stage} failed (exit 23)' in public
+    assert 'recreate' not in calls
+    assert not (tmp_path / 'release-attempt.json').exists()
+    assert receipt.read_text() == 'previous successful deployment'
+    fault.clear()
+    wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
+    assert calls.count(stage) == 2
+    assert calls.count('recreate') == 1
+    assert json.loads(receipt.read_text()) == manifest
     assert not (tmp_path / 'release-attempt.json').exists()
 
 
-def test_verified_release_can_be_reapplied_after_operator_config_change(tmp_path, monkeypatch):
-    wrapper = load('komodo_deploy')
-    bundle = load('release_bundle')
-    _, manifest = bundle.render(source(), images(bundle), 'v6.3.1', 'b' * 40)
-    monkeypatch.setattr(wrapper, '__file__', str(tmp_path / 'komodo_deploy.py'))
-    calls = []
-    monkeypatch.setattr(wrapper, 'deploy', lambda *a, **kw: calls.append(a[1]['version']))
+@pytest.mark.parametrize('stage', ['recreate', 'readback', 'stamp-readback'])
+@pytest.mark.parametrize('failure', [None, SystemExit, KeyboardInterrupt])
+def test_failed_or_interrupted_candidate_cannot_be_applied_again(
+        release_runtime, tmp_path, stage, failure):
+    import json
+
+    wrapper, manifest, calls, fault = release_runtime
+    receipt = tmp_path / 'release-deploy.json'
+    receipt.write_text('previous successful deployment')
+    fault.update(stage=stage, exception=failure)
+    with pytest.raises(failure or wrapper.CommandError):
+        wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
+    attempted = list(calls)
+    assert (tmp_path / 'release-attempt.json').stat().st_mode & 0o777 == 0o600
+    assert receipt.read_text() == 'previous successful deployment'
+    for candidate in (manifest, dict(manifest, annotation='changed')):
+        with pytest.raises(RuntimeError, match='blocked'):
+            wrapper.apply_release(['docker', 'compose'], candidate, tmp_path, 'nora', site=False)
+    assert calls == attempted  # not even preflight is repeated after a possible mutation
+    fault.clear()
+    # Simulate the explicit operator recovery after inspecting the mutation.
+    (tmp_path / 'release-attempt.json').unlink()
+    wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
+    assert json.loads(receipt.read_text()) == manifest
+    assert not (tmp_path / 'release-attempt.json').exists()
+
+
+def test_different_release_can_roll_forward_after_failed_recreation(release_runtime, tmp_path):
+    import json
+
+    wrapper, manifest, calls, fault = release_runtime
+    fault['stage'] = 'recreate'
+    with pytest.raises(wrapper.CommandError):
+        wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
+    fault.clear()
+    manifest.update(version='v6.3.2', commit='c' * 40)
+    wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
+    assert calls.count('recreate') == 2
+    assert json.loads((tmp_path / 'release-deploy.json').read_text()) == manifest
+    assert not (tmp_path / 'release-attempt.json').exists()
+
+
+def test_existing_marker_still_requires_operator_recovery(release_runtime, tmp_path):
+    import hashlib
+    import json
+
+    wrapper, manifest, calls, _ = release_runtime
+    selected = {key: manifest[key] for key in ('version', 'commit', 'services')}
+    marker = tmp_path / 'release-attempt.json'
+    fingerprint = hashlib.sha256(json.dumps(selected, sort_keys=True).encode()).hexdigest()
+    marker.write_text(json.dumps({
+        'manifest_sha256': fingerprint,
+        'version': manifest['version'], 'commit': manifest['commit']}))
+    with pytest.raises(RuntimeError, match='blocked'):
+        wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
+    assert calls == []
+    assert marker.exists()
+
+
+def test_verified_release_can_be_reapplied_after_operator_config_change(release_runtime, tmp_path):
+    wrapper, manifest, calls, _ = release_runtime
     for _ in range(2):
         wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
-    assert calls == ['v6.3.1', 'v6.3.1']
+    assert calls.count('recreate') == 2
+
+
+@pytest.mark.parametrize('recording_fails', [False, True])
+def test_failed_command_keeps_raw_output_private_and_preserves_exit(
+        tmp_path, recording_fails):
+    import os
+    import shutil
+    import subprocess
+    import sys
+
+    control = tmp_path / 'control'
+    control.mkdir(mode=0o700)
+    shutil.copyfile(ROOT / 'scripts/komodo_deploy.py', control / 'komodo_deploy.py')
+    docker = tmp_path / 'docker'
+    docker.write_text(f'#!{sys.executable}\n'
+                      'import sys\n'
+                      'print("PRIVATE_STDOUT")\n'
+                      'print("PRIVATE_STDERR", file=sys.stderr)\n'
+                      'sys.exit(23)\n')
+    docker.chmod(0o700)
+    if recording_fails:
+        # The installed control directory disappears before the diagnostic can be created.
+        docker.write_text(docker.read_text().replace('import sys',
+            f'import sys, shutil; shutil.rmtree({str(control)!r})'))
+    previous_umask = os.umask(0)
+    try:
+        result = subprocess.run(  # noqa: S603 -- synthetic CLI, no Docker daemon
+            [sys.executable, str(control / 'komodo_deploy.py'),
+             '--runtime-root', str(tmp_path), '--project', 'nora', '--',
+             'docker', 'compose', '-f', 'PRIVATE_ARGV', 'config'],
+            env={**os.environ, 'PATH': f'{tmp_path}{os.pathsep}' + os.environ['PATH']},
+            capture_output=True, text=True, check=False)
+    finally:
+        os.umask(previous_umask)
+    assert result.returncode == 23
+    public = result.stdout + result.stderr
+    assert 'config-discovery failed (exit 23)' in public
+    assert all(sentinel not in public for sentinel in
+               ('PRIVATE_STDOUT', 'PRIVATE_STDERR', 'PRIVATE_ARGV'))
+    if recording_fails:
+        assert 'private diagnostic unavailable' in public
+    else:
+        diagnostics = list(control.glob('failure-*.log'))
+        assert len(diagnostics) == 1
+        diagnostic = diagnostics[0]
+        assert str(diagnostic) in public
+        assert diagnostic.stat().st_mode & 0o777 == 0o600
+        assert diagnostic.read_bytes() == b'stdout:\nPRIVATE_STDOUT\n\nstderr:\nPRIVATE_STDERR\n'
 
 
 def test_native_procedure_is_disabled_until_explicit_cutover():

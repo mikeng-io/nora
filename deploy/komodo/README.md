@@ -30,8 +30,8 @@ the first-install bootstrap below is not the normal production deploy procedure.
    A private operator copy of `resources.example.toml` owns the Stack and
    Procedure configuration. Its Resource Sync is separate from the generated
    deployment branch and applied manually. The wrapper records an outstanding
-   candidate before deployment and clears it only after verified success.
-   Failed/interrupted candidates are refused on subsequent checks; a newer
+   candidate immediately before recreation and clears it only after verified success.
+   Failed/interrupted recreation or readback is refused on subsequent checks; a newer
    manifest can still roll forward. There is no self-modifying scheduled script.
 5. An installed command wrapper holds the existing deploy lock through pull,
    candidate config validation, recreation, service readback and success receipt.
@@ -75,10 +75,20 @@ Docker access; native Compose additionally needs to read the external `.env`
 and the wrapper needs the host config. Install the reviewed `komodo_deploy.py`
 and `verify-deploy.py` together under `/etc/komodo/nora-deploy`, shared at the
 same path between host and Periphery. Candidate config copies and the final
-`release-deploy.json` receipt and outstanding `release-attempt.json` marker live
-there, so a Docker bind sees the same file
+`release-deploy.json` receipt, outstanding `release-attempt.json` marker and private
+`failure-*.log` subprocess diagnostics live there, so a Docker bind sees the same file
 as the process that prepared it. Config copies are private and removed after
-validation. Do not install trusted executables inside the fetched release clone.
+validation. Diagnostics retain failed subprocess stdout/stderr with mode `0600`,
+including failures during verifier Docker reads; they can contain secrets. Keep
+the control directory owner-local and accessible only to the deployment account
+(mode `0700`, also usable by Periphery at the shared path). Never upload these
+files to Git, Komodo, chat or a log collector. Public failures name only the stage,
+exit status and private diagnostic path. If recording fails, deployment still
+fails with the original command exit status and reports diagnostics unavailable.
+Do not install trusted executables inside the fetched release clone.
+An application release does not update these installed scripts. Back up and replace
+the reviewed wrapper in this shared control directory under the shared deploy lock;
+preserve the receipt, outstanding marker and diagnostics when updating it.
 The runtime root itself can remain read-only to Periphery. Also bind the
 **existing host lock file** `/tmp/nora-deploy.lock` to container
 `/run/nora-deploy.lock`, as in `periphery.override.example.yml`. This keeps the
@@ -135,14 +145,15 @@ They are not performed by the publisher or by merging its PR.
 6. Rehearse on a disposable Compose project: successful update, failed image
    pull, refused config, stale/missing service, failed health, correct stamp,
    private sentinel absent from Core logs, and a compatible rollback. Confirm
-   that a failed/interrupted candidate is refused before another pull/recreate
+   that pull/config failures can retry the identical candidate, while a
+   failed/interrupted recreation or readback is refused before another pull/recreate
    and leaves the previous success receipt.
    Local/unit checks do not establish that this Core/Periphery installation did it.
 7. After an explicit production-cutover approval, run the Procedure manually once
    against the intended release. Read every owned service image ID/health, the
    Nora version/source stamp, persistent volumes and final receipt. Only then
    enable the ten-minute Procedure schedule. Change checks continue after failure,
-   but the same candidate cannot be reapplied automatically.
+   but a candidate that reached recreation cannot be reapplied after failure automatically.
 
 Once cut over, use the Komodo Stack for release deployment. Do not concurrently
 run the legacy checkout-based rebuild procedure: it would restore local tags and
@@ -153,11 +164,14 @@ owned cohort under the same lock. A host config edit does not create a new relea
 ## Failure and recovery
 
 A failed build/pull/config check leaves the running services untouched. A failed
+pull or config-validation attempt creates no outstanding marker, so a later
+change check may retry the identical candidate under the shared lock. A failed
 recreate/readback can leave partially updated services; the outstanding marker
 blocks reapplication of that candidate, with no new success receipt. The native
 Procedure keeps checking and reports failure; it does not pretend the candidate
 was deployed. Pause its schedule while investigating if needed. Inspect details
-privately on the host. A running process alone is insufficient: readback names expected services
+privately in the control directory's `failure-*.log`; keep their raw contents on
+the owner host. A running process alone is insufficient: readback names expected services
 before comparing image IDs, so an absent collector or old digest cannot disappear
 from the denominator. Services with health checks must become healthy and all
 owned services must have zero restarts after recreation. Nora's running manifest
@@ -172,7 +186,11 @@ not roll back the database schema (migrations upgrade to head on start), nor doe
 it roll back host config; review both for compatibility first. After inspecting the failure
 and deciding to retry the same candidate, remove only the shared control
 directory's `release-attempt.json` marker while holding the shared deploy lock,
-then run the Procedure manually. Never clear it concurrently with an attempt. The publisher refuses old
+then release the lock and run the Procedure manually (it acquires the same lock).
+Existing markers, including those written before preflight by an older wrapper,
+are never automatically cleared by installing the new wrapper: first establish
+whether recreation occurred and review running state. Never clear a marker
+concurrently with an attempt. The publisher refuses old
 versions; rollback is a separate operator-controlled promotion. When schemas are
 incompatible, roll forward or use the tested database restore procedure. A failed
 rollback stays failed and must alert. Preserve the last successful receipt for
