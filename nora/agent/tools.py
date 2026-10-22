@@ -2748,7 +2748,7 @@ class DocumentPublisher(Protocol):
 
     async def read(
         self, *, platform: str, conversation_id: str, document_id: UUID | None = None,
-        handle: str = "",
+        handle: str = "", person_id: str | None = None,
     ) -> Any: ...
 
     async def set_state(
