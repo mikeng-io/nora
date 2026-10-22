@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+from collections.abc import Iterator
 
 VISIBLE = re.compile(r"^(feat|fix|security|perf|change|doctrine|revert)(\([^)]*\))?!?:")
 RUNTIME_DIRS = ("nora/", "app/", "site/", "docs-site/", "sidecars/", "deploy/")
@@ -36,7 +37,13 @@ def git(*args: str) -> str:
     return subprocess.check_output([shutil.which("git") or "/usr/bin/git", *args], text=True)  # noqa: S603
 
 
-def eligible(base: str, head: str = "HEAD") -> bool:
+def releasable(base: str, head: str = "HEAD") -> Iterator[tuple[str, str]]:
+    """Yield (sha, subject) for each user-visible commit since `base` that changes runtime inputs.
+
+    `git log base..head` is topological: it lists every commit reachable from `head`
+    and not from `base`, whatever its committer date. release-please orders by date
+    and so misses a branch written before the last release and merged after it.
+    """
     for row in git("log", "--no-merges", "--format=%H %s", f"{base}..{head}").splitlines():
         sha, subject = row.split(" ", 1)
         if not (VISIBLE.match(subject) or subject.startswith('Revert "')):
@@ -57,8 +64,11 @@ def eligible(base: str, head: str = "HEAD") -> bool:
             )
             for path in paths
         ):
-            return True
-    return False
+            yield sha, subject
+
+
+def eligible(base: str, head: str = "HEAD") -> bool:
+    return any(True for _ in releasable(base, head))
 
 
 if __name__ == "__main__":
