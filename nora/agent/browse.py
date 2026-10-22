@@ -85,7 +85,7 @@ class _Task:
             return None
         return "This task is finished. The page is not touched again; stop here."
 
-    def finish(self, outcome: BrowseOutcome) -> str:
+    def conclude(self, outcome: BrowseOutcome) -> str:
         """Record the terminal outcome, one way: the first finish stands, a second is refused."""
         if self.finished is not None:
             return "This task already has its answer; a second finish is not recorded. Stop here."
@@ -240,7 +240,7 @@ def _tools(task: _Task) -> list[Any]:
             answer: What she needs to know, in plain words.
             found: false when the pages do not have what was asked for.
         """
-        refused = task.finish(BrowseOutcome(
+        refused = task.conclude(BrowseOutcome(
             status="ok" if found else "nothing_found", answer=answer.strip(),
             url=task.url, steps=task.steps,
         ))
@@ -254,7 +254,7 @@ def _tools(task: _Task) -> list[Any]:
         Args:
             reason: What a person must do, and on which page.
         """
-        refused = task.finish(BrowseOutcome(
+        refused = task.conclude(BrowseOutcome(
             status="unavailable", reason=reason.strip() or "a person must step in",
             url=task.url, steps=task.steps, needs_human=True,
         ))
