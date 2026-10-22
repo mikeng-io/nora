@@ -955,3 +955,62 @@ async def test_shared_search_hides_persona_after_render_rollback():
         keys = {h.node.key for h in found.hits}
         assert control.key in keys
         assert (node.key in keys) == render
+
+
+# --- disclosure in the packet: formatted numbers and person names ---------------
+
+
+def _packet_of(node: IndexedNode, people: set[str] | None = None, name_of=str) -> tuple:
+    hit = memory_search.Hit(
+        node, 1.0, (memory_search.Step("message", how="matched"),), people=people or set(),
+    )
+    return render_packet(
+        [hit], name_of=name_of, room_label=lambda k: "B",
+        now=datetime.fromtimestamp(NOW / 1000, UTC),
+    )
+
+
+def _synthetic(n: int, step: int = 3) -> str:
+    """`n` digits that belong to nobody: a generated fixture, never a number."""
+    return "".join(str((i * step) % 10) for i in range(n))
+
+
+_FORMATS = ("+{cc} {a} {b}", "+{cc} ({z}) {a}-{b}", "+{cc}-{a}-{b}")
+
+
+def _number(template: str) -> str:
+    return template.format(
+        cc=_synthetic(3), a=_synthetic(4, 7), b=_synthetic(4, 9), z=_synthetic(3, 1),
+    )
+
+
+@pytest.mark.parametrize("template", _FORMATS)
+def test_a_formatted_number_in_a_memory_is_withheld_whole(template: str) -> None:
+    """The memory packet screens the same normalised form the reply does: a
+    number written with separators is still somebody's number."""
+    node = IndexedNode("message", "m1", f"ring me on {_number(template)} tonight", NOW,
+                       origin_room="signal:b")
+    assert _packet_of(node) == ([], 1)
+
+
+def test_ordinary_digit_runs_in_a_memory_are_shown() -> None:
+    """Dates, prices, rooms and versions are not phones, so the packet keeps them."""
+    node = IndexedNode("message", "m1", "dinner 2024-10-22 at 1,000,000 coins, "
+                       "room 12345, version 3.14", NOW, origin_room="signal:b")
+    items, withheld = _packet_of(node)
+    assert withheld == 0 and len(items) == 1
+
+
+@pytest.mark.parametrize(("name", "shown"), [
+    (_number(_FORMATS[0]), "someone"),
+    ("kit", "someone"),
+    ("", "someone"),
+    ("Kit", "Kit"),
+])
+def test_a_person_name_that_is_not_a_name_is_shown_as_someone(name: str, shown: str) -> None:
+    """Each resolved person name goes through the identifier screen before it
+    enters the model-facing packet. An identifier, an empty name and the
+    internal person id all fall back to `someone` (R-18)."""
+    items, _ = _packet_of(_msg("1", "ramen at noon"), people={"kit"},
+                          name_of={"kit": name}.__getitem__)
+    assert items[0]["people"] == [shown]
