@@ -2,7 +2,8 @@
 
 Lives in `nora.infra`, not `nora.obs`: the layer contract puts `nora.obs` above
 `nora.infra`, and both the platform adapters and the infra-level social client
-call the bridge. It depends on nothing but OpenTelemetry's API.
+call the bridge. It depends on OpenTelemetry's API and the shared service-token
+helper, nothing else.
 """
 
 from __future__ import annotations

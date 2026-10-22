@@ -4,8 +4,10 @@ The transport bridges listen on the private `nora` Docker network, not on a
 published port. Network membership is not caller authentication: any container
 co-networked with a bridge can reach it, and a compromised sidecar must not be
 able to read private events or send as the account. Each bridge therefore
-requires the shared bearer token in `NORA_BRIDGE_TOKEN` on every route except
-`/health`, and Nora sends it from the same environment variable.
+requires the shared bearer token in `NORA_BRIDGE_TOKEN` on every route that
+carries account data, and Nora sends it from the same environment variable.
+WhatsApp leaves only its counters-only `/health` open; Instagram protects
+`/health` too because that body names the account.
 
 An unset token returns no header. The bridge refuses to start without one, so
 that is a deployment error that fails closed at the bridge, not a silent
