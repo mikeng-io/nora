@@ -17,7 +17,7 @@ import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 
-from scripts.check_commit_subject import SUBJECT_RE, check_subject
+from scripts.check_commit_subject import SUBJECT_RE, TYPES_RE, check_subject
 
 ROOT = Path(__file__).resolve().parents[1]
 PR_HEADINGS = re.findall(
@@ -41,6 +41,7 @@ PUBLIC_ISSUES = {
     ],
     "enhancement": ["Problem", "Proposed solution"],
 }
+BRANCH_RE = re.compile(rf"(?:{TYPES_RE})/[a-z0-9]+(?:-[a-z0-9]+)*")
 MARKER = "<!-- nora-contribution-feedback -->"
 PLACEHOLDER = re.compile(
     r"^(?:TODO|TBD|PENDING(?:_[A-Z]+)*|\.{3}|"
@@ -139,6 +140,11 @@ def pr_problems(item: dict, repository: str, release_login: str = "") -> list[st
                 "The dependency PR must contain Dependabot's generated update description."
             )
         return errors
+    if not BRANCH_RE.fullmatch(item["head"]["ref"]):
+        errors.append(
+            "Name the branch `<type>/<kebab-slug>` with a declared commit type, "
+            "e.g. `fix/message-delivery` (CONTRIBUTING.md, Branch naming)."
+        )
     found = sections(body)
     names = [name for name, _ in found]
     if len(set(names)) != len(names):
