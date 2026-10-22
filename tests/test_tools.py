@@ -1928,3 +1928,33 @@ def test_send_reply_accepts_a_null_more_instead_of_failing_the_send(wiring):
     validate = wiring["tools"]["send_reply"]._metadata.validate_input
     assert validate({"text": "hi", "more": None})["more"] is None
     assert validate({"text": "hi", "more": "true"})["more"] is True
+
+
+class _RecordingRelay:
+    """Records every `send` the tool makes, and answers `ok` the way a relay with a room would."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    async def send(self, **kwargs) -> dict:
+        self.calls.append(kwargs)
+        return {"status": "ok", "note": "passed on"}
+
+
+async def test_send_to_on_a_relayed_turn_is_refused_and_relays_nothing(wiring):
+    """8765_44837, the execution guard: a model that names `send_to` on a relayed turn anyway gets
+    a refusal, and nothing reaches the relay."""
+    relay = _RecordingRelay()
+    tools = _tools_over(wiring, wiring["deliverer"], relay=relay, relay_turn=True)
+    out = await _call(tools["send_to"], platform="signal", text="pass this on")
+    assert out["status"] == "refused"
+    assert relay.calls == []
+
+
+async def test_send_to_on_an_ordinary_turn_still_reaches_the_relay(wiring):
+    """The positive control: the same call off a relayed turn is handed to the relay."""
+    relay = _RecordingRelay()
+    tools = _tools_over(wiring, wiring["deliverer"], relay=relay, relay_turn=False)
+    out = await _call(tools["send_to"], platform="signal", text="pass this on")
+    assert out["status"] == "ok"
+    assert len(relay.calls) == 1

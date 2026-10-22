@@ -83,6 +83,16 @@ def is_handle(text: str) -> bool:
     return _HANDLE.fullmatch(text) is not None
 
 
+def may_read(summary: DocumentSummary, person_id: str | None, named: frozenset[RoomKey]) -> bool:
+    """Whether `person_id` may read a document, given the rooms whose explicit `persons` list
+    names them (`rooms_of`). The creator always may; anyone else only where the document's room
+    names them. Room membership alone is no grant: a `persons = "*"` room names nobody, so only
+    its creator reads what was made there (8765_44827). `None` reads nothing."""
+    if person_id is None:
+        return False
+    return summary.created_by == person_id or (summary.platform, summary.conversation_id) in named
+
+
 class NaiveDocumentDatetimeError(ValueError):
     """A datetime reached the document store without a timezone."""
 

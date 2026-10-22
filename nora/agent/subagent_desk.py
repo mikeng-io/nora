@@ -80,7 +80,7 @@ class SubagentWorker(Protocol):
 class DocumentTitles(Protocol):
     async def read(
         self, *, platform: str, conversation_id: str, document_id: UUID | None = None,
-        handle: str = "",
+        handle: str = "", person_id: str | None = None,
     ) -> Any: ...
 
 
@@ -319,7 +319,7 @@ class SubagentDesk:
             try:
                 out = await self._documents.read(
                     platform=row.platform, conversation_id=row.conversation_id,
-                    document_id=UUID(raw),
+                    document_id=UUID(raw), person_id=row.requester_person_id,
                 )
                 titles.append(str(out.title) if out.status == "ok" else "")
             except Exception:

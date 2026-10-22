@@ -28,14 +28,11 @@ Details:
 - **`presence`: the guard is not waived by the flag.** `where_is` treats
   `location = true` as trust that relaxes the subset check (DEC-79). Here the
   flag AND the guard must both pass: B's live roster is read, a degraded or
-  unreadable one denies (R-27), and B's people must be a subset of a circle
-  holding P. An unmapped account in B is IGNORED, not counted: `_presence`
-  never reads `live.unnamed`, so the guard runs over the named people alone
-  (`live.person_ids`). That lets a flagged room pass past an unmapped account,
-  but it is not DEC-79's waiver: nothing here counts it on
-  `nora_presence_disclosure_waived_total`, so such a pass leaves no trace. (The
-  `message` kind and `exclude_persons` are stricter and deny on `unnamed > 0`.)
-  A presence entry with no subject denies: the guard is a rule about a person.
+  unreadable one denies (R-27), an account Nora cannot name denies (8765_44856:
+  the circle never approved a member it cannot name), and B's people must be a
+  subset of a circle holding P. Nothing here is DEC-79's waiver, which relaxes
+  `where_is` and not this predicate. A presence entry with no subject denies:
+  the guard is a rule about a person.
 - **Unknown is deny.** An entry of a kind with no predicate, `UNRESOLVED`
   included, passes only in the row's origin room; so does a section with no
   entries. With no origin, nowhere.
@@ -122,7 +119,7 @@ def _presence(entry: LineageEntry, target: RenderRoom) -> bool:
     b, live = target.room, target.live
     if b is None or not b.location or entry.subject is None:
         return False
-    if live is None or not live.available or live.degraded:
+    if live is None or not live.available or live.degraded or live.unnamed > 0:
         return False
     return any(
         entry.subject in members

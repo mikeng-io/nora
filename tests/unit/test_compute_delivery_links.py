@@ -23,6 +23,7 @@ from nora.domain.ports import JobResult, JobStatus
 from nora.engagement.slots import ConversationSlots
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
+from nora.policy import permissive_policy
 from nora.testing import FakeAgentRunner, FakeComputeBackend, FakeComputeJobStore, ScriptedTurn
 from tests.unit.test_document_links_are_minted import PUBLIC, _service
 from tests.unit.test_document_tools import _doc
@@ -67,6 +68,7 @@ async def _deliver(doctrine_store, persons, reply, document_ids, service):
         JobStatus.SUCCEEDED, report="documents made", document_ids=document_ids,
     ))
     poller = ComputeJobPoller(
+        policy=permissive_policy(),
         store=store, backends={"subagent": backend}, speak=path.speak,
         slots=ConversationSlots(maxlen=16, spawn=lambda c: None), metrics=Metrics(),
         tick_seconds=1.0, clock=lambda: NOW, documents=service,

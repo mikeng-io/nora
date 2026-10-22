@@ -356,7 +356,9 @@ async def _later_turn_block(store: FakeDocumentStore, conversation_id: str = ROO
         store=store, room_ids=lambda platform, cid: frozenset({cid}),
         clock=lambda: datetime(2026, 10, 2, tzinfo=UTC), metrics=Metrics(),
     )
-    block = render_documents(await reader.read(platform="signal", conversation_id=conversation_id))
+    block = render_documents(await reader.read(
+        platform="signal", conversation_id=conversation_id, person_id="miles",
+    ))
     return "" if block is None else block.body
 
 

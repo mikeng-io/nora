@@ -32,6 +32,7 @@ from nora.engagement.slots import ConversationSlots
 from nora.obs.logging import bind_tag_id
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
+from nora.policy import permissive_policy
 from nora.testing import (
     FakeAgentRunner,
     FakeComputeJobStore,
@@ -426,7 +427,8 @@ async def test_create_runs_a_worker_and_the_poller_delivers_with_the_documents_l
     assert result.report == "Published 1 document."
     (document_id,) = result.document_ids
     link = (await service.read(
-        platform=PLATFORM, conversation_id=ROOM, document_id=UUID(document_id))).url
+        platform=PLATFORM, conversation_id=ROOM, document_id=UUID(document_id),
+        person_id="miles")).url
     assert link.startswith(PUBLIC + "/documents/")
 
     adapter = _FireAdapter()
@@ -439,6 +441,7 @@ async def test_create_runs_a_worker_and_the_poller_delivers_with_the_documents_l
         ]),
     )
     poller = ComputeJobPoller(
+        policy=permissive_policy(),
         store=desk._jobs, backends={SUBAGENT_KIND: backend}, speak=path.speak,
         slots=ConversationSlots(maxlen=16, spawn=lambda c: None), metrics=Metrics(),
         tick_seconds=1.0, clock=lambda: NOW, documents=service,

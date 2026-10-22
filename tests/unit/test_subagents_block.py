@@ -56,7 +56,7 @@ class _Worker:
 
 
 class _Titles:
-    async def read(self, *, platform, conversation_id, document_id=None, handle=""):
+    async def read(self, *, platform, conversation_id, document_id=None, handle="", person_id=None):
         @dataclass
         class _R:
             status: str = "ok"
@@ -385,11 +385,15 @@ async def test_a_status_read_that_raises_is_running_with_progress_unknown_never_
 
 async def test_a_slow_or_failing_title_read_costs_the_title_never_the_block():
     class _Sleepy(_Titles):
-        async def read(self, *, platform, conversation_id, document_id=None, handle=""):
+        async def read(
+            self, *, platform, conversation_id, document_id=None, handle="", person_id=None,
+        ):
             await asyncio.sleep(5)
 
     class _Broken(_Titles):
-        async def read(self, *, platform, conversation_id, document_id=None, handle=""):
+        async def read(
+            self, *, platform, conversation_id, document_id=None, handle="", person_id=None,
+        ):
             raise RuntimeError("down")
 
     job = _job(state=ComputeJobState.DONE, finished_minutes=5, result_document_ids=(DOC, DOC))

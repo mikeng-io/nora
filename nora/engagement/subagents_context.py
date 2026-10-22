@@ -47,7 +47,7 @@ log = logging.getLogger("nora.subagent.context")
 class DocumentTitles(Protocol):
     async def read(
         self, *, platform: str, conversation_id: str, document_id: UUID | None = None,
-        handle: str = "",
+        handle: str = "", person_id: str | None = None,
     ) -> Any: ...
 
 
@@ -169,7 +169,7 @@ class SubagentsContextReader:
                 res = await asyncio.wait_for(
                     self._documents.read(
                         platform=row.platform, conversation_id=row.conversation_id,
-                        document_id=UUID(raw),
+                        document_id=UUID(raw), person_id=row.requester_person_id,
                     ),
                     timeout=self._title_timeout,
                 )

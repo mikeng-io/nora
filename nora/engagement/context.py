@@ -306,7 +306,7 @@ class TranscriptInjection:
             ),
             asyncio.gather(
                 self._computer(msg),
-                self._documents(msg),
+                self._documents(msg, ref),
                 self._subagents(msg),
                 self._memos(msg),
                 self._prefetch(msg, ref),
@@ -756,13 +756,16 @@ class TranscriptInjection:
             platform=msg.platform, conversation_id=msg.conversation_id,
         ))
 
-    async def _documents(self, msg: NormalizedMessage) -> DocumentsView | None:
-        """This room's newest documents, or `None` (no reader, none yet, or the read
-        failed). `DocumentsContextReader.read` never raises."""
+    async def _documents(
+        self, msg: NormalizedMessage, ref: PersonRef | None,
+    ) -> DocumentsView | None:
+        """This room's newest documents the tagger may read, or `None` (no reader, none
+        yet, no tagger, or the read failed). `DocumentsContextReader.read` never raises."""
         if self._documents_reader is None:
             return None
         return await traced_read("documents", "read", self._documents_reader.read(
             platform=msg.platform, conversation_id=msg.conversation_id,
+            person_id=ref.person_id if ref is not None else None,
         ))
 
     async def _subagents(self, msg: NormalizedMessage) -> SubagentsView | None:

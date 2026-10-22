@@ -80,6 +80,12 @@ TAG_ONLY_TOOLS: frozenset[str] = frozenset({
 })
 
 
+#: Refused on a RELAYED turn (`ToolScope.relay`). A relayed turn carries words that arrived from
+#: another room, so `send_to` there would pass them on into a third room: a chain of relays
+#: (8765_44837). The tool is also refused in its own body, so the surface is not the only guard.
+RELAY_REFUSED_TOOLS: frozenset[str] = frozenset({"send_to"})
+
+
 #: The sub-agent worker's own tools: offered to a worker and to nothing else.
 #: The mirror of `TAG_ONLY_TOOLS`: a tag turn must not hold the worker's
 #: checkpoint, and no occasion but a worker's may.
@@ -107,6 +113,9 @@ class ToolScope:
     `tag_turn` is False for every occasion that is not a person's tag: a fire turn, a Dreamer
     adaptor, and the sub-agent worker. `TAG_ONLY_TOOLS` are refused there. `worker` is True
     only for the sub-agent worker, the one occasion `WORKER_ONLY_TOOLS` are admitted to.
+
+    `relay` is True for a fire turn that is a relayed message (`RELAY_REFUSED_TOOLS` are refused
+    there), so a relayed turn cannot relay onward.
     """
 
     platform: str | None
@@ -114,6 +123,7 @@ class ToolScope:
     grant: frozenset[str] | None = None
     tag_turn: bool = True
     worker: bool = False
+    relay: bool = False
 
     def admits(self, name: str) -> bool:
         if self.grant is not None and name not in self.grant:
@@ -121,6 +131,8 @@ class ToolScope:
         if name in TAG_ONLY_TOOLS and not self.tag_turn:
             return False
         if name in WORKER_ONLY_TOOLS and not self.worker:
+            return False
+        if name in RELAY_REFUSED_TOOLS and self.relay:
             return False
         if self.platform is None:
             return True

@@ -107,7 +107,7 @@
   {
     "name": "service set_state: the same-room rule is dropped, so another room changes this room's document",
     "file": "nora/app/documents_service.py",
-    "old": "        if (\n            current is None\n            or current.summary.platform != platform\n            or current.summary.conversation_id not in here\n        ):\n            return None\n        return current",
+    "old": "        if (\n            current is None\n            or current.summary.platform != platform\n            or current.summary.conversation_id not in here\n            or not may_read(current.summary, person_id, named)\n        ):\n            return None\n        return current",
     "new": "        if current is None:\n            return None\n        return current",
     "target": "tests/unit/test_documents_service.py::test_another_rooms_document_cannot_have_its_state_changed"
   },

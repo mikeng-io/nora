@@ -38,6 +38,7 @@ from nora.domain.subagent import SUBAGENT_KIND
 from nora.domain.subagents_context import SubagentLine, SubagentsView
 from nora.language.checkpoint_render import render_checkpoint
 from nora.language.subagents_render import render_subagents
+from nora.policy import permissive_policy
 from nora.testing import FakeComputeJobStore
 from tests.unit.test_subagent_tools import _Desk, _surface_names
 from tests.unit.test_subagent_worker import (
@@ -489,6 +490,7 @@ async def _deliver(result: JobResult, row: ComputeJob):
     store = FakeComputeJobStore()
     await store.create(row)
     poller = ComputeJobPoller(
+        policy=permissive_policy(),
         store=store, backends={SUBAGENT_KIND: _Backend()}, speak=speak,
         slots=ConversationSlots(maxlen=16, spawn=lambda c: None), metrics=Metrics(),
         tick_seconds=1.0, clock=lambda: NOW,
@@ -553,6 +555,7 @@ async def test_a_checkpoint_written_before_the_row_exists_is_on_the_row_after_de
         return "sent"
 
     poller = ComputeJobPoller(
+        policy=permissive_policy(),
         store=store, backends={SUBAGENT_KIND: backend}, speak=speak,
         slots=ConversationSlots(maxlen=16, spawn=lambda c: None), metrics=rig.metrics,
         tick_seconds=1.0, clock=lambda: NOW,

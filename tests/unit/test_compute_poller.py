@@ -10,7 +10,9 @@ one `tests/unit/test_heartbeat_loop.py` builds inline per test.
 
 from __future__ import annotations
 
+import tempfile
 from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
@@ -22,6 +24,7 @@ from nora.domain.compute import ComputeJob, ComputeJobState
 from nora.domain.ports import JobResult, JobStatus
 from nora.engagement.slots import ConversationSlots
 from nora.obs.metrics import Metrics
+from nora.policy import Policy, load_policy, permissive_policy
 from nora.testing import FakeComputeBackend, FakeComputeJobStore
 
 
@@ -58,6 +61,7 @@ async def test_a_still_running_job_is_left_pending(fake_slots, fake_metrics):
     )
     spoken = []
     poller = ComputeJobPoller(
+        policy=permissive_policy(),
         store=store, backends={"subagent": backend}, speak=lambda occ: spoken.append(occ) or "sent",
         slots=fake_slots, metrics=fake_metrics, tick_seconds=1.0,
         clock=lambda: datetime.now(UTC),
@@ -85,6 +89,7 @@ async def test_a_finished_job_is_delivered_and_marked_done(fake_slots, fake_metr
         return "sent"
 
     poller = ComputeJobPoller(
+        policy=permissive_policy(),
         store=store, backends={"subagent": backend}, speak=speak, slots=fake_slots,
         metrics=fake_metrics, tick_seconds=1.0, clock=lambda: datetime.now(UTC),
     )
@@ -127,6 +132,7 @@ async def test_a_job_never_delivered_twice(fake_slots, fake_metrics):
         return "sent"
 
     poller = ComputeJobPoller(
+        policy=permissive_policy(),
         store=store, backends={"subagent": backend}, speak=speak, slots=fake_slots,
         metrics=fake_metrics, tick_seconds=1.0, clock=lambda: datetime.now(UTC),
     )
@@ -165,6 +171,7 @@ async def test_a_turn_that_did_not_speak_still_ends_the_job(fake_slots, fake_met
         return FAILED_POLICY
 
     poller = ComputeJobPoller(
+        policy=permissive_policy(),
         store=store, backends={"subagent": backend}, speak=speak, slots=fake_slots,
         metrics=fake_metrics, tick_seconds=1.0, clock=lambda: datetime.now(UTC),
     )
@@ -209,6 +216,7 @@ async def test_a_held_slot_defers_the_delivery_and_says_so_in_the_series(
         return "sent"
 
     poller = ComputeJobPoller(
+        policy=permissive_policy(),
         store=store, backends={"subagent": backend}, speak=speak, slots=fake_slots,
         metrics=fake_metrics, tick_seconds=1.0, clock=lambda: datetime.now(UTC),
     )
@@ -313,6 +321,7 @@ def _poller(store, backends, fake_slots, fake_metrics, spoken, documents=None):
         return "sent"
 
     return ComputeJobPoller(
+        policy=permissive_policy(),
         store=store, backends=backends, speak=speak, slots=fake_slots,
         metrics=fake_metrics, tick_seconds=1.0, clock=lambda: datetime.now(UTC),
         documents=documents,
@@ -383,7 +392,9 @@ class _Documents:
     def __init__(self, held: dict[str, str]) -> None:
         self._held = held
 
-    async def read(self, *, platform, conversation_id, document_id=None, handle=""):
+    async def read(
+        self, *, platform, conversation_id, document_id=None, handle="", person_id=None,
+    ):
         key = str(document_id)
         if key not in self._held:
             return SimpleNamespace(status="refused", title="", url="")
@@ -446,3 +457,112 @@ async def test_delivery_writes_the_workers_trace_id_on_the_row(fake_slots, fake_
     await poller.tick()
 
     assert (await store.get(job.id)).trace_id == "t-1"
+
+
+# ---------------------------------------------------------------------------
+# 8765_44864: a finished job is delivered only while the grant still stands
+# ---------------------------------------------------------------------------
+
+
+def _policy(*, room: str = "conv-1", persons: str = '["person-1"]') -> Policy:
+    """A real `Policy` from a real policy.toml. `is_allowed` is the grant under test,
+    so a permissive stub would prove nothing."""
+    p = Path(tempfile.mkdtemp()) / "policy.toml"
+    p.write_text(
+        'default = "deny"\n[[conversations]]\nplatform = "signal"\n'
+        f'id = "{room}"\nlabel = "{room}"\npersons = {persons}\n'
+    )
+    return load_policy(p)
+
+
+async def _finished_job_under(policy: Policy, fake_slots, fake_metrics):
+    store = FakeComputeJobStore()
+    job = _pending_job()
+    await store.create(job)
+    backend = FakeComputeBackend()
+    backend.set_result(
+        job_id="job_1",
+        result=JobResult(status=JobStatus.SUCCEEDED, url="https://x/drop/1", summary="a haiku"),
+        polls_before_done=0,
+    )
+    spoken: list = []
+
+    async def speak(occ):
+        spoken.append(occ)
+        return "sent"
+
+    poller = ComputeJobPoller(
+        store=store, backends={"subagent": backend}, speak=speak, slots=fake_slots,
+        metrics=fake_metrics, tick_seconds=1.0, clock=lambda: datetime.now(UTC),
+        policy=policy,
+    )
+    await poller.tick()
+    return spoken, await store.get(job.id)
+
+
+async def test_a_finished_job_is_not_delivered_once_its_room_is_removed(fake_slots, fake_metrics):
+    """Room removal between creation and completion: the room is no longer in
+    policy.toml, so nothing is spoken and the row is closed as policy-failed."""
+    spoken, fetched = await _finished_job_under(
+        _policy(room="another-room"), fake_slots, fake_metrics,
+    )
+    assert spoken == []
+    assert fetched.state is ComputeJobState.FAILED
+    assert fetched.failure_reason == FAILED_POLICY
+
+
+async def test_a_finished_job_is_not_delivered_once_its_requester_is_removed(
+    fake_slots, fake_metrics,
+):
+    """Requester removal: the room still lists the conversation, but its explicit
+    `persons` list no longer names the person who asked."""
+    spoken, fetched = await _finished_job_under(
+        _policy(persons='["someone-else"]'), fake_slots, fake_metrics,
+    )
+    assert spoken == []
+    assert fetched.state is ComputeJobState.FAILED
+    assert fetched.failure_reason == FAILED_POLICY
+
+
+async def test_a_finished_job_is_still_delivered_while_the_grant_stands(fake_slots, fake_metrics):
+    """The positive control: the same job under the same policy shape, still granted."""
+    spoken, fetched = await _finished_job_under(_policy(), fake_slots, fake_metrics)
+    assert len(spoken) == 1
+    assert fetched.state is ComputeJobState.DONE
+
+
+async def test_a_lost_job_is_not_spoken_after_restart_once_its_grant_is_gone():
+    """Restart recovery: `recover` closes the orphaned row, and the boot-time telling
+    must not speak into a room the requester no longer has access to."""
+    from nora.app.composition import _tell_about_lost_jobs
+
+    job = _pending_job()
+    spoken: list = []
+
+    async def speak(occ):
+        spoken.append(occ)
+        return "sent"
+
+    await _tell_about_lost_jobs(
+        jobs=[job], speak=speak, slots=ConversationSlots(maxlen=16, spawn=lambda c: None),
+        metrics=Metrics(), policy=_policy(persons='["someone-else"]'),
+    )
+    assert spoken == []
+
+
+async def test_a_lost_job_is_still_told_while_the_grant_stands():
+    """The positive control for the restart test: the same call, still granted."""
+    from nora.app.composition import _tell_about_lost_jobs
+
+    job = _pending_job()
+    spoken: list = []
+
+    async def speak(occ):
+        spoken.append(occ)
+        return "sent"
+
+    await _tell_about_lost_jobs(
+        jobs=[job], speak=speak, slots=ConversationSlots(maxlen=16, spawn=lambda c: None),
+        metrics=Metrics(), policy=_policy(),
+    )
+    assert len(spoken) == 1

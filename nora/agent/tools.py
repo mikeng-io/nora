@@ -4812,6 +4812,9 @@ def build_tool_specs(
     lookup_window: tuple[TranscriptRow, ...] | None = None,
     ai_peer: str = "nora",
     fire_turn: bool = False,
+    # THIS turn is a relay: another room's words arrived through `Relay`, so `send_to` is
+    # refused here as well as left off the surface (8765_44837).
+    relay_turn: bool = False,
     dream_adaptor: str = "",
     # THE THIRD provenance: the id of the background job this set
     # is built for, `""` for every tag, fire turn and Dreamer pass. Non-empty makes the
@@ -14587,6 +14590,14 @@ Args:
                 these.
             text: What to pass on, in their words.
         """
+        if relay_turn:
+            # A relayed turn is never a second relay: its words came from another room, and
+            # passing them on would chain one room's words into a third (8765_44837).
+            return {
+                "status": "refused",
+                "note": "This came to you from another room, so you can't pass it on "
+                        "from here. Say so plainly, with send_reply.",
+            }
         if relay is None:
             return {
                 "status": "unavailable",
@@ -16270,11 +16281,15 @@ Args:
             _record(metrics, tool, "not_found", reason="bad_id")
             return {"status": "not_found",
                     "note": "That is not a document id, so nothing was read."}
+        # The person who asked: a document is read as its creator, or as a person its room
+        # names, never by room membership alone (8765_44827). Nobody asked, nothing is read.
+        tagger = getattr(room, "tagger", None) if room is not None else None
         try:
             out = await documents.read(
                 platform=room.platform if room is not None else "",
                 conversation_id=bound_conversation_id, document_id=target,
                 handle="" if target is not None else handle,
+                person_id=tagger.person_id if tagger is not None else None,
             )
         except Exception:
             log.exception("document_read failed")
@@ -16994,6 +17009,8 @@ def build_tools(
     memory_retrieval: MemorySearch | None = None,
     persona: PersonaWriter | None = None,
     persona_read: PersonaHeads | None = None,
+    relay: Relay | None = None,
+    relay_turn: bool = False,
 ) -> list:
     """The Strands-ready form of `build_tool_specs` — `adapt()` each spec so
     the docstrings above become the tool's model-facing description/schema
@@ -17052,5 +17069,6 @@ def build_tools(
         memory_retrieval=memory_retrieval,
         persona=persona,
         persona_read=persona_read,
+        relay=relay, relay_turn=relay_turn,
     )
     return [adapt(spec) for spec in specs]

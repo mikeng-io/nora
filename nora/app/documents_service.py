@@ -59,6 +59,7 @@ from nora.domain.documents import (
     StoredDocument,
     handle_of,
     is_handle,
+    may_read,
 )
 from nora.domain.media import code_matches, parse_media_type, resolve_room_media, room_sightings
 from nora.domain.ports import MediaObjectStore, RecordStore
@@ -198,8 +199,13 @@ class DocumentService:
         now_ms: Callable[[], int] = _wall_ms,
         public_url: str = "",
         place_locator: PlaceLocator | None = None,
+        # The rooms whose explicit `persons` list names a person: `rooms_named` from the
+        # CURRENT policy, the same answer the portal reads with. `None` names nothing, so a
+        # document is read by its creator alone (8765_44827).
+        rooms_of: Callable[[str], frozenset[RoomKey]] | None = None,
     ) -> None:
         self._store = store
+        self._rooms_of = rooms_of
         self._records = records
         self._media = media
         self._window = media_window
@@ -312,11 +318,11 @@ class DocumentService:
 
     async def _target_problem(
         self, platform: str, conversation_id: str, document_id: UUID | None,
-        base_revision: int | None,
+        base_revision: int | None, person_id: str,
     ) -> PublishResult | None:
         """The refusal a revision's TARGET would earn at the write (another room's or an unknown
-        id, not active, a stale revision), or `None`. Read-only, and the write checks
-        again, so a race between the two is still caught there."""
+        id, a document `person_id` may not revise, not active, a stale revision), or `None`.
+        Read-only, and the write checks again, so a race between the two is still caught there."""
         if document_id is None:
             return None
         try:
@@ -328,6 +334,7 @@ class DocumentService:
             current is None
             or current.summary.platform != platform
             or current.summary.conversation_id not in here
+            or not may_read(current.summary, person_id, self._named(person_id))
         ):
             return _no_such_document()
         if current.summary.state != "active":
@@ -436,6 +443,13 @@ class DocumentService:
         from the tool."""
         return catalog_prompt()
 
+    def _named(self, person_id: str | None) -> frozenset[RoomKey]:
+        """The rooms whose explicit list names `person_id`; nothing without a wiring or a
+        requester, so only a creator reads (`may_read`)."""
+        if self._rooms_of is None or person_id is None:
+            return frozenset()
+        return self._rooms_of(person_id)
+
     async def _in_room(
         self,
         *,
@@ -443,14 +457,18 @@ class DocumentService:
         conversation_id: str,
         document_id: UUID | None,
         handle: str,
+        person_id: str | None,
     ) -> StoredDocument | None:
         """The document named by `document_id`, or by the 12-hex `handle` a link carries,
-        when it was made in THIS room (any id the room answers to), in ANY state; else `None`.
+        when it was made in THIS room (any id the room answers to), in ANY state, and `person_id`
+        may read it (`may_read`); else `None`.
 
         The ONE resolution `read` and `set_state` share. A handle is matched among this
-        room's documents only, and one that matches none or more than one, like another
-        room's document or an unknown id, is the same `None`: it is never picked."""
+        room's documents `person_id` may read, and one that matches none or more than one, like
+        another room's document, one the viewer may not read or an unknown id, is the same `None`:
+        it is never picked."""
         here = self._room_ids(platform, conversation_id) | {conversation_id}
+        named = self._named(person_id)
         current: StoredDocument | None = None
         if document_id is not None:
             current = await self._store.get(document_id=document_id)
@@ -459,12 +477,14 @@ class DocumentService:
                 d
                 for d in await self._store.find_by_handle(handle=handle)
                 if d.summary.platform == platform and d.summary.conversation_id in here
+                and may_read(d.summary, person_id, named)
             ]
             current = mine[0] if len(mine) == 1 else None  # two is never picked
         if (
             current is None
             or current.summary.platform != platform
             or current.summary.conversation_id not in here
+            or not may_read(current.summary, person_id, named)
         ):
             return None
         return current
@@ -476,15 +496,16 @@ class DocumentService:
         conversation_id: str,
         document_id: UUID | None = None,
         handle: str = "",
+        person_id: str | None = None,
     ) -> ReadResult:
-        """The current revision of a document made in THIS room, named by its id or by the
-        12-hex handle its link carries. Another room's document, an unknown id, a handle
-        that fits none or two of this room's documents, and a deleted document all answer
-        exactly alike (`no_such_document`)."""
+        """The current revision of a document made in THIS room that `person_id` may read,
+        named by its id or by the 12-hex handle its link carries. Another room's document, a
+        document of this room `person_id` may not read, an unknown id, a handle that fits none
+        or two of those, and a deleted document all answer exactly alike (`no_such_document`)."""
         try:
             current = await self._in_room(
                 platform=platform, conversation_id=conversation_id,
-                document_id=document_id, handle=handle,
+                document_id=document_id, handle=handle, person_id=person_id,
             )
         except Exception:  # noqa: BLE001 - a store that is down is `unavailable`
             return ReadResult("unavailable", note="The document could not be read right now.")
@@ -535,7 +556,7 @@ class DocumentService:
         try:
             current = await self._in_room(
                 platform=platform, conversation_id=conversation_id,
-                document_id=document_id, handle=handle,
+                document_id=document_id, handle=handle, person_id=person_id,
             )
             if current is None:
                 return StateResult("refused", findings=_no_such_document().findings)
@@ -656,7 +677,7 @@ class DocumentService:
             # answered before any billed lookup, so the model's «read it again and publish
             # again» after a conflict does not pay for the same places twice.
             early = await self._target_problem(
-                platform, conversation_id, document_id, base_revision
+                platform, conversation_id, document_id, base_revision, person_id
             )
             if early is not None:
                 return early
@@ -706,6 +727,7 @@ class DocumentService:
                 current is None
                 or current.summary.platform != platform
                 or current.summary.conversation_id not in here
+                or not may_read(current.summary, person_id, self._named(person_id))
             ):
                 return _no_such_document()
             if current.summary.state != "active":
