@@ -140,6 +140,28 @@ async def test_list_for_conversation_scopes_to_conversation(store):
     assert [e.id for e in out] == [here.id]
 
 
+async def test_list_for_conversation_quarantines_legacy_rows_unless_include_legacy(store):
+    """The legacy `unit_id=""` row is fetched only on the caller's explicit
+    proof of ownership (`include_legacy`), never universally with the unit
+    match. The positive control is the widened read, so the negative cannot
+    pass by returning nothing at all."""
+    unit = f"unit-{uuid4()}"
+    legacy = _event(conversation_id="signal:group-5", unit_id="")
+    owned = _event(conversation_id="signal:group-5", unit_id=unit)
+    await store.create(legacy)
+    await store.create(owned)
+
+    scoped = await store.list_for_conversation(
+        conversation_id="signal:group-5", unit_id=unit,
+    )
+    assert [e.id for e in scoped] == [owned.id]
+
+    widened = await store.list_for_conversation(
+        conversation_id="signal:group-5", unit_id=unit, include_legacy=True,
+    )
+    assert {e.id for e in widened} == {legacy.id, owned.id}
+
+
 async def test_list_for_person_includes_events_i_created(store):
     mine = _event(conversation_id="signal:group-5", created_by="miles")
     someone_elses = _event(conversation_id="signal:group-5", created_by="daisy")

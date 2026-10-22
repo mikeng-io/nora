@@ -489,6 +489,69 @@ def still_open_gatherings(
     return [e for e in events if e.when is None or e.when >= now]
 
 
+#: Conversation id -> every `(unit, platform)` pair `policy.toml` assigns it.
+#: `events` stores the conversation id and, since migration 0116, the unit —
+#: never the platform — so this mapping is the trusted ownership record a
+#: caller checks a persisted row against.
+RoomClaims = Mapping[str, frozenset[tuple[str, str]]]
+
+
+def event_in_scope(
+    event: Gathering, *, unit_id: str, conversation_id: str,
+    claims: RoomClaims, platform: str | None = None,
+) -> bool:
+    """Whether `event` may be read or mutated as `(unit_id, platform,
+    conversation_id)`.
+
+    A row that records a non-empty `unit_id` is owned by that unit and the
+    named room. A row with `unit_id=""` predates the column: it is admitted
+    ONLY when `policy.toml` assigns the room to exactly this caller. Any other
+    assignment (two units, or two platforms in one unit) makes the row
+    ambiguous, and ambiguity is REFUSED — never "belongs to whoever asks".
+
+    `platform=None` is the unit-wide reader (`event_search`, the agenda and
+    the wake look-ahead): a unit row whose id policy places on two platforms
+    is ambiguous without a platform, so it is refused too. An empty `unit_id`
+    is the unpartitioned development scope and may see only rows policy does
+    not place anywhere; a configured deployment always names a unit."""
+    if event.conversation_id != conversation_id:
+        return False
+    assigned = claims.get(conversation_id, frozenset())
+    if not unit_id:
+        return event.unit_id == "" and not assigned
+    if event.unit_id:
+        if event.unit_id != unit_id:
+            return False
+        platforms = {p for (u, p) in assigned if u == unit_id}
+        if not platforms:
+            # Policy does not place this id (or ownership is unwired): the
+            # row's own unit plus the room is all the evidence there is.
+            return True
+        if platform is None:
+            return len(platforms) <= 1
+        return platforms == {platform}
+    if platform is None:
+        return len(assigned) == 1 and next(iter(assigned))[0] == unit_id
+    return assigned == frozenset({(unit_id, platform)})
+
+
+def legacy_room_admissible(
+    claims: RoomClaims, *, unit_id: str, conversation_id: str,
+    platform: str | None = None,
+) -> bool:
+    """Whether a `unit_id=""` row in `conversation_id` may be fetched for this
+    caller. The store uses it to decide whether to widen a scoped read; the
+    service uses it to build `search_events`' legacy room ids. Same rule as
+    `event_in_scope`'s legacy branch, kept separate because it runs before a
+    row is in hand."""
+    assigned = claims.get(conversation_id, frozenset())
+    if not unit_id:
+        return not assigned
+    if platform is None:
+        return len(assigned) == 1 and next(iter(assigned))[0] == unit_id
+    return assigned == frozenset({(unit_id, platform)})
+
+
 @runtime_checkable
 class GatheringStore(Protocol):
     async def create(
@@ -504,9 +567,11 @@ class GatheringStore(Protocol):
 
     async def list_for_conversation(
         self, *, conversation_id: str, status: GatheringStatus | None = None,
-        unit_id: str = "",
+        unit_id: str = "", include_legacy: bool = False,
     ) -> Sequence[Gathering]:
-        """A room's events."""
+        """A room's events. `include_legacy` is set by the service only when
+        `legacy_room_admissible` proves the pre-migration rows belong to this
+        caller; a scoped read otherwise returns the exact unit's rows only."""
 
     async def list_for_person(
         self, *, person_id: str, conversation_ids: Collection[str] = (),

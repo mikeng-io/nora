@@ -12,10 +12,15 @@
 
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
+import { spawn } from 'node:child_process';
 import { createCipheriv } from 'node:crypto';
+import { once } from 'node:events';
+import http from 'node:http';
 import { mkdtempSync, writeFileSync } from 'node:fs';
+import net from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   authorizedBridgeRequest,
@@ -717,3 +722,68 @@ test('health is open; every other route needs the exact bearer', () => {
   assert.equal(authorizedBridgeRequest('GET', '/health', undefined, ''), true);
   assert.equal(authorizedBridgeRequest('GET', '/events', 'Bearer ', ''), false);
 });
+
+test('a non-ASCII bearer is a 401, not a crash, and the bridge keeps serving', async () => {
+  // `Bearer t0é` has the expected STRING length (10) but one more UTF-8 byte.
+  // Comparing string lengths and then timingSafeEqual threw
+  // ERR_CRYPTO_TIMING_SAFE_EQUAL_LENGTH from the HTTP handler.
+  assert.equal(authorizedBridgeRequest('GET', '/events', 'Bearer t0é', 't0k'), false);
+
+  // Start the REAL bridge unpaired (no creds.json): it serves HTTP without
+  // opening a WhatsApp socket, so this exercises the actual request handler
+  // rather than a copy of it.
+  const port = await freePort();
+  const child = spawn(process.execPath, [
+    'bridge.js', '--port', String(port), '--session', mkdtempSync(path.join(tmpdir(), 'bridge-http-')),
+  ], {
+    cwd: path.dirname(fileURLToPath(import.meta.url)),
+    env: { ...process.env, NORA_BRIDGE_TOKEN: 't0k' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let output = '';
+  child.stdout.on('data', (chunk) => { output += chunk; });
+  child.stderr.on('data', (chunk) => { output += chunk; });
+  try {
+    await Promise.race([
+      (async () => {
+        while (!output.includes('listening on')) {
+          if (child.exitCode !== null) throw new Error(`bridge exited: ${output}`);
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+      })(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error(`bridge did not start: ${output}`)), 10_000)),
+    ]);
+    const call = (authorization) => new Promise((resolve, reject) => {
+      const req = http.request({
+        host: '127.0.0.1', port, path: '/events', headers: { authorization },
+      }, (res) => {
+        res.resume();
+        res.on('end', () => resolve(res.statusCode));
+      });
+      req.on('error', reject);
+      req.end();
+    });
+    assert.equal(await call('Bearer t0é'), 401);
+    // `/health` is open, so a 200 proves the process survived the bad header.
+    const health = await new Promise((resolve, reject) => {
+      http.get({ host: '127.0.0.1', port, path: '/health' }, (res) => {
+        res.resume();
+        res.on('end', () => resolve(res.statusCode));
+      }).on('error', reject);
+    });
+    assert.equal(health, 200);
+  } finally {
+    child.kill();
+    await once(child, 'exit');
+  }
+});
+
+async function freePort() {
+  const server = net.createServer();
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const { port } = server.address();
+  server.close();
+  await once(server, 'close');
+  return port;
+}

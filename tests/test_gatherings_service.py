@@ -50,7 +50,7 @@ def _service(
     store=None,
     route_source=None,
     honcho=None,
-    unit_room_ids=None,
+    room_claims=None,
     place_areas=None,
 ) -> GatheringService:
     return GatheringService(
@@ -59,7 +59,7 @@ def _service(
         honcho=honcho or _FakeHoncho(),
         ai_peer="nora",
         now=lambda: NOW,
-        unit_room_ids=unit_room_ids,
+        room_claims=room_claims,
         place_areas=place_areas,
     )
 
@@ -720,11 +720,11 @@ def _legacy_event(*, conversation_id: str, title: str) -> Gathering:
     )
 
 
-async def test_search_events_finds_legacy_event_via_unit_room_ids():
+async def test_search_events_finds_legacy_event_via_room_claims():
     store = FakeGatheringStore()
     svc = _service(
         store=store,
-        unit_room_ids=lambda unit: ("signal:room-a",) if unit == "friends" else (),
+        room_claims={"signal:room-a": frozenset({("friends", "signal")})},
     )
     legacy = await store.create(
         _legacy_event(conversation_id="signal:room-a", title="Pre-migration dinner"),
@@ -738,7 +738,7 @@ async def test_search_events_never_leaks_a_legacy_event_from_another_units_room(
     store = FakeGatheringStore()
     svc = _service(
         store=store,
-        unit_room_ids=lambda unit: ("signal:room-a",) if unit == "friends" else (),
+        room_claims={"signal:room-a": frozenset({("friends", "signal")})},
     )
     other_unit_legacy = await store.create(_legacy_event(
         conversation_id="signal:room-z", title="Someone else's pre-migration dinner",
@@ -746,3 +746,82 @@ async def test_search_events_never_leaks_a_legacy_event_from_another_units_room(
 
     found = await svc.search_events(unit_id="friends", conversation_id="signal:room-a")
     assert other_unit_legacy.id not in {e.id for e in found}
+
+
+async def test_a_legacy_event_is_quarantined_when_two_units_claim_its_room():
+    """No `unit_id` in the row and two units naming the same id: there is no
+    evidence which one said it, so it is shown to NEITHER, not to whoever
+    asks."""
+    store = FakeGatheringStore()
+    legacy = await store.create(_legacy_event(
+        conversation_id="signal:room-a", title="Pre-migration dinner",
+    ))
+    svc = _service(store=store, room_claims={
+        "signal:room-a": frozenset({("friends", "signal"), ("work", "signal")}),
+    })
+
+    assert not await svc.list_events(
+        conversation_id="signal:room-a", unit_id="friends", platform="signal",
+    )
+    assert legacy.id not in {
+        e.id for e in await svc.search_events(
+            unit_id="friends", conversation_id="signal:room-a",
+        )
+    }
+
+
+def _event_mutations(svc: GatheringService, event_id: uuid.UUID):
+    """Every write that authorizes a bare event id, as the FRIENDS caller."""
+    return {
+        "event_revise": lambda: svc.update_event(
+            event_id=event_id, conversation_id="signal:room-a",
+            platform="signal", unit_id="friends", venue_text="elsewhere",
+        ),
+        "event_rsvp": lambda: svc.rsvp(
+            event_id=event_id, conversation_id="signal:room-a",
+            person_id="miles", response=RSVPResponse.YES,
+            platform="signal", unit_id="friends",
+        ),
+        "event_set_status": lambda: svc.set_event_status(
+            event_id=event_id, conversation_id="signal:room-a",
+            status=GatheringStatus.CONFIRMED,
+            platform="signal", unit_id="friends",
+        ),
+        "suggest_venue": lambda: svc.suggest_venue(
+            event_id=event_id, conversation_id="signal:room-a",
+            roster_person_ids=(), platform="signal", unit_id="friends",
+        ),
+    }
+
+
+async def test_every_event_mutation_refuses_another_units_event_with_the_same_room_id():
+    """The row's own `unit_id` is authoritative: a foreign unit's id never
+    passes because the conversation string happens to match."""
+    store = FakeGatheringStore()
+    claims = {"signal:room-a": frozenset({("friends", "signal"), ("work", "signal")})}
+    foreign = await _service(store=store, room_claims=claims).create_event(
+        conversation_id="signal:room-a", requester_person_id="miles",
+        title="Work dinner", platform="signal", unit_id="work",
+    )
+    svc = _service(store=store, honcho=_FakeHoncho(), room_claims=claims)
+    for name, call in _event_mutations(svc, foreign.id).items():
+        with pytest.raises(GatheringNotFoundError):
+            await call()
+        assert (await store.get(foreign.id)).unit_id == "work", name
+
+
+async def test_every_event_mutation_refuses_an_ambiguous_legacy_event():
+    """A `unit_id=""` row two units claim is quarantined for WRITES too: the
+    authorizer cannot prove it is this caller's, so it refuses like an unknown
+    id rather than letting the first asker mutate it."""
+    store = FakeGatheringStore()
+    legacy = await store.create(_legacy_event(
+        conversation_id="signal:room-a", title="Pre-migration dinner",
+    ))
+    svc = _service(store=store, honcho=_FakeHoncho(), room_claims={
+        "signal:room-a": frozenset({("friends", "signal"), ("work", "signal")}),
+    })
+    for _name, call in _event_mutations(svc, legacy.id).items():
+        with pytest.raises(GatheringNotFoundError):
+            await call()
+    assert not await store.rsvps_for(legacy.id)

@@ -40,7 +40,13 @@ from nora.agent.dreamer import (
     cognition_grant,
 )
 from nora.domain.cognition_session import COGNITION_ADAPTOR, Room
-from nora.domain.gatherings import OPEN_STATUSES, Gathering, GatheringStore
+from nora.domain.gatherings import (
+    OPEN_STATUSES,
+    Gathering,
+    GatheringStore,
+    event_in_scope,
+    legacy_room_admissible,
+)
 from nora.domain.note_body import NORA_NAMES
 from nora.domain.ports import CognitionStore, StimulusStore
 from nora.domain.reminders import ReminderCaps
@@ -401,18 +407,33 @@ def units_with_home_rooms(
 
 def open_events_reader(
     store: GatheringStore,
+    room_claims: Mapping[str, frozenset[tuple[str, str]]] | None = None,
 ) -> Callable[[str, str], Awaitable[Sequence[Gathering]]]:
     """A room's events a session may still move, and is shown: every status
     before `happened` (`OPEN_STATUSES`: staged, proposed, confirmed), so a
     confirmed event can reach `happened` or `cancelled`. The unit is passed
     with the room because a conversation id alone is only unique within one
-    platform's id space."""
+    platform's id space.
+
+    `room_claims` is `policy.toml`'s id -> `(unit, platform)` record. A
+    pre-migration `unit_id=""` row enters only when the id has exactly one
+    owner and it is this unit; a unit row whose id two platforms claim is
+    ambiguous without a platform and is quarantined too."""
+    claims = dict(room_claims or {})
+
     async def read(unit: str, conversation_id: str) -> Sequence[Gathering]:
+        include_legacy = legacy_room_admissible(
+            claims, unit_id=unit, conversation_id=conversation_id,
+        )
         return [
             e for e in await store.list_for_conversation(
                 conversation_id=conversation_id, unit_id=unit,
+                include_legacy=include_legacy,
             )
             if e.status in OPEN_STATUSES
+            and event_in_scope(
+                e, unit_id=unit, conversation_id=conversation_id, claims=claims,
+            )
         ]
     return read
 

@@ -231,6 +231,28 @@ async def test_a_session_cannot_read_another_units_event_with_the_same_room_id()
     assert {e.title for e in await read("unit-a", "ga")} == {"ours"}
 
 
+async def test_a_legacy_event_is_read_only_when_policy_assigns_the_room_to_exactly_this_caller():
+    """The pre-migration row carries no `unit_id`; policy is the only owner
+    record. Exactly one owner admits it, two units (or two platforms of one
+    unit) quarantine it — never "belongs to whoever asks"."""
+    store = FakeGatheringStore()
+    await store.create(_event(title="ambiguous", unit_id=""))
+
+    ambiguous_units = open_events_reader(store, {
+        "ga": frozenset({("unit-a", "signal"), ("unit-b", "signal")}),
+    })
+    assert not await ambiguous_units("unit-a", "ga")
+
+    ambiguous_platforms = open_events_reader(store, {
+        "ga": frozenset({("unit-a", "signal"), ("unit-a", "whatsapp")}),
+    })
+    assert not await ambiguous_platforms("unit-a", "ga")
+
+    owned = open_events_reader(store, {"ga": frozenset({("unit-a", "signal")})})
+    assert {e.title for e in await owned("unit-a", "ga")} == {"ambiguous"}
+    assert not await owned("unit-b", "ga")
+
+
 # -- how an abduced field is voiced -------------------------------
 
 def test_an_abduced_field_is_voiced_as_a_question_and_no_assent_upgrades_it():

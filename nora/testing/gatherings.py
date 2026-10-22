@@ -98,12 +98,12 @@ class FakeGatheringStore:
 
     async def list_for_conversation(
         self, *, conversation_id: str, status: GatheringStatus | None = None,
-        unit_id: str = "",
+        unit_id: str = "", include_legacy: bool = False,
     ) -> Sequence[Gathering]:
         out = [
             e for e in self._events.values()
             if e.conversation_id == conversation_id
-            and (not unit_id or e.unit_id in (unit_id, ""))
+            and (not unit_id or e.unit_id == unit_id or (include_legacy and e.unit_id == ""))
             and (status is None or e.status == status)
         ]
         return sorted(out, key=lambda e: e.created_at)

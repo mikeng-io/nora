@@ -531,14 +531,17 @@ async function handleReact(req, res) {
 }
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, 'http://bridge');
-  const route = `${req.method} ${url.pathname}`;
-  if (!authorizedBridgeRequest(
-    req.method, url.pathname, req.headers.authorization, BRIDGE_TOKEN,
-  )) {
-    return sendJson(res, 401, { error: 'unauthorized' });
-  }
+  let route = `${req.method} ${req.url}`;
   try {
+    // The guard is inside this try too: a malformed request must answer
+    // (401/400), never reject the handler and take the bridge down.
+    const url = new URL(req.url, 'http://bridge');
+    route = `${req.method} ${url.pathname}`;
+    if (!authorizedBridgeRequest(
+      req.method, url.pathname, req.headers.authorization, BRIDGE_TOKEN,
+    )) {
+      return sendJson(res, 401, { error: 'unauthorized' });
+    }
     switch (route) {
       case 'GET /health': return handleHealth(req, res);
       case 'GET /events': return handleEvents(req, res);

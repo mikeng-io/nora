@@ -107,8 +107,8 @@
  {
   "name": "review #669: event_set_status hands the tag path no message id",
   "file": "nora/agent/tools.py",
-  "old": "                platform=room.platform, message_ids=room.trigger_message_ids,\n",
-  "new": "                platform=room.platform,\n",
+  "old": "                platform=room.platform, unit_id=_unit() or \"\",\n                message_ids=room.trigger_message_ids,\n",
+  "new": "                platform=room.platform, unit_id=_unit() or \"\",\n",
   "target": "tests/test_gathering_tools.py::test_a_tag_turn_s_event_writes_cite_the_message_that_raised_the_turn"
  },
  {

@@ -27,6 +27,7 @@ class FakeWorld:
     def __init__(self) -> None:
         self.health = '{"session":"authenticated"}'
         self.health_rc = 0
+        self.token = "tok-test"  # noqa: S105 - a fake, never a real credential
         self.stop_rc = 0
         self.start_rc = 0
         self.bridge_dir: Path | None = None
@@ -48,7 +49,10 @@ class FakeWorld:
 
     def run(self, argv: Sequence[str], timeout: float, stdin: str | None) -> RunResult:
         self.calls.append(list(argv))
-        if argv[:2] == ["docker", "exec"] and "curl" in argv:
+        if argv[:2] == ["docker", "exec"] and len(argv) >= 6 and argv[3:5] == ["sh", "-c"]:
+            script = argv[5]
+            if "Authorization: Bearer $NORA_BRIDGE_TOKEN" not in script:
+                return RunResult(1, "", "curl: (22) 401 Unauthorized")
             if not self.running:  # exec into a stopped container fails
                 return RunResult(1, "", "container is not running")
             return RunResult(self.health_rc, self.health)
@@ -145,6 +149,25 @@ def test_healthy_run_is_pass_and_appends_one_line_without_secrets(world, bridge_
     assert recs[0]["instagram_sessionid"] == {
         "chrome": fingerprint(CHROME_SID), "bridge": fingerprint(BRIDGE_SID)}
     assert stat.S_IMODE(cfg.state_file.stat().st_mode) == 0o600
+
+
+def test_the_health_probe_authenticates_from_the_container_without_the_token_in_argv(
+    world, bridge_dir, tmp_path,
+):
+    """/health is protected (a bare curl is a 401, which would read as
+    `unreachable`). The container's own shell expands NORA_BRIDGE_TOKEN, so the
+    value is neither passed to docker nor recorded."""
+    world.health = '{"session":"authenticated"}'
+    world.token = "tok-never-in-argv"  # noqa: S105 - a fake, never a real credential
+    p, cfg = make(world, bridge_dir, tmp_path)
+    verdict, _ = p.run_once()
+    assert verdict == "PASS"
+    health_calls = [c for c in world.calls if c[:2] == ["docker", "exec"]]
+    assert health_calls, world.calls
+    for argv in world.calls:
+        assert world.token not in " ".join(argv)
+    assert "Authorization: Bearer $NORA_BRIDGE_TOKEN" in health_calls[0][5]
+    assert world.token not in cfg.state_file.read_text()
 
 
 def test_logged_out_bridge_with_newer_chrome_cookie_is_synced(world, bridge_dir, tmp_path):

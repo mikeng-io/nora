@@ -198,12 +198,14 @@ def test_a_restore_after_a_recreate_puts_every_room_back_byte_for_byte(host: Hos
     archive = _backup(host)
     before = {p.relative_to(host.vm / "workspace"): p.read_bytes()
               for p in (host.vm / "workspace").rglob("*")
-              if p.is_file() and "/browser/Default" not in str(p) and ".tmux" not in str(p)}
+              if p.is_file() and "/browser/Default" not in str(p) and ".tmux" not in str(p)
+              and p.name != ".restore.lock"}
     _wipe(host)                                       # what a recreate does
     result = host.run("restore", str(archive))
     assert result.returncode == 0, result.stdout + result.stderr
     after = {p.relative_to(host.vm / "workspace"): p.read_bytes()
-             for p in (host.vm / "workspace").rglob("*") if p.is_file()}
+             for p in (host.vm / "workspace").rglob("*")
+             if p.is_file() and p.name != ".restore.lock"}
     assert after == before
     assert host.vm_tmp_files() == []
     assert [e["status"] for e in host.events() if e["event"] == "restore"] == ["ok"]
@@ -283,6 +285,83 @@ def test_a_restore_does_not_follow_a_symlink_already_in_a_room(
     assert result.returncode == 0, result.stdout + result.stderr
     assert not (outside / "pwned").exists()
     assert (host.vm / "workspace" / ROOM_A / "escape" / "pwned").read_text() == "owned"
+
+
+def test_a_restore_holds_the_exclusive_lease_while_it_swaps_a_room(host: Host) -> None:
+    """computerd takes the same lock SHARED around `run`/`state`/file ops, so a
+    restore that holds it exclusively cannot rename a directory out from under
+    a command. This is the lock, not the absence of one: while the shimmed
+    rename is paused, a non-blocking exclusive open must be refused."""
+    import fcntl
+    import threading
+    import time
+
+    archive = _backup(host)
+    result: dict[str, subprocess.CompletedProcess[str]] = {}
+
+    def restore() -> None:
+        result["run"] = host.run(
+            "restore", str(archive), "--force",
+            STUB_VM_MV_MODE="block", STUB_VM_MV_SLEEP="1.0",
+        )
+
+    thread = threading.Thread(target=restore)
+    thread.start()
+    marker = host.dir / "vm-mv-started"
+    deadline = time.monotonic() + 20
+    while not marker.exists() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert marker.exists(), "the restore never reached the room rename"
+    with (
+        open(host.vm / "workspace" / ".restore.lock", "rb") as lock,
+        pytest.raises(BlockingIOError),
+    ):
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    thread.join(timeout=60)
+    assert not thread.is_alive()
+    assert result["run"].returncode == 0, result["run"].stdout + result["run"].stderr
+
+
+def test_a_destination_that_reappears_is_not_nested_inside_and_the_old_room_is_kept(
+    host: Host,
+) -> None:
+    """The old restore did `rm -rf` then plain `mv`: a writer recreating the
+    destination between them made the staged room land INSIDE it. Now the
+    exact-destination rename fails, the old room is not deleted, and the
+    installer names the `.restore-old` directory that holds it."""
+    archive = _backup(host)
+    (host.vm / "workspace" / ROOM_A / "inbox" / "a.txt").write_text("changed after backup")
+
+    result = host.run("restore", str(archive), "--force", STUB_VM_MV_MODE="recreate")
+
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "old room data kept in" in result.stderr, result.stderr
+    destination = host.vm / "workspace" / ROOM_A
+    assert (destination / "raced.txt").exists(), "the writer's directory was replaced"
+    assert not (destination / ROOM_A).exists(), "the staged room was nested inside the destination"
+    kept = list((host.vm / "workspace").glob(".restore-old.*"))
+    assert kept, "the old room data was not kept"
+    assert any(
+        (backup / ROOM_A / "inbox" / "a.txt").read_text() == "changed after backup"
+        for backup in kept
+    )
+
+
+def test_a_failed_room_move_puts_the_old_room_back_instead_of_deleting_it(host: Host) -> None:
+    """The old restore deleted the room before the move, so a failed move lost
+    it. The replacement now lands first; on failure the old room is restored
+    from the aside directory and the staging/backup directories are cleaned."""
+    archive = _backup(host)
+    before = (host.vm / "workspace" / ROOM_A / "inbox" / "a.txt").read_text()
+
+    result = host.run("restore", str(archive), "--force", STUB_VM_MV_MODE="fail")
+
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert (host.vm / "workspace" / ROOM_A / "inbox" / "a.txt").read_text() == before
+    assert not [p for p in (host.vm / "workspace").glob(".restore.*") if p.is_dir()], \
+        "staging directory left behind"
+    assert not list((host.vm / "workspace").glob(".restore-old.*")), \
+        "an empty backup was left behind"
 
 
 def test_an_archive_without_its_checksum_is_not_restored(host: Host) -> None:

@@ -137,7 +137,9 @@ async def session(
         return [n.title for n in await stores.notes.standing(unit=unit)]
 
     async def open_events(unit: str, conversation_id: str) -> Any:
-        return await stores.gatherings.list_for_conversation(conversation_id=conversation_id)
+        return await stores.gatherings.list_for_conversation(
+            conversation_id=conversation_id, unit_id=unit,
+        )
 
     wiring: dict[str, Any] = {
         "store": stores.cognition, "stimulus_store": stimuli,

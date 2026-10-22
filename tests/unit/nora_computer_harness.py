@@ -189,6 +189,7 @@ args = [tr(a) for a in sys.argv[1:]]
 if os.environ.get("STUB_VM_TAR_FAILS") == "1" and "tar $ex" in " ".join(args):
     sys.exit(2)
 env = dict(os.environ)
+env["PATH"] = os.path.join(os.environ["STUB_DIR"], "vm-bin") + ":" + env["PATH"]
 if os.environ.get("STUB_VM_TAR_GARBAGE") == "1":
     # A `tar` that "succeeds" and writes something that is not a tarball: the
     # digest taken after it still matches the copy, so only reading the archive
@@ -292,8 +293,56 @@ shift
 exec "$@"
 """
 
-_FLOCK = r"""#!/bin/bash
-exit 0
+_FLOCK = r"""#!/usr/bin/env python3
+import fcntl, sys, time
+args = sys.argv[1:]
+timeout = None
+while args and args[0].startswith("-"):
+    if args[0] == "-w":
+        timeout = float(args[1]); args = args[2:]
+    else:
+        args = args[1:]
+fd = int(args[0])
+deadline = None if timeout is None else time.monotonic() + timeout
+while True:
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        sys.exit(0)
+    except BlockingIOError:
+        if deadline is not None and time.monotonic() >= deadline:
+            sys.exit(1)
+        time.sleep(0.02)
+"""
+
+# The VM is Linux, where `mv -T` is the exact-destination rename the installer
+# relies on; the host may be macOS, whose mv has no -T. This reproduces GNU -T:
+# rename onto the destination NAME, and refuse an existing directory rather
+# than nesting the source inside it.
+_VM_MV = r"""#!/usr/bin/env python3
+import os, sys, time
+raw = sys.argv[1:]
+target = "-T" in raw
+args = [a for a in raw if a not in ("-T", "--")]
+if not target:
+    os.execv("/bin/mv", ["/bin/mv", *raw])
+src, dst = args[-2], args[-1]
+mode = os.environ.get("STUB_VM_MV_MODE", "")
+if mode and "/.restore." in src:
+    # The staged tree -> /workspace/<scope> rename is the only one controlled
+    # here: moving the old room aside, and putting it back, must still work.
+    if mode == "block":
+        open(os.path.join(os.environ["STUB_DIR"], "vm-mv-started"), "w").close()
+        time.sleep(float(os.environ.get("STUB_VM_MV_SLEEP", "1")))
+    elif mode == "fail":
+        sys.exit(1)
+    elif mode == "recreate":
+        os.makedirs(dst, exist_ok=True)
+        with open(os.path.join(dst, "raced.txt"), "w") as fh:
+            fh.write("raced")
+if os.path.isdir(dst) and not os.path.islink(dst):
+    sys.stderr.write("mv: cannot overwrite directory %s\n" % dst)
+    sys.exit(1)
+os.rename(src, dst)
 """
 
 _SHA256SUM = r"""#!/bin/bash
@@ -326,6 +375,10 @@ class Host:
         for name, body in (("vm-run", _VM_RUN), ("vm-cp", _VM_CP_RUN)):
             (self.dir / name).write_text(body)
             (self.dir / name).chmod(0o755)
+        vmbin = self.dir / "vm-bin"
+        vmbin.mkdir()
+        (vmbin / "mv").write_text(_VM_MV)
+        (vmbin / "mv").chmod(0o755)
         for name, body in (("id", _ID), ("useradd", _USERADD), ("chown", _CHOWN)):
             self._install(name, body)
         self.vm = self.dir / "vm"

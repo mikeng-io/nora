@@ -249,17 +249,23 @@ class SqlGatheringStore:
 
     async def list_for_conversation(
         self, *, conversation_id: str, status: GatheringStatus | None = None,
-        unit_id: str = "",
+        unit_id: str = "", include_legacy: bool = False,
     ) -> Sequence[Gathering]:
         """This room's events. `unit_id`, when given, is a second scope check:
         conversation ids are an id space per platform, so the same string can
-        name rooms in two units. A pre-migration row (`unit_id=""`) still
-        belongs to the room it names and is kept."""
+        name rooms in two units.
+
+        A pre-migration row (`unit_id=""`) has no recorded owner. It is fetched
+        ONLY when `include_legacy` is set, which the service does after
+        `legacy_room_admissible` proves this room's id maps to exactly this
+        caller in `policy.toml`. Without that proof the row is quarantined, not
+        universally admitted."""
         stmt = sa.select(EVENTS).where(EVENTS.c.conversation_id == conversation_id)
         if unit_id:
-            stmt = stmt.where(sa.or_(
-                EVENTS.c.unit_id == unit_id, EVENTS.c.unit_id == "",
-            ))
+            scope = EVENTS.c.unit_id == unit_id
+            if include_legacy:
+                scope = sa.or_(scope, EVENTS.c.unit_id == "")
+            stmt = stmt.where(scope)
         stmt = stmt.order_by(EVENTS.c.created_at)
         if status is not None:
             stmt = stmt.where(EVENTS.c.status == status.value)
@@ -407,7 +413,9 @@ class SqlGatheringStore:
         one of the unit's own rooms — units live in `policy.toml`, not the
         DB, so the migration backfilled every existing event to
         `unit_id=""` and this is the only way one is found unit-wide again.
-        `room_ids=()` keeps the old, exact `unit_id == unit_id` match."""
+        `GatheringService.search_events` passes only ids whose policy
+        assignment is unambiguous for this unit. `room_ids=()` keeps the old,
+        exact `unit_id == unit_id` match."""
         unit_clause: Any = EVENTS.c.unit_id == unit_id
         if room_ids:
             unit_clause = sa.or_(

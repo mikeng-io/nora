@@ -782,7 +782,11 @@ export function ensureDir(dir) {
 export function authorizedBridgeRequest(method, pathname, authorization, token) {
   if (method === 'GET' && pathname === '/health') return true;
   if (!token || typeof authorization !== 'string') return false;
-  const expected = `Bearer ${token}`;
-  if (authorization.length !== expected.length) return false;
-  return timingSafeEqual(Buffer.from(authorization), Buffer.from(expected));
+  // Compare BYTE lengths, not JavaScript string lengths. A non-ASCII header can
+  // have the expected string length and a different UTF-8 byte length, and
+  // `timingSafeEqual` throws ERR_CRYPTO_TIMING_SAFE_EQUAL_LENGTH on that.
+  const got = Buffer.from(authorization, 'utf8');
+  const expected = Buffer.from(`Bearer ${token}`, 'utf8');
+  if (got.length !== expected.length) return false;
+  return timingSafeEqual(got, expected);
 }

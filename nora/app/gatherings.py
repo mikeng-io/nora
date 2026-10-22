@@ -33,9 +33,12 @@ from nora.domain.gatherings import (
     Gathering,
     GatheringStatus,
     GatheringStore,
+    RoomClaims,
     RSVPResponse,
     VenueCandidate,
     VenueSuggestions,
+    event_in_scope,
+    legacy_room_admissible,
     merge_field_meta,
     still_open_gatherings,
 )
@@ -166,7 +169,7 @@ class GatheringService:
         honcho: _Honcho | None,
         ai_peer: str,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
-        unit_room_ids: Callable[[str], Sequence[str]] | None = None,
+        room_claims: RoomClaims | None = None,
         place_areas: _PlaceAreas | None = None,
     ) -> None:
         self._store = store
@@ -178,11 +181,12 @@ class GatheringService:
         self._honcho = honcho
         self._ai_peer = ai_peer
         self._now = now
-        # unit -> its room ids, from `policy.toml` (the composition root's
-        # `_unit_rooms(allowlist)` mapping; units are not in the DB, so a
-        # legacy event may carry no `unit_id`). `None` keeps `search_events`
-        # to an exact `unit_id` match, surfacing no legacy row.
-        self._unit_room_ids = unit_room_ids
+        # conversation id -> every `(unit, platform)` `policy.toml` assigns it.
+        # The composition root builds it from the allowlist; `None` leaves the
+        # unpartitioned/development scope where only `unit_id=""` rows exist.
+        # It is the trusted record `event_in_scope` uses to reject a row whose
+        # id two units (or two platforms in one unit) claim.
+        self._room_claims: RoomClaims = dict(room_claims or {})
 
     async def create_event(
         self, *, conversation_id: str, requester_person_id: str, title: str,
@@ -213,6 +217,7 @@ class GatheringService:
         transition to move a past event out of PROPOSED."""
         open_events = await self.list_events(
             conversation_id=conversation_id, status=GatheringStatus.PROPOSED,
+            unit_id=unit_id, platform=platform,
         )
         now = self._now()
         still_open = still_open_gatherings(open_events, now=now)
@@ -259,11 +264,17 @@ class GatheringService:
         self, *, event_id: UUID, conversation_id: str,
         when: datetime | None = None, venue_text: str | None = None,
         person_names: frozenset[str] | None = None, platform: str,
+        unit_id: str = "",
         base_revision_id: UUID | None = None, message_ids: Sequence[int] = (),
         reasoning: str | None = None, confidence: str | None = None,
         field_meta: tuple[FieldMeta, ...] = (),
     ) -> Gathering:
-        current = await self._require_in_conversation(event_id, conversation_id)
+        current = await self._require_in_conversation(
+            event_id,
+            conversation_id,
+            unit_id=unit_id,
+            platform=platform,
+        )
         if current.status in TERMINAL_STATUSES:
             # Only a status BEFORE `happened` may be
             # revised: `cancelled`, `happened`, `lapsed` and `evicted` are
@@ -294,6 +305,7 @@ class GatheringService:
     async def set_event_status(
         self, *, event_id: UUID, conversation_id: str, status: GatheringStatus,
         base_revision_id: UUID | None = None, platform: str | None = None,
+        unit_id: str = "",
         message_ids: Sequence[int] = (),
         reasoning: str | None = None, confidence: str | None = None,
         field_meta: tuple[FieldMeta, ...] = (),
@@ -301,7 +313,12 @@ class GatheringService:
         """The general lifecycle move `event_set_status` backs:
         `cancel_event` is `set_event_status(status=CANCELLED)` restated, kept
         as its own method for the callers (`nora.web.gatherings`) that use it."""
-        current = await self._require_in_conversation(event_id, conversation_id)
+        current = await self._require_in_conversation(
+            event_id,
+            conversation_id,
+            unit_id=unit_id,
+            platform=platform,
+        )
         if current.status is GatheringStatus.CANCELLED and status is not GatheringStatus.CANCELLED:
             # The same refusal `update_event` gives a cancelled event: no
             # lifecycle move revives one that was called off.
@@ -317,8 +334,15 @@ class GatheringService:
     async def rsvp(
         self, *, event_id: UUID, conversation_id: str, person_id: str,
         response: RSVPResponse,
+        platform: str = "",
+        unit_id: str = "",
     ) -> RSVP:
-        current = await self._require_in_conversation(event_id, conversation_id)
+        current = await self._require_in_conversation(
+            event_id,
+            conversation_id,
+            unit_id=unit_id,
+            platform=platform,
+        )
         if current.status in TERMINAL_STATUSES:
             # The same set `update_event` refuses on:
             # recording an RSVP against an event that is over, called off,
@@ -332,46 +356,92 @@ class GatheringService:
         await self._store.add_rsvp(row)
         return row
 
-    async def cancel_event(self, *, event_id: UUID, conversation_id: str) -> Gathering:
+    async def cancel_event(
+        self,
+        *,
+        event_id: UUID,
+        conversation_id: str,
+        platform: str = "",
+        unit_id: str = "",
+    ) -> Gathering:
         return await self.set_event_status(
             event_id=event_id, conversation_id=conversation_id,
             status=GatheringStatus.CANCELLED,
+            platform=platform or None,
+            unit_id=unit_id,
         )
 
     async def list_events(
         self, *, conversation_id: str, status: GatheringStatus | None = None,
         unit_id: str = "",
+        platform: str = "",
     ) -> Sequence[Gathering]:
-        return await self._store.list_for_conversation(
-            conversation_id=conversation_id, status=status, unit_id=unit_id,
+        """This room's events, scoped to the trusted unit and platform when the
+        caller names them. A legacy `unit_id=""` row is fetched only when
+        `legacy_room_admissible` proves policy.toml assigns this exact room to
+        this caller; the in-memory filter repeats the check on every row."""
+        include_legacy = legacy_room_admissible(
+            self._room_claims,
+            unit_id=unit_id,
+            conversation_id=conversation_id,
+            platform=platform or None,
         )
+        rows = await self._store.list_for_conversation(
+            conversation_id=conversation_id, status=status, unit_id=unit_id,
+            include_legacy=include_legacy,
+        )
+        return [
+            e
+            for e in rows
+            if event_in_scope(
+                e,
+                unit_id=unit_id,
+                conversation_id=conversation_id,
+                claims=self._room_claims,
+                platform=platform or None,
+            )
+        ]
 
     async def search_events(
         self, *, unit_id: str, conversation_id: str, place: str | None = None,
         person: str | None = None, start: datetime | None = None,
         end: datetime | None = None,
+        platform: str = "",
     ) -> Sequence[Gathering]:
         """`event_search`'s store side: unit-wide when
         `unit_id` names one (`list_events` is per room, filtered by status
         only); otherwise this room's own events, so a room with no unit
         resolved can still search its own events. A bare `event_search()` with
-        none of `place`/`person`/`start`/`end` reads exactly as `list_events()`."""
+        none of `place`/`person`/`start`/`end` reads exactly as `list_events()`.
+
+        Legacy `unit_id=""` rows enter a unit-wide search only through room ids
+        `policy.toml` assigns to THIS unit and to no other unit or platform;
+        `event_in_scope` then applies the same rule to every returned row."""
         if not unit_id:
-            return await self.list_events(conversation_id=conversation_id)
-        room_ids: Sequence[str] = ()
-        if self._unit_room_ids is not None:
-            try:
-                room_ids = self._unit_room_ids(unit_id)
-            except Exception:
-                # A resolver failure must not turn a unit-wide search
-                # into a crash — it falls back to the exact `unit_id` match,
-                # the same result as an unwired resolver (`None` above).
-                log.exception("unit_room_ids resolution failed for unit %s", unit_id)
-                room_ids = ()
-        return await self._store.search(
+            return await self.list_events(
+                conversation_id=conversation_id, platform=platform,
+            )
+        room_ids = tuple(
+            sorted(
+                cid
+                for cid, assigned in self._room_claims.items()
+                if len(assigned) == 1 and next(iter(assigned))[0] == unit_id
+            )
+        )
+        found = await self._store.search(
             unit_id=unit_id, place=place, person=person, start=start, end=end,
             room_ids=room_ids,
         )
+        return [
+            e
+            for e in found
+            if event_in_scope(
+                e,
+                unit_id=unit_id,
+                conversation_id=e.conversation_id,
+                claims=self._room_claims,
+            )
+        ]
 
     async def get_event(self, *, event_id: UUID) -> Gathering | None:
         """A reader: an id that does not exist reads as absent."""
@@ -419,8 +489,15 @@ class GatheringService:
         self, *, event_id: UUID, conversation_id: str,
         roster_person_ids: Sequence[str],
         person_names: frozenset[str] | None = None,
+        platform: str = "",
+        unit_id: str = "",
     ) -> VenueSuggestions:
-        await self._require_in_conversation(event_id, conversation_id)
+        await self._require_in_conversation(
+            event_id,
+            conversation_id,
+            unit_id=unit_id,
+            platform=platform,
+        )
         if self._honcho is None:
             return VenueSuggestions(status="unavailable")
 
@@ -471,6 +548,9 @@ class GatheringService:
 
     async def _require_in_conversation(
         self, event_id: UUID, conversation_id: str,
+        *,
+        unit_id: str = "",
+        platform: str | None = "",
     ) -> Gathering:
         """`_require`, plus the scope check `ReminderStore.cancel`
         (`nora.domain.reminders`) already documents the reasoning for: "a
@@ -479,9 +559,21 @@ class GatheringService:
         accept a bare event id from the model with no prior proof it belongs
         to the room asking — an id from ANOTHER conversation refuses exactly
         like an unknown one (`GatheringNotFoundError`), never a distinct "wrong
-        room" message that would confirm a stranger's event id is real."""
+        room" message that would confirm a stranger's event id is real.
+
+        The check is not conversation-only: `event_in_scope` also requires the
+        row's unit to be the caller's trusted unit, and a row whose id
+        `policy.toml` places on two platforms is refused unless this caller
+        names one of them unambiguously. A legacy `unit_id=""` row is refused
+        unless the room maps to exactly this `(unit, platform)`."""
         event = await self._require(event_id)
-        if event.conversation_id != conversation_id:
+        if not event_in_scope(
+            event,
+            unit_id=unit_id,
+            conversation_id=conversation_id,
+            claims=self._room_claims,
+            platform=platform or None,
+        ):
             raise GatheringNotFoundError(event_id)
         return event
 

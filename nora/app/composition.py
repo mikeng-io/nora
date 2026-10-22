@@ -327,12 +327,16 @@ _REASONING_EFFORTS: frozenset[str] = frozenset(
 )
 
 
-def _unit_room_ids(allowlist: Policy) -> dict[str, tuple[str, ...]]:
-    """Unit -> its rooms' primary ids, from `policy.toml`."""
-    out: dict[str, tuple[str, ...]] = {}
+def _room_claims(allowlist: Policy) -> dict[str, frozenset[tuple[str, str]]]:
+    """Conversation id -> every `(unit, platform)` pair policy.toml assigns it,
+    across every id form the room has had. Events store the conversation id
+    and the unit but never the platform, so this is the record that tells a
+    legacy `unit_id=""` row (or an id two units share) who owns it."""
+    out: dict[str, set[tuple[str, str]]] = {}
     for conv in allowlist.conversations:
-        out[conv.unit] = (*out.get(conv.unit, ()), conv.primary_id)
-    return out
+        for cid in conv.ids:
+            out.setdefault(cid, set()).add((conv.unit, conv.platform))
+    return {cid: frozenset(owners) for cid, owners in out.items()}
 
 
 def _presence_reader(
@@ -2464,13 +2468,10 @@ async def build_dependencies(
     # already threaded to `TranscriptInjection`/`ToolRegistry` below.
     event_store = SqlGatheringStore(engine)
     # Events stored before units existed carry `unit_id=""` — units live in
-    # `policy.toml`, not the DB, so the column cannot be filled — and
-    # `search_events`'s unit-wide filter would never find one: it reads a
-    # unit's rooms from policy instead.
-    event_unit_rooms = _unit_room_ids(allowlist)
-
-    def _event_unit_room_ids(unit_id: str) -> tuple[str, ...]:
-        return event_unit_rooms.get(unit_id, ())
+    # `policy.toml`, not the DB, so the column cannot be filled — and policy
+    # also knows the platform each id belongs to, which the row does not. The
+    # service admits a legacy row only when this map names exactly one owner.
+    event_room_claims = _room_claims(allowlist)
 
     # A venue's district and city come from the Geocoding API by the place id
     # `place_info` resolved it to, with the route key (a Places id is that
@@ -2485,7 +2486,7 @@ async def build_dependencies(
         route_source=route_client,
         honcho=memory,
         ai_peer=cfg.memory.ai_peer,
-        unit_room_ids=_event_unit_room_ids,
+        room_claims=event_room_claims,
         place_areas=place_areas,
     )
     # `media_fetch` (DEC-56) reads a stored blob back through MiMo. Its two
@@ -4519,7 +4520,7 @@ async def build_dependencies(
                     return ()
                 return await note_store.standing(unit=unit)
 
-            _open_events = open_events_reader(event_store)
+            _open_events = open_events_reader(event_store, event_room_claims)
 
             # The unit -> its rooms' every id form, for the grounding read: a
             # stimulus naming a room outside its unit is never read (DEC-231).

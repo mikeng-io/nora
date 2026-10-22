@@ -146,8 +146,14 @@ class Probe:
     # ---- measurements -----------------------------------------------------
     def _bridge_health(self) -> tuple[BridgeSession, bool | None]:
         """(raw session, `connected` when /health carries a boolean)."""
+        # The bridge protects /health with the bearer token its own environment
+        # already holds (compose sets NORA_BRIDGE_TOKEN). Let the CONTAINER's
+        # shell expand it: the token never enters this argv, the probe's state
+        # file or a diagnostic. A missing token is a 401, which is `unreachable`
+        # — the correct fail-closed reading of a misconfigured bridge.
         res = self._run(
-            ["docker", "exec", self._cfg.container, "curl", "-sS", "-m", "5",
+            ["docker", "exec", self._cfg.container, "sh", "-c",
+             'curl -sS -m 5 -H "Authorization: Bearer $NORA_BRIDGE_TOKEN" '
              f"http://127.0.0.1:{self._cfg.bridge_port}/health"],
             15.0, None,
         )
