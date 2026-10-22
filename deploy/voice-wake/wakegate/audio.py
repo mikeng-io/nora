@@ -24,7 +24,8 @@ SOURCE_CHANNELS = 2
 SOURCE_FRAME_BYTES = 3840  # 20 ms @ 48 kHz stereo s16le — the sidecar's frame
 BLOCK_48K = 3840  # 80 ms of 48 kHz mono samples
 OWW_CHUNK = 1280  # 80 ms of 16 kHz mono samples — openWakeWord's input frame
-assert BLOCK_48K // 3 == OWW_CHUNK
+if BLOCK_48K // 3 != OWW_CHUNK:  # a raise, not an assert: `python -O` strips asserts
+    raise RuntimeError(f"BLOCK_48K // 3 must equal OWW_CHUNK: {BLOCK_48K // 3} != {OWW_CHUNK}")
 
 
 def stereo_to_mono(pcm: bytes) -> np.ndarray:

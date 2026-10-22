@@ -428,3 +428,15 @@ async def test_the_gauges_follow_the_lane_from_boot_through_a_refusal(kind, tmp_
     clock.now += 10 * DAY  # the access token has expired, so the call refreshes
     await _call(lane)()
     assert metrics.get("nora_oauth_refresh_failures_total", lane=kind, reason="auth") == 2
+
+
+@pytest.mark.parametrize("kind", LANES)
+async def test_a_usable_check_never_serves_an_empty_cache(kind, tmp_path, issuer, monkeypatch):
+    """`_usable` is what says a cached link may answer. Told yes with nothing
+    cached, the lane must refresh, not return None: an assert on that
+    narrowing is stripped by `python -O`, and the caller would get None."""
+    base, srv = issuer
+    lane = _lane(kind, tmp_path, base, srv["clock"])
+    monkeypatch.setattr(lane, "_usable", lambda *_args: True)
+    assert (await _call(lane)()).status == "ok"  # type: ignore[attr-defined]
+    assert srv["sent"] == ["rt-boot"]

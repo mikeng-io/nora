@@ -8,7 +8,9 @@ ONNX=sys.argv[1]; N=int(sys.argv[2]) if len(sys.argv)>2 else 400
 CORP="/home/norty/workspace/voice-lab-data/oww-data/output/喂Nora"; VAL="/home/norty/workspace/voice-lab-data/oww-data/features/validation_set_features.npy"
 oww=Model(wakeword_models=[ONNX],inference_framework="onnx")
 def read(p):
-    with wave.open(p) as w: assert w.getsampwidth()==2 and w.getframerate()==16000; pcm=np.frombuffer(w.readframes(w.getnframes()),np.int16)
+    with wave.open(p) as w:
+        if w.getsampwidth()!=2 or w.getframerate()!=16000: raise ValueError(f"{p}: not 16-bit 16 kHz")
+        pcm=np.frombuffer(w.readframes(w.getnframes()),np.int16)
     return pcm.reshape(-1,w.getnchannels()).mean(1).astype(np.int16) if w.getnchannels()>1 else pcm
 def peak(p):
     pcm=read(p); oww.reset(); s=[float(list(oww.predict(pcm[i:i+1280]).values())[0]) for i in range(0,len(pcm)-1279,1280)]

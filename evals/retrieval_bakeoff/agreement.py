@@ -79,8 +79,10 @@ def main() -> None:
     st = sentence_transformers.SentenceTransformer(
         "google/embeddinggemma-2", revision=REV, device="cpu",
         model_kwargs={"torch_dtype": torch.float32})
-    assert {str(p.dtype) for p in st.parameters()} == {"torch.float32"}
-    assert st.model_card_data.base_model_revision == REV
+    if {str(p.dtype) for p in st.parameters()} != {"torch.float32"}:
+        raise ValueError("model parameters are not all float32")
+    if st.model_card_data.base_model_revision != REV:
+        raise ValueError(f"base revision is not {REV}")
     ip = st[0].processor.image_processor
     pil = [Image.open(p).convert("RGB") for p in imgs]
     h_t = st.encode(TEXTS, normalize_embeddings=False).tolist()

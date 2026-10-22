@@ -373,7 +373,8 @@ class GoogleDriveSource:
             return await self._sheet(ref)
         if mime in _NATIVE:
             export = _NATIVE[mime][1]
-            assert export is not None  # noqa: S101 - only a Sheet has none, handled above
+            if export is None:  # only a Sheet has none, and a Sheet is handled above
+                raise ExternalFileError("refused", NOT_TEXT)
             return await self._parse("plain", await self._export(ref, export))
         if mime not in _BLOBS:
             raise ExternalFileError("refused", NOT_TEXT)
