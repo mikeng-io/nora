@@ -107,6 +107,14 @@ _COORD_PAIR = re.compile(
     rf"(?<![0-9])(?<![0-9]\.)(?:{_WIDE}{_JOIN}{_NARROW}|{_NARROW}{_JOIN}{_WIDE})(?![0-9])(?!\.[0-9])",
     re.IGNORECASE,
 )
+# A comma or slash between two decimals whose integer parts both have two digits
+# is a pair even without a wide element. A bare space is not enough here: a
+# space-joined pair of two-digit decimals (a time or a score) stays clear.
+_TWO_DIGIT = rf"-?[0-9]{{2,3}}\.[0-9]+{_SUFFIX}"
+_COORD_PAIR_TWO = re.compile(
+    rf"(?<![0-9])(?<![0-9]\.){_TWO_DIGIT}\s*[,;/|]\s*{_TWO_DIGIT}(?![0-9])(?!\.[0-9])",
+    re.IGNORECASE,
+)
 # A labelled decimal on its own: `lat: 22.410`, `LNG = 114.124`.
 _COORD_LABELLED = re.compile(
     rf"(?<![0-9A-Za-z_]){_LABEL}[\s:=/|()\[\]]*{_DEC}", re.IGNORECASE,
@@ -124,6 +132,7 @@ _COORD_HEMISPHERE = re.compile(rf"(?:北緯|南緯|東經|西經)\s*{_DEC}")
 _REPLY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     *_IDENTIFIER_PATTERNS,
     ("coordinate", _COORD_PAIR),
+    ("coordinate", _COORD_PAIR_TWO),
     ("coordinate", _COORD_LABELLED),
     ("coordinate", _COORD_LONG),
     ("coordinate", _COORD_HEMISPHERE),

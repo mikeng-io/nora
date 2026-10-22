@@ -310,6 +310,18 @@ def test_an_unlabelled_decimal_or_a_short_long_value_is_not_a_coordinate(text):
 
 
 @pytest.mark.parametrize("text", [
+    _generated("{}.{}, {}.{}", 10, 5, 20, 5),
+    _generated("{}.{}/{}.{}", 10, 5, 20, 5),
+])
+def test_a_comma_or_slash_pair_of_two_digit_parts_is_a_coordinate(text):
+    """A pair whose integer parts both have two digits, joined by a comma or a slash
+    (not a bare space), is a coordinate even with one-decimal fractions. The
+    one-digit-part and the space-joined pairs stay clear (see the dotted-negatives
+    test above)."""
+    assert scan_reply(text) == "coordinate", text
+
+
+@pytest.mark.parametrize("text", [
     _generated("{}.{:02d}N, {}.{:02d}E", 22, 41, 114, 12),
     _generated("{}.{:02d}°N {}.{:02d}°E", 22, 41, 114, 12),
     _generated("{}.{:02d}°N, {}.{:02d}°E", 22, 41, 114, 12),
