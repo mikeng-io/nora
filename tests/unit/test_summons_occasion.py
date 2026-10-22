@@ -763,3 +763,40 @@ async def test_a_reply_at_the_public_cap_posts(world):
     at = "a" * PUBLIC_REPLY_MAX_CHARS
     out = await world.occasion(mode="live", turns=_replies(at)).run(_card())
     assert out.state == "published"
+
+
+# ---- the flush checks the FINAL body, on every flush ----------------------------
+
+
+async def test_a_dash_that_makes_a_coordinate_pair_is_refused_at_the_flush(world):
+    """The deliverer measures the text as she wrote it: the em dash separates
+    the two decimals, so no pair is there and it holds. The flush then makes
+    the dash a comma (`undash`), and the body that would post is a coordinate
+    pair. Refused, the body is not kept, nothing is posted."""
+    # Generated: two decimals joined by an em dash, which `undash` makes a comma.
+    dashed = "Near " + "—".join(f"{whole}.{frac}" for whole, frac in ((1, 3193), (2, 1694)))
+    out = await world.occasion(
+        mode="live", turns=_replies(f"{dashed} today", bypass=True),
+    ).run(_card())
+    assert (out.state, out.bridge_code) == ("refused", "coordinate")
+    assert world.fake.posts() == []
+    row = await world.row()
+    assert (row.state, row.reply_text) == ("refused", None)
+
+
+async def test_a_staged_reply_is_checked_again_when_its_flush_is_retried(world):
+    """The retry path posts the staged text, so a disclosure that reached the
+    ledger any way (a doctrine change, a hand edit) is still refused there."""
+    from dataclasses import replace
+
+    world.fake.write = envelope("too_soon")
+    occasion = world.occasion(mode="live", turns=_replies(REPLY))
+    await occasion.run(_card())
+    staged = await world.ledger.awaiting_flush()
+    assert staged is not None
+    leaked = replace(staged, reply_text="The code is CANARY-7f3a, use it.")
+    world.fake.write = (201, {"id": "17900000000000777"})
+    out = await occasion.flush_staged(leaked)
+    assert (out.state, out.bridge_code) == ("refused", "canary")
+    assert len(world.fake.posts()) == 1
+    assert (await world.ledger.get(staged.id)).state == "refused"
