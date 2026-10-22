@@ -57,50 +57,61 @@ time in between.
 | **Scope** | one user, one thread | a circle of people and rooms across platforms, with one read boundary per social unit |
 | **Changes** | when the model or the prompt is replaced | her accounts of people and the lessons she acts on are revised from evidence, while her voice and conduct are written by humans |
 
-## What makes her different
+## Architecture at a glance
 
-These are design commitments with a record behind each, not a feature checklist.
-The linked documents say what was adopted from existing memory systems, what was
-refused, and what is not built yet.
+Nora is one body of persistent state with two ways of acting on it. **Speaking
+turns** answer when she is called and decide whether to speak when she is not.
+**Cognition** works in the background, keeping her model of the circle current
+and deciding when something deserves a later look. Policy decides who may be
+heard, what may be said where, and whether she may speak unasked. Her doctrine,
+meaning her voice and conduct, is written by people and wins over anything she
+derives.
 
-**Sessionless.** There is no chat session to resume. Her continuity is the
-persistent record and what is derived from it. Every speaking turn assembles the
-relevant context for a fresh agent, speaks, and ends. Cognition, browser and
-computer work do keep bounded sessions of their own; sessionless does not mean a
-continuously running model. See the [glossary](GLOSSARY.md#nora-as-a-social-agent).
+```mermaid
+flowchart TD
+    accTitle: Nora architecture at a glance
+    accDescr: Platform events are ingested and recorded into persistent state. Policy and doctrine govern admission and disclosure. Speaking turns assemble context from state, use tools and the workspace, and send through governed delivery. A background cognition process reads stimuli, maintains state and sets reminders that become speaking turns.
 
-**A memory that knows how it knows.** The record is written by code at the
-moment something happens. A rollup computes what it adds up to over an interval.
-On top sits a notebook of four tiers, each answering one question through one write path: the **register** (what is the state of the unit's affairs), the
-**character** of each person, room and unit (what it is like and how it
-behaves), **lessons** (what she has learned about how to act here) and her
-**standing** (where she stands toward a room, the unit or a person). Every
-derived row carries how it was formed (told, deduced, abduced, induced or said),
-its confidence, its lineage and its age. The [tier model](design/cognition-loop/10-tiers.md)
-is the contract and the [prior-art note](design/cognition-loop/80-prior-art.md)
-records what she takes from Honcho, Graphiti, Letta, Generative Agents and Mem0,
-and what she refuses.
+    Platforms["Messaging and voice platforms"] --> Ingest["Ingestion: normalize, resolve identity, record"]
+    Ingest --> State[("Persistent state: record, rollup, notebook")]
+    Ingest -.->|"stimuli"| Cognition["Cognition: background, per unit"]
+    Cognition <--> State
+    Cognition -->|"reminders"| Turns
+    Policy["Policy and doctrine: admission, disclosure, voice and conduct"] --> Turns
+    State --> Turns["Speaking turns: called, participating, proactive"]
+    Turns <--> Tools["Tools and workspace"]
+    Turns --> Delivery["Governed delivery"]
+    Delivery --> Platforms
+```
 
-**A cognition loop, not a scheduled job.** Her presence is one
-observe–orient–decide–act loop, closed through a human. Observing is plain code.
-Orienting, deciding and acting are one agent session per unit per wake. That
-session keeps the register and her standing, can schedule its own next look, and
-can act only by setting a reminder; a speaking turn then composes it. When the
-moment arrives she reads the situation again, so by then the right answer may be
-that the matter is settled and nothing needs saying. Slower passes reflect on
-each entity (character) and on each unit (lessons). See the
-[cognition design](design/cognition-loop/00-intent.md).
+| Part | Role |
+|---|---|
+| **Interfaces** | Adapters for Signal, Discord, WhatsApp, Instagram and voice turn each platform's events into one normalized shape. |
+| **Ingestion** | Records permitted events, resolves who is speaking, handles media and raises stimuli. Nothing speaks from here. |
+| **Persistent state** | PostgreSQL holds the record and what is derived from it, media has its own custody store, and a memory service supplies interpreted memory while the unified-memory migration completes. State is scoped to people, rooms and social units. |
+| **Speaking turns** | A fresh agent per turn, built on the Strands Agents SDK from doctrine, transcript and scoped state. It reads and acts through tools, and speaks only through explicit, governed delivery. |
+| **Cognition** | Background work that reads recorded stimuli, maintains notes, events and reminders, and can schedule its own next look. Slower passes revise her accounts of people and rooms and the lessons she has learned from how her actions landed. |
+| **Policy and doctrine** | Room admission, grants and disclosure are deployment policy. Whether she may speak unasked in a room is its own grant, apart from what she may see. |
+| **Workspace** | A persistent, room-scoped computer workspace and a bounded browser runner let her investigate and carry work from one turn to the next. |
+| **Operations** | Docker Compose deployment, releases published to a `deployments` branch that Komodo applies, and health, metrics and tracing. |
 
-**Social by construction.** Rooms are admitted explicitly. Whether she may ever
-speak unasked in a room is its own grant, apart from what she may see. The social
-unit is the read boundary: people and rooms whose talk must not meet belong in
-different units. Unrequested participation passes a conversation window and,
-when configured, a relevance gate. In any admitted room she answers when called.
+Four ideas run through all of it:
 
-**She grows inside limits humans set.** Lessons and character accounts are
-revised from how her own actions landed. That changes stored context, never
-model weights. Her doctrine, meaning her voice, conduct and constraints, is
-written by people, is never rewritten by her, and wins over anything she derives.
+- **Sessionless.** There is no chat session to resume. Each turn assembles its
+  context from persistent state, speaks and ends. Cognition, browser and computer
+  work keep bounded sessions of their own, so this does not mean a continuously
+  running model. See the [glossary](GLOSSARY.md#nora-as-a-social-agent).
+- **Silence is an outcome.** When an occasion arrives she reads the situation
+  again, and the right answer may be that nothing needs saying.
+- **The unit is the boundary.** Continuity does not grant shared access: people
+  and rooms whose talk must not meet belong in different social units.
+- **Learning changes context, not weights.** Lessons and accounts of people are
+  revised from evidence. Doctrine is never rewritten by her.
+
+The [architecture map](ARCHITECTURE.md) is the full runtime and code map. The
+memory tiers are specified in the [tier model](design/cognition-loop/10-tiers.md)
+and the [prior-art note](design/cognition-loop/80-prior-art.md) records what she
+adopts and refuses from existing memory systems.
 
 ## A continuing presence
 
@@ -111,29 +122,6 @@ she reads the situation again: the booking may already be settled, so silence ca
 be the right outcome. Any investigation can leave files in the room's workspace
 for another turn to continue. This is an illustration of how the parts connect,
 not a receipt of a particular live interaction.
-
-## How it fits together
-
-```mermaid
-flowchart TD
-    accTitle: Nora runtime overview
-    accDescr: Messaging events are written to the record. Rollup and the notebook build on it. A cognition session per unit reads and writes the notebook and acts only by setting reminders. Speaking turns assemble context from the notebook, and delivery is governed by room policy.
-
-    Messages["Messaging platforms"] --> Record[("Record: what was observed")]
-    Record --> Rollup[("Rollup: what it adds up to")]
-    Record --> Notebook
-    Rollup --> Notebook[("Notebook: register · character · lessons · standing")]
-    Notebook <--> Cognition["Cognition: one session per unit per wake"]
-    Cognition -->|"sets a reminder"| Turn
-    Notebook --> Turn["Speaking turn: called, participating or proactive"]
-    Turn --> Delivery["Governed delivery"]
-    Delivery --> Messages
-```
-
-Individual agent invocations use the Strands Agents SDK; persistent stores supply
-the continuity between them. Room policy controls admission and disclosure. The
-[architecture map](ARCHITECTURE.md) describes the full runtime and its boundaries,
-including the memory migration that is still in progress.
 
 ## Project status
 
