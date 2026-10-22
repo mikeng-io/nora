@@ -30,6 +30,7 @@
     "postcss-selector-parser": "^7.1.6",
     "mermaid": {
       "katex": "0.18.2"
-    }
+    },
+    "es-module-lexer": "^3.0.0"
   }
 }

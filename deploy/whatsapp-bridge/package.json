@@ -13,5 +13,8 @@
   },
   "dependencies": {
     "@whiskeysockets/baileys": "7.0.0-rc13"
+  },
+  "overrides": {
+    "pino": "10.1.1"
   }
 }
