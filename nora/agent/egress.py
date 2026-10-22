@@ -118,13 +118,14 @@ _COORD_PAIR_TWO = re.compile(
 # A bearing on BOTH numbers of a pair is a coordinate whatever the integer width or
 # the separator (`22.41°N 73.12°W`, `1.1N, 2.2E`). The letter sits directly on the
 # decimal, or after a degree sign with an optional space, so a spaced `2.5 N of the
-# river` is prose. A single decimal of three or more places with a bearing (`22.412N`)
-# is a coordinate on its own. Both are case-sensitive: an `n` or `w` is a word.
+# river` is prose. A single decimal of three or more places is a coordinate on its own
+# only after a degree sign (`22.412°N`): `0.500W` or `1.234E` is a unit or an exponent.
+# Both are case-sensitive: an `n` or `w` is a word.
 _BEARING_MARK = r"(?:\s?°\s?|)[NSEW](?![0-9A-Za-z])"
 _BEARING = rf"-?[0-9]{{1,3}}\.[0-9]+{_BEARING_MARK}"
 _COORD_BEARING_PAIR = re.compile(rf"(?<![0-9])(?<![0-9]\.){_BEARING}[\s,;/|]+{_BEARING}")
 _COORD_BEARING_SINGLE = re.compile(
-    rf"(?<![0-9])(?<![0-9]\.)-?[0-9]{{1,3}}\.[0-9]{{3,}}{_BEARING_MARK}"
+    r"(?<![0-9])(?<![0-9]\.)-?[0-9]{1,3}\.[0-9]{3,}\s?°\s?[NSEW](?![0-9A-Za-z])"
 )
 
 # A labelled decimal on its own: `lat: 22.410`, `LNG = 114.124`.

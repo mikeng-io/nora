@@ -359,17 +359,19 @@ def test_a_pair_with_bearings_on_both_numbers_is_a_coordinate_whatever_the_width
 
 
 @pytest.mark.parametrize("text", [
-    _generated("{}.{:03d}N", 22, 412),
-    _generated("{}.{:03d}°W", 114, 123),
-    _generated("佢喺 {}.{:03d}N 附近", 22, 412),
+    _generated("{}.{:03d}°N", 22, 412),
+    _generated("{}.{:03d} °W", 114, 123),
+    _generated("佢喺 {}.{:03d}°N 附近", 22, 412),
 ])
-def test_a_single_bearing_qualified_decimal_with_three_decimals_is_a_coordinate(text):
+def test_a_single_decimal_with_a_degree_sign_and_bearing_is_a_coordinate(text):
     assert scan_reply(text) == "coordinate", text
 
 
 @pytest.mark.parametrize("text", [
     _generated("{}.{} N of the river is fine", 2, 5),
     "route 66 West",
+    "The LED draws 0.500W in standby.",
+    "a 0.500N force and a 1.234E exponent",
     _generated("{}.{} N, {}.{} E on the map", 2, 5, 3, 5),
     _generated("{}.{:02d} N of the river, {}.{:02d} W", 2, 5, 3, 5),
 ])
