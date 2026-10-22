@@ -55,6 +55,8 @@ jobs:
           GH_REPO: ${{ github.repository }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_HEAD: release-please--branches--master--components--nora
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          APP_BOT_ID: ${{ vars.RELEASE_APP_BOT_USER_ID }}
         run: |
           set -euo pipefail
           # checkout dropped its credentials (persist-credentials: false) and the repo is
@@ -64,8 +66,11 @@ jobs:
           python3 -m scripts.release_plan --out "$RUNNER_TEMP/release" | tee "$RUNNER_TEMP/plan.txt" >> "$GITHUB_OUTPUT"
           grep -qx 'eligible=true' "$RUNNER_TEMP/plan.txt" || exit 0
           version=$(sed -n 's/^version=//p' "$RUNNER_TEMP/plan.txt")
-          git config user.name 'Nora release bot'
-          git config user.email 'noreply@users.noreply.github.com'
+          # The App's own bot identity, so GitHub links the commit to it. A generic
+          # noreply address resolves to an unrelated account that owns that login.
+          test -n "$APP_SLUG" && test -n "$APP_BOT_ID"
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${APP_BOT_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
           git switch -C "$PR_HEAD"
           git add -- .release-please-manifest.json CHANGELOG.md nora/__init__.py pyproject.toml uv.lock
           git commit -m "chore(master): release $version"

@@ -83,14 +83,17 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           GH_REPO: ${{ github.repository }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          APP_BOT_ID: ${{ vars.RELEASE_APP_BOT_USER_ID }}
         run: |
           set -eu
           test ! -f openwiki/.run.json
           git diff --exit-code -- openwiki/INSTRUCTIONS.md
           git add -- openwiki AGENTS.md CLAUDE.md
           if git diff --cached --quiet; then exit 0; fi
-          git config user.name 'Nora documentation bot'
-          git config user.email 'noreply@users.noreply.github.com'
+          test -n "$APP_SLUG" && test -n "$APP_BOT_ID"
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${APP_BOT_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
           git switch -C docs/openwiki-update
           git commit -m 'docs: update the implementation wiki'
           gh auth setup-git

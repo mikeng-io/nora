@@ -196,3 +196,13 @@ def test_git_credentials_are_set_before_the_first_remote_operation_in_the_plan_s
     remote = [step.index(op) for op in ("git fetch", "git push") if op in step]
     assert remote, "the plan step no longer talks to the remote"
     assert step.index("gh auth setup-git") < min(remote)
+
+
+def test_bot_commits_are_attributed_to_the_app_not_a_generic_noreply_account():
+    """`noreply@users.noreply.github.com` resolves to an unrelated GitHub account, so a
+    commit made under it is credited to a stranger. The release App's own identity links."""
+    for name in ("release-please.yml", "openwiki-update.yml"):
+        text = (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
+        assert "user.email 'noreply@users.noreply.github.com'" not in text, name
+        assert '+${APP_SLUG}[bot]@users.noreply.github.com"' in text, name
+        assert "RELEASE_APP_BOT_USER_ID" in text, name

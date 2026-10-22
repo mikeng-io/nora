@@ -180,9 +180,11 @@ def test_bug_reports_accept_code_and_logs_without_treating_fenced_headings_as_fi
         "### Version and environment\nNora 6.2.0, Linux, Node 22.\n",
     }
     assert content.issue_problems(item) == []
-    item["body"] = item["body"].replace(
-        "### Expected behavior\nThe service remains available.\n", ""
-    ).replace("node src/service.mjs", "node src/service.mjs\n### Expected behavior\nSpoofed")
+    item["body"] = (
+        item["body"]
+        .replace("### Expected behavior\nThe service remains available.\n", "")
+        .replace("node src/service.mjs", "node src/service.mjs\n### Expected behavior\nSpoofed")
+    )
     assert any("Expected behavior" in error for error in content.issue_problems(item))
 
 
@@ -323,8 +325,16 @@ def test_issue_feedback_updates_once_and_clears_only_its_own_comment_after_corre
 @pytest.mark.parametrize(
     "case",
     [
-        "valid", "renamed", "unconfigured", "wrong-id", "missing-id",
-        "human", "fork", "branch", "label", "body",
+        "valid",
+        "renamed",
+        "unconfigured",
+        "wrong-id",
+        "missing-id",
+        "human",
+        "fork",
+        "branch",
+        "label",
+        "body",
     ],
 )
 def test_private_release_bot_uses_the_pinned_user_identity(monkeypatch, case):
@@ -378,10 +388,9 @@ def test_privileged_metadata_jobs_use_only_default_branch_code():
     workflow = yaml.safe_load(
         (content.ROOT / ".github/workflows/contribution-content.yml").read_text()
     )
-    assert (
-        "inputs.kind || (github.event_name == 'pull_request_target' && 'pr' || 'issue')"
-        in workflow["concurrency"]["group"]
-    )
+    # A run cancelled by a newer event leaves a cancelled `pr-metadata` check on the same
+    # commit, and the merge rules treat that as unsatisfied even when a newer run is green.
+    assert "concurrency" not in workflow
     for job in workflow["jobs"].values():
         for step in job["steps"]:
             if step.get("uses", "").startswith("actions/checkout@"):
