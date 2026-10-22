@@ -397,6 +397,13 @@ class DreamGuard(HookProvider):
             # purpose: `evaluate` is pure so every rule stays testable without
             # strands, and this hook is the layer that owns lifecycle.
             self._ledger.reserve(name, ref=ref)
+            if self._pass is not None:
+                # The pass ceiling is held the same way, on the same id, so a
+                # parallel batch larger than `max_tool_calls` is refused in
+                # this hook rather than admitted in full: `pass_refusal` above
+                # reads `spent` (finished plus in flight), and only this line
+                # makes an admitted call count while it runs.
+                self._pass.reserve(_PASS_TOOLS, ref=ref)
             if self._memory is not None and name in self._memory_tools:
                 # The pass ledger holds its reservation on the SAME id, in its
                 # own dictionaries — so a batch of three memory verbs emitted
