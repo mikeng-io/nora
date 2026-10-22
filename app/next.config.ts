@@ -3,9 +3,30 @@ import createNextIntlPlugin from "next-intl/plugin";
 
 const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 
+// A fallback directive is deliberate: without `default-src`, a directive the
+// policy does not name falls back to "allow", so a newly loaded resource class
+// (a font, a frame, a manifest) is unrestricted until someone remembers to add
+// it. The explicit allowances are what Next hydration, inline styles and the
+// portal's map tiles actually need.
+const CSP = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data:",
+  "connect-src 'self' https: wss:",
+  "worker-src 'self' blob:",
+  "frame-src 'none'",
+  "manifest-src 'self'",
+].join("; ");
+
 const SECURITY_HEADERS = [
-  // Baseline CSP: Next hydration, map workers and OAuth keep their existing sources.
-  { key: "Content-Security-Policy", value: "base-uri 'self'; object-src 'none'; frame-ancestors 'none'" },
+  { key: "Content-Security-Policy", value: CSP },
+  { key: "Strict-Transport-Security", value: "max-age=31536000" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "X-Frame-Options", value: "DENY" },
