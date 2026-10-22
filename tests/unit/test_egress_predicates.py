@@ -338,3 +338,44 @@ def test_a_pair_with_a_compass_letter_or_degree_sign_is_a_coordinate(text):
 ])
 def test_a_cantonese_latitude_or_longitude_is_a_coordinate(text):
     assert scan_reply(text) == "coordinate", text
+
+
+@pytest.mark.parametrize("text", [
+    _generated("{}.{:02d}°N {}.{:02d}°W", 22, 41, 73, 12),
+    _generated("{}.{:02d}N {}.{:02d}W", 22, 41, 73, 12),
+    _generated("{}.{}N, {}.{}E", 1, 1, 2, 2),
+    _generated("{}.{}N/{}.{}E", 1, 1, 2, 2),
+    _generated("{}.{}N;{}.{}E", 1, 1, 2, 2),
+    _generated("{}.{}N {}.{}E", 1, 1, 2, 2),
+    _generated("{}.{}°N, {}.{}°E", 1, 1, 2, 2),
+    _generated("{}.{}° N {}.{}° E", 1, 1, 2, 2),
+    _generated("佢喺 {}.{:02d}°N {}.{:02d}°W 附近", 22, 41, 73, 12),
+])
+def test_a_pair_with_bearings_on_both_numbers_is_a_coordinate_whatever_the_width_or_separator(text):
+    """A compass letter directly after a decimal, or a degree sign and a bearing, on
+    BOTH numbers is unambiguous: no integer width or fraction length is needed, and
+    the separator can be a space, comma, slash or semicolon."""
+    assert scan_reply(text) == "coordinate", text
+
+
+@pytest.mark.parametrize("text", [
+    _generated("{}.{:03d}N", 22, 412),
+    _generated("{}.{:03d}°W", 114, 123),
+    _generated("佢喺 {}.{:03d}N 附近", 22, 412),
+])
+def test_a_single_bearing_qualified_decimal_with_three_decimals_is_a_coordinate(text):
+    assert scan_reply(text) == "coordinate", text
+
+
+@pytest.mark.parametrize("text", [
+    _generated("{}.{} N of the river is fine", 2, 5),
+    "route 66 West",
+    _generated("{}.{} N, {}.{} E on the map", 2, 5, 3, 5),
+    _generated("{}.{:02d} N of the river, {}.{:02d} W", 2, 5, 3, 5),
+])
+def test_bearing_like_prose_is_not_a_coordinate(text):
+    """A bearing needs its letter directly on a decimal (or a degree sign), and both
+    numbers of the pair must carry one. A spaced `2.5 N` or a bare `route 66 West`
+    is prose, so these stay clear."""
+    assert scan_identifiers(text) is None, text
+    assert scan_reply(text) is None, text

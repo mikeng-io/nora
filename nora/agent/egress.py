@@ -115,6 +115,18 @@ _COORD_PAIR_TWO = re.compile(
     rf"(?<![0-9])(?<![0-9]\.){_TWO_DIGIT}\s*[,;/|]\s*{_TWO_DIGIT}(?![0-9])(?!\.[0-9])",
     re.IGNORECASE,
 )
+# A bearing on BOTH numbers of a pair is a coordinate whatever the integer width or
+# the separator (`22.41°N 73.12°W`, `1.1N, 2.2E`). The letter sits directly on the
+# decimal, or after a degree sign with an optional space, so a spaced `2.5 N of the
+# river` is prose. A single decimal of three or more places with a bearing (`22.412N`)
+# is a coordinate on its own. Both are case-sensitive: an `n` or `w` is a word.
+_BEARING_MARK = r"(?:\s?°\s?|)[NSEW](?![0-9A-Za-z])"
+_BEARING = rf"-?[0-9]{{1,3}}\.[0-9]+{_BEARING_MARK}"
+_COORD_BEARING_PAIR = re.compile(rf"(?<![0-9])(?<![0-9]\.){_BEARING}[\s,;/|]+{_BEARING}")
+_COORD_BEARING_SINGLE = re.compile(
+    rf"(?<![0-9])(?<![0-9]\.)-?[0-9]{{1,3}}\.[0-9]{{3,}}{_BEARING_MARK}"
+)
+
 # A labelled decimal on its own: `lat: 22.410`, `LNG = 114.124`.
 _COORD_LABELLED = re.compile(
     rf"(?<![0-9A-Za-z_]){_LABEL}[\s:=/|()\[\]]*{_DEC}", re.IGNORECASE,
@@ -133,6 +145,8 @@ _REPLY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     *_IDENTIFIER_PATTERNS,
     ("coordinate", _COORD_PAIR),
     ("coordinate", _COORD_PAIR_TWO),
+    ("coordinate", _COORD_BEARING_PAIR),
+    ("coordinate", _COORD_BEARING_SINGLE),
     ("coordinate", _COORD_LABELLED),
     ("coordinate", _COORD_LONG),
     ("coordinate", _COORD_HEMISPHERE),
