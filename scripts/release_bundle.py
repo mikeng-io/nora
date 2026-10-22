@@ -159,7 +159,7 @@ def main() -> None:
         metadata = args.directory / f'{name}.metadata.json'
         image = f'{REGISTRY}{name}:{args.tag}'
         subprocess.run(  # noqa: S603 -- Docker CLI, fixed inputs, validated tag
-            ['docker', 'buildx', 'build', '--platform', 'linux/amd64', '--push',  # noqa: S607 -- Docker CLI
+            ['docker', 'buildx', 'build', '--pull', '--platform', 'linux/amd64', '--push',  # noqa: S607 -- Docker CLI
              '--metadata-file', str(metadata),
              '--label', f'org.opencontainers.image.revision={commit}',
              '--label', f'org.opencontainers.image.version={args.tag}',

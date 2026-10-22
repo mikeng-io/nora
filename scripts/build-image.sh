@@ -42,7 +42,7 @@ fi
 # commit, so the deploy revision never names a sha the code does not match.
 SHA="$(git rev-parse HEAD)"
 if [ -n "$(git status --porcelain --untracked-files=no)" ]; then SHA="$SHA+dirty"; fi
-docker build --network=host --build-arg "NORA_VERSION=$VERSION" \
+docker build --pull --network=host --build-arg "NORA_VERSION=$VERSION" \
   --build-arg "NORA_GIT_SHA=$SHA" --build-arg "NORA_BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   -t nora:latest .
 echo "built nora:latest ${VERSION:-unstamped}"

@@ -1,8 +1,8 @@
-# python:3.12-slim matches Nora's own container base (../../Dockerfile) for
+# python:3.12-slim-trixie matches Nora's own container base (../../Dockerfile) for
 # consistency, but this is a SEPARATE image with its own dependency set --
 # `stt` is not a reuse of nora:latest, it's a different app that happens to
 # live in the same repo (docs/superpowers/specs/2026-08-21-nora-stt-infrastructure-design.md).
-FROM python:3.12-slim
+FROM python:3.12-slim-trixie
 
 # curl is needed for this Dockerfile's own HEALTHCHECK below; ffmpeg gives
 # soundfile a universal decoder for signal voice notes (opus/ogg works without

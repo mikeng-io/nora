@@ -1,25 +1,15 @@
-# node:22-slim matches the Node 22 the spike was verified with on this host
-# (design/voice-channel/05-sidecar-receive.md). This is a SEPARATE image with
-# its own dependency set — the same "separate app that lives in this repo"
-# shape as deploy/stt/.
-# Pin node 22.22.3-slim (NOT the floating node:22-slim): the DAVE spike and
-# `npm ci` were verified on 22.22.3 with @discordjs/opus@0.10.0's prebuilt
-# binaries; floating node:22 currently resolves to 22.23.x whose node-v127
-# ABI has no opus prebuild, and the image has no toolchain to compile the
-# fallback (node-gyp needs python3/make/g++ — not installed by design).
-FROM node:22.22.3-slim
+# Separate audio-controller image with its own dependency set, on the same
+# Node 24 / Debian trixie family as the other Node services.
+FROM node:24-trixie-slim
 
-# curl is needed for this Dockerfile's own HEALTHCHECK below. The runtime
-# deps (@discordjs/opus, @snazzah/davey) ship prebuilt linux-x64 glibc
-# binaries, but @discordjs/opus@0.10.0 only provides a glibc-2.43 prebuild —
-# Debian bookworm (glibc 2.36) misses it and falls back to source compile,
-# so python3/make/g++ are needed for node-pre-gyp despite the prebuilds
-# (this is the "future bump drops the prebuilds" case the README foresaw).
+# curl runs the healthcheck; ffmpeg transcodes playback. Native audio
+# packages may lack a prebuild for the selected Node ABI, architecture or
+# glibc, so retain python3/make/g++ for @discordjs/opus's source fallback.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl python3 make g++ ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# node:22-slim already ships user `node` (uid/gid 1000 — the SAME uid the
+# node:24-trixie-slim already ships user `node` (uid/gid 1000 — the SAME uid the
 # top-level Dockerfile and deploy/stt use) AND a pre-existing system group
 # named `voice` (gid 22). A groupadd/useradd here would collide on both the
 # group name and uid 1000, so the container simply runs as the base image's

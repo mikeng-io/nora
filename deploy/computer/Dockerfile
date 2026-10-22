@@ -7,19 +7,26 @@
 # sbx's `shell` agent does NOT run this image's ENTRYPOINT (spike round 2), so
 # none is set: `nora-computer ensure` starts computerd, as root, with `sbx exec`.
 #
-# Everything fetched is pinned: the base image and uv by digest, computerd's
-# Python dependencies by hash (requirements.txt, from `uv pip compile
-# --generate-hashes`). Bump them deliberately, in one commit, with a rebuild.
+# Ubuntu and uv are pinned by digest, computerd's Python dependencies by
+# hash (requirements.txt, from `uv pip compile --generate-hashes`). Bump those
+# deliberately with a rebuild. Node is the exception: its Node 24 / trixie
+# tag floats patch updates, refreshed by `nora-computer build` with --pull.
+FROM node:24-trixie-slim AS node
+
 FROM ubuntu@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
 
 ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get -o Acquire::Retries=3 update && apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
         bash ca-certificates coreutils curl file git jq less procps sqlite3 tmux unzip zip \
         python3 python3-venv python3-pip \
-        nodejs npm \
+        libstdc++6 libatomic1 \
         ffmpeg imagemagick pandoc poppler-utils \
         fonts-noto-cjk fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/*
+
+# Official Node binaries and npm, with their runtime libraries installed above.
+# Keep Ubuntu's distro Python for computerd and the system tools.
+COPY --from=node /usr/local/ /usr/local/
 
 # uv for per-project environments (a project's .venv and lockfile persist
 # under /workspace; the system Python does not). 0.12.21, by digest.
@@ -42,7 +49,7 @@ RUN python3 -m venv /opt/computerd/venv \
 # its postinstall fetches the Chromium it draws with, at build time, into
 # /opt/nora-render/puppeteer (the libraries below are what that Chromium
 # links against). Nothing here reaches the network at run time.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get -o Acquire::Retries=3 update && apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
         libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libcairo2 libcups2t64 \
         libdrm2 libgbm1 libnss3 libpango-1.0-0 libxcomposite1 libxdamage1 \
         libxfixes3 libxkbcommon0 libxrandr2 librsvg2-bin \
@@ -64,7 +71,7 @@ ARG CHROME_SHA256=c58aa0f2cd66179c9f050e062c882d27aa9b9f8c2b7c73fee3498560b5ed0b
 RUN curl -fsSLo /tmp/chrome.deb \
         "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_${CHROME_VERSION}_amd64.deb" \
     && echo "${CHROME_SHA256}  /tmp/chrome.deb" | sha256sum -c - \
-    && apt-get update && apt-get install -y --no-install-recommends /tmp/chrome.deb xvfb \
+    && apt-get -o Acquire::Retries=3 update && apt-get -o Acquire::Retries=3 install -y --no-install-recommends /tmp/chrome.deb xvfb \
     && rm -rf /var/lib/apt/lists/* /tmp/chrome.deb \
     && rm -f /etc/apt/sources.list.d/google-chrome.list \
     && mkdir -p /tmp/.X11-unix && chown root:root /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix

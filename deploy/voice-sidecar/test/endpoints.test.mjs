@@ -353,7 +353,7 @@ test('voice-death: destroyed connection tears down to idle and pushes the event'
   const h = await makeHarness();
   const { generation } = await h.join();
   h.connection.emit('stateChange', { status: 'ready' }, { status: 'destroyed' });
-  await tick();
+  assert.ok(await until(() => h.core.lifecycle.voice() === 'idle'));
 
   const status = await h.get(`/voice/status?guild_id=${GUILD}`);
   assert.equal(status.body.voice, 'idle');
@@ -425,6 +425,7 @@ test('channel-emptied fires 60s after the human count drops to zero', async () =
   assert.equal(emptied[0].channel_id, CHANNEL);
   // The timer firing tears the connection down itself (§12.6: "the
   // controller tears the connection down AND writes desired=idle").
+  assert.ok(await until(() => h.core.lifecycle.voice() === 'idle'));
   assert.ok(await waitFor(() => h.leaves() > 0));
   const after = await h.get(`/voice/status?guild_id=${GUILD}`);
   assert.equal(after.body.voice, 'idle');
@@ -485,6 +486,8 @@ test('channel-emptied arms on join into an already-empty channel and fires after
   assert.equal(emptied.length, 1);
   assert.equal(emptied[0].generation, generation);
   assert.equal(emptied[0].channel_id, CHANNEL);
+  // Delivery precedes teardown's real fs write; fake time/ticks do not finish it.
+  assert.ok(await until(() => h.core.lifecycle.voice() === 'idle'));
   assert.ok(await waitFor(() => h.leaves() > 0));
   await h.close();
 });
@@ -543,7 +546,8 @@ test('a manual Discord-UI disconnect during the empty-channel grace period cance
 
   // Manual disconnect via Discord UI, well before the 60s mark.
   h.connection.emit('stateChange', { status: 'ready' }, { status: 'destroyed' });
-  await tick();
+  // The death event is emitted before the asynchronous teardown completes.
+  assert.ok(await until(() => h.core.lifecycle.voice() === 'idle'));
 
   const status = await h.get(`/voice/status?guild_id=${GUILD}`);
   assert.equal(status.body.voice, 'idle');

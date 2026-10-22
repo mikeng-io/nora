@@ -512,7 +512,7 @@ deny-by-default until the DM study lands.
 | Network blip | transient disconnect | self-heals; the bridge reconnects with backoff |
 
 The container healthcheck only proves the HTTP layer serves (curl exists in
-the image precisely because node:20-slim ships none). The real detector is
+the image precisely because node:24-trixie-slim ships none). The real detector is
 Nora `/health`'s per-platform `last_event_age_seconds` — the bridge emits
 SSE heartbeats so a dead WhatsApp socket ages that value in a quiet room,
 and Prometheus's `PlatformSilent` rule alerts on it (`deploy/prometheus/rules/`,

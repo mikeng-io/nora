@@ -2,7 +2,7 @@
 # Build from the REPO ROOT so the art in assets/ is in the context:
 #   docker build -f site/Dockerfile -t nora-site .
 # (site/Dockerfile.dockerignore keeps that context to site/ and assets/.)
-FROM node:22-slim AS build
+FROM node:24-trixie-slim AS build
 WORKDIR /repo/site
 COPY site/package.json site/package-lock.json ./
 # --ignore-scripts: esbuild's install script only re-validates the binary its
@@ -16,7 +16,7 @@ ARG PUBLIC_PORTAL_ORIGIN
 RUN npm run build
 
 # The wiki is generated/reviewed in Git; image builds make no model calls.
-FROM node:22-slim AS wiki
+FROM node:24-trixie-slim AS wiki
 # Native wiki regressions create Git fixtures and independently verify the patch.
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 WORKDIR /repo/docs-site
