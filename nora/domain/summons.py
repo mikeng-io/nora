@@ -319,8 +319,12 @@ class SummonsLedger(Protocol):
         self, summons_id: UUID, state: str, *, now: datetime,
         person_id: str | None = None, reply_text: str | None = None,
         reply_comment_id: str | None = None, bridge_code: str | None = None,
-        trace_id: str | None = None,
-    ) -> bool: ...
+        trace_id: str | None = None, clear_reply: bool = False,
+    ) -> bool:
+        """Move the row to `state`. A field passed as None is left as it is;
+        `clear_reply=True` sets `reply_text` to NULL instead, for a row whose
+        staged text must not be kept (a refused disclosure)."""
+        ...
 
     async def take_for_flush(self, summons_id: UUID, *, now: datetime) -> bool: ...
 

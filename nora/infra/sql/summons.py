@@ -95,7 +95,7 @@ class SqlSummonsLedger:
         self, summons_id: UUID, state: str, *, now: datetime,
         person_id: str | None = None, reply_text: str | None = None,
         reply_comment_id: str | None = None, bridge_code: str | None = None,
-        trace_id: str | None = None,
+        trace_id: str | None = None, clear_reply: bool = False,
     ) -> bool:
         if state not in SUMMONS_STATES:
             raise ValueError(f"unknown summons state {state!r}")
@@ -107,6 +107,8 @@ class SqlSummonsLedger:
         ):
             if value is not None:
                 values[key] = value
+        if clear_reply:
+            values["reply_text"] = None
         # A final row is final: the WHERE is the state machine, enforced in
         # the one statement that writes, so no read-then-write race exists.
         stmt = (

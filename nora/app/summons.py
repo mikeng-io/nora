@@ -685,12 +685,17 @@ class SummonsOccasion:
             else disclosure
         )
         if refusal is not None:
+            # A prior 503 may have been claimed and posted (`_RETRY_503`), so a
+            # refusal now does not prove it never posted: the outcome stays
+            # `ambiguous`, as `_write_state` keeps it after a 503 and a retry.
+            state = "ambiguous" if prior_code in _RETRY_503 else "refused"
+            code = prior_code if state == "ambiguous" else refusal
             await self._ledger.finish(
-                summons_id, "refused", now=now, person_id=person_id,
-                reply_text=None if disclosure else body,
-                bridge_code=refusal, trace_id=trace_id,
+                summons_id, state, now=now, person_id=person_id,
+                reply_text=None if disclosure else body, clear_reply=disclosure is not None,
+                bridge_code=code, trace_id=trace_id,
             )
-            return SummonsOutcome("refused", bridge_code=refusal, reached_bridge=True)
+            return SummonsOutcome(state, bridge_code=code, reached_bridge=True)
         await self._ledger.finish(
             summons_id, "staged", now=now, person_id=person_id, reply_text=body,
             trace_id=trace_id,

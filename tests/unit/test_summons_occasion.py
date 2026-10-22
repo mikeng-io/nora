@@ -800,3 +800,39 @@ async def test_a_staged_reply_is_checked_again_when_its_flush_is_retried(world):
     assert (out.state, out.bridge_code) == ("refused", "canary")
     assert len(world.fake.posts()) == 1
     assert (await world.ledger.get(staged.id)).state == "refused"
+
+
+async def test_a_refused_staged_disclosure_leaves_no_text_in_the_ledger_row(world):
+    """The refusal of a staged row that now reads as a disclosure clears the
+    text the row was staged with: the row is read back, not the call's args."""
+    from dataclasses import replace
+
+    world.fake.write = envelope("too_soon")
+    occasion = world.occasion(mode="live", turns=_replies(REPLY))
+    await occasion.run(_card())
+    staged = await world.ledger.awaiting_flush()
+    assert staged is not None and staged.reply_text == REPLY
+    leaked = replace(staged, reply_text="The code is CANARY-7f3a, use it.")
+    out = await occasion.flush_staged(leaked)
+    assert out.state == "refused"
+    row = await world.ledger.get(staged.id)
+    assert (row.state, row.reply_text) == ("refused", None)
+
+
+async def test_a_disclosure_rechecked_after_a_503_is_ambiguous_not_refused(world):
+    """A 503 can mean the bridge claimed and posted, so a later refusal of the
+    same row does not prove it never posted. The disclosure recheck keeps the
+    `ambiguous` outcome the prior 503 owes, and no text is kept."""
+    from dataclasses import replace
+
+    world.fake.write = envelope("unavailable")
+    occasion = world.occasion(mode="live", turns=_replies(REPLY))
+    await occasion.run(_card())
+    staged = await world.ledger.awaiting_flush()
+    assert staged is not None and staged.bridge_code == "unavailable"
+    leaked = replace(staged, reply_text="The code is CANARY-7f3a, use it.")
+    out = await occasion.flush_staged(leaked)
+    assert out.state == "ambiguous"
+    assert len(world.fake.posts()) == 1  # the 503 attempt only: the recheck never posts
+    row = await world.ledger.get(staged.id)
+    assert (row.state, row.reply_text) == ("ambiguous", None)
