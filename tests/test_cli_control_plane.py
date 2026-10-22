@@ -915,3 +915,35 @@ async def test_persona_window_and_report_are_read_only_until_explicit_apply(
             assert count == 0
     finally:
         await engine.dispose()
+
+
+async def test_character_report_requires_a_separately_configured_judge(monkeypatch):
+    from argparse import Namespace
+    from types import SimpleNamespace
+
+    import nora.app.cli as cli
+    from nora.app.cli import CliError
+
+    cfg = SimpleNamespace(
+        evals=SimpleNamespace(judge_model="writer"), dreamer_model=lambda: "writer",
+        obs=SimpleNamespace(tracing=SimpleNamespace(enabled=False)),
+        llm=SimpleNamespace(base_url="http://example.invalid", api_key_env="UNSET_TEST_KEY"))
+    monkeypatch.setattr(cli, "_config", lambda _: cfg)
+    monkeypatch.setattr(cli, "_persons", lambda _: SimpleNamespace(by_person={}))
+    reached = []
+    class ModelSelected(Exception):
+        pass
+    def factory(**request):
+        if request["model_id"] != "independent":
+            raise AssertionError("the writer must not be constructed as the judge")
+        reached.append(request["model_id"])
+        raise ModelSelected  # stop at selection; no model or database call
+    monkeypatch.setattr("nora.agent.structured.build_structured_model", factory)
+    args = Namespace(since=None, until=None, judge=True)
+    with pytest.raises(CliError, match="must differ"):
+        await cli.cmd_persona_report(args)
+    assert not reached
+    cfg.evals.judge_model = "independent"
+    with pytest.raises(ModelSelected):
+        await cli.cmd_persona_report(args)
+    assert reached == ["independent"]

@@ -11,6 +11,6 @@
     "file": "nora/infra/sql/migrations/versions/0054_note_candidate_title_key.py",
     "old": "        [\n            \"workspace\", \"anchor_date\", \"anchor_entity_ids\",\n            sa.text(\"lower(btrim(title))\"),\n        ],\n        unique=True, postgresql_where=sa.text(\"kind = 'create'\"),\n    )\n\n\ndef downgrade",
     "new": "        [\"workspace\", \"anchor_date\", \"anchor_entity_ids\"],\n        unique=True, postgresql_where=sa.text(\"kind = 'create'\"),\n    )\n\n\ndef downgrade",
-    "target": "tests/contract/test_note_store_contract.py -k test_record_create_candidate_separates_two_titles_on_one_anchor"
+    "target": "tests/infra/test_schema_parity.py::test_normalised_pg_dump_matches_the_checked_in_baseline"
   }
 ]

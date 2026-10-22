@@ -145,5 +145,12 @@
     "old": "_persona_location(PERSONA_LINE.c),",
     "new": "sa.false(),",
     "target": "tests/infra/test_memory_projection_persona.py::test_location_profile_search_uses_existing_presence_scope"
+  },
+  {
+    "name": "events-as-traits uses a different configured model",
+    "file": "nora/app/cli.py",
+    "old": "if cfg.evals.judge_model == cfg.dreamer_model():",
+    "new": "if False:",
+    "target": "tests/test_cli_control_plane.py::test_character_report_requires_a_separately_configured_judge"
   }
 ]
