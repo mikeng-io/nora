@@ -1,7 +1,7 @@
 # python:3.12-slim-trixie matches the host's default interpreter (requires-python >=3.11 in
 # pyproject.toml; the dev .venv happened to be built with 3.13, but 3.12 is what the
 # host actually runs, so that's what we validate the container against).
-FROM python:3.12-slim-trixie
+FROM python:3.12-slim-trixie@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2
 
 # ffmpeg is the Discord Music design's playback transcoder (design/discord-music/
 # 01-playback-and-source.md) -- discord.py's FFmpegPCMAudio shells out to whatever

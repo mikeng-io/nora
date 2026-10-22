@@ -1,7 +1,7 @@
 # Same base + posture as deploy/stt/Dockerfile: a SEPARATE image with its own
 # dependency set -- `voice-wake` is not a reuse of nora:latest, it is a
 # different app (the stage-3 wake gate) that happens to live in the same repo.
-FROM python:3.12-slim-trixie
+FROM python:3.12-slim-trixie@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2
 
 # curl is needed for this Dockerfile's own HEALTHCHECK below.
 RUN apt-get update \
