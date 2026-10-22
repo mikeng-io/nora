@@ -51,6 +51,12 @@ updates:
     prefix: security
     include: scope
   open-pull-requests-limit: 3
+  # Dependabot proposes the highest tag, which for node is the odd-numbered Current
+  # line (25), never an LTS. Majors are moved by hand to the Active LTS line.
+  ignore:
+  - dependency-name: node
+    update-types:
+    - version-update:semver-major
   groups:
     base-images:
       patterns:

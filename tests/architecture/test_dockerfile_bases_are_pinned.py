@@ -77,3 +77,14 @@ def test_security_only_ecosystems_commit_as_a_visible_type_so_a_patch_releases()
         assert message.get("prefix") == "security" and message.get("include") == "scope", update[
             "package-ecosystem"
         ]
+
+
+def test_node_images_stay_on_an_even_lts_line_and_dependabot_cannot_bump_the_major():
+    for path in dockerfiles():
+        for match in re.finditer(r"^FROM\s+node:(\d+)", path.read_text(encoding="utf-8"), re.M):
+            assert int(match[1]) % 2 == 0, f"{path.relative_to(ROOT)}: node {match[1]} is not LTS"
+    config = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text(encoding="utf-8"))
+    docker = next(u for u in config["updates"] if u["package-ecosystem"] == "docker")
+    assert {"dependency-name": "node", "update-types": ["version-update:semver-major"]} in docker[
+        "ignore"
+    ]
