@@ -139,8 +139,9 @@ gh pr view <N> --json baseRefName,headRefOid       # master, and == git rev-pars
 
 - Whether and at which level: `AGENTS.md` «Review is adaptive». Level
   none: go straight to step 8. The PR's Gate section names the row.
-- Otherwise, a fresh agent that did not write the change: DeepSeek for light,
-  Kimi for full, both launched through T3 (lane and effort: `AGENTS.md`).
+- Otherwise, a fresh agent from a vendor that did not build the change:
+  DeepSeek for light, and Kimi or `gpt-6.1-sol` (whichever did not build it)
+  for full, launched through T3 (lane and effort: `AGENTS.md`).
   Give it the diff (`gh pr diff <N>`) and the PR's claims.
 - Triage every finding (`AGENTS.md` «Triage decides what blocks»). Only a
   BLOCKER buys another round, and that round reviews the fix diff only.

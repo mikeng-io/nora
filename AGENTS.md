@@ -445,7 +445,10 @@ longest-running context of any lane. The work goes to these lanes:
   orchestrator would rather do the work.
 - **Kimi builds on trial** (operator, 2026-10-22). GPT's quota runs out
   first, so 3 to 5 builds to a finished spec, additive or off by default,
-  go to `kimi-code/k3-256k`, each reviewed by a fresh `gpt-6.1-sol`. The
+  go to `kimi-code/k3-256k`. Each one gets a review by a fresh `gpt-6.1-sol`
+  at `medium`, whatever the review table's row: the trial is a measurement,
+  and a build nobody reviewed measures nothing. While GPT is down, no trial
+  build launches, because its reviewer would have to be Kimi. The
   report records what the review found and any defect found after merge.
   If Kimi's builds come back as clean as GPT's, spec'd builds move to Kimi
   and its plan grows instead of GPT's. If not, Kimi stays on review.
@@ -484,7 +487,9 @@ every round reviewed the whole scope with a fresh reader, the brief asked
 for findings, the reviewer graded its own severity, and every finding was
 fixed. A finding counts only if it names a reachable path (real input,
 caller or config), the harm on that path, and whether this diff caused it.
-The orchestrator, not the reviewer, sets the verdict:
+The orchestrator, not the reviewer, sets the verdict. When two verdicts
+fit, the higher one wins: a crash, data loss or disclosure is a BLOCKER
+however rare its path.
 
 | verdict | test | action |
 |---|---|---|
@@ -497,11 +502,15 @@ The orchestrator, not the reviewer, sets the verdict:
 - **A fix round reviews the fix diff only** (`git diff <reviewed-sha>..HEAD`),
   never the whole PR again: a fresh reader of the whole scope always finds
   something new.
-- **Two rounds at most.** A third BLOCKER means the spec gets re-read
-  (the effort table's rule below), not another launch.
+- **Two rounds at most.** Round 2 reviews the fix diff one effort level
+  up (the effort table below). A BLOCKER in round 2 is fixed and proved
+  with `nora-prove-fix`, and then the orchestrator re-reads the spec and
+  reports to the operator, who decides on any round 3. Nothing launches it
+  automatically.
 - **The review brief says**: report only findings with a reachable path;
   `NONE` is a valid and expected answer; mark anything outside the diff
-  `PRE-EXISTING`; at most 6 findings.
+  `PRE-EXISTING`; at most 6 findings, most severe first, so a cap never
+  hides a BLOCKER.
 - **The PR's Gate section records the level and the triage** («light; 1
   BLOCKER fixed, 2 FIX-IF-CHEAP, 1 ISSUE #N, 2 DROP»).
 
