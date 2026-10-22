@@ -20,7 +20,8 @@ from uuid import uuid4
 
 from nora.agent.prefill import _BLOCKS, build_prefill
 from nora.domain.compute import ComputeJob, ComputeJobState
-from nora.domain.models import NormalizedMessage, TagContext
+from nora.domain.models import NormalizedMessage, PersonRef, TagContext
+from nora.domain.ports import EngageDecision, EngagementRequest
 from nora.domain.subagent import SUBAGENT_KIND
 from nora.domain.subagents_context import (
     FINISHED_WINDOW,
@@ -30,14 +31,17 @@ from nora.domain.subagents_context import (
     SubagentLine,
     SubagentsView,
 )
+from nora.engagement.context import TranscriptInjection
 from nora.engagement.subagents_context import SubagentsContextReader
 from nora.language.subagents_render import render_subagents
 from nora.obs.metrics import Metrics
-from nora.testing import FakeComputeJobStore
+from nora.persons import Persons
+from nora.testing import FakeComputeJobStore, FakeMemoryStore, FakeRecordStore
 
 NOW = datetime(2026, 10, 5, 12, tzinfo=UTC)
 ROOM = ("signal", "g-sub")
 DOC = "11111111-1111-1111-1111-111111111111"
+KEN, MEI = "ken", "mei"
 
 
 @dataclass
@@ -63,6 +67,22 @@ class _Titles:
             title: str = "Sheets, merged"
 
         return _R()
+
+
+class _Documents:
+    """Authorization-sensitive, as `DocumentService.read` is: a document is read as its creator
+    only, and any other viewer is `refused` with no title."""
+
+    def __init__(self, *, creator: str, title: str) -> None:
+        self.creator, self.title = creator, title
+
+    async def read(self, *, platform, conversation_id, document_id=None, handle="", person_id=None):
+        @dataclass
+        class _R:
+            status: str
+            title: str = ""
+
+        return _R("ok", self.title) if person_id == self.creator else _R("refused")
 
 
 def _job(*, state=ComputeJobState.PENDING, task="merge the sheets", title="Sheet merge", room=ROOM,
@@ -99,8 +119,10 @@ def _reader(store, *, worker=None, metrics=None, documents=None, **kw) -> Subage
     return reader
 
 
-async def _body(store, **kw) -> str:
-    view = await _reader(store, **kw).read(platform=ROOM[0], conversation_id=ROOM[1])
+async def _body(store, *, viewer: str | None = KEN, **kw) -> str:
+    view = await _reader(store, **kw).read(
+        platform=ROOM[0], conversation_id=ROOM[1], person_id=viewer,
+    )
     block = render_subagents(view)
     return "" if block is None else block.body
 
@@ -205,10 +227,61 @@ async def test_a_cancelled_job_says_nothing_was_delivered():
     assert "stopped 2 min ago" in body
 
 
-async def test_a_document_title_that_will_not_read_is_said_not_blank():
+async def test_a_document_with_no_reader_is_left_out_whole_and_the_job_stays():
     job = _job(state=ComputeJobState.DONE, finished_minutes=5, result_document_ids=(DOC,))
     body = await _body(await _store(job))
-    assert f'"(title not read)" (id {DOC})' in body
+    assert body.startswith("done · ") and DOC not in body and "documents" not in body
+
+
+async def test_a_result_document_is_titled_for_its_creator_and_never_for_another_viewer():
+    job = _job(state=ComputeJobState.DONE, finished_minutes=5, result_document_ids=(DOC,))
+    store = await _store(job)
+    docs = _Documents(creator=KEN, title="Ken's private title")
+    creator = await _body(store, documents=docs, viewer=KEN)
+    assert f'documents "Ken\'s private title" (id {DOC})' in creator        # positive control
+    other = await _body(store, documents=docs, viewer=MEI)
+    assert other.startswith("done · ")                                      # the job is shown
+    assert "Ken's private title" not in other and DOC not in other
+    assert "documents" not in other
+
+
+async def test_with_no_viewer_no_document_title_or_id_is_shown():
+    job = _job(state=ComputeJobState.DONE, finished_minutes=5, result_document_ids=(DOC,))
+    docs = _Documents(creator=KEN, title="Ken's private title")
+    body = await _body(await _store(job), documents=docs, viewer=None)
+    assert body.startswith("done · ") and "Ken's private title" not in body
+    assert DOC not in body and "documents" not in body
+
+
+async def test_a_tag_turn_titles_the_document_for_its_tagger_and_not_for_another_one():
+    """Through `TranscriptInjection.assemble`, the path a real tag turn takes: the tagger's
+    person is the viewer. Ken's turn shows his document; Mei's turn in the same room does not."""
+    job = _job(state=ComputeJobState.DONE, finished_minutes=5, result_document_ids=(DOC,))
+    docs = _Documents(creator=KEN, title="Ken's private title")
+    reader = _reader(await _store(job), documents=docs)
+    people = {p: PersonRef(person_id=p, name=p.title(), honcho_peer_id=p) for p in (KEN, MEI)}
+    persons = Persons(
+        by_person=people,
+        index={("signal", "sender-ken"): KEN, ("signal", "sender-mei"): MEI},
+    )
+    shown: dict[str, str] = {}
+    for sender in ("sender-ken", "sender-mei"):
+        msg = NormalizedMessage(
+            platform=ROOM[0], conversation_id=ROOM[1], conversation_type="group",
+            sender_id=sender, sender_name=sender, timestamp=1, body="how is it", raw={},
+        )
+        assembler = TranscriptInjection(
+            audit=FakeRecordStore(), memory=FakeMemoryStore(), persons=persons,
+            context_window=10, metrics=Metrics(), subagents=reader,
+        )
+        ctx = await assembler.assemble(request=EngagementRequest(
+            message=msg, decision=EngageDecision(engage=True, reason="trigger_text"),
+            tag_id="tag-1",
+        ))
+        shown[sender] = render_subagents(ctx.subagents).body if ctx.subagents else ""
+    assert f'documents "Ken\'s private title" (id {DOC})' in shown["sender-ken"]   # control
+    assert "Ken's private title" not in shown["sender-mei"] and DOC not in shown["sender-mei"]
+    assert shown["sender-mei"].startswith("done · ")
 
 
 # -- the room, the window, the cap ------------------------------------------------------
@@ -265,7 +338,7 @@ async def test_at_most_five_rows_and_the_rest_are_counted():
 async def test_a_capped_read_says_at_least():
     jobs = [_job(task=f"job {n}", minutes=10 + n) for n in range(8)]
     view = await _reader(await _store(*jobs), rows=6).read(
-        platform=ROOM[0], conversation_id=ROOM[1])
+        platform=ROOM[0], conversation_id=ROOM[1], person_id=KEN)
     assert view.omitted_at_least and view.omitted == 1
     assert render_subagents(view).body.splitlines()[-1].startswith("at least 1 more job")
 
@@ -329,7 +402,7 @@ async def test_a_store_that_is_down_is_no_block_a_counted_error_never_a_raise():
 
     metrics = Metrics()
     assert await _reader(Down(), metrics=metrics).read(
-        platform=ROOM[0], conversation_id=ROOM[1]) is None
+        platform=ROOM[0], conversation_id=ROOM[1], person_id=KEN) is None
     assert metrics.get("nora_errors_total", stage="subagents_context", platform="signal") == 1
 
 
@@ -339,7 +412,7 @@ async def test_a_store_slower_than_the_bound_is_no_block_not_a_stalled_turn():
             await asyncio.sleep(5)
 
     assert await _reader(Slow(), timeout=0.05).read(
-        platform=ROOM[0], conversation_id=ROOM[1]) is None
+        platform=ROOM[0], conversation_id=ROOM[1], person_id=KEN) is None
 
 
 def test_the_fire_path_is_never_given_the_reader():
@@ -367,7 +440,7 @@ async def test_a_store_that_leaks_another_rooms_row_still_shows_none_of_it():
     store = Leaky()
     await store.create(_job(task="mine"))
     await store.create(_job(task="other room", room=("signal", "g-other")))
-    view = await _reader(store).read(platform=ROOM[0], conversation_id=ROOM[1])
+    view = await _reader(store).read(platform=ROOM[0], conversation_id=ROOM[1], person_id=KEN)
     body = render_subagents(view).body
     assert 'description "mine"' in body
     assert "other room" not in body and len(body.splitlines()) == 1
@@ -401,4 +474,4 @@ async def test_a_slow_or_failing_title_read_costs_the_title_never_the_block():
         started = asyncio.get_event_loop().time()
         body = await _body(await _store(job), documents=docs, timeout=2.0, title_timeout=0.05)
         assert asyncio.get_event_loop().time() - started < 1.0
-        assert body.startswith("done · ") and body.count(f'"(title not read)" (id {DOC})') == 2
+        assert body.startswith("done · ") and DOC not in body and "documents" not in body

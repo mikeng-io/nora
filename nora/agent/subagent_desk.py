@@ -229,9 +229,10 @@ class SubagentDesk:
         return [self._view(r, titles=(), full=False) for r in rows]
 
     async def read(
-        self, *, platform: str, conversation_id: str, job_id: str,
+        self, *, platform: str, conversation_id: str, job_id: str, person_id: str | None,
     ) -> JobView | None:
-        """One job of THIS room, or None: unknown, malformed, another room's, another kind's."""
+        """One job of THIS room, or None: unknown, malformed, another room's, another kind's.
+        Its documents are shown to `person_id`, the one asking, only where they may read them."""
         row = await self._own(platform, conversation_id, job_id)
         if row is None:
             return None
@@ -239,9 +240,12 @@ class SubagentDesk:
         ids = (tuple(getattr(live, "document_ids", ())) if live is not None else ()) or (
             row.result_document_ids
         )
-        titles = await self._titles(row, ids)
+        readable = await self._titles(row, ids, person_id)
+        ids = tuple(i for i, _ in readable)
+        titles = tuple(t for _, t in readable)
         view = self._view(row, titles=titles, full=True)
-        return replace(view, checkpoint=self._checkpoint_text(row, live, ids, titles) or None)
+        checkpoint = self._checkpoint_text(row, live, ids, titles) or None
+        return replace(view, document_ids=ids, checkpoint=checkpoint)
 
     async def cancel(
         self, *, platform: str, conversation_id: str, job_id: str,
@@ -311,21 +315,25 @@ class SubagentDesk:
             mode="read",
         )
 
-    async def _titles(self, row: ComputeJob, ids: tuple[str, ...]) -> tuple[str, ...]:
-        if self._documents is None or not ids:
+    async def _titles(
+        self, row: ComputeJob, ids: tuple[str, ...], person_id: str | None,
+    ) -> tuple[tuple[str, str], ...]:
+        """`(id, title)` for each document `person_id` may read. One they may not read, or whose
+        read fails, is left out whole: no id, no title."""
+        if self._documents is None or person_id is None or not ids:
             return ()
-        titles: list[str] = []
+        readable: list[tuple[str, str]] = []
         for raw in ids:
             try:
                 out = await self._documents.read(
                     platform=row.platform, conversation_id=row.conversation_id,
-                    document_id=UUID(raw), person_id=row.requester_person_id,
+                    document_id=UUID(raw), person_id=person_id,
                 )
-                titles.append(str(out.title) if out.status == "ok" else "")
+                if out.status == "ok":
+                    readable.append((raw, str(out.title)))
             except Exception:
                 log.exception("subagent_read: document %s did not read back", raw)
-                titles.append("")
-        return tuple(titles)
+        return tuple(readable)
 
     def _view(self, row: ComputeJob, *, titles: Sequence[str], full: bool = True) -> JobView:
         age = max(0, int((self._clock() - row.created_at).total_seconds()))

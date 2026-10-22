@@ -13,10 +13,14 @@ row is still `pending` but whose worker has stopped is `ended` (the result is on
 never `running`.
 
 **Never raises, and never a wrong fact.** A store that is down, or slow past `timeout`, is
-logged, counted (`nora_errors_total{stage="subagents_context"}`) and read as no block. A
-document title that will not read is `""`, and the renderer says so. `row.error` is never
-read: it is free text a worker or a backend wrote, and only `failure_reason` (a controlled
-word) reaches the block.
+logged, counted (`nora_errors_total{stage="subagents_context"}`) and read as no block.
+
+**Documents are read as the tagger, never as the requester.** A result document's id and
+title reach the block only when the person the block serves may read it; anyone else, no
+viewer, or a read that fails, leaves the document out whole. A job's requester can be gone
+from identity, so the requester's read is not a read the room may rely on. `row.error` is
+never read: it is free text a worker or a backend wrote, and only `failure_reason` (a
+controlled word) reaches the block.
 """
 
 from __future__ import annotations
@@ -78,19 +82,24 @@ class SubagentsContextReader:
         """The backend, attached after the tool registry is built (as `SubagentDesk`'s is)."""
         self._worker = worker
 
-    async def read(self, *, platform: str, conversation_id: str) -> SubagentsView | None:
+    async def read(
+        self, *, platform: str, conversation_id: str, person_id: str | None,
+    ) -> SubagentsView | None:
         """This room's running jobs and the ones finished within `FINISHED_WINDOW`, or
-        `None` (none, or the read failed)."""
+        `None` (none, or the read failed). `person_id` is the viewer the block serves: the
+        documents are titled for them, and for no one when it is None."""
         try:
             return await asyncio.wait_for(
-                self._read(platform, conversation_id), timeout=self._timeout,
+                self._read(platform, conversation_id, person_id), timeout=self._timeout,
             )
         except Exception:
             log.exception("subagents context read failed; rendering no block")
             self._metrics.inc("nora_errors_total", stage="subagents_context", platform=platform)
             return None
 
-    async def _read(self, platform: str, conversation_id: str) -> SubagentsView | None:
+    async def _read(
+        self, platform: str, conversation_id: str, person_id: str | None,
+    ) -> SubagentsView | None:
         rows = await self._jobs.room_jobs(
             platform=platform, conversation_id=conversation_id, kind=SUBAGENT_KIND,
             limit=self._rows,
@@ -110,13 +119,13 @@ class SubagentsContextReader:
         done.sort(key=lambda r: r.completed_at or r.created_at, reverse=True)
         ordered = live + done
         shown = ordered[: self._shown]
-        lines = await asyncio.gather(*(self._line(r) for r in shown))
+        lines = await asyncio.gather(*(self._line(r, person_id) for r in shown))
         return SubagentsView(
             lines=tuple(lines), now=now, omitted=len(ordered) - len(shown),
             omitted_at_least=len(rows) >= self._rows,
         )
 
-    async def _line(self, row: ComputeJob) -> SubagentLine:
+    async def _line(self, row: ComputeJob, person_id: str | None) -> SubagentLine:
         if _unfinished(row):
             return self._running(row)
         state, delivered = _finished(row)
@@ -125,7 +134,7 @@ class SubagentsContextReader:
             objective=row.task, created_at=row.created_at,
             finished_at=row.completed_at or row.created_at,
             report=(row.result_report or "").strip() or None,
-            documents=await self._titles(row), failure_reason=row.failure_reason,
+            documents=await self._titles(row, person_id), failure_reason=row.failure_reason,
             delivered=delivered,
         )
 
@@ -158,27 +167,32 @@ class SubagentsContextReader:
             checkpoint=getattr(status, "checkpoint", None) or stored, **base,
         )
 
-    async def _titles(self, row: ComputeJob) -> tuple[tuple[str, str], ...]:
-        """Each document's title, read concurrently and each bounded on its own, so one slow
-        or failing read costs that title (`""`, rendered «title not read» beside the id),
-        never the block."""
-        async def one(raw: str) -> tuple[str, str]:
-            if self._documents is None:
-                return raw, ""
+    async def _titles(
+        self, row: ComputeJob, person_id: str | None,
+    ) -> tuple[tuple[str, str], ...]:
+        """`(id, title)` for each document `person_id` may read, read concurrently and each
+        bounded on its own so one slow read costs only that document. A document they may not
+        read, or whose read fails or times out, is left out whole: its id is not shown either."""
+        documents = self._documents
+        if documents is None or person_id is None:
+            return ()
+
+        async def one(raw: str) -> tuple[str, str] | None:
             try:
                 res = await asyncio.wait_for(
-                    self._documents.read(
+                    documents.read(
                         platform=row.platform, conversation_id=row.conversation_id,
-                        document_id=UUID(raw), person_id=row.requester_person_id,
+                        document_id=UUID(raw), person_id=person_id,
                     ),
                     timeout=self._title_timeout,
                 )
-                return raw, (str(res.title) if res.status == "ok" else "")
+                return (raw, str(res.title)) if res.status == "ok" else None
             except Exception:
                 log.exception("subagents context: document %s did not read", raw)
-                return raw, ""
+                return None
 
-        return tuple(await asyncio.gather(*(one(r) for r in row.result_document_ids)))
+        found = await asyncio.gather(*(one(r) for r in row.result_document_ids))
+        return tuple(f for f in found if f is not None)
 
 
 def _unfinished(row: ComputeJob) -> bool:

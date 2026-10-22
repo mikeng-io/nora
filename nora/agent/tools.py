@@ -16588,10 +16588,13 @@ Args:
         tool = "subagent_read"
         if subagent is None or not subagent_on_tag:
             return _subagent_unavailable(tool, "not_wired")
+        # The person asking: the documents of the job are shown to them, never to the requester.
+        tagger = getattr(room, "tagger", None) if room is not None else None
         try:
             view = await subagent.read(
                 platform=room.platform if room is not None else "",
                 conversation_id=bound_conversation_id, job_id=id,
+                person_id=tagger.person_id if tagger is not None else None,
             )
         except Exception:
             log.exception("subagent_read failed")

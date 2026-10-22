@@ -307,7 +307,7 @@ class TranscriptInjection:
             asyncio.gather(
                 self._computer(msg),
                 self._documents(msg, ref),
-                self._subagents(msg),
+                self._subagents(msg, ref),
                 self._memos(msg),
                 self._prefetch(msg, ref),
             ),
@@ -768,13 +768,17 @@ class TranscriptInjection:
             person_id=ref.person_id if ref is not None else None,
         ))
 
-    async def _subagents(self, msg: NormalizedMessage) -> SubagentsView | None:
+    async def _subagents(
+        self, msg: NormalizedMessage, ref: PersonRef | None,
+    ) -> SubagentsView | None:
         """This room's sub-agent jobs, or `None` (no reader, none in the window, or the read
-        failed). `SubagentsContextReader.read` never raises."""
+        failed). The documents are titled for the tagger, `ref`, and for no one without one.
+        `SubagentsContextReader.read` never raises."""
         if self._subagents_reader is None:
             return None
         return await traced_read("subagents", "read", self._subagents_reader.read(
             platform=msg.platform, conversation_id=msg.conversation_id,
+            person_id=ref.person_id if ref is not None else None,
         ))
 
     async def _presence(self, msg: NormalizedMessage) -> Presence | None:
