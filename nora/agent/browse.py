@@ -90,6 +90,8 @@ class _Task:
         if self.finished is not None:
             return "This task already has its answer; a second finish is not recorded. Stop here."
         self.finished = outcome
+        # Revokes the page's action capability with the outcome: nothing acts on it after this.
+        self.page.revoke()
         return ""
 
     def spend(self) -> str | None:

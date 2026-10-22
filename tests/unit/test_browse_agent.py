@@ -18,6 +18,10 @@ class FakePage:
 
     def __init__(self) -> None:
         self.actions: list[tuple[str, Any]] = []
+        self.revoked = False
+
+    def revoke(self) -> None:
+        self.revoked = True
 
     async def navigate(self, url: str) -> str:
         self.actions.append(("navigate", url))
@@ -81,8 +85,9 @@ async def test_browse_done_sets_ok_or_nothing_found():
 
 
 async def test_needs_human_is_unavailable_with_the_reason():
-    task, _ = _task()
+    task, page = _task()
     await _named(task)["browse_needs_human"](reason="a CAPTCHA")
+    assert page.revoked
     assert task.finished is not None
     assert task.finished.status == "unavailable" and task.finished.needs_human
     assert task.finished.reason == "a CAPTCHA"
@@ -100,7 +105,7 @@ async def test_once_browse_done_no_page_tool_touches_the_page_again():
         said = await tools[name](**args)
         text = said if isinstance(said, str) else said["content"][0]["text"]
         assert "finished" in text, (name, text)
-    assert page.actions == before
+    assert page.actions == before and page.revoked
     assert task.finished is not None and task.finished.answer == "Open 9 to 5."
 
 

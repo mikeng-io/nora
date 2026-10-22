@@ -24,6 +24,7 @@ from PIL import Image
 
 from nora.agent.factory import RetryPolicy, create_browse_agent
 from nora.infra.computer.browser import (
+    ActionRefusedError,
     BrowserError,
     BrowserPage,
     CdpConnection,
@@ -45,10 +46,15 @@ class FakeCdp:
 
     def __init__(self, *, nodes: list[dict[str, Any]] | None = None,
                  password_nodes: frozenset[int] = frozenset(),
-                 targets: list[list[dict[str, Any]]] | None = None) -> None:
+                 targets: list[list[dict[str, Any]]] | None = None,
+                 submit_click: bool = False, focus_in_form: bool = False) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.nodes = nodes or []
         self.password_nodes = password_nodes
+        # Whether the element a click or a key names is a form's submit control, and
+        # whether the focused element sits in a form (Enter there submits it).
+        self.submit_click = submit_click
+        self.focus_in_form = focus_in_form
         self.loader = "L1"
         self.loaders_after_input: list[str] = []
         self.target_lists = targets or [[{"targetId": "T0", "type": "page", "url": "about:blank"}]]
@@ -62,9 +68,12 @@ class FakeCdp:
         if method == "Page.createIsolatedWorld":
             return {"executionContextId": 42}
         if method == "Runtime.evaluate":
+            expression = str(params.get("expression"))
+            if "activeElement" in expression:
+                return {"result": {"value": self.focus_in_form}}
             values = {"location.href": "https://example.com", "document.title": "Example",
                       "document.readyState": "complete"}
-            return {"result": {"value": values.get(params.get("expression"), "")}}
+            return {"result": {"value": values.get(expression, "")}}
         if method == "Accessibility.getFullAXTree":
             return {"nodes": self.nodes}
         if method == "DOM.describeNode":
@@ -73,6 +82,8 @@ class FakeCdp:
         if method == "DOM.resolveNode":
             return {"object": {"objectId": "obj"}}
         if method == "Runtime.callFunctionOn":
+            if "form" in str(params.get("functionDeclaration")):
+                return {"result": {"value": self.submit_click}}
             if self.loaders_after_input:
                 self.loader = self.loaders_after_input.pop(0)
             return {"result": {"value": "Newest"}}
@@ -116,6 +127,99 @@ def _quick(monkeypatch):
     async def no_sleep(_: float) -> None:
         return None
     monkeypatch.setattr("nora.infra.computer.browser.asyncio.sleep", no_sleep)
+
+
+# -- the action policy at the page boundary ----------------------------------------
+
+
+def _dispatched(cdp: FakeCdp) -> list[str]:
+    """The input and insertion calls that reached the page."""
+    return [m for m in cdp.methods() if m.startswith("Input.")]
+
+
+async def test_a_click_on_a_submit_control_is_refused_and_nothing_reaches_the_page():
+    """Aikido 8765_44859: a click that submits a form is a write, and the read-only browse
+    contract refuses it without a person's approval. The refusal is checked before any
+    mouse event is sent, so the page sees nothing."""
+    cdp = FakeCdp(nodes=[_node("button", "Send", 3)], submit_click=True)
+    page = _page(cdp)
+    await page.snapshot()
+    with pytest.raises(ActionRefusedError, match="submit"):
+        await page.click("e1")
+    assert _dispatched(cdp) == []
+
+
+async def test_a_plain_click_still_reaches_the_page():
+    cdp = FakeCdp(nodes=[_node("link", "More", 3)])
+    page = _page(cdp)
+    await page.snapshot()
+    await page.click("e1")
+    assert "Input.dispatchMouseEvent" in cdp.methods()
+
+
+async def test_enter_in_a_form_is_refused_and_outside_a_form_it_is_not():
+    cdp = FakeCdp(focus_in_form=True)
+    with pytest.raises(ActionRefusedError, match="submit"):
+        await _page(cdp).press("Enter")
+    assert _dispatched(cdp) == []
+    free = FakeCdp(focus_in_form=False)
+    await _page(free).press("Enter")
+    assert "Input.dispatchKeyEvent" in free.methods()
+
+
+async def test_typing_into_a_password_field_is_refused_and_nothing_is_inserted():
+    cdp = FakeCdp(nodes=[_node("textbox", "Pass", 4)], password_nodes=frozenset({4}))
+    page = _page(cdp)
+    await page.snapshot()
+    with pytest.raises(ActionRefusedError, match="sensitive"):
+        await page.type_text("e1", "hunter2")
+    assert "Input.insertText" not in cdp.methods()
+
+
+async def test_typing_with_submit_into_a_form_is_refused_before_the_text_goes_in():
+    cdp = FakeCdp(nodes=[_node("textbox", "Search", 4)], submit_click=True)
+    page = _page(cdp)
+    await page.snapshot()
+    with pytest.raises(ActionRefusedError, match="submit"):
+        await page.type_text("e1", "cats", submit=True)
+    assert "Input.insertText" not in cdp.methods()
+
+
+async def test_a_revocation_during_a_click_stops_the_mouse_events():
+    """The policy is checked again immediately before the input is sent: a revocation that
+    lands while the click is being prepared (here, on its box lookup) sends no mouse event."""
+
+    class RevokeOnBox(FakeCdp):
+        page: BrowserPage | None = None
+
+        async def call(self, method: str, params: dict[str, Any] | None = None, **kwargs: Any):
+            if method == "DOM.getBoxModel" and self.page is not None:
+                self.page.revoke()
+            return await super().call(method, params, **kwargs)
+
+    cdp = RevokeOnBox(nodes=[_node("link", "More", 3)])
+    page = _page(cdp)
+    cdp.page = page
+    await page.snapshot()
+    with pytest.raises(ActionRefusedError):
+        await page.click("e1")
+    assert "Input.dispatchMouseEvent" not in cdp.methods()
+
+
+async def test_a_revoked_page_dispatches_nothing_at_all():
+    """`browse_needs_human` and `browse_done` revoke the page: even an action that would be
+    allowed is refused, so no later call can act on the page."""
+    cdp = FakeCdp(nodes=[_node("link", "More", 3)])
+    page = _page(cdp)
+    await page.snapshot()
+    page.revoke()
+    with pytest.raises(ActionRefusedError):
+        await page.click("e1")
+    with pytest.raises(ActionRefusedError):
+        await page.navigate("https://example.com/next")
+    with pytest.raises(ActionRefusedError):
+        await page.press("Tab")
+    assert _dispatched(cdp) == [] and "Page.navigate" not in cdp.methods()
 
 
 # -- reads run in an isolated world -------------------------------------------
