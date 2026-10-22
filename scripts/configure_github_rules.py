@@ -8,6 +8,12 @@ owner `gh` login, never from a PR job:
     python3 scripts/configure_github_rules.py           # show what would change
     python3 scripts/configure_github_rules.py --apply   # apply, then read it all back
 
+`pr-metadata` is the job that runs the PR content check; it fails when the title, body or
+branch break the rules. The `PR content` check run it also publishes is NOT required: GitHub's
+merge evaluation answered "Required status check 'PR content' is expected" for it although it
+was green, because it is created through the Checks API rather than by a job, and that blocked
+every merge.
+
 CodeQL, dependency review and the wiki build are deliberately not required. The first two
 are skipped while the repo is private (their matrix job never reports its real name) and
 Aikido covers them; the wiki build only runs on some paths, so requiring it would block
@@ -22,7 +28,7 @@ import sys
 from scripts.configure_public_github import api
 
 GITHUB_ACTIONS_APP_ID = 15368
-REQUIRED = ["checks", "PR content"]
+REQUIRED = ["checks", "pr-metadata"]
 BRANCH_RULESET = "master requires a conforming pull request"
 TAG_RULESET = "Release tags are immutable"
 REPO_SETTINGS = {

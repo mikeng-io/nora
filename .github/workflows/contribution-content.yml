@@ -21,9 +21,9 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: contribution-${{ github.event.pull_request.number || github.event.issue.number || inputs.number }}-${{ inputs.kind || (github.event_name == 'pull_request_target' && 'pr' || 'issue') }}
-  cancel-in-progress: true
+# No concurrency group: a run cancelled by a newer event leaves a cancelled `pr-metadata`
+# check on the same commit, and the merge rules treat that as unsatisfied even though a
+# newer run is green. Every run reads the live title and body, so none can go stale.
 
 jobs:
   pr-metadata:

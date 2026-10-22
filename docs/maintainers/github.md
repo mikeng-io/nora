@@ -95,7 +95,8 @@ python3 scripts/configure_github_rules.py --apply    # write it, then read it al
 ```
 
 `master` needs a pull request, merge commits only, resolved conversations, an up-to-date branch
-and the `checks` and `PR content` statuses; force-push and deletion are blocked, and `v*` tags
+and the `checks` and `pr-metadata` jobs (the second runs the PR content check and fails on a bad
+title, body or branch); force-push and deletion are blocked, and `v*` tags
 cannot be moved or deleted. There are no bypass actors, so the owner cannot merge a failing PR
 either; the way out is editing the ruleset in the repository settings. Only checks that report
 on every pull request may be required: CodeQL and dependency review are skipped while private
