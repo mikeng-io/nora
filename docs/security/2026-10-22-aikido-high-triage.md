@@ -250,7 +250,7 @@ again.
 
 ### Leaked-secret findings (17)
 
-All seventeen were opened individually and the reported value was classified
+All seventeen are **high severity, `leaked_secret`**, and were opened individually and the reported value was classified
 without printing it. None is an authentication secret. The recurring causes are
 SHA-256 checksums, an OpenPGP fingerprint, placeholder identifiers in examples,
 base64-encoded Signal conversation ids in eval fixtures, and public model /
