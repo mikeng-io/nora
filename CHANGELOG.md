@@ -1,5 +1,19 @@
 # Changelog
 
+## [6.6.4](https://github.com/mikeng-io/nora/compare/v6.6.3...v6.6.4) (2026-10-22)
+
+
+### Security
+
+* **build:** pin every base image to a digest and let Dependabot keep them current ([3ce8640](https://github.com/mikeng-io/nora/commit/3ce86406bea0c61a003bc12fc37a950691af0a88))
+
+## [6.6.3](https://github.com/mikeng-io/nora/compare/v6.6.2...v6.6.3) (2026-10-22)
+
+
+### Security
+
+* **deps:** pin patched undici, pino, dompurify, es-module-lexer and vitest ([31b2579](https://github.com/mikeng-io/nora/commit/31b2579daa420deeee7a9c4141e13d97e3900f48))
+
 ## [6.6.2](https://github.com/mikeng-io/nora/compare/v6.6.1...v6.6.2) (2026-10-22)
 
 
