@@ -738,10 +738,17 @@ class SqlPersonaInputs:
         # Context has no citation/evidence: it cannot mint an occasion. One
         # snapshot per call (one day per windowed history call), not per stay.
         routine_json = json.dumps(routine, ensure_ascii=False)
-        out = [PersonSourceRevision(domain="rollup", source=f"presence:routine:{person}",
-            subject=person, revision=hashlib.sha256(routine_json.encode()).hexdigest(),
+        routine_source = f"presence:routine:{person}"
+        routine_revision = hashlib.sha256(routine_json.encode()).hexdigest()
+        pending_routine = await self._pending(key=key, domain="rollup", limit=1,
+            include_settled=include_settled, stmt=sa.select(
+                sa.literal(routine_source).label("source"),
+                sa.literal(routine_revision).label("revision")))
+        out = [PersonSourceRevision(domain="rollup", source=routine_source,
+            subject=person, revision=routine_revision,
             state="computed", recorded_at="unknown", as_of=until_ms,
-            properties=(("routine", routine_json),))] if any(routine.values()) else []
+            properties=(("routine", routine_json),))] if pending_routine and any(
+                routine.values()) else []
         for row, revision in rows:
             cite = f"presence:{row.kind}:{person}:{row.valid_from_ms}"
             fields = {k: v for k, v in row.fields.items()
