@@ -21,6 +21,7 @@ Wired as a `commit-msg` hook (see `.githooks/README.md`); the Makefile `hooks`
 target installs it. It reads the message file git passes as $1 and exits 1 on
 the first violation, printing which rule and where the convention is written.
 """
+
 from __future__ import annotations
 
 import re
@@ -50,6 +51,14 @@ TYPES = {
 }
 
 TYPES_RE = "|".join(sorted(TYPES))
+
+# Types a changelog reader sees (release-please's visible set). Their commit says why.
+BODY_TYPES = frozenset({"feat", "fix", "security", "perf", "change", "doctrine"})
+MIN_BODY = 20
+# Trailers are metadata, not the why. `PII-Ack` is appended by the commit-msg scanner.
+TRAILER_RE = re.compile(
+    r"^(Co-Authored-By|Claude-Session|Signed-off-by|Release-As|PII-Ack|Reviewed-by):", re.I
+)
 SUBJECT_RE = re.compile(rf"^({TYPES_RE})(\([^)]+\))?!?: .+")
 
 # Bare `Merge pull request #N from ...` / `Merge branch ...` are GitHub's
@@ -71,9 +80,7 @@ AUTHORED_MERGE_RE = re.compile(r"^merge:\s+\S")  # merge: <non-empty arc> — cu
 # The GitHub-default bodies, checked AFTER the authored prefix matched: without
 # this, `merge: Merge pull request #N from x` would pass on the prefix alone — the
 # exact defect this script exists to catch, wearing the sanctioned type.
-DEFAULT_BODY_RE = re.compile(
-    r"^Merge (pull request|branch|remote-tracking branch)\b"
-)
+DEFAULT_BODY_RE = re.compile(r"^Merge (pull request|branch|remote-tracking branch)\b")
 OLD_MERGE_RE = re.compile(r"^Merge\s+[^ ]*\s*:")  # Merge <branch>: <desc> — superseded
 
 
@@ -152,6 +159,33 @@ def check_subject(subject: str) -> list[str]:
     return problems
 
 
+def message_body(lines: list[str]) -> str:
+    """The prose after the subject, without git comment lines and trailers."""
+    kept = [x for x in lines[1:] if not x.startswith("#") and not TRAILER_RE.match(x.strip())]
+    return "\n".join(kept).strip()
+
+
+def check_body(subject: str, body: str) -> list[str]:
+    """A user-visible commit must carry a body: the subject is the changelog line,
+    the body is the reason. Merge, revert and hidden types are not asked for one."""
+    match = SUBJECT_RE.match(subject)
+    if not match or match.group(1) not in BODY_TYPES or len(body) >= MIN_BODY:
+        return []
+    return [
+        f"`{match.group(1)}:` commits need a body of at least {MIN_BODY} characters: what was\n"
+        "    broken, what was measured, what shipped. The subject is the changelog line;\n"
+        "    the body is the reason. (CONTRIBUTING.md §Commit messages)"
+    ]
+
+
+def check_message(message: str) -> list[str]:
+    """Subject and body problems for one whole commit message."""
+    lines = message.splitlines()
+    if not lines or not lines[0].strip():
+        return ["commit subject is empty."]
+    return check_subject(lines[0].rstrip()) or check_body(lines[0].rstrip(), message_body(lines))
+
+
 def main(argv: list[str]) -> int:
     if len(argv) != 2:
         print("usage: check_commit_subject.py <commit-msg-file>", file=sys.stderr)
@@ -162,7 +196,7 @@ def main(argv: list[str]) -> int:
         print("commit subject is empty.", file=sys.stderr)
         return 1
     # A merge commit whose subject is already authored passes through the same check.
-    problems = check_subject(lines[0].rstrip())
+    problems = check_message("\n".join(lines))
     if problems:
         print("commit subject violates the convention:", file=sys.stderr)
         print(f"    subject: {lines[0]!r}", file=sys.stderr)
