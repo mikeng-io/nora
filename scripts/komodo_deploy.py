@@ -26,15 +26,33 @@ COHORT = {
 }
 
 
-def run(command: list[str], *, output: bool = False) -> str:
+class CommandError(RuntimeError):
+    """Only safe metadata may cross the Komodo output boundary."""
+
+    def __init__(self, stage: str, returncode: int, diagnostic: Path | None):
+        self.returncode = returncode
+        detail = (f'private diagnostic: {diagnostic}' if diagnostic
+                  else 'private diagnostic unavailable')
+        super().__init__(f'{stage} failed (exit {returncode}); {detail}')
+
+
+def run(command: list[str], *, stage: str, output: bool = False) -> str:
     # Capture subprocess output: Compose config and validation errors can quote secrets.
     result = subprocess.run(  # noqa: S603 -- validated Compose argv, no shell
-        command, stdin=subprocess.DEVNULL, capture_output=True,
-                            text=True, check=False)
+        command, stdin=subprocess.DEVNULL, capture_output=True, check=False)
     if result.returncode:
-        raise RuntimeError(f'{command[0]} operation failed (exit {result.returncode}); '
-                           'inspect privately on the host')
-    return result.stdout if output else ''
+        diagnostic = None
+        try:
+            # mkstemp semantics: exclusive creation, mode 0600 even with a permissive umask.
+            with tempfile.NamedTemporaryFile(prefix='failure-', suffix='.log',
+                                             dir=Path(__file__).parent, delete=False) as private:
+                private.write(b'stdout:\n' + result.stdout + b'\nstderr:\n' + result.stderr)
+                diagnostic = Path(private.name)
+        except OSError:
+            # Recording failure must neither leak its exception nor hide the command's exit.
+            diagnostic = None
+        raise CommandError(stage, result.returncode, diagnostic) from None
+    return result.stdout.decode(errors='replace') if output else ''
 
 
 def compose_prefix(command: list[str]) -> tuple[list[str], str]:
@@ -63,12 +81,21 @@ def expected_images(manifest: dict, *, site: bool) -> dict[str, str]:
     return {s: image for s, image in images.items() if s != 'site' or site}
 
 
-def deploy(prefix: list[str], manifest: dict, runtime: Path, project: str, *, site: bool) -> None:
+def apply_release(prefix: list[str], manifest: dict, runtime: Path, project: str,
+                  *, site: bool) -> None:
+    """Under the shared lock, allow preflight retries but never repeat a failed recreation."""
     images = expected_images(manifest, site=site)
+    selected = {key: manifest[key] for key in ('version', 'commit', 'services')}
+    fingerprint = hashlib.sha256(json.dumps(selected, sort_keys=True).encode()).hexdigest()
+    marker = Path(__file__).with_name('release-attempt.json')
+    if marker.exists() and json.loads(marker.read_text())['manifest_sha256'] == fingerprint:
+        raise RuntimeError('candidate blocked after failed/interrupted deployment; '
+                           'inspect privately')
     if site:
         prefix = [*prefix, '--profile', 'site']
     # Resolve only in this captured host process; never return this config to Komodo.
-    resolved = json.loads(run([*prefix, 'config', '--format', 'json'], output=True))
+    resolved = json.loads(run([*prefix, 'config', '--format', 'json'],
+                              stage='compose-config', output=True))
     if resolved['name'] != project:
         raise ValueError('Compose project differs from installed project')
     for service, image in images.items():
@@ -85,7 +112,7 @@ def deploy(prefix: list[str], manifest: dict, runtime: Path, project: str, *, si
         raise ValueError('candidate config mount differs from validated host config')
     # Pull every candidate before stopping any running service. Infrastructure is excluded.
     print('PULL: fetch every owned image before recreation', flush=True)
-    run([*prefix, 'pull', *images])
+    run([*prefix, 'pull', *images], stage='pull')
     print('VALIDATE: candidate image against installed host config', flush=True)
     # A copy avoids Docker creating a missing mount source in the runtime directory.
     # This directory must be bind-mounted at the SAME path in Periphery and the host.
@@ -97,52 +124,40 @@ def deploy(prefix: list[str], manifest: dict, runtime: Path, project: str, *, si
         run(['docker', 'run', '--rm', '--network', 'none',
              '--user', f'{os.getuid()}:{os.getgid()}',
              '-v', f'{config}:/tmp/config.toml:ro', '--entrypoint', '/app/.venv/bin/nora',
-             images['nora'], 'config', 'validate', '--config', '/tmp/config.toml'])  # noqa: S108 -- container path
+             images['nora'], 'config', 'validate', '--config', '/tmp/config.toml'],  # noqa: S108 -- container path
+            stage='config-validation')
+    # Only recreation can change the running cohort. Write BEFORE it so process
+    # death, partial recreation and verifier SystemExit all leave the candidate blocked.
+    temporary = marker.with_suffix('.tmp')
+    temporary.write_text(json.dumps({'manifest_sha256': fingerprint,
+                                     'version': manifest['version'], 'commit': manifest['commit']}))
+    temporary.chmod(0o600)
+    temporary.replace(marker)
     print('RECREATE: owned service cohort; infrastructure excluded', flush=True)
     run([*prefix, 'up', '-d', '--no-deps', '--no-build', '--pull', 'never',
-         '--force-recreate', *images])
+         '--force-recreate', *images], stage='recreate')
     spec = importlib.util.spec_from_file_location('verify_deploy',
                                                  Path(__file__).with_name('verify-deploy.py'))
     if spec is None or spec.loader is None:
         raise RuntimeError('installed verifier missing')
     verifier = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(verifier)
+    # The standalone verifier includes raw Docker stderr in SystemExit. Keep its
+    # subprocesses behind this wrapper's private diagnostic boundary as well.
+    verifier._docker = lambda *args: run(['docker', *args], stage='readback', output=True)
     print('READBACK: exact service membership, image IDs, health and version', flush=True)
     verifier.verify_services(project, images)
     stamp = json.loads(run([*prefix, 'exec', '-T', 'nora', '/app/.venv/bin/python', '-c',
                             'import json; print(json.dumps(json.load(open('
-                            '"/app/nora/version.json"))))'], output=True))
+                            '"/app/nora/version.json"))))'], stage='stamp-readback', output=True))
     if (stamp['version'], stamp['commit']) != (manifest['version'], manifest['commit']):
         raise ValueError('running Nora stamp differs from release')
     receipt = Path(__file__).with_name('release-deploy.json')
     candidate = receipt.with_suffix('.tmp')
     candidate.write_text(json.dumps(manifest, indent=2) + '\n')
     candidate.replace(receipt)
-    print(f'VERIFIED: deployed {manifest["version"]}; receipt recorded on host')
-
-
-def apply_release(prefix: list[str], manifest: dict, runtime: Path, project: str,
-                  *, site: bool) -> None:
-    """Under the shared lock, refuse a failed/interrupted candidate until cleared.
-
-    Komodo cannot disable a running resource's schedule. This one marker prevents
-    its next change check from recreating a partially deployed cohort again.
-    Write BEFORE the attempt so process death and verifier SystemExit are covered.
-    """
-    expected_images(manifest, site=site)
-    selected = {key: manifest[key] for key in ('version', 'commit', 'services')}
-    fingerprint = hashlib.sha256(json.dumps(selected, sort_keys=True).encode()).hexdigest()
-    marker = Path(__file__).with_name('release-attempt.json')
-    if marker.exists() and json.loads(marker.read_text())['manifest_sha256'] == fingerprint:
-        raise RuntimeError('candidate blocked after failed/interrupted deployment; '
-                           'inspect privately')
-    temporary = marker.with_suffix('.tmp')
-    temporary.write_text(json.dumps({'manifest_sha256': fingerprint,
-                                     'version': manifest['version'], 'commit': manifest['commit']}))
-    temporary.chmod(0o600)
-    temporary.replace(marker)
-    deploy(prefix, manifest, runtime, project, site=site)
     marker.unlink()  # only a fully verified transaction clears the outstanding attempt
+    print(f'VERIFIED: deployed {manifest["version"]}; receipt recorded on host')
 
 
 def main() -> None:
@@ -157,7 +172,7 @@ def main() -> None:
     if operation == 'config':
         # Komodo stores this output. Resolve no host env values or paths here.
         print(run([*prefix, 'config', '--no-interpolate', '--no-env-resolution',
-                   '--no-path-resolution'], output=True), end='')
+                   '--no-path-resolution'], stage='config-discovery', output=True), end='')
         return
     if not args.runtime_root.is_absolute() or not re.fullmatch(r'[a-z0-9_-]+', args.project):
         raise ValueError('install an absolute runtime path and fixed Compose project')
@@ -175,6 +190,10 @@ def main() -> None:
 if __name__ == '__main__':
     try:
         main()
+    except CommandError as error:
+        print(f'FAILED: {error}; no successful receipt was recorded', file=sys.stderr)
+        exit_code = error.returncode if error.returncode > 0 else 128 - error.returncode
+        raise SystemExit(exit_code) from None
     except (ValueError, RuntimeError, KeyError, OSError, json.JSONDecodeError) as error:
         # Do not echo data or command argv: they can contain private host configuration.
         print(f'FAILED: release deployment ({type(error).__name__}); '
