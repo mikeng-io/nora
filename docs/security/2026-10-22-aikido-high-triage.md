@@ -254,27 +254,28 @@ All seventeen were opened individually and the reported value was classified
 without printing it. None is an authentication secret. The recurring causes are
 SHA-256 checksums, an OpenPGP fingerprint, placeholder identifiers in examples,
 base64-encoded Signal conversation ids in eval fixtures, and public model /
-tokenizer hashes.
+tokenizer hashes. Every row below is one finding; its verdict is **false
+positive**.
 
-| ID | Reported location | What the value actually is | Why it is not a secret |
-|---|---|---|---|
-| 8764_82355 | `evals/retrieval_bakeoff/qwen_llama.py:51` | public Qwen model repo/revision names and tokenizer constants around the `__all__` block | model identifiers and hashes, not credentials |
-| 8764_82525 | `design/04-config-identity.md:102` (value at `:107`) | commented placeholder Discord snowflake in a `persons.yaml` example | placeholder, not a live client id |
-| 8764_82516 | `deploy/signal-cli/Dockerfile:19` | `ARG SIGNAL_CLI_SHA256` 64-hex checksum | integrity digest |
-| 8764_82513 | `deploy/signal-cli/fetch.sh:9` | 40-hex OpenPGP fingerprint in a comment | public key fingerprint |
-| 8764_82495 | `evals/corpora/injections.yaml:123` | base64-encoded Signal conversation id in the fixture snapshot | eval identifier, not a credential |
-| 8764_82489 | `evals/corpora/trigger.yaml:170` | boolean fixture metadata; adjacent anchor is a base64 conversation id | no secret on the line |
-| 8764_82485 | `evals/corpora/relevance_gate.yaml:153-154` | Discord test channel/snowflake id | public id shape, fixture value |
-| 8764_82479 | `evals/corpora/near_miss.yaml:84` | `entry: tag`; adjacent `snapshot: *room_a` resolves to a base64 conversation id | eval identifier |
-| 8764_82477 | `evals/corpora/no_trigger.yaml:130` | `entry: tag`; adjacent anchor is a base64 conversation id | eval identifier |
-| 8764_82471 | `evals/corpora/participation.yaml:184` | fixture input containing a URL; the case snapshot uses a base64 conversation id | no credential |
-| 8764_82465 | `evals/corpora/injections.yaml:90` | comment line; nearby fixture snapshots hold base64 conversation ids | no credential |
-| 8764_82460 | `evals/corpora/trigger.yaml:90` | case name; its snapshot anchor is a base64 conversation id | eval identifier |
-| 8764_82378 | `evals/retrieval_bakeoff/results/…text_image.json:721` | `tokenizer_sha256` 64-hex | model-file hash |
-| 8764_82372 | `evals/retrieval_bakeoff/results/…names.json:720` | `tokenizer_sha256` 64-hex | model-file hash |
-| 8764_82366 | `evals/retrieval_bakeoff/results/…cantonese.json:785` | `tokenizer_sha256` 64-hex | model-file hash |
-| 8764_82365 | `evals/retrieval_bakeoff/wemm_normaliser_golden.py:31` | adjacent `TOKENIZER_SHA` 64-hex | model-file hash |
-| 8764_82360 | `evals/retrieval_bakeoff/adapters.py:264` | comment citing the tokenizer SHA-256 | model-file hash |
+| ID | Reported location | What the value actually is | Why it is not a secret | Trust boundary / reversal |
+|---|---|---|---|---|
+| 8764_82355 | `evals/retrieval_bakeoff/qwen_llama.py:51` | public Qwen model repo/revision names and tokenizer constants around the `__all__` block | model identifiers and hashes, not credentials | none: public/fixture data; reversal = a live credential or private identifier |
+| 8764_82525 | `design/04-config-identity.md:102` (value at `:107`) | commented placeholder Discord snowflake in a `persons.yaml` example | placeholder, not a live client id | none: public/fixture data; reversal = a live credential or private identifier |
+| 8764_82516 | `deploy/signal-cli/Dockerfile:19` | `ARG SIGNAL_CLI_SHA256` 64-hex checksum | integrity digest | none: public/fixture data; reversal = a live credential or private identifier |
+| 8764_82513 | `deploy/signal-cli/fetch.sh:9` | 40-hex OpenPGP fingerprint in a comment | public key fingerprint | none: public/fixture data; reversal = a live credential or private identifier |
+| 8764_82495 | `evals/corpora/injections.yaml:123` | base64-encoded Signal conversation id in the fixture snapshot | eval identifier, not a credential | none: public/fixture data; reversal = a live credential or private identifier |
+| 8764_82489 | `evals/corpora/trigger.yaml:170` | boolean fixture metadata; adjacent anchor is a base64 conversation id | no secret on the line | none: public/fixture data; reversal = a live credential or private identifier |
+| 8764_82485 | `evals/corpora/relevance_gate.yaml:153-154` | Discord test channel/snowflake id | public id shape, fixture value | none: public/fixture data; reversal = a live credential or private identifier |
+| 8764_82479 | `evals/corpora/near_miss.yaml:84` | `entry: tag`; adjacent `snapshot: *room_a` resolves to a base64 conversation id | eval identifier | none: public/fixture data; reversal = a live credential or private identifier |
+| 8764_82477 | `evals/corpora/no_trigger.yaml:130` | `entry: tag`; adjacent anchor is a base64 conversation id | eval identifier | none: public/fixture data; reversal = a live credential or private identifier |
+| 8764_82471 | `evals/corpora/participation.yaml:184` | fixture input containing a URL; the case snapshot uses a base64 conversation id | no credential | none: public/fixture data; reversal = a live credential or private identifier |
+| 8764_82465 | `evals/corpora/injections.yaml:90` | comment line; nearby fixture snapshots hold base64 conversation ids | no credential | none: public/fixture data; reversal = a live credential or private identifier |
+| 8764_82460 | `evals/corpora/trigger.yaml:90` | case name; its snapshot anchor is a base64 conversation id | eval identifier | none: public/fixture data; reversal = a live credential or private identifier |
+| 8764_82378 | `evals/retrieval_bakeoff/results/…text_image.json:721` | `tokenizer_sha256` 64-hex | model-file hash | none: public/fixture data; reversal = a live credential or private identifier |
+| 8764_82372 | `evals/retrieval_bakeoff/results/…names.json:720` | `tokenizer_sha256` 64-hex | model-file hash | none: public/fixture data; reversal = a live credential or private identifier |
+| 8764_82366 | `evals/retrieval_bakeoff/results/…cantonese.json:785` | `tokenizer_sha256` 64-hex | model-file hash | none: public/fixture data; reversal = a live credential or private identifier |
+| 8764_82365 | `evals/retrieval_bakeoff/wemm_normaliser_golden.py:31` | adjacent `TOKENIZER_SHA` 64-hex | model-file hash | none: public/fixture data; reversal = a live credential or private identifier |
+| 8764_82360 | `evals/retrieval_bakeoff/adapters.py:264` | comment citing the tokenizer SHA-256 | model-file hash | none: public/fixture data; reversal = a live credential or private identifier |
 
 Reversal for any of these: a value that authenticates to a third-party service,
 appears in `.env`/CI as a live credential, or is a private identifier rather than
