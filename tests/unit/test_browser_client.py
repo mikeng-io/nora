@@ -138,7 +138,7 @@ def _dispatched(cdp: FakeCdp) -> list[str]:
 
 
 async def test_a_click_on_a_submit_control_is_refused_and_nothing_reaches_the_page():
-    """Aikido 8765_44859: a click that submits a form is a write, and the read-only browse
+    """Aikido 8765_44853: a click that submits a form is a write, and the read-only browse
     contract refuses it without a person's approval. The refusal is checked before any
     mouse event is sent, so the page sees nothing."""
     cdp = FakeCdp(nodes=[_node("button", "Send", 3)], submit_click=True)
