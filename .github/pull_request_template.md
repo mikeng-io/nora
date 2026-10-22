@@ -11,7 +11,9 @@
 ## Gate on the merged tree
 
 <!-- Run make gate once on the final head. Record its actual exit code and
-     summary; name failures explicitly. make full-gate is the full suite. -->
+     summary; name failures explicitly. make full-gate is the full suite.
+     Then the review level (none / light / full) and the triage line,
+     e.g. "light; 1 BLOCKER fixed, 2 FIX-IF-CHEAP, 1 ISSUE #N, 2 DROP". -->
 
 ## Closes
 
