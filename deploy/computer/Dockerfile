@@ -11,7 +11,7 @@
 # hash (requirements.txt, from `uv pip compile --generate-hashes`). Bump those
 # deliberately with a rebuild. Node is the exception: its Node 24 / trixie
 # tag floats patch updates, refreshed by `nora-computer build` with --pull.
-FROM node:24-trixie-slim AS node
+FROM node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS node
 
 FROM ubuntu@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
 
