@@ -268,12 +268,16 @@ class DocumentStore(Protocol):
         platform: str,
         conversation_ids: frozenset[str],
         limit: int,
+        person_id: str,
+        rooms: frozenset[RoomKey],
         states: tuple[DocumentState, ...] = ("active",),
     ) -> tuple[DocumentSummary, ...]:
         """The documents IN `states` (by default the active ones) made in ONE room
-        (`platform` and any of the room's conversation ids), most recently revised first, at
-        most `limit`. It is the room's own list, not a person's: no visibility check, because
-        everyone the room names already reads these. It loads no spec and no text: the prompt
+        (`platform` and any of the room's conversation ids) that `person_id` may read (the
+        creator's, and every one in a room `rooms` names), most recently revised first, at
+        most `limit`. The visibility is applied BEFORE the limit, so the limit counts only what
+        the asker may read: a filter after a bounded read drops an older document of their own
+        behind newer ones of others (Aikido, PR 203). It loads no spec and no text: the prompt
         block reads this on every turn."""
         ...
 

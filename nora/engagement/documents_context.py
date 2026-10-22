@@ -13,11 +13,12 @@ and to nobody else.
 
 **This room's documents only, and only those the asker may read.** The room is matched by
 every conversation id it answers to, as `DocumentService` matches it, and a document made in
-another room never appears, whoever made it. Within the room the list is filtered by
-`may_read` for the turn's requester: the creator's own, and everything in a room that names
-them. In a `persons = "*"` room that is the creator's documents only, so another member's
-creator-only ids are not enumerated (8765_44827). A turn with no requester (a participation
-turn) renders no block at all.
+another room never appears, whoever made it. Within the room the store lists only what the
+turn's requester may read (`may_read`: the creator's own, and everything in a room that names
+them), and it applies that before each limit, so the block's N are N documents the asker may
+see (Aikido, PR 203). In a `persons = "*"` room that is the creator's documents only, so another
+member's creator-only ids are not enumerated (8765_44827). A turn with no requester (a
+participation turn) renders no block at all.
 
 **Never raises, and never a wrong id.** A store that is down, or slow past `timeout`,
 is logged, counted (`nora_errors_total{stage="documents_context"}`) and read as no
@@ -31,7 +32,7 @@ import logging
 from collections.abc import Callable
 from datetime import datetime
 
-from nora.domain.documents import DocumentStore, DocumentSummary, RoomKey, may_read
+from nora.domain.documents import DocumentStore, DocumentSummary, RoomKey
 from nora.domain.documents_context import (
     DOCUMENTS_SHOWN,
     PUT_AWAY_SHOWN,
@@ -75,14 +76,17 @@ class DocumentsContextReader:
         named = self._rooms_of(person_id) if self._rooms_of is not None else frozenset()
         try:
             ids = self._room_ids(platform, conversation_id) | {conversation_id}
+            # The store applies the visibility before each limit, so a limit counts only
+            # documents this person may read (Aikido, PR 203).
             found, away = await asyncio.wait_for(
                 asyncio.gather(
                     self._store.list_room(
-                        platform=platform, conversation_ids=ids, limit=self._shown
+                        platform=platform, conversation_ids=ids, limit=self._shown,
+                        person_id=person_id, rooms=named,
                     ),
                     self._store.list_room(
                         platform=platform, conversation_ids=ids, limit=self._put_away,
-                        states=("archived", "deleted"),
+                        person_id=person_id, rooms=named, states=("archived", "deleted"),
                     ),
                 ),
                 timeout=self._timeout,
@@ -91,12 +95,10 @@ class DocumentsContextReader:
             log.exception("documents context read failed; rendering no block")
             self._metrics.inc("nora_errors_total", stage="documents_context", platform=platform)
             return None
-        found = [d for d in found if may_read(d, person_id, named)]
-        away = [d for d in away if may_read(d, person_id, named)]
         if not found and not away:
             return None
         return DocumentsView(
-            lines=tuple(_line(d) for d in found[: self._shown]),
+            lines=tuple(_line(d) for d in found),
             now=self._clock(),
             put_away=tuple(_line(d) for d in away),  # bounded by the read's own limit
         )

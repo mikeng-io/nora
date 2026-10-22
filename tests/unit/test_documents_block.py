@@ -325,3 +325,40 @@ async def test_a_turn_with_no_requester_renders_no_documents_block():
     assert await _reader(store).read(
         person_id=None, platform=ROOM[0], conversation_id=ROOM[1],
     ) is None
+
+
+async def test_a_wildcard_rooms_old_document_is_listed_past_newer_ones_of_others():
+    """Aikido (medium, PR 203): the store was asked for the newest `DOCUMENTS_SHOWN` rows of the
+    room and filtered afterwards, so the asker's own older document fell behind five newer
+    ones of other members and no line for it was rendered. The visibility is applied in the
+    store query, before the limit, so the asker's document is listed."""
+    store = FakeDocumentStore()
+    mine = await _make(store, "Mine", by="mei")
+    for n in range(DOCUMENTS_SHOWN + 1):
+        await _make(store, f"Theirs {n}", by="ken")
+    view = await _wildcard_reader(store).read(
+        person_id="mei", platform=ROOM[0], conversation_id=ROOM[1])
+    assert [line.document_id for line in view.lines] == [str(mine)]
+
+
+async def test_a_wildcard_rooms_old_put_away_document_is_listed_past_newer_ones_of_others():
+    """The same limit-before-filter defect on the put-away list (`PUT_AWAY_SHOWN`)."""
+    store = FakeDocumentStore()
+    mine = await _make(store, "Mine", by="mei")
+    await store.set_state(document_id=mine, state="archived", set_by="mei")
+    for n in range(PUT_AWAY_SHOWN + 1):
+        theirs = await _make(store, f"Theirs {n}", by="ken")
+        await store.set_state(document_id=theirs, state="archived", set_by="ken")
+    view = await _wildcard_reader(store).read(
+        person_id="mei", platform=ROOM[0], conversation_id=ROOM[1])
+    assert view.lines == ()
+    assert [line.document_id for line in view.put_away] == [str(mine)]
+
+
+async def test_a_member_the_room_names_reads_the_whole_list_past_their_own():
+    """The positive control for the named room: a member the room names reads what others made
+    there too (`rooms` is what the store's visibility is built from)."""
+    store = FakeDocumentStore()
+    theirs = await _make(store, "Theirs", by="ken")
+    view = await _reader(store).read(person_id="mei", platform=ROOM[0], conversation_id=ROOM[1])
+    assert [line.document_id for line in view.lines] == [str(theirs)]

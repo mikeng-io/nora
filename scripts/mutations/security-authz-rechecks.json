@@ -49,11 +49,25 @@
     "target": "tests/unit/test_documents_service.py::test_a_wildcard_room_document_cannot_be_revised_by_a_non_creator"
   },
   {
-    "name": "8765_44827 <documents> block: the room's whole list is shown to any member, so creator-only ids are enumerated",
-    "file": "nora/engagement/documents_context.py",
-    "old": "        found = [d for d in found if may_read(d, person_id, named)]",
-    "new": "        found = [d for d in found if True]",
+    "name": "8765_44827 <documents> block: the store lists the room's whole list to any member, so creator-only ids are enumerated",
+    "file": "nora/testing/fakes.py",
+    "old": "            and d.summary.state in states\n            and self._sees(d.summary, person_id, rooms)\n",
+    "new": "            and d.summary.state in states\n",
     "target": "tests/unit/test_documents_block.py::test_a_wildcard_room_block_lists_only_the_askers_own_documents"
+  },
+  {
+    "name": "8765_44827 list_room visibility: the store returns the room's documents to any asker, before the limit",
+    "file": "nora/infra/sql/documents.py",
+    "old": "            _state().in_(states),\n            _visible(person_id, rooms),\n",
+    "new": "            _state().in_(states),\n",
+    "target": "tests/contract/test_document_store_contract.py::test_list_room_applies_the_visibility_before_the_limit[sql]"
+  },
+  {
+    "name": "8765_44827 <documents> reader: a member the room names is read the room's list with no grant",
+    "file": "nora/engagement/documents_context.py",
+    "old": "                        person_id=person_id, rooms=named,\n                    ),\n",
+    "new": "                        person_id=person_id, rooms=frozenset(),\n                    ),\n",
+    "target": "tests/unit/test_documents_block.py::test_a_member_the_room_names_reads_the_whole_list_past_their_own"
   },
   {
     "name": "8765_44856 presence: an unmapped account in a flagged room no longer refuses the presence scope",

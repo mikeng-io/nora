@@ -77,10 +77,10 @@
     "target": "tests/unit/test_documents_service.py::test_a_revision_of_an_archived_or_deleted_document_is_refused_as_not_active"
   },
   {
-    "name": "sql list_room: archived and deleted documents reach the block",
+    "name": "sql list_room: archived and deleted documents reach the block (visibility now in the same filter)",
     "file": "nora/infra/sql/documents.py",
-    "old": "            _D.platform == platform, _D.conversation_id.in_(ids), _state().in_(states)\n",
-    "new": "            _D.platform == platform, _D.conversation_id.in_(ids)\n",
+    "old": "            _state().in_(states),\n            _visible(person_id, rooms),\n",
+    "new": "            _visible(person_id, rooms),\n",
     "target": "tests/contract/test_document_store_contract.py::test_list_room_leaves_out_archived_and_deleted_documents[sql]"
   },
   {
@@ -121,8 +121,8 @@
   {
     "name": "review 1: the reader never reads the put-away documents, so a later turn has no id to restore",
     "file": "nora/engagement/documents_context.py",
-    "old": "                        states=(\"archived\", \"deleted\"),\n",
-    "new": "",
+    "old": ", states=(\"archived\", \"deleted\"),\n",
+    "new": ",\n",
     "target": "tests/unit/test_document_tools.py::test_a_deleted_document_is_restored_from_what_a_later_turn_sees"
   },
   {
