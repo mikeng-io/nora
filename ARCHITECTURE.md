@@ -140,12 +140,14 @@ the image revision when reconstructing running behaviour.
   [observability](docs/observability.md) and the [runbook](docs/runbook.md)
   describe diagnosis.
 
-The existing agent procedure builds on the deployment host, validates configuration,
-recreates services and verifies image/process state. Rollback must account for
-schema and configuration compatibility, not just retag an image.
-[Deployment](deploy/README.md) records the proposed migration to host-side
-pull reconciliation; it is not active. No Kubernetes runtime is required by
-the current stack.
+Application releases deploy through the installed Komodo Stack: a published
+release commits its image bundle to the `deployments` branch and Komodo's poller
+applies it, then writes a receipt. The checkout procedure (build on the host,
+validate configuration, recreate services, verify image and process state)
+remains for infrastructure services and is legacy for the application. Rollback
+must account for schema and configuration compatibility, not just retag an
+image. [Deployment](deploy/README.md) describes both paths. No Kubernetes runtime
+is required by the current stack.
 
 ## Verification
 

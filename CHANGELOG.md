@@ -1,5 +1,12 @@
 # Changelog
 
+## [6.6.2](https://github.com/mikeng-io/nora/compare/v6.6.1...v6.6.2) (2026-10-22)
+
+
+### Security
+
+* **deps:** bump deploy/stt lock past seven Aikido medium advisories ([74747d3](https://github.com/mikeng-io/nora/commit/74747d329e438fdcd86b29e7969ff78b638bf172))
+
 ## [6.6.1](https://github.com/mikeng-io/nora/compare/v6.6.0...v6.6.1) (2026-10-22)
 
 

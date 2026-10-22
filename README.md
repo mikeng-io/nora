@@ -1,3 +1,4 @@
+
 <p align="center">
   <img src="assets/nora-social-banner.png" alt="Mini Nora at her desk, earphones in, beside a sleeping cat." width="100%">
 </p>
@@ -18,82 +19,126 @@
 </p>
 
 <p align="center">
-  <code>conversation</code> · <code>memory</code> · <code>voice</code> · <code>cognition</code> · <code>self-hosted</code>
+  <code>sessionless</code> · <code>layered memory</code> · <code>cognition loop</code> · <code>social</code> · <code>self-hosted</code>
 </p>
 
-Nora is an experimental, self-hosted social AI agent built to participate in
-everyday life over time. She is present across Signal, Discord, WhatsApp,
-Instagram and voice, carrying a working understanding of people, conversations
-and unfinished matters beyond any individual exchange.
+**Nora is a persistent member of one circle of friends, not a bot in their chat.**
 
-Her continuity lives in persistent state rather than an open chat session.
-Memory carries experience forward; background cognition revisits what changes;
-participation and proactive turns decide when something needs attention; and a
-persistent sandbox workspace lets her investigate and carry out work. Responses
-to her actions inform stored lessons and her account of herself, within
-human-authored constraints. Each capability depends on configuration and room
-policy.
+She is in the rooms where they talk: Signal, Discord, WhatsApp, Instagram and a
+voice channel. She keeps a working model of the circle's people, places and
+plans, and acts on it unasked, within what each room may be told. When nobody
+has called her she is still reading, still holding what is unsettled, and still
+deciding whether this is the moment to speak. Usually it is not, and staying
+quiet is a result she can reach on purpose.
+
+She is built to be there over months, not to finish a task and leave. Nora is
+experimental and self-hosted: the runtime and every store run on your own
+hardware, and model inference and connected services can be external.
 
 <p align="center">
   <a href="ARCHITECTURE.md">Architecture</a> ·
+  <a href="GLOSSARY.md">Glossary</a> ·
   <a href="CONTRIBUTING.md">Contributing</a> ·
   <a href="deploy/README.md">Deployment</a> ·
   <a href="SECURITY.md">Security</a>
 </p>
 
-## Project status
+## Not an assistant
 
-Nora is actively developed as a personal project. She combines conversational
-memory, permissioned participation, reminders, voice and background cognition.
-Capabilities depend on the services and room policy configured by each operator.
-Interfaces and deployment requirements can change; expect to provision your own
-model services, platform accounts and persistent storage.
+An assistant starts when you ask and ends when it answers. Nora's work is the
+time in between.
+
+| | A chat assistant | Nora |
+|---|---|---|
+| **Starts** | when you ask | when someone calls her, and when something changes: new conversation, a plan that moves, a reminder she set that comes due |
+| **Owes** | an answer | an answer when called; otherwise nothing, and silence is a normal outcome |
+| **Remembers** | a chat history, or a profile | a layered notebook: what was observed, what is still open, what each person and room is like, what she has learned about how to act here |
+| **Continuity** | a session | no session at all: each turn is built from persistent state |
+| **Scope** | one user, one thread | a circle of people and rooms across platforms, with one read boundary per social unit |
+| **Changes** | when the model or the prompt is replaced | her accounts of people and the lessons she acts on are revised from evidence, while her voice and conduct are written by humans |
+
+## Architecture at a glance
+
+Nora is one body of persistent state with two ways of acting on it. **Speaking
+turns** answer when she is called and decide whether to speak when she is not.
+**Cognition** works in the background, keeping her model of the circle current
+and deciding when something deserves a later look. Policy decides who may be
+heard, what may be said where, and whether she may speak unasked. Her doctrine,
+meaning her voice and conduct, is written by people and wins over anything she
+derives.
+
+```mermaid
+flowchart TD
+    accTitle: Nora architecture at a glance
+    accDescr: Platform events are ingested and recorded into persistent state. Policy and doctrine govern admission and disclosure. Speaking turns assemble context from state, use tools and the workspace, and send through governed delivery. A background cognition process reads stimuli, maintains state and sets reminders that become speaking turns.
+
+    Platforms["Messaging and voice platforms"] --> Ingest["Ingestion: normalize, resolve identity, record"]
+    Ingest --> State[("Persistent state: record, rollup, notebook")]
+    Ingest -.->|"stimuli"| Cognition["Cognition: background, per unit"]
+    Cognition <--> State
+    Cognition -->|"reminders"| Turns
+    Policy["Policy and doctrine: admission, disclosure, voice and conduct"] --> Turns
+    State --> Turns["Speaking turns: called, participating, proactive"]
+    Turns <--> Tools["Tools and workspace"]
+    Turns --> Delivery["Governed delivery"]
+    Delivery --> Platforms
+```
+
+| Part | Role |
+|---|---|
+| **Interfaces** | Adapters for Signal, Discord, WhatsApp, Instagram and voice turn each platform's events into one normalized shape. |
+| **Ingestion** | Records permitted events, resolves who is speaking, handles media and raises stimuli. Nothing speaks from here. |
+| **Persistent state** | PostgreSQL holds the record and what is derived from it, media has its own custody store, and a memory service supplies interpreted memory while the unified-memory migration completes. State is scoped to people, rooms and social units. |
+| **Speaking turns** | A fresh agent per turn, built on the Strands Agents SDK from doctrine, transcript and scoped state. It reads and acts through tools, and speaks only through explicit, governed delivery. |
+| **Cognition** | Background work that reads recorded stimuli, maintains notes, events and reminders, and can schedule its own next look. Slower passes revise her accounts of people and rooms and the lessons she has learned from how her actions landed. |
+| **Policy and doctrine** | Room admission, grants and disclosure are deployment policy. Whether she may speak unasked in a room is its own grant, apart from what she may see. |
+| **Workspace** | A persistent, room-scoped computer workspace and a bounded browser runner let her investigate and carry work from one turn to the next. |
+| **Operations** | Docker Compose deployment, releases published to a `deployments` branch that Komodo applies, and health, metrics and tracing. |
+
+Four ideas run through all of it:
+
+- **Sessionless.** There is no chat session to resume. Each turn assembles its
+  context from persistent state, speaks and ends. Cognition, browser and computer
+  work keep bounded sessions of their own, so this does not mean a continuously
+  running model. See the [glossary](GLOSSARY.md#nora-as-a-social-agent).
+- **Silence is an outcome.** When an occasion arrives she reads the situation
+  again, and the right answer may be that nothing needs saying.
+- **The unit is the boundary.** Continuity does not grant shared access: people
+  and rooms whose talk must not meet belong in different social units.
+- **Learning changes context, not weights.** Lessons and accounts of people are
+  revised from evidence. Doctrine is never rewritten by her.
+
+The [architecture map](ARCHITECTURE.md) is the full runtime and code map. The
+memory tiers are specified in the [tier model](design/cognition-loop/10-tiers.md)
+and the [prior-art note](design/cognition-loop/80-prior-art.md) records what she
+adopts and refuses from existing memory systems.
 
 ## A continuing presence
 
 A group discusses dinner, changes the place and leaves the booking unresolved.
 With the relevant features enabled, Nora can keep that matter in working state,
 revisit it through cognition and arrange a later look. When the occasion arrives,
-she reads the situation again: the booking may already be settled, so silence
-can be the right outcome. Any investigation can leave files in the room's
-workspace for another turn to continue. This is an illustration of how the
-parts connect, not a receipt of a particular live interaction.
+she reads the situation again: the booking may already be settled, so silence can
+be the right outcome. Any investigation can leave files in the room's workspace
+for another turn to continue. This is an illustration of how the parts connect,
+not a receipt of a particular live interaction.
 
-“Sessionless” describes this continuity: speaking turns construct fresh agents
-from relevant persistent context. Cognition and computer work still use bounded
-sessions internally. Nora's runtime and stores are self-hosted; model inference
-and connected services can be external.
+## Project status
 
-## How it fits together
-
-```mermaid
-flowchart TD
-    accTitle: Nora runtime overview
-    accDescr: Messaging events are recorded, checked against policy and assembled into context for the agent. Delivery is governed. Background cognition maintains scoped state shared with context assembly.
-
-    Messages["Messaging platforms"] --> Ingest["Ingest & record"]
-    Ingest --> Context["Policy & context"]
-    Context --> Agent["Agent & tools"]
-    Agent --> Delivery["Governed delivery"]
-    Ingest --> State[("Records & scoped memory")]
-    State <--> Context
-    Cognition["Background cognition"] <--> State
-```
-
-Individual agent invocations use the Strands Agents SDK; persistent stores
-supply continuity between them. Room policy controls admission and disclosure. Background cognition maintains
-scoped state alongside the conversational path. The [architecture map](ARCHITECTURE.md)
-describes the full runtime and its boundaries.
+Nora is actively developed as a personal project. Interfaces and deployment
+requirements change, capabilities depend on the services and room policy each
+operator configures, and you should expect to provision your own model services,
+platform accounts and persistent storage.
 
 ## Start here
 
 - [Implementation wiki](https://nora.67.zone/wiki/): connected concepts and contributor workflows, maintained with OpenWiki.
+- [Glossary](GLOSSARY.md): the words that mean something specific here.
 - [Architecture](ARCHITECTURE.md): runtime boundaries, data and deployment.
-- [Contributing](CONTRIBUTING.md): development checks and pull requests.
 - [Decisions](docs/adr/README.md) and [design index](design/09-decision-index.md):
   rationale, trade-offs and design work, including proposals not yet implemented.
-- [Deployment](deploy/README.md): prerequisites and the Compose lifecycle.
-- [Operator runbook](docs/runbook.md): detailed implementation and recovery notes.
+- [Contributing](CONTRIBUTING.md): development checks and pull requests.
+- [Deployment](deploy/README.md) and the [operator runbook](docs/runbook.md).
 - [Agent instructions](AGENTS.md): procedures for coding agents.
 
 ## Quickstart
@@ -118,7 +163,8 @@ uv run pytest -q tests/test_docs.py tests/test_architecture_doc.py
 `origin/master`; unknown changes run the full suite. Database and object-store
 tests need Docker. Live model evaluations are separate and need operator-owned
 services and credentials; ordinary contributors do not need production access.
-See [Contributing](CONTRIBUTING.md) for the full workflow and local hooks.
+See [Contributing](CONTRIBUTING.md) for the full workflow, branch and pull
+request rules, and local hooks.
 
 ## Configuration
 
@@ -149,16 +195,14 @@ The reference deployment uses Docker Compose on a Linux host. The application us
 networks; `build.network: host` is a build-time DNS workaround, not its runtime
 network mode. Configure administration and network access for your own environment.
 
-[Deployment](deploy/README.md) describes the current build/recreate procedure
-and an off-by-default Komodo release deployment path. Production deployment is
-still operator/agent-driven until its installation and cutover are verified;
-merging a PR does not install a deployment controller.
-The [runbook](docs/runbook.md) carries health checks and rollback constraints,
+Releases are cut from Conventional Commit subjects, and a release is separate from
+a deployment. Publishing a release builds the images and commits the selected bundle to
+the `deployments` branch; where a [Komodo](deploy/komodo/README.md) Stack is
+installed, it polls that branch and deploys the bundle, then writes a receipt. The
+image records the source revision and its generated version manifest. The
+[deployment guide](deploy/README.md) describes the procedure, and the
+[runbook](docs/runbook.md) carries health checks and rollback constraints,
 including database migrations. Do not use old phase tags as rollback targets.
-
-Releases are managed by [release-please](.github/workflows/release-please.yml).
-A release and a deployment are separate: the image records the source revision
-and, when available, its generated version manifest.
 
 ## Help and contributions
 
@@ -168,12 +212,10 @@ minimal synthetic example. Keep credentials, personal conversations, account
 identifiers and location data out of issues, logs and screenshots. See
 [Contributing](CONTRIBUTING.md) for development checks and [Security](SECURITY.md)
 for vulnerability reports. Follow the [Code of Conduct](CODE_OF_CONDUCT.md).
-Maintenance is on a best-effort basis.
+Maintenance is on a best-effort basis. Repository security, release automation
+and merge rules are documented in [GitHub maintenance](docs/maintainers/github.md).
 
 ## License
 
 Nora is licensed under the [MIT License](LICENSE). Third-party components retain
 their respective licenses.
-
-Repository security, release automation and the free public setup are documented
-in [GitHub maintenance](docs/maintainers/github.md).
