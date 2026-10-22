@@ -62,7 +62,10 @@ class Repo:
 
     def commit(self, msg: str, *paths: str, env: dict | None = None, no_verify: bool = False):
         self.git("add", *(paths or ["-A"]))
-        args = ["commit", "-q", "-m", msg] + (["--no-verify"] if no_verify else [])
+        # A body, so a `feat:`/`fix:` message satisfies the commit-body rule and these
+        # tests keep judging the identifier scanner alone.
+        body = "A body that states the reason, so the body rule passes."
+        args = ["commit", "-q", "-m", msg, "-m", body] + (["--no-verify"] if no_verify else [])
         return self.git(*args, env=env)
 
     def head(self) -> str:

@@ -15,6 +15,12 @@
      Then the review level (none / light / full) and the triage line,
      e.g. "light; 1 BLOCKER fixed, 2 FIX-IF-CHEAP, 1 ISSUE #N, 2 DROP". -->
 
+## Authored by
+
+<!-- Human or agent. For an agent, the tool and model (for example "agent: Claude
+     Sonnet 5.5 in Claude Code"). Name who reviewed it and whether that was a
+     different person or model than the author. -->
+
 ## Closes
 
 <!-- Closes #N only when this PR fully resolves it; otherwise use issue #N

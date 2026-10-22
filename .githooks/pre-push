@@ -38,10 +38,9 @@ checked=0
 failed=0
 
 check_one() {  # $1 = sha
-  local sha="$1" subject msgfile
-  subject="$(git log -1 --format=%s "$sha")"
+  local sha="$1" msgfile
   msgfile="$(mktemp)"
-  printf '%s\n' "$subject" > "$msgfile"
+  git log -1 --format=%B "$sha" > "$msgfile"
   if ! python3 -I -S "$CHECKER" "$msgfile"; then
     echo "  offending commit: $sha" >&2
     failed=1

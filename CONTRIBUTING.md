@@ -92,8 +92,12 @@ adding a type requires updating both this table and the `TYPES` map in
 
 
 The subject is a full, specific clause. The body carries the why: what was
-broken, what was measured, what shipped, and what it does not cover. Hooks reject
-missing or undeclared types, `wip:` and default merge subjects. If you bypass
+broken, what was measured, what shipped, and what it does not cover. A `feat`,
+`fix`, `security`, `perf`, `change` or `doctrine` commit must have one of at least
+20 characters; other types and merges need none. Hooks reject missing or undeclared
+types, `wip:`, default merge subjects and a missing body, and the `pr-metadata`
+check judges every commit of a PR by the same rules, so `--no-verify` does not
+get past review. If you bypass
 hooks with `--no-verify`, name the reason in the commit body.
 
 There is no release fragment: commit subjects are the release notes.
@@ -109,6 +113,8 @@ lands an indexed decision, and these headings in order:
 - **What**: concrete changes and supporting artifacts, one block per piece.
 - **Also**: findings left outside the change; omit when empty.
 - **Gate on the merged tree**: the actual outcome and exit code.
+- **Authored by**: human or agent; for an agent, the tool and model, and who
+  reviewed it.
 - **Closes**: `Closes #N` only when the PR fully resolves it; otherwise reference
   `issue #N` in the prose. Omit when there is no issue.
 
@@ -121,7 +127,10 @@ During iteration, run the tests you touched. `make full-gate` is the uncondition
 full run. Name a pre-existing unrelated gate failure with its issue number;
 never absorb it into "tests pass".
 The contribution-content workflow checks populated headings and their order;
-it does not verify the truth of a claimed result.
+it does not verify the truth of a claimed result. The PR triage workflow then sets
+the `type:` label from the title, `area:` labels from the changed paths and
+`breaking` from `!`, and assigns the author. Nobody sets these by hand, and
+Dependabot PRs get theirs from `.github/dependabot.yml`.
 
 ## Issues
 

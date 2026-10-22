@@ -1,7 +1,7 @@
 # GitHub maintenance
 
 Nora uses GitHub Free features for a public repository: standard Ubuntu-hosted
-Actions runners, CodeQL, dependency review, Dependabot alerts/security updates,
+Actions runners, dependency review, Dependabot alerts/security updates,
 secret scanning/push protection, private vulnerability reports, branch protection
 and tag rules. No paid Advanced Security subscription, larger runner, external
 scanner subscription or deployment runner is required. Standard public runner
@@ -32,9 +32,10 @@ work while private: see Merge rules below. The check names are bound to the GitH
 Actions App, rather than arbitrary status producers. The release App has no
 branch-rule bypass.
 
-CodeQL and dependency review deliberately skip while private, avoiding paid
-private-repository security features. After publication, manually dispatch Security
-and open a small PR to confirm those checks report. The existing
+Dependency review deliberately skips while private, avoiding paid
+private-repository security features. After publication, open a small PR to confirm
+it reports. There is no CodeQL job: it was skipped on every PR while private and
+Aikido scans the code. The existing
 fast CI still runs while private. It checks static contracts and selected tests;
 it does not run the complete suite. Run the local `make gate` once on the final head before landing code.
 
@@ -99,8 +100,8 @@ and the `checks` and `pr-metadata` jobs (the second runs the PR content check an
 title, body or branch); force-push and deletion are blocked, and `v*` tags
 cannot be moved or deleted. There are no bypass actors, so the owner cannot merge a failing PR
 either; the way out is editing the ruleset in the repository settings. Only checks that report
-on every pull request may be required: CodeQL and dependency review are skipped while private
-and the wiki build is path-filtered, so none of them is. Add Aikido's PR check here only after
+on every pull request may be required: dependency review is skipped while private
+and the wiki build is path-filtered, so neither is. Add Aikido's PR check here only after
 a PR shows the name it reports under.
 
 ## Deployment documentation
