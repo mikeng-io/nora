@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from nora.domain.culture import Episode, RoomMessage
+from nora.domain.persona import Said
 from nora.domain.social_stream import PersonSocialItem, RecordedCounts
 
 
@@ -34,4 +35,6 @@ class PersonSourceRevision:
     cache_ready: bool = False
     media_state: str = "not_applicable"
     ready_handles: tuple[str, ...] = ()
+    subject: str | None = None
     episode: Episode | None = None
+    evidence: tuple[tuple[str, Said], ...] = ()

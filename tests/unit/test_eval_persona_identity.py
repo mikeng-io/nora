@@ -305,7 +305,7 @@ def test_representation_bundle_and_grader_keep_qualifications(tmp_path, monkeypa
          "account ownership and usual frequency unknown"),
     ):
         behavior = receipt()
-        behavior["heads"][0].update(part="character", kind="trait", mode="induced",
+        behavior["heads"][0].update(part="character", kind="style", mode="induced",
             told_by=None, fact_key=None, fact_value=None, text=text,
             citations=("101", "102"), as_of=2)
         assert check_identity(vector, behavior) == ()
@@ -349,7 +349,7 @@ async def test_representation_semantic_draw_accepts_paraphrase_and_decomposition
         {
             **behavior["heads"][0],
             "part": "character",
-            "kind": "trait",
+            "kind": "style",
             "mode": "deduced",
             "told_by": None,
             "fact_key": None,

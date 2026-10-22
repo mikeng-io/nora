@@ -64,6 +64,8 @@ _TRACE = "a log of what a turn or session was shown; nothing reads bytes through
 #: Columns that look like a key, or are JSON that could hold one under
 #: another name, and name no blob that must stay, and why.
 NOT_BLOB_KEYS: Mapping[tuple[str, str], str] = {
+    ("persona_line", "content"): "prose Character slots, never blob custody",
+    ("persona_line", "strength"): "code-computed occasion roots and timestamps, never blob custody",
     ("persona_line", "fact_value"): (
         "typed identity labels, dates, lists and person references; never blob custody"
     ),

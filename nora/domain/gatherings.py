@@ -316,7 +316,7 @@ class Gathering:
     #: until a caller resolves one (the tool layer's `_unit()`), matching
     #: `note`'s own "no unit means unavailable" convention rather than raising.
     unit_id: str = ""
-    #: The OTHER half of the persisted owner (`0127_event_platform`): the
+    #: The OTHER half of the persisted owner (`0128_event_platform`): the
     #: platform the write was said on. Empty on a row that predates the column
     #: (or was written before durable platform ownership existed); such a row
     #: is quarantined by `event_in_scope`, never attributed from current policy.
@@ -497,7 +497,7 @@ def still_open_gatherings(
 #: Conversation id -> every `(unit, platform)` pair `policy.toml` assigns it.
 #: The PORTAL uses this to resolve a member room's trusted `(unit, platform)`;
 #: it is never proof of who owns a persisted row. The row itself carries the
-#: owner since `0127_event_platform`.
+#: owner since `0128_event_platform`.
 RoomClaims = Mapping[str, frozenset[tuple[str, str]]]
 
 
@@ -510,7 +510,7 @@ def event_in_scope(
 
     The ROW is the ownership record: the `(unit_id, platform)` pair persisted
     with it names who wrote it. A row whose `platform` is empty has no durable
-    platform identity — it predates `0127_event_platform` and `policy.toml`
+    platform identity — it predates `0128_event_platform` and `policy.toml`
     cannot establish what the policy was when it was written, because the room
     may since have moved. Such a row is QUARANTINED: preserved in the table,
     never shown or mutated through an inferred owner. The same applies to a row

@@ -334,7 +334,8 @@ async def test_initial_cached_recovery_past_old_cursor_is_bounded_and_durable(
     assert done['frozen'] and done['complete'] and done['pending_cached'] == 0
     assert await reads.history_state(key=KEY) == (boundary, boundary)
     after_restart, _ = await evidence().newest(key=KEY, after=boundary, limit=1)
-    assert after_restart == []
+    assert not [r for r in after_restart if r.domain != "rollup"]
+    assert all(r.state == "unavailable" for r in after_restart)
 
 
 def wired(engine, *, media_join=None):

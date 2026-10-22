@@ -109,6 +109,15 @@ async def run_writer(
     # the restored background BEFORE arrivals, using production's cursor rows.
     engine = create_sql_engine(subject.database_url)
     try:
+        # These declared synthetic vectors contain messages/media only. Supply
+        # an explicitly empty healthy presence build, rather than treating an
+        # unbuilt Rollup as a successful absence at the new source seam.
+        from nora.infra.sql.rollups import SqlRollupStore
+        rollup = SqlRollupStore(engine)
+        if await rollup.current_build() is None:
+            build = await rollup.create_build(code_version="synthetic-persona",
+                                              params_sha256="0" * 64)
+            await rollup.switch_build(build_id=build)
         cursor = await SqlCharacterEvidence(engine).message_head()
         cursors = SqlLanguageStore(engine)
         for name in ("persona-person:history-boundary", "persona-person:history"):

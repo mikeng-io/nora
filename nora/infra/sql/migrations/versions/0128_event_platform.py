@@ -14,11 +14,11 @@ deleted) and are invisible to every scoped read until an operator establishes
 ownership explicitly. New writes always carry the platform from the trusted
 caller.
 
-Follows `0126_social_backfill_end`. `uv run alembic heads` must print exactly
+Follows `0127_character_content`. `uv run alembic heads` must print exactly
 ONE line.
 
-Revision ID: 0127_event_platform
-Revises: 0126_social_backfill_end
+Revision ID: 0128_event_platform
+Revises: 0127_character_content
 """
 
 from __future__ import annotations
@@ -26,8 +26,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0127_event_platform"
-down_revision = "0126_social_backfill_end"
+revision = "0128_event_platform"
+down_revision = "0127_character_content"
 branch_labels = None
 depends_on = None
 

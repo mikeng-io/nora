@@ -1,0 +1,51 @@
+[
+  {
+    "name": "revisited places survive the as-of cutoff",
+    "file": "nora/infra/sql/mobility.py",
+    "old": "PRESENCE_DERIVED_PLACES.c.first_seen_ts <= until_ms,",
+    "new": "PRESENCE_DERIVED_PLACES.c.first_seen_ts <= until_ms,\n                PRESENCE_DERIVED_PLACES.c.last_seen_ts <= until_ms,",
+    "target": "tests/infra/test_character_card.py::test_presence_labels_corridors_and_rhythm_reach_writer_never_coordinates"
+  },
+  {
+    "name": "place last seen is reconstructed as of cutoff",
+    "file": "nora/infra/sql/mobility.py",
+    "old": "\"last_seen_ts\": (agg.last_seen_ts if agg is not None and until_ms is not None\n                                     else place.last_seen_ts),",
+    "new": "\"last_seen_ts\": place.last_seen_ts,",
+    "target": "tests/infra/test_character_card.py::test_presence_labels_corridors_and_rhythm_reach_writer_never_coordinates"
+  },
+  {
+    "name": "stay aggregates exclude future observations",
+    "file": "nora/infra/sql/mobility.py",
+    "old": "agg_stmt = agg_stmt.where(PRESENCE_STAYS.c.started_ts <= until_ms,\n                                      PRESENCE_STAYS.c.ended_ts <= until_ms)",
+    "new": "agg_stmt = agg_stmt.where(sa.true())",
+    "target": "tests/infra/test_character_card.py::test_presence_labels_corridors_and_rhythm_reach_writer_never_coordinates"
+  },
+  {
+    "name": "corridors reconstruct eligible samples as of cutoff",
+    "file": "nora/infra/sql/mobility.py",
+    "old": "            samples = (sa.select(\n                PRESENCE_TRIPS.c.corridor_id,\n                sa.func.count().label(\"sample_count\"),\n                sa.func.min(PRESENCE_TRIPS.c.started_ts).label(\"first_seen_ts\"),\n                sa.func.max(PRESENCE_TRIPS.c.ended_ts).label(\"last_seen_ts\"),\n            ).where(\n                PRESENCE_TRIPS.c.subject_id == subject_id,\n                self._in_build(build, PRESENCE_TRIPS),\n                PRESENCE_TRIPS.c.started_ts <= until_ms,\n                PRESENCE_TRIPS.c.ended_ts <= until_ms,\n            ).group_by(PRESENCE_TRIPS.c.corridor_id).subquery())\n            stmt = (sa.select(PRESENCE_CORRIDORS.c.id, PRESENCE_CORRIDORS.c.subject_id,\n                PRESENCE_CORRIDORS.c.sequence, samples.c.sample_count,\n                samples.c.first_seen_ts, samples.c.last_seen_ts)\n                .join(samples, samples.c.corridor_id == PRESENCE_CORRIDORS.c.id)\n                .where(PRESENCE_CORRIDORS.c.subject_id == subject_id,\n                       self._in_build(build, PRESENCE_CORRIDORS),\n                       PRESENCE_CORRIDORS.c.first_seen_ts <= until_ms)\n                .order_by(PRESENCE_CORRIDORS.c.id.asc()))",
+    "new": "            stmt = stmt.where(PRESENCE_CORRIDORS.c.first_seen_ts <= until_ms,\n                              PRESENCE_CORRIDORS.c.last_seen_ts <= until_ms)",
+    "target": "tests/infra/test_character_card.py::test_presence_labels_corridors_and_rhythm_reach_writer_never_coordinates"
+  },
+  {
+    "name": "rhythm covers 180 days",
+    "file": "nora/infra/sql/mobility.py",
+    "old": "window_ms = min(max(window_ms, 0), 180 * 86400000)",
+    "new": "window_ms = min(max(window_ms, 0), _MAX_ANALYTICS_WINDOW_MS)",
+    "target": "tests/infra/test_character_card.py::test_presence_labels_corridors_and_rhythm_reach_writer_never_coordinates"
+  },
+  {
+    "name": "rhythm clips at lower window boundary",
+    "file": "nora/infra/sql/mobility.py",
+    "old": "max(row.started_ts, cutoff_ms), min(row.ended_ts, now_ms),",
+    "new": "row.started_ts, min(row.ended_ts, now_ms),",
+    "target": "tests/infra/test_character_card.py::test_presence_labels_corridors_and_rhythm_reach_writer_never_coordinates"
+  },
+  {
+    "name": "routine uses source acknowledgement",
+    "file": "nora/infra/sql/persona_inputs.py",
+    "old": "))] if pending_routine and any(",
+    "new": "))] if any(",
+    "target": "tests/infra/test_character_card.py::test_acknowledged_routine_does_not_wake_writer_until_revision_changes"
+  }
+]

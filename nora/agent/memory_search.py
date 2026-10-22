@@ -491,8 +491,11 @@ def scope_for(
         here.persons is not None and live is not None and live.available
         and not live.degraded and live.unnamed == 0
     )
+    # Collective cards retain the actual cited presence subjects. Ordinary
+    # person nodes still require membership in listed_here inside every read.
+    candidates = listed | frozenset(p for members in target.circles for p in members)
     presence = frozenset(
-        p for p in listed
+        p for p in candidates
         if section_permits((LineageEntry(PRESENCE, subject=p),), target, origin=None)
     )
     return MemoryScope(
@@ -947,7 +950,7 @@ def _shown(node: IndexedNode, name_of: Callable[[str], str]) -> tuple[str, str]:
     or video of the network's, and its location that it is a tagged place.
     Every other kind is its kind."""
     if node.kind == "persona_line" and node.identity_fact is not None:
-        from nora.domain.persona import format_fact
+        from nora.domain.character_card import format_profile
 
         fact = node.identity_fact
 
@@ -957,8 +960,8 @@ def _shown(node: IndexedNode, name_of: Callable[[str], str]) -> tuple[str, str]:
             name = name_of(pid)
             return name if name and name not in ("someone", pid) else "someone (unknown)"
 
-        return node.kind, format_fact(
-            fact["key"], fact["value"],
+        return node.kind, format_profile(
+            fact["key"], fact["value"], mode=fact.get("mode"),
             name_of=scoped_name,
             as_of=fact["as_of"], valid_from=fact["valid_from"], valid_until=fact["valid_until"],
         )

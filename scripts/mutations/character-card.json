@@ -1,0 +1,191 @@
+[
+  {
+    "name": "every dimension requires its prose slots",
+    "file": "nora/domain/persona.py",
+    "old": "    if line.kind in TRAIT_SLOTS or line.part == \"hypothesis\":\n        required = ((\"statement\", \"context\", *TRAIT_SLOTS[line.kind])\n                    if line.kind in TRAIT_SLOTS else (\"proposed_cause\", \"alternative\"))\n        allowed_slots = set(required) | ({\"exceptions\"} if line.part == \"character\" else set())\n        if not isinstance(line.content, Mapping) or set(line.content) - allowed_slots or any(\n            not isinstance(line.content.get(k), str) or not line.content[k].strip()\n            for k in required\n        ) or any(not isinstance(v, str) or not v.strip() for v in line.content.values()):\n            return PersonaRefusal(\"content_slots\", \"required non-empty prose slots: \" +\n                                  \", \".join(required) + \"; explicit unknown is allowed\")\n",
+    "new": "",
+    "target": "tests/unit/test_character_card.py::test_each_required_slot_is_refused_when_missing_or_blank tests/unit/test_character_card.py::test_slot_contract_has_no_arbitrary_extra_fields"
+  },
+  {
+    "name": "skill is actor-only",
+    "file": "nora/domain/persona.py",
+    "old": "if collective and line.kind == \"skill\":",
+    "new": "if False:",
+    "target": "tests/unit/test_character_card.py::test_entity_applicability_and_hypothesis_slots"
+  },
+  {
+    "name": "three occasions for every mode",
+    "file": "nora/domain/persona.py",
+    "old": "if len(occasions) < INDUCED_MIN_INSTANCES:",
+    "new": "if False:",
+    "target": "tests/unit/test_character_card.py::test_every_trait_needs_three_occasions_even_on_two_days"
+  },
+  {
+    "name": "an aggregate cannot exempt recurrence",
+    "file": "nora/domain/persona.py",
+    "old": "    if line.part == \"character\":\n        if evidence.unrooted_rollups",
+    "new": "    if line.part == \"character\" and not evidence.rollup_keys:\n        if evidence.unrooted_rollups",
+    "target": "tests/unit/test_character_card.py::test_one_aggregate_is_not_an_exemption_and_roots_are_positive_control"
+  },
+  {
+    "name": "duplicate roots count once",
+    "file": "nora/domain/persona.py",
+    "old": "key = source.occasion or f\"{source.room}:{source.ts}\"",
+    "new": "key = str(len(roots))",
+    "target": "tests/unit/test_character_card.py::test_one_occasion_repeated_across_media_and_days_is_not_a_trait"
+  },
+  {
+    "name": "strength is code-computed",
+    "file": "nora/domain/persona.py",
+    "old": "strength={\"occasions\": len(sources),",
+    "new": "strength={\"occasions\": 900,",
+    "target": "tests/unit/test_character_card.py::test_model_strength_and_location_are_ignored_and_projection_is_canonical"
+  },
+  {
+    "name": "traits need two HKT days",
+    "file": "nora/domain/persona.py",
+    "old": "INDUCED_MIN_DAYS = 2",
+    "new": "INDUCED_MIN_DAYS = 1",
+    "target": "tests/unit/test_character_card.py::test_every_trait_needs_two_hkt_days_and_skill_value_decay_is_longer"
+  },
+  {
+    "name": "existing room location guard is preserved",
+    "file": "nora/agent/lineage.py",
+    "old": "        if not line.location:\n            return True",
+    "new": "        if True:\n            return True",
+    "target": "tests/unit/test_character_card.py::test_existing_room_flag_and_disclosure_guard_filter_stored_location"
+  },
+  {
+    "name": "coordinates never reach the model",
+    "file": "nora/language/persona.py",
+    "old": "if self._coordinate_screen is not None and self._coordinate_screen(text):",
+    "new": "if False:",
+    "target": "tests/infra/test_character_card.py::test_coordinate_input_is_refused_before_any_model_can_read_it"
+  },
+  {
+    "name": "content roundtrips through SQL",
+    "file": "nora/infra/sql/persona.py",
+    "old": "content=row.content, location=row.location,",
+    "new": "content={}, location=row.location,",
+    "target": "tests/infra/test_character_card.py::test_new_content_roundtrips_and_supersedes_without_rewriting_history"
+  },
+  {
+    "name": "card output is explicit",
+    "file": "nora/app/persona_spike.py",
+    "old": "    if card:\n        out[\"card\"]",
+    "new": "    if True:\n        out[\"card\"]",
+    "target": "tests/infra/test_character_card.py::test_window_dry_read_is_oldest_first_day_by_day_and_report_counts_only"
+  },
+  {
+    "name": "window respects its last date",
+    "file": "nora/app/persona_spike.py",
+    "old": "m.ts < min(day + 86400000, until),",
+    "new": "sa.true(),",
+    "target": "tests/infra/test_character_card.py::test_window_dry_read_is_oldest_first_day_by_day_and_report_counts_only"
+  },
+  {
+    "name": "dry-run constructs no runtime",
+    "file": "nora/app/cli.py",
+    "old": "        if args.apply:\n            from nora.app.composition import build_dependencies",
+    "new": "        if True:\n            from nora.app.composition import build_dependencies",
+    "target": "tests/test_cli_control_plane.py::test_persona_window_and_report_are_read_only_until_explicit_apply"
+  },
+  {
+    "name": "dimension and evidence range render canonically",
+    "file": "nora/domain/character_card.py",
+    "old": "f\"{day(item.strength.get('last'))}; {item.mode}]: {text}\")",
+    "new": "f\"{day(item.strength.get('last'))}; told]: {text}\")",
+    "target": "tests/unit/test_character_card.py::test_card_golden_for_person_room_and_nora"
+  },
+  {
+    "name": "skill and value retain their longer evidence interval",
+    "file": "nora/domain/persona.py",
+    "old": "3 * TRAIT_DECAY_MS if line.kind in (\"skill\", \"value\")",
+    "new": "TRAIT_DECAY_MS if line.kind in (\"skill\", \"value\")",
+    "target": "tests/unit/test_character_card.py::test_every_trait_needs_two_hkt_days_and_skill_value_decay_is_longer"
+  },
+  {
+    "name": "presence is actually handed to the writer",
+    "file": "nora/language/persona.py",
+    "old": "        if selected:\n            parts.append(ContextBlock(",
+    "new": "        if False:\n            parts.append(ContextBlock(",
+    "target": "tests/infra/test_character_card.py::test_presence_labels_corridors_and_rhythm_reach_writer_never_coordinates"
+  },
+  {
+    "name": "social items actually enter the composed input",
+    "file": "nora/language/persona.py",
+    "old": "            restamp(social_block, _ROW),",
+    "new": "            None,",
+    "target": "tests/unit/test_persona_social_input.py::test_inputs_renders_the_items_with_counts_and_makes_them_citable"
+  },
+  {
+    "name": "nine pooled traits retain the existing retirement requirement",
+    "file": "nora/domain/persona.py",
+    "old": "CAPS: Mapping[str, int] = {\"character\": 9, \"hypothesis\": 3}",
+    "new": "CAPS: Mapping[str, int] = {\"character\": 5, \"hypothesis\": 3}",
+    "target": "tests/unit/test_character_card.py::test_trait_cap_is_nine_pooled_across_dimensions"
+  },
+  {
+    "name": "old typed residences retain the existing location setting",
+    "file": "nora/domain/persona.py",
+    "old": "if is_location_fact(self.fact_key, self.fact_value):",
+    "new": "if False:",
+    "target": "tests/unit/test_character_card.py::test_legacy_typed_residence_keeps_the_room_location_boundary"
+  },
+  {
+    "name": "claims retain their qualifications under the render budget",
+    "file": "nora/language/persona_render.py",
+    "old": "    kept: list[str] = []\n    for line in body.splitlines():\n        candidate = \"\\n\".join([*kept, line])\n        dropped = len(body) - len(candidate)\n        if len(candidate) + len(f\"\\n[{dropped} more characters not shown]\") > room:\n            break\n        kept.append(line)\n    text = \"\\n\".join(kept)\n    marker = f\"[{len(body) - len(text)} more characters not shown]\"\n    return \"\\n\".join([*kept, marker]) if len(marker) <= room else \"\"",
+    "new": "    return body[:room]",
+    "target": "tests/unit/test_character_card.py::test_render_budget_omits_whole_claims_including_qualifications"
+  },
+  {
+    "name": "location profile search obeys the existing presence scope",
+    "file": "nora/infra/sql/memory_read.py",
+    "old": "_persona_location(PERSONA_LINE.c),",
+    "new": "sa.false(),",
+    "target": "tests/infra/test_memory_projection_persona.py::test_location_profile_search_uses_existing_presence_scope"
+  },
+  {
+    "name": "events-as-traits uses a different configured model",
+    "file": "nora/app/cli.py",
+    "old": "if cfg.evals.judge_model == cfg.dreamer_model():",
+    "new": "if False:",
+    "target": "tests/test_cli_control_plane.py::test_character_report_requires_a_separately_configured_judge"
+  },
+  {
+    "name": "collective prompt disclosure uses actual cited subjects",
+    "file": "nora/agent/lineage.py",
+    "old": "subjects = line.location_subjects",
+    "new": "subjects = tuple(target.room.persons or ()) if target.room else ()",
+    "target": "tests/unit/test_character_card.py::test_collective_location_uses_cited_subjects_not_the_viewer_roster"
+  },
+  {
+    "name": "collective SQL reads check the cited presence subjects",
+    "file": "nora/infra/sql/memory_read.py",
+    "old": "source_subjects.contained_by(\n                                 sa.func.to_jsonb(_array(scope.presence_persons)))",
+    "new": "sa.true()",
+    "target": "tests/infra/test_memory_projection_persona.py::test_collective_location_search_uses_the_cited_presence_subject"
+  },
+  {
+    "name": "existing circle permissions cover a collective source without widening listed nodes",
+    "file": "nora/agent/memory_search.py",
+    "old": "p for p in candidates",
+    "new": "p for p in listed",
+    "target": "tests/unit/test_character_card.py::test_collective_location_uses_cited_subjects_not_the_viewer_roster"
+  },
+  {
+    "name": "confirmation carries newly cited location evidence",
+    "file": "nora/domain/persona.py",
+    "old": "location=target.location or any(s.location for s in ev.said),",
+    "new": "location=target.location,",
+    "target": "tests/unit/test_character_card.py::test_confirmation_carries_location_evidence_for_an_open_hypothesis"
+  },
+  {
+    "name": "dense search remains compilable for the real planner check",
+    "file": "nora/infra/sql/memory_read.py",
+    "old": "sa.func.to_jsonb(_array(scope.presence_persons))",
+    "new": "sa.cast(sorted(scope.presence_persons), pg.JSONB)",
+    "target": "tests/integration/test_memory_dense_seed.py::test_the_planner_scans_the_hnsw_index_with_the_scope_inside"
+  }
+]

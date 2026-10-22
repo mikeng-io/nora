@@ -15,6 +15,8 @@ from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, NamedTuple, Protocol, get_args
 
+from nora.domain.memory_item import is_location_fact
+
 __all__ = [
     "ATTACHMENT_KINDS",
     "EMBEDDED_KINDS",
@@ -253,7 +255,7 @@ class MemoryScope:
     - `exclude_strict`: the room cannot vouch for who is in it (a `*` room,
       an unmapped account, an unreadable or degraded roster): any node with
       an `exclude_persons` is out (`nora.agent.lineage.excluded`'s rule).
-    - `presence_persons`: listed persons whose presence passes here (the
+    - `presence_persons`: known circle persons whose presence passes here (the
       room's `location` flag AND the live DisclosureGuard): an episode, or a
       social item's tagged place (`PRESENCE_KINDS`), is in scope only if
       every person of it is one.
@@ -304,7 +306,9 @@ class IndexedNode:
     state: str = "live"
     # Canonical typed truth is read from Persona, never reconstructed from prose.
     identity_fact: Mapping[str, Any] | None = None
+    location: bool = False
     named_persons: frozenset[str] = frozenset()
+    location_subjects: tuple[str, ...] = ()
 
     @property
     def key(self) -> tuple[str, str]:
@@ -486,6 +490,12 @@ def in_scope(node: IndexedNode, scope: MemoryScope) -> bool:
         scope.exclude_strict or set(node.exclude_persons) & scope.people_here
     ):
         return False
+    location = node.location or (node.identity_fact is not None and is_location_fact(
+        node.identity_fact.get("key"), node.identity_fact.get("value")))
+    if location:
+        subjects = set(node.persons or node.location_subjects)
+        if not subjects or not subjects <= scope.presence_persons:
+            return False
     if node.kind in SOCIAL_KINDS and set(node.persons) & scope.social_off:
         return False
     return not (

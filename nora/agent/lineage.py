@@ -324,10 +324,18 @@ async def persona_lines_for(
     lines: tuple[PersonaLine, ...], target: RenderRoom, room: Room,
 ) -> tuple[PersonaLine, ...]:
     """Apply the existing exclusion boundary, reading the roster only if needed."""
-    if any(line.exclude_persons for line in lines):
+    if any(line.exclude_persons or line.location for line in lines):
         view = await room.scope()
         target = target.with_live(LiveRoom(
             person_ids=frozenset(p.person_id for p in view.people),
             unnamed=view.unnamed, available=view.available, degraded=view.degraded,
         ))
-    return tuple(line for line in lines if not excluded(line.exclude_persons, target))
+    def permitted(line: PersonaLine) -> bool:
+        if excluded(line.exclude_persons, target):
+            return False
+        if not line.location:
+            return True
+        subjects = line.location_subjects
+        return bool(subjects) and all(_presence(
+            LineageEntry(PRESENCE, person, None), target) for person in subjects)
+    return tuple(line for line in lines if permitted(line))

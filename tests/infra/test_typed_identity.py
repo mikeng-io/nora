@@ -64,7 +64,8 @@ async def test_typed_values_round_trip_and_override_conflicting_model_text(env, 
         name_of=lambda _: "Kit",
         now=datetime.fromtimestamp(NOW / 1000, UTC),
     )
-    assert body and rendered in body[0]
+    from nora.domain.character_card import format_line
+    assert body and format_line(line) in body[0]
     if key == "birthday":
         assert "birthday: 02-29" in rendered and "2000-02-29" not in rendered
     if key == "dietary_restrictions":

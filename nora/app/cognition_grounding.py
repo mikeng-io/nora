@@ -54,7 +54,14 @@ from dataclasses import replace
 from datetime import UTC, datetime, tzinfo
 from typing import Any, Protocol
 
-from nora.agent.lineage import LineagePolicy, derived_view, excluded, visible_sections
+from nora.agent.lineage import (
+    LineagePolicy,
+    derived_view,
+    excluded,
+    persona_lines_for,
+    visible_sections,
+)
+from nora.agent.room import Room as AgentRoom
 from nora.agent.room import RoomView
 from nora.agent.whereis import Circle, presence_audience
 from nora.domain.blocks import speaker_name
@@ -363,7 +370,9 @@ def unit_self_reader(
 
 
 def unit_self_persona_reader(
-    persona: PersonaHeads | None, policy: Any,
+    persona: PersonaHeads | None, policy: Any, *,
+    lineage: LineagePolicy | None = None,
+    room_for: Callable[[str, str], AgentRoom] | None = None,
 ) -> Callable[[str], Awaitable[tuple[PersonaLine, ...]] | None] | None:
     """`build_grounder`'s `self_persona`: her Persona account of the unit, or
     none — `unit_self_reader`'s gate (R-31: the session can reach any room of
@@ -372,19 +381,30 @@ def unit_self_persona_reader(
 
     The session can reach every room of the unit but has no live roster to
     clear an exclusion. The shared exclusion predicate therefore withholds
-    excluded lines, as the grounder's other lineage reads do.
+    excluded lines, as the grounder's other lineage reads do. Location lines
+    additionally pass the turn path's presence permission in every target room.
     """
     if persona is None:
         return None
 
     async def read(unit: str) -> tuple[PersonaLine, ...]:
-        lineage = LineagePolicy.from_policy(policy)
-        targets = tuple(lineage.render_room(platform=c.platform, conversation_id=c.primary_id)
+        boundary = lineage or LineagePolicy.from_policy(policy)
+        targets = tuple(boundary.render_room(platform=c.platform, conversation_id=c.primary_id)
                         for c in policy.conversations if c.unit == unit and c.primary_id)
         lines = await persona.account_heads(key=nora_character_key(unit))
-        return tuple(line for line in lines if not line.exclude_persons or (
+        lines = tuple(line for line in lines if not line.exclude_persons or (
             targets and all(not excluded(line.exclude_persons, target) for target in targets)
         ))
+        if any(line.location for line in lines):
+            if not targets or room_for is None:
+                return tuple(line for line in lines if not line.location)
+            # Every possible send room must pass the turn path's presence rule.
+            for target in targets:
+                if target.room is None:
+                    return tuple(line for line in lines if not line.location)
+                lines = await persona_lines_for(lines, target, room_for(
+                    target.room.platform, target.room.primary_id))
+        return lines
 
     def gated(unit: str) -> Awaitable[tuple[PersonaLine, ...]] | None:
         if not policy.shows_self_to_unit(unit):

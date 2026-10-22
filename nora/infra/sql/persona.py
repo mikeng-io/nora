@@ -55,6 +55,8 @@ __all__ = ["SqlPersonaStore", "chain_heads"]
 
 def _line(row: sa.Row[Any]) -> PersonaLine:
     return PersonaLine(
+        content=row.content, location=row.location,
+        source_medium=tuple(row.source_medium), strength=row.strength,
         id=str(row.id),
         persona_key=row.persona_key,
         part=row.part,
@@ -88,6 +90,8 @@ def _line(row: sa.Row[Any]) -> PersonaLine:
 
 def _values(line: PersonaLine) -> dict[str, Any]:
     return {
+        "content": dict(line.content), "location": line.location,
+        "source_medium": list(line.source_medium), "strength": dict(line.strength),
         "id": line.id,
         "persona_key": line.persona_key,
         "part": line.part,

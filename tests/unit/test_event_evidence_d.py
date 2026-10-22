@@ -246,7 +246,7 @@ async def test_a_session_cannot_read_the_other_platforms_event_with_the_same_roo
 
 
 async def test_a_legacy_event_with_no_stored_platform_is_quarantined():
-    """A pre-`0127` row has no durable platform owner. It is invisible even to
+    """A pre-`0128` row has no durable platform owner. It is invisible even to
     the unit and room it was written in, because current policy cannot say what
     the policy was then. Nothing infers one."""
     store = FakeGatheringStore()

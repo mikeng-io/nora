@@ -158,6 +158,7 @@ from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
+from nora.domain.character_card import format_line
 from nora.domain.culture import split_culture_key
 from nora.domain.media import blobs_from_media_json
 from nora.domain.media_join import shas_in
@@ -169,7 +170,6 @@ from nora.domain.memory_index import (
     social_label,
 )
 from nora.domain.models import parse_mentions_json
-from nora.domain.persona import format_fact
 from nora.domain.rollup import days_touched, episode_key, iso, local_date, room_key
 from nora.domain.social_stream import HIDING_STATES, PLACE_STATE
 from nora.infra.sql.schema import (
@@ -1208,7 +1208,7 @@ async def _project_persona_line(conn: AsyncConnection, source_id: str) -> None:
     index, not only the account."""
     row = (await conn.execute(
         sa.select(
-            PERSONA_LINE.c.persona_key, PERSONA_LINE.c.text, PERSONA_LINE.c.state,
+            PERSONA_LINE,
             PERSONA_LINE.c.part, PERSONA_LINE.c.fact_key, PERSONA_LINE.c.fact_value,
             PERSONA_LINE.c.as_of, PERSONA_LINE.c.valid_from, PERSONA_LINE.c.valid_until,
             PERSONA_LINE.c.citations, PERSONA_LINE.c.draws_on, PERSONA_LINE.c.supersedes,
@@ -1247,13 +1247,13 @@ async def _project_persona_line(conn: AsyncConnection, source_id: str) -> None:
         # Readable only where a room lists the person.
         persons = [str(person)]
         about = ("person", str(person))
+    from nora.infra.sql.persona import _line
+
     await _upsert_node(
         conn, kind="persona_line", source_id=source_id,
         unit=None if form == "room" else row.unit, origin_room=room,
         persons=persons, exclude_persons=row.exclude_persons,
-        text=(format_fact(row.fact_key, row.fact_value, as_of=row.as_of,
-                          valid_from=row.valid_from, valid_until=row.valid_until)
-              if row.part == "identity" else row.text),
+        text=format_line(_line(row)),
         at_ms=row.as_of if row.as_of is not None else row.written_at,
         state=("superseded" if successor is not None
                else "live" if row.state in ("current", "disputed") else "retired"),

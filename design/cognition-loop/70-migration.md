@@ -338,7 +338,7 @@ are identified by that deploy row. The daemon writes all four
   read-side `room_ids` widening and the `nora events backfill-units` write
   side are deleted. A row's owner is its persisted `(unit_id, platform)`; a
   row with no stored platform is quarantined and is never attributed from the
-  current `policy.toml` (migration `0127_event_platform`, which backfills
+  current `policy.toml` (migration `0128_event_platform`, which backfills
   nothing and preserves every row). The cross-room de-duplication of legacy
   per-room events into one row is still **not built here**: merging
   same-gathering rows from different rooms of a unit into one is a separate,

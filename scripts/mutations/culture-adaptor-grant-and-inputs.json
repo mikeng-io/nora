@@ -95,7 +95,7 @@
     "file": "config.example.toml",
     "old": "output_tokens = 6000",
     "new": "output_tokens = 1000",
-    "target": "tests/test_config.py -k budget_block_the_template_declares"
+    "target": "tests/test_config.py::test_the_template_pins_the_budget_blocks_it_declares"
   },
   {
     "name": "part 2d: the Dreamer's per-completion ceiling drops under one realistic account",

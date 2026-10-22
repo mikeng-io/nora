@@ -4,7 +4,7 @@
     "file": "nora/language/cognition_render.py",
     "old": "            [rec], row_id=lambda r: r.message_id,\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)),\n                (\"reaction\", (r.emoji or \"?\") if reacted else None),",
     "new": "            [rec], row_id=lambda r: 1,\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)),\n                (\"reaction\", (r.emoji or \"?\") if reacted else None),",
-    "target": "tests/unit/test_cognition_prompt_ids_are_the_ids_required.py::test_every_id_and_name_the_prompt_shows_is_accepted_by_the_real_note_create tests/unit/test_cognition_prompt_ids_are_the_ids_required.py::test_the_prompt_shows_an_id_the_rows_hold_and_no_other_handle"
+    "target": "tests/unit/test_cognition_prompt_ids_are_the_ids_required.py::test_the_prompt_shows_an_id_the_rows_hold_and_no_other_handle"
   },
   {
     "name": "3b (a): her own send's n is a position, not its id",
@@ -32,7 +32,7 @@
     "file": "nora/domain/blocks.py",
     "old": "            f'{key}=\"{escape_attr(collapsed)}\"'",
     "new": "            f'{key}=\"{collapsed}\"'",
-    "target": "tests/unit/test_cognition_prompt_ids_are_the_ids_required.py::test_hostile_words_names_titles_labels_and_summaries_write_no_element tests/unit/test_cognition_prompt_ids_are_the_ids_required.py::test_every_id_and_name_the_prompt_shows_is_accepted_by_the_real_note_create"
+    "target": "tests/unit/test_cognition_prompt_ids_are_the_ids_required.py::test_hostile_words_names_titles_labels_and_summaries_write_no_element"
   },
   {
     "name": "3b (b): a message's words are not collapsed to one line, so a newline writes a second line",
@@ -60,7 +60,7 @@
     "file": "nora/app/cognition_session.py",
     "old": "id=r.message_id, sender=speaker_of(r.author), person_id=r.person_id,",
     "new": "id=r.message_id, sender=r.author, person_id=r.person_id,",
-    "target": "tests/unit/test_cognition_prompt_ids_are_the_ids_required.py::test_every_id_and_name_the_prompt_shows_is_accepted_by_the_real_note_create"
+    "target": "tests/unit/test_cognition_prompt_ids_are_the_ids_required.py::test_the_name_rendered_is_the_name_the_validator_compares"
   },
   {
     "name": "3b (c): speaker_of keeps a character the attribute cannot carry, so the shown and validated names part",

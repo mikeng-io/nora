@@ -27,12 +27,14 @@ absent, not empty: nothing renders what was never said.
 from __future__ import annotations
 
 import re
+import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any, Protocol
 
+from nora.domain.character_card import format_card, format_line
 from nora.domain.culture import RoomMessage, character_key
 from nora.domain.models import PersonRef
-from nora.domain.persona import PersonaDispute, PersonaLine, identity_text
+from nora.domain.persona import PersonaDispute, PersonaLine
 from nora.domain.ports import MemoryStore
 from nora.persons import Persons
 
@@ -231,6 +233,8 @@ async def _persona_account(
     rows = await _cited_rows(cited, heads)
     return {
         "unit": unit,
+        "card": format_card(heads, now_ms=int(time.time() * 1000), name_of=name_of,
+                            location=True),
         "lines": [
             _line_payload(line, persons=persons, rows=rows, viewer_rooms=viewer_rooms,
                           name_of=name_of)
@@ -283,7 +287,7 @@ def _line_payload(
     payload: dict[str, Any] = {
         "part": line.part,
         "kind": line.kind,
-        "text": identity_text(line, name_of=name_of)
+        "text": format_line(line, name_of=name_of)
         or "legacy untyped: " + line.text,
         "fact_key": line.fact_key,
         "as_of": line.as_of,

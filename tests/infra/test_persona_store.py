@@ -211,7 +211,9 @@ async def _hypothesis(env, *, window_end: int) -> str:
         mode="induced", citations=("101", "102", "103"))])
     assert premise.status == "ok"
     added = await _write(env, [AddOp(
-        part="hypothesis", kind="explanation", text="winding down after work",
+        part="hypothesis", kind="explanation",
+        content={"proposed_cause": "relaxing after work", "alternative": "enjoys games"},
+        text="winding down after work",
         mode="abduced", citations=("101",), draws_on=("P1",),
         prediction="picks short games on weekdays",
         prediction_observable="rollup:tie:u1|p-kit,p-other",

@@ -11,7 +11,7 @@
   "file": "nora/engagement/debrief_render.py",
   "old": "    return _stamp(ContextBlock(\n        name=\"standing_prior\",\n        attrs=((\"written\", age(\n            prior.updated_at, datetime.fromtimestamp(now_ms / 1000, tz=UTC),\n        )),),\n        body=escape(prior.body.strip()),\n    ))",
   "new": "    return _stamp(ContextBlock(\n        name=\"standing_prior\",\n        body=escape(prior.body.strip()),\n    ))",
-  "target": "tests/unit/test_debrief_render.py -k the_rollup_prior_carries_when_it_was_written_against_now_ms"
+  "target": "tests/unit/test_debrief_render.py -k the_prior_carries_when_it_was_written_against_the_turns_time"
  },
  {
   "name": "standing-compact §2: the tag path's age is against the TURN, not the wall clock",
@@ -137,7 +137,7 @@
   "file": "nora/engagement/debrief_render.py",
   "old": "    return datetime.fromtimestamp(ts_ms / 1000, tz=tz).strftime(\"%Y-%m-%d %H:%M\")",
   "new": "    return datetime.fromtimestamp(ts_ms / 1000, tz=tz).strftime(\"%H:%M\")",
-  "target": "tests/unit/test_debrief_render.py -k test_every_row_carries_its_date_on_the_tag_and_the_rollup_render"
+  "target": "tests/unit/test_debrief_render.py::test_a_timestamp_renders_as_a_clock_and_never_as_the_raw_bigint"
  },
  {
   "name": "standing-compact §5: a thinking clip is counted on its own label",

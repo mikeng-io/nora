@@ -52,6 +52,7 @@ from nora.agent.memory_search import MemorySearch
 from nora.agent.registry import ToolRegistry
 from nora.agent.relay import Relay
 from nora.agent.room import Room
+from nora.agent.security import looks_like_coordinate
 from nora.agent.structured import ask_text, build_structured_model
 from nora.agent.subagent_desk import SubagentDesk
 from nora.agent.telemetry import (
@@ -4129,7 +4130,7 @@ async def build_dependencies(
                         # Character session's, captions redacted to the author's
                         # own handle, each reading clipped as the media reads.
                         social=persona_social,
-                        screen=scan_identifiers,
+                        coordinate_screen=looks_like_coordinate, screen=scan_identifiers,
                         render_chars=cfg.media.comprehension_render_chars,
                         handle_owners=persons.instagram_username_owners,
                     ),
@@ -4192,9 +4193,14 @@ async def build_dependencies(
                     *dream_adaptors,
                     *(PersonaCollectiveAdaptor(
                         kind=kind, persona=persona_store, culture=culture_store,
-                        render=persona_index,
+                        render=persona_index, media_join=media_join, screen=text_offence,
+                        coordinate_screen=looks_like_coordinate,
                         evidence=CollectiveEvidence(
-                            store=persona_reads, keys=keys, kind=kind, render=persona_index),
+                            store=persona_reads, keys=keys, kind=kind, render=persona_index,
+                            source_inputs=SqlPersonaInputs(engine, social=persona_social),
+                            members={k: tuple(sorted({pid for r in ck.rooms
+                                for convo in allowlist.conversations if convo.primary_id == r.key
+                                for pid in convo.persons or ()})) for k, ck in keys.items()}),
                         reads=persona_reads, keys=keys,
                         name_of=lambda pid: (
                             ref.name if pid and (ref := persons.by_person.get(pid)) is not None
@@ -4603,7 +4609,14 @@ async def build_dependencies(
                 # THE SWITCH (45 §5): when `[persona] render` is on, her
                 # Persona account replaces the prose one; the SAME reader the
                 # tag and fire paths hold.
-                self_persona=unit_self_persona_reader(persona_reader, allowlist),
+                self_persona=unit_self_persona_reader(
+                    persona_reader, allowlist, lineage=lineage,
+                    room_for=lambda platform, conversation_id: Room(
+                        platform=platform, conversation_id=conversation_id,
+                        roster_source=rosters.get(platform), persons=persons,
+                        self_ids=registry.self_aliases(),
+                    ),
+                ),
                 metrics=metrics,
             )
 

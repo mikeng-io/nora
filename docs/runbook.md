@@ -1500,6 +1500,38 @@ successful old shadow session is not historical coverage. The person adaptor
 now walks bounded oldest-first pages through a frozen Record boundary using
 its existing schedule and budget, independently of recent-message updates.
 
+The Character-card spike is an explicit operator command; it never runs on
+startup or changes `[persona] render`. Dates are inclusive HKT dates, and keys
+may be repeated. Dry-run constructs no runtime and writes no rows or cursors:
+
+```bash
+nora memory persona-history --key '<unit>#character:<person>' --since 2026-10-01 --until 2026-10-02
+# Only when the operator chooses to run the spike:
+nora memory persona-history --key '<unit>#character:<person>' --since 2026-10-01 --until 2026-10-02 --apply
+nora memory persona-report --key '<unit>#character:<person>' --since 2026-10-01 --until 2026-10-02
+nora memory persona-report --key '<unit>#character:<person>' --format card
+nora memory persona-report --key '<unit>#character:<person>' --judge
+```
+
+The window reads messages/mentions oldest-first in day-sized pages, with cached
+media and bounded social/presence snapshots for that day, through the same
+writer. It retains the normal history cursor rather than resetting it. As with
+normal sessions, input budgets bound source delivery; this is a monitored spike,
+not evidence of a completed full historical recovery. Inspect the report and
+session traces before widening the window. No window is run by the build.
+
+The report reads the database through a read-only engine and prints counts by
+default. `--format card` explicitly prints private card prose on the operator's
+machine. `--judge` spends calls on `[evals] judge_model`, refuses the writer's
+configured model, and reports pattern/event/unsupported/unavailable separately.
+This classification never writes a hypothesis verdict or promotes a claim.
+Usage and refusal counts come from recorded Langfuse observations; absent or
+inaccessible receipts are null, never zero. `--sessions /private/observations.json`
+can instead read an exported observation list (or its `data` envelope). Keep
+source text, cards and trace exports on owner hardware. No public receipt contains
+private rows. Migration downgrade refuses dimension rows rather than rewriting
+append-only history; preserve a database backup for schema rollback.
+
 `nora memory persona-history` prints per-account source boundary/progress,
 eligible source counts, missing fields, untyped legacy heads and disputes,
 without message text. Completion means source exhaustion, not factual parity.

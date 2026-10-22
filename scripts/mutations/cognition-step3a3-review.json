@@ -151,7 +151,7 @@
   "file": "nora/app/composition.py",
   "old": "                records=SqlRecordQuery(engine), persons=persons, media_join=media_join,",
   "new": "                records=tool_registry._record, persons=persons, media_join=media_join,",
-  "target": "tests/test_composition.py::test_the_shadow_session_is_grounded_from_the_record_with_record_query_off"
+  "target": "tests/test_composition.py::test_the_session_is_grounded_from_the_record_with_record_query_off"
  },
  {
   "name": "major 2: a hidden message is returned by the reference read",
@@ -193,7 +193,7 @@
   "file": "nora/app/cognition_wiring.py",
   "old": "            n: frozenset(names) | {\"room\"}",
   "new": "            n: frozenset(names)",
-  "target": "tests/test_composition.py::test_session_mode_shadow_builds_one_runner_and_hands_its_hook_to_the_evaluator"
+  "target": "tests/test_composition.py::test_cognition_on_builds_one_runner_and_hands_its_hook_to_the_evaluator"
  },
  {
   "name": "minor 1: a unit outside session_units is tracked and hooked",
@@ -210,11 +210,11 @@
   "target": "tests/unit/test_cognition_session_units.py"
  },
  {
-  "name": "minor 1: units without a home room are dropped from the evaluator",
+  "name": "minor 1: a unit without a home room is gauged but not woken",
   "file": "nora/app/composition.py",
-  "old": "            cognition_session_units = frozenset(cognition_wakeable)\n",
-  "new": "            cognition_session_units = frozenset(cognition_wakeable)\n            cognition_units = lambda: tuple(cognition_wakeable)  # noqa: E731\n",
-  "target": "tests/test_composition.py::test_session_mode_shadow_builds_one_runner_and_hands_its_hook_to_the_evaluator tests/test_composition.py::test_units_without_a_home_room_stay_in_the_evaluator_and_are_gauged"
+  "old": "            units=lambda: sorted(cognition_session_units or ()), metrics=metrics,",
+  "new": "            units=lambda: sorted(unit_scopes()), metrics=metrics,",
+  "target": "tests/test_composition.py::test_units_without_a_home_room_are_gauged_and_never_woken"
  },
  {
   "name": "minor 1: shadow boots with no unit that can run a session",

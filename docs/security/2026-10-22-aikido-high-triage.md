@@ -207,7 +207,7 @@ that runs. Their remediation is testable without the scanner's target.
   `nora/agent/tools.py:12864` and `nora/app/composition.py:4527-4528` threaded
   the room but not the unit.
 - **Fix:** ownership is persisted, not inferred. `events` now carries
-  `platform` beside `unit_id` (migration `0127_event_platform`, which adds the
+  `platform` beside `unit_id` (migration `0128_event_platform`, which adds the
   column and backfills nothing), and `Gathering`/`event_in_scope` require the
   row's stored `(unit_id, platform, conversation_id)` to match the caller. A
   row with no stored platform is quarantined: it is never returned and never
