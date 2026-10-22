@@ -60,7 +60,8 @@ selecting commit there. It does not roll back database schema or host config.
 There is no `develop` branch. Use **`<type>/<kebab-slug>`** for maintainers, agents
 and fork contributors alike, with a type from the commit table below, for example
 `docs/public-readiness` or `fix/message-delivery`. Describe the change in the slug.
-Every change starts in its own worktree and branch.
+Every change starts in its own worktree and branch. The `PR content` check rejects any other branch name, and the `master` ruleset
+makes that check blocking (`docs/maintainers/github.md`, Merge rules).
 
 ## Commit messages
 
