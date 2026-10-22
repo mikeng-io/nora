@@ -9,6 +9,7 @@
 // (fail-closed: NOT a first boot — silently first-booting could rejoin a
 // channel the user just exited).
 
+import { realpathSync } from 'node:fs';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -38,6 +39,34 @@ export function createStateStore({ path: filePath }) {
   }
 
   return { read, write, path: filePath };
+}
+
+// The path of `name` inside `dir`, and only that: a guild id reaches here from
+// the control plane (`guild_id` in a request body), so a name with a separator,
+// a `..` or an absolute form is refused, and so is a file whose real location
+// (a symlink planted under the name) lies outside `dir`. Checked on the
+// resolved paths; the returned path is the plain join the caller expects.
+const UNSAFE_NAME = /[\\/]/;
+
+function realOrSelf(p) {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+}
+
+export function containedFile(dir, name) {
+  if (typeof name !== 'string' || name === '' || name === '.' || name === '..' || UNSAFE_NAME.test(name)) {
+    throw new Error(`refusing state file name ${JSON.stringify(name)}`);
+  }
+  const realBase = realOrSelf(path.resolve(dir));
+  const real = realOrSelf(path.join(realBase, name));
+  const rel = path.relative(realBase, real);
+  if (rel === '' || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
+    throw new Error(`state file ${JSON.stringify(name)} escapes its directory`);
+  }
+  return path.join(dir, name);
 }
 
 // Which of a state directory's files name a guild, and which do not.
