@@ -78,19 +78,56 @@ class VideoDesk:
         # A create this turn that may have reached the provider without a delivery (`uncertain`,
         # `row_not_written`): repeated, never re-sent, so the tool's second call cannot pay twice.
         self._turn_spent: dict[tuple[str, str, str], str] = {}
+        # Rows whose write failed AFTER the provider accepted the clip (or after an uncertain
+        # create). They are held here and counted against the cap until `_reconcile` writes them,
+        # which the next create does before it reads the cap. Not durable: a restart during a
+        # database outage loses them, and that residual is named in the PR, not papered over.
+        self._unrecorded: list[ComputeJob] = []
 
     def _day_start(self) -> datetime:
         local = self._clock().astimezone(self._tz)
         return datetime.combine(local.date(), time.min, tzinfo=self._tz)
 
     async def used_today(self, *, platform: str, conversation_id: str) -> int:
-        """This room's clips since local midnight; other rooms' rows are not counted."""
+        """This room's clips since local midnight; other rooms' rows are not counted.
+
+        Held rows are counted too, so a failed write cannot reopen the cap in this process.
+        They are read BEFORE the table: a row reconciled during the read is then counted twice,
+        which fails closed, never once-too-few."""
+        held = sum(
+            1 for r in self._unrecorded
+            if r.platform == platform and r.conversation_id == conversation_id
+        )
         rows = await self._jobs.kind_since(kind=VIDEO_KIND, since=self._day_start())
-        return sum(
+        return held + sum(
             1 for r in rows
             if r.platform == platform and r.conversation_id == conversation_id
             and clip_counts(failure_reason=r.failure_reason, result_url=r.result_url)
         )
+
+    async def _persist(self, row: ComputeJob) -> bool:
+        """Write `row`. On failure it is held for `_reconcile` and False is returned: the
+        caller must not report a clip as recorded that the table does not hold."""
+        try:
+            await self._jobs.create(row)
+            return True
+        except Exception:
+            log.exception("video_create: the row for %s was not written; held to retry", row.id)
+            self._unrecorded.append(row)
+            return False
+
+    async def _reconcile(self) -> None:
+        """Write held rows, oldest first, stopping at the first that still fails. A row the
+        table already holds (its write landed but the call raised) is dropped, not re-inserted."""
+        while self._unrecorded:
+            row = self._unrecorded[0]
+            try:
+                if await self._jobs.get(row.id) is None:
+                    await self._jobs.create(row)
+            except Exception:
+                log.exception("video_create: a held row is still unwritten; retried next create")
+                return
+            self._unrecorded.pop(0)
 
     async def _record_uncertain(
         self, *, platform: str, conversation_id: str, conversation_type: str,
@@ -107,10 +144,7 @@ class VideoDesk:
             error=reason or "the create call broke after it was sent",
             failure_reason="uncertain",
         )
-        try:
-            await self._jobs.create(row)
-        except Exception:
-            log.exception("video_create: the uncertain create was not recorded")
+        await self._persist(row)
 
     async def create(
         self, *, platform: str, conversation_id: str, conversation_type: str,
@@ -149,6 +183,7 @@ class VideoDesk:
                 return VideoOutcome("started", id=self._turn_jobs[key], repeated=True)
             if tag_id and key in self._turn_spent:
                 return VideoOutcome("unavailable", reason=self._turn_spent[key])
+            await self._reconcile()
             try:
                 used = await self.used_today(platform=platform, conversation_id=conversation_id)
             except Exception:
@@ -182,15 +217,11 @@ class VideoDesk:
                 requester_person_id=requester_person_id, tag_id=tag_id,
                 created_at=self._clock(), state=ComputeJobState.PENDING,
             )
-            try:
-                await self._jobs.create(row)
-            except Exception:
-                # The clip is rendering and nothing will deliver it. Said plainly: there is no
-                # cancel call to stop the spend.
-                log.exception(
-                    "video_create: the job row was not written; task %s renders undelivered",
-                    started.job_id,
-                )
+            if not await self._persist(row):
+                # The clip is rendering and nothing will deliver it, unless the held row is
+                # written (`_reconcile`). Said plainly: there is no cancel call to stop the spend.
+                log.error("video_create: task %s renders undelivered until its row is written",
+                          started.job_id)
                 self._remember(self._turn_spent, key, "row_not_written", tag_id)
                 return VideoOutcome("unavailable", reason="row_not_written")
             self._remember(self._turn_jobs, key, str(row.id), tag_id)

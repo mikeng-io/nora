@@ -746,6 +746,69 @@ async def test_a_clip_whose_row_was_not_written_is_not_started_again_in_the_turn
     assert len(starter.calls) == 1
 
 
+class _FlakyStore(FakeComputeJobStore):
+    """A store whose writes fail while `down` is set: the database that drops
+    out just after a provider launch."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.down = True
+
+    async def create(self, job: ComputeJob) -> None:
+        if self.down:
+            raise RuntimeError("db down")
+        await super().create(job)
+
+
+async def test_a_clip_whose_row_was_not_written_still_counts_against_the_cap_in_a_later_turn():
+    """The provider launch happened, the row did not land, and the process has not restarted.
+    The cap must still count that clip: `_turn_spent` is per turn, so a new turn that
+    re-read only the table would launch a second clip past a cap of one."""
+    store = _FlakyStore()
+    starter = _Starter()
+    desk = _desk(store, starter, cap=1)
+    first = await _make(desk, tag="t1")
+    assert (first.status, first.reason) == ("unavailable", "row_not_written")
+    second = await _make(desk, tag="t2")
+    assert second.status == "at_cap"
+    assert len(starter.calls) == 1
+
+
+async def test_an_unwritten_row_is_written_by_the_next_create_once_the_store_recovers():
+    """The retry path: the next create writes the held row before it counts, so a recovered
+    database holds the clip exactly once and the cap reads it from the table."""
+    store = _FlakyStore()
+    starter = _Starter()
+    desk = _desk(store, starter, cap=1)
+    await _make(desk, tag="t1")
+    store.down = False
+    again = await _make(desk, tag="t2")
+    assert again.status == "at_cap"
+    rows = await store.kind_since(kind=VIDEO_KIND, since=NOW - timedelta(days=1))
+    assert [r.backend_job_id for r in rows] == ["T1@1"]
+    assert len(starter.calls) == 1
+
+
+async def test_an_uncertain_clip_whose_record_was_not_written_still_counts_in_a_later_turn():
+    """The provider may have rendered a clip and returned no task id, and the record of that
+    uncertain create then fails to write. The cap must still count it in a later turn, or a
+    retry after the database recovers would pay for a second clip."""
+
+    class _Uncertain(_Starter):
+        async def start(self, request: VideoRequest) -> VideoStart:
+            self.calls.append(request)
+            return VideoStart("unavailable", reason="timed out", uncertain=True)
+
+    store = _FlakyStore()
+    starter = _Uncertain()
+    desk = _desk(store, starter, cap=1)
+    first = await _make(desk, tag="t1")
+    assert (first.status, first.reason) == ("unavailable", "uncertain")
+    second = await _make(desk, tag="t2")
+    assert second.status == "at_cap"
+    assert len(starter.calls) == 1
+
+
 async def test_a_refused_start_writes_no_row_and_spends_no_cap():
     store = FakeComputeJobStore()
     out = await _make(_desk(store, _Starter("refused")))
