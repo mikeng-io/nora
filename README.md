@@ -14,6 +14,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-48587A?labelColor=5E5351" alt="License: MIT"></a>
   <a href="#development"><img src="https://img.shields.io/badge/python-3.12-48587A?labelColor=5E5351" alt="Development: Python 3.12"></a>
   <a href="#project-status"><img src="https://img.shields.io/badge/status-experimental-835E0E?labelColor=5E5351" alt="Status: experimental"></a>
+  <a href="https://www.aikido.dev/"><img src="https://img.shields.io/badge/security-scanned_with_Aikido-48587A?labelColor=5E5351" alt="Security: scanned with Aikido"></a>
 </p>
 
 <p align="center">

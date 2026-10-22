@@ -512,11 +512,17 @@ async def _reset_sequences(conn: AsyncConnection, table: str) -> None:
         "WHERE table_schema = 'public' AND table_name = :t "
         "AND (is_identity = 'YES' OR column_default LIKE 'nextval(%')"
     ), {"t": table})).scalars().all()
+    relation = sa.table(table, schema="public")
     for column in serials:
-        await conn.execute(sa.text(
-            f"SELECT setval(pg_get_serial_sequence(:t, :c), max(\"{column}\")) "  # noqa: S608 — table and column names are module constants, never input
-            f'FROM "{table}" HAVING max("{column}") IS NOT NULL'
-        ), {"t": f'public."{table}"', "c": column})
+        # Catalog names are identifiers, not SQL: let the dialect escape them.
+        maximum: sa.ColumnElement[int] = sa.func.max(sa.column(column))
+        await conn.execute(
+            sa.select(sa.func.setval(
+                sa.func.pg_get_serial_sequence(sa.bindparam("t"), sa.bindparam("c")),
+                maximum,
+            )).select_from(relation).having(maximum.is_not(None)),
+            {"t": conn.dialect.identifier_preparer.format_table(relation), "c": column},
+        )
 
 
 async def _refuse_a_target_that_holds_rows(conn: AsyncConnection) -> None:
