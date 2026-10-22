@@ -88,6 +88,41 @@ async def test_needs_human_is_unavailable_with_the_reason():
     assert task.finished.reason == "a CAPTCHA"
 
 
+async def test_once_browse_done_no_page_tool_touches_the_page_again():
+    """Aikido 8765_44870: a finished task is over. Every page tool must refuse, and the page
+    must see no further action, even though the model keeps calling tools."""
+    task, page = _task()
+    tools = _named(task)
+    await tools["browse_done"](answer="Open 9 to 5.")
+    before = list(page.actions)
+    for name, args in [("page_open", {"url": "https://example.com"}), ("page_snapshot", {}),
+                       ("page_click", {"ref": "e1"}), ("page_read", {}), ("page_look", {})]:
+        said = await tools[name](**args)
+        text = said if isinstance(said, str) else said["content"][0]["text"]
+        assert "finished" in text, (name, text)
+    assert page.actions == before
+    assert task.finished is not None and task.finished.answer == "Open 9 to 5."
+
+
+async def test_a_second_terminal_outcome_is_rejected_and_the_first_stands():
+    """Aikido 8765_44870: `browse_done` and `browse_needs_human` are one-way. A second
+    terminal call must not overwrite the first outcome."""
+    task, _ = _task()
+    tools = _named(task)
+    await tools["browse_needs_human"](reason="a CAPTCHA")
+    said = await tools["browse_done"](answer="a later answer")
+    assert "already" in said
+    assert task.finished is not None
+    assert task.finished.needs_human and task.finished.reason == "a CAPTCHA"
+    assert task.finished.answer == ""
+    task2, _ = _task()
+    tools2 = _named(task2)
+    await tools2["browse_done"](answer="first")
+    await tools2["browse_needs_human"](reason="late")
+    assert task2.finished is not None and task2.finished.answer == "first"
+    assert not task2.finished.needs_human
+
+
 async def test_page_read_marks_a_cut():
     task, _ = _task(read_chars=10)
     said = await _named(task)["page_read"]()
