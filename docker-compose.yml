@@ -981,7 +981,7 @@ services:
   # `nora-egress.service` sat in `failed` for sixteen days with nothing to say
   # so. Three stores and no reader — `docs/observability.md`.
   prometheus:
-    image: prom/prometheus:v3.7.3
+    image: prom/prometheus:v3.13.5
     container_name: nora-prometheus
     restart: unless-stopped
     command:

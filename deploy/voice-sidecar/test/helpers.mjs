@@ -6,6 +6,7 @@ import { EventEmitter } from 'node:events';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { after } from 'node:test';
 
 import { createCore, createFrontDoor } from '../src/controller.mjs';
 import { createStateStore } from '../src/state_store.mjs';
@@ -261,6 +262,13 @@ export async function makeHarness(options = {}) {
     log: () => {},
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const close = () => new Promise((resolve) => {
+    server.close(resolve);
+    // Failed tests may leave an active HTTP request open.
+    server.closeAllConnections();
+  });
+  // Runs even when an assertion throws before a test's explicit close().
+  after(close);
   const base = `http://127.0.0.1:${server.address().port}`;
   const post = async (p, body) => {
     const res = await fetch(base + p, {
@@ -305,7 +313,7 @@ export async function makeHarness(options = {}) {
     },
     leaves: () => leaveCount,
     pumpCloses: () => pumpCloseCount,
-    close: () => new Promise((resolve) => server.close(resolve)),
+    close,
   };
 }
 
