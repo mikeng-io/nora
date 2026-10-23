@@ -1009,10 +1009,20 @@ def render_packet(
     withheld = 0
     spent = 0
     last: float | None = None  # the previous unpinned hit's relevance
+
+    # A person's name is model-facing metadata, so it is screened like the text
+    # (R-18): an identifier, an empty name, or the internal person id itself is
+    # not a name, and the packet says `someone`.
+    def packet_name(pid: str) -> str:
+        name = name_of(pid)
+        if not name or name == pid or scan_identifiers(name) is not None:
+            return "someone"
+        return name
+
     # Screened WHOLE, before the cut: an identifier straddling `TEXT_CHARS`
     # would otherwise leave as a fragment the screen cannot recognise (R-18).
     # A withheld hit takes no part in the cut.
-    shown = [_shown(h.node, name_of) for h in hits]
+    shown = [_shown(h.node, packet_name) for h in hits]
     screened = [bool(body and scan_identifiers(body) is not None) for _, body in shown]
     # The best relevance from each hit on, over the unpinned hits the screen
     # passes. The rank is age-decayed, so a recent weak hit can sit ahead of
@@ -1046,7 +1056,7 @@ def render_packet(
         if h.node.origin_room:
             item["room"] = room_label(h.node.origin_room)
         item["text"] = text
-        people = sorted({name_of(p) for p in h.people})
+        people = sorted({packet_name(p) for p in h.people})
         if people:
             item["people"] = people
         if places:
