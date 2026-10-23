@@ -12,7 +12,8 @@ of contributions. Use synthetic reproductions. Report vulnerabilities through
 
 ## Setup
 
-Use Python 3.12 and [uv](https://docs.astral.sh/uv/). Fork the repository if you
+Use Python 3.12 and [uv](https://docs.astral.sh/uv/) 0.13.4 or newer
+(the emSign TLS fix). Fork the repository if you
 do not have write access, then clone your fork and work in a separate worktree:
 
 ```bash
