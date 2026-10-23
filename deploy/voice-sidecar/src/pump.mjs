@@ -24,7 +24,7 @@ import { encodeHello, encodeFrame } from './codec.mjs';
  * drop counters for /voice/status. The wake gate degrades into gaps for a
  * slow consumer, never into a memory grow.
  */
-export function createPump({ guildId, host = '127.0.0.1', port = 4599, maxPending = 200, maxUserBacklog = 16, connectImpl = net.connect } = {}) {
+export function createPump({ guildId, token, host = '127.0.0.1', port = 4599, maxPending = 200, maxUserBacklog = 16, connectImpl = net.connect } = {}) {
   let socket = null;
   // Validated HERE, not in the connect handler: a throw inside `'connect'` is
   // an uncaught exception on the event loop and would take the whole process
@@ -32,6 +32,11 @@ export function createPump({ guildId, host = '127.0.0.1', port = 4599, maxPendin
   // is no useful degraded mode to fall back to.
   if (typeof guildId !== 'string' || !guildId) {
     throw new Error('createPump needs a guildId — a hello-less connection is dropped by the gate');
+  }
+  // The gate refuses a hello without the shared token, so a pump built without
+  // one could never deliver audio. Refused here, for the same reason as above.
+  if (typeof token !== 'string' || !token) {
+    throw new Error('createPump needs the service token — the wake gate refuses an unauthenticated hello');
   }
   let connecting = false;
   let closed = false;
@@ -78,7 +83,7 @@ export function createPump({ guildId, host = '127.0.0.1', port = 4599, maxPendin
       // gate, so a falsy guildId would silently produce a pump forwarding
       // audio nobody can attribute — a failure in another container, with
       // nothing here to point at it. `createPump` refuses one outright.
-      s.write(encodeHello(guildId));
+      s.write(encodeHello(guildId, token));
       const held = pending;
       pending = [];
       for (const { userId, frame } of held) writeCounted(userId, frame);

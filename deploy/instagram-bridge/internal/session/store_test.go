@@ -3,6 +3,7 @@ package session
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -333,4 +334,79 @@ func TestClearSeqIsIdempotent(t *testing.T) {
 	if err := s.ClearSeq(); err != nil {
 		t.Fatalf("a second clear errored: %v", err)
 	}
+}
+
+// --- the raw bootstrap is scrubbed, and the session is private first ----------
+
+// A cookies.curl paste is the whole account credential in plain text. Once the
+// jar is saved from it, the paste is a second copy with nothing left to do: it
+// is truncated and removed, so the credential is not left readable on disk.
+func TestTheCurlBootstrapIsScrubbedOnceTheJarIsSaved(t *testing.T) {
+	s := Store{Dir: t.TempDir()}
+	curl := `-H 'cookie: csrftoken=CSRF123; ds_user_id=79597894900; sessionid=79597894900%3Asecret%3A28'`
+	if err := os.WriteFile(s.Path("cookies.curl"), []byte(curl), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadCookieJar(s); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(s.Path("cookies.curl")); !os.IsNotExist(err) {
+		t.Fatalf("cookies.curl survived the bootstrap: stat err = %v", err)
+	}
+}
+
+// The directory and the credential files are tightened before anything is read
+// from them. A directory left 0755 by a copy into the volume is readable by
+// every user on the host, and a jar at 0644 is the same credential, readable.
+func TestTheSessionIsMadePrivateBeforeItsCredentialIsRead(t *testing.T) {
+	s := Store{Dir: t.TempDir()}
+	if err := os.Chmod(s.Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	curl := `-H 'cookie: csrftoken=CSRF123; ds_user_id=79597894900; sessionid=79597894900%3Asecret%3A28'`
+	if err := os.WriteFile(s.Path("cookies.curl"), []byte(curl), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(s.Path("cookies.json"), []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadCookieJar(s); err != nil {
+		t.Fatal(err)
+	}
+	if got := modeOf(t, s.Dir); got != 0o700 {
+		t.Errorf("session directory mode = %o, want 0700", got)
+	}
+	if got := modeOf(t, s.Path("cookies.json")); got != 0o600 {
+		t.Errorf("cookies.json mode = %o, want 0600", got)
+	}
+}
+
+// When the session cannot be made private, the credential is not read at all.
+// The bridge keeps serving and reports why: an error, not a jar.
+func TestAnUnprivatizableSessionFailsClosedAndIsNotRead(t *testing.T) {
+	s := Store{Dir: t.TempDir()}
+	good := `-H 'cookie: csrftoken=CSRF123; ds_user_id=79597894900; sessionid=79597894900%3Asecret%3A28'`
+	if err := os.WriteFile(s.Path("cookies.curl"), []byte(good), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prev := chmod
+	chmod = func(string, os.FileMode) error { return errors.New("operation not permitted") }
+	t.Cleanup(func() { chmod = prev })
+
+	jar, err := LoadCookieJar(s)
+	if err == nil {
+		t.Fatalf("a readable session was loaded: jar logged in = %v", jar != nil && jar.IsLoggedIn())
+	}
+	if _, statErr := os.Stat(s.Path("cookies.json")); !os.IsNotExist(statErr) {
+		t.Fatal("the bootstrap was normalized into cookies.json on a session that was not private")
+	}
+}
+
+func modeOf(t *testing.T, path string) os.FileMode {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return info.Mode().Perm()
 }

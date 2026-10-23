@@ -26,9 +26,13 @@ here would mean two components disagreeing about whether you have been told.
 from __future__ import annotations
 
 import contextlib
+import hashlib
+import hmac
 import json
 import logging
 import os
+import sys
+import threading
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -51,6 +55,32 @@ TIMEOUT = float(os.environ.get("ALERT_DISCORD_TIMEOUT", "10"))
 #: alerts can exceed it, and a 400 from Discord would turn "many things broke"
 #: into "you were told nothing" — the worst possible time to lose the message.
 MAX_CONTENT = 1900
+#: The bearer every POST must carry: the shared `NORA_BRIDGE_TOKEN`, which
+#: compose already requires and Alertmanager sends (deploy/alertmanager).
+#: Empty fails closed — `main` refuses to start, and `Handler` refuses every POST.
+BRIDGE_TOKEN = os.environ.get("NORA_BRIDGE_TOKEN", "")
+#: The largest body accepted. An Alertmanager group is a few KB; 256 KiB is
+#: hundreds of alerts with full annotations. Checked against the declared
+#: length BEFORE a byte is read, so the bound is on what the bridge buffers.
+MAX_BODY = 256 * 1024
+#: Seconds one connection may take to deliver its request. Alertmanager sends
+#: its body at once; a client that stalls mid-body would otherwise hold a
+#: thread for as long as it likes.
+INBOUND_TIMEOUT = 10
+#: Connections served at once, one thread each. Alertmanager sends one POST
+#: per group, so more than a handful in flight means something is wrong. A
+#: connection past the bound is answered 503 and closed, not queued.
+MAX_CONCURRENT = 8
+#: The longest any one label or annotation is rendered. A runaway annotation
+#: becomes a truncated one, marked as such, instead of the whole message.
+MAX_FIELD = 300
+
+
+def _field(value: object) -> str:
+    """One label or annotation, stripped and bounded. Truncation is marked, like
+    the message's own: a silently clipped field reads as a complete one."""
+    text = "" if value is None else str(value).strip()
+    return text if len(text) <= MAX_FIELD else text[:MAX_FIELD] + "…"
 
 
 def render(payload: dict) -> str:
@@ -61,21 +91,22 @@ def render(payload: dict) -> str:
     summary carries the rest; the description is included only when it says
     something the summary does not.
     """
-    status = str(payload.get("status", "unknown")).upper()
-    alerts = payload.get("alerts") or []
+    status = _field(payload.get("status", "unknown")).upper()
+    raw_alerts = payload.get("alerts")
+    alerts = [a for a in raw_alerts if isinstance(a, dict)] if isinstance(raw_alerts, list) else []
     lines = [f"[{status}] {len(alerts)} alert(s)"]
     for alert in alerts[:10]:
-        labels = alert.get("labels") or {}
-        annotations = alert.get("annotations") or {}
-        name = labels.get("alertname", "unnamed")
-        severity = labels.get("severity", "")
-        where = labels.get("job") or labels.get("instance") or ""
+        labels = alert.get("labels") if isinstance(alert.get("labels"), dict) else {}
+        annotations = alert.get("annotations") if isinstance(alert.get("annotations"), dict) else {}
+        name = _field(labels.get("alertname") or "unnamed")
+        severity = _field(labels.get("severity"))
+        where = _field(labels.get("job") or labels.get("instance"))
         head = " ".join(part for part in (name, f"({severity})" if severity else "", where) if part)
         lines.append(f"• {head}")
-        summary = (annotations.get("summary") or "").strip()
+        summary = _field(annotations.get("summary"))
         if summary:
             lines.append(f"  {summary}")
-        description = (annotations.get("description") or "").strip()
+        description = _field(annotations.get("description"))
         if description and description != summary:
             lines.append(f"  {description}")
     if len(alerts) > 10:
@@ -99,7 +130,10 @@ def send(message: str) -> bool:
         # TRUNCATED, and it says so — for `render`'s reason one level down: a
         # silently clipped message understates the incident.
         message = message[:MAX_CONTENT] + "\n… truncated"
-    body = json.dumps({"content": message}).encode()
+    # `parse: []` turns off every mention Discord would otherwise act on. The
+    # text is copied from rule annotations and label values, and some of those
+    # echo input nobody here controls: a bare `@everyone` must not ping a room.
+    body = json.dumps({"content": message, "allowed_mentions": {"parse": []}}).encode()
     request = urllib.request.Request(  # noqa: S310 — fixed https base
         f"{API}/channels/{CHANNEL}/messages",
         data=body,
@@ -133,18 +167,105 @@ def send(message: str) -> bool:
     return True
 
 
+class Server(ThreadingHTTPServer):
+    """A thread per connection, and no more than MAX_CONCURRENT of them at once.
+
+    The bound is taken in `process_request`, before a thread exists, so a flood
+    is refused at the accept rather than queued behind the threads it started.
+    """
+
+    def __init__(self, address: tuple[str, int], handler: type) -> None:
+        super().__init__(address, handler)
+        self._slots = threading.BoundedSemaphore(MAX_CONCURRENT)
+
+    def process_request(self, request, client_address):
+        if not self._slots.acquire(blocking=False):
+            log.error("connection refused: %d already in flight", MAX_CONCURRENT)
+            with contextlib.suppress(OSError):
+                request.sendall(
+                    b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n"
+                    b"Connection: close\r\n\r\n",
+                )
+            self.shutdown_request(request)
+            return
+        super().process_request(request, client_address)
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._slots.release()
+
+
 class Handler(BaseHTTPRequestHandler):
+    #: Socket timeout for one connection, so a client that stops sending is
+    #: disconnected instead of holding a thread and a slot.
+    timeout = INBOUND_TIMEOUT
+
+    def _authorized(self) -> bool:
+        # Fail closed on an empty token. Digests on both sides make the compare
+        # one length regardless of what the caller sent, which compare_digest
+        # on the raw strings would not: it returns early on a length mismatch.
+        if not BRIDGE_TOKEN:
+            return False
+        got = self.headers.get("Authorization", "").encode("utf-8")
+        want = f"Bearer {BRIDGE_TOKEN}".encode()
+        return hmac.compare_digest(hashlib.sha256(got).digest(), hashlib.sha256(want).digest())
+
+    def _declared_length(self) -> int:
+        try:
+            return int(self.headers.get("Content-Length") or "")
+        except ValueError:
+            return -1
+
+    def _refuse(self, status: int, unread: int, headers: tuple[tuple[str, str], ...] = ()) -> None:
+        """Answer without using the body. A body being refused is read off first,
+        up to MAX_BODY, because closing over unread bytes resets the connection
+        before the client has read the answer. A larger body is not read at all:
+        reading it is what refusing it is meant to avoid."""
+        if 0 < unread <= MAX_BODY:
+            with contextlib.suppress(OSError):
+                self.rfile.read(unread)
+        self.close_connection = True
+        self.send_response(status)
+        for name, value in headers:
+            self.send_header(name, value)
+        self.end_headers()
+
     def do_POST(self) -> None:  # BaseHTTPRequestHandler's contract
         if self.path.rstrip("/") != "/alert":
             self.send_response(404)
             self.end_headers()
             return
-        length = int(self.headers.get("Content-Length") or 0)
+        length = self._declared_length()
+        if not self._authorized():
+            log.error("alert refused: bearer missing or wrong")
+            self._refuse(401, length, (("WWW-Authenticate", "Bearer"),))
+            return
+        if length < 0:
+            self._refuse(400, 0)
+            return
+        if length > MAX_BODY:
+            log.error("alertmanager sent %d bytes; the limit is %d", length, MAX_BODY)
+            self._refuse(413, 0)
+            return
         raw = self.rfile.read(length)
+        if len(raw) != length:
+            # The client went away mid-body. What arrived is not an alert.
+            log.error("alertmanager body ended after %d of %d bytes", len(raw), length)
+            self.close_connection = True
+            self.send_response(400)
+            self.end_headers()
+            return
         try:
             payload = json.loads(raw or b"{}")
-        except ValueError:
+        except (ValueError, RecursionError):
             log.error("alertmanager sent non-JSON")
+            self.send_response(400)
+            self.end_headers()
+            return
+        if not isinstance(payload, dict):
+            log.error("alertmanager sent JSON that is not an object")
             self.send_response(400)
             self.end_headers()
             return
@@ -172,8 +293,13 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    if not BRIDGE_TOKEN:
+        # Refused before the port is bound. A bridge that starts open and warns
+        # is one any co-networked container can post to, and nobody reads the warning.
+        log.error("NORA_BRIDGE_TOKEN is unset; refusing to start an unauthenticated alert bridge")
+        sys.exit(2)
     log.info(
         "alert-bridge listening on :%d -> %s/channels/%s",
         PORT, API, CHANNEL or "<unset>",
     )
-    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()  # noqa: S104
+    Server(("0.0.0.0", PORT), Handler).serve_forever()  # noqa: S104

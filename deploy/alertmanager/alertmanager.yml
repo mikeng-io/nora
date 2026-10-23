@@ -40,3 +40,9 @@ receivers:
       # forty lines and already existed.
       - url: http://alert-bridge:9110/alert
         send_resolved: true
+        # The shared NORA_BRIDGE_TOKEN as a Bearer. A FILE, not inline: this
+        # config is committed. The compose entrypoint writes the token there.
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /run/alertmanager/bridge-token

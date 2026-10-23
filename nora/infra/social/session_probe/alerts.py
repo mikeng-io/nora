@@ -47,10 +47,14 @@ class LogSink:
         return True
 
 
+# The bridge requires the shared bearer. The script runs INSIDE the bridge container, where
+# NORA_BRIDGE_TOKEN is already in the environment, so the token never appears in the host's
+# argv or in this repo.
 _POST_SCRIPT = (
-    "import sys,urllib.request;"
+    "import os,sys,urllib.request;"
     "r=urllib.request.Request('http://127.0.0.1:9110/alert',data=sys.stdin.buffer.read(),"
-    "headers={'Content-Type':'application/json'});"
+    "headers={'Content-Type':'application/json',"
+    "'Authorization':'Bearer '+os.environ['NORA_BRIDGE_TOKEN']});"
     "urllib.request.urlopen(r,timeout=10).read()"
 )
 

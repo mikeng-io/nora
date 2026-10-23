@@ -330,3 +330,50 @@ async def test_stop_tolerates_a_dead_generation(aiohttp_client):
     await session.stop()  # must not raise
 
     assert session.playback_id is None
+
+
+async def test_every_control_call_and_the_status_read_carry_the_bearer(aiohttp_client, monkeypatch):
+    """The sidecar refuses every route without the shared bearer, so the client
+    must send it on both verbs, from the one environment variable nora holds."""
+    monkeypatch.setenv("NORA_BRIDGE_TOKEN", "tok-shared")
+    seen: list[str | None] = []
+    app = web.Application()
+
+    async def handler(request: web.Request) -> web.Response:
+        seen.append(request.headers.get("Authorization"))
+        return web.json_response({"ok": True, "request_id": "r-1", "state": _state()})
+
+    async def status_handler(request: web.Request) -> web.Response:
+        seen.append(request.headers.get("Authorization"))
+        body = {**_state(), "last_event_seq": 0, "streaming": False, "last_error": None}
+        return web.json_response(body)
+
+    for path in _ROUTES:
+        app.router.add_post(path, handler)
+    app.router.add_get("/voice/status", status_handler)
+    vc = await _client(aiohttp_client, app)
+
+    await vc.join("guild-1", "chan-1", request_id="r-1")
+    await vc.status("guild-1")
+
+    assert seen == ["Bearer tok-shared", "Bearer tok-shared"]
+
+
+async def test_with_no_token_configured_the_client_sends_no_header(aiohttp_client, monkeypatch):
+    """An unset token sends nothing rather than `Bearer `; the sidecar then
+    refuses, which is the fail-closed answer."""
+    monkeypatch.delenv("NORA_BRIDGE_TOKEN", raising=False)
+    seen: list[str | None] = []
+    app = web.Application()
+
+    async def handler(request: web.Request) -> web.Response:
+        seen.append(request.headers.get("Authorization"))
+        return web.json_response({"ok": True, "request_id": "r-1", "state": _state()})
+
+    for path in _ROUTES:
+        app.router.add_post(path, handler)
+    vc = await _client(aiohttp_client, app)
+
+    await vc.join("guild-1", "chan-1", request_id="r-1")
+
+    assert seen == [None]

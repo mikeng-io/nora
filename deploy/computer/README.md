@@ -338,6 +338,34 @@ first connection to `GET /v1/browser?scope=<scope>`, a websocket behind the
 same bearer token: each text frame is one CDP message, relayed to Chrome's
 `--remote-debugging-pipe`.
 
+- **TLS activation precedes CDP on every start, including a reused profile.**
+  Chrome loads CRLSet asynchronously: on 2026-10-23 a fresh profile accepted
+  the compromised `EM DV TLS CA - G3B` chain, and a restarted profile still
+  accepted it while `chrome://components/` already displayed the updated
+  version. computerd now requires Chrome's own uncached resource fetch of
+  `https://dv-g3b-emudhra.we-have-a-problem.com/` to return exactly
+  `net::ERR_CERT_REVOKED` (-206), and `https://pypi.org/` to return HTTP 200.
+  If the affected certificate is still accepted, it clicks Chrome's native
+  CRLSet update button and waits for actual rejection, never a version or sleep.
+  Chrome authenticates its signed component; computerd adds no trust material.
+  Each probe uses a fresh incognito context (including fresh TLS connections)
+  with credentials disabled; bodies
+  are closed without reading or executing them. The context and update tab
+  are removed before the websocket is exposed. Failure or a 60-second deadline
+  kills Chrome and Xvfb, returns `unavailable`, and leaves no browser slot.
+- **Activation bounds (issue #210).** These two public endpoints and Google's
+  component service are availability dependencies for a profile that needs an
+  update. A cached, already active CRLSet needs only the probes. DNS/proxy errors,
+  other certificate errors, and endpoint changes fail closed. This verifies the
+  measured affected chain through this managed Chrome launch, not every CA or
+  arbitrary browsers launched by `computer_run`. No offline verification API
+  for this Linux Chrome was established. Google's
+  [advisory](https://blog.google/security/protecting-chrome-and-android-users-from-compromised-emudhra-intermediate-ca-certificates/)
+  schedules root removal for October 27: `ERR_CERT_AUTHORITY_INVALID` remains
+  unavailable until that mechanism is measured. Replace this incident-specific
+  guard only after fresh-profile and reused-profile startup measurements prove
+  the pinned replacement rejects the affected chains and accepts ordinary TLS
+  before user CDP, including when component updates are unavailable.
 - **No debugging port.** Chrome runs headed on its own Xvfb display
   (`-nolisten tcp`), both as the room's user, and computerd holds the pipe.
   Read on a VM built from this image (2026-10-07): only port 80 listened,
