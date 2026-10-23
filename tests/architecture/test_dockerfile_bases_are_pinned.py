@@ -14,6 +14,7 @@ import subprocess
 from pathlib import Path
 
 import yaml
+from packaging.version import Version
 
 ROOT = Path(__file__).resolve().parents[2]
 FROM = re.compile(
@@ -88,3 +89,57 @@ def test_node_images_stay_on_an_even_lts_line_and_dependabot_cannot_bump_the_maj
     assert {"dependency-name": "node", "update-types": ["version-update:semver-major"]} in docker[
         "ignore"
     ]
+
+
+def test_uv_bootstraps_copy_patched_binaries_before_using_them():
+    # pip's old vendored CA bundle fetched uv, which also had old roots.
+    images = set()
+    for name in (
+        "Dockerfile",
+        "deploy/stt/Dockerfile",
+        "deploy/voice-wake/Dockerfile",
+        "deploy/computer/Dockerfile",
+    ):
+        recipe = (ROOT / name).read_text(encoding="utf-8")
+        active = "\n".join(
+            line for line in recipe.splitlines() if not line.lstrip().startswith("#")
+        )
+        copy = re.search(
+            r"^COPY --from=(ghcr\.io/astral-sh/uv:([^@\s]+)@sha256:[0-9a-f]{64}) "
+            r"/uv /uvx /usr/local/bin/$",
+            active,
+            re.M,
+        )
+        assert copy, f"{name}: install uv/uvx from a tagged, digest-pinned official image"
+        assert Version(copy[2]) >= Version("0.13.4"), name
+        assert not re.search(r"\bpip\s+install[^\n]*\buv(?:==|\s|$)", active), name
+        first_use = re.search(r"^RUN uv\b", active, re.M)
+        assert first_use is None or copy.end() < first_use.start(), name
+        images.add(copy[1])
+    assert len(images) == 1, "all four images must use the same verified uv artifact"
+
+
+def test_workflow_installer_inputs_have_the_emsign_patch_floor():
+    seen = {"astral-sh/setup-uv": 0, "actions/setup-node": 0}
+    for path in (ROOT / ".github/workflows").glob("*.yml"):
+        workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+        for job in workflow["jobs"].values():
+            for step in job.get("steps", []):
+                action = step.get("uses", "").split("@")[0]
+                if action not in seen:
+                    continue
+                seen[action] += 1
+                key = "version" if action == "astral-sh/setup-uv" else "node-version"
+                version = Version(step["with"][key])
+                floor = Version("0.13.4" if key == "version" else "24.22.1")
+                assert version >= floor, f"{path.name}: {action} {version} predates {floor}"
+    assert seen == {"astral-sh/setup-uv": 6, "actions/setup-node": 2}
+
+
+def test_periphery_upgrades_the_system_ca_used_by_git():
+    recipe = (ROOT / "deploy/komodo/Periphery.Dockerfile").read_text(encoding="utf-8")
+    image = next(FROM.finditer(recipe))["image"]
+    assert image.startswith("ghcr.io/moghtech/komodo-periphery:2.3.3@sha256:")
+    active = "\n".join(line for line in recipe.splitlines() if not line.lstrip().startswith("#"))
+    install = re.search(r"apt-get install ([^&]+)", active)
+    assert install and "ca-certificates" in install[1].split(), "Git uses Periphery's system CA"

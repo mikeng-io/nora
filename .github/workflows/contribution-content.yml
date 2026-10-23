@@ -50,7 +50,7 @@ jobs:
         if: always()
         continue-on-error: true
         with:
-          version: '0.11.18'
+          version: '0.13.4'
           enable-cache: false
       - name: Advisory spelling
         if: always()
@@ -77,7 +77,7 @@ jobs:
         if: always()
         continue-on-error: true
         with:
-          version: '0.11.18'
+          version: '0.13.4'
           enable-cache: false
       - name: Advisory spelling
         if: always()
