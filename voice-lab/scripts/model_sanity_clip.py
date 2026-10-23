@@ -14,7 +14,8 @@ from openwakeword.model import Model
 
 LAB = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 onnx = os.path.join(LAB, "oww-data", "output", "喂Nora.onnx")
-assert os.path.exists(onnx), onnx
+if not os.path.exists(onnx):
+    raise FileNotFoundError(onnx)
 
 oww = Model(
     wakeword_models=[onnx],

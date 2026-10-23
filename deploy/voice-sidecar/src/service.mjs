@@ -40,7 +40,7 @@ import { buildCore, createCoreRegistry, createFrontDoor } from './controller.mjs
 import { bootChannel } from './lifecycle.mjs';
 import { realClock } from './outbox.mjs';
 import { join, createPump } from './recv.js';
-import { createStateStore, guildsFromStateFiles } from './state_store.mjs';
+import { containedFile, createStateStore, guildsFromStateFiles } from './state_store.mjs';
 
 const HOST = process.env.HOST ?? '127.0.0.1';
 const PORT = Number(process.env.PORT ?? 4600);
@@ -222,7 +222,7 @@ async function main() {
     return buildCore(registry, guildId, {
       joinVoice,
       entersStateFn: (connection, status, timeoutMs) => entersState(connection, status, timeoutMs),
-      stateStore: createStateStore({ path: path.join(STATE_DIR, `${guildId}.json`) }),
+      stateStore: createStateStore({ path: containedFile(STATE_DIR, `${guildId}.json`) }),
       spawn: (args) => spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] }),
       createMusicResource: (stream) =>
         createAudioResource(stream, { inputType: StreamType.Raw, inlineVolume: true }),
@@ -303,7 +303,7 @@ async function main() {
     }
     for (const guildId of guilds) {
       const file = `${guildId}.json`;
-      const store = createStateStore({ path: path.join(STATE_DIR, file) });
+      const store = createStateStore({ path: containedFile(STATE_DIR, file) });
       const stored = await store.read();
       if (stored.status === 'corrupt' || stored.status === 'error') {
         log('error', {

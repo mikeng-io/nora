@@ -275,9 +275,9 @@ class RotatingOAuthLane:
         process already refreshed, its link is adopted and no second refresh
         spends the (now dead) refresh token.
         """
-        if not self._unsaved and self._usable(self._cached, rejected, since):
-            assert self._cached is not None  # noqa: S101 — narrowed by _usable
-            return self._cached
+        cached = self._cached
+        if not self._unsaved and cached is not None and self._usable(cached, rejected, since):
+            return cached
         # Shielded: a caller cancelled mid-refresh (a turn timing out) must
         # not abandon a refresh the issuer has already rotated, or the new
         # token is lost and the old one is dead.
@@ -295,8 +295,7 @@ class RotatingOAuthLane:
     async def _locked(self, rejected: str, since: float | None) -> LaneState | str:
         async with self._lock:
             cached = self._cached
-            if self._usable(cached, rejected, since):
-                assert cached is not None  # noqa: S101 — narrowed by _usable
+            if cached is not None and self._usable(cached, rejected, since):
                 # Retry a write that failed. No flock needed: while our
                 # rotation is unsaved no other process can hold a newer
                 # chain (it would need the token only we have).
@@ -333,8 +332,7 @@ class RotatingOAuthLane:
                     # save retries the write.
                     return await self._spend(cached.refresh_token)
                 state = self._load()
-                if self._usable(state, rejected, since):
-                    assert state is not None  # noqa: S101 — narrowed by _usable
+                if state is not None and self._usable(state, rejected, since):
                     self._cached = state
                     self._observe(state)
                     return state

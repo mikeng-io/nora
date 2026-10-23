@@ -13,7 +13,8 @@ from openwakeword.model import Model
 
 LAB = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 onnx = os.path.join(LAB, "oww-data", "output", "喂Nora.onnx")
-assert os.path.exists(onnx)
+if not os.path.exists(onnx):
+    raise FileNotFoundError(onnx)
 
 oww = Model(
     wakeword_models=[onnx],
@@ -26,7 +27,8 @@ oww = Model(
 def score_wav(path, label):
     with wave.open(path, "rb") as wf:
         sr = wf.getframerate()
-        assert sr == 16000, f"{label}: sr={sr}"
+        if sr != 16000:
+            raise ValueError(f"{label}: sr={sr}")
         raw = wf.readframes(wf.getnframes())
     pcm = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
     chunk = 512

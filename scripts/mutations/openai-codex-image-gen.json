@@ -16,8 +16,8 @@
   {
     "name": "unsaved rotation: the fast path does not skip the retry",
     "file": "nora/infra/image_gen/oauth_lane.py",
-    "old": "        if not self._unsaved and self._usable(self._cached, rejected, since):\n",
-    "new": "        if self._usable(self._cached, rejected, since):\n",
+    "old": "        if not self._unsaved and cached is not None and self._usable(cached, rejected, since):\n",
+    "new": "        if cached is not None and self._usable(cached, rejected, since):\n",
     "target": "tests/contract/test_openai_codex_image_generator.py::test_an_unsaved_rotation_beats_the_older_chain_in_the_file"
   },
   {
@@ -30,8 +30,8 @@
   {
     "name": "a failed write after the pre-check (reviewer's repro): both spend branches reverted to the original",
     "file": "nora/infra/image_gen/oauth_lane.py",
-    "old": "                if self._unsaved and cached is not None:\n                    # Our rotation never reached the file, so the file's\n                    # chain is older (dead): spend ours; the refresh's own\n                    # save retries the write.\n                    return await self._spend(cached.refresh_token)\n                state = self._load()\n                if self._usable(state, rejected, since):\n                    assert state is not None  # noqa: S101 — narrowed by _usable\n                    self._cached = state\n                    self._observe(state)\n                    return state\n                if state is not None:\n                    chain = state\n                elif cached is not None:\n                    chain = cached  # the file vanished; ours is current\n                else:\n",
-    "new": "                state = self._load()\n                if self._usable(state, rejected, since):\n                    assert state is not None  # noqa: S101 — narrowed by _usable\n                    self._cached = state\n                    self._observe(state)\n                    return state\n                if state is not None:\n                    chain = state\n                else:\n",
+    "old": "                if self._unsaved and cached is not None:\n                    # Our rotation never reached the file, so the file's\n                    # chain is older (dead): spend ours; the refresh's own\n                    # save retries the write.\n                    return await self._spend(cached.refresh_token)\n                state = self._load()\n                if state is not None and self._usable(state, rejected, since):\n                    self._cached = state\n                    self._observe(state)\n                    return state\n                if state is not None:\n                    chain = state\n                elif cached is not None:\n                    chain = cached  # the file vanished; ours is current\n                else:\n",
+    "new": "                state = self._load()\n                if state is not None and self._usable(state, rejected, since):\n                    self._cached = state\n                    self._observe(state)\n                    return state\n                if state is not None:\n                    chain = state\n                else:\n",
     "target": "tests/contract/test_openai_codex_image_generator.py::test_a_failed_write_keeps_spending_the_rotated_token_and_retries_the_write"
   },
   {

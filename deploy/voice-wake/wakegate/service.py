@@ -184,7 +184,8 @@ class WakeService:
         while state.pending48.size >= BLOCK_48K:
             block, state.pending48 = state.pending48[:BLOCK_48K], state.pending48[BLOCK_48K:]
             chunk = downsample_to_16k(block)
-            assert chunk.size == OWW_CHUNK
+            if chunk.size != OWW_CHUNK:
+                raise RuntimeError(f"downsampled block is {chunk.size} samples, want {OWW_CHUNK}")
             state.chunks += 1
             utterance = state.gate.feed(chunk)
             if utterance is not None:

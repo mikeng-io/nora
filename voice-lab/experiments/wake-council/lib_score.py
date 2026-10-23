@@ -14,7 +14,8 @@ def load_model():
 
 def read_wav_int16(path):
     with wave.open(path, "rb") as wf:
-        assert wf.getsampwidth() == 2, path
+        if wf.getsampwidth() != 2:
+            raise ValueError(f"{path}: not 16-bit PCM")
         sr, ch = wf.getframerate(), wf.getnchannels()
         raw = wf.readframes(wf.getnframes())
     pcm = np.frombuffer(raw, dtype=np.int16)
@@ -33,5 +34,6 @@ def score_stream(oww, pcm, chunk=CHUNK):
 
 def score_file(oww, path, chunk=CHUNK):
     pcm, sr = read_wav_int16(path)
-    assert sr == 16000, f"{path} is {sr} Hz"
+    if sr != 16000:
+        raise ValueError(f"{path} is {sr} Hz")
     return score_stream(oww, pcm, chunk)
