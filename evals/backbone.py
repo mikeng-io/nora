@@ -67,6 +67,7 @@ from evals.situation import (
     varied_transport,
 )
 from evals.subject_config import FULL_RESTORE_OVERRIDES, NO_GEOCODER_ENV
+from evals.terminal import safe_print as print
 from nora.domain.block_types import BLOCK_TYPES
 from nora.domain.note_body import (
     ATTRIBUTED,

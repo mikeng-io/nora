@@ -43,6 +43,7 @@ import hashlib
 import json
 import logging
 import os
+import stat
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -118,6 +119,26 @@ def _release(fd: int) -> None:
         os.close(fd)
 
 
+def _private_or_refused(fd: int, path: Path) -> bool:
+    """Whether the open file `fd` may hold this account's tokens. A regular
+    file another account owns is refused; one readable or writable by group
+    or other is narrowed to 0600 first (a restored or hand-copied file keeps
+    its old mode). Checked on the descriptor, so nothing is read before it."""
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid():
+            log.error("%s is not a regular file this account owns; refusing it", path)
+            return False
+        if st.st_mode & 0o077:
+            os.fchmod(fd, 0o600)
+            log.warning("%s was readable beyond this account (%o); narrowed to 0600",
+                        path, stat.S_IMODE(st.st_mode))
+    except OSError:
+        log.error("%s could not be checked or narrowed; refusing it", path)
+        return False
+    return True
+
+
 class RotatingOAuthLane:
     """The chain, the locks and the state file. Subclasses set `lane` and
     `skew_seconds` and implement `_exchange`."""
@@ -175,10 +196,37 @@ class RotatingOAuthLane:
 
     # -- state file ---------------------------------------------------------
 
-    def _load(self) -> LaneState | None:
-        """The state file, if it belongs to the CURRENT `.env` login."""
+    def _private_parent(self) -> bool:
+        """Pin the owned directory before accepting or writing credentials."""
         try:
-            data = json.loads(self._state_file.read_text(encoding="utf-8"))
+            fd = os.open(self._state_file.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                st = os.fstat(fd)
+                if st.st_uid != os.getuid():
+                    return False
+                if st.st_mode & 0o077:
+                    os.fchmod(fd, st.st_mode & 0o700)
+            finally:
+                os.close(fd)
+        except OSError:
+            return False
+        return True
+
+    def _load(self) -> LaneState | None:
+        """The state file, if it belongs to the CURRENT `.env` login. Opened
+        without following a link, and checked (owner, mode) before its token
+        is read: see `_private_or_refused`."""
+        if not self._private_parent():
+            return None
+        try:
+            fd = os.open(self._state_file, os.O_RDONLY | os.O_NOFOLLOW)
+        except OSError:
+            return None
+        try:
+            with os.fdopen(fd, "rb") as fh:
+                if not _private_or_refused(fh.fileno(), self._state_file):
+                    return None
+                data = json.loads(fh.read().decode("utf-8"))
             access = str(data.get("access_token") or "")
             # Absent (not empty): a pre-fingerprint file, adopted as LEGACY.
             fingerprint = str(data["bootstrap_sha256"]) if "bootstrap_sha256" in data else ""
@@ -211,7 +259,7 @@ class RotatingOAuthLane:
         ).encode("utf-8")
         tmp = self._state_file.with_suffix(self._state_file.suffix + ".tmp")
         try:
-            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
             try:
                 os.fchmod(fd, 0o600)  # an older tmp keeps its mode through O_CREAT
                 os.write(fd, payload)
@@ -233,10 +281,10 @@ class RotatingOAuthLane:
 
     def _writable(self) -> bool:
         try:
-            self._state_file.parent.mkdir(parents=True, exist_ok=True)
+            self._state_file.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         except OSError:
             return False
-        return os.access(self._state_file.parent, os.W_OK)
+        return self._private_parent() and os.access(self._state_file.parent, os.W_OK)
 
     def _fresh(self, state: LaneState | None) -> bool:
         return (
@@ -307,9 +355,12 @@ class RotatingOAuthLane:
                     "state_unwritable", f"{self._state_file.parent} is not writable",
                 )
             try:
-                fd = os.open(self._lock_file, os.O_CREAT | os.O_RDWR, 0o600)
+                fd = os.open(self._lock_file, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
             except OSError:
                 return self._failed("state_unwritable", f"could not open {self._lock_file}")
+            if not _private_or_refused(fd, self._lock_file):
+                _release(fd)
+                return self._failed("state_unwritable", f"{self._lock_file} is not private")
             waiter_owns_fd = False
             try:
                 waiter = asyncio.ensure_future(

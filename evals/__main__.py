@@ -51,6 +51,7 @@ from evals.scenarios import (
     selected_cases,
 )
 from evals.subject_config import materialise
+from evals.terminal import safe_print as print
 from nora.subject import (
     EMBEDDER_FROM_HOST,
     GraphIndexRefusedError,
@@ -67,6 +68,7 @@ from nora.subject import (
     sweep_stale_private_blank_templates,
 )
 from nora.subject.context_filter import exposure
+from nora.subject.sandbox import EvalLockHeldError, eval_host_lock
 
 #: Coarse S-class grouping for `--class`. Approximate on purpose where a
 #: corpus is not wholly one class — good enough to pick
@@ -519,6 +521,18 @@ def memory_surface_line(deployed: bool, flag: bool) -> str:
 
 
 def main() -> int:
+    """One run per host: the whole run, from its first line to its last, holds
+    the host's eval lock (`eval_host_lock`). A run that finds it held is refused
+    before it does anything, so no two runs share the shared template."""
+    try:
+        with eval_host_lock():
+            return _main()
+    except EvalLockHeldError as exc:
+        print(f"refusing to run: {exc}", file=sys.stderr)
+        return 2
+
+
+def _main() -> int:
     ap = argparse.ArgumentParser(prog="python -m evals")
     ap.add_argument("corpus", nargs="*", help="corpus name(s) — see --list")
     ap.add_argument("--class", dest="cls", action="append",

@@ -15,6 +15,8 @@ import base64
 import hashlib
 import json
 import logging
+import os
+import stat
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
@@ -440,3 +442,99 @@ async def test_a_usable_check_never_serves_an_empty_cache(kind, tmp_path, issuer
     monkeypatch.setattr(lane, "_usable", lambda *_args: True)
     assert (await _call(lane)()).status == "ok"  # type: ignore[attr-defined]
     assert srv["sent"] == ["rt-boot"]
+
+
+def _fresh_file(kind: str, tmp_path: Path, clock: Clock, *, mode: int) -> Path:
+    """A fingerprinted state file holding a live access token, at `mode`."""
+    folder = tmp_path / "state"
+    folder.mkdir(exist_ok=True)
+    name = "xai-oauth.json" if kind == "xai" else "openai-codex-oauth.json"
+    path = folder / name
+    path.write_text(json.dumps({
+        "access_token": _jwt(7, clock.now + 10 * DAY), "refresh_token": "rt-kept",
+        "bootstrap_sha256": hashlib.sha256(b"rt-boot").hexdigest(),
+        "expires_at": clock.now + 10 * DAY, "refreshed_at": clock.now,
+    }))
+    os.chmod(path, mode)
+    return path
+
+
+@pytest.mark.parametrize("kind", LANES)
+async def test_a_state_file_readable_beyond_its_owner_is_narrowed_before_its_token_is_used(
+    kind, tmp_path, issuer,
+):
+    """A valid, fingerprinted file that a restore left 0644 (with its lock
+    file) is narrowed to 0600 and its token served, with no refresh: the
+    check runs before the token is read, not after a refresh rewrote it."""
+    base, srv = issuer
+    path = _fresh_file(kind, tmp_path, srv["clock"], mode=0o644)
+    lock = path.with_suffix(path.suffix + ".lock")
+    lock.write_text("")
+    os.chmod(lock, 0o644)
+    got = await _call(_lane(kind, tmp_path, base, srv["clock"]))()  # type: ignore[attr-defined]
+    assert got.access_token == _jwt(7, srv["clock"].now + 10 * DAY)
+    assert srv["sent"] == []
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert stat.S_IMODE(lock.stat().st_mode) == 0o600
+
+
+@pytest.mark.parametrize("kind", LANES)
+async def test_a_legacy_state_file_readable_beyond_its_owner_is_narrowed_then_adopted(
+    kind, tmp_path, issuer,
+):
+    """A pre-fingerprint file at 0644 still carries the live chain: it is
+    narrowed, tried, and rewritten at 0600 with its fingerprint."""
+    base, srv = issuer
+    srv["live"] = {"rt-legacy-live"}
+    path = _legacy_file(kind, tmp_path, "rt-legacy-live")
+    os.chmod(path, 0o644)
+    lane = _lane(kind, tmp_path, base, srv["clock"])
+    assert (await _call(lane)()).status == "ok"  # type: ignore[attr-defined]
+    assert srv["sent"] == ["rt-legacy-live"]
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    saved = json.loads(path.read_text())
+    assert saved["bootstrap_sha256"] == hashlib.sha256(b"rt-boot").hexdigest()
+
+
+@pytest.mark.parametrize("kind", LANES)
+async def test_a_state_file_another_account_owns_is_refused_and_its_token_never_served(
+    kind, tmp_path, issuer, monkeypatch,
+):
+    """Read as a different account (the owner check's uid), the file is not
+    this account's: its token is not served, and the lock beside it is
+    refused too, so nothing is spent and the call answers unavailable."""
+    base, srv = issuer
+    _fresh_file(kind, tmp_path, srv["clock"], mode=0o600)
+    other = os.getuid() + 1
+    monkeypatch.setattr(os, "getuid", lambda: other)
+    got = await _call(_lane(kind, tmp_path, base, srv["clock"]))()  # type: ignore[attr-defined]
+    assert got.access_token == ""
+    assert got.status == "unavailable"
+    assert srv["sent"] == []
+
+
+@pytest.mark.parametrize("kind", LANES)
+async def test_a_restored_parent_is_private_before_snapshot_reads_credentials(
+    kind, tmp_path, issuer,
+):
+    base, srv = issuer
+    path = _fresh_file(kind, tmp_path, srv["clock"], mode=0o644)
+    path.parent.chmod(0o777)
+    lane = _lane(kind, tmp_path, base, srv["clock"])
+    assert lane.snapshot() is not None
+    assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+
+@pytest.mark.parametrize("kind", LANES)
+async def test_a_linked_state_directory_is_not_used(kind, tmp_path, issuer):
+    base, srv = issuer
+    path = _fresh_file(kind, tmp_path, srv["clock"], mode=0o600)
+    target = tmp_path / "elsewhere"
+    path.parent.rename(target)
+    path.parent.symlink_to(target, target_is_directory=True)
+    lane = _lane(kind, tmp_path, base, srv["clock"])
+    assert lane.snapshot() is None
+    assert (await _call(lane)()).status == "unavailable"
+    assert srv["sent"] == []
+

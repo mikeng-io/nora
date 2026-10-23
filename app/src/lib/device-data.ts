@@ -8,6 +8,7 @@ import { clear as clearIdb } from "idb-keyval";
 // page shows, so a shared phone never hands one person's data to the next.
 
 let writesStopped = false;
+export const DEVICE_SIGN_OUT = "nora:device-sign-out";
 
 /** True once the device is being forgotten: the persister writes nothing
  * after this, so a read still in flight cannot put data back. */
@@ -22,6 +23,13 @@ export const resumeDeviceWrites = () => {
 
 export async function forgetDevice(): Promise<void> {
   writesStopped = true;
+  // Stop mounted caches in this tab and every other tab before forgetting I/O.
+  window.dispatchEvent(new Event(DEVICE_SIGN_OUT));
+  if (typeof BroadcastChannel !== "undefined") {
+    const channel = new BroadcastChannel(DEVICE_SIGN_OUT);
+    channel.postMessage("signed-out");
+    channel.close();
+  }
   await clearIdb().catch(() => {});
   if ("caches" in window) {
     const keys = await caches.keys().catch(() => [] as string[]);

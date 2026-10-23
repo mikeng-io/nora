@@ -62,6 +62,19 @@ def test_defaulted_props_may_be_left_out() -> None:
     assert VALIDATOR.is_valid(doc)
 
 
+@pytest.mark.parametrize("length", [3999, 4000, 4001])
+def test_published_mermaid_limit_counts_unicode_code_points(length: int) -> None:
+    from nora.documents.check import check_document
+
+    prefix, suffix = 'flowchart LR\nA["', '"]'
+    source = prefix + "😀" * (length - len(prefix) - len(suffix)) + suffix
+    doc = _page({"type": "Mermaid", "props": {"source": source, "caption": "A diagram"}})
+    assert len(source) == length
+    assert VALIDATOR.is_valid(doc) is (length <= 4000)
+    checked = check_document(doc)
+    assert checked.ok is (length <= 4000)
+
+
 @pytest.mark.parametrize(
     ("url", "as_of"),
     [
