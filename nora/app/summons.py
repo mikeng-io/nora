@@ -65,6 +65,7 @@ from datetime import datetime, timedelta
 from typing import Any, Protocol
 from uuid import UUID
 
+from nora.agent.egress import LeakGuard, scan_reply
 from nora.agent.ports import ToolSpec
 from nora.agent.punctuation import undash
 from nora.agent.registry import ToolRegistry
@@ -647,6 +648,14 @@ class SummonsOccasion:
 
     # ---- the flush: the ONE place a comment is written ----------------------
 
+    def _disclosure(self, body: str) -> str | None:
+        """The kind of disclosure the public body carries, or None: the doctrine
+        or the canary (`LeakGuard`, R-6), or somebody's identifier or a
+        coordinate (`scan_reply`, R-18). Built per call, from the doctrine the
+        summons reads, so a flush sees what its turn saw."""
+        doctrine = self._doctrine_store.get(applies_to=SUMMONS)
+        return LeakGuard(doctrine, self._canary).check(body) or scan_reply(body)
+
     async def _flush(
         self, summons_id: UUID, *, shortcode: str, comment_id: str, text: str,
         person_id: str | None, trace_id: str | None, now: datetime,
@@ -663,18 +672,36 @@ class SummonsOccasion:
         # residue through; a public comment does not. Punctuation only: the
         # same undash the request path uses, no word changes.
         body = without_address(undash(text), summoner).strip()
+        # Every check runs on this FINAL body, after each transform above. The
+        # guards before the hold measured the text as she wrote it, and a
+        # transform can make a clean text a disclosure: the em dash between two
+        # decimals becomes the comma of a coordinate pair. A disclosure is never
+        # kept in the ledger, even refused.
+        disclosure = self._disclosure(body)
         refusal = (
             "empty" if not body
             else "too_long" if len(body) > PUBLIC_REPLY_MAX_CHARS
             else "mention" if _MENTION_RE.search(body)
-            else None
+            else disclosure
         )
         if refusal is not None:
+            # A prior 503 may have been claimed and posted (`_RETRY_503`), so a
+            # refusal now does not prove it never posted: the outcome stays
+            # `ambiguous`, as `_write_state` keeps it after a 503 and a retry.
+            state = "ambiguous" if prior_code in _RETRY_503 else "refused"
+            code = prior_code if state == "ambiguous" else refusal
+            if state == "ambiguous" and disclosure is not None:
+                # The kind only, never the text: an operator sees why it was refused.
+                log.error(
+                    "summons %s: a %s disclosure refused a row whose prior write got a "
+                    "503; it stays ambiguous", summons_id, disclosure,
+                )
             await self._ledger.finish(
-                summons_id, "refused", now=now, person_id=person_id, reply_text=body,
-                bridge_code=refusal, trace_id=trace_id,
+                summons_id, state, now=now, person_id=person_id,
+                reply_text=None if disclosure else body, clear_reply=disclosure is not None,
+                bridge_code=code, trace_id=trace_id,
             )
-            return SummonsOutcome("refused", bridge_code=refusal, reached_bridge=True)
+            return SummonsOutcome(state, bridge_code=code, reached_bridge=True)
         await self._ledger.finish(
             summons_id, "staged", now=now, person_id=person_id, reply_text=body,
             trace_id=trace_id,

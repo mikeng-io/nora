@@ -28,6 +28,8 @@ from types import SimpleNamespace
 from typing import Any
 
 from strands.tools.decorator import FunctionToolMetadata
+from strands.types._events import ToolResultEvent
+from strands.types.tools import AgentTool
 
 from ..domain.computer import ComputerToolSettings
 from ..domain.computer_events import ComputerEventStore
@@ -142,6 +144,63 @@ def _opening(description: str) -> str:
     """
     unwrapped = " ".join(description.strip().split("\n\n")[0].split())
     return unwrapped.rstrip(".")
+
+
+class _AggregateBudget:
+    """One MCP server's ceiling for one surface: every tool of the server draws on it."""
+
+    def __init__(self, budget: int) -> None:
+        self._budget = budget
+        self._admitted = 0
+
+    def admit(self) -> bool:
+        if self._admitted >= self._budget:
+            return False
+        self._admitted += 1
+        return True
+
+
+class _AggregateBudgetedTool(AgentTool):
+    """A discovered MCP tool that also draws on its server's aggregate budget.
+
+    The per-tool ceiling (`ToolRegistry.budgets`) is checked by the guard before this runs; this
+    is the second ceiling, so calls spread over the server's tools cannot exceed the server's
+    budget. A refused call answers as an error result and never reaches the server.
+    """
+
+    def __init__(self, tool: Any, aggregate: _AggregateBudget) -> None:
+        super().__init__()
+        self._tool = tool
+        self._aggregate = aggregate
+
+    @property
+    def tool_name(self) -> str:
+        return str(self._tool.tool_name)
+
+    @property
+    def tool_spec(self) -> Any:
+        return self._tool.tool_spec
+
+    @property
+    def tool_type(self) -> str:
+        return str(self._tool.tool_type)
+
+    async def stream(self, tool_use: Any, invocation_state: Any, **kwargs: Any) -> Any:
+        if not self._aggregate.admit():
+            yield ToolResultEvent({
+                "toolUseId": tool_use["toolUseId"], "status": "error",
+                "content": [{"text": "This server's budget for this turn is spent; "
+                                     "answer from what you already have."}],
+            })
+            return
+        async for event in self._tool.stream(tool_use, invocation_state, **kwargs):
+            yield event
+
+
+def aggregate_budgeted_tools(group: McpToolGroup) -> list[Any]:
+    """`group`'s tools, each gated on the one aggregate budget its server shares."""
+    aggregate = _AggregateBudget(group.budget)
+    return [_AggregateBudgetedTool(tool, aggregate) for tool in group.tools]
 
 
 class ToolRegistry:
@@ -992,6 +1051,7 @@ class ToolRegistry:
         transcript: tuple[TranscriptRow, ...] | None = None,
         lookup_window: tuple[TranscriptRow, ...] | None = None,
         fire_turn: bool = False,
+        relay_turn: bool = False,
         location_trusted: bool = False,
         links: LinkCarry | None = None,
         supplied_unit: str | None = None,
@@ -1070,7 +1130,8 @@ class ToolRegistry:
             geocoder=self._geocoder,
             question=question, context_window=context_window,
             transcript=transcript, lookup_window=lookup_window,
-            ai_peer=self._ai_peer, fire_turn=fire_turn, dream_adaptor=dream_adaptor,
+            ai_peer=self._ai_peer, fire_turn=fire_turn, relay_turn=relay_turn,
+            dream_adaptor=dream_adaptor,
             subagent_job=subagent_job, checkpoint_sink=checkpoint_sink,
             reminders=self._reminders, reminder_caps=self._caps, clock=self._clock,
             events=self._events,
@@ -1171,6 +1232,7 @@ class ToolRegistry:
         transcript: tuple[TranscriptRow, ...] | None = None,
         lookup_window: tuple[TranscriptRow, ...] | None = None,
         fire_turn: bool = False,
+        relay_turn: bool = False,
         allowed_mcp: frozenset[str] = frozenset(),
         location_trusted: bool = False,
         links: LinkCarry | None = None,
@@ -1215,6 +1277,7 @@ class ToolRegistry:
             dreamer=bool(dream_adaptor),
             grant=grant,
             tag_turn=not (fire_turn or dream_adaptor or subagent_job),
+            relay=relay_turn,
             worker=bool(subagent_job),
         )
         shelf = ToolShelf()
@@ -1223,7 +1286,8 @@ class ToolRegistry:
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
             room=room, question=question, context_window=context_window,
             transcript=transcript, lookup_window=lookup_window,
-            fire_turn=fire_turn, location_trusted=location_trusted, links=links,
+            fire_turn=fire_turn, relay_turn=relay_turn,
+            location_trusted=location_trusted, links=links,
             supplied_unit=supplied_unit, dream_adaptor=dream_adaptor,
             subagent_job=subagent_job, checkpoint_sink=checkpoint_sink,
             shelf=shelf, on_rows=on_rows,
@@ -1246,7 +1310,7 @@ class ToolRegistry:
         for name in allowed_mcp:
             group = self._mcp_tools.get(name)
             if group is not None:
-                tools.extend(group.tools)
+                tools.extend(aggregate_budgeted_tools(group))
         return ToolSurface(
             scope=scope,
             tools=tools,

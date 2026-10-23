@@ -21,6 +21,7 @@ including the API key, and this module does not read the environment.
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -37,7 +38,8 @@ from strands.agent.conversation_manager import (
 from strands.hooks import HookCallback, HookProvider
 from strands.models.openai import OpenAIModel
 from strands.plugins import Plugin
-from strands.tools.executors import SequentialToolExecutor
+from strands.tools.executors import ConcurrentToolExecutor, SequentialToolExecutor
+from strands.tools.executors._executor import ToolExecutor
 from strands.types.exceptions import MaxTokensReachedException
 from strands.vended_plugins.skills import AgentSkills
 
@@ -288,6 +290,131 @@ def build_retry_policy(
     )
 
 
+#: How many model-controlled tool calls may run at once across EVERY agent in the process. A
+#: parallel batch is not limited by Strands, and each turn, dream and sub-agent loop used to hold
+#: its own unbounded batch; overlapping turns multiplied that.
+TOOL_CONCURRENCY = 8
+
+#: Slots background work (the Dreamer, the sub-agent worker) may never take. A user-facing turn
+#: finds one free even while eight long-running background tools run; without the reserve they
+#: could hold every slot and the turn's tool would wait out its timeout.
+INTERACTIVE_RESERVE = 2
+
+
+class ToolSlots:
+    """The in-flight tool calls that every executor sharing one instance draws on: `limit` in all.
+
+    Background work may hold at most `limit - reserve` of them at once, so the `reserve` left are
+    for interactive turns whatever the background is doing. Both gates are `asyncio.Semaphore`s,
+    which bind to the event loop they first wait on: one instance serves one loop, the process's.
+    """
+
+    def __init__(self, limit: int, *, reserve: int = 0) -> None:
+        if limit < 1:
+            raise ValueError("a tool executor needs at least one slot")
+        if not 0 <= reserve < limit:
+            raise ValueError("background work must leave at least one slot for interactive turns")
+        self.limit = limit
+        self._total = asyncio.Semaphore(limit)
+        self._background = asyncio.Semaphore(limit - reserve)
+        self.in_flight = 0
+        self.waiting = 0
+        self.peak = 0
+
+    async def acquire(self, *, background: bool) -> None:
+        self.waiting += 1
+        try:
+            if background:
+                await self._background.acquire()
+                try:
+                    await self._total.acquire()
+                except BaseException:
+                    self._background.release()
+                    raise
+            else:
+                await self._total.acquire()
+        finally:
+            self.waiting -= 1
+        self.in_flight += 1
+        self.peak = max(self.peak, self.in_flight)
+
+    def release(self, *, background: bool) -> None:
+        self.in_flight -= 1
+        self._total.release()
+        if background:
+            self._background.release()
+
+
+class BoundedToolExecutor(ConcurrentToolExecutor):
+    """Concurrent tool execution drawing on one `ToolSlots`, shared by every agent given it.
+
+    Each tool call of a batch is a task (Strands' concurrent executor), and each task takes a slot
+    before it starts and gives it back when its stream ends, however it ends. Results keep the
+    model's order because Strands collects them by task, not by completion. A cancelled turn gives
+    its slots back the same way, so it cannot starve the next turn. A `background` executor takes
+    its slots under the reserve (see `ToolSlots`); an interactive one takes them from the whole.
+
+    What this does not do: it sets no timeout. A tool that never returns holds its slot until it
+    is cancelled; the tools' own timeouts (MCP read timeouts, the browse task's clock) are what
+    end one. A tool must not await another agent that shares this executor, or the two can wait on
+    each other's slots.
+    """
+
+    def __init__(self, slots: ToolSlots, *, background: bool = False) -> None:
+        super().__init__()
+        self.slots = slots
+        self.background = background
+
+    @property
+    def in_flight(self) -> int:
+        return self.slots.in_flight
+
+    @property
+    def waiting(self) -> int:
+        return self.slots.waiting
+
+    @property
+    def peak(self) -> int:
+        return self.slots.peak
+
+    async def _task(self, agent: Any, tool_use: Any, *args: Any, **kwargs: Any) -> None:
+        await self.slots.acquire(background=self.background)
+        try:
+            await super()._task(agent, tool_use, *args, **kwargs)
+        finally:
+            self.slots.release(background=self.background)
+
+
+@functools.cache
+def shared_tool_slots() -> ToolSlots:
+    """The process's tool slots, built on first use: one object, so every executor draws on one
+    limit. `functools.cache` makes it the same object for every caller."""
+    return ToolSlots(TOOL_CONCURRENCY, reserve=INTERACTIVE_RESERVE)
+
+
+@functools.cache
+def shared_tool_executor() -> BoundedToolExecutor:
+    """The interactive executor, the tag loop's default: it may take any slot."""
+    return BoundedToolExecutor(shared_tool_slots())
+
+
+@functools.cache
+def shared_background_executor() -> BoundedToolExecutor:
+    """The background executor, the Dreamer's and the sub-agent's default: the same slots, but
+    at most `TOOL_CONCURRENCY - INTERACTIVE_RESERVE` of them at once."""
+    return BoundedToolExecutor(shared_tool_slots(), background=True)
+
+
+def _executor_or_shared(tool_executor: ToolExecutor | None) -> ToolExecutor:
+    """The executor a caller passed, else the process-wide interactive one."""
+    return tool_executor if tool_executor is not None else shared_tool_executor()
+
+
+def _background_executor_or_shared(tool_executor: ToolExecutor | None) -> ToolExecutor:
+    """The executor a caller passed, else the process-wide background one."""
+    return tool_executor if tool_executor is not None else shared_background_executor()
+
+
 def create_agent(
     *,
     model: OpenAIModel,
@@ -302,6 +429,7 @@ def create_agent(
     retry: RetryPolicy,
     skills_dir: str | Path | None = None,
     agent_name: str = DEFAULT_AGENT_NAME,
+    tool_executor: ToolExecutor | None = None,
 ) -> Agent:
     """Build the per-tag agent for a Nora turn.
 
@@ -379,6 +507,7 @@ def create_agent(
         # shape at runtime and only the static type is asserted here.
         messages=list(pre_fill),  # type: ignore[arg-type]
         hooks=hooks,
+        tool_executor=_executor_or_shared(tool_executor),
         conversation_manager=NullConversationManager(),
         session_manager=None,
         callback_handler=None,
@@ -397,6 +526,7 @@ def create_dream_agent(
     trace_attributes: dict,
     retry: RetryPolicy,
     agent_name: str = DEFAULT_DREAM_AGENT_NAME,
+    tool_executor: ToolExecutor | None = None,
 ) -> Agent:
     """The Dreamer's agent: a loop that may LOOK and may not ACT.
 
@@ -449,6 +579,7 @@ def create_dream_agent(
         # After the guard, for `create_agent`'s reason (see the comment on its
         # `hooks` list). `None` is the inert default.
         hooks=[guard] if reasoning_watch is None else [guard, reasoning_watch],
+        tool_executor=_background_executor_or_shared(tool_executor),
         conversation_manager=NullConversationManager(),
         session_manager=None,
         callback_handler=None,
@@ -475,6 +606,7 @@ def create_subagent(
     trace_attributes: dict,
     retry: RetryPolicy,
     agent_name: str = "subagent",
+    tool_executor: ToolExecutor | None = None,
 ) -> Agent:
     """The sub-agent worker's agent: a background loop that does ONE objective for
     Nora and answers with a report.
@@ -525,6 +657,7 @@ def create_subagent(
         # `reasoning_watch` last, for `create_agent`'s reason: it must read the
         # guard's verdicts.
         hooks=[guard, progress] if reasoning_watch is None else [guard, progress, reasoning_watch],
+        tool_executor=_background_executor_or_shared(tool_executor),
         # A sliding window, trimmed before every model call (`per_turn=True`; the
         # default trims once per invocation, and a job is one invocation of
         # hundreds of rounds) with the brief, the first message, pinned. The

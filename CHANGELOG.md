@@ -1,5 +1,50 @@
 # Changelog
 
+## [6.6.7](https://github.com/mikeng-io/nora/compare/v6.6.6...v6.6.7) (2026-10-23)
+
+
+### Bug Fixes
+
+* **agent:** declare the requester on the DocumentPublisher read protocol ([755be46](https://github.com/mikeng-io/nora/commit/755be4628cf60b5eea445c496e25af317c78b1a4))
+
+
+### Security
+
+* **authz:** bound and parallelise the document reads behind subagent_list ([3887883](https://github.com/mikeng-io/nora/commit/388788350bb68c471bc84c23d7fc322d1f7348b7))
+* **authz:** re-check grants at delivery, read, revise and relay ([7c7bb31](https://github.com/mikeng-io/nora/commit/7c7bb31cc6737a8fde60d6c3c3d5ea673efdb106))
+* **authz:** show a sub-agent document only where its audience reads it ([556b8c5](https://github.com/mikeng-io/nora/commit/556b8c557994b31554e748e8c6cd9adefa5b0ce9))
+* **authz:** title a sub-agent result document for the viewer, never the requester ([2d8664a](https://github.com/mikeng-io/nora/commit/2d8664a68e7ab5a402376494f5305f4b49e6cd0d))
+* **documents:** list the visible documents before the limit, not after it ([d5b95c9](https://github.com/mikeng-io/nora/commit/d5b95c9ac3a51b8871bb2e6b65c9f6c7e130c0f0))
+
+## [6.6.6](https://github.com/mikeng-io/nora/compare/v6.6.5...v6.6.6) (2026-10-23)
+
+
+### Security
+
+* **agent:** bound model tool batches by one process-wide in-flight limit ([d088561](https://github.com/mikeng-io/nora/commit/d088561c0548342769c8fc3b6bbefaff0a34e29e))
+* **agent:** count a clip whose row failed to write against the cap in-process ([ce3c45d](https://github.com/mikeng-io/nora/commit/ce3c45d040e00efa73772884661dedf4dc6e4987))
+* **agent:** give each MCP server one aggregate budget across its tools ([8a79857](https://github.com/mikeng-io/nora/commit/8a798572fa67ca94e710d314f00fe3fced0e5d83))
+* **agent:** hold a cancelled clip write and reconcile past a failing row ([9587bff](https://github.com/mikeng-io/nora/commit/9587bff74006f1857cf978f29e741d8f579c00ab))
+* **agent:** hold the pass ceiling for a parallel Dreamer batch in before-tool ([31292d4](https://github.com/mikeng-io/nora/commit/31292d4e095f223bc5232be5f5770922caa2f4f0))
+* **agent:** make the browse task's terminal outcome one-way ([0891347](https://github.com/mikeng-io/nora/commit/0891347df152e73f7fcb229596fd02ca15291641))
+* **agent:** reconcile held video rows before each cap read, count only today's ([029423f](https://github.com/mikeng-io/nora/commit/029423fb72b424a5ea38434ab0f99dfa31622533))
+* **agent:** reserve tool slots for user turns so background work cannot starve them ([198972e](https://github.com/mikeng-io/nora/commit/198972edf9ce4c5cfef7efa5b34274607e3addd6))
+* **browser:** check the read-only action policy before each page input ([945c7f2](https://github.com/mikeng-io/nora/commit/945c7f2ae15f6a47e8da249131734a49d8f4af64))
+
+## [6.6.5](https://github.com/mikeng-io/nora/compare/v6.6.4...v6.6.5) (2026-10-23)
+
+
+### Security
+
+* **egress:** a bearing on both numbers of a pair is a coordinate ([6a2093a](https://github.com/mikeng-io/nora/commit/6a2093a99a7145a16d28baa4e66820ca22e593a4))
+* **egress:** a comma or slash pair of two-digit parts is a coordinate ([a3a418e](https://github.com/mikeng-io/nora/commit/a3a418ecfe3c3235bd91c4e8b0e21e66be0d1c55))
+* **egress:** a lone decimal is a coordinate only after a degree sign ([e7bfdfa](https://github.com/mikeng-io/nora/commit/e7bfdfad13d3304e6d8e5c66119de4ea79255043))
+* **egress:** coordinate pairs, phone separators, invisible marks and labels ([15a894d](https://github.com/mikeng-io/nora/commit/15a894da8e4f05f1c75fff0b33ce8a9b99af5827))
+* **egress:** reply guard catches separated coordinates, short numbers and invisible characters ([e67e300](https://github.com/mikeng-io/nora/commit/e67e3006f6a6618c0fb2b9d424963c74ef40ea4e))
+* **memory:** the packet screens each person name before the model reads it ([4740adc](https://github.com/mikeng-io/nora/commit/4740adc314657275942ae7194f48b67a190dc54f))
+* **summons:** a refused disclosure clears its staged text, and a 503 stays ambiguous ([da5d5f2](https://github.com/mikeng-io/nora/commit/da5d5f2b60ee84af7ab18d70603d32d8c403f4a3))
+* **summons:** the public comment body is checked after its last transform ([2f15fa3](https://github.com/mikeng-io/nora/commit/2f15fa3189abba25426b133bc555c1744b39f979))
+
 ## [6.6.4](https://github.com/mikeng-io/nora/compare/v6.6.3...v6.6.4) (2026-10-22)
 
 

@@ -45,6 +45,7 @@ from nora.infra.video_gen import (
 from nora.obs.logging import bind_tag_id, setup_logging
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
+from nora.policy import permissive_policy
 from nora.testing import (
     FakeAgentRunner,
     FakeBlobStore,
@@ -457,6 +458,7 @@ async def test_a_held_room_costs_no_download_and_the_clip_is_fetched_once_it_is_
         return SENT
 
     poller = ComputeJobPoller(
+        policy=permissive_policy(),
         store=store, backends={VIDEO_KIND: _backend(provider, metrics=metrics)}, speak=speak,
         slots=slots, metrics=metrics, tick_seconds=1.0, clock=lambda: NOW,
     )
@@ -493,6 +495,7 @@ async def test_a_fetch_that_must_wait_leaves_the_row_unclaimed_for_the_next_tick
         return SENT
 
     poller = ComputeJobPoller(
+        policy=permissive_policy(),
         store=store, backends={VIDEO_KIND: _backend(provider)}, speak=speak,
         slots=ConversationSlots(maxlen=16, spawn=lambda c: None), metrics=Metrics(),
         tick_seconds=1.0, clock=lambda: NOW,
@@ -645,6 +648,7 @@ async def _deliver_through_the_poller(
         return SENT
 
     poller = ComputeJobPoller(
+        policy=permissive_policy(),
         store=store, backends={VIDEO_KIND: backend}, speak=speak,
         slots=ConversationSlots(maxlen=16, spawn=lambda c: None), metrics=Metrics(),
         tick_seconds=1.0, clock=lambda: NOW,
@@ -746,6 +750,69 @@ async def test_a_clip_whose_row_was_not_written_is_not_started_again_in_the_turn
     assert len(starter.calls) == 1
 
 
+class _FlakyStore(FakeComputeJobStore):
+    """A store whose writes fail while `down` is set: the database that drops
+    out just after a provider launch."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.down = True
+
+    async def create(self, job: ComputeJob) -> None:
+        if self.down:
+            raise RuntimeError("db down")
+        await super().create(job)
+
+
+async def test_a_clip_whose_row_was_not_written_still_counts_against_the_cap_in_a_later_turn():
+    """The provider launch happened, the row did not land, and the process has not restarted.
+    The cap must still count that clip: `_turn_spent` is per turn, so a new turn that
+    re-read only the table would launch a second clip past a cap of one."""
+    store = _FlakyStore()
+    starter = _Starter()
+    desk = _desk(store, starter, cap=1)
+    first = await _make(desk, tag="t1")
+    assert (first.status, first.reason) == ("unavailable", "row_not_written")
+    second = await _make(desk, tag="t2")
+    assert second.status == "at_cap"
+    assert len(starter.calls) == 1
+
+
+async def test_an_unwritten_row_is_written_by_the_next_create_once_the_store_recovers():
+    """The retry path: the next create writes the held row before it counts, so a recovered
+    database holds the clip exactly once and the cap reads it from the table."""
+    store = _FlakyStore()
+    starter = _Starter()
+    desk = _desk(store, starter, cap=1)
+    await _make(desk, tag="t1")
+    store.down = False
+    again = await _make(desk, tag="t2")
+    assert again.status == "at_cap"
+    rows = await store.kind_since(kind=VIDEO_KIND, since=NOW - timedelta(days=1))
+    assert [r.backend_job_id for r in rows] == ["T1@1"]
+    assert len(starter.calls) == 1
+
+
+async def test_an_uncertain_clip_whose_record_was_not_written_still_counts_in_a_later_turn():
+    """The provider may have rendered a clip and returned no task id, and the record of that
+    uncertain create then fails to write. The cap must still count it in a later turn, or a
+    retry after the database recovers would pay for a second clip."""
+
+    class _Uncertain(_Starter):
+        async def start(self, request: VideoRequest) -> VideoStart:
+            self.calls.append(request)
+            return VideoStart("unavailable", reason="timed out", uncertain=True)
+
+    store = _FlakyStore()
+    starter = _Uncertain()
+    desk = _desk(store, starter, cap=1)
+    first = await _make(desk, tag="t1")
+    assert (first.status, first.reason) == ("unavailable", "uncertain")
+    second = await _make(desk, tag="t2")
+    assert second.status == "at_cap"
+    assert len(starter.calls) == 1
+
+
 async def test_a_refused_start_writes_no_row_and_spends_no_cap():
     store = FakeComputeJobStore()
     out = await _make(_desk(store, _Starter("refused")))
@@ -753,7 +820,154 @@ async def test_a_refused_start_writes_no_row_and_spends_no_cap():
     assert await store.kind_since(kind=VIDEO_KIND, since=NOW - timedelta(days=1)) == []
 
 
+class _Fitting(_Starter):
+    """A backend whose `prepare` fits every reference: it returns the request unchanged, so a
+    clip takes the fast path that runs before the lock."""
+
+    async def prepare(self, request: VideoRequest) -> VideoRequest | VideoStart:
+        return request
+
+
+CLIP_REQUEST = VideoRequest("x", references=(VideoReference("a" * 64, b"clip", kind="video"),))
+
+
+async def _make_clip(desk: VideoDesk, tag: str, room: str = ROOM) -> Any:
+    return await desk.create(
+        platform=PLATFORM, conversation_id=room, conversation_type="group",
+        requester_person_id="miles", tag_id=tag, request=CLIP_REQUEST)
+
+
+async def test_a_held_clip_is_written_by_the_next_fitted_turn_even_when_the_room_is_at_cap():
+    """The provider accepted the clip and its row failed to write. The next turn's fitted clip
+    takes the fast path, which answers a room at its cap before the lock: that answer must not
+    skip the reconcile, or the held row is never written and the poller never delivers the clip."""
+    store = _FlakyStore()
+    starter = _Fitting()
+    desk = _desk(store, starter, cap=1)
+    first = await _make_clip(desk, tag="t1")
+    assert (first.status, first.reason) == ("unavailable", "row_not_written")
+    store.down = False
+    second = await _make_clip(desk, tag="t2")
+    assert second.status == "at_cap"
+    rows = await store.kind_since(kind=VIDEO_KIND, since=NOW - timedelta(days=1))
+    assert [r.backend_job_id for r in rows] == ["T1@1"]
+    assert len(starter.calls) == 1
+
+
+async def test_concurrent_fitted_turns_write_a_recovered_row_exactly_once():
+    """Two fitted turns reconcile at once on the fast path. Both see the held row missing from the
+    table and both would insert it, so the reconcile runs one at a time."""
+
+    class _Counting(_FlakyStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.writes = 0
+
+        async def create(self, job: ComputeJob) -> None:
+            if self.down:
+                raise RuntimeError("db down")
+            await asyncio.sleep(0)               # the write yields, so the two can interleave
+            self.writes += 1
+            await super().create(job)
+
+    store = _Counting()
+    desk = _desk(store, _Fitting(), cap=1)
+    assert (await _make_clip(desk, tag="t1")).status == "unavailable"
+    store.down = False
+    store.writes = 0
+    first, second = await asyncio.gather(
+        _make_clip(desk, tag="t2"), _make_clip(desk, tag="t3"))
+    assert (first.status, second.status) == ("at_cap", "at_cap")
+    assert store.writes == 1
+
+
+async def test_a_held_clip_from_yesterday_does_not_count_against_today():
+    """A row held since 23:00 local yesterday is not a clip of today: the day predicate applies to
+    held rows as it does to table rows, so a room with no clip today is not refused `at_cap`."""
+    store = _FlakyStore()
+    starter = _Starter()
+    clock = [NOW - timedelta(hours=13)]          # 23:00 HKT yesterday; the store stays down
+    desk = VideoDesk(
+        jobs=store, backend=starter, clock=lambda: clock[0], tz=HKT, max_per_room_per_day=1)
+    first = await _make(desk, tag="t1")
+    assert (first.status, first.reason) == ("unavailable", "row_not_written")
+    clock[0] = NOW                               # 12:00 HKT today
+    second = await _make(desk, tag="t2")
+    assert (second.status, second.reason) == ("unavailable", "row_not_written")
+    assert len(starter.calls) == 2
+
+
 # ---- the tool --------------------------------------------------------------------------------
+
+
+class _Hanging(FakeComputeJobStore):
+    """The first write hangs until its caller cancels it (the process is cut mid-write); the
+    writes after it land, as a recovered store's do."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.hung = False
+        self.entered = asyncio.Event()
+
+    async def create(self, job: ComputeJob) -> None:
+        if not self.hung:
+            self.hung = True
+            self.entered.set()
+            await asyncio.Event().wait()
+        await super().create(job)
+
+
+async def test_a_clip_cancelled_mid_write_is_held_so_the_next_turn_is_at_cap():
+    """The provider accepted clip 1 and the task was cancelled while its row was being written.
+    A cancellation is a BaseException, so `_persist`'s `except Exception` never held the row: the
+    next turn read the table, found nothing, and started clip 2 past a cap of one. The row must be
+    held before the cancellation propagates; the next turn's reconcile writes it exactly once."""
+    store = _Hanging()
+    starter = _Starter()
+    desk = _desk(store, starter, cap=1)
+    write = asyncio.create_task(_make(desk, tag="t1"))
+    await store.entered.wait()
+    write.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await write
+    second = await _make(desk, tag="t2")
+    assert (second.status, second.used, second.cap) == ("at_cap", 1, 1)
+    assert (await _make(desk, tag="t3")).status == "at_cap"
+    rows = await store.kind_since(kind=VIDEO_KIND, since=NOW - timedelta(days=1))
+    assert [r.backend_job_id for r in rows] == ["T1@1"]
+    assert len(starter.calls) == 1
+
+
+class _Refusing(FakeComputeJobStore):
+    """Every write fails while `down` is set; afterwards, writes for `refused_room` still fail."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.down = True
+        self.refused_room: str | None = None
+
+    async def create(self, job: ComputeJob) -> None:
+        if self.down or job.conversation_id == self.refused_room:
+            raise RuntimeError("db down")
+        await super().create(job)
+
+
+async def test_a_held_row_that_keeps_failing_does_not_block_the_rows_behind_it():
+    """Two clips are held, room A's first and room B's second. The store then refuses room A's
+    row for good. Reconcile must still write B's row: a failing head that stops the loop starves
+    every room behind it. A's row stays held, so A's cap still counts it."""
+    store = _Refusing()
+    starter = _Starter()
+    desk = _desk(store, starter, cap=1)
+    assert (await _make(desk, tag="a1")).reason == "row_not_written"
+    assert (await _make(desk, tag="b1", room=OTHER_ROOM)).reason == "row_not_written"
+    store.down = False
+    store.refused_room = ROOM
+    assert await desk.used_today(platform=PLATFORM, conversation_id=OTHER_ROOM) == 1
+    rows = await store.kind_since(kind=VIDEO_KIND, since=NOW - timedelta(days=1))
+    assert [r.conversation_id for r in rows] == [OTHER_ROOM]
+    assert await desk.used_today(platform=PLATFORM, conversation_id=ROOM) == 1
+    assert len(starter.calls) == 2
 
 
 class _Media:
@@ -1145,6 +1359,7 @@ async def _deliver_a_finished_clip(
     backend = _backend(_Provider(polls=[_task("succeeded", content={"url": CLIP})],
                                  clips=clips), metrics=metrics)
     poller = ComputeJobPoller(
+        policy=permissive_policy(),
         store=store, backends={VIDEO_KIND: backend}, speak=path.speak,
         slots=ConversationSlots(maxlen=16, spawn=lambda c: None), metrics=metrics,
         tick_seconds=1.0, clock=lambda: NOW, blobs=blobs, media=media,

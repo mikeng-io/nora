@@ -359,14 +359,21 @@ class SqlDocumentStore:
         platform: str,
         conversation_ids: frozenset[str],
         limit: int,
+        person_id: str,
+        rooms: frozenset[RoomKey],
         states: tuple[DocumentState, ...] = ("active",),
     ) -> tuple[DocumentSummary, ...]:
         limit = min(max(limit, 0), _MAX_LIMIT)
         if limit == 0 or not conversation_ids:
             return ()
         ids = sorted(conversation_ids)
+        # The visibility is part of the room filter, so the limit below counts only rows the
+        # asker may read (the same predicate `list_visible` applies).
         in_room = sa.and_(
-            _D.platform == platform, _D.conversation_id.in_(ids), _state().in_(states)
+            _D.platform == platform,
+            _D.conversation_id.in_(ids),
+            _state().in_(states),
+            _visible(person_id, rooms),
         )
         # The top-revision subquery is restricted to THIS room's documents first, so a turn's
         # read does not aggregate every revision of every document.

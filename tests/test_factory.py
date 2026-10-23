@@ -381,9 +381,11 @@ def test_the_dream_agent_takes_none_of_the_tag_paths_welded_parameters():
     # is the path most exposed to it — see
     # `docs/adr/0013-the-reasoning-strip-is-counted-in-postgres.md`. The three
     # names above stay unspellable; this one is deliberately spellable on both.
+    # `tool_executor` is the one parameter every loop has: it defaults to the process-wide
+    # bounded executor, and a test passes its own to observe the bound.
     assert params == {"model", "system_prompt", "tools", "guard",
                       "reasoning_watch", "trace_attributes", "retry",
-                      "agent_name"}
+                      "agent_name", "tool_executor"}
 
 
 def test_the_dream_agent_is_named_apart_from_her_turns():

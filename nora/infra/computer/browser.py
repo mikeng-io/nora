@@ -66,6 +66,40 @@ class RefError(BrowserError):
     """An action named a ref the last snapshot did not give."""
 
 
+class ActionRefusedError(BrowserError):
+    """The action policy does not allow this page action. The page was not touched."""
+
+
+@dataclass
+class ActionPolicy:
+    """What a browse task may still do to its page, decided before each CDP call.
+
+    Fail-closed, and read-only by default: a click or Enter that submits a form, typing
+    into a password or other sensitive field, and every action after `revoke` are refused.
+    No approval channel exists yet, so a person does the submission, not the task. Navigation
+    is not restricted here (no origin allowlist is configured; see the PR's Also).
+    """
+
+    revoked: bool = False
+
+    def revoke(self) -> None:
+        self.revoked = True
+
+    def check(self, action: str, *, submits: bool = False, sensitive: bool = False) -> None:
+        """Raise `ActionRefusedError` if `action` may not run now. Called before the first CDP call
+        of an action and again, through `live`, immediately before each input is sent."""
+        self.live(action)
+        if submits:
+            raise ActionRefusedError(f"{action} would submit a form; a person must do that step")
+        if sensitive:
+            raise ActionRefusedError(f"{action} is into a sensitive field; a person must type it")
+
+    def live(self, action: str) -> None:
+        """Raise if the task is over. Checked right before a CDP input call."""
+        if self.revoked:
+            raise ActionRefusedError(f"{action}: the task is over; the page is not touched")
+
+
 @dataclass(frozen=True)
 class Element:
     ref: str
@@ -173,7 +207,12 @@ class BrowserPage:
     session_id: str
     target_id: str = ""
     refs: dict[str, int] = field(default_factory=dict)
+    policy: ActionPolicy = field(default_factory=ActionPolicy)
     _world: tuple[str, int] | None = None
+
+    def revoke(self) -> None:
+        """Revoke the page's action capability: every later action is refused."""
+        self.policy.revoke()
 
     async def _page(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         return await self.cdp.call(method, params, session_id=self.session_id)
@@ -221,7 +260,9 @@ class BrowserPage:
     async def navigate(self, url: str) -> str:
         """Open `url` and wait for the page to finish loading (or for
         `LOAD_SECONDS`). Returns the URL the page ended on."""
+        self.policy.live("navigate")
         before = await self._loader()
+        self.policy.live("navigate")
         got = await self._page("Page.navigate", {"url": url})
         if got.get("errorText"):
             raise BrowserError(f"could not open the page: {got['errorText']}")
@@ -323,9 +364,13 @@ class BrowserPage:
             raise BrowserError(f"{ref} is no longer on the page")
         return str(object_id)
 
-    async def _call_on(self, ref: str, function: str, *args: Any) -> Any:
+    async def _call_on(self, ref: str, function: str, *args: Any, live: str = "") -> Any:
+        object_id = await self._object(ref)
+        if live:
+            # Resolving the node awaits: a revocation that lands there must send nothing.
+            self.policy.live(live)
         got = await self._page("Runtime.callFunctionOn", {
-            "objectId": await self._object(ref), "functionDeclaration": function,
+            "objectId": object_id, "functionDeclaration": function,
             "arguments": [{"value": a} for a in args], "returnByValue": True,
         })
         if "exceptionDetails" in got:
@@ -357,8 +402,26 @@ class BrowserPage:
         except (BrowserError, KeyError, TypeError, ValueError):
             return 1280.0, 800.0
 
+    async def _submits(self, ref: str) -> bool:
+        """Whether the element is a control that submits its form: a submit button or
+        image, or a button with no type, inside a form."""
+        return bool(await self._call_on(ref, """function() {
+            const f = this.form || (this.closest && this.closest('form'));
+            if (!f) return false;
+            const t = String(this.type || '').toLowerCase();
+            if (this.tagName === 'BUTTON') return t === '' || t === 'submit';
+            if (this.tagName === 'INPUT') return t === 'submit' || t === 'image';
+            return false;
+        }"""))
+
+    async def _in_form(self, ref: str) -> bool:
+        return bool(await self._call_on(ref, """function() {
+            return !!(this.form || (this.closest && this.closest('form')));
+        }"""))
+
     async def click(self, ref: str) -> None:
         node = self._node(ref)
+        self.policy.check("click", submits=await self._submits(ref))
         before = await self._loader()
         known = {str(t.get("targetId")) for t in await self._targets()}
         with contextlib.suppress(BrowserError):
@@ -369,7 +432,7 @@ class BrowserPage:
             xs, ys = quad[0::2], quad[1::2]
         except (BrowserError, KeyError, TypeError, IndexError):
             # No layout box (an element drawn by script, or hidden): a DOM click.
-            await self._call_on(ref, "function() { this.click(); }")
+            await self._call_on(ref, "function() { this.click(); }", live="click")
         else:
             # The box's centre, kept inside the part that is on screen: an
             # element taller than the window has its centre off it.
@@ -377,6 +440,7 @@ class BrowserPage:
             x = min(max(sum(xs) / 4, max(min(xs), 1.0)), min(max(xs), width - 1))
             y = min(max(sum(ys) / 4, max(min(ys), 1.0)), min(max(ys), height - 1))
             for kind in ("mouseMoved", "mousePressed", "mouseReleased"):
+                self.policy.live("click")
                 await self._page("Input.dispatchMouseEvent", {
                     "type": kind, "x": x, "y": y, "button": "left", "clickCount": 1,
                 })
@@ -387,13 +451,18 @@ class BrowserPage:
         """Replace the field's text with `text`, as typing would: an input's
         value, or an editable element's text."""
         node = self._node(ref)
+        sensitive = await self._is_password(node)
+        self.policy.check("type", sensitive=sensitive,
+                          submits=submit and await self._in_form(ref))
         await self._page("DOM.focus", {"backendNodeId": node})
+        self.policy.live("type")
         await self._call_on(ref, """function() {
             if ('value' in this) { this.value = ''; }
             else if (this.isContentEditable) { this.textContent = ''; }
             else { return; }
             this.dispatchEvent(new Event('input', {bubbles: true}));
-        }""")
+        }""", live="type")
+        self.policy.live("type")
         await self._page("Input.insertText", {"text": text})
         if submit:
             await self.press("Enter")
@@ -402,6 +471,7 @@ class BrowserPage:
 
     async def select(self, ref: str, option: str) -> str:
         """Choose the option whose visible text (or value) is `option`."""
+        self.policy.live("select")
         before = await self._loader()
         chosen = await self._call_on(ref, """function(want) {
             if (!this.options) return null;
@@ -415,7 +485,7 @@ class BrowserPage:
               }
             }
             return null;
-        }""", option)
+        }""", option, live="select")
         if chosen is None:
             raise BrowserError(f"{ref} has no option {option!r}")
         await self.settle(before)  # a change handler may reload the page
@@ -425,11 +495,19 @@ class BrowserPage:
         if key not in _KEYS:
             raise BrowserError(f"unknown key {key!r}")
         code, text, keycode = _KEYS[key]
+        if key == "Enter":
+            focused = await self.evaluate(
+                "!!(document.activeElement && (document.activeElement.form || "
+                "(document.activeElement.closest && document.activeElement.closest('form'))))")
+            self.policy.check("press Enter", submits=bool(focused))
+        else:
+            self.policy.live("press")
         before = await self._loader()
         down: dict[str, Any] = {"type": "keyDown", "key": code, "code": code,
                                 "windowsVirtualKeyCode": keycode}
         if text:
             down["text"] = text
+        self.policy.live("press")
         await self._page("Input.dispatchKeyEvent", down)
         await self._page("Input.dispatchKeyEvent",
                          {"type": "keyUp", "key": code, "code": code,
@@ -440,7 +518,9 @@ class BrowserPage:
         dy = {"down": 1, "up": -1}.get(direction)
         if dy is None:
             raise BrowserError("scroll up or down")
+        self.policy.live("scroll")
         width, height = await self._viewport()
+        self.policy.live("scroll")
         await self._page("Input.dispatchMouseEvent", {
             "type": "mouseWheel", "x": width / 2, "y": height / 2, "deltaX": 0,
             "deltaY": dy * round(height * 0.85),

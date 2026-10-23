@@ -546,3 +546,13 @@ def test_the_voice_occasion_schema_growth_stays_under_its_ceiling():
 
     extra = tokens(voice) - tokens(text)
     assert 0 < extra <= _VOICE_EXTRA_TOKEN_CEILING, extra
+
+
+def test_a_relayed_turn_is_offered_no_send_to():
+    """8765_44837: a relayed turn carries another room's words, so its `send_to` would relay them
+    onward. Offered nothing, the turn cannot chain; the same fire turn that is not a relay keeps
+    the tool, and so does an ordinary tag turn."""
+    assert "send_to" in _surface().admitted
+    assert "send_to" in _surface(fire_turn=True).admitted
+    assert "send_to" not in _surface(fire_turn=True, relay_turn=True).admitted
+    assert not ToolScope(platform="signal", relay=True).admits("send_to")

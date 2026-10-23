@@ -5,13 +5,14 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from nora.agent import factory
 from nora.agent.guards import Deliverer, ReplyGuard
 from nora.agent.mcp import McpToolGroup
-from nora.agent.registry import ToolRegistry
+from nora.agent.registry import ToolRegistry, aggregate_budgeted_tools
 from nora.agent.room import Room
 from nora.agent.surface import WORKER_ONLY_TOOLS
 from nora.agent.tools import (
@@ -789,6 +790,58 @@ def test_unauthorized_conversations_veto_message_never_names_mcp_tools():
     assert message is not None
     assert "pulse_server_status" not in message
     assert "pulse_weekly" not in message
+
+
+class _SpyMcpTool:
+    """A discovered tool that records each call it actually runs."""
+
+    def __init__(self, tool_name: str, ran: list[str]) -> None:
+        self.tool_name = tool_name
+        self.tool_type = "mcp"
+        self._ran = ran
+
+    async def stream(self, tool_use: dict, invocation_state: dict, **kwargs: Any):
+        self._ran.append(tool_use["toolUseId"])
+        yield {"ok": self.tool_name}
+
+
+async def test_a_servers_aggregate_budget_refuses_the_call_past_it_spread_over_its_tools():
+    """Aikido 8765_44785: the server-wide budget was the per-tool budget copied onto each tool,
+    so calls spread over two tools could exceed it. With budget 2 the third call is refused
+    though its own tool is within its budget, and the refused call never runs."""
+    ran: list[str] = []
+    group = McpToolGroup(budget=2, tools=(
+        _SpyMcpTool("pulse_server_status", ran), _SpyMcpTool("pulse_weekly", ran),
+    ))
+    first, second = aggregate_budgeted_tools(group)
+
+    async def call(tool: Any, ref: str) -> list[Any]:
+        return [e async for e in tool.stream({"toolUseId": ref, "input": {}}, {})]
+
+    assert await call(first, "r1") == [{"ok": "pulse_server_status"}]
+    assert await call(second, "r2") == [{"ok": "pulse_weekly"}]
+    refused = await call(first, "r3")
+    assert refused[0].tool_result["status"] == "error"
+    assert ran == ["r1", "r2"]
+
+
+async def test_the_built_surface_gates_a_servers_tools_on_its_aggregate_budget():
+    """The same budget, reached the way a turn reaches it: `build` hands the model the
+    server's tools, and calls through those handed-over tools are counted together."""
+    ran: list[str] = []
+    registry = ToolRegistry(mcp_tools={"pulse": McpToolGroup(budget=1, tools=(
+        _SpyMcpTool("pulse_server_status", ran), _SpyMcpTool("pulse_weekly", ran),
+    ))})
+    tools = {t.tool_name: t for t in registry.build(
+        store=_FakeStore(), conversation_id="g1", conversation_type="group",
+        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
+        metrics=Metrics(), room=_room(), allowed_mcp=frozenset({"pulse"}),
+    ) if t.tool_name.startswith("pulse_")}
+    assert set(tools) == {"pulse_server_status", "pulse_weekly"}
+    first = [e async for e in tools["pulse_server_status"].stream({"toolUseId": "a"}, {})]
+    second = [e async for e in tools["pulse_weekly"].stream({"toolUseId": "b"}, {})]
+    assert first == [{"ok": "pulse_server_status"}]
+    assert second[0].tool_result["status"] == "error" and ran == ["a"]
 
 
 def test_registry_derivations_are_unaffected_by_mcp_tools():

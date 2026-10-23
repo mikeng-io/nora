@@ -9,15 +9,15 @@
   {
     "name": "used_today ignores the conversation id (rooms on one platform share a count)",
     "file": "nora/agent/video_desk.py",
-    "old": "r.platform == platform and r.conversation_id == conversation_id",
-    "new": "r.platform == platform",
+    "old": "            1 for r in rows\n            if r.platform == platform and r.conversation_id == conversation_id",
+    "new": "            1 for r in rows\n            if r.platform == platform",
     "target": "tests/unit/test_video_generation.py::test_another_rooms_clips_do_not_use_this_rooms_cap"
   },
   {
     "name": "used_today ignores the platform (the same id on another platform shares a count)",
     "file": "nora/agent/video_desk.py",
-    "old": "r.platform == platform and r.conversation_id == conversation_id",
-    "new": "r.conversation_id == conversation_id",
+    "old": "            1 for r in rows\n            if r.platform == platform and r.conversation_id == conversation_id",
+    "new": "            1 for r in rows\n            if r.conversation_id == conversation_id",
     "target": "tests/unit/test_video_generation.py::test_another_rooms_clips_do_not_use_this_rooms_cap"
   },
   {

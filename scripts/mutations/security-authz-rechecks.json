@@ -1,0 +1,100 @@
+[
+  {
+    "name": "8765_44874 ingest sender gate: a relevance-gate candidate skips the sender check, so an excluded mapped sender is noted for a participation turn",
+    "file": "nora/ingest/pipeline.py",
+    "old": "        if (decision.engage or decision.relevance_gate) and not self._allowlist.is_allowed(",
+    "new": "        if decision.engage and not self._allowlist.is_allowed(",
+    "target": "tests/unit/test_ingest_pipeline.py::test_an_unlisted_mapped_sender_is_not_a_relevance_candidate"
+  },
+  {
+    "name": "8765_44864 compute poller: a finished job is delivered with no policy re-check at delivery time",
+    "file": "nora/app/compute_poller.py",
+    "old": "            if not self._policy.is_allowed(\n                platform=job.platform, conversation_id=job.conversation_id,\n                person_id=job.requester_person_id,\n            ):",
+    "new": "            if False:",
+    "target": "tests/unit/test_compute_poller.py::test_a_finished_job_is_not_delivered_once_its_room_is_removed"
+  },
+  {
+    "name": "8765_44864 boot telling: a job whose grant is gone is still spoken into its room after a restart",
+    "file": "nora/app/composition.py",
+    "old": "        if not policy.is_allowed(\n            platform=job.platform, conversation_id=job.conversation_id,\n            person_id=job.requester_person_id,\n        ):",
+    "new": "        if False:",
+    "target": "tests/unit/test_compute_poller.py::test_a_lost_job_is_not_spoken_after_restart_once_its_grant_is_gone"
+  },
+  {
+    "name": "8765_44827 may_read: any requester reads any document, so room membership or a wildcard room is a grant",
+    "file": "nora/domain/documents.py",
+    "old": "    return summary.created_by == person_id or (summary.platform, summary.conversation_id) in named",
+    "new": "    return True",
+    "target": "tests/unit/test_documents_service.py::test_a_wildcard_room_document_is_read_by_its_creator_alone"
+  },
+  {
+    "name": "8765_44827 read path: the visibility clause is dropped from the one resolution read and set_state share",
+    "file": "nora/app/documents_service.py",
+    "old": "            or not may_read(current.summary, person_id, named)\n        ):\n            return None\n        return current",
+    "new": "            or False\n        ):\n            return None\n        return current",
+    "target": "tests/unit/test_documents_service.py::test_a_wildcard_room_document_is_read_by_its_creator_alone"
+  },
+  {
+    "name": "8765_44827 set_state: a non-creator in a wildcard room can archive or delete the document",
+    "file": "nora/app/documents_service.py",
+    "old": "            or not may_read(current.summary, person_id, named)\n        ):\n            return None\n        return current",
+    "new": "            or False\n        ):\n            return None\n        return current",
+    "target": "tests/unit/test_documents_service.py::test_a_wildcard_room_document_cannot_have_its_state_changed_by_a_non_creator"
+  },
+  {
+    "name": "8765_44827 publish revision: a non-creator in a wildcard room can revise the document",
+    "file": "nora/app/documents_service.py",
+    "old": "                or not may_read(current.summary, person_id, self._named(person_id))\n            ):\n                return _no_such_document()",
+    "new": "                or False\n            ):\n                return _no_such_document()",
+    "target": "tests/unit/test_documents_service.py::test_a_wildcard_room_document_cannot_be_revised_by_a_non_creator"
+  },
+  {
+    "name": "8765_44827 <documents> block: the store lists the room's whole list to any member, so creator-only ids are enumerated",
+    "file": "nora/testing/fakes.py",
+    "old": "            and d.summary.state in states\n            and self._sees(d.summary, person_id, rooms)\n",
+    "new": "            and d.summary.state in states\n",
+    "target": "tests/unit/test_documents_block.py::test_a_wildcard_room_block_lists_only_the_askers_own_documents"
+  },
+  {
+    "name": "8765_44827 list_room visibility: the store returns the room's documents to any asker, before the limit",
+    "file": "nora/infra/sql/documents.py",
+    "old": "            _state().in_(states),\n            _visible(person_id, rooms),\n",
+    "new": "            _state().in_(states),\n",
+    "target": "tests/contract/test_document_store_contract.py::test_list_room_applies_the_visibility_before_the_limit[sql]"
+  },
+  {
+    "name": "8765_44827 <documents> reader: a member the room names is read the room's list with no grant",
+    "file": "nora/engagement/documents_context.py",
+    "old": "                        person_id=person_id, rooms=named,\n                    ),\n",
+    "new": "                        person_id=person_id, rooms=frozenset(),\n                    ),\n",
+    "target": "tests/unit/test_documents_block.py::test_a_member_the_room_names_reads_the_whole_list_past_their_own"
+  },
+  {
+    "name": "8765_44856 presence: an unmapped account in a flagged room no longer refuses the presence scope",
+    "file": "nora/agent/lineage.py",
+    "old": "    if live is None or not live.available or live.degraded or live.unnamed > 0:\n        return False\n    return any(",
+    "new": "    if live is None or not live.available or live.degraded:\n        return False\n    return any(",
+    "target": "tests/unit/test_lineage.py::test_presence_is_refused"
+  },
+  {
+    "name": "8765_44837 surface: a relayed turn is offered send_to, so a relay can chain",
+    "file": "nora/agent/surface.py",
+    "old": "        if name in RELAY_REFUSED_TOOLS and self.relay:\n            return False",
+    "new": "        if name in RELAY_REFUSED_TOOLS and self.relay and False:\n            return False",
+    "target": "tests/unit/test_tool_surface.py::test_a_relayed_turn_is_offered_no_send_to"
+  },
+  {
+    "name": "8765_44837 execution guard: send_to on a relayed turn still relays",
+    "file": "nora/agent/tools.py",
+    "old": "        if relay_turn:\n            # A relayed turn is never a second relay",
+    "new": "        if relay_turn and False:\n            # A relayed turn is never a second relay",
+    "target": "tests/test_tools.py::test_send_to_on_a_relayed_turn_is_refused_and_relays_nothing"
+  },
+  {
+    "name": "8765_44837 fire path: a relay occasion does not tell the surface it is a relay",
+    "file": "nora/app/fire.py",
+    "old": "                relay_turn=occasion.kind == \"relay\",",
+    "new": "                relay_turn=False,",
+    "target": "tests/unit/test_fire_path.py::test_a_relayed_turn_is_told_it_is_a_relay_and_a_reminder_is_not"
+  }
+]
