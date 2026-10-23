@@ -401,3 +401,18 @@ async def test_a_compressed_body_cut_off_mid_stream_is_not_read_as_the_file():
     complete = httpx.Response(200, headers={"Content-Encoding": "gzip"},
                               stream=httpx.ByteStream(whole))
     assert await _bounded_body(complete, 1_000_000) == b"x" * 50_000
+
+
+async def test_a_native_kind_with_no_export_is_refused_not_asserted(monkeypatch):
+    """Only a Sheet has no export, and a Sheet is read before this branch. A
+    Doc is patched to have none so the branch runs: the refusal must be an
+    ExternalFileError, not a bare assert (stripped under `python -O`, after
+    which a None export would be sent to Google)."""
+    from nora.infra.external_files import google_drive
+
+    kind, _export, office = google_drive._NATIVE[google_drive._GDOC]
+    monkeypatch.setitem(google_drive._NATIVE, google_drive._GDOC, (kind, None, office))
+    with pytest.raises(ExternalFileError) as err:
+        await _source(_server()).read(ref=_ref(IDS["doc"]), part=1)
+    assert err.value.status == "refused"
+    assert err.value.reason == NOT_TEXT

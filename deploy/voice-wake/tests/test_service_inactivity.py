@@ -97,3 +97,15 @@ async def test_a_reaped_user_does_not_fire_from_a_stale_timer(service):
 async def _until(cond):
     while not cond():
         await asyncio.sleep(0.01)
+
+
+async def test_a_block_that_resamples_to_the_wrong_size_is_refused(service, monkeypatch):
+    # The chunk the model scores must be exactly OWW_CHUNK samples. The check is
+    # a raise, not an assert: `python -O` would strip an assert and score a
+    # short chunk. Two frames make one 80 ms block, which is what gets resampled.
+    svc, fired, _ = service
+    monkeypatch.setattr(service_mod, "downsample_to_16k",
+                        lambda _block: np.zeros(service_mod.OWW_CHUNK - 1, dtype=np.int16))
+    with pytest.raises(RuntimeError, match="samples"):
+        await _feed(svc, 2)
+    assert fired == []

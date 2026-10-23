@@ -15,8 +15,10 @@ LAB = os.path.dirname(BASE)  # voice-lab root (scripts/ → lab root)
 onnx = os.path.join(LAB, "oww-data", "output", "喂Nora.onnx")
 wav = "/tmp/gate16k.wav"  # ffmpeg-resampled 16k mono of Miles's 21.2s recording
 
-assert os.path.exists(onnx), f"missing {onnx}"
-assert os.path.exists(wav), f"missing {wav}"
+if not os.path.exists(onnx):
+    raise FileNotFoundError(f"missing {onnx}")
+if not os.path.exists(wav):
+    raise FileNotFoundError(f"missing {wav}")
 print("onnx:", onnx)
 print("wav:", wav)
 

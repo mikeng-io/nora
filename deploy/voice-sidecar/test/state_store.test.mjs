@@ -5,11 +5,11 @@
 
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, chmodSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, chmodSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { createStateStore, guildsFromStateFiles } from '../src/state_store.mjs';
+import { containedFile, createStateStore, guildsFromStateFiles } from '../src/state_store.mjs';
 import { bootChannel } from '../src/lifecycle.mjs';
 import { makeHarness, GUILD, CHANNEL } from './helpers.mjs';
 
@@ -209,4 +209,55 @@ test('only a Discord snowflake names a guild', () => {
 
 test('an empty directory yields no guilds and no complaints', () => {
   assert.deepEqual(guildsFromStateFiles([]), { guilds: [], skipped: [] });
+});
+
+// --- a guild id names a file only inside the state directory (A3) ------------
+// The guild id reaches the file name from the control plane, so the file a
+// store reads or writes must stay inside STATE_DIR whatever the id is.
+
+test('containedFile names a file inside the directory', () => {
+  const dir = tmp();
+  assert.equal(containedFile(dir, '100000000000000203.json'), path.join(dir, '100000000000000203.json'));
+  // A name that merely starts with dots is a name, not a traversal.
+  assert.equal(containedFile(dir, '..state.json'), path.join(dir, '..state.json'));
+});
+
+test('containedFile refuses traversal, separators, absolute and empty names', () => {
+  const dir = tmp();
+  for (const name of ['../evil.json', '../../etc/x', '..', '.', '', 'a/b.json', 'a\\b.json', '/etc/passwd']) {
+    assert.throws(() => containedFile(dir, name), /refusing state file name/, JSON.stringify(name));
+  }
+  assert.throws(() => containedFile(dir, undefined), /refusing state file name/);
+});
+
+test('containedFile refuses a symlink planted under the name that points outside', () => {
+  const dir = tmp();
+  const outside = tmp();
+  writeFileSync(path.join(outside, 'target.json'), '{}');
+  symlinkSync(path.join(outside, 'target.json'), path.join(dir, '100000000000000203.json'));
+  assert.throws(() => containedFile(dir, '100000000000000203.json'), /escapes its directory/);
+});
+
+test('a symlink at the state file name is an error, not a read of its target', async () => {
+  const dir = tmp();
+  const outside = path.join(tmp(), 'outside.json');
+  writeFileSync(outside, JSON.stringify({ desired: 'connected', channel_id: 'x' }));
+  const file = path.join(dir, '100000000000000301.json');
+  symlinkSync(outside, file);
+  const got = await createStateStore({ path: file }).read();
+  assert.equal(got.status, 'error');
+  assert.equal(got.state, null);
+});
+
+test('a symlink planted at the temp name is replaced, never written through', async () => {
+  const dir = tmp();
+  const outsideDir = tmp();
+  const outside = path.join(outsideDir, 'victim.txt');
+  writeFileSync(outside, 'untouched');
+  const file = path.join(dir, '100000000000000302.json');
+  symlinkSync(outside, `${file}.${process.pid}.tmp`);
+  const store = createStateStore({ path: file });
+  await store.write({ desired: 'idle' });
+  assert.equal(readFileSync(outside, 'utf8'), 'untouched');
+  assert.deepEqual(await store.read(), { status: 'ok', state: { desired: 'idle' } });
 });

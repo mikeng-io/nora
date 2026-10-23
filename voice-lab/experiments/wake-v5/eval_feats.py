@@ -7,7 +7,9 @@ D,MODE,STEPS,TAG=sys.argv[1],sys.argv[2],int(sys.argv[3]),sys.argv[4]
 FE="/home/norty/workspace/voice-lab-data/oww-data/features/"
 pat=lambda p: re.sub(r'^\d+-|-\d+\.wav$','',os.path.basename(p))
 def load(n):
-    X=np.load(f"{D}/{n}.npy"); names=[l.strip() for l in open(f"{D}/{n}.npy.txt")]; assert len(X)==len(names),(n,len(X),len(names)); return X,names
+    X=np.load(f"{D}/{n}.npy"); names=[l.strip() for l in open(f"{D}/{n}.npy.txt")]
+    if len(X)!=len(names): raise ValueError((n,len(X),len(names)))
+    return X,names
 pos,posn=load("pos_train"); neg,negn=load("neg_train"); pt,ptn=load("pos_test"); nt,ntn=load("neg_test")
 BARE={"喂-Nora","喂，Nora","喂Nora"}
 if MODE=="bare":

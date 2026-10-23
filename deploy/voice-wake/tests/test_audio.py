@@ -8,6 +8,7 @@ values is still a broken gate.
 
 import io
 import wave
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -60,3 +61,16 @@ def test_pcm16_to_wav_round_trips():
         assert (wf.getnchannels(), wf.getsampwidth(), wf.getframerate()) == (1, 2, 16000)
         back = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
     assert back.tolist() == samples.tolist()
+
+
+def test_a_changed_block_to_chunk_ratio_fails_the_import_under_any_flags():
+    # The ratio is checked at import by a raise, not an assert: `python -O`
+    # strips asserts, and a changed constant would then ship silently. Mutate
+    # the constant in the module's source and import it fresh.
+    import wakegate.audio as audio
+
+    src = Path(audio.__file__).read_text(encoding="utf-8")
+    mutant = src.replace("OWW_CHUNK = 1280", "OWW_CHUNK = 1281", 1)
+    assert mutant != src
+    with pytest.raises(RuntimeError, match="OWW_CHUNK"):
+        exec(compile(mutant, audio.__file__, "exec"), {"__name__": "wakegate_audio_mutant"})

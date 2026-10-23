@@ -34,7 +34,8 @@ CEILING_DBTP = -1.0
 
 def load_wav(path: Path) -> np.ndarray:
     sr, x = wavfile.read(path)
-    assert sr == SR, f"{path} is {sr} Hz"
+    if sr != SR:
+        raise ValueError(f"{path} is {sr} Hz")
     x = x.astype(np.float64)
     return x[:N] if len(x) >= N else np.pad(x, ((0, N - len(x)), (0, 0)))
 

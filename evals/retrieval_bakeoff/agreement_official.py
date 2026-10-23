@@ -100,7 +100,8 @@ def reference_vectors(label: str) -> tuple[dict[str, list[float]], dict]:
     fmt = adapters.OFFICIAL[label]
     os.environ["HF_HUB_OFFLINE"] = "1"
     path = adapters._pinned_snapshot(fmt.repo, fmt.revision)
-    assert Path(path).name == fmt.revision, path
+    if Path(path).name != fmt.revision:
+        raise ValueError(f"{path} is not the pinned revision {fmt.revision}")
     out = {}
     if label == "qwen3vl":
         sys.path.insert(0, str(Path(path) / "scripts"))
