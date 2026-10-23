@@ -6,9 +6,14 @@
 // real, per the privacy posture in design/voice-channel/05-sidecar-receive.md.
 
 import fs from 'node:fs';
+import { dirname, resolve } from 'node:path';
 
 export class WavWriter {
   constructor(path, { rate = 48000, channels = 2 } = {}) {
+    // The mock spike builds filenames from loopback TCP frame user IDs.
+    if (dirname(resolve(path)) !== resolve('recordings')) {
+      throw new Error('WAV output must be directly inside recordings');
+    }
     this.fd = fs.openSync(path, 'w');
     this.bytesWritten = 0;
     this.rate = rate;
