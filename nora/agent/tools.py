@@ -1741,7 +1741,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                     side_effect_state="confirmed", idempotency="idempotent",
                                     retry="safe",
                                     output_contract="three_state", level=2),
-    # One list call discovers recent releases and the running build. Two reads
+    # One list call discovers shipped history and the running build. Two reads
     # allow notes for the running release and one selected earlier release.
     "version_list": NativeTool(1,
                                source_tier="confirmed", read_only=True,
@@ -4099,24 +4099,6 @@ _VENUE_REPORT: Mapping[str, str] = {
     "unavailable": "I can't read what people here like right now. Say you "
                    "couldn't check, and don't guess a venue.",
 }
-_VERSION_LIST_NOTES: Mapping[str, str] = {
-    "ok": "These are published releases, not deployment history. Only `running` "
-          "identifies this process. The list covers one recent GitHub page; "
-          "`more_available` means older releases may be omitted. Read a selected "
-          "version's notes with version_read. Notes alone cannot explain response speed.",
-    "nothing_found": "GitHub lists no published stable releases. This says nothing "
-                     "about which build is running; read `running` separately.",
-    "unavailable": "I couldn't check GitHub releases. Don't claim there are none. "
-                   "The separate `running` result still describes the local build.",
-}
-_VERSION_READ_NOTES: Mapping[str, str] = {
-    "ok": "This is the exact published release body. Explain it in your own words. "
-          "An empty body means no notes were published. Publication does not prove "
-          "deployment, or that an upgrade caused faster responses.",
-    "nothing_found": "There is no published stable release for that exact tag. "
-                     "Don't invent its contents.",
-    "unavailable": "I couldn't read that release. Don't describe it or claim it is absent.",
-}
 
 
 def _weather_result(obs: WeatherObservation) -> dict[str, object]:
@@ -4821,7 +4803,6 @@ def build_tool_specs(
     clock: Callable[[], datetime] | None = None,
     links: LinkCarry | None = None,
     versions=None,
-    releases=None,
     giphy_source: GifSource | None = None,
     reaction_picker: ReactionPicker | None = None,
     tool_call_log_store: ToolCallLogStore | None = None,
@@ -4954,9 +4935,8 @@ def build_tool_specs(
     an error; the caps and the clock fall back to `ReminderCaps()` and
     `utc_now`, so a caller that never sets a reminder needs neither.
 
-    `versions` is the immutable process-lifetime build stamp. `releases` is
-    the public GitHub reader. They remain independent: GitHub can be unavailable
-    with a known running build, or releases readable with an unstamped build.
+    `versions` is the immutable process-lifetime build stamp and shipped
+    release history. Both version tools read this same snapshot.
 
     `tool_call_log_store` is `recall_lookups`'s own collaborator, wired the
     identical way: `None` in the offline/eval compositions and any composition
@@ -14254,66 +14234,62 @@ Args:
         return {"status": "ok", "title": note.title}
 
     async def version_list() -> dict:
-        """List releases and running version when somebody asks about upgrades.
+        """List running version and history when somebody asks about versions or upgrades.
 
-        Returns `status`: ok, nothing_found or unavailable, with a `note` on
-        how to report it. `running` has its own build-stamp status.
+        Returns `status`: ok or unavailable, with a `note` on how to report it.
+        History is the shipped snapshot, without notes or changes bodies.
         """
         current = versions.current() if versions is not None else None
-        running: dict = {"status": "unavailable", "note": "I can't read my own build "
-                         "stamp. Don't guess which version is running."}
-        if current is not None and current.status == "ok" and current.entry is not None:
-            running = {"status": "ok", "version": current.entry.version}
-        if releases is None:
+        if current is None or current.status != "ok" or current.entry is None:
             _record(metrics, "version_list", "unavailable")
-            return {"status": "unavailable",
-                    "note": "I couldn't check GitHub releases. Don't claim there are none. "
-                            "The separate `running` result still describes the local build.",
-                    "running": running}
-        try:
-            out = await releases.list()
-        except Exception:
-            log.exception("version_list failed")
-            _record(metrics, "version_list", "unavailable")
-            return {"status": "unavailable",
-                    "note": "I couldn't check GitHub releases. Don't claim there are none. "
-                            "The separate `running` result still describes the local build.",
-                    "running": running}
-        out["running"] = running
-        _record(metrics, "version_list", out["status"])
-        return _with_note(out, _VERSION_LIST_NOTES)
+            return {"status": "unavailable", "note": "I couldn't read my build stamp. "
+                    "Don't guess the running version or claim there is no history."}
+        releases = []
+        for name in versions.known():
+            entry = versions.lookup(name).entry
+            if entry is not None:
+                releases.append({"version": entry.version, "released": entry.released,
+                                 "commit": entry.commit})
+        _record(metrics, "version_list", "ok")
+        return {"status": "ok", "running": {"status": "ok", "version": current.entry.version},
+                "releases": releases,
+                "note": "This is shipped history, newest first, not live release or deployment "
+                        "history. Only running identifies this process. Releases after this "
+                        "build are invisible until another image is deployed. "
+                        "Read recorded notes with version_read; notes alone cannot explain speed."}
 
     async def version_read(version: str) -> dict:
-        """Read release notes when somebody asks what changed.
+        """Read version notes when somebody asks what changed.
 
         Returns `status`: ok, nothing_found or unavailable, with a `note` on
-        how to report it. The body comes from GitHub, not deployment history.
+        how to report it. Notes and changes come from the shipped snapshot.
 
         Args:
-            version: Exact release tag from version_list or the question.
+            version: Recorded version from version_list or the question.
         """
         tag = version.strip() if isinstance(version, str) else ""
-        # The tag leaves the host in a public HTTP path, like any search input.
-        decoded = urllib.parse.unquote(tag)
-        if not tag or scan_identifiers(decoded) is not None or _looks_like_coordinate(decoded):
+        if not tag:
             _record(metrics, "version_read", "unavailable")
-            return {"status": "unavailable", "note": "I need a public release tag, "
-                    "without private identifiers or coordinates."}
-        if releases is None:
+            return {"status": "unavailable", "note": "I need a version to read its recorded notes."}
+        lookup = versions.lookup(tag) if versions is not None else None
+        if lookup is None or lookup.status == "unavailable":
             _record(metrics, "version_read", "unavailable")
-            return {"status": "unavailable",
-                    "note": "I couldn't read that release. "
-                            "Don't describe it or claim it is absent."}
-        try:
-            out = await releases.read(tag)
-        except Exception:
-            log.exception("version_read failed")
-            _record(metrics, "version_read", "unavailable")
-            return {"status": "unavailable",
-                    "note": "I couldn't read that release. "
-                            "Don't describe it or claim it is absent."}
-        _record(metrics, "version_read", out["status"])
-        return _with_note(out, _VERSION_READ_NOTES)
+            return {"status": "unavailable", "note": "I couldn't read my shipped history. "
+                    "Don't describe that version or claim it is absent."}
+        if lookup.status == "nothing_found" or lookup.entry is None:
+            _record(metrics, "version_read", "nothing_found")
+            return {"status": "nothing_found", "known": list(lookup.known),
+                    "note": "That version is not recorded in this shipped snapshot. "
+                            "It may exist outside the snapshot; don't invent its contents."}
+        entry = lookup.entry
+        _record(metrics, "version_read", "ok")
+        return {"status": "ok", "version": entry.version, "released": entry.released,
+                "commit": entry.commit, "notes": entry.notes, "changes": list(entry.changes),
+                "note": "These are shipped release summaries, not a complete live GitHub body: "
+                        "notes are capped at 2,000 characters and changes at 20 subjects. "
+                        "Empty fields mean nothing was recorded. Releases after this build "
+                        "are invisible until another image is deployed. These notes don't "
+                        "prove deployment or that an upgrade caused faster responses."}
 
     def _resolve_quote(reply_to: int | None) -> OutboundQuote | None:
         """`n` from the rendered transcript -> the row's platform handles.
@@ -17005,7 +16981,6 @@ def build_tools(
     memory_retrieval: MemorySearch | None = None,
     persona: PersonaWriter | None = None,
     persona_read: PersonaHeads | None = None,
-    releases=None,
     relay: Relay | None = None,
     relay_turn: bool = False,
 ) -> list:
@@ -17066,7 +17041,6 @@ def build_tools(
         memory_retrieval=memory_retrieval,
         persona=persona,
         persona_read=persona_read,
-        releases=releases,
         relay=relay, relay_turn=relay_turn,
     )
     return [adapt(spec) for spec in specs]

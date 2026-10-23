@@ -214,15 +214,17 @@ cases:
     metadata: {tools: [version_list], not_tools: [version_read, web_search, web_fetch]}
     snapshot: *room_a
 
+  # Generate nora/version.json with scripts/gen_version_manifest.py in the
+  # clean evaluation checkout before running; v6.6.9 is a recorded release.
   - name: route_version_read
     entry: tag
     expect: reply
     mention: true
-    input: What changed in your v0.0.3 release? Read that exact release's notes.
+    input: What changed in your v6.6.9 release? Read its recorded notes.
     metadata:
       tools: [version_read]
       not_tools: [version_list, web_search, web_fetch]
-      args_include: {version_read: [v0.0.3]}
+      args_include: {version_read: [v6.6.9]}
     snapshot: *room_a
 
   - name: route_version_indirect_upgrade

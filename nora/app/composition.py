@@ -164,7 +164,6 @@ from nora.infra.blobs import FilesystemBlobStore, RustfsBlobStore
 from nora.infra.blobs.cipher import BlobCipher
 from nora.infra.computer.probe import ComputerdProbe
 from nora.infra.embedder import QUERY_TIMEOUT_SECONDS, LlamaEmbedder, fingerprint, model_file
-from nora.infra.github_releases import GitHubReleases
 from nora.infra.google.auth import GoogleCredentials
 from nora.infra.honcho import HonchoClient
 from nora.infra.music import YtDlpSource
@@ -2940,10 +2939,8 @@ async def build_dependencies(
         if mount.enabled
     }
     mcp_tool_groups = build_mcp_tools(mcp_mounts)
-    # Running identity is local and immutable; published release history is an
-    # independent public read. Each HTTP operation closes its own client.
+    # Running identity and release history share the immutable build snapshot.
     version_manifest = VersionManifest()
-    github_releases = GitHubReleases()
     giphy_client = None
     if giphy_key := os.environ.get("GIPHY_API_KEY"):
         from nora.infra.giphy import GiphyClient
@@ -3206,7 +3203,6 @@ async def build_dependencies(
         # two absences covering for each other.
         unit_for=_note_unit_of(allowlist),
         versions=version_manifest,
-        releases=github_releases,
         giphy=giphy_client,
         reaction=reaction_picker,
         music=music_bridge,

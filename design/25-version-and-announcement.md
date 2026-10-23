@@ -13,29 +13,38 @@ timestamp: '2026-08-11'
 
 ## Current release tools (issue #217, 2026-10-23)
 
-`version_list()` replaces the old `version(which)` interface. It lists stable,
-published GitHub Releases from the fixed public `mikeng-io/nora` repository,
-newest publication first, with version, publication date and URL, without bodies.
-One request reads at most 100 recent API entries; `more_available` reports a next
-page, so the result does not claim to be the entire archive. Older exact tags
-remain readable with `version_read(version)`, which fetches that release's body.
-A release with no body has no published notes; no notes are invented.
+`version_list()` replaces the old `version(which)` interface. It reads the
+existing immutable `VersionManifest` and returns a separate `running` identity
+plus recorded version metadata (`version`, `released`, `commit`) in the
+generator's newest-first order, without `notes` or `changes` bodies. A readable
+stamp with no history still identifies the running build and returns an empty
+history list as `ok`; it does not invent a history entry for the running build.
 
-The list includes a separate `running` result from the immutable
-`VersionManifest`: only that stamp says what this process runs. Its absence is
-`unavailable`, even when GitHub is readable. Conversely an API failure is
-`unavailable` even with a readable stamp. An exact missing or unpublished stable
-release is `nothing_found`; an empty complete list is also `nothing_found`.
-The two calls have budgets 1 and 2, respectively, and are read-only and unit-safe.
-The adapter closes its HTTP client within each operation; it uses no credentials,
-new persistence or polling. Build stamping and publication controls are unchanged.
+`version_read(version)` reads the selected entry's recorded `notes` and `changes`
+from that same snapshot, retaining the reader's case-insensitive matching and
+optional `v` prefix. Empty content stays empty. A readable manifest without that
+entry is `nothing_found`, including when the running build has no history entry.
+This means not recorded here, not that the release does not exist. An absent,
+unreadable or unstamped manifest is `unavailable` for both tools. Every outcome
+carries a reporting note and records its tool metric.
 
-Published releases do not establish deployment, and release notes do not
-establish that an upgrade caused faster responses. Routing cases include a
-synthetic indirect upgrade question and sibling exclusions. Routing and reporting
-still require the parent-owned live measurement; offline tests prove HTTP and
-wiring, not model selection. The old tool and announcement sections below are
-historical.
+This is **shipped history**. Releases after the build are invisible until another
+image is deployed. The existing generator caps notes at 2,000 characters and
+changes at 20 commit subjects: the result is a recorded release summary, not a
+complete exact live GitHub release body. Running identity and history remain
+fixed for the process. Only the running stamp establishes this process's version;
+history alone establishes neither deployment nor that an upgrade caused faster
+responses.
+
+The two calls keep budgets 1 and 2, respectively, and remain read-only and
+unit-safe. There is no runtime HTTP, GitHub credential, second store, cache or
+polling. Generator limits, build stamping and publication controls are unchanged.
+Routing cases cover direct version questions, one historical read, and an indirect
+upgrade question with sibling exclusions. Generate `nora/version.json` using
+`scripts/gen_version_manifest.py` in the clean evaluation checkout before the
+live measurement; the selected historical release is `v6.6.9`. Parent-owned live
+routing/reporting measurement remains separate from deterministic file-reader
+and wiring tests. The old tool and announcement sections below are historical.
 
 # Version, and the upgrade note
 
