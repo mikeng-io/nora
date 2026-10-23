@@ -1,5 +1,18 @@
 # Changelog
 
+## [6.6.15](https://github.com/mikeng-io/nora/compare/v6.6.14...v6.6.15) (2026-10-23)
+
+
+### Bug Fixes
+
+* **voice:** preserve valid audio and enforce configured guild admission ([1cf9f01](https://github.com/mikeng-io/nora/commit/1cf9f0177b4b34e52c4b2a62b05182b12b1185a0))
+
+
+### Security
+
+* **voice:** authenticate the voice event route and dispose a discarded core's sweep timer ([e5ecee6](https://github.com/mikeng-io/nora/commit/e5ecee602adf12e0554cc5e672e11de8be981d46))
+* **voice:** authenticate voice ingress and bound retained work ([e8e23e8](https://github.com/mikeng-io/nora/commit/e8e23e8a05a1196f1eb1d603f635e8ccac28795c))
+
 ## [6.6.14](https://github.com/mikeng-io/nora/compare/v6.6.13...v6.6.14) (2026-10-23)
 
 
