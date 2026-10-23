@@ -372,15 +372,22 @@ def test_a_burst_past_the_concurrency_bound_is_refused_not_queued(bridge, monkey
         try:
             time.sleep(0.2)  # let the stalled connection take its slot
             conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2.0)
-            conn.request(
-                "POST", "/alert", body=_GOOD_BODY,
-                headers={
-                    "Authorization": f"Bearer {_TOKEN}",
-                    "Content-Length": str(len(_GOOD_BODY)),
-                },
-            )
-            assert conn.getresponse().status == 503
-            conn.close()
+            # A refused connection is closed with this request's body unread, which on a
+            # loaded host can reach the client as a reset before the 503 does; either way
+            # it was turned away at once and Alertmanager retries.
+            try:
+                conn.request(
+                    "POST", "/alert", body=_GOOD_BODY,
+                    headers={
+                        "Authorization": f"Bearer {_TOKEN}",
+                        "Content-Length": str(len(_GOOD_BODY)),
+                    },
+                )
+                assert conn.getresponse().status == 503
+            except (ConnectionResetError, http.client.RemoteDisconnected):
+                pass
+            finally:
+                conn.close()
         finally:
             stalled.close()
     assert sent == []
