@@ -2342,6 +2342,9 @@ class ToolRouteGrader(Evaluator):
     (`where_been` for a «where is she NOW» question). Both are read from what
     EXECUTED (`NORA_TOOLS`), never from what the reply says.
 
+    `metadata.required_tools` optionally names tools that must ALL execute,
+    in addition to the ANY choice in `metadata.tools`.
+
     `load_tools` is plumbing and is never the answer to anything: it is
     dropped before either check, so a deferred turn and a resident one are
     graded on the same question.
@@ -2427,6 +2430,7 @@ class ToolRouteGrader(Evaluator):
         md = data.metadata or {}
         want = frozenset(md.get("tools") or ())
         avoid = frozenset(md.get("not_tools") or ())
+        required = frozenset(md.get("required_tools") or ())
         before = md.get("before") or {}
         if error:
             return [self._out(ERROR, 0.0, f"the case did not run: {error}")]
@@ -2444,6 +2448,9 @@ class ToolRouteGrader(Evaluator):
         wrong = sorted(avoid & set(ran))
         if wrong:
             return [self._out(FAIL, 0.0, f"called the sibling {wrong}; ran {ran}")]
+        missing = sorted(required - set(ran))
+        if missing:
+            return [self._out(FAIL, 0.0, f"missing required tools {missing}; ran {ran}")]
         for first, not_before in before.items():
             if first not in ran:
                 continue

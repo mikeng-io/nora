@@ -205,6 +205,15 @@ image records the source revision and its generated version manifest. The
 [runbook](docs/runbook.md) carries health checks and rollback constraints,
 including database migrations. Do not use old phase tags as rollback targets.
 
+Nora reads the release history shipped in her image with `version_list()` and
+`version_read(version)`. The list includes the immutable running version and
+recorded version metadata; the read returns one version's recorded notes and
+changes. Both use the same baked snapshot, with no runtime GitHub access or
+credentials. Releases after the build are invisible until another image is
+deployed. Notes are capped at 2,000 characters and changes at 20 commit subjects,
+so this is a release summary, not the complete live GitHub release body.
+An absent or unreadable stamp is unavailable; an unrecorded version is not found.
+
 ## Help and contributions
 
 Use [GitHub issues](https://github.com/mikeng-io/nora/issues) for reproducible bugs

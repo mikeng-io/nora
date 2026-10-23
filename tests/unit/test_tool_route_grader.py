@@ -7,6 +7,7 @@ before any number from it is trusted.
 
 from __future__ import annotations
 
+import pytest
 from strands_evals.types.evaluation import EnvironmentState, EvaluationData
 
 from evals.backbone import ERROR, FAIL, NORA_ERROR, NORA_TOOLS, PASS, ToolRouteGrader, _tools_called
@@ -568,3 +569,37 @@ def test_the_self_case_fails_the_prompt_that_sent_her_reference_back():
     assert graded("Standing calm and slightly deadpan, facing the viewer, one hand in "
                   "hoodie pocket, plain neutral background. No text") == FAIL
     assert graded("sitting on the floor of a dim living room at night, phone in hand") == PASS
+
+
+@pytest.mark.parametrize(("version", "expected"), [
+    ("v6.6.9", PASS), ("6.6.9", PASS), ("6.6.8", FAIL),
+])
+def test_version_read_corpus_accepts_prefixed_and_bare_release(version, expected):
+    from evals.scenarios import load_corpus
+
+    case = next(c for c in load_corpus("tool_selection") if c.name == "route_version_read")
+    assert _label(_carried(
+        (("version_read", f'{{"version": "{version}"}}'),), **case.metadata,
+    )) == expected
+
+
+@pytest.mark.parametrize(("called", "expected"), [
+    (("version_list",), FAIL),
+    (("version_read",), FAIL),
+    (("version_list", "version_read"), PASS),
+    (("version_list", "version_read", "web_search"), FAIL),
+    (("version_list", "version_read", "web_fetch"), FAIL),
+])
+def test_indirect_upgrade_corpus_requires_discovery_and_notes(called, expected):
+    from evals.scenarios import load_corpus
+
+    case = next(c for c in load_corpus("tool_selection")
+                if c.name == "route_version_indirect_upgrade")
+    data = _data(called)
+    data.metadata = case.metadata
+    assert _label(data) == expected
+
+
+def test_expected_tools_remain_any_when_no_required_tools_are_stated():
+    assert _label(_data(("version_list",), tools=("version_list", "version_read"))) == PASS
+    assert _label(_data(("version_read",), tools=("version_list", "version_read"))) == PASS

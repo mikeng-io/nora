@@ -525,7 +525,7 @@ class DreamToolSource(Protocol):
 # test red rather than silently joining or silently missing. That is the same
 # structure `ACT_VERBS` uses in `tests/unit/test_tool_registry.py`.
 UNIT_SAFE_TOOLS: frozenset[str] = frozenset({
-    "web_search", "web_fetch", "now", "calculate", "weather", "version",
+    "web_search", "web_fetch", "now", "calculate", "weather", "version_list", "version_read",
     # `x_read` and `x_search` (DEC-201): read the open internet (public X content)
     # with no room state anywhere in the answer, the same shape as
     # `web_search`/`web_fetch`, and read-only at three layers besides (R-86).

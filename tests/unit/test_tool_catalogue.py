@@ -160,6 +160,12 @@ def test_confusable_pairs_are_discriminated_in_the_catalogue_itself():
     assert "NEW" in by_name["event_propose"]
     assert "ALREADY" in by_name["event_revise"]
 
+    assert "history" in by_name["version_list"]
+    assert "upgrades" in by_name["version_list"]
+    assert "names a version" in by_name["version_read"]
+    read = " ".join(ToolRegistry()._descriptions()["version_read"].split())
+    assert "without version_list before or after" in read
+
 
 def test_the_hot_set_is_marked_and_matches_the_one_declaration():
     """A marker saying «already loaded» while the builder did not load it sends

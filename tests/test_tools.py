@@ -211,8 +211,8 @@ def test_every_declared_tool_is_built(wiring):
         "video_create",
         # The worker's own place-keeper.
         "checkpoint_update",
-        # DEC-97: what she is running, and what was in an earlier version.
-        "version",
+        # Running build context plus public release metadata and notes.
+        "version_list", "version_read",
         # The note tier's four verbs.
         "note_read", "note_search", "note_create", "note_update",
         # DEC-306: one kept memo of the unit.

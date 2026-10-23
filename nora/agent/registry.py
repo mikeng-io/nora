@@ -589,16 +589,7 @@ class ToolRegistry:
         # discloses names. `.specs()`/`.build()`'s `allowed_mcp` is the SAME
         # value a caller must pass here.
         self._mcp_tools = dict(mcp_tools) if mcp_tools is not None else {}
-        # The baked build stamp (DEC-97), DEFAULT-CONSTRUCTED like `transit` and
-        # unlike `route`/`search`/`weather`: there is no key to resolve and no
-        # service to reach, only a file that either shipped with this code or
-        # did not, so there is nothing an unconfigured deployment could be
-        # missing. Reading it costs one open, once, on the first `version` call;
-        # a source checkout has no `nora/version.json`, and the reader answers
-        # `unavailable` for it (never `nothing_found`, R-27). Held HERE for the
-        # reason the transit catalogue is: it is a process-lifetime fact, and
-        # the alternative, a module-level cache, is the mutable singleton the
-        # test-seam policy forbids.
+        # One immutable snapshot for running identity and shipped release history.
         self._versions = versions if versions is not None else VersionManifest()
         self._giphy = giphy
         # `nora.agent.reaction`: None keeps every reply exactly as written.

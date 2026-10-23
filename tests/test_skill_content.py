@@ -1024,7 +1024,7 @@ def test_the_self_account_says_who_can_reach_the_web_view_and_who_cannot(
 
 def test_the_self_account_says_the_build_is_asked_not_inferred(self_account):
     """«You cannot read your own build» is false wherever the image carries a
-    stamp: `version` is a registered tool, it reads the stamp baked in at build
+    stamp: `version_list` is registered and includes the stamp baked in at build
     time, and it answers `ok` with a name.
 
     What is true on EVERY deployment is the shape — there may be a stamp or there
@@ -1040,10 +1040,10 @@ def test_the_self_account_says_the_build_is_asked_not_inferred(self_account):
     ) in _flat(self_account)
 
     catalog = {t["name"]: t for t in ToolRegistry().catalog()}
-    assert "version" in catalog, "she must have a way to ask"
-    described = catalog["version"]["description"]
+    assert "version_list" in catalog, "she must have a way to ask"
+    described = catalog["version_list"]["description"]
     assert "ok" in described and "unavailable" in described
-    assert catalog["version"]["source_tier"] == "confirmed"
+    assert catalog["version_list"]["source_tier"] == "confirmed"
 
 
 def test_the_self_account_does_not_assert_a_deployment_it_cannot_read(
