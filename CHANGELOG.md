@@ -1,5 +1,16 @@
 # Changelog
 
+## [6.6.14](https://github.com/mikeng-io/nora/compare/v6.6.13...v6.6.14) (2026-10-23)
+
+
+### Security
+
+* **bridge:** authenticate the alert bridge, bound inbound bodies and streams ([eba96b2](https://github.com/mikeng-io/nora/commit/eba96b29667f32f55e7b777ecef0a0d7d16a4add))
+* **bridge:** bound refused bodies, drop the stream lifetime, scrub an obsolete cookie paste ([3bfa9f1](https://github.com/mikeng-io/nora/commit/3bfa9f1fd1e6204c0b0a9d6994ac0f5c184b0704))
+* **bridge:** leave a cookie paste the bridge did not consume alone ([ecc985d](https://github.com/mikeng-io/nora/commit/ecc985d11662ffdeecb44c7d9a9e9e127427be51))
+* **bridge:** scrub a cookie paste only when it repeats the jar's session ([06a1b89](https://github.com/mikeng-io/nora/commit/06a1b89dd9ee371c642157d2f3c4aa7594bee181))
+* **bridge:** the session probe sends the bridge bearer, and a newer cookie paste is kept ([4ed52e8](https://github.com/mikeng-io/nora/commit/4ed52e89fbc2451ec31ced0eef84c055c3ccbc4f))
+
 ## [6.6.13](https://github.com/mikeng-io/nora/compare/v6.6.12...v6.6.13) (2026-10-23)
 
 
