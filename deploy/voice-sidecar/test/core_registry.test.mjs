@@ -264,3 +264,17 @@ test('end-to-end: a real join failure removes the guild from /health with no ret
   assert.notEqual(controller2, null);
   assert.deepEqual(registry.guildIds(), ['g-e2e']);
 });
+
+// A discarded core must stop its dedupe sweep timer, or every failed join leaves one behind.
+test('discardIfFailed disposes the failed core\'s controller', () => {
+  let disposed = 0;
+  const { registry } = makeRegistry({
+    cores: [() => ({
+      ...fakeCore('g1', { voice: 'error', session: null }),
+      controller: { dispose: () => { disposed += 1; } },
+    })],
+  });
+  const core = registry.mint('g1');
+  assert.equal(registry.discardIfFailed('g1', core), true);
+  assert.equal(disposed, 1);
+});

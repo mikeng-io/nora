@@ -15,6 +15,10 @@ import { createStateStore } from '../src/state_store.mjs';
 // `guild_id` names a state file and mints a core on an unauthenticated plane.
 // 'g1' would have been rejected, which is the point.
 export const GUILD = '111111111111111111';
+// The shared bearer every test server requires; AUTH is what a legitimate
+// caller (nora, the bridges) sends.
+export const TOKEN = 'test-bridge-token';
+export const AUTH = { authorization: `Bearer ${TOKEN}` };
 export const CHANNEL = 'c1';
 
 export function createFakeClock(start = 1_000_000) {
@@ -245,6 +249,7 @@ export async function makeHarness(options = {}) {
     log: () => {},
     arbiterOptions: options.arbiterOptions ?? {},
     outboxOptions: options.outboxOptions ?? {},
+    controllerOptions: options.controllerOptions ?? {},
   });
 
   // The socket belongs to the FRONT DOOR since 2026-09-17, not to a core: one
@@ -253,6 +258,7 @@ export async function makeHarness(options = {}) {
   // body limits, the 413/400 split, dedupe — through the code production
   // uses.
   const server = createFrontDoor({
+    authToken: TOKEN,
     // NO `any` branch: route knowledge is static (CONTROL_ROUTES) since
     // 2026-09-17. The harness used to answer `any` unconditionally, which made
     // the empty-cores branch unreachable from the whole suite — and that
@@ -273,13 +279,13 @@ export async function makeHarness(options = {}) {
   const post = async (p, body) => {
     const res = await fetch(base + p, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...AUTH },
       body: JSON.stringify(body ?? {}),
     });
     return { status: res.status, body: await res.json() };
   };
   const get = async (p) => {
-    const res = await fetch(base + p);
+    const res = await fetch(base + p, { headers: AUTH });
     return { status: res.status, body: await res.json() };
   };
 

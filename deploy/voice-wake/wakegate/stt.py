@@ -89,11 +89,14 @@ async def forward_utterance(
     user_id: str,
     text: str,
     guild_id: str,
+    token: str,
     voice_channel_id: str | None = None,
 ) -> bool:
     """The transcript -> Nora's `/app/v1/voice/utterance` as JSON. Text only —
     audio never crosses this boundary. Never raises; a refused forward drops
     the utterance (transient by design) and is visible in the log.
+
+    `token` is the shared service bearer; Nora refuses the utterance without it.
 
     The GUILD is what is sent, not a conversation id: nora resolves it to the
     room the operator marked `voice = true`, so this service never has to know
@@ -107,7 +110,9 @@ async def forward_utterance(
     if voice_channel_id:
         payload["voice_channel_id"] = voice_channel_id
     try:
-        async with session.post(url, json=payload) as response:
+        async with session.post(
+            url, json=payload, headers={"Authorization": f"Bearer {token}"},
+        ) as response:
             if response.status != 202:
                 log.warning("nora refused the utterance (http %s)", response.status)
                 return False

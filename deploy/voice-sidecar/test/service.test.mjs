@@ -6,8 +6,13 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { EventEmitter } from 'node:events';
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { createFrontDoor } from '../src/controller.mjs';
+import { GUILD, TOKEN, AUTH } from './helpers.mjs';
 
-import { createJoinVoice } from '../src/service.mjs';
+import { createJoinVoice, loadConfiguredGuilds } from '../src/service.mjs';
 
 function makeSeams() {
   const pumps = [];
@@ -125,4 +130,59 @@ test('a subscribe() that returns falsy is logged as subscribe_failed, not swallo
     logs.some(([level, fields]) => level === 'error' && fields.event === 'subscribe_failed' && fields.channel_id === 'c1'),
   );
   assert.ok(!logs.some(([level]) => level === 'subscribe')); // success log did not also fire
+});
+
+
+test('configured guild admission refuses an unconfigured bot member before dispatch', async () => {
+  // Exercise the exact callback wired by main, with only Discord replaced.
+  const source = readFileSync(new URL('../src/service.mjs', import.meta.url), 'utf8');
+  const begin = source.indexOf('authorizeGuild: async (guildId) => {') + 'authorizeGuild: '.length;
+  const end = source.indexOf(',\n    controllerFor:', begin);
+  const registry = { guildIds: () => [] };
+  let member = true;
+  let checks = 0;
+  const authorizeGuild = new Function('registry', 'TOKEN', 'configuredGuilds', 'fetch',
+    `return (${source.slice(begin, end)});`)(registry, 'synthetic-bot-token', new Set([GUILD]),
+    async () => { checks++; return { ok: member, body: { cancel: async () => {} } }; });
+  let dispatched = 0;
+  const front = createFrontDoor({ authToken: TOKEN, authorizeGuild, health: () => ({}),
+    controllerFor: () => { dispatched++; return { handleParsedPost: res => {
+      res.writeHead(200); res.end('{}');
+    } }; },
+  });
+  await new Promise(r => front.listen(0, '127.0.0.1', r));
+  const post = guild_id => fetch(`http://127.0.0.1:${front.address().port}/voice/join`, {
+    method: 'POST', headers: { ...AUTH, 'content-type': 'application/json' },
+    body: JSON.stringify({ guild_id }),
+  });
+  try {
+    const unconfigured = '200000000000000203';
+    assert.equal((await post(unconfigured)).status, 403);
+    registry.guildIds = () => [unconfigured];
+    assert.equal((await post(unconfigured)).status, 403, 'existing cores cannot bypass configuration');
+    assert.equal(checks, 0);
+    assert.equal(dispatched, 0);
+    assert.equal((await post(GUILD)).status, 200);
+    member = false;
+    assert.equal((await post(GUILD)).status, 403, 'configuration still requires Discord membership');
+    assert.equal(dispatched, 1);
+  } finally { front.closeAllConnections(); await new Promise(r => front.close(r)); }
+});
+
+
+test('guild configuration reads the existing TOML sidecars list and fails closed', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'voice-config-'));
+  const file = path.join(dir, 'config.toml');
+  try {
+    writeFileSync(file, `[speech.tts]\nsidecars = [{ guild = "${GUILD}", endpoint = "http://voice-sidecar:4600" }]\n`);
+    assert.deepEqual([...loadConfiguredGuilds(file)], [GUILD]);
+    writeFileSync(file, '[speech.tts]\nsidecars = []\n');
+    assert.equal(loadConfiguredGuilds(file).size, 0);
+    for (const invalid of ['broken = [', '[speech.tts]\nsidecars = [{guild = "invalid"}]']) {
+      writeFileSync(file, invalid);
+      assert.throws(() => loadConfiguredGuilds(file), { message: 'Cannot load configured voice guilds; refusing to start' });
+    }
+    assert.throws(() => loadConfiguredGuilds(path.join(dir, 'absent.toml')),
+      { message: 'Cannot load configured voice guilds; refusing to start' });
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
