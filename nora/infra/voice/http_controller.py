@@ -27,6 +27,7 @@ from uuid import uuid4
 import aiohttp
 
 from nora.domain.playback_liveness import PlaybackReading
+from nora.infra.service_auth import service_auth_headers
 
 log = logging.getLogger("nora.infra.voice")
 
@@ -249,6 +250,7 @@ class VoiceControllerClient:
         try:
             async with session.request(
                 method, f"{self._base_url}{path}", json=body,
+                headers=service_auth_headers(),
             ) as resp:
                 try:
                     payload: Any = await resp.json(content_type=None)

@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import signal
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -40,7 +41,7 @@ import numpy as np
 from aiohttp import web
 
 from .audio import BLOCK_48K, OWW_CHUNK, downsample_to_16k, pcm16_to_wav, stereo_to_mono
-from .codec import FrameParser
+from .codec import FrameParser, ProtocolError
 from .gate import Utterance, WakeGate
 from .selftest import log_self_test, run_self_test
 from .stt import forward_utterance, transcribe
@@ -68,6 +69,20 @@ class Config:
     stt_language: str = "yue"
     stt_timeout_s: float = 30.0
     nora_url: str = "http://nora:9100"
+    # The shared service bearer (NORA_BRIDGE_TOKEN). It authenticates the
+    # sidecar's hello and is sent on every utterance to Nora. Required: run()
+    # refuses to serve without it.
+    bridge_token: str = ""
+    # Bounded admission (security(voice), Aikido round 2): at most this many
+    # utterances in flight at once. That is also the cap on concurrent STT
+    # requests, since an utterance holds one from transcription to forward.
+    max_utterances: int = 4
+    # Seam connections held at once. One sidecar connects per guild, so this
+    # is the most guilds the gate will serve.
+    max_seam_clients: int = 8
+    # A frame that has started but not finished within this many seconds is a
+    # stalled peer, and its connection is closed. An idle seam is not.
+    frame_read_timeout_s: float = 10.0
     # There is no guild here. The guild arrives per CONNECTION, in the
     # sidecar's hello frame, which is what lets one gate serve every guild —
     # this service has no deployment identity to configure. Where a guild's
@@ -128,6 +143,11 @@ class WakeService:
         # servers is two gates, which is correct: they are two conversations.
         self._users: dict[tuple[str, str], _UserState] = {}
         self._clients = 0
+        self._closing = False
+        # The utterance tasks this service has started and not yet finished,
+        # keyed by (guild, user). Kept so shutdown can cancel and await them,
+        # and so a user's second wake while the first is in flight is refused.
+        self._inflight: dict[tuple[str, str], asyncio.Task] = {}
         self._server: asyncio.AbstractServer | None = None
         self._model_available = Path(config.model_path).is_file()
         self._selftest = None  # SelfTestResult once boot has run it
@@ -215,11 +235,45 @@ class WakeService:
         )
 
     def _fire(self, key: tuple[str, str], utterance: Utterance, state: _UserState) -> None:
+        if self._closing:
+            return
         state.wakes += 1
         state.model.reset()
         if state.vad is not None:
             state.vad.reset()  # type: ignore[attr-defined]
-        asyncio.create_task(self._handle_utterance(key, utterance, state))
+        # Refused promptly, never queued: an utterance is transient, and a queue
+        # would only deliver it late, after the speaker has moved on.
+        if key in self._inflight:
+            log.warning("wake dropped for user %s in guild %s: utterance still in flight",
+                        key[1], key[0])
+            return
+        if len(self._inflight) >= self._cfg.max_utterances:
+            log.warning("wake dropped for user %s in guild %s: %d utterances already in flight",
+                        key[1], key[0], len(self._inflight))
+            return
+        task = asyncio.create_task(self._handle_utterance(key, utterance, state))
+        self._inflight[key] = task
+        task.add_done_callback(lambda t, k=key: self._release(k, t))
+
+    def _release(self, key: tuple[str, str], task: asyncio.Task) -> None:
+        if self._inflight.get(key) is task:
+            del self._inflight[key]
+        if not task.cancelled() and task.exception() is not None:
+            log.error("utterance task for user %s in guild %s failed", key[1], key[0],
+                      exc_info=task.exception())
+
+    async def close(self) -> None:
+        """Cancel the utterances in flight and wait for them to unwind."""
+        self._closing = True
+        for state in self._users.values():
+            if state.inactivity is not None:
+                state.inactivity.cancel()
+                state.inactivity = None
+        tasks = list(self._inflight.values())
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self._inflight.clear()
 
     def _arm_inactivity(self, key: tuple[str, str], state: _UserState) -> None:
         """Re-arm the wall-clock end-pointer on every frame while COLLECTING;
@@ -263,7 +317,7 @@ class WakeService:
                 return  # no wake -> no cost; dropped silently by design
             ok = await forward_utterance(
                 session, nora_url=self._cfg.nora_url, user_id=user_id,
-                text=text, guild_id=guild_id,
+                text=text, guild_id=guild_id, token=self._cfg.bridge_token,
             )
         if ok:
             state.utterances += 1
@@ -273,31 +327,44 @@ class WakeService:
     async def _on_client(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ) -> None:
-        self._clients += 1
         peer = writer.get_extra_info("peername")
+        if self._clients >= self._cfg.max_seam_clients:
+            log.warning("seam client %s refused: %d seam connections already open",
+                        peer, self._clients)
+            writer.close()
+            return
+        self._clients += 1
         log.info("seam client connected: %s", peer)
         # ONE PARSER PER CONNECTION, which is what carries the guild: the
-        # sidecar announces it in a hello on connect, and a pump is created per
-        # join, so a connection is one guild for its lifetime. That is how a
-        # single gate serves every guild at once.
-        parser = FrameParser()
+        # sidecar announces it in an authenticated hello on connect, and a pump
+        # is created per join, so a connection is one guild for its lifetime.
+        # That is how a single gate serves every guild at once.
+        parser = FrameParser(self._cfg.bridge_token)
+        deadline = None
         try:
             while True:
-                chunk = await reader.read(65536)
+                if parser.pending or parser.guild_id is None:
+                    if deadline is None:
+                        deadline = (
+                            asyncio.get_running_loop().time() + self._cfg.frame_read_timeout_s
+                        )
+                    async with asyncio.timeout_at(deadline):
+                        chunk = await self._read_seam(reader, parser)
+                else:
+                    deadline = None
+                    chunk = await self._read_seam(reader, parser)
                 if not chunk:
                     break
-                frames = parser.feed(chunk)
-                if frames and parser.guild_id is None:
-                    # Audio before the hello. Dropped, not guessed: attributing
-                    # it to some other connection's guild would put one
-                    # server's words in another server's room.
-                    log.warning(
-                        "seam client %s sent %d audio frame(s) before its hello "
-                        "— dropped", peer, len(frames),
-                    )
-                    continue
-                for user_id, pcm in frames:
+                for user_id, pcm in parser.feed(chunk):
                     await self._on_frame((parser.guild_id or "", user_id), pcm)
+                if not parser.pending:
+                    deadline = None
+        except ProtocolError as exc:
+            # A connection that failed the hello, or broke the format, is closed.
+            # Nothing it sent after the fault is read.
+            log.warning("seam client %s refused: %s", peer, exc)
+        except TimeoutError:
+            log.warning("seam client %s stalled mid-frame; closed", peer)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -306,6 +373,13 @@ class WakeService:
             self._clients -= 1
             writer.close()
             log.info("seam client disconnected: %s", peer)
+
+    async def _read_seam(self, reader: asyncio.StreamReader, parser: FrameParser) -> bytes:
+        """One read off the seam. The deadline applies only while a frame is
+        part-received: a sidecar is legitimately silent between utterances."""
+        if parser.pending:
+            return await asyncio.wait_for(reader.read(65536), self._cfg.frame_read_timeout_s)
+        return await reader.read(65536)
 
     async def _reap_idle_users(self) -> None:
         while True:
@@ -407,24 +481,45 @@ class WakeService:
                 log.exception("wake summary failed")
 
     async def run(self) -> None:
+        # Refused, not degraded: a gate that cannot check the hello would accept
+        # speech from anything on the private network.
+        if not self._cfg.bridge_token:
+            raise RuntimeError("NORA_BRIDGE_TOKEN is not set; refusing to serve an open seam")
         health_app = web.Application()
-        health_app.router.add_get("/health", lambda request: web.json_response(self._health_payload()))
+        health_app.router.add_get(
+            "/health", lambda request: web.json_response(self._health_payload()),
+        )
         runner = web.AppRunner(health_app, access_log=None)
         await runner.setup()
         await web.TCPSite(runner, self._cfg.health_host, self._cfg.health_port).start()
         self._server = await asyncio.start_server(
             self._on_client, self._cfg.listen_host, self._cfg.listen_port,
         )
-        asyncio.create_task(self._reap_idle_users())
-        asyncio.create_task(self._summary_loop())
+        background = [
+            asyncio.create_task(self._reap_idle_users()),
+            asyncio.create_task(self._summary_loop()),
+        ]
         # AFTER the listeners are up: the seam must not miss a sidecar that
         # reconnects while the model is loading, and /health must answer
         # during it. The result lands in the log and /health when it lands.
-        asyncio.create_task(self._run_boot_self_test())
+        background.append(asyncio.create_task(self._run_boot_self_test()))
         log.info(
             "wake gate listening on %s:%s (model %s, threshold %.2f, -> %s)",
             self._cfg.listen_host, self._cfg.listen_port,
             self._cfg.model_path if self._model_available else "DISABLED",
             self._cfg.threshold, self._cfg.nora_url,
         )
-        await asyncio.Event().wait()  # forever; the container's SIGTERM ends us
+        stop = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(sig, stop.set)
+        try:
+            await stop.wait()  # the container's SIGTERM ends us
+        finally:
+            self._server.close()
+            await self._server.wait_closed()
+            await self.close()
+            for task in background:
+                task.cancel()
+            await asyncio.gather(*background, return_exceptions=True)
+            await runner.cleanup()

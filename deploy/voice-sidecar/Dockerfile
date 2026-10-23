@@ -40,7 +40,7 @@ EXPOSE 4600
 # even while the service idles without a token (healthy-but-idle — see
 # README.md "Health semantics"). $PORT matches the service's own env.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl -fsS "http://127.0.0.1:${PORT:-4600}/health" || exit 1
+    CMD printf 'Authorization: Bearer %s\n' "$NORA_BRIDGE_TOKEN" | curl -fsS -m 5 -H @- "http://127.0.0.1:${PORT:-4600}/health" || exit 1
 
 # Nothing about the build or this command waits on DISCORD_BOT_TOKEN: the
 # service starts, serves /health, and only joins Discord when the env says

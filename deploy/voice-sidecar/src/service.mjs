@@ -59,6 +59,10 @@ const STATE_DIR = process.env.STATE_DIR ?? '/var/lib/audio-controller';
 // a join for a guild the bot is not a member of fails at discord.js, which is
 // a stronger authority than any list this process could hold.
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
+// The shared service bearer (NORA_BRIDGE_TOKEN), the same value nora and the
+// bridges hold. Required: it guards every route here and the wake-gate seam
+// hello, so a process without it refuses to start rather than serve open.
+const BRIDGE_TOKEN = process.env.NORA_BRIDGE_TOKEN || '';
 
 // Mirror of the log into the state VOLUME, which survives what stdout does
 // not. `docker logs` keeps nothing across `up -d --force-recreate`, and that
@@ -211,7 +215,7 @@ async function main() {
     // audio is from, and one pump serving two guilds could not say.
     const { joinVoice, perUser, currentPump } = createJoinVoice({
       joinImpl: (channelId) => join(guildId, channelId, TOKEN),
-      createPumpImpl: () => createPump({ guildId, host: PUMP_HOST, port: PUMP_PORT }),
+      createPumpImpl: () => createPump({ guildId, token: BRIDGE_TOKEN, host: PUMP_HOST, port: PUMP_PORT }),
       createPlayerImpl: () =>
         createAudioPlayer({
           behaviors: { noSubscriber: NoSubscriberBehavior.Pause },
@@ -251,6 +255,20 @@ async function main() {
   const registry = createCoreRegistry({ makeCore, canCreate: () => Boolean(TOKEN), log });
 
   const server = createFrontDoor({
+    authToken: BRIDGE_TOKEN,
+    // Existing connections were already admitted by Discord. Before minting
+    // a new core, require bot membership in the target guild as well as the
+    // service bearer; generation is only replay control.
+    authorizeGuild: async (guildId) => {
+      if (registry.guildIds().includes(guildId)) return true;
+      if (!TOKEN) return false;
+      const response = await fetch(`https://discord.com/api/v10/guilds/${guildId}`, {
+        headers: { Authorization: `Bot ${TOKEN}` },
+        signal: AbortSignal.timeout(5000),
+      });
+      await response.body?.cancel();
+      return response.ok;
+    },
     controllerFor: registry.controllerFor,
     // Process-level liveness, not a guild's. The compose HEALTHCHECK curls
     // this and it must answer 200 while idle with no guild at all.
@@ -347,5 +365,11 @@ async function main() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  // Checked here, not at module scope: test/service.test.mjs imports this file,
+  // and a module-level exit would take the whole test run down with it.
+  if (!BRIDGE_TOKEN) {
+    console.error('[voc] NORA_BRIDGE_TOKEN is not set; refusing to start an unauthenticated audio controller');
+    process.exit(2);
+  }
   await main();
 }

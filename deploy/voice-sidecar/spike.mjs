@@ -97,7 +97,7 @@ async function mock() {
   });
   await new Promise((r) => server.listen(PUMP_PORT, '127.0.0.1', r));
 
-  const pump = createPump({ port: PUMP_PORT });
+  const pump = createPump({ guildId: '100000000000000203', token: 'synthetic-smoke-token', port: PUMP_PORT });
   // Two fake users: 1.5 s tone each (75 x 20ms frames), interleaved, with a
   // different pitch per user so the WAVs are audibly distinct.
   const users = [
@@ -140,7 +140,7 @@ async function live() {
   const st = stats();
   const wavs = new Map();
   const doPump = process.env.PUMP === '1';
-  const pump = doPump ? createPump({ port: PUMP_PORT }) : null;
+  const pump = doPump ? createPump({ guildId, token: process.env.NORA_BRIDGE_TOKEN, port: PUMP_PORT }) : null;
 
   const { bus, leave } = await join(guildId, channelId, token);
   console.log(`[live] joined channel ${channelId}; waiting for speakers (Ctrl-C to stop)`);

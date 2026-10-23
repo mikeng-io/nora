@@ -8,7 +8,7 @@ import { strict as assert } from 'node:assert';
 import net from 'node:net';
 
 import { createFrontDoor } from '../src/controller.mjs';
-import { makeHarness, playTrack, tick, until, GUILD, CHANNEL } from './helpers.mjs';
+import { makeHarness, playTrack, tick, until, GUILD, CHANNEL, TOKEN, AUTH } from './helpers.mjs';
 
 const PINNED_SNAPSHOT_KEYS = [
   'voice',
@@ -601,7 +601,7 @@ test('a body that fails mid-read is 400 body_read_failed, not body_too_large', a
     const socket = net.connect({ host: '127.0.0.1', port }, () => {
       // Promise 100 bytes, send 7, then FIN: the upload dies mid-body but
       // the half-open socket can still carry the answer.
-      socket.write('POST /music/stop HTTP/1.1\r\nhost: x\r\ncontent-length: 100\r\nconnection: close\r\n\r\npartial');
+      socket.write(`POST /music/stop HTTP/1.1\r\nhost: x\r\nauthorization: Bearer ${TOKEN}\r\ncontent-length: 100\r\nconnection: close\r\n\r\npartial`);
       socket.end();
     });
     let data = '';
@@ -746,7 +746,7 @@ test('a JSON null body is 400 invalid_body and the server keeps serving', async 
   const h = await makeHarness();
   const raw = await fetch(`http://127.0.0.1:${h.port}/music/stop`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...AUTH },
     body: 'null',
   });
   assert.equal(raw.status, 400);
@@ -755,7 +755,7 @@ test('a JSON null body is 400 invalid_body and the server keeps serving', async 
 
   const list = await fetch(`http://127.0.0.1:${h.port}/music/stop`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...AUTH },
     body: '[1,2]',
   });
   assert.equal(list.status, 400);
@@ -839,6 +839,7 @@ test('the front door asks to CREATE only on a join', async () => {
     },
   };
   const server = createFrontDoor({
+    authToken: TOKEN,
     controllerFor: (guildId, opts = {}) => {
       asked.push({ guildId, create: Boolean(opts.create) });
       return stub;
@@ -850,7 +851,7 @@ test('the front door asks to CREATE only on a join', async () => {
   const base = `http://127.0.0.1:${server.address().port}`;
   const send = (p) => fetch(base + p, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...AUTH },
     body: JSON.stringify({ guild_id: GUILD }),
   });
 
@@ -883,6 +884,7 @@ test('a COLD BOOT with zero cores still accepts a join', async () => {
     },
   };
   const server = createFrontDoor({
+    authToken: TOKEN,
     controllerFor: (guildId, opts = {}) => {
       if (cores.has(guildId)) return stub;
       if (!opts.create) return null;
@@ -898,7 +900,7 @@ test('a COLD BOOT with zero cores still accepts a join', async () => {
   assert.equal(cores.size, 0, 'precondition: no cores, as on a cold boot');
   const res = await fetch(`${base}/voice/join`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...AUTH },
     body: JSON.stringify({ guild_id: '100000000000000203', channel_id: 'c1' }),
   });
 

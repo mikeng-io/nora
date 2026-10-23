@@ -21,6 +21,9 @@
 // One connection per guild is Discord's own limit, not a policy: joining a
 // second channel while connected is still 409 connected_elsewhere.
 //
+// Every route requires the shared service bearer (NORA_BRIDGE_TOKEN). The check
+// runs before any body is read, and a missing or wrong bearer is 401.
+//
 // Request dedupe (§3.3): control POSTs may carry request_id; the FIRST
 // occurrence reserves an in-flight promise BEFORE the handler runs, so
 // concurrent duplicates await the same execution and get the same response;
@@ -33,44 +36,70 @@ import { isHttpError, httpError } from './errors.mjs';
 import { createArbiter } from './arbiter.mjs';
 import { createLifecycle } from './lifecycle.mjs';
 import { createOutbox, realClock } from './outbox.mjs';
+import { bearerMatches } from './auth.mjs';
 
 const MAX_SPEECH_BYTES = 2 * 1024 * 1024; // decoded b64 budget per /stream
 const MAX_BODY_BYTES = 4 * 1024 * 1024; // raw /stream body (b64 ~4/3 of decoded)
 const MAX_CONTROL_BYTES = 64 * 1024;
 const DEDUPE_TTL_MS = 5 * 60 * 1000;
+// Dedupe budget, shared by in-flight and completed entries. A caller that
+// never stops sending fresh request_ids must not grow this map without bound.
+const DEDUPE_MAX_ENTRIES = 256;
+const DEDUPE_MAX_BYTES = 512 * 1024;
+const DEDUPE_SWEEP_MS = 30 * 1000;
+// A request_id is a caller's correlation token: a short ASCII word, nothing
+// that could be a path, a header or a log-injection payload.
+const REQUEST_ID_RE = /^[A-Za-z0-9._:-]{1,64}$/;
+// Whole-request read deadline (body included): a stalled upload is cut.
+const BODY_TIMEOUT_MS = 15 * 1000;
+const MAX_CONNECTIONS = 64;
 
-// Resolves { ok: true, raw } | { ok: false, reason: 'too_large' | 'read_error' }.
-// An over-limit body keeps draining (discarded) so the client gets a real
-// 413 answer; destroying the request would kill the socket before the
-// response could be written. A transport failure mid-body ('error', or
-// 'close' before 'end') is a read error, NOT an over-limit body — the two
-// used to share one 400 body_too_large (2026-09-16 audit C-5).
-function readBody(req, limit) {
+// Resolves { ok: true, raw } | { ok: false, reason: 'too_large' | 'timeout' | 'read_error' }.
+// An over-limit body is answered at the moment it crosses the limit, without
+// reading the rest: the front door writes 413 and closes the socket
+// (`closeUnread`). A body that is still arriving at the deadline is 'timeout'
+// (408). A transport failure mid-body ('error', or 'close' before 'end') is a
+// read error, NOT an over-limit body — the two used to share one 400
+// body_too_large (2026-09-16 audit C-5).
+function readBody(req, limit, timeoutMs) {
   return new Promise((resolve) => {
     let size = 0;
-    let tooLarge = false;
     let settled = false;
     const done = (result) => {
       if (!settled) {
         settled = true;
+        clearTimeout(timer);
         resolve(result);
       }
     };
+    // Explicit rather than Node's requestTimeout: that one does not fire while
+    // a body is being consumed (measured on Node 26), so a slow-drip upload
+    // would hold its socket until the peer gave up.
+    const timer = setTimeout(() => done({ ok: false, reason: 'timeout' }), timeoutMs);
     const chunks = [];
     req.on('data', (chunk) => {
       size += chunk.length;
+      if (settled) return;
       if (size > limit) {
-        tooLarge = true;
-        return; // drain and discard; the answer comes at 'end'
+        req.pause();
+        return done({ ok: false, reason: 'too_large' });
       }
-      if (!tooLarge) chunks.push(chunk);
+      chunks.push(chunk);
     });
-    req.on('end', () =>
-      done(tooLarge ? { ok: false, reason: 'too_large' } : { ok: true, raw: Buffer.concat(chunks).toString('utf8') }),
-    );
+    req.on('end', () => done({ ok: true, raw: Buffer.concat(chunks).toString('utf8') }));
     req.on('error', () => done({ ok: false, reason: 'read_error' }));
     req.on('close', () => done({ ok: false, reason: 'read_error' }));
   });
+}
+
+// Answers, then closes WITHOUT reading the rest of the request. Used for every
+// refusal that can leave a body unread (401, 413): draining would let a caller
+// stream unbounded bytes into a listener that holds them only to discard them.
+function closeUnread(req, res, status, error) {
+  res.writeHead(status, { 'content-type': 'application/json', connection: 'close' });
+  req.pause();
+  res.once('finish', () => req.socket.destroySoon());
+  res.end(JSON.stringify({ error, request_id: null, state: null }));
 }
 
 //: The control-plane routes, as a fact about the PROTOCOL rather than about
@@ -99,10 +128,17 @@ export function createController({
   pumpInfo = () => ({}),
   clock = realClock,
   dedupeTtlMs = DEDUPE_TTL_MS,
+  dedupeMaxEntries = DEDUPE_MAX_ENTRIES,
+  dedupeMaxBytes = DEDUPE_MAX_BYTES,
+  dedupeSweepMs = DEDUPE_SWEEP_MS,
   log = () => {},
 }) {
-  // request_id -> in-flight { promise } | completed { status, body, expiresAt }
+  // request_id -> in-flight { promise, bytes } | completed { status, body, expiresAt, bytes }
+  // Bounded by dedupeMaxEntries and dedupeMaxBytes, counting both kinds. Only
+  // completed entries are evictable: an in-flight entry is the promise a
+  // duplicate is waiting on.
   const dedupe = new Map();
+  let dedupeBytes = 0;
 
   function snapshot() {
     const a = arbiter.statusSnapshot();
@@ -134,12 +170,36 @@ export function createController({
     respond(res, status, { error, request_id: requestId ?? null, state: snapshot() });
   }
 
+  function forget(id) {
+    const entry = dedupe.get(id);
+    if (!entry) return;
+    dedupe.delete(id);
+    dedupeBytes -= entry.bytes;
+  }
+
   function pruneDedupe() {
     const now = clock.now();
     for (const [id, entry] of dedupe) {
-      if (entry.expiresAt !== undefined && entry.expiresAt <= now) dedupe.delete(id);
+      if (entry.expiresAt !== undefined && entry.expiresAt <= now) forget(id);
     }
   }
+
+  // Room for one more entry of `bytes`, evicting COMPLETED entries oldest-first
+  // only as far as needed. False when everything held is in flight: the caller
+  // is refused (503 dedupe_full) rather than the map growing past its budget.
+  function makeRoom(bytes) {
+    const fits = () => dedupe.size < dedupeMaxEntries && dedupeBytes + bytes <= dedupeMaxBytes;
+    for (const [id, entry] of dedupe) {
+      if (fits()) return true;
+      if (entry.expiresAt !== undefined) forget(id);
+    }
+    return fits();
+  }
+
+  // Expiry does not wait for traffic: a completed memo past its TTL is dropped
+  // by this timer, so an idle controller releases what an attacker stored.
+  // unref() so the timer alone never keeps the process alive.
+  setInterval(pruneDedupe, dedupeSweepMs).unref();
 
   function checkGuild(body) {
     if (body.guild_id !== undefined && body.guild_id !== guildId) {
@@ -269,13 +329,28 @@ export function createController({
       respond(res, result.status, result.body);
       return;
     }
-    const entry = { promise: execute(route, body, requestId) };
+    const retainedBytes = Buffer.byteLength(requestId) + Buffer.byteLength(JSON.stringify(body));
+    if (!makeRoom(retainedBytes)) {
+      // Every slot is an in-flight request: refuse, do not queue behind them.
+      respond(res, 503, { error: 'dedupe_full', request_id: requestId, state: snapshot() });
+      return;
+    }
+    const entry = { promise: execute(route, body, requestId), bytes: retainedBytes };
     dedupe.set(requestId, entry); // reserved BEFORE the handler settles
+    dedupeBytes += entry.bytes;
     const result = await entry.promise;
+    forget(requestId);
     if (result.status < 500) {
-      dedupe.set(requestId, { status: result.status, body: result.body, expiresAt: clock.now() + dedupeTtlMs });
-    } else {
-      dedupe.delete(requestId);
+      // The memo holds a whole response body, so it can overflow the byte
+      // budget even though the in-flight slot it replaces was tiny. It makes
+      // its own room; if none can be made (everything else is in flight) the
+      // answer is served but not remembered, so a retry re-executes — the one
+      // place this map trades replay protection for its bound.
+      const memoBytes = Buffer.byteLength(requestId) + Buffer.byteLength(JSON.stringify(result.body));
+      if (makeRoom(memoBytes)) {
+        dedupe.set(requestId, { status: result.status, body: result.body, expiresAt: clock.now() + dedupeTtlMs, bytes: memoBytes });
+        dedupeBytes += memoBytes;
+      }
     }
     respond(res, result.status, result.body);
   }
@@ -317,6 +392,8 @@ export function createController({
     handleStatus,
     handleHealth,
     knowsRoute: (route) => Boolean(handlers[route]),
+    dedupeSize: () => dedupe.size,
+    dedupeBytes: () => dedupeBytes,
   };
 }
 
@@ -445,7 +522,19 @@ export function buildCore(registry, guildId, coreOptions) {
 // Body limits, the 413/400 split and the clientError shape are moved here
 // VERBATIM from the controller that used to own the socket; every one of them
 // is pinned by `endpoints.test.mjs`, which is what made the move safe.
-export function createFrontDoor({ controllerFor, health, log = () => {} }) {
+export function createFrontDoor({
+  controllerFor,
+  health,
+  log = () => {},
+  authToken,
+  authorizeGuild = async () => true,
+  bodyTimeoutMs = BODY_TIMEOUT_MS,
+  maxConnections = MAX_CONNECTIONS,
+}) {
+  // Refuses to exist without a token: every route here moves audio or holds
+  // a voice connection, and the bridges already refuse to start unauthenticated.
+  if (!authToken) throw new Error('createFrontDoor needs an authToken (NORA_BRIDGE_TOKEN)');
+
   function respond(res, status, body) {
     res.writeHead(status, { 'content-type': 'application/json' });
     res.end(JSON.stringify(body));
@@ -465,32 +554,41 @@ export function createFrontDoor({ controllerFor, health, log = () => {} }) {
   }
 
   const server = http.createServer((req, res) => {
+    // Before the route, before any body is read: an unauthenticated caller
+    // gets the same 401 whatever it asked for, and holds no socket open.
+    if (!bearerMatches(req.headers.authorization, authToken)) {
+      return closeUnread(req, res, 401, 'unauthorized');
+    }
     const [path, query] = String(req.url).split('?');
     const route = `${req.method} ${path}`;
     if (route === 'GET /health') return respond(res, 200, health());
+    (async () => {
     if (route === 'GET /voice/status') {
       // A GET carries no body, so the guild rides the query string. Absent is
       // an error rather than a default: defaulting would report one guild's
       // playback as another's the moment a second one connected.
       const guildId = new URLSearchParams(query ?? '').get('guild_id');
       if (!guildId) return bareError(res, 400, 'guild_id is required');
+      if (!await authorizeGuild(guildId)) return bareError(res, 403, 'forbidden_guild');
       const c = controllerFor(guildId, { create: false });
       if (!c) return bareError(res, 404, 'unknown_guild');
       return c.handleStatus(res);
     }
-    (async () => {
       // Static: see CONTROL_ROUTES. Asking a core whether it knows the route
       // deadlocked a cold boot.
       if (!CONTROL_ROUTES.has(route)) {
         return respond(res, 404, { error: 'not_found', request_id: null, state: null });
       }
-      const read = await readBody(req, route === 'POST /stream' ? MAX_BODY_BYTES : MAX_CONTROL_BYTES);
+      const read = await readBody(req, route === 'POST /stream' ? MAX_BODY_BYTES : MAX_CONTROL_BYTES, bodyTimeoutMs);
       if (!read.ok) {
-        // 413 for over-limit, 400 for a transport-level read failure
-        // (2026-09-16 audit C-5). nora's client maps only 400/409 explicitly,
-        // so 413 lands on its generic fail-closed unavailable path.
-        return bareError(res, read.reason === 'too_large' ? 413 : 400,
-          read.reason === 'too_large' ? 'body_too_large' : 'body_read_failed');
+        // 413 for over-limit, 408 for a body that did not finish in time, 400
+        // for a transport-level read failure (2026-09-16 audit C-5). nora's
+        // client maps only 400/409 explicitly, so 408 and 413 land on its
+        // generic fail-closed unavailable path. Over-limit and timed-out
+        // requests close without reading any more of the body.
+        if (read.reason === 'too_large') return closeUnread(req, res, 413, 'body_too_large');
+        if (read.reason === 'timeout') return closeUnread(req, res, 408, 'body_timeout');
+        return bareError(res, 400, 'body_read_failed');
       }
       let body;
       try {
@@ -506,14 +604,20 @@ export function createFrontDoor({ controllerFor, health, log = () => {} }) {
       const guildId = typeof body.guild_id === 'string' ? body.guild_id : null;
       if (!guildId) return bareError(res, 400, 'wrong_guild', requestIdOf(body));
       // A Discord snowflake, and nothing else. `guild_id` reaches
-      // `path.join(STATE_DIR, ...)` and mints a core, on a control plane with
-      // no auth by design — so "../../etc/evil" must die here, not at the
+      // `path.join(STATE_DIR, ...)` and mints a core, on the authenticated control plane — so "../../etc/evil" must die here, not at the
       // Discord API by luck.
       if (!/^[0-9]{15,25}$/.test(guildId)) {
         return bareError(res, 400, 'wrong_guild', requestIdOf(body));
       }
+      // `request_id` is the dedupe key, so its shape is bounded here, before a
+      // dedupe slot can be spent on it. Absent or null is the un-deduped path.
+      const rid = body.request_id;
+      if (rid !== undefined && rid !== null && !(typeof rid === 'string' && REQUEST_ID_RE.test(rid))) {
+        return bareError(res, 400, 'invalid_request_id');
+      }
       // `create` ONLY on a join: every other verb addresses a connection that
       // must already exist.
+      if (!await authorizeGuild(guildId)) return bareError(res, 403, 'forbidden_guild');
       const controller = controllerFor(guildId, { create: route === 'POST /voice/join' });
       if (!controller) {
         // NOT `wrong_guild`. "I hold no connection for this guild" is the
@@ -547,6 +651,10 @@ export function createFrontDoor({ controllerFor, health, log = () => {} }) {
     }
   });
 
+  // The socket count is capped for this listener. The body deadline is in
+  // readBody; Node's own request timeout does not cover a body being read.
+  server.maxConnections = maxConnections;
+
   return server;
 }
 
@@ -579,6 +687,7 @@ export function createCore({
   onJoinFailed = () => {},
   arbiterOptions = {},
   outboxOptions = {},
+  controllerOptions = {},
 }) {
   let lifecycle; // forward reference for the arbiter's generation check
   const outbox = createOutbox({ url: eventUrl, fetchImpl, clock, log, ...outboxOptions });
@@ -614,6 +723,7 @@ export function createCore({
     pumpInfo,
     clock,
     log,
+    ...controllerOptions,
   });
   // No `server`: one process owns several cores behind ONE front door
   // (multi-guild, 2026-09-17), and the socket is `createFrontDoor`'s.

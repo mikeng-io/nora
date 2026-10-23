@@ -53,6 +53,16 @@ async def _drain(background) -> None:
         await asyncio.sleep(0)
 
 
+# The wake gate's bearer: the utterance route refuses everything without it.
+TOKEN = "test-bridge-token"  # noqa: S105 - a fake
+AUTH = {"Authorization": f"Bearer {TOKEN}"}
+
+
+@pytest.fixture(autouse=True)
+def bridge_token(monkeypatch):
+    monkeypatch.setenv("NORA_BRIDGE_TOKEN", TOKEN)
+
+
 @pytest.fixture
 async def client(tmp_path, monkeypatch, pg_url, aiohttp_client):
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
@@ -120,6 +130,7 @@ async def client(tmp_path, monkeypatch, pg_url, aiohttp_client):
 async def test_a_posted_utterance_lands_as_an_ingest_row_and_a_memory_feed(client):
     resp = await client.post(
         "/app/v1/voice/utterance",
+        headers=AUTH,
         json={"user_id": USER, "text": TEXT, "guild_id": GUILD,
               "voice_channel_id": "499999999999999999"},
     )
@@ -210,6 +221,7 @@ async def test_an_utterance_from_an_unmarked_guild_records_nothing(
     try:
         resp = await client.post(
             "/app/v1/voice/utterance",
+            headers=AUTH,
             json={"user_id": USER, "text": TEXT,
                   "guild_id": "499999999999999999"},
         )

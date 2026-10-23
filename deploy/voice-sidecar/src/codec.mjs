@@ -3,7 +3,7 @@
 // ONE wire format and a change to either is a change to both.
 //
 // Frame:  [u32be payload_len][u8 user_id_len][user_id utf8][pcm bytes]
-// Hello:  [u32be payload_len][u8 0][guild_id utf8]
+// Hello:  [u32be payload_len][u8 0][guild_id utf8]["\n"][token utf8]
 //
 // See TRANSPORT.md for why TCP with a length prefix.
 //
@@ -21,11 +21,18 @@
 // rather than per frame because a pump is created per join, so a connection
 // belongs to exactly one guild for its lifetime — and 20 ms of audio keeps
 // its 2-byte header.
-export function encodeHello(guildId) {
+// The token (NORA_BRIDGE_TOKEN) follows the guild after a newline. A guild id is
+// digits and cannot contain one, so the first newline is always the separator;
+// the wake gate checks the token before it trusts anything else in the hello.
+export function encodeHello(guildId, token) {
   const id = Buffer.from(String(guildId), 'utf8');
   if (!id.length) throw new Error('a hello frame needs a guildId');
   if (id.length > 255) throw new Error('guildId too long for frame');
-  const payload = Buffer.concat([Buffer.from([0]), id]);
+  if (id.includes(0x0a)) throw new Error('guildId must not contain a newline');
+  const secret = Buffer.from(String(token ?? ''), 'utf8');
+  if (!secret.length) throw new Error('a hello frame needs the service token');
+  if (secret.length > 256) throw new Error('service token too long for hello');
+  const payload = Buffer.concat([Buffer.from([0]), id, Buffer.from('\n'), secret]);
   const header = Buffer.alloc(4);
   header.writeUInt32BE(payload.length, 0);
   return Buffer.concat([header, payload]);
@@ -47,9 +54,10 @@ export function encodeFrame(userId, pcm) {
  * Incremental parser for the frame format above. Feed it arbitrary TCP
  * chunks; it calls onFrame(userId, pcmBuffer) per complete AUDIO frame.
  *
- * A HELLO is consumed, not emitted — it carries a guild id, not audio. When
- * `onHello` is given it is called with that guild id. Mirrors
- * `wakegate/codec.py`'s `FrameParser`, which swallows it into `guild_id`:
+ * A HELLO is consumed, not emitted — it carries a guild id and the token, not
+ * audio. When `onHello` is given it is called with both. This parser does not
+ * judge the token: the wake gate (`codec.py`) is the party that checks it.
+ * Mirrors `wakegate/codec.py`'s `FrameParser`, which swallows it into `guild_id`:
  * the two halves of one wire format must not disagree about what a frame IS,
  * and for one commit this one emitted the hello as a frame whose speaker was
  * the empty string.
@@ -74,9 +82,12 @@ export function createFrameParser(onFrame, onHello = () => {}) {
       }
       const idLen = payload[0];
       if (idLen === 0) {
-        const guildId = payload.subarray(1).toString('utf8');
+        const body = payload.subarray(1);
+        const sep = body.indexOf(0x0a);
+        const guildId = (sep < 0 ? body : body.subarray(0, sep)).toString('utf8');
+        const token = sep < 0 ? '' : body.subarray(sep + 1).toString('utf8');
         buf = buf.subarray(4 + payloadLen);
-        if (guildId) onHello(guildId);
+        if (guildId) onHello(guildId, token);
         continue;
       }
       const userId = payload.subarray(1, 1 + idLen).toString('utf8');

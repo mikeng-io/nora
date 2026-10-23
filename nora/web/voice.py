@@ -21,11 +21,12 @@ Two postures, stated here because they are decisions, not omissions:
 - **Text only.** Audio never reaches this process — the wake service sends
   `{user_id, text, guild_id}` plus an optional `voice_channel_id` and nothing
   else. There is no audio storage anywhere on this path, by design.
-- **No auth.** The only caller is the wake service on the private `nora`
-  docker network; the port is published to the host on loopback only, same
-  as every other route on this app. What a forged POST could do is exactly
-  what any message in an admitted conversation does — policy and the engage
-  gate still apply downstream, unchanged.
+- **Bearer, not network.** The only caller is the wake service on the private
+  `nora` docker network, and that is not authentication: any container there
+  could reach the port. The route requires the shared `NORA_BRIDGE_TOKEN`
+  bearer, and an unset token refuses every utterance. What a forged but
+  authenticated POST could do is exactly what any message in an admitted
+  conversation does — policy and the engage gate still apply downstream.
 
 Returns 202 Accepted: ingest runs inline (it is deterministic — the same
 reasoning as `Dispatcher.on_message`), and downstream agent work is spawned
@@ -56,6 +57,7 @@ from typing import Any
 from aiohttp import web
 
 from nora.domain.models import NormalizedMessage
+from nora.infra.service_auth import service_auth_ok
 
 log = logging.getLogger("nora.web.voice")
 
@@ -87,6 +89,10 @@ def register_voice(
     endpoint to poke."""
 
     async def voice_utterance(request: web.Request) -> web.Response:
+        # Checked before the body is read: an unauthenticated caller gets no
+        # parse, no room resolution and no ingest.
+        if not service_auth_ok(request.headers.get("Authorization")):
+            return web.json_response({"error": "unauthorized"}, status=401)
         try:
             body = await request.json()
         except (json.JSONDecodeError, UnicodeDecodeError):
