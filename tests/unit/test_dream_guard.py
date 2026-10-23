@@ -227,6 +227,35 @@ def test_the_second_of_two_reservations_sees_the_ceiling():
     assert "1 time(s)" in message
 
 
+def test_a_parallel_batch_larger_than_the_pass_ceiling_admits_only_the_ceiling():
+    """The pass-wide ceiling (`max_tool_calls`) must hold WITHIN one parallel
+    batch, not only between model turns.
+
+    Five calls, spread over two tools, with distinct `toolUseId`s, are all
+    admitted by `_before_tool` before any `_after_tool` fires (Strands runs a
+    batch's before-hooks ahead of its completions). With a pass budget of 2 only
+    the first two may be admitted; the other three must be cancelled. The pass
+    counter is advanced only in `_after_tool`, so without a reservation in
+    `_before_tool` every call sees the pre-batch count and all five run.
+    """
+    g = DreamGuard(
+        adaptor="room_language", budgets=BUDGETS, metrics=Metrics(), pass_budget=2,
+    )
+    calls = [("place_info", "b1"), ("now", "b2"), ("place_info", "b3"),
+             ("place_info", "b4"), ("now", "b5")]
+    events = []
+    for name, ref in calls:
+        event = _BeforeToolCall(name)
+        event.tool_use["toolUseId"] = ref
+        g._before_tool(event)
+        events.append(event)
+
+    admitted = [e.tool_use["toolUseId"] for e in events if e.cancel_tool is None]
+    assert admitted == ["b1", "b2"], (
+        f"a parallel batch admitted {admitted} against a pass ceiling of 2"
+    )
+
+
 # ---- the metric --------------------------------------------------------
 
 

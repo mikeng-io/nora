@@ -156,6 +156,25 @@ async def test_finish_records_the_state_and_only_the_fields_it_was_given(ledger)
     )
 
 
+async def test_clear_reply_nulls_the_text_and_an_omitted_one_keeps_it(ledger):
+    """`reply_text=None` means "leave the column", so a refusal that must not
+    keep its text says so with `clear_reply`: the stored text becomes NULL.
+    A finish that does not pass it keeps the text. Falsified by dropping the
+    clear: the refused row keeps the body it was staged with."""
+    cleared = await _claim(ledger, "mid.$clear")
+    kept = await _claim(ledger, "mid.$keep")
+    assert cleared is not None and kept is not None
+    await ledger.finish(cleared, "staged", now=NOW, reply_text="sensitive body")
+    await ledger.finish(kept, "staged", now=NOW, reply_text="fine body")
+    assert await ledger.finish(cleared, "refused", now=NOW, bridge_code="canary",
+                               clear_reply=True) is True
+    assert await ledger.finish(kept, "published", now=NOW, reply_comment_id="9009") is True
+    cleared_row = await ledger.get(cleared)
+    kept_row = await ledger.get(kept)
+    assert (cleared_row.state, cleared_row.reply_text) == ("refused", None)
+    assert (kept_row.state, kept_row.reply_text) == ("published", "fine body")
+
+
 async def test_an_unknown_state_is_refused(ledger):
     summons_id = await _claim(ledger)
     assert summons_id is not None
