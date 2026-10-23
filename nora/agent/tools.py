@@ -14254,8 +14254,7 @@ Args:
         return {"status": "ok", "title": note.title}
 
     async def version_list() -> dict:
-        """List your published releases and running version. Call this when
-        somebody asks your version, what's new, or whether you've been upgraded.
+        """List releases and running version when somebody asks about upgrades.
 
         Returns `status`: ok, nothing_found or unavailable, with a `note` on
         how to report it. `running` has its own build-stamp status.
@@ -14267,20 +14266,25 @@ Args:
             running = {"status": "ok", "version": current.entry.version}
         if releases is None:
             _record(metrics, "version_list", "unavailable")
-            return _with_note({"status": "unavailable", "running": running}, _VERSION_LIST_NOTES)
+            return {"status": "unavailable",
+                    "note": "I couldn't check GitHub releases. Don't claim there are none. "
+                            "The separate `running` result still describes the local build.",
+                    "running": running}
         try:
             out = await releases.list()
         except Exception:
             log.exception("version_list failed")
             _record(metrics, "version_list", "unavailable")
-            return _with_note({"status": "unavailable", "running": running}, _VERSION_LIST_NOTES)
+            return {"status": "unavailable",
+                    "note": "I couldn't check GitHub releases. Don't claim there are none. "
+                            "The separate `running` result still describes the local build.",
+                    "running": running}
         out["running"] = running
         _record(metrics, "version_list", out["status"])
         return _with_note(out, _VERSION_LIST_NOTES)
 
     async def version_read(version: str) -> dict:
-        """Read one exact version's published release notes. Call this when
-        somebody asks what changed in a named release.
+        """Read release notes when somebody asks what changed.
 
         Returns `status`: ok, nothing_found or unavailable, with a `note` on
         how to report it. The body comes from GitHub, not deployment history.
@@ -14297,13 +14301,17 @@ Args:
                     "without private identifiers or coordinates."}
         if releases is None:
             _record(metrics, "version_read", "unavailable")
-            return _with_note({"status": "unavailable"}, _VERSION_READ_NOTES)
+            return {"status": "unavailable",
+                    "note": "I couldn't read that release. "
+                            "Don't describe it or claim it is absent."}
         try:
             out = await releases.read(tag)
         except Exception:
             log.exception("version_read failed")
             _record(metrics, "version_read", "unavailable")
-            return _with_note({"status": "unavailable"}, _VERSION_READ_NOTES)
+            return {"status": "unavailable",
+                    "note": "I couldn't read that release. "
+                            "Don't describe it or claim it is absent."}
         _record(metrics, "version_read", out["status"])
         return _with_note(out, _VERSION_READ_NOTES)
 
@@ -16997,6 +17005,7 @@ def build_tools(
     memory_retrieval: MemorySearch | None = None,
     persona: PersonaWriter | None = None,
     persona_read: PersonaHeads | None = None,
+    releases=None,
     relay: Relay | None = None,
     relay_turn: bool = False,
 ) -> list:
@@ -17057,6 +17066,7 @@ def build_tools(
         memory_retrieval=memory_retrieval,
         persona=persona,
         persona_read=persona_read,
+        releases=releases,
         relay=relay, relay_turn=relay_turn,
     )
     return [adapt(spec) for spec in specs]
