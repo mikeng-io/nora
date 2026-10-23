@@ -410,3 +410,26 @@ func modeOf(t *testing.T, path string) os.FileMode {
 	}
 	return info.Mode().Perm()
 }
+
+// A session normalized by an earlier version still has its paste on disk. The jar
+// is the session, so the next load removes the paste instead of leaving a second
+// plain-text copy of the credential.
+func TestAnObsoletePasteIsScrubbedWhenAValidJarAlreadyExists(t *testing.T) {
+	s := Store{Dir: t.TempDir()}
+	curl := `-H 'cookie: csrftoken=CSRF123; ds_user_id=79597894900; sessionid=79597894900%3Asecret%3A28'`
+	if err := os.WriteFile(s.Path("cookies.curl"), []byte(curl), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadCookieJar(s); err != nil { // writes cookies.json and scrubs the paste
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(s.Path("cookies.curl"), []byte(curl), 0o600); err != nil { // the paste returns
+		t.Fatal(err)
+	}
+	if _, err := LoadCookieJar(s); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(s.Path("cookies.curl")); !os.IsNotExist(err) {
+		t.Fatalf("cookies.curl survived a load that used cookies.json: stat err = %v", err)
+	}
+}

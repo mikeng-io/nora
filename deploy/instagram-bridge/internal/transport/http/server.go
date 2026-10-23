@@ -42,9 +42,6 @@ var (
 	// cut for being long, and no WriteTimeout is set on the server, which
 	// /events must not have.
 	streamWriteTimeout = 2 * time.Minute
-	// streamMaxLifetime ends one stream. The client reconnects and is replayed
-	// what was buffered in the gap, so the end is a reconnect, not a loss.
-	streamMaxLifetime = time.Hour
 )
 
 // Server is the HTTP surface over the use cases.
@@ -225,13 +222,12 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	lifetime := time.NewTimer(streamMaxLifetime)
-	defer lifetime.Stop()
+	// No stream lifetime: ending a healthy stream on a timer abandons whatever is
+	// queued for it, and a client that stopped reading is already cut by the write
+	// deadline above.
 	for {
 		select {
 		case <-r.Context().Done():
-			return
-		case <-lifetime.C:
 			return
 		case payload, open := <-ch:
 			if !open || !send(payload) {

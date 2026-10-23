@@ -261,7 +261,10 @@ var (
 	// `unavailable` at once: the request is retryable, and a queue of stalled
 	// readers is the thing this bound exists to refuse.
 	maxBodyReaders = 16
-	bodySlots      = make(chan struct{}, maxBodyReaders)
+	// refusedBodyDrain is how long the server may wait on the body of a request it
+	// refused for want of a slot.
+	refusedBodyDrain = 2 * time.Second
+	bodySlots        = make(chan struct{}, maxBodyReaders)
 )
 
 // readJSON decodes a request body of at most `limit` bytes into `into`,
@@ -274,6 +277,11 @@ func readJSON(w http.ResponseWriter, r *http.Request, limit int64, into any) ([]
 	case bodySlots <- struct{}{}:
 		defer func() { <-bodySlots }()
 	default:
+		// The body of a refused request is never read. Close the connection and cap what
+		// the server may spend draining it, or a refused request holds a reader with no
+		// slot and no deadline until its body arrives.
+		w.Header().Set("Connection", "close")
+		_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(refusedBodyDrain))
 		writeErrorEnvelope(w, http.StatusServiceUnavailable, "unavailable", "too many request bodies are being read; retry")
 		return nil, false
 	}

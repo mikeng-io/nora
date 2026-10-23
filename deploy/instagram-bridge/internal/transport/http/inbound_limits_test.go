@@ -11,7 +11,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -147,24 +146,6 @@ func TestAnExcessEventStreamIsRefusedAndCounted(t *testing.T) {
 	}
 }
 
-// A stream has a lifetime. The handler ends it and the client reconnects, and
-// the reconnect is replayed what was buffered in the gap, so nothing is lost.
-func TestAnEventStreamEndsAtItsLifetime(t *testing.T) {
-	setDuration(t, &streamMaxLifetime, 100*time.Millisecond)
-	ts := listen(t, stream.NewHub())
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"/events", nil)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	if _, err := io.ReadAll(resp.Body); err != nil {
-		t.Fatalf("the stream did not end at its lifetime: %v", err)
-	}
-}
-
 // A client that stops reading is the one that blocks a write forever. Each
 // frame has a deadline, so such a client is disconnected and its slot freed.
 func TestAStreamThatStopsReadingIsDisconnected(t *testing.T) {
@@ -198,5 +179,41 @@ func waitFor(t *testing.T, what string, ok func() bool) {
 			t.Fatalf("timed out waiting for %s", what)
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// A refused request's body is not waited on. With every slot held, a POST that
+// declares a body and never sends it still gets its 503 at once, on a connection
+// that is then closed, so refused requests cannot hold readers.
+func TestARefusedRequestIsAnsweredWithoutWaitingForItsBody(t *testing.T) {
+	for i := 0; i < maxBodyReaders; i++ {
+		bodySlots <- struct{}{}
+	}
+	t.Cleanup(func() {
+		for len(bodySlots) > 0 {
+			<-bodySlots
+		}
+	})
+	ts := listen(t, stream.NewHub())
+	conn, err := net.Dial("tcp", strings.TrimPrefix(ts.URL, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_, err = fmt.Fprintf(conn, "POST /threads/%s/messages HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n", room)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	if err != nil {
+		t.Fatalf("no answer to a refused request within a second (waiting for its body?): %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", resp.StatusCode)
+	}
+	if !resp.Close {
+		t.Fatalf("the connection of a refused request was kept open")
 	}
 }

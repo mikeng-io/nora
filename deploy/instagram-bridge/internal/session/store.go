@@ -264,6 +264,11 @@ func LoadCookieJar(s Store) (*cookies.Cookies, error) {
 		case len(jar.GetMissingCookieNames()) > 0:
 			jsonErr = fmt.Errorf("cookies.json is missing %v", jar.GetMissingCookieNames())
 		default:
+			// A paste left from before this version is a second plain-text copy of the
+			// credential; the jar is the session, so the paste goes now.
+			if err := s.scrubBootstrap(); err != nil {
+				return nil, fmt.Errorf("cookies.curl is obsolete but could not be removed: %w", err)
+			}
 			return jar, nil
 		}
 	}
