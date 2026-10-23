@@ -1,6 +1,8 @@
-import json,time,pathlib,sys,statistics,os
+import json,time,pathlib,sys,statistics,os,tempfile
 ns={};exec(open('/tmp/nora-context-probe.py').read().split("run('rocm-0.8b'")[0],ns)
-CASES=ns['CASES']; QUESTIONS=ns['QUESTIONS'];DEFS=ns['DEFS'];ROOT=pathlib.Path('/tmp/nora-context-probe')
+CASES=ns['CASES']; QUESTIONS=ns['QUESTIONS'];DEFS=ns['DEFS']
+# A fresh 0700 directory: a fixed /tmp path would let another local account plant a link.
+OUT=pathlib.Path(tempfile.mkdtemp(prefix='nora-local-models-'));print('RESULTS',OUT,flush=True)
 import torch
 torch.set_num_threads(4);torch.set_num_interop_threads(2)
 kind=sys.argv[1];t=time.perf_counter()
@@ -28,6 +30,6 @@ for name,msg,standing,cues,target,depth in CASES:
   row={'case':name,'seconds':elapsed,'expected':expected,'got':got,'wrong':wrong,'response':response}
  except Exception as e:row={'case':name,'seconds':time.perf_counter()-t,'error':type(e).__name__+': '+str(e)}
  rows.append(row);print(kind,name,round(row['seconds'],3),row.get('wrong',row.get('error')),flush=True)
- (ROOT/(kind+'-results.json')).write_text(json.dumps({'model':kind,'load_seconds':load_seconds,'rows':rows},ensure_ascii=False,indent=2))
+ (OUT/(kind+'-results.json')).write_text(json.dumps({'model':kind,'load_seconds':load_seconds,'rows':rows},ensure_ascii=False,indent=2))
  if time.perf_counter()-t>60:break
 print('DONE',flush=True)
