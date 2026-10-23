@@ -224,7 +224,7 @@ cases:
     metadata:
       tools: [version_read]
       not_tools: [version_list, web_search, web_fetch]
-      args_include: {version_read: [v6.6.9]}
+      args_include: {version_read: [6.6.9]}
     snapshot: *room_a
 
   - name: route_version_indirect_upgrade
@@ -232,7 +232,10 @@ cases:
     expect: reply
     mention: true
     input: You seem quicker today. Have you been upgraded? Can you check what changed?
-    metadata: {tools: [version_list], not_tools: [web_search, web_fetch]}
+    metadata:
+      tools: [version_list]
+      required_tools: [version_list, version_read]
+      not_tools: [web_search, web_fetch]
     snapshot: *room_a
 
   - name: route_generate_image
