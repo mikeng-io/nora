@@ -11,9 +11,15 @@ every other page; this test pins the narrow matcher and both policies.
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
-CADDY = Path(__file__).resolve().parents[2] / "site/Caddyfile"
+import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
+CADDY = ROOT / "site/Caddyfile"
+PLACEHOLDER = "@@CSP_SCRIPT_HASHES@@"
 
 
 def _policies() -> tuple[str, str, str]:
@@ -44,3 +50,45 @@ def test_the_graph_csp_names_only_the_origins_its_meta_csp_already_allows():
     # No blanket scheme wildcard: the only https origins are the three named
     # above.
     assert graph.count("https://") == 3
+
+
+def _script_src(policy: str) -> str:
+    match = re.search(r"script-src ([^;]+)", policy)
+    assert match, policy
+    return match.group(1)
+
+
+def test_the_baseline_and_404_script_src_take_hashes_not_unsafe_inline():
+    """Any injected inline script runs under 'unsafe-inline'; hashes allow only the known ones."""
+    baseline, _graph, not_found = _policies()
+    for policy in (baseline, not_found):
+        script = _script_src(policy)
+        assert "'unsafe-inline'" not in script
+        assert PLACEHOLDER in script
+        assert "'wasm-unsafe-eval'" in script
+
+
+def test_the_graph_page_keeps_its_own_wider_policy_on_purpose():
+    _baseline, graph, _not_found = _policies()
+    assert "'unsafe-inline'" in _script_src(graph)
+    assert PLACEHOLDER not in graph
+
+
+def test_the_image_bakes_the_hashes_into_the_caddyfile_it_ships():
+    dockerfile = (ROOT / "site/Dockerfile").read_text()
+    assert "csp-hashes.mjs Caddyfile.in Caddyfile site-dist wiki-dist" in dockerfile
+    assert "COPY --from=csp /csp/Caddyfile /etc/caddy/Caddyfile" in dockerfile
+    assert "COPY site/Caddyfile /etc/caddy/Caddyfile" not in dockerfile, (
+        "the raw Caddyfile still holds the placeholder and would block every inline script"
+    )
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_hash_generator_passes_its_own_tests():
+    result = subprocess.run(  # noqa: S603 -- fixed repo script
+        [shutil.which("node") or "node", "--test", "scripts/csp-hashes.test.mjs"],
+        cwd=ROOT / "site",
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
