@@ -10,8 +10,10 @@ FROM python:3.12-slim-trixie@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e
 # audio this process didn't produce itself).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl ffmpeg \
-    && rm -rf /var/lib/apt/lists/* \
-    && pip install --no-cache-dir uv==0.11.18
+    && rm -rf /var/lib/apt/lists/*
+
+# Patched embedded TLS roots; avoid the base image pip network bootstrap.
+COPY --from=ghcr.io/astral-sh/uv:0.13.4@sha256:9f130421e930bfbdc563c00740466603f8723158e90297d07957c2294640262b /uv /uvx /usr/local/bin/
 
 # uid/gid 1000 matches the reference host operator so the bind-mounted ./data directory
 # is writable without a runtime `user:` override or a chmod dance.
