@@ -59,6 +59,17 @@ describe("two validators, one verdict", () => {
     const split = all.filter(([, doc]) => parseDocument(doc).ok !== validateJson(doc));
     expect(split.map(([label]) => label)).toEqual([]);
   });
+
+  it.each([3999, 4000, 4001])("counts %i Mermaid Unicode code points the same way", (length) => {
+    const prefix = 'flowchart LR\nA["';
+    const suffix = '"]';
+    const source = prefix + "😀".repeat(length - prefix.length - suffix.length) + suffix;
+    const doc = { version: 1, root: { type: "Page", props: { title: "T" }, children: [
+      { type: "Mermaid", props: { source, caption: "A boundary diagram" } },
+    ] } };
+    expect(parseDocument(doc).ok).toBe(length <= 4000);
+    expect(validateJson(doc)).toBe(length <= 4000);
+  });
 });
 
 describe("parseDocument never throws and never recurses on hostile depth", () => {

@@ -380,13 +380,20 @@ async def test_a_refused_refresh_is_auth_and_a_429_is_rate_limited(tmp_path, aut
 
 
 async def test_a_failed_write_keeps_spending_the_rotated_token_and_retries_the_write(
-    tmp_path, auth_server,
+    tmp_path, auth_server, monkeypatch,
 ):
     """A write failing AFTER the writability check must not leave the rotation
     only in memory, or the next refresh re-sends the dead bootstrap."""
     issuer, auth = auth_server
     state_file = tmp_path / "state" / "openai-codex-oauth.json"
-    state_file.mkdir(parents=True)  # a directory: os.replace onto it fails
+    # Fail the write after the load/pre-check; a directory at the state path
+    # is a refused file and must now stop before spending any token.
+    real_replace = os.replace
+
+    def failing_replace(src, dst):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(os, "replace", failing_replace)
     oauth = OpenAICodexOAuth(
         bootstrap_refresh_token="rt-boot", state_file=state_file,
         issuer=issuer, timeout_seconds=5.0,
@@ -396,7 +403,7 @@ async def test_a_failed_write_keeps_spending_the_rotated_token_and_retries_the_w
     second = await oauth.access_token(rejected=first.access_token)
     assert second.status == "ok"
     assert auth["sent"] == ["rt-boot", "rt-1"]
-    state_file.rmdir()
+    monkeypatch.setattr(os, "replace", real_replace)
     assert (await oauth.access_token()).access_token == second.access_token
     assert json.loads(state_file.read_text())["refresh_token"] == "rt-2"
     assert auth["sent"] == ["rt-boot", "rt-1"]

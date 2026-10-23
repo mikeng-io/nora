@@ -9,7 +9,7 @@ import { personById, resolveDiscordPerson, type Person } from "./allowlist";
 export const IDENTITY_TOML_PATH = process.env.IDENTITY_TOML_PATH ?? "/app/identity.toml";
 
 export type SessionCheck =
-  | ({ status: "ok"; image: string | null; via: "discord" | "code" } & Person)
+  | ({ status: "ok"; image: string | null; via: "discord" | "code"; sessionId?: string } & Person)
   | { status: "no-session" }
   | { status: "denied"; name: string | null; image: string | null; via: "discord" | "code" };
 
@@ -44,12 +44,12 @@ export async function checkSession(): Promise<SessionCheck> {
   if (user?.personId) {
     const person = personById(readIdentityToml(), user.personId);
     return person
-      ? { status: "ok", image, via: "code", ...person }
+      ? { status: "ok", image, via: "code", sessionId: user.sessionId, ...person }
       : { status: "denied", name: null, image, via: "code" };
   }
   const discordId = user?.discordId;
   if (!discordId) return { status: "no-session" };
   const person = resolveDiscordPerson(readIdentityToml(), discordId);
   if (!person) return { status: "denied", name: user?.name ?? null, image, via: "discord" };
-  return { status: "ok", image, via: "discord", ...person };
+  return { status: "ok", image, via: "discord", sessionId: user?.sessionId, ...person };
 }

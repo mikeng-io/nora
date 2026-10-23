@@ -1,5 +1,17 @@
 # Changelog
 
+## [6.6.16](https://github.com/mikeng-io/nora/compare/v6.6.15...v6.6.16) (2026-10-23)
+
+
+### Bug Fixes
+
+* **security:** preserve newer sign-ins and refuse unsafe OAuth state ([6812a6f](https://github.com/mikeng-io/nora/commit/6812a6f1ac3383c035a8b4c9d75a95c2c24639f2))
+
+
+### Security
+
+* **hardening:** keep local state private and isolate eval and portal sessions ([837d5bf](https://github.com/mikeng-io/nora/commit/837d5bf977049fbe3afa468eee49d6def0b3bdf5))
+
 ## [6.6.15](https://github.com/mikeng-io/nora/compare/v6.6.14...v6.6.15) (2026-10-23)
 
 

@@ -26,7 +26,7 @@ export default async function PortalLayout({
   };
   return (
     <ViewerProvider viewer={viewer}>
-      <QueryProvider personId={check.personId}>
+      <QueryProvider personId={check.personId} sessionId={check.sessionId}>
         <AppShell>{children}</AppShell>
       </QueryProvider>
     </ViewerProvider>

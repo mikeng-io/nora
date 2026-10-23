@@ -78,6 +78,7 @@ from evals.retrieval_bakeoff.adapters import (
     matryoshka,
     sha256_file,
 )
+from evals.terminal import safe_print as print
 from nora.subject import lexical_seed
 
 SET_DIR = Path(__file__).resolve().parent

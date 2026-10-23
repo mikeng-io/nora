@@ -68,6 +68,8 @@ mismatch rather than copying rows into columns the source never had.
 from __future__ import annotations
 
 import json
+import os
+import stat
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -332,6 +334,7 @@ async def materialise(
     recorded load; `in_force.json` lists it under `missing`.
     """
     written: list[Path] = []
+    _export_root(out_dir)
     async with source.connect() as conn, conn.begin():
         await _read_only(conn)
         forced = await in_force(conn, at)
@@ -352,18 +355,18 @@ async def materialise(
                 path = (root / rel).resolve()
                 if root not in path.parents:
                     raise SnapshotRefusedError(f"recorded path {rel!r} leaves {root}")
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(await body(sha), encoding="utf-8")
+                path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                _private_write(path, await body(sha))
                 written.append(path)
         for name, load in forced.config.items():
             if load is None:
                 continue
             path = out_dir / name
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(await body(load.content_sha256), encoding="utf-8")
+            path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            _private_write(path, await body(load.content_sha256))
             written.append(path)
     manifest = out_dir / "in_force.json"
-    manifest.write_text(json.dumps({
+    _private_write(manifest, json.dumps({
         "at": at.isoformat(),
         "missing": list(forced.missing()),
         "doctrine": _describe(forced.doctrine),
@@ -374,9 +377,41 @@ async def materialise(
             for k, v in forced.deploy.items()
         },
         "excepted": list(EXCEPTED),
-    }, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    }, indent=2, ensure_ascii=False) + "\n")
     written.append(manifest)
     return forced, tuple(written)
+
+
+def _export_root(out_dir: Path) -> None:
+    """The export directory: created 0700, or an existing one this account
+    alone can read. A link, a file or a directory others can read is refused
+    rather than written into; nothing here narrows a directory someone chose."""
+    try:
+        st = os.lstat(out_dir)
+    except FileNotFoundError:
+        out_dir.mkdir(mode=0o700, parents=True)
+        return
+    if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o077:
+        raise SnapshotRefusedError(
+            f"{out_dir} must be a directory only this account can read (0700); "
+            "the export holds identity and policy, so give it a fresh path"
+        )
+    if any(out_dir.iterdir()):
+        raise SnapshotRefusedError(f"{out_dir} must be empty; use a fresh export directory")
+
+
+def _private_write(path: Path, text: str) -> None:
+    """Write one export file as 0600, whatever the umask. `O_NOFOLLOW` refuses
+    a link at the leaf, so a planted link is never written through."""
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    except OSError as exc:
+        raise SnapshotRefusedError(
+            f"{path} cannot be written as a private file ({exc.strerror}); remove it"
+        ) from exc
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        os.fchmod(fh.fileno(), 0o600)
+        fh.write(text)
 
 
 def _describe(load: InstructionLoad | None) -> dict[str, Any] | None:

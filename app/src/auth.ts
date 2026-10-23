@@ -1,4 +1,5 @@
 import NextAuth, { type NextAuthConfig } from "next-auth";
+import { randomUUID } from "node:crypto";
 import { discordProvider } from "./discord";
 import Credentials from "next-auth/providers/credentials";
 import { codeSignInEnabled, verifyCode } from "@/server/otp";
@@ -64,12 +65,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     // A code sign-in carries the person_id Nora verified instead: there is no
     // account at another provider to resolve, only the person.
     async jwt({ token, account, user }) {
+      // Stable through JWT rotation, distinct even when the same person signs in again.
+      if (account) token.sessionId = randomUUID();
       if (account?.provider === "discord") token.discordId = account.providerAccountId;
       if (account?.provider === "dev" && user?.id) token.discordId = user.id;
       if (account?.provider === "otp" && user?.id) token.personId = user.id;
       return token;
     },
     async session({ session, token }) {
+      if (typeof token.sessionId === "string") session.user.sessionId = token.sessionId;
       if (typeof token.discordId === "string") session.user.discordId = token.discordId;
       if (typeof token.personId === "string") session.user.personId = token.personId;
       return session;
