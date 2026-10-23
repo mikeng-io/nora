@@ -26,9 +26,9 @@ class Channel extends EventTarget {
 
 // Drive effect setup/cleanup with real QueryClients and the real throttled
 // persister. The app's Node harness has no DOM; only browser I/O is mocked.
-function mount(personId: string) {
-  const element = QueryProvider({ personId, children: null });
-  const render = element.type as (props: { personId: string; children: ReactNode }) => ReactElement;
+function mount(personId: string, sessionId = "session-a") {
+  const element = QueryProvider({ personId, sessionId, children: null });
+  const render = element.type as (props: { personId: string; sessionId?: string; children: ReactNode }) => ReactElement;
   const tree = render(element.props);
   const cleanups = hooks.effects.splice(0).map((setup) => setup());
   const { client, persistOptions } = tree.props as {
@@ -55,8 +55,8 @@ afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("the portal query cache is per person", () => {
   it("keys the provider by person", () => {
-    expect(QueryProvider({ personId: "person-a", children: null }).key).toBe("person-a");
-    expect(QueryProvider({ personId: "person-b", children: null }).key).toBe("person-b");
+    expect(QueryProvider({ personId: "person-a", sessionId: "session-a", children: null }).key).toBe("person-a:session-a");
+    expect(QueryProvider({ personId: "person-b", sessionId: "session-b", children: null }).key).toBe("person-b:session-b");
   });
 
   it("cancels reads, empties the old client and removes its persisted cache on identity change", async () => {
@@ -96,13 +96,38 @@ describe("the portal query cache is per person", () => {
     const tab = mount("person-a");
     tab.client.setQueryData(["private-plan"], "old plan");
     expect(Channel.opened).toHaveLength(1);
-    Channel.opened[0].dispatchEvent(new MessageEvent("message", { data: "signed-out" }));
+    Channel.opened[0].dispatchEvent(new MessageEvent("message", { data: { type: "signed-out", sessionId: "session-a" } }));
     expect(tab.client.getQueryCache().getAll()).toEqual([]);
     expect(del).toHaveBeenCalledWith(cacheKey("person-a"));
-    expect(signOutAction).toHaveBeenCalledWith("en");
+    expect(signOutAction).toHaveBeenCalledWith("en", "session-a");
     tab.unmount();
     expect(Channel.opened[0].close).toHaveBeenCalled();
   });
+
+  it("ignores a late sign-out after a newer sign-in, including the same person", () => {
+    const old = mount("person-a", "session-a");
+    old.unmount();
+    const current = mount("person-a", "session-b");
+    current.client.setQueryData(["private-plan"], "new plan");
+    Channel.opened[1].dispatchEvent(new MessageEvent("message", {
+      data: { type: "signed-out", sessionId: "session-a" },
+    }));
+    expect(current.client.getQueryData(["private-plan"])).toBe("new plan");
+    expect(signOutAction).not.toHaveBeenCalled();
+    current.unmount();
+  });
+
+  it.each(["signed-out", null, {}, { type: "signed-out" },
+    { type: "signed-out", sessionId: "unknown-session" }])(
+    "ignores sign-out with missing or unknown generation: %j", (data) => {
+      const tab = mount("person-a");
+      tab.client.setQueryData(["private-plan"], "kept plan");
+      Channel.opened[0].dispatchEvent(new MessageEvent("message", { data }));
+      expect(tab.client.getQueryData(["private-plan"])).toBe("kept plan");
+      expect(signOutAction).not.toHaveBeenCalled();
+      tab.unmount();
+    },
+  );
 
   it("forgetDevice tells local and remote caches to stop before clearing storage", async () => {
     const tab = mount("person-a");
@@ -110,7 +135,7 @@ describe("the portal query cache is per person", () => {
     await forgetDevice();
     expect(tab.client.getQueryCache().getAll()).toEqual([]);
     expect(Channel.opened[1].name).toBe(Channel.opened[0].name);
-    expect(Channel.opened[1].postMessage).toHaveBeenCalledWith("signed-out");
+    expect(Channel.opened[1].postMessage).toHaveBeenCalledWith({ type: "signed-out", sessionId: "session-a" });
     expect(Channel.opened[1].close).toHaveBeenCalled();
     expect(clear).toHaveBeenCalled();
     tab.unmount();

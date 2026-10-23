@@ -212,20 +212,26 @@ class RotatingOAuthLane:
             return False
         return True
 
-    def _load(self) -> LaneState | None:
+    def _load(self) -> LaneState | Refusal | None:
         """The state file, if it belongs to the CURRENT `.env` login. Opened
         without following a link, and checked (owner, mode) before its token
         is read: see `_private_or_refused`."""
         if not self._private_parent():
-            return None
+            return Refusal(
+                "state_unwritable", "repair ownership/permissions of the state directory",
+            )
         try:
             fd = os.open(self._state_file, os.O_RDONLY | os.O_NOFOLLOW)
-        except OSError:
+        except FileNotFoundError:
             return None
+        except OSError:
+            return Refusal("state_unwritable", "repair ownership/permissions of the state file")
         try:
             with os.fdopen(fd, "rb") as fh:
                 if not _private_or_refused(fh.fileno(), self._state_file):
-                    return None
+                    return Refusal(
+                        "state_unwritable", "repair ownership/permissions of the state file",
+                    )
                 data = json.loads(fh.read().decode("utf-8"))
             access = str(data.get("access_token") or "")
             # Absent (not empty): a pre-fingerprint file, adopted as LEGACY.
@@ -237,7 +243,9 @@ class RotatingOAuthLane:
                 expires_at=float(data.get("expires_at") or self._expiry_of(access)),
                 refreshed_at=float(data.get("refreshed_at") or self._issued_of(access)),
             )
-        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        except OSError:
+            return Refusal("state_unwritable", "repair ownership/permissions of the state file")
+        except (ValueError, KeyError, TypeError, AttributeError):
             return None
         if not state.refresh_token or state.bootstrap_sha256 not in (self._bootstrap_sha, ""):
             return None
@@ -307,7 +315,8 @@ class RotatingOAuthLane:
     def snapshot(self) -> LaneState | None:
         """The current link without a refresh or a lock: the cache, else the
         state file. For the keeper's plan and the boot-time gauges."""
-        return self._cached or self._load()
+        state = self._cached or self._load()
+        return state if isinstance(state, LaneState) else None
 
     # -- access -------------------------------------------------------------
 
@@ -383,6 +392,8 @@ class RotatingOAuthLane:
                     # save retries the write.
                     return await self._spend(cached.refresh_token)
                 state = self._load()
+                if isinstance(state, Refusal):
+                    return self._failed(state.reason, state.detail)
                 if state is not None and self._usable(state, rejected, since):
                     self._cached = state
                     self._observe(state)

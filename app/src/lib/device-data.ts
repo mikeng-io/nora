@@ -8,6 +8,7 @@ import { clear as clearIdb } from "idb-keyval";
 // page shows, so a shared phone never hands one person's data to the next.
 
 let writesStopped = false;
+let currentSessionId: string | undefined;
 export const DEVICE_SIGN_OUT = "nora:device-sign-out";
 
 /** True once the device is being forgotten: the persister writes nothing
@@ -17,17 +18,20 @@ export const deviceWritesStopped = () => writesStopped;
 /** A new session began (the portal mounted for someone): keep again. A
  * client-side redirect after sign-in keeps this module alive, so the flag
  * would otherwise outlast the session that set it. */
-export const resumeDeviceWrites = () => {
+export const resumeDeviceWrites = (sessionId?: string) => {
   writesStopped = false;
+  currentSessionId = sessionId;
 };
 
 export async function forgetDevice(): Promise<void> {
+  const sessionId = currentSessionId;
+  currentSessionId = undefined;
   writesStopped = true;
   // Stop mounted caches in this tab and every other tab before forgetting I/O.
   window.dispatchEvent(new Event(DEVICE_SIGN_OUT));
-  if (typeof BroadcastChannel !== "undefined") {
+  if (sessionId && typeof BroadcastChannel !== "undefined") {
     const channel = new BroadcastChannel(DEVICE_SIGN_OUT);
-    channel.postMessage("signed-out");
+    channel.postMessage({ type: "signed-out", sessionId });
     channel.close();
   }
   await clearIdb().catch(() => {});

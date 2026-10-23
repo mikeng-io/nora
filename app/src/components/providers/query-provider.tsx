@@ -23,25 +23,26 @@ function toSignIn() {
   location.assign(`/${locale}/login?next=${back}`);
 }
 
-export function QueryProvider({ personId, children }: { personId: string; children: ReactNode }) {
-  // Keyed by the person: a changed `personId` mounts a new cache and persister.
-  // A changed prop never reaches `useState`, so without the key a mounted portal
-  // would keep the last person's queries in memory after an account change.
+type PortalCacheProps = { personId: string; sessionId?: string; children: ReactNode };
+
+export function QueryProvider({ personId, sessionId, children }: PortalCacheProps) {
+  // A new person or sign-in mounts a new cache and persister: changed props
+  // never reach `useState`, including a second sign-in as the same person.
   return (
-    <PortalCache key={personId} personId={personId}>
+    <PortalCache key={`${personId}:${sessionId ?? ""}`} personId={personId} sessionId={sessionId}>
       {children}
     </PortalCache>
   );
 }
 
-function PortalCache({ personId, children }: { personId: string; children: ReactNode }) {
+function PortalCache({ personId, sessionId, children }: PortalCacheProps) {
   const [lifetime] = useState(() => ({ active: true }));
   // Start from what the device says, so an app opened offline shows what it
   // kept instead of firing reads that can only fail.
   useState(() => {
     if (typeof navigator !== "undefined") {
       onlineManager.setOnline(navigator.onLine);
-      resumeDeviceWrites();
+      resumeDeviceWrites(sessionId);
     }
     return null;
   });
@@ -91,12 +92,13 @@ function PortalCache({ personId, children }: { personId: string; children: React
     };
     const channel = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel(DEVICE_SIGN_OUT);
     const signedOut = (event: MessageEvent) => {
-      if (event.data !== "signed-out") return;
+      // Unknown/legacy messages cannot identify the session that ended.
+      if (!sessionId || event.data?.type !== "signed-out" || event.data.sessionId !== sessionId) return;
       dispose();
-      // The sender may not have cleared our shared cookie yet. Going straight
-      // to login could send us back into the portal with the old session.
+      // The sender may not have cleared our shared cookie yet. The action
+      // rechecks the generation in case another tab has since signed in.
       startTransition(async () => {
-        await signOutAction(location.pathname.split("/")[1] || "zh-Hant");
+        await signOutAction(location.pathname.split("/")[1] || "zh-Hant", sessionId);
       });
     };
     channel?.addEventListener("message", signedOut);
@@ -106,7 +108,7 @@ function PortalCache({ personId, children }: { personId: string; children: React
       channel?.close();
       dispose();
     };
-  }, [client, persister, lifetime]);
+  }, [client, persister, lifetime, sessionId]);
 
   return (
     <PersistQueryClientProvider

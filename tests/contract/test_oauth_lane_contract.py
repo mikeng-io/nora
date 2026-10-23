@@ -498,19 +498,61 @@ async def test_a_legacy_state_file_readable_beyond_its_owner_is_narrowed_then_ad
 
 @pytest.mark.parametrize("kind", LANES)
 async def test_a_state_file_another_account_owns_is_refused_and_its_token_never_served(
-    kind, tmp_path, issuer, monkeypatch,
+    kind, tmp_path, issuer, monkeypatch, caplog,
 ):
-    """Read as a different account (the owner check's uid), the file is not
-    this account's: its token is not served, and the lock beside it is
-    refused too, so nothing is spent and the call answers unavailable."""
+    """Only the state inode is foreign; its parent and lock remain ours."""
     base, srv = issuer
-    _fresh_file(kind, tmp_path, srv["clock"], mode=0o600)
-    other = os.getuid() + 1
-    monkeypatch.setattr(os, "getuid", lambda: other)
+    path = _fresh_file(kind, tmp_path, srv["clock"], mode=0o600)
+    path.parent.chmod(0o775)
+    before, inode = path.read_bytes(), path.stat().st_ino
+    original = os.fstat
+
+    def foreign_file(fd):
+        st = original(fd)
+        if st.st_ino != inode:
+            return st
+        fields = list(st)
+        fields[4] = os.getuid() + 1
+        return os.stat_result(fields)
+
+    monkeypatch.setattr(os, "fstat", foreign_file)
     got = await _call(_lane(kind, tmp_path, base, srv["clock"]))()  # type: ignore[attr-defined]
+    assert srv["sent"] == []
     assert got.access_token == ""
     assert got.status == "unavailable"
+    assert got.reason == "state_unwritable"
+    assert path.read_bytes() == before
+    assert path.stat().st_ino == inode
+    assert "repair ownership/permissions" in caplog.text
+    # Repairing ownership resumes the ordinary deployed 0600-file path.
+    monkeypatch.setattr(os, "fstat", original)
+    assert (await _call(_lane(kind, tmp_path, base, srv["clock"]))()).status == "ok"
     assert srv["sent"] == []
+    assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
+
+
+@pytest.mark.parametrize("kind", LANES)
+async def test_a_state_file_that_cannot_be_made_private_is_not_bootstrapped(
+    kind, tmp_path, issuer, monkeypatch,
+):
+    base, srv = issuer
+    path = _fresh_file(kind, tmp_path, srv["clock"], mode=0o644)
+    path.parent.chmod(0o700)
+    before, inode = path.read_bytes(), path.stat().st_ino
+    original = os.fchmod
+
+    def refuse_file(fd, mode):
+        if os.fstat(fd).st_ino == inode:
+            raise PermissionError("synthetic file refusal")
+        return original(fd, mode)
+
+    monkeypatch.setattr(os, "fchmod", refuse_file)
+    got = await _call(_lane(kind, tmp_path, base, srv["clock"]))()  # type: ignore[attr-defined]
+    assert srv["sent"] == []
+    assert got.status == "unavailable"
+    assert got.reason == "state_unwritable"
+    assert path.read_bytes() == before
+    assert path.stat().st_ino == inode
 
 
 @pytest.mark.parametrize("kind", LANES)
@@ -519,7 +561,7 @@ async def test_a_restored_parent_is_private_before_snapshot_reads_credentials(
 ):
     base, srv = issuer
     path = _fresh_file(kind, tmp_path, srv["clock"], mode=0o644)
-    path.parent.chmod(0o777)
+    path.parent.chmod(0o775)
     lane = _lane(kind, tmp_path, base, srv["clock"])
     assert lane.snapshot() is not None
     assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700

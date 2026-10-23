@@ -1,8 +1,9 @@
 "use server";
 
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { AuthError } from "next-auth";
-import { DEV_LOGIN_ENABLED, signIn, signOut } from "@/auth";
+import { auth, DEV_LOGIN_ENABLED, signIn, signOut } from "@/auth";
 import { routing } from "@/i18n/routing";
 import { fullNumber, safeRegion } from "@/lib/dial-codes";
 import { CODE_PLATFORMS, type CodePlatform, SendThrottle, clientKey, requestCode } from "./otp";
@@ -31,7 +32,14 @@ export async function signInAsDev(locale: string, discordId: string, next?: stri
   await signIn("dev", { discordId, redirectTo: safeNext(l, next) });
 }
 
-export async function signOutAction(locale: string) {
+export async function signOutAction(locale: string, expectedSessionId?: string) {
+  if (expectedSessionId !== undefined) {
+    // A receiver can still hold the old generation when its delayed request
+    // arrives with a newer shared cookie. Never clear that newer sign-in.
+    const session = await auth();
+    if (!session) redirect(`/${safeLocale(locale)}/login?signedOut=1`);
+    if (!expectedSessionId || session?.user.sessionId !== expectedSessionId) return;
+  }
   await signOut({ redirectTo: `/${safeLocale(locale)}/login?signedOut=1` });
 }
 
