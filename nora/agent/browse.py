@@ -79,6 +79,21 @@ class _Task:
         self.finished: BrowseOutcome | None = None
         self.url = ""
 
+    def over(self) -> str | None:
+        """Once the task has finished, no page tool runs again: the text the model reads."""
+        if self.finished is None:
+            return None
+        return "This task is finished. The page is not touched again; stop here."
+
+    def conclude(self, outcome: BrowseOutcome) -> str:
+        """Record the terminal outcome, one way: the first finish stands, a second is refused."""
+        if self.finished is not None:
+            return "This task already has its answer; a second finish is not recorded. Stop here."
+        self.finished = outcome
+        # Revokes the page's action capability with the outcome: nothing acts on it after this.
+        self.page.revoke()
+        return ""
+
     def spend(self) -> str | None:
         """Count one page action; past the budget, the text the model reads."""
         self.steps += 1
@@ -92,7 +107,9 @@ def _tools(task: _Task) -> list[Any]:
     page = task.page
 
     async def act(run: Any) -> str:
-        over = task.spend()
+        # Checked at the start and again here, with nothing awaited in between, so no
+        # operation can begin after the task finished.
+        over = task.over() or task.spend()
         if over is not None:
             return over
         try:
@@ -107,6 +124,8 @@ def _tools(task: _Task) -> list[Any]:
         Args:
             url: The full address, starting with http:// or https://.
         """
+        if (over := task.over()) is not None:
+            return over
         if not url.startswith(("http://", "https://")):
             return "Only http:// and https:// addresses can be opened."
 
@@ -201,7 +220,7 @@ def _tools(task: _Task) -> list[Any]:
     async def page_look() -> dict[str, Any]:
         """A screenshot of what is on screen, each element of the latest snapshot
         boxed with its ref. Use it when the snapshot leaves the layout unclear."""
-        over = task.spend()
+        over = task.over() or task.spend()
         if over is not None:
             return {"status": "success", "content": [{"text": over}]}
         try:
@@ -221,11 +240,11 @@ def _tools(task: _Task) -> list[Any]:
             answer: What she needs to know, in plain words.
             found: false when the pages do not have what was asked for.
         """
-        task.finished = BrowseOutcome(
+        refused = task.conclude(BrowseOutcome(
             status="ok" if found else "nothing_found", answer=answer.strip(),
             url=task.url, steps=task.steps,
-        )
-        return "Done. Stop here."
+        ))
+        return refused or "Done. Stop here."
 
     @tool
     async def browse_needs_human(reason: str) -> str:
@@ -235,11 +254,11 @@ def _tools(task: _Task) -> list[Any]:
         Args:
             reason: What a person must do, and on which page.
         """
-        task.finished = BrowseOutcome(
+        refused = task.conclude(BrowseOutcome(
             status="unavailable", reason=reason.strip() or "a person must step in",
             url=task.url, steps=task.steps, needs_human=True,
-        )
-        return "Handed to a person. Stop here."
+        ))
+        return refused or "Handed to a person. Stop here."
 
     return [page_open, page_snapshot, page_click, page_type, page_select, page_press,
             page_scroll, page_read, page_look, browse_done, browse_needs_human]
