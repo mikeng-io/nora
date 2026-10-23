@@ -19,7 +19,7 @@ from nora.app import documents_service as service_module
 from nora.app.documents_service import DocumentService, rooms_named
 from nora.documents import catalog_prompt
 from nora.documents.check import Checked, Finding
-from nora.domain.documents import RevisionIn, RevisionOutcome
+from nora.domain.documents import RevisionIn, RevisionOutcome, RoomKey
 from nora.domain.media import MediaObject
 from nora.policy import Conversation, Policy
 from nora.testing import FakeDocumentStore, FakeMediaObjectStore
@@ -116,9 +116,11 @@ def _service(
     public_url: str = "",
     new_id: Callable[[], UUID] = uuid4,
     places: Any = None,
+    rooms_of: Callable[[str], frozenset[RoomKey]] | None = None,
 ) -> tuple[DocumentService, FakeDocumentStore]:
     store = store or FakeDocumentStore()
     svc = DocumentService(
+        rooms_of=rooms_of if rooms_of is not None else (lambda p: rooms_named(_policy(), p)),
         store=store,
         records=_Transcript(rooms or {}, fail=fail_rows, history=history, filler=filler),  # type: ignore[arg-type]
         media=FakeMediaObjectStore(objs, fail=fail_media),
@@ -383,7 +385,8 @@ async def test_a_room_reads_its_own_document_at_the_current_revision() -> None:
     first = await _publish(svc, _doc(title="v1"))
     await _publish(svc, _doc(title="v2"), document_id=first.document_id, base_revision=1)
     read = await svc.read(
-        platform=ROOM[0], conversation_id="room-1-alias", document_id=first.document_id
+        platform=ROOM[0], conversation_id="room-1-alias", document_id=first.document_id,
+        person_id="ken",
     )
     assert read.status == "ok" and read.revision == 2 and read.title == "v2"
     assert read.spec is not None and read.spec["root"]["props"]["title"] == "v2"
@@ -394,9 +397,12 @@ async def test_another_rooms_document_reads_exactly_like_an_unknown_one() -> Non
     svc, _ = _service()
     first = await _publish(svc, _doc(title="mine"), room=ROOM)
     other = await svc.read(
-        platform=OTHER[0], conversation_id=OTHER[1], document_id=first.document_id
+        platform=OTHER[0], conversation_id=OTHER[1], document_id=first.document_id,
+        person_id="ken",
     )
-    unknown = await svc.read(platform=OTHER[0], conversation_id=OTHER[1], document_id=uuid4())
+    unknown = await svc.read(
+        platform=OTHER[0], conversation_id=OTHER[1], document_id=uuid4(), person_id="ken",
+    )
     assert other.status == "refused" and other.spec is None
     assert other == unknown
 
@@ -407,7 +413,9 @@ async def test_a_store_that_is_down_reads_unavailable_not_missing() -> None:
             raise RuntimeError("db down")
 
     svc, _ = _service(store=_Down())
-    read = await svc.read(platform=ROOM[0], conversation_id=ROOM[1], document_id=uuid4())
+    read = await svc.read(
+        platform=ROOM[0], conversation_id=ROOM[1], document_id=uuid4(), person_id="ken",
+    )
     assert read.status == "unavailable" and read.spec is None
 
 
@@ -571,7 +579,8 @@ async def test_with_a_public_url_the_link_is_the_origin_and_the_handle_never_the
     assert made.url == f"https://nora.example/documents/{handle}"
     assert str(made.document_id) not in made.url and made.document_id.hex not in made.url
     read = await svc.read(
-        platform=ROOM[0], conversation_id=ROOM[1], document_id=made.document_id
+        platform=ROOM[0], conversation_id=ROOM[1], document_id=made.document_id,
+        person_id="ken",
     )
     assert read.url == made.url
     revised = await _publish(
@@ -660,7 +669,9 @@ async def test_set_state_appends_and_restore_brings_a_deleted_document_back() ->
     assert gone.status == "ok" and gone.changed and gone.previous == "active"
     assert gone.url == ""  # a deleted document's link opens nothing, so none is handed out
     # Deleted is out of every read a room makes, except the restore itself.
-    read = await svc.read(platform=ROOM[0], conversation_id=ROOM[1], document_id=first.document_id)
+    read = await svc.read(
+        platform=ROOM[0], conversation_id=ROOM[1], document_id=first.document_id, person_id="ken",
+    )
     assert read.status == "refused" and read.findings[0].rule == "no_such_document"
     back = await _set(svc, first.document_id, "active", person="mei")
     assert back.status == "ok" and back.changed and back.previous == "deleted"
@@ -704,7 +715,9 @@ async def test_an_archived_document_still_reads_and_says_it_is_archived() -> Non
     svc, _ = _service()
     first = await _publish(svc, _doc(title="mine"))
     await _set(svc, first.document_id, "archived")
-    read = await svc.read(platform=ROOM[0], conversation_id=ROOM[1], document_id=first.document_id)
+    read = await svc.read(
+        platform=ROOM[0], conversation_id=ROOM[1], document_id=first.document_id, person_id="ken",
+    )
     assert read.status == "ok" and read.state == "archived"
 
 
@@ -959,3 +972,87 @@ async def test_coordinates_that_push_a_document_over_the_size_limit_are_a_fixabl
     assert MAX_BYTES - 2500 < size <= MAX_BYTES, size
     result = await _publish(svc, spec)
     assert result.status == "refused" and result.findings[0].rule == "size", result
+
+
+# ------------------------------------------- 8765_44827: a wildcard room is no grant
+WILD = ("signal", "open")  # `persons = "*"` in `_policy()`: the room names nobody
+
+
+async def test_a_wildcard_room_document_is_read_by_its_creator_alone() -> None:
+    """Room membership is not a grant in a room that names nobody: `mei` shares the
+    room with `ken`'s document, and still reads it exactly like an unknown id."""
+    svc, _ = _service()
+    made = await _publish(svc, _doc(title="ken only"), room=WILD)
+    as_creator = await svc.read(
+        platform=WILD[0], conversation_id=WILD[1], document_id=made.document_id, person_id="ken",
+    )
+    as_member = await svc.read(
+        platform=WILD[0], conversation_id=WILD[1], document_id=made.document_id, person_id="mei",
+    )
+    unknown = await svc.read(
+        platform=WILD[0], conversation_id=WILD[1], document_id=uuid4(), person_id="mei",
+    )
+    assert as_creator.status == "ok" and as_creator.title == "ken only"
+    assert as_member.status == "refused" and as_member.spec is None
+    assert as_member == unknown
+
+
+async def test_a_wildcard_room_document_is_not_read_without_a_requester() -> None:
+    """The participation and fire turns that name nobody read nothing from a wildcard room
+    by room membership, and the model-facing read has no requester to check."""
+    svc, _ = _service()
+    made = await _publish(svc, _doc(title="ken only"), room=WILD)
+    read = await svc.read(platform=WILD[0], conversation_id=WILD[1], document_id=made.document_id)
+    assert read.status == "refused" and read.spec is None
+
+
+async def test_a_document_in_a_listed_room_is_read_by_a_person_the_room_names() -> None:
+    """The positive control: `mei` is listed in `room-1`, so she reads `ken`'s document
+    there. The wildcard refusal above is the room's shape, not a general one."""
+    svc, _ = _service()
+    made = await _publish(svc, _doc(title="shared"), room=ROOM)
+    read = await svc.read(
+        platform=ROOM[0], conversation_id=ROOM[1], document_id=made.document_id, person_id="mei",
+    )
+    assert read.status == "ok" and read.title == "shared"
+
+
+async def test_a_person_a_listed_room_no_longer_names_cannot_read_its_document() -> None:
+    """Revocation: the same read after `mei` is removed from the room's list is refused."""
+    removed = _policy()
+    svc, _ = _service(rooms_of=lambda p: rooms_named(
+        Policy(conversations=tuple(
+            c if c.platform != "signal" or "room-1" not in c.ids
+            else Conversation(platform="signal", ids=c.ids, persons=frozenset({"ken"}))
+            for c in removed.conversations
+        )), p,
+    ))
+    made = await _publish(svc, _doc(title="shared"), room=ROOM)
+    read = await svc.read(
+        platform=ROOM[0], conversation_id=ROOM[1], document_id=made.document_id, person_id="mei",
+    )
+    assert read.status == "refused"
+
+
+async def test_a_wildcard_room_document_cannot_be_revised_by_a_non_creator() -> None:
+    """`publish` on a revision applies the same predicate: `mei` gets the same answer as
+    for an unknown id, and `ken`'s document keeps its text."""
+    svc, store = _service()
+    made = await _publish(svc, _doc(title="ken only"), room=WILD)
+    result = await svc.publish(
+        platform=WILD[0], conversation_id=WILD[1], person_id="mei", raw=_doc(title="taken"),
+        written_by="tag:2", document_id=made.document_id, base_revision=1,
+    )
+    assert result.status == "refused" and result.findings[0].rule == "no_such_document"
+    assert (await store.get(document_id=made.document_id)).summary.title == "ken only"
+
+
+async def test_a_wildcard_room_document_cannot_have_its_state_changed_by_a_non_creator() -> None:
+    svc, store = _service()
+    made = await _publish(svc, _doc(title="ken only"), room=WILD)
+    result = await svc.set_state(
+        platform=WILD[0], conversation_id=WILD[1], person_id="mei",
+        document_id=made.document_id, state="archived",
+    )
+    assert result.status == "refused"
+    assert (await store.get(document_id=made.document_id)).summary.state == "active"

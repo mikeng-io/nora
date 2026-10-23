@@ -300,6 +300,7 @@ from .compute_poller import ComputeJobPoller
 from .compute_poller import recover as compute_poller_recover
 from .dispatch import Dispatcher
 from .fire import (
+    FAILED_POLICY,
     FirePath,
     lost_job_occasion,
     proactive_occasion,
@@ -1648,6 +1649,8 @@ async def build_dependencies(
         # A Map names its places and the service looks them up. The same
         # client `route` and `place_info` use, so `[route]` off means a Map is `unavailable`.
         place_locator=route_client,
+        # The read grant, from the same policy.toml the portal reads with (8765_44827).
+        rooms_of=functools.partial(rooms_named, allowlist),
     )
     # `<documents>`: the one reader the tag path and the fire path
     # share. `None` while `[documents]` is off, so no room renders the block (the same
@@ -1657,6 +1660,7 @@ async def build_dependencies(
         documents_context = DocumentsContextReader(
             store=documents_store, room_ids=_room_ids_of(allowlist),
             clock=lambda: datetime.now(UTC), metrics=metrics,
+            rooms_of=functools.partial(rooms_named, allowlist),
         )
     # `<subagents>`: this room's sub-agent jobs, tag turn only. `None`
     # while `[subagent]` is off. The worker is attached where the desk's is, once built.
@@ -3540,6 +3544,7 @@ async def build_dependencies(
         # heartbeat and the poller do.
         background.spawn(_tell_about_lost_jobs(
             jobs=lost_jobs, speak=fire_path.speak, slots=slots, metrics=metrics,
+            policy=allowlist,
         ))
     elif lost_jobs:
         # No fire path on this deployment, so there is no way to say it. Loud
@@ -3607,6 +3612,7 @@ async def build_dependencies(
             metrics=metrics,
             tick_seconds=cfg.compute.poll_tick_seconds,
             clock=clock,
+            policy=allowlist,
         )
         # Spawned, never awaited — the same reason `heartbeat.run()` above
         # is: a boot must not wait on a background
@@ -4797,6 +4803,7 @@ async def build_dependencies(
 
 async def _tell_about_lost_jobs(
     *, jobs: list[Any], speak: Any, slots: ConversationSlots, metrics: Metrics,
+    policy: Policy,
 ) -> None:
     """Close the promise each lost job left open, one room at a time.
 
@@ -4805,8 +4812,22 @@ async def _tell_about_lost_jobs(
     is logged and counted — the whole point of this function is that somebody
     is waiting, so a delivery that silently did not happen would be the very
     defect it exists to fix.
+
+    A job whose room or requester was removed while it was pending is not told
+    about at all: the grant that launched it no longer stands, and the row is
+    already terminal (8765_44864).
     """
     for job in jobs:
+        if not policy.is_allowed(
+            platform=job.platform, conversation_id=job.conversation_id,
+            person_id=job.requester_person_id,
+        ):
+            log.warning(
+                "lost compute job %s not told: %s is no longer allowed in %s",
+                job.id, job.requester_person_id, job.conversation_id,
+            )
+            metrics.inc("nora_compute_lost_told_total", outcome=FAILED_POLICY)
+            continue
         key = (job.platform, job.conversation_id)
         # `try_acquire`, the heartbeat's rule: a room already mid-turn is not
         # one to interrupt, and this is the least urgent thing the process does.

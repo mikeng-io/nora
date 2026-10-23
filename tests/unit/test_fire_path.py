@@ -3174,6 +3174,38 @@ async def test_a_fire_turn_carries_its_rooms_location_trust_into_where_is(
     assert seen == [location]
 
 
+async def test_a_relayed_turn_is_told_it_is_a_relay_and_a_reminder_is_not(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """8765_44837 on the fire path: a relayed message's turn carries `relay_turn` into the
+    surface, so `send_to` is left off it; a reminder's turn, which is no relay, does not."""
+    from nora.app.fire import relay_occasion
+
+    seen: list[bool] = []
+
+    class _Spy(ToolRegistry):
+        def surface(self, **kw):  # type: ignore[override]
+            seen.append(kw.get("relay_turn", False))
+            return super().surface(**kw)
+
+    room = Conversation(
+        platform="signal", ids=frozenset({"conv-1"}), persons=None,
+        label="Friends", primary_id="conv-1", unit="friends",
+    )
+    policy = Policy(conversations=(room,), _by_id={("signal", "conv-1"): room})
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        registry=_Spy(), policy=policy, runner=FakeAgentRunner(_send_turns("好")),
+    )
+
+    await path.speak(relay_occasion(
+        destination=room, requester=MILES, text="dinner at 8", from_platform="discord",
+    ))
+    await path.run([_reminder()])
+
+    assert seen == [True, False]
+
+
 async def test_a_shadow_held_participation_turn_stays_strict_in_a_location_room(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:

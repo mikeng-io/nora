@@ -38,6 +38,7 @@ from nora.domain.subagent import SUBAGENT_KIND
 from nora.domain.subagents_context import SubagentLine, SubagentsView
 from nora.language.checkpoint_render import render_checkpoint
 from nora.language.subagents_render import render_subagents
+from nora.policy import permissive_policy
 from nora.testing import FakeComputeJobStore
 from tests.unit.test_subagent_tools import _Desk, _surface_names
 from tests.unit.test_subagent_worker import (
@@ -49,6 +50,7 @@ from tests.unit.test_subagent_worker import (
     _Script,
     _until_done,
 )
+from tests.unit.test_subagents_block import _Documents
 
 NOW = datetime(2026, 10, 5, 12, 0, tzinfo=UTC)
 FAKE_DOC = "00000000-0000-4000-8000-000000000000"
@@ -332,7 +334,7 @@ async def _block_body(store, worker=None) -> str:
     )
     if worker is not None:
         reader.attach(worker)
-    view = await reader.read(platform=PLATFORM, conversation_id=ROOM)
+    view = await reader.read(platform=PLATFORM, conversation_id=ROOM, person_id="ken")
     block = render_subagents(view)
     return "" if block is None else block.body
 
@@ -375,16 +377,16 @@ def test_a_running_line_without_a_checkpoint_is_unchanged():
 
 
 async def test_subagent_read_shows_the_full_checkpoint_with_outputs_from_code():
-    rig = _Desk()
+    rig = _Desk(documents=_Documents(creator="miles", title="Sheet 1"))
     row = _row(uuid4(), "bj1", checkpoint=row_payload(_cp(), ("out.txt",)), checkpoint_at=NOW,
-               result_document_ids=("d-1",))
+               result_document_ids=(FAKE_DOC,))
     await rig.store.create(row)
     rig.worker.live["bj1"] = None
     out = await rig.tools()["subagent_read"](id=str(row.id))
     assert out["status"] == "ok"
     text = out["checkpoint"]
     for part in ("read the 8 sheets", "publishing sheet 3", "sheets 4 to 8", "kept the layout",
-                 "**Outputs**", "kept file out.txt", "document id d-1"):
+                 "**Outputs**", "kept file out.txt", f"document Sheet 1 (id {FAKE_DOC})"):
         assert part in text
     # a running job's read uses memory, and says its rounds
     rig.worker.live["bj1"] = _Live(_cp(doing=("fresh",)))
@@ -489,6 +491,7 @@ async def _deliver(result: JobResult, row: ComputeJob):
     store = FakeComputeJobStore()
     await store.create(row)
     poller = ComputeJobPoller(
+        policy=permissive_policy(),
         store=store, backends={SUBAGENT_KIND: _Backend()}, speak=speak,
         slots=ConversationSlots(maxlen=16, spawn=lambda c: None), metrics=Metrics(),
         tick_seconds=1.0, clock=lambda: NOW,
@@ -553,6 +556,7 @@ async def test_a_checkpoint_written_before_the_row_exists_is_on_the_row_after_de
         return "sent"
 
     poller = ComputeJobPoller(
+        policy=permissive_policy(),
         store=store, backends={SUBAGENT_KIND: backend}, speak=speak,
         slots=ConversationSlots(maxlen=16, spawn=lambda c: None), metrics=rig.metrics,
         tick_seconds=1.0, clock=lambda: NOW,

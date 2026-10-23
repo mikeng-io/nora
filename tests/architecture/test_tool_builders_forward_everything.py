@@ -84,7 +84,7 @@ _SPECS_ONLY = frozenset({
     # The worker's progress record, where `checkpoint_update` writes;
     # threaded the same way as `subagent_job`.
     "checkpoint_sink",
-    "music", "relay", "reminder_caps", "reminders", "tool_call_log_store",
+    "music", "reminder_caps", "reminders", "tool_call_log_store",
     "versions",
     # `load_tools`' per-turn shelf. Created and
     # stocked inside `ToolRegistry.surface()`, which is the only thing that

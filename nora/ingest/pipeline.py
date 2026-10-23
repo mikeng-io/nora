@@ -414,8 +414,12 @@ class IngestPipeline:
 
         # The SENDER gate. Only consulted once something would actually be
         # answered, so an unrecognised sender in an allowed room is still
-        # audited — which is exactly what `nora persons pending` reads.
-        if decision.engage and not self._allowlist.is_allowed(
+        # audited — which is exactly what `nora persons pending` reads. A
+        # relevance-gate candidate counts as "would be answered": the quiescence
+        # window will speak for it, so an excluded sender must not become one
+        # (8765_44874). Without this the window's burst carries their words to
+        # the gate and, on GO, into a turn.
+        if (decision.engage or decision.relevance_gate) and not self._allowlist.is_allowed(
             platform=message.platform,
             conversation_id=message.conversation_id,
             person_id=person.person_id if person else None,

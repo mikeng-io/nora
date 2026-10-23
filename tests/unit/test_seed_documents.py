@@ -31,7 +31,8 @@ async def test_a_named_document_is_made_in_the_subjects_room():
         subject, "case", [{"id": ID, "title": "Saturday dinner plan", "body": "Dinner at 7pm."}]
     )
     found = await store.list_room(
-        platform="signal", conversation_ids=frozenset({"g-eval"}), limit=5
+        platform="signal", conversation_ids=frozenset({"g-eval"}), limit=5,
+        person_id="reader", rooms=frozenset({("signal", "g-eval")})
     )
     assert [(d.id, d.title, d.revision) for d in found] == [
         (UUID(ID), "Saturday dinner plan", 1)
@@ -43,7 +44,8 @@ async def test_a_subject_with_documents_off_is_refused_not_seeded():
     with pytest.raises(ValueError, match=r"\[documents\] off"):
         await seed_documents(subject, "case", [{"id": ID, "title": "T", "body": "b"}])
     assert await store.list_room(
-        platform="signal", conversation_ids=frozenset({"g-eval"}), limit=5
+        platform="signal", conversation_ids=frozenset({"g-eval"}), limit=5,
+        person_id="reader", rooms=frozenset({("signal", "g-eval")})
     ) == ()
 
 

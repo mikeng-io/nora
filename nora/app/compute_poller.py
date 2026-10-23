@@ -13,7 +13,8 @@ from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 from uuid import UUID
 
-from nora.app.fire import SENT, compute_occasion
+from nora.app.documents_service import room_names_audience
+from nora.app.fire import FAILED_POLICY, SENT, compute_occasion
 from nora.domain.checkpoint import read_row
 from nora.domain.compute import (
     ComputeJob,
@@ -35,6 +36,7 @@ from nora.domain.subagent import job_title
 from nora.engagement.slots import ConversationSlots, Key
 from nora.language.checkpoint_render import render_checkpoint
 from nora.obs.metrics import Metrics
+from nora.policy import Policy
 
 log = logging.getLogger("nora.app.compute_poller")
 
@@ -50,11 +52,12 @@ DEFERRED = "deferred"
 
 
 class DocumentReader(Protocol):
-    """The read `DocumentService.read` already is: one document, as its room sees it."""
+    """The read `DocumentService.read` already is: one document, as its room sees it and as
+    `person_id` may read it."""
 
     async def read(
         self, *, platform: str, conversation_id: str, document_id: UUID | None = None,
-        handle: str = "",
+        handle: str = "", person_id: str | None = None,
     ) -> Any: ...
 
 
@@ -78,11 +81,15 @@ class ComputeJobPoller:
         metrics: Metrics,
         tick_seconds: float,
         clock: Callable[[], datetime],
+        policy: Policy,
         documents: DocumentReader | None = None,
         blobs: BlobStore | None = None,
         media: MediaObjectStore | None = None,
     ) -> None:
         self._store = store
+        # The grant is checked again at delivery, not only at launch: a job can finish long
+        # after its room or its requester was removed from policy (8765_44864).
+        self._policy = policy
         # Nora's own storage for a result that carries its artifact's bytes (a video clip):
         # the blob store holds the bytes, the media index the row `media_search` finds.
         self._blobs = blobs
@@ -113,17 +120,30 @@ class ComputeJobPoller:
                 )
                 self._metrics.inc("nora_errors_total", stage="compute_poller")
 
-    async def _read_back(self, job: ComputeJob, ids: tuple[str, ...]) -> DocumentReadBack:
+    async def _read_back(
+        self, job: ComputeJob, ids: tuple[str, ...],
+    ) -> DocumentReadBack | None:
         """Read each `document_id` the result named back through the document store, in the
-        job's own room. An id that is not a document here, or whose read raised, is missing:
-        fail closed, never linked (R-100)."""
+        job's own room, as the requester. An id that is not a document here, or whose read
+        raised, is missing: fail closed, never linked (R-100).
+
+        A one-to-one (`dm`) job is the requester's own, so that is all it needs. Anything else
+        is a room's message, read by everyone the room names: a document's title, link and id
+        ride with it only where that audience may read it (`room_names_audience`), and a
+        document that is not shown is left out whole, with no «missing» line that would carry
+        its id. `None` (no document store, one-to-one) is the caller's answer for "not read"."""
+        room = job.conversation_type != "dm"
+        if self._documents is None or (
+            room and not room_names_audience(self._policy, job.platform, job.conversation_id)
+        ):
+            return DocumentReadBack() if room else None
         found: list[ReadBackDocument] = []
         missing: list[str] = []
         for raw in ids:
             try:
-                out = await self._documents.read(  # type: ignore[union-attr]
+                out = await self._documents.read(
                     platform=job.platform, conversation_id=job.conversation_id,
-                    document_id=UUID(raw),
+                    document_id=UUID(raw), person_id=job.requester_person_id,
                 )
                 ok = out.status == "ok"
             except Exception:
@@ -131,7 +151,7 @@ class ComputeJobPoller:
                 ok = False
             if ok:
                 found.append(ReadBackDocument(raw, out.title, out.url))
-            else:
+            elif not room:
                 missing.append(raw)
         return DocumentReadBack(tuple(found), tuple(missing))
 
@@ -218,6 +238,25 @@ class ComputeJobPoller:
             self._metrics.inc("nora_compute_jobs_delivered_total", outcome=DEFERRED)
             return
         try:
+            if not self._policy.is_allowed(
+                platform=job.platform, conversation_id=job.conversation_id,
+                person_id=job.requester_person_id,
+            ):
+                # The room was removed, or the requester was, after the job was launched.
+                # Nothing is fetched, claimed or said: the row closes as policy-failed, and
+                # the outbound adapter is never called (8765_44864).
+                log.warning(
+                    "compute job %s not delivered: %s is no longer allowed in %s",
+                    job.id, job.requester_person_id, job.conversation_id,
+                )
+                if await self._store.claim(job.id):
+                    await self._store.mark(
+                        job.id, ComputeJobState.FAILED, completed_at=self._clock(),
+                        error="the room or requester is no longer allowed",
+                        failure_reason=FAILED_POLICY,
+                    )
+                self._metrics.inc("nora_compute_jobs_delivered_total", outcome=FAILED_POLICY)
+                return
             if result.status is JobStatus.SUCCEEDED and isinstance(backend, ResultFetcher):
                 result = await backend.fetch_result(job_id=job.backend_job_id, result=result)
                 if result.status is JobStatus.RUNNING:
@@ -226,10 +265,7 @@ class ComputeJobPoller:
             if not await self._store.claim(job.id):
                 # Already claimed by an earlier tick's overlapping poll.
                 return
-            readback = (
-                await self._read_back(job, result.document_ids)
-                if self._documents is not None else None
-            )
+            readback = await self._read_back(job, result.document_ids)
             # ponytail: the media index's metric is video's, the one kind that carries bytes
             # today; a second such kind names its own.
             kept = await self._keep(job, result)

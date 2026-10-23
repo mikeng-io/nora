@@ -336,7 +336,8 @@ async def test_list_room_is_this_rooms_documents_newest_revision_first(store):
     second = await _make(store, title="Second")
     await asyncio.sleep(0.02)
     await _revise(store, first, base=1, title="First, revised")  # now the newest touch
-    got = await store.list_room(platform="signal", conversation_ids=frozenset({"room-1"}), limit=5)
+    got = await store.list_room(platform="signal", conversation_ids=frozenset({"room-1"}), limit=5,
+    person_id="reader", rooms=frozenset({ROOM}))
     assert [d.id for d in got] == [first, second]
     assert got[0].title == "First, revised" and got[0].revision == 2
     assert got[1].title == "Second" and got[1].revision == 1
@@ -346,7 +347,8 @@ async def test_list_room_never_returns_another_rooms_document_whoever_made_it(st
     mine = await _make(store, created_by="ken", room=ROOM, title="Here")
     await _make(store, created_by="ken", room=OTHER_ROOM, title="Elsewhere")
     await _make(store, created_by="ken", room=("discord", "room-1"), title="Other platform")
-    got = await store.list_room(platform="signal", conversation_ids=frozenset({"room-1"}), limit=5)
+    got = await store.list_room(platform="signal", conversation_ids=frozenset({"room-1"}), limit=5,
+    person_id="reader", rooms=frozenset({ROOM}))
     assert [d.id for d in got] == [mine]
 
 
@@ -355,7 +357,8 @@ async def test_list_room_reads_every_id_a_room_answers_to(store):
     await asyncio.sleep(0.02)
     b = await _make(store, room=("signal", "room-1-alias"), title="B")
     got = await store.list_room(
-        platform="signal", conversation_ids=frozenset({"room-1", "room-1-alias"}), limit=5
+        platform="signal", conversation_ids=frozenset({"room-1", "room-1-alias"}), limit=5,
+        person_id="reader", rooms=frozenset({ROOM, ("signal", "room-1-alias")})
     )
     assert {d.id for d in got} == {a, b}
 
@@ -365,9 +368,12 @@ async def test_list_room_is_bounded_by_its_limit_and_empty_for_nothing(store):
         await _make(store, title=f"doc {n}")
         await asyncio.sleep(0.01)
     ids = frozenset({"room-1"})
-    assert len(await store.list_room(platform="signal", conversation_ids=ids, limit=3)) == 3
-    assert await store.list_room(platform="signal", conversation_ids=ids, limit=0) == ()
-    assert await store.list_room(platform="signal", conversation_ids=frozenset(), limit=5) == ()
+    assert len(await store.list_room(platform="signal", conversation_ids=ids, limit=3,
+    person_id="reader", rooms=frozenset({ROOM}))) == 3
+    assert await store.list_room(platform="signal", conversation_ids=ids, limit=0,
+    person_id="reader", rooms=frozenset({ROOM})) == ()
+    assert await store.list_room(platform="signal", conversation_ids=frozenset(), limit=5,
+    person_id="reader", rooms=frozenset({ROOM})) == ()
 
 
 # --------------------------------------------------------------------- the link's handle
@@ -490,7 +496,8 @@ async def test_a_deleted_document_is_in_no_list_and_reads_like_an_unknown_id(sto
         await store.get_visible_by_handle(handle=handle_of(gone), person_id="ken", rooms=rooms)
     ) is None
     assert await store.list_room(
-        platform="signal", conversation_ids=frozenset({"room-1"}), limit=5
+        platform="signal", conversation_ids=frozenset({"room-1"}), limit=5,
+        person_id="reader", rooms=frozenset({ROOM})
     ) == ()
     # Nothing was erased: the service's own read still finds it, with every revision.
     raw = await store.get(document_id=gone)
@@ -516,10 +523,30 @@ async def test_restore_returns_a_document_to_every_read_and_lets_it_be_revised(s
     assert [d.id for d in page.items] == [doc] and page.items[0].state == "active"
     assert await store.get_visible(document_id=doc, person_id="mei", rooms=rooms) is not None
     assert [d.id for d in await store.list_room(
-        platform="signal", conversation_ids=frozenset({"room-1"}), limit=5
+        platform="signal", conversation_ids=frozenset({"room-1"}), limit=5,
+        person_id="reader", rooms=frozenset({ROOM})
     )] == [doc]
     out = await store.add_revision(document_id=doc, base_revision=1, revision=_rev("v2"))
     assert out.status == "ok" and out.document.summary.revision == 2
+
+
+async def test_list_room_applies_the_visibility_before_the_limit(store):
+    """Aikido (medium, PR 203): a limit applied before the visibility filter drops the asker's own
+    older document behind newer ones of others. The store filters first, so the limit counts
+    only what the asker may read; a room that names the asker reads the whole list."""
+    mine = await _make(store, created_by="mei", title="Mine")
+    for n in range(4):
+        await asyncio.sleep(0.01)
+        await _make(store, created_by="ken", title=f"Theirs {n}")
+    ids = frozenset({"room-1"})
+    got = await store.list_room(
+        platform="signal", conversation_ids=ids, limit=3, person_id="mei", rooms=frozenset(),
+    )
+    assert [d.id for d in got] == [mine]
+    named = await store.list_room(
+        platform="signal", conversation_ids=ids, limit=3, person_id="mei", rooms=frozenset({ROOM}),
+    )
+    assert len(named) == 3 and mine not in {d.id for d in named}
 
 
 async def test_list_room_leaves_out_archived_and_deleted_documents(store):
@@ -528,7 +555,8 @@ async def test_list_room_leaves_out_archived_and_deleted_documents(store):
     deleted = await _make(store, title="deleted")
     await store.set_state(document_id=archived, state="archived", set_by="ken")
     await store.set_state(document_id=deleted, state="deleted", set_by="ken")
-    got = await store.list_room(platform="signal", conversation_ids=frozenset({"room-1"}), limit=5)
+    got = await store.list_room(platform="signal", conversation_ids=frozenset({"room-1"}), limit=5,
+    person_id="reader", rooms=frozenset({ROOM}))
     assert [d.id for d in got] == [live]
 
 

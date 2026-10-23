@@ -111,6 +111,8 @@ def test_presence_needs_the_flag_and_the_live_guard_for_that_person():
     (B, LiveRoom(person_ids=frozenset({"p1"}), available=False), "roster unreadable"),
     (B, LiveRoom(person_ids=frozenset({"p1"}), degraded=True), "roster degraded"),
     (B, LiveRoom(person_ids=frozenset({"p1", "p3"})), "p3 is outside the circle"),
+    (B, LiveRoom(person_ids=frozenset({"p1", "p2"}), unnamed=1),
+     "an unmapped account is in the room (8765_44856)"),
 ])
 def test_presence_is_refused(room, live, why):
     entry = LineageEntry(kind="presence", subject="p1", origin="b")

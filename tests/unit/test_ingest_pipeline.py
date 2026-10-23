@@ -1080,3 +1080,46 @@ async def test_the_stage_records_links_on_every_platform(platform, _no_network):
     out = await stage.run(message=msg)
     assert [r.file_id for r in out.external_files] == [_DRIVE_ID]
     assert out.body == msg.body
+
+
+async def _relevance_candidate(*, listed: str):
+    """An UNTAGGED message in a `relevance_gate = true` room whose explicit `persons`
+    list names `listed`, sent by the mapped `miles`. The room gate returns its
+    candidate verdict; only the sender gate can take it back."""
+    import tempfile
+    from pathlib import Path
+
+    from nora.ingest.policy import CompositePolicy, RelevanceGatePolicy
+    from nora.policy import load_policy
+
+    p = Path(tempfile.mkdtemp()) / "policy.toml"
+    p.write_text(
+        'default = "deny"\n[[conversations]]\nplatform = "signal"\n'
+        f'id = "g1"\nlabel = "g1"\npersons = ["{listed}"]\nrelevance_gate = true\n'
+    )
+    allowlist = load_policy(p)
+    pipeline = _pipeline(
+        memory=FakeMemory(), persons=_known_persons(),
+        policy=CompositePolicy((RelevanceGatePolicy(allowlist),)),
+        spawn=lambda c: c.close(), allowlist=allowlist,
+    )
+    return await pipeline.run(
+        message=dataclasses.replace(_msg(body="anyone know a good dentist"), conversation_id="g1")
+    )
+
+
+async def test_an_unlisted_mapped_sender_is_not_a_relevance_candidate():
+    """8765_44874: the sender gate ran only for `engage=True`, so an untagged
+    message from a person an explicit `persons` list excludes came back as a
+    `relevance_gate` candidate, and the dispatcher noted it for a participation
+    turn. The sender gate must take the candidate back too."""
+    result = await _relevance_candidate(listed="someone-else")
+    assert result.decision.relevance_gate is False
+    assert result.decision.reason == "sender_not_allowed"
+
+
+async def test_a_listed_mapped_sender_stays_a_relevance_candidate():
+    """The positive control for the test above: the same room and sender, listed,
+    is still a candidate, so the refusal is the list and not the room."""
+    result = await _relevance_candidate(listed="miles")
+    assert result.decision.relevance_gate is True
