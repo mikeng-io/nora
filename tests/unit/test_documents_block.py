@@ -59,12 +59,15 @@ async def _make(store, title, *, room=ROOM, by="ken") -> UUID:
 
 
 def _reader(store, *, now=NOW, **kw):
+    # A room that names every asker, so the block tests below read the room's whole list as
+    # they always did; the creator-only shape is tested on its own (`_wildcard_reader`).
     return DocumentsContextReader(
         store=store,
         room_ids=lambda platform, cid: (
             frozenset({"g-docs", ALIAS}) if cid in {"g-docs", ALIAS} else frozenset({cid})
         ),
-        clock=lambda: now, metrics=kw.pop("metrics", Metrics()), **kw,
+        clock=lambda: now, metrics=kw.pop("metrics", Metrics()),
+        rooms_of=kw.pop("rooms_of", lambda person: frozenset({ROOM})), **kw,
     )
 
 
@@ -168,7 +171,7 @@ def test_the_block_costs_what_it_was_measured_to_cost():
 
 async def test_no_document_means_no_view():
     assert await _reader(FakeDocumentStore()).read(
-        platform=ROOM[0], conversation_id=ROOM[1]) is None
+        person_id="ken", platform=ROOM[0], conversation_id=ROOM[1]) is None
 
 
 async def test_the_view_is_this_rooms_documents_never_another_rooms():
@@ -176,7 +179,7 @@ async def test_the_view_is_this_rooms_documents_never_another_rooms():
     mine = await _make(store, "Here", by="ken")
     await _make(store, "Elsewhere", room=("signal", "g-other"), by="ken")
     await _make(store, "Other platform", room=("discord", "g-docs"), by="ken")
-    view = await _reader(store).read(platform=ROOM[0], conversation_id=ROOM[1])
+    view = await _reader(store).read(person_id="ken", platform=ROOM[0], conversation_id=ROOM[1])
     assert [line.document_id for line in view.lines] == [str(mine)]
 
 
@@ -184,7 +187,7 @@ async def test_a_room_that_answers_to_two_ids_is_one_room():
     store = FakeDocumentStore()
     a = await _make(store, "A", room=("signal", "g-docs"))
     b = await _make(store, "B", room=("signal", ALIAS))
-    view = await _reader(store).read(platform="signal", conversation_id=ALIAS)
+    view = await _reader(store).read(person_id="ken", platform="signal", conversation_id=ALIAS)
     assert {line.document_id for line in view.lines} == {str(a), str(b)}
 
 
@@ -192,7 +195,7 @@ async def test_at_most_five_most_recently_revised_first():
     store = FakeDocumentStore()
     ids = [await _make(store, f"doc {n}") for n in range(7)]
     await store.add_revision(document_id=ids[0], base_revision=1, revision=_rev("doc 0 again"))
-    view = await _reader(store).read(platform=ROOM[0], conversation_id=ROOM[1])
+    view = await _reader(store).read(person_id="ken", platform=ROOM[0], conversation_id=ROOM[1])
     assert len(view.lines) == DOCUMENTS_SHOWN == 5
     assert view.lines[0].document_id == str(ids[0]) and view.lines[0].revision == 2
     assert view.lines[0].title == "doc 0 again"
@@ -206,7 +209,7 @@ async def test_a_store_that_is_down_is_no_block_a_counted_error_never_a_raise():
 
     metrics = Metrics()
     assert await _reader(Down(), metrics=metrics).read(
-        platform=ROOM[0], conversation_id=ROOM[1]) is None
+        person_id="ken", platform=ROOM[0], conversation_id=ROOM[1]) is None
     assert metrics.get("nora_errors_total", stage="documents_context", platform="signal") == 1
 
 
@@ -216,14 +219,15 @@ async def test_a_store_slower_than_the_bound_is_no_block_not_a_stalled_turn():
             await asyncio.sleep(5)
 
     assert await _reader(Slow(), timeout=0.05).read(
-        platform=ROOM[0], conversation_id=ROOM[1]) is None
+        person_id="ken", platform=ROOM[0], conversation_id=ROOM[1]) is None
 
 
 async def test_the_age_is_against_the_turns_clock():
     store = FakeDocumentStore()
     doc_id = await _make(store, "Old")
     later = (await store.get(document_id=doc_id)).summary.updated_at + timedelta(hours=3)
-    view = await _reader(store, now=later).read(platform=ROOM[0], conversation_id=ROOM[1])
+    view = await _reader(store, now=later).read(
+        person_id="ken", platform=ROOM[0], conversation_id=ROOM[1])
     assert view.now == later
     assert "3 h ago" in render_documents(view).body
 
@@ -235,11 +239,11 @@ async def test_the_view_leaves_out_archived_and_deleted_documents():
     gone = await _make(store, "Gone")
     await store.set_state(document_id=shelved, state="archived", set_by="ken")
     await store.set_state(document_id=gone, state="deleted", set_by="ken")
-    view = await _reader(store).read(platform=ROOM[0], conversation_id=ROOM[1])
+    view = await _reader(store).read(person_id="ken", platform=ROOM[0], conversation_id=ROOM[1])
     assert [line.document_id for line in view.lines] == [str(live)]
     # Restored, it is back in her view.
     await store.set_state(document_id=gone, state="active", set_by="ken")
-    view = await _reader(store).read(platform=ROOM[0], conversation_id=ROOM[1])
+    view = await _reader(store).read(person_id="ken", platform=ROOM[0], conversation_id=ROOM[1])
     assert {line.document_id for line in view.lines} == {str(live), str(gone)}
 
 
@@ -253,7 +257,7 @@ async def test_put_away_documents_are_a_bounded_section_led_by_their_state():
             document_id=doc, state="deleted" if n % 2 else "archived", set_by="ken"
         )
         away.append(doc)
-    view = await _reader(store).read(platform=ROOM[0], conversation_id=ROOM[1])
+    view = await _reader(store).read(person_id="ken", platform=ROOM[0], conversation_id=ROOM[1])
     assert [line.document_id for line in view.lines] == [str(live)]
     # At most PUT_AWAY_SHOWN, newest first, each carrying its own state.
     assert len(view.put_away) == PUT_AWAY_SHOWN == 3
@@ -267,7 +271,7 @@ async def test_a_room_with_only_put_away_documents_still_gets_the_block():
     store = FakeDocumentStore()
     only = await _make(store, "Only")
     await store.set_state(document_id=only, state="deleted", set_by="ken")
-    view = await _reader(store).read(platform=ROOM[0], conversation_id=ROOM[1])
+    view = await _reader(store).read(person_id="ken", platform=ROOM[0], conversation_id=ROOM[1])
     assert view.lines == () and [line.document_id for line in view.put_away] == [str(only)]
     assert render_documents(view).body.startswith(f'deleted · "Only" · id {only}')
 
@@ -276,7 +280,8 @@ async def test_another_rooms_put_away_documents_never_appear():
     store = FakeDocumentStore()
     there = await _make(store, "Elsewhere", room=("signal", "g-other"))
     await store.set_state(document_id=there, state="deleted", set_by="ken")
-    assert await _reader(store).read(platform=ROOM[0], conversation_id=ROOM[1]) is None
+    assert await _reader(store).read(
+        person_id="ken", platform=ROOM[0], conversation_id=ROOM[1]) is None
 
 
 async def test_nothing_put_away_renders_exactly_what_it_did_before():
@@ -286,3 +291,74 @@ async def test_nothing_put_away_renders_exactly_what_it_did_before():
     ).body
     assert "archived" not in render_documents(_view(line)).body
     assert render_documents(DocumentsView(lines=(), now=NOW)) is None
+
+
+def _wildcard_reader(store):
+    """A `persons = "*"` room: its explicit list names nobody (`rooms_of` is empty for everyone)."""
+    return _reader(store, rooms_of=lambda person: frozenset())
+
+
+async def test_a_wildcard_room_block_lists_only_the_askers_own_documents():
+    """8765_44827: another member's creator-only documents are not enumerated into the block.
+    The listed id is the asker's own, and the other member's id never appears."""
+    store = FakeDocumentStore()
+    mine = await _make(store, "Mine", by="mei")
+    theirs = await _make(store, "Theirs", by="ken")
+    view = await _wildcard_reader(store).read(
+        person_id="mei", platform=ROOM[0], conversation_id=ROOM[1])
+    assert [line.document_id for line in view.lines] == [str(mine)]
+    assert str(theirs) not in str(view)
+
+
+async def test_a_wildcard_room_block_with_only_another_members_documents_is_no_block():
+    store = FakeDocumentStore()
+    await _make(store, "Theirs", by="ken")
+    assert await _wildcard_reader(store).read(
+        person_id="mei", platform=ROOM[0], conversation_id=ROOM[1],
+    ) is None
+
+
+async def test_a_turn_with_no_requester_renders_no_documents_block():
+    """A participation turn names nobody, so there is no list to read for it."""
+    store = FakeDocumentStore()
+    await _make(store, "Here", by="ken")
+    assert await _reader(store).read(
+        person_id=None, platform=ROOM[0], conversation_id=ROOM[1],
+    ) is None
+
+
+async def test_a_wildcard_rooms_old_document_is_listed_past_newer_ones_of_others():
+    """Aikido (medium, PR 203): the store was asked for the newest `DOCUMENTS_SHOWN` rows of the
+    room and filtered afterwards, so the asker's own older document fell behind five newer
+    ones of other members and no line for it was rendered. The visibility is applied in the
+    store query, before the limit, so the asker's document is listed."""
+    store = FakeDocumentStore()
+    mine = await _make(store, "Mine", by="mei")
+    for n in range(DOCUMENTS_SHOWN + 1):
+        await _make(store, f"Theirs {n}", by="ken")
+    view = await _wildcard_reader(store).read(
+        person_id="mei", platform=ROOM[0], conversation_id=ROOM[1])
+    assert [line.document_id for line in view.lines] == [str(mine)]
+
+
+async def test_a_wildcard_rooms_old_put_away_document_is_listed_past_newer_ones_of_others():
+    """The same limit-before-filter defect on the put-away list (`PUT_AWAY_SHOWN`)."""
+    store = FakeDocumentStore()
+    mine = await _make(store, "Mine", by="mei")
+    await store.set_state(document_id=mine, state="archived", set_by="mei")
+    for n in range(PUT_AWAY_SHOWN + 1):
+        theirs = await _make(store, f"Theirs {n}", by="ken")
+        await store.set_state(document_id=theirs, state="archived", set_by="ken")
+    view = await _wildcard_reader(store).read(
+        person_id="mei", platform=ROOM[0], conversation_id=ROOM[1])
+    assert view.lines == ()
+    assert [line.document_id for line in view.put_away] == [str(mine)]
+
+
+async def test_a_member_the_room_names_reads_the_whole_list_past_their_own():
+    """The positive control for the named room: a member the room names reads what others made
+    there too (`rooms` is what the store's visibility is built from)."""
+    store = FakeDocumentStore()
+    theirs = await _make(store, "Theirs", by="ken")
+    view = await _reader(store).read(person_id="mei", platform=ROOM[0], conversation_id=ROOM[1])
+    assert [line.document_id for line in view.lines] == [str(theirs)]

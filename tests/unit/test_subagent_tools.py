@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import tempfile
 import time
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from uuid import UUID
@@ -26,12 +28,14 @@ from nora.agent.tools import SUBAGENT_TOOLS
 from nora.app.compute_poller import ComputeJobPoller
 from nora.app.documents_service import DocumentService
 from nora.domain.compute import ComputeJobState
+from nora.domain.models import PersonRef
 from nora.domain.ports import LaunchRequest
 from nora.domain.subagent import SUBAGENT_KIND, SubagentBrief
 from nora.engagement.slots import ConversationSlots
 from nora.obs.logging import bind_tag_id
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
+from nora.policy import load_policy
 from nora.testing import (
     FakeAgentRunner,
     FakeComputeJobStore,
@@ -51,10 +55,14 @@ from tests.unit.test_subagent_worker import (
     _Script,
     _until_done,
 )
+from tests.unit.test_subagents_block import _Documents
 
 NOW = datetime(2026, 10, 4, 12, 0, tzinfo=UTC)
 OTHER_ROOM = "g-other"
 PUBLIC = "https://nora.example"
+DOC_ID = "11111111-1111-1111-1111-111111111111"
+KEN = PersonRef(person_id="ken", name="Ken", honcho_peer_id="ken")
+MEI = PersonRef(person_id="mei", name="Mei", honcho_peer_id="mei")
 
 
 class _FakeWorker:
@@ -107,11 +115,11 @@ def _surface_names(registry: ToolRegistry, **kw: Any) -> set[str]:
 class _Desk:
     """A desk over the in-memory outbox, with a fake worker attached."""
 
-    def __init__(self, *, attach: bool = True) -> None:
+    def __init__(self, *, attach: bool = True, documents: Any = None) -> None:
         self.store = FakeComputeJobStore()
         self.worker = _FakeWorker()
         self.now = NOW
-        self.desk = SubagentDesk(jobs=self.store, clock=lambda: self.now)
+        self.desk = SubagentDesk(jobs=self.store, clock=lambda: self.now, documents=documents)
         if attach:
             self.desk.attach(self.worker)
         self.registry = ToolRegistry(subagent=self.desk)
@@ -282,7 +290,7 @@ async def test_an_empty_room_lists_nothing_found_and_a_malformed_id_reads_nothin
 
 
 async def test_read_shows_live_progress_while_it_runs_and_no_link_after():
-    rig = _Desk()
+    rig = _Desk(documents=_Documents(creator=MILES.person_id, title="Sheet 1"))
     job_id = (await _create(rig))["id"]
     rig.worker.live["bj1"] = SimpleNamespace(running=True, rounds=7, last_tool="computer_run")
     rig.now = NOW + timedelta(seconds=95)
@@ -426,7 +434,8 @@ async def test_create_runs_a_worker_and_the_poller_delivers_with_the_documents_l
     assert result.report == "Published 1 document."
     (document_id,) = result.document_ids
     link = (await service.read(
-        platform=PLATFORM, conversation_id=ROOM, document_id=UUID(document_id))).url
+        platform=PLATFORM, conversation_id=ROOM, document_id=UUID(document_id),
+        person_id="miles")).url
     assert link.startswith(PUBLIC + "/documents/")
 
     adapter = _FireAdapter()
@@ -438,7 +447,14 @@ async def test_create_runs_a_worker_and_the_poller_delivers_with_the_documents_l
             ScriptedTurn(tool_calls=[("send_reply", {"text": reply})], final_text=reply),
         ]),
     )
+    # A room that names Miles: the document Miles made there is one the room's audience reads.
+    policy_file = Path(tempfile.mkdtemp()) / "policy.toml"
+    policy_file.write_text(
+        'default = "deny"\n[[conversations]]\nplatform = "signal"\n'
+        f'id = "{ROOM}"\nlabel = "{ROOM}"\npersons = ["miles"]\n'
+    )
     poller = ComputeJobPoller(
+        policy=load_policy(policy_file),
         store=desk._jobs, backends={SUBAGENT_KIND: backend}, speak=path.speak,
         slots=ConversationSlots(maxlen=16, spawn=lambda c: None), metrics=Metrics(),
         tick_seconds=1.0, clock=lambda: NOW, documents=service,
@@ -534,6 +550,76 @@ async def test_the_workers_document_tools_refuse_a_document_of_another_room(tmp_
 
 
 # -- titles ---------------------------------------------------------------
+
+
+async def test_read_titles_a_result_document_for_the_viewer_and_refuses_another_person():
+    """Ken's job made Ken's document; Mei's `subagent_read` of the same job shows the job, not
+    the document's id or its title. Only the viewer decides: the requester's read is not used."""
+    rig = _Desk(documents=_Documents(creator=KEN.person_id, title="Ken's private title"))
+    bind_tag_id("tag-ken")
+    started = await rig.tools(ROOM, tagger=KEN)["subagent_create"](**BRIEF)
+    assert started["status"] == "started"
+    await rig.store.mark(
+        UUID(started["id"]), ComputeJobState.DONE, completed_at=NOW, result_report="published",
+        result_document_ids=(DOC_ID,),
+    )
+
+    creator = await rig.tools(ROOM, tagger=KEN)["subagent_read"](id=started["id"])
+    assert creator["documents"] == [{"document_id": DOC_ID, "title": "Ken's private title"}]
+    other = await rig.tools(ROOM, tagger=MEI)["subagent_read"](id=started["id"])
+    assert other["status"] == "ok" and other["state"] == "done"       # the job is still shown
+    assert "documents" not in other
+    assert DOC_ID not in repr(other) and "Ken's private title" not in repr(other)
+    nobody = await rig.tools(ROOM, tagger=None)["subagent_read"](id=started["id"])
+    assert DOC_ID not in repr(nobody) and "Ken's private title" not in repr(nobody)
+
+
+async def test_list_shows_a_result_document_id_to_its_viewer_and_never_to_another_person():
+    """Ken's job made Ken's document. `subagent_list` shows its id to Ken (the positive control)
+    and not to Mei, whose read of it is refused, nor to a call with no viewer."""
+    rig = _Desk(documents=_Documents(creator=KEN.person_id, title="Ken's private title"))
+    bind_tag_id("tag-ken")
+    started = await rig.tools(ROOM, tagger=KEN)["subagent_create"](**BRIEF)
+    await rig.store.mark(
+        UUID(started["id"]), ComputeJobState.DONE, completed_at=NOW, result_report="published",
+        result_document_ids=(DOC_ID,),
+    )
+
+    creator = await rig.tools(ROOM, tagger=KEN)["subagent_list"]()
+    assert [d["document_id"] for d in creator["jobs"][0]["documents"]] == [DOC_ID]
+    other = await rig.tools(ROOM, tagger=MEI)["subagent_list"]()
+    assert other["status"] == "ok" and other["jobs"][0]["state"] == "done"   # the job is shown
+    assert "documents" not in other["jobs"][0]
+    assert DOC_ID not in repr(other) and "Ken's private title" not in repr(other)
+    nobody = await rig.tools(ROOM, tagger=None)["subagent_list"]()
+    assert DOC_ID not in repr(nobody)
+
+
+async def test_a_stuck_document_read_cannot_stall_subagent_list(monkeypatch):
+    """The list reads each job's documents back; a read that never returns costs that document
+    (left out whole) after the timeout, not the whole turn."""
+    import nora.agent.subagent_desk as desk_module
+
+    monkeypatch.setattr(desk_module, "DOCUMENT_READ_TIMEOUT_S", 0.05)
+
+    docs = _Documents(creator=KEN.person_id, title="Ken's private title")
+
+    async def never_returns(**_: Any):
+        await asyncio.sleep(3600)
+
+    monkeypatch.setattr(docs, "read", never_returns)
+    rig = _Desk(documents=docs)
+    bind_tag_id("tag-ken")
+    started = await rig.tools(ROOM, tagger=KEN)["subagent_create"](**BRIEF)
+    await rig.store.mark(
+        UUID(started["id"]), ComputeJobState.DONE, completed_at=NOW, result_report="published",
+        result_document_ids=(DOC_ID,),
+    )
+    t0 = time.monotonic()
+    listed = await asyncio.wait_for(rig.tools(ROOM, tagger=KEN)["subagent_list"](), timeout=5)
+    assert time.monotonic() - t0 < 2
+    assert listed["jobs"][0]["state"] == "done" and "documents" not in listed["jobs"][0]
+    assert DOC_ID not in repr(listed)
 
 
 async def test_a_title_of_exactly_sixty_characters_is_accepted_and_kept():

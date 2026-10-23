@@ -1008,6 +1008,7 @@ class FirePath:
             return None
         return await self._documents.read(
             platform=occasion.platform, conversation_id=occasion.conversation_id,
+            person_id=occasion.person_id,
         )
 
     async def _read_presence(self, occasion: Event) -> Presence | None:
@@ -1944,6 +1945,9 @@ class FirePath:
                 # is an unbounded loop, and the conversation it would fire into
                 # is this one.
                 fire_turn=True,
+                # A relayed message carries another room's words: its turn may not relay them
+                # onward (8765_44837).
+                relay_turn=occasion.kind == "relay",
                 location_trusted=fire_convo.location if fire_convo is not None else False,
                 # DEC-89: the same carrier `handle`'s `Deliverer` holds. A fire
                 # turn can absolutely recommend a place («你話要我提你訂枱») and

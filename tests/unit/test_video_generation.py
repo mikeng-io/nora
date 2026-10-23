@@ -45,6 +45,7 @@ from nora.infra.video_gen import (
 from nora.obs.logging import bind_tag_id, setup_logging
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
+from nora.policy import permissive_policy
 from nora.testing import (
     FakeAgentRunner,
     FakeBlobStore,
@@ -457,6 +458,7 @@ async def test_a_held_room_costs_no_download_and_the_clip_is_fetched_once_it_is_
         return SENT
 
     poller = ComputeJobPoller(
+        policy=permissive_policy(),
         store=store, backends={VIDEO_KIND: _backend(provider, metrics=metrics)}, speak=speak,
         slots=slots, metrics=metrics, tick_seconds=1.0, clock=lambda: NOW,
     )
@@ -493,6 +495,7 @@ async def test_a_fetch_that_must_wait_leaves_the_row_unclaimed_for_the_next_tick
         return SENT
 
     poller = ComputeJobPoller(
+        policy=permissive_policy(),
         store=store, backends={VIDEO_KIND: _backend(provider)}, speak=speak,
         slots=ConversationSlots(maxlen=16, spawn=lambda c: None), metrics=Metrics(),
         tick_seconds=1.0, clock=lambda: NOW,
@@ -645,6 +648,7 @@ async def _deliver_through_the_poller(
         return SENT
 
     poller = ComputeJobPoller(
+        policy=permissive_policy(),
         store=store, backends={VIDEO_KIND: backend}, speak=speak,
         slots=ConversationSlots(maxlen=16, spawn=lambda c: None), metrics=Metrics(),
         tick_seconds=1.0, clock=lambda: NOW,
@@ -1355,6 +1359,7 @@ async def _deliver_a_finished_clip(
     backend = _backend(_Provider(polls=[_task("succeeded", content={"url": CLIP})],
                                  clips=clips), metrics=metrics)
     poller = ComputeJobPoller(
+        policy=permissive_policy(),
         store=store, backends={VIDEO_KIND: backend}, speak=path.speak,
         slots=ConversationSlots(maxlen=16, spawn=lambda c: None), metrics=metrics,
         tick_seconds=1.0, clock=lambda: NOW, blobs=blobs, media=media,

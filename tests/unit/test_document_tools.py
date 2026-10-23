@@ -356,7 +356,9 @@ async def _later_turn_block(store: FakeDocumentStore, conversation_id: str = ROO
         store=store, room_ids=lambda platform, cid: frozenset({cid}),
         clock=lambda: datetime(2026, 10, 2, tzinfo=UTC), metrics=Metrics(),
     )
-    block = render_documents(await reader.read(platform="signal", conversation_id=conversation_id))
+    block = render_documents(await reader.read(
+        platform="signal", conversation_id=conversation_id, person_id="miles",
+    ))
     return "" if block is None else block.body
 
 
@@ -594,3 +596,13 @@ async def test_an_address_reverse_geocode_gave_out_this_turn_cannot_be_pinned_on
     )
     assert out.status == "refused" and out.findings[0].rule == "place_refused"
     assert asked == [] and tools is not None
+
+
+def test_the_document_publisher_read_takes_the_requester() -> None:
+    """Mypy (CI `checks`): `document_read` passes the asker's `person_id` to `read`, so the
+    `DocumentPublisher` protocol must declare it. Without it the typecheck fails at the call."""
+    import inspect
+
+    from nora.agent import tools as tools_module
+
+    assert "person_id" in inspect.signature(tools_module.DocumentPublisher.read).parameters

@@ -2566,6 +2566,7 @@ class FakeDocumentStore:
 
     async def list_room(
         self, *, platform: str, conversation_ids: frozenset[str], limit: int,
+        person_id: str, rooms: frozenset[RoomKey],
         states: tuple[DocumentState, ...] = ("active",),
     ) -> tuple[DocumentSummary, ...]:
         seen = [
@@ -2574,6 +2575,7 @@ class FakeDocumentStore:
             and d.summary.platform == platform
             and d.summary.conversation_id in conversation_ids
             and d.summary.state in states
+            and self._sees(d.summary, person_id, rooms)
         ]
         seen.sort(key=lambda s: (-s.updated_at.timestamp(), str(s.id)))
         limit = min(max(limit, 0), 1_000)
