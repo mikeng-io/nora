@@ -265,9 +265,9 @@ func LoadCookieJar(s Store) (*cookies.Cookies, error) {
 			jsonErr = fmt.Errorf("cookies.json is missing %v", jar.GetMissingCookieNames())
 		default:
 			// A paste left from before this version is a second plain-text copy of the
-			// credential; the jar is the session, so a paste that is not newer than the jar
-			// goes now. A newer one is an operator's pending re-authentication: it stays.
-			if s.pasteIsNotNewerThanJar() {
+			// credential, so one that repeats the jar's session is scrubbed. A paste with a
+			// different session is an operator's pending re-authentication and stays.
+			if s.pasteRepeatsJar(jar) {
 				if err := s.scrubBootstrap(); err != nil {
 					return nil, fmt.Errorf("cookies.curl is obsolete but could not be removed: %w", err)
 				}
@@ -302,18 +302,19 @@ func LoadCookieJar(s Store) (*cookies.Cookies, error) {
 	return jar, nil
 }
 
-// pasteIsNotNewerThanJar reports whether cookies.curl exists and is no newer than
-// cookies.json.
-func (s Store) pasteIsNotNewerThanJar() bool {
-	paste, err := os.Stat(s.Path("cookies.curl"))
+// pasteRepeatsJar reports whether cookies.curl exists and carries the same session
+// as the jar.
+func (s Store) pasteRepeatsJar(jar *cookies.Cookies) bool {
+	blob, err := os.ReadFile(s.Path("cookies.curl"))
 	if err != nil {
 		return false
 	}
-	jar, err := os.Stat(s.Path("cookies.json"))
+	pairs, err := cookiesFromCurl(string(blob))
 	if err != nil {
 		return false
 	}
-	return !paste.ModTime().After(jar.ModTime())
+	want := pairs[cookies.IGCookieSessionID]
+	return want != "" && want == jar.Get(cookies.IGCookieSessionID)
 }
 
 // scrubBootstrap truncates and removes the one-shot cookies.curl. A missing
