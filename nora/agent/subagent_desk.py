@@ -44,6 +44,9 @@ log = logging.getLogger("nora.agent.subagent_desk")
 
 #: How many of a room's jobs `subagent_list` shows.
 LIST_LIMIT = 10
+# One document read-back may take this long; a slower one is left out, so listing ten jobs
+# cannot stall a turn on a stuck store.
+DOCUMENT_READ_TIMEOUT_S = 2.0
 
 #: What `subagent_list` shows of a job's description (its objective) and its report; a read
 #: shows them whole (the report to `REPORT_CHARS`).
@@ -230,14 +233,13 @@ class SubagentDesk:
             platform=platform, conversation_id=conversation_id, kind=SUBAGENT_KIND,
             limit=LIST_LIMIT,
         )
-        views = []
-        for r in rows:
-            readable = await self._titles(r, r.result_document_ids, person_id)
-            views.append(replace(
-                self._view(r, titles=(), full=False),
-                document_ids=tuple(i for i, _ in readable),
-            ))
-        return views
+        readable = await asyncio.gather(
+            *(self._titles(r, r.result_document_ids, person_id) for r in rows)
+        )
+        return [
+            replace(self._view(r, titles=(), full=False), document_ids=tuple(i for i, _ in got))
+            for r, got in zip(rows, readable, strict=True)
+        ]
 
     async def read(
         self, *, platform: str, conversation_id: str, job_id: str, person_id: str | None,
@@ -331,20 +333,26 @@ class SubagentDesk:
     ) -> tuple[tuple[str, str], ...]:
         """`(id, title)` for each document `person_id` may read. One they may not read, or whose
         read fails, is left out whole: no id, no title."""
-        if self._documents is None or person_id is None or not ids:
+        documents = self._documents
+        if documents is None or person_id is None or not ids:
             return ()
-        readable: list[tuple[str, str]] = []
-        for raw in ids:
+
+        async def one(raw: str) -> tuple[str, str] | None:
             try:
-                out = await self._documents.read(
-                    platform=row.platform, conversation_id=row.conversation_id,
-                    document_id=UUID(raw), person_id=person_id,
+                out = await asyncio.wait_for(
+                    documents.read(
+                        platform=row.platform, conversation_id=row.conversation_id,
+                        document_id=UUID(raw), person_id=person_id,
+                    ),
+                    timeout=DOCUMENT_READ_TIMEOUT_S,
                 )
-                if out.status == "ok":
-                    readable.append((raw, str(out.title)))
+                return (raw, str(out.title)) if out.status == "ok" else None
             except Exception:
                 log.exception("subagent_read: document %s did not read back", raw)
-        return tuple(readable)
+                return None
+
+        found = await asyncio.gather(*(one(raw) for raw in ids))
+        return tuple(f for f in found if f is not None)
 
     def _view(self, row: ComputeJob, *, titles: Sequence[str], full: bool = True) -> JobView:
         age = max(0, int((self._clock() - row.created_at).total_seconds()))

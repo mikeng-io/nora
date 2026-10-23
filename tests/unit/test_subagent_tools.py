@@ -595,6 +595,33 @@ async def test_list_shows_a_result_document_id_to_its_viewer_and_never_to_anothe
     assert DOC_ID not in repr(nobody)
 
 
+async def test_a_stuck_document_read_cannot_stall_subagent_list(monkeypatch):
+    """The list reads each job's documents back; a read that never returns costs that document
+    (left out whole) after the timeout, not the whole turn."""
+    import nora.agent.subagent_desk as desk_module
+
+    monkeypatch.setattr(desk_module, "DOCUMENT_READ_TIMEOUT_S", 0.05)
+
+    docs = _Documents(creator=KEN.person_id, title="Ken's private title")
+
+    async def never_returns(**_: Any):
+        await asyncio.sleep(3600)
+
+    monkeypatch.setattr(docs, "read", never_returns)
+    rig = _Desk(documents=docs)
+    bind_tag_id("tag-ken")
+    started = await rig.tools(ROOM, tagger=KEN)["subagent_create"](**BRIEF)
+    await rig.store.mark(
+        UUID(started["id"]), ComputeJobState.DONE, completed_at=NOW, result_report="published",
+        result_document_ids=(DOC_ID,),
+    )
+    t0 = time.monotonic()
+    listed = await asyncio.wait_for(rig.tools(ROOM, tagger=KEN)["subagent_list"](), timeout=5)
+    assert time.monotonic() - t0 < 2
+    assert listed["jobs"][0]["state"] == "done" and "documents" not in listed["jobs"][0]
+    assert DOC_ID not in repr(listed)
+
+
 async def test_a_title_of_exactly_sixty_characters_is_accepted_and_kept():
     rig = _Desk()
     out = await _create(rig, title="t" * 60)
