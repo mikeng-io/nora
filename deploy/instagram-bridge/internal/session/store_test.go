@@ -426,10 +426,39 @@ func TestAnObsoletePasteIsScrubbedWhenAValidJarAlreadyExists(t *testing.T) {
 	if err := os.WriteFile(s.Path("cookies.curl"), []byte(curl), 0o600); err != nil { // the paste returns
 		t.Fatal(err)
 	}
+	older := time.Now().Add(-time.Hour) // a paste from before the jar was written
+	if err := os.Chtimes(s.Path("cookies.curl"), older, older); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := LoadCookieJar(s); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(s.Path("cookies.curl")); !os.IsNotExist(err) {
 		t.Fatalf("cookies.curl survived a load that used cookies.json: stat err = %v", err)
+	}
+}
+
+// A paste newer than the jar is an operator re-authenticating: it is not scrubbed.
+func TestAPasteNewerThanTheJarIsLeftAlone(t *testing.T) {
+	s := Store{Dir: t.TempDir()}
+	curl := `-H 'cookie: csrftoken=CSRF123; ds_user_id=79597894900; sessionid=79597894900%3Asecret%3A28'`
+	if err := os.WriteFile(s.Path("cookies.curl"), []byte(curl), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadCookieJar(s); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(s.Path("cookies.curl"), []byte(curl), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	later := time.Now().Add(time.Hour)
+	if err := os.Chtimes(s.Path("cookies.curl"), later, later); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadCookieJar(s); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(s.Path("cookies.curl")); err != nil {
+		t.Fatalf("a newer cookies.curl was removed: %v", err)
 	}
 }

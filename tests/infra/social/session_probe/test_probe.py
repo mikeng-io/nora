@@ -798,3 +798,41 @@ def test_config_reads_the_opencli_profile_and_refuses_a_blank_one():
     assert config_from_env({"OPENCLI_PROFILE": "nora-alt"}).opencli_profile == "nora-alt"
     with pytest.raises(ValueError):
         config_from_env({"OPENCLI_PROFILE": "  "})
+
+
+def test_the_alert_post_script_sends_the_bridge_bearer_from_its_own_environment():
+    """The bridge answers 401 without the shared bearer. Run the real script against a local
+    listener, inside an environment that carries the token, and read what it sent."""
+    import http.server
+    import os
+    import subprocess
+    import sys
+    import threading
+
+    from nora.infra.social.session_probe import alerts
+
+    got: dict = {}
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            got["auth"] = self.headers.get("Authorization")
+            self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *args):  # type: ignore[no-untyped-def]
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        script = alerts._POST_SCRIPT.replace("9110", str(server.server_port))
+        done = subprocess.run(  # noqa: S603
+            [sys.executable, "-c", script], input=b"{}", timeout=20,
+            env={**os.environ, "NORA_BRIDGE_TOKEN": "probe-test-token"}, check=False,
+        )
+    finally:
+        server.shutdown()
+    assert done.returncode == 0
+    assert got["auth"] == "Bearer probe-test-token"
+    assert "probe-test-token" not in alerts._POST_SCRIPT

@@ -265,9 +265,12 @@ func LoadCookieJar(s Store) (*cookies.Cookies, error) {
 			jsonErr = fmt.Errorf("cookies.json is missing %v", jar.GetMissingCookieNames())
 		default:
 			// A paste left from before this version is a second plain-text copy of the
-			// credential; the jar is the session, so the paste goes now.
-			if err := s.scrubBootstrap(); err != nil {
-				return nil, fmt.Errorf("cookies.curl is obsolete but could not be removed: %w", err)
+			// credential; the jar is the session, so a paste that is not newer than the jar
+			// goes now. A newer one is an operator's pending re-authentication: it stays.
+			if s.pasteIsNotNewerThanJar() {
+				if err := s.scrubBootstrap(); err != nil {
+					return nil, fmt.Errorf("cookies.curl is obsolete but could not be removed: %w", err)
+				}
 			}
 			return jar, nil
 		}
@@ -297,6 +300,20 @@ func LoadCookieJar(s Store) (*cookies.Cookies, error) {
 		return nil, fmt.Errorf("cookies.curl was used but could not be removed: %w", err)
 	}
 	return jar, nil
+}
+
+// pasteIsNotNewerThanJar reports whether cookies.curl exists and is no newer than
+// cookies.json.
+func (s Store) pasteIsNotNewerThanJar() bool {
+	paste, err := os.Stat(s.Path("cookies.curl"))
+	if err != nil {
+		return false
+	}
+	jar, err := os.Stat(s.Path("cookies.json"))
+	if err != nil {
+		return false
+	}
+	return !paste.ModTime().After(jar.ModTime())
 }
 
 // scrubBootstrap truncates and removes the one-shot cookies.curl. A missing
