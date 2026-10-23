@@ -237,3 +237,27 @@ test('containedFile refuses a symlink planted under the name that points outside
   symlinkSync(path.join(outside, 'target.json'), path.join(dir, '100000000000000203.json'));
   assert.throws(() => containedFile(dir, '100000000000000203.json'), /escapes its directory/);
 });
+
+test('a symlink at the state file name is an error, not a read of its target', async () => {
+  const dir = tmp();
+  const outside = path.join(tmp(), 'outside.json');
+  writeFileSync(outside, JSON.stringify({ desired: 'connected', channel_id: 'x' }));
+  const file = path.join(dir, '100000000000000301.json');
+  symlinkSync(outside, file);
+  const got = await createStateStore({ path: file }).read();
+  assert.equal(got.status, 'error');
+  assert.equal(got.state, null);
+});
+
+test('a symlink planted at the temp name is replaced, never written through', async () => {
+  const dir = tmp();
+  const outsideDir = tmp();
+  const outside = path.join(outsideDir, 'victim.txt');
+  writeFileSync(outside, 'untouched');
+  const file = path.join(dir, '100000000000000302.json');
+  symlinkSync(outside, `${file}.${process.pid}.tmp`);
+  const store = createStateStore({ path: file });
+  await store.write({ desired: 'idle' });
+  assert.equal(readFileSync(outside, 'utf8'), 'untouched');
+  assert.deepEqual(await store.read(), { status: 'ok', state: { desired: 'idle' } });
+});
