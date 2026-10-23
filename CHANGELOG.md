@@ -1,5 +1,12 @@
 # Changelog
 
+## [6.6.12](https://github.com/mikeng-io/nora/compare/v6.6.11...v6.6.12) (2026-10-23)
+
+
+### Security
+
+* **build:** patch emSign trust in installers and deployment fetches ([ccfdfea](https://github.com/mikeng-io/nora/commit/ccfdfea7f3f9eab2d345ec7767f3212366785146))
+
 ## [6.6.11](https://github.com/mikeng-io/nora/compare/v6.6.10...v6.6.11) (2026-10-23)
 
 
