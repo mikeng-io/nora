@@ -1,5 +1,12 @@
 # Changelog
 
+## [6.6.13](https://github.com/mikeng-io/nora/compare/v6.6.12...v6.6.13) (2026-10-23)
+
+
+### Security
+
+* **computer:** verify Chrome revocation before exposing CDP ([62076ca](https://github.com/mikeng-io/nora/commit/62076ca18ed7cc3884e07b90021beca432392c8f))
+
 ## [6.6.12](https://github.com/mikeng-io/nora/compare/v6.6.11...v6.6.12) (2026-10-23)
 
 
