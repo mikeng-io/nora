@@ -1,5 +1,20 @@
 # Changelog
 
+## [6.6.6](https://github.com/mikeng-io/nora/compare/v6.6.5...v6.6.6) (2026-10-23)
+
+
+### Security
+
+* **agent:** bound model tool batches by one process-wide in-flight limit ([d088561](https://github.com/mikeng-io/nora/commit/d088561c0548342769c8fc3b6bbefaff0a34e29e))
+* **agent:** count a clip whose row failed to write against the cap in-process ([ce3c45d](https://github.com/mikeng-io/nora/commit/ce3c45d040e00efa73772884661dedf4dc6e4987))
+* **agent:** give each MCP server one aggregate budget across its tools ([8a79857](https://github.com/mikeng-io/nora/commit/8a798572fa67ca94e710d314f00fe3fced0e5d83))
+* **agent:** hold a cancelled clip write and reconcile past a failing row ([9587bff](https://github.com/mikeng-io/nora/commit/9587bff74006f1857cf978f29e741d8f579c00ab))
+* **agent:** hold the pass ceiling for a parallel Dreamer batch in before-tool ([31292d4](https://github.com/mikeng-io/nora/commit/31292d4e095f223bc5232be5f5770922caa2f4f0))
+* **agent:** make the browse task's terminal outcome one-way ([0891347](https://github.com/mikeng-io/nora/commit/0891347df152e73f7fcb229596fd02ca15291641))
+* **agent:** reconcile held video rows before each cap read, count only today's ([029423f](https://github.com/mikeng-io/nora/commit/029423fb72b424a5ea38434ab0f99dfa31622533))
+* **agent:** reserve tool slots for user turns so background work cannot starve them ([198972e](https://github.com/mikeng-io/nora/commit/198972edf9ce4c5cfef7efa5b34274607e3addd6))
+* **browser:** check the read-only action policy before each page input ([945c7f2](https://github.com/mikeng-io/nora/commit/945c7f2ae15f6a47e8da249131734a49d8f4af64))
+
 ## [6.6.5](https://github.com/mikeng-io/nora/compare/v6.6.4...v6.6.5) (2026-10-23)
 
 
