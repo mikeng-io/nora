@@ -14,6 +14,7 @@ package stream
 
 import (
 	"encoding/json"
+	"errors"
 	"sync"
 )
 
@@ -28,13 +29,24 @@ const (
 	// socket's own goroutine, so blocking here would stall the whole realtime
 	// stream and turn one stuck HTTP client into a dead bridge.
 	clientQueue = 256
+	// maxClients bounds the event streams open at once. One adapter attaches,
+	// with a reconnect's brief overlap, so a dozen is already a misconfiguration.
+	// Each stream holds a goroutine, a connection and a clientQueue of payloads:
+	// without this bound the count of open streams is the memory bound.
+	maxClients = 8
 )
+
+// ErrTooManyClients is Subscribe's refusal once maxClients streams are open.
+var ErrTooManyClients = errors.New("too many event streams are open")
 
 type Hub struct {
 	mu      sync.Mutex
 	clients map[chan []byte]struct{}
 	buf     [][]byte
 	dropped int
+	// rejected counts subscriptions refused at the bound. It is the rejection
+	// metric: a stream that never connects leaves no other trace.
+	rejected int
 	// notice is set when something was dropped and not yet announced. It is
 	// consumed by the NEXT client to connect, exactly once; the cumulative
 	// count stays on /health permanently. One-shot because the notice answers
@@ -95,15 +107,20 @@ func (h *Hub) push(payload []byte) {
 }
 
 // Subscribe registers a client and returns its channel plus whatever was
-// buffered while nobody was listening.
+// buffered while nobody was listening. Past maxClients it refuses with
+// ErrTooManyClients and registers nothing.
 //
 // Registration happens BEFORE the buffer snapshot, under one lock. The reverse
 // order has a window in which an event arrives after the snapshot and before
 // registration, is buffered, and is then dropped by the caller's clear() — a
 // loss that would show up as nothing at all.
-func (h *Hub) Subscribe() (chan []byte, [][]byte, int) {
+func (h *Hub) Subscribe() (chan []byte, [][]byte, int, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if len(h.clients) >= maxClients {
+		h.rejected++
+		return nil, nil, 0, ErrTooManyClients
+	}
 	ch := make(chan []byte, clientQueue)
 	h.clients[ch] = struct{}{}
 	replay := h.buf
@@ -113,7 +130,7 @@ func (h *Hub) Subscribe() (chan []byte, [][]byte, int) {
 		notice = h.dropped
 		h.notice = false
 	}
-	return ch, replay, notice
+	return ch, replay, notice, nil
 }
 
 func (h *Hub) Unsubscribe(ch chan []byte) {
@@ -125,10 +142,10 @@ func (h *Hub) Unsubscribe(ch chan []byte) {
 	}
 }
 
-func (h *Hub) Stats() (clients, buffered, dropped int) {
+func (h *Hub) Stats() (clients, buffered, dropped, rejected int) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return len(h.clients), len(h.buf), h.dropped
+	return len(h.clients), len(h.buf), h.dropped, h.rejected
 }
 
 // HasClients gates the heartbeat. A heartbeat exists to age

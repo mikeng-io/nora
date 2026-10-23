@@ -118,7 +118,7 @@ func deliver(t *testing.T, b *Bridge, msg *slidetypes.Message) {
 // events is every buffered SSE event, decoded, in order.
 func events(t *testing.T, b *Bridge) []map[string]any {
 	t.Helper()
-	_, replay, _ := hubOf(b).Subscribe()
+	_, replay, _, _ := hubOf(b).Subscribe()
 	out := make([]map[string]any, 0, len(replay))
 	for _, raw := range replay {
 		var ev map[string]any
@@ -217,7 +217,7 @@ func TestASummonsCardResolvesThroughTheRefetch(t *testing.T) {
 			// it is made, the only event emitted is the ordinary message.
 			recordedBeforeEmit := false
 			rec.onRecord = func() {
-				_, buffered, _ := hubOf(b).Stats()
+				_, buffered, _, _ := hubOf(b).Stats()
 				recordedBeforeEmit = buffered == 1
 			}
 			deliver(t, b, liveCard(t, cardText))

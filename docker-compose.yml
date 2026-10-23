@@ -1022,6 +1022,16 @@ services:
     image: prom/alertmanager:v0.28.1
     container_name: nora-alertmanager
     restart: unless-stopped
+    # Alertmanager reads a bearer from a FILE (http_config credentials_file), not
+    # the environment, and the config is a read-only mount. So the shared bridge
+    # token is written to tmpfs before the real binary starts: it never lands in
+    # the config, the image or a volume. Same token the alert-bridge checks.
+    environment:
+      - NORA_BRIDGE_TOKEN=${NORA_BRIDGE_TOKEN:?set NORA_BRIDGE_TOKEN in the host environment first}
+    entrypoint: ["/bin/sh", "-c", "umask 077 && printf '%s' \"$$NORA_BRIDGE_TOKEN\" > /run/alertmanager/bridge-token && exec /bin/alertmanager \"$$@\"", "alertmanager"]
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml", "--storage.path=/alertmanager"]
+    tmpfs:
+      - /run/alertmanager
     volumes:
       - ./deploy/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager-data:/alertmanager
@@ -1050,6 +1060,9 @@ services:
       # whether Nora's Gateway session is alive, which is the whole point of
       # this container being separate.
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
+      # The shared bridge bearer. Required: the bridge refuses to start without
+      # it, and Alertmanager sends it on every POST (deploy/alertmanager).
+      - NORA_BRIDGE_TOKEN=${NORA_BRIDGE_TOKEN:?set NORA_BRIDGE_TOKEN in the host environment first}
     # NOT on the `nora` network only: this one needs the public internet to
     # reach discord.com, and it no longer needs to reach signal-cli at all.
     networks: [nora, default]
