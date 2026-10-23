@@ -1,5 +1,21 @@
 # Changelog
 
+## [6.6.11](https://github.com/mikeng-io/nora/compare/v6.6.10...v6.6.11) (2026-10-23)
+
+
+### Security
+
+* **voice:** contain spike WAV output for 8764_82704 ([8fb6e73](https://github.com/mikeng-io/nora/commit/8fb6e73c666e38e055dc74fb26e9a99d28a249a2))
+
+## [6.6.10](https://github.com/mikeng-io/nora/compare/v6.6.9...v6.6.10) (2026-10-23)
+
+
+### Security
+
+* **asserts:** raise, not assert, where python -O would strip the check ([8ce4e37](https://github.com/mikeng-io/nora/commit/8ce4e37762f9303cd1ac52400e9111277cce4c1a))
+* **sidecar:** contain the guild state file name under STATE_DIR ([e2894bb](https://github.com/mikeng-io/nora/commit/e2894bbb8ba3ce63553d29f6ae0eaa50e81960ab))
+* **sidecar:** read the state file without following a link and create its temp file exclusively ([d60231d](https://github.com/mikeng-io/nora/commit/d60231d211238bef32e1286c926d7ce2b35a1ce3))
+
 ## [6.6.9](https://github.com/mikeng-io/nora/compare/v6.6.8...v6.6.9) (2026-10-23)
 
 
