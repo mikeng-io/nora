@@ -62,13 +62,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
-import json
 import errno
 import fcntl
 import fnmatch
 import hashlib
 import heapq
 import hmac
+import json
 import os
 import pwd
 import re
@@ -838,7 +838,8 @@ class Browser:
             session = (await command("Target.attachToTarget", {
                 "targetId": target, "flatten": True,
             }))["sessionId"]
-            frame = (await command("Page.getFrameTree", session=session))["frameTree"]["frame"]["id"]
+            frame_tree = await command("Page.getFrameTree", session=session)
+            frame = frame_tree["frameTree"]["frame"]["id"]
             resource = (await command("Network.loadNetworkResource", {
                 "frameId": frame, "url": url,
                 "options": {"disableCache": True, "includeCredentials": False},
