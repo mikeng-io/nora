@@ -243,7 +243,7 @@ def test_the_registry_exposes_every_declared_tool():
         # (the four `subagent_*` tools are tag-turn only: this Dreamer-path build omits them,
         # and tests/unit/test_subagent_tools.py pins where they ARE built.)
         # DEC-97: what she is running, and what was in an earlier version.
-        "version",
+        "version_list", "version_read",
         # The note tier's four verbs.
         "note_read", "note_search", "note_create", "note_update",
         # DEC-306: one kept memo of the unit.
@@ -479,9 +479,8 @@ def test_budgets_match_todays_table():
         # second call in the same turn is a model looping on its own write.
         "event_search": 1, "event_propose": 3, "event_revise": 2,
         "event_rsvp": 1, "event_set_status": 2, "suggest_venue": 4,
-        # 2 — one call answers "what version are you", a second covers the
-        # follow-up about an earlier one (DEC-79).
-        "version": 2,
+        # One metadata list, then notes for up to two selected releases.
+        "version_list": 1, "version_read": 2,
         # The four note verbs. The RATIO is the
         # decision, not the absolute numbers: a revision costs two calls —
         # `note_read` then `note_update` — which is what makes the read
@@ -1002,7 +1001,7 @@ READ_ONLY = frozenset({
     "file_fetch",
     "media_search",
     "web_search", "web_fetch", "weather", "list_reminders", "event_search",
-    "suggest_venue", "version", "search_gifs",
+    "suggest_venue", "version_list", "version_read", "search_gifs",
     # The two parking verbs: live reads that act on nothing —
     # vacancy lookups and nearby discovery, no writes anywhere.
     "parking_status", "find_parking",

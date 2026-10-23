@@ -97,7 +97,8 @@ def test_known_spec_tools_are_covered() -> None:
     docs = dict(_model_facing_docstrings())
     # A representative set must be present so a `_spec` rename or a docstring
     # that drops below the extraction floor turns this file red loudly.
-    assert {"send_reply", "weather", "note_create", "media_fetch", "version"} <= set(docs)
+    assert {"send_reply", "weather", "note_create", "media_fetch",
+            "version_list", "version_read"} <= set(docs)
 
 
 @pytest.mark.parametrize(
@@ -539,8 +540,11 @@ def test_no_text_after_args_is_silently_dropped(tool: str, doc: str) -> None:
 #: EXCLUSIVELY by the tool's own local egress check, never by this call.
 #: `instagram_read`'s router can additionally answer `ambiguous`/`refused`
 #: for a handle or link input, not only through the tool's own
-#: person-resolution branch. A tool absent here has no delegate return.
+#: person-resolution branch. The release adapter's list/read both return
+#: ok/nothing_found/unavailable. A tool absent here has no delegate return.
 _DELEGATE_REACHABLE_STATUSES: dict[str, frozenset[str]] = {
+    "version_list": frozenset({"ok", "nothing_found", "unavailable"}),
+    "version_read": frozenset({"ok", "nothing_found", "unavailable"}),
     "x_read": frozenset({"ok", "nothing_found", "unavailable"}),
     "x_search": frozenset({"ok", "nothing_found", "unavailable"}),
     "linkedin_read": frozenset({"ok", "nothing_found", "unavailable"}),
@@ -965,12 +969,14 @@ def _note_assigned_before(
 
 
 def _is_backend_read_call(expr: ast.expr) -> bool:
-    """`await X.read(...)` -- the one shape a genuine backend call takes in
-    these tools (`social_source.read(...)`, `linkedin_source.read(...)`)."""
+    """`await X.read(...)`, or the release adapter's metadata-only list read."""
     if isinstance(expr, ast.Await):
         expr = expr.value
     return (isinstance(expr, ast.Call) and isinstance(expr.func, ast.Attribute)
-            and expr.func.attr == "read")
+            and (expr.func.attr == "read" or (
+                expr.func.attr == "list" and isinstance(expr.func.value, ast.Name)
+                and expr.func.value.id == "releases"
+            )))
 
 
 def _verify_passthrough_binding(
@@ -978,7 +984,7 @@ def _verify_passthrough_binding(
     assigns: dict[str, ast.expr], local_funcs: dict[str, ast.AST] | None,
 ) -> str | None:
     """`None`: every assignment to `var` in the tool is either a genuine
-    backend call (`await X.read(...)`) or an already-classifiable
+    backend call (`await X.read(...)` or `await releases.list()`) or an already-classifiable
     note-bearing value (a literal dict with a note, or `dict(CONST)` with
     one), so trusting `var` as an opaque pass-through (shape (e)) is
     grounded. Otherwise, the reason the binding could not be verified --

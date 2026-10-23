@@ -110,6 +110,8 @@ _SNAPSHOT_SHA256 = (
 #: Snapshot names renamed to the pattern or removed since. Grows; the exempt
 #: set below shrinks with it.
 _RENAMED_SINCE: frozenset[str] = frozenset({
+    # Issue #217: replaced by the public release list/read pair.
+    "version",
     # DEC-201: retired into `x_read` and `x_search`, which meet the pattern.
     "social_fetch",
     # DEC-237: renamed to the event verbs and `event_search`.

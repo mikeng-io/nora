@@ -62,6 +62,7 @@ from ..domain.ports import (
 )
 from ..domain.reminders import ReminderCaps, ReminderStore
 from ..domain.tool_call_log import ToolCallLogStore
+from ..infra.github_releases import GitHubReleases
 from ..infra.parking import ParkingClient, StreetParkingClient
 from ..infra.routes import RouteClient
 from ..infra.transit import TransitClient
@@ -300,6 +301,7 @@ class ToolRegistry:
         clock: Callable[[], datetime] = utc_now,
         mcp_tools: Mapping[str, McpToolGroup] | None = None,
         versions: VersionManifest | None = None,
+        releases: GitHubReleases | None = None,
         giphy: GifSource | None = None,
         reaction: ReactionPicker | None = None,
         music: MusicToolBridge | None = None,
@@ -589,17 +591,10 @@ class ToolRegistry:
         # discloses names. `.specs()`/`.build()`'s `allowed_mcp` is the SAME
         # value a caller must pass here.
         self._mcp_tools = dict(mcp_tools) if mcp_tools is not None else {}
-        # The baked build stamp (DEC-97), DEFAULT-CONSTRUCTED like `transit` and
-        # unlike `route`/`search`/`weather`: there is no key to resolve and no
-        # service to reach, only a file that either shipped with this code or
-        # did not, so there is nothing an unconfigured deployment could be
-        # missing. Reading it costs one open, once, on the first `version` call;
-        # a source checkout has no `nora/version.json`, and the reader answers
-        # `unavailable` for it (never `nothing_found`, R-27). Held HERE for the
-        # reason the transit catalogue is: it is a process-lifetime fact, and
-        # the alternative, a module-level cache, is the mutable singleton the
-        # test-seam policy forbids.
+        # Process-lifetime local identity and public release reader. The reader
+        # owns each request's HTTP context, so it needs no shutdown registration.
         self._versions = versions if versions is not None else VersionManifest()
+        self._releases = releases
         self._giphy = giphy
         # `nora.agent.reaction`: None keeps every reply exactly as written.
         self._reaction = reaction
@@ -1151,6 +1146,7 @@ class ToolRegistry:
             persona_read=self._persona_read,
             social_items=self._social_items,
             versions=self._versions,
+            releases=self._releases,
             giphy_source=self._giphy,
             reaction_picker=self._reaction,
             tool_call_log_store=self._tool_call_log_store,

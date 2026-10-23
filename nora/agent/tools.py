@@ -264,8 +264,6 @@ from ..domain.x_links import is_handle as _is_x_handle
 from ..domain.x_links import parse_link as _parse_x_link
 from ..infra.social.readings import READ_CONCURRENCY as _INSTAGRAM_READ_CONCURRENCY
 from ..infra.social.readings import TurnLook
-from ..infra.version import NOTHING_FOUND as VERSION_NOTHING_FOUND
-from ..infra.version import UNAVAILABLE as VERSION_UNAVAILABLE
 from ..infra.vision.client import DESCRIBE_PROMPTS
 from ..infra.vision.comprehend import describe_coverage, read_video_windows
 from ..infra.vision.preprocess import (
@@ -1743,31 +1741,16 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                     side_effect_state="confirmed", idempotency="idempotent",
                                     retry="safe",
                                     output_contract="three_state", level=2),
-    # WHAT SHE IS RUNNING, and what was in each version (DEC-97). ONE verb with
-    # two shapes rather than two tools (`weather`'s DEC-72 argument): "咩version"
-    # and "V2 有咩" are one capability asked from two angles, and two tools would
-    # fight over every version question the way DEC-58 measured.
-    #
-    # Budget 2, sized like `lookup_person` — by model round trips, not by cost
-    # (the answer is a dict parsed from one small local file). One call answers
-    # "what version are you"; a second covers the follow-up "and what was in the
-    # one before", which is a genuinely different question with a different
-    # argument. A third in one turn is a model looping.
-    #
-    # `source_tier="confirmed"`: this is Nora's own build stamp, read off the
-    # artifact she is executing — the closest source there is for a fact about
-    # herself, and the reason she must never web-search her own version.
-    # `time_shiftable` is None, like `calculate`: the manifest cannot change
-    # under a running process, so the answer is neither about this instant nor
-    # shiftable to another one.
-    #
-    # `level=2` (ADR 0015 §3): one constraint, never work a version out from the
-    # chat or the web. Whether to paraphrase `notes` or say none were recorded
-    # is the `ok` result's `note`.
-    "version": NativeTool(2,
-                          source_tier="confirmed", read_only=True,
-                          side_effect_state="none", idempotency="idempotent", retry="safe",
-                          output_contract="three_state", level=2),
+    # One list call discovers recent releases and the running build. Two reads
+    # allow notes for the running release and one selected earlier release.
+    "version_list": NativeTool(1,
+                               source_tier="confirmed", read_only=True,
+                               side_effect_state="none", idempotency="idempotent", retry="safe",
+                               output_contract="three_state", level=3),
+    "version_read": NativeTool(2,
+                               source_tier="confirmed", read_only=True,
+                               side_effect_state="none", idempotency="idempotent", retry="safe",
+                               output_contract="three_state", level=3),
     # THE ONLY TERMINAL TOOL, and **the number that caps how many messages one
     # tag may send**. Both facts are easy to miss from the guard's side, so they
     # are stated here, where the number is.
@@ -4116,16 +4099,23 @@ _VENUE_REPORT: Mapping[str, str] = {
     "unavailable": "I can't read what people here like right now. Say you "
                    "couldn't check, and don't guess a venue.",
 }
-# The «no build stamp» payload for `version` (DEC-97). A source checkout has no
-# `nora/version.json` (it is generated at build time and gitignored), so this is
-# the ordinary state outside a built image — and it is `unavailable`, NEVER
-# `nothing_found`: «I can't read my own build stamp» and «I have no versions»
-# are different claims, and the second one is a false statement about herself
-# manufactured out of a wiring gap (R-27).
-_VERSION_OFF: Mapping[str, object] = {
-    "status": "unavailable",
-    "note": "I can't read my own build stamp. Say you're not sure which version "
-            "you're on, and don't guess one or work it out from the chat.",
+_VERSION_LIST_NOTES: Mapping[str, str] = {
+    "ok": "These are published releases, not deployment history. Only `running` "
+          "identifies this process. The list covers one recent GitHub page; "
+          "`more_available` means older releases may be omitted. Read a selected "
+          "version's notes with version_read. Notes alone cannot explain response speed.",
+    "nothing_found": "GitHub lists no published stable releases. This says nothing "
+                     "about which build is running; read `running` separately.",
+    "unavailable": "I couldn't check GitHub releases. Don't claim there are none. "
+                   "The separate `running` result still describes the local build.",
+}
+_VERSION_READ_NOTES: Mapping[str, str] = {
+    "ok": "This is the exact published release body. Explain it in your own words. "
+          "An empty body means no notes were published. Publication does not prove "
+          "deployment, or that an upgrade caused faster responses.",
+    "nothing_found": "There is no published stable release for that exact tag. "
+                     "Don't invent its contents.",
+    "unavailable": "I couldn't read that release. Don't describe it or claim it is absent.",
 }
 
 
@@ -4831,6 +4821,7 @@ def build_tool_specs(
     clock: Callable[[], datetime] | None = None,
     links: LinkCarry | None = None,
     versions=None,
+    releases=None,
     giphy_source: GifSource | None = None,
     reaction_picker: ReactionPicker | None = None,
     tool_call_log_store: ToolCallLogStore | None = None,
@@ -4963,11 +4954,9 @@ def build_tool_specs(
     an error; the caps and the clock fall back to `ReminderCaps()` and
     `utc_now`, so a caller that never sets a reminder needs neither.
 
-    `versions` is a `nora.infra.version.VersionManifest` (DEC-97) and comes from
-    `ToolRegistry` for the same reason: the build stamp is a PROCESS-lifetime
-    fact, read once, never per turn. `None` — a caller that wired none — makes
-    `version` answer `unavailable`, which is the same honest wiring-gap state
-    `reminders=None` gives `remind`, and never `nothing_found`.
+    `versions` is the immutable process-lifetime build stamp. `releases` is
+    the public GitHub reader. They remain independent: GitHub can be unavailable
+    with a known running build, or releases readable with an unstamped build.
 
     `tool_call_log_store` is `recall_lookups`'s own collaborator, wired the
     identical way: `None` in the offline/eval compositions and any composition
@@ -14264,67 +14253,59 @@ Args:
         _record(metrics, "note_update", "ok", chars=len(body))
         return {"status": "ok", "title": note.title}
 
-    async def version(which: str = "") -> dict:
-        """Read which version of you is running, and what was in it. Call this
-        the moment somebody asks about YOU as software.
+    async def version_list() -> dict:
+        """List your published releases and running version. Call this when
+        somebody asks your version, what's new, or whether you've been upgraded.
 
-        This build stamp is the only source: never work a version out from the
-        chat, from what somebody said, or from the web. Leave `which` empty for
-        the running version, or name an earlier one.
+        Returns `status`: ok, nothing_found or unavailable, with a `note` on
+        how to report it. `running` has its own build-stamp status.
+        """
+        current = versions.current() if versions is not None else None
+        running: dict = {"status": "unavailable", "note": "I can't read my own build "
+                         "stamp. Don't guess which version is running."}
+        if current is not None and current.status == "ok" and current.entry is not None:
+            running = {"status": "ok", "version": current.entry.version}
+        if releases is None:
+            _record(metrics, "version_list", "unavailable")
+            return _with_note({"status": "unavailable", "running": running}, _VERSION_LIST_NOTES)
+        try:
+            out = await releases.list()
+        except Exception:
+            log.exception("version_list failed")
+            _record(metrics, "version_list", "unavailable")
+            return _with_note({"status": "unavailable", "running": running}, _VERSION_LIST_NOTES)
+        out["running"] = running
+        _record(metrics, "version_list", out["status"])
+        return _with_note(out, _VERSION_LIST_NOTES)
 
-        Returns `status`: ok, nothing_found or unavailable, with a `note` on how
-        to report it.
+    async def version_read(version: str) -> dict:
+        """Read one exact version's published release notes. Call this when
+        somebody asks what changed in a named release.
+
+        Returns `status`: ok, nothing_found or unavailable, with a `note` on
+        how to report it. The body comes from GitHub, not deployment history.
 
         Args:
-            which: A version name, to read an earlier one. Leave it out for the
-                one running now.
+            version: Exact release tag from version_list or the question.
         """
-        asked = str(which).strip()
-        if versions is None:
-            _record(metrics, "version", "unavailable", reason="not_wired")
-            return dict(_VERSION_OFF)
-        lookup = versions.lookup(asked) if asked else versions.current()
-        if lookup.status == VERSION_UNAVAILABLE:
-            # `lookup.reason` (absent / unreadable / no_current_version) goes in
-            # the LOG, never the payload: it is an operator's diagnosis of this
-            # host's build, and the model has one thing to do with it either way
-            # — say she cannot check.
-            _record(metrics, "version", "unavailable", reason=lookup.reason)
-            return dict(_VERSION_OFF)
-        if lookup.status == VERSION_NOTHING_FOUND:
-            _record(metrics, "version", "nothing_found", known=len(lookup.known))
-            return {
-                "status": "nothing_found",
-                "known": list(lookup.known),
-                "note": "There's no version by that name. Offer the ones in `known`, "
-                        "and don't describe one that isn't there.",
-            }
-        entry = lookup.entry
-        out: dict = {"status": "ok", "version": entry.version}
-        # Only what the manifest actually recorded. An absent `notes` or `changes` is
-        # left OUT rather than sent as an empty string: a tool result is re-sent on
-        # every subsequent model call (DEC-73), and an empty field invites the model to
-        # fill it.
-        if entry.released:
-            out["released"] = entry.released
-        if entry.notes:
-            out["notes"] = entry.notes
-        if entry.changes:
-            out["changes"] = list(entry.changes)
-        out["known"] = list(lookup.known)
-        # How to report it (ADR 0015), per whether `notes` was recorded: an
-        # absent field is «nothing recorded», never a gap to fill.
-        out["note"] = (
-            "Put notes in your own words rather than reading them out."
-            if entry.notes else
-            "No notes were recorded for this version. Say its name and that you "
-            "have no notes for it, and don't fill the gap."
-        )
-        _record(
-            metrics, "version", "ok",
-            asked=bool(asked), noted=bool(entry.notes), changes=len(entry.changes),
-        )
-        return out
+        tag = version.strip() if isinstance(version, str) else ""
+        # The tag leaves the host in a public HTTP path, like any search input.
+        decoded = urllib.parse.unquote(tag)
+        if not tag or scan_identifiers(decoded) is not None or _looks_like_coordinate(decoded):
+            _record(metrics, "version_read", "unavailable")
+            return {"status": "unavailable", "note": "I need a public release tag, "
+                    "without private identifiers or coordinates."}
+        if releases is None:
+            _record(metrics, "version_read", "unavailable")
+            return _with_note({"status": "unavailable"}, _VERSION_READ_NOTES)
+        try:
+            out = await releases.read(tag)
+        except Exception:
+            log.exception("version_read failed")
+            _record(metrics, "version_read", "unavailable")
+            return _with_note({"status": "unavailable"}, _VERSION_READ_NOTES)
+        _record(metrics, "version_read", out["status"])
+        return _with_note(out, _VERSION_READ_NOTES)
 
     def _resolve_quote(reply_to: int | None) -> OutboundQuote | None:
         """`n` from the rendered transcript -> the row's platform handles.
@@ -16785,7 +16766,8 @@ Args:
         _spec("computer_import", computer_import),
         _spec("computer_session_list", computer_session_list),
         _spec("computer_browse", computer_browse),
-        _spec("version", version),
+        _spec("version_list", version_list),
+        _spec("version_read", version_read),
         _spec("send_reply", send_reply),
         _spec("send_to", send_to),
         _spec("search_gifs", search_gifs),

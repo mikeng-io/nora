@@ -11,6 +11,32 @@ timestamp: '2026-08-11'
 > nothing is announced to a room. The build-time stamp and the three-state read below still
 > hold. Read the rest of this file as history.
 
+## Current release tools (issue #217, 2026-10-23)
+
+`version_list()` replaces the old `version(which)` interface. It lists stable,
+published GitHub Releases from the fixed public `mikeng-io/nora` repository,
+newest publication first, with version, publication date and URL, without bodies.
+One request reads at most 100 recent API entries; `more_available` reports a next
+page, so the result does not claim to be the entire archive. Older exact tags
+remain readable with `version_read(version)`, which fetches that release's body.
+A release with no body has no published notes; no notes are invented.
+
+The list includes a separate `running` result from the immutable
+`VersionManifest`: only that stamp says what this process runs. Its absence is
+`unavailable`, even when GitHub is readable. Conversely an API failure is
+`unavailable` even with a readable stamp. An exact missing or unpublished stable
+release is `nothing_found`; an empty complete list is also `nothing_found`.
+The two calls have budgets 1 and 2, respectively, and are read-only and unit-safe.
+The adapter closes its HTTP client within each operation; it uses no credentials,
+new persistence or polling. Build stamping and publication controls are unchanged.
+
+Published releases do not establish deployment, and release notes do not
+establish that an upgrade caused faster responses. Routing cases include a
+synthetic indirect upgrade question and sibling exclusions. Routing and reporting
+still require the parent-owned live measurement; offline tests prove HTTP and
+wiring, not model selection. The old tool and announcement sections below are
+historical.
+
 # Version, and the upgrade note
 
 ## 0. Two questions and one event

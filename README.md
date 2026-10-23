@@ -205,6 +205,12 @@ image records the source revision and its generated version manifest. The
 [runbook](docs/runbook.md) carries health checks and rollback constraints,
 including database migrations. Do not use old phase tags as rollback targets.
 
+Nora can inspect published stable releases with `version_list()` and read one
+exact release's notes with `version_read(version)`. The list includes the running
+version from the image's immutable build stamp and up to 100 recent GitHub
+entries, with an indicator when older entries remain. A published release does
+not establish deployment; an absent build stamp leaves the running version unknown.
+
 ## Help and contributions
 
 Use [GitHub issues](https://github.com/mikeng-io/nora/issues) for reproducible bugs
