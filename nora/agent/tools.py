@@ -14234,7 +14234,10 @@ Args:
         return {"status": "ok", "title": note.title}
 
     async def version_list() -> dict:
-        """List running version and history when somebody asks about versions or upgrades.
+        """List version history when somebody asks about upgrades or what is running.
+
+        Discover an unknown upgrade here, then use version_read for its notes.
+        For a known or named version, use version_read directly instead.
 
         Returns `status`: ok or unavailable, with a `note` on how to report it.
         History is the shipped snapshot, without notes or changes bodies.
@@ -14259,7 +14262,9 @@ Args:
                         "Read recorded notes with version_read; notes alone cannot explain speed."}
 
     async def version_read(version: str) -> dict:
-        """Read version notes when somebody asks what changed.
+        """Read version notes when somebody names a version.
+
+        For a known version, read directly without version_list before or after.
 
         Returns `status`: ok, nothing_found or unavailable, with a `note` on
         how to report it. Notes and changes come from the shipped snapshot.
