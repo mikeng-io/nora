@@ -6,10 +6,19 @@
 // real, per the privacy posture in design/voice-channel/05-sidecar-receive.md.
 
 import fs from 'node:fs';
+import nodePath from 'node:path';
+
+const RECORDINGS_ROOT = nodePath.resolve('recordings');
 
 export class WavWriter {
   constructor(path, { rate = 48000, channels = 2 } = {}) {
-    this.fd = fs.openSync(path, 'w');
+    const baseFull = nodePath.resolve(RECORDINGS_ROOT);
+    const target = nodePath.resolve(baseFull, path);
+    const rel = nodePath.relative(baseFull, target);
+    if (rel === '..' || rel.startsWith(`..${nodePath.sep}`) || nodePath.isAbsolute(rel)) {
+      throw new Error('Invalid file path');
+    }
+    this.fd = fs.openSync(target, 'w');
     this.bytesWritten = 0;
     this.rate = rate;
     this.channels = channels;
