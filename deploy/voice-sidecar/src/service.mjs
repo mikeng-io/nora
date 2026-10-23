@@ -21,7 +21,7 @@
 // Privacy posture: audio is transient. PCM is forwarded over the TCP seam
 // and music flows CDN -> ffmpeg -> Discord; nothing is written to disk.
 
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 import {
@@ -48,16 +48,12 @@ const PUMP_HOST = process.env.PUMP_HOST ?? '127.0.0.1';
 const PUMP_PORT = Number(process.env.PUMP_PORT ?? 4599);
 const NORA_EVENT_URL = process.env.NORA_EVENT_URL ?? 'http://nora:9100/app/v1/voice/event';
 // A DIRECTORY now, one `<guild_id>.json` inside it (multi-guild 2026-09-17).
-// It is also the only record of which guilds this process serves: there is no
-// guild list in env and none in config here, because the list already exists
-// in nora's `[speech.tts] sidecars` and a second copy is a second answer.
+// Configured guilds come from Nora's existing [speech.tts].sidecars list,
+// mounted read-only at /app/config.toml. State records desired connections,
+// but cannot grant admission to a guild removed from that configuration.
 const STATE_DIR = process.env.STATE_DIR ?? '/var/lib/audio-controller';
 
-// The ONLY env this service reads besides its binds. A guild id is not a
-// secret — it is in every Discord URL — so it does not belong here; the bot
-// token does. Which guilds exist is nora's to know and Discord's to enforce:
-// a join for a guild the bot is not a member of fails at discord.js, which is
-// a stronger authority than any list this process could hold.
+// The Discord bot credential is separate from the shared service bearer.
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 // The shared service bearer (NORA_BRIDGE_TOKEN), the same value nora and the
 // bridges hold. Required: it guards every route here and the wake-gate seam
@@ -194,7 +190,29 @@ export function createJoinVoice({ joinImpl, createPumpImpl, createPlayerImpl, lo
   return { joinVoice, perUser, currentPump: () => currentPump };
 }
 
+// python3 is already installed in the sidecar image; use its stdlib TOML
+// parser rather than interpreting TOML a second way or adding a dependency.
+export function loadConfiguredGuilds(configPath = '/app/config.toml') {
+  try {
+    const result = execFileSync('python3', ['-c', `
+import json, sys, tomllib
+with open(sys.argv[1], 'rb') as stream:
+    entries = tomllib.load(stream).get('speech', {}).get('tts', {}).get('sidecars', [])
+guilds = [entry['guild'] for entry in entries]
+if any(not isinstance(guild, str) or not guild.isascii() or not guild.isdecimal()
+       or not 17 <= len(guild) <= 20 for guild in guilds):
+    raise ValueError('invalid guild')
+print(json.dumps(guilds))
+`, configPath], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    return new Set(JSON.parse(result));
+  } catch {
+    // Neither TOML values nor parser/subprocess diagnostics may reach logs.
+    throw new Error('Cannot load configured voice guilds; refusing to start');
+  }
+}
+
 async function main() {
+  const configuredGuilds = loadConfiguredGuilds();
   // ONE CORE PER GUILD, in one process (multi-guild, 2026-09-17). Each is the
   // same single-connection state machine §12.5 describes — a generation
   // counter, an outbox, a desired-state file — instantiated per guild rather
@@ -256,10 +274,10 @@ async function main() {
 
   const server = createFrontDoor({
     authToken: BRIDGE_TOKEN,
-    // Existing connections were already admitted by Discord. Before minting
-    // a new core, require bot membership in the target guild as well as the
-    // service bearer; generation is only replay control.
+    // Configuration is the admission boundary, including for existing cores.
+    // New cores also require Discord bot membership; generation is replay control.
     authorizeGuild: async (guildId) => {
+      if (!configuredGuilds.has(guildId)) return false;
       if (registry.guildIds().includes(guildId)) return true;
       if (!TOKEN) return false;
       const response = await fetch(`https://discord.com/api/v10/guilds/${guildId}`, {
@@ -296,9 +314,7 @@ async function main() {
   });
 
   // Boot (§12.1): restore whatever the STATE DIRECTORY says was connected.
-  // That directory is this process's only memory of which guilds it serves —
-  // there is no guild list in env or config here, because nora already holds
-  // one in `[speech.tts] sidecars` and a second copy is a second answer.
+  // Restore only guilds still present in the shared configuration.
   //
   // A guild whose file says `idle` is NOT restored and NOT created: a restart
   // must not rejoin a channel someone just left. A file that cannot be read
@@ -320,6 +336,7 @@ async function main() {
       });
     }
     for (const guildId of guilds) {
+      if (!configuredGuilds.has(guildId)) continue;
       const file = `${guildId}.json`;
       const store = createStateStore({ path: containedFile(STATE_DIR, file) });
       const stored = await store.read();

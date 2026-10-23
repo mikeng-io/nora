@@ -938,3 +938,21 @@ test('a guild the process holds no connection for is 404, not wrong_guild', asyn
   assert.equal(res.body.request_id, 'r', 'the envelope still echoes request_id');
   await h.close();
 });
+
+for (const size of [400_000, 1024 * 1024, 2 * 1024 * 1024]) {
+  test(`speech with a request id admits ${size} decoded bytes and replays the first result`, async () => {
+    const h = await makeHarness();
+    try {
+      const { generation } = await h.join();
+      const body = { guild_id: GUILD, generation, request_id: 'large-speech',
+        audio_b64: Buffer.alloc(size, 1).toString('base64') };
+      const first = await h.post('/stream', body);
+      assert.equal(first.status, 200);
+      const played = h.player.played.length;
+      const duplicate = await h.post('/stream', { ...body, generation: 'stale' });
+      assert.deepEqual(duplicate, first, 'the duplicate returns the first outcome');
+      assert.equal(h.player.played.length, played, 'the duplicate does not enqueue audio');
+      assert.ok(h.core.controller.dedupeBytes() < 2048, 'only the small outcome is retained');
+    } finally { await h.close(); }
+  });
+}

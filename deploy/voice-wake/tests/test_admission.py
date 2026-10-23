@@ -19,8 +19,8 @@ from wakegate.stt import forward_utterance
 
 TOKEN = "test-bridge-token"
 GUILD = "100000000000000203"
-# One real 20 ms frame: 960 stereo s16le samples, 3840 bytes. Wire frames must
-# be this size or less; anything larger is refused by the codec.
+# One real 20 ms frame: 960 stereo s16le samples, 3840 bytes. Wire frames
+# can also contain longer valid decoded Opus packets.
 FRAME = np.full(1920, 3000, dtype=np.int16).tobytes()
 
 
@@ -184,7 +184,10 @@ async def test_the_seam_refuses_connections_beyond_its_cap():
     svc = _service(max_seam_clients=0)
     writer = _FakeWriter()
 
-    await svc._on_client(_FakeReader([encode_hello(GUILD, TOKEN)]), writer)
+    reader = _FakeReader([encode_hello(GUILD, TOKEN)])
+    await svc._on_client(reader, writer)
+
+    assert reader._chunks == [encode_hello(GUILD, TOKEN)], "refused before any read"
 
     assert writer.closed is True
     assert svc._clients == 0
@@ -274,3 +277,68 @@ async def test_shutdown_cancels_tail_timers_and_refuses_late_wakes():
     svc._fire((GUILD, "u1"), object(), _state())
     await asyncio.sleep(0)
     assert blocking.started == 0
+
+
+async def test_empty_frames_cannot_extend_hello_deadline_or_hold_all_eight_slots():
+    svc = _service()
+    seen = asyncio.Event()
+
+    async def on_frame(key, pcm):
+        seen.set()
+
+    svc._on_frame = on_frame
+    all_connected = asyncio.Event()
+    connected = 0
+
+    async def on_client(reader, writer):
+        nonlocal connected
+        connected += 1
+        if connected == 8:
+            all_connected.set()
+        await svc._on_client(reader, writer)
+
+    server = await asyncio.start_server(on_client, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    sockets = []
+
+    async def drip(writer):
+        try:
+            while True:
+                writer.write(b"\x00" * 4)
+                await writer.drain()
+                await asyncio.sleep(0.1)
+        except (ConnectionError, OSError):
+            pass
+
+    tasks = []
+    try:
+        for _ in range(8):
+            reader, writer = await asyncio.open_connection("127.0.0.1", port)
+            sockets.append((reader, writer))
+            tasks.append(asyncio.create_task(drip(writer)))
+        await asyncio.wait_for(all_connected.wait(), 1)
+        assert svc._clients == 8
+        # Traffic continues beyond the absolute HELLO deadline. Each socket
+        # must close while the peer is still sending, not when the peer leaves.
+        closed = await asyncio.wait_for(
+            asyncio.gather(*(reader.read(1) for reader, _ in sockets)),
+            svc._cfg.frame_read_timeout_s + 1,
+        )
+        assert closed == [b""] * 8
+        assert svc._clients == 0
+        reader, writer = await asyncio.open_connection("127.0.0.1", port)
+        sockets.append((reader, writer))
+        writer.write(encode_hello(GUILD, TOKEN) + encode_frame("u1", FRAME))
+        await writer.drain()
+        await asyncio.wait_for(seen.wait(), 0.5)
+        assert svc._clients == 1
+    finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        for _, writer in sockets:
+            writer.close()
+        await asyncio.gather(*(w.wait_closed() for _, w in sockets), return_exceptions=True)
+        server.close()
+        await server.wait_closed()
+        await svc.close()

@@ -246,10 +246,18 @@ def test_pcm_limit_is_independent_of_the_speaker_id_length():
     parser = FrameParser(TOKEN)
     parser.feed(encode_hello("100000000000000203", TOKEN))
     with pytest.raises(ProtocolError, match="PCM"):
-        parser.feed(encode_frame("u1", b"x" * 3841))
+        parser.feed(encode_frame("u1", b"x" * 23041))
 
 def test_rejected_length_does_not_retain_the_supplied_body():
     parser = FrameParser(TOKEN)
     with pytest.raises(ProtocolError):
         parser.feed(struct.pack(">I", MAX_FRAME_PAYLOAD + 1) + b"x" * 100000)
     assert len(parser._buf) == 4
+
+
+@pytest.mark.parametrize("duration_ms", [20, 40, 60, 120])
+def test_valid_opus_durations_fit_the_pcm_frame_bound(duration_ms):
+    parser = FrameParser(TOKEN)
+    parser.feed(encode_hello("g9", TOKEN))
+    pcm = b"\x01\x02" * (48 * duration_ms * 2)
+    assert parser.feed(encode_frame("u1", pcm)) == [("u1", pcm)]

@@ -357,7 +357,7 @@ class WakeService:
                     break
                 for user_id, pcm in parser.feed(chunk):
                     await self._on_frame((parser.guild_id or "", user_id), pcm)
-                if not parser.pending:
+                if not parser.pending and parser.guild_id is not None:
                     deadline = None
         except ProtocolError as exc:
             # A connection that failed the hello, or broke the format, is closed.

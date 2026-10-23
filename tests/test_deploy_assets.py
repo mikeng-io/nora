@@ -227,3 +227,10 @@ def test_stt_cpu_index_does_not_shadow_general_python_packages():
     cpu = next(index for index in config['tool']['uv']['index']
                if index['name'] == 'pytorch-cpu')
     assert cpu.get('explicit') is True
+
+
+def test_audio_controller_reads_the_existing_config_read_only():
+    import yaml
+
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+    assert "./config.toml:/app/config.toml:ro" in compose["services"]["voice-sidecar"]["volumes"]

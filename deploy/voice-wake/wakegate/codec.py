@@ -35,8 +35,8 @@ import struct
 
 _HEADER = 4
 
-#: One 20 ms frame of s16le 48 kHz stereo — the only audio a sidecar sends.
-MAX_PCM_FRAME_BYTES = 3840
+#: Largest decoded Opus packet: 120 ms * 48 samples/ms * 2 channels * 2 bytes (s16le).
+MAX_PCM_FRAME_BYTES = 23040
 #: The user id is one length byte, so 255 is the protocol's own ceiling.
 MAX_ID_BYTES = 255
 #: A token is the shared NORA_BRIDGE_TOKEN; 256 bytes is generous for one.
@@ -149,7 +149,7 @@ def _audio(payload: bytes) -> tuple[str, bytes]:
         raise ProtocolError("user id is not UTF-8") from exc
     pcm = payload[1 + id_len :]
     if len(pcm) > MAX_PCM_FRAME_BYTES:
-        raise ProtocolError("PCM exceeds one 20 ms frame")
+        raise ProtocolError("PCM exceeds one 120 ms Opus packet")
     return user_id, pcm
 
 

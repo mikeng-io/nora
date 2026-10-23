@@ -873,15 +873,8 @@ services:
       # route here requires it, and the wake-gate hello carries it. Required,
       # like the bridges, so a deployment without it fails loudly.
       - NORA_BRIDGE_TOKEN=${NORA_BRIDGE_TOKEN:?set NORA_BRIDGE_TOKEN in the host environment first}
-      # NO GUILD IDENTITY HERE (multi-guild, 2026-09-17). One process serves
-      # every guild nora asks it to: a core is created on `/voice/join` and
-      # restored at boot from the state directory below. Which guilds exist is
-      # nora's `[speech.tts] sidecars`, and Discord itself enforces the rest —
-      # a join for a guild this bot is not in fails at the Discord API, which
-      # is a stronger authority than any list this container could hold.
-      #
-      # A guild id is not a secret (it is in every Discord URL) so it never
-      # belonged in .env; the bot token does, and stays.
+      # Guild admission uses Nora's existing [speech.tts].sidecars list in
+      # the shared config mount below, plus Discord bot membership.
       # The wake-gate seam (deploy/voice-sidecar/TRANSPORT.md). Stage 3 made
       # the consumer real: `voice-wake` below listens on 4599, so the shipped
       # default is the service name on this same private network — the
@@ -918,6 +911,7 @@ services:
       # survive container restarts/recreates. Named volume (not a bind
       # mount) so it inherits the Dockerfile's `chown node:node` (B-1).
       - audio-controller-state:/var/lib/audio-controller
+      - ./config.toml:/app/config.toml:ro
     healthcheck:
       # /health is process liveness served by src/service.mjs, and it now
       # requires the bearer (its body names the users it hears). The header goes

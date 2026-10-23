@@ -329,7 +329,10 @@ export function createController({
       respond(res, result.status, result.body);
       return;
     }
-    const retainedBytes = Buffer.byteLength(requestId) + Buffer.byteLength(JSON.stringify(body));
+    // Only the id and promise live in the dedupe map, never the upload.
+    // Reserve a small fixed allowance for the promise/entry metadata; completed
+    // entries below account for their actual serialized outcome instead.
+    const retainedBytes = Buffer.byteLength(requestId) + 128;
     if (!makeRoom(retainedBytes)) {
       // Every slot is an in-flight request: refuse, do not queue behind them.
       respond(res, 503, { error: 'dedupe_full', request_id: requestId, state: snapshot() });

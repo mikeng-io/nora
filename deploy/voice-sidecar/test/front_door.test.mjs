@@ -256,11 +256,16 @@ test('dedupe caps in-flight entries and bytes before executing', async () => {
   const r = await h.post('/voice/join', { guild_id: GUILD, channel_id: CHANNEL, request_id: 'second' });
   assert.equal(r.status, 503);
   assert.equal(h.core.controller.dedupeSize(), 1);
-  assert.ok(h.core.controller.dedupeBytes() > 'first'.length, 'the retained body counts too');
+  assert.ok(h.core.controller.dedupeBytes() > 'first'.length, 'the promise metadata counts too');
   release();
   await first;
   const big = await h.post('/music/stop', { guild_id: GUILD, request_id: 'large', padding: 'x'.repeat(600) });
-  assert.equal(big.status, 503, 'an individual body cannot exceed the byte budget');
+  assert.equal(big.status, 409, 'request bodies do not occupy the dedupe map');
+  const tiny = await makeHarness({ controllerOptions: { dedupeMaxBytes: 128 } });
+  const refused = await tiny.post('/voice/join', { guild_id: GUILD, channel_id: CHANNEL, request_id: 'over-budget' });
+  assert.equal(refused.status, 503, 'even an in-flight entry must fit the byte budget');
+  assert.equal(tiny.joinCalls.length, 0);
+  await tiny.close();
   await h.close();
 });
 
