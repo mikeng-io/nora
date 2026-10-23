@@ -1,5 +1,23 @@
 # Changelog
 
+## [6.7.0](https://github.com/mikeng-io/nora/compare/v6.6.16...v6.7.0) (2026-10-23)
+
+
+### Features
+
+* **version:** list published releases and read exact release notes ([d050e43](https://github.com/mikeng-io/nora/commit/d050e436b77f7218b0e6b813a348b7044a5693aa))
+
+
+### Bug Fixes
+
+* **version:** read named release notes without listing ([b70352d](https://github.com/mikeng-io/nora/commit/b70352d66b546fe346ab575c7eff82dfc17d8cce))
+* **version:** satisfy release tool gate checks ([e2f312a](https://github.com/mikeng-io/nora/commit/e2f312ab56e15864a76ae25ec4e0c12a4c665b5e))
+
+
+### Changes
+
+* **version:** read releases from the shipped manifest ([0077c11](https://github.com/mikeng-io/nora/commit/0077c11540b969777928a5f7c7b0f695e3ef98f2))
+
 ## [6.6.16](https://github.com/mikeng-io/nora/compare/v6.6.15...v6.6.16) (2026-10-23)
 
 
