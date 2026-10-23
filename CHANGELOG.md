@@ -1,5 +1,12 @@
 # Changelog
 
+## [6.6.9](https://github.com/mikeng-io/nora/compare/v6.6.8...v6.6.9) (2026-10-23)
+
+
+### Security
+
+* **site:** allow only the page's own inline scripts by hash instead of 'unsafe-inline' ([efa0bd1](https://github.com/mikeng-io/nora/commit/efa0bd1c477ad354dc0d745a1e72862749a1c34a))
+
 ## [6.6.8](https://github.com/mikeng-io/nora/compare/v6.6.7...v6.6.8) (2026-10-23)
 
 
