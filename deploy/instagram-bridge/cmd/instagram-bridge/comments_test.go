@@ -86,7 +86,7 @@ func TestASummonsIsAnsweredOnceEndToEnd(t *testing.T) {
 	}
 	summon(t, b)
 	var summons map[string]any
-	_, replay, _ := b.hub.Subscribe()
+	_, replay, _, _ := b.hub.Subscribe()
 	for _, raw := range replay {
 		var ev map[string]any
 		_ = json.Unmarshal(raw, &ev)

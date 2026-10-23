@@ -242,7 +242,7 @@ func TestSeqAndStateUpdatesReachTheDisk(t *testing.T) {
 // as the short one, and every consumer keying on room_id would miss silently.
 func TestTypingClaimsARoomOnlyWhenTheCacheCanVouchForIt(t *testing.T) {
 	b := eventBridge(t)
-	ch, _, _ := hubOf(b).Subscribe()
+	ch, _, _, _ := hubOf(b).Subscribe()
 	defer hubOf(b).Unsubscribe(ch)
 
 	if err := b.onEvent(t.Context(), &slidetypes.TypingNotification{
@@ -311,7 +311,7 @@ func TestEveryMeaningfulDeltaIsForwardedAndTheRestAreNot(t *testing.T) {
 		if err := b.onEvent(t.Context(), &slidetypes.Delta{ThreadIGID: threadShort, Data: c.data}); err != nil {
 			t.Fatalf("%s: %v", c.name, err)
 		}
-		_, buffered, dropped := hubOf(b).Stats()
+		_, buffered, dropped, _ := hubOf(b).Stats()
 		if dropped != 0 {
 			t.Errorf("%s: %d events were dropped", c.name, dropped)
 		}
@@ -324,7 +324,7 @@ func TestEveryMeaningfulDeltaIsForwardedAndTheRestAreNot(t *testing.T) {
 		if buffered != 1 {
 			t.Fatalf("%s: emitted %d events, want 1", c.name, buffered)
 		}
-		_, replay, _ := hubOf(b).Subscribe()
+		_, replay, _, _ := hubOf(b).Subscribe()
 		var got map[string]any
 		if err := json.Unmarshal(replay[0], &got); err != nil {
 			t.Fatal(err)

@@ -64,6 +64,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"instagram-bridge/internal/app"
 	"instagram-bridge/internal/domain"
@@ -246,12 +247,38 @@ func failEnvelope(ctx context.Context, w http.ResponseWriter, route string, err 
 	writeJSON(w, status, errorEnvelope{Error: body})
 }
 
+// The limits on reading a request body, in time and in number. The route's
+// byte limit (`limit`) is about size; these are about a client that is slow, or
+// many at once. A body that stops arriving holds a goroutine and a connection,
+// so an unbounded count of them is a resource anyone on the network can spend.
+var (
+	// bodyReadTimeout is how long one request body may take to arrive. A
+	// deadline on this request's connection only, set when its body read
+	// starts. It is not a server WriteTimeout: /events is a stream that must
+	// outlive any body deadline.
+	bodyReadTimeout = 30 * time.Second
+	// maxBodyReaders bounds the bodies read at once. A full set answers 503
+	// `unavailable` at once: the request is retryable, and a queue of stalled
+	// readers is the thing this bound exists to refuse.
+	maxBodyReaders = 16
+	bodySlots      = make(chan struct{}, maxBodyReaders)
+)
+
 // readJSON decodes a request body of at most `limit` bytes into `into`,
 // answering 413 `too_large` over the limit and 400 for anything that is not
 // one JSON value. It returns the raw bytes too, for the one route whose limit
 // depends on what the body turned out to be (a text message is bounded
 // tighter than a media one).
 func readJSON(w http.ResponseWriter, r *http.Request, limit int64, into any) ([]byte, bool) {
+	select {
+	case bodySlots <- struct{}{}:
+		defer func() { <-bodySlots }()
+	default:
+		writeErrorEnvelope(w, http.StatusServiceUnavailable, "unavailable", "too many request bodies are being read; retry")
+		return nil, false
+	}
+	// A writer that cannot set deadlines (a test recorder) is read without one.
+	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(bodyReadTimeout))
 	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
 	if err != nil {
 		var tooBig *http.MaxBytesError

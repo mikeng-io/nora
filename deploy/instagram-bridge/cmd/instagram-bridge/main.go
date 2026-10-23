@@ -132,8 +132,9 @@ func main() {
 		Addr:    fmt.Sprintf(":%d", *port),
 		Handler: httptransport.RequireToken(token)(handler),
 		// No write timeout: /events is a long-lived SSE stream and any write
-		// deadline would sever it on a quiet room. Read timeouts are set
-		// instead, since request bodies are bounded and fast.
+		// deadline would sever it on a quiet room. Writes are bounded per frame
+		// (transport/http's streamWriteTimeout), and each request body has its own
+		// read deadline (readJSON's bodyReadTimeout).
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
