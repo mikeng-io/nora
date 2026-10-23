@@ -264,14 +264,6 @@ func LoadCookieJar(s Store) (*cookies.Cookies, error) {
 		case len(jar.GetMissingCookieNames()) > 0:
 			jsonErr = fmt.Errorf("cookies.json is missing %v", jar.GetMissingCookieNames())
 		default:
-			// A paste left from before this version is a second plain-text copy of the
-			// credential, so one that repeats the jar's session is scrubbed. A paste with a
-			// different session is an operator's pending re-authentication and stays.
-			if s.pasteRepeatsJar(jar) {
-				if err := s.scrubBootstrap(); err != nil {
-					return nil, fmt.Errorf("cookies.curl is obsolete but could not be removed: %w", err)
-				}
-			}
 			return jar, nil
 		}
 	}
@@ -300,21 +292,6 @@ func LoadCookieJar(s Store) (*cookies.Cookies, error) {
 		return nil, fmt.Errorf("cookies.curl was used but could not be removed: %w", err)
 	}
 	return jar, nil
-}
-
-// pasteRepeatsJar reports whether cookies.curl exists and carries the same session
-// as the jar.
-func (s Store) pasteRepeatsJar(jar *cookies.Cookies) bool {
-	blob, err := os.ReadFile(s.Path("cookies.curl"))
-	if err != nil {
-		return false
-	}
-	pairs, err := cookiesFromCurl(string(blob))
-	if err != nil {
-		return false
-	}
-	want := pairs[cookies.IGCookieSessionID]
-	return want != "" && want == jar.Get(cookies.IGCookieSessionID)
 }
 
 // scrubBootstrap truncates and removes the one-shot cookies.curl. A missing
