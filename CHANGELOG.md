@@ -1,5 +1,21 @@
 # Changelog
 
+## [6.6.7](https://github.com/mikeng-io/nora/compare/v6.6.6...v6.6.7) (2026-10-23)
+
+
+### Bug Fixes
+
+* **agent:** declare the requester on the DocumentPublisher read protocol ([755be46](https://github.com/mikeng-io/nora/commit/755be4628cf60b5eea445c496e25af317c78b1a4))
+
+
+### Security
+
+* **authz:** bound and parallelise the document reads behind subagent_list ([3887883](https://github.com/mikeng-io/nora/commit/388788350bb68c471bc84c23d7fc322d1f7348b7))
+* **authz:** re-check grants at delivery, read, revise and relay ([7c7bb31](https://github.com/mikeng-io/nora/commit/7c7bb31cc6737a8fde60d6c3c3d5ea673efdb106))
+* **authz:** show a sub-agent document only where its audience reads it ([556b8c5](https://github.com/mikeng-io/nora/commit/556b8c557994b31554e748e8c6cd9adefa5b0ce9))
+* **authz:** title a sub-agent result document for the viewer, never the requester ([2d8664a](https://github.com/mikeng-io/nora/commit/2d8664a68e7ab5a402376494f5305f4b49e6cd0d))
+* **documents:** list the visible documents before the limit, not after it ([d5b95c9](https://github.com/mikeng-io/nora/commit/d5b95c9ac3a51b8871bb2e6b65c9f6c7e130c0f0))
+
 ## [6.6.6](https://github.com/mikeng-io/nora/compare/v6.6.5...v6.6.6) (2026-10-23)
 
 
