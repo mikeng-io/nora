@@ -24,7 +24,17 @@ Every POST answers `{ ok, request_id, state }` or
 crossfade_seconds}`. All state-changing commands except `/voice/join` are
 generation-scoped (stale generation → `409 generation_conflict`); any body
 `guild_id` ≠ the configured guild → `400 wrong_guild` (single-guild
-hard-bound). `request_id` is deduped for 5 minutes.
+hard-bound). `request_id` is deduped for 5 minutes, in a bounded map
+(256 entries / 512 KiB, in-flight entries never evicted; a full map of
+in-flight requests answers `503 dedupe_full`). A `request_id` is 1–64 characters
+of `[A-Za-z0-9._:-]`, else `400 invalid_request_id`.
+
+**Every route requires `Authorization: Bearer $NORA_BRIDGE_TOKEN`**, the shared
+service bearer that nora and the bridges already hold. A missing or wrong
+bearer is `401 unauthorized` before the body is read. The process refuses to
+start without the token. A body over the limit is `413` and a body still
+arriving after 15 s is `408`; both close the connection without reading the
+rest. The listener accepts at most 64 connections.
 
 | route | semantics |
 |---|---|
@@ -97,8 +107,9 @@ written, and there is no default that would "work".
 
 ## Health semantics
 
-`GET /health` is **process liveness**: it answers 200 whenever the process
-is up, including when no token is configured — a deployment without voice
+`GET /health` is **process liveness** (behind the bearer, like every route:
+its body names the users it hears): it answers 200 whenever the process
+is up, including when no Discord token is configured — a deployment without voice
 receive enabled is **healthy-but-idle**, not failed (the dumb-pipe posture:
 there is nothing to fail closed into). The payload's `voice` field carries
 the receive state — `idle` | `connecting` | `connected` | `error` — plus

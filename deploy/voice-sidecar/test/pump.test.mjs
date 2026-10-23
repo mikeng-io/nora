@@ -8,6 +8,8 @@ import { EventEmitter } from 'node:events';
 import { encodeFrame, encodeHello, createFrameParser } from '../src/codec.mjs';
 import { createPump } from '../src/pump.mjs';
 
+const TOKEN = 'test-bridge-token';
+
 test('frame codec round-trips arbitrary user ids and PCM, even split mid-frame', () => {
   const pcm = Buffer.alloc(3840, 7);
   const frame = encodeFrame('user-123', pcm);
@@ -43,7 +45,7 @@ function fakeSocket() {
 
 test('per-user backlog beyond 16 frames is dropped and counted; other users unaffected', () => {
   const socket = fakeSocket();
-  const pump = createPump({ guildId: GUILD, connectImpl: () => socket });
+  const pump = createPump({ guildId: GUILD, token: TOKEN, connectImpl: () => socket });
   const pcm = Buffer.alloc(3840);
 
   pump(pcm, 'u1'); // no socket yet -> starts the handshake, frame held in pending
@@ -73,7 +75,7 @@ test('handshake overflow drops the oldest pending frame and counts it', () => {
   const dead = new EventEmitter();
   dead.write = () => false;
   dead.destroy = () => dead.emit('close');
-  const pump = createPump({ guildId: GUILD, connectImpl: () => dead, maxPending: 2 });
+  const pump = createPump({ guildId: GUILD, token: TOKEN, connectImpl: () => dead, maxPending: 2 });
   const pcm = Buffer.alloc(3840);
   pump(pcm, 'u1'); // handshake starts, frame held
   pump(pcm, 'u1');
@@ -84,7 +86,7 @@ test('handshake overflow drops the oldest pending frame and counts it', () => {
 
 test('close during the TCP handshake destroys the connecting socket (2026-09-16 audit N-5)', () => {
   const socket = fakeSocket();
-  const pump = createPump({ guildId: GUILD, connectImpl: () => socket });
+  const pump = createPump({ guildId: GUILD, token: TOKEN, connectImpl: () => socket });
   pump(Buffer.alloc(3840), 'u1'); // starts the handshake; frame held in pending
 
   let destroyed = 0;
@@ -114,13 +116,13 @@ test('the hello is written on connect, BEFORE any held audio', () => {
   // would have to buffer it or drop it, and dropping an utterance's onset is
   // exactly what the pending buffer exists to prevent.
   const socket = fakeSocket();
-  const pump = createPump({ guildId: GUILD, connectImpl: () => socket });
+  const pump = createPump({ guildId: GUILD, token: TOKEN, connectImpl: () => socket });
 
   pump(Buffer.alloc(3840), 'u1'); // held: no socket yet
   socket.emit('connect');
 
   assert.equal(socket.writes.length, 2);
-  assert.deepEqual(socket.writes[0], encodeHello(GUILD));
+  assert.deepEqual(socket.writes[0], encodeHello(GUILD, TOKEN));
   assert.deepEqual(socket.writes[1], encodeFrame('u1', Buffer.alloc(3840)));
 });
 
@@ -128,11 +130,11 @@ test('the hello is re-sent on every reconnect', () => {
   // A gate restart drops the connection; the next one is a NEW connection and
   // carries no memory of which guild the old one was for.
   let socket = fakeSocket();
-  const pump = createPump({ guildId: GUILD, connectImpl: () => socket });
+  const pump = createPump({ guildId: GUILD, token: TOKEN, connectImpl: () => socket });
 
   pump(Buffer.alloc(3840), 'u1');
   socket.emit('connect');
-  assert.deepEqual(socket.writes[0], encodeHello(GUILD));
+  assert.deepEqual(socket.writes[0], encodeHello(GUILD, TOKEN));
 
   socket.emit('close');            // the gate went away
   const reconnected = fakeSocket();
@@ -140,14 +142,14 @@ test('the hello is re-sent on every reconnect', () => {
   pump(Buffer.alloc(3840), 'u1');  // re-opens
   reconnected.emit('connect');
 
-  assert.deepEqual(reconnected.writes[0], encodeHello(GUILD));
+  assert.deepEqual(reconnected.writes[0], encodeHello(GUILD, TOKEN));
 });
 
 test('the hello does not enter a user backlog', () => {
   // It is not a user's audio. Counting it against `u1` would let one frame of
   // real speech past the per-user bound go missing instead.
   const socket = fakeSocket();
-  const pump = createPump({ guildId: GUILD, connectImpl: () => socket });
+  const pump = createPump({ guildId: GUILD, token: TOKEN, connectImpl: () => socket });
 
   pump(Buffer.alloc(3840), 'u1');
   socket.emit('connect');
@@ -170,5 +172,14 @@ test('a pump without a guildId is refused at construction', () => {
   assert.throws(
     () => createPump({ guildId: '', connectImpl: () => fakeSocket() }),
     /needs a guildId/,
+  );
+});
+
+test('a pump without the service token is refused at construction', () => {
+  // The gate drops a hello it cannot authenticate, so a tokenless pump would
+  // be a silent audio sink in another container. Refused here, like a guildless one.
+  assert.throws(
+    () => createPump({ guildId: GUILD, connectImpl: () => fakeSocket() }),
+    /needs the service token/,
   );
 });

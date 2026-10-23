@@ -8,8 +8,9 @@ Two sources, each owning what it should (AGENTS.md, the three config files):
   `/app/config.toml` by compose, read once at boot (`config_toml.py`); a
   change needs a restart, like identity.toml and policy.toml. No env override
   for these — one place, one answer.
-- **env** — bind addresses only: the listen/health binds and
-  `NORA_INGEST_URL`. NO deployment identity: the
+- **env** — bind addresses, `NORA_INGEST_URL`, and the shared
+  `NORA_BRIDGE_TOKEN` that authenticates the seam hello and the utterance.
+  NO deployment identity: the
   guild arrives per CONNECTION in the sidecar's hello frame, so this service
   is identical on every deployment and serves however many guilds connect to
   it. nora resolves that guild to the room marked `voice = true` in
@@ -53,6 +54,7 @@ def build_config(config_path: Path = DEFAULT_PATH, env: dict[str, str] | None = 
         stt_language=str(stt.get("language", d.stt_language)),
         stt_timeout_s=float(stt.get("timeout_seconds", d.stt_timeout_s)),
         nora_url=e.get("NORA_INGEST_URL", d.nora_url),
+        bridge_token=e.get("NORA_BRIDGE_TOKEN", ""),
     )
 
 
