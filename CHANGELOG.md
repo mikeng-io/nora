@@ -1,5 +1,12 @@
 # Changelog
 
+## [6.6.11](https://github.com/mikeng-io/nora/compare/v6.6.10...v6.6.11) (2026-10-23)
+
+
+### Security
+
+* **voice:** contain spike WAV output for 8764_82704 ([8fb6e73](https://github.com/mikeng-io/nora/commit/8fb6e73c666e38e055dc74fb26e9a99d28a249a2))
+
 ## [6.6.10](https://github.com/mikeng-io/nora/compare/v6.6.9...v6.6.10) (2026-10-23)
 
 
