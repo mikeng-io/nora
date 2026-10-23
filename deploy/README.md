@@ -40,8 +40,10 @@ legacy; it must not run concurrently with or replace the installed release path.
 
 Node build/runtime stages use `node:24-trixie-slim`; Python services use
 `python:3.12-slim-trixie`. Instagram keeps `golang:1.27-bookworm` with a Debian
-bookworm runtime. Runtime patches float within these families; canonical release,
-legacy image and computer builds use `--pull` to refresh base images. Rebuild,
+bookworm runtime. These bases are digest-pinned: update the digest to adopt a
+patch; `--pull` alone does not advance it. uv is copied from the official 0.13.4
+image with patched embedded roots, and Periphery explicitly upgrades system CAs
+for its HTTPS Git fetches. Rebuild,
 test and redeploy to apply updates; running containers do not update themselves.
 The computer is managed separately via `nora-computer build` and the
 [computer lifecycle](computer/README.md): its Ubuntu digest, distro Python and

@@ -9,8 +9,8 @@
 #
 # Ubuntu and uv are pinned by digest, computerd's Python dependencies by
 # hash (requirements.txt, from `uv pip compile --generate-hashes`). Bump those
-# deliberately with a rebuild. Node is the exception: its Node 24 / trixie
-# tag floats patch updates, refreshed by `nora-computer build` with --pull.
+# deliberately with a rebuild. Node 24 / trixie is also digest-pinned;
+# --pull alone does not advance any pinned base.
 FROM node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS node
 
 FROM ubuntu@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944
@@ -29,8 +29,8 @@ RUN apt-get -o Acquire::Retries=3 update && apt-get -o Acquire::Retries=3 instal
 COPY --from=node /usr/local/ /usr/local/
 
 # uv for per-project environments (a project's .venv and lockfile persist
-# under /workspace; the system Python does not). 0.12.21, by digest.
-COPY --from=ghcr.io/astral-sh/uv@sha256:a7aed3216253ee804de3e2d8afa5073baa1a177335345d43845cd4165e43b711 /uv /uvx /usr/local/bin/
+# under /workspace; the system Python does not). 0.13.4 includes the emSign TLS fix.
+COPY --from=ghcr.io/astral-sh/uv:0.13.4@sha256:9f130421e930bfbdc563c00740466603f8723158e90297d07957c2294640262b /uv /uvx /usr/local/bin/
 
 # computerd in its own venv, so a project's `pip install` can never break the
 # thing that answers Nora. Root-owned: commands run as their room's own

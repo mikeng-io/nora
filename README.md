@@ -151,7 +151,8 @@ and explicitly allow the intended rooms before starting Nora.
 
 ## Development
 
-Use Python 3.12 and [uv](https://docs.astral.sh/uv/). From a checkout:
+Use Python 3.12 and [uv](https://docs.astral.sh/uv/) 0.13.4 or newer
+(the emSign TLS fix). From a checkout:
 
 ```bash
 uv sync --frozen --extra evals
