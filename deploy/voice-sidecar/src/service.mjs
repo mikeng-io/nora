@@ -253,6 +253,7 @@ async function main() {
         createAudioResource(Readable.from([audio]), { inputType: StreamType.Arbitrary }),
       fetchImpl: (...args) => fetch(...args),
       eventUrl: NORA_EVENT_URL,
+      eventHeaders: { authorization: `Bearer ${BRIDGE_TOKEN}` },
       clock: realClock,
       getWakeStats: () => {
         const users = {};

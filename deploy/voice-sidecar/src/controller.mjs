@@ -199,7 +199,8 @@ export function createController({
   // Expiry does not wait for traffic: a completed memo past its TTL is dropped
   // by this timer, so an idle controller releases what an attacker stored.
   // unref() so the timer alone never keeps the process alive.
-  setInterval(pruneDedupe, dedupeSweepMs).unref();
+  const sweepTimer = setInterval(pruneDedupe, dedupeSweepMs);
+  sweepTimer.unref();
 
   function checkGuild(body) {
     if (body.guild_id !== undefined && body.guild_id !== guildId) {
@@ -397,6 +398,9 @@ export function createController({
     knowsRoute: (route) => Boolean(handlers[route]),
     dedupeSize: () => dedupe.size,
     dedupeBytes: () => dedupeBytes,
+    // Stops the sweep timer. A discarded core must call this, or each failed join leaves a
+    // timer and its closure behind.
+    dispose: () => clearInterval(sweepTimer),
   };
 }
 
@@ -446,6 +450,7 @@ export function createCoreRegistry({ makeCore, canCreate = () => true, log = () 
     if (cores.get(guildId) !== core) return false; // superseded already
     if (core.lifecycle.voice() !== 'error' || core.lifecycle.session()) return false;
     cores.delete(guildId);
+    core.controller.dispose?.();
     log('core_pruned', { guild_id: guildId, reason: 'join_failed' });
     return true;
   }
@@ -468,6 +473,7 @@ export function createCoreRegistry({ makeCore, canCreate = () => true, log = () 
     let existing = cores.get(guildId);
     if (existing && create && existing.lifecycle.voice() === 'error' && !existing.lifecycle.session()) {
       cores.delete(guildId);
+      existing.controller.dispose?.();
       log('core_pruned', { guild_id: guildId, reason: 'stale_error_core_on_mint' });
       existing = undefined;
     }
@@ -681,6 +687,8 @@ export function createCore({
   createSpeechResource,
   fetchImpl,
   eventUrl,
+  // Extra headers on every event POST (the shared bearer Nora's event route requires).
+  eventHeaders = {},
   clock = realClock,
   getWakeStats,
   pumpInfo,
@@ -693,7 +701,7 @@ export function createCore({
   controllerOptions = {},
 }) {
   let lifecycle; // forward reference for the arbiter's generation check
-  const outbox = createOutbox({ url: eventUrl, fetchImpl, clock, log, ...outboxOptions });
+  const outbox = createOutbox({ url: eventUrl, headers: eventHeaders, fetchImpl, clock, log, ...outboxOptions });
   const emitEvent = (type, fields) => outbox.push(type, { guild_id: guildId, ...fields });
   const arbiter = createArbiter({
     spawn,

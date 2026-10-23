@@ -283,3 +283,19 @@ test('a voice-death pushed while a delivery is in flight is serialized behind it
   assert.ok(delivered[1].event_seq > delivered[0].event_seq);
   assert.equal(outbox.pendingCount(), 0);
 });
+
+test('configured headers (the shared bearer) are sent on every event POST', async () => {
+  const seen = [];
+  const { outbox } = makeOutbox({
+    headers: { authorization: 'Bearer test-token' },
+    fetchBehavior: async (url, opts) => {
+      seen.push(opts.headers);
+      return { status: 200 };
+    },
+  });
+  outbox.push('track-finished', { playback_id: 'p1' });
+  await tick();
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].authorization, 'Bearer test-token');
+  assert.equal(seen[0]['content-type'], 'application/json');
+});

@@ -158,12 +158,12 @@ async def event_client(aiohttp_client):
 
 async def test_the_event_route_exists_only_when_a_consumer_is_wired(client):
     """Without `on_voice_event` there is no endpoint to poke at all."""
-    resp = await client.post("/app/v1/voice/event", json=EVENT)
+    resp = await client.post("/app/v1/voice/event", headers=AUTH, json=EVENT)
     assert resp.status == 404
 
 
 async def test_an_event_reaches_the_consumer_and_the_verdict_passes_through(event_client):
-    resp = await event_client.post("/app/v1/voice/event", json=EVENT)
+    resp = await event_client.post("/app/v1/voice/event", headers=AUTH, json=EVENT)
     assert resp.status == 200
     assert (await resp.json())["status"] == "ok"
     assert event_client.seen == [EVENT]
@@ -173,9 +173,24 @@ async def test_an_event_with_invalid_json_is_refused_with_400(event_client):
     resp = await event_client.post(
         "/app/v1/voice/event",
         data=b"not json",
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", **AUTH},
     )
     assert resp.status == 400
+    assert event_client.seen == []
+
+
+async def test_an_event_without_the_bearer_never_reaches_the_consumer(event_client):
+    """A co-networked caller must not be able to detach a live guild session."""
+    resp = await event_client.post("/app/v1/voice/event", json=EVENT)
+    assert resp.status == 401
+    assert event_client.seen == []
+
+
+async def test_an_event_with_a_wrong_bearer_never_reaches_the_consumer(event_client):
+    resp = await event_client.post(
+        "/app/v1/voice/event", json=EVENT, headers={"Authorization": "Bearer not-it"},
+    )
+    assert resp.status == 401
     assert event_client.seen == []
 
 

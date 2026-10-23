@@ -166,6 +166,10 @@ def register_voice(
     if on_voice_event is not None:
 
         async def voice_event(request: web.Request) -> web.Response:
+            # Same posture as the utterance route: no bearer, no parse and no dispatch, so a
+            # co-networked caller cannot detach a live guild session.
+            if not service_auth_ok(request.headers.get("Authorization")):
+                return web.json_response({"error": "unauthorized"}, status=401)
             try:
                 body = await request.json()
             except (json.JSONDecodeError, UnicodeDecodeError):
