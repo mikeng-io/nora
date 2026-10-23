@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import tempfile
 import time
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from uuid import UUID
@@ -33,7 +35,7 @@ from nora.engagement.slots import ConversationSlots
 from nora.obs.logging import bind_tag_id
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
-from nora.policy import permissive_policy
+from nora.policy import load_policy
 from nora.testing import (
     FakeAgentRunner,
     FakeComputeJobStore,
@@ -445,8 +447,14 @@ async def test_create_runs_a_worker_and_the_poller_delivers_with_the_documents_l
             ScriptedTurn(tool_calls=[("send_reply", {"text": reply})], final_text=reply),
         ]),
     )
+    # A room that names Miles: the document Miles made there is one the room's audience reads.
+    policy_file = Path(tempfile.mkdtemp()) / "policy.toml"
+    policy_file.write_text(
+        'default = "deny"\n[[conversations]]\nplatform = "signal"\n'
+        f'id = "{ROOM}"\nlabel = "{ROOM}"\npersons = ["miles"]\n'
+    )
     poller = ComputeJobPoller(
-        policy=permissive_policy(),
+        policy=load_policy(policy_file),
         store=desk._jobs, backends={SUBAGENT_KIND: backend}, speak=path.speak,
         slots=ConversationSlots(maxlen=16, spawn=lambda c: None), metrics=Metrics(),
         tick_seconds=1.0, clock=lambda: NOW, documents=service,
@@ -564,6 +572,27 @@ async def test_read_titles_a_result_document_for_the_viewer_and_refuses_another_
     assert DOC_ID not in repr(other) and "Ken's private title" not in repr(other)
     nobody = await rig.tools(ROOM, tagger=None)["subagent_read"](id=started["id"])
     assert DOC_ID not in repr(nobody) and "Ken's private title" not in repr(nobody)
+
+
+async def test_list_shows_a_result_document_id_to_its_viewer_and_never_to_another_person():
+    """Ken's job made Ken's document. `subagent_list` shows its id to Ken (the positive control)
+    and not to Mei, whose read of it is refused, nor to a call with no viewer."""
+    rig = _Desk(documents=_Documents(creator=KEN.person_id, title="Ken's private title"))
+    bind_tag_id("tag-ken")
+    started = await rig.tools(ROOM, tagger=KEN)["subagent_create"](**BRIEF)
+    await rig.store.mark(
+        UUID(started["id"]), ComputeJobState.DONE, completed_at=NOW, result_report="published",
+        result_document_ids=(DOC_ID,),
+    )
+
+    creator = await rig.tools(ROOM, tagger=KEN)["subagent_list"]()
+    assert [d["document_id"] for d in creator["jobs"][0]["documents"]] == [DOC_ID]
+    other = await rig.tools(ROOM, tagger=MEI)["subagent_list"]()
+    assert other["status"] == "ok" and other["jobs"][0]["state"] == "done"   # the job is shown
+    assert "documents" not in other["jobs"][0]
+    assert DOC_ID not in repr(other) and "Ken's private title" not in repr(other)
+    nobody = await rig.tools(ROOM, tagger=None)["subagent_list"]()
+    assert DOC_ID not in repr(nobody)
 
 
 async def test_a_title_of_exactly_sixty_characters_is_accepted_and_kept():

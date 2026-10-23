@@ -315,13 +315,13 @@ async def test_a_lost_job_says_it_lost_track_and_never_that_it_failed():
 # ---------------------------------------------------------------------------
 
 
-def _poller(store, backends, fake_slots, fake_metrics, spoken, documents=None):
+def _poller(store, backends, fake_slots, fake_metrics, spoken, documents=None, policy=None):
     async def speak(occ):
         spoken.append(occ)
         return "sent"
 
     return ComputeJobPoller(
-        policy=permissive_policy(),
+        policy=policy if policy is not None else permissive_policy(),
         store=store, backends=backends, speak=speak, slots=fake_slots,
         metrics=fake_metrics, tick_seconds=1.0, clock=lambda: datetime.now(UTC),
         documents=documents,
@@ -404,10 +404,11 @@ class _Documents:
 async def test_delivery_reads_each_document_back_and_names_a_missing_one(
     fake_slots, fake_metrics,
 ):
+    # A one-to-one job: the requester is the whole audience, so the missing one is named.
     here, gone = UUID(int=1), UUID(int=2)
     url = f"https://nora.example/documents/{here.hex}"
     store = FakeComputeJobStore()
-    await store.create(_pending_job())
+    await store.create(_pending_job(conversation_type="dm"))
     backend = FakeComputeBackend()
     backend.set_result(job_id="job_1", result=JobResult(
         JobStatus.SUCCEEDED, report="two sheets made", document_ids=(str(here), str(gone)),
@@ -425,6 +426,113 @@ async def test_delivery_reads_each_document_back_and_names_a_missing_one(
     assert url in body
     assert f"{gone}" in body and "could not be found" in body
     assert spoken[0].document_urls == (url,)   # only the one that read back
+
+
+class _Readable:
+    """Authorization-sensitive, as `DocumentService.read` is: a document reads `ok` only for the
+    people in `readers`, and is `refused` (no title, no link) for anyone else."""
+
+    def __init__(self, *, document: UUID, title: str, url: str, readers: frozenset[str]) -> None:
+        self.document, self.title, self.url, self.readers = document, title, url, readers
+
+    async def read(
+        self, *, platform, conversation_id, document_id=None, handle="", person_id=None,
+    ):
+        if document_id == self.document and person_id in self.readers:
+            return SimpleNamespace(status="ok", title=self.title, url=self.url)
+        return SimpleNamespace(status="refused", title="", url="")
+
+
+async def _spoken_for(
+    *, conversation_type, policy, documents, document_ids, fake_slots, fake_metrics,
+) -> list:
+    store = FakeComputeJobStore()
+    await store.create(_pending_job(conversation_type=conversation_type, requester_person_id="ken"))
+    backend = FakeComputeBackend()
+    backend.set_result(job_id="job_1", result=JobResult(
+        JobStatus.SUCCEEDED, report="two sheets made", document_ids=document_ids,
+    ))
+    spoken: list = []
+    poller = _poller(
+        store, {"subagent": backend}, fake_slots, fake_metrics, spoken,
+        documents=documents, policy=policy,
+    )
+    await poller.tick()
+    return spoken
+
+
+async def test_a_room_event_shows_no_title_link_or_id_of_a_document_only_its_creator_reads(
+    fake_slots, fake_metrics,
+):
+    """Ken's job made a document only Ken may read, and the room is `"*"`, which names nobody.
+    The event goes to the room, so it carries none of the title, the link or the id. The same
+    job one-to-one, to Ken, carries all three: the positive control."""
+    doc = UUID(int=1)
+    url = f"https://nora.example/documents/{doc.hex[:12]}"
+    creator_only = _Readable(
+        document=doc, title="Ken's private title", url=url, readers=frozenset({"ken"}),
+    )
+    room = await _spoken_for(
+        conversation_type="group", policy=_policy(persons='"*"'), documents=creator_only,
+        document_ids=(str(doc),), fake_slots=fake_slots, fake_metrics=fake_metrics,
+    )
+    assert len(room) == 1 and "two sheets made" in room[0].body   # the job's text still lands
+    assert "Ken's private title" not in room[0].body
+    assert url not in room[0].body and doc.hex[:12] not in room[0].body
+    assert str(doc) not in room[0].body and "could not be found" not in room[0].body
+    assert room[0].document_urls == ()
+
+    own = await _spoken_for(
+        conversation_type="dm", policy=_policy(persons='["ken"]'), documents=creator_only,
+        document_ids=(str(doc),), fake_slots=fake_slots, fake_metrics=fake_metrics,
+    )
+    assert "Ken's private title" in own[0].body and url in own[0].body   # positive control
+    assert own[0].document_urls == (url,)
+
+
+async def test_a_room_event_shows_a_document_the_whole_room_names_can_read(
+    fake_slots, fake_metrics,
+):
+    """The same document, in a room that names Ken and Mei, both of whom read it: the room
+    is its audience, so the title and link ride with the event (the positive control)."""
+    doc = UUID(int=1)
+    url = f"https://nora.example/documents/{doc.hex[:12]}"
+    shared = _Readable(
+        document=doc, title="Shared title", url=url, readers=frozenset({"ken", "mei"}),
+    )
+    room = await _spoken_for(
+        conversation_type="group", policy=_policy(persons='["ken", "mei"]'),
+        documents=shared, document_ids=(str(doc),),
+        fake_slots=fake_slots, fake_metrics=fake_metrics,
+    )
+    assert "Shared title" in room[0].body and url in room[0].body
+    assert room[0].document_urls == (url,)
+
+
+async def test_a_failed_read_in_a_room_leaves_no_id_in_the_event(fake_slots, fake_metrics):
+    """A document that reads back shows its title and link; the one that does not leaves no id,
+    no link and no «could not be found» line in a room event. One-to-one, the requester still
+    hears the id named missing, as before."""
+    doc, ghost = UUID(int=1), UUID("abcdef01-2345-6789-abcd-ef0123456789")
+    url = f"https://nora.example/documents/{doc.hex[:12]}"
+    shared = _Readable(
+        document=doc, title="Shared title", url=url, readers=frozenset({"ken", "mei"}),
+    )
+    room = await _spoken_for(
+        conversation_type="group", policy=_policy(persons='["ken", "mei"]'),
+        documents=shared, document_ids=(str(doc), str(ghost)),
+        fake_slots=fake_slots, fake_metrics=fake_metrics,
+    )
+    assert "Shared title" in room[0].body                          # positive control
+    assert str(ghost) not in room[0].body and ghost.hex[:12] not in room[0].body
+    assert "could not be found" not in room[0].body
+
+    own = await _spoken_for(
+        conversation_type="dm", policy=_policy(persons='["ken"]'),
+        documents=shared, document_ids=(str(doc), str(ghost)),
+        fake_slots=fake_slots, fake_metrics=fake_metrics,
+    )
+    assert str(ghost) in own[0].body and "could not be found" in own[0].body
 
 
 async def test_delivery_keeps_the_report_and_document_ids_on_the_row(fake_slots, fake_metrics):

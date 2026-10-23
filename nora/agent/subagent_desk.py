@@ -221,12 +221,23 @@ class SubagentDesk:
             return CreateOutcome("unavailable", reason="row_not_written")
         return CreateOutcome("started", id=str(row.id))
 
-    async def recent(self, *, platform: str, conversation_id: str) -> list[JobView]:
+    async def recent(
+        self, *, platform: str, conversation_id: str, person_id: str | None,
+    ) -> list[JobView]:
+        """This room's jobs, newest first. A job's document ids are listed to `person_id`, the
+        one asking, only where they may read them, as `read` shows them; no one, no ids."""
         rows = await self._jobs.room_jobs(
             platform=platform, conversation_id=conversation_id, kind=SUBAGENT_KIND,
             limit=LIST_LIMIT,
         )
-        return [self._view(r, titles=(), full=False) for r in rows]
+        views = []
+        for r in rows:
+            readable = await self._titles(r, r.result_document_ids, person_id)
+            views.append(replace(
+                self._view(r, titles=(), full=False),
+                document_ids=tuple(i for i, _ in readable),
+            ))
+        return views
 
     async def read(
         self, *, platform: str, conversation_id: str, job_id: str, person_id: str | None,

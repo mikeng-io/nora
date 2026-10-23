@@ -16545,10 +16545,13 @@ Args:
         tool = "subagent_list"
         if subagent is None or not subagent_on_tag:
             return _subagent_unavailable(tool, "not_wired")
+        # The person asking: the documents of each job are listed to them, never to the requester.
+        tagger = getattr(room, "tagger", None) if room is not None else None
         try:
             views = await subagent.recent(
                 platform=room.platform if room is not None else "",
                 conversation_id=bound_conversation_id,
+                person_id=tagger.person_id if tagger is not None else None,
             )
         except Exception:
             log.exception("subagent_list failed")

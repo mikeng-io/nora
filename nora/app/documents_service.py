@@ -135,6 +135,16 @@ def rooms_named(policy: Policy, person_id: str) -> frozenset[RoomKey]:
     )
 
 
+def room_names_audience(policy: Policy, platform: str, conversation_id: str) -> bool:
+    """Whether everyone the room `(platform, conversation_id)` names can read a document made in
+    it: true only for an explicit, non-empty `persons` list. A `"*"` room names nobody, so only a
+    document's creator reads what was made there (`may_read`), and an unlisted room names nobody.
+    The caller reads the document room-scoped, so it was made in this room, and `rooms_named`
+    gives each listed person that room's read. Fail closed: anything else is False."""
+    convo = policy.conversation(platform, conversation_id)
+    return convo is not None and convo.persons is not None and bool(convo.persons)
+
+
 def room_label(policy: Policy, platform: str, conversation_id: str) -> str:
     """The operator's label of the room `(platform, conversation_id)` names, or "" when no
     allowed room answers to it. The portal shows it beside a document, but only to someone
@@ -792,5 +802,6 @@ __all__ = [
     "ReadResult",
     "StateResult",
     "room_label",
+    "room_names_audience",
     "rooms_named",
 ]

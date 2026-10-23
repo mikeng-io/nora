@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 from uuid import UUID
 
+from nora.app.documents_service import room_names_audience
 from nora.app.fire import FAILED_POLICY, SENT, compute_occasion
 from nora.domain.checkpoint import read_row
 from nora.domain.compute import (
@@ -119,15 +120,28 @@ class ComputeJobPoller:
                 )
                 self._metrics.inc("nora_errors_total", stage="compute_poller")
 
-    async def _read_back(self, job: ComputeJob, ids: tuple[str, ...]) -> DocumentReadBack:
+    async def _read_back(
+        self, job: ComputeJob, ids: tuple[str, ...],
+    ) -> DocumentReadBack | None:
         """Read each `document_id` the result named back through the document store, in the
-        job's own room. An id that is not a document here, or whose read raised, is missing:
-        fail closed, never linked (R-100)."""
+        job's own room, as the requester. An id that is not a document here, or whose read
+        raised, is missing: fail closed, never linked (R-100).
+
+        A one-to-one (`dm`) job is the requester's own, so that is all it needs. Anything else
+        is a room's message, read by everyone the room names: a document's title, link and id
+        ride with it only where that audience may read it (`room_names_audience`), and a
+        document that is not shown is left out whole, with no «missing» line that would carry
+        its id. `None` (no document store, one-to-one) is the caller's answer for "not read"."""
+        room = job.conversation_type != "dm"
+        if self._documents is None or (
+            room and not room_names_audience(self._policy, job.platform, job.conversation_id)
+        ):
+            return DocumentReadBack() if room else None
         found: list[ReadBackDocument] = []
         missing: list[str] = []
         for raw in ids:
             try:
-                out = await self._documents.read(  # type: ignore[union-attr]
+                out = await self._documents.read(
                     platform=job.platform, conversation_id=job.conversation_id,
                     document_id=UUID(raw), person_id=job.requester_person_id,
                 )
@@ -137,7 +151,7 @@ class ComputeJobPoller:
                 ok = False
             if ok:
                 found.append(ReadBackDocument(raw, out.title, out.url))
-            else:
+            elif not room:
                 missing.append(raw)
         return DocumentReadBack(tuple(found), tuple(missing))
 
@@ -251,10 +265,7 @@ class ComputeJobPoller:
             if not await self._store.claim(job.id):
                 # Already claimed by an earlier tick's overlapping poll.
                 return
-            readback = (
-                await self._read_back(job, result.document_ids)
-                if self._documents is not None else None
-            )
+            readback = await self._read_back(job, result.document_ids)
             # ponytail: the media index's metric is video's, the one kind that carries bytes
             # today; a second such kind names its own.
             kept = await self._keep(job, result)

@@ -10,8 +10,10 @@ real `DocumentService`; only the model's reply is scripted.
 
 from __future__ import annotations
 
+import tempfile
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -23,7 +25,7 @@ from nora.domain.ports import JobResult, JobStatus
 from nora.engagement.slots import ConversationSlots
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
-from nora.policy import permissive_policy
+from nora.policy import Policy, load_policy
 from nora.testing import FakeAgentRunner, FakeComputeBackend, FakeComputeJobStore, ScriptedTurn
 from tests.unit.test_document_links_are_minted import PUBLIC, _service
 from tests.unit.test_document_tools import _doc
@@ -50,6 +52,17 @@ def _job() -> ComputeJob:
     )
 
 
+def _room_policy() -> Policy:
+    """A room that names Miles and nobody else: a document Miles made there is one everyone the
+    room names can read, so its link may ride with a message the room receives."""
+    path = Path(tempfile.mkdtemp()) / "policy.toml"
+    path.write_text(
+        'default = "deny"\n[[conversations]]\nplatform = "signal"\n'
+        f'id = "{ROOM}"\nlabel = "{ROOM}"\npersons = ["miles"]\n'
+    )
+    return load_policy(path)
+
+
 async def _deliver(doctrine_store, persons, reply, document_ids, service):
     """Run one finished job through the poller and a real fire turn; return what was sent."""
     adapter = _FireAdapter()
@@ -68,7 +81,7 @@ async def _deliver(doctrine_store, persons, reply, document_ids, service):
         JobStatus.SUCCEEDED, report="documents made", document_ids=document_ids,
     ))
     poller = ComputeJobPoller(
-        policy=permissive_policy(),
+        policy=_room_policy(),
         store=store, backends={"subagent": backend}, speak=path.speak,
         slots=ConversationSlots(maxlen=16, spawn=lambda c: None), metrics=Metrics(),
         tick_seconds=1.0, clock=lambda: NOW, documents=service,
