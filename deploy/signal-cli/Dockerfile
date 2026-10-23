@@ -13,7 +13,7 @@
 #
 # Java 25 is REQUIRED: signal-cli 0.14.7 ships class file version 69. Temurin 21
 # fails at class load with UnsupportedClassVersionError.
-FROM eclipse-temurin:25-jre-noble
+FROM eclipse-temurin:25-jre-noble@sha256:3f2223fe04b750aa5a8179e29b5c9a1ddf7665fc9bb08bfe11ad01d143bc13a5
 
 ARG SIGNAL_CLI_VERSION=0.14.7
 ARG SIGNAL_CLI_KEY=FA10826A74907F9EC6BBB7FC2BA2CD21B5B09570

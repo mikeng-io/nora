@@ -12,6 +12,7 @@
     "preview": "astro preview",
     "fonts": "node scripts/fonts.mjs",
     "check": "astro check",
+    "test": "node --test scripts/*.test.mjs",
     "format": "prettier --write \"src/**/*.{astro,ts,css}\" \"scripts/*.mjs\" astro.config.mjs"
   },
   "dependencies": {
@@ -28,5 +29,8 @@
     "sharp": "0.35.5",
     "subset-font": "^2.9.0",
     "typescript": "^5.9.0"
+  },
+  "overrides": {
+    "es-module-lexer": "^3.0.0"
   }
 }

@@ -1,5 +1,33 @@
 # Changelog
 
+## [6.6.5](https://github.com/mikeng-io/nora/compare/v6.6.4...v6.6.5) (2026-10-23)
+
+
+### Security
+
+* **egress:** a bearing on both numbers of a pair is a coordinate ([6a2093a](https://github.com/mikeng-io/nora/commit/6a2093a99a7145a16d28baa4e66820ca22e593a4))
+* **egress:** a comma or slash pair of two-digit parts is a coordinate ([a3a418e](https://github.com/mikeng-io/nora/commit/a3a418ecfe3c3235bd91c4e8b0e21e66be0d1c55))
+* **egress:** a lone decimal is a coordinate only after a degree sign ([e7bfdfa](https://github.com/mikeng-io/nora/commit/e7bfdfad13d3304e6d8e5c66119de4ea79255043))
+* **egress:** coordinate pairs, phone separators, invisible marks and labels ([15a894d](https://github.com/mikeng-io/nora/commit/15a894da8e4f05f1c75fff0b33ce8a9b99af5827))
+* **egress:** reply guard catches separated coordinates, short numbers and invisible characters ([e67e300](https://github.com/mikeng-io/nora/commit/e67e3006f6a6618c0fb2b9d424963c74ef40ea4e))
+* **memory:** the packet screens each person name before the model reads it ([4740adc](https://github.com/mikeng-io/nora/commit/4740adc314657275942ae7194f48b67a190dc54f))
+* **summons:** a refused disclosure clears its staged text, and a 503 stays ambiguous ([da5d5f2](https://github.com/mikeng-io/nora/commit/da5d5f2b60ee84af7ab18d70603d32d8c403f4a3))
+* **summons:** the public comment body is checked after its last transform ([2f15fa3](https://github.com/mikeng-io/nora/commit/2f15fa3189abba25426b133bc555c1744b39f979))
+
+## [6.6.4](https://github.com/mikeng-io/nora/compare/v6.6.3...v6.6.4) (2026-10-22)
+
+
+### Security
+
+* **build:** pin every base image to a digest and let Dependabot keep them current ([3ce8640](https://github.com/mikeng-io/nora/commit/3ce86406bea0c61a003bc12fc37a950691af0a88))
+
+## [6.6.3](https://github.com/mikeng-io/nora/compare/v6.6.2...v6.6.3) (2026-10-22)
+
+
+### Security
+
+* **deps:** pin patched undici, pino, dompurify, es-module-lexer and vitest ([31b2579](https://github.com/mikeng-io/nora/commit/31b2579daa420deeee7a9c4141e13d97e3900f48))
+
 ## [6.6.2](https://github.com/mikeng-io/nora/compare/v6.6.1...v6.6.2) (2026-10-22)
 
 

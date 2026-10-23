@@ -104,6 +104,16 @@ on every pull request may be required: dependency review is skipped while privat
 and the wiki build is path-filtered, so neither is. Add Aikido's PR check here only after
 a PR shows the name it reports under.
 
+## Dependabot
+
+Security updates for Python, npm, Go and the base images, and monthly Actions and base-image
+version updates, are proposed by `.github/dependabot.yml`. Every PR is assigned to the
+maintainer and labelled by that file, because a Dependabot-triggered job cannot label. The
+security-only ecosystems commit as `security(deps)`, a user-visible type, so a patched
+dependency cuts a release by itself; Actions bumps stay `build(deps)`. Every `FROM` is pinned
+to a multi-arch digest and its directory must be listed under the `docker` ecosystem (a test
+enforces both). `apt` packages are still fetched live at build time.
+
 ## Deployment documentation
 
 `nora-host` is a placeholder SSH alias defined by each operator; all paths and

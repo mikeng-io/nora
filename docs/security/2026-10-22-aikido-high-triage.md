@@ -479,6 +479,12 @@ a public/model/fixture value. None of the above does.
   `apt` to a dated snapshot when reproducible builds become a requirement; then
   this becomes a confirmed fix, not an accepted risk. Do not "fix" it by
   switching to unpinned `latest`.
+- **Update, same day:** every `FROM` is now pinned to the multi-arch index digest
+  with its tag kept beside it, and Dependabot's `docker` ecosystem proposes the
+  next digest monthly (`tests/architecture/test_dockerfile_bases_are_pinned.py`
+  fails on an unpinned base or an unwatched Dockerfile directory). **Still open:**
+  `apt` packages are fetched live at build time; a dated snapshot feed is the
+  remaining step, so the finding is mitigated, not closed.
 
 ### 8764_79880 — Periphery container runs as root (high, iac)
 

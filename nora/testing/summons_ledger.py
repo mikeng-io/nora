@@ -48,7 +48,7 @@ class InMemorySummonsLedger:
         self, summons_id: UUID, state: str, *, now: datetime,
         person_id: str | None = None, reply_text: str | None = None,
         reply_comment_id: str | None = None, bridge_code: str | None = None,
-        trace_id: str | None = None,
+        trace_id: str | None = None, clear_reply: bool = False,
     ) -> bool:
         if state not in SUMMONS_STATES:
             raise ValueError(f"unknown summons state {state!r}")
@@ -63,6 +63,8 @@ class InMemorySummonsLedger:
         ):
             if value is not None:
                 changes[key] = value
+        if clear_reply:
+            changes["reply_text"] = None
         self._rows[summons_id] = dataclasses.replace(row, **changes)  # type: ignore[arg-type]
         return True
 
