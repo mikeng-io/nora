@@ -15,3 +15,5 @@ RUN apt-get update \
     && python3 --version \
     && command -v flock \
     && command -v docker
+RUN useradd -U -u 1000 appuser
+USER 1000
