@@ -18,6 +18,21 @@ The images it describes are in `assets/` (02 §"Source of the canonical
 image"): the canonical self image, the character sheet, the social avatar and
 the social banner.
 
+## Amendment, 2026-10-26: Mini option08 Balanced
+
+The operator approved option08 Balanced as the new Mini canonical design and
+requested matching reference, T-pose, setting, app, site and showreel images.
+This supersedes the original eye clauses below (dark ovals, no iris/sclera,
+minimal oval-eye anchor, and the blanket rejection of anime eyes). Open eyes
+now have visible warm sclera, large brown irises, dark pupils, restrained
+highlights and a defined upper lid line, in the proportions of the approved
+canonical image. Keep the small calm expression, no nose marker, one tiny
+short mouth, and all other Mini anchors. Closed-eye expressions stay valid.
+
+[09](09-mini08-balanced.md) records current scope and provenance.
+[08](08-bauhinia-human-form.md) continues to govern the unchanged human form.
+The operator's original September body follows verbatim as historical source.
+
 ---
 
 NORA — CANONICAL VISUAL IDENTITY

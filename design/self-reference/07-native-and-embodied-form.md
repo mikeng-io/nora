@@ -11,6 +11,14 @@ edges:
 
 # One identity, two representations
 
+**Mini amendment, 2026-10-26:** [09](09-mini08-balanced.md) refreshes Mini's
+canonical eyes and repository derivatives. The 2026-10-25 human approval
+left Mini unchanged at that date; 09 is a separate subsequent approval.
+The conceptual framing here is retained, with historical asset sizes and
+ingest statements dated to their original implementation. No new runtime
+media ingest or release is performed by the repository refresh.
+
+
 ## Supersession — 2026-10-25
 
 The operator approved [08 — Bauhinia human form](08-bauhinia-human-form.md)
@@ -96,23 +104,28 @@ physical embodiment.
 
 ## The assets
 
-Both new references sit in `assets/` beside the canon, flat, named by form. None
-is ingested (02 is unchanged: exactly one `role: self` asset).
+References sit in `assets/` beside the canon, flat, named by form. The
+2026-10-26 Mini canonical replaces repository bytes; its live ingest is pending.
+References are not ingested (02 keeps exactly one `role: self` asset).
 
 | file | form | role |
 |---|---|---|
-| `nora-canonical-self.png` | mini | **the** canonical asset, ingested (02) |
+| `nora-canonical-self.png` | mini | **the** canonical source; refreshed bytes not yet ingested (02) |
 | `nora-character-reference-sheet.png` | mini | descriptive source (02) |
 | `nora-social-avatar.png`, `nora-social-banner.png` | mini | reference only (02) |
-| `nora-mini-icon.png` (1261×1247, transparent) | mini | reference only: cut-out head-and-arms icon for stickers and small surfaces |
+| `nora-mini-icon.png` (1254×1254, transparent) | mini | reference only: cut-out head-and-arms icon for stickers and small surfaces |
 | `nora-mini-tpose.png` (1024×1536) | mini | reference only: T-pose front view, the image-to-3D input for the native form's rig |
+| [nora-mini-turnaround.png](../../assets/nora-mini-turnaround.png) (1536×1024) | mini | front/side/back reference, complements the T-pose; not a validated model or rig |
+| `nora-human-bauhinia-reference.png` | human | approved visual anchor governed by 08; unchanged |
+| `nora-notebook.webp` | mini | shared app/showreel illustration, not an identity reference |
 | `nora-embodied-tpose.png` (1024×1536) | embodied | reference only: T-pose front view, the image-to-3D input for the embodied form's rig |
 
 The two T-poses are the inputs the parked 3D avatar spike was waiting for
 (branch `mikeng-io/avatar-3d-spike`, VRM pipeline under `avatar/`). Model files
 that pipeline produces belong under its `avatar/source/`, not here.
 
-`assets/` stays flat. Seven images, the canonical one path-pinned by
+`assets/` stays flat; `assets/visual-assets.json` is the current inventory.
+The canonical source is path-pinned by
 `scripts/ingest_self_asset.py`, `tests/test_skill_content.py` and
 `tests/unit/test_canonical_self_reference.py`; the form is carried by the name
 prefix. A subdirectory earns its place when a form gains more than a handful of

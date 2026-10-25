@@ -469,15 +469,18 @@ def test_the_image_skill_carries_every_anchor_and_rule_of_the_spec(store):
     body = _flat(_image_skill(store).instructions)
     for needle in (
         # identity rule
-        "there is no human or photoreal version",
+        "Your Mini form is a stylized 3D mascot",
         "a character that exists digitally, not an illustration imitating a real person",
         # form and the proportion constraint
         "2.5 to 3 heads tall", "never a shrunken real person",
         "Your proportions are identity",
         "when anatomy and the head-to-body ratio disagree, the ratio wins",
         # face
-        "oval eyes, no visible iris or white", "pink blush on both cheeks",
-        "slightly deadpan", "never over-acted or conventionally anime",
+        "option08 Balanced anime eyes with visible warm sclera",
+        "large brown irises", "dark pupils", "restrained highlights",
+        "a defined upper lid line", "no nose marker", "one tiny short-line mouth",
+        "pink blush on both cheeks",
+        "slightly deadpan", "never over-acted",
         # hair, clothes, earphones, backpack
         "messy high bun", "face-framing strands", "side-parted",
         "light-grey zip hoodie", "plain white top",

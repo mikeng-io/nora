@@ -23,7 +23,7 @@ OUT = ROOT / "public" / "art"
 CUTOUTS = {"thinking", "walking", "umbrella", "music"}
 BORROWED = {  # the repo's existing, already-checked art, used as-is
     "group-chat": REPO / "site/src/assets/art/group-chat.webp",
-    "notebook": REPO / "site/src/assets/art/notebook.webp",
+    "notebook": REPO / "assets/nora-notebook.webp",
     "quiet": REPO / "site/src/assets/art/quiet.webp",
     "night-portrait": REPO / "site/src/assets/art/night-portrait.webp",
     "wave": REPO / "site/src/assets/art/wave.webp",
@@ -61,6 +61,7 @@ def main() -> int:
                 exact=lossless)
         dims[name] = {"w": im.width, "h": im.height}
         print(f"{name:22s} {im.width}x{im.height} {im.mode} -> {dst.relative_to(ROOT)}")
+    (ROOT / "src" / "data").mkdir(parents=True, exist_ok=True)
     (ROOT / "src" / "data" / "art.json").write_text(json.dumps(dims, indent=2, sort_keys=True) + "\n")
     for p in problems:
         print("PROBLEM", p)

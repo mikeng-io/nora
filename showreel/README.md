@@ -146,3 +146,14 @@ sources (all OFL): Inter, Space Grotesk (the wordmark only), JetBrains Mono,
 Noto Sans HK. The Noto subset holds exactly the CJK characters in
 `src/copy/*.json` (`public/fonts/noto-sans-hk.txt`); change the Cantonese
 copy, rerun it.
+
+## Mini option08 refresh, 2026-10-26
+
+Current character inputs follow option08 Balanced eyes. The shared brief and
+earbud detail prompts describe the new design; adjacent raw JSONL files
+record the historical September generation, not the replacement's provenance.
+See `assets/visual-assets.json` for masters, consumers and unchanged reasons.
+Notebook now comes from `assets/nora-notebook.webp`. Run
+`uv run python scripts/visual_assets.py sync` from the repository root to
+refresh image outputs. Existing `renders/*.mp4` remain historical exports;
+this work does not rerender videos or claim their frames match current art.

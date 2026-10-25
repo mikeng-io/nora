@@ -1,5 +1,23 @@
 # Mini Nora icon: provenance
 
+## Current: option08 Balanced, 2026-10-26
+
+The operator approved option08 eyes for Mini and requested this portrait refreshed
+from the new canonical image: visible sclera, brown irises, dark pupils, restrained
+highlights and upper lid line; no nose marker and one tiny mouth. The transparent
+head-and-shoulders crop retains the bun, cheek blush, hoodie and wired earphones.
+It is an icon derivative, not a replacement full-body reference.
+
+`assets/visual-assets.json` declares every consumer and derivative. Run
+`uv run python scripts/visual_assets.py sync` to rebuild app/site icons, the
+portal portrait and showreel images through their existing processors.
+Transparent exports remain bare; iOS and maskable icons use the studio square
+from `DESIGN.md`. Original generated PNG metadata stays in the local archive;
+repository PNGs omit generation metadata. No external profile publication or
+runtime media ingest is performed by this pipeline.
+
+## Historical icon, 2026-10-20 (superseded)
+
 Generated with the built-in imagegen tool on 2026-10-20. The operator selected
 the second candidate for the repository and web app. This replaces the previous
 chin-on-hands icon; the canonical full-body image and character sheet are unchanged.

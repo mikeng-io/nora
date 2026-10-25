@@ -1,5 +1,23 @@
 # Site art: provenance
 
+## Current Mini refresh, 2026-10-26
+
+Open-eye Mini sources now follow approved option08 Balanced: warm sclera,
+brown irises, pupils, restrained highlights and an upper lid line. No nose
+marker; one tiny mouth. The source map is provided by the parent image
+generation task. The canonical and reference sheet remain the shared identity
+inputs. `assets/visual-assets.json` records each source, copy and consumer;
+`scripts/visual_assets.py sync` rebuilds derivatives and the live rig.
+Closed-eye quiet art and the standalone stool remain compatible.
+`assets/nora-notebook.webp` is the retained shared notebook master for the
+app and showreel; only its use on this site was retired.
+
+## September generation history
+
+The following dates describe the original generation, before the option08
+refresh. The shared brief below is the current recipe; prior eye wording is
+preserved in the original operator spec and Git history.
+
 Renders of Mini Nora made for the public site with the image-generation tool
 of Codex CLI (`codex-cli 0.157.0`, `codex exec`): six on 2026-09-26, and on
 2026-09-27 two more poses and a prop for her live presence
@@ -41,7 +59,7 @@ are placed in `components/Memory.astro`, measured on both renders.
 ```text
 You are an art director's image-generation collaborator. Use your built-in image generation tool (do not draw with code, do not use PIL/SVG).
 
-The attached images are the canonical reference for a character called Nora (Mini Nora): a stylized soft 3D mascot, about 2.5-3 heads tall, very large rounded head, messy dark-brown high bun with loose strands, long face-framing strands, side-parted messy fringe, minimal face (large vertical dark oval eyes with no visible iris, tiny short line mouth, nose effectively absent, soft pink blush on both cheeks), oversized light-grey zip hoodie worn open over a plain white top, loose baggy blue-grey jeans, chunky white low-top sneakers, and WHITE WIRED EARPHONES in both ears with the thin white cable falling across her front and a small white inline remote on it. Stay exactly on-model with the reference: same proportions, same render style and material quality (soft 3D, subsurface skin, fine hair strands), same outfit, earphones and cable visible. Expression minimal and calm, slightly deadpan; never over-acted, never anime. No logos, no text, no jewellery, no watermark.
+The attached images are the canonical reference for a character called Nora (Mini Nora): a stylized soft 3D mascot, about 2.5-3 heads tall, very large rounded head, messy dark-brown high bun with loose strands, long face-framing strands, side-parted messy fringe, option08 Balanced face (visible warm sclera, large brown irises, dark pupils, restrained highlights and a defined upper lid line, one tiny short-line mouth, no nose marker, soft pink blush on both cheeks), oversized light-grey zip hoodie worn open over a plain white top, loose baggy blue-grey jeans, chunky white low-top sneakers, and WHITE WIRED EARPHONES in both ears with the thin white cable falling across her front and a small white inline remote on it. Stay exactly on-model with the reference: same proportions, same render style and material quality (soft 3D, subsurface skin, fine hair strands), same outfit, earphones and cable visible. Expression minimal and calm, slightly deadpan; never over-acted, preserve mascot body proportions. No logos, no text, no jewellery, no watermark.
 ```
 
 ## `night-portrait`

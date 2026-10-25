@@ -19,8 +19,7 @@ her character sheet. This script turns her renders into what that needs:
   - rig.json: where each pose's eyes, mouth, head, neck, bun and moving
     limbs are, as fractions of its texture.
 
-Found by measurement (eyes and mouth: dark blobs in the face, fitted as
-ellipses) where the render allows it; placed by hand, in MANUAL below, where
+Found by measurement (eyes and mouth: dark blobs in the face, measured as complete eye openings) where the render allows it; placed by hand, in MANUAL below, where
 it does not (a pivot is a judgement about anatomy, not a pixel property).
 `--debug` writes an overlay of everything found to site/.cache/rig-debug/,
 which is how every value in MANUAL was checked.
@@ -33,6 +32,7 @@ and the repo's assets/ (art/README.md has their provenance).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -49,7 +49,7 @@ CACHE = SITE / ".cache"
 ART = SITE / "src" / "assets" / "art"
 
 # Every pose the renderer can put her in. `eyes` is what the render itself
-# shows: open ovals, the closed crescents of `quiet`, or the lidded look of
+# shows: option08 open eyes, the closed crescents of `quiet`, or the lidded look of
 # `lost`. `plate` names the studio a baked-in portrait stands in.
 POSES: dict[str, dict] = {
     "stand": {"src": REPO / "assets" / "nora-canonical-self.png", "plate": "studio", "eyes": "open"},
@@ -153,13 +153,13 @@ MANUAL: dict[str, dict] = {
         # lidded (unimpressed) in the render, so placed by hand: the open eye
         # each lid is cutting, tilted with her head
         "eyes": [
-            {"cx": 0.5015, "cy": 0.449, "rx": 0.0191, "ry": 0.0278, "rot": -0.25},
-            {"cx": 0.7638, "cy": 0.4228, "rx": 0.0148, "ry": 0.0214, "rot": -0.25},
+            {"cx": 0.471, "cy": 0.443, "rx": 0.041, "ry": 0.0315, "rot": -0.25},
+            {"cx": 0.744, "cy": 0.4105, "rx": 0.031, "ry": 0.031, "rot": -0.25},
         ],
-        # each eye and the lash line of its lid
+        # Measured on the option08 source: whole sclera, iris, lid and crease.
         "paintOut": [
-            [(0.43, 0.437), (0.535, 0.417), (0.546, 0.44), (0.546, 0.47), (0.531, 0.487), (0.47, 0.49), (0.458, 0.462), (0.43, 0.453)],
-            [(0.707, 0.401), (0.79, 0.383), (0.798, 0.40), (0.798, 0.44), (0.786, 0.453), (0.741, 0.454), (0.731, 0.42), (0.707, 0.418)],
+            [(0.395, 0.431), (0.445, 0.417), (0.52, 0.409), (0.548, 0.413), (0.548, 0.46), (0.52, 0.477), (0.438, 0.477), (0.408, 0.459)],
+            [(0.688, 0.394), (0.735, 0.378), (0.795, 0.375), (0.806, 0.388), (0.8, 0.433), (0.77, 0.45), (0.72, 0.44), (0.695, 0.418)],
         ],
     },
     "hop": {
@@ -193,7 +193,8 @@ def luminance(rgb: np.ndarray) -> np.ndarray:
 def birefnet_mask(pose: str, src: Path) -> np.ndarray:
     """The matte of a portrait with its studio baked in, cached: the model is
     a 973 MB download and its answer never changes for the same render."""
-    cached = CACHE / f"rig-mask-{pose}.png"
+    fingerprint = hashlib.sha256(src.read_bytes()).hexdigest()[:16]
+    cached = CACHE / f"rig-mask-{pose}-{fingerprint}.png"
     if not cached.exists():
         from rembg import new_session, remove  # heavy; only when the cache is cold
 
@@ -252,20 +253,57 @@ def blobs(dark: np.ndarray, min_area: int) -> list[tuple[np.ndarray, tuple]]:
 
 
 def find_open_eyes(rgba: np.ndarray, box: tuple[int, int, int, int]) -> list[dict]:
-    """The two dark vertical ovals inside `box` (x0, y0, x1, y1)."""
+    """Measure option08 openings from sclera seeds, then include iris and lid.
+
+    Dark blobs alone join brows or hair, and fitting an iris alone misses the
+    white. Sclera locates the eye row; a bounded connected fill recovers the
+    adjacent iris/lid without wandering up into the brow or sideways into hair.
+    """
     x0, y0, x1, y1 = box
-    lum = luminance(rgba[..., :3])
-    dark = np.zeros(lum.shape, bool)
-    dark[y0:y1, x0:x1] = (lum[y0:y1, x0:x1] < 0.5) & (rgba[y0:y1, x0:x1, 3] > 0.9)
-    found = []
-    for comp, sl in blobs(dark, min_area=int(0.00025 * lum.size)):
+    rgb = rgba[..., :3]
+    lum = luminance(rgb)
+    red, green, blue = rgb.transpose(2, 0, 1)
+    # The late-night portrait's warm light tints its sclera (R-G about .08).
+    white = (red - green < 0.10) & (green - blue < 0.10) & (blue > 0.66)
+    white &= (lum > 0.72) & (rgba[..., 3] > 0.9)
+    seeds = np.zeros(lum.shape, bool)
+    seeds[y0:y1, x0:x1] = white[y0:y1, x0:x1]
+    candidates = []
+    for comp, sl in blobs(seeds, min_area=max(20, int(0.0001 * lum.size))):
         h, w = sl[0].stop - sl[0].start, sl[1].stop - sl[1].start
-        if 1.05 < h / w < 2.4 and comp[sl].mean() > 0.6:
-            found.append(ellipse_from(comp))
-    found.sort(key=lambda e: e["rx"] * e["ry"], reverse=True)
-    if len(found) < 2:
-        raise SystemExit(f"expected two open eyes in {box}, found {len(found)}")
-    return sorted(found[:2], key=lambda e: e["cx"])
+        if h > 0.015 * lum.shape[0] and 0.15 < w / h < 2.5:
+            candidates.append((int(comp.sum()), comp, sl))
+    pairs = []
+    for i, left in enumerate(candidates):
+        for right in candidates[i + 1:]:
+            ls, rs = left[2], right[2]
+            ly, ry = (ls[0].start + ls[0].stop) / 2, (rs[0].start + rs[0].stop) / 2
+            lx, rx = (ls[1].start + ls[1].stop) / 2, (rs[1].start + rs[1].stop) / 2
+            height = max(ls[0].stop - ls[0].start, rs[0].stop - rs[0].start)
+            if 1.5 * height < abs(lx - rx) < 6 * height and abs(ly - ry) < height * 0.5:
+                pairs.append((left[0] + right[0], [left, right]))
+    if not pairs:
+        raise SystemExit(f"expected two option08 sclera in {box}; inspect source and MANUAL")
+    pair = sorted(max(pairs, key=lambda p: p[0])[1], key=lambda c: c[2][1].start)
+    found = []
+    for side, (_, seed, sl) in enumerate(pair):
+        height = sl[0].stop - sl[0].start
+        # The broad sclera is on the outer side of each iris. Grow toward
+        # the nose more than toward her hair, leaving the eyebrow above.
+        left = round(sl[1].start - height * (0.2 if side == 0 else 1.0))
+        right = round(sl[1].stop + height * (1.0 if side == 0 else 0.2))
+        top, bottom = round(sl[0].start - height * 0.16), round(sl[0].stop + height * 0.08)
+        region = np.zeros(lum.shape, bool)
+        region[max(0, top):bottom, max(0, left):right] = True
+        dark = (lum < 0.52) & region
+        touch = ndimage.binary_dilation(seed, iterations=max(2, round(height * 0.09)))
+        connected = ndimage.binary_propagation(touch & dark, mask=dark)
+        ys, xs = np.nonzero(connected | seed)
+        found.append({"cx": float((xs.min() + xs.max()) / 2),
+                      "cy": float((ys.min() + ys.max()) / 2),
+                      "rx": float((xs.max() - xs.min() + 1) / 2),
+                      "ry": float((ys.max() - ys.min() + 1) / 2), "rot": 0.0})
+    return found
 
 
 def find_crescents(rgba: np.ndarray, box: tuple[int, int, int, int]) -> list[dict]:
@@ -436,11 +474,9 @@ def build(pose: str, spec: dict, debug: bool) -> dict:
     if spec["eyes"] == "open":
         found = find_open_eyes(rgba, face_box)
         for e in found:
-            core = ellipse_mask((h, w), e, 0.55)
-            rim = ellipse_mask((h, w), e, 0.95) & ~ellipse_mask((h, w), e, 0.75)
-            e["core"] = median_colour(rgb, core)
-            e["rim"] = median_colour(rgb, rim & (lum < 0.5))
-            hole |= ellipse_mask((h, w), e, 1.16, pad=2.5)
+            e["core"] = [0.19, 0.105, 0.067]
+            e["rim"] = [0.59, 0.34, 0.16]
+            hole |= ellipse_mask((h, w), e, 1.25, pad=3.0)
             eyes.append(e)
     elif spec["eyes"] == "closed":
         # Closed crescents are the lower part of an eye whose lid has come

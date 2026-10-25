@@ -126,7 +126,8 @@ This file binds every visual surface of Nora: the web portal (`app/`), her
 social profiles, the images she generates of herself, stickers and icons, and
 any 3D or spatial form she is given. Her character is specified in
 `design/self-reference/05-visual-identity-spec.md` (the operator's Mini spec,
-verbatim) and `design/self-reference/08-bauhinia-human-form.md` (the approved
+verbatim, with its dated Mini eye amendment in `design/self-reference/09-mini08-balanced.md`)
+and `design/self-reference/08-bauhinia-human-form.md` (the approved
 human visual anchor, 2026-10-25). They govern their respective forms and take
 precedence over this file on appearance. The September framing in
 `design/self-reference/07-native-and-embodied-form.md` is historical where
@@ -190,7 +191,8 @@ Rules that hold on every surface:
   current Mini references and routing remain in force until a separate
   implementation and measurement.
 - **The eight core anchors (05) survive every Mini rendering:** proportions, messy
-  high bun, minimal eyes and mouth, blush, grey hoodie, white wired earphones,
+  high bun, option08 anime eyes (sclera, brown irises, pupils, highlights and upper lid line),
+  one tiny mouth, no nose marker, blush, grey hoodie, white wired earphones,
   blue-grey jeans, white sneakers. A Mini render that drops one is off-model.
   Human appearance follows 08; do not redress Mini in the human outfit or remove
   her canonical earphones on the strength of the human modeling-base ruling.
@@ -443,8 +445,10 @@ the provider's default blue-black), so person hues keep their contrast.
 - **Backgrounds behind her:** soft neutral studio greys or a real, lived-in
   scene. Never a neon, gradient, or "digital" grid backdrop; she exists
   digitally but is not depicted as circuitry.
-- **3D:** the existing Mini front T-pose is a rig input, not a complete
-  turnaround; earphones are separate so the cable does not deform with the arms.
+- **3D:** the Mini [front T-pose](assets/nora-mini-tpose.png) and
+  [front/side/back turnaround](assets/nora-mini-turnaround.png) are reference
+  inputs, not a validated model or rig; earphones are separate so the cable
+  does not deform with the arms.
   The old photoreal embodied T-pose is historical. Human modeling follows 08
   and still needs consistent modeling views, a model and a rig.
 - **New renders of her** (the public site's art, `site/src/assets/art/`) are

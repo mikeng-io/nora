@@ -42,6 +42,11 @@ path-exempt scrub/replacements.txt -- the scrub's private join map (scrub/README
 
 symlink .claude/skills/* -- Claude Code reads the repo skills through these links to .agents/skills (AGENTS.md, Skills)
 
+binary app/public/screenshots/*.webp -- mock PWA screenshots
+binary app/src/assets/art/*.webp -- existing portal artwork
+binary site/src/assets/rig/*.webp -- generated procedural rig textures and plates
+binary assets/nora-notebook.webp -- shared notebook source artwork
+
 binary assets/*.png -- Nora's character art (DESIGN.md)
 binary app/public/favicon.ico -- the portal's generated favicon (app/scripts/make-icons.py)
 binary app/public/icons/*.png -- the portal's generated PWA and iOS icons (app/scripts/make-icons.py)

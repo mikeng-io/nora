@@ -119,3 +119,39 @@ standalone Next.js server on `:3000`, published on `127.0.0.1:3400`. Its
 environment is the block at the top of `.env.example`; `identity.toml` is
 bind-mounted read-only. Nothing here is bind-mounted: a change needs a rebuild
 and a recreate (the `nora-deploy` skill).
+
+## PWA screenshot refresh (synthetic data only)
+
+The manifest's `screenshots/today-{narrow,wide}.webp` were recaptured on
+2026-10-26 using the invented Miles account from `dev/identity.dev.toml`.
+The narrow image is a 390×844 viewport at 2×; wide is 1440×900 at 1×.
+These are install previews, not evidence of a live Nora deployment.
+
+Start the documented mock workflow with explicit local-only settings (no
+private `.env.local`, identity roster or API is needed):
+
+```bash
+cd app
+npm ci
+env PORT=3498 MOCK_PORT=9198 MOCK_LATENCY_MS=40 \
+  NORA_API_BASE=http://127.0.0.1:9198 NORA_DEV_LOGIN=1 \
+  IDENTITY_TOML_PATH=./dev/identity.dev.toml AUTH_URL=http://localhost:3498 \
+  AUTH_SECRET=dev-only-secret-not-for-production-0123456789abcdef \
+  AUTH_DISCORD_ID=dev-placeholder AUTH_DISCORD_SECRET=dev-placeholder \
+  npm run dev:all
+```
+
+With the installed `@playwright/test` Chromium, create a fresh browser context
+for each viewport: `locale: 'en-HK'`, `timezoneId: 'Asia/Hong_Kong'`,
+`colorScheme: 'light'`, `reducedMotion: 'reduce'`. Use `bypassCSP: true` only
+in this local capture context: the dev React debugger uses eval while the
+app's production CSP disallows it. This does not change the app's headers.
+Follow `e2e/helpers.ts`: open `http://localhost:3498/en/login`, click the
+button named exactly `Miles`, wait for `/en/today`, `networkidle`,
+`document.fonts.ready` and image decoding. Capture the viewport (not the
+whole page) to PNG, inspect it, then encode with Pillow as WebP at quality 90,
+method 6 to the two manifest paths. The recorded capture had no page errors.
+Run `scripts/visual_assets.py sync` from the repo root to record the new
+screenshot byte fingerprints after inspection. The mock's people, locations,
+plans and memories are invented; never replace this workflow with a live
+portal session.
