@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import replace
 from datetime import datetime
 from typing import Protocol
 
@@ -266,8 +267,10 @@ def render_profile_people(
         budget -= len(shown.render()) + 1
         if room < len(body):
             closed = True
-    if omitted:
-        blocks.append(ContextBlock(
-            name="profile", body=f"[{omitted} more characters not shown]",
-        ))
+    if omitted and blocks:
+        # Keep the notice inside an identified profile, like `_cut`'s marker;
+        # a separate <profile> would have no subject or author (ADR 0029).
+        blocks[-1] = replace(
+            blocks[-1], body=blocks[-1].body + f"\n[{omitted} more characters not shown]",
+        )
     return tuple(blocks)

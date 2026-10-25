@@ -41,3 +41,17 @@ def test_retired_config_section_refuses_and_names_replacement(example_config_pat
     example_config_path.write_text(text)
     with pytest.raises(ConfigError, match=r"\[persona\].*\[profile\]"):
         load(example_config_path)
+
+
+def test_people_budget_never_emits_an_unidentified_profile():
+    from nora.language.profile_render import PROFILE_PEOPLE_MAX_CHARS, render_profile_people
+    views = tuple(ProfileView(entity="person", of=f"synthetic-{i}",
+                              authored=("synthetic " * 120,)) for i in range(20))
+    blocks = render_profile_people(views, name_of=lambda _: "Ada", now=NOW)
+    assert blocks and len(blocks) < len(views)
+    for block in blocks:
+        assert set(dict(block.attrs)) == {"of", "written_by", "source", "written"}
+        assert dict(block.attrs)["of"] in {view.of for view in views}
+        assert dict(block.attrs)["written_by"] == "nora"
+    assert blocks[-1].body.endswith("more characters not shown]")
+    assert sum(len(block.render()) + 1 for block in blocks) <= PROFILE_PEOPLE_MAX_CHARS
