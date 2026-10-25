@@ -42,7 +42,11 @@ by a model**:
 Built from each occasion's **trace**, which already holds every tool call and
 result: `tag_trace` for tag turns, plus two gaps closed in step 1: the fire
 path keeps its trace, and `CognitionAgentRunner` returns its exchange and the
-session persists it. Retention follows `tag_trace`'s.
+session persists it. A trace alone does not carry an item's disclosure
+requirements (`tag_trace` copies the SDK messages, and a Character read
+returns rendered text without its restrictions), so step 1 also records them
+at read time for every item, on all three paths (§5). Retention follows
+`tag_trace`'s.
 
 **`tool_call_log` is left exactly as it is until step 5.** It is not widened
 to every tool: `recall_lookups` reads its newest rows without filtering by
