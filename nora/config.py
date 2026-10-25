@@ -1113,7 +1113,7 @@ class MessageReadingsConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     enabled: bool = False
     # Same gateway and credentials as [llm]; never inherit its tag/reasoning lane.
-    model: str = ""
+    model: str = "ollamacloud/deepseek-v4.1-flash"
     batch_size: int = Field(default=20, ge=1, le=100)
     context_size: int = Field(default=20, ge=1, le=100)
     settle_seconds: float = Field(default=2, ge=0, le=60)

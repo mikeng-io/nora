@@ -68,5 +68,19 @@
     "old": "                try:\n                    await self.store.fail(job)\n                except Exception:  # noqa: BLE001 - lease retains work during a store outage\n                    log.warning(\"message reading failure not recorded; durable lease retained\")",
     "new": "                await self.store.fail(job)",
     "target": "tests/contract/test_message_readings_contract.py::test_failure_recording_outage_counts_one_failed_attempt"
+  },
+  {
+    "name": "writer joins the declared context assembly",
+    "file": "nora/app/message_readings.py",
+    "old": "prompt = assemble(",
+    "new": "prompt = str(",
+    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_nothing_builds_a_prompt_outside_context_assembly"
+  },
+  {
+    "name": "source markup stays inside its existing block",
+    "file": "nora/app/message_readings.py",
+    "old": "body=escape(json.dumps(job[\"snapshot\"], ensure_ascii=False)),",
+    "new": "body=json.dumps(job[\"snapshot\"], ensure_ascii=False),",
+    "target": "tests/contract/test_message_readings_contract.py::test_writer_input_keeps_message_markup_inside_existing_source_block"
   }
 ]

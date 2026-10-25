@@ -106,7 +106,7 @@ class SqlMessageReadings:
     def __init__(self, engine: AsyncEngine) -> None:
         self.engine = engine
 
-    async def take(
+    async def take_reading_batch(
         self,
         *,
         model: str,
@@ -272,7 +272,9 @@ class SqlMessageReadings:
                 )
             )
 
-    async def finish(self, job: dict[str, Any], *, claims: list[dict[str, Any]]) -> int:
+    async def publish_reading_batch(
+        self, job: dict[str, Any], *, claims: list[dict[str, Any]]
+    ) -> int:
         async with self.engine.begin() as conn:
             # Sources before reading: the invalidator's lock order, including
             # edits inserted while the model was running.

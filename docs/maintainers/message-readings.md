@@ -75,6 +75,10 @@ so a deletion/edit during a model request cannot resurrect stale claims.
 All four tables use the existing system-time history machinery and are included
 in restore contracts. There is no model-facing read API.
 
+The writer assembles its source input through the existing context-assembly
+machinery, reusing the existing `cited_sources` type with escaped JSON. It adds
+no new prompt block type and sends no readings to any consumer.
+
 ## Enabling later
 
 These are operator steps **after merge, release and verified deployment of this
