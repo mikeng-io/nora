@@ -224,6 +224,8 @@ class App:
             ))
         else:
             log.info("retention sweep disabled (store.prune_enabled = false)")
+        if deps.message_readings is not None:
+            deps.background.spawn(deps.message_readings.run())
         # Unconditional: every store write projects into the memory index,
         # so there is always a queue a failed projection may have filled.
         deps.background.spawn(runtime.memory_drain_loop(

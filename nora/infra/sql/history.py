@@ -64,6 +64,10 @@ CAPTURE_SETTING = "nora.row_history"
 #: trigger's arguments). Includes `sticker_index` (an in-place cache) and
 #: `message_edit` (deleted by cascade when a message is pruned).
 HISTORY_TABLES: dict[str, tuple[str, ...]] = {
+    "message_reading": ("id",),
+    "message_reading_queue": ("id",),
+    "message_reading_claim": ("id",),
+    "message_reading_attempt": ("id",),
     "messages": ("id",),
     # Written append-only, but `message_edit.message_id` is ON DELETE CASCADE:
     # a prune deletes a message's edits with no store asking, and only a row

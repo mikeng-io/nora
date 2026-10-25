@@ -98,6 +98,7 @@ from nora.app.memory_routing import (
     persona_scopes_of_person,
     workspaces_of_person,
 )
+from nora.app.message_readings import MessageReadingWorker
 from nora.app.oauth_keepalive import KeepaliveTiming, KeptLane, OAuthKeepalive
 from nora.app.otp import OtpService
 from nora.app.social_expiry import StoryMediaExpiry
@@ -186,6 +187,7 @@ from nora.infra.sql.media_objects import SqlMediaObjectStore
 from nora.infra.sql.memo import SqlMemoStore
 from nora.infra.sql.memory_embed import MemoryEmbedWorker
 from nora.infra.sql.memory_read import SqlMemoryIndex
+from nora.infra.sql.message_readings import SqlMessageReadings
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.music_queue import SqlMusicQueueStore
 from nora.infra.sql.music_session import SqlMusicSessionStore
@@ -1315,6 +1317,7 @@ class Dependencies:
     # The memory index's embedding worker: `None` under `[memory_index] embed =
     # false`, the default. `__main__` hands it to the memory drain loop.
     memory_embed: MemoryEmbedWorker | None = None
+    message_readings: MessageReadingWorker | None = None
     # The social stream's poller: `None` unless `[social.poll] enabled`.
     # `nora/__main__.py` starts it; the eval subject, which composes the same
     # graph, does not.
@@ -1511,6 +1514,7 @@ async def build_dependencies(
         engine,
         max_per_conversation=cfg.store.max_per_conversation,
         metrics=metrics,
+        message_reading_unit=_note_unit_of(allowlist) if cfg.message_readings.enabled else None,
     )
     # The dashboard consumer reads the derived analytics tables through the
     # same pool as every other Nora store. A second engine would fork the pool
@@ -4782,6 +4786,10 @@ async def build_dependencies(
         social_poller=social_poller,
         social_perception=social_perception,
         story_expiry=story_expiry,
+        message_readings=(MessageReadingWorker(
+            store=SqlMessageReadings(engine), client=client,
+            config=cfg.message_readings, metrics=metrics,
+        ) if cfg.message_readings.enabled else None),
         memory_embed=(
             MemoryEmbedWorker(
                 engine, LlamaEmbedder(cfg.memory_index.embedder_url), blobs,
