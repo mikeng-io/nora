@@ -199,21 +199,6 @@ from ..domain.notes import (
     has_duplicate_open_title,
     note_handle,
 )
-from ..domain.persona import (
-    FACT_KINDS,
-    SINGLETON_FACTS,
-    PersonaCitable,
-    PersonaView,
-    PersonaWriter,
-    handles_for,
-)
-from ..domain.persona import LINE_MAX_CHARS as PERSONA_LINE_MAX_CHARS
-from ..domain.persona import Account as PersonaAccount
-from ..domain.persona import AddOp as PersonaAddOp
-from ..domain.persona import (
-    ReviseOp as PersonaReviseOp,
-)
-from ..domain.persona import Said as PersonaSaid
 from ..domain.ports import (
     BrowserRunner,
     CultureReader,
@@ -237,6 +222,21 @@ from ..domain.ports import (
     VoiceChannelRef,
     VoicePresenceSource,
 )
+from ..domain.profile import (
+    FACT_KINDS,
+    SINGLETON_FACTS,
+    ProfileCitable,
+    ProfileView,
+    ProfileWriter,
+    handles_for,
+)
+from ..domain.profile import LINE_MAX_CHARS as PROFILE_LINE_MAX_CHARS
+from ..domain.profile import Account as ProfileAccount
+from ..domain.profile import AddOp as ProfileAddOp
+from ..domain.profile import (
+    ReviseOp as ProfileReviseOp,
+)
+from ..domain.profile import Said as ProfileSaid
 from ..domain.prompt import stamp
 from ..domain.quote_window import first_by_ts
 from ..domain.record_query import RECORD_QUERY_MAX, RecordHit, RecordQuery
@@ -275,13 +275,13 @@ from ..infra.vision.preprocess import (
     video_encode_signature,
 )
 from ..language.culture import CULTURE_ADAPTOR_NAME
-from ..language.persona_render import PersonaHeads, account_text, authored_identity
+from ..language.profile_render import ProfileHeads, account_text, authored_identity
 from ..obs.logging import current_tag_id
 from ..obs.tracing import annotate, current_span_ids, span
 from .arithmetic import evaluate as evaluate_expression
 from .character_read import account_key, person_named, room_named, rooms_listing
 from .egress import scan_reply
-from .lineage import LineagePolicy, entry_permits, persona_lines_for
+from .lineage import LineagePolicy, entry_permits, profile_lines_for
 
 # Re-exported, explicitly (`as`-aliased to themselves so ruff's F401 reads
 # them as intentional, not dead): `tests/test_media_fetch.py` and
@@ -1555,7 +1555,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # question or later: remember, note_create or remind). Its one non-English
     # string is the trigger 記低; «say 記低咗 only when saved» is an output
     # rule and rides in the `ok` result's `note`.
-    # On the graph surface the same name is `remember_told`, a Persona `told`
+    # On the graph surface the same name is `remember_told`, a Profile `told`
     # line (design/unified-memory/45), with the same declaration: one write,
     # confirmed, never retried, level 2.
     "remember": NativeTool(1,
@@ -1564,9 +1564,9 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                            output_contract="three_state", level=2),
     # The dispute door beside `remember_told` (35 §2): «that's wrong» or
     # «forget that» about a remembered fact, on the graph surface only (the
-    # Persona account it rules on exists there). One write, confirmed, never
+    # Profile account it rules on exists there). One write, confirmed, never
     # retried; level 2 beside `remember`.
-    "persona_dispute": NativeTool(1,
+    "profile_dispute": NativeTool(1,
                                   side_effect_state="confirmed", idempotency="non_idempotent",
                                   retry="never",
                                   output_contract="three_state", level=2),
@@ -3109,7 +3109,7 @@ _CHARACTER_OK = (
     "Each account is as of its own time and is one room's view. Link it by its "
     "`revision`; do not quote it as what someone said."
 )
-_CHARACTER_PERSONA_OK = (
+_CHARACTER_PROFILE_OK = (
     "Each account is as of its own time and is this group's view of that room "
     "or person; a (disputed) line is being weighed, not settled. Do not quote "
     "it as what someone said."
@@ -4632,15 +4632,15 @@ _MEMORY_BAD_SPAN: Mapping[str, str] = MappingProxyType({
     "note": "That span ends before it starts, so I didn't search. Swap since and "
             "until and call again.",
 })
-_PERSONA_UNAVAILABLE: Mapping[str, str] = MappingProxyType({
+_PROFILE_UNAVAILABLE: Mapping[str, str] = MappingProxyType({
     "status": "unavailable",
     "note": "I couldn't keep that right now, so nothing was saved. Say so, never "
             "say 記低咗, and don't write it down as a note instead.",
 })
 
-#: The note for each Persona refusal the turn's `remember` can meet; any other
+#: The note for each Profile refusal the turn's `remember` can meet; any other
 #: reason takes the generic refusal note.
-_PERSONA_REFUSED_NOTES: Mapping[str, str] = MappingProxyType({
+_PROFILE_REFUSED_NOTES: Mapping[str, str] = MappingProxyType({
     "instruction_not_subject": "Nothing was saved: only they can tell me how they "
                                "want to be treated. Say so.",
     "unlisted_room": "Nothing was saved: they are not one of this room's members, so "
@@ -4655,21 +4655,21 @@ _PERSONA_REFUSED_NOTES: Mapping[str, str] = MappingProxyType({
                    "itself, then call again.",
 })
 
-_PERSONA_DISPUTE_UNAVAILABLE: Mapping[str, str] = MappingProxyType({
+_PROFILE_DISPUTE_UNAVAILABLE: Mapping[str, str] = MappingProxyType({
     "status": "unavailable",
     "note": "I couldn't record that right now, so nothing was recorded. Say so.",
 })
 
 #: The `note` for each `effect` a recorded dispute carries (35 §2), and for
 #: each refusal reason the store's own judge returns.
-_PERSONA_DISPUTE_NOTES: Mapping[str, str] = MappingProxyType({
+_PROFILE_DISPUTE_NOTES: Mapping[str, str] = MappingProxyType({
     "hidden": "It is forgotten. Say so, and do not bring it up again.",
     "disputed": "It is marked as disputed and I will weigh it. Meanwhile, do "
                 "not state it as fact.",
     "recorded": "It is recorded. I could not tell which remembered fact it "
                 "was about, so ask which one if that matters.",
 })
-_PERSONA_DISPUTE_REFUSED_NOTES: Mapping[str, str] = MappingProxyType({
+_PROFILE_DISPUTE_REFUSED_NOTES: Mapping[str, str] = MappingProxyType({
     "forget_not_subject": "Nothing was recorded: only they can ask me to "
                           "forget something about themselves. Say so.",
     "identifier": "Nothing was recorded: it carries a number or handle I never "
@@ -4700,9 +4700,9 @@ _MEMORY_UNLISTED: Mapping[str, str] = MappingProxyType({
 #: `about` (the profile read) is Honcho's, so it sits on the Honcho surface
 #: alone; a profile question on the graph is `memory_search` with `person`.
 #: `remember` (the person-fact write) is on BOTH, built from one of two
-#: closures: Honcho's conclusion off the graph, a Persona `told` line on it
-#: (DEC-317). `persona_dispute` (35 §2's dispute door) is the graph's alone:
-#: the Persona account it rules on exists only there, and the Honcho surface
+#: closures: Honcho's conclusion off the graph, a Profile `told` line on it
+#: (DEC-317). `profile_dispute` (35 §2's dispute door) is the graph's alone:
+#: the Profile account it rules on exists only there, and the Honcho surface
 #: has no dispute. `load_transcript` reads the room's own rows
 #: and is on both too.
 #: `who_said` is deprecated: the graph surface does without it
@@ -4711,7 +4711,7 @@ _MEMORY_UNLISTED: Mapping[str, str] = MappingProxyType({
 HONCHO_MEMORY_TOOLS: frozenset[str] = frozenset({
     "ask_memory", "search_memory", "search_memory_workspace", "who_said", "about",
 })
-GRAPH_MEMORY_TOOLS: frozenset[str] = frozenset({"memory_search", "persona_dispute"})
+GRAPH_MEMORY_TOOLS: frozenset[str] = frozenset({"memory_search", "profile_dispute"})
 #: The Dreamer adaptors whose `memory_search` reads their OWN room alone
 #: (`nora.agent.memory_search.scope_for`'s `own_room`; DEC-316). The culture fold writes one room's
 #: culture, which must
@@ -4900,14 +4900,14 @@ def build_tool_specs(
     # shipped default, offline, eval) is the Honcho path.
     memory_retrieval: MemorySearch | None = None,
     all_memory_surfaces: bool = False,
-    # The Persona write (design/unified-memory/45): the graph surface's
+    # The Profile write (design/unified-memory/45): the graph surface's
     # `remember` writes a `told` line through it. `None` answers `unavailable`.
-    persona: PersonaWriter | None = None,
-    # THE SWITCH (45 §5): wired only while `[persona] render` is on beside
-    # `[persona] enabled`, and `character_read` then answers from the Persona
+    profile: ProfileWriter | None = None,
+    # THE SWITCH (45 §5): wired only while `[profile] render` is on beside
+    # `[profile] enabled`, and `character_read` then answers from the Profile
     # accounts instead of the culture store — the same accounts the prompt's
-    # `<persona>` blocks render, so the tool and the prompt cannot disagree.
-    persona_read: PersonaHeads | None = None,
+    # `<profile>` blocks render, so the tool and the prompt cannot disagree.
+    profile_read: ProfileHeads | None = None,
     content_checks: bool = True,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
@@ -5861,7 +5861,7 @@ def build_tool_specs(
             entity: room for a room's culture, person for one person's account.
             subject: The room's label, or the person's name.
         """
-        if persona_read is None and culture is None:
+        if profile_read is None and culture is None:
             _record(metrics, "character_read", "unavailable", reason="unwired")
             return {"status": "unavailable", "note": _CHARACTER_OFF}
         if lineage is None:
@@ -5898,17 +5898,17 @@ def build_tool_specs(
             return {"status": "unavailable", "note": _CHARACTER_OFF}
         keyed = [(r, pid, key) for r, pid in wanted
                  if (key := account_key(r, pid)) is not None]
-        if persona_read is not None:
-            # THE SWITCH (45 §5): the same resolution, the Persona accounts as
-            # the source. Lines were screened at WRITE (SqlPersonaStore's
+        if profile_read is not None:
+            # THE SWITCH (45 §5): the same resolution, the Profile accounts as
+            # the source. Lines were screened at WRITE (SqlProfileStore's
             # `screen`), so there is no read-time withhold here; a line whose
             # `exclude_persons` names a member of THIS room is dropped, as the
             # assembler drops it before the prompt's blocks.
             try:
-                persona_heads = await asyncio.gather(
-                    *(persona_read.account_heads(key=key) for _, _, key in keyed))
+                profile_heads = await asyncio.gather(
+                    *(profile_read.account_heads(key=key) for _, _, key in keyed))
             except Exception:
-                log.exception("character_read (persona) failed")
+                log.exception("character_read (profile) failed")
                 _record(metrics, "character_read", "unavailable", reason="store")
                 return {"status": "unavailable", "note": _CHARACTER_OFF}
             target = lineage.render_room(
@@ -5919,8 +5919,8 @@ def build_tool_specs(
                 named = persons.by_person.get(person_id)
                 return named.name if named is not None else "someone"
 
-            persona_accounts = []
-            for (r, pid, _), lines in zip(keyed, persona_heads, strict=True):
+            profile_accounts = []
+            for (r, pid, _), lines in zip(keyed, profile_heads, strict=True):
                 of = r.label or platform_name(r.platform)
                 authored: tuple[str, ...] = ()
                 if pid is not None and pid in persons.by_person:
@@ -5934,9 +5934,9 @@ def build_tool_specs(
                             if owner == pid
                         })),
                     )
-                kept = await persona_lines_for(lines, target, room)
+                kept = await profile_lines_for(lines, target, room)
                 rendered = account_text(
-                    PersonaView(entity=entity, of=of, lines=kept, authored=authored),
+                    ProfileView(entity=entity, of=of, lines=kept, authored=authored),
                     name_of=name_of, now=now_fn(),
                 )
                 if rendered is None:
@@ -5945,16 +5945,16 @@ def build_tool_specs(
                 entry: dict = {"room": of, "account": text}
                 if written is not None:
                     entry["as_of"] = rollup_iso(written)
-                persona_accounts.append(entry)
-            if not persona_accounts:
+                profile_accounts.append(entry)
+            if not profile_accounts:
                 _record(metrics, "character_read", "nothing_found", entity=entity)
                 return {"status": "nothing_found", "note": _CHARACTER_NONE}
             _record(metrics, "character_read", "ok",
-                    entity=entity, accounts=len(persona_accounts))
-            return {"status": "ok", "entity": entity, "accounts": persona_accounts,
-                    "note": _CHARACTER_PERSONA_OK}
+                    entity=entity, accounts=len(profile_accounts))
+            return {"status": "ok", "entity": entity, "accounts": profile_accounts,
+                    "note": _CHARACTER_PROFILE_OK}
         if culture is None:
-            # persona_read answered above, so a miss here means NEITHER store
+            # profile_read answered above, so a miss here means NEITHER store
             # is wired — the same unwired case as the first guard, seen from
             # the culture path (and the narrowing mypy cannot do itself).
             _record(metrics, "character_read", "unavailable", reason="unwired")
@@ -13800,8 +13800,8 @@ Args:
     valid_from: Evidence-grounded effective start, epoch milliseconds or null.
     valid_until: Evidence-grounded effective end, epoch milliseconds or null."""
         # The graph surface's `remember` (DEC-317): the
-        # Persona `told` line, through the one write path and its judge
-        # (`nora.domain.persona.plan_write`). The Honcho surface keeps
+        # Profile `told` line, through the one write path and its judge
+        # (`nora.domain.profile.plan_write`). The Honcho surface keeps
         # `remember` above; `build_tool_specs` registers one or the other.
         tagger = room.tagger
         if tagger is None:
@@ -13819,26 +13819,26 @@ Args:
                 "note": "Nothing was saved: there's no fact in that. Say the "
                         "fact itself, one line, then call again.",
             }
-        if len(text) > PERSONA_LINE_MAX_CHARS:
+        if len(text) > PROFILE_LINE_MAX_CHARS:
             _record(metrics, "remember", "refused", reason="too_long")
             return {
                 "status": "refused",
-                "note": f"Nothing was saved: one fact fits in {PERSONA_LINE_MAX_CHARS} "
+                "note": f"Nothing was saved: one fact fits in {PROFILE_LINE_MAX_CHARS} "
                         "characters. Say it shorter, then call again.",
             }
         cites = room.trigger_message_ids
         unit = _unit()
-        if persona is None or lineage is None or unit is None or not cites:
+        if profile is None or lineage is None or unit is None or not cites:
             # A wiring gap, or a turn no Record message raised (a told line
             # cites the message it was said in): «I couldn't», never a save.
             _record(metrics, "remember", "unavailable", reason="unwired")
-            return dict(_PERSONA_UNAVAILABLE)
+            return dict(_PROFILE_UNAVAILABLE)
         subject = tagger
         if person.strip():
             view = await room.scope()
             if not view.available:
                 _record(metrics, "remember", "unavailable", reason="roster")
-                return dict(_PERSONA_UNAVAILABLE)
+                return dict(_PROFILE_UNAVAILABLE)
             matches = view.find(person)
             if not matches:
                 miss = _miss(person, view, content_checks=content_checks)
@@ -13869,34 +13869,34 @@ Args:
             source = {r.id: r for r in (transcript or ()) if r.id in cites}
             if set(source) != set(cites):
                 _record(metrics, "remember", "unavailable", reason="source")
-                return dict(_PERSONA_UNAVAILABLE)
-            said = {n: PersonaSaid(ts=r.ts, person_id=r.person_id, room=here)
+                return dict(_PROFILE_UNAVAILABLE)
+            said = {n: ProfileSaid(ts=r.ts, person_id=r.person_id, room=here)
                     for n, r in source.items()}
-            account = PersonaAccount(
+            account = ProfileAccount(
                 key=character_key(unit, subject.person_id), entity_kind="human",
                 unit=unit, subject=subject.person_id)
-            revision, _ = await persona.account_state(key=account.key)
-            heads = await persona.account_heads(key=account.key)
+            revision, _ = await profile.account_state(key=account.key)
+            heads = await profile.account_heads(key=account.key)
             candidates = [h for h in heads if fact_key in SINGLETON_FACTS
-                          and h.part == "identity" and h.fact_key == fact_key
+                          and h.part == "facts" and h.fact_key == fact_key
                           and h.state in ("current", "disputed")]
             old = candidates[0] if len(candidates) == 1 else None
             handle = next((h for h, lid in handles_for(heads).items()
                            if old is not None and lid == old.id), None)
             cites_text = tuple(str(n) for n in cites)
-            op = (PersonaReviseOp(
+            op = (ProfileReviseOp(
                 line=handle, citations=cites_text, text=text,
                 fact_key=fact_key, fact_value=fact_value,
                 valid_from=valid_from, valid_until=valid_until,
             ) if old is not None and handle is not None and old.mode == "told"
-                and old.told_by == tagger.person_id else PersonaAddOp(
-                    part="identity", kind=FACT_KINDS[fact_key], text=text, mode="told",
+                and old.told_by == tagger.person_id else ProfileAddOp(
+                    part="facts", kind=FACT_KINDS[fact_key], text=text, mode="told",
                     fact_key=fact_key, fact_value=fact_value,
                     valid_from=valid_from, valid_until=valid_until,
                     citations=cites_text, told_by=tagger.person_id, conflicts_with=handle))
-            result = await persona.persona_write(
+            result = await profile.profile_write(
                 account=account, ops=(op,), expected_revision=revision,
-                citable=PersonaCitable(
+                citable=ProfileCitable(
                     messages=said,
                     # Evidence about a person counts only if said in a room they
                     # are listed in (35 §3); a `*` room lists nobody by name.
@@ -13906,9 +13906,9 @@ Args:
                 now_ms=now_ms, written_by_session="tag", apply_decay=False,
             )
         except Exception:
-            log.exception("remember (persona) failed")
+            log.exception("remember (profile) failed")
             _record(metrics, "remember", "unavailable")
-            return dict(_PERSONA_UNAVAILABLE)
+            return dict(_PROFILE_UNAVAILABLE)
         if result.status == "ok":
             _record(metrics, "remember", "ok")
             return {
@@ -13917,13 +13917,13 @@ Args:
             }
         if result.status == "conflict":
             _record(metrics, "remember", "unavailable", reason="conflict")
-            return dict(_PERSONA_UNAVAILABLE)
+            return dict(_PROFILE_UNAVAILABLE)
         reason = result.refusals[0].reason if result.refusals else "refused"
         _record(metrics, "remember", "refused", reason=reason)
-        return {"status": "refused", "note": _PERSONA_REFUSED_NOTES.get(
+        return {"status": "refused", "note": _PROFILE_REFUSED_NOTES.get(
             reason, "Nothing was saved. Say you couldn't keep it, and don't say 記低咗.")}
 
-    async def persona_dispute(
+    async def profile_dispute(
         claim: str, person: str = "",
         kind: Literal["dispute", "forget"] = "dispute",
     ) -> dict:
@@ -13946,11 +13946,11 @@ Args:
         # The dispute door (35 §2), mirroring `remember_told`: the speaker is
         # the disputer, the named person is the account's subject, and the
         # store rules on it in one transaction. The line the claim names is
-        # matched by code (`nora.domain.persona.match_disputed_line`), never
+        # matched by code (`nora.domain.profile.match_disputed_line`), never
         # by the model: an unmatched claim is recorded, not guessed at.
         tagger = room.tagger
         if tagger is None:
-            _record(metrics, "persona_dispute", "refused", reason="no_tagger")
+            _record(metrics, "profile_dispute", "refused", reason="no_tagger")
             return {
                 "status": "refused",
                 "note": "Nothing was recorded: I don't know who you are well "
@@ -13959,40 +13959,40 @@ Args:
             }
         text = claim.strip()
         if not text:
-            _record(metrics, "persona_dispute", "refused", reason="empty")
+            _record(metrics, "profile_dispute", "refused", reason="empty")
             return {
                 "status": "refused",
                 "note": "Nothing was recorded: say what is wrong, one line, "
                         "then call again.",
             }
-        if len(text) > PERSONA_LINE_MAX_CHARS:
-            _record(metrics, "persona_dispute", "refused", reason="too_long")
+        if len(text) > PROFILE_LINE_MAX_CHARS:
+            _record(metrics, "profile_dispute", "refused", reason="too_long")
             return {
                 "status": "refused",
                 "note": f"Nothing was recorded: a dispute fits in "
-                        f"{PERSONA_LINE_MAX_CHARS} characters. Say it shorter, "
+                        f"{PROFILE_LINE_MAX_CHARS} characters. Say it shorter, "
                         "then call again.",
             }
         cites = room.trigger_message_ids
         unit = _unit()
-        if persona is None or lineage is None or unit is None or not cites:
+        if profile is None or lineage is None or unit is None or not cites:
             # A wiring gap, or a turn no Record message raised: «I couldn't»,
             # never a record.
-            _record(metrics, "persona_dispute", "unavailable", reason="unwired")
-            return dict(_PERSONA_DISPUTE_UNAVAILABLE)
+            _record(metrics, "profile_dispute", "unavailable", reason="unwired")
+            return dict(_PROFILE_DISPUTE_UNAVAILABLE)
         subject = tagger
         if person.strip():
             view = await room.scope()
             if not view.available:
-                _record(metrics, "persona_dispute", "unavailable", reason="roster")
-                return dict(_PERSONA_DISPUTE_UNAVAILABLE)
+                _record(metrics, "profile_dispute", "unavailable", reason="roster")
+                return dict(_PROFILE_DISPUTE_UNAVAILABLE)
             matches = view.find(person)
             if not matches:
                 miss = _miss(person, view, content_checks=content_checks)
-                _record(metrics, "persona_dispute", miss["status"], candidates=0)
+                _record(metrics, "profile_dispute", miss["status"], candidates=0)
                 return miss
             if len(matches) > 1:
-                _record(metrics, "persona_dispute", "ambiguous", candidates=len(matches))
+                _record(metrics, "profile_dispute", "ambiguous", candidates=len(matches))
                 return {
                     "status": "ambiguous", **_asked_about(person, content_checks=content_checks),
                     "could_be": [p.name for p in matches],
@@ -14000,8 +14000,8 @@ Args:
                 }
             subject = matches[0]
         try:
-            result = await persona.record_dispute(
-                account=PersonaAccount(
+            result = await profile.record_dispute(
+                account=ProfileAccount(
                     key=character_key(unit, subject.person_id), entity_kind="human",
                     unit=unit, subject=subject.person_id,
                 ),
@@ -14009,22 +14009,22 @@ Args:
                 message_id=cites[0], now_ms=_now_ms(),
             )
         except Exception:
-            log.exception("persona_dispute failed")
-            _record(metrics, "persona_dispute", "unavailable")
-            return dict(_PERSONA_DISPUTE_UNAVAILABLE)
+            log.exception("profile_dispute failed")
+            _record(metrics, "profile_dispute", "unavailable")
+            return dict(_PROFILE_DISPUTE_UNAVAILABLE)
         if result.status == "ok":
-            _record(metrics, "persona_dispute", "ok", effect=result.effect)
+            _record(metrics, "profile_dispute", "ok", effect=result.effect)
             return {
                 "status": "ok", "effect": result.effect, "person": subject.name,
-                "note": _PERSONA_DISPUTE_NOTES.get(
+                "note": _PROFILE_DISPUTE_NOTES.get(
                     result.effect or "", "It is recorded."),
             }
         if result.status == "conflict":
-            _record(metrics, "persona_dispute", "unavailable", reason="conflict")
-            return dict(_PERSONA_DISPUTE_UNAVAILABLE)
+            _record(metrics, "profile_dispute", "unavailable", reason="conflict")
+            return dict(_PROFILE_DISPUTE_UNAVAILABLE)
         reason = result.refusal.reason if result.refusal else "refused"
-        _record(metrics, "persona_dispute", "refused", reason=reason)
-        return {"status": "refused", "note": _PERSONA_DISPUTE_REFUSED_NOTES.get(
+        _record(metrics, "profile_dispute", "refused", reason=reason)
+        return {"status": "refused", "note": _PROFILE_DISPUTE_REFUSED_NOTES.get(
             reason, "Nothing was recorded. Say you couldn't record it.")}
 
     def _held_to_schema(tool: str, body: str, *, carried: frozenset[int]) -> str | dict:
@@ -16802,11 +16802,11 @@ Args:
         *((_spec("remember", remember_told),) if memory_retrieval is not None
           else (_spec("remember", remember),)),
         # Built on both surfaces (no `remember`-style name collision);
-        # `on_memory_surface` keeps it off the Honcho one, and `persona=None`
+        # `on_memory_surface` keeps it off the Honcho one, and `profile=None`
         # answers `unavailable`. The introspection build
         # (`all_memory_surfaces`) must see it, or its catalogue line ships
         # with no description.
-        _spec("persona_dispute", persona_dispute),
+        _spec("profile_dispute", profile_dispute),
         _spec("computer_run", computer_run),
         _spec("computer_read", computer_read),
         _spec("computer_write", computer_write),
@@ -17044,8 +17044,8 @@ def build_tools(
     video: VideoDesk | None = None,
     video_ref_kinds: frozenset[str] = frozenset(),
     memory_retrieval: MemorySearch | None = None,
-    persona: PersonaWriter | None = None,
-    persona_read: PersonaHeads | None = None,
+    profile: ProfileWriter | None = None,
+    profile_read: ProfileHeads | None = None,
     relay: Relay | None = None,
     relay_turn: bool = False,
     content_checks: bool = True,
@@ -17105,8 +17105,8 @@ def build_tools(
         subagent=subagent,
         video=video, video_ref_kinds=video_ref_kinds,
         memory_retrieval=memory_retrieval,
-        persona=persona,
-        persona_read=persona_read,
+        profile=profile,
+        profile_read=profile_read,
         relay=relay, relay_turn=relay_turn,
         content_checks=content_checks,
     )

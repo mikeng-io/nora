@@ -246,6 +246,104 @@ def _tracked_markdown_files() -> list[str]:
 # the operator; do not mass-rewrite the docs to clear it, and do not add to it
 # for a NEW reference (fix the doc, or the code, instead).
 _KNOWN_DANGLING: dict[tuple[str, str], str] = {
+    ('design/evaluation/11-the-sandbox-rebuild.md', 'evals/PERSONA_IDENTITY.md'): (
+        "ADR 0029 renamed this typed-tier file; this historical design or generated "
+        "evidence citation resolves in git history. Current code uses profile names."
+    ),
+    ('design/private-dm/01-current-flow.md', 'nora/infra/sql/persona.py'): (
+        "ADR 0029 renamed this typed-tier file; this historical design or generated "
+        "evidence citation resolves in git history. Current code uses profile names."
+    ),
+    ('design/unified-memory/45-persona-adaptor.md', 'nora/language/persona.py'): (
+        "ADR 0029 renamed this typed-tier file; this historical design or generated "
+        "evidence citation resolves in git history. Current code uses profile names."
+    ),
+    (
+        'design/unified-memory/45-persona-adaptor.md',
+        'nora/language/persona_collective.py',
+    ): (
+        "ADR 0029 renamed this typed-tier file; this historical design or generated "
+        "evidence citation resolves in git history. Current code uses profile names."
+    ),
+    ('design/unified-memory/47-character-dimensions.md', 'nora/domain/persona.py'): (
+        "ADR 0029 renamed this typed-tier file; this historical design or generated "
+        "evidence citation resolves in git history. Current code uses profile names."
+    ),
+    ('design/unified-memory/47-character-dimensions.md', 'nora/infra/sql/persona.py'): (
+        "ADR 0029 renamed this typed-tier file; this historical design or generated "
+        "evidence citation resolves in git history. Current code uses profile names."
+    ),
+    ('design/unified-memory/47-character-dimensions.md', 'nora/language/persona_verdict.py'): (
+        "ADR 0029 renamed this typed-tier file; this historical design or generated "
+        "evidence citation resolves in git history. Current code uses profile names."
+    ),
+    ('design/unified-memory/70-honcho-cutover.md', 'nora/infra/sql/persona.py'): (
+        "ADR 0029 renamed this typed-tier file; this historical design or generated "
+        "evidence citation resolves in git history. Current code uses profile names."
+    ),
+    ('openwiki/concepts/persona-and-provenance.md', 'nora/domain/persona.py'): (
+        "ADR 0029 renamed this typed-tier file; this historical design or generated "
+        "evidence citation resolves in git history. Current code uses profile names."
+    ),
+    ('openwiki/concepts/persona-and-provenance.md', 'nora/infra/sql/persona.py'): (
+        "ADR 0029 renamed this typed-tier file; this historical design or generated "
+        "evidence citation resolves in git history. Current code uses profile names."
+    ),
+    ('openwiki/concepts/persona-and-provenance.md', 'nora/infra/sql/persona_inputs.py'): (
+        "ADR 0029 renamed this typed-tier file; this historical design or generated "
+        "evidence citation resolves in git history. Current code uses profile names."
+    ),
+    ('openwiki/concepts/persona-and-provenance.md', 'nora/language/persona_collective.py'): (
+        "ADR 0029 renamed this typed-tier file; this historical design or generated "
+        "evidence citation resolves in git history. Current code uses profile names."
+    ),
+    ('openwiki/concepts/persona-and-provenance.md', 'nora/language/persona_verdict.py'): (
+        "ADR 0029 renamed this typed-tier file; this historical design or generated "
+        "evidence citation resolves in git history. Current code uses profile names."
+    ),
+    ('openwiki/concepts/persona-and-provenance.md', 'nora/subject/persona_coverage.py'): (
+        "ADR 0029 renamed this typed-tier file; this historical design or generated "
+        "evidence citation resolves in git history. Current code uses profile names."
+    ),
+    (
+        'openwiki/concepts/persona-and-provenance.md',
+        'tests/infra/test_memory_projection_persona.py',
+    ): (
+        "ADR 0029 renamed this typed-tier file; this historical design or generated "
+        "evidence citation resolves in git history. Current code uses profile names."
+    ),
+    ('openwiki/concepts/persona-and-provenance.md', 'tests/infra/test_persona_collective.py'): (
+        "ADR 0029 renamed this typed-tier file; this historical design or generated "
+        "evidence citation resolves in git history. Current code uses profile names."
+    ),
+    ('openwiki/concepts/persona-and-provenance.md', 'tests/infra/test_persona_store.py'): (
+        "ADR 0029 renamed this typed-tier file; this historical design or generated "
+        "evidence citation resolves in git history. Current code uses profile names."
+    ),
+    ('openwiki/concepts/persona-and-provenance.md', 'tests/infra/test_persona_verdict.py'): (
+        "ADR 0029 renamed this typed-tier file; this historical design or generated "
+        "evidence citation resolves in git history. Current code uses profile names."
+    ),
+    ('openwiki/concepts/persona-and-provenance.md', 'tests/infra/test_remember_persona.py'): (
+        "ADR 0029 renamed this typed-tier file; this historical design or generated "
+        "evidence citation resolves in git history. Current code uses profile names."
+    ),
+    (
+        'openwiki/concepts/persona-and-provenance.md',
+        'tests/integration/test_eval_persona_writer.py',
+    ): (
+        "ADR 0029 renamed this typed-tier file; this historical design or generated "
+        "evidence citation resolves in git history. Current code uses profile names."
+    ),
+    ('openwiki/concepts/persona-and-provenance.md', 'tests/unit/test_persona_rules.py'): (
+        "ADR 0029 renamed this typed-tier file; this historical design or generated "
+        "evidence citation resolves in git history. Current code uses profile names."
+    ),
+    ('openwiki/concepts/persona-and-provenance.md', 'tests/unit/test_persona_social_input.py'): (
+        "ADR 0029 renamed this typed-tier file; this historical design or generated "
+        "evidence citation resolves in git history. Current code uses profile names."
+    ),
+
     (
         "design/context-assembly/04-every-occasion.md",
         "nora/app/announce.py",

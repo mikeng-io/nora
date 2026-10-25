@@ -74,7 +74,7 @@ HER_AUDIENCES: dict[str, tuple[str, ...]] = {
 # A section tag with nothing behind it is not doctrine. `voice.md` truncated to
 # its front matter plus a bare `# 你係邊個` still emits `name="voice"`, so every
 # `f'name="{name}" in text'` assertion in this file would pass while the
-# audience carried an empty persona.
+# audience carried an empty profile.
 #
 # 400 is a floor, not a target: the shipped bodies sit well above it, so an
 # honest edit does not trip it, and it is far above the ~10 characters a
@@ -222,7 +222,7 @@ def test_no_audience_of_hers_is_degenerate(doctrine_store, audience: str):
     """Every audience she reads gets the full authored set, and every section
     it gets arrives with a body.
 
-    Without the authored files she delivers with no persona and no constraints,
+    Without the authored files she delivers with no profile and no constraints,
     and `LeakGuard`'s verbatim-leak corpus (R-6) is built from whatever the
     audience resolves to, so a thin audience is a thin corpus on exactly the
     path that speaks.

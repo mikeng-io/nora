@@ -234,7 +234,7 @@ async def test_the_fire_path_reads_only_the_people_in_the_window():
     path._metrics = Metrics()
     path._persons = PERSONS
     path._standing_store_timeout_seconds = 5.0
-    path._persona_reader = None  # pre-switch (45 §5): the character reads run
+    path._profile_reader = None  # pre-switch (45 §5): the character reads run
     path._room_members = lambda occasion: ROSTER  # type: ignore[method-assign]
     occasion = type("_Occ", (), {"platform": "signal", "conversation_id": "g"})()
     got = await path._read_character(occasion, None, [_row("cy", 1)])  # type: ignore[arg-type]

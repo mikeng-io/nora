@@ -156,9 +156,9 @@ def build_offline_pipeline(
         # below: the eval subject (`nora.subject`) reconstructs a room's real
         # account at a real instant, and this harness has no store to hold one.
         culture=None,
-        # `<persona>`, the switch (45 §5) — `None`, as `culture`: no Persona
+        # `<profile>`, the switch (45 §5) — `None`, as `culture`: no Profile
         # store here, so the pre-switch blocks render.
-        persona=None,
+        profile=None,
         rosters={adapter.platform: roster_source} if roster_source else {},
         self_ids=frozenset(),
         # `<lessons>` (L5) — `None`, as `culture`: no store here, and the
@@ -339,8 +339,8 @@ def build_offline_pipeline(
             # and a case with no account should see no block.
             culture=None,
             # THE SWITCH (45 §5): the same `None` as `culture` — this harness
-            # has no Persona store, so the fire path reads the pre-switch tiers.
-            persona=None,
+            # has no Profile store, so the fire path reads the pre-switch tiers.
+            profile=None,
             lessons=None,
             policy=permissive_policy(),
             participation_runner=participation_runner,

@@ -1385,7 +1385,7 @@ CONSOLIDATION_WATERMARK = sa.Table(
     sa.Column("last_message_id", sa.BigInteger, nullable=False, server_default=sa.text("0")),
     sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False,
               server_default=sa.text("now()")),
-    # Persona source snapshots share the existing progress/settlement seam.
+    # Profile source snapshots share the existing progress/settlement seam.
     sa.Column("source_revision", sa.Text),
     sa.Column("source_read_revision", sa.Text),
 )
@@ -4870,21 +4870,21 @@ IDX_BLOB_TOMBSTONE_SHA = sa.Index(
 )
 
 
-# `persona` / `persona_line` (migration `0117_persona`, design/unified-memory/45
-# §1): one account per entity, kept as typed lines. `persona` is the account
+# `profile` / `profile_line` (migration `0117_persona`, design/unified-memory/45
+# §1): one account per entity, kept as typed lines. `profile` is the account
 # and changes in place (`revision`, bumped by every committed write, is the
 # compare-and-set a session writes against), so it keeps `row_history`.
-# `persona_line` is APPEND-ONLY: a change inserts a row whose `supersedes`
+# `profile_line` is APPEND-ONLY: a change inserts a row whose `supersedes`
 # names the one it replaces, so the account is the chain heads, and
-# `uq_persona_line_supersedes` lets a line be superseded once, which decides a
+# `uq_profile_line_supersedes` lets a line be superseded once, which decides a
 # race between two writers. No foreign key between them, for the reason
 # `documents` gives. The rules a CHECK can carry are here; the rest
 # (premises, instances per day, the listed-room rule, caps, precedence) are
-# `nora.domain.persona.plan_write`'s, run inside the write's transaction.
+# `nora.domain.profile.plan_write`'s, run inside the write's transaction.
 # Nothing renders these rows before the switch (00 «Sequence» step 8), so
 # they are the shadow by construction.
-PERSONA = sa.Table(
-    "persona",
+PROFILE = sa.Table(
+    "profile",
     METADATA,
     sa.Column("key", sa.Text, primary_key=True),
     sa.Column("entity_kind", sa.Text, nullable=False),
@@ -4894,20 +4894,20 @@ PERSONA = sa.Table(
     # When the account's own session last settled it (`apply_decay`): a
     # turn's `told` line written after it is pending (0120).
     sa.Column("settled_at", sa.BigInteger),
-    sa.CheckConstraint("length(btrim(key)) > 0", name="ck_persona_has_a_key"),
-    sa.CheckConstraint("length(btrim(unit)) > 0", name="ck_persona_has_a_unit"),
+    sa.CheckConstraint("length(btrim(key)) > 0", name="ck_profile_has_a_key"),
+    sa.CheckConstraint("length(btrim(unit)) > 0", name="ck_profile_has_a_unit"),
     sa.CheckConstraint(
         "entity_kind IN ('human', 'nora', 'agent', 'room', 'unit')",
-        name="ck_persona_entity_kind",
+        name="ck_profile_entity_kind",
     ),
-    sa.CheckConstraint("revision >= 0", name="ck_persona_revision"),
+    sa.CheckConstraint("revision >= 0", name="ck_profile_revision"),
 )
 
-PERSONA_LINE = sa.Table(
-    "persona_line",
+PROFILE_LINE = sa.Table(
+    "profile_line",
     METADATA,
     sa.Column("id", pg.UUID(as_uuid=False), primary_key=True),
-    sa.Column("persona_key", sa.Text, nullable=False),
+    sa.Column("profile_key", sa.Text, nullable=False),
     sa.Column("part", sa.Text, nullable=False),
     sa.Column("kind", sa.Text, nullable=False),
     sa.Column("content", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
@@ -4942,94 +4942,94 @@ PERSONA_LINE = sa.Table(
     sa.Column("written_by_session", sa.Text, nullable=False),
     _recorded_at(),
     sa.CheckConstraint(
-        "part IN ('identity', 'character', 'hypothesis')", name="ck_persona_line_part",
+        "part IN ('facts', 'traits', 'guesses')", name="ck_profile_line_part",
     ),
     sa.CheckConstraint(
-        "(part = 'identity' AND kind IN ('name', 'role', 'relationship', 'attribute', "
-        "'instruction', 'purpose', 'norm')) OR (part = 'character' AND kind IN "
+        "(part = 'facts' AND kind IN ('name', 'role', 'relationship', 'attribute', "
+        "'instruction', 'purpose', 'norm')) OR (part = 'traits' AND kind IN "
         "('trait', 'topic', 'habit', 'skill', 'preference', 'disposition', 'style', "
         "'value', 'social', 'goal')) "
-        "OR (part = 'hypothesis' AND kind = 'explanation')",
-        name="ck_persona_line_kind_part",
+        "OR (part = 'guesses' AND kind = 'explanation')",
+        name="ck_profile_line_kind_part",
     ),
     sa.CheckConstraint(
-        "(part = 'identity' AND mode IN ('told', 'deduced')) "
-        "OR (part = 'character' AND mode IN ('deduced', 'induced')) "
-        "OR (part = 'hypothesis' AND mode = 'abduced')",
-        name="ck_persona_line_mode_part",
+        "(part = 'facts' AND mode IN ('told', 'deduced')) "
+        "OR (part = 'traits' AND mode IN ('deduced', 'induced')) "
+        "OR (part = 'guesses' AND mode = 'abduced')",
+        name="ck_profile_line_mode_part",
     ),
     sa.CheckConstraint(
-        "length(btrim(text)) > 0 AND length(text) <= 300", name="ck_persona_line_text",
+        "length(btrim(text)) > 0 AND length(text) <= 300", name="ck_profile_line_text",
     ),
-    sa.CheckConstraint("cardinality(citations) >= 1", name="ck_persona_line_cites"),
+    sa.CheckConstraint("cardinality(citations) >= 1", name="ck_profile_line_cites"),
     sa.CheckConstraint(
-        "(mode = 'told') = (told_by IS NOT NULL)", name="ck_persona_line_told_by",
+        "(mode = 'told') = (told_by IS NOT NULL)", name="ck_profile_line_told_by",
     ),
     sa.CheckConstraint(
         "CASE WHEN mode = 'abduced' THEN prediction IS NOT NULL "
         "AND prediction_observable IS NOT NULL AND prediction_window_end IS NOT NULL "
         "ELSE prediction IS NULL AND prediction_observable IS NULL "
         "AND prediction_window_end IS NULL END",
-        name="ck_persona_line_prediction",
+        name="ck_profile_line_prediction",
     ),
     sa.CheckConstraint(
         "mode IN ('deduced', 'abduced') OR cardinality(draws_on) = 0",
-        name="ck_persona_line_draws_on",
+        name="ck_profile_line_draws_on",
     ),
     sa.CheckConstraint(
         "mode <> 'deduced' OR cardinality(citations) + cardinality(draws_on) >= 2",
-        name="ck_persona_line_deduced_premises",
+        name="ck_profile_line_deduced_premises",
     ),
     sa.CheckConstraint(
         "mode <> 'abduced' OR cardinality(draws_on) >= 1",
-        name="ck_persona_line_abduced_explains",
+        name="ck_profile_line_abduced_explains",
     ),
     sa.CheckConstraint(
         "state IN ('current', 'disputed', 'outranked', 'hidden', 'superseded', "
         "'retired', 'refuted')",
-        name="ck_persona_line_state",
+        name="ck_profile_line_state",
     ),
     sa.CheckConstraint(
-        "(part = 'hypothesis') = (verdict IS NOT NULL)", name="ck_persona_line_verdict_part",
+        "(part = 'guesses') = (verdict IS NOT NULL)", name="ck_profile_line_verdict_part",
     ),
     sa.CheckConstraint(
         "verdict IS NULL OR verdict IN ('open', 'confirmed', 'refuted', 'expired', 'unknown')",
-        name="ck_persona_line_verdict",
+        name="ck_profile_line_verdict",
     ),
     sa.CheckConstraint(
-        "(verdict_by IS NULL) = (verdict_at IS NULL)", name="ck_persona_line_verdict_by",
+        "(verdict_by IS NULL) = (verdict_at IS NULL)", name="ck_profile_line_verdict_by",
     ),
     sa.CheckConstraint(
-        "supersedes IS NULL OR supersedes <> id", name="ck_persona_line_not_self",
+        "supersedes IS NULL OR supersedes <> id", name="ck_profile_line_not_self",
     ),
-    sa.CheckConstraint("support_count >= 1", name="ck_persona_line_support_count"),
-    sa.CheckConstraint("length(btrim(unit)) > 0", name="ck_persona_line_has_a_unit"),
+    sa.CheckConstraint("support_count >= 1", name="ck_profile_line_support_count"),
+    sa.CheckConstraint("length(btrim(unit)) > 0", name="ck_profile_line_has_a_unit"),
     sa.CheckConstraint(
-        "length(btrim(written_by_session)) > 0", name="ck_persona_line_names_its_writer",
+        "length(btrim(written_by_session)) > 0", name="ck_profile_line_names_its_writer",
     ),
 )
-IDX_PERSONA_LINE_KEY = sa.Index(
-    "idx_persona_line_key", PERSONA_LINE.c.persona_key, PERSONA_LINE.c.written_at,
+IDX_PROFILE_LINE_KEY = sa.Index(
+    "idx_profile_line_key", PROFILE_LINE.c.profile_key, PROFILE_LINE.c.written_at,
 )
 # A line is superseded at most once: two writers replacing the same line at
 # the same moment cannot both land, the loser raises (a forked chain is
 # unrepresentable rather than unlikely).
-UQ_PERSONA_LINE_SUPERSEDES = sa.Index(
-    "uq_persona_line_supersedes", PERSONA_LINE.c.supersedes, unique=True,
-    postgresql_where=PERSONA_LINE.c.supersedes.isnot(None),
+UQ_PROFILE_LINE_SUPERSEDES = sa.Index(
+    "uq_profile_line_supersedes", PROFILE_LINE.c.supersedes, unique=True,
+    postgresql_where=PROFILE_LINE.c.supersedes.isnot(None),
 )
 
-# ── persona_dispute ───────────────────────────────────────────────────────────
-# A dispute of a Persona line is a Record item (35 §2, migration
+# ── profile_dispute ───────────────────────────────────────────────────────────
+# A dispute of a Profile line is a Record item (35 §2, migration
 # `0121_persona_dispute`): who disputed, the claim as they put it, the message
 # they said it in, and the line the claim matched when one did. Append-only;
-# what the dispute DID to the line is a new `persona_line` row written in the
-# same transaction (`SqlPersonaStore.record_dispute`), not a column here.
-PERSONA_DISPUTE = sa.Table(
-    "persona_dispute",
+# what the dispute DID to the line is a new `profile_line` row written in the
+# same transaction (`SqlProfileStore.record_dispute`), not a column here.
+PROFILE_DISPUTE = sa.Table(
+    "profile_dispute",
     METADATA,
     sa.Column("id", pg.UUID(as_uuid=False), primary_key=True),
-    sa.Column("persona_key", sa.Text, nullable=False),
+    sa.Column("profile_key", sa.Text, nullable=False),
     sa.Column("line_id", pg.UUID(as_uuid=False)),
     sa.Column("disputed_by", sa.Text, nullable=False),
     sa.Column("kind", sa.Text, nullable=False),
@@ -5038,23 +5038,23 @@ PERSONA_DISPUTE = sa.Table(
     sa.Column("unit", sa.Text, nullable=False),
     sa.Column("written_at", sa.BigInteger, nullable=False),
     _recorded_at(),
-    sa.CheckConstraint("kind IN ('dispute', 'forget')", name="ck_persona_dispute_kind"),
+    sa.CheckConstraint("kind IN ('dispute', 'forget')", name="ck_profile_dispute_kind"),
     sa.CheckConstraint(
         "length(btrim(claim)) > 0 AND length(claim) <= 300",
-        name="ck_persona_dispute_claim",
+        name="ck_profile_dispute_claim",
     ),
     sa.CheckConstraint(
-        "length(btrim(disputed_by)) > 0", name="ck_persona_dispute_who",
+        "length(btrim(disputed_by)) > 0", name="ck_profile_dispute_who",
     ),
     sa.CheckConstraint(
-        "length(btrim(persona_key)) > 0", name="ck_persona_dispute_has_a_key",
+        "length(btrim(profile_key)) > 0", name="ck_profile_dispute_has_a_key",
     ),
     sa.CheckConstraint(
-        "length(btrim(unit)) > 0", name="ck_persona_dispute_has_a_unit",
+        "length(btrim(unit)) > 0", name="ck_profile_dispute_has_a_unit",
     ),
 )
-IDX_PERSONA_DISPUTE_KEY = sa.Index(
-    "idx_persona_dispute_key", PERSONA_DISPUTE.c.persona_key, PERSONA_DISPUTE.c.written_at,
+IDX_PROFILE_DISPUTE_KEY = sa.Index(
+    "idx_profile_dispute_key", PROFILE_DISPUTE.c.profile_key, PROFILE_DISPUTE.c.written_at,
 )
 
 

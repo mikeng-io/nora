@@ -23,7 +23,7 @@ in Python, which the contract suite holds to the same answers):
     AND (n.kind NOT IN ('social', 'social_media', 'social_location')
          OR NOT n.persons && $social_off)
 
-Location-bearing collective Persona lines check their code-recorded source
+Location-bearing collective Profile lines check their code-recorded source
 subjects against that same presence permission; an absent subject is unknown.
 The presence line is `PRESENCE_KINDS`: an episode, and the place a social
 item is tagged with, which is a node of its own so that this line can gate
@@ -134,7 +134,7 @@ from nora.infra.sql.schema import (
     EMBEDDING_INDEXED_DIMENSIONS,
     MEMORY_EDGE,
     MEMORY_NODE,
-    PERSONA_LINE,
+    PROFILE_LINE,
 )
 
 __all__ = ["DENSE_CANDIDATES", "HNSW_EF_SEARCH", "HNSW_MAX_SCAN_TUPLES", "SqlMemoryIndex"]
@@ -195,7 +195,7 @@ def _narrowed(n: Any, scope: MemoryScope) -> list[sa.ColumnElement[bool]]:
     return out
 
 
-def _persona_location(p: Any) -> sa.ColumnElement[bool]:
+def _profile_location(p: Any) -> sa.ColumnElement[bool]:
     """Effective flag for old typed locations without rewriting append-only rows."""
     return sa.or_(p.location, p.fact_key == "residence", sa.and_(p.fact_key == "attribute",
         p.fact_value["name"].astext.in_(LOCATION_ATTRIBUTES)))
@@ -211,14 +211,14 @@ def _in_scope(n: Any, scope: MemoryScope) -> sa.ColumnElement[bool]:
             ~n.c.exclude_persons.overlap(_array(scope.people_here)),
         ),
     )
-    source_subjects = PERSONA_LINE.c.strength["location_subjects"]
+    source_subjects = PROFILE_LINE.c.strength["location_subjects"]
     return sa.and_(
         n.c.state == "live",
         n.c.kind.not_in(HUB_KINDS),
-        sa.or_(n.c.kind != "persona_line", sa.and_(sa.literal(scope.persona_render),
+        sa.or_(n.c.kind != "profile_line", sa.and_(sa.literal(scope.profile_render),
             ~sa.exists().where(
-                sa.cast(PERSONA_LINE.c.id, sa.Text) == n.c.source_id,
-                _persona_location(PERSONA_LINE.c),
+                sa.cast(PROFILE_LINE.c.id, sa.Text) == n.c.source_id,
+                _profile_location(PROFILE_LINE.c),
                 ~sa.case((sa.func.cardinality(n.c.persons) > 0,
                           n.c.persons.contained_by(_array(scope.presence_persons))),
                          else_=sa.func.coalesce(sa.and_(
@@ -329,28 +329,28 @@ def _node(r: Any, scope: MemoryScope | None = None) -> IndexedNode:
 
 
 def _columns(n: Any) -> list[Any]:
-    p = PERSONA_LINE.c
+    p = PROFILE_LINE.c
     fact = (
         sa.select(sa.func.jsonb_build_object(
             "key", p.fact_key, "value", p.fact_value, "as_of", p.as_of, "mode", p.mode,
             "valid_from", p.valid_from, "valid_until", p.valid_until,
         ))
-        .where(n.c.kind == "persona_line", p.id == sa.cast(sa.case(
+        .where(n.c.kind == "profile_line", p.id == sa.cast(sa.case(
                    (n.c.source_id.op("~")(
                        r"^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$"
                    ), n.c.source_id), else_=None,
                ), pg.UUID(as_uuid=False)),
-               p.part == "identity", p.fact_key.is_not(None))
+               p.part == "facts", p.fact_key.is_not(None))
         .correlate(n).scalar_subquery().label("identity_fact")
     )
     return [
         n.c.kind, n.c.source_id, n.c.text, n.c.at_ms, n.c.unit, n.c.origin_room,
         n.c.persons, n.c.exclude_persons, n.c.lineage, n.c.sha256, n.c.state, fact,
         sa.exists().where(sa.cast(p.id, sa.Text) == n.c.source_id,
-                          n.c.kind == "persona_line", _persona_location(p)).label("location"),
+                          n.c.kind == "profile_line", _profile_location(p)).label("location"),
         sa.select(p.strength["location_subjects"]).where(
             sa.cast(p.id, sa.Text) == n.c.source_id,
-            n.c.kind == "persona_line").correlate(n).scalar_subquery().label("location_subjects"),
+            n.c.kind == "profile_line").correlate(n).scalar_subquery().label("location_subjects"),
     ]
 
 

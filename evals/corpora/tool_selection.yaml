@@ -1244,7 +1244,7 @@ cases:
   # not make; "she wrote nothing at all" is not expressible as a criterion.
   # NOT RUN when written: the eval owner runs them on master and the branch.
   # `remember` is on both memory surfaces, a different write on each: a Honcho
-  # conclusion off the graph, a Persona `told` line on it (operator ruling
+  # conclusion off the graph, a Profile `told` line on it (operator ruling
   # 2026-10-17, design/unified-memory/45). So the own-fact case runs on both,
   # and on each a note is not where a settled fact goes (DEC-316).
   - name: route_keep_group_fact_is_not_remember

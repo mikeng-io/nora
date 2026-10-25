@@ -103,13 +103,13 @@ CORPUS_CLASS: dict[str, str] = {
     # not touch, the nearest class the map has. Its `stale`
     # cases are S5-shaped (time misread) — approximate, as this map says.
     "standing": "S6",
-    "persona_identity": "S6",
-    "persona_coverage": "S6",
+    "profile_identity": "S6",
+    "profile_coverage": "S6",
 }
 
 #: The entry points that honour `metadata.print_input` — render the model
 #: call's input, record it as `shown`, and call no model.
-_PRINTS_INPUT = frozenset({"standing", "persona_identity", "persona_coverage"})
+_PRINTS_INPUT = frozenset({"standing", "profile_identity", "profile_coverage"})
 
 
 #: What one draw costs, in seconds, for the run budget below. Unjudged is
@@ -641,7 +641,7 @@ def _main() -> int:
                     help="exclusive private manifest destination; never derived from input name")
     args = ap.parse_args()
     if args.coverage_freeze_input:
-        from evals.persona_coverage_input import freeze_manifest
+        from evals.profile_coverage_input import freeze_manifest
         try:
             if not args.coverage_manifest:
                 raise ValueError("freeze requires --coverage-manifest")
@@ -652,7 +652,7 @@ def _main() -> int:
             print(f"coverage freeze ERROR: {exc}", file=sys.stderr)
             return 2
     if args.coverage_export:
-        from evals.persona_coverage_input import export_input
+        from evals.profile_coverage_input import export_input
         try:
             if not all((args.coverage_inventory, args.coverage_semantic, args.coverage_recovery,
                         args.coverage_manifest)):
@@ -704,14 +704,14 @@ def _main() -> int:
             file=sys.stderr,
         )
         return 2
-    if "persona_coverage" in names:
+    if "profile_coverage" in names:
         # A frozen read-only measurement has no subject to compose, sandbox to
         # mutate or Honcho workspace to create. It still runs the same task,
         # Experiment, Outcome grader, spend and positions report as every entry.
-        if names != ["persona_coverage"] or args.sample != 1:
+        if names != ["profile_coverage"] or args.sample != 1:
             print("coverage requires one corpus, one frozen census draw", file=sys.stderr)
             return 2
-        from evals.rebuilt.persona_coverage import load_input, plan
+        from evals.rebuilt.profile_coverage import load_input, plan
         try:
             doc = load_input(gold=not bool(args.print_input))
             print("coverage plan:", json.dumps(plan(doc), sort_keys=True))

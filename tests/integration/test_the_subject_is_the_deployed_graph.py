@@ -109,11 +109,11 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
         "68 -> 69: `story_expiry`, a story frame's bytes deleted at their bound, "
         "started only by `nora/__main__.py`, never by the subject, which must "
         "not delete the deployment's bytes. "
-        "69 -> 73 on 2026-10-19, the persona prompt switch: `persona_portal` "
-        "plus `persona_scopes_of` and `persona_cited` (the portal /memory "
-        "account block: the caller's Persona heads, open disputes and the "
+        "69 -> 73 on 2026-10-19, the profile prompt switch: `profile_portal` "
+        "plus `profile_scopes_of` and `profile_cited` (the portal /memory "
+        "account block: the caller's Profile heads, open disputes and the "
         "evidence behind each line), and `index_state` (/health's "
-        "memory-index block) — all unwired until `[persona] render` is on."
+        "memory-index block) — all unwired until `[profile] render` is on."
     )
 
 

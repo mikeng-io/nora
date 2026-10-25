@@ -95,8 +95,8 @@ def _fire_path(culture, policy) -> FirePath:
     path._policy = policy
     path._metrics = Metrics()
     path._standing_store_timeout_seconds = 5.0
-    # Pre-switch (45 §5): no Persona reader wired, so the culture reads run.
-    path._persona_reader = None
+    # Pre-switch (45 §5): no Profile reader wired, so the culture reads run.
+    path._profile_reader = None
     return path
 
 
@@ -135,7 +135,7 @@ async def test_a_unit_with_no_account_reads_none_on_the_fire_path(tmp_path):
 
 
 async def test_the_switch_reads_no_self_account_on_the_fire_path(tmp_path):
-    """45 §5: a wired Persona reader replaces the read entirely — no culture
+    """45 §5: a wired Profile reader replaces the read entirely — no culture
     read is made, so a raising store is never even asked."""
     culture = InMemoryCultureStore()
     await culture.append(
@@ -143,7 +143,7 @@ async def test_the_switch_reads_no_self_account_on_the_fire_path(tmp_path):
         written_at=1, established_by="character-nora")
     culture.reads.clear()
     path = _fire_path(culture, _policy(tmp_path))
-    path._persona_reader = object()  # wired: the account itself is not needed
+    path._profile_reader = object()  # wired: the account itself is not needed
 
     assert await path._read_self_account(_participation()) is None
     assert culture.reads == []
@@ -158,10 +158,10 @@ def test_the_self_block_is_the_first_row_of_the_tag_and_cognition_tables():
     for table in (PREFILL_BLOCKS, COGNITION_BLOCKS):
         order = {name: o for name, o, _key in table}
         assert order["self"] == min(order.values()), table
-        # The switch (45 §5): `<persona of="you">` replaces `<self>` at the SAME
+        # The switch (45 §5): `<profile of="nora">` replaces `<self>` at the SAME
         # row, and the grounder fills one or the other, never both.
         first = {name for name, o in order.items() if o == order["self"]}
-        assert first <= {"self", "persona"}, table
+        assert first <= {"self", "profile"}, table
 
 
 async def test_a_failed_read_costs_the_block_not_the_session():
@@ -309,7 +309,7 @@ async def test_a_location_off_room_of_a_mixed_unit_reads_no_account_on_tag(tmp_p
     assembler._culture_reader = culture
     assembler._policy = _policy(tmp_path)
     assembler._metrics = Metrics()
-    assembler._persona_reader = None
+    assembler._profile_reader = None
 
     def msg(platform, cid):
         return type("_Msg", (), {"platform": platform, "conversation_id": cid})()

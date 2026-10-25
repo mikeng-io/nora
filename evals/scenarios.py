@@ -74,13 +74,13 @@ COUNTERFACTUAL_KEYS = frozenset({"varies", "why"})
 #: bears on. The varied lessons ride in `metadata.lessons` (her own
 #: words, as the live lesson reads), which no other case may state.
 COUNTERFACTUAL_TIERS = frozenset({
-    "culture", "transport", "prior", "lessons", "persona_sources",
+    "culture", "transport", "prior", "lessons", "profile_sources",
 })
 #: Tiers that mean something in one corpus only. `prior` is the standing
 #: fold's; that corpus varies nothing else. `lessons` is the lessons corpus's.
 _TIER_CORPORA = {
     "prior": frozenset({"standing"}), "lessons": frozenset({"lessons"}),
-    "persona_sources": frozenset({"persona_identity"}),
+    "profile_sources": frozenset({"profile_identity"}),
 }
 
 
@@ -134,9 +134,9 @@ def _rows(name: str) -> list[dict[str, Any]]:
             )
         return list(doc.get("cases") or [])
     rows = list(doc)
-    if name == "persona_identity" and os.environ.get("NORA_EVAL_PERSONA_CASES"):
-        private = yaml.safe_load(Path(os.environ["NORA_EVAL_PERSONA_CASES"]).read_text())
-        from nora.subject.persona_writer import (
+    if name == "profile_identity" and os.environ.get("NORA_EVAL_PROFILE_CASES"):
+        private = yaml.safe_load(Path(os.environ["NORA_EVAL_PROFILE_CASES"]).read_text())
+        from nora.subject.profile_writer import (
             REPRESENTATION_VECTORS,
             SOURCE_VECTORS,
             SOURCE_VECTORS_V2,
@@ -147,8 +147,8 @@ def _rows(name: str) -> list[dict[str, Any]]:
                 or set(private) - registered not in (
                     set(), set(SOURCE_VECTORS), set(SOURCE_VECTORS_V2),
                     set(REPRESENTATION_VECTORS))):
-            raise ValueError("private persona file must supply exactly the registered vectors")
-        rows.extend({"name": name, "entry": "persona_identity", "expect": "identity",
+            raise ValueError("private profile file must supply exactly the registered vectors")
+        rows.extend({"name": name, "entry": "profile_identity", "expect": "identity",
                      "metadata": {"synthetic_evidence": True}}
                     for name in (*SOURCE_VECTORS, *SOURCE_VECTORS_V2, *REPRESENTATION_VECTORS)
                     if name in private)
@@ -156,17 +156,17 @@ def _rows(name: str) -> list[dict[str, Any]]:
             value = private[row["name"]]
             if (not isinstance(value, dict)
                     or set(value) != {"snapshot", "person", "sources", "clock_ms"}):
-                raise ValueError("private persona vector requires snapshot, roster person, sources")
+                raise ValueError("private profile vector requires snapshot, roster person, sources")
             validate_sources(value["sources"], value["clock_ms"], vector=row["name"])
             row.update(snapshot=value["snapshot"], person=value["person"], counterfactual={
-                "varies": "persona_sources",
+                "varies": "profile_sources",
                 "why": "Private invented source arrivals and held birthday, at a declared clock; "
                        "the real anchor is background only, not evidence for these facts.",
             })
             row["metadata"] = {**row.get("metadata", {}),
-                               "persona_input": {"sources": value["sources"],
+                               "profile_input": {"sources": value["sources"],
                                                  "clock_ms": value["clock_ms"]},
-                               "private_persona_file": True}
+                               "private_profile_file": True}
     return rows
 
 
@@ -389,8 +389,8 @@ CORPUS_ENTRY: dict[str, str] = {
     # them unasked.
     "presence": "tag",
     "standing": "standing",
-    "persona_identity": "persona_identity",
-    "persona_coverage": "persona_coverage",
+    "profile_identity": "profile_identity",
+    "profile_coverage": "profile_coverage",
     "tool_reporting": "tag",
     # What she says about her OWN FORM. A tag, and judged — "did she reply"
     # says nothing about whether the reply described the mascot when asked, or
@@ -431,7 +431,7 @@ ROUTED_CORPORA = frozenset({"tool_selection", "tool_selection_cognition"})
 #: judging unconditionally (once a judge is configured) adds no second
 #: selection rule.
 JUDGED_CORPORA = frozenset({
-    "persona_coverage", "persona_identity",
+    "profile_coverage", "profile_identity",
     "being_contradicted", "identity_grounding", "source_scope",
     "injections", "transcript_injection", "standing", "presence",
     # ADR 0015 §4: what she SAYS after a tool returns a status. Its opted-in

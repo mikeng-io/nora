@@ -77,12 +77,12 @@ _SHARED_BUILDER_NAMES = {
     # themselves. It always builds `today`, and the caller stamps its row with
     # `restamp`, so this is the same shape as the five above.
     "today_block": "today",
-    # `nora.language.persona_render.render_persona` (45 §5): the one `<persona>`
+    # `nora.language.profile_render.render_profile` (45 §5): the one `<profile>`
     # block, built for the cognition prompt, the debrief fold and the prefill,
     # and restamped by the caller's own `_BLOCKS` row.
-    "render_persona": "persona",
+    "render_profile": "profile",
     # `nora.language.character._within_budget`: the one `<social_items>` block,
-    # shared by the Character and Persona sessions; its second return value is
+    # shared by the Character and Profile sessions; its second return value is
     # always that block (or None), restamped by the caller's own row.
     "_within_budget": "social_items",
 }

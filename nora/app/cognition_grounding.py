@@ -58,7 +58,7 @@ from nora.agent.lineage import (
     LineagePolicy,
     derived_view,
     excluded,
-    persona_lines_for,
+    profile_lines_for,
     visible_sections,
 )
 from nora.agent.room import Room as AgentRoom
@@ -84,13 +84,13 @@ from nora.domain.gatherings import Gathering
 from nora.domain.memo import Memo
 from nora.domain.mobility_forecast import detect_stay_anomalies, place_words
 from nora.domain.notes import Note, likely_duplicates
-from nora.domain.persona import PersonaLine, PersonaView
+from nora.domain.profile import ProfileLine, ProfileView
 from nora.domain.record_query import RecordHit, RecordRefHit
 from nora.domain.reminders import Reminder
 from nora.domain.rollup import room_key
 from nora.domain.stimuli import Stimulus
 from nora.language.culture_render import read_culture
-from nora.language.persona_render import PersonaHeads, read_persona
+from nora.language.profile_render import ProfileHeads, read_profile
 
 log = logging.getLogger("nora.app.cognition_grounding")
 
@@ -374,14 +374,14 @@ def unit_self_reader(
     return read
 
 
-def unit_self_persona_reader(
-    persona: PersonaHeads | None, policy: Any, *,
+def unit_self_profile_reader(
+    profile: ProfileHeads | None, policy: Any, *,
     lineage: LineagePolicy | None = None,
     room_for: Callable[[str, str], AgentRoom] | None = None,
-) -> Callable[[str], Awaitable[tuple[PersonaLine, ...]] | None] | None:
-    """`build_grounder`'s `self_persona`: her Persona account of the unit, or
+) -> Callable[[str], Awaitable[tuple[ProfileLine, ...]] | None] | None:
+    """`build_grounder`'s `self_profile`: her Profile account of the unit, or
     none — `unit_self_reader`'s gate (R-31: the session can reach any room of
-    the unit) on the switch's account (45 §5). `None` while `[persona] render`
+    the unit) on the switch's account (45 §5). `None` while `[profile] render`
     is off.
 
     The session can reach every room of the unit but has no live roster to
@@ -389,14 +389,14 @@ def unit_self_persona_reader(
     excluded lines, as the grounder's other lineage reads do. Location lines
     additionally pass the turn path's presence permission in every target room.
     """
-    if persona is None:
+    if profile is None:
         return None
 
-    async def read(unit: str) -> tuple[PersonaLine, ...]:
+    async def read(unit: str) -> tuple[ProfileLine, ...]:
         boundary = lineage or LineagePolicy.from_policy(policy)
         targets = tuple(boundary.render_room(platform=c.platform, conversation_id=c.primary_id)
                         for c in policy.conversations if c.unit == unit and c.primary_id)
-        lines = await persona.account_heads(key=nora_character_key(unit))
+        lines = await profile.account_heads(key=nora_character_key(unit))
         lines = tuple(line for line in lines if not line.exclude_persons or (
             targets and all(not excluded(line.exclude_persons, target) for target in targets)
         ))
@@ -407,11 +407,11 @@ def unit_self_persona_reader(
             for target in targets:
                 if target.room is None:
                     return tuple(line for line in lines if not line.location)
-                lines = await persona_lines_for(lines, target, room_for(
+                lines = await profile_lines_for(lines, target, room_for(
                     target.room.platform, target.room.primary_id))
         return lines
 
-    def gated(unit: str) -> Awaitable[tuple[PersonaLine, ...]] | None:
+    def gated(unit: str) -> Awaitable[tuple[ProfileLine, ...]] | None:
         if not policy.shows_self_to_unit(unit):
             return None
         return read(unit)
@@ -437,7 +437,7 @@ def build_grounder(
     stay_context: Callable[[str, int], Awaitable[StayContext | None]] | None = None,
     place_release: Callable[[str, str], Awaitable[bool]] | None = None,
     self_account: Callable[[str], Awaitable[CultureRevision | None] | None] | None = None,
-    self_persona: Callable[[str], Awaitable[tuple[PersonaLine, ...]] | None] | None = None,
+    self_profile: Callable[[str], Awaitable[tuple[ProfileLine, ...]] | None] | None = None,
     metrics: Any = None,
     memo_index: Callable[[str], Awaitable[Sequence[Memo]]] | None = None,
     pending_reminds: Callable[[], Awaitable[Sequence[Reminder]]] | None = None,
@@ -615,23 +615,23 @@ def build_grounder(
         # Bounded and counted like the tag and fire reads (`read_culture`,
         # `stage="cognition_self"`).
         #
-        # THE SWITCH (45 §5): with the persona reader wired (`[persona]
-        # render`), her Persona account is read instead — the prose read is
-        # not made — and renders as `<persona of="you">`. A failed persona
-        # read is counted (`stage="cognition_self_persona"`, R-27) and drops
+        # THE SWITCH (45 §5): with the profile reader wired (`[profile]
+        # render`), her Profile account is read instead — the prose read is
+        # not made — and renders as `<profile of="nora">`. A failed profile
+        # read is counted (`stage="cognition_self_profile"`, R-27) and drops
         # the block, never a fall back to the prose account.
         account: CultureRevision | None = None
-        persona_view: PersonaView | None = None
-        persona_names: dict[str, str] = {}
-        if self_persona is not None:
-            lines = await read_persona(
-                self_persona(unit),
-                stage="cognition_self_persona", platform="cognition",
+        profile_view: ProfileView | None = None
+        profile_names: dict[str, str] = {}
+        if self_profile is not None:
+            lines = await read_profile(
+                self_profile(unit),
+                stage="cognition_self_profile", platform="cognition",
                 metrics=metrics,
             )
             if lines is not None:
-                persona_view = PersonaView(entity="self", of="you", lines=lines)
-                persona_names = {
+                profile_view = ProfileView(entity="nora", of="nora", lines=lines)
+                profile_names = {
                     line.told_by: ref.name
                     for line in lines if line.told_by is not None
                     if (ref := persons.by_person.get(line.told_by)) is not None
@@ -645,7 +645,7 @@ def build_grounder(
             records=records_out, notes=notes, memos=memos, events=tuple(events),
             rollups=rollups, socials=_social_lines(pending, claimed, persons),
             own_sends=own_sends, room_labels=labels, self_account=account,
-            self_persona=persona_view, persona_names=persona_names,
+            self_profile=profile_view, profile_names=profile_names,
         )
 
     return ground

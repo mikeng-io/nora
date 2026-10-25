@@ -35,7 +35,7 @@ from typing import Literal
 from nora.domain.cognition_session import Room
 from nora.domain.culture import CultureRevision
 from nora.domain.memo import Memo
-from nora.domain.persona import PersonaView
+from nora.domain.profile import ProfileView
 from nora.domain.stimuli import Stimulus
 
 #: The tables a message stimulus's `ref` names a row of (`nora.ingest.stages.
@@ -274,13 +274,13 @@ class Grounding:
     #: as the `self` block; `None` when the unit has no account or the read
     #: failed.
     self_account: CultureRevision | None = None
-    #: THE SWITCH (45 §5): her Persona account for the unit, rendered as
-    #: `<persona of="you">` INSTEAD of `self_account` when `[persona] render`
-    #: is on. `persona_names` resolves a line's `told_by` to the
+    #: THE SWITCH (45 §5): her Profile account for the unit, rendered as
+    #: `<profile of="nora">` INSTEAD of `self_account` when `[profile] render`
+    #: is on. `profile_names` resolves a line's `told_by` to the
     #: identity-canonical name (never an id, R-18), built by the grounder,
     #: which holds `Persons`; the renderer does not.
-    self_persona: PersonaView | None = None
-    persona_names: Mapping[str, str] = field(default_factory=dict)
+    self_profile: ProfileView | None = None
+    profile_names: Mapping[str, str] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, object]:
         """The JSON the session row keeps: what she was shown, by reference
@@ -298,10 +298,10 @@ class Grounding:
             "memos": [m.id for m in self.memos],
             # By revision id, never the words: the account is hers to rewrite.
             "self_revision_id": None if self.self_account is None else self.self_account.id,
-            # The Persona switch's self account, by line id, never the words.
-            "self_persona_line_ids": (
-                None if self.self_persona is None
-                else [line.id for line in self.self_persona.lines]
+            # The Profile switch's self account, by line id, never the words.
+            "self_profile_line_ids": (
+                None if self.self_profile is None
+                else [line.id for line in self.self_profile.lines]
             ),
             "events": [e.id for e in self.events],
             # By reference, and no name: a person id, the kind, the interval.

@@ -7,15 +7,15 @@
     "target": "tests/infra/test_typed_identity.py::test_historical_union_freezes_boundary_and_resumes_without_consuming_unread"
   },
   {
-    "name": "a conflicted Persona write retains its evidence page",
-    "file": "nora/language/persona.py",
-    "old": "raise AccountNotRecordableError(\"Persona commit failed; retaining evidence\")",
+    "name": "a conflicted Profile write retains its evidence page",
+    "file": "nora/language/profile.py",
+    "old": "raise AccountNotRecordableError(\"Profile commit failed; retaining evidence\")",
     "new": "continue",
     "target": "tests/infra/test_typed_identity.py::test_historical_unsettled_and_conflicted_sessions_hold_the_same_page"
   },
   {
     "name": "birthday values must be calendar dates",
-    "file": "nora/domain/persona.py",
+    "file": "nora/domain/profile.py",
     "old": "date(value.get(\"year\", 2000), value[\"month\"], value[\"day\"])",
     "new": "date(2000, 1, 1)",
     "target": "tests/infra/test_typed_identity.py::test_invalid_shapes_are_refused_without_a_row"

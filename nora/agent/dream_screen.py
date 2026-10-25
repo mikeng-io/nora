@@ -178,7 +178,7 @@ def offence(item: Mapping[str, object], *, content_checks: bool = True) -> tuple
 
 def text_offence(text: str, *, content_checks: bool = True) -> str | None:
     """`offence` on one text: `"identifier"`, `"coordinate"` or `None`. The
-    Persona write's screen (`nora.infra.sql.persona.SqlPersonaStore`)."""
+    Profile write's screen (`nora.infra.sql.profile.SqlProfileStore`)."""
     found = _offence({"text": text}, content_checks=content_checks)
     return None if found is None else found[0]
 

@@ -162,7 +162,7 @@ async def test_windowed_is_every_visible_line_in_the_rooms_over_the_interval(see
 
 
 async def test_rows_by_id_are_the_visible_rows_named_with_their_room(seeded):
-    """What a Persona session checks an older account's citation against: the
+    """What a Profile session checks an older account's citation against: the
     rows asked for, ascending, each with its room; a hidden one is gone and an
     id nothing holds is skipped."""
     store, ids = seeded

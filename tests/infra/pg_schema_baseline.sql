@@ -253,9 +253,6 @@ ADD CONSTRAINT note_revision_pkey PRIMARY KEY (id);
 ADD CONSTRAINT otp_attempt_pkey PRIMARY KEY (id);
 ADD CONSTRAINT otp_challenge_pkey PRIMARY KEY (challenge_id);
 ADD CONSTRAINT participation_window_state_pkey PRIMARY KEY (platform, conversation_id);
-ADD CONSTRAINT persona_dispute_pkey PRIMARY KEY (id);
-ADD CONSTRAINT persona_line_pkey PRIMARY KEY (id);
-ADD CONSTRAINT persona_pkey PRIMARY KEY (key);
 ADD CONSTRAINT pk_document_revision PRIMARY KEY (document_id, revision);
 ADD CONSTRAINT presence_corridor_speed_pkey PRIMARY KEY (subject_id, corridor_id, hour_of_week);
 ADD CONSTRAINT presence_corridors_pkey PRIMARY KEY (id);
@@ -266,6 +263,9 @@ ADD CONSTRAINT presence_place_rhythm_pkey PRIMARY KEY (subject_id, place_id);
 ADD CONSTRAINT presence_places_pkey PRIMARY KEY (circle_id, place_id);
 ADD CONSTRAINT presence_stays_pkey PRIMARY KEY (id);
 ADD CONSTRAINT presence_trips_pkey PRIMARY KEY (id);
+ADD CONSTRAINT profile_dispute_pkey PRIMARY KEY (id);
+ADD CONSTRAINT profile_line_pkey PRIMARY KEY (id);
+ADD CONSTRAINT profile_pkey PRIMARY KEY (key);
 ADD CONSTRAINT reasoning_strip_log_pkey PRIMARY KEY (id);
 ADD CONSTRAINT reminders_pkey PRIMARY KEY (id);
 ADD CONSTRAINT rendered_claim_pkey PRIMARY KEY (conversation_id, kind, row_key);
@@ -411,9 +411,6 @@ ALTER TABLE ONLY public.note_revision
 ALTER TABLE ONLY public.otp_attempt
 ALTER TABLE ONLY public.otp_challenge
 ALTER TABLE ONLY public.participation_window_state
-ALTER TABLE ONLY public.persona
-ALTER TABLE ONLY public.persona_dispute
-ALTER TABLE ONLY public.persona_line
 ALTER TABLE ONLY public.presence_corridor_speed
 ALTER TABLE ONLY public.presence_corridors
 ALTER TABLE ONLY public.presence_derived_places
@@ -424,6 +421,9 @@ ALTER TABLE ONLY public.presence_place_rhythm
 ALTER TABLE ONLY public.presence_places
 ALTER TABLE ONLY public.presence_stays
 ALTER TABLE ONLY public.presence_trips
+ALTER TABLE ONLY public.profile
+ALTER TABLE ONLY public.profile_dispute
+ALTER TABLE ONLY public.profile_line
 ALTER TABLE ONLY public.reasoning_strip_log
 ALTER TABLE ONLY public.reminders
 ALTER TABLE ONLY public.rendered_claim
@@ -627,7 +627,7 @@ CONSTRAINT ck_memory_index_state_one_row CHECK (id),
 CONSTRAINT ck_memory_index_state_status CHECK ((status = ANY (ARRAY['never'::text, 'building'::text, 'complete'::text])))
 CONSTRAINT ck_memory_node_embed_input CHECK (((embed_input IS NULL) OR (embed_input = ANY (ARRAY['text'::text, 'bytes'::text])))),
 CONSTRAINT ck_memory_node_has_a_scope CHECK (((kind = ANY (ARRAY['person'::text, 'room'::text, 'unit'::text, 'nora'::text, 'place'::text])) OR (unit IS NOT NULL) OR (origin_room IS NOT NULL) OR (cardinality(persons) > 0))),
-CONSTRAINT ck_memory_node_kind CHECK ((kind = ANY (ARRAY['message'::text, 'media'::text, 'note'::text, 'memo'::text, 'event'::text, 'lesson'::text, 'character'::text, 'outing'::text, 'stay'::text, 'trip'::text, 'person'::text, 'room'::text, 'unit'::text, 'nora'::text, 'place'::text, 'social'::text, 'social_media'::text, 'social_location'::text, 'persona_line'::text]))),
+CONSTRAINT ck_memory_node_kind CHECK ((kind = ANY (ARRAY['message'::text, 'media'::text, 'note'::text, 'memo'::text, 'event'::text, 'lesson'::text, 'character'::text, 'outing'::text, 'stay'::text, 'trip'::text, 'person'::text, 'room'::text, 'unit'::text, 'nora'::text, 'place'::text, 'social'::text, 'social_media'::text, 'social_location'::text, 'profile_line'::text]))),
 CONSTRAINT ck_memory_node_state CHECK ((state = ANY (ARRAY['live'::text, 'retired'::text, 'superseded'::text])))
 CONSTRAINT ck_message_reading_state CHECK ((state = ANY (ARRAY['pending'::text, 'done'::text, 'retired'::text])))
 CONSTRAINT ck_music_queue_position_non_negative CHECK (("position" >= 0))
@@ -637,33 +637,33 @@ CONSTRAINT ck_otp_challenge_code_hash CHECK ((code_hash ~ '^[0-9a-f]{64}$'::text
 CONSTRAINT ck_otp_challenge_expiry CHECK ((expires_at > issued_at)),
 CONSTRAINT ck_otp_challenge_platform CHECK ((platform = ANY (ARRAY['signal'::text, 'whatsapp'::text]))),
 CONSTRAINT ck_otp_challenge_purpose CHECK ((purpose = ANY (ARRAY['sign_in'::text, 'adopt'::text])))
-CONSTRAINT ck_persona_dispute_claim CHECK (((length(btrim(claim)) > 0) AND (length(claim) <= 300))),
-CONSTRAINT ck_persona_dispute_has_a_key CHECK ((length(btrim(persona_key)) > 0)),
-CONSTRAINT ck_persona_dispute_has_a_unit CHECK ((length(btrim(unit)) > 0)),
-CONSTRAINT ck_persona_dispute_kind CHECK ((kind = ANY (ARRAY['dispute'::text, 'forget'::text]))),
-CONSTRAINT ck_persona_dispute_who CHECK ((length(btrim(disputed_by)) > 0))
-CONSTRAINT ck_persona_entity_kind CHECK ((entity_kind = ANY (ARRAY['human'::text, 'nora'::text, 'agent'::text, 'room'::text, 'unit'::text]))),
-CONSTRAINT ck_persona_has_a_key CHECK ((length(btrim(key)) > 0)),
-CONSTRAINT ck_persona_has_a_unit CHECK ((length(btrim(unit)) > 0)),
-CONSTRAINT ck_persona_line_abduced_explains CHECK (((mode <> 'abduced'::text) OR (cardinality(draws_on) >= 1))),
-CONSTRAINT ck_persona_line_cites CHECK ((cardinality(citations) >= 1)),
-CONSTRAINT ck_persona_line_deduced_premises CHECK (((mode <> 'deduced'::text) OR ((cardinality(citations) + cardinality(draws_on)) >= 2))),
-CONSTRAINT ck_persona_line_draws_on CHECK (((mode = ANY (ARRAY['deduced'::text, 'abduced'::text])) OR (cardinality(draws_on) = 0))),
-CONSTRAINT ck_persona_line_has_a_unit CHECK ((length(btrim(unit)) > 0)),
-CONSTRAINT ck_persona_line_kind_part CHECK ((((part = 'identity'::text) AND (kind = ANY (ARRAY['name'::text, 'role'::text, 'relationship'::text, 'attribute'::text, 'instruction'::text, 'purpose'::text, 'norm'::text]))) OR ((part = 'character'::text) AND (kind = ANY (ARRAY['trait'::text, 'topic'::text, 'habit'::text, 'skill'::text, 'preference'::text, 'disposition'::text, 'style'::text, 'value'::text, 'social'::text, 'goal'::text]))) OR ((part = 'hypothesis'::text) AND (kind = 'explanation'::text)))),
-CONSTRAINT ck_persona_line_mode_part CHECK ((((part = 'identity'::text) AND (mode = ANY (ARRAY['told'::text, 'deduced'::text]))) OR ((part = 'character'::text) AND (mode = ANY (ARRAY['deduced'::text, 'induced'::text]))) OR ((part = 'hypothesis'::text) AND (mode = 'abduced'::text)))),
-CONSTRAINT ck_persona_line_names_its_writer CHECK ((length(btrim(written_by_session)) > 0)),
-CONSTRAINT ck_persona_line_not_self CHECK (((supersedes IS NULL) OR (supersedes <> id))),
-CONSTRAINT ck_persona_line_part CHECK ((part = ANY (ARRAY['identity'::text, 'character'::text, 'hypothesis'::text]))),
-CONSTRAINT ck_persona_line_prediction CHECK (
-CONSTRAINT ck_persona_line_state CHECK ((state = ANY (ARRAY['current'::text, 'disputed'::text, 'outranked'::text, 'hidden'::text, 'superseded'::text, 'retired'::text, 'refuted'::text]))),
-CONSTRAINT ck_persona_line_support_count CHECK ((support_count >= 1)),
-CONSTRAINT ck_persona_line_text CHECK (((length(btrim(text)) > 0) AND (length(text) <= 300))),
-CONSTRAINT ck_persona_line_told_by CHECK (((mode = 'told'::text) = (told_by IS NOT NULL))),
-CONSTRAINT ck_persona_line_verdict CHECK (((verdict IS NULL) OR (verdict = ANY (ARRAY['open'::text, 'confirmed'::text, 'refuted'::text, 'expired'::text, 'unknown'::text])))),
-CONSTRAINT ck_persona_line_verdict_by CHECK (((verdict_by IS NULL) = (verdict_at IS NULL))),
-CONSTRAINT ck_persona_line_verdict_part CHECK (((part = 'hypothesis'::text) = (verdict IS NOT NULL)))
-CONSTRAINT ck_persona_revision CHECK ((revision >= 0))
+CONSTRAINT ck_profile_dispute_claim CHECK (((length(btrim(claim)) > 0) AND (length(claim) <= 300))),
+CONSTRAINT ck_profile_dispute_has_a_key CHECK ((length(btrim(profile_key)) > 0)),
+CONSTRAINT ck_profile_dispute_has_a_unit CHECK ((length(btrim(unit)) > 0)),
+CONSTRAINT ck_profile_dispute_kind CHECK ((kind = ANY (ARRAY['dispute'::text, 'forget'::text]))),
+CONSTRAINT ck_profile_dispute_who CHECK ((length(btrim(disputed_by)) > 0))
+CONSTRAINT ck_profile_entity_kind CHECK ((entity_kind = ANY (ARRAY['human'::text, 'nora'::text, 'agent'::text, 'room'::text, 'unit'::text]))),
+CONSTRAINT ck_profile_has_a_key CHECK ((length(btrim(key)) > 0)),
+CONSTRAINT ck_profile_has_a_unit CHECK ((length(btrim(unit)) > 0)),
+CONSTRAINT ck_profile_line_abduced_explains CHECK (((mode <> 'abduced'::text) OR (cardinality(draws_on) >= 1))),
+CONSTRAINT ck_profile_line_cites CHECK ((cardinality(citations) >= 1)),
+CONSTRAINT ck_profile_line_deduced_premises CHECK (((mode <> 'deduced'::text) OR ((cardinality(citations) + cardinality(draws_on)) >= 2))),
+CONSTRAINT ck_profile_line_draws_on CHECK (((mode = ANY (ARRAY['deduced'::text, 'abduced'::text])) OR (cardinality(draws_on) = 0))),
+CONSTRAINT ck_profile_line_has_a_unit CHECK ((length(btrim(unit)) > 0)),
+CONSTRAINT ck_profile_line_kind_part CHECK ((((part = 'facts'::text) AND (kind = ANY (ARRAY['name'::text, 'role'::text, 'relationship'::text, 'attribute'::text, 'instruction'::text, 'purpose'::text, 'norm'::text]))) OR ((part = 'traits'::text) AND (kind = ANY (ARRAY['trait'::text, 'topic'::text, 'habit'::text, 'skill'::text, 'preference'::text, 'disposition'::text, 'style'::text, 'value'::text, 'social'::text, 'goal'::text]))) OR ((part = 'guesses'::text) AND (kind = 'explanation'::text)))),
+CONSTRAINT ck_profile_line_mode_part CHECK ((((part = 'facts'::text) AND (mode = ANY (ARRAY['told'::text, 'deduced'::text]))) OR ((part = 'traits'::text) AND (mode = ANY (ARRAY['deduced'::text, 'induced'::text]))) OR ((part = 'guesses'::text) AND (mode = 'abduced'::text)))),
+CONSTRAINT ck_profile_line_names_its_writer CHECK ((length(btrim(written_by_session)) > 0)),
+CONSTRAINT ck_profile_line_not_self CHECK (((supersedes IS NULL) OR (supersedes <> id))),
+CONSTRAINT ck_profile_line_part CHECK ((part = ANY (ARRAY['facts'::text, 'traits'::text, 'guesses'::text]))),
+CONSTRAINT ck_profile_line_prediction CHECK (
+CONSTRAINT ck_profile_line_state CHECK ((state = ANY (ARRAY['current'::text, 'disputed'::text, 'outranked'::text, 'hidden'::text, 'superseded'::text, 'retired'::text, 'refuted'::text]))),
+CONSTRAINT ck_profile_line_support_count CHECK ((support_count >= 1)),
+CONSTRAINT ck_profile_line_text CHECK (((length(btrim(text)) > 0) AND (length(text) <= 300))),
+CONSTRAINT ck_profile_line_told_by CHECK (((mode = 'told'::text) = (told_by IS NOT NULL))),
+CONSTRAINT ck_profile_line_verdict CHECK (((verdict IS NULL) OR (verdict = ANY (ARRAY['open'::text, 'confirmed'::text, 'refuted'::text, 'expired'::text, 'unknown'::text])))),
+CONSTRAINT ck_profile_line_verdict_by CHECK (((verdict_by IS NULL) = (verdict_at IS NULL))),
+CONSTRAINT ck_profile_line_verdict_part CHECK (((part = 'guesses'::text) = (verdict IS NOT NULL)))
+CONSTRAINT ck_profile_revision CHECK ((revision >= 0))
 CONSTRAINT ck_reasoning_strip_log_counts CHECK (((continuation_calls >= 1) AND (continuation_calls <= model_calls) AND (strip_calls >= 0) AND (strip_calls <= continuation_calls) AND (stripped_blocks >= 0) AND ((strip_calls = 0) = (stripped_blocks = 0)))),
 CONSTRAINT ck_reasoning_strip_log_tag_id_not_empty CHECK (((tag_id IS NULL) OR (tag_id <> ''::text)))
 CONSTRAINT ck_reminders_recurrence CHECK ((((recurrence = 'none'::text) AND (recurrence_tz IS NULL) AND (recurrence_count IS NULL) AND (recurrence_until IS NULL) AND (series_id IS NULL) AND (series_anchor_at IS NULL) AND (occurrence = 0)) OR ((recurrence <> 'none'::text) AND (recurrence_tz IS NOT NULL) AND (recurrence_count >= 1) AND (series_id IS NOT NULL) AND (series_anchor_at IS NOT NULL) AND (occurrence >= 0) AND (occurrence < recurrence_count)))),
@@ -843,7 +843,7 @@ CREATE INDEX idx_memory_node_embedding_256 ON public.memory_node USING hnsw (((p
 CREATE INDEX idx_memory_node_origin_room ON public.memory_node USING btree (origin_room);
 CREATE INDEX idx_memory_node_sha256 ON public.memory_node USING btree (sha256);
 CREATE INDEX idx_memory_node_text_trgm ON public.memory_node USING gin (text public.gin_trgm_ops);
-CREATE INDEX idx_memory_node_unembedded ON public.memory_node USING btree (embed_attempts, id DESC) WHERE ((embedding IS NULL) AND (state = 'live'::text) AND (kind = ANY (ARRAY['message'::text, 'media'::text, 'note'::text, 'memo'::text, 'event'::text, 'lesson'::text, 'character'::text, 'social'::text, 'social_media'::text, 'social_location'::text, 'persona_line'::text])));
+CREATE INDEX idx_memory_node_unembedded ON public.memory_node USING btree (embed_attempts, id DESC) WHERE ((embedding IS NULL) AND (state = 'live'::text) AND (kind = ANY (ARRAY['message'::text, 'media'::text, 'note'::text, 'memo'::text, 'event'::text, 'lesson'::text, 'character'::text, 'social'::text, 'social_media'::text, 'social_location'::text, 'profile_line'::text])));
 CREATE INDEX idx_memory_node_unit ON public.memory_node USING btree (unit);
 CREATE INDEX idx_message_delete_message ON public.message_delete USING btree (message_id);
 CREATE INDEX idx_message_edit_message_ts ON public.message_edit USING btree (message_id, ts);
@@ -861,8 +861,6 @@ CREATE INDEX idx_note_revision_body_trgm ON public.note_revision USING gin (body
 CREATE INDEX idx_note_revision_note_id ON public.note_revision USING btree (note_id);
 CREATE INDEX idx_note_standing ON public.note USING btree (unit) WHERE (retired_at IS NULL);
 CREATE INDEX idx_otp_challenge_person ON public.otp_challenge USING btree (person_id, purpose, issued_at);
-CREATE INDEX idx_persona_dispute_key ON public.persona_dispute USING btree (persona_key, written_at);
-CREATE INDEX idx_persona_line_key ON public.persona_line USING btree (persona_key, written_at);
 CREATE INDEX idx_presence_corridors_build_subject ON public.presence_corridors USING btree (build_id, subject_id);
 CREATE INDEX idx_presence_corridors_subject ON public.presence_corridors USING btree (subject_id);
 CREATE INDEX idx_presence_derived_places_build_subject ON public.presence_derived_places USING btree (build_id, subject_id);
@@ -872,6 +870,8 @@ CREATE INDEX idx_presence_stays_build_subject ON public.presence_stays USING btr
 CREATE INDEX idx_presence_stays_subject_ts ON public.presence_stays USING btree (subject_id, started_ts DESC);
 CREATE INDEX idx_presence_trips_build_subject ON public.presence_trips USING btree (build_id, subject_id, started_ts);
 CREATE INDEX idx_presence_trips_subject_started ON public.presence_trips USING btree (subject_id, started_ts DESC);
+CREATE INDEX idx_profile_dispute_key ON public.profile_dispute USING btree (profile_key, written_at);
+CREATE INDEX idx_profile_line_key ON public.profile_line USING btree (profile_key, written_at);
 CREATE INDEX idx_reasoning_strip_log_path_ts ON public.reasoning_strip_log USING btree (path, created_at);
 CREATE INDEX idx_reminders_due ON public.reminders USING btree (state, due_at);
 CREATE INDEX idx_rendered_claim_window ON public.rendered_claim USING btree (conversation_id, last_rendered_at DESC);
@@ -965,9 +965,6 @@ CREATE TABLE public.note_revision (
 CREATE TABLE public.otp_attempt (
 CREATE TABLE public.otp_challenge (
 CREATE TABLE public.participation_window_state (
-CREATE TABLE public.persona (
-CREATE TABLE public.persona_dispute (
-CREATE TABLE public.persona_line (
 CREATE TABLE public.presence_corridor_speed (
 CREATE TABLE public.presence_corridors (
 CREATE TABLE public.presence_derived_places (
@@ -977,6 +974,9 @@ CREATE TABLE public.presence_place_rhythm (
 CREATE TABLE public.presence_places (
 CREATE TABLE public.presence_stays (
 CREATE TABLE public.presence_trips (
+CREATE TABLE public.profile (
+CREATE TABLE public.profile_dispute (
+CREATE TABLE public.profile_line (
 CREATE TABLE public.reasoning_strip_log (
 CREATE TABLE public.reminders (
 CREATE TABLE public.rendered_claim (
@@ -1040,7 +1040,6 @@ CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.music
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.note FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.note_candidate FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.participation_window_state FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('platform', 'conversation_id');
-CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.persona FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('key');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.presence_corridors FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.presence_derived_places FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.presence_fixes FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
@@ -1049,6 +1048,7 @@ CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.prese
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.presence_places FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('circle_id', 'place_id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.presence_stays FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.presence_trips FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.profile FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('key');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.reminders FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.rollup_build FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.rollup_colocation FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
@@ -1085,7 +1085,6 @@ CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.music_session
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.note FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.note_candidate FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.participation_window_state FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
-CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.persona FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.presence_corridors FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.presence_derived_places FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.presence_fixes FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
@@ -1094,6 +1093,7 @@ CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.presence_plac
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.presence_places FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.presence_stays FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.presence_trips FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.profile FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.reminders FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.rollup_build FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.rollup_colocation FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
@@ -1113,7 +1113,7 @@ CREATE UNIQUE INDEX uq_computer_sessions_open_scope ON public.computer_sessions 
 CREATE UNIQUE INDEX uq_lesson_revision_seq ON public.lesson_revision USING btree (lesson_id, seq);
 CREATE UNIQUE INDEX uq_memo_revision_seq ON public.memo_revision USING btree (memo_id, seq);
 CREATE UNIQUE INDEX uq_otp_attempt_ok ON public.otp_attempt USING btree (challenge_id) WHERE ok;
-CREATE UNIQUE INDEX uq_persona_line_supersedes ON public.persona_line USING btree (supersedes) WHERE (supersedes IS NOT NULL);
+CREATE UNIQUE INDEX uq_profile_line_supersedes ON public.profile_line USING btree (supersedes) WHERE (supersedes IS NOT NULL);
 CREATE UNIQUE INDEX uq_reminders_proactive_open_note ON public.reminders USING btree (((payload ->> 'note_id'::text))) WHERE ((kind = 'proactive'::text) AND (state = ANY (ARRAY['pending'::text, 'firing'::text])));
 CREATE UNIQUE INDEX uq_rollup_build_current ON public.rollup_build USING btree (status) WHERE (status = 'current'::text);
 CREATE UNIQUE INDEX uq_row_history_open ON public.row_history USING btree (table_name, row_key) WHERE (superseded_at IS NULL);
@@ -2114,8 +2114,6 @@ person_id text,
 person_id text,
 person_id text,
 person_id text,
-persona_key text NOT NULL,
-persona_key text NOT NULL,
 persons text[] DEFAULT '{}'::text[] NOT NULL,
 persons text[] NOT NULL,
 persons text[] NOT NULL,
@@ -2160,6 +2158,8 @@ prediction_observable text,
 prediction_window_end bigint,
 premise_fact_id uuid NOT NULL,
 probe text,
+profile_key text NOT NULL,
+profile_key text NOT NULL,
 projected_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 provenance jsonb DEFAULT '{}'::jsonb NOT NULL,
 provenance text NOT NULL,
