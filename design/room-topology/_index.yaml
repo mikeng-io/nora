@@ -1,0 +1,42 @@
+kind: design_index
+title: "Room topology: a unit holds as many rooms as its people use, addressed by room, chosen from context"
+description: >
+  DEC-105 limits a unit to at most one room per platform, and DEC-214 made
+  startup refuse a second. The reason was addressing, not storage: `send_to`
+  names its destination by network ("tell Signal"), so a second Signal room
+  would make that a guess. Every per-room store already keys on
+  (platform, conversation_id), and every unit-level store on the unit. This
+  bundle lifts the limit by changing the address: `send_to` names a ROOM, the
+  model chooses it from the rooms of the unit using what each room is for
+  (the operator's description), what it is like (its culture) and what is
+  being passed on, and asks when two rooms fit. Room names become unique
+  within a unit in place of the one-per-platform refusal. Cross-room shared
+  state is the unit scope of design/standing-ledger/, not a transcript feed.
+  Proposal, not built.
+status: proposal
+governance: operator-directed
+timestamp: '2026-10-25'
+origin: >
+  Operator, 2026-10-25: «allow a unit to have multiple rooms across different
+  platforms … in Signal, a single unit could have multiple rooms»; «we need
+  cross-room visibility, but rather than a passive feed, it should act more
+  like a shared state»; «I need a clean topology and hierarchy between the
+  platform, the room, and the unit»; and on addressing: «when we ask "send it
+  to Signal", it will collect … the current situation, the purpose, and the
+  culture and persona of different rooms, select the proper room, and send
+  into it. And when it doesn't know, it will ask … on Signal we have two
+  rooms: one is general … the other is for dinner things.»
+members:
+  - 00-intent.md
+  - 10-topology.md
+  - 20-addressing.md
+  - 30-what-reads-the-platform.md
+  - 40-verification.md
+  - 50-migration.md
+edges:
+  - {src: 00-intent, dst: 10-topology, rel: sequences, provenance: asserted}
+  - {src: 20-addressing, dst: 10-topology, rel: depends_on, provenance: asserted}
+  - {src: 30-what-reads-the-platform, dst: 10-topology, rel: details, provenance: asserted}
+  - {src: 40-verification, dst: 20-addressing, rel: measures, provenance: asserted}
+  - {src: 50-migration, dst: 40-verification, rel: depends_on, provenance: asserted}
+  - {src: 10-topology, dst: ../standing-ledger/20-the-ledger.md, rel: relates_to, provenance: asserted}
