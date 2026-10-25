@@ -1,5 +1,12 @@
 # Changelog
 
+## [6.8.1](https://github.com/mikeng-io/nora/compare/v6.8.0...v6.8.1) (2026-10-25)
+
+
+### Changes
+
+* **egress:** disable optional content filters by default ([9ed6675](https://github.com/mikeng-io/nora/commit/9ed6675743c58300301cdfd92080b24b7e8ce65d))
+
 ## [6.8.0](https://github.com/mikeng-io/nora/compare/v6.7.0...v6.8.0) (2026-10-25)
 
 
