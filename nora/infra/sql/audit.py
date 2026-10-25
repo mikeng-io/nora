@@ -144,6 +144,7 @@ class SqlRecordStore:
         max_per_conversation: int = DEFAULT_MAX_PER_CONVERSATION,
         metrics: Any = None,
         mention_persons: Any = None,
+        message_reading_unit: Any = None,
     ) -> None:
         """`metrics` is INJECTED, never imported.
 
@@ -166,6 +167,7 @@ class SqlRecordStore:
         self._max_per_conversation = max_per_conversation
         self._metrics = metrics
         self._mention_persons = mention_persons
+        self._message_reading_unit = message_reading_unit
 
     def _resolved_mentions_json(self, message: NormalizedMessage) -> str | None:
         """`mention_persons_json` for one message or edit: the sorted person
@@ -225,6 +227,14 @@ class SqlRecordStore:
         # one row came back, which a bare INSERT always produces.
         async with self._engine.begin() as conn:
             row_id = int((await conn.execute(stmt)).scalar_one())
+            if self._message_reading_unit is not None:
+                from nora.infra.sql.message_readings import enqueue
+
+                unit = self._message_reading_unit(message.platform, message.conversation_id)
+                if unit is None:
+                    raise ValueError("message reading owner unavailable")
+                await enqueue(conn, message_id=row_id, message=message, unit=unit,
+                              is_source=not is_nora)
             # Its node, attachments and edges in the same transaction; a failure
             # queues the projection and never costs the message.
             await memory_index.project(conn, "message", row_id, metrics=self._metrics)

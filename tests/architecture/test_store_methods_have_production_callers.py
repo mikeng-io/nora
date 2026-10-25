@@ -273,6 +273,7 @@ _STORE_MODULES: frozenset[str] = frozenset(
         "gatherings.py", "geocode_cache.py", "language.py",
         "media_descriptions.py", "media_objects.py", "memo.py", "memory_embed.py",
         "memory_read.py", "mobility.py",
+        "message_readings.py",
         "music_queue.py", "music_session.py", "notes.py", "otp.py",
         "participation_state.py", "persona.py", "persona_inputs.py", "presence.py",
         "reasoning_strip.py", "record_query.py",
