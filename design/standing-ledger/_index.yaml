@@ -1,0 +1,49 @@
+kind: design_index
+title: "Standing Ledger: her process and her decisions survive the turn"
+description: >
+  Nora is sessionless: every turn starts from the prompt, and what she worked
+  out on the last one reaches her only through Standing. Today that is one
+  folded paragraph (1200 characters) rewritten on every tag turn, so a
+  comparison she ran, the scores she gave two venues, or the reason she ruled
+  one out is gone by the next fold. The room's words survive in the Record;
+  her process does not. This bundle makes Standing a ledger of what cannot be
+  re-derived from the Record (her open and closed DECISIONS with their
+  options, criteria, leaning and what would reopen them, and her
+  COMMITMENTS), indexes the topic threads by pointer rather than restating
+  them, and gives every turn a TURN RECORD that a ledger line can cite and a
+  later turn can open. The fold-onto-fold paragraph retires. `recall_lookups`
+  retires once the turn-record read passes the being-contradicted corpus,
+  because DEC-112 made it her evidence of what she actually checked, and that
+  job has to be taken over rather than dropped. Proposal, not built.
+status: proposal
+governance: operator-directed
+timestamp: '2026-10-25'
+origin: >
+  Operator, 2026-10-25 brainstorm on recording and discussion sessions: «what I
+  worry about is losing the things that Nora is doing, during a deep reasoning
+  round … when it does the compression writing Where it stands, we're losing
+  all that»; «the most important part is the process, and because the output
+  is already inside the transcript, how can we properly compress this process
+  and the decision log inside the standing with a hybrid approach»; «not
+  execution items specifically»; «I want to get rid of the recall lookup
+  tools». The same session split the wider work into separate bundles: room
+  topology, this one, the preference and ranking engine, the agent worker
+  port, and amendments to sandbox-runtime, private-dm and cognition-loop.
+members:
+  - 00-intent.md
+  - 10-what-standing-holds.md
+  - 20-the-ledger.md
+  - 30-turn-records.md
+  - 40-verification.md
+  - 50-migration.md
+edges:
+  - {src: 00-intent, dst: 10-what-standing-holds, rel: sequences, provenance: asserted}
+  - {src: 10-what-standing-holds, dst: 20-the-ledger, rel: motivates, provenance: asserted}
+  - {src: 20-the-ledger, dst: 30-turn-records, rel: depends_on, provenance: asserted}
+  - {src: 40-verification, dst: 20-the-ledger, rel: measures, provenance: asserted}
+  - {src: 40-verification, dst: 30-turn-records, rel: measures, provenance: asserted}
+  - {src: 50-migration, dst: 40-verification, rel: depends_on, provenance: asserted}
+  - {src: 20-the-ledger, dst: ../cognition-loop/12-schemas.md, rel: amends, provenance: asserted}
+  - {src: 20-the-ledger, dst: ../standing-compact/30-working-set.md, rel: supersedes, provenance: asserted}
+  - {src: 10-what-standing-holds, dst: ../live-threads/05-standing.md, rel: extends, provenance: asserted}
+  - {src: 30-turn-records, dst: ../standing-compact/00-intent.md, rel: extends, provenance: asserted}
