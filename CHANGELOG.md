@@ -1,5 +1,12 @@
 # Changelog
 
+## [6.8.3](https://github.com/mikeng-io/nora/compare/v6.8.2...v6.8.3) (2026-10-25)
+
+
+### Changes
+
+* **visuals:** unify Mini Nora eyes and inventory visual assets ([ef324b3](https://github.com/mikeng-io/nora/commit/ef324b30f3e22921107f6c8c3fb23d0e79eced06))
+
 ## [6.8.2](https://github.com/mikeng-io/nora/compare/v6.8.1...v6.8.2) (2026-10-25)
 
 
