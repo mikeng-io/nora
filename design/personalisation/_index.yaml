@@ -1,8 +1,10 @@
 kind: design_index
-title: "Recommendations: likes from profiles, one ranker and recommendation types as data"
+title: "Personalisation: likes from profiles, personalised replies, one ranker for recommendations, suggestions through the speaking path"
 description: >
-  Recommendations proposes ranked choices for a group and supports personalisation.
-  The future code home is nora/recommend/. Likes is a read view of profile
+  Personalisation is one engine with three jobs: personalised replies,
+  recommendations (ranked choices for a group) and suggestions (offering them
+  through the existing speaking path). The future code home is
+  nora/personalisation/. Likes is a read view of profile
   facts, traits and guesses, with cited evidence and uncertainty, not a second
   preference store. One ranker destination-filters inputs, computes features,
   applies group fairness and records reasons in a Standing decision.
@@ -21,12 +23,13 @@ origin: >
   conversation, routes, and schedules into account»); «personalisation
   recommendation is still the same thing; it just has a different outcome»;
   «it should be an abstracted engine»; «social engagement also puts signal
-  into the engine». Names settled by the operator on 2026-10-25: recommendations,
+  into the engine». Names settled by the operator on 2026-10-25: personalisation (the engine), recommendations,
   likes, recommendation type and learning from picks; prompt identities follow ADR 0029.
 members:
   - 00-intent.md
   - 10-likes.md
   - 20-ranker.md
+  - 25-personalisation.md
   - 30-recommendation-types.md
   - 40-feedback.md
   - 50-verification.md
@@ -34,6 +37,8 @@ members:
 edges:
   - {src: 00-intent, dst: 10-likes, rel: sequences, provenance: asserted}
   - {src: 20-ranker, dst: 10-likes, rel: depends_on, provenance: asserted}
+  - {src: 25-personalisation, dst: 10-likes, rel: depends_on, provenance: asserted}
+  - {src: 25-personalisation, dst: ../../docs/adr/0029-a-prompt-block-names-its-subject-and-author-by-id.md, rel: depends_on, provenance: asserted}
   - {src: 30-recommendation-types, dst: 20-ranker, rel: details, provenance: asserted}
   - {src: 40-feedback, dst: 10-likes, rel: extends, provenance: asserted}
   - {src: 50-verification, dst: 20-ranker, rel: measures, provenance: asserted}

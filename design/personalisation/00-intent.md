@@ -1,7 +1,7 @@
 ---
 type: design
-title: "Intent: from reminding to proposing, on one engine"
-description: "What the operator asked for, why personalisation and recommendation are one engine, why the classic recommender toolbox does not fit a friend group, what the engine reads that already exists, and the split between what the model does and what code does."
+title: "Intent: one personalisation engine, three jobs"
+description: "What the operator asked for, why personalisation, recommendations and suggestions are one engine with three jobs, the future jobs it can take, why the classic recommender toolbox does not fit a friend group, what the engine reads that already exists, and the split between what the model does and what code does."
 tags: [nora, recommendations, recommendation, personalisation, proactive, member]
 timestamp: '2026-10-25'
 edges:
@@ -18,21 +18,25 @@ operator wants a member who proposes: "they want to play this sort of game"
 followed by a shortlist; "the party has no venue" followed by two places that
 are on everyone's way, accounting for who is working late.
 
-## 2. One engine, two consumers
+## 2. One engine, three jobs
 
-Both cases rank options against people. Only the options differ.
+The engine is **personalisation**. Its future code home is `nora/personalisation/`.
+Personalisation, recommendation and suggestion are three jobs in one
+pipeline. They are not three engines: two engines would each keep their own
+reading of what a person likes, and the readings would drift.
 
-| consumer | ranks | for | output |
+| job | answers | owner | output |
 |---|---|---|---|
-| **recommendation** | outside candidates: venues, games, films, trips | the group, or one person in a DM | a Standing decision ([standing-ledger 20](../standing-ledger/20-the-ledger.md) §2) whose `Options` are the shortlist with scores, posted by a fire turn |
-| **personalisation** | her own choices: which option to mention first, what to leave out, when to raise something | the people in the room | the same ranked choices and their reasons, rendered into her turns |
+| **likes** | what each person likes, needs or will not do | a read view of profiles ([10](10-likes.md)); no store of its own | nothing visible by itself |
+| **personalised replies** | what Nora leads with, leaves out or checks, for the people in this turn | likes in her turn context ([25](25-personalisation.md)) | how she answers; no list, no announcement |
+| **recommendations** | which outside options are best for these people, here, now | the one **ranker** ([20](20-ranker.md)), with each domain as a **recommendation type** ([30](30-recommendation-types.md)), as data | a ranked shortlist with reasons: a Standing decision ([standing-ledger 20](../standing-ledger/20-the-ledger.md) §2) |
+| **suggestions** | whether to offer it now, and to whom | the existing speaking path: Cognition, fire turns, the weekly cap and **learning from picks** ([40](40-feedback.md)) | the shortlist said in the room, or held back |
 
-The engine is **recommendations**, with its future code home `nora/recommend/`.
-It reads **likes** from profiles ([10](10-likes.md)), uses one **ranker**
-([20](20-ranker.md)), and represents each domain as a **recommendation type**
-([30](30-recommendation-types.md)), as data. Personalisation describes its
-behaviour, not a second engine. These names are the operator decision of
-2026-10-25; profile parts and prompt identities follow
+Only the likes view and the ranker are new. Profiles and the speaking path
+already exist. These names are the operator decision of 2026-10-25, the same
+convention that Netflix and Spotify use: personalisation is the umbrella, and
+recommendations are one product built on it. Profile parts and prompt
+identities follow
 [ADR 0029](../../docs/adr/0029-a-prompt-block-names-its-subject-and-author-by-id.md).
 
 ## 3. Why not the usual recommender toolbox
@@ -79,7 +83,29 @@ picks the shortlist and records why. A ranking made of code-computed parts can
 be replayed and measured ([50](50-verification.md)); a ranking a model asserts
 cannot.
 
-## 6. Out of scope
+## 6. Future jobs on the same engine
+
+Each future job is a new recommendation type, or a new use of likes. None
+is a new engine. Each one ships only with its own replay or eval gate, as
+in [50](50-verification.md). The order is a proposal.
+
+| job | layer | what it adds | needs |
+|---|---|---|---|
+| **venues** | recommendations | the first recommendation type | built inputs ([60](60-migration.md) step 4) |
+| **games** | recommendations | catalogue and coverage | a game catalogue source (step 5) |
+| **reply style** | personalised replies | length, language and register per person, read from profile traits | nothing new ([25](25-personalisation.md)) |
+| **times** | recommendations | rank candidate slots for a plan from stated availability, dated plans and the presence forecast | the step-1 constraint reader, the step-2 origin model |
+| **shared meals** | personalised replies + recommendations | gather the group's dietary rules and likes for one order or one place, without listing who said what | the constraint reader |
+| **meeting point** | recommendations | rank a place to meet, or the next place to go, by the logistics feature alone | the origin model |
+| **reminder timing** | suggestions | when, and in which room or DM, each person is most likely to act on a reminder, learnt from response episodes | learning from picks over reminder sends; [private-dm](../private-dm/) for DM routing |
+| **things to share** | recommendations | which link, release or news item is worth raising, and to whom, from the social stream | the social poller enabled |
+| **gifts and occasions** | recommendations | ideas for a member's occasion from their likes, offered only in a destination that excludes that member | birthdays stay told-only (the existing contract) |
+
+Rejected as a job: **who to invite.** Ranking people by tie strength would
+put an exclusion list in a friends' room. Ties choose likely attendees for a
+frame someone else set, never a list Nora proposes.
+
+## 7. Out of scope
 
 - Acting on another network (booking a table, buying a game). A proposal can
   offer to; the act is its own decision.

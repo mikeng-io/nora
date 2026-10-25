@@ -52,7 +52,7 @@ all options. Read the decision's close alongside that evidence:
   supplies **none**, even for the chooser. If ada says "choose this because I
   like puzzles", the liking is evidence for ada; bea's agreement says nothing
   about bea's taste. The existing profile writer interprets the original
-  Record evidence; recommendations never updates attendees' posteriors or
+  Record evidence; personalisation never updates attendees' posteriors or
   writes a second preference store. A collective choice stays collective.
 - **Learning from picks** (§3): once a linked outcome is settled, `picked` or
   unambiguous `engaged` adds 1 to acceptance `α`; explicit `rejected` or

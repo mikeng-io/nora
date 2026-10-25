@@ -13,7 +13,7 @@ edges:
 
 ## 1. Likes come from profiles
 
-**Likes are a read view, not another store or writer.** Recommendations reads
+**Likes are a read view, not another store or writer.** Personalisation reads
 per-person profiles: **facts**, **traits**, **guesses (unconfirmed)**, under
 [ADR 0029](../../docs/adr/0029-a-prompt-block-names-its-subject-and-author-by-id.md).
 The existing profile writers own what Nora believes about a person. Today's
@@ -77,7 +77,7 @@ facets and polarity with citations and cannot choose its own weight.
 A group pick, attendance, agreement to a compromise or rejection of a plan is
 not by itself an individual like or dislike. Silence supplies no likes
 evidence. Profile writers can consider social interest and responses under
-their existing evidence rules; recommendations never writes a posterior back
+their existing evidence rules; personalisation never writes a posterior back
 as a new profile fact.
 
 The social stream is built, including perceptions and counts
@@ -127,7 +127,7 @@ around 19:00"; no private location is rendered unless its gate passes.
 
 ## 6. One profile owner
 
-Recommendations reads profiles and their cited sources; it does not maintain
+Personalisation reads profiles and their cited sources; it does not maintain
 a competing interpretation of people. Profile writers do not ingest the
 ranker's scores or explanations as evidence about a person's likes. A real
 response can become evidence through its original Record message. This
