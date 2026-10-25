@@ -9,8 +9,8 @@ workspace belongs to are unchanged.
 
 Operator, 2026-10-25, on whether a DM has a default unit or spans everywhere:
 reads may span the units the person belongs to; publication into a unit is held
-by the **laundering rule** («let's try laundering rule»). A personal assistant
-whose person is in several units would otherwise answer from one of their
+by the **laundering rule** («let's try laundering rule»). An assistant to one
+person who is in several units would otherwise answer from one of their
 groups and be blind to the others.
 
 ## 2. What stays anchored
