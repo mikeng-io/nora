@@ -388,9 +388,8 @@ no entry.
   identity in a tag
   ([ADR 0029](docs/adr/0029-a-prompt-block-names-its-subject-and-author-by-id.md),
   measured by a blind reader test). This replaces **Character**, **entry**,
-  **profile / traits / hypotheses** and **Persona** below. The code rename has not
-  been done yet. The live prose blocks keep their tags until the switch deletes
-  them.
+  **profile / traits / hypotheses** and **Persona** below. The typed shadow implementation uses these names. The live
+  prose blocks keep their tags until the switch deletes them.
 - **Character** — *(names superseded by ADR 0029: read **Profile**)* the Notebook tier for a **person**, a **room** (culture's
   home, above), the **unit** or **Nora**. One row is an **entry**, a judgement
   with **profile** (who they are), **traits** (what they are like) and
@@ -404,12 +403,12 @@ no entry.
   contract. The four rulings are in [47](design/unified-memory/47-character-dimensions.md#decided-operator-2026-10-22).
   "Account" is now only for platform accounts.
   [ADR 0026](docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md)
-  records the naming; the code rename is deferred. Today `culture` (the room
+  records the superseded naming. Today `culture` (the room
   adaptor) and `character-*` write live prose through `character_revise`,
-  while `persona-*` writes shadow typed lines through `persona_write`, with
-  `persona-verdict` judging hypotheses.
-  The target is **one `character-*` adaptor family** (person, room, unit,
-  nora, verdict) writing typed profile/traits/hypotheses lines; the prose
+  while `profile-*` writes shadow typed lines through `profile_write`, with
+  `profile-verdict` judging guesses.
+  The target is **one `profile-*` adaptor family** (person, room, unit,
+  nora, verdict) writing typed facts/traits/guesses lines; the prose
   adaptors retire at the switch. The existing live prose implementation
   below was built as DEC-290 (design/self-growth/10): one Dreamer session per
   (unit, entity), stored in the `culture` chain under four key shapes:

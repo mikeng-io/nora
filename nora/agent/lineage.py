@@ -67,7 +67,7 @@ from ..domain.lineage import (
     room_key,
 )
 from ..domain.notes import Note
-from ..domain.persona import PersonaLine
+from ..domain.profile import ProfileLine
 from ..domain.standing import Standing
 from ..policy import Policy
 from .room import Room
@@ -317,9 +317,9 @@ def derived_view(
     )
 
 
-async def persona_lines_for(
-    lines: tuple[PersonaLine, ...], target: RenderRoom, room: Room,
-) -> tuple[PersonaLine, ...]:
+async def profile_lines_for(
+    lines: tuple[ProfileLine, ...], target: RenderRoom, room: Room,
+) -> tuple[ProfileLine, ...]:
     """Apply the existing exclusion boundary, reading the roster only if needed."""
     if any(line.exclude_persons or line.location for line in lines):
         view = await room.scope()
@@ -327,7 +327,7 @@ async def persona_lines_for(
             person_ids=frozenset(p.person_id for p in view.people),
             unnamed=view.unnamed, available=view.available, degraded=view.degraded,
         ))
-    def permitted(line: PersonaLine) -> bool:
+    def permitted(line: ProfileLine) -> bool:
         if excluded(line.exclude_persons, target):
             return False
         if not line.location:

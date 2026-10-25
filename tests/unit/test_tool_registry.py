@@ -498,9 +498,9 @@ def test_budgets_match_todays_table():
         "memo_read": 3,
         # 1, like `note_create`: one write answers the ask; a second call is the
         # model looping on a tool it should have trusted to have worked (the
-        # remember verb's write lane). `persona_dispute` is its graph-surface
+        # remember verb's write lane). `profile_dispute` is its graph-surface
         # sibling (35 §2), the same one-call write.
-        "remember": 1, "persona_dispute": 1,
+        "remember": 1, "profile_dispute": 1,
         # `search_memory_workspace` is 4 like its room-scoped sibling — the
         # same verb at a wider scope, the same sizing.
         "search_memory_workspace": 4,
@@ -953,9 +953,9 @@ ACT_VERBS = frozenset({
     "note_create", "note_update",
     # The remember verb: writing a Honcho conclusion is a write —
     # the Dreamer may never be granted it, same as the note verbs.
-    # `persona_dispute` (the graph surface's dispute door, 35 §2) writes and
+    # `profile_dispute` (the graph surface's dispute door, 35 §2) writes and
     # can hide a line at once: an act for the same reason.
-    "remember", "persona_dispute",
+    "remember", "profile_dispute",
     # Discord-only music — every verb
     # but `music_status` mutates the voice session or its queue.
     "play_music", "skip_music", "top_music", "stop_music",

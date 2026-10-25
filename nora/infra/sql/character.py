@@ -17,9 +17,9 @@ for a room, generalised); a read is what the session is handed:
   number of revisions a unit's rooms hold only grows and is the cursor.
 
 Evidence reads are SELECTs. Historical and social progress reuse the existing
-consolidation watermarks; their explicit cursor methods write no Persona claim.
+consolidation watermarks; their explicit cursor methods write no Profile claim.
 
-**Media is not joined here.** Persona joins these scoped rows at its input
+**Media is not joined here.** Profile joins these scoped rows at its input
 renderer using the shared MediaJoin; legacy Character still reads bare handles.
 A person's lines are read by this module's own SQL,
 so a photo they posted reaches their session as its stored body, the bare
@@ -46,7 +46,7 @@ from nora.infra.sql.schema import (
     CULTURE_REVISION,
     MEMORY_EDGE,
     MESSAGES,
-    PERSONA,
+    PROFILE,
     ROLLUP_RESPONSE,
     ROLLUP_TIE,
 )
@@ -133,7 +133,7 @@ class SqlCharacterEvidence:
 
         Two existing watermark rows hold boundary and progress. Their explicit
         names let the CLI restart an incorrectly completed shadow pass without
-        rewriting Persona history or the normal runtime watermark.
+        rewriting Profile history or the normal runtime watermark.
         """
         t = CONSOLIDATION_WATERMARK
         async with self._engine.begin() as conn:
@@ -141,7 +141,7 @@ class SqlCharacterEvidence:
             await conn.execute(
                 pg.insert(CONSOLIDATION_WATERMARK)
                 .values(
-                    consolidator_name="persona-person:history-boundary",
+                    consolidator_name="profile-person:history-boundary",
                     scope_id=key,
                     last_message_id=head.scalar_subquery(),
                     updated_at=sa.func.now(),
@@ -153,14 +153,14 @@ class SqlCharacterEvidence:
                     sa.select(t.c.consolidator_name, t.c.last_message_id).where(
                         t.c.scope_id == key,
                         t.c.consolidator_name.in_(
-                            ["persona-person:history-boundary", "persona-person:history"]
+                            ["profile-person:history-boundary", "profile-person:history"]
                         ),
                     )
                 )
             ).all()
         values = {str(r.consolidator_name): int(r.last_message_id) for r in rows}
-        return int(values["persona-person:history-boundary"]), int(
-            values.get("persona-person:history", 0)
+        return int(values["profile-person:history-boundary"]), int(
+            values.get("profile-person:history", 0)
         )
 
     async def advance_history(self, *, key: str, cursor: int) -> None:
@@ -169,7 +169,7 @@ class SqlCharacterEvidence:
             await conn.execute(
                 pg.insert(CONSOLIDATION_WATERMARK)
                 .values(
-                    consolidator_name="persona-person:history",
+                    consolidator_name="profile-person:history",
                     scope_id=key,
                     last_message_id=cursor,
                     updated_at=sa.func.now(),
@@ -252,7 +252,7 @@ class SqlCharacterEvidence:
     async def room_count(
         self, *, rooms: Sequence[tuple[str, str]], after: int,
     ) -> int:
-        """How many such messages: a room Persona's wake count."""
+        """How many such messages: a room Profile's wake count."""
         stmt = sa.select(sa.func.count()).select_from(MESSAGES).where(
             *self._room(rooms, after),
         )
@@ -334,7 +334,7 @@ class SqlCharacterEvidence:
         limit: int,
     ) -> list[RoomMessage]:
         """Every visible message in `rooms` with `ts` in `(since_ms, until_ms]`,
-        oldest first, at most the NEWEST `limit`: what the Persona verdict
+        oldest first, at most the NEWEST `limit`: what the Profile verdict
         judge reads a hypothesis's prediction window by (45 §3 — «the Record
         rows inside it»). Hers included: the observable may be an exchange, not
         one person's lines. Past `limit` the window's OLDEST rows are dropped —
@@ -358,7 +358,7 @@ class SqlCharacterEvidence:
 
     async def rows_by_id(self, *, ids: Sequence[int]) -> list[RoomMessage]:
         """The Record rows `ids` names that are not hidden, each with its
-        room: what a Persona session checks a citation an older account
+        room: what a Profile session checks a citation an older account
         carried by (its time, speaker and room, 45 §4)."""
         if not ids:
             return []
@@ -374,7 +374,7 @@ class SqlCharacterEvidence:
         """One person's Rollup ties in `unit`'s current build, summed over every
         week: `(other person, replies out, replies in, mentions out, mentions
         in, reactions out, reactions in)`, most replies first. Never
-        `colocation_ms`: a Persona session holds no presence (R-31)."""
+        `colocation_ms`: a Profile session holds no presence (R-31)."""
         t = ROLLUP_TIE.c
         mine = t.person_a == person_id
         other = sa.case((mine, t.person_b), else_=t.person_a)
@@ -529,19 +529,19 @@ class SqlCharacterEvidence:
             rows = (await conn.execute(stmt)).all()
         return [r.culture_key for r in rows], total
 
-    async def persona_revision_count(self, *, keys: Sequence[str]) -> int:
+    async def profile_revision_count(self, *, keys: Sequence[str]) -> int:
         """Monotone account revisions, not timestamp-offset paging of line UUIDs."""
         async with self._engine.connect() as conn:
             return int((await conn.execute(sa.select(sa.func.coalesce(
-                sa.func.sum(PERSONA.c.revision), 0)).where(
-                    PERSONA.c.key.in_(list(keys))))).scalar_one())
+                sa.func.sum(PROFILE.c.revision), 0)).where(
+                    PROFILE.c.key.in_(list(keys))))).scalar_one())
 
-    async def persona_revisions_after(
+    async def profile_revisions_after(
         self, *, keys: Sequence[str], after: int, limit: int,
     ) -> tuple[list[str], int]:
         # The consumer reads ALL current room contexts in one session; this
         # cursor measures the snapshot, not individual line evidence.
-        total = await self.persona_revision_count(keys=keys)
+        total = await self.profile_revision_count(keys=keys)
         return (list(keys), total) if total > after and limit > 0 else ([], after)
 
     # -- Nora ----------------------------------------------------------------

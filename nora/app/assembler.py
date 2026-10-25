@@ -40,7 +40,7 @@ from nora.engagement.documents_context import DocumentsContextReader
 from nora.engagement.self_presence import PresenceReader
 from nora.engagement.subagents_context import SubagentsContextReader
 from nora.language.lesson_render import ActiveLessons
-from nora.language.persona_render import PersonaHeads
+from nora.language.profile_render import ProfileHeads
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.policy import Policy
@@ -78,7 +78,7 @@ def build_assembler(
     memos: MemoStore | None = None,
     memory_search: MemorySearch | None = None,
     clock: Callable[[], datetime] | None = None,
-    persona: PersonaHeads | None = None,
+    profile: ProfileHeads | None = None,
     rosters: Mapping[str, RosterSource] | None = None,
     self_ids: frozenset[str] = frozenset(),
 ) -> TranscriptInjection:
@@ -139,9 +139,9 @@ def build_assembler(
         # The graph's one clock, so the pre-fetch dates and ranks its items
         # at the instant every other component reads.
         clock=clock,
-        # THE SWITCH (design/unified-memory/45 §5): the Persona accounts'
-        # reader. `None` until `[persona] render` is on beside `[persona]
+        # THE SWITCH (design/unified-memory/45 §5): the Profile accounts'
+        # reader. `None` until `[profile] render` is on beside `[profile]
         # enabled`, and in every harness that wires none — the turn then
         # renders the Honcho and prose-culture blocks it always has.
-        persona=persona, rosters=rosters, self_ids=self_ids,
+        profile=profile, rosters=rosters, self_ids=self_ids,
     )

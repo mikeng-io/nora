@@ -180,7 +180,7 @@ class PersonKey:
     rooms: tuple[CharacterRoom, ...]
     home: str
     #: The rooms that list them (`primary_id`s): where evidence about them
-    #: counts for their Persona (design/unified-memory/35 §3).
+    #: counts for their Profile (design/unified-memory/35 §3).
     listed: tuple[str, ...] = ()
 
 
@@ -629,7 +629,7 @@ class _Shown:
     """One item as the block renders it: redacted, screened and clipped once.
 
     `counts` is the item's latest `social_item_count` row, when the session
-    reads counts (the Persona adaptor's input, 45 §4); None renders no count
+    reads counts (the Profile adaptor's input, 45 §4); None renders no count
     attributes, so the Character block is unchanged."""
 
     item: PersonSocialItem

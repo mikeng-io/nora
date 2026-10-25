@@ -255,7 +255,7 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
         "actor": "tag", "created_by_tag": f"t{i}",
     },
     # 0117_persona: an account's head, its revision bumped by each write.
-    "persona": lambda i: {
+    "profile": lambda i: {
         "key": f"u#character:p{i}", "entity_kind": "human", "unit": "u",
         "revision": 1, "updated_at": MS0 + i,
     },
@@ -275,7 +275,7 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
     "note": ("strikes", lambda i: 1 + i),
     "culture": ("updated_at", lambda i: MS0 + 1000 + i),
     "computer_sessions": ("objective", lambda i: f"task {i}, continued"),
-    "persona": ("revision", lambda i: 2 + i),
+    "profile": ("revision", lambda i: 2 + i),
     "standing": ("body", lambda i: f"revised position {i}"),
     "reminders": ("state", lambda i: "cancelled"),
     "compute_jobs": ("state", lambda i: "firing"),
@@ -376,15 +376,15 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "established_by": "test",
     },
     # 0117_persona: one told line.
-    "persona_line": lambda n: {
-        "id": _uuid("pl", n), "persona_key": f"u#character:p{n}", "part": "identity",
+    "profile_line": lambda n: {
+        "id": _uuid("pl", n), "profile_key": f"u#character:p{n}", "part": "facts",
         "kind": "attribute", "text": f"fact {n}", "mode": "told", "citations": [str(n + 1)],
         "told_by": f"p{n}", "state": "current", "support_count": 1, "unit": "u",
         "written_at": MS0 + n, "written_by_session": "test",
     },
-    # 0121_persona_dispute: one dispute of a Persona line.
-    "persona_dispute": lambda n: {
-        "id": _uuid("pd", n), "persona_key": f"u#character:p{n}", "line_id": None,
+    # 0121_persona_dispute: one dispute of a Profile line.
+    "profile_dispute": lambda n: {
+        "id": _uuid("pd", n), "profile_key": f"u#character:p{n}", "line_id": None,
         "disputed_by": f"p{n}", "kind": "dispute", "claim": f"not so {n}",
         "message_id": n + 1, "unit": "u", "written_at": MS0 + n,
     },

@@ -15,7 +15,7 @@ from nora.app.memory_routing import (
     MemoryRoutingError,
     build_workspace_router,
     honcho_workspaces,
-    persona_scopes_of_person,
+    profile_scopes_of_person,
     workspaces_of_person,
 )
 from nora.infra.honcho import HonchoRoute
@@ -177,8 +177,8 @@ def test_without_units_everyone_is_in_the_one_implicit_workspace(tmp_path):
     assert workspaces_of_person(_policy(tmp_path, body), "anyone") == ("default",)
 
 
-def test_persona_scopes_pair_each_listing_unit_with_its_workspace(tmp_path):
-    """Where a person's Persona accounts live (45 §1): one (unit, workspace)
+def test_profile_scopes_pair_each_listing_unit_with_its_workspace(tmp_path):
+    """Where a person's Profile accounts live (45 §1): one (unit, workspace)
     per unit whose rooms list them BY NAME — a `*` room lists nobody, and an
     unlisted person has no scope at all (no account exists for one)."""
     def room(cid, unit, persons):
@@ -195,15 +195,15 @@ def test_persona_scopes_pair_each_listing_unit_with_its_workspace(tmp_path):
         + '[units.open]\nworkspace = "public"\n'
     )
     policy = _policy(tmp_path, body)
-    assert persona_scopes_of_person(policy, "jordan") == (
+    assert profile_scopes_of_person(policy, "jordan") == (
         ("friends", "67"), ("ridgeline", "ridgeline"),
     )
-    assert persona_scopes_of_person(policy, "blair") == (("friends", "67"),)
-    assert persona_scopes_of_person(policy, "nobody") == ()
+    assert profile_scopes_of_person(policy, "blair") == (("friends", "67"),)
+    assert profile_scopes_of_person(policy, "nobody") == ()
 
 
-def test_persona_scopes_without_units_cover_only_listed_people(tmp_path):
-    """Without `[units]` the one workspace is `default`, but a Persona account
+def test_profile_scopes_without_units_cover_only_listed_people(tmp_path):
+    """Without `[units]` the one workspace is `default`, but a Profile account
     exists only for a person a room lists — so unlike
     `workspaces_of_person`'s everyone, an unlisted person scopes to nothing."""
     def room(platform, cid, persons):
@@ -213,5 +213,5 @@ def test_persona_scopes_without_units_cover_only_listed_people(tmp_path):
         )
     body = 'default = "deny"\n' + room("signal", "a", '["jordan"]') + room("discord", "b", '"*"')
     policy = _policy(tmp_path, body)
-    assert persona_scopes_of_person(policy, "jordan") == (("nora", "default"),)
-    assert persona_scopes_of_person(policy, "nobody") == ()
+    assert profile_scopes_of_person(policy, "jordan") == (("nora", "default"),)
+    assert profile_scopes_of_person(policy, "nobody") == ()

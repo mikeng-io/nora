@@ -1924,7 +1924,7 @@ async def test_full_history_recovery_leaves_fresh_first_page_posts_to_the_poll(
         origin = (await conn.execute(
             sa.select(SOCIAL_ITEM.c.origin).where(SOCIAL_ITEM.c.item_id == "fresh-news")
         )).scalar_one()
-    assert origin == "poll", "fresh posts must retain their stimulus and Persona wake eligibility"
+    assert origin == "poll", "fresh posts must retain their stimulus and Profile wake eligibility"
 
 
 async def test_an_older_backfill_page_does_not_move_the_fresh_news_boundary(world):

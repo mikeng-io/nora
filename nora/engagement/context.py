@@ -25,7 +25,7 @@ from datetime import datetime
 from typing import Any, NamedTuple, Protocol
 
 from nora.agent.clock import local_now
-from nora.agent.lineage import LineagePolicy, persona_lines_for
+from nora.agent.lineage import LineagePolicy, profile_lines_for
 from nora.agent.memory_search import (
     PREFETCH_TOKENS,
     MemorySearch,
@@ -53,7 +53,6 @@ from nora.domain.models import (
     TranscriptRow,
 )
 from nora.domain.notes import Note
-from nora.domain.persona import PersonaView
 from nora.domain.ports import (
     CultureReader,
     EngagementRequest,
@@ -62,6 +61,7 @@ from nora.domain.ports import (
     RosterSource,
     StandingStore,
 )
+from nora.domain.profile import ProfileView
 from nora.domain.quote_window import QuoteWindow
 from nora.domain.rollup import room_key
 from nora.domain.self_presence import Presence, platform_name
@@ -74,7 +74,7 @@ from nora.engagement.self_presence import PresenceReader
 from nora.engagement.subagents_context import SubagentsContextReader
 from nora.language.culture_render import read_character, read_culture
 from nora.language.lesson_render import ActiveLessons, read_lessons
-from nora.language.persona_render import PersonaHeads, authored_identity, read_persona
+from nora.language.profile_render import ProfileHeads, authored_identity, read_profile
 from nora.obs.tracing import traced_read
 from nora.persons import Persons
 from nora.policy import Policy
@@ -159,7 +159,7 @@ class TranscriptInjection:
         memos: MemoStore | None = None,
         memory_search: MemorySearch | None = None,
         clock: Callable[[], datetime] | None = None,
-        persona: PersonaHeads | None = None,
+        profile: ProfileHeads | None = None,
         rosters: Mapping[str, RosterSource] | None = None,
         self_ids: frozenset[str] = frozenset(),
     ) -> None:
@@ -249,14 +249,14 @@ class TranscriptInjection:
         # raises, so it is safe inside the gather. Tag path only: the fire path
         # holds no such reader.
         self._subagents_reader = subagents
-        # THE SWITCH (45 §5): the Persona accounts' reader, wired by
-        # composition only when `[persona] render` is on. Not `None` means this
-        # turn renders `<persona>` blocks and the seven reads they replace —
+        # THE SWITCH (45 §5): the Profile accounts' reader, wired by
+        # composition only when `[profile] render` is on. Not `None` means this
+        # turn renders `<profile>` blocks and the seven reads they replace —
         # `_peer_card`, `_recall_tagger`, `_culture`, `_unit_culture`,
         # `_self_account` and `_character` — are not made at all: a switched
-        # turn never pays for both surfaces, and a failed persona read is
+        # turn never pays for both surfaces, and a failed profile read is
         # `nora_errors_total` (R-27), never a quiet fall back to the old block.
-        self._persona_reader = persona
+        self._profile_reader = profile
 
     async def assemble(self, *, request: EngagementRequest) -> TagContext:
         msg = request.message
@@ -286,7 +286,7 @@ class TranscriptInjection:
         # `<presence>` is on the front of the turn like the rest because adapter
         # health must be read now, not remembered.
         (
-            ((transcript, character, personas), card, tagger_card, standing, notes),
+            ((transcript, character, profiles), card, tagger_card, standing, notes),
             presence,
             culture,
             (unit_culture, self_account, lessons),
@@ -351,7 +351,7 @@ class TranscriptInjection:
             presence=presence,
             culture=culture,
             character=character,
-            personas=personas,
+            profiles=profiles,
             unit_culture=unit_culture,
             self_account=self_account,
             lessons=lessons,
@@ -499,8 +499,8 @@ class TranscriptInjection:
         Bounded, fail-soft and counted (`stage="tag_culture"`) by
         `read_culture`, so it is safe inside the `gather`.
         """
-        if self._persona_reader is not None:
-            # The switch (45 §5): the room's `<persona>` replaced this block;
+        if self._profile_reader is not None:
+            # The switch (45 §5): the room's `<profile>` replaced this block;
             # a switched turn never pays for both surfaces.
             return None
         if self._culture_reader is None or self._policy is None:
@@ -526,7 +526,7 @@ class TranscriptInjection:
     ) -> tuple[
         tuple[TranscriptRow, ...],
         tuple[tuple[str, CultureRevision], ...],
-        tuple[PersonaView, ...],
+        tuple[ProfileView, ...],
     ]:
         """The transcript, then the accounts of the people in it. WHO needs the
         window's speakers, so the character read cannot start before the
@@ -535,13 +535,13 @@ class TranscriptInjection:
         (`read_character`'s timeout) is added to the transcript's, not to the
         whole gather's.
 
-        Switched (`[persona] render`): the character read is not made at all
-        and the turn's Persona accounts are read instead — the room's, the
+        Switched (`[profile] render`): the character read is not made at all
+        and the turn's Profile accounts are read instead — the room's, the
         unit's, hers, and every person the turn is about."""
         read = await self._recent(msg)
         shown = self._shown(read, msg)
-        if self._persona_reader is not None:
-            return read, (), await self._personas(msg, ref, shown)
+        if self._profile_reader is not None:
+            return read, (), await self._profiles(msg, ref, shown)
         return read, await self._character(msg, ref, shown), ()
 
     def _platforms_of(self, person_id: str) -> tuple[str, ...]:
@@ -555,23 +555,23 @@ class TranscriptInjection:
             if pid == person_id
         }))
 
-    async def _personas(
+    async def _profiles(
         self, msg: NormalizedMessage, ref: PersonRef | None,
         transcript: Sequence[TranscriptRow],
-    ) -> tuple[PersonaView, ...]:
-        """The turn's Persona accounts (45 §5): hers, the room's, the unit's,
+    ) -> tuple[ProfileView, ...]:
+        """The turn's Profile accounts (45 §5): hers, the room's, the unit's,
         then one per person the turn is about (`tag_character_people`'s set,
         the same set `<character>` rendered).
 
-        Reads share `read_persona` (bounded, fail-soft, counted under
-        `nora_errors_total{stage="tag_persona_*"}`, R-27): a failed read drops
+        Reads share `read_profile` (bounded, fail-soft, counted under
+        `nora_errors_total{stage="tag_profile_*"}`, R-27): a failed read drops
         THAT account's view, never the turn. A line whose `exclude_persons`
         names a member of this room is dropped here, before the view is built
-        (`PersonaView`'s docstring) — the renderer never sees it. Views with
-        nothing to say still land in the tuple; `render_persona` emits no
-        block for them, and `ctx.personas` being non-empty is the switch, not
+        (`ProfileView`'s docstring) — the renderer never sees it. Views with
+        nothing to say still land in the tuple; `render_profile` emits no
+        block for them, and `ctx.profiles` being non-empty is the switch, not
         any one account's content."""
-        reader = self._persona_reader
+        reader = self._profile_reader
         if reader is None or self._policy is None:
             return ()
         convo = self._policy.conversation(msg.platform, msg.conversation_id)
@@ -590,23 +590,23 @@ class TranscriptInjection:
         async def one(
             key: str, *, entity: str, of: str, stage: str,
             authored: tuple[str, ...] = (),
-        ) -> PersonaView | None:
-            lines = await read_persona(
+        ) -> ProfileView | None:
+            lines = await read_profile(
                 reader.account_heads(key=key), stage=stage,
                 platform=msg.platform, metrics=self._metrics,
             )
             if lines is None:
                 return None
-            kept = await persona_lines_for(lines, target, room)
-            return PersonaView(entity=entity, of=of, lines=kept, authored=authored)
+            kept = await profile_lines_for(lines, target, room)
+            return ProfileView(entity=entity, of=of, lines=kept, authored=authored)
 
-        views: list[PersonaView] = []
+        views: list[ProfileView] = []
         # HERS, gated like `_self_account` (R-31): written from her sends in
         # every room of the unit, so a room that may not see it reads nothing.
         if self._policy.shows_self_in(msg.platform, msg.conversation_id):
             view = await one(
                 nora_character_key(convo.unit),
-                entity="self", of="you", stage="tag_persona_self",
+                entity="nora", of="nora", stage="tag_profile_self",
             )
             if view is not None:
                 views.append(view)
@@ -614,15 +614,15 @@ class TranscriptInjection:
         if convo.primary_id:
             view = await one(
                 convo.primary_id,
-                entity="room", of=convo.label or "this room",
-                stage="tag_persona_room",
+                entity="room", of=convo.primary_id,
+                stage="tag_profile_room",
             )
             if view is not None:
                 views.append(view)
         # THE UNIT's, keyed like `_unit_culture`.
         view = await one(
             unit_culture_key(convo.unit),
-            entity="unit", of=convo.unit, stage="tag_persona_unit",
+            entity="unit", of=convo.unit, stage="tag_profile_unit",
         )
         if view is not None:
             views.append(view)
@@ -634,7 +634,7 @@ class TranscriptInjection:
         ):
             view = await one(
                 character_key(convo.unit, person.person_id),
-                entity="person", of=person.name, stage="tag_persona_person",
+                entity="person", of=person.person_id, stage="tag_profile_person",
                 authored=authored_identity(
                     name=person.name, aliases=person.aliases,
                     platforms=self._platforms_of(person.person_id),
@@ -693,8 +693,8 @@ class TranscriptInjection:
         `unit_culture_key(unit)`, so it is read only in that unit's rooms.
         Bounded, fail-soft and counted (`stage="tag_unit_culture"`) by
         `read_culture`, like `_culture`."""
-        if self._persona_reader is not None:
-            return None  # the switch (45 §5): the unit's `<persona>` replaced it
+        if self._profile_reader is not None:
+            return None  # the switch (45 §5): the unit's `<profile>` replaced it
         if self._culture_reader is None or self._policy is None:
             return None
         convo = self._policy.conversation(msg.platform, msg.conversation_id)
@@ -712,8 +712,8 @@ class TranscriptInjection:
         (`stage="tag_self"`) by `read_culture`, like `_unit_culture`; `None`
         when the unit has no account or the room may not show it
         (`Policy.shows_self_in`), so no `<self>` block renders."""
-        if self._persona_reader is not None:
-            return None  # the switch (45 §5): her `<persona of="you">` replaced it
+        if self._profile_reader is not None:
+            return None  # the switch (45 §5): her `<profile of="nora">` replaced it
         if self._culture_reader is None or self._policy is None:
             return None
         convo = self._policy.conversation(msg.platform, msg.conversation_id)
@@ -845,8 +845,8 @@ class TranscriptInjection:
         in a `gather`, where an unreachable exception stops being a thinner
         prompt and becomes four cancelled reads and a dead turn.
         """
-        if self._persona_reader is not None:
-            return ()  # the switch (45 §5): the tagger's `<persona>` replaced it
+        if self._profile_reader is not None:
+            return ()  # the switch (45 §5): the tagger's `<profile>` replaced it
         if ref is None:
             return ()
         try:
@@ -895,8 +895,8 @@ class TranscriptInjection:
         remains the path for anything she will actually assert, and it
         reports `unavailable` honestly.
         """
-        if self._persona_reader is not None:
-            return ()  # the switch (45 §5): the tagger's `<persona>` replaced it
+        if self._profile_reader is not None:
+            return ()  # the switch (45 §5): the tagger's `<profile>` replaced it
         if ref is None or not self._ai_peer or self._tagger_card_conclusions <= 0:
             return ()
         try:

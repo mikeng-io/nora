@@ -232,7 +232,7 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         # Computer session selection and audit reads both use the bound unit scope.
         # Their independent contract suites drive the two production stores.
         "for_scope",
-        # Persona source reads share register/settle names with other owners.
+        # Profile source reads share register/settle names with other owners.
         "register", "settle",
         # `SqlDocumentStore.set_state` (DEC-255) shares the name with another store's.
         "set_state",
@@ -275,7 +275,7 @@ _STORE_MODULES: frozenset[str] = frozenset(
         "memory_read.py", "mobility.py",
         "message_readings.py",
         "music_queue.py", "music_session.py", "notes.py", "otp.py",
-        "participation_state.py", "persona.py", "persona_inputs.py", "presence.py",
+        "participation_state.py", "profile.py", "profile_inputs.py", "presence.py",
         "reasoning_strip.py", "record_query.py",
         "reminders.py", "revisions.py", "rollup_read.py", "rollups.py",
         "snapshot_at.py", "social_stream.py",

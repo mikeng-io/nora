@@ -70,13 +70,13 @@ from nora.domain.blocks import (
 )
 from nora.domain.culture import CultureRevision
 from nora.domain.models import DeliveryStatus, TranscriptRow
-from nora.domain.persona import PersonaView
+from nora.domain.profile import ProfileView
 from nora.domain.prompt import age, escape
 from nora.domain.quote_window import first_by_ts
 from nora.domain.standing import Standing, WorkingSetItem
 from nora.domain.tag_trace import TagTrace
 from nora.language.culture_render import render_culture
-from nora.language.persona_render import render_persona
+from nora.language.profile_render import render_profile
 from nora.obs.metrics import Metrics
 
 #: What this renderer carries, declared as data.
@@ -100,9 +100,9 @@ from nora.obs.metrics import Metrics
 #: otherwise drop them.
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("culture", 10, "turn"),
-    # The switch (45 §5): the room's Persona account sits at `<culture>`'s row
+    # The switch (45 §5): the room's Profile account sits at `<culture>`'s row
     # and replaces it — a fold input carries one or the other, never both.
-    ("persona", 10, "turn"),
+    ("profile", 10, "turn"),
     ("standing_prior", 20, "turn"),
     ("standing_working_set_prior", 30, "turn"),
     ("turn", 40, "turn"),
@@ -717,8 +717,8 @@ def render_debrief_input(
     since_rows: Sequence[TranscriptRow] = (),
     tz: tzinfo | None = None,
     culture: CultureRevision | None = None,
-    persona_room: PersonaView | None = None,
-    persona_name_of: Callable[[str], str] | None = None,
+    profile_room: ProfileView | None = None,
+    profile_name_of: Callable[[str], str] | None = None,
 ) -> str:
     """The whole of what the STANDING call sees — the prior plus the turn.
 
@@ -726,7 +726,7 @@ def render_debrief_input(
     has one: a position is where she had got to in this room, and the account
     is what the room is, which is how «had got to» is meant to be read. Absent,
     nothing is rendered in its place. Under the switch (45 §5) the room's
-    Persona account (`persona_room`, the view the turn itself read) replaces
+    Profile account (`profile_room`, the view the turn itself read) replaces
     it at the same row, and `culture` is not rendered.
 
     `<standing_prior>` is emitted **even when there is none**, carrying an
@@ -754,13 +754,13 @@ def render_debrief_input(
     )
     return assemble(
         [
-            *_persona_blocks(persona_room, name_of=persona_name_of,
+            *_profile_blocks(profile_room, name_of=profile_name_of,
                              now_ms=trace.created_at),
             *_culture_blocks(
-                # The switch (45 §5): the Persona account REPLACES the culture
+                # The switch (45 §5): the Profile account REPLACES the culture
                 # read — when the room's view was handed through, the culture
                 # read was never made.
-                None if persona_room is not None else culture,
+                None if profile_room is not None else culture,
                 now_ms=trace.created_at,
             ),
             prior_block, working_set_prior_block, turn,
@@ -769,16 +769,16 @@ def render_debrief_input(
     )
 
 
-def _persona_blocks(
-    view: PersonaView | None, *, name_of: Callable[[str], str] | None,
+def _profile_blocks(
+    view: ProfileView | None, *, name_of: Callable[[str], str] | None,
     now_ms: int,
 ) -> list[ContextBlock]:
-    """The room's `<persona>` under the switch (45 §5), `_culture_blocks`'s
+    """The room's `<profile>` under the switch (45 §5), `_culture_blocks`'s
     shape and rule: nothing when the room's account would say nothing
-    (`render_persona`'s «no block, not an empty one»)."""
+    (`render_profile`'s «no block, not an empty one»)."""
     if view is None or name_of is None:
         return []
-    block = render_persona(
+    block = render_profile(
         view, name_of=name_of, now=datetime.fromtimestamp(now_ms / 1000, tz=UTC))
     return [] if block is None else [_stamp(block)]
 

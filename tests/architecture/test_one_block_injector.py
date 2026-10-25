@@ -176,7 +176,7 @@ def test_a_module_that_writes_a_tag_by_hand_is_caught():
 #: source, so a module that builds blocks and is missing here fails.
 CONVERTED = (
     "nora/app/message_readings.py",
-    "nora/app/persona_spike.py",
+    "nora/app/profile_spike.py",
     "nora/agent/prefill.py",
     "nora/agent/reaction.py",
     "nora/agent/speech_format.py",
@@ -197,10 +197,10 @@ CONVERTED = (
     "nora/language/subagent_render.py",
     "nora/language/culture.py",
     "nora/language/character.py",
-    "nora/language/persona.py",
-    "nora/language/persona_render.py",
-    "nora/language/persona_collective.py",
-    "nora/language/persona_verdict.py",
+    "nora/language/profile.py",
+    "nora/language/profile_render.py",
+    "nora/language/profile_collective.py",
+    "nora/language/profile_verdict.py",
     "nora/language/lessons.py",
     "nora/language/lesson_render.py",
     "nora/language/doctrine_check.py",

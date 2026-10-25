@@ -2136,14 +2136,14 @@ async def test_cognition_holds_the_memory_surface_the_flag_selects(cfg, tmp_path
 
 
 @pytest.mark.parametrize("render", [False, True])
-async def test_persona_render_switch_selects_one_account_writer_and_keeps_the_judge(cfg, render):
+async def test_profile_render_switch_selects_one_account_writer_and_keeps_the_judge(cfg, render):
     configured = override_config(cfg, {
         "dreamer.enabled": True, "culture.enabled": True,
-        "persona.enabled": True, "persona.render": render,
+        "profile.enabled": True, "profile.render": render,
     })
     deps = await build_dependencies(configured)
     names = {a.name for a in deps.dream_adaptors}
-    assert {"persona-person", "persona-room", "persona-unit",
-            "persona-nora", "persona-verdict"} <= names
+    assert {"profile-person", "profile-room", "profile-unit",
+            "profile-nora", "profile-verdict"} <= names
     legacy = {"culture", "character-person", "character-unit", "character-nora"}
     assert (names & legacy) == (set() if render else legacy)

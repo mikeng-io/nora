@@ -68,7 +68,7 @@ from nora.app.cognition_grounding import (
     build_grounder,
     place_release,
     stay_context_reader,
-    unit_self_persona_reader,
+    unit_self_profile_reader,
     unit_self_reader,
 )
 from nora.app.cognition_session import CognitionSessionRunner
@@ -95,7 +95,7 @@ from nora.app.documents_service import DocumentService, room_label, rooms_named
 from nora.app.memory_routing import (
     MemoryRoutingError,
     build_workspace_router,
-    persona_scopes_of_person,
+    profile_scopes_of_person,
     workspaces_of_person,
 )
 from nora.app.message_readings import MessageReadingWorker
@@ -194,9 +194,9 @@ from nora.infra.sql.music_session import SqlMusicSessionStore
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.otp import SqlOtpStore
 from nora.infra.sql.participation_state import SqlParticipationStateStore
-from nora.infra.sql.persona import SqlPersonaStore
-from nora.infra.sql.persona_inputs import SqlPersonaInputs
 from nora.infra.sql.presence import PresenceStore
+from nora.infra.sql.profile import SqlProfileStore
+from nora.infra.sql.profile_inputs import SqlProfileInputs
 from nora.infra.sql.reasoning_strip import SqlReasoningStripStore
 from nora.infra.sql.record_query import SqlRecordQuery
 from nora.infra.sql.reminders import SqlReminderStore
@@ -259,25 +259,25 @@ from nora.language.lessons import (
     LessonsAdaptor,
     LessonsKey,
 )
-from nora.language.persona import (
-    PERSONA_PERSON_ADAPTOR_NAME,
-    PersonaEvidence,
-    PersonaPersonAdaptor,
+from nora.language.profile import (
+    PROFILE_PERSON_ADAPTOR_NAME,
+    ProfileEvidence,
+    ProfilePersonAdaptor,
 )
-from nora.language.persona_collective import (
-    PERSONA_COLLECTIVE_ADAPTOR_NAMES,
-    PERSONA_NORA_ADAPTOR_NAME,
-    PERSONA_ROOM_ADAPTOR_NAME,
-    PERSONA_UNIT_ADAPTOR_NAME,
+from nora.language.profile_collective import (
+    PROFILE_COLLECTIVE_ADAPTOR_NAMES,
+    PROFILE_NORA_ADAPTOR_NAME,
+    PROFILE_ROOM_ADAPTOR_NAME,
+    PROFILE_UNIT_ADAPTOR_NAME,
     CollectiveEvidence,
     CollectiveKey,
-    PersonaCollectiveAdaptor,
+    ProfileCollectiveAdaptor,
 )
-from nora.language.persona_render import PersonaHeads
-from nora.language.persona_verdict import (
-    PERSONA_VERDICT_ADAPTOR_NAME,
+from nora.language.profile_render import ProfileHeads
+from nora.language.profile_verdict import (
+    PROFILE_VERDICT_ADAPTOR_NAME,
     DocketAccount,
-    PersonaVerdictAdaptor,
+    ProfileVerdictAdaptor,
 )
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
@@ -1102,13 +1102,13 @@ class Dependencies:
     # portal's own-memory page. A callable for `resolve_voice_room`'s reason:
     # `nora.web` never sees a `Policy`.
     workspaces_of: Callable[[str], tuple[str, ...]]
-    # The portal's Persona reads (45, the switch): the read-only store (None
-    # until `[persona] render` is on — `persona_reader` above), a person_id ->
+    # The portal's Profile reads (45, the switch): the read-only store (None
+    # until `[profile] render` is on — `profile_reader` above), a person_id ->
     # the (unit, workspace) pairs their accounts live under, and the Record
     # read that resolves a line's message/episode citations for the page.
-    persona_portal: SqlPersonaStore | None
-    persona_scopes_of: Callable[[str], tuple[tuple[str, str], ...]] | None
-    persona_cited: SqlCharacterEvidence | None
+    profile_portal: SqlProfileStore | None
+    profile_scopes_of: Callable[[str], tuple[tuple[str, str], ...]] | None
+    profile_cited: SqlCharacterEvidence | None
     # /health's `index` block: the memory index's state and queue length
     # (`SqlMemoryIndex.index_state`, no model fingerprint).
     index_state: Callable[[], Awaitable[IndexState]]
@@ -2168,25 +2168,25 @@ async def build_dependencies(
         ActiveLessons(SqlLessonStore(engine)) if cfg.lessons.render else None
     )
     # THE SWITCH (design/unified-memory/45 §5, 00 «Sequence» step 8): the
-    # Persona accounts' read half — one store, read-only by the Protocol the
-    # readers are typed against (`PersonaHeads` has `account_heads` and nothing
+    # Profile accounts' read half — one store, read-only by the Protocol the
+    # readers are typed against (`ProfileHeads` has `account_heads` and nothing
     # else), handed to the tag assembler, the fire path, the Cognition
-    # grounder and the debrief fold. Wired only when `[persona] enabled` AND
-    # `[persona] render` are both on: `enabled` alone is the shadow (the
+    # grounder and the debrief fold. Wired only when `[profile] enabled` AND
+    # `[profile] render` are both on: `enabled` alone is the shadow (the
     # sessions write, nothing reads), and `render` without `enabled` has no
     # store to read. Flipping `render` back off is the whole rollback.
-    # `persona_store_reader` keeps the concrete type for the portal, whose
-    # page reads the open disputes too (`PersonaHeads` has no such read).
-    persona_store_reader = (
-        SqlPersonaStore(engine, screen=text_offence)
-        if cfg.persona.enabled and cfg.persona.render else None
+    # `profile_store_reader` keeps the concrete type for the portal, whose
+    # page reads the open disputes too (`ProfileHeads` has no such read).
+    profile_store_reader = (
+        SqlProfileStore(engine, screen=text_offence)
+        if cfg.profile.enabled and cfg.profile.render else None
     )
-    persona_reader: PersonaHeads | None = persona_store_reader
+    profile_reader: ProfileHeads | None = profile_store_reader
     # The same gate, for the writers (the dream sessions and the graph
-    # surface's `remember`): on, a persona write projects its lines into the
+    # surface's `remember`): on, a profile write projects its lines into the
     # memory index in its own transaction (45 §1, 25 §7); off is the shadow,
     # and the shadow's lines join at the flip through `nora memory rebuild`.
-    persona_index = cfg.persona.enabled and cfg.persona.render
+    profile_index = cfg.profile.enabled and cfg.profile.render
     # The join from a note to its room's account (DEC-207):
     # EVERY id a room is known by — `Note.established_in` holds whichever one
     # the note was born under — within the note's UNIT, since ids are unique
@@ -2225,7 +2225,7 @@ async def build_dependencies(
     memory_search = (
         MemorySearch(
             memory_index_reader, metrics,
-            persona_render=cfg.persona.enabled and cfg.persona.render,
+            profile_render=cfg.profile.enabled and cfg.profile.render,
             # `[memory_index] embed`: dense and exact seeds, the
             # lexical seed only as the fallback; off, every answer is
             # the fallback's `partial`.
@@ -2280,10 +2280,10 @@ async def build_dependencies(
         quote_window=quote_window,
         presence=presence_reader,
         culture=culture_reader,
-        # `<persona>`, the switch (45 §5): `None` until `[persona] render` is
-        # on beside `[persona] enabled`, and the same reader the fire path,
+        # `<profile>`, the switch (45 §5): `None` until `[profile] render` is
+        # on beside `[profile] enabled`, and the same reader the fire path,
         # the Cognition grounder and the debrief fold hold.
-        persona=persona_reader,
+        profile=profile_reader,
         # `<lessons>`: `None` while `[lessons]
         # render` is off. The same reader the fire path gets.
         lessons=lessons_reader,
@@ -3088,14 +3088,14 @@ async def build_dependencies(
         # verbs as before (DEC-316, `nora.agent.tools.GRAPH_MEMORY_TOOLS`).
         # Built once above: the assembler's pre-fetch holds the same one.
         memory_search=memory_search,
-        # The graph surface's `remember` writes a Persona `told` line
+        # The graph surface's `remember` writes a Profile `told` line
         # (design/unified-memory/45); wired with `memory_search`, never alone.
-        persona=(SqlPersonaStore(engine, screen=text_offence, index=persona_index)
+        profile=(SqlProfileStore(engine, screen=text_offence, index=profile_index)
                  if memory_search is not None else None),
-        # THE SWITCH (45 §5): while `[persona] render` is on, `character_read`
-        # answers from the Persona accounts — the same reader the tag
+        # THE SWITCH (45 §5): while `[profile] render` is on, `character_read`
+        # answers from the Profile accounts — the same reader the tag
         # assembler and the fire path hold, so tool and prompt cannot disagree.
-        persona_read=persona_reader,
+        profile_read=profile_reader,
         lineage=lineage,
         # The current Rollup build's rows and the Standing head. SELECTs, so no
         # flag. The Standing head is Dreamer-only (`DREAMER_ONLY_TOOLS`); the
@@ -3463,9 +3463,9 @@ async def build_dependencies(
             # path resolves the occasion through the policy it already holds
             # before reading (`FirePath._read_culture`).
             culture=culture_reader,
-            # THE SWITCH (45 §5): the SAME persona reader the tag assembler
-            # holds; `None` until `[persona] render` is on.
-            persona=persona_reader,
+            # THE SWITCH (45 §5): the SAME profile reader the tag assembler
+            # holds; `None` until `[profile] render` is on.
+            profile=profile_reader,
             lessons=lessons_reader,
             standing_store_timeout_seconds=cfg.standing.store_timeout_seconds,
             # The participation turn's memory reads. ONE knob set,
@@ -3888,7 +3888,7 @@ async def build_dependencies(
         #
         # Gated on `[culture] enabled` alone — no note-tier dependency: the
         # corpus is `messages`, which every deployment has.
-        if cfg.culture.enabled or cfg.persona.enabled:
+        if cfg.culture.enabled or cfg.profile.enabled:
             dream_schedules = {
                 **dream_schedules,
                 "culture": AdaptorSchedule(
@@ -4056,11 +4056,11 @@ async def build_dependencies(
                 ),
             )
 
-            # PERSONA · COLLECTIVES' keys (45 §1's key forms): a room's
+            # PROFILE · COLLECTIVES' keys (45 §1's key forms): a room's
             # account under its `primary_id`, the unit's and Nora's under the
             # culture keys — the same key the prose head they backfill from
             # is written under.
-            persona_room_keys = {
+            profile_room_keys = {
                 conv.primary_id: CollectiveKey(
                     unit=conv.unit,
                     rooms=(CharacterRoom(key=conv.primary_id, platform=conv.platform,
@@ -4069,34 +4069,34 @@ async def build_dependencies(
                 )
                 for conv in allowlist.conversations if conv.primary_id and conv.unit
             }
-            persona_unit_keys = {
+            profile_unit_keys = {
                 key: CollectiveKey(unit=uk.unit, rooms=uk.rooms, label=uk.unit)
                 for key, uk in unit_keys.items()
             }
-            persona_nora_keys = {
+            profile_nora_keys = {
                 key: CollectiveKey(unit=nk.unit, rooms=nk.rooms, label="Nora")
                 for key, nk in nora_keys.items()
             }
-            persona_collective_keys = {
-                **persona_room_keys, **persona_unit_keys, **persona_nora_keys,
+            profile_collective_keys = {
+                **profile_room_keys, **profile_unit_keys, **profile_nora_keys,
             }
 
-            # PERSONA · PERSON, in shadow (design/unified-memory/45 §4): one
+            # PROFILE · PERSON, in shadow (design/unified-memory/45 §4): one
             # session per (unit, listed person), on the person's Character
-            # wake plus a turn's `told` line; it writes `persona_line`, which
+            # wake plus a turn's `told` line; it writes `profile_line`, which
             # nothing renders until the switch. Inside the culture block: it
             # reads the Character head and the rooms' cultures.
-            if cfg.persona.enabled:
-                persona_store = SqlPersonaStore(
-                    engine, screen=text_offence, index=persona_index)
-                persona_reads = SqlCharacterEvidence(engine)
+            if cfg.profile.enabled:
+                profile_store = SqlProfileStore(
+                    engine, screen=text_offence, index=profile_index)
+                profile_reads = SqlCharacterEvidence(engine)
                 # The person accounts' social input (45 §4): the readable
                 # store's (opted-out, gone and hidden left out there), the
                 # same store the social cursor and the counts come from.
-                persona_social = readable_social_store(engine, persons)
+                profile_social = readable_social_store(engine, persons)
                 dream_schedules = {
                     **dream_schedules,
-                    PERSONA_PERSON_ADAPTOR_NAME: AdaptorSchedule(
+                    PROFILE_PERSON_ADAPTOR_NAME: AdaptorSchedule(
                         min_interval_seconds=cfg.culture.stale_seconds,
                         wake_batch=cfg.culture.person_wake_batch,
                         batch_limit=cfg.culture.person_wake_batch,
@@ -4104,7 +4104,7 @@ async def build_dependencies(
                     # The verdict judge (45 §3): one unit's docket of
                     # window-closed open hypotheses, fired the tick one is due
                     # (wake_batch 1), never by its writer.
-                    PERSONA_VERDICT_ADAPTOR_NAME: AdaptorSchedule(
+                    PROFILE_VERDICT_ADAPTOR_NAME: AdaptorSchedule(
                         min_interval_seconds=cfg.culture.stale_seconds,
                         wake_batch=1,
                         batch_limit=cfg.culture.person_wake_batch,
@@ -4112,18 +4112,18 @@ async def build_dependencies(
                 }
                 dream_adaptors = (
                     *dream_adaptors,
-                    PersonaPersonAdaptor(
-                        persona=persona_store, culture=culture_store, render=persona_index,
+                    ProfilePersonAdaptor(
+                        profile=profile_store, culture=culture_store, render=profile_index,
                         media_join=media_join,
-                        evidence=PersonaEvidence(
-                            store=persona_reads, persona=persona_store, keys=person_keys,
+                        evidence=ProfileEvidence(
+                            store=profile_reads, profile=profile_store, keys=person_keys,
                             wake_batch=cfg.culture.person_wake_batch,
-                            source_inputs=SqlPersonaInputs(engine, social=persona_social),
+                            source_inputs=SqlProfileInputs(engine, social=profile_social),
                             source_timeout_seconds=cfg.standing.store_timeout_seconds,
-                            social=persona_social,
+                            social=profile_social,
                             former_ids=persons.former_ids_for,
                         ),
-                        reads=persona_reads, keys=person_keys,
+                        reads=profile_reads, keys=person_keys,
                         name_of=lambda pid: (
                             ref.name if pid and (ref := persons.by_person.get(pid)) is not None
                             else "someone"
@@ -4133,13 +4133,13 @@ async def build_dependencies(
                         # The social items' render (45 §4): screened like the
                         # Character session's, captions redacted to the author's
                         # own handle, each reading clipped as the media reads.
-                        social=persona_social,
+                        social=profile_social,
                         coordinate_screen=looks_like_coordinate, screen=scan_identifiers,
                         render_chars=cfg.media.comprehension_render_chars,
                         handle_owners=persons.instagram_username_owners,
                     ),
-                    PersonaVerdictAdaptor(
-                        store=persona_store, reads=persona_reads,
+                    ProfileVerdictAdaptor(
+                        store=profile_store, reads=profile_reads,
                         rollup=SqlRollupRead(engine),
                         # The docket covers every account of the unit, a
                         # collective's included: each mapped to who the judge
@@ -4154,7 +4154,7 @@ async def build_dependencies(
                             **{key: DocketAccount(
                                 about=ck.label or key,
                                 rooms=tuple((r.platform, r.key) for r in ck.rooms),
-                            ) for key, ck in persona_collective_keys.items()},
+                            ) for key, ck in profile_collective_keys.items()},
                         },
                         name_of=lambda pid: (
                             ref.name if pid and (ref := persons.by_person.get(pid)) is not None
@@ -4164,24 +4164,24 @@ async def build_dependencies(
                     ),
                 )
 
-            # PERSONA · COLLECTIVES, in shadow (45 §4): a room's, the unit's
+            # PROFILE · COLLECTIVES, in shadow (45 §4): a room's, the unit's
             # and Nora's own account, each woken by its own evidence — the
             # room's messages, the rooms' culture revisions, the unit's
             # closed response episodes.
-            if cfg.persona.enabled:
+            if cfg.profile.enabled:
                 dream_schedules = {
                     **dream_schedules,
-                    PERSONA_ROOM_ADAPTOR_NAME: AdaptorSchedule(
+                    PROFILE_ROOM_ADAPTOR_NAME: AdaptorSchedule(
                         min_interval_seconds=cfg.culture.stale_seconds,
                         wake_batch=cfg.culture.wake_batch,
                         batch_limit=cfg.culture.batch_limit,
                     ),
-                    PERSONA_UNIT_ADAPTOR_NAME: AdaptorSchedule(
+                    PROFILE_UNIT_ADAPTOR_NAME: AdaptorSchedule(
                         min_interval_seconds=cfg.culture.stale_seconds,
                         wake_batch=cfg.culture.unit_wake_batch,
                         batch_limit=cfg.culture.batch_limit,
                     ),
-                    PERSONA_NORA_ADAPTOR_NAME: AdaptorSchedule(
+                    PROFILE_NORA_ADAPTOR_NAME: AdaptorSchedule(
                         min_interval_seconds=cfg.culture.stale_seconds,
                         wake_batch=cfg.culture.nora_wake_batch,
                         batch_limit=cfg.culture.nora_wake_batch,
@@ -4190,22 +4190,22 @@ async def build_dependencies(
                 collective_kinds: tuple[
                     tuple[Literal["room", "unit", "nora"], Mapping[str, CollectiveKey]], ...,
                 ] = (
-                    ("room", persona_room_keys), ("unit", persona_unit_keys),
-                    ("nora", persona_nora_keys),
+                    ("room", profile_room_keys), ("unit", profile_unit_keys),
+                    ("nora", profile_nora_keys),
                 )
                 dream_adaptors = (
                     *dream_adaptors,
-                    *(PersonaCollectiveAdaptor(
-                        kind=kind, persona=persona_store, culture=culture_store,
-                        render=persona_index, media_join=media_join, screen=text_offence,
+                    *(ProfileCollectiveAdaptor(
+                        kind=kind, profile=profile_store, culture=culture_store,
+                        render=profile_index, media_join=media_join, screen=text_offence,
                         coordinate_screen=looks_like_coordinate,
                         evidence=CollectiveEvidence(
-                            store=persona_reads, keys=keys, kind=kind, render=persona_index,
-                            source_inputs=SqlPersonaInputs(engine, social=persona_social),
+                            store=profile_reads, keys=keys, kind=kind, render=profile_index,
+                            source_inputs=SqlProfileInputs(engine, social=profile_social),
                             members={k: tuple(sorted({pid for r in ck.rooms
                                 for convo in allowlist.conversations if convo.primary_id == r.key
                                 for pid in convo.persons or ()})) for k, ck in keys.items()}),
-                        reads=persona_reads, keys=keys,
+                        reads=profile_reads, keys=keys,
                         name_of=lambda pid: (
                             ref.name if pid and (ref := persons.by_person.get(pid)) is not None
                             else "someone"
@@ -4215,7 +4215,7 @@ async def build_dependencies(
                 )
 
         # One account writer per subject at cutover; render=false restores legacy writers.
-        if persona_index or not cfg.culture.enabled:
+        if profile_index or not cfg.culture.enabled:
             retired = {CULTURE_ADAPTOR_NAME, CHARACTER_PERSON_ADAPTOR_NAME,
                        CHARACTER_UNIT_ADAPTOR_NAME, CHARACTER_NORA_ADAPTOR_NAME}
             dream_adaptors = tuple(a for a in dream_adaptors if a.name not in retired)
@@ -4402,12 +4402,12 @@ async def build_dependencies(
             # rooms that lists the person (`CharacterPersonAdaptor.tool_room`),
             # resolved through `scope_rooms` exactly as the room fold's are.
             CHARACTER_PERSON_ADAPTOR_NAME: culture_grant(),
-            # The Persona session stands where the person's Character session
-            # does (`PersonaPersonAdaptor.tool_room`), with the same reads.
-            PERSONA_PERSON_ADAPTOR_NAME: culture_grant(),
-            # A room's Persona session holds Culture's read tools, scoped to
-            # its own room (`PersonaCollectiveAdaptor.tool_room`).
-            PERSONA_ROOM_ADAPTOR_NAME: culture_grant(),
+            # The Profile session stands where the person's Character session
+            # does (`ProfilePersonAdaptor.tool_room`), with the same reads.
+            PROFILE_PERSON_ADAPTOR_NAME: culture_grant(),
+            # A room's Profile session holds Culture's read tools, scoped to
+            # its own room (`ProfileCollectiveAdaptor.tool_room`).
+            PROFILE_ROOM_ADAPTOR_NAME: culture_grant(),
             # The verdict judge holds no read tool (its windows are in the
             # prompt) and writes only through `record_verdict`; the default
             # grant (nothing) is its ceiling, kept here by omission.
@@ -4426,8 +4426,8 @@ async def build_dependencies(
         # and a few checked writes.
         if "culture" in dream_budgets:
             for name in (*CHARACTER_ADAPTOR_NAMES, LESSONS_ADAPTOR_NAME,
-                         PERSONA_PERSON_ADAPTOR_NAME, PERSONA_VERDICT_ADAPTOR_NAME,
-                         *PERSONA_COLLECTIVE_ADAPTOR_NAMES):
+                         PROFILE_PERSON_ADAPTOR_NAME, PROFILE_VERDICT_ADAPTOR_NAME,
+                         *PROFILE_COLLECTIVE_ADAPTOR_NAMES):
                 dream_budgets.setdefault(name, dream_budgets["culture"])
         # An adaptor with no block of its own. `budget_for` returns a freshly
         # constructed default rather than a shared constant (DEC-13 forbids a
@@ -4610,11 +4610,11 @@ async def build_dependencies(
                 # Her own account in the unit, shown only where every room of the
                 # unit agrees on `location` (R-31; `unit_self_reader`).
                 self_account=unit_self_reader(culture_reader, allowlist),
-                # THE SWITCH (45 §5): when `[persona] render` is on, her
-                # Persona account replaces the prose one; the SAME reader the
+                # THE SWITCH (45 §5): when `[profile] render` is on, her
+                # Profile account replaces the prose one; the SAME reader the
                 # tag and fire paths hold.
-                self_persona=unit_self_persona_reader(
-                    persona_reader, allowlist, lineage=lineage,
+                self_profile=unit_self_profile_reader(
+                    profile_reader, allowlist, lineage=lineage,
                     room_for=lambda platform, conversation_id: Room(
                         platform=platform, conversation_id=conversation_id,
                         roster_source=rosters.get(platform), persons=persons,
@@ -4714,15 +4714,15 @@ async def build_dependencies(
         policy=policy, assembler=assembler, ingest=ingest, engagement=engagement,
         resolve_voice_room=_voice_room_of(allowlist),
         workspaces_of=functools.partial(workspaces_of_person, allowlist),
-        # The portal's Persona reads (45): wired with the switch's reader, so
+        # The portal's Profile reads (45): wired with the switch's reader, so
         # the page shows the accounts exactly when the prompts do.
-        persona_portal=persona_store_reader,
-        persona_scopes_of=(
-            functools.partial(persona_scopes_of_person, allowlist)
-            if persona_store_reader is not None else None
+        profile_portal=profile_store_reader,
+        profile_scopes_of=(
+            functools.partial(profile_scopes_of_person, allowlist)
+            if profile_store_reader is not None else None
         ),
-        persona_cited=(
-            SqlCharacterEvidence(engine) if persona_store_reader is not None else None
+        profile_cited=(
+            SqlCharacterEvidence(engine) if profile_store_reader is not None else None
         ),
         index_state=memory_index_reader.index_state,
         documents=documents_store, document_service=document_service,

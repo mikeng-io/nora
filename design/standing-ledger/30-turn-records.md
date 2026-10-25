@@ -113,14 +113,14 @@ nothing.
 - **Each item keeps the complete disclosure requirements its source carried
   when it was read**, recorded by code at read time, not re-derived later from
   a subject: the lineage entries; `exclude_persons`; the `location` flag and
-  location subjects (the fields `persona_lines_for` in `nora/agent/lineage.py`
+  location subjects (the fields `profile_lines_for` in `nora/agent/lineage.py`
   applies to a Character read, and which a subject alone cannot reproduce);
   and whatever further requirement that source's own gate applies. A
   transcript or `room_read` item has the rooms whose messages it returned as
   origins; a web search has the room the turn ran in. A Cognition record mixes
   several rooms, which is why this is per item and not per record.
 - **Re-applied with the same predicates** the source's own read uses
-  (`persona_lines_for` for a Character item, the lineage predicates for the
+  (`profile_lines_for` for a Character item, the lineage predicates for the
   rest), against the room the record is opened from, with its live audience.
   An item whose requirements cannot be resolved (an unknown kind, a missing
   field, a roster that cannot be read) is withheld: fail closed.

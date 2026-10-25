@@ -25,20 +25,20 @@ export type Status = z.infer<typeof StatusSchema>;
 // one per Nora workspace they belong to (DEC-214), each labelled
 // `workspace`. `identity` (who they are) and `episodes` (what happened) are
 // two distinct reads and never collapse into one list.
-// `persona` is optional: only a backend running the Persona switch
-// (`[persona] render`) sends it — the caller's own account per unit, every
+// `profile` is optional: only a backend running the Profile switch
+// (`[profile] render`) sends it — the caller's own account per unit, every
 // chain head with its state, the evidence behind each line, and the open
 // disputes (cognition-loop/50 §4).
-export const PersonaEvidenceSchema = z.object({
+export const ProfileEvidenceSchema = z.object({
   ref: z.string(),
   kind: z.enum(["message", "episode", "social", "rollup", "unknown"]),
   text: z.string().nullable().optional(),
   said_at: z.number().optional(),
   by: z.string().nullable().optional(),
 });
-export type PersonaEvidence = z.infer<typeof PersonaEvidenceSchema>;
-export const PersonaLineSchema = z.object({
-  part: z.enum(["identity", "character", "hypothesis"]),
+export type ProfileEvidence = z.infer<typeof ProfileEvidenceSchema>;
+export const ProfileLineSchema = z.object({
+  part: z.enum(["facts", "traits", "guesses"]),
   kind: z.string(),
   text: z.string(),
   mode: z.string(),
@@ -50,27 +50,27 @@ export const PersonaLineSchema = z.object({
   as_of: z.number().nullable().optional(),
   valid_from: z.number().nullable().optional(),
   valid_until: z.number().nullable().optional(),
-  evidence: z.array(PersonaEvidenceSchema),
+  evidence: z.array(ProfileEvidenceSchema),
   prediction: z.string().nullable().optional(),
   prediction_observable: z.string().nullable().optional(),
   prediction_window_end: z.number().nullable().optional(),
   verdict: z.string().nullable().optional(),
 });
-export type PersonaLine = z.infer<typeof PersonaLineSchema>;
-export const PersonaDisputeSchema = z.object({
+export type ProfileLine = z.infer<typeof ProfileLineSchema>;
+export const ProfileDisputeSchema = z.object({
   kind: z.string(),
   claim: z.string(),
   disputed_by: z.string().nullable(),
   written_at: z.number(),
 });
-export type PersonaDispute = z.infer<typeof PersonaDisputeSchema>;
-export const PersonaAccountSchema = z.object({
+export type ProfileDispute = z.infer<typeof ProfileDisputeSchema>;
+export const ProfileAccountSchema = z.object({
   card: z.string().optional(),
   unit: z.string(),
-  lines: z.array(PersonaLineSchema),
-  disputes: z.array(PersonaDisputeSchema),
+  lines: z.array(ProfileLineSchema),
+  disputes: z.array(ProfileDisputeSchema),
 });
-export type PersonaAccount = z.infer<typeof PersonaAccountSchema>;
+export type ProfileAccount = z.infer<typeof ProfileAccountSchema>;
 export const MemoryEntrySchema = z.object({
   workspace: z.string().optional(),
   person_id: z.string(),
@@ -78,7 +78,7 @@ export const MemoryEntrySchema = z.object({
   reachable: z.boolean(),
   identity: z.array(z.string()),
   episodes: z.array(z.string()),
-  persona: z.array(PersonaAccountSchema).optional(),
+  profile: z.array(ProfileAccountSchema).optional(),
 });
 export type MemoryEntry = z.infer<typeof MemoryEntrySchema>;
 export const MemorySchema = z.array(MemoryEntrySchema);

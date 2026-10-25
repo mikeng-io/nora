@@ -315,16 +315,16 @@ def add_subcommands(
     )
     memory_sub = memory.add_subparsers(dest="memory_command", required=True)
     history = memory_sub.add_parser(
-        "persona-history", parents=[parent],
-        help="historical Persona coverage receipts; optionally restart one account's pass",
+        "profile-history", parents=[parent],
+        help="historical Profile coverage receipts; optionally restart one account's pass",
     )
-    history.add_argument("--key", action="append", help="scoped Persona key; repeatable")
+    history.add_argument("--key", action="append", help="scoped Profile key; repeatable")
     history.add_argument("--since", help="first HKT date, YYYY-MM-DD")
     history.add_argument("--until", help="last HKT date, inclusive")
     history.add_argument("--restart", action="store_true")
     history.add_argument("--apply", action="store_true")
-    history.set_defaults(func=cmd_persona_history)
-    report = memory_sub.add_parser("persona-report", parents=[parent],
+    history.set_defaults(func=cmd_profile_history)
+    report = memory_sub.add_parser("profile-report", parents=[parent],
                                   help="read-only Character counts; card only on explicit request")
     report.add_argument("--key", action="append", required=True)
     report.add_argument("--since")
@@ -332,15 +332,15 @@ def add_subcommands(
     report.add_argument("--format", choices=["counts", "card"], default="counts")
     report.add_argument("--sessions", type=Path, help="private recorded session receipts JSON file")
     report.add_argument("--judge", action="store_true", help="run the independent configured judge")
-    report.set_defaults(func=cmd_persona_report)
+    report.set_defaults(func=cmd_profile_report)
 
     retry_media = memory_sub.add_parser(
-        "persona-retry-media", parents=[parent],
+        "profile-retry-media", parents=[parent],
         help="queue one normal Dreamer attempt for one account's pending cached media",
     )
-    retry_media.add_argument("--key", required=True, help="one scoped Persona account key")
+    retry_media.add_argument("--key", required=True, help="one scoped Profile account key")
     retry_media.add_argument("--apply", action="store_true", help="queue; otherwise read-only")
-    retry_media.set_defaults(func=cmd_persona_retry_media)
+    retry_media.set_defaults(func=cmd_profile_retry_media)
     backfill = memory_sub.add_parser(
         "backfill", parents=[parent],
         help="replay one unit's recorded human messages into its own Honcho "
@@ -872,19 +872,19 @@ async def cmd_memory_backfill(args: argparse.Namespace) -> int:
     return 1 if result.failed else 0
 
 
-async def cmd_persona_history(args: argparse.Namespace) -> int:
+async def cmd_profile_history(args: argparse.Namespace) -> int:
     """No model calls. Restart clears only history cursors, retaining all claims."""
     import sqlalchemy as sa
 
     from nora.app.composition import character_person_keys
-    from nora.domain.persona import FACT_KINDS
+    from nora.domain.profile import FACT_KINDS
     from nora.infra.sql.character import SqlCharacterEvidence
-    from nora.infra.sql.persona import SqlPersonaStore
-    from nora.infra.sql.persona_inputs import SqlPersonaInputs
+    from nora.infra.sql.profile import SqlProfileStore
+    from nora.infra.sql.profile_inputs import SqlProfileInputs
     from nora.infra.sql.schema import CONSOLIDATION_WATERMARK as W
 
     if getattr(args, "since", None) or getattr(args, "until", None):
-        return await cmd_persona_window(args)
+        return await cmd_profile_window(args)
     requested = [args.key] if isinstance(args.key, str) else args.key or []
     if args.restart and len(requested) != 1:
         raise CliError("--restart requires exactly one --key")
@@ -899,11 +899,11 @@ async def cmd_persona_history(args: argparse.Namespace) -> int:
             async with engine.begin() as conn:
                 await conn.execute(sa.delete(W).where(W.c.scope_id == key,
                     W.c.consolidator_name.in_([
-                        "persona-person:history", "persona-person:history-boundary"])))
+                        "profile-person:history", "profile-person:history-boundary"])))
         async with engine.connect() as conn:
             rows = (await conn.execute(sa.select(W).where(
                 W.c.consolidator_name.in_([
-                    "persona-person:history", "persona-person:history-boundary"])))).all()
+                    "profile-person:history", "profile-person:history-boundary"])))).all()
         by_key: dict[str, dict[str, int]] = {}
         for row in rows:
             by_key.setdefault(row.scope_id, {})[row.consolidator_name] = row.last_message_id
@@ -912,18 +912,18 @@ async def cmd_persona_history(args: argparse.Namespace) -> int:
             by_key.setdefault(key, {})
         if args.key:
             by_key = {k: by_key.get(k, {}) for k in requested}
-        store = SqlPersonaStore(engine, screen=lambda _: None)
+        store = SqlProfileStore(engine, screen=lambda _: None)
         receipts = SqlCharacterEvidence(engine)
         for key, state in sorted(by_key.items()):
-            boundary = state.get("persona-person:history-boundary")
-            cursor = state.get("persona-person:history", 0)
+            boundary = state.get("profile-person:history-boundary")
+            cursor = state.get("profile-person:history", 0)
             heads = await store.account_heads(key=key)
             pk = keys.get(key)
             total, seen = (await receipts.historical_counts(
                 rooms=[(r.platform, r.key) for r in pk.rooms if r.key in pk.listed],
                 person_id=pk.person.person_id, cursor=cursor, through=boundary,
             ) if pk is not None and boundary is not None else (None, None))
-            typed = [h for h in heads if h.part == "identity" and h.fact_key is not None
+            typed = [h for h in heads if h.part == "facts" and h.fact_key is not None
                      and h.state == "current"]
             present = {h.fact_key for h in typed}
             print(json.dumps({
@@ -933,12 +933,12 @@ async def cmd_persona_history(args: argparse.Namespace) -> int:
                 "unresolved_relationships": sum(h.fact_key == "relationship"
                     and isinstance(h.fact_value, dict) and "unresolved_name" in h.fact_value
                     for h in typed),
-                "legacy_unresolved": sum(h.part == "identity" and h.fact_key is None
+                "legacy_unresolved": sum(h.part == "facts" and h.fact_key is None
                                          and h.state in ("current", "disputed") for h in heads),
                 "disputed": sum(h.state == "disputed" for h in heads),
                 "missing_fields": sorted(set(FACT_KINDS) - {"purpose", "norm"} - present),
                 "restart_applied": bool(args.restart and args.apply),
-                "cached_media": (await SqlPersonaInputs(engine).media_recovery(
+                "cached_media": (await SqlProfileInputs(engine).media_recovery(
                     key=key, rooms=[(r.platform, r.key) for r in pk.rooms if r.key in pk.listed],
                     person=pk.person.person_id,
                 )) if pk is not None else None,
@@ -949,7 +949,7 @@ async def cmd_persona_history(args: argparse.Namespace) -> int:
     return 0
 
 
-def _persona_tracing(cfg: Config) -> None:
+def _profile_tracing(cfg: Config) -> None:
     """Use the daemon's existing trace destination for explicitly requested model work."""
     if cfg.obs.tracing.enabled:
         from nora.agent.telemetry import setup_agent_tracing
@@ -959,13 +959,13 @@ def _persona_tracing(cfg: Config) -> None:
             headers_env=cfg.obs.tracing.headers_env)
 
 
-async def cmd_persona_window(args: argparse.Namespace) -> int:
+async def cmd_profile_window(args: argparse.Namespace) -> int:
     from datetime import datetime
 
     from nora.app.composition import character_person_keys
-    from nora.app.persona_spike import history_days, window
-    from nora.domain.persona import PERSONA_HKT
-    from nora.infra.sql.persona_inputs import SqlPersonaInputs
+    from nora.app.profile_spike import history_days, window
+    from nora.domain.profile import PROFILE_HKT
+    from nora.infra.sql.profile_inputs import SqlProfileInputs
     from nora.infra.sql.social_stream import readable_social_store
     try:
         since, until = window(args.since, args.until)
@@ -978,7 +978,7 @@ async def cmd_persona_window(args: argparse.Namespace) -> int:
     cfg = _config(args)
     keys = character_person_keys(_policy(cfg), _persons(cfg))
     if any(k not in keys for k in args.key):
-        raise CliError("unknown or unlisted Persona key")
+        raise CliError("unknown or unlisted Profile key")
     engine = create_readonly_sql_engine(_database_url(cfg))
     deps = None
     runtime = None
@@ -986,16 +986,16 @@ async def cmd_persona_window(args: argparse.Namespace) -> int:
     try:
         if args.apply:
             from nora.app.composition import build_dependencies
-            _persona_tracing(cfg)
+            _profile_tracing(cfg)
             deps = await build_dependencies(cfg)
             runtime = deps.dreamer_runtime
             if runtime is None:
-                raise CliError("Persona history needs the configured Dreamer runtime")
+                raise CliError("Profile history needs the configured Dreamer runtime")
             adaptor = next((a for a in deps.dream_adaptors
-                            if a.name == "persona-person"), None)
+                            if a.name == "profile-person"), None)
             if adaptor is None:
-                raise CliError("Persona person writer is not enabled")
-        sources = SqlPersonaInputs(engine, social=readable_social_store(engine, _persons(cfg)))
+                raise CliError("Profile person writer is not enabled")
+        sources = SqlProfileInputs(engine, social=readable_social_store(engine, _persons(cfg)))
         for key in args.key:
             pk = keys[key]
             seen_days: set[int] = set()
@@ -1011,15 +1011,15 @@ async def cmd_persona_window(args: argparse.Namespace) -> int:
                         limit=100, since_ms=day, until_ms=day + 86400000, include_settled=True)]
                     seen_days.add(day)
                 receipt = {"key": key, "day": datetime.fromtimestamp(day / 1000,
-                           tz=PERSONA_HKT).date().isoformat(),
+                           tz=PROFILE_HKT).date().isoformat(),
                            "messages": len(batch), "other_sources": len(extra),
                            "dry_run": not args.apply}
                 if runtime is not None and adaptor is not None:
                     from typing import Any, cast
 
                     from nora.obs.tracing import span
-                    with span("persona-spike", **{"nora.dreamer.key": key,
-                              "nora.persona.person_day": receipt["day"]}):
+                    with span("profile-spike", **{"nora.dreamer.key": key,
+                              "nora.profile.person_day": receipt["day"]}):
                         outcome = await runtime.run(adaptor=adaptor, key=key,
                                                     batch=cast(Any, [*batch, *extra]))
                     receipt.update(status=outcome.status, written=outcome.written)
@@ -1040,11 +1040,11 @@ async def cmd_persona_window(args: argparse.Namespace) -> int:
     return 0
 
 
-async def cmd_persona_report(args: argparse.Namespace) -> int:
+async def cmd_profile_report(args: argparse.Namespace) -> int:
     import functools
     import os
 
-    from nora.app.persona_spike import (
+    from nora.app.profile_spike import (
         event_judge,
         read_session_observations,
         recorded_sessions,
@@ -1062,7 +1062,7 @@ async def cmd_persona_report(args: argparse.Namespace) -> int:
         person = persons.by_person.get(pid)
         return person.name if person else "unknown participant"
     if args.judge:
-        _persona_tracing(cfg)
+        _profile_tracing(cfg)
         from nora.agent.structured import build_structured_model
         if cfg.evals.judge_model == cfg.dreamer_model():
             raise CliError("events-as-traits judge must differ from the writer model")
@@ -1077,9 +1077,9 @@ async def cmd_persona_report(args: argparse.Namespace) -> int:
         observations = observations.get("data")
     sessions = recorded_sessions(observations) if observations is not None else None
     engine = create_readonly_sql_engine(_database_url(cfg))
-    from nora.infra.sql.persona_inputs import SqlPersonaInputs
+    from nora.infra.sql.profile_inputs import SqlProfileInputs
     from nora.infra.sql.social_stream import readable_social_store
-    source_inputs = SqlPersonaInputs(engine, social=readable_social_store(engine, _persons(cfg)))
+    source_inputs = SqlProfileInputs(engine, social=readable_social_store(engine, _persons(cfg)))
     try:
         for key in args.key:
             payload = await report(engine, key=key, since=since, until=until,
@@ -1096,20 +1096,20 @@ async def cmd_persona_report(args: argparse.Namespace) -> int:
     return 0
 
 
-async def cmd_persona_retry_media(args: argparse.Namespace) -> int:
+async def cmd_profile_retry_media(args: argparse.Namespace) -> int:
     """Queue a wake; never compose Nora, call a model, or reset evidence cursors."""
     import sqlalchemy as sa
 
     from nora.app.composition import character_person_keys
-    from nora.infra.sql.persona_inputs import SqlPersonaInputs
+    from nora.infra.sql.profile_inputs import SqlProfileInputs
     from nora.infra.sql.schema import CONSOLIDATION_WATERMARK as W
 
     cfg = _config(args)
-    if not (cfg.dreamer.enabled and cfg.culture.enabled and cfg.persona.enabled):
-        raise CliError("the Persona Dreamer must be enabled before requesting recovery")
+    if not (cfg.dreamer.enabled and cfg.culture.enabled and cfg.profile.enabled):
+        raise CliError("the Profile Dreamer must be enabled before requesting recovery")
     keys = character_person_keys(_policy(cfg), _persons(cfg))
     if args.key not in keys:
-        raise CliError("unknown or unlisted Persona account")
+        raise CliError("unknown or unlisted Profile account")
     pk = keys[args.key]
     engine = (create_sql_engine(_database_url(cfg)) if args.apply
               else create_readonly_sql_engine(_database_url(cfg)))
@@ -1118,12 +1118,12 @@ async def cmd_persona_retry_media(args: argparse.Namespace) -> int:
             rows = (await conn.execute(sa.select(
                 W.c.consolidator_name, W.c.last_message_id).where(
                     W.c.scope_id == args.key, W.c.consolidator_name.in_([
-                        'persona-person:history-boundary', 'persona-person:history'])))).all()
+                        'profile-person:history-boundary', 'profile-person:history'])))).all()
         history = {r.consolidator_name: r.last_message_id for r in rows}
-        boundary = history.get('persona-person:history-boundary')
-        if boundary is None or history.get('persona-person:history', 0) < boundary:
+        boundary = history.get('profile-person:history-boundary')
+        if boundary is None or history.get('profile-person:history', 0) < boundary:
             raise CliError("historical recovery must complete first; no cursors were reset")
-        source = SqlPersonaInputs(engine)
+        source = SqlProfileInputs(engine)
         status = await source.media_recovery(key=args.key,
             rooms=[(r.platform, r.key) for r in pk.rooms if r.key in pk.listed],
             person=pk.person.person_id)

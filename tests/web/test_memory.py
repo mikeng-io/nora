@@ -2,7 +2,7 @@ import pytest
 
 from nora.domain.culture import RoomMessage, character_key
 from nora.domain.models import DeliveryStatus, PersonRef, TranscriptRow
-from nora.domain.persona import PersonaDispute, PersonaLine
+from nora.domain.profile import ProfileDispute, ProfileLine
 from nora.persons import Persons
 from nora.testing import FakeMemoryStore
 from nora.web.memory import build_memory_payload
@@ -160,12 +160,12 @@ async def test_a_caller_in_no_workspace_sees_nothing_rather_than_a_guess():
     assert honcho.queries == []
 
 
-# --- Persona (45, the switch) --------------------------------------------------
+# --- Profile (45, the switch) --------------------------------------------------
 
 _NOW = 1_790_000_000_000
 
 
-class _Persona:
+class _Profile:
     """The portal's two reads, answered from dicts keyed by account key."""
 
     def __init__(self, heads=None, disputes=None):
@@ -195,34 +195,34 @@ def _row(row_id: int, body: str, room: str, person_id: str | None = "miles") -> 
     ))
 
 
-def _line(line_id: str, text: str, **overrides) -> PersonaLine:
+def _line(line_id: str, text: str, **overrides) -> ProfileLine:
     defaults = {
-        "id": line_id, "persona_key": character_key("friends", "miles"),
-        "part": "identity", "kind": "attribute", "text": text, "mode": "told",
+        "id": line_id, "profile_key": character_key("friends", "miles"),
+        "part": "facts", "kind": "attribute", "text": text, "mode": "told",
         "citations": ("7",), "state": "current",
         "unit": "friends", "written_at": _NOW, "written_by_session": "tag",
         "told_by": "miles",
     }
-    return PersonaLine(**(defaults | overrides))
+    return ProfileLine(**(defaults | overrides))
 
 
-async def test_a_callers_own_persona_accounts_ride_their_workspace_entries():
+async def test_a_callers_own_profile_accounts_ride_their_workspace_entries():
     """The switch's portal half (cognition-loop/50 §4): the caller sees the
     account about them per unit that lists them, each under its workspace's
     entry — every chain head with its state, the evidence behind it, and the
     open disputes."""
     key = character_key("friends", "miles")
-    persona = _Persona(
+    profile = _Profile(
         heads={key: (
             _line("l1", "cycles to work"),
-            _line("l2", "maybe vegetarian", part="hypothesis", kind="explanation",
+            _line("l2", "maybe vegetarian", part="guesses", kind="explanation",
                   mode="abduced", state="disputed", told_by=None,
                   citations=("response:9", "social:instagram:p1", "rollup:outing:friends|x"),
                   prediction="orders veg", prediction_observable="rollup:outing:friends|x",
                   prediction_window_end=_NOW + 1000, verdict="open"),
         )},
-        disputes={key: (PersonaDispute(
-            id="d1", persona_key=key, line_id="l2", disputed_by="miles",
+        disputes={key: (ProfileDispute(
+            id="d1", profile_key=key, line_id="l2", disputed_by="miles",
             kind="dispute", claim="maybe vegetarian", message_id=7,
             unit="friends", written_at=_NOW,
         ),)},
@@ -232,12 +232,12 @@ async def test_a_callers_own_persona_accounts_ride_their_workspace_entries():
         honcho=FakeMemoryStore(conclusions={"miles": ["x"]}, cards={"miles": []}),
         persons=_persons(MILES), ai_peer="nora", person_id="miles",
         workspaces_of=lambda _pid: ("67",),
-        persona=persona,
-        persona_scopes_of=lambda _pid: (("friends", "67"),),
+        profile=profile,
+        profile_scopes_of=lambda _pid: (("friends", "67"),),
         cited=cited,
         rooms_of=lambda _pid: frozenset({("signal", "g1")}),
     )
-    [account] = payload[0]["persona"]
+    [account] = payload[0]["profile"]
     assert account["unit"] == "friends"
     told, hypothesis = account["lines"]
     assert (told["state"], told["mode"], told["told_by"]) == ("current", "told", "Miles")
@@ -264,16 +264,16 @@ async def test_evidence_text_shows_only_where_the_viewer_is_still_listed():
     citation said in a room the viewer no longer lists renders as its bare
     ref, and so does a row the Record has hidden."""
     key = character_key("friends", "miles")
-    persona = _Persona(heads={key: (_line("l1", "cycles to work"),)})
+    profile = _Profile(heads={key: (_line("l1", "cycles to work"),)})
     cited = _Cited([_row(7, "i cycle to work", "g1")])
     payload = await build_memory_payload(
         honcho=FakeMemoryStore(conclusions={"miles": ["x"]}),
         persons=_persons(MILES), ai_peer="nora", person_id="miles",
-        persona=persona, persona_scopes_of=lambda _pid: (("friends", "default"),),
+        profile=profile, profile_scopes_of=lambda _pid: (("friends", "default"),),
         cited=cited,
         rooms_of=lambda _pid: frozenset(),  # no longer listed in g1
     )
-    assert payload[0]["persona"][0]["lines"][0]["evidence"] == [
+    assert payload[0]["profile"][0]["lines"][0]["evidence"] == [
         {"ref": "7", "kind": "message"},
     ]
 
@@ -282,20 +282,20 @@ async def test_an_account_never_written_is_absent_not_empty():
     payload = await build_memory_payload(
         honcho=FakeMemoryStore(conclusions={"miles": ["x"]}),
         persons=_persons(MILES), ai_peer="nora", person_id="miles",
-        persona=_Persona(),
-        persona_scopes_of=lambda _pid: (("friends", "default"),),
+        profile=_Profile(),
+        profile_scopes_of=lambda _pid: (("friends", "default"),),
     )
-    assert "persona" not in payload[0]
+    assert "profile" not in payload[0]
 
 
-async def test_a_person_no_room_lists_has_no_persona_read_at_all():
-    persona = _Persona()
+async def test_a_person_no_room_lists_has_no_profile_read_at_all():
+    profile = _Profile()
     payload = await build_memory_payload(
         honcho=FakeMemoryStore(conclusions={"miles": ["x"]}),
         persons=_persons(MILES), ai_peer="nora", person_id="miles",
-        persona=persona, persona_scopes_of=lambda _pid: (),
+        profile=profile, profile_scopes_of=lambda _pid: (),
     )
-    assert "persona" not in payload[0]
+    assert "profile" not in payload[0]
 
 
 async def test_an_account_whose_workspace_has_no_entry_is_dropped_not_rehomed():
@@ -303,18 +303,18 @@ async def test_an_account_whose_workspace_has_no_entry_is_dropped_not_rehomed():
     entry of this caller, so the account shows NOWHERE rather than under
       another workspace's label."""
     key = character_key("friends", "miles")
-    persona = _Persona(heads={key: (_line("l1", "cycles to work"),)})
+    profile = _Profile(heads={key: (_line("l1", "cycles to work"),)})
     payload = await build_memory_payload(
         honcho=FakeMemoryStore(conclusions={"miles": ["x"]}),
         persons=_persons(MILES), ai_peer="nora", person_id="miles",
         workspaces_of=lambda _pid: ("ridgeline",),
-        persona=persona,
-        persona_scopes_of=lambda _pid: (("friends", "67"),),
+        profile=profile,
+        profile_scopes_of=lambda _pid: (("friends", "67"),),
     )
-    assert "persona" not in payload[0]
+    assert "profile" not in payload[0]
 
 
-async def test_without_a_persona_reader_the_payload_is_unchanged():
+async def test_without_a_profile_reader_the_payload_is_unchanged():
     payload = await build_memory_payload(
         honcho=FakeMemoryStore(conclusions={"miles": ["x"]}, cards={"miles": ["Name: M"]}),
         persons=_persons(MILES), ai_peer="nora", person_id="miles",
@@ -332,12 +332,13 @@ async def test_typed_relationship_names_resolve_only_inside_the_accounts_unit(sa
                  fact_value={"relation": "friend", "person_id": "ada"})
     payload = await build_memory_payload(
         honcho=FakeMemoryStore(), persons=_persons(MILES, ADA), ai_peer="nora", person_id="miles",
-        persona=_Persona(heads={key: (line,)}),
-        persona_scopes_of=lambda pid: (
+        profile=_Profile(heads={key: (line,)}),
+        profile_scopes_of=lambda pid: (
             ("friends" if pid == "miles" or same_unit else "other", "default"),),
     )
-    text = payload[0]["persona"][0]["lines"][0]["text"]
-    assert text == "relationship: friend: " + ("Ada" if same_unit else "someone") + " [told]"
+    text = payload[0]["profile"][0]["lines"][0]["text"]
+    assert text == ("relationship: friend: " + ("Ada" if same_unit else "someone")
+                    + " [told] (told by Miles)")
     assert "conflicting prose" not in text
 
 
@@ -349,11 +350,11 @@ async def test_fallback_portal_keeps_json_but_displays_shared_formatted_truth():
                  as_of=1000)
     payload = await build_memory_payload(
         honcho=FakeMemoryStore(), persons=_persons(MILES), ai_peer="nora", person_id="miles",
-        persona=_Persona(heads={key: (line,)}),
-        persona_scopes_of=lambda _: (("friends", "default"),),
+        profile=_Profile(heads={key: (line,)}),
+        profile_scopes_of=lambda _: (("friends", "default"),),
     )
-    shown = payload[0]["persona"][0]["lines"][0]
+    shown = payload[0]["profile"][0]["lines"][0]
     assert shown["fact_value"] == value and shown["as_of"] == 1000
     from nora.domain.character_card import format_line
-    assert shown["text"] == format_line(line)
+    assert shown["text"] == format_line(line, name_of=lambda _: "Miles")
     assert shown["text"].startswith("height: 178 cm (asserted ")

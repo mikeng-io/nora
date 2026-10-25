@@ -1,30 +1,30 @@
 [
   {
     "name": "unit cutover and rollback use independent counters",
-    "file": "nora/language/persona_collective.py",
-    "old": "self.watermark_name = \"persona-unit:persona\" if kind == \"unit\" and render else None",
+    "file": "nora/language/profile_collective.py",
+    "old": "self.watermark_name = \"profile-unit:profile\" if kind == \"unit\" and render else None",
     "new": "self.watermark_name = None",
-    "target": "tests/infra/test_persona_collective.py::test_unit_switch_and_rollback_keep_independent_durable_cursors"
+    "target": "tests/infra/test_profile_collective.py::test_unit_switch_and_rollback_keep_independent_durable_cursors"
   },
   {
     "name": "resolved relationship target remains searchable",
     "file": "nora/infra/sql/memory_index.py",
     "old": "if row.fact_key == \"relationship\" and isinstance(row.fact_value, dict):",
     "new": "if False:",
-    "target": "tests/infra/test_memory_projection_persona.py::test_relationship_projection_retrieval_preserves_scoped_targets"
+    "target": "tests/infra/test_memory_projection_profile.py::test_relationship_projection_retrieval_preserves_scoped_targets"
   },
   {
     "name": "packet formats canonical relationship with scoped names",
     "file": "nora/agent/memory_search.py",
-    "old": "if node.kind == \"persona_line\" and node.identity_fact is not None:",
+    "old": "if node.kind == \"profile_line\" and node.identity_fact is not None:",
     "new": "if False:",
-    "target": "tests/infra/test_memory_projection_persona.py::test_relationship_projection_retrieval_preserves_scoped_targets"
+    "target": "tests/infra/test_memory_projection_profile.py::test_relationship_projection_retrieval_preserves_scoped_targets"
   },
   {
     "name": "unlisted relationship target is never named",
     "file": "nora/agent/memory_search.py",
     "old": "if pid not in node.named_persons:",
     "new": "if False:",
-    "target": "tests/infra/test_memory_projection_persona.py::test_relationship_projection_retrieval_preserves_scoped_targets"
+    "target": "tests/infra/test_memory_projection_profile.py::test_relationship_projection_retrieval_preserves_scoped_targets"
   }
 ]

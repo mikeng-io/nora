@@ -59,7 +59,7 @@ it rather than asserting it.
 
 - **Source restrictions survive.** A Character item read with
   `exclude_persons` or a location restriction is withheld from a room where
-  `persona_lines_for` would withhold it, when opened through the record and
+  `profile_lines_for` would withhold it, when opened through the record and
   when cited by an entry; an item whose requirements cannot be resolved is
   withheld.
 - **`recall_lookups` keeps its reach until step 5.** A lookup made before 30

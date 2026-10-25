@@ -1514,9 +1514,9 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
     before_ms = int(shot["before_ms"])
     clock_ms = before_ms
     if port.synthetic_sources:
-        private = md.get("persona_input") or {}
-        if not md.get("private_persona_file") or not isinstance(private.get("clock_ms"), int):
-            raise ValueError("persona writer requires private synthetic source file and clock")
+        private = md.get("profile_input") or {}
+        if not md.get("private_profile_file") or not isinstance(private.get("clock_ms"), int):
+            raise ValueError("profile writer requires private synthetic source file and clock")
         clock_ms = private["clock_ms"]
         if clock_ms < before_ms:
             raise ValueError("synthetic writer clock cannot precede the restored anchor")
@@ -1656,7 +1656,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             nora_case = dataclasses.replace(
                 nora_case, moment=Moment(source_url=spec.source_url, rows=seeded.rows),
             )
-            from evals.rebuilt.persona_identity import REPRESENTATION_PROPERTIES
+            from evals.rebuilt.profile_identity import REPRESENTATION_PROPERTIES
             from nora.subject.context_filter import case_scope
 
             if (port.judged_on == "identity" and nora_case.name in REPRESENTATION_PROPERTIES
