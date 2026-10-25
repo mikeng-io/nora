@@ -1,5 +1,12 @@
 # Changelog
 
+## [6.8.2](https://github.com/mikeng-io/nora/compare/v6.8.1...v6.8.2) (2026-10-25)
+
+
+### Bug Fixes
+
+* **profile:** name a room by its policy label, never its platform conversation id ([1483383](https://github.com/mikeng-io/nora/commit/1483383bf9ad71c710f80b2a89ecb92af9e4ed96))
+
 ## [6.8.1](https://github.com/mikeng-io/nora/compare/v6.8.0...v6.8.1) (2026-10-25)
 
 
