@@ -38,13 +38,19 @@ with `room_list`, `room_read` and `send_reply` as siblings in `not_tools`.
 
 ## 3. Tests
 
-- A unit with two Signal rooms with different labels loads.
 - A unit with two rooms whose names fold to the same string is refused at
-  startup, naming both; so is a label equal to a network's name on another
-  network's room.
+  startup, naming both; so is a label equal to a network's name on a network
+  with two or more of the unit's rooms, and on another network's room.
+- A unit with two labelled Signal rooms loads: **at step 3**, once the
+  one-per-platform refusal is gone (until then that refusal rejects it by
+  design).
+- A room with no label is still refused, as today.
 - `send_to` resolves name, then a unique network; returns `ambiguous` with
   the candidates' names for a network with several; returns the same unknown
   refusal for another unit's room and for no room.
 - A send between two rooms on one platform is not refused as the same room;
   a send to the source room itself is.
-- R-49's gates are unchanged: the existing relay tests pass as they are.
+- R-49's authorisation gates are unchanged, and their tests pass as they are.
+  The addressing tests change with the address: the multi-candidate case in
+  `tests/test_relay.py` that expects `refused` (`ambiguous_room`) expects
+  `ambiguous` with the candidates' names.

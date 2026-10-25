@@ -12,9 +12,9 @@ edges:
 
 | step | ships | gate |
 |---|---|---|
-| **1. Names and the room list** | the unique-name refusal, alongside the one-per-platform refusal (both hold; no config breaks); `room_list` gains `about`, `culture`, `threads` (`threads` once the standing ledger's step 2 exists); the audit of [30](30-what-reads-the-platform.md) re-run on the branch | the policy tests ([40](40-verification.md) §3); the live `policy.toml` still loads (read back on the deploy host) |
+| **1. Names and the room list** | the unique-name refusal, alongside the one-per-platform refusal (both hold; no config breaks); `room_list` gains `about`, `culture`, `threads` (`threads` once the standing ledger's step 2 exists); the audit of [30](30-what-reads-the-platform.md) re-run on the branch | the refusal tests of [40](40-verification.md) §3 (duplicate names, reserved network names, a missing label); the live `policy.toml` still loads (read back on the deploy host) |
 | **2. `send_to` by room** | the `room` argument and resolver, `ambiguous`, same room by identity, the new docstring, the rewritten comments | routing corpus and `tool_selection` against master (§1, §2) |
-| **3. The rule goes** | `_refuse_two_rooms_on_one_platform` deleted; DEC-105 and DEC-214 amended by a decision row at merge time naming the unique-name rule as the invariant; R-49 amended for the `room` address | the step-2 numbers hold on a test unit with two Signal rooms |
+| **3. The rule goes** | `_refuse_two_rooms_on_one_platform` deleted; DEC-105 and DEC-214 amended by a decision row at merge time naming the unique-name rule as the invariant; R-49 amended for the `room` address | the loader accepts two labelled Signal rooms in one unit ([40](40-verification.md) §3); the step-2 numbers hold on that test unit |
 
 Adding the second Signal room to the live `policy.toml` is a config change on
 the deploy host after step 3, made by the operator; it never goes to GitHub.

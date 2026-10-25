@@ -35,7 +35,7 @@ per room, beside its name, network, connection and activity:
 | field | from | why |
 |---|---|---|
 | `about` | the room's operator `description` (`nora/policy.py`: "`label` says what the room is CALLED; this says what it IS") | the dinner room is for dinner |
-| `culture` | the first line of the room's culture account | what the room is like, when no description says |
+| `culture` | the first line of the room's culture account, **only when that account carries citations**: an uncited account predates the citing verb, came from a fold that also held presence reads, and is withheld from every cross-room read for that reason (`nora/language/character.py`, the `<room_cultures>` rule pinned by `tests/unit/test_character_unit.py`); the same eligibility check runs before the line is taken, and an ineligible room shows no `culture` | what the room is like, when no description says |
 | `threads` | the room's newest Standing threads, by topic line | what it is currently talking about |
 
 The `about` and `culture` fields are rendered as data about the room, never as
