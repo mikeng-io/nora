@@ -475,6 +475,7 @@ class TranscriptInjection:
             hits, name_of=name_of,
             room_label=lambda key: room_label(prefetch.target.rooms, key),
             now=prefetch.now, budget=PREFETCH_TOKENS,
+            content_checks=prefetch.target.content_checks,
         )
         return tuple(items)
 

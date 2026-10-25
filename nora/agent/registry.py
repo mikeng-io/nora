@@ -355,7 +355,9 @@ class ToolRegistry:
         # answers where `culture` would, so the tool reads the accounts the
         # prompt's `<profile>` blocks render; both `None` withholds the tool.
         profile_read: ProfileHeads | None = None,
+        content_checks: bool = True,
     ) -> None:
+        self._content_checks = content_checks
         self._budget_overrides = dict(budget_overrides or {})
         self._profile = profile
         self._profile_read = profile_read
@@ -950,7 +952,12 @@ class ToolRegistry:
             # its description (DEC-307); without the generator the portal
             # would show a description no deployed turn reads.
             image_generator=self._image_generator,
+            content_checks=self._content_checks,
         )
+
+    @property
+    def content_checks(self) -> bool:
+        return self._content_checks
 
     @property
     def video_chunk_seconds(self) -> int:
@@ -1164,6 +1171,7 @@ class ToolRegistry:
             external_files=self._external_files,
             shelf=shelf,
             on_rows=on_rows,
+            content_checks=self._content_checks,
         )
 
     def build(

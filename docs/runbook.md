@@ -1,5 +1,12 @@
 # Nora operator runbook
 
+Content filters default to `[content_checks] enabled = false`. To restore the
+retained phone/UUID/coordinate, place/person-name and location audience checks,
+set `enabled = true` in the deployment-owned config and restart through the
+normal validated deployment procedure. This does not toggle credential or
+doctrine protection, or grant a room/unit access. No live config is changed by
+the source change. See [the decision](adr/0030-content-filters-are-disabled-by-default-and-reversible.md).
+
 All example names, account IDs, nicknames and room mappings in this file are
 synthetic pseudonyms; replace them with your own installation values.
 

@@ -534,6 +534,7 @@ class EngagementPipeline:
                 store_timeout_seconds=wiring.store_timeout_seconds,
                 working_set_max_items=wiring.working_set_max_items,
                 working_set_max_chars=wiring.working_set_max_chars,
+                content_checks=wiring.content_checks,
                 now_ms=int(time.time() * 1000),
                 culture=culture,
                 profile_room=profile_room,
@@ -628,6 +629,7 @@ class EngagementPipeline:
                 persons=self._persons, display_name=self._display_name,
                 self_ids=frozenset(getattr(identity, "aliases", ())),
                 metrics=self._metrics,
+                content_checks=self._tool_registry.content_checks,
             ).rehydrate(ctx)
             doctrine = self._doctrine_store.get(applies_to="tag")
             log.info(
@@ -691,6 +693,7 @@ class EngagementPipeline:
                     persons=self._persons, metrics=self._metrics,
                     roster_source=self._rosters.get(msg.platform),
                     preview_source=self._preview_source,
+                    content_checks=self._tool_registry.content_checks,
                 ),
                 # Routing: a precision-first, abstaining classifier over the
                 # message. Non-None only on a narrow high-precision surface (mall
@@ -705,6 +708,7 @@ class EngagementPipeline:
                 on_delivered=indicate.DeliverySettler(
                     indicator=indicator, spawn=self._spawn,
                 ),
+                content_checks=self._tool_registry.content_checks,
             )
             # One `Room` per tag, constructed here and closed over by the three
             # room-scoped tools. Nothing reads the platform roster unless one

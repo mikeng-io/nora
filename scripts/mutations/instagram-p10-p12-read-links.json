@@ -93,8 +93,8 @@
   {
     "name": "review 1: a link's username skips the egress screen a typed handle gets",
     "file": "nora/agent/tools.py",
-    "old": "        if kind == \"handle\" and scan_identifiers(target) is not None:",
-    "new": "        if source == \"handle\" and scan_identifiers(target) is not None:",
+    "old": "        if kind == \"handle\" and scan_identifiers(target, content_checks=content_checks) is not None:",
+    "new": "        if source == \"handle\" and scan_identifiers(target, content_checks=content_checks) is not None:",
     "target": "tests/unit/test_instagram_read_links.py -k key_shaped"
   },
   {

@@ -397,7 +397,7 @@ def _reasoning_effort(value: str, *, source: str) -> ReasoningEffort:
     return cast(ReasoningEffort, value)
 
 
-def _require_a_sendable_public_url(public_url: str) -> None:
+def _require_a_sendable_public_url(public_url: str, *, content_checks: bool = True) -> None:
     """Refuse to start when egress would block the link she is told to send.
 
     `[documents] public_url` is validated as an origin, but an origin can still be one the
@@ -407,7 +407,7 @@ def _require_a_sendable_public_url(public_url: str) -> None:
     if not public_url:
         return
     link = f"{public_url}/documents/{'0' * 12}"
-    kind = scan_reply(link)
+    kind = scan_reply(link, content_checks=content_checks)
     if kind is not None:
         raise StartupError(
             f"[documents] public_url = {public_url!r}: egress would block the link she "
@@ -1464,6 +1464,7 @@ async def build_dependencies(
     is now the moment), and a harness asks it a question at a fixed instant by
     passing a clock.
     """
+    content_checks = cfg.content_checks.enabled
     try:
         persons = load_persons(cfg.identity_file)
     except PersonsError as exc:
@@ -1643,7 +1644,9 @@ async def build_dependencies(
                 "route enabled but %s is unset — routing stays unavailable",
                 cfg.route.api_key_env,
             )
-    _require_a_sendable_public_url(cfg.documents.public_url)
+    _require_a_sendable_public_url(
+        cfg.documents.public_url, content_checks=content_checks,
+    )
     document_service = DocumentService(
         store=documents_store, records=audit, media=media_objects,
         media_window=cfg.store.context_window + LOAD_TRANSCRIPT_MAX,
@@ -1655,6 +1658,7 @@ async def build_dependencies(
         place_locator=route_client,
         # The read grant, from the same policy.toml the portal reads with (8765_44827).
         rooms_of=functools.partial(rooms_named, allowlist),
+        content_checks=content_checks,
     )
     # `<documents>`: the one reader the tag path and the fire path
     # share. `None` while `[documents]` is off, so no room renders the block (the same
@@ -1684,7 +1688,7 @@ async def build_dependencies(
     # it — see `nora.domain.media_join`'s docstring.
     media_join = MediaJoin(
         store=media_objects,
-        screen=scan_identifiers,
+        screen=functools.partial(scan_identifiers, content_checks=content_checks),
         metrics=metrics,
         render_chars=cfg.media.comprehension_render_chars,
         # The per-QUERY timeout, on every path. The two slot-held callers wrap
@@ -1860,7 +1864,7 @@ async def build_dependencies(
         canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
         trigger=cfg.engagement.trigger.text,
         language_hint=cfg.doctrine.language_hint,
-        tool_names=ToolRegistry().tool_names(),
+        tool_names=ToolRegistry(content_checks=content_checks).tool_names(),
         metrics=metrics,
     )
     try:
@@ -2178,7 +2182,9 @@ async def build_dependencies(
     # `profile_store_reader` keeps the concrete type for the portal, whose
     # page reads the open disputes too (`ProfileHeads` has no such read).
     profile_store_reader = (
-        SqlProfileStore(engine, screen=text_offence)
+        SqlProfileStore(
+            engine, screen=functools.partial(text_offence, content_checks=content_checks),
+        )
         if cfg.profile.enabled and cfg.profile.render else None
     )
     profile_reader: ProfileHeads | None = profile_store_reader
@@ -2497,6 +2503,7 @@ async def build_dependencies(
         honcho=memory,
         ai_peer=cfg.memory.ai_peer,
         place_areas=place_areas,
+        content_checks=content_checks,
     )
     # `media_fetch` (DEC-56) reads a stored blob back through MiMo. Its two
     # collaborators are wired together: the blob store (already built above,
@@ -2583,6 +2590,7 @@ async def build_dependencies(
             spawn=_spawn,
             stickers_enabled=cfg.media.sticker_descriptions,
             max_concurrent=cfg.media.comprehension_max_concurrent,
+            content_checks=content_checks,
         )
     # `[speech.stt]`'s transcriber: wired ONLY when enabled — the same
     # inert-ship rule as `stickers`. Off leaves the ingest stage without a
@@ -2968,6 +2976,7 @@ async def build_dependencies(
             ),
             prompts=doctrine_store, gifs=giphy_client, metrics=metrics,
             timeout_seconds=cfg.reaction.timeout_seconds,
+            content_checks=content_checks,
         )
     games_client = None
     if pulse_api_token := os.environ.get("PULSE_API_TOKEN"):
@@ -3002,6 +3011,7 @@ async def build_dependencies(
         # so «Discord is down» in the block and `send_to` refusing into Discord
         # are one read of one mapping, never two opinions.
         transport=presence_reader.state,
+        content_checks=content_checks,
     )
     # `DiscordMusicToolBridge` — the
     # four music agent tools' own collaborator. Built ONLY when BOTH a
@@ -3090,7 +3100,9 @@ async def build_dependencies(
         memory_search=memory_search,
         # The graph surface's `remember` writes a Profile `told` line
         # (design/unified-memory/45); wired with `memory_search`, never alone.
-        profile=(SqlProfileStore(engine, screen=text_offence, index=profile_index)
+        profile=(SqlProfileStore(
+                    engine, screen=functools.partial(text_offence, content_checks=content_checks),
+                    index=profile_index)
                  if memory_search is not None else None),
         # THE SWITCH (45 §5): while `[profile] render` is on, `character_read`
         # answers from the Profile accounts — the same reader the tag
@@ -3225,6 +3237,7 @@ async def build_dependencies(
         # point. Names are validated at config load, so anything arriving here
         # is a tool that exists.
         budget_overrides=cfg.llm.budgets,
+        content_checks=content_checks,
     )
     # The sub-agent worker, registered under its kind for the poller below.
     # OFF by default: nothing is built and `compute_backends` stays empty. It needs the tool
@@ -3253,7 +3266,7 @@ async def build_dependencies(
             "the video backend); the "
             "compute-job poller stays idle. Set enabled = false."
         )
-    if presence_store is not None:
+    if presence_store is not None and content_checks:
         # The R-21/R-31 startup invariant (DEC-54(4)): alarm the day a policy
         # conversation is no longer a subset of a circle. A BACKGROUND task, not
         # a startup gate — it needs the signal-cli roster, and an unreadable
@@ -3324,6 +3337,7 @@ async def build_dependencies(
             store_timeout_seconds=cfg.standing.store_timeout_seconds,
             working_set_max_items=cfg.standing.working_set_max_items,
             working_set_max_chars=cfg.standing.working_set_max_chars,
+            content_checks=content_checks,
         )
     engagement = EngagementPipeline(
         # EVERY built adapter, not just Signal's: a tag is answered on the
@@ -3650,6 +3664,7 @@ async def build_dependencies(
                 mode=summons_cfg.mode,
                 max_age=timedelta(minutes=summons_cfg.max_age_minutes),
                 limits=limits, timeout_seconds=tier.timeout_seconds, clock=clock,
+                content_checks=content_checks,
             ),
             ledger=summons_ledger, metrics=metrics, clock=clock,
         )
@@ -3999,7 +4014,7 @@ async def build_dependencies(
                         former_ids=persons.former_ids_for,
                     ),
                     keys=person_keys, metrics=metrics,
-                    screen=scan_identifiers,
+                    screen=functools.partial(scan_identifiers, content_checks=content_checks),
                     render_chars=cfg.media.comprehension_render_chars,
                     # A caption keeps only the author's own @handle.
                     handle_owners=persons.instagram_username_owners,
@@ -4088,7 +4103,8 @@ async def build_dependencies(
             # reads the Character head and the rooms' cultures.
             if cfg.profile.enabled:
                 profile_store = SqlProfileStore(
-                    engine, screen=text_offence, index=profile_index)
+                    engine, screen=functools.partial(text_offence, content_checks=content_checks),
+                    index=profile_index)
                 profile_reads = SqlCharacterEvidence(engine)
                 # The person accounts' social input (45 §4): the readable
                 # store's (opted-out, gone and hidden left out there), the
@@ -4134,7 +4150,8 @@ async def build_dependencies(
                         # Character session's, captions redacted to the author's
                         # own handle, each reading clipped as the media reads.
                         social=profile_social,
-                        coordinate_screen=looks_like_coordinate, screen=scan_identifiers,
+                        coordinate_screen=looks_like_coordinate if content_checks else None,
+                        screen=functools.partial(scan_identifiers, content_checks=content_checks),
                         render_chars=cfg.media.comprehension_render_chars,
                         handle_owners=persons.instagram_username_owners,
                     ),
@@ -4197,8 +4214,9 @@ async def build_dependencies(
                     *dream_adaptors,
                     *(ProfileCollectiveAdaptor(
                         kind=kind, profile=profile_store, culture=culture_store,
-                        render=profile_index, media_join=media_join, screen=text_offence,
-                        coordinate_screen=looks_like_coordinate,
+                        render=profile_index, media_join=media_join,
+                        screen=functools.partial(text_offence, content_checks=content_checks),
+                        coordinate_screen=looks_like_coordinate if content_checks else None,
                         evidence=CollectiveEvidence(
                             store=profile_reads, keys=keys, kind=kind, render=profile_index,
                             source_inputs=SqlProfileInputs(engine, social=profile_social),
@@ -4259,7 +4277,7 @@ async def build_dependencies(
             lesson_book = LessonBook(
                 store=SqlLessonStore(engine),
                 law=lambda: [r.text for r in doctrine_store.law_rules()],
-                screen=dream_offence,
+                screen=functools.partial(dream_offence, content_checks=content_checks),
                 clock_ms=_now_ms,
                 check=lesson_check, tensions=SqlTensionStore(engine), metrics=metrics,
             )
@@ -4460,6 +4478,7 @@ async def build_dependencies(
             # discarded reasoning there is both closer to being the verdict
             # and harder to notice than on a reply somebody reads.
             reasoning_strip_store=reasoning_strip_store,
+            content_checks=content_checks,
         )
         # R-5's refuse-to-start shape, and the one check that must run at
         # STARTUP rather than at the first tick: an adaptor holding an act verb
@@ -4604,6 +4623,7 @@ async def build_dependencies(
                         self_ids=registry.self_aliases(),
                     ).members(),
                     circles=presence_circles,
+                    content_checks=content_checks,
                 ),
                 # Her own account in the unit, under
                 # `[culture] enabled` like every Character read.
@@ -4887,14 +4907,18 @@ def reverse_geocoder(
             return HKGovGeocoder(
                 service_url=cfg.presence.hkgov_geocode_url, token=hkgov_token,
                 lang_zh=cfg.presence.hkgov_lang_zh, lang_en=cfg.presence.hkgov_lang_en,
-                cache_store=cache_store, area_screen=screened_area,
+                cache_store=cache_store,
+                area_screen=functools.partial(
+                    screened_area, content_checks=cfg.content_checks.enabled),
             )
         return None
     maps_key = environ.get(cfg.presence.geocode_api_key_env, "")
     if maps_key:
         from nora.infra.geocode import GoogleGeocoder
         return GoogleGeocoder(
-            api_key=maps_key, cache_store=cache_store, area_screen=screened_area,
+            api_key=maps_key, cache_store=cache_store,
+                area_screen=functools.partial(
+                    screened_area, content_checks=cfg.content_checks.enabled),
         )
     return None
 

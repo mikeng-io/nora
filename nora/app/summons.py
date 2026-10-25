@@ -304,7 +304,9 @@ class SummonsOccasion:
         clock: Callable[[], datetime],
         media_read_seconds: float = MEDIA_READ_SECONDS,
         media_item_seconds: float = MEDIA_ITEM_SECONDS,
+        content_checks: bool = True,
     ) -> None:
+        self._content_checks = content_checks
         self._client = client
         self._ledger = ledger
         self._summoners = summoners
@@ -500,6 +502,7 @@ class SummonsOccasion:
             },
             terminal=frozenset({"send_reply"}),
             metrics=self._metrics, audience=SUMMONS,
+            content_checks=self._content_checks,
             # No roster and no preview: a comment tags nobody.
             composer=None,
             # THE STAGING SWITCH. Every guard runs; the text is held.
@@ -560,7 +563,8 @@ class SummonsOccasion:
             reasoning_watch=handle.reasoning_watch, tool_hooks=surface.hooks,
             tag_message=context_text, limits=surface.limits(self._limits),
             ctx=ctx, timeout_seconds=self._timeout_seconds,
-            metrics=self._metrics, audience=SUMMONS, follow_up=follow_up,
+            metrics=self._metrics, audience=SUMMONS,
+            follow_up=follow_up,
         )
         # How the follow-up ended, when there was one: the invocation's own
         # failure outcome (`invoke.run`'s blank trace) if it died after the
@@ -654,7 +658,9 @@ class SummonsOccasion:
         coordinate (`scan_reply`, R-18). Built per call, from the doctrine the
         summons reads, so a flush sees what its turn saw."""
         doctrine = self._doctrine_store.get(applies_to=SUMMONS)
-        return LeakGuard(doctrine, self._canary).check(body) or scan_reply(body)
+        return LeakGuard(doctrine, self._canary).check(body) or scan_reply(
+            body, content_checks=self._content_checks
+        )
 
     async def _flush(
         self, summons_id: UUID, *, shortcode: str, comment_id: str, text: str,

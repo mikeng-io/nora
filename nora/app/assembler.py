@@ -54,6 +54,7 @@ def lineage_policy(cfg: Config, *, policy: Policy, persons: Persons) -> LineageP
     three cannot disagree about who a room is."""
     return LineagePolicy.from_policy(
         policy, circles=circles_from_persons(persons), mode=cfg.lineage.mode,
+        content_checks=cfg.content_checks.enabled,
     )
 
 

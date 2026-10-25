@@ -44,6 +44,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import functools
 import json
 import os
 import sys
@@ -850,8 +851,10 @@ async def cmd_memory_backfill(args: argparse.Namespace) -> int:
     # The daemon's media join, over a read-only engine: what a photo showed
     # rides in the replayed row, as it does in lazy adoption's.
     media_join = MediaJoin(
-        store=SqlMediaObjectStore(media_engine), screen=scan_identifiers,
-        metrics=Metrics(), render_chars=cfg.media.comprehension_render_chars,
+        store=SqlMediaObjectStore(media_engine),
+        screen=functools.partial(scan_identifiers, content_checks=cfg.content_checks.enabled),
+        metrics=Metrics(),
+        render_chars=cfg.media.comprehension_render_chars,
         timeout_seconds=cfg.media.join_timeout_seconds,
     )
     try:
@@ -1181,7 +1184,7 @@ async def cmd_memory_backfill_places(args: argparse.Namespace) -> int:
     try:
         result = await backfill_places(
             events=SqlGatheringStore(engine), cache=SqlGeocodeCacheStore(engine),
-            places=places, geocoder=geocoder,
+            places=places, geocoder=geocoder, content_checks=cfg.content_checks.enabled,
             apply=bool(args.apply), per_second=float(args.per_second), limit=int(args.limit),
         )
     finally:

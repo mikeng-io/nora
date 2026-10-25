@@ -105,6 +105,13 @@ implementations and container build contexts live under `deploy/`.
 
 ## State and trust boundaries
 
+The optional `[content_checks]` filters default off. Their retained phone/UUID/
+coordinate, place-query/person-name and location audience checks can be restored
+with `enabled = true` and a restart. Credential-pattern blocking and doctrine
+LeakGuard always run; authentication, room/unit scope, location opt-in/collection
+consent, freshness and unavailable/error handling remain independent. See
+[the decision](docs/adr/0030-content-filters-are-disabled-by-default-and-reversible.md).
+
 PostgreSQL is the record store, with Alembic migrations applied at startup.
 Honcho supplies durable interpreted memory; it is not the authoritative record.
 Media custody uses the configured blob store, with RustFS supplied in Compose.

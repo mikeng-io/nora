@@ -169,6 +169,12 @@ request rules, and local hooks.
 
 ## Configuration
 
+`[content_checks] enabled = false` is the default: phone/UUID/coordinate,
+third-party place/person-name and location audience filters are bypassed while
+credential and doctrine guards remain enabled. Set it to `true` and restart
+to restore those retained filters. Admission, unit scope and location consent
+remain required. See [the decision](docs/adr/0030-content-filters-are-disabled-by-default-and-reversible.md).
+
 The tracked examples describe three separate inputs:
 
 | Example | Purpose |

@@ -130,10 +130,12 @@ class Deliverer:
         links: LinkCarry | None = None,
         send_permitted: bool = True,
         intent: str | None = None,
+        content_checks: bool = True,
     ) -> None:
         # The brief's intent (`tell`/`ask`) of a fire turn, written into the
         # raw_json of every message this Deliverer audits (key `intent`). None is
         # the tag path: a reply has no brief.
+        self._content_checks = content_checks
         self._intent = intent
         self._store = store
         self._adapter = adapter
@@ -422,7 +424,9 @@ class Deliverer:
         # so a member's real number wrapped in emphasis would otherwise be sent
         # (in bold). A text transformation must never sit in front of a
         # fail-closed guard without the guard seeing both sides.
-        kind = scan_reply(styled.text) or scan_reply(drafted)
+        kind = scan_reply(styled.text, content_checks=self._content_checks) or scan_reply(
+            drafted, content_checks=self._content_checks
+        )
         if kind:
             log.error("egress_blocked: %s (tag=%s)", kind, self._tag_id)
             self._metrics.inc("nora_egress_blocks_total", kind=kind)

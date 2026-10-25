@@ -213,7 +213,9 @@ class DocumentService:
         # CURRENT policy, the same answer the portal reads with. `None` names nothing, so a
         # document is read by its creator alone (8765_44827).
         rooms_of: Callable[[str], frozenset[RoomKey]] | None = None,
+        content_checks: bool = True,
     ) -> None:
+        self._content_checks = content_checks
         self._store = store
         self._rooms_of = rooms_of
         self._records = records
@@ -392,7 +394,8 @@ class DocumentService:
                 return
             async with gate:
                 got = await screen_and_locate_place(
-                    name, place_locator=self._place_locator, person_names=person_names
+                    name, place_locator=self._place_locator, person_names=person_names,
+                    content_checks=self._content_checks,
                 )
             resolved[key(name)] = got.data if got.status == "resolved" else {"status": got.status}
             if got.status == "refused":
@@ -426,8 +429,10 @@ class DocumentService:
                 name = str(place.get("name", ""))
                 if status == "ambiguous":
                     could = ", ".join(
-                        c for c in (str(c) for c in got.get("could_be", [])[:3])
-                        if scan_identifiers(c) is None  # as `place_info` screens its candidates
+                        c
+                        for c in (str(c) for c in got.get("could_be", [])[:3])
+                        if scan_identifiers(c, content_checks=self._content_checks)
+                        is None  # as `place_info` screens its candidates
                     )
                     findings.append(Finding(
                         path, "place_ambiguous",

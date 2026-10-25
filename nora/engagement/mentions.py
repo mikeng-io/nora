@@ -81,7 +81,9 @@ class MentionRenderer:
     def __init__(
         self, *, persons: Persons, display_name: str,
         self_ids: frozenset[str], metrics: Any,
+        content_checks: bool = True,
     ) -> None:
+        self._content_checks = content_checks
         self._persons = persons
         self._display_name = display_name
         self._self_ids = frozenset(self_ids)
@@ -176,7 +178,7 @@ class MentionRenderer:
             # `scan_identifiers`, not `scan_reply`: this text is going into the
             # PROMPT, not into the room, so a model name in somebody's name is
             # not a disclosure — only an identifier is (DEC-30).
-            if scan_identifiers(ref.name):
+            if scan_identifiers(ref.name, content_checks=self._content_checks):
                 break
             return f"@{ref.name}"
         self._metrics.inc("nora_unmapped_mentions_total", platform=platform)

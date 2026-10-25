@@ -110,6 +110,7 @@ def _fit(readings: list[str], room: int) -> tuple[list[str], int]:
 def render_items(
     items: Sequence[RecordedItem], *, by: str, place: bool, now: datetime,
     max_chars: int = SOCIAL_READ_CHARS,
+    content_checks: bool = True,
 ) -> tuple[list[dict[str, Any]], int, int]:
     """`(shown, withheld, cut)`: the items in order as the model reads them,
     how many were withheld for an identifier, and how many did not fit in
@@ -124,11 +125,14 @@ def render_items(
         readings = [_cut(r) for r in it.perception if r.strip()]
         # Screened whole, before the cut: an identifier straddling the cut
         # would otherwise leave as a fragment the screen cannot recognise.
-        if any(scan_identifiers(t) is not None for t in (it.caption or "", *it.perception)):
+        if any(
+            scan_identifiers(t, content_checks=content_checks) is not None
+            for t in (it.caption or "", *it.perception)
+        ):
             withheld += 1
             continue
         location = (it.location or "").strip() if place else ""
-        if location and scan_reply(location) is not None:
+        if location and scan_reply(location, content_checks=content_checks) is not None:
             location = ""
         counts = counts_line(it.counts, now)
         readings, more_seen = _fit(
