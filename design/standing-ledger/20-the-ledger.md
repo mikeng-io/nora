@@ -74,14 +74,22 @@ a thread's facts (which rooms, which message range, when it last moved) are
 computed from the Record, and the model contributes only the topic line and
 which messages belong to it.
 
-**Columns:** `id`, `scope`, `topic` (one line, the model's), `rooms`,
-`first_message_id`, `last_message_id`, `last_moved_at`, `note_ids`,
-`decision_ids`. **No body.** A thread restates nothing; a turn that needs the
-content opens the range with `load_transcript` or `room_read`.
+**Columns:** `id`, `scope`, `topic` (one line, the model's), `last_moved_at`,
+`note_ids`, `decision_ids`, and one **span per room** (room, first and last
+message id, first and last message time), computed by code. **No body.** A
+thread restates nothing.
+
+**How a turn opens it.** Today's readers cannot: `load_transcript` takes only
+`limit` and a time `before`, and `room_read` adds a room but no message range
+(`nora/agent/tools.py`). So the readers gain a `thread` argument, the thread's
+id as rendered, which code resolves to the spans the calling room may see; the
+model never handles a message-id range. It is a change to two tools' arguments,
+measured with `tool_selection` ([40](40-verification.md) §6), and it ships
+before the topic-recall gate ([50](50-migration.md) step 2).
 
 A thread is what fixes "she loses the topic after 20 messages": a topic last
-discussed 40 messages ago stays in the prompt as one line with an age and a
-range she can open.
+discussed 40 messages ago stays in the prompt as one line with an age, and
+she opens it by id.
 
 ## 5. The rendered form
 
@@ -93,16 +101,16 @@ keys, and the new `turn(...)` for turn records, [30](30-turn-records.md) §3):
 ```
 <standing description="…">
 ## Decisions
-d4 · open · 3d · Halloween venue · note 118
+d4 · open · 3d · r5 · Halloween venue · note 118
   Options: Sai Kung bar .8, on 3 of 4 routes, open past 1am turn(t812) · TST rooftop .6, Kit +40 min from work turn(t812)
   Criteria: worst-case travel, open past 11 [9087]
   Leaning: Sai Kung · Blocked on: when Kit finishes
   Reopen if: Ana rules out Sai Kung, or a booking fails
 ## I owe
-c2 · open · 5h · ferry times for Saturday, to the room [9104]
+c2 · open · 5h · r1 · ferry times for Saturday, to the room [9104]
 ## Threads
-th7 · 2h · Halloween plans · signal-dinner, discord-general · [8790–9110] · d4, note 118
-th3 · 6d · co-op games for the weekend · discord-general · [7702–7810]
+th7 · 2h · Halloween plans · signal-dinner, discord-general · d4, note 118
+th3 · 6d · co-op games for the weekend · discord-general
 </standing>
 ```
 
@@ -118,7 +126,12 @@ th3 · 6d · co-op games for the weekend · discord-general · [7702–7810]
   sections) and stay readable through `standing_read`.
 - **Lineage per entry.** An entry renders only where its own lineage passes for
   the room, the rule `nora/agent/standing_read.py` already applies per section,
-  moved down one level.
+  moved down one level. An entry's lineage is derived by code from everything
+  it cites, `turn(...)` records included with their own lineage
+  ([30](30-turn-records.md) §5); it is never the writing room's own lineage
+  alone, which is what Standing rows are stamped with today.
+- **Each entry renders with its revision**, which is the base a later op on it
+  asserts (§7).
 
 ## 6. Scopes
 
@@ -144,9 +157,21 @@ A writer never sends a whole Standing. It sends operations:
 | op | effect |
 |---|---|
 | `open(kind, scope, subject, body)` | a new entry |
-| `revise(id, sections, base_revision)` | replaces the named sections only; the rest carries forward; `base_revision` is the compare-and-set token `standing_revise` already takes (DEC-250) |
-| `close(id, outcome, cites)` | `closed`, `done` or `dropped`, with its grounds |
-| `touch(thread_id, message_ids)` | extends a thread's range; code recomputes `last_moved_at` |
+| `revise(id, sections, base)` | replaces the named sections only; the rest carries forward |
+| `close(id, outcome, cites, base)` | `closed`, `done` or `dropped`, with its grounds |
+| `touch(thread_id, message_ids)` | adds messages to a thread's spans; code recomputes the spans and `last_moved_at` |
+
+**Every op that changes an existing entry asserts a base**: the entry's
+revision as the turn saw it rendered, captured by the tool from the render
+rather than typed by the model. `touch` is the exception because it commutes:
+adding messages to a set in either order gives the same set. The base is
+required, not optional. Today's `check_stale_base` lets a caller that asserts
+no base through (`nora/domain/standing_revise.py`), which is safe while one
+room's turns are serialised by its own slot (`nora/engagement/slots.py`); a
+unit entry is written from rooms whose slots are independent, so a stale room
+turn could otherwise close a decision another room has since changed. The
+comparison and the revision append are one transaction, holding a row lock on
+the entry. A stale base is refused `stale_base` and the turn re-reads.
 
 Every op passes the same validator before commit, the one-verb rule
 `nora/domain/standing_revise.py` states today. A refused op is answered

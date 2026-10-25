@@ -27,8 +27,8 @@ What reaches the next turn today:
 | her reply | one transcript row, bare text, no provenance | DEC-112 |
 | her tool results | nothing in the prompt; `recall_lookups` can read back the `cacheable` ones for 7 days | `nora/agent/tools.py`, `nora/infra/sql/tool_call_log.py` |
 | her reasoning, comparisons, scores | nothing | `reasoning_carry.py` scope |
-| her position | Standing: `Where it stands`, one paragraph capped at 1200 characters, rewritten by one model call after every tag turn | `nora/domain/standing.py`, `nora/engagement/stages/debrief.py` |
-| fire turns' work | nothing: the fire path discards its `TagTrace` | `nora/app/fire.py` (the comment at the `TagTrace` hand-back) |
+| her position | Standing: `Where it stands`, one paragraph capped at 1200 characters, rewritten after every tag turn by one fold call (a second when the first overflows the cap) | `nora/domain/standing.py`, `nora/engagement/stages/debrief.py` |
+| fire turns' work | only their `cacheable` tool calls, through `recall_lookups`; the fire path discards its `TagTrace`, so the rest of the exchange is gone and no debrief runs | `nora/app/fire.py` (the comment at the `TagTrace` hand-back) |
 
 So the turn's OUTPUT survives (it is in the transcript) and its PROCESS does
 not. A deep round that scored two venues and ruled one out writes, at best, a

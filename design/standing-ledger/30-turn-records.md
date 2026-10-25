@@ -1,8 +1,8 @@
 ---
 type: design
 title: "Turn records: what a turn did, kept whole, cited by id, opened on demand"
-description: "The Record layer the ledger cites. Every occasion keeps a turn record built by code from what already exists (tag_trace, tool_call_log); a ledger line cites it as turn(id); one read tool opens it. That read takes over DEC-112's job, which is what lets recall_lookups retire."
-tags: [nora, turn-record, tag-trace, tool-call-log, provenance, recall-lookups, dec-112]
+description: "The Record layer the ledger cites. Every occasion keeps a turn record built by code from what already exists (tag_trace, tool_call_log) plus the two paths that keep too little today (fire, Cognition); every message she sends carries its record's handle; a ledger line cites it as turn(id); one read opens it, gated item by item by code-derived lineage. That read takes over DEC-112's job, which is what lets recall_lookups retire."
+tags: [nora, turn-record, tag-trace, tool-call-log, provenance, lineage, recall-lookups, dec-112]
 timestamp: '2026-10-25'
 edges:
   - {dst: 20-the-ledger, rel: realizes, provenance: asserted}
@@ -15,49 +15,66 @@ edges:
 
 Most of a turn's work is already kept. The next turn just cannot reach it.
 
-| store | holds | read by today |
+| store or path | holds | read by today |
 |---|---|---|
 | `tag_trace` (`nora/infra/sql/tag_traces.py`) | each completed **tag** turn whole: the agent messages (tool calls and results, sanitised, narration capped, a human's words never cut) and the transcript it was shown | the debrief fold; the `rebuild_state` stub that was never built |
-| `tool_call_log` (`nora/infra/sql/tool_call_log.py`) | each successful call to a `cacheable` tool, with its input and result, keyed by conversation and `tag_id` | `recall_lookups` only (7 days, 30 rows, 8000 characters) |
-| `cognition_session` and its siblings | a Cognition wake's session | the Cognition loop |
-| nothing | **fire turns**: proactive, participation, reminders. The fire path discards the `TagTrace` `AgentRunner.invoke` hands back (`nora/app/fire.py`) | nothing |
+| `tool_call_log` (`nora/infra/sql/tool_call_log.py`) | each successful call to a `cacheable` tool, with its input and result, keyed by conversation and `tag_id`, written by the `ToolCallLog` hook on **tag and fire** turns alike (`nora/engagement/stages/deliver.py` builds it for both) | `recall_lookups` only (7 days, 30 rows, 8000 characters) |
+| the fire path | its cacheable tool calls, through the hook above; **not** its trace: it discards the `TagTrace` `AgentRunner.invoke` hands back (`nora/app/fire.py`), so a fire turn's non-cacheable calls and its whole exchange are gone, and it gets no debrief | nothing beyond `recall_lookups` |
+| Cognition | the session's situation, agenda and provenance (`cognition_session`); **not** the executed exchange: `CognitionAgentRunner` returns only the stop reason and token usage (`nora/app/cognition_agent_runner.py`) | the Cognition loop |
 
 ## 2. The turn record
 
 One record per occasion that ran a model loop, **built by code, never written
 by a model**:
 
-- `id`, `occasion` (`tag`, `fire`, `participation`, `cognition`), the room or
-  unit, `started_at`, `outcome`;
-- the **tool calls and their results**, every tool, not only `cacheable` ones,
-  under the same sanitiser and caps `tag_trace` uses;
-- the **message it sent**, as a message id;
+- `id`, `occasion` (`tag`, `fire`, `participation`, `cognition`), the room it
+  ran in (for Cognition: the unit, plus the agenda items' bound rooms),
+  `started_at`, `outcome`;
+- **items**: each tool call with its result, every tool and not only
+  `cacheable` ones, under the sanitiser and caps `tag_trace` uses; each item
+  carries its own lineage (§5);
+- the **messages it sent**, as message ids;
 - **no reasoning.** Her reasoning is often a path she abandoned; the part worth
   keeping is the conclusion, which belongs in a decision she writes (§4).
   Whether any reasoning block survives today's sanitiser is checked in step 0
   ([50](50-migration.md)), not assumed.
 
-Built as a view over `tag_trace` and `tool_call_log` for tag turns, plus the
-two gaps closed: the fire path keeps its trace, and the `ToolCallLog` hook
-logs every tool rather than only `cacheable` ones. Retention follows
-`tag_trace`'s.
+Built as a view over `tag_trace` and `tool_call_log` for tag turns, plus three
+gaps closed in step 1: the fire path keeps its trace; `CognitionAgentRunner`
+returns its exchange and the session persists it; the `ToolCallLog` hook logs
+every tool. Retention follows `tag_trace`'s.
 
-## 3. Citing it
+## 3. Every message she sends carries its record
+
+DEC-112's diagnosis was that her replies "survive into `group_transcript` as
+bare text with no provenance". Most checked answers never become a decision,
+a commitment or a thread: a factual answer is said and done. So the handle
+cannot live only in the ledger.
+
+**Her own transcript rows render with the handle of the turn that produced
+them**, written by code from the record's sent-message ids:
+
+```
+[9104] Nora (5h, turn t812): Saturday ferries leave Central at 18:30 and 19:15
+```
+
+Every surface that renders her rows gets it: the tag prompt's
+`<group_transcript>`, `load_transcript`, `room_read`. A row older than the
+window is reached the way any row is, and carries its handle too.
+
+## 4. Citing it, and who writes what
 
 A ledger line cites a turn record as `turn(<id>)`, beside the house grammar's
 `[ids]` and `rollup(...)` (`nora/domain/note_body.py`). The validator holds a
 `turn(...)` cite to the rule 12-schemas §2.3 holds every cite to: it must be a
-turn this writer was shown or ran. A debrief may cite the turn it is folding;
-a Cognition session may cite turns it opened with the read in §5.
-
-## 4. Who writes what: the hybrid
+turn this writer was shown or ran.
 
 | part | written by | how |
 |---|---|---|
-| the turn record | **code** | from the run, always, with no model call |
-| `turn(...)` handles on a ledger line | **code** checks them; the writer names them | validator |
+| the turn record, and the handle on her rows | **code** | from the run, always, no model call |
+| `turn(...)` handles on a ledger line | the writer names them; **code** checks them | validator |
 | a decision's `Options`, `Leaning`, `Reopen if`; a commitment's `Owed` | **the model**, in her own words, at the moment she decides | two routes, below |
-| thread ranges, ages, `last_moved_at` | **code** | from the Record |
+| thread spans, ages, `last_moved_at` | **code** | from the Record |
 
 The model has two routes to write, and both are kept:
 
@@ -71,16 +88,38 @@ The model has two routes to write, and both are kept:
 
 Neither route folds an earlier fold. That is the change that stops the loss.
 
-## 5. Opening it
+## 5. Opening it, and who may see what
 
-One read tool opens a turn record by its handle, scoped to the room or unit the
-calling turn is in, the room rule `nora/agent/subagent_desk.py` applies to job
-ids: a handle from another room behaves exactly as an unknown handle. Its name
-follows ADR 0015 and is measured with `tool_selection` before it ships
-([40](40-verification.md) §3); `record_read` is the working name.
+One read tool opens a turn record by its handle. Its name follows ADR 0015 and
+is measured with `tool_selection` before it ships ([40](40-verification.md)
+§6); `record_read` is the working name. It returns the record's items, the
+messages it sent, and the ledger entries that cite it.
 
-It returns the tool calls and results the turn made, the message it sent, and
-the ledger entries that cite it.
+**Disclosure is per item, derived by code, and uses the lineage predicates that
+already exist** (`nora/agent/lineage.py`); unit membership alone authorises
+nothing.
+
+- **Each item's lineage** is computed from what that tool call read: a
+  transcript or `room_read` item has the rooms whose messages it returned as
+  origins; a memory or Character read has its subjects; a web search has the
+  room the turn ran in. A Cognition record mixes several rooms, which is why
+  this is per item and not per record.
+- **The record opens in room B** item by item: an item is returned only where
+  its lineage passes for B, under the same fail-closed rules a Standing section
+  gets (a degraded or partly unnamed audience withholds what names a person).
+  Withheld items are counted in the result, never described, the shape
+  `standing_read` returns today.
+- **Another room of the same unit is not an unknown handle.** A unit-scope
+  decision citing `turn(t812)` from the Signal room opens from the Discord
+  room, for exactly the items whose lineage passes there.
+- **Another unit's handle, or one that names nothing, is unknown**, and the
+  two are byte-identical (the `room_read` rule, D1 = B).
+- **A ledger entry's lineage includes its cited records' lineage**
+  ([20](20-the-ledger.md) §5), so an entry never renders somewhere its own
+  evidence could not be opened.
+
+A handle on her transcript row (§3) needs no separate gate: the row is shown
+only where it is already shown, and the record still opens item by item.
 
 ## 6. Why this is what lets `recall_lookups` retire
 
@@ -92,11 +131,15 @@ the next one. `nora/doctrine/rooms/constraints.md` («When you are told you are
 wrong») tells her the grounds she checked may still be in the record, and
 names no tool on purpose.
 
-After this bundle the claim she is challenged on is a ledger line, and the
-line cites `turn(t812)`. The evidence is in front of her when she is
-challenged, rather than behind a tool she has to think of calling: 0 calls in
-30 live turns was DEC-112's measurement of how often she thought of it. The
-read in §5 opens it. That replaces both halves of `recall_lookups` (the cache
-and the evidence), so it retires, and DEC-112 is amended rather than broken.
-The retirement is gated on the being-contradicted corpus not regressing
-([40](40-verification.md) §2), not on this argument.
+`recall_lookups` answered that with a list she had to think of asking for: 0
+calls in 30 live turns was DEC-112's measurement of how often she did. After
+this bundle the evidence is in front of her when she is challenged. **Every
+claim she is challenged on is a row of hers, and the row carries
+`turn(t812)`** (§3); when the claim is also a decision, the decision cites the
+same record. The read in §5 opens it. That covers both of `recall_lookups`'
+jobs, the cache and the evidence, for ordinary answers and decisions alike, so
+it retires and DEC-112 is amended rather than broken.
+
+The retirement is gated on the being-contradicted corpus not regressing,
+ordinary checked answers included ([40](40-verification.md) §2), not on this
+argument.
