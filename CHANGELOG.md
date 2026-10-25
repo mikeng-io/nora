@@ -1,5 +1,19 @@
 # Changelog
 
+## [6.8.0](https://github.com/mikeng-io/nora/compare/v6.7.0...v6.8.0) (2026-10-25)
+
+
+### Features
+
+* **record:** write message readings for new arrival batches ([35f68cd](https://github.com/mikeng-io/nora/commit/35f68cdc3583430e1738f0cd9f198848df790a71))
+
+
+### Bug Fixes
+
+* **record:** count reported reading tokens during ledger outages ([6470db5](https://github.com/mikeng-io/nora/commit/6470db5a270d68021089a00bafc017a5b12e7901))
+* **record:** integrate readings with context and schema contracts ([dbb58d9](https://github.com/mikeng-io/nora/commit/dbb58d9edf6d4e4fd16159565e88b66a5d818fe3))
+* **record:** preserve source control characters through assembly ([771aa22](https://github.com/mikeng-io/nora/commit/771aa22d0a377a5e710a6aa81409f47f74a3c0bd))
+
 ## [6.7.0](https://github.com/mikeng-io/nora/compare/v6.6.16...v6.7.0) (2026-10-23)
 
 
