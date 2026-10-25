@@ -125,18 +125,21 @@ components:
 This file binds every visual surface of Nora: the web portal (`app/`), her
 social profiles, the images she generates of herself, stickers and icons, and
 any 3D or spatial form she is given. Her character is specified in
-`design/self-reference/05-visual-identity-spec.md` (the operator's spec,
-verbatim) and her forms in `design/self-reference/07-native-and-embodied-form.md`;
-this file derives a system from them and does not restate them. Where they
-disagree with this file on how she looks, they win.
+`design/self-reference/05-visual-identity-spec.md` (the operator's Mini spec,
+verbatim) and `design/self-reference/08-bauhinia-human-form.md` (the approved
+human visual anchor, 2026-10-25). They govern their respective forms and take
+precedence over this file on appearance. The September framing in
+`design/self-reference/07-native-and-embodied-form.md` is historical where
+superseded by 08; this file derives a system from these sources.
 
 ## 1. Overview
 
 **North Star: "Earphones in."**
 
 Nora is in the room, listening, not performing. She is calm, observant and a
-little deadpan; she dresses in a grey hoodie and loose jeans with no logos; the
-one thing always on her is a pair of white wired earphones. Every Nora surface
+little deadpan. In Mini mode she dresses in a grey hoodie and loose jeans with
+no logos, with white wired earphones as her signature. Her approved human
+form follows the Bauhinia anchor (08). Every Nora surface
 should read the same way: **present, quiet, unbranded, warm.** A screen of hers
 is somewhere you look things up in, not a product being sold to you.
 
@@ -165,15 +168,17 @@ product, an influencer or an "AI assistant" with sparkles.
 
 ## 2. Representation
 
-One identity, rendered by context (07). Pick the form by the surface, never by
-taste:
+One identity, two forms: human Nora and Mini Nora (mini mode), per 08. Human
+design may be 2D anime art or 3D; it is no longer restricted to a spatial
+interface. Runtime self-image generation and public avatars remain Mini until
+separately implemented and measured. Current representation boundaries:
 
 | surface | form | source |
 |---|---|---|
-| social profiles, web, chat, reactions, stickers, every generated image | **Mini Nora** (native) | `assets/nora-canonical-self.png`, `assets/nora-character-reference-sheet.png` |
+| social profiles, web, chat, reactions, stickers, runtime-generated self-images | **Mini Nora** (native) | `assets/nora-canonical-self.png`, `assets/nora-character-reference-sheet.png` |
 | small or square slots: favicon, PWA icon, app avatar, notification | **Mini Nora**, cut-out, bare (§7) | `assets/nora-mini-icon.png` |
 | 3D avatar of the native form (VRM, stickers in 3D) | **Mini Nora** rig | `assets/nora-mini-tpose.png` |
-| human-scale 3D, VR/AR, spatial display, mocap, full-body interaction | **Embodied Nora** (interface) | `assets/nora-embodied-tpose.png` |
+| human-form design and future modeling, in 2D anime art or 3D | **Human Nora**, approved visual anchor; not a runtime/public-avatar rollout | `assets/nora-human-bauhinia-reference.png`, governed by 08 |
 | voice | no visual form | — |
 
 Rules that hold on every surface:
@@ -181,12 +186,14 @@ Rules that hold on every surface:
 - **The mascot is Nora.** Mini Nora is not a chibi version of someone; there is
   no real Nora behind her. Never caption, frame or crop her as "cute version",
   "avatar of", or next to a human "real" one.
-- **The embodied form never appears on an internet surface.** Not as a profile
-  picture, not in a post, not in a generated image. It exists only where a
-  human-scale body is the interface.
-- **The eight core anchors (05) survive every rendering:** proportions, messy
+- **Human design approval does not change runtime or public avatars.** Their
+  current Mini references and routing remain in force until a separate
+  implementation and measurement.
+- **The eight core anchors (05) survive every Mini rendering:** proportions, messy
   high bun, minimal eyes and mouth, blush, grey hoodie, white wired earphones,
-  blue-grey jeans, white sneakers. A render that drops one is off-model.
+  blue-grey jeans, white sneakers. A Mini render that drops one is off-model.
+  Human appearance follows 08; do not redress Mini in the human outfit or remove
+  her canonical earphones on the strength of the human modeling-base ruling.
 - **Never logo-ise her.** No flat vector mark, no monogram "N" in a circle
   standing in for her face. When a slot is too small for her, use the cut-out
   icon; when it is too small for that, use the wordmark.
@@ -436,8 +443,10 @@ the provider's default blue-black), so person hues keep their contrast.
 - **Backgrounds behind her:** soft neutral studio greys or a real, lived-in
   scene. Never a neon, gradient, or "digital" grid backdrop; she exists
   digitally but is not depicted as circuitry.
-- **3D:** the T-poses are rig inputs. Earphones are a separate mesh so the
-  cable does not deform with the arms.
+- **3D:** the existing Mini front T-pose is a rig input, not a complete
+  turnaround; earphones are separate so the cable does not deform with the arms.
+  The old photoreal embodied T-pose is historical. Human modeling follows 08
+  and still needs consistent modeling views, a model and a rig.
 - **New renders of her** (the public site's art, `site/src/assets/art/`) are
   made from the canonical image and the character sheet, checked by eye
   against the eight anchors before use, and kept with their brief and prompt
@@ -468,7 +477,8 @@ the provider's default blue-black), so person hues keep their contrast.
 - **Don't** add blobs, aurora, spinning or glowing borders, gradient text, or
   any perpetual decorative motion.
 - **Don't** use uppercase wide-tracked labels or black weights.
-- **Don't** put the embodied form on an internet surface, or reduce Mini Nora
+- **Don't** replace runtime self-images or public avatars with the human
+  anchor before separate implementation and measurement, or reduce Mini Nora
   to a flat logo.
 - **Don't** nest cards.
 
