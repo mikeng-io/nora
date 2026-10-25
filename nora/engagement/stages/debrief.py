@@ -292,6 +292,7 @@ def _working_set(
     max_items: int,
     max_chars: int,
     metrics: Metrics,
+    content_checks: bool = True,
 ) -> tuple[WorkingSetItem, ...]:
     """The revised `working_set`, from the model's raw array
     — never raises, and every
@@ -392,6 +393,7 @@ def _working_set(
             for item in candidates
         ],
         metrics=metrics,
+        content_checks=content_checks,
     )
     rejected_indices = {r.index for r in rejected}
     survivors = tuple(
@@ -448,6 +450,7 @@ class Wiring:
     # actually carries. LAST, because a defaulted field cannot precede the
     # ones above it.
     media_join: MediaJoin | None = None
+    content_checks: bool = True
     # `working_set`'s own two operating caps — `max_chars`'s siblings and, like
     # it, config (`StandingConfig.working_set_max_items`/`_max_chars`).
     # Defaulted so a caller that omits them still builds a `Wiring`.
@@ -480,6 +483,7 @@ async def run(
     persona_name_of: Callable[[str], str] | None = None,
     working_set_max_items: int = DEFAULT_WORKING_SET_MAX_ITEMS,
     working_set_max_chars: int = DEFAULT_WORKING_SET_MAX_CHARS,
+    content_checks: bool = True,
 ) -> None:
     """Fold this finished turn into the conversation's position. **Never
     raises, and never returns anything** — a stage that runs after delivery has
@@ -645,6 +649,7 @@ async def run(
         # it persists by design rather than by attack.
         kept, rejected = screen(
             adaptor="debrief", items=[{"standing": body}], metrics=metrics,
+            content_checks=content_checks,
         )
         if not kept:
             log.warning(
@@ -666,6 +671,7 @@ async def run(
             prior=prior.working_set if prior is not None else (),
             max_items=working_set_max_items, max_chars=working_set_max_chars,
             metrics=metrics,
+            content_checks=content_checks,
         )
 
         # Bounded and labelled `unavailable`, NOT `timeout`, exactly as the read

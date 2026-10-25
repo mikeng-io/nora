@@ -236,6 +236,7 @@ def stay_context_reader(
 def place_release(
     *, rooms_of: Callable[[str], Collection[tuple[str, str, bool]]],
     room_view: Callable[[str, str], Awaitable[RoomView]], circles: Sequence[Circle],
+    content_checks: bool = True,
 ) -> Callable[[str, str], Awaitable[bool]]:
     """`(unit, person_id) -> may a place of theirs be named here`: True only
     when EVERY room of the unit passes `presence_audience`, the decision
@@ -255,7 +256,11 @@ def place_release(
             for platform, conversation_id, trusted in rooms:
                 view = await room_view(platform, conversation_id)
                 if not any(
-                    presence_audience(view, c, location_trusted=trusted) == "ok" for c in mine
+                    presence_audience(
+                        view, c, location_trusted=trusted, content_checks=content_checks
+                    )
+                    == "ok"
+                    for c in mine
                 ):
                     return False
             return True

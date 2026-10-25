@@ -3871,11 +3871,19 @@ class ToolsConfig(BaseModel):
     mcp: dict[str, McpMountConfig] = Field(default_factory=dict)
 
 
+class ContentChecksConfig(BaseModel):
+    """Optional content/disclosure filters; credentials and doctrine stay guarded."""
+
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool = False
+
+
 class Config(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     # Optional and defaulted — see `AgentConfig`; the default is today's identity.
     agent: AgentConfig = AgentConfig()
+    content_checks: ContentChecksConfig = ContentChecksConfig()
     platforms: PlatformsConfig
     llm: LLMConfig
     memory: MemoryConfig

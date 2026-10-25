@@ -3319,7 +3319,7 @@ def _spec(name: str, call) -> ToolSpec:
     )
 
 
-def _asked_about(name: str) -> dict:
+def _asked_about(name: str, *, content_checks: bool = True) -> dict:
     """Echo the model's own word back, unless the word is an identifier.
 
     Echoing helps: a turn that called `lookup_person` twice needs to know which
@@ -3337,10 +3337,10 @@ def _asked_about(name: str) -> dict:
     refuse model names either (there is no model-name veto; see `egress.py`),
     so echoing it cannot cost the message.
     """
-    return {} if scan_identifiers(name) else {"asked_about": name}
+    return {} if scan_identifiers(name, content_checks=content_checks) else {"asked_about": name}
 
 
-def _miss(name: str, view: RoomView) -> dict:
+def _miss(name: str, view: RoomView, *, content_checks: bool = True) -> dict:
     """The answer when a name resolves to nobody in this room.
 
     **`not_found` says nothing about whether that person exists.** A person in
@@ -3357,12 +3357,12 @@ def _miss(name: str, view: RoomView) -> dict:
     """
     if view.degraded:
         return {
-            "status": "unavailable", **_asked_about(name),
+            "status": "unavailable", **_asked_about(name, content_checks=content_checks),
             "note": "I can't check who is in this group right now, so I can't tell "
                     "you who that is. Say so rather than guessing.",
         }
     return {
-        "status": "not_found", **_asked_about(name),
+        "status": "not_found", **_asked_about(name, content_checks=content_checks),
         "note": "Nobody in this conversation goes by that. Say you're not sure who "
                 "they mean. Do not guess, and do not answer as if you knew them.",
     }
@@ -3430,6 +3430,7 @@ def _memory_result(payload: dict) -> dict:
 def _memory_hits_result(
     *, hits: Sequence[tuple[str, str]], roster: Mapping[str, str],
     record: Callable[..., None], partial_view: bool | None,
+    content_checks: bool = True,
 ) -> dict:
     """The shared tail of both memory-search verbs: roster filter, withhold,
     and status shaping over Honcho's raw hits.
@@ -3467,7 +3468,7 @@ def _memory_hits_result(
         name = roster.get(peer)
         if name is None:
             continue                       # only what named people said
-        if scan_reply(content) is not None:
+        if scan_reply(content, content_checks=content_checks) is not None:
             withheld += 1
             continue
         # Honcho holds what it was fed, and older rows carry the raw URL:
@@ -4907,6 +4908,7 @@ def build_tool_specs(
     # accounts instead of the culture store — the same accounts the prompt's
     # `<persona>` blocks render, so the tool and the prompt cannot disagree.
     persona_read: PersonaHeads | None = None,
+    content_checks: bool = True,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -5113,7 +5115,7 @@ def build_tool_specs(
                 })
                 _record(metrics, "who_said", "unavailable")
                 return {
-                    "status": "unavailable", **_asked_about(words),
+                    "status": "unavailable", **_asked_about(words, content_checks=content_checks),
                     "note": "I can't re-read the messages in front of me, so I can't "
                             "check who said that. Say you couldn't check, and never "
                             "say nobody said it.",
@@ -5148,7 +5150,7 @@ def build_tool_specs(
                 })
                 _record(metrics, "who_said", "nothing_found", rows=len(lookup_rows))
                 return {
-                    "status": "nothing_found", **_asked_about(words),
+                    "status": "nothing_found", **_asked_about(words, content_checks=content_checks),
                     "note": "Nobody in the messages you can see said that. Do not put "
                             "it in anyone's mouth. Look further back with "
                             "load_transcript or search_memory, or say you can't find "
@@ -5177,7 +5179,12 @@ def build_tool_specs(
             # `identity.toml` or a platform profile, never a `sender_id` — this
             # tool accepts no identifier and emits none (R-18/R-28).
             return _memory_result(
-                {"status": "ok", "said_by": hits, **_asked_about(words)})
+                {
+                    "status": "ok",
+                    "said_by": hits,
+                    **_asked_about(words, content_checks=content_checks),
+                }
+            )
 
     async def load_transcript(
         limit: int = LOAD_TRANSCRIPT_DEFAULT, before: str | None = None,
@@ -5966,9 +5973,14 @@ def build_tool_specs(
         # identifier is withheld whole here, as `ask_memory` withholds an
         # answer: nothing screened these bodies when they were written.
         accounts = [
-            {"room": r.label or platform_name(r.platform), "account": head.body,
-             "as_of": rollup_iso(head.written_at), "revision": head.id}
-            for r, head in held if scan_identifiers(head.body) is None
+            {
+                "room": r.label or platform_name(r.platform),
+                "account": head.body,
+                "as_of": rollup_iso(head.written_at),
+                "revision": head.id,
+            }
+            for r, head in held
+            if scan_identifiers(head.body, content_checks=content_checks) is None
         ]
         withheld = len(held) - len(accounts)
         if not accounts and withheld:
@@ -6048,6 +6060,7 @@ def build_tool_specs(
         shown, withheld, cut = render_items(
             got[:SOCIAL_READ_MAX], by=who.name,
             place=location_shown(who.person_id, target), now=now_fn().astimezone(_HKT),
+            content_checks=content_checks,
         )
         if not shown:
             _record(metrics, "social_read", "nothing_found", withheld=withheld)
@@ -6143,20 +6156,22 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # these tools take, and `_asked_about` exists because a model does put
         # phone numbers in it.
         if not matches:
-            miss = _miss(name, view)
+            miss = _miss(name, view, content_checks=content_checks)
             _record_room(metrics, "lookup_person", miss["status"], candidates=0)
             return miss
         if len(matches) > 1:
             _record_room(metrics, "lookup_person", "ambiguous", candidates=len(matches))
             return {
-                "status": "ambiguous", **_asked_about(name),
+                "status": "ambiguous", **_asked_about(name, content_checks=content_checks),
                 "could_be": [p.name for p in matches],
                 "note": "More than one person here goes by that. Ask which one.",
             }
         person = matches[0]
         _record_room(metrics, "lookup_person", "ok", candidates=1)
         return {
-            "status": "ok", **_asked_about(name), "name": person.name,
+            "status": "ok",
+            **_asked_about(name, content_checks=content_checks),
+            "name": person.name,
             "also_called": list(person.aliases),
             "note": "This person is in this conversation.",
         }
@@ -6191,13 +6206,13 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             }
         matches = view.find(person)
         if not matches:
-            miss = _miss(person, view)
+            miss = _miss(person, view, content_checks=content_checks)
             _record_room(metrics, "about", miss["status"], candidates=0)
             return miss
         if len(matches) > 1:
             _record_room(metrics, "about", "ambiguous", candidates=len(matches))
             return {
-                "status": "ambiguous", **_asked_about(person),
+                "status": "ambiguous", **_asked_about(person, content_checks=content_checks),
                 "could_be": [p.name for p in matches],
                 "note": "More than one person here goes by that. Ask which one.",
             }
@@ -6296,13 +6311,19 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # `sonnet` and four more — from a group of software engineers who talk about
         # them constantly. What she runs on stays hers because `Deliverer` refuses to
         # SAY it, not because she is made to forget what other people said.
-        kept = tuple(c for c in memory.conclusions if scan_identifiers(c) is None)
+        kept = tuple(
+            c
+            for c in memory.conclusions
+            if scan_identifiers(c, content_checks=content_checks) is None
+        )
         # THE CARD GETS THE SAME SCREEN, and it needs it more than the
         # conclusions do: a card renders IDENTITY claims distilled from what
         # people said, and «Phone: +852…» is exactly the shape of thing that
         # ends up in one. Scrubbing conclusions but not the card would have put
         # the identifier back on the reply that R-18 then fails closed on.
-        kept_card = tuple(c for c in card if scan_identifiers(c) is None)
+        kept_card = tuple(
+            c for c in card if scan_identifiers(c, content_checks=content_checks) is None
+        )
         withheld = (
             (len(memory.conclusions) - len(kept)) + (len(card) - len(kept_card))
         )
@@ -6394,6 +6415,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 return {"status": "unavailable", **asked, "note": _INDEX_UNAVAILABLE}
             items, withheld = render_packet(
                 found.hits, name_of=_rollup_name, room_label=_index_room_label, now=now,
+                content_checks=content_checks,
             )
         except Exception as exc:  # noqa: BLE001 — «I couldn't check», counted
             log.warning("memory_search index path failed (%s)", type(exc).__name__)
@@ -6489,13 +6511,13 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 }
             matches = view.find(person)
             if not matches:
-                miss = _miss(person, view)
+                miss = _miss(person, view, content_checks=content_checks)
                 _record_room(metrics, "memory_search", miss["status"], candidates=0)
                 return miss
             if len(matches) > 1:
                 _record_room(metrics, "memory_search", "ambiguous", candidates=len(matches))
                 return {
-                    "status": "ambiguous", **_asked_about(person),
+                    "status": "ambiguous", **_asked_about(person, content_checks=content_checks),
                     "could_be": [p.name for p in matches],
                     "note": "More than one person here goes by that. Ask which one.",
                 }
@@ -6552,13 +6574,13 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             }
         matches = view.find(person)
         if not matches:
-            miss = _miss(person, view)
+            miss = _miss(person, view, content_checks=content_checks)
             _record_room(metrics, "ask_memory", miss["status"], candidates=0)
             return miss
         if len(matches) > 1:
             _record_room(metrics, "ask_memory", "ambiguous", candidates=len(matches))
             return {
-                "status": "ambiguous", **_asked_about(person),
+                "status": "ambiguous", **_asked_about(person, content_checks=content_checks),
                 "could_be": [p.name for p in matches],
                 "note": "More than one person here goes by that. Ask which one.",
             }
@@ -6595,7 +6617,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # kept, so it is withheld whole. `scan_identifiers`, not the reply
         # predicate (the `about` rationale: what she runs on stays hers because
         # the Deliverer refuses to SAY it, not because she is made to forget).
-        if scan_identifiers(answer) is not None:
+        if scan_identifiers(answer, content_checks=content_checks) is not None:
             # `status="empty"` to match `about`'s all-withheld path (nothing usable
             # surfaced), not a new label value: the recall metric keeps its
             # ok/empty/unavailable cardinality.
@@ -6674,6 +6696,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             hits=hits, roster=roster,
             record=lambda s, **kw: _record_room(metrics, "search_memory", s, **kw),
             partial_view=view.degraded,
+            content_checks=content_checks,
         )
 
     async def now() -> str:
@@ -6729,7 +6752,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # Only the ECHO is recoverable: the RESULT of that expression is
         # `85290000101`, which is a number and nothing distinguishes it from
         # arithmetic, here or at egress.
-        if scan_identifiers(expression) is not None:
+        if scan_identifiers(expression, content_checks=content_checks) is not None:
             out.pop("expression", None)
         # ADR 0015 §3: how to report the answer rides in the result. A refusal
         # already says what to fix (`arithmetic`'s own sentence); the tool adds the
@@ -6789,7 +6812,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # already narrowed to `[A-Z0-9]{1,7}` before it reaches a URL, so
         # nothing that looks like a phone number can survive to the echo — this
         # is the belt for that, and it costs one regex.
-        if scan_identifiers(str(out.get("route", ""))) is not None:
+        if scan_identifiers(str(out.get("route", "")), content_checks=content_checks) is not None:
             out.pop("route", None)
         # And the fourth: `near` is free text, echoed back as `near.asked` for
         # the same two-calls-one-turn disambiguation `_asked_about` buys, and
@@ -6801,12 +6824,15 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         near_info = out.get("near")
         if isinstance(near_info, dict):
             for key in ("asked", "stop"):
-                if scan_identifiers(str(near_info.get(key, ""))) is not None:
+                if (
+                    scan_identifiers(str(near_info.get(key, "")), content_checks=content_checks)
+                    is not None
+                ):
                     near_info.pop(key, None)
             if isinstance(near_info.get("could_be"), list):
                 near_info["could_be"] = [
                     name for name in near_info["could_be"]
-                    if scan_identifiers(str(name)) is None
+                    if scan_identifiers(str(name), content_checks=content_checks) is None
                 ]
         _record(
             metrics, "transit", out["status"],
@@ -6865,8 +6891,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         """How to get from one place to another, and how long it takes. Call
         this for ANY «how do I get from A to B».
 
-        Give places as they were named: a place, never a person or a
-        coordinate. It looks each one up itself. For a
+        Give places as they were named. It looks each one up itself. For a
         PERSONAL place name (home, someone's home, work), call `saved_places`
         first and pass the saved name; never guess one from earlier messages.
         An `address` that `reverse_geocode` gave you for a `where_is` position
@@ -6916,14 +6941,14 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 # guard below; the person screen would refuse «a home of theirs (Grant)»
                 # for its name.
                 continue
-            if scan_identifiers(place) is not None:
+            if scan_identifiers(place, content_checks=content_checks) is not None:
                 _record(metrics, "route", "refused", reason="identifier")
                 return {
                     "status": "refused",
                     "note": "That looks like an identifier, not a place. Ask for "
                             "a place name: a building, a stop, a mall.",
                 }
-            if _looks_like_coordinate(place):
+            if (content_checks and _looks_like_coordinate(place)):
                 # A stored presence position must never leave in a tool argument (R-28).
                 # Revert this and a Life360 coordinate reaches Google once `whereis` is
                 # wired.
@@ -6933,7 +6958,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     "note": "That's a raw coordinate, not a place I can route from. "
                             "Ask for the place by name: a building, a stop, a mall.",
                 }
-            if _names_a_person(place, _route_person_names):
+            if (content_checks and _names_a_person(place, _route_person_names)):
                 _record(metrics, "route", "refused", reason="person")
                 return {
                     "status": "refused",
@@ -7005,6 +7030,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             saved = await resolvable_places(
                 room=room, circles=presence_circles, presence=presence_source,
                 location_trusted=location_trusted,
+                content_checks=content_checks,
             )
             # `None` (failed read) and `()` (nothing you may resolve) both leave
             # `local_places` unset here, and that is right for THIS caller: the
@@ -7049,11 +7075,15 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             asked_ref = ref_places.get(str(out.get(key, "")).strip().casefold())
             if asked_ref is not None:
                 out[key] = asked_ref.name
-            if scan_identifiers(str(out.get(key, ""))) is not None:
+            if scan_identifiers(str(out.get(key, "")), content_checks=content_checks) is not None:
                 out.pop(key, None)
         for key in ("origin_could_be", "destination_could_be"):
             if isinstance(out.get(key), list):
-                out[key] = [c for c in out[key] if scan_identifiers(str(c)) is None]
+                out[key] = [
+                    c
+                    for c in out[key]
+                    if scan_identifiers(str(c), content_checks=content_checks) is None
+                ]
         # No link for a trip from a place presence named: «a home of theirs»
         # is not words anyone can open, and a resolved pin must never publish.
         if out.get("status") == "ok" and not ref_places:
@@ -7111,6 +7141,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # `GatheringService._resolve_place`.
         result = await _screen_and_resolve_place(
             name, route_source=route_source, person_names=_route_person_names,
+            content_checks=content_checks,
         )
         if result.status == "refused":
             _record(metrics, "place_info", "refused", reason=result.reason)
@@ -7143,7 +7174,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             }
         if isinstance(out.get("could_be"), list):
             out["could_be"] = [c for c in out["could_be"]
-                               if scan_identifiers(str(c)) is None]
+                               if scan_identifiers(str(c), content_checks=content_checks) is None]
         # ADR 0015 §3: the client answers these three bare; how to report each
         # rides in the result, not in the description.
         if out.get("status") == "ambiguous":
@@ -7199,6 +7230,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         places = await resolvable_places(
             room=room, circles=presence_circles, presence=presence_source,
             location_trusted=location_trusted,
+            content_checks=content_checks,
         )
         # `None` is a FAILED READ, not an empty answer (R-27). Folding it into
         # «no names» would tell the model `ok` with an empty list while the presence
@@ -7278,7 +7310,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 room=room, circle=circle, presence=presence_source,
                 refresher=refresher, geocoder=geocoder,
                 location_trusted=location_trusted, metrics=metrics,
-            ).locate(person)
+                content_checks=content_checks).locate(person,
+            )
             if str(out.get("status", "")) == "ok":
                 _record(metrics, "where_is", "ok", age_seconds=out.get("age_seconds"))
                 # `where_is` carries NO address (position + saved place + lat/lng only),
@@ -7399,7 +7432,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             }
         # The decision is `presence_audience`'s, shared with a Cognition
         # rollup line's place release; the branches below word and count it.
-        audience = presence_audience(view, circle, location_trusted=location_trusted)
+        audience = presence_audience(
+            view, circle, location_trusted=location_trusted, content_checks=content_checks
+        )
         subset_ok = audience != "not_subset"
         unnamed_blocks = audience == "unnamed"
         if view.degraded:
@@ -7440,7 +7475,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             }
         # A WAIVED guard is counted, not silent — the same DEC-79 rule
         # `Whereis.locate` runs one branch below its own guard.
-        if view.unnamed > 0 and location_trusted:
+        if content_checks and view.unnamed > 0 and location_trusted:
             if metrics is not None:
                 metrics.inc(
                     "nora_presence_disclosure_waived_total", reason="unnamed",
@@ -7803,8 +7838,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             to the answer it is about."""
             if what == "day":
                 note = (
-                    f"Give the date ({day_iso}) with anything you quote, and "
-                    "never read lat/lng aloud."
+                    f"Give the date ({day_iso}) with anything you quote."
+                    + (" Never read lat/lng aloud." if content_checks else "")
                 )
                 if any(s.get("unusual") for p in people for s in p.get("stays", ())):
                     note += (
@@ -9002,8 +9037,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # origin through this tool.
         _disclosed_live_addresses.add(address.strip().casefold())
         return {"status": "ok", "address": address, "lat": lat_f, "lng": lng_f,
-                "note": "Say the address in your reply. The coordinate never goes "
-                        "in it."}
+                "note": "Say the address in your reply." + (
+                    " The coordinate never goes in it." if content_checks else "")}
 
     # ---- media_fetch: read a stored image back through MiMo (DEC-56) ---------
     #
@@ -9180,7 +9215,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # did not ask, on bytes she cannot re-check. The value is never echoed back:
         # repeating it into the transcript is the leak one surface over.
         if question:
-            kind = scan_identifiers(question)
+            kind = scan_identifiers(question, content_checks=content_checks)
             if kind is not None:
                 _record_media(metrics, "nothing_found", reason="identifier")
                 metrics.inc("nora_egress_blocks_total", kind=kind)
@@ -9257,14 +9292,14 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             # percent-encoded identifier in a query cannot ride past a
             # raw-string match. `nothing_found`, and the value is not echoed.
             decoded_url = urllib.parse.unquote(url)
-            if scan_identifiers(decoded_url) is not None:
+            if scan_identifiers(decoded_url, content_checks=content_checks) is not None:
                 _record_media(metrics, "nothing_found", reason="identifier")
                 return {
                     "status": "nothing_found",
                     "note": "That link has what looks like a phone number or "
                             "ID in it, so I won't open it.",
                 }
-            if _looks_like_coordinate(decoded_url):
+            if (content_checks and _looks_like_coordinate(decoded_url)):
                 _record_media(metrics, "nothing_found", reason="coordinate")
                 return {
                     "status": "nothing_found",
@@ -9829,7 +9864,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         model read is one frame; without that sentence a correct description of
         it reads as a description of the whole reel.
         """
-        if scan_identifiers(description) is not None:
+        if scan_identifiers(description, content_checks=content_checks) is not None:
             # An identifier the model transcribed off the image — dropped with a
             # note, the shape `about` uses for a conclusion that carries one. The
             # status stays `ok` (she DID look), but the words never leave.
@@ -10577,7 +10612,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             # reading is never matched on either: matching it would let a model
             # confirm hidden digits one query at a time.
             hidden = obj is not None and read and (
-                scan_identifiers(_stored_reading(obj)) is not None
+                scan_identifiers(_stored_reading(obj), content_checks=content_checks) is not None
             )
             if not asked:
                 results.append(_room_result(photo, obj, hidden=hidden))
@@ -10783,7 +10818,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # `scan_identifiers`, NOT `scan_reply`: this tool filters on the floor because an
         # identifier is unsafe at every exit (see `egress.py`). A MODEL NAME in a query
         # is fine (「搵首 haiku」 must work).
-        if scan_identifiers(query) is not None:
+        if scan_identifiers(query, content_checks=content_checks) is not None:
             _record(metrics, "web_search", "nothing_found", reason="identifier")
             return {
                 "status": "nothing_found",
@@ -10795,7 +10830,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # received could otherwise ride a search query to Tavily. The R-28 barrier
         # screens `route`; the web query is the other free-text egress and needs the
         # same screen. `nothing_found`, and the coordinate is not echoed back.
-        if _looks_like_coordinate(query):
+        if (content_checks and _looks_like_coordinate(query)):
             _record(metrics, "web_search", "nothing_found", reason="coordinate")
             return {
                 "status": "nothing_found",
@@ -10881,14 +10916,14 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # match. `scan_identifiers`, NOT `scan_reply` — DEC-30's split, same as
         # `web_search`'s own screen below.
         decoded_url = urllib.parse.unquote(url)
-        if scan_identifiers(decoded_url) is not None:
+        if scan_identifiers(decoded_url, content_checks=content_checks) is not None:
             _record(metrics, "web_fetch", "nothing_found", reason="identifier")
             return {
                 "status": "nothing_found",
                 "note": "That link has what looks like a phone number or ID in "
                         "it, so I won't open it.",
             }
-        if _looks_like_coordinate(decoded_url):
+        if (content_checks and _looks_like_coordinate(decoded_url)):
             _record(metrics, "web_fetch", "nothing_found", reason="coordinate")
             return {
                 "status": "nothing_found",
@@ -11181,7 +11216,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # username or the post id. The rest of a link (its query, its
         # fragment) never leaves, so it is not what this screens. `refused`:
         # a boundary, not a failure, as in `instagram_search`.
-        if scan_identifiers(target) is not None or _looks_like_coordinate(target):
+        if scan_identifiers(target, content_checks=content_checks) is not None or (
+            content_checks and _looks_like_coordinate(target)
+        ):
             _record(metrics, "x_read", "refused", reason="egress")
             return {
                 "status": "refused",
@@ -11240,7 +11277,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # coordinate, must not leave in a search. Decoded first, so a
         # percent-encoded identifier cannot ride past a raw-string match.
         decoded = urllib.parse.unquote(text)
-        if scan_identifiers(decoded) is not None or _looks_like_coordinate(decoded):
+        if scan_identifiers(decoded, content_checks=content_checks) is not None or (
+            content_checks and _looks_like_coordinate(decoded)
+        ):
             _record(metrics, "x_search", "refused", reason="egress")
             return {
                 "status": "refused",
@@ -11405,7 +11444,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             read = what
             target = name
         # The egress screen on exactly what leaves.
-        if scan_identifiers(target) is not None or _looks_like_coordinate(target):
+        if scan_identifiers(target, content_checks=content_checks) is not None or (
+            content_checks and _looks_like_coordinate(target)
+        ):
             _record(metrics, "linkedin_read", "refused", reason="egress")
             return {
                 "status": "refused",
@@ -11462,7 +11503,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # A phone number pasted into a PEOPLE search would be looked up
         # against real people, so the screen matters most here.
         decoded = urllib.parse.unquote(text)
-        if scan_identifiers(decoded) is not None or _looks_like_coordinate(decoded):
+        if scan_identifiers(decoded, content_checks=content_checks) is not None or (
+            content_checks and _looks_like_coordinate(decoded)
+        ):
             _record(metrics, "linkedin_search", "refused", reason="egress")
             return {
                 "status": "refused",
@@ -11714,7 +11757,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                             "it again.",
                 }
             target = username
-        if kind == "handle" and scan_identifiers(target) is not None:
+        if kind == "handle" and scan_identifiers(target, content_checks=content_checks) is not None:
             # The egress screen `instagram_search` applies, on EVERY username
             # that is about to leave: a typed handle, and the username of a
             # profile or story link alike. A phone number or an ID must not
@@ -11755,24 +11798,26 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     # couldn't check», never «nobody here» (`_miss`'s rule).
                     _record(metrics, "instagram_read", "unavailable", reason="room")
                     return {
-                        "status": "unavailable", **_asked_about(spoken),
+                        "status": "unavailable",
+                        **_asked_about(spoken, content_checks=content_checks),
                         "note": "I can't check who is in this group right now, "
-                                "so I can't tell whose Instagram that is. Say so.",
+                        "so I can't tell whose Instagram that is. Say so.",
                     }
                 # No match is `nothing_found`. Identical for «not in this
                 # room» and «does not exist», on purpose: a
                 # difference would disclose who is in Nora's other rooms.
                 _record(metrics, "instagram_read", "nothing_found", reason="person")
                 return {
-                    "status": "nothing_found", **_asked_about(spoken),
+                    "status": "nothing_found",
+                    **_asked_about(spoken, content_checks=content_checks),
                     "note": "Nobody in this conversation goes by that. Say "
-                            "you're not sure who they mean. Do not guess an "
-                            "account.",
+                    "you're not sure who they mean. Do not guess an "
+                    "account.",
                 }
             if len(matches) > 1:
                 _record(metrics, "instagram_read", "ambiguous", reason="person")
                 return {
-                    "status": "ambiguous", **_asked_about(spoken),
+                    "status": "ambiguous", **_asked_about(spoken, content_checks=content_checks),
                     "could_be": [p.name for p in matches],
                     "note": "More than one person here goes by that. Ask which "
                             "one.",
@@ -11893,7 +11938,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # apply to what they send: a phone number or ID, or a raw coordinate,
         # must not leave in a search. `refused`: a boundary, not a failure.
         decoded = urllib.parse.unquote(text)
-        if scan_identifiers(decoded) is not None or _looks_like_coordinate(decoded):
+        if scan_identifiers(decoded, content_checks=content_checks) is not None or (
+            content_checks and _looks_like_coordinate(decoded)
+        ):
             _record(metrics, "instagram_search", "refused", reason="egress")
             return {
                 "status": "refused",
@@ -12036,13 +12083,15 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             # must NOT travel to Google Places as a search query — that is
             # the exact exfil shape the screen exists to close (route
             # screens args the same way).
-            if scan_identifiers(place) is not None or _looks_like_coordinate(place):
+            if scan_identifiers(place, content_checks=content_checks) is not None or (
+                content_checks and _looks_like_coordinate(place)
+            ):
                 _record(metrics, "find_parking", "refused")
                 return {"status": "not_found",
                         "note": "That doesn't look like a place name I can search for. "
                                 "Ask which place they mean."}
             if (_route_person_names is not None
-                    and _names_a_person(place, _route_person_names)):
+                    and (content_checks and _names_a_person(place, _route_person_names))):
                 _record(metrics, "find_parking", "refused")
                 return {"status": "not_found",
                         "note": "That looks like a person, not a place to park near. "
@@ -12086,13 +12135,15 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 return {"status": "unavailable",
                         "note": "I can't confirm who's here, so I can't use your "
                                 "position. Say you couldn't check."}
-            unnamed_blocks = view.unnamed > 0 and not location_trusted
+            unnamed_blocks = content_checks and view.unnamed > 0 and not location_trusted
             room_ids = frozenset(p.person_id for p in view.people)
             pos: tuple[float, float] | None = None
             for circle in presence_circles:
                 if unnamed_blocks:
                     continue
-                if not (location_trusted or DisclosureGuard(circle).permits(room_ids)):
+                if content_checks and not (
+                    location_trusted or DisclosureGuard(circle).permits(room_ids)
+                ):
                     continue
                 # The asker's own latest fix (the room's tagger) FIRST — the
                 # person being asked is the natural search centre; another
@@ -13548,7 +13599,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             "revision_id": memo.head.id,
         }
         superseded = result["superseded"]
-        if any(scan_identifiers(t) is not None for t in (memo.head.body, *superseded)):
+        if any(
+            scan_identifiers(t, content_checks=content_checks) is not None
+            for t in (memo.head.body, *superseded)
+        ):
             result["note"] = (
                 "This memo holds a value a reply cannot carry (a phone number, an "
                 "id or a key-shaped string): a reply containing it is not sent. "
@@ -13628,6 +13682,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             record=lambda s, **kw: _record(
                 metrics, "search_memory_workspace", s, **kw),
             partial_view=None,
+            content_checks=content_checks,
         )
 
     async def remember(content: str) -> dict:
@@ -13786,13 +13841,13 @@ Args:
                 return dict(_PERSONA_UNAVAILABLE)
             matches = view.find(person)
             if not matches:
-                miss = _miss(person, view)
+                miss = _miss(person, view, content_checks=content_checks)
                 _record(metrics, "remember", miss["status"], candidates=0)
                 return miss
             if len(matches) > 1:
                 _record(metrics, "remember", "ambiguous", candidates=len(matches))
                 return {
-                    "status": "ambiguous", **_asked_about(person),
+                    "status": "ambiguous", **_asked_about(person, content_checks=content_checks),
                     "could_be": [p.name for p in matches],
                     "note": "More than one person here goes by that. Ask which one.",
                 }
@@ -13933,13 +13988,13 @@ Args:
                 return dict(_PERSONA_DISPUTE_UNAVAILABLE)
             matches = view.find(person)
             if not matches:
-                miss = _miss(person, view)
+                miss = _miss(person, view, content_checks=content_checks)
                 _record(metrics, "persona_dispute", miss["status"], candidates=0)
                 return miss
             if len(matches) > 1:
                 _record(metrics, "persona_dispute", "ambiguous", candidates=len(matches))
                 return {
-                    "status": "ambiguous", **_asked_about(person),
+                    "status": "ambiguous", **_asked_about(person, content_checks=content_checks),
                     "could_be": [p.name for p in matches],
                     "note": "More than one person here goes by that. Ask which one.",
                 }
@@ -14473,8 +14528,13 @@ Returns `status`: ok, nothing_found or unavailable, with a `note` on what to do.
 
 Args:
     query: A generic visual reaction phrase, not copied chat text."""
-        if (not query or len(query) > 120 or len(query.split()) > 12
-                or scan_identifiers(query) is not None or giphy_source is None):
+        if (
+            not query
+            or len(query) > 120
+            or len(query.split()) > 12
+            or scan_identifiers(query, content_checks=content_checks) is not None
+            or giphy_source is None
+        ):
             return {"status": "unavailable", "note": "Reply in words instead."}
         found = await giphy_source.search(query=query)
         gif_candidates.clear()
@@ -16988,6 +17048,7 @@ def build_tools(
     persona_read: PersonaHeads | None = None,
     relay: Relay | None = None,
     relay_turn: bool = False,
+    content_checks: bool = True,
 ) -> list:
     """The Strands-ready form of `build_tool_specs` — `adapt()` each spec so
     the docstrings above become the tool's model-facing description/schema
@@ -17047,5 +17108,6 @@ def build_tools(
         persona=persona,
         persona_read=persona_read,
         relay=relay, relay_turn=relay_turn,
+        content_checks=content_checks,
     )
     return [adapt(spec) for spec in specs]

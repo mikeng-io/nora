@@ -320,11 +320,12 @@ class RenderRoom:
     circles: tuple[frozenset[str], ...] = ()
     live: LiveRoom | None = None
     mode: LineageMode = "off"
+    content_checks: bool = True
 
     def with_live(self, live: LiveRoom | None) -> RenderRoom:
         return RenderRoom(
             room=self.room, rooms=self.rooms, circles=self.circles, live=live,
-            mode=self.mode,
+            mode=self.mode, content_checks=self.content_checks,
         )
 
     def resolve(self, ref: str | None) -> tuple[RoomFacts, ...]:

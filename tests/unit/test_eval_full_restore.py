@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import contextlib
 from datetime import UTC, datetime
+from functools import partial
 from types import SimpleNamespace
 from typing import Any
+from uuid import UUID
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -212,20 +214,38 @@ def test_a_full_restore_subject_builds_no_geocoder_even_with_the_keys_set(
     assert reverse_geocoder(hkgov, _KEYED, cache_store=None) is None
 
 
-def test_both_composed_geocoders_screen_the_areas_they_keep(tmp_path, monkeypatch) -> None:
-    """`reverse_geocoder` hands each backend the R-28 area screen venue areas
-    pass (`screened_area`); without it a backend keeps no areas at all."""
+@pytest.mark.parametrize("enabled", [False, True])
+def test_both_composed_geocoders_screen_the_areas_they_keep(tmp_path, monkeypatch, enabled) -> None:
+    """Both backends get the real area screen, bound to the reversible flag.
+    Clean areas survive in both modes; credentials are always withheld."""
     from nora.app.composition import reverse_geocoder
     from nora.app.gatherings import screened_area
+    from nora.domain.ports import PlaceArea
 
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    google = reverse_geocoder(_built(tmp_path / "google", None), _KEYED, cache_store=None)
+    overrides = {"content_checks.enabled": True} if enabled else {}
+    google = reverse_geocoder(_built(tmp_path / "google", overrides), _KEYED, cache_store=None)
     hkgov = reverse_geocoder(_built(tmp_path / "hkgov", {
+        **overrides,
         "presence.geocode_provider": "hkgov",
         "presence.hkgov_geocode_url": "https://example.invalid/reverseGeocode",
     }), _KEYED, cache_store=None)
     for geo in (google, hkgov):
-        assert geo is not None and geo._area_screen is screened_area  # type: ignore[attr-defined]
+        assert geo is not None
+        screen = geo._area_screen  # type: ignore[attr-defined]
+        assert isinstance(screen, partial) and screen.func is screened_area
+        assert screen.keywords == {"content_checks": enabled}
+        clean = PlaceArea(district="Example District", city="Example City")
+        assert screen(clean) == clean
+        assert screen(None) is None
+        for name in (
+            f"+1 {202} {555} {101:04d}", str(UUID(int=7)),
+            ", ".join(f"{n + 0.125:.3f}" for n in (1, 2)),
+        ):
+            area = PlaceArea(district=name, city="Example City")
+            expected = PlaceArea(district=None, city="Example City") if enabled else area
+            assert screen(area) == expected
+        assert screen(PlaceArea(district="sk-" + "synthetic" * 4)) is None
 
 
 async def test_a_full_restore_refuses_while_the_no_geocoder_name_is_set(seams, monkeypatch) -> None:

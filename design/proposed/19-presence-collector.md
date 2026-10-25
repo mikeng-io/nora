@@ -9,6 +9,13 @@ status: proposed
 
 # The presence collector
 
+> Content-policy update, 2026-10-25: phone/UUID/coordinate, place/person-name
+> and location audience filters described here remain implemented and tested in
+> enabled mode, but runtime defaults them off through `[content_checks]`.
+> Credentials, doctrine, scope, consent and availability are independent.
+> See the [current decision](../../docs/adr/0030-content-filters-are-disabled-by-default-and-reversible.md).
+
+
 Operator idea, 2026-08-07: run our own 24/7 location record, grouped by circle,
 so we have a **personal presence service** rather than depending on Life360 live
 at every read. Later, derive from it — where someone stays, where home is, where

@@ -453,7 +453,8 @@ async def test_the_screen_applies_to_a_social_session(social) -> None:
     # would carry an identifier is refused before it is staged (R-18/R-28).
     revise, _keep = adaptor.verbs(key=KEY)
     screened = DreamerRuntime._screened(
-        SimpleNamespace(_metrics=metrics), CHARACTER_PERSON_ADAPTOR_NAME, revise,  # type: ignore[arg-type]
+        SimpleNamespace(_metrics=metrics, _content_checks=True),  # type: ignore[arg-type]
+        CHARACTER_PERSON_ADAPTOR_NAME, revise,
     )
     answer = await screened(entity="Ada", body="ring her on +85291234567",
                             citations=["social:instagram:9001"])

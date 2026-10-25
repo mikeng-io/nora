@@ -1,5 +1,11 @@
 """Outbound content that must never leave, whatever the model wrote.
 
+Runtime composition defaults `[content_checks] enabled` to false. The original
+phone/UUID/coordinate, place/person-name and location-audience predicates remain
+available in enabled mode. Credentials and LeakGuard are independent of this
+switch; admission, unit scope, location opt-in and availability still apply.
+
+
 Two predicates, because there are two questions and they have different
 answers:
 
@@ -195,24 +201,28 @@ def _first_match(text: str, patterns: tuple[tuple[str, re.Pattern[str]], ...]) -
     return None
 
 
-def scan_identifiers(text: str) -> str | None:
+def scan_identifiers(text: str, *, content_checks: bool = True) -> str | None:
     """Return the kind of identifier found, or None if the text carries none.
 
     The predicate for anything that is not a reply: a tool result the model
     will reason over, or an argument leaving for a third party. Somebody's
     number or ACI is unsafe at every one of those exits.
     """
-    return _first_match(text, _IDENTIFIER_PATTERNS)
+    return _first_match(text, _IDENTIFIER_PATTERNS if content_checks else (("keylike", _KEYLIKE),))
 
 
-def scan_reply(text: str) -> str | None:
+def scan_reply(text: str, *, content_checks: bool = True) -> str | None:
     """Return the kind of disclosure found, or None if the text is safe to SEND.
 
     The identifier scan plus the coordinate pair, scoped to text addressed to
     the group (R-6/R-18). There is no model-name veto. Everywhere else, use
     `scan_identifiers`.
     """
-    return _first_match(text, _REPLY_PATTERNS)
+    return (
+        _first_match(text, _REPLY_PATTERNS)
+        if content_checks
+        else scan_identifiers(text, content_checks=False)
+    )
 
 
 def _normalize(text: str) -> str:

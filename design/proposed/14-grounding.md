@@ -10,6 +10,13 @@ supersedes: "this document's own first draft, which treated grounding as one sea
 
 # Grounding
 
+> Content-policy update, 2026-10-25: phone/UUID/coordinate, place/person-name
+> and location audience filters described here remain implemented and tested in
+> enabled mode, but runtime defaults them off through `[content_checks]`.
+> Credentials, doctrine, scope, consent and availability are independent.
+> See the [current decision](../../docs/adr/0030-content-filters-are-disabled-by-default-and-reversible.md).
+
+
 Everything Nora knows comes from inside the room: the transcript,
 `identity.toml`, Honcho, and the clock. Grounding is the first capability that
 reaches outside.

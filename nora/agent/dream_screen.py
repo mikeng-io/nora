@@ -1,4 +1,10 @@
 """The Dreamer's egress screen: nothing reaches a sink carrying an identifier
+
+Runtime composition defaults `[content_checks] enabled` to false. The original
+phone/UUID/coordinate, place/person-name and location-audience predicates remain
+available in enabled mode. Credentials and LeakGuard are independent of this
+switch; admission, unit scope, location opt-in and availability still apply.
+
 or a raw coordinate.
 
 **Dreamer output reaches the model.** Whatever an adaptor persists is rendered
@@ -62,7 +68,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 
 from ..obs.metrics import Metrics
-from .egress import scan_identifiers
+from .egress import _E164, _canonical, scan_identifiers
 from .security import looks_like_coordinate
 
 __all__ = ["Rejection", "offence", "screen"]
@@ -140,11 +146,12 @@ _LABELLED_COORD = re.compile(
 )
 
 
-def _sink_identifier(text: str) -> bool:
-    return bool(_EMAIL.search(text) or _LONG_ID.search(text))
+def _sink_identifier(text: str, *, content_checks: bool = True) -> bool:
+    identifiers = text if content_checks else _E164.sub("", _canonical(text))
+    return bool(_EMAIL.search(text) or _LONG_ID.search(identifiers))
 
 
-def _offence(item: Mapping[str, object]) -> tuple[str, str] | None:
+def _offence(item: Mapping[str, object], *, content_checks: bool = True) -> tuple[str, str] | None:
     """The first `(reason, path)` in `item`, or None if it is clean.
 
     Identifiers are checked before coordinates on each string, mirroring
@@ -153,29 +160,32 @@ def _offence(item: Mapping[str, object]) -> tuple[str, str] | None:
     is dropped; only the label differs.
     """
     for text, path in _strings(item, ""):
-        if scan_identifiers(text) is not None or _sink_identifier(text):
+        if scan_identifiers(text, content_checks=content_checks) is not None or _sink_identifier(
+            text, content_checks=content_checks
+        ):
             return "identifier", path
-        if looks_like_coordinate(text) or _LABELLED_COORD.search(text):
+        if content_checks and (looks_like_coordinate(text) or _LABELLED_COORD.search(text)):
             return "coordinate", path
     return None
 
 
-def offence(item: Mapping[str, object]) -> tuple[str, str] | None:
+def offence(item: Mapping[str, object], *, content_checks: bool = True) -> tuple[str, str] | None:
     """`_offence` under a public name, for the runtime's screen on an
     adaptor's own write verbs (`DreamerRuntime._screened`): one predicate for
     an envelope item and a verb's arguments, never a second copy."""
-    return _offence(item)
+    return _offence(item, content_checks=content_checks)
 
 
-def text_offence(text: str) -> str | None:
+def text_offence(text: str, *, content_checks: bool = True) -> str | None:
     """`offence` on one text: `"identifier"`, `"coordinate"` or `None`. The
     Persona write's screen (`nora.infra.sql.persona.SqlPersonaStore`)."""
-    found = _offence({"text": text})
+    found = _offence({"text": text}, content_checks=content_checks)
     return None if found is None else found[0]
 
 
 def screen(
-    *, adaptor: str, items: Sequence[Mapping[str, object]], metrics: Metrics
+    *, adaptor: str, items: Sequence[Mapping[str, object]], metrics: Metrics,
+    content_checks: bool = True,
 ) -> tuple[tuple[Mapping[str, object], ...], tuple[Rejection, ...]]:
     """Split a Dreamer envelope's items into (kept, rejected).
 
@@ -188,7 +198,7 @@ def screen(
     kept: list[Mapping[str, object]] = []
     rejected: list[Rejection] = []
     for index, item in enumerate(items):
-        found = _offence(item)
+        found = _offence(item, content_checks=content_checks)
         if found is None:
             kept.append(item)
             continue

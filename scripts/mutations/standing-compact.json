@@ -184,22 +184,22 @@
  {
   "name": "standing-compact §5 screen: an email is an identifier",
   "file": "nora/agent/dream_screen.py",
-  "old": "    return bool(_EMAIL.search(text) or _LONG_ID.search(text))",
-  "new": "    return bool(_LONG_ID.search(text))",
+  "old": "    return bool(_EMAIL.search(text) or _LONG_ID.search(identifiers))",
+  "new": "    return bool(_LONG_ID.search(identifiers))",
   "target": "tests/unit/test_dream_screen.py::test_the_sink_screen_refuses_what_the_reply_floor_does_not[email]"
  },
  {
   "name": "standing-compact §5 screen: a 15+-digit id is an identifier",
   "file": "nora/agent/dream_screen.py",
-  "old": "    return bool(_EMAIL.search(text) or _LONG_ID.search(text))",
+  "old": "    return bool(_EMAIL.search(text) or _LONG_ID.search(identifiers))",
   "new": "    return bool(_EMAIL.search(text))",
   "target": "tests/unit/test_dream_screen.py::test_the_sink_screen_refuses_what_the_reply_floor_does_not[18-digit-id]"
  },
  {
   "name": "standing-compact §5 screen: a labelled lat/lng pair is a coordinate",
   "file": "nora/agent/dream_screen.py",
-  "old": "        if looks_like_coordinate(text) or _LABELLED_COORD.search(text):",
-  "new": "        if looks_like_coordinate(text):",
+  "old": "        if content_checks and (looks_like_coordinate(text) or _LABELLED_COORD.search(text)):",
+  "new": "        if content_checks and looks_like_coordinate(text):",
   "target": "tests/unit/test_dream_screen.py::test_the_sink_screen_refuses_what_the_reply_floor_does_not[labelled-lat-lng]"
  },
  {
@@ -331,7 +331,7 @@
  {
   "name": "working-set #445 fix: a working-set item is screened like the body before the write",
   "file": "nora/engagement/stages/debrief.py",
-  "old": "    _kept, rejected = screen(\n        adaptor=\"debrief_working_set\",\n        items=[\n            {\"what\": item.what, \"source\": item.source,\n             \"bears_on\": item.bears_on or \"\"}\n            for item in candidates\n        ],\n        metrics=metrics,\n    )\n    rejected_indices = {r.index for r in rejected}\n    survivors = tuple(\n        item for i, item in enumerate(candidates) if i not in rejected_indices\n    )\n",
+  "old": "    _kept, rejected = screen(\n        adaptor=\"debrief_working_set\",\n        items=[\n            {\"what\": item.what, \"source\": item.source,\n             \"bears_on\": item.bears_on or \"\"}\n            for item in candidates\n        ],\n        metrics=metrics,\n        content_checks=content_checks,\n    )\n    rejected_indices = {r.index for r in rejected}\n    survivors = tuple(\n        item for i, item in enumerate(candidates) if i not in rejected_indices\n    )\n",
   "new": "    survivors = tuple(candidates)\n",
   "target": "tests/unit/test_debrief.py -k test_a_working_set_item_is_screened_like_the_body"
  },

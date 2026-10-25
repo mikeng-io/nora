@@ -93,8 +93,9 @@ def _card(**kw: Any) -> SummonsCard:
     )
 
 
-def _registry() -> ToolRegistry:
+def _registry(*, content_checks: bool = True) -> ToolRegistry:
     return ToolRegistry(
+        content_checks=content_checks,
         notes=_Explode("note store"), reminders=_Explode("reminder store"),
         events=_Explode("events store"), rooms=_Explode("room directory"),
         relay=_Explode("relay"), mobility=_Explode("mobility store"),
@@ -121,19 +122,28 @@ class World:
                  max_age: timedelta = timedelta(minutes=60),
                  follow_up: list[ScriptedTurn] | None = None,
                  follow_up_delay: float = 0.0,
-                 timeout_seconds: float = 30) -> SummonsOccasion:
+                 timeout_seconds: float = 30, content_checks: bool = True) -> SummonsOccasion:
         if turns is not None:
             self.runner = FakeAgentRunner(
                 turns, follow_up_turns=follow_up, follow_up_delay=follow_up_delay,
             )
         return SummonsOccasion(
-            client=self.client, ledger=self.ledger,
+            client=self.client,
+            ledger=self.ledger,
             summoners=PersonsSubjectIndex(self.persons, _Explode("room policy")),  # type: ignore[arg-type]
-            persons=self.persons, doctrine_store=self.doctrine, registry=_registry(),
-            runner=self.runner, metrics=self.metrics, canary="CANARY-7f3a",
-            handle="noraexample", mode=mode, max_age=max_age,
+            persons=self.persons,
+            doctrine_store=self.doctrine,
+            registry=_registry(content_checks=content_checks),
+            runner=self.runner,
+            metrics=self.metrics,
+            canary="CANARY-7f3a",
+            handle="noraexample",
+            mode=mode,
+            max_age=max_age,
             limits={"turns": 8, "total_tokens": 64000, "output_tokens": 8000},
-            timeout_seconds=timeout_seconds, clock=lambda: NOW,
+            timeout_seconds=timeout_seconds,
+            clock=lambda: NOW,
+            content_checks=content_checks,
         )
 
     async def row(self):
@@ -857,3 +867,30 @@ async def test_a_disclosure_rechecked_after_a_503_is_ambiguous_not_refused(world
     assert len(world.fake.posts()) == 1  # the 503 attempt only: the recheck never posts
     row = await world.ledger.get(staged.id)
     assert (row.state, row.reply_text) == ("ambiguous", None)
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_public_venue_bio_phone_follows_the_content_switch(world, enabled):
+    from tests.unit.test_content_checks import PHONE
+
+    answer = f"The venue publishes this booking contact in its bio: {PHONE}."
+    out = await world.occasion(mode="live", turns=_replies(answer),
+                               content_checks=enabled).run(_card())
+    assert out.state == ("silent" if enabled else "published")
+    assert len(world.fake.posts()) == int(not enabled)
+
+
+@pytest.mark.parametrize("text", ["CANARY-7f3a", "sk-" + "synthetic" * 4])
+async def test_public_flush_keeps_protections_with_content_checks_disabled(world, text):
+    from dataclasses import replace
+
+    world.fake.write = envelope("too_soon")
+    occasion = world.occasion(mode="live", turns=_replies(REPLY), content_checks=False)
+    await occasion.run(_card())
+    staged = await world.ledger.awaiting_flush()
+    assert staged is not None
+    before = len(world.fake.posts())
+    world.fake.write = (201, {"id": "17900000000000777"})
+    out = await occasion.flush_staged(replace(staged, reply_text=text))
+    assert out.state == "refused"
+    assert len(world.fake.posts()) == before

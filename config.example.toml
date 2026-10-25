@@ -1448,3 +1448,9 @@ max_bytes = 104857600
 # a clip whose audio cannot be decoded is read silent.
 chunk_seconds = 90
 chunk_max = 10
+
+# Optional phone/UUID/coordinate, third-party place/person-name and location
+# audience filters. Re-enable with true and restart. Credential-pattern blocking
+# and doctrine/canary/prompt-markup protection always remain enabled.
+[content_checks]
+enabled = false

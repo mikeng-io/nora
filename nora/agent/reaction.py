@@ -149,11 +149,11 @@ def _json(text: str) -> dict[str, Any]:
     return got if isinstance(got, dict) else {}
 
 
-def _usable_query(query: str) -> bool:
+def _usable_query(query: str, *, content_checks: bool = True) -> bool:
     # The same bar `search_gifs` holds her own queries to: short, and nothing
     # that looks like an identifier leaves for Giphy.
     return (bool(query) and len(query) <= 60 and len(query.split()) <= 6
-            and scan_identifiers(query) is None)
+            and scan_identifiers(query, content_checks=content_checks) is None)
 
 
 class ReactionPicker:
@@ -163,7 +163,9 @@ class ReactionPicker:
     def __init__(
         self, *, client: ModelClient, prompts: PromptSource, gifs: GifSource,
         metrics: Counter, timeout_seconds: float = 8.0,
+        content_checks: bool = True,
     ) -> None:
+        self._content_checks = content_checks
         self._client = client
         self._prompts = prompts
         self._gifs = gifs
@@ -214,7 +216,7 @@ class ReactionPicker:
         if mode not in MODES:
             self._count("none")
             return None
-        if not _usable_query(query):
+        if not _usable_query(query, content_checks=self._content_checks):
             self._count("bad_query")
             return None
 

@@ -103,7 +103,9 @@ class Relay:
         occasion_for: Any = None,
         transport: Callable[[str], Awaitable[TransportState]],
         metrics: Any = None,
+        content_checks: bool = True,
     ) -> None:
+        self._content_checks = content_checks
         self._policy = policy
         # `PresenceReader.state`: one network's transport, read now, bounded
         # by the reader's own timeout, and `unknown` (never `up`) when the
@@ -233,7 +235,7 @@ class Relay:
         # the model so it cannot be talked out of it.
         outbound = f"{requester.name}: {body}"
 
-        if (kind := scan_reply(outbound)) is not None:
+        if (kind := scan_reply(outbound, content_checks=self._content_checks)) is not None:
             log.warning("relay blocked by egress scan (%s)", kind)
             return self._refuse(
                 "egress_blocked",
