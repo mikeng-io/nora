@@ -584,6 +584,7 @@ def build_cognition_runner(
         model_window_tokens=cfg.cognition.model_window_tokens,
         overflow_window_fraction=cfg.cognition.overflow_window_fraction,
         roster_of=roster_of, nora_names=nora_names,
+        content_checks=cfg.content_checks.enabled,
     )
 
 

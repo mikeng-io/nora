@@ -12,6 +12,17 @@ war-stories and specific values; read it when a rule needs its "why".
 load it before the first edit**: the rules say what must hold; the skill gives
 the command order and the check after each step.
 
+## Content checks: operator reversal, 2026-10-25
+
+`[content_checks] enabled = false` disables the phone/UUID/coordinate content
+filters, third-party place/person-name screens and location audience
+subset/unknown-person checks. Keep their implementations and enabled-mode tests;
+`true` plus a restart restores enforcement. Credentials and doctrine LeakGuard
+always remain enabled. Admission, unit read scope, location consent/opt-in,
+availability, freshness, budgets and network security are unchanged. Older
+always-on egress/disclosure wording below describes enabled mode; this ruling
+controls the default. See [the decision](docs/adr/0030-content-filters-are-disabled-by-default-and-reversible.md).
+
 ## The spine: comprehend → measure → serialize
 
 Every path, including a new tool, stage or **eval**, preserves this loop:

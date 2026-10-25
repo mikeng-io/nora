@@ -1823,6 +1823,7 @@ class FirePath:
             ctx = MentionRenderer(
                 persons=self._persons, display_name=self._display_name,
                 self_ids=self_ids, metrics=self._metrics,
+                content_checks=self._registry.content_checks,
             ).rehydrate(ctx)
 
             doctrine = self._doctrine_store.get(applies_to=audience)
@@ -1895,7 +1896,9 @@ class FirePath:
                     persons=self._persons, metrics=self._metrics,
                     roster_source=self._rosters.get(occasion.platform),
                     preview_source=self._preview_source,
+                    content_checks=self._registry.content_checks,
                 ),
+                content_checks=self._registry.content_checks,
             )
             room = Room(
                 platform=occasion.platform, conversation_id=occasion.conversation_id,
@@ -2486,6 +2489,7 @@ class FirePath:
                 # cooldown — it is how a cooldown-HELD message is reviewed at
                 # all, so holding the mirror too would hide exactly that case.
                 send_permitted=True,
+                content_checks=self._registry.content_checks,
             )
             # `d.shadow_hold` is true here by construction: this method returns
             # early without a channel, and `_determined` conjoins the channel
@@ -2578,6 +2582,7 @@ class FirePath:
                 tool_call_log_store=self._tool_call_log_store,
                 reasoning_strip_store=self._reasoning_strip_store,
                 send_permitted=True,
+                content_checks=self._registry.content_checks,
             )
             posted = await handle.deliverer.deliver(
                 await self._gate_verdict_text(

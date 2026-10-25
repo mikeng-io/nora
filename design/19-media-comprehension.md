@@ -11,6 +11,13 @@ edges:
 
 # Media comprehension
 
+> Content-policy update, 2026-10-25: phone/UUID/coordinate, place/person-name
+> and location audience filters described here remain implemented and tested in
+> enabled mode, but runtime defaults them off through `[content_checks]`.
+> Credentials, doctrine, scope, consent and availability are independent.
+> See the [current decision](../docs/adr/0030-content-filters-are-disabled-by-default-and-reversible.md).
+
+
 > 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
 
 

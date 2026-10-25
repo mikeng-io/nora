@@ -307,7 +307,9 @@ class OutboundComposer:
         metrics: Any,
         roster_source: RosterSource | None = None,
         preview_source: LinkPreviewSource | None = None,
+        content_checks: bool = True,
     ) -> None:
+        self._content_checks = content_checks
         self._platform = platform
         self._conversation_id = conversation_id
         self._persons = persons
@@ -489,7 +491,9 @@ class OutboundComposer:
         # is «she does not SAY what she runs on» and a third party's page title
         # is not her saying anything; screening it would drop the preview of any
         # page about LLMs.
-        kind = scan_identifiers(f"{preview.title} {preview.description}")
+        kind = scan_identifiers(
+            f"{preview.title} {preview.description}", content_checks=self._content_checks
+        )
         if kind:
             log.error("preview_blocked: %s in the fetched card for %s", kind, preview.url)
             self._metrics.inc("nora_egress_blocks_total", kind=kind)
