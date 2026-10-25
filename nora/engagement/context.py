@@ -611,10 +611,13 @@ class TranscriptInjection:
             if view is not None:
                 views.append(view)
         # THE ROOM's, keyed its `primary_id` for `_culture`'s reason (DEC-181).
-        if convo.primary_id:
+        # `of` is the room's `policy.toml` label, its id in the prompt (ADR
+        # 0029). `primary_id` is the store key, often a platform conversation
+        # id, and never reaches a prompt. A room with no label shows no block.
+        if convo.primary_id and convo.label:
             view = await one(
                 convo.primary_id,
-                entity="room", of=convo.primary_id,
+                entity="room", of=convo.label,
                 stage="tag_profile_room",
             )
             if view is not None:
