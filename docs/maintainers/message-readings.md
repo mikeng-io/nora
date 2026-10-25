@@ -94,7 +94,7 @@ and retain its shared lock, backups, candidate validation and readback.
 Under `flock -o -E 75 -w 900 /tmp/nora-deploy.lock`, back up the live runtime
 root's `config.toml`. Copy it into the **running new-code container** at
 `/app/message-readings.candidate.toml` so its relative paths retain `/app` as base.
-Run the existing config CLI on that candidate, never on the mounted live file:
+Run the existing config CLI on that candidate before copying it into the live file.
 
 The complete host-side candidate operation, after the new release is verified,
 is below. It creates a private backup and preserves the live bind-mount inode:
@@ -109,6 +109,7 @@ candidate=$(mktemp /tmp/nora-message-readings.XXXXXX.toml)
 trap 'rm -f "$candidate"' EXIT
 cp config.toml "$backup"
 docker compose cp config.toml nora:/app/message-readings.candidate.toml
+docker compose exec -T --user root nora chown nora:nora /app/message-readings.candidate.toml
 docker compose exec -T nora /app/.venv/bin/nora config set message_readings.model \
   'ollamacloud/deepseek-v4.1-flash' --config /app/message-readings.candidate.toml
 docker compose exec -T nora /app/.venv/bin/nora config set message_readings.enabled true \

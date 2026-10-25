@@ -363,6 +363,20 @@ async def test_writer_input_keeps_message_markup_inside_existing_source_block(
     assert (await rows(engine, CLAIM))[0]["content"]["evidence"][0]["quote"] == body
 
 
+async def test_json_transport_preserves_del_in_source_evidence(stores, example_config):
+    record, store, engine = stores
+    body = "tomorrow visit Workshop and ok\x7fhidden"
+    await record.append(message=message(body=body), person_id="subject-a")
+    cfg = override_config(example_config.message_readings, {"enabled": True, "settle_seconds": 0})
+    gateway = Gateway()
+    metrics = Metrics()
+    worker = MessageReadingWorker(store=store, client=gateway, config=cfg, metrics=metrics)
+    assert await worker.run_once() == 1
+    assert (await rows(engine, CLAIM))[0]["content"]["evidence"][0]["quote"] == body
+    assert "\x7f" not in gateway.calls[0]["messages"][1]["content"]
+    assert metrics.get("nora_message_reading_failures_total") == 0
+
+
 async def test_failed_call_retries_same_batch_with_usage_left_unknown(stores, example_config):
     record, store, engine = stores
     await record.append(message=message(), person_id="subject-a")

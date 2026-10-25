@@ -79,8 +79,15 @@
   {
     "name": "source markup stays inside its existing block",
     "file": "nora/app/message_readings.py",
-    "old": "body=escape(json.dumps(job[\"snapshot\"], ensure_ascii=False)),",
-    "new": "body=json.dumps(job[\"snapshot\"], ensure_ascii=False),",
+    "old": "body=escape(payload),",
+    "new": "body=payload,",
     "target": "tests/contract/test_message_readings_contract.py::test_writer_input_keeps_message_markup_inside_existing_source_block"
+  },
+  {
+    "name": "JSON transport preserves the exact source control character",
+    "file": "nora/app/message_readings.py",
+    "old": "json.dumps(job[\"snapshot\"], ensure_ascii=False).replace(\"\\x7f\", r\"\\u007f\")",
+    "new": "json.dumps(job[\"snapshot\"], ensure_ascii=False)",
+    "target": "tests/contract/test_message_readings_contract.py::test_json_transport_preserves_del_in_source_evidence"
   }
 ]
