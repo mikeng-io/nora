@@ -16,8 +16,10 @@ edges:
   persistent sbx microVM serving computerd, Nora its only client, through the
   `SandboxRuntime` port (`nora/domain/ports.py`): `run` (a command, capped at
   900 seconds, `MAX_RUN_SECONDS` in `deploy/computer/computerd.py`), `read`,
-  `write_text`, `edit`, `files`, `fetch`, `put`, `state`, each scoped by
-  `computer_scope(platform, conversation_id)`.
+  `write_text`, `edit`, `files`, `fetch`, `put`, `state`, each scoped by the room's policy unit,
+  `computer_unit_scope(unit)` (`nora/domain/computer.py:78`), the scope the
+  native computer tools use (`nora/agent/tools.py:14585`). `computer_scope`
+  (`computer.py:70`) is the retired room key and is not used.
 - **The sub-agent** ([subagent](../subagent/00-design.md)): `subagent_create`
   starts a background Strands agent (`SubagentBackend`,
   `nora/app/subagent_backend.py`, a `ComputeBackend`) with a closed tool

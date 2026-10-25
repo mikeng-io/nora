@@ -31,7 +31,7 @@ assumed.
 
 ## 2. Routing
 
-`computer_delegate` is a new tool on the sub-agent's surface, so its name,
+`coding_task_run` is a new tool on the sub-agent's surface, so its name,
 level and description follow ADR 0015, and `tool_selection` cases put it
 beside `computer_run`, `computer_edit` and `computer_write` in `not_tools`
 both ways (a one-line fix must not be delegated, a multi-file feature must).
@@ -40,7 +40,16 @@ both ways (a one-line fix must not be delegated, a multi-file feature must).
 
 - No provider key inside the VM, read back by listing the worker's
   environment and config files in a session.
-- No egress to any private address but the relay's (`egress check`).
+- IP-literal private denies hold (`egress check`). This does **not** prove
+  that no private service is reachable by name
+  ([40](40-models-egress-permissions.md) §2).
+- **Positive:** from inside the VM, a model call through the relay with a
+  live session token succeeds, and with a revoked or forged token it is
+  refused. This gates step 4.
+- **Wrapped shell operations:** `curl -T` to a public test host and a
+  `git push` inside a shell script each run, and the record shows what
+  actually happened. A read of another unit's scope is refused by the OS.
+- `files_changed` detects a same-size content edit (`x = 1` to `x = 2`).
 - A write outside the scope, a push, an upload, a secret request: each denied,
   and the denial in the record.
 - A limit reached: the session is cancelled and the process killed, and
@@ -51,11 +60,14 @@ both ways (a one-line fix must not be delegated, a multi-file feature must).
 
 | step | ships | gate |
 |---|---|---|
-| **1. `spawn`** | the verb in the port, computerd's websocket, the fake, the contract suite | the contract suite on the fake and on computerd |
+| **1. `spawn`** | the verb in the port, computerd's websocket, the content-manifest read for `files_changed`, the fake, the contract suite | the contract suite on the fake and on computerd |
 | **2. Pi spike** | no production code: the four questions of [20](20-adapters.md) §3 answered for Pi, inside the VM | a written read-back |
-| **3. The relay and its egress rule** | the per-session token relay, its model allowlist and budget; the one allow rule | the key and egress negatives (§3) |
-| **4. The Pi adapter and the tool** | the adapter behind a `[subagent]` flag, `computer_delegate` on the sub-agent's surface, the permission policy | the adapter contract; the task corpus (§1); `tool_selection` (§2) |
+| **3. The relay** | the per-session token relay behind the host's public HTTPS entry, its model allowlist and budget; no egress rule changes | the key negatives and the **positive relay call** (§3) |
+| **4. The Pi adapter and the tool** | the adapter behind a `[subagent]` flag, `coding_task_run` on the sub-agent's surface, the permission policy | the adapter contract; the task corpus (§1); `tool_selection` (§2) |
 | **5. The ACP adapter** | one adapter, enabled per harness after its four questions are answered | the adapter contract per harness; the task corpus for any harness offered as a default |
+| **6. Citable worker records** | the worker session as a turn-record occasion; `turn(...)` citation of it | depends on the standing ledger's record view, citation validation and reader ([standing-ledger 50](../standing-ledger/50-migration.md)); its per-item disclosure rules |
+
+Steps 1 to 5 ship without step 6: until then, worker records are kept but not citable.
 
 The VM provider adapters are not steps of this bundle; [30](30-sandbox-port.md)
 §3 is the contract they will meet.
