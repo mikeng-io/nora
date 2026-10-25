@@ -604,6 +604,19 @@ refresh_timeout_seconds = 8
 # unit) and no Honcho tool is offered (`ask_memory`, `search_memory`,
 # `search_memory_workspace`, `who_said`, `about`, `remember`); off, those
 # Honcho tools and no `memory_search`.
+[message_readings]
+# Record writer only: no readers, index projection, history backfill or Character consumption.
+enabled = false
+# Existing OmniRoute/Ollama Cloud Flash route; shared [llm] endpoint and API-key environment.
+# This lane never inherits a tag or synthesis model. V4 Pro and MiniMax are refused.
+model = "ollamacloud/deepseek-v4.1-flash"
+batch_size = 20
+context_size = 20
+settle_seconds = 2.0
+timeout_seconds = 90.0
+# Per-call ceiling, not a daily budget. Truncated responses fail closed and retry.
+max_tokens = 6000
+
 [memory_index]
 drain_seconds = 60.0
 enabled = false
