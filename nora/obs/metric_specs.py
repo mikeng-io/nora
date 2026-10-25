@@ -2119,6 +2119,30 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "permanent reason, or its third failed read).",
         ("source", "outcome"),
     ),
+    _CounterSpec(
+        "nora_message_reading_calls_total",
+        "Transport attempts for message readings, including retries.",
+    ),
+    _CounterSpec(
+        "nora_message_reading_input_tokens_total",
+        "Reported input tokens for every reading response, including rejected output.",
+    ),
+    _CounterSpec(
+        "nora_message_reading_output_tokens_total",
+        "Reported output tokens for every reading response, including rejected output.",
+    ),
+    _CounterSpec(
+        "nora_message_reading_failures_total",
+        "Failed message reading attempts or storage operations; durable work is retained.",
+    ),
+    _CounterSpec(
+        "nora_message_reading_claims_written_total",
+        "New claims committed by the message reading writer.",
+    ),
+    _CounterSpec(
+        "nora_message_reading_usage_missing_total",
+        "Reading requests whose usage is unavailable; measured cost is incomplete.",
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
