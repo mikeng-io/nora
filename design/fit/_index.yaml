@@ -1,0 +1,48 @@
+kind: design_index
+title: "Fit: one preference model and one ranker, for recommendation and personalisation"
+description: >
+  Nora as a member, not a search box: she notices the group wants something
+  (a game like the ones they keep sharing, a venue for an undecided party)
+  and proposes, rather than only reminding. Personalisation and
+  recommendation are one capability with two consumers: both fit options to
+  people. The bundle fixes a structured PREFERENCE MODEL (per person and per
+  unit: facets with evidence, decay and uncertainty, fed by conversation,
+  social engagement, presence, play and outcomes), one RANKER (trigger, frame,
+  generate, filter, score, aggregate for the group, diversify, explain), and
+  RECIPES as data so venues and games are two declarations on one engine.
+  The model extracts evidence and judges fuzzy fit; code aggregates, decays,
+  computes logistics, applies group fairness and chooses the shortlist. Its
+  output is a Standing decision (design/standing-ledger/), and its feedback
+  is the Rollup's response episodes. Proposal, not built; the name is
+  provisional.
+status: proposal
+governance: operator-directed
+timestamp: '2026-10-25'
+origin: >
+  Operator, 2026-10-25: «making Nora a genuine AI member and assistant inside
+  the room … most importantly, recommendations»; the game case («members
+  frequently send gaming links on Instagram … search for similar titles, make
+  recommendations») and the Halloween case («taking our locations,
+  conversation, routes, and schedules into account»); «personalisation
+  recommendation is still the same thing; it just has a different outcome»;
+  «it should be an abstracted engine»; «social engagement also puts signal
+  into the engine».
+members:
+  - 00-intent.md
+  - 10-preference-model.md
+  - 20-ranker.md
+  - 30-recipes.md
+  - 40-feedback.md
+  - 50-verification.md
+  - 60-migration.md
+edges:
+  - {src: 00-intent, dst: 10-preference-model, rel: sequences, provenance: asserted}
+  - {src: 20-ranker, dst: 10-preference-model, rel: depends_on, provenance: asserted}
+  - {src: 30-recipes, dst: 20-ranker, rel: details, provenance: asserted}
+  - {src: 40-feedback, dst: 10-preference-model, rel: extends, provenance: asserted}
+  - {src: 50-verification, dst: 20-ranker, rel: measures, provenance: asserted}
+  - {src: 60-migration, dst: 50-verification, rel: depends_on, provenance: asserted}
+  - {src: 20-ranker, dst: ../standing-ledger/20-the-ledger.md, rel: depends_on, provenance: asserted}
+  - {src: 40-feedback, dst: ../unified-memory/50-learning-from-acts.md, rel: extends, provenance: asserted}
+  - {src: 10-preference-model, dst: ../cognition-loop/22-social-stream.md, rel: depends_on, provenance: asserted}
+  - {src: 10-preference-model, dst: ../cognition-loop/25-rollup.md, rel: depends_on, provenance: asserted}
