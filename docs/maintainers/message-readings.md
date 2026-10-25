@@ -150,6 +150,8 @@ Attempt rows bind to the trace (NULL when tracing is off), and durably record
 reported provider identity and usage **before** output
 validation, so rejected/truncated responses count toward cost. An interrupted or
 unreported request keeps NULL usage, never a fabricated zero.
+Prometheus still counts reported tokens if persisting that usage fails; the
+attempt remains unknown in the durable query and no claims are published.
 
 After one complete day, run this read-only query through
 `docker compose exec -T db psql -X -U nora -d nora` on the host. Pass `-v` values

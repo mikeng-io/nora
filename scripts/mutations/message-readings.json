@@ -89,5 +89,12 @@
     "old": "json.dumps(job[\"snapshot\"], ensure_ascii=False).replace(\"\\x7f\", r\"\\u007f\")",
     "new": "json.dumps(job[\"snapshot\"], ensure_ascii=False)",
     "target": "tests/contract/test_message_readings_contract.py::test_json_transport_preserves_del_in_source_evidence"
+  },
+  {
+    "name": "reported usage survives a ledger outage",
+    "file": "nora/app/message_readings.py",
+    "old": "        # Report provider usage even if the durable ledger write is unavailable.\n        # Publication still requires that write; NULL ledger usage stays unknown.\n        if input_tokens is not None:\n            self.metrics.inc(\"nora_message_reading_input_tokens_total\", input_tokens)\n        if output_tokens is not None:\n            self.metrics.inc(\"nora_message_reading_output_tokens_total\", output_tokens)\n        usage_known = input_tokens is not None and output_tokens is not None\n        if not usage_known:\n            self.metrics.inc(\"nora_message_reading_usage_missing_total\")\n        await self.store.record_usage(\n            job,\n            input_tokens=input_tokens,\n            output_tokens=output_tokens,\n            provider_model=provider_model,\n        )\n        if not usage_known:\n",
+    "new": "        await self.store.record_usage(\n            job,\n            input_tokens=input_tokens,\n            output_tokens=output_tokens,\n            provider_model=provider_model,\n        )\n        # Report provider usage even if the durable ledger write is unavailable.\n        # Publication still requires that write; NULL ledger usage stays unknown.\n        if input_tokens is not None:\n            self.metrics.inc(\"nora_message_reading_input_tokens_total\", input_tokens)\n        if output_tokens is not None:\n            self.metrics.inc(\"nora_message_reading_output_tokens_total\", output_tokens)\n        usage_known = input_tokens is not None and output_tokens is not None\n        if not usage_known:\n            self.metrics.inc(\"nora_message_reading_usage_missing_total\")\n        if not usage_known:\n",
+    "target": "tests/contract/test_message_readings_contract.py::test_usage_counters_survive_ledger_outage"
   }
 ]

@@ -208,18 +208,22 @@ class MessageReadingWorker:
             total_tokens=getattr(usage, "total_tokens", None),
             latency_seconds=time.monotonic() - started,
         )
+        # Report provider usage even if the durable ledger write is unavailable.
+        # Publication still requires that write; NULL ledger usage stays unknown.
+        if input_tokens is not None:
+            self.metrics.inc("nora_message_reading_input_tokens_total", input_tokens)
+        if output_tokens is not None:
+            self.metrics.inc("nora_message_reading_output_tokens_total", output_tokens)
+        usage_known = input_tokens is not None and output_tokens is not None
+        if not usage_known:
+            self.metrics.inc("nora_message_reading_usage_missing_total")
         await self.store.record_usage(
             job,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             provider_model=provider_model,
         )
-        if input_tokens is not None:
-            self.metrics.inc("nora_message_reading_input_tokens_total", input_tokens)
-        if output_tokens is not None:
-            self.metrics.inc("nora_message_reading_output_tokens_total", output_tokens)
-        if input_tokens is None or output_tokens is None:
-            self.metrics.inc("nora_message_reading_usage_missing_total")
+        if not usage_known:
             raise ValueError("reading usage unavailable")
         if not re.fullmatch(r"(?:[^/]+/)?deepseek-v4\.1-flash", provider_model or ""):
             raise ValueError("reading provider model unavailable or unexpected")

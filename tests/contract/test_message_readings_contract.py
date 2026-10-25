@@ -348,6 +348,32 @@ async def test_wrong_provider_model_is_counted_but_cannot_write(stores, example_
     assert attempt["outcome"] == "error"
 
 
+@pytest.mark.parametrize("usage", [True, False])
+async def test_usage_counters_survive_ledger_outage(stores, example_config, monkeypatch, usage):
+    record, store, engine = stores
+    await record.append(message=message(), person_id="subject-a")
+    cfg = override_config(example_config.message_readings, {"enabled": True, "settle_seconds": 0})
+    metrics = Metrics()
+
+    async def unavailable(*args, **kwargs):
+        raise ConnectionError("synthetic ledger outage")
+
+    monkeypatch.setattr(store, "record_usage", unavailable)
+    worker = MessageReadingWorker(
+        store=store, client=Gateway(usage=usage), config=cfg, metrics=metrics
+    )
+    assert await worker.run_once() == 0
+    assert metrics.get("nora_message_reading_calls_total") == 1
+    assert metrics.get("nora_message_reading_failures_total") == 1
+    assert metrics.get("nora_message_reading_input_tokens_total") == (100 if usage else 0)
+    assert metrics.get("nora_message_reading_output_tokens_total") == (30 if usage else 0)
+    assert metrics.get("nora_message_reading_usage_missing_total") == int(not usage)
+    assert await rows(engine, CLAIM) == []
+    attempt = (await rows(engine, ATTEMPT))[0]
+    assert attempt["input_tokens"] is None and attempt["output_tokens"] is None
+    assert attempt["outcome"] == "error"
+
+
 async def test_writer_input_keeps_message_markup_inside_existing_source_block(
     stores, example_config
 ):
