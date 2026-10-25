@@ -514,16 +514,25 @@ def test_the_screen_is_injected_rather_than_imported_by_the_join() -> None:
         isinstance(node, ast.Call)
         and getattr(node.func, "id", None) == "MediaJoin"
         and any(
-            kw.arg == "screen" and getattr(kw.value, "id", None) == "scan_identifiers"
+            kw.arg == "screen"
+            and ast.unparse(kw.value) == (
+                "functools.partial(scan_identifiers, content_checks=content_checks)"
+            )
             for kw in node.keywords
         )
         for node in ast.walk(tree)
     )
     assert screened, (
         "the composition root must hand `MediaJoin` the REAL `scan_identifiers` "
-        "screen as its `screen=` argument; a join built without one renders "
-        "model prose into eight prompts unscreened"
+        "screen bound to the configured content-check switch as its `screen=` "
+        "argument; a no-op loses enabled-mode and credential protection"
     )
+    assert any(
+        isinstance(node, ast.Assign)
+        and any(getattr(target, "id", None) == "content_checks" for target in node.targets)
+        and ast.unparse(node.value) == "cfg.content_checks.enabled"
+        for node in ast.walk(tree)
+    ), "the injected screen must follow config, not a hard-coded enabled/disabled value"
 
 
 @pytest.mark.parametrize("rel,path", sorted(PATHS.items()))

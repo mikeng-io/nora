@@ -1,11 +1,13 @@
 # 0030 — Content filters are disabled by default and reversible
 
-- **Status:** accepted by operator, 2026-10-25; number provisional until the parent's merge-time allocation check
+- **Status:** accepted by operator, 2026-10-25
 - **Date:** 2026-10-25
 - **Reverses, in part:** the always-on requirements in R-18, R-28, R-31,
   R-35, DEC-74, DEC-79, DEC-156, DEC-222 and DEC-227. Their predicates,
   numbering and enabled-mode tests remain.
-- **Index:** a DEC number is taken at merge; existing rows are marked below.
+- **Index:** existing R-18, R-28, R-31, R-35, DEC-74, DEC-79, DEC-156,
+  DEC-222 and DEC-227 rows are amended in place in `design/09-decision-index.md`;
+  their historical enabled-mode decisions and tests remain. No new DEC row.
 
 ## Context
 

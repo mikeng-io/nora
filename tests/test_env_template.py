@@ -21,7 +21,7 @@ def test_config_example_exists_and_parses():
     data = tomllib.loads((ROOT / "config.example.toml").read_text())
     assert set(data) == {
         "agent",
-        "message_readings",
+        "message_readings", "content_checks",
         "platforms", "llm", "memory", "store", "media", "route", "presence",
         "analytics", "memory_index", "compute", "computer", "otp",
         "search", "online", "weather", "preview", "heartbeat", "reminders",
@@ -33,6 +33,7 @@ def test_config_example_exists_and_parses():
         "identity_file", "policy_file",
         "obs", "evals", "tools",
     }
+    assert data["content_checks"] == {"enabled": False}
 
 
 # --- Drift between the template and the real deployment ---------------------

@@ -163,7 +163,7 @@
   {
     "name": "2 review: an unmapped account no longer blocks (shared audience decision)",
     "file": "nora/agent/whereis.py",
-    "old": "    if view.unnamed > 0 and not location_trusted:\n        return \"unnamed\"\n",
+    "old": "    if content_checks and view.unnamed > 0 and not location_trusted:\n        return \"unnamed\"\n",
     "new": "",
     "target": "tests/unit/test_cognition_rollup_stay_context.py::test_an_unmapped_account_in_a_room_withholds_the_place"
   },
