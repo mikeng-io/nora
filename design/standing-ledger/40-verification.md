@@ -57,6 +57,13 @@ it rather than asserting it.
 
 ## 5. The negatives: what must NOT happen
 
+- **Source restrictions survive.** A Character item read with
+  `exclude_persons` or a location restriction is withheld from a room where
+  `persona_lines_for` would withhold it, when opened through the record and
+  when cited by an entry; an item whose requirements cannot be resolved is
+  withheld.
+- **`recall_lookups` keeps its reach until step 5.** A lookup made before 30
+  non-cacheable calls is still returned by `recall_lookups` after them.
 - **Lineage.** A unit-scope entry whose lineage includes a room a listener is
   not in never renders there. A turn record opened from another room of the
   same unit returns only the items whose lineage passes there, and counts the
@@ -78,5 +85,9 @@ it rather than asserting it.
 
 The new read tool, the ledger-op tool and the `thread` argument on
 `load_transcript` and `room_read` each get `tool_selection` cases with their
-siblings (`standing_read`, `load_transcript`, `room_read`) named in
-`not_tools`, run before and after (ADR 0004, ADR 0015).
+siblings named in `not_tools`, run before and after (ADR 0004, ADR 0015).
+A case's expected tool is never also in its own `not_tools` (the grader
+rejects a correct call whose name appears there): a `thread` case expects
+`load_transcript` or `room_read` and lists `standing_read` and the record read
+as siblings, and asserts the `thread` argument was passed, since a reader
+called without it is the misroute being measured.

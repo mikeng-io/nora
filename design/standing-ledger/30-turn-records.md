@@ -39,10 +39,17 @@ by a model**:
   Whether any reasoning block survives today's sanitiser is checked in step 0
   ([50](50-migration.md)), not assumed.
 
-Built as a view over `tag_trace` and `tool_call_log` for tag turns, plus three
-gaps closed in step 1: the fire path keeps its trace; `CognitionAgentRunner`
-returns its exchange and the session persists it; the `ToolCallLog` hook logs
-every tool. Retention follows `tag_trace`'s.
+Built from each occasion's **trace**, which already holds every tool call and
+result: `tag_trace` for tag turns, plus two gaps closed in step 1: the fire
+path keeps its trace, and `CognitionAgentRunner` returns its exchange and the
+session persists it. Retention follows `tag_trace`'s.
+
+**`tool_call_log` is left exactly as it is until step 5.** It is not widened
+to every tool: `recall_lookups` reads its newest rows without filtering by
+tool name, capped at 30 and unpaged (`nora/agent/tools.py`), so logging every
+tool there would push real lookups out of its reach while it is still her
+evidence. It keeps its `cacheable`-only selection until the turn-record read
+has replaced it ([50](50-migration.md) step 5).
 
 ## 3. Every message she sends carries its record
 
@@ -99,11 +106,20 @@ messages it sent, and the ledger entries that cite it.
 already exist** (`nora/agent/lineage.py`); unit membership alone authorises
 nothing.
 
-- **Each item's lineage** is computed from what that tool call read: a
+- **Each item keeps the complete disclosure requirements its source carried
+  when it was read**, recorded by code at read time, not re-derived later from
+  a subject: the lineage entries; `exclude_persons`; the `location` flag and
+  location subjects (the fields `persona_lines_for` in `nora/agent/lineage.py`
+  applies to a Character read, and which a subject alone cannot reproduce);
+  and whatever further requirement that source's own gate applies. A
   transcript or `room_read` item has the rooms whose messages it returned as
-  origins; a memory or Character read has its subjects; a web search has the
-  room the turn ran in. A Cognition record mixes several rooms, which is why
-  this is per item and not per record.
+  origins; a web search has the room the turn ran in. A Cognition record mixes
+  several rooms, which is why this is per item and not per record.
+- **Re-applied with the same predicates** the source's own read uses
+  (`persona_lines_for` for a Character item, the lineage predicates for the
+  rest), against the room the record is opened from, with its live audience.
+  An item whose requirements cannot be resolved (an unknown kind, a missing
+  field, a roster that cannot be read) is withheld: fail closed.
 - **The record opens in room B** item by item: an item is returned only where
   its lineage passes for B, under the same fail-closed rules a Standing section
   gets (a degraded or partly unnamed audience withholds what names a person).
@@ -114,9 +130,9 @@ nothing.
   room, for exactly the items whose lineage passes there.
 - **Another unit's handle, or one that names nothing, is unknown**, and the
   two are byte-identical (the `room_read` rule, D1 = B).
-- **A ledger entry's lineage includes its cited records' lineage**
-  ([20](20-the-ledger.md) §5), so an entry never renders somewhere its own
-  evidence could not be opened.
+- **A ledger entry carries its cited items' requirements**, exclusions and
+  location restrictions included ([20](20-the-ledger.md) §5), so an entry never
+  renders somewhere its own evidence could not be opened.
 
 A handle on her transcript row (§3) needs no separate gate: the row is shown
 only where it is already shown, and the record still opens item by item.

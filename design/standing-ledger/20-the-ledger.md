@@ -126,10 +126,11 @@ th3 · 6d · co-op games for the weekend · discord-general
   sections) and stay readable through `standing_read`.
 - **Lineage per entry.** An entry renders only where its own lineage passes for
   the room, the rule `nora/agent/standing_read.py` already applies per section,
-  moved down one level. An entry's lineage is derived by code from everything
-  it cites, `turn(...)` records included with their own lineage
-  ([30](30-turn-records.md) §5); it is never the writing room's own lineage
-  alone, which is what Standing rows are stamped with today.
+  moved down one level. An entry's disclosure requirements are derived by code
+  from everything it cites, `turn(...)` items included with their recorded
+  requirements (lineage, exclusions, location restrictions,
+  [30](30-turn-records.md) §5); never the writing room's own lineage alone,
+  which is what Standing rows are stamped with today.
 - **Each entry renders with its revision**, which is the base a later op on it
   asserts (§7).
 
@@ -165,7 +166,11 @@ A writer never sends a whole Standing. It sends operations:
 revision as the turn saw it rendered, captured by the tool from the render
 rather than typed by the model. `touch` is the exception because it commutes:
 adding messages to a set in either order gives the same set. The base is
-required, not optional. Today's `check_stale_base` lets a caller that asserts
+required, not optional, for every ledger op from step 2 on. The legacy
+paragraph writes that coexist with the ledger until step 4 (the debrief passes
+no base today, and Cognition's `standing_revise` lets one be omitted) keep
+today's optional base until they switch to ops at step 3; the requirement is
+the ledger's, not a change to the shared legacy check. Today's `check_stale_base` lets a caller that asserts
 no base through (`nora/domain/standing_revise.py`), which is safe while one
 room's turns are serialised by its own slot (`nora/engagement/slots.py`); a
 unit entry is written from rooms whose slots are independent, so a stale room
