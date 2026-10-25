@@ -26,8 +26,7 @@ is a new DEC plus an ingest, not a redesign.
 
 ## Source of the canonical image
 
-The canonical `self` asset source material lives IN this bundle, as two files
-with two distinct roles:
+The canonical `self` asset source material lives IN this bundle, with distinct roles:
 
 - **`assets/nora-canonical-self.png`** (1024×1536) — **THE ASSET.** A single
   clean full-body front-facing studio render of the mascot form, supplied by
@@ -49,8 +48,13 @@ with two distinct roles:
 - **`assets/nora-mini-icon.png`**, **`assets/nora-mini-tpose.png`** and
   **`assets/nora-embodied-tpose.png`** — **REFERENCE ONLY, not assets**
   (operator, 2026-09-26): a cut-out icon of the native form and the two
-  T-pose rig inputs, one per form. `07-native-and-embodied-form.md` carries
-  their roles and the native/embodied framing.
+  T-pose inputs recorded in September, one per form. The old photoreal
+  embodied T-pose is now historical; `07-native-and-embodied-form.md` preserves
+  that framing and points to its dated supersession.
+- **`assets/nora-human-bauhinia-reference.png`** — **HUMAN VISUAL ANCHOR ONLY,
+  not ingested.** Operator-approved 2026-10-25;
+  `08-bauhinia-human-form.md` governs its appearance and limits. It does not
+  replace the Mini canonical self asset, descriptive sheet or public avatars.
 
 At build time the ingest one-shot (`scripts/ingest_self_asset.py`) ingests the
 canonical single image into Nora's media library, marks `role: self`, and the
