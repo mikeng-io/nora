@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Turn records: what a turn did, kept whole, cited by id, opened on demand"
-description: "The Record layer the ledger cites. Every occasion keeps a turn record built by code from what already exists (tag_trace, tool_call_log) plus the two paths that keep too little today (fire, Cognition); every message she sends carries its record's handle; a ledger line cites it as turn(id); one read opens it, gated item by item by code-derived lineage. That read takes over DEC-112's job, which is what lets recall_lookups retire."
+description: "The Record layer the ledger cites. Every occasion keeps a turn record built by code from each occasion's trace (tag_trace today, plus the fire and Cognition exchanges that are not kept today); every message she sends carries its record's handle; a ledger line cites it as turn(id); one read opens it, gated item by item by the disclosure requirements recorded with each item. That read takes over DEC-112's job, which is what lets recall_lookups retire."
 tags: [nora, turn-record, tag-trace, tool-call-log, provenance, lineage, recall-lookups, dec-112]
 timestamp: '2026-10-25'
 edges:
