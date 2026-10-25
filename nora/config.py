@@ -1107,6 +1107,26 @@ class OnlineConfig(BaseModel):
     timeout_seconds: float = Field(default=8.0, gt=0)
 
 
+class MessageReadingsConfig(BaseModel):
+    """Write-only Record perception; independent of the memory index read flag."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    enabled: bool = False
+    # Same gateway and credentials as [llm]; never inherit its tag/reasoning lane.
+    model: str = ""
+    batch_size: int = Field(default=20, ge=1, le=100)
+    context_size: int = Field(default=20, ge=1, le=100)
+    settle_seconds: float = Field(default=2, ge=0, le=60)
+    timeout_seconds: float = Field(default=90, gt=0, le=300)
+    max_tokens: int = Field(default=6000, ge=256, le=32000)
+
+    @model_validator(mode="after")
+    def _reading_model_is_flash(self) -> MessageReadingsConfig:
+        if self.enabled and not re.fullmatch(r"[^/]+/deepseek-v4\.1-flash", self.model):
+            raise ValueError("message_readings requires a configured DeepSeek V4.1 Flash route")
+        return self
+
+
 class MemoryIndexConfig(BaseModel):
     """The memory index. The index is written by every store's own write whatever this
     says; `drain_seconds` is how often the nora process re-projects what those writes
@@ -3878,6 +3898,7 @@ class Config(BaseModel):
     analytics: AnalyticsConfig = AnalyticsConfig()
     # Optional and defaulted — see `MemoryIndexConfig`.
     memory_index: MemoryIndexConfig = MemoryIndexConfig()
+    message_readings: MessageReadingsConfig = MessageReadingsConfig()
     # Optional and defaulted — see `SearchConfig`. Off (inert) unless an operator
     # turns it on AND a Tavily key is present (`api_key_env`, DEC-8/DEC-73); a
     # config.toml without a `[search]` section keeps loading.

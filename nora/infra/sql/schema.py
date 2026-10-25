@@ -5056,3 +5056,77 @@ PERSONA_DISPUTE = sa.Table(
 IDX_PERSONA_DISPUTE_KEY = sa.Index(
     "idx_persona_dispute_key", PERSONA_DISPUTE.c.persona_key, PERSONA_DISPUTE.c.written_at,
 )
+
+
+# Record message readings. Deliberately absent from memory_node and every read surface.
+MESSAGE_READING = sa.Table(
+    "message_reading", METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(), primary_key=True),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("platform", sa.Text, nullable=False),
+    sa.Column("origin_room", sa.Text, nullable=False),
+    sa.Column("source_ids", pg.ARRAY(sa.Integer), nullable=False),
+    sa.Column("context_ids", pg.ARRAY(sa.Integer), nullable=False),
+    sa.Column("snapshot", pg.JSONB, nullable=False),
+    sa.Column("version", sa.Integer, nullable=False),
+    sa.Column("model", sa.Text, nullable=False),
+    sa.Column("state", sa.Text, nullable=False, server_default=sa.text("'pending'")),
+    sa.Column("attempts", sa.Integer, nullable=False, server_default=sa.text("0")),
+    sa.Column("due_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+    sa.Column("created_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now()),
+    sa.Column("built_at", sa.DateTime(timezone=True)),
+    sa.Column("retired_at", sa.DateTime(timezone=True)),
+    sa.CheckConstraint("state IN ('pending', 'done', 'retired')", name="ck_message_reading_state"),
+)
+
+MESSAGE_READING_QUEUE = sa.Table(
+    "message_reading_queue", METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(), primary_key=True),
+    sa.Column("message_id", sa.Integer, sa.ForeignKey("messages.id", ondelete="SET NULL")),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("platform", sa.Text, nullable=False),
+    sa.Column("origin_room", sa.Text, nullable=False),
+    sa.Column("source_key", sa.Text, nullable=False),
+    sa.Column("is_source", sa.Boolean, nullable=False, server_default=sa.true()),
+    sa.Column("reading_id", sa.BigInteger, sa.ForeignKey("message_reading.id")),
+    sa.Column("queued_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now()),
+    sa.UniqueConstraint("platform", "origin_room", "source_key", name="uq_message_reading_arrival"),
+    sa.UniqueConstraint("message_id", name="uq_message_reading_queue_message"),
+)
+
+MESSAGE_READING_CLAIM = sa.Table(
+    "message_reading_claim", METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(), primary_key=True),
+    sa.Column("reading_id", sa.BigInteger, sa.ForeignKey("message_reading.id"), nullable=False),
+    sa.Column("ordinal", sa.Integer, nullable=False),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("platform", sa.Text, nullable=False),
+    sa.Column("origin_room", sa.Text, nullable=False),
+    sa.Column("source_ids", pg.ARRAY(sa.Integer), nullable=False),
+    sa.Column("content", pg.JSONB, nullable=False),
+    sa.Column("built_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+    sa.Column("retired_at", sa.DateTime(timezone=True)),
+    sa.UniqueConstraint("reading_id", "ordinal", name="uq_message_reading_claim"),
+)
+
+MESSAGE_READING_ATTEMPT = sa.Table(
+    "message_reading_attempt", METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(), primary_key=True),
+    sa.Column("reading_id", sa.BigInteger, sa.ForeignKey("message_reading.id"), nullable=False),
+    sa.Column("attempt", sa.Integer, nullable=False),
+    sa.Column("model", sa.Text, nullable=False),
+    sa.Column("provider_model", sa.Text),
+    sa.Column("trace_id", sa.Text),
+    sa.Column("started_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now()),
+    sa.Column("finished_at", sa.DateTime(timezone=True)),
+    sa.Column("input_tokens", sa.BigInteger),
+    sa.Column("output_tokens", sa.BigInteger),
+    sa.Column("outcome", sa.Text, nullable=False, server_default=sa.text("'started'")),
+    sa.UniqueConstraint("reading_id", "attempt", name="uq_message_reading_attempt"),
+)
+sa.Index("idx_message_reading_due", MESSAGE_READING.c.state, MESSAGE_READING.c.due_at)
+sa.Index("idx_message_reading_queue_pending", MESSAGE_READING_QUEUE.c.reading_id,
+         MESSAGE_READING_QUEUE.c.queued_at)
