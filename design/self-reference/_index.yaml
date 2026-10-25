@@ -24,6 +24,7 @@ revision_2026_09_23_build: 'Built. Operator placed the content in an on-demand S
 revision_2026_09_23: 'Canon replaced by the mascot form (operator, 2026-09-23): new self asset (sha256 535e4da5…), new Mini Form sheet, the operator''s spec kept verbatim as 05, social avatar and banner added as reference-only. The human form is retired, not kept as an alternative.'
 revision_2026_09_26: 'One identity, two representations (operator, 2026-09-26, 07): Mini Nora is the native form on every internet surface; Embodied Nora is a human-scale interface for spatial surfaces, not a human identity, so 05 and the 2026-09-23 retirement of the human-form canon stand. Three reference-only images added (nora-mini-icon, nora-mini-tpose, nora-embodied-tpose); nothing ingested, runtime unchanged. The repo-wide visual system is DESIGN.md.'
 revision_2026_10_25: 'Approved Bauhinia human visual anchor (08), tracked in issue #245: one identity, human and Mini forms; human design may be 2D anime art or 3D, superseding the spatial-only framing in 07. Original PNG is reference-only, not ingested. Mini canon, public avatars and runtime remain unchanged; consistent modeling turnarounds and model/rig work remain future.'
+revision_2026_10_26: 'Operator approved Mini option08 Balanced and requested refreshed art, an integrated inventory and matching procedural eyes. Human Bauhinia is unchanged; no runtime ingest, release, external publication or video rerender is performed.'
 origin: "self-reference design discussion with miles after the 2026-08-27 cow-avatar image failure"
 members:
   - 00-overview.md
@@ -35,6 +36,7 @@ members:
   - 06-implementation-plan.md
   - 07-native-and-embodied-form.md
   - 08-bauhinia-human-form.md
+  - 09-mini08-balanced.md
 edges:
   - {src: 01-appearance-doctrine, dst: 05-visual-identity-spec, rel: depends_on, provenance: asserted}
   - {src: 05-visual-identity-spec, dst: 00-overview, rel: realizes, provenance: asserted}
@@ -53,6 +55,8 @@ edges:
   - {src: 07-native-and-embodied-form, dst: 00-overview, rel: realizes, provenance: asserted}
   - {src: 08-bauhinia-human-form, dst: 07-native-and-embodied-form, rel: supersedes, provenance: asserted}
   - {src: 08-bauhinia-human-form, dst: 02-canonical-assets, rel: depends_on, provenance: asserted}
+  - {src: 09-mini08-balanced, dst: 05-visual-identity-spec, rel: supersedes, provenance: asserted}
+  - {src: 09-mini08-balanced, dst: 02-canonical-assets, rel: depends_on, provenance: asserted}
 scope:
   v1:
     - "image-generation skill (nora/skills/image-generation/SKILL.md), on demand: the in-the-picture judgement, recognition/no-guess rules, her visual form, per-model notes (built as a skill, not the designed appearance.md doctrine file)"

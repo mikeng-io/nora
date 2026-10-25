@@ -40,7 +40,16 @@ same page: whether she is in the picture at all, and whose photo is whose.
 The designed doctrine file (`kind: identity`, order 15, injected every turn)
 was not built; see the banner.
 
-## Contents
+## Current appearance amendment, 2026-10-26
+
+[09](09-mini08-balanced.md) supersedes the September eye description: Mini
+now has visible sclera, brown irises, pupils, highlights and an upper lid
+line, with no nose marker and one tiny mouth. [08](08-bauhinia-human-form.md)
+supersedes the old no-human-form statement for human design. The September
+content below is historical where those clauses disagree. Runtime images
+still use Mini; no live ingest or release is performed by this amendment.
+
+## September contents (appearance amended above)
 
 1. **Visual description** — written from the operator's own spec,
    `05-visual-identity-spec.md` (2026-09-23, verbatim), and confirmed against

@@ -1,0 +1,2194 @@
+{
+  "version": 1,
+  "current_mini_design": "mini08-balanced-2026-10-26",
+  "assets": [
+    {
+      "id": "app.public.favicon",
+      "path": "app/public/favicon.ico",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-mini-icon.png"
+      ],
+      "recipe": "app-icons",
+      "consumers": [
+        "app/public/offline.html (standalone app URL /favicon.ico; deployed shared host uses site favicon)",
+        "app/public/sw.js (standalone app URL /favicon.ico; deployed shared host uses site favicon)"
+      ],
+      "provenance": "Standalone app fallback icon; the deployed shared hostname serves /favicon.ico from site/public/favicon.ico. Existing app icon processor; no publication.",
+      "unchanged_reason": null,
+      "sha256": "bd379de3dc1a314bf3b5616e06bd19a6c2cc665af6bbbaf2082a7cdd4bbc64eb",
+      "size": [
+        48,
+        48
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "app.public.icons.apple-touch-icon",
+      "path": "app/public/icons/apple-touch-icon.png",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-mini-icon.png"
+      ],
+      "recipe": "app-icons",
+      "consumers": [
+        "app/public/sw.js (URL /icons/apple-touch-icon.png)",
+        "app/src/app/[locale]/layout.tsx (URL /icons/apple-touch-icon.png)"
+      ],
+      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "unchanged_reason": null,
+      "sha256": "3d28fb5c5bfe9c7b9d2f35bf3150fde25e2246f0b3ab8f12a213337d6d4fc748",
+      "size": [
+        180,
+        180
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "app.public.icons.icon-192",
+      "path": "app/public/icons/icon-192.png",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-mini-icon.png"
+      ],
+      "recipe": "app-icons",
+      "consumers": [
+        "app/public/manifest.webmanifest (URL /icons/icon-192.png)",
+        "app/public/offline.html (URL /icons/icon-192.png)",
+        "app/public/sw.js (URL /icons/icon-192.png)",
+        "app/src/app/[locale]/layout.tsx (URL /icons/icon-192.png)"
+      ],
+      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "unchanged_reason": null,
+      "sha256": "9b6fa7c30a4a6528b6a8f6334b16697b872810445db20463a0a7f8c367d5ad42",
+      "size": [
+        192,
+        192
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "app.public.icons.icon-512",
+      "path": "app/public/icons/icon-512.png",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-mini-icon.png"
+      ],
+      "recipe": "app-icons",
+      "consumers": [
+        "app/public/manifest.webmanifest (URL /icons/icon-512.png)",
+        "app/public/offline.html (URL /icons/icon-512.png)",
+        "app/public/sw.js (URL /icons/icon-512.png)",
+        "app/src/app/[locale]/layout.tsx (URL /icons/icon-512.png)"
+      ],
+      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "unchanged_reason": null,
+      "sha256": "b48acacdbdf30420b3fd0bebfc3d6a2ae097e39a6de2a9877128a98eabc573ee",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "app.public.icons.icon-maskable-512",
+      "path": "app/public/icons/icon-maskable-512.png",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-mini-icon.png"
+      ],
+      "recipe": "app-icons",
+      "consumers": [
+        "app/public/manifest.webmanifest (URL /icons/icon-maskable-512.png)",
+        "app/public/sw.js (URL /icons/icon-maskable-512.png)"
+      ],
+      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "unchanged_reason": null,
+      "sha256": "417db501a87434dbc69ac5d2980e8bcb4a47717a75df0108fab427a1a124cb84",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "app.public.screenshots.today-narrow",
+      "path": "app/public/screenshots/today-narrow.webp",
+      "form": "ui",
+      "role": "screenshot",
+      "status": "active",
+      "eyes": "mini08-ui",
+      "parents": [
+        "app/src/assets/art/nora-mini-icon.webp"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "app/public/manifest.webmanifest (URL /screenshots/today-narrow.webp)"
+      ],
+      "provenance": "Mock-only recapture 2026-10-26: app/README.md documented dev server and invented Miles sign-in, local mock :9198 / app :3498; Playwright Chromium, en-HK, light, reduced motion, no page errors. No real personal data. See app/README.md PWA screenshots.",
+      "unchanged_reason": null,
+      "sha256": "b99333fea73b8bd8d5fe0707286f93c2440abc9feff3a514b9911b06ee279a26",
+      "visual_review": "captured and inspected; screenshot only, not general UI/accessibility acceptance",
+      "size": [
+        780,
+        1688
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "app.public.screenshots.today-wide",
+      "path": "app/public/screenshots/today-wide.webp",
+      "form": "ui",
+      "role": "screenshot",
+      "status": "active",
+      "eyes": "mini08-ui",
+      "parents": [
+        "app/src/assets/art/nora-mini-icon.webp"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "app/public/manifest.webmanifest (URL /screenshots/today-wide.webp)"
+      ],
+      "provenance": "Mock-only recapture 2026-10-26: app/README.md documented dev server and invented Miles sign-in, local mock :9198 / app :3498; Playwright Chromium, en-HK, light, reduced motion, no page errors. No real personal data. See app/README.md PWA screenshots.",
+      "unchanged_reason": null,
+      "sha256": "af23f51d83eff417aeb0e84c5f7ac0720dc9033deeafe80f2a63bb06867581fd",
+      "visual_review": "captured and inspected; screenshot only, not general UI/accessibility acceptance",
+      "size": [
+        1440,
+        900
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "app.src.assets.art.group-chat",
+      "path": "app/src/assets/art/group-chat.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "site/src/assets/art/group-chat.webp"
+      ],
+      "recipe": "copy",
+      "consumers": [
+        "app/src/components/nora/art.ts (direct import)",
+        "app/src/components/ui/states.tsx (art[artName], registry key groupChat)"
+      ],
+      "provenance": "Deterministic app export from declared master.",
+      "unchanged_reason": null,
+      "sha256": "e41e8d86307f166972989c4c4697f5abb0034786cc73d991c908ccf67e0181a0",
+      "size": [
+        996,
+        1579
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "app.src.assets.art.lost",
+      "path": "app/src/assets/art/lost.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "site/src/assets/art/lost.webp"
+      ],
+      "recipe": "copy",
+      "consumers": [
+        "app/src/components/nora/art.ts (direct import)",
+        "app/src/components/ui/states.tsx (art[artName], registry key lost)"
+      ],
+      "provenance": "Deterministic app export from declared master.",
+      "unchanged_reason": null,
+      "sha256": "78e8678f823184ea7c3a886e876a64093abaef8c77abf695c2619e2e8c45ae83",
+      "size": [
+        963,
+        1634
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "app.src.assets.art.night-portrait",
+      "path": "app/src/assets/art/night-portrait.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "site/src/assets/art/night-portrait.webp"
+      ],
+      "recipe": "copy",
+      "consumers": [
+        "app/src/app/[locale]/(portal)/nora/nora-view.tsx (art.nightPortrait via registry)",
+        "app/src/app/[locale]/login/page.tsx (art.nightPortrait via registry)",
+        "app/src/components/nora/art.ts (direct import)",
+        "app/src/components/ui/states.tsx (art[artName], registry key nightPortrait)"
+      ],
+      "provenance": "Deterministic app export from declared master.",
+      "unchanged_reason": null,
+      "sha256": "3f1179afc259493005df25fd6b4fafef8cd79eb9937eb03959aeecbb59a245bc",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "app.src.assets.art.nora-canonical-self",
+      "path": "app/src/assets/art/nora-canonical-self.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "webp",
+      "consumers": [
+        "app/src/app/[locale]/(portal)/nora/nora-view.tsx (art.canonical via registry)",
+        "app/src/app/[locale]/login/page.tsx (art.canonical via registry)",
+        "app/src/components/nora/art.ts (direct import)",
+        "app/src/components/ui/states.tsx (art[artName], registry key canonical)"
+      ],
+      "provenance": "Deterministic app export from declared master.",
+      "unchanged_reason": null,
+      "sha256": "80e6025a154e8136d8bbb6e2112dd33b6bd909d4099d0d5acb4922c5ce57fb0f",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "app.src.assets.art.nora-mini-icon",
+      "path": "app/src/assets/art/nora-mini-icon.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-mini-icon.png"
+      ],
+      "recipe": "app-icon-webp",
+      "consumers": [
+        "app/src/components/nora/art.ts (direct import)",
+        "app/src/components/ui/avatar.tsx (art.icon via registry)",
+        "app/src/components/ui/states.tsx (art[artName], registry key icon)"
+      ],
+      "provenance": "Deterministic app export from declared master.",
+      "unchanged_reason": null,
+      "sha256": "66a25040b97cd39d622863fac3f738c261f6819ac26048ce3dadf446f2b2460a",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "app.src.assets.art.notebook",
+      "path": "app/src/assets/art/notebook.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-notebook.webp"
+      ],
+      "recipe": "copy",
+      "consumers": [
+        "app/src/components/nora/art.ts (direct import)",
+        "app/src/components/ui/states.tsx (art[artName], registry key notebook)"
+      ],
+      "provenance": "Deterministic app export from declared master.",
+      "unchanged_reason": null,
+      "sha256": "51641f7cf563109f89aafcf94cab8c42304bd8af089d0860d9372314122b9a12",
+      "size": [
+        984,
+        1599
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "app.src.assets.art.quiet",
+      "path": "app/src/assets/art/quiet.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "closed",
+      "parents": [
+        "site/src/assets/art/quiet.webp"
+      ],
+      "recipe": "copy",
+      "consumers": [
+        "app/src/components/nora/art.ts (direct import)",
+        "app/src/components/ui/states.tsx (art[artName], registry key quiet)"
+      ],
+      "provenance": "Deterministic app export from declared master.",
+      "unchanged_reason": "Closed-eye Mini rendering; no open eye design to replace.",
+      "sha256": "066b8b0fcb538f8078a9633d94bf6cd64edd3cdabb81d3fe1f7f19a596e1fd17",
+      "size": [
+        777,
+        1402
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "app.src.assets.art.wave",
+      "path": "app/src/assets/art/wave.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "site/src/assets/art/wave.webp"
+      ],
+      "recipe": "copy",
+      "consumers": [
+        "app/src/app/[locale]/login/page.tsx (art.wave via registry)",
+        "app/src/components/nora/art.ts (direct import)",
+        "app/src/components/ui/states.tsx (art[artName], registry key wave)"
+      ],
+      "provenance": "Deterministic app export from declared master.",
+      "unchanged_reason": null,
+      "sha256": "a0e1cc317312c47e42bef53d77cf2e413187e369ba3de7e64c6319980c6ead39",
+      "size": [
+        979,
+        1607
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "assets.nora-canonical-self",
+      "path": "assets/nora-canonical-self.png",
+      "form": "mini",
+      "role": "canonical",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "DESIGN.md (explicit path reference)",
+        "assets/nora-mini-icon.md (explicit path reference)",
+        "design/self-reference/00-overview.md (explicit path reference)",
+        "design/self-reference/01-appearance-doctrine.md (explicit path reference)",
+        "design/self-reference/02-canonical-assets.md (explicit path reference)",
+        "design/self-reference/04-tests-and-files.md (explicit path reference)",
+        "design/self-reference/06-implementation-plan.md (explicit path reference)",
+        "design/self-reference/_index.yaml (explicit path reference)",
+        "design/video-generation/00-design.md (explicit path reference)",
+        "docs-site/src/pages/index.astro (direct import)",
+        "docs-site/src/pages/index.astro (explicit path reference)",
+        "scripts/ingest_self_asset.py (explicit path reference)",
+        "showreel/README.md (explicit path reference)",
+        "showreel/pipeline/gen_art.sh (explicit path reference)",
+        "showreel/pipeline/process_art.py (BORROWED input)",
+        "showreel/pipeline/process_art.py (explicit path reference)",
+        "site/src/assets/art.ts (direct import)",
+        "site/src/assets/art.ts (explicit path reference)",
+        "site/src/assets/art/README.md (explicit path reference)",
+        "site/src/assets/rig/README.md (explicit path reference)",
+        "site/src/components/Form.astro (art.canonical via registry)",
+        "site/src/components/Hero.astro (art.canonical via registry)"
+      ],
+      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "unchanged_reason": null,
+      "sha256": "5f1a43327bcc81959c794951c550a511e2cfbda4fda25b8c55bc8b93e42f9b57",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.nora-character-reference-sheet",
+      "path": "assets/nora-character-reference-sheet.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "DESIGN.md (explicit path reference)",
+        "assets/nora-mini-icon.md (explicit path reference)",
+        "design/self-reference/01-appearance-doctrine.md (explicit path reference)",
+        "design/self-reference/02-canonical-assets.md (explicit path reference)",
+        "design/self-reference/02-canonical-assets.md (reference link)",
+        "design/self-reference/04-tests-and-files.md (explicit path reference)",
+        "design/self-reference/08-bauhinia-human-form.md (explicit path reference)",
+        "design/self-reference/09-mini08-balanced.md (reference link)",
+        "showreel/README.md (explicit path reference)",
+        "showreel/pipeline/gen_art.sh (explicit path reference)",
+        "site/src/assets/art.ts (direct import)",
+        "site/src/assets/art.ts (explicit path reference)",
+        "site/src/assets/art/README.md (explicit path reference)",
+        "site/src/components/Form.astro (art.sheet via registry)"
+      ],
+      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "unchanged_reason": null,
+      "sha256": "41a7862cfb0b3d668c51efd8f46bb57003426a8c05591086efe14111448d8d62",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.nora-embodied-tpose",
+      "path": "assets/nora-embodied-tpose.png",
+      "form": "human",
+      "role": "reference",
+      "status": "historical",
+      "eyes": "historical",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "design/self-reference/02-canonical-assets.md (explicit path reference)",
+        "design/self-reference/07-native-and-embodied-form.md (explicit path reference)"
+      ],
+      "provenance": "September reference; exact original generator unknown.",
+      "unchanged_reason": "September photoreal human reference superseded by Bauhinia; retained as history.",
+      "sha256": "a8a758a35d5f3bfcabbb6c1f0d52c5295dddb3b48bcf41726b2860b1ad846223",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.nora-human-bauhinia-reference",
+      "path": "assets/nora-human-bauhinia-reference.png",
+      "form": "human",
+      "role": "reference",
+      "status": "approved-reference",
+      "eyes": "human-bauhinia",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "DESIGN.md (explicit path reference)",
+        "design/self-reference/02-canonical-assets.md (explicit path reference)",
+        "design/self-reference/08-bauhinia-human-form.md (explicit path reference)",
+        "design/self-reference/08-bauhinia-human-form.md (reference link)"
+      ],
+      "provenance": "2026-10-25 approval; design/self-reference/08-bauhinia-human-form.md.",
+      "unchanged_reason": "Approved human form is outside Mini eye refresh.",
+      "sha256": "a8ff83404677989d46985f97b0de24f546bf45321389d480f813cc48841c5dca",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.nora-mini-icon",
+      "path": "assets/nora-mini-icon.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "DESIGN.md (explicit path reference)",
+        "README.md (explicit path reference)",
+        "app/scripts/make-icons.py (explicit path reference)",
+        "assets/nora-mini-icon.md (explicit path reference)",
+        "design/self-reference/02-canonical-assets.md (explicit path reference)",
+        "docs-site/src/components/SiteTitle.astro (direct import)",
+        "docs-site/src/components/SiteTitle.astro (explicit path reference)",
+        "showreel/pipeline/process_art.py (BORROWED input)",
+        "showreel/pipeline/process_art.py (explicit path reference)",
+        "site/scripts/make_images.py (explicit path reference)",
+        "site/src/assets/art.ts (direct import)",
+        "site/src/assets/art.ts (explicit path reference)",
+        "site/src/components/NoraAvatar.astro (art.icon via registry)",
+        "site/src/components/NoraMark.astro (art.icon via registry)"
+      ],
+      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "unchanged_reason": null,
+      "sha256": "e885ec0cb9ba391ef4a5bb3c88ffca988d4588d9296d87ad47de15e12ba8d0cb",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "assets.nora-mini-tpose",
+      "path": "assets/nora-mini-tpose.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "DESIGN.md (explicit path reference)",
+        "DESIGN.md (reference link)",
+        "design/self-reference/02-canonical-assets.md (explicit path reference)",
+        "design/self-reference/02-canonical-assets.md (reference link)",
+        "design/self-reference/08-bauhinia-human-form.md (explicit path reference)",
+        "design/self-reference/09-mini08-balanced.md (reference link)",
+        "site/src/assets/art.ts (direct import)",
+        "site/src/assets/art.ts (explicit path reference)",
+        "site/src/components/Form.astro (art.tpose via registry)"
+      ],
+      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "unchanged_reason": null,
+      "sha256": "f2519df57d5725bc8b96af6a24733ee341b8057ebbf30f6516443dad464ab00d",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.nora-mini-turnaround",
+      "path": "assets/nora-mini-turnaround.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "DESIGN.md (explicit path reference)",
+        "DESIGN.md (reference link)",
+        "design/self-reference/02-canonical-assets.md (explicit path reference)",
+        "design/self-reference/02-canonical-assets.md (reference link)",
+        "design/self-reference/07-native-and-embodied-form.md (explicit path reference)",
+        "design/self-reference/07-native-and-embodied-form.md (reference link)",
+        "design/self-reference/09-mini08-balanced.md (reference link)"
+      ],
+      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "unchanged_reason": null,
+      "sha256": "d572281fcc52289ae7ce84b0431c8477d16821966c18352c69c828e8b2916a2f",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.nora-notebook",
+      "path": "assets/nora-notebook.webp",
+      "form": "mini",
+      "role": "shared-master",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "showreel/README.md (explicit path reference)",
+        "showreel/pipeline/process_art.py (BORROWED input)",
+        "showreel/pipeline/process_art.py (explicit path reference)",
+        "site/src/assets/art/README.md (explicit path reference)"
+      ],
+      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "unchanged_reason": null,
+      "sha256": "51641f7cf563109f89aafcf94cab8c42304bd8af089d0860d9372314122b9a12",
+      "size": [
+        984,
+        1599
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "assets.nora-social-avatar",
+      "path": "assets/nora-social-avatar.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "design/self-reference/02-canonical-assets.md (explicit path reference)"
+      ],
+      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "unchanged_reason": null,
+      "sha256": "2faac9a529ac741040046caee677368dd72a3513e1c03009f7d0e425bcb3ebf8",
+      "size": [
+        1374,
+        1145
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.nora-social-banner",
+      "path": "assets/nora-social-banner.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "README.md (explicit path reference)",
+        "design/self-reference/02-canonical-assets.md (explicit path reference)"
+      ],
+      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; banner IDAT losslessly recompressed to remove a coincidental printable email shape, preserving dimensions, mode and decoded pixels. Unlike the canonical source, its compressed IDAT bytes are not exact; canonical source and original archive unchanged.",
+      "unchanged_reason": null,
+      "sha256": "f8314b8cc91a0cd9edb7448ea066bbafeb029cc0949222b8b13116619845f9f1",
+      "size": [
+        2056,
+        765
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "showreel.art.raw.hotpot-photo",
+      "path": "showreel/art/raw/hotpot-photo.png",
+      "form": "noncharacter",
+      "role": "reference",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
+      ],
+      "provenance": "Original prompt: showreel/art/prompts/hotpot-photo.txt; adjacent JSONL records September generation only, not current refresh.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "8805ed3533fdebcce0d76c595367af21cfe1fa686732f5379426fd2f87c93cc1",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "showreel.art.raw.macro-earbud-tall",
+      "path": "showreel/art/raw/macro-earbud-tall.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
+      ],
+      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "unchanged_reason": null,
+      "sha256": "007d879606f4cb7514fa92dd6d920993dfb3b8fe9e62b2a498ca2282e89071a4",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "showreel.art.raw.macro-earbud-wide",
+      "path": "showreel/art/raw/macro-earbud-wide.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
+      ],
+      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "unchanged_reason": null,
+      "sha256": "a07334cf2d78bdfb275b64b446db3d9679265b1148d3ba2b06eb612edc340c9b",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "showreel.art.raw.music",
+      "path": "showreel/art/raw/music.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "closed",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
+      ],
+      "provenance": "Original prompt: showreel/art/prompts/music.txt; adjacent JSONL records September generation only, not current refresh.",
+      "unchanged_reason": "Closed-eye Mini rendering; no open eye design to replace.",
+      "sha256": "ed2a64b39d6d412cdeadcec6d530493a759ecef08eb5a88069b43064f9f308a1",
+      "size": [
+        1122,
+        1402
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "showreel.art.raw.quiet-closeup-tall",
+      "path": "showreel/art/raw/quiet-closeup-tall.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "closed",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
+      ],
+      "provenance": "Original prompt: showreel/art/prompts/quiet-closeup-tall.txt; adjacent JSONL records September generation only, not current refresh.",
+      "unchanged_reason": "Closed-eye Mini rendering; no open eye design to replace.",
+      "sha256": "e3b01120c0bc2d2fcacdadf5937d698ebd9345824b136930049daf87065d9ccb",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "showreel.art.raw.quiet-closeup-wide",
+      "path": "showreel/art/raw/quiet-closeup-wide.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "closed",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
+      ],
+      "provenance": "Original prompt: showreel/art/prompts/quiet-closeup-wide.txt; adjacent JSONL records September generation only, not current refresh.",
+      "unchanged_reason": "Closed-eye Mini rendering; no open eye design to replace.",
+      "sha256": "1c6383405ba4f89631c224d94aed2811bd7c1618656bd799dafcab5c65215173",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "showreel.art.raw.room-night-tall",
+      "path": "showreel/art/raw/room-night-tall.png",
+      "form": "noncharacter",
+      "role": "reference",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
+      ],
+      "provenance": "Original prompt: showreel/art/prompts/room-night-tall.txt; adjacent JSONL records September generation only, not current refresh.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "a51c603bd609e2074f2a93c54c75a536f45f5826a5758d45a90331541e87cc0c",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "showreel.art.raw.room-night-wide",
+      "path": "showreel/art/raw/room-night-wide.png",
+      "form": "noncharacter",
+      "role": "reference",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
+      ],
+      "provenance": "Original prompt: showreel/art/prompts/room-night-wide.txt; adjacent JSONL records September generation only, not current refresh.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "9596700e43be8a35afcc6916583aac35a51194876cd65e89e0309f4de6372561",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "showreel.art.raw.thinking",
+      "path": "showreel/art/raw/thinking.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
+      ],
+      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "unchanged_reason": null,
+      "sha256": "5d87defc4ec5fbfaaf3493a46863e4e71725e5d8321a91eec5631426af314371",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "showreel.art.raw.umbrella",
+      "path": "showreel/art/raw/umbrella.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
+      ],
+      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "unchanged_reason": null,
+      "sha256": "f37780840ed70c37264b76dc29ac5c905b2d769c890fcfee64332c0f16f1200c",
+      "size": [
+        1122,
+        1402
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "showreel.art.raw.walking",
+      "path": "showreel/art/raw/walking.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
+      ],
+      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "unchanged_reason": null,
+      "sha256": "689ef81a55e68cc7276b33cd4d2c2cf67577a8919739c824364b20b9cfd3f1a3",
+      "size": [
+        1122,
+        1402
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "showreel.public.art.group-chat",
+      "path": "showreel/public/art/group-chat.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "site/src/assets/art/group-chat.webp"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Thread.tsx (staticFile/Cutout/Plate art/group-chat.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": null,
+      "sha256": "15ddabf68707acc55e55d4ab77147066716c531f3cb73dc3d4b2f26d9cd9a2e6",
+      "size": [
+        996,
+        1579
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "showreel.public.art.hotpot-photo",
+      "path": "showreel/public/art/hotpot-photo.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [
+        "showreel/art/raw/hotpot-photo.png"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Senses.tsx (staticFile/Cutout/Plate art/hotpot-photo.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "33b16059684d19af9629edddae9221dd0023ca8e829d0d66b68244f8bc06571c",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "showreel.public.art.macro-earbud-tall",
+      "path": "showreel/public/art/macro-earbud-tall.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "showreel/art/raw/macro-earbud-tall.png"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Thread.tsx (staticFile/Cutout/Plate art/macro-earbud-tall.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": null,
+      "sha256": "5b1cb45a794522399b18457da8c226997e30dfa1f66d1b0a22eafff4ac11eb36",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "showreel.public.art.macro-earbud-wide",
+      "path": "showreel/public/art/macro-earbud-wide.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "showreel/art/raw/macro-earbud-wide.png"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Thread.tsx (staticFile/Cutout/Plate art/macro-earbud-wide.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": null,
+      "sha256": "850bd9373a39a7b530ff790511a0ddfdc97382d61b28f25f7a5b87a7fcf681b3",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "showreel.public.art.music",
+      "path": "showreel/public/art/music.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "closed",
+      "parents": [
+        "showreel/art/raw/music.png"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Senses.tsx (staticFile/Cutout/Plate art/music.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": "Closed-eye Mini rendering; no open eye design to replace.",
+      "sha256": "412706520558c70b7feec0e107c7322de28766a13b035f99b7289e4c73678b3e",
+      "size": [
+        820,
+        1402
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "showreel.public.art.night-portrait",
+      "path": "showreel/public/art/night-portrait.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "site/src/assets/art/night-portrait.webp"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Quiet.tsx (staticFile/Cutout/Plate art/night-portrait.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": null,
+      "sha256": "59b11a938825b770de4b9fd70d8f493b27f679c18b31d5fe46a5f56440cc672f",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "showreel.public.art.nora-canonical-self",
+      "path": "showreel/public/art/nora-canonical-self.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": " No current scene displays this generated output. No current scene displays this generated output.",
+      "sha256": "b7cb38e39eee24cd907be8192a78dfb85942304194f7d0fe5cfbe102bbdac71f",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "showreel.public.art.nora-mini-icon",
+      "path": "showreel/public/art/nora-mini-icon.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-mini-icon.png"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Senses.tsx (staticFile/Cutout/Plate art/nora-mini-icon.webp)",
+        "showreel/src/scenes/Thread.tsx (staticFile/Cutout/Plate art/nora-mini-icon.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": null,
+      "sha256": "7af4ef03abf7063e1cf1665a4c2ecf0f7ecba5123455573347d00f9591acda8e",
+      "size": [
+        1237,
+        1254
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "showreel.public.art.notebook",
+      "path": "showreel/public/art/notebook.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-notebook.webp"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Memory.tsx (staticFile/Cutout/Plate art/notebook.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": null,
+      "sha256": "968f65a7955b41a04adcb517cc920136cb5d7da550d538156e35cdf6df98215d",
+      "size": [
+        984,
+        1599
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "showreel.public.art.quiet-closeup-tall",
+      "path": "showreel/public/art/quiet-closeup-tall.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "closed",
+      "parents": [
+        "showreel/art/raw/quiet-closeup-tall.png"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Quiet.tsx (staticFile/Cutout/Plate art/quiet-closeup-tall.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": "Closed-eye Mini rendering; no open eye design to replace.",
+      "sha256": "149c0a936613c5e19af383210da2963b8c70da6a244370c938086b7f6c9ab7d7",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "showreel.public.art.quiet-closeup-wide",
+      "path": "showreel/public/art/quiet-closeup-wide.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "closed",
+      "parents": [
+        "showreel/art/raw/quiet-closeup-wide.png"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Quiet.tsx (staticFile/Cutout/Plate art/quiet-closeup-wide.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": "Closed-eye Mini rendering; no open eye design to replace.",
+      "sha256": "b2b48a72c0192e9fdce4339e6ed504e509e757a0d83c1b1b77cdb333550e86b7",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "showreel.public.art.quiet",
+      "path": "showreel/public/art/quiet.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "closed",
+      "parents": [
+        "site/src/assets/art/quiet.webp"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": "Closed-eye Mini rendering; no open eye design to replace. No current scene displays this generated output. No current scene displays this generated output.",
+      "sha256": "30cbb4669316e130cc35ff4fd81de154826e2b4b7ef8964a79444d34c3c6bf29",
+      "size": [
+        777,
+        1402
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "showreel.public.art.room-night-tall",
+      "path": "showreel/public/art/room-night-tall.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [
+        "showreel/art/raw/room-night-tall.png"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Thread.tsx (staticFile/Cutout/Plate art/room-night-tall.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "71f6024ca94942415ba3efce5e26e43ae3a85c68b41949d1acd5f4d04fcd80cf",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "showreel.public.art.room-night-wide",
+      "path": "showreel/public/art/room-night-wide.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [
+        "showreel/art/raw/room-night-wide.png"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Thread.tsx (staticFile/Cutout/Plate art/room-night-wide.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "aabd243523d13bd01284d422403aeb7e509540584e3e8802a0d8fe651b412329",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "showreel.public.art.thinking",
+      "path": "showreel/public/art/thinking.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "showreel/art/raw/thinking.png"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Thread.tsx (staticFile/Cutout/Plate art/thinking.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": null,
+      "sha256": "73f4073983e3a3199558a9cf2a0ff019a711a1563ada033d6157c36bd8445792",
+      "size": [
+        748,
+        1254
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "showreel.public.art.umbrella",
+      "path": "showreel/public/art/umbrella.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "showreel/art/raw/umbrella.png"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Senses.tsx (staticFile/Cutout/Plate art/umbrella.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": null,
+      "sha256": "48270f4a7fec5d2b950b4a9f98151d3722b5fb06eb20e34b5d10b4702733a49a",
+      "size": [
+        996,
+        1315
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "showreel.public.art.walking",
+      "path": "showreel/public/art/walking.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "showreel/art/raw/walking.png"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Senses.tsx (staticFile/Cutout/Plate art/walking.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": null,
+      "sha256": "088b4f0312a368bac696f72dbb903aeb943d558076ac2096bafc6f87c4183686",
+      "size": [
+        796,
+        1402
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "showreel.public.art.wave",
+      "path": "showreel/public/art/wave.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "site/src/assets/art/wave.webp"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Senses.tsx (staticFile/Cutout/Plate art/wave.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": null,
+      "sha256": "097df30576a88284091db040dc0fdd53b012dbe025ef4e62d1bf96736fbbdff9",
+      "size": [
+        979,
+        1607
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "showreel.public.fx.grain-0",
+      "path": "showreel/public/fx/grain-0.png",
+      "form": "noncharacter",
+      "role": "reference",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "showreel/src/components.tsx (Grain: staticFile(`fx/grain-${i}.png`), i=0..7)"
+      ],
+      "provenance": "Existing procedural grain tiles; original generator recipe not recorded in repository.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "530076c21e182d6283f683028756a0ec97371a8401da53eca4c3b014dd6276be",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "L"
+    },
+    {
+      "id": "showreel.public.fx.grain-1",
+      "path": "showreel/public/fx/grain-1.png",
+      "form": "noncharacter",
+      "role": "reference",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "showreel/src/components.tsx (Grain: staticFile(`fx/grain-${i}.png`), i=0..7)"
+      ],
+      "provenance": "Existing procedural grain tiles; original generator recipe not recorded in repository.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "e2e5833bac2a5f41c32d03261a52e775bb81c87cfa99402f7441da4526d92c6d",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "L"
+    },
+    {
+      "id": "showreel.public.fx.grain-2",
+      "path": "showreel/public/fx/grain-2.png",
+      "form": "noncharacter",
+      "role": "reference",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "showreel/src/components.tsx (Grain: staticFile(`fx/grain-${i}.png`), i=0..7)"
+      ],
+      "provenance": "Existing procedural grain tiles; original generator recipe not recorded in repository.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "2bdb81871274e0b5abc2713947b49d032b5a78e5a930d272d918f17fb70f0dcb",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "L"
+    },
+    {
+      "id": "showreel.public.fx.grain-3",
+      "path": "showreel/public/fx/grain-3.png",
+      "form": "noncharacter",
+      "role": "reference",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "showreel/src/components.tsx (Grain: staticFile(`fx/grain-${i}.png`), i=0..7)"
+      ],
+      "provenance": "Existing procedural grain tiles; original generator recipe not recorded in repository.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "f91e4bf8fd7088a0359203852028b68739faa4f2028bd120ada43294f5982c98",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "L"
+    },
+    {
+      "id": "showreel.public.fx.grain-4",
+      "path": "showreel/public/fx/grain-4.png",
+      "form": "noncharacter",
+      "role": "reference",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "showreel/src/components.tsx (Grain: staticFile(`fx/grain-${i}.png`), i=0..7)"
+      ],
+      "provenance": "Existing procedural grain tiles; original generator recipe not recorded in repository.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "70b7ce1d0c48fa6f1f525bd069b0b1c782161a73be9cdf460dbe1da6b3c3a7c6",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "L"
+    },
+    {
+      "id": "showreel.public.fx.grain-5",
+      "path": "showreel/public/fx/grain-5.png",
+      "form": "noncharacter",
+      "role": "reference",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "showreel/src/components.tsx (Grain: staticFile(`fx/grain-${i}.png`), i=0..7)"
+      ],
+      "provenance": "Existing procedural grain tiles; original generator recipe not recorded in repository.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "430fdb286ced4fa396e8761e1785d3aa788f50b3fcc0a99d754148f09323d69c",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "L"
+    },
+    {
+      "id": "showreel.public.fx.grain-6",
+      "path": "showreel/public/fx/grain-6.png",
+      "form": "noncharacter",
+      "role": "reference",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "showreel/src/components.tsx (Grain: staticFile(`fx/grain-${i}.png`), i=0..7)"
+      ],
+      "provenance": "Existing procedural grain tiles; original generator recipe not recorded in repository.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "cb9ca273359d5d5b97148646d48cbbdfb3a27dfa2fe9a4a1906c415cdb86b3dc",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "L"
+    },
+    {
+      "id": "showreel.public.fx.grain-7",
+      "path": "showreel/public/fx/grain-7.png",
+      "form": "noncharacter",
+      "role": "reference",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "showreel/src/components.tsx (Grain: staticFile(`fx/grain-${i}.png`), i=0..7)"
+      ],
+      "provenance": "Existing procedural grain tiles; original generator recipe not recorded in repository.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "0ab103f6fd30f386358659a0a9449eedf161f2c1116a6a26dac57c1106ef819f",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "L"
+    },
+    {
+      "id": "site.public._site.apple-touch-icon",
+      "path": "site/public/_site/apple-touch-icon.png",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-mini-icon.png"
+      ],
+      "recipe": "site-images",
+      "consumers": [
+        "site/src/layouts/Base.astro (URL /_site/apple-touch-icon.png)"
+      ],
+      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "unchanged_reason": null,
+      "sha256": "3d28fb5c5bfe9c7b9d2f35bf3150fde25e2246f0b3ab8f12a213337d6d4fc748",
+      "size": [
+        180,
+        180
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "site.public._site.icon-512",
+      "path": "site/public/_site/icon-512.png",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-mini-icon.png"
+      ],
+      "recipe": "site-images",
+      "consumers": [
+        "site/public/_site/site.webmanifest (URL /_site/icon-512.png)"
+      ],
+      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "unchanged_reason": null,
+      "sha256": "b48acacdbdf30420b3fd0bebfc3d6a2ae097e39a6de2a9877128a98eabc573ee",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.public._site.icon-maskable",
+      "path": "site/public/_site/icon-maskable.png",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-mini-icon.png"
+      ],
+      "recipe": "site-images",
+      "consumers": [
+        "site/public/_site/site.webmanifest (URL /_site/icon-maskable.png)"
+      ],
+      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "unchanged_reason": null,
+      "sha256": "417db501a87434dbc69ac5d2980e8bcb4a47717a75df0108fab427a1a124cb84",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.public._site.icon",
+      "path": "site/public/_site/icon.png",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-mini-icon.png"
+      ],
+      "recipe": "site-images",
+      "consumers": [
+        "site/public/_site/site.webmanifest (URL /_site/icon.png)",
+        "site/src/layouts/Base.astro (URL /_site/icon.png)"
+      ],
+      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "unchanged_reason": null,
+      "sha256": "9b6fa7c30a4a6528b6a8f6334b16697b872810445db20463a0a7f8c367d5ad42",
+      "size": [
+        192,
+        192
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.public._site.og-en",
+      "path": "site/public/_site/og-en.png",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-mini-icon.png",
+        "site/src/assets/art/group-chat.webp"
+      ],
+      "recipe": "site-images",
+      "consumers": [
+        "site/src/i18n/index.ts (URL /_site/og-en.png)"
+      ],
+      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "unchanged_reason": null,
+      "sha256": "b6083a176b8f8d66df720a2f90ac43239ce6e336304161524f6f8bea8b2b92c0",
+      "size": [
+        1200,
+        630
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "site.public._site.og-zh-hant",
+      "path": "site/public/_site/og-zh-hant.png",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-mini-icon.png",
+        "site/src/assets/art/group-chat.webp"
+      ],
+      "recipe": "site-images",
+      "consumers": [
+        "site/src/i18n/index.ts (URL /_site/og-zh-hant.png)"
+      ],
+      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "unchanged_reason": null,
+      "sha256": "a0426183c33458649b1f442c6c720b3b26af661ea911b32cc144e29a9c37d4fc",
+      "size": [
+        1200,
+        630
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "site.public.favicon",
+      "path": "site/public/favicon.ico",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-mini-icon.png"
+      ],
+      "recipe": "site-images",
+      "consumers": [
+        "app/public/offline.html (shared-host /favicon.ico resolves to site; standalone app has its own fallback)",
+        "app/public/sw.js (shared-host /favicon.ico precache resolves to site)",
+        "docs-site/astro.config.mjs (URL /favicon.ico)",
+        "site/src/layouts/Base.astro (URL /favicon.ico)"
+      ],
+      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "unchanged_reason": null,
+      "sha256": "3ee93c34c2b5c282206ebefa34d889c6ed1c78dfa6cda71f289ce53479766ca0",
+      "size": [
+        64,
+        64
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.art.group-chat",
+      "path": "site/src/assets/art/group-chat.webp",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (BORROWED input)",
+        "showreel/pipeline/process_art.py (explicit path reference)",
+        "site/scripts/make_rig.py (POSES input)",
+        "site/src/assets/art.ts (direct import)",
+        "site/src/components/ChatDemo.astro (art.groupChat via registry)"
+      ],
+      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "unchanged_reason": null,
+      "sha256": "e41e8d86307f166972989c4c4697f5abb0034786cc73d991c908ccf67e0181a0",
+      "size": [
+        996,
+        1579
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.art.hop",
+      "path": "site/src/assets/art/hop.webp",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "site/scripts/make_rig.py (POSES input)"
+      ],
+      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "unchanged_reason": null,
+      "sha256": "b3f24a1e9e5bc26ed19df985eb80e72df21fe9d48c2eeba2bbdde5695831cd37",
+      "size": [
+        977,
+        1610
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.art.ledge",
+      "path": "site/src/assets/art/ledge.webp",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "site/scripts/make_rig.py (POSES input)",
+        "site/src/assets/art.ts (direct import)",
+        "site/src/components/Memory.astro (art.ledge via registry)"
+      ],
+      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "unchanged_reason": null,
+      "sha256": "a4905252445ae462384eb29c802891ae79fbc25a1b7a5be22a934a3048492c9c",
+      "size": [
+        959,
+        1641
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.art.lost",
+      "path": "site/src/assets/art/lost.webp",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "site/scripts/make_rig.py (POSES input)",
+        "site/src/assets/art.ts (direct import)",
+        "site/src/pages/404.astro (art.lost via registry)"
+      ],
+      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "unchanged_reason": null,
+      "sha256": "78e8678f823184ea7c3a886e876a64093abaef8c77abf695c2619e2e8c45ae83",
+      "size": [
+        963,
+        1634
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.art.night-portrait",
+      "path": "site/src/assets/art/night-portrait.webp",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (BORROWED input)",
+        "showreel/pipeline/process_art.py (explicit path reference)",
+        "site/scripts/make_rig.py (POSES input)",
+        "site/src/assets/art.ts (direct import)",
+        "site/src/components/Form.astro (art.nightPortrait via registry)",
+        "site/src/components/Hero.astro (art.nightPortrait via registry)"
+      ],
+      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "unchanged_reason": null,
+      "sha256": "3f1179afc259493005df25fd6b4fafef8cd79eb9937eb03959aeecbb59a245bc",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "site.src.assets.art.quiet",
+      "path": "site/src/assets/art/quiet.webp",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "closed",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (BORROWED input)",
+        "showreel/pipeline/process_art.py (explicit path reference)",
+        "site/scripts/make_rig.py (POSES input)",
+        "site/src/assets/art.ts (direct import)",
+        "site/src/components/Manners.astro (art.quiet via registry)"
+      ],
+      "provenance": "Existing closed-eye source, compatible with option08; retained unless map refreshes it.",
+      "unchanged_reason": "Closed-eye Mini rendering; no open eye design to replace.",
+      "sha256": "066b8b0fcb538f8078a9633d94bf6cd64edd3cdabb81d3fe1f7f19a596e1fd17",
+      "size": [
+        777,
+        1402
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.art.stool",
+      "path": "site/src/assets/art/stool.webp",
+      "form": "noncharacter",
+      "role": "reference",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "site/src/assets/art.ts (direct import)",
+        "site/src/components/Memory.astro (art.stool via registry)"
+      ],
+      "provenance": "Existing source retained; site art README or showreel prompts. Grain recipe: showreel/pipeline/grain.mjs.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "c8fe6a46fc9b0c93e9dec60fb44e7a51551e415342dfe8cb4fc2e3a430678f23",
+      "size": [
+        839,
+        911
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.art.wave",
+      "path": "site/src/assets/art/wave.webp",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (BORROWED input)",
+        "showreel/pipeline/process_art.py (explicit path reference)",
+        "site/scripts/make_rig.py (POSES input)",
+        "site/src/assets/art.ts (direct import)",
+        "site/src/components/Portal.astro (art.wave via registry)"
+      ],
+      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "unchanged_reason": null,
+      "sha256": "a0e1cc317312c47e42bef53d77cf2e413187e369ba3de7e64c6319980c6ead39",
+      "size": [
+        979,
+        1607
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.rig.hop",
+      "path": "site/src/assets/rig/hop.webp",
+      "form": "mini",
+      "role": "rig-texture",
+      "status": "active",
+      "eyes": "procedural-mini08",
+      "parents": [
+        "site/src/assets/art/hop.webp"
+      ],
+      "recipe": "rig",
+      "consumers": [
+        "site/src/components/NoraRig.astro (direct import)",
+        "site/src/scripts/nora/rig.ts (texture URL from NoraRig.astro pose registry)"
+      ],
+      "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
+      "unchanged_reason": null,
+      "sha256": "ff5890b030d4e8876f67326076fb944ea65cfcea321521f3cbc4e2b55a727784",
+      "visual_review": "PASS: parent browser visual inspection, 2026-10-26; all eight pose feature placements and expression/gaze states inspected; see verification.shader_and_rig",
+      "size": [
+        977,
+        1610
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.rig.ledge",
+      "path": "site/src/assets/rig/ledge.webp",
+      "form": "mini",
+      "role": "rig-texture",
+      "status": "active",
+      "eyes": "procedural-mini08",
+      "parents": [
+        "site/src/assets/art/ledge.webp"
+      ],
+      "recipe": "rig",
+      "consumers": [
+        "site/src/components/NoraRig.astro (direct import)",
+        "site/src/scripts/nora/rig.ts (texture URL from NoraRig.astro pose registry)"
+      ],
+      "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
+      "unchanged_reason": null,
+      "sha256": "202e7f3401c837036bdf3c9ccd62721192c103670c7f44c35be6cadaa0f515c9",
+      "visual_review": "PASS: parent browser visual inspection, 2026-10-26; all eight pose feature placements and expression/gaze states inspected; see verification.shader_and_rig",
+      "size": [
+        959,
+        1641
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.rig.lost",
+      "path": "site/src/assets/rig/lost.webp",
+      "form": "mini",
+      "role": "rig-texture",
+      "status": "active",
+      "eyes": "procedural-mini08",
+      "parents": [
+        "site/src/assets/art/lost.webp"
+      ],
+      "recipe": "rig",
+      "consumers": [
+        "site/src/components/NoraRig.astro (direct import)",
+        "site/src/scripts/nora/rig.ts (texture URL from NoraRig.astro pose registry)"
+      ],
+      "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
+      "unchanged_reason": null,
+      "sha256": "63af70fcc6c03dfcbb1ac33d0e8e5aa7681231935e576a614fc02fb69b8dce0c",
+      "visual_review": "PASS: parent browser visual inspection, 2026-10-26; all eight pose feature placements and expression/gaze states inspected; see verification.shader_and_rig",
+      "size": [
+        963,
+        1634
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.rig.perch",
+      "path": "site/src/assets/rig/perch.webp",
+      "form": "mini",
+      "role": "rig-texture",
+      "status": "active",
+      "eyes": "procedural-mini08",
+      "parents": [
+        "site/src/assets/art/group-chat.webp"
+      ],
+      "recipe": "rig",
+      "consumers": [
+        "site/src/components/NoraRig.astro (direct import)",
+        "site/src/scripts/nora/rig.ts (texture URL from NoraRig.astro pose registry)"
+      ],
+      "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
+      "unchanged_reason": null,
+      "sha256": "29e6c55a7feff2e9e4be18e3ae235130437beb0659b4145cad32c5173245ccd3",
+      "visual_review": "PASS: parent browser visual inspection, 2026-10-26; all eight pose feature placements and expression/gaze states inspected; see verification.shader_and_rig",
+      "size": [
+        996,
+        1579
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.rig.plate-night",
+      "path": "site/src/assets/rig/plate-night.webp",
+      "form": "mini",
+      "role": "rig-plate",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [
+        "site/src/assets/art/night-portrait.webp"
+      ],
+      "recipe": "rig",
+      "consumers": [
+        "site/src/components/Form.astro (direct import)",
+        "site/src/components/Hero.astro (direct import)"
+      ],
+      "provenance": "site/scripts/make_rig.py reconstructs the empty studio from its declared portrait; no character or eyes. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig.",
+      "unchanged_reason": null,
+      "sha256": "627aa371f3f1d6a2056e9679e4d1cc39b321d641f8ebee007d649ad629233959",
+      "visual_review": "PASS: parent browser visual inspection, 2026-10-26; both lighting themes inspected; see verification.shader_and_rig",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "site.src.assets.rig.plate-studio",
+      "path": "site/src/assets/rig/plate-studio.webp",
+      "form": "mini",
+      "role": "rig-plate",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "rig",
+      "consumers": [
+        "site/src/components/Form.astro (direct import)",
+        "site/src/components/Hero.astro (direct import)"
+      ],
+      "provenance": "site/scripts/make_rig.py reconstructs the empty studio from its declared portrait; no character or eyes. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig.",
+      "unchanged_reason": null,
+      "sha256": "9aed7be76d4342c0812a003aace651eb85ac4d5fcee4081fe228422bb93bd660",
+      "visual_review": "PASS: parent browser visual inspection, 2026-10-26; both lighting themes inspected; see verification.shader_and_rig",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "site.src.assets.rig.quiet",
+      "path": "site/src/assets/rig/quiet.webp",
+      "form": "mini",
+      "role": "rig-texture",
+      "status": "active",
+      "eyes": "procedural-mini08",
+      "parents": [
+        "site/src/assets/art/quiet.webp"
+      ],
+      "recipe": "rig",
+      "consumers": [
+        "site/src/components/NoraRig.astro (direct import)",
+        "site/src/scripts/nora/rig.ts (texture URL from NoraRig.astro pose registry)"
+      ],
+      "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
+      "unchanged_reason": "Closed-eye Mini rendering; no open eye design to replace.",
+      "sha256": "6d2977d3793517611f34e80954e3a2e051a98a3220e468983600dc223801b7aa",
+      "visual_review": "PASS: parent browser visual inspection, 2026-10-26; all eight pose feature placements and expression/gaze states inspected; see verification.shader_and_rig",
+      "size": [
+        777,
+        1402
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.rig.stand-night",
+      "path": "site/src/assets/rig/stand-night.webp",
+      "form": "mini",
+      "role": "rig-texture",
+      "status": "active",
+      "eyes": "procedural-mini08",
+      "parents": [
+        "site/src/assets/art/night-portrait.webp"
+      ],
+      "recipe": "rig",
+      "consumers": [
+        "site/src/components/NoraRig.astro (direct import)",
+        "site/src/scripts/nora/rig.ts (texture URL from NoraRig.astro pose registry)"
+      ],
+      "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
+      "unchanged_reason": null,
+      "sha256": "7dc8eb0d045e71f6c65626d7e775aa7d8cae30b9c06c8d30c314711a2b18d314",
+      "visual_review": "PASS: parent browser visual inspection, 2026-10-26; all eight pose feature placements and expression/gaze states inspected; see verification.shader_and_rig",
+      "size": [
+        776,
+        1316
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.rig.stand",
+      "path": "site/src/assets/rig/stand.webp",
+      "form": "mini",
+      "role": "rig-texture",
+      "status": "active",
+      "eyes": "procedural-mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "rig",
+      "consumers": [
+        "site/src/components/NoraRig.astro (direct import)",
+        "site/src/scripts/nora/rig.ts (texture URL from NoraRig.astro pose registry)"
+      ],
+      "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
+      "unchanged_reason": null,
+      "sha256": "0072ec272da142c7ad2bb9c78cda4c7b146bb05e400e512af013cfa5435f27ad",
+      "visual_review": "PASS: parent browser visual inspection, 2026-10-26; all eight pose feature placements and expression/gaze states inspected; see verification.shader_and_rig",
+      "size": [
+        774,
+        1311
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.rig.wave",
+      "path": "site/src/assets/rig/wave.webp",
+      "form": "mini",
+      "role": "rig-texture",
+      "status": "active",
+      "eyes": "procedural-mini08",
+      "parents": [
+        "site/src/assets/art/wave.webp"
+      ],
+      "recipe": "rig",
+      "consumers": [
+        "site/src/components/NoraRig.astro (direct import)",
+        "site/src/scripts/nora/rig.ts (texture URL from NoraRig.astro pose registry)"
+      ],
+      "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
+      "unchanged_reason": null,
+      "sha256": "87ec358a9f8e0c9d3dd98bed6c36f41d6ded380c46b6438dcf0295abce79519a",
+      "visual_review": "PASS: parent browser visual inspection, 2026-10-26; all eight pose feature placements and expression/gaze states inspected; see verification.shader_and_rig",
+      "size": [
+        979,
+        1607
+      ],
+      "mode": "RGBA"
+    }
+  ],
+  "historical_exports": [
+    {
+      "path": "showreel/renders/nora-showreel-en-16x9.mp4",
+      "status": "historical-export",
+      "reason": "Historical rendered video, outside image refresh; no video rerender performed."
+    },
+    {
+      "path": "showreel/renders/nora-showreel-en-1x1.mp4",
+      "status": "historical-export",
+      "reason": "Historical rendered video, outside image refresh; no video rerender performed."
+    },
+    {
+      "path": "showreel/renders/nora-showreel-en-4x5.mp4",
+      "status": "historical-export",
+      "reason": "Historical rendered video, outside image refresh; no video rerender performed."
+    },
+    {
+      "path": "showreel/renders/nora-showreel-en-9x16.mp4",
+      "status": "historical-export",
+      "reason": "Historical rendered video, outside image refresh; no video rerender performed."
+    },
+    {
+      "path": "showreel/renders/nora-showreel-yue-16x9.mp4",
+      "status": "historical-export",
+      "reason": "Historical rendered video, outside image refresh; no video rerender performed."
+    },
+    {
+      "path": "showreel/renders/nora-showreel-yue-1x1.mp4",
+      "status": "historical-export",
+      "reason": "Historical rendered video, outside image refresh; no video rerender performed."
+    },
+    {
+      "path": "showreel/renders/nora-showreel-yue-4x5.mp4",
+      "status": "historical-export",
+      "reason": "Historical rendered video, outside image refresh; no video rerender performed."
+    },
+    {
+      "path": "showreel/renders/nora-showreel-yue-9x16.mp4",
+      "status": "historical-export",
+      "reason": "Historical rendered video, outside image refresh; no video rerender performed."
+    },
+    {
+      "path": "voice-lab/tts-cmp/samples/minimax_T2V01_test.mp4",
+      "status": "historical-export",
+      "reason": "Historical rendered video, outside image refresh; no video rerender performed."
+    }
+  ],
+  "verification": {
+    "source_art": "Parent visually inspected generated sources before import; derivative browser acceptance is separate.",
+    "inventory": "Deterministic byte/coverage checks only; consumers resolved by scoped imports, public URLs and explicit dynamic registries, never basename matching.",
+    "shader_and_rig": "PASS: parent browser visual inspection, 2026-10-26, software WebGL Chromium. Inspected /tmp/mini08-live-hero.png, /tmp/mini08-dark.png, /tmp/mini08-live-room.png, /tmp/mini08-live-memory.png, /tmp/mini08-live-manners.png, /tmp/mini08-live-portal.png, /tmp/mini08-live-404.png and /tmp/mini08-render-grid.png after the happy stroke fix. All eight pose feature placements, blink/happy/lidded/left-right gaze/halfblink manually inspected; quiet page correctly closes eyes at baseline. Reduced-motion static fallback PASS; source static inspected previously. Browser visual inspection only: not 3D rig/model acceptance, deployment or runtime ingestion.",
+    "pwa_screenshots": "CAPTURED and inspected from documented mock-only workflow, 2026-10-26; narrow 390x844 at 2x, wide 1440x900 at 1x; no real personal data.",
+    "runtime_reach_and_cost": "UNMEASURED",
+    "live_media_ingest": "NOT PERFORMED",
+    "deployment": "NOT PERFORMED",
+    "local_browser_smoke": "PASS: built /en/ on local preview, Playwright Chromium with software WebGL2 reached live canvas; switching reduced motion restored static fallback. No page errors or shader compile errors; software GPU emitted ReadPixels performance warnings. This is not visual acceptance.",
+    "targeted_checks": "PASS: 58 Python inventory/runtime-skill tests, 6 site script tests, site astro check/build, scoped ruff and git diff --check. No full suite or gate."
+  }
+}

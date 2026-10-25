@@ -270,7 +270,7 @@ export const en = {
     anchors: [
       "Two and a half heads tall",
       "A messy high bun",
-      "Dark eyes, a small line of a mouth",
+      "Brown irises, visible whites, one tiny mouth",
       "Pink cheeks",
       "An oversized grey hoodie",
       "White wired earphones",
@@ -278,10 +278,10 @@ export const en = {
       "Chunky white sneakers",
     ],
     figureAlt: "Nora’s canonical portrait, with her eight defining features labelled.",
-    sheetCaption: "Her character sheet: turnaround, expressions, poses.",
+    sheetCaption: "Her character sheet: three views and five expressions.",
     sheetAlt:
-      "Nora’s character sheet, showing her from four sides, five expressions, five poses, details of her face, bun, earphones and hoodie, and her colour palette.",
-    tposeCaption: "The reference her 3D form is built from.",
+      "Nora’s Mini character sheet: front, side and back views, with neutral, happy, thinking, sleepy and unimpressed expressions.",
+    tposeCaption: "A reference for future 3D modeling; no validated model or rig.",
     tposeAlt: "Nora standing in a T-pose, arms out, facing forward.",
     enlarge: "Enlarge",
     close: "Close",

@@ -18,7 +18,8 @@ uv run --no-project --with pillow --with numpy --with scipy \
 Not an animation that plays: her own render, on a mesh that a shader bends a
 little (a breath, a roll of the head, hair that trails a movement, one limb
 that moves), with her eyes and mouth drawn on top as shapes instead of
-pixels. Her face is two dark ovals and a line, so shapes can be exactly
+pixels. Her option08 face has warm sclera, brown irises, dark pupils, restrained
+highlights, an upper lid line and one tiny mouth, so shapes can be
 on-model and still blink, look at the pointer, close into the crescents of
 her `quiet` render, flatten into the unimpressed lids of `lost`, or turn up
 into the ^ ^ of the character sheet's "Happy". The eight anchors of
@@ -32,7 +33,7 @@ none of them is redrawn.
 | `stand.webp`, `stand-night.webp` | the canonical portrait and its late-night twin, cut out of their studios (BiRefNet through rembg, cached in `site/.cache/`; foreground colours recovered with pymatting so no studio grey rides on her hair), eyes and mouth painted out, cropped to her |
 | `plate-studio.webp`, `plate-night.webp` | those two studios with her taken out: row-fitted sweeps, the floor band where her shadow falls interpolated top to bottom, the render's grain added back. The hero frame and the form plate show these while she is somewhere else |
 | `perch.webp`, `ledge.webp`, `quiet.webp`, `wave.webp`, `lost.webp`, `hop.webp` | the transparent renders of `src/assets/art/`, eyes and mouth painted out, framing unchanged so the live figure lands exactly on the static one |
-| `rig.json` | per pose: where the eyes (fitted as ellipses from the render's own dark ovals), the mouth, the head, the neck pivot, the face, the bun, the hips and the ground are, and the limbs that move, as fractions of the texture |
+| `rig.json` | per pose: where the eyes (complete option08 openings, not just the dark irises), the mouth, the head, the neck pivot, the face, the bun, the hips and the ground are, and the limbs that move, as fractions of the texture |
 
 The eyes and the mouth are found by measurement; everything else in
 `rig.json` is placed by hand in `make_rig.py`'s `MANUAL`, because a pivot is a
@@ -44,3 +45,38 @@ crescents) or placed (`lost`), and drawn in the colours of `wave`'s.
 Painted-out eyes are never shown on their own: without script, with reduced
 motion, or if WebGL2 is missing or lost, the page keeps the static renders
 and never loads these files.
+
+## Option08 refresh, 2026-10-26
+
+Open-eye detection measures the whole eye opening; the blankface fill removes
+sclera, iris and upper line together. Gaze moves the iris within the opening.
+The same shader retains blink, happy, closed and flat-lidded states; no nose
+is drawn. Portrait matte cache names include a source-byte fingerprint, so
+a changed source cannot reuse a stale pose-keyed matte. Debug overlays remain
+local build inspection artifacts. The repository manifest names every input
+and output; `scripts/visual_assets.py sync` invokes this existing processor.
+
+
+## Parent visual inspection
+
+PASS — parent browser visual inspection, 2026-10-26, in Chromium with software
+WebGL. Both lighting themes and all eight pose feature placements were inspected,
+including blink, happy, lidded, left/right gaze and halfblink states. The quiet
+page correctly closes her eyes at baseline. Reduced-motion static fallback
+passed; source static renders were inspected previously.
+
+The parent inspected `/tmp/mini08-live-hero.png`, `/tmp/mini08-dark.png`,
+`/tmp/mini08-live-room.png`, `/tmp/mini08-live-memory.png`,
+`/tmp/mini08-live-manners.png`, `/tmp/mini08-live-portal.png`,
+`/tmp/mini08-live-404.png` and `/tmp/mini08-render-grid.png` after the happy
+stroke fix. These are local inspection artifacts, alongside the feature overlays
+in `site/.cache/rig-debug/`.
+
+From the repo root, `cd site && npm run preview -- --host 127.0.0.1 --port 4328`
+serves the built page at `http://127.0.0.1:4328/en/` (build first with
+`npm run build` after changing it).
+
+This accepts the browser visual result only. Neither these textures nor the new
+turnaround constitute a validated 3D model or rig. Runtime reach and cost remain
+UNMEASURED; live media ingestion and deployment were not performed. Historical
+video exports remain unchanged and were not rerendered or accepted by this check.

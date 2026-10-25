@@ -24,7 +24,23 @@ role value, one row.
 The `role` marker is still the extension point: adding an `operator` asset later
 is a new DEC plus an ingest, not a redesign.
 
-## Source of the canonical image
+## Current Mini source, 2026-10-26
+
+The operator approved [option08 Balanced](09-mini08-balanced.md) as canonical
+and requested matching reference, T-pose, setting and public repository art.
+The same canonical path now contains the approved new PNG, sanitized of
+generation metadata while retaining encoded IDAT pixels. The runtime skill
+pins its sanitized full digest; live ingest and release are not performed
+by repository synchronization. The other source paths keep their roles;
+the social files are repository references, not proof of external publication.
+The [Mini turnaround](../../assets/nora-mini-turnaround.png) adds front, side
+and back views beside the [front T-pose](../../assets/nora-mini-tpose.png) and
+[character sheet](../../assets/nora-character-reference-sheet.png). These are
+reference-only inputs; neither a validated model nor a rig.
+The human Bauhinia anchor stays unchanged. Current dimensions, digests,
+parents and consumers are in `assets/visual-assets.json`.
+
+## September source history (superseded image bytes)
 
 The canonical `self` asset source material lives IN this bundle, with distinct roles:
 
@@ -40,7 +56,7 @@ The canonical `self` asset source material lives IN this bundle, with distinct r
   from, and it is deliberately NOT ingested as a reference image — a
   multi-panel image muddles identity in generation.
 - **`assets/nora-social-avatar.png`** (1374×1145) and
-  **`assets/nora-social-banner.png`** (2057×765) — **REFERENCE ONLY, not
+  **`assets/nora-social-banner.png`** (2056×765) — **REFERENCE ONLY, not
   assets.** Her current profile picture and banner on every social network
   (operator, 2026-09-23). Kept so the look she presents publicly is on file
   beside the canon; not ingested, because each places her in a scene (desk,
@@ -56,7 +72,7 @@ The canonical `self` asset source material lives IN this bundle, with distinct r
   `08-bauhinia-human-form.md` governs its appearance and limits. It does not
   replace the Mini canonical self asset, descriptive sheet or public avatars.
 
-At build time the ingest one-shot (`scripts/ingest_self_asset.py`) ingests the
+In the September implementation the ingest one-shot (`scripts/ingest_self_asset.py`) ingests the
 canonical single image into Nora's media library, marks `role: self`, and the
 skill's `<SELF_HANDLE>` (the image-generation skill, 06) is pinned to the ingested row's full sha256 as
 normal. Source sha256 at acceptance (2026-09-23): `535e4da56b933c9c30ea28182ba651246ce9bc65608ebdf92363e6342ab8567c`. The 2026-09-16 image (`4b8825fe…`) is superseded.

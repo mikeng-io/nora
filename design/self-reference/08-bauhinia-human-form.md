@@ -34,8 +34,10 @@ the reference for this human design.
 bind Mini. This anchor governs human appearance. Runtime self-image generation
 and public avatars remain Mini until separately implemented and measured.
 This PNG is a design reference only, not ingested as the canonical `self`
-asset. Mini canonical assets, ingest, doctrine, runtime skill and code remain
-unchanged. Do not dress Mini in the human outfit or remove her canonical
+asset. As of this human approval (2026-10-25), Mini assets and runtime text were
+unchanged. The separate [2026-10-26 Mini approval](09-mini08-balanced.md)
+supersedes that Mini-only status: option08 eyes now govern Mini references
+and runtime appearance text. No runtime media ingest or release is implied. Do not dress Mini in the human outfit or remove her canonical
 earphones because the human modeling base excludes audio accessories.
 
 ## Approved appearance
@@ -82,7 +84,9 @@ animation constraint requires an explicit revision; do not silently redesign.
 without earphones for rigging, not a complete modeling turnaround.
 `assets/nora-character-reference-sheet.png` has resting front, three-quarter,
 side and back views, expressions and details; it is not a T-pose turnaround.
-Mini's canonical appearance remains unchanged, including her earphones.
+At the 2026-10-25 human approval Mini was unchanged, including her earphones.
+The 2026-10-26 option08 amendment refreshes Mini eyes and references while
+preserving those earphones; this human anchor itself remains unchanged.
 A consistent Mini modeling turnaround is still future work; no new Mini
 sheet is approved by this human anchor.
 
