@@ -110,6 +110,19 @@
       "persona_sources": 1
     }
   },
+  "design/personalisation/10-likes.md": {
+    "reason": "Upstream design provenance retains pre-rename vocabulary; protected design text is unchanged.",
+    "matches": {
+      "PersonaLine": 1,
+      "persona": 4
+    }
+  },
+  "design/personalisation/50-verification.md": {
+    "reason": "Upstream design provenance retains pre-rename vocabulary; protected design text is unchanged.",
+    "matches": {
+      "persona": 2
+    }
+  },
   "design/private-dm/00-contract.md": {
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
