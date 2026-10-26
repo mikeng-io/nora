@@ -1,5 +1,4 @@
-Generate ONE image, portrait 4:5, on a TRANSPARENT background (PNG with alpha; if transparency is impossible, a flat plain #F4F2F2 background with no shadow).
-- PROPORTIONS FIRST: exactly the chibi proportions of the first reference, 2.5 to 3 heads tall, the head as wide as her shoulders plus arms, compact torso, short legs, small feet. She must not look taller or more adult than the reference.
-- Nora standing, eyes closed with the "Happy" expression of the character sheet (closed eyes as soft upward curves, a tiny smile), head tilted, gently swaying to the music in her earphones, one hand lightly touching the earbud at her ear, the other hand in her hoodie pocket. Front view.
-- Earphones in both ears, the white cable and inline remote visible.
-- Full body in frame with some margin. No other props.
+Generate ONE 2D anime image, portrait 4:5, on true transparent PNG alpha.
+- Preserve Mini Nora's 2.5-3 head proportions, simplified broad hair, five-petal clasp and Bauhinia outfit from the new master.
+- Full body, front view. Eyes closed in soft upward happy curves, tiny smile, head tilted, gently swaying as she listens. One hand relaxed near her collar, the other resting naturally by her side. No gesture touching an earbud.
+- Keep a calm, minimal expression; full body in frame with margin. No earphones, cable, inline remote, bag, floor, shadow, text or watermark.

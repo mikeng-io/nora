@@ -123,7 +123,8 @@ and a recreate (the `nora-deploy` skill).
 ## PWA screenshot refresh (synthetic data only)
 
 The manifest's `screenshots/today-{narrow,wide}.webp` were recaptured on
-2026-10-26 using the invented Miles account from `dev/identity.dev.toml`.
+2026-10-26 after the 2D Bauhinia icon refresh, using the invented Miles account
+from `dev/identity.dev.toml`.
 The narrow image is a 390×844 viewport at 2×; wide is 1440×900 at 1×.
 These are install previews, not evidence of a live Nora deployment.
 

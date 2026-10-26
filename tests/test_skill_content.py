@@ -113,14 +113,8 @@ def test_every_skill_names_no_scenario(skills):
 #: space first (`" ".join(text.split())`), which gives the SAME count for every
 #: rewrap of the same words while staying in cl100k tokens.
 _TOKEN_CEILING = 1_500
-_TOKEN_CEILINGS: dict[str, int] = {
-    # DEC-193. Her whole visual spec lives here and nowhere else: it is not
-    # doctrine (needed only when she makes an image) and not the tool schema (it
-    # is about HER, not the tool). Completeness is ruled over brevity, and no
-    # rule of the spec may be dropped. It is meant to grow by one section per
-    # configured model, so the ceiling keeps room for that.
-    "image-generation": 2_000,
-}
+# The current 2D Bauhinia appearance fits the default 1,500-token ceiling.
+_TOKEN_CEILINGS: dict[str, int] = {}
 _HARD_LIMIT = 5_000
 _DESCRIPTION_CEILING = 80
 
@@ -408,7 +402,7 @@ def test_the_image_skill_copies_dates_times_and_places_from_the_clock_line(store
 
 
 def test_her_look_is_not_the_house_style_and_the_prompt_writes_what_was_asked(store):
-    """Her own rendering («stylized 3D mascot», «collectible-character quality»)
+    """Her own rendering (2D anime Mini Bauhinia)
     must not leak into a picture she is not in, and a prompt must not invent
     props or an arrangement that cannot exist. The skill has to say, with the
     reason, that her look is hers only, that the style comes from the request
@@ -468,31 +462,27 @@ def test_the_image_skill_carries_every_anchor_and_rule_of_the_spec(store):
     a rule gets deleted as «restatement», so each one is pinned."""
     body = _flat(_image_skill(store).instructions)
     for needle in (
-        # identity rule
-        "Your Mini form is a stylized 3D mascot",
-        "a character that exists digitally, not an illustration imitating a real person",
-        # form and the proportion constraint
+        # Current 2D Bauhinia identity and proportions.
+        "Your Mini form is a 2D anime mascot", "adult and Mini forms",
         "2.5 to 3 heads tall", "never a shrunken real person",
         "Your proportions are identity",
         "when anatomy and the head-to-body ratio disagree, the ratio wins",
-        # face
         "option08 Balanced anime eyes with visible warm sclera",
         "large brown irises", "dark pupils", "restrained highlights",
         "a defined upper lid line", "no nose marker", "one tiny short-line mouth",
-        "pink blush on both cheeks",
-        "slightly deadpan", "never over-acted",
-        # hair, clothes, earphones, backpack
-        "messy high bun", "face-framing strands", "side-parted",
-        "light-grey zip hoodie", "plain white top",
-        "never produce a fitted or fashion-model silhouette",
-        "casual, understated, contemporary and functional",
-        "outdoor, travelling, walking or everyday-life scenes",
-        "white low-top sneakers", "no logos, text, jewellery",
-        "White wired earphones are permanent", "inline remote",
-        "never by default",
-        # rendering
-        "High-quality 3D / CGI rendering", "soft matte skin", "Not photorealism",
-        "Pixar-style exaggeration", "generic AI-girl",
+        "pink blush on both cheeks", "slightly deadpan", "never over-acted",
+        "compact high bun", "broad clumps", "three broad bangs",
+        "two thick face-framing locks", "No individual flyaways or hair loops",
+        "five-petal Bauhinia clasp", "anatomical right",
+        "ivory overlapping stand-collar blouse", "navy waistcoat",
+        "exactly three copper frog closures", "open grey hooded coat",
+        "grey-jade hood lining", "broad ivory cuffs", "window-grille panels",
+        "Two separate wide cropped navy trouser legs", "never a skirt",
+        "ivory ankle boots", "No bags, earphones, cables, inline remotes",
+        "Clean controlled linework, flat colours and restrained cel shading",
+        "every non-3D picture, including closed eyes",
+        "Stylized 3D PNGs are Meshy modeling inputs only",
+        "Not photorealism", "Pixar-style exaggeration", "generic AI-girl",
         # the eight anchors
         "Eight anchors",
     ):
@@ -503,8 +493,8 @@ def test_the_image_skill_carries_every_anchor_and_rule_of_the_spec(store):
 
 def test_identitys_anchors_stay_in_step_with_the_skills_spec(store):
     """Drift guard (DEC-205): `identity.md`'s always-loaded
-    sentence names three of the skill's eight anchors by word — messy
-    dark-brown high bun, oversized light-grey hoodie, white wired earphones.
+    sentence names three current anchors by word: compact dark-brown
+    high bun, Bauhinia clasp and grey coat over navy waistcoat.
     Nothing mechanical ties the two together: a future edit to
     the skill (a different hairstyle, a different
     signature item) could leave `identity.md` quietly describing a form that
@@ -529,7 +519,7 @@ def test_identitys_anchors_stay_in_step_with_the_skills_spec(store):
     skill_look = _flat(_image_skill(store).instructions).lower()
     skill_look = skill_look.split("## what you look like", 1)[1]
 
-    for anchor in ("bun", "hoodie", "earphone"):
+    for anchor in ("bun", "clasp", "waistcoat"):
         assert anchor in identity_section, (
             f"identity.md no longer names {anchor!r} -- update this test's "
             "anchor list to match, deliberately"

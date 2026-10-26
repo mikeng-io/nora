@@ -14,7 +14,7 @@ interface Props {
 const { locale } = Astro.props;
 const t = LOCALES[locale].dict.form;
 
-// The eight anchors of design/self-reference/05, pinned on the canonical
+// The current Bauhinia anchors in design/self-reference/09, pinned on the canonical
 // portrait. x/y are fractions of the portrait (1024x1536); `ly` is where the
 // label sits when it cannot share the point's height; `side` picks the
 // column. The first anchor (proportions) is drawn as a ruler instead.
@@ -26,13 +26,13 @@ interface Pin {
 }
 const PINS: (Pin | null)[] = [
   null,
-  { x: 0.5, y: 0.19, side: "l" },
-  { x: 0.55, y: 0.525, ly: 0.47, side: "r" },
-  { x: 0.665, y: 0.55, ly: 0.575, side: "r" },
-  { x: 0.36, y: 0.715, ly: 0.74, side: "l" },
-  { x: 0.435, y: 0.655, ly: 0.585, side: "l" },
-  { x: 0.54, y: 0.825, ly: 0.8, side: "r" },
-  { x: 0.61, y: 0.885, ly: 0.905, side: "r" },
+  { x: 0.46, y: 0.105, side: "l" },
+  { x: 0.53, y: 0.33, ly: 0.29, side: "r" },
+  { x: 0.65, y: 0.37, ly: 0.41, side: "r" },
+  { x: 0.51, y: 0.48, ly: 0.55, side: "l" },
+  { x: 0.30, y: 0.17, ly: 0.28, side: "l" },
+  { x: 0.54, y: 0.72, ly: 0.72, side: "r" },
+  { x: 0.61, y: 0.91, ly: 0.91, side: "r" },
 ];
 
 // Portrait sits in the middle half of a 4:3 plate; convert to plate percentages.
@@ -124,11 +124,11 @@ const plates = `--plate-studio:url(${await empty(plateStudio)});--plate-night:ur
         <svg class="lines" viewBox="0 0 100 75" preserveAspectRatio="none" aria-hidden="true">
           <g vector-effect="non-scaling-stroke">
             {/* the ruler: top of the bun to the soles, head height ticked */}
-            <line x1="20" y1={0.085 * 75} x2="20" y2={0.905 * 75} />
-            <line x1="19" y1={0.085 * 75} x2="21" y2={0.085 * 75} />
-            <line x1="19.4" y1={0.413 * 75} x2="20.6" y2={0.413 * 75} />
-            <line x1="19.4" y1={0.741 * 75} x2="20.6" y2={0.741 * 75} />
-            <line x1="19" y1={0.905 * 75} x2="21" y2={0.905 * 75} />
+            <line x1="20" y1={0.04 * 75} x2="20" y2={0.95 * 75} />
+            <line x1="19" y1={0.04 * 75} x2="21" y2={0.04 * 75} />
+            <line x1="19.4" y1={0.405 * 75} x2="20.6" y2={0.405 * 75} />
+            <line x1="19.4" y1={0.77 * 75} x2="20.6" y2={0.77 * 75} />
+            <line x1="19" y1={0.95 * 75} x2="21" y2={0.95 * 75} />
             {PINS.map((p, i) => {
               if (!p) return null;
               const x = px(p.x);

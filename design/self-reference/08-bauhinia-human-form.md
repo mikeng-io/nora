@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Self-Reference — Bauhinia human form: approved visual anchor"
-description: "Operator-approved human anime design, preserved as a visual anchor; one Nora with human and Mini forms, with Mini runtime and public avatars unchanged."
+description: "Approved adult Bauhinia anchor and dated 2D production setting for one Nora in adult and Mini forms; 2D repository integration, with browser and 3D engineering acceptance separate."
 tags: [nora, identity, appearance, source, modeling]
 timestamp: '2026-10-25'
 edges:
@@ -20,7 +20,25 @@ The unmodified original is retained in the operator’s local archive.
 
 ![Approved Bauhinia human Nora visual anchor, with front and side artwork](../../assets/nora-human-bauhinia-reference.png)
 
-## One identity, two forms
+## Production setting supersession — 2026-10-26
+
+The later [operator ruling](09-mini08-balanced.md#production-setting-supersession--2026-10-26)
+requires 2D anime for every non-3D use of adult and Mini Nora; stylized 3D PNGs
+are Meshy inputs only. Mini's Bauhinia outfit is approved production direction,
+superseding the earlier modeling-only restriction. Adult production uses A;
+modeling uses B's face plus D's material treatment with the anime-face correction.
+C's Western game appearance is rejected. Both forms use scalp volume, a compact
+high bun of four or five broad clumps, three broad bangs, two thicker face-framing
+locks and a five-petal clasp; no thin flyaways, hair loops, bags or audio accessories
+on new bases. Mini retains her proportions and option08 eyes.
+
+The approved original adult anchor and v1 references stay intact as dated
+history. Five simplified-hair v2 sheets and six isolated Meshy candidates are imported;
+parent inspected source artwork/candidate suitability. All 23 production
+targets, runtime appearance text and the repository canonical pin are integrated.
+Parent accepted all final source originals and the integrated current 2D browser result. No ingest, deployment, mesh or rig acceptance is implied. The earlier approval facts below remain history.
+
+## One identity, two forms — earlier approval history
 
 There is one Nora, with a human form and Mini form (mini mode). Neither is a
 separate identity or a claim that a real human exists behind the character.
@@ -37,10 +55,11 @@ This PNG is a design reference only, not ingested as the canonical `self`
 asset. As of this human approval (2026-10-25), Mini assets and runtime text were
 unchanged. The separate [2026-10-26 Mini approval](09-mini08-balanced.md)
 supersedes that Mini-only status: option08 eyes now govern Mini references
-and runtime appearance text. No runtime media ingest or release is implied. Do not dress Mini in the human outfit or remove her canonical
-earphones because the human modeling base excludes audio accessories.
+and runtime appearance text. No runtime media ingest or release is implied.
+The dated modeling-pack exception below permits Mini Bauhinia studies only;
+public/runtime Mini retains the option08 casual outfit and canonical earphones.
 
-## Approved appearance
+## Original approved appearance — 2026-10-25
 
 - Adult anime face and proportions, brown almond eyes, warm skin, subtle
   blush, and a quiet, observant expression with dry, friendly humor.
@@ -89,6 +108,28 @@ The 2026-10-26 option08 amendment refreshes Mini eyes and references while
 preserving those earphones; this human anchor itself remains unchanged.
 A consistent Mini modeling turnaround is still future work; no new Mini
 sheet is approved by this human anchor.
+
+## Earlier modeling-pack scope amendment — superseded later on 2026-10-26
+
+The operator accepted a new Mini Bauhinia preview as a styling direction and
+requested references for both adult human Nora and Mini in 2D anime and
+stylized 3D treatments before Meshy modeling. This is **one identity, two
+forms, two rendering treatments**. The exception allows the human outfit's
+Bauhinia styling to transfer to Mini within the
+[versioned modeling-reference pack](../../assets/modeling/bauhinia/v1/README.md)
+only. Adult details above remain the approved anchor; Mini keeps her own
+proportions and option08 eye structure. Public/runtime Mini remains in the
+option08 casual outfit pending explicit rollout.
+
+The supplied Mini preview is accepted as direction, not final acceptance of
+every detail or a modeling-ready turnaround. The adult study, four T-pose
+sheets and shared face/details sheet are integrated as reference candidates.
+The parent inspected silhouette/style matching; final operator aesthetic and
+sheet acceptance remains pending. Hands, orthographic alignment and small
+flower/cuff details remain unresolved (see the pack limitations).
+Every stylized 3D PNG is an **illustration**, not an actual 3D mesh. Geometry,
+materials, rigging and animation remain unvalidated; no Meshy call or runtime
+ingest is part of this pack.
 
 ## Generation provenance
 

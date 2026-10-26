@@ -11,6 +11,13 @@ edges:
 
 # One identity, two representations
 
+**Later production supersession, 2026-10-26:** [09](09-mini08-balanced.md)
+now approves Bauhinia 2D anime for all non-3D uses of both forms. Stylized 3D
+PNGs serve Meshy modeling only. The earlier casual-outfit/earphone and medium
+rules below are historical; canonical/runtime text and pin integration are
+complete, including all eight parent-accepted final showreel sources. Integrated
+browser acceptance passed for the current 2D artwork. One identity, adult and Mini forms.
+
 **Mini amendment, 2026-10-26:** [09](09-mini08-balanced.md) refreshes Mini's
 canonical eyes and repository derivatives. The 2026-10-25 human approval
 left Mini unchanged at that date; 09 is a separate subsequent approval.

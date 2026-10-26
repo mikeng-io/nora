@@ -1,5 +1,5 @@
-Generate ONE image, portrait 4:5, on a TRANSPARENT background (PNG with alpha; if transparency is impossible, a flat plain #F4F2F2 background with no shadow).
+Generate ONE image, portrait 4:5, on a TRANSPARENT background (PNG with true alpha; no flat backdrop).
 - PROPORTIONS FIRST: exactly the chibi proportions of the first reference, 2.5 to 3 heads tall, the head as wide as her shoulders plus arms, compact torso, short legs, small feet. She must not look taller or more adult than the reference.
-- Nora standing under a small clear transparent umbrella she holds above her head with one hand, looking up at the sky from under it, calm and deadpan; the other hand in her hoodie pocket. Front three-quarter view. No rain drawn.
-- Earphones in both ears, the white cable and inline remote visible.
+- Nora standing under a small clear transparent umbrella she holds above her head with one hand, looking up at the sky from under it, calm and deadpan; the other hand relaxed beside her coat. Front three-quarter view. No rain drawn.
+- New Mini Bauhinia 2D anime design; simplified broad hair and five-petal clasp. No bag, earphones, cable or remote.
 - Full body in frame with some margin. No other props.

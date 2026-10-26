@@ -1,6 +1,21 @@
 # Mini Nora icon: provenance
 
-## Current: option08 Balanced, 2026-10-26
+## Current: 2D anime Bauhinia — 2026-10-26
+
+The supplied final transparent portrait follows the approved Mini Bauhinia
+production setting: compact high bun, broad hair locks, five-petal clasp,
+option08 eyes, one tiny mouth without a nose marker and the new outfit.
+No earphones or cables. Parent viewed the final crop and bun visibility PASS.
+It remains an icon derivative, never the full-body canonical self reference.
+
+The central inventory records the canonical semantic parent, dated prompt
+intent and all app/site/showreel outputs. Existing icon and OG processors keep
+bare transparent icons and full-bleed studio squares where required. Two PWA
+screenshots were recaptured using the documented synthetic mock workflow;
+no real account or live data was used. External profile publication, media
+ingest and deployment were not performed.
+
+## Earlier option08 Balanced refresh — historical, 2026-10-26
 
 The operator approved option08 eyes for Mini and requested this portrait refreshed
 from the new canonical image: visible sclera, brown irises, dark pupils, restrained

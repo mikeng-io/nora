@@ -1,21 +1,26 @@
 # Site art: provenance
 
-## Current Mini refresh, 2026-10-26
+## Current 2D Bauhinia sources — 2026-10-26
 
-Open-eye Mini sources now follow approved option08 Balanced: warm sclera,
-brown irises, pupils, restrained highlights and an upper lid line. No nose
-marker; one tiny mouth. The source map is provided by the parent image
-generation task. The canonical and reference sheet remain the shared identity
-inputs. `assets/visual-assets.json` records each source, copy and consumer;
-`scripts/visual_assets.py sync` rebuilds derivatives and the live rig.
-Closed-eye quiet art and the standalone stool remain compatible.
-`assets/nora-notebook.webp` is the retained shared notebook master for the
-app and showreel; only its use on this site was retired.
+All seven site character sources and the shared notebook master now use the
+parent-accepted 2D anime Mini Bauhinia artwork, including closed-eye quiet.
+The canonical Mini supplies identity: option08 eyes, Mini proportions, one tiny
+mouth without a nose marker, compact broad hair clumps, five-petal clasp and
+Bauhinia clothing. The prior compositions supply scene/pose intent only.
+Transparent sources retain alpha; encoding follows the existing WebP recipe
+at each source's actual aspect ratio. The standalone stool is unchanged.
+
+The [central inventory](../../../../assets/visual-assets.json) records semantic
+repository image parents, dated prompt intent, consumers and byte fingerprints.
+Original PNGs and generation metadata remain private. The notebook master is
+shared by the app/showreel; its old placement on this site remains retired.
+Fresh static/rig alignment and browser acceptance are separate from source-art
+acceptance. Runtime media ingest and deployment were not performed.
 
 ## September generation history
 
 The following dates describe the original generation, before the option08
-refresh. The shared brief below is the current recipe; prior eye wording is
+refresh. The brief and prompts below are historical recipes; prior eye wording is
 preserved in the original operator spec and Git history.
 
 Renders of Mini Nora made for the public site with the image-generation tool
@@ -54,7 +59,7 @@ not: a stool that arrives and leaves with her reads as wrong. `ledge.webp`
 `notebook.webp` so it matches the one she used to sit on) replaced it; the two
 are placed in `components/Memory.astro`, measured on both renders.
 
-## Shared brief
+## Historical shared brief — superseded by the 2D production setting
 
 ```text
 You are an art director's image-generation collaborator. Use your built-in image generation tool (do not draw with code, do not use PIL/SVG).
