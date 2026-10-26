@@ -27,6 +27,24 @@ uv sync --frozen --extra evals
 make hooks
 ```
 
+Token-budget tests also need the public `cl100k_base` vocabulary, which the
+locked `tiktoken` wheel downloads on first use. While online, bootstrap it into
+an explicit cache (keep this variable set for subsequent test commands):
+
+```bash
+export TIKTOKEN_CACHE_DIR="$HOME/.cache/nora/tiktoken"
+uv run --frozen python -c 'import tiktoken; tiktoken.get_encoding("cl100k_base")'
+```
+
+The public source is
+`https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken`:
+1,681,126 bytes, SHA256
+`223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7`.
+The locked tokenizer verifies that hash before accepting downloaded or cached
+data. An offline machine needs this verified public cache prepared in advance;
+locked Python dependencies alone do not make cold offline collection work.
+No private configuration or tokenizer cache is needed.
+
 Database and object-store tests need Docker. Live model evaluations require
 operator-owned services and credentials; ordinary contributions use synthetic
 data and do not need production access. See the [README](README.md#development)

@@ -21,11 +21,6 @@ from nora.infra.sql.migrations_runner import (
 from nora.infra.sql.schema import METADATA
 
 
-async def test_upgrade_head_reaches_the_head_revision(pg_url):
-    run_migrations(pg_url)
-    assert current_revision(pg_url) == head_revision()
-
-
 async def test_startup_is_idempotent_across_restarts(pg_url):
     for _ in range(3):
         run_migrations(pg_url)

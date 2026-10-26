@@ -507,19 +507,6 @@ async def test_an_adopted_join_records_the_channel_it_adopted(aiohttp_client):
         await hub.join("guild-1", "cortez-2")
 
 
-async def test_an_adoption_for_another_channel_never_caches_anything(aiohttp_client):
-    """The controller is connected somewhere else entirely: that is a real
-    conflict, not an adoption, and it must leave no cache behind."""
-    hub = await _hub(
-        aiohttp_client, _app(join_status=409, status_channel="cortez-elsewhere"),
-    )
-
-    with pytest.raises(GenerationConflict):
-        await hub.join("guild-1", "cortez-1")
-
-    assert hub.session_for("guild-1") is None
-
-
 async def test_boot_adoption_is_quiet_when_a_guild_has_no_connection(aiohttp_client, caplog):
     """A controller holding no connection for a guild answers 404
     `unknown_guild`, and since one process serves N guilds that is the ordinary

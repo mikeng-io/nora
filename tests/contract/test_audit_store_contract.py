@@ -10,15 +10,19 @@ from __future__ import annotations
 
 import dataclasses
 import json
+from collections.abc import Iterator
+from typing import Any
+from uuid import uuid4
 
+import psycopg
 import pytest
+import sqlalchemy as sa
 
 from nora.domain.media import MediaBlob
 from nora.domain.models import DeliveryStatus, EditTarget, NormalizedMessage, Quote, RowEdit
 from nora.domain.ports import RecordStore
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.migrations_runner import run_migrations
 from nora.testing.fakes import FakeRecordStore
 
 
@@ -31,16 +35,62 @@ def _msg(conv="g1", body="hello", ts=1, sender="+852111", platform="signal",
     )
 
 
+@pytest.fixture(scope="module")
+def _audit_db(pg_admin: Any, pg_template: str) -> Iterator[str]:
+    """One migrated test database per module/worker; isolate rows below.
+
+    The module-db/truncate pattern is shared with the memo/standing contracts;
+    cloning the session template also avoids replaying migrations here.
+    """
+    dbname = "t_audit_" + uuid4().hex
+    with psycopg.connect(pg_admin.dsn(pg_admin.maintenance_db), autocommit=True) as conn:
+        conn.execute(f'CREATE DATABASE "{dbname}" TEMPLATE "{pg_template}"')
+    url = (
+        f"postgresql+asyncpg://{pg_admin.user}:{pg_admin.password}"
+        f"@{pg_admin.host}:{pg_admin.port}/{dbname}"
+    )
+    try:
+        yield url
+    finally:
+        with psycopg.connect(pg_admin.dsn(pg_admin.maintenance_db), autocommit=True) as conn:
+            conn.execute(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname = %s AND pid <> pg_backend_pid()", (dbname,),
+            )
+            conn.execute(f'DROP DATABASE IF EXISTS "{dbname}"')
+
+
 @pytest.fixture(params=["sql", "fake"])
 async def store(request):
     if request.param == "sql":
-        pg_url = request.getfixturevalue("pg_url")
-        run_migrations(pg_url)
-        s: RecordStore = SqlRecordStore(create_sql_engine(pg_url))
+        engine = create_sql_engine(request.getfixturevalue("_audit_db"))
+        s: RecordStore = SqlRecordStore(engine)
     else:
         s = FakeRecordStore()
-    yield s
-    await s.aclose()
+    try:
+        yield s
+    finally:
+        try:
+            if request.param == "sql":
+                async with engine.begin() as conn:
+                    # Reset the rows and their search projection, with capture off
+                    # as in the other module-scoped contract fixtures.
+                    await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
+                    await conn.execute(sa.text(
+                        "TRUNCATE messages, memory_node, memory_edge, "
+                        "memory_projection_queue RESTART IDENTITY CASCADE"
+                    ))
+        finally:
+            await s.aclose()
+
+
+@pytest.mark.parametrize("case", ["first", "next"])
+async def test_each_case_starts_empty_and_can_write(store, case):
+    """Repeated on both backends: a previous case's rows must not survive."""
+    assert (await store.stats())["messages"] == 0
+    await store.append(message=_msg(body=case))
+    assert (await store.stats())["messages"] == 1
+    assert [row.body for row in await store.recent(conversation_id="g1", limit=10)] == [case]
 
 
 async def test_append_returns_increasing_row_ids(store):

@@ -44,6 +44,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 NORA = ROOT / "nora"
 
@@ -78,10 +80,10 @@ def _sources() -> list[tuple[str, ast.Module]]:
     ]
 
 
-def _modules_where(predicate) -> set[str]:
+def _modules_where(sources, predicate) -> set[str]:
     return {
         name
-        for name, tree in _sources()
+        for name, tree in sources
         for node in ast.walk(tree)
         if isinstance(node, ast.Call) and predicate(node)
     }
@@ -117,18 +119,32 @@ def test_only_the_tag_path_and_the_fire_path_can_send():
     there at all, and if she should, the decision index's R-1 row and this
     file's `CALLERS` are the two places that have to say so.
     """
-    assert _modules_where(_is_port_send) == {SENDER}, (
+    sources = _sources()
+    assert _modules_where(sources, _is_port_send) == {SENDER}, (
         "something other than Deliverer.deliver reaches adapter.send — that "
         "bypasses R-2's latch, R-4, R-6's leak scan, R-18's egress scan and "
         "A9's audit-first write, all five at once"
     )
-    assert _modules_where(_is_deliverer_construction) == {BUILDER}, (
+    assert _modules_where(sources, _is_deliverer_construction) == {BUILDER}, (
         "a second Deliverer construction site — `audience` has no default "
         "there precisely so a new one cannot silently report its failures as "
         "the tag path's"
     )
-    assert _modules_where(_is_deliver_build) == CALLERS, (
+    assert _modules_where(sources, _is_deliver_build) == CALLERS, (
         "the tag path, the fire path, the public summons and the one-time code "
         "are the only senders; another caller of deliver.build is another way "
         "for Nora to speak unprompted"
     )
+
+
+@pytest.mark.parametrize(("source", "predicate"), [
+    ("adapter.send(target=room, text=reply)", _is_port_send),
+    ("Deliverer(audit=store)", _is_deliverer_construction),
+    ("deliver.build(audit=store)", _is_deliver_build),
+])
+def test_each_link_detects_an_unapproved_module(source, predicate):
+    sources = [
+        ("unapproved.py", ast.parse(source)),
+        ("transport.py", ast.parse("self._sender.send(target, text)")),
+    ]
+    assert _modules_where(sources, predicate) == {"unapproved.py"}
