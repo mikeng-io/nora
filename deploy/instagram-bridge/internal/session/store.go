@@ -243,6 +243,11 @@ func (s Store) SaveCookies(jar *cookies.Cookies) error {
 // thing in and normalizing it here is one less way to arrive at a half-session
 // that fails with an opaque auth error.
 func LoadCookieJar(s Store) (*cookies.Cookies, error) {
+	// Before any credential is read. A session that cannot be made private is
+	// not read at all: the bridge keeps serving and says why.
+	if err := s.Private(); err != nil {
+		return nil, err
+	}
 	// A cookies.json that is PRESENT but unusable must not shadow the cURL
 	// bootstrap. Reaching the cURL path only on a read error meant an empty,
 	// truncated or half-written cookies.json made the documented re-auth
@@ -279,7 +284,81 @@ func LoadCookieJar(s Store) (*cookies.Cookies, error) {
 	if err := s.SaveCookies(jar); err != nil {
 		return nil, fmt.Errorf("cookies.curl did not yield a usable session: %w", err)
 	}
+	// And the paste itself goes. Once the jar is saved it is a second, plain-text
+	// copy of the account credential, and nothing reads it again. A failure to
+	// remove it is an error: a credential left readable on disk is not a
+	// session this bridge should go on serving.
+	if err := s.scrubBootstrap(); err != nil {
+		return nil, fmt.Errorf("cookies.curl was used but could not be removed: %w", err)
+	}
 	return jar, nil
+}
+
+// scrubBootstrap truncates and removes the one-shot cookies.curl. A missing
+// file is already scrubbed.
+func (s Store) scrubBootstrap() error {
+	path := s.Path("cookies.curl")
+	f, err := os.OpenFile(path, os.O_WRONLY, 0)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := f.Truncate(0); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+// chmod is a variable so a test can make a permission change fail; nothing
+// else replaces it.
+var chmod = os.Chmod
+
+// Private tightens the session directory to 0700 and each credential file to
+// 0600, and says so when it cannot. The directory is created 0700 by the
+// bridge, but a volume that was filled by a copy keeps the copy's modes, and a
+// jar readable by other users on the host is the credential, readable. A
+// missing file has nothing to protect and is not an error here; the read that
+// follows reports it.
+func (s Store) Private() error {
+	if err := tighten(s.Dir, 0o700); err != nil {
+		return err
+	}
+	for _, name := range []string{"cookies.json", "cookies.curl"} {
+		if err := tighten(s.Path(name), 0o600); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func tighten(path string, want os.FileMode) error {
+	info, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if info.Mode().Perm()&^want == 0 {
+		return nil
+	}
+	if err := chmod(path, want); err != nil {
+		return fmt.Errorf("%s is readable beyond its owner and cannot be made private: %w", filepath.Base(path), err)
+	}
+	return nil
 }
 
 // Each alternative matches a quote to the SAME quote character. The obvious

@@ -192,9 +192,9 @@ from nora.infra.sql.schema import (
     MESSAGES,
     NOTE,
     NOTE_REVISION,
-    PERSONA_LINE,
     PRESENCE_STAYS,
     PRESENCE_TRIPS,
+    PROFILE_LINE,
     ROLLUP_BUILD,
     ROLLUP_DAYBOOK,
     ROLLUP_OUTING,
@@ -267,10 +267,10 @@ INDEXED_WRITES: dict[str, str] = {
     "social_item": "social",
     "social_item_state": "social",
     "social_perception": "social",
-    # A Persona line (45 §1) — projected by the store's write paths only while
-    # `[persona] render` is on; the shadow's lines join at the switch through
+    # A Profile line (45 §1) — projected by the store's write paths only while
+    # `[profile] render` is on; the shadow's lines join at the switch through
     # the flip's rebuild (45 §8), never the queue, whose drain runs either way.
-    "persona_line": "persona_line",
+    "profile_line": "profile_line",
 }
 
 _METRIC = "nora_memory_projection_total"
@@ -1164,38 +1164,38 @@ async def _project_character(conn: AsyncConnection, source_id: str) -> None:
     await _entry_edges(conn, "character", source_id, edges)
 
 
-# --- Persona (design/unified-memory/45 §1) -----------------------------------
+# --- Profile (design/unified-memory/45 §1) -----------------------------------
 
-#: A persona line's episode citation, `response:<send id>`: the send's Record
+#: A profile line's episode citation, `response:<send id>`: the send's Record
 #: id, so the message's node. And its social citation, `social:<network>:<id>`.
-_PERSONA_EPISODE_CITATION = re.compile(r"response:(\d+)")
-_PERSONA_SOCIAL_CITATION = re.compile(r"social:([a-z]+):(\S+)")
+_PROFILE_EPISODE_CITATION = re.compile(r"response:(\d+)")
+_PROFILE_SOCIAL_CITATION = re.compile(r"social:([a-z]+):(\S+)")
 
 
-def _persona_cites(source_id: str, citations: Iterable[str]) -> list[Edge]:
-    """A persona line's citations as `cites` edges: a Record row id and a
+def _profile_cites(source_id: str, citations: Iterable[str]) -> list[Edge]:
+    """A profile line's citations as `cites` edges: a Record row id and a
     `response:<send id>` both name a message; `social:<network>:<item id>`
     names the item. A `rollup:<kind>:<subject>` citation (45 §1) is the
-    Persona spelling — the index's episode keys are its own
+    Profile spelling — the index's episode keys are its own
     `rollup(kind|key)` form (`_cites`) — and names no node here."""
-    out = _cites("persona_line", source_id, citations, "persona_line.citations")
+    out = _cites("profile_line", source_id, citations, "profile_line.citations")
     for c in dict.fromkeys(c.strip() for c in citations):
-        episode = _PERSONA_EPISODE_CITATION.fullmatch(c)
+        episode = _PROFILE_EPISODE_CITATION.fullmatch(c)
         if episode is not None:
             out.append((
-                "persona_line", source_id, "cites", "message", episode.group(1),
-                "persona_line.citations"))
+                "profile_line", source_id, "cites", "message", episode.group(1),
+                "profile_line.citations"))
             continue
-        social = _PERSONA_SOCIAL_CITATION.fullmatch(c)
+        social = _PROFILE_SOCIAL_CITATION.fullmatch(c)
         if social is not None:
             out.append((
-                "persona_line", source_id, "cites", "social",
-                f"{social.group(1)}:{social.group(2)}", "persona_line.citations"))
+                "profile_line", source_id, "cites", "social",
+                f"{social.group(1)}:{social.group(2)}", "profile_line.citations"))
     return out
 
 
-async def _project_persona_line(conn: AsyncConnection, source_id: str) -> None:
-    """One Persona line: its text the node's, in its account's scope (the
+async def _project_profile_line(conn: AsyncConnection, source_id: str) -> None:
+    """One Profile line: its text the node's, in its account's scope (the
     account key is a culture key, `split_culture_key`), and its citations,
     `about`, `supersedes` and `draws_on` the edges (45 §1).
 
@@ -1208,32 +1208,32 @@ async def _project_persona_line(conn: AsyncConnection, source_id: str) -> None:
     index, not only the account."""
     row = (await conn.execute(
         sa.select(
-            PERSONA_LINE,
-            PERSONA_LINE.c.part, PERSONA_LINE.c.fact_key, PERSONA_LINE.c.fact_value,
-            PERSONA_LINE.c.as_of, PERSONA_LINE.c.valid_from, PERSONA_LINE.c.valid_until,
-            PERSONA_LINE.c.citations, PERSONA_LINE.c.draws_on, PERSONA_LINE.c.supersedes,
-            PERSONA_LINE.c.unit, PERSONA_LINE.c.exclude_persons, PERSONA_LINE.c.written_at,
-        ).where(PERSONA_LINE.c.id == source_id)
+            PROFILE_LINE,
+            PROFILE_LINE.c.part, PROFILE_LINE.c.fact_key, PROFILE_LINE.c.fact_value,
+            PROFILE_LINE.c.as_of, PROFILE_LINE.c.valid_from, PROFILE_LINE.c.valid_until,
+            PROFILE_LINE.c.citations, PROFILE_LINE.c.draws_on, PROFILE_LINE.c.supersedes,
+            PROFILE_LINE.c.unit, PROFILE_LINE.c.exclude_persons, PROFILE_LINE.c.written_at,
+        ).where(PROFILE_LINE.c.id == source_id)
     )).first()
-    if row is None or row.state == "hidden" or (row.part == "identity" and row.fact_key is None):
-        await _drop(conn, "persona_line", [source_id])
+    if row is None or row.state == "hidden" or (row.part == "facts" and row.fact_key is None):
+        await _drop(conn, "profile_line", [source_id])
         return
     successor = (await conn.execute(
-        sa.select(PERSONA_LINE.c.id, PERSONA_LINE.c.state)
-        .where(PERSONA_LINE.c.supersedes == source_id)
+        sa.select(PROFILE_LINE.c.id, PROFILE_LINE.c.state)
+        .where(PROFILE_LINE.c.supersedes == source_id)
     )).first()
     if successor is not None and successor.state == "hidden":
-        await _drop(conn, "persona_line", [source_id])
+        await _drop(conn, "profile_line", [source_id])
         return
-    form, owner, person = split_culture_key(row.persona_key)
+    form, owner, person = split_culture_key(row.profile_key)
     if form == "character" and not (owner and await _is_a_unit(conn, owner)):
         # `_project_character`'s rule: a pre-C2b ROOM-keyed account is never
         # indexed, and dropped if it ever was.
-        await _drop(conn, "persona_line", [source_id])
+        await _drop(conn, "profile_line", [source_id])
         return
     room = await _room_of(conn, owner) if form == "room" else None
     if form == "room" and room is None:
-        await _drop(conn, "persona_line", [source_id])
+        await _drop(conn, "profile_line", [source_id])
         return
     persons: list[str] = []
     about: tuple[str, str]
@@ -1247,10 +1247,10 @@ async def _project_persona_line(conn: AsyncConnection, source_id: str) -> None:
         # Readable only where a room lists the person.
         persons = [str(person)]
         about = ("person", str(person))
-    from nora.infra.sql.persona import _line
+    from nora.infra.sql.profile import _line
 
     await _upsert_node(
-        conn, kind="persona_line", source_id=source_id,
+        conn, kind="profile_line", source_id=source_id,
         unit=None if form == "room" else row.unit, origin_room=room,
         persons=persons, exclude_persons=row.exclude_persons,
         text=format_line(_line(row)),
@@ -1259,27 +1259,27 @@ async def _project_persona_line(conn: AsyncConnection, source_id: str) -> None:
                else "live" if row.state in ("current", "disputed") else "retired"),
     )
     edges: list[Edge] = [
-        ("persona_line", source_id, "about", *about, "persona_line.persona_key")]
+        ("profile_line", source_id, "about", *about, "profile_line.profile_key")]
     if row.fact_key == "relationship" and isinstance(row.fact_value, dict):
         target = row.fact_value.get("person_id")
         if target:
-            edges.append(("persona_line", source_id, "about", "person", target,
-                          "persona_line.fact_value"))
-    edges += _persona_cites(source_id, row.citations)
+            edges.append(("profile_line", source_id, "about", "person", target,
+                          "profile_line.fact_value"))
+    edges += _profile_cites(source_id, row.citations)
     edges += [
-        ("persona_line", source_id, "draws_on", "persona_line", str(d),
-         "persona_line.draws_on")
+        ("profile_line", source_id, "draws_on", "profile_line", str(d),
+         "profile_line.draws_on")
         for d in row.draws_on
     ]
     if row.supersedes is not None:
         edges.append((
-            "persona_line", source_id, "supersedes", "persona_line",
-            str(row.supersedes), "persona_line.supersedes"))
+            "profile_line", source_id, "supersedes", "profile_line",
+            str(row.supersedes), "profile_line.supersedes"))
     if successor is not None:
         edges.append((
-            "persona_line", str(successor.id), "supersedes", "persona_line",
-            source_id, "persona_line.supersedes"))
-    await _entry_edges(conn, "persona_line", source_id, edges)
+            "profile_line", str(successor.id), "supersedes", "profile_line",
+            source_id, "profile_line.supersedes"))
+    await _entry_edges(conn, "profile_line", source_id, edges)
 
 
 # --- Rollup episodes ---------------------------------------------------------
@@ -1633,7 +1633,7 @@ _PROJECTORS: dict[str, Callable[[AsyncConnection, str], Awaitable[None]]] = {
     "event": _project_event,
     "character": _project_character,
     "social": _project_social,
-    "persona_line": _project_persona_line,
+    "profile_line": _project_profile_line,
     **{kind: _episode_projector(kind) for kind in _EPISODES},
 }
 
@@ -1993,7 +1993,7 @@ def _sources() -> list[tuple[str, Any, list[Any]]]:
         ("event", EVENTS.c.id, []),
         ("character", CULTURE.c.key, []),
         ("social", _social_key(), []),
-        ("persona_line", PERSONA_LINE.c.id, []),
+        ("profile_line", PROFILE_LINE.c.id, []),
     ]
 
 
@@ -2015,10 +2015,10 @@ def _source_of(kind: str) -> Any:
         return sa.exists().where(CULTURE.c.key == node)
     if kind == "social":
         return sa.exists().where(_social_key() == node, ~_hidden(SOCIAL_ITEM))
-    if kind == "persona_line":
+    if kind == "profile_line":
         return sa.exists().where(
-            PERSONA_LINE.c.id == sa.cast(node, pg.UUID(as_uuid=False)),
-            PERSONA_LINE.c.state != "hidden",
+            PROFILE_LINE.c.id == sa.cast(node, pg.UUID(as_uuid=False)),
+            PROFILE_LINE.c.state != "hidden",
         )
     table = {"note": NOTE, "memo": MEMO, "lesson": LESSON, "event": EVENTS}[kind]
     return sa.exists().where(table.c.id == sa.cast(node, pg.UUID(as_uuid=False)))

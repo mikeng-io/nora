@@ -99,11 +99,14 @@ per-case, name, and it guards it:
 from __future__ import annotations
 
 import contextlib
+import fcntl
+import os
 import re
 import uuid
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import sqlalchemy as sa
@@ -137,15 +140,47 @@ from .memory_workspace import new_run_id
 from .obtain import Subject
 
 __all__ = [
-    "Sandboxed", "SharedDatabaseMutatedError", "SharedDatabaseVersions",
-    "SourceRevisionMismatchError", "as_knowledge", "assert_shared_databases_unchanged",
-    "close_private_blank_templates", "judge_source", "refuse_if_source_diverges_from_head",
+    "EVAL_HOST_LOCK", "EvalLockHeldError", "Sandboxed", "SharedDatabaseMutatedError",
+    "SharedDatabaseVersions", "SourceRevisionMismatchError", "as_knowledge",
+    "assert_shared_databases_unchanged", "close_private_blank_templates", "eval_host_lock",
+    "judge_source", "refuse_if_source_diverges_from_head",
     "restored_room", "sandbox_as_of", "sandbox_database", "sandbox_from_snapshot", "seed_lessons",
     "shared_database_versions",
     "sweep_stale_private_blank_templates",
 ]
 
 _HOUR_MS = 3_600_000
+
+#: The deploy host's ONE eval lock, shared by every session on the host. Read
+#: at call time, so a test can point it at its own file.
+# Separate from the documented outer /tmp/nora-eval.lock: taking that same
+# flock again inside its child process would refuse every wrapped run.
+EVAL_HOST_LOCK = Path("/tmp/nora-eval-run.lock")  # noqa: S108 — one host-wide lock by design
+
+
+class EvalLockHeldError(RuntimeError):
+    """Another eval run on this host holds `EVAL_HOST_LOCK`."""
+
+
+@contextlib.contextmanager
+def eval_host_lock() -> Iterator[None]:
+    """Hold the host's exclusive eval lock for the block, and release it when
+    the block ends, by exception or not. It never waits: a run that finds the
+    lock taken is refused, because two runs initialise and migrate the shared
+    template and the source's reads only mean something one at a time.
+    """
+    # ponytail: an advisory flock on one host; a second host has its own lock.
+    fd = os.open(EVAL_HOST_LOCK, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise EvalLockHeldError(
+                f"another eval run holds {EVAL_HOST_LOCK}; wait for it to finish"
+            ) from exc
+        yield
+    finally:
+        os.close(fd)  # closing the descriptor drops the flock
 
 #: Templates this process has already brought to the migration head, by URL.
 #: `run_migrations` on an at-head database is a brief advisory-lock round trip

@@ -8,7 +8,7 @@ const pages = await getCollection('docs');
 const image = await getImage({ src: portrait, width: 560, format: 'webp' });
 const paths = [
   { slug: 'concepts/sessionless-continuity', title: 'Continuity between turns', description: 'Start with the state that carries across a conversation.' },
-  { slug: 'concepts/memory-and-record', title: 'Memory and provenance', description: 'Follow Record, retrieval and the Persona write path.' },
+  { slug: 'concepts/memory-and-record', title: 'Memory and provenance', description: 'Follow Record, retrieval and the Profile write path.' },
   { slug: 'workflows/cognition', title: 'Thinking between interactions', description: 'Trace stimuli, wakes and the bounded cognition loop.' },
   { slug: 'systems/computer-and-browser', title: 'Tools beyond the conversation', description: 'Explore the persistent computer, browser and scoped workspaces.' },
 ];
@@ -26,7 +26,7 @@ const base = import.meta.env.BASE_URL;
   hero: {
     title: 'The systems <br />behind Nora.',
     tagline: 'How a self-hosted social agent carries context, thinks between interactions and works through tools.',
-    image: { html: `<img src="${image.src}" width="${image.attributes.width}" height="${image.attributes.height}" alt="Mini Nora in her grey hoodie, wired earphones in." loading="eager" decoding="async" />` },
+    image: { html: `<img src="${image.src}" width="${image.attributes.width}" height="${image.attributes.height}" alt="Mini Nora standing calmly." loading="eager" decoding="async" />` },
     actions: [
       { text: 'Open the guide', link: `${base}quickstart/`, icon: 'right-arrow' },
       { text: 'Explore the graph', link: `${base}graph/`, variant: 'minimal' },

@@ -29,7 +29,7 @@ from nora.domain.memory_index import (
 )
 from nora.domain.otp import CHECK_OUTCOMES as OTP_CHECK_OUTCOMES
 from nora.domain.otp import REQUEST_OUTCOMES as OTP_REQUEST_OUTCOMES
-from nora.domain.persona import PERSONA_OUTCOMES
+from nora.domain.profile import PROFILE_OUTCOMES
 from nora.domain.reasoning_strip import (
     PATHS_HELP,
     STRIP_OUTCOMES,
@@ -1633,20 +1633,20 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     ),
     # The Lessons session: one per unit, by what it did; `decayed` is code
     # retiring a lesson at its horizon.
-    # The Persona sessions, in shadow (design/unified-memory/45 §4).
+    # The Profile sessions, in shadow (design/unified-memory/45 §4).
     _CounterSpec(
-        "nora_persona_session_total",
-        "Persona sessions by outcome (" + " / ".join(sorted(PERSONA_OUTCOMES)) + "). "
+        "nora_profile_session_total",
+        "Profile sessions by outcome (" + " / ".join(sorted(PROFILE_OUTCOMES)) + "). "
         "written a session's one write landed rows; kept it settled with none; "
         "refused one verb call was refused; unsettled a session that did neither "
         "(its batch is held); abandoned the third unsettled run of one batch.",
         ("outcome",),
     ),
-    # The Persona verdict judge (45 §3): one per hypothesis judged, by verdict
+    # The Profile verdict judge (45 §3): one per hypothesis judged, by verdict
     # and by judge (code for a countable observable, the model otherwise).
     # `unknown` is never confirmed's side: it is the observable unread (R-27).
     _CounterSpec(
-        "nora_persona_verdict_total",
+        "nora_profile_verdict_total",
         "Hypothesis verdicts by verdict (confirmed / refuted / expired / "
         "unknown) and judge (code / model).",
         ("verdict", "judge"),
@@ -2118,6 +2118,30 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "on a later day, as is unavailable. failed is never read again (a "
         "permanent reason, or its third failed read).",
         ("source", "outcome"),
+    ),
+    _CounterSpec(
+        "nora_message_reading_calls_total",
+        "Transport attempts for message readings, including retries.",
+    ),
+    _CounterSpec(
+        "nora_message_reading_input_tokens_total",
+        "Reported input tokens for every reading response, including rejected output.",
+    ),
+    _CounterSpec(
+        "nora_message_reading_output_tokens_total",
+        "Reported output tokens for every reading response, including rejected output.",
+    ),
+    _CounterSpec(
+        "nora_message_reading_failures_total",
+        "Failed message reading attempts or storage operations; durable work is retained.",
+    ),
+    _CounterSpec(
+        "nora_message_reading_claims_written_total",
+        "New claims committed by the message reading writer.",
+    ),
+    _CounterSpec(
+        "nora_message_reading_usage_missing_total",
+        "Reading requests whose usage is unavailable; measured cost is incomplete.",
     ),
 )
 

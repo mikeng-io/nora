@@ -159,9 +159,9 @@ class App:
             skills_dir=deps.skills_dir, events=deps.events,
             doctrine_store=deps.doctrine_store,
             workspaces_of=deps.workspaces_of,
-            persona=deps.persona_portal,
-            persona_scopes_of=deps.persona_scopes_of,
-            persona_cited=deps.persona_cited,
+            profile=deps.profile_portal,
+            profile_scopes_of=deps.profile_scopes_of,
+            profile_cited=deps.profile_cited,
             documents=deps.documents, rooms_of=deps.rooms_of,
             room_event_shown=deps.room_event_shown, blobs=deps.blobs,
             room_label=deps.room_label, artifacts=deps.artifacts,
@@ -224,6 +224,8 @@ class App:
             ))
         else:
             log.info("retention sweep disabled (store.prune_enabled = false)")
+        if deps.message_readings is not None:
+            deps.background.spawn(deps.message_readings.run())
         # Unconditional: every store write projects into the memory index,
         # so there is always a queue a failed projection may have filled.
         deps.background.spawn(runtime.memory_drain_loop(

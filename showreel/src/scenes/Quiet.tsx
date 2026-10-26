@@ -1,5 +1,5 @@
 // 14–20 s: the line leads back to her. "And when there's nothing worth
-// saying…" — she presses the remote, the music stops, "I don't." Then home.
+// saying…" — she pauses, the music stops, "I don't." Then home.
 import React from "react";
 import { Img, staticFile } from "remotion";
 import { Headline, Presence } from "../components";
@@ -25,10 +25,11 @@ import {
 
 const N = NIGHT;
 
-// Where her fingers hold the inline remote, in image px (measured on the renders, 2026-09-26).
+// 2D Bauhinia clasp centres, measured on the 2026-10-26 artwork. The pause
+// pulse is a graphic accent; no remote, cable or button is depicted.
 export const QUIET = {
-  wide: { src: "art/quiet-closeup-wide.webp", iw: 1536, ih: 1024, remote: [777, 760] },
-  tall: { src: "art/quiet-closeup-tall.webp", iw: 1024, ih: 1536, remote: [446, 1079] },
+  wide: { src: "art/quiet-closeup-wide.webp", iw: 1536, ih: 1024, focus: [780, 158] },
+  tall: { src: "art/quiet-closeup-tall.webp", iw: 1024, ih: 1536, focus: [314, 318] },
 };
 
 export const Quiet: React.FC<{ lang: Lang }> = ({ lang }) => {
@@ -41,11 +42,11 @@ export const Quiet: React.FC<{ lang: Lang }> = ({ lang }) => {
   const s0 = Math.max(w / q.iw, h / q.ih);
   const push = lerp(1.0, 1.16, smooth(prog(t, CUE.collapse + 0.2, click)));
   const s = s0 * push;
-  // keep the remote where it is on screen while the camera pushes in on it
-  const rx0 = (w - q.iw * s0) / 2 + q.remote[0] * s0;
-  const ry0 = (h - q.ih * s0) / 2 + q.remote[1] * s0;
-  const ox = rx0 - q.remote[0] * s;
-  const oy = ry0 - q.remote[1] * s;
+  // keep the clasp where it is on screen while the camera pushes in
+  const rx0 = (w - q.iw * s0) / 2 + q.focus[0] * s0;
+  const ry0 = (h - q.ih * s0) / 2 + q.focus[1] * s0;
+  const ox = rx0 - q.focus[0] * s;
+  const oy = ry0 - q.focus[1] * s;
   const inP = easeOut(prog(t, CUE.collapse + 0.15, CUE.collapse + 0.8));
   const dark = t >= click ? 1 - Math.pow(prog(t, click, click + 0.06), 0.5) * 0.93 : 1;
   const gone = prog(t, click + 0.05, click + 0.5);
@@ -80,7 +81,7 @@ export const Quiet: React.FC<{ lang: Lang }> = ({ lang }) => {
           opacity: inP * (1 - gone),
         }}
       />
-      {/* the click: a ring off the remote */}
+      {/* the pause: a graphic ring from the clasp, with existing audio timing */}
       {ring > 0 && ring < 1 && (
         <div
           style={{

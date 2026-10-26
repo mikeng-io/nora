@@ -4,8 +4,8 @@ from dataclasses import replace
 import pytest
 
 from nora.domain.character_card import format_card
-from nora.domain.persona import AddOp, Said, parse_ops
-from tests.unit.test_persona_rules import (
+from nora.domain.profile import AddOp, Said, parse_ops
+from tests.unit.test_profile_rules import (
     CITABLE,
     HUMAN,
     NOW,
@@ -32,7 +32,7 @@ SLOTS = {
 
 
 def trait(kind="topic", **changes):
-    return replace(AddOp(part="character", kind=kind, text="ignored competing prose",
+    return replace(AddOp(part="traits", kind=kind, text="ignored competing prose",
         mode="induced", citations=("101", "102", "103"),
         content={"statement": "reads books", "context": "unknown",
                  **dict.fromkeys(SLOTS[kind], "unknown")}), **changes)
@@ -55,7 +55,7 @@ def test_each_required_slot_is_refused_when_missing_or_blank(kind, slot):
 def test_entity_applicability_and_hypothesis_slots():
     assert _reasons(_plan([trait("skill")], account=ROOM_ACCOUNT)) == ["part_kind"]
     assert not _plan([trait("habit")], account=ROOM_ACCOUNT).refused
-    op = AddOp(part="hypothesis", kind="explanation", text="why", mode="abduced",
+    op = AddOp(part="guesses", kind="explanation", text="why", mode="abduced",
         citations=("101",), draws_on=("P1",), prediction="longer replies in quiet weeks",
         prediction_observable="longer replies", prediction_window_end=NOW + 86400000,
         content={"proposed_cause": "limited time", "alternative": "prefers brevity"})
@@ -79,7 +79,7 @@ def test_one_aggregate_is_not_an_exemption_and_roots_are_positive_control():
 
 
 def test_model_strength_and_location_are_ignored_and_projection_is_canonical():
-    raw = {"op": "add", "part": "character", "kind": "topic", "text": "fiction",
+    raw = {"op": "add", "part": "traits", "kind": "topic", "text": "fiction",
            "mode": "induced", "content": dict(trait().content),
            "citations": ["101", "102", "103"],
            "strength": {"occasions": 900, "location_subjects": ["unrelated-person"]},
@@ -120,7 +120,7 @@ def test_presence_sources_have_real_occasion_times_and_set_location():
 
 @pytest.mark.parametrize("location,allowed", [(False, False), (True, True)])
 async def test_existing_room_flag_and_disclosure_guard_filter_stored_location(location, allowed):
-    from nora.agent.lineage import persona_lines_for
+    from nora.agent.lineage import profile_lines_for
     from nora.domain.lineage import RenderRoom, RoomFacts
     [line] = _plan([trait()]).inserts
     line = replace(line, location=True)
@@ -134,26 +134,26 @@ async def test_existing_room_flag_and_disclosure_guard_filter_stored_location(lo
                 unnamed=0, available=True, degraded=False)
     room = ScopedRoom()
     public = replace(line, id="public", location=False)
-    result = await persona_lines_for((line, public), target, room)
+    result = await profile_lines_for((line, public), target, room)
     assert (line in result) == allowed and public in result
     denied = replace(target, circles=(frozenset({"someone-else"}),))
-    assert await persona_lines_for((line, public), denied, room) == (public,)
+    assert await profile_lines_for((line, public), denied, room) == (public,)
 
 
 def test_profile_and_open_hypothesis_share_the_card_formatter():
-    profile = replace(_line(1), part="identity", kind="attribute", fact_key="residence",
+    profile = replace(_line(1), part="facts", kind="attribute", fact_key="residence",
                       fact_value="Lotus District", mode="told", location=True)
-    hypothesis = replace(_line(2), part="hypothesis", kind="explanation", mode="abduced",
+    guess = replace(_line(2), part="guesses", kind="explanation", mode="abduced",
         content={"proposed_cause": "limited evenings", "alternative": "prefers brevity"},
         prediction="longer replies in quiet weeks", prediction_window_end=NOW + 86400000)
-    text = format_card([profile, hypothesis], now_ms=NOW, location=True)
+    text = format_card([profile, guess], now_ms=NOW, location=True)
     assert "Lives in: Lotus District [told]" in text
-    assert "Hypothesis [abduced]" in text and "predicts: longer replies in quiet weeks" in text
-    assert "Lotus District" not in format_card([profile, hypothesis], now_ms=NOW)
+    assert "guess [abduced]" in text and "predicts: longer replies in quiet weeks" in text
+    assert "Lotus District" not in format_card([profile, guess], now_ms=NOW)
 
 
 def test_every_trait_needs_two_hkt_days_and_skill_value_decay_is_longer():
-    from nora.domain.persona import TRAIT_DECAY_MS
+    from nora.domain.profile import TRAIT_DECAY_MS
     same_day = replace(CITABLE, messages={i: replace(CITABLE.messages[i],
         ts=NOW + i * 1000) for i in (101, 102, 103)})
     assert _reasons(_plan([trait()], citable=same_day)) == ["induced_one_day"]
@@ -167,7 +167,7 @@ def test_every_trait_needs_two_hkt_days_and_skill_value_decay_is_longer():
 async def test_events_as_traits_judge_reads_sources_and_keeps_unavailable_distinct(monkeypatch):
     from types import SimpleNamespace
 
-    from nora.app.persona_spike import event_judge
+    from nora.app.profile_spike import event_judge
     seen = []
     async def fake_call(**request):
         value = request["prompt"]
@@ -200,12 +200,12 @@ def test_trait_cap_is_nine_pooled_across_dimensions():
 
 
 def test_render_budget_omits_whole_claims_including_qualifications():
-    from nora.language.persona_render import _cut
+    from nora.language.profile_render import _cut
     assert _cut("A complete claim, with its necessary exception", 10) == ""
 
 
 def test_legacy_typed_residence_keeps_the_room_location_boundary():
-    residence = replace(_line(1), part="identity", kind="attribute", mode="told",
+    residence = replace(_line(1), part="facts", kind="attribute", mode="told",
         fact_key="residence", fact_value="Lotus District", location=False)
     assert residence.location and residence.memory_item.location
     assert format_card([residence], now_ms=NOW, location=False) == ""
@@ -223,11 +223,11 @@ def test_slot_contract_has_no_arbitrary_extra_fields():
 async def test_collective_location_uses_cited_subjects_not_the_viewer_roster():
     from types import SimpleNamespace
 
-    from nora.agent.lineage import persona_lines_for
+    from nora.agent.lineage import profile_lines_for
     from nora.agent.memory_search import scope_for
     from nora.domain.lineage import LiveRoom, RenderRoom, RoomFacts
     from nora.domain.memory_index import IndexedNode, in_scope
-    from nora.domain.persona import Account
+    from nora.domain.profile import Account
 
     refs = {f"presence:stay:p-kit:{n}": Said(NOW - n * 86400000, "p-kit", None,
         occasion=f"visit:{n}", medium="presence", location=True) for n in (1, 2, 3)}
@@ -239,17 +239,17 @@ async def test_collective_location_uses_cited_subjects_not_the_viewer_roster():
                                    unnamed=0, available=True, degraded=False)
     target = RenderRoom(room=RoomFacts("signal", frozenset({"room-a"}), "u1",
         frozenset({"p-lee"}), location=True), circles=(frozenset({"p-lee"}),))
-    assert not await persona_lines_for((line,), target, Room())
+    assert not await profile_lines_for((line,), target, Room())
     shared = replace(target, circles=(frozenset({"p-lee", "p-kit"}),))
-    assert await persona_lines_for((line,), shared, Room()) == (line,)
+    assert await profile_lines_for((line,), shared, Room()) == (line,)
     assert line.strength["location_subjects"] == ["p-kit"]
-    assert not await persona_lines_for((replace(line, strength={}),), shared, Room())
+    assert not await profile_lines_for((replace(line, strength={}),), shared, Room())
     scope = scope_for(shared.with_live(LiveRoom(person_ids=frozenset({"p-lee"}),
         unnamed=0, available=True, degraded=False)), social_off=())
-    scope = replace(scope, persona_render=True)
+    scope = replace(scope, profile_render=True)
     assert "p-kit" in scope.presence_persons
     assert not in_scope(IndexedNode("stay", "visit", persons=("p-kit",)), scope)
-    node = IndexedNode("persona_line", "collective", unit="u1", location=True,
+    node = IndexedNode("profile_line", "collective", unit="u1", location=True,
                        location_subjects=("p-kit",))
     assert in_scope(node, scope)
     assert not in_scope(replace(node, location_subjects=()), scope)
@@ -257,9 +257,9 @@ async def test_collective_location_uses_cited_subjects_not_the_viewer_roster():
 
 
 def test_confirmation_carries_location_evidence_for_an_open_hypothesis():
-    from nora.domain.persona import KeepOp
+    from nora.domain.profile import KeepOp
 
-    held = replace(_line(2), part="hypothesis", kind="explanation", mode="abduced",
+    held = replace(_line(2), part="guesses", kind="explanation", mode="abduced",
         content={"proposed_cause": "limited evenings", "alternative": "prefers brevity"},
         prediction="longer replies in quiet weeks", prediction_window_end=NOW + 86400000,
         location=False, source_medium=("chat",))

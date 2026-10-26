@@ -148,7 +148,9 @@ class MediaComprehension:
         spawn: Callable[[Coroutine[Any, Any, None]], None],
         stickers_enabled: bool = True,
         max_concurrent: int = DEFAULT_MAX_CONCURRENT,
+        content_checks: bool = True,
     ) -> None:
+        self._content_checks = content_checks
         self._blobs = blobs
         self._store = store
         self._interpreter = interpreter
@@ -483,7 +485,7 @@ class MediaComprehension:
             for part in (title, description, content, caveat)
             if part
         )
-        kind = scan_identifiers(detail) if detail else None
+        kind = scan_identifiers(detail, content_checks=self._content_checks) if detail else None
         if kind is not None:
             log.warning(
                 "a media comprehension would have carried a %s identifier into "

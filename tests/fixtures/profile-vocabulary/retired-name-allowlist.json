@@ -1,0 +1,789 @@
+{
+  "CHANGELOG.md": {
+    "reason": "Published immutable release history.",
+    "matches": {
+      "Persona": 2,
+      "_persona_settled_at": 2,
+      "persona": 22
+    }
+  },
+  "GLOSSARY.md": {
+    "reason": "Retired-term note and historical decision references.",
+    "matches": {
+      "Persona": 2,
+      "persona": 4
+    }
+  },
+  "design/04-config-identity.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "persona": 1
+    }
+  },
+  "design/09-decision-index.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "Persona": 15,
+      "PersonaStore": 1,
+      "SqlPersonaStore": 3,
+      "_persona": 1,
+      "_persona_settled_at": 1,
+      "nora_persona_reload_failures_total": 1,
+      "persona": 16,
+      "persona_dispute": 1,
+      "persona_leak": 1,
+      "persona_line": 2,
+      "persona_no_change": 1,
+      "persona_sha256": 1,
+      "persona_span": 1,
+      "persona_write": 3
+    }
+  },
+  "design/13-trace-content-and-redaction.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "PERSONA": 2
+    }
+  },
+  "design/17-prompt-substrate.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "Persona": 3,
+      "PersonaSection": 1,
+      "PersonaStore": 1,
+      "nora_persona": 2,
+      "persona": 14,
+      "persona_sha256": 1,
+      "persona_store": 1
+    }
+  },
+  "design/cognition-loop/05-data-model.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "Persona": 1
+    }
+  },
+  "design/cognition-loop/10-tiers.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "persona": 2
+    }
+  },
+  "design/cognition-loop/22-social-stream.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "Persona": 7,
+      "persona": 1
+    }
+  },
+  "design/cognition-loop/70-migration.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "persona": 2
+    }
+  },
+  "design/cognition-loop/80-prior-art.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "persona": 2
+    }
+  },
+  "design/computer-unit-scope/00-contract.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "Persona": 1
+    }
+  },
+  "design/context-plan/10-doctrine-audit.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "persona": 1
+    }
+  },
+  "design/evaluation/11-the-sandbox-rebuild.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "NORA_EVAL_PERSONA_CASES": 1,
+      "PERSONA_IDENTITY": 1,
+      "Persona": 2,
+      "persona_identity": 1,
+      "persona_sources": 1
+    }
+  },
+  "design/personalisation/10-likes.md": {
+    "reason": "Upstream design provenance retains pre-rename vocabulary; protected design text is unchanged.",
+    "matches": {
+      "PersonaLine": 1,
+      "persona": 4
+    }
+  },
+  "design/personalisation/50-verification.md": {
+    "reason": "Upstream design provenance retains pre-rename vocabulary; protected design text is unchanged.",
+    "matches": {
+      "persona": 2
+    }
+  },
+  "design/private-dm/00-contract.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "Persona": 12,
+      "persona": 2
+    }
+  },
+  "design/private-dm/01-current-flow.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "Persona": 2,
+      "PersonaEvidence": 1,
+      "PersonaPersonAdaptor": 1,
+      "persona": 2,
+      "persona_scopes_of_person": 1
+    }
+  },
+  "design/private-dm/02-storage.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "Persona": 5,
+      "persona": 1,
+      "persona_line": 1
+    }
+  },
+  "design/private-dm/03-execution.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "Persona": 10,
+      "persona_dispute": 1
+    }
+  },
+  "design/private-dm/04-build-and-acceptance.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "Persona": 6
+    }
+  },
+  "design/private-dm/_index.yaml": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "Persona": 1
+    }
+  },
+  "design/self-growth/10-character.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "Persona": 1,
+      "persona": 1
+    }
+  },
+  "design/self-growth/31-doctrine-audit.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "persona": 1
+    }
+  },
+  "design/unified-memory/00-intent.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "Persona": 13,
+      "persona": 15,
+      "persona_write": 1
+    }
+  },
+  "design/unified-memory/10-honcho-audit.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "Persona": 12,
+      "persona": 9
+    }
+  },
+  "design/unified-memory/15-memory-map.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "Persona": 4,
+      "persona": 6,
+      "persona_dispute": 1
+    }
+  },
+  "design/unified-memory/18-message-readings.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "Persona": 1,
+      "persona": 7,
+      "persona_write": 3
+    }
+  },
+  "design/unified-memory/25-memory-graph.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "Persona": 14,
+      "persona": 7,
+      "persona_dispute": 3
+    }
+  },
+  "design/unified-memory/30-identity-and-character.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "Persona": 11,
+      "persona": 9,
+      "persona_dispute": 2
+    }
+  },
+  "design/unified-memory/35-persona.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "<path> design/unified-memory/35-persona.md": 1,
+      "Persona": 24,
+      "persona": 10,
+      "persona_dispute": 1
+    }
+  },
+  "design/unified-memory/40-prior-art.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "Persona": 3,
+      "PersonaMem": 1,
+      "persona": 8
+    }
+  },
+  "design/unified-memory/45-persona-adaptor.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "<path> design/unified-memory/45-persona-adaptor.md": 1,
+      "PERSONA_COVERAGE": 1,
+      "Persona": 25,
+      "PersonaCitable": 1,
+      "PersonaEvidence": 2,
+      "PersonaPersonAdaptor": 2,
+      "SqlPersonaInputs": 1,
+      "SqlPersonaStore": 1,
+      "_persona": 1,
+      "_persona_settled_at": 1,
+      "persona": 28,
+      "persona_collective": 1,
+      "persona_coverage": 1,
+      "persona_dispute": 1,
+      "persona_disputes": 1,
+      "persona_key": 1,
+      "persona_line": 3,
+      "persona_no_change": 3,
+      "persona_write": 5
+    }
+  },
+  "design/unified-memory/47-character-dimensions.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "persona": 9,
+      "persona_verdict": 2
+    }
+  },
+  "design/unified-memory/50-learning-from-acts.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "Persona": 9,
+      "persona": 4
+    }
+  },
+  "design/unified-memory/60-build-step-3.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "Persona": 2
+    }
+  },
+  "design/unified-memory/65-build-step-3-vectors.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "Persona": 2
+    }
+  },
+  "design/unified-memory/70-honcho-cutover.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "Persona": 10,
+      "persona": 13,
+      "persona_line": 3,
+      "persona_reader": 1
+    }
+  },
+  "design/unified-memory/75-typed-identity.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "Persona": 6,
+      "persona_line": 1,
+      "persona_write": 2
+    }
+  },
+  "design/unified-memory/76-typed-identity-build.md": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "Persona": 3,
+      "PersonaEvidence": 1,
+      "SqlPersonaStore": 1,
+      "persona": 3,
+      "persona_collective": 1,
+      "persona_line": 1,
+      "persona_render": 1
+    }
+  },
+  "design/unified-memory/_index.yaml": {
+    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "matches": {
+      "Persona": 2,
+      "persona": 11,
+      "persona_write": 1
+    }
+  },
+  "docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md": {
+    "reason": "Historical decision text, including superseded ADR 0026 and the ADR 0029 rename contract.",
+    "matches": {
+      "Persona": 5,
+      "persona": 9,
+      "persona_dispute": 1,
+      "persona_key": 1,
+      "persona_line": 1,
+      "persona_lines": 1,
+      "persona_write": 1
+    }
+  },
+  "docs/adr/0029-a-prompt-block-names-its-subject-and-author-by-id.md": {
+    "reason": "Historical decision text, including superseded ADR 0026 and the ADR 0029 rename contract.",
+    "matches": {
+      "Persona": 1,
+      "persona": 4
+    }
+  },
+  "evals/PROFILE_COVERAGE.md": {
+    "reason": "Exact historical file citations retained after the rename; no runtime identifier alias.",
+    "matches": {
+      "persona": 1
+    }
+  },
+  "nora/config.py": {
+    "reason": "Explicit startup rejection names the retired section and its replacement.",
+    "matches": {
+      "persona": 2
+    }
+  },
+  "nora/doctrine/classification.yaml": {
+    "reason": "Generic English persona in immutable doctrine classification, not the typed tier.",
+    "matches": {
+      "persona": 1
+    }
+  },
+  "nora/infra/sql/history.py": {
+    "reason": "Historical applied migration revision ids remain resolvable.",
+    "matches": {
+      "_persona": 2,
+      "_persona_dispute": 1
+    }
+  },
+  "nora/infra/sql/migrations/versions/0117_persona.py": {
+    "reason": "Applied schema history or the reversible rename translating predecessor names.",
+    "matches": {
+      "<path> nora/infra/sql/migrations/versions/0117_persona.py": 1,
+      "Persona": 1,
+      "_persona": 2,
+      "ck_persona_entity_kind": 1,
+      "ck_persona_has_a_key": 1,
+      "ck_persona_has_a_unit": 1,
+      "ck_persona_line_abduced_explains": 1,
+      "ck_persona_line_cites": 1,
+      "ck_persona_line_deduced_premises": 1,
+      "ck_persona_line_draws_on": 1,
+      "ck_persona_line_has_a_unit": 1,
+      "ck_persona_line_kind_part": 1,
+      "ck_persona_line_mode_part": 1,
+      "ck_persona_line_names_its_writer": 1,
+      "ck_persona_line_not_self": 1,
+      "ck_persona_line_part": 1,
+      "ck_persona_line_prediction": 1,
+      "ck_persona_line_state": 1,
+      "ck_persona_line_support_count": 1,
+      "ck_persona_line_text": 1,
+      "ck_persona_line_told_by": 1,
+      "ck_persona_line_verdict": 1,
+      "ck_persona_line_verdict_by": 1,
+      "ck_persona_line_verdict_part": 1,
+      "ck_persona_revision": 1,
+      "idx_persona_line_key": 2,
+      "persona": 10,
+      "persona_key": 2,
+      "persona_line": 8,
+      "uq_persona_line_supersedes": 3
+    }
+  },
+  "nora/infra/sql/migrations/versions/0118_place_area.py": {
+    "reason": "Applied schema history or the reversible rename translating predecessor names.",
+    "matches": {
+      "_persona": 3
+    }
+  },
+  "nora/infra/sql/migrations/versions/0120_persona_settled_at.py": {
+    "reason": "Applied schema history or the reversible rename translating predecessor names.",
+    "matches": {
+      "<path> nora/infra/sql/migrations/versions/0120_persona_settled_at.py": 1,
+      "Persona": 1,
+      "_persona_settled_at": 2,
+      "persona": 3,
+      "persona_no_change": 1
+    }
+  },
+  "nora/infra/sql/migrations/versions/0121_persona_dispute.py": {
+    "reason": "Applied schema history or the reversible rename translating predecessor names.",
+    "matches": {
+      "<path> nora/infra/sql/migrations/versions/0121_persona_dispute.py": 1,
+      "Persona": 1,
+      "SqlPersonaStore": 1,
+      "_persona": 1,
+      "_persona_dispute": 2,
+      "_persona_settled_at": 3,
+      "ck_persona_dispute_claim": 1,
+      "ck_persona_dispute_has_a_key": 1,
+      "ck_persona_dispute_has_a_unit": 1,
+      "ck_persona_dispute_kind": 1,
+      "ck_persona_dispute_who": 1,
+      "idx_persona_dispute_key": 2,
+      "persona": 1,
+      "persona_dispute": 5,
+      "persona_key": 3,
+      "persona_line": 1
+    }
+  },
+  "nora/infra/sql/migrations/versions/0122_message_mention_persons.py": {
+    "reason": "Applied schema history or the reversible rename translating predecessor names.",
+    "matches": {
+      "Persona": 1,
+      "_persona_dispute": 3
+    }
+  },
+  "nora/infra/sql/migrations/versions/0123_persona_line_index.py": {
+    "reason": "Applied schema history or the reversible rename translating predecessor names.",
+    "matches": {
+      "<path> nora/infra/sql/migrations/versions/0123_persona_line_index.py": 1,
+      "Persona": 1,
+      "_persona_line_index": 2,
+      "persona": 1,
+      "persona_line": 5
+    }
+  },
+  "nora/infra/sql/migrations/versions/0124_typed_identity.py": {
+    "reason": "Applied schema history or the reversible rename translating predecessor names.",
+    "matches": {
+      "_persona_line_index": 1,
+      "persona_line": 2
+    }
+  },
+  "nora/infra/sql/migrations/versions/0125_persona_source_revision.py": {
+    "reason": "Applied schema history or the reversible rename translating predecessor names.",
+    "matches": {
+      "<path> nora/infra/sql/migrations/versions/0125_persona_source_revision.py": 1,
+      "Persona": 1,
+      "_persona_source_revision": 1
+    }
+  },
+  "nora/infra/sql/migrations/versions/0126_social_backfill_end.py": {
+    "reason": "Applied schema history or the reversible rename translating predecessor names.",
+    "matches": {
+      "_persona_source_revision": 1
+    }
+  },
+  "nora/infra/sql/migrations/versions/0127_character_content.py": {
+    "reason": "Applied schema history or the reversible rename translating predecessor names.",
+    "matches": {
+      "ck_persona_line_kind_part": 4,
+      "persona_line": 6
+    }
+  },
+  "nora/infra/sql/migrations/versions/0130_profile_names.py": {
+    "reason": "Applied schema history or the reversible rename translating predecessor names.",
+    "matches": {
+      "persona": 5,
+      "persona_dispute": 3,
+      "persona_key": 5,
+      "persona_line": 4
+    }
+  },
+  "nora/infra/sql/schema.py": {
+    "reason": "Historical applied migration revision ids remain resolvable.",
+    "matches": {
+      "_persona": 1,
+      "_persona_dispute": 1
+    }
+  },
+  "openwiki/.claims/concepts/context-assembly.json": {
+    "reason": "Generated historical evidence index; refreshed only through its owning generator.",
+    "matches": {
+      "_PERSONA_REPLACES": 1,
+      "persona": 2
+    }
+  },
+  "openwiki/.claims/concepts/memory-and-record.json": {
+    "reason": "Generated historical evidence index; refreshed only through its owning generator.",
+    "matches": {
+      "Persona": 10,
+      "PersonaHeads": 1,
+      "persona": 20,
+      "persona_collective": 1,
+      "persona_dispute": 2,
+      "persona_line": 5,
+      "persona_render": 2,
+      "persona_verdict": 1
+    }
+  },
+  "openwiki/.claims/concepts/persona-and-provenance.json": {
+    "reason": "Generated historical evidence index; refreshed only through its owning generator.",
+    "matches": {
+      "<path> openwiki/.claims/concepts/persona-and-provenance.json": 1,
+      "PERSONA_REFUSALS": 1,
+      "Persona": 4,
+      "PersonaAddOp": 1,
+      "PersonaCitable": 1,
+      "PersonaReviseOp": 1,
+      "SqlPersonaStore": 2,
+      "nora_persona_session_total": 1,
+      "nora_persona_verdict_total": 1,
+      "persona": 69,
+      "persona_collective": 1,
+      "persona_dispute": 3,
+      "persona_line": 2,
+      "persona_no_change": 1,
+      "persona_render": 6,
+      "persona_verdict": 2,
+      "persona_write": 3,
+      "read_persona": 1,
+      "test_persona_rules": 2,
+      "test_persona_store": 3,
+      "test_persona_verdict": 2,
+      "test_remember_persona": 1,
+      "uq_persona_line_supersedes": 1
+    }
+  },
+  "openwiki/.claims/systems/dreamer.json": {
+    "reason": "Generated historical evidence index; refreshed only through its owning generator.",
+    "matches": {
+      "Persona": 2,
+      "persona": 4,
+      "persona_verdict": 1
+    }
+  },
+  "openwiki/.claims/testing/verification.json": {
+    "reason": "Generated historical evidence index; refreshed only through its owning generator.",
+    "matches": {
+      "persona_coverage": 1,
+      "persona_identity": 1
+    }
+  },
+  "openwiki/.page-manifest.json": {
+    "reason": "Generated historical evidence index; refreshed only through its owning generator.",
+    "matches": {
+      "persona": 1
+    }
+  },
+  "openwiki/INSTRUCTIONS.md": {
+    "reason": "Generated historical evidence index; refreshed only through its owning generator.",
+    "matches": {
+      "Persona": 2
+    }
+  },
+  "openwiki/architecture/runtime-topology.md": {
+    "reason": "Generated historical evidence index; refreshed only through its owning generator.",
+    "matches": {
+      "persona_portal": 1
+    }
+  },
+  "openwiki/architecture/state-and-scopes.md": {
+    "reason": "Generated historical evidence index; refreshed only through its owning generator.",
+    "matches": {
+      "Persona": 1,
+      "persona": 1
+    }
+  },
+  "openwiki/concepts/context-assembly.md": {
+    "reason": "Generated historical evidence index; refreshed only through its owning generator.",
+    "matches": {
+      "Persona": 1,
+      "_PERSONA_REPLACES": 1,
+      "persona": 5
+    }
+  },
+  "openwiki/concepts/contextual-learning.md": {
+    "reason": "Generated historical evidence index; refreshed only through its owning generator.",
+    "matches": {
+      "Persona": 2,
+      "persona": 2
+    }
+  },
+  "openwiki/concepts/index.md": {
+    "reason": "Generated historical evidence index; refreshed only through its owning generator.",
+    "matches": {
+      "Persona": 3,
+      "persona": 1
+    }
+  },
+  "openwiki/concepts/memory-and-record.md": {
+    "reason": "Generated historical evidence index; refreshed only through its owning generator.",
+    "matches": {
+      "Persona": 18,
+      "PersonaHeads": 2,
+      "_PERSONA_REPLACES": 1,
+      "persona": 29,
+      "persona_collective": 1,
+      "persona_dispute": 4,
+      "persona_line": 4,
+      "persona_render": 2,
+      "persona_verdict": 1,
+      "personas": 2
+    }
+  },
+  "openwiki/concepts/persona-and-provenance.md": {
+    "reason": "Generated historical evidence index; refreshed only through its owning generator.",
+    "matches": {
+      "<path> openwiki/concepts/persona-and-provenance.md": 1,
+      "PERSONA_HKT": 1,
+      "PERSONA_READ_TIMEOUT_SECONDS": 1,
+      "PERSONA_REFUSALS": 1,
+      "Persona": 9,
+      "PersonaAddOp": 1,
+      "PersonaCitable": 1,
+      "PersonaCollectiveAdaptor": 1,
+      "PersonaConfig": 1,
+      "PersonaPersonAdaptor": 1,
+      "PersonaRefusal": 1,
+      "PersonaReviseOp": 1,
+      "PersonaView": 1,
+      "SqlPersonaStore": 4,
+      "nora_persona_session_total": 1,
+      "nora_persona_verdict_total": 1,
+      "persona": 32,
+      "persona_collective": 4,
+      "persona_coverage": 1,
+      "persona_dispute": 3,
+      "persona_inputs": 1,
+      "persona_line": 5,
+      "persona_lines_for": 1,
+      "persona_render": 3,
+      "persona_verdict": 4,
+      "persona_write": 6,
+      "read_persona": 4,
+      "render_persona": 2,
+      "test_eval_persona_writer": 1,
+      "test_memory_projection_persona": 1,
+      "test_persona_collective": 1,
+      "test_persona_rules": 2,
+      "test_persona_social_input": 1,
+      "test_persona_store": 3,
+      "test_persona_verdict": 2,
+      "test_remember_persona": 2,
+      "uq_persona_line_supersedes": 1
+    }
+  },
+  "openwiki/concepts/sessionless-continuity.md": {
+    "reason": "Generated historical evidence index; refreshed only through its owning generator.",
+    "matches": {
+      "persona": 2
+    }
+  },
+  "openwiki/operations/configuration.md": {
+    "reason": "Generated historical evidence index; refreshed only through its owning generator.",
+    "matches": {
+      "persona": 4
+    }
+  },
+  "openwiki/operations/troubleshooting.md": {
+    "reason": "Generated historical evidence index; refreshed only through its owning generator.",
+    "matches": {
+      "Persona": 2,
+      "persona": 2
+    }
+  },
+  "openwiki/quickstart.md": {
+    "reason": "Generated historical evidence index; refreshed only through its owning generator.",
+    "matches": {
+      "Persona": 1,
+      "persona": 1
+    }
+  },
+  "openwiki/systems/dreamer.md": {
+    "reason": "Generated historical evidence index; refreshed only through its owning generator.",
+    "matches": {
+      "Persona": 3,
+      "SqlPersonaStore": 1,
+      "persona": 16,
+      "persona_no_change": 1,
+      "persona_verdict": 1,
+      "persona_write": 2
+    }
+  },
+  "openwiki/systems/portal-and-web-api.md": {
+    "reason": "Generated historical evidence index; refreshed only through its owning generator.",
+    "matches": {
+      "Persona": 1,
+      "persona": 3
+    }
+  },
+  "openwiki/testing/verification.md": {
+    "reason": "Generated historical evidence index; refreshed only through its owning generator.",
+    "matches": {
+      "persona_coverage": 1,
+      "persona_identity": 1
+    }
+  },
+  "openwiki/workflows/proactive-occasions.md": {
+    "reason": "Generated historical evidence index; refreshed only through its owning generator.",
+    "matches": {
+      "persona": 1
+    }
+  },
+  "tests/architecture/test_doc_references_resolve.py": {
+    "reason": "Exact historical file citations retained after the rename; no runtime identifier alias.",
+    "matches": {
+      "PERSONA_IDENTITY": 1,
+      "persona": 23,
+      "persona_collective": 2,
+      "persona_coverage": 1,
+      "persona_inputs": 1,
+      "persona_verdict": 2,
+      "test_eval_persona_writer": 1,
+      "test_memory_projection_persona": 1,
+      "test_persona_collective": 1,
+      "test_persona_rules": 1,
+      "test_persona_social_input": 1,
+      "test_persona_store": 1,
+      "test_persona_verdict": 1,
+      "test_remember_persona": 1
+    }
+  },
+  "tests/architecture/test_profile_vocabulary.py": {
+    "reason": "Guard regex and positive controls must spell the retired identifiers.",
+    "matches": {
+      "PERSONA": 1,
+      "PERSONA_LINE": 1,
+      "Persona": 1,
+      "SqlPersonaStore": 1,
+      "_persona_key": 1,
+      "persona": 3,
+      "persona_line": 1,
+      "personas": 1
+    }
+  },
+  "tests/infra/test_profile_names_migration.py": {
+    "reason": "Synthetic predecessor schema seeds and downgrade assertions for the migration.",
+    "matches": {
+      "persona": 17,
+      "persona_dispute": 2,
+      "persona_key": 2,
+      "persona_line": 7
+    }
+  },
+  "tests/integration/test_snapshot_holds_what_was_held.py": {
+    "reason": "Historical applied migration revision ids remain resolvable.",
+    "matches": {
+      "_persona": 2,
+      "_persona_dispute": 1
+    }
+  },
+  "tests/unit/test_profile_render.py": {
+    "reason": "Negative control proves the retired configuration section is rejected.",
+    "matches": {
+      "persona": 2
+    }
+  }
+}

@@ -1,4 +1,4 @@
-"""The bridge's bearer token is readable by anything in its container. The
+"""The bridges' bearer token is readable by anything in its container. The
 healthcheck must hand it to curl on stdin (`-H @-`), never through an expanded
 Authorization header in curl's argv, which `/proc/<pid>/cmdline` exposes.
 
@@ -32,9 +32,10 @@ def _healthcheck_commands() -> list[tuple[str, str]]:
     return found
 
 
-def test_both_bridge_healthchecks_keep_the_token_out_of_curls_actual_argv(tmp_path):
+def test_every_healthcheck_that_carries_the_bearer_keeps_it_out_of_curls_actual_argv(tmp_path):
     commands = _healthcheck_commands()
-    assert len(commands) == 2, commands
+    # Both bridges, and the voice sidecar, whose /health requires the bearer.
+    assert len(commands) == 3, commands
 
     stub = tmp_path / "bin"
     stub.mkdir()

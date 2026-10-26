@@ -45,8 +45,8 @@ from nora.subject.standing_fold import fold, read_fold_turn
 
 from .domain import Case, Outcome, WorkingSetFinding
 from .fold_evidence import render_evidence, render_shown
-from .persona_coverage import persona_coverage
-from .persona_identity import persona_identity
+from .profile_coverage import profile_coverage
+from .profile_identity import profile_identity
 
 
 async def gate(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
@@ -650,7 +650,7 @@ _PARTICIPATION_SUBSYSTEM = {
 #: The port's implementations, by the name a case selects. A new suite over an
 #: existing entry point adds NOTHING here; a test pins that.
 ENTRY_POINTS = {
-    "persona_coverage": EntryPoint(drive=persona_coverage, frozen_input=True),
+    "profile_coverage": EntryPoint(drive=profile_coverage, frozen_input=True),
     "gate": EntryPoint(drive=gate, config=_PARTICIPATION_SUBSYSTEM),
     "participation": EntryPoint(
         drive=participation, config=_PARTICIPATION_SUBSYSTEM, delivers_input=True,
@@ -664,9 +664,9 @@ ENTRY_POINTS = {
     # the corpus's business (the culture adaptor needs `[culture] enabled`). Putting an
     # adaptor's flag here would make one corpus's requirement look like the
     # entry point's.
-    "persona_identity": EntryPoint(
-        drive=persona_identity, synthetic_sources=True, judged_on="identity",
-        config={"dreamer.enabled": True, "persona.enabled": True},
+    "profile_identity": EntryPoint(
+        drive=profile_identity, synthetic_sources=True, judged_on="identity",
+        config={"dreamer.enabled": True, "profile.enabled": True},
     ),
     "dreamer": EntryPoint(drive=dreamer, config={"dreamer.enabled": True}),
     # The act turn needs the FIRE PATH, which `[participation]` also builds,

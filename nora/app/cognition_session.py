@@ -602,6 +602,7 @@ class CognitionSessionRunner:
         remind_max_horizon_days: int | None = None,
         notes: Any = None, events: Any = None, standing: Any = None,
         reminders: Any = None, ai_peer: str = "nora", memos: Any = None,
+        content_checks: bool = True,
     ) -> None:
         """`doctrine_source`, when given, is read at the start of EVERY session
         and replaces `doctrine_text`/`doctrine_sha256` (which then serve only
@@ -652,6 +653,7 @@ class CognitionSessionRunner:
         are what a context overflow is PROVEN against (DEC-244): without a
         known window no overflow is ever the agenda's, and every one is
         `infra`."""
+        self._content_checks = content_checks
         check_home_rooms(units, home_rooms)
         check_session_timeouts(budget.timeout_seconds, session_timeout_seconds)
         self._store = store
@@ -1702,7 +1704,7 @@ class CognitionSessionRunner:
             Kept` lines (`nora.domain.memo.screened_parts`): a Kept line holds
             what the room said, verbatim (DEC-230). Refused with the field,
             never the text."""
-            found = offence(parts)
+            found = offence(parts, content_checks=self._content_checks)
             if found is None:
                 return None
             reason, path = found

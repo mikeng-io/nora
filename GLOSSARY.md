@@ -380,7 +380,17 @@ no entry.
   the fire-turn *occasion* — that is code `Event` (`nora.domain.events.Event`,
   DEC-139, see *occasion* below), a different thing with the same English
   word. Written by the Cognition adaptor and the tag path until the cut-over, then by the Cognition adaptor alone (DEC-249).
-- **Character** — the Notebook tier for a **person**, a **room** (culture's
+- **Profile** — what Nora has written about one **person**, **room**, **unit**
+  or Nora herself. Its parts are **facts**, **traits** and **guesses**, and the model
+  reads the last as `guesses (unconfirmed)`. Every profile block names its
+  subject and author by id: `<profile of="ada" written_by="nora" source="what
+  people said in chat">`. Nora's id is `nora`, and `you`/`self` are never an
+  identity in a tag
+  ([ADR 0029](docs/adr/0029-a-prompt-block-names-its-subject-and-author-by-id.md),
+  measured by a blind reader test). This replaces **Character**, **entry**,
+  **profile / traits / hypotheses** and **Persona** below. The typed shadow implementation uses these names. The live
+  prose blocks keep their tags until the switch deletes them.
+- **Character** — *(names superseded by ADR 0029: read **Profile**)* the Notebook tier for a **person**, a **room** (culture's
   home, above), the **unit** or **Nora**. One row is an **entry**, a judgement
   with **profile** (who they are), **traits** (what they are like) and
   **hypotheses** (why), using **told / deduced / induced / abduced** modes.
@@ -393,12 +403,12 @@ no entry.
   contract. The four rulings are in [47](design/unified-memory/47-character-dimensions.md#decided-operator-2026-10-22).
   "Account" is now only for platform accounts.
   [ADR 0026](docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md)
-  records the naming; the code rename is deferred. Today `culture` (the room
+  records the superseded naming. Today `culture` (the room
   adaptor) and `character-*` write live prose through `character_revise`,
-  while `persona-*` writes shadow typed lines through `persona_write`, with
-  `persona-verdict` judging hypotheses.
-  The target is **one `character-*` adaptor family** (person, room, unit,
-  nora, verdict) writing typed profile/traits/hypotheses lines; the prose
+  while `profile-*` writes shadow typed lines through `profile_write`, with
+  `profile-verdict` judging guesses.
+  The target is **one `profile-*` adaptor family** (person, room, unit,
+  nora, verdict) writing typed facts/traits/guesses lines; the prose
   adaptors retire at the switch. The existing live prose implementation
   below was built as DEC-290 (design/self-growth/10): one Dreamer session per
   (unit, entity), stored in the `culture` chain under four key shapes:
@@ -425,8 +435,8 @@ no entry.
     `response:<id>` episode it was shown; a refusal names its reason. **`character_no_change`**
     closes an entity with its entry unchanged. A session that settles
     neither holds its batch and is given up on the third try.
-- **Persona (retired term)** — use **Character** for the tier, **person** for
-  the kind and **entry** for one row. See
+- **Persona (retired term)** — use **Profile** (ADR 0029). Earlier this pointed to
+  **Character** for the tier, **person** for the kind and **entry** for one row, per
   [ADR 0026](docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md),
   restoring DEC-29's rejection of "persona" (see **Doctrine**).
 - **Lessons** — what Nora has learned about how to act in a unit: short

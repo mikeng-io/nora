@@ -1,5 +1,11 @@
 """The lineage predicates: may room B be shown this section? (DEC-222, DEC-225)
 
+Runtime composition defaults `[content_checks] enabled` to false. The original
+phone/UUID/coordinate, place/person-name and location-audience predicates remain
+available in enabled mode. Credentials and LeakGuard are independent of this
+switch; admission, unit scope, location opt-in and availability still apply.
+
+
 **Applied at assembly, never at egress** (GLOSSARY): when a pushed block
 renders (`nora.agent.prefill`) and when a read tool returns
 (`record_query`), for the room the turn is bound to. By the time text exists
@@ -67,7 +73,7 @@ from ..domain.lineage import (
     room_key,
 )
 from ..domain.notes import Note
-from ..domain.persona import PersonaLine
+from ..domain.profile import ProfileLine
 from ..domain.standing import Standing
 from ..policy import Policy
 from .room import Room
@@ -119,7 +125,11 @@ def _presence(entry: LineageEntry, target: RenderRoom) -> bool:
     b, live = target.room, target.live
     if b is None or not b.location or entry.subject is None:
         return False
-    if live is None or not live.available or live.degraded or live.unnamed > 0:
+    if live is None or not live.available or live.degraded:
+        return False
+    if not target.content_checks:
+        return any(entry.subject in members for members in target.circles)
+    if live.unnamed > 0:
         return False
     return any(
         entry.subject in members
@@ -226,6 +236,7 @@ class LineagePolicy:
     rooms: tuple[RoomFacts, ...] = ()
     circles: tuple[frozenset[str], ...] = ()
     mode: LineageMode = "off"
+    content_checks: bool = True
     _by_id: dict[tuple[str, str], RoomFacts] = field(
         default_factory=dict, repr=False, compare=False,
     )
@@ -234,6 +245,7 @@ class LineagePolicy:
     def from_policy(
         cls, policy: Policy, *, circles: tuple[Circle, ...] = (),
         mode: LineageMode = "off",
+        content_checks: bool = True,
     ) -> LineagePolicy:
         rooms = tuple(
             RoomFacts(
@@ -245,6 +257,7 @@ class LineagePolicy:
         )
         return cls(
             rooms=rooms, circles=tuple(c.person_ids for c in circles), mode=mode,
+            content_checks=content_checks,
             _by_id={(r.platform, cid): r for r in rooms for cid in r.ids},
         )
 
@@ -253,7 +266,11 @@ class LineagePolicy:
     ) -> RenderRoom:
         return RenderRoom(
             room=self._by_id.get((platform, conversation_id)),
-            rooms=self.rooms, circles=self.circles, live=live, mode=self.mode,
+            rooms=self.rooms,
+            circles=self.circles,
+            live=live,
+            mode=self.mode,
+            content_checks=self.content_checks,
         )
 
 
@@ -317,9 +334,9 @@ def derived_view(
     )
 
 
-async def persona_lines_for(
-    lines: tuple[PersonaLine, ...], target: RenderRoom, room: Room,
-) -> tuple[PersonaLine, ...]:
+async def profile_lines_for(
+    lines: tuple[ProfileLine, ...], target: RenderRoom, room: Room,
+) -> tuple[ProfileLine, ...]:
     """Apply the existing exclusion boundary, reading the roster only if needed."""
     if any(line.exclude_persons or line.location for line in lines):
         view = await room.scope()
@@ -327,7 +344,7 @@ async def persona_lines_for(
             person_ids=frozenset(p.person_id for p in view.people),
             unnamed=view.unnamed, available=view.available, degraded=view.degraded,
         ))
-    def permitted(line: PersonaLine) -> bool:
+    def permitted(line: ProfileLine) -> bool:
         if excluded(line.exclude_persons, target):
             return False
         if not line.location:

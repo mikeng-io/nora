@@ -1,7 +1,0 @@
-# Real frozen source roster/denominator/context are supplied privately through
-# NORA_EVAL_PERSONA_COVERAGE. No invented snapshot or synthetic facts.
-- name: frozen_coverage
-  entry: persona_coverage
-  expect: fold
-  metadata:
-    coverage_snapshot: true

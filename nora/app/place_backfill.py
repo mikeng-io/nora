@@ -108,6 +108,7 @@ async def backfill_places(
     *, events: _Events, cache: _Cache, places: _PlaceAreas | None,
     geocoder: _AreaGeocoder | None, apply: bool = False, per_second: float = 2.0,
     limit: int = 10_000,
+    content_checks: bool = True,
 ) -> PlaceBackfillReport:
     """See the module docstring."""
     pace = _Pace(per_second)
@@ -115,17 +116,34 @@ async def backfill_places(
     if places is None:
         report.venues_skipped = "no Maps key ([route] enabled with its key)"
     else:
-        await _venues(events, places, report.venues, apply=apply, pace=pace, limit=limit)
+        await _venues(
+            events,
+            places,
+            report.venues,
+            apply=apply,
+            pace=pace,
+            limit=limit,
+            content_checks=content_checks,
+        )
     if geocoder is None:
         report.geocodes_skipped = "no reverse geocoder ([presence] geocode_provider)"
     else:
-        await _geocodes(cache, geocoder, report.geocodes, apply=apply, pace=pace, limit=limit)
+        await _geocodes(
+            cache,
+            geocoder,
+            report.geocodes,
+            apply=apply,
+            pace=pace,
+            limit=limit,
+            content_checks=content_checks,
+        )
     return report
 
 
 async def _venues(
     events: _Events, places: _PlaceAreas, counts: Counts, *, apply: bool, pace: _Pace,
     limit: int,
+    content_checks: bool = True,
 ) -> None:
     pending = await events.without_venue_area(limit=limit)
     counts.found = len(pending)
@@ -139,7 +157,9 @@ async def _venues(
         await pace.wait()
         counts.asked += 1
         try:
-            area = screened_area(await places.area_of_place(place_id))
+            area = screened_area(
+                await places.area_of_place(place_id), content_checks=content_checks
+            )
         except Exception:
             log.exception("backfill-places: a venue lookup failed")
             counts.failed += len(group)
@@ -171,6 +191,7 @@ async def _write_events(
 async def _geocodes(
     cache: _Cache, geocoder: _AreaGeocoder, counts: Counts, *, apply: bool, pace: _Pace,
     limit: int,
+    content_checks: bool = True,
 ) -> None:
     pending = await cache.without_area(limit=limit)
     counts.found = len(pending)
@@ -179,7 +200,9 @@ async def _geocodes(
     for lat, lng in pending:
         await pace.wait()
         counts.asked += 1
-        area = screened_area(await geocoder.area_for(lat=lat, lng=lng))
+        area = screened_area(
+            await geocoder.area_for(lat=lat, lng=lng), content_checks=content_checks
+        )
         if area is None:
             counts.unnamed += 1
             continue

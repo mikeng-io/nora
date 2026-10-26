@@ -1,6 +1,5 @@
-Generate ONE image, portrait 2:3 (1024x1536), cinematic.
-- Extreme close-up of Nora's head seen from her left side, three-quarter from behind the cheek, placed in the UPPER third of the frame: her ear with the white wired earbud seated in it, soft strands of her messy dark-brown hair falling past it, the curve of her pink-blushed cheek and the edge of one large dark oval eye at the right edge. Calm.
-- The thin white earphone cable drops from the earbud straight down through the lower two-thirds of the frame and leaves it at the bottom edge, crisp, catching the light; the lower half of the frame is mostly dark, only the cable visible.
-- Very shallow depth of field: earbud and cable sharp, hair behind softly blurred.
-- Light: late night. One soft warm key light from the upper left like a desk lamp just out of frame, a gentle warm rim on the hair strands. Background deep warm charcoal (around #141112 to #241F20, faint warm cast, never blue-black).
-- Same soft 3D mascot render quality as the references: matte skin, fine hair strands, subsurface; not a photoreal human. No props, no text.
+Generate ONE 2D anime image, portrait (1024x1536), from the new Mini Bauhinia master.
+- Close listening detail from her left side, slightly behind the cheek: bare ear, simplified broad dark-brown hair locks and the five-petal Bauhinia clasp, with the edge of one option08 eye where visible. Place her listening ear, broad hair locks and edge of the cheek in the upper third; keep the lower half quiet dark negative space.
+- Warm late-night lamp light against deep warm charcoal (#141112 to #241F20); clean linework, restrained cel shading, calm expression. No fine hair strands or photoreal depth-of-field treatment.
+- No earbud, earphone, cable, inline remote, bag or added prop. No text or watermark.
+- The legacy filename is retained for consumers; this slot now depicts an accessory-free listening detail. Camera/focal coordinates require fresh measurement before composition acceptance.

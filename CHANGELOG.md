@@ -1,5 +1,115 @@
 # Changelog
 
+## [6.8.4](https://github.com/mikeng-io/nora/compare/v6.8.3...v6.8.4) (2026-10-26)
+
+
+### Changes
+
+* **visuals:** use 2D Nora art outside 3D modeling ([c5060af](https://github.com/mikeng-io/nora/commit/c5060aff5018e05a518fdfa7254f0adb4a902701))
+
+## [6.8.3](https://github.com/mikeng-io/nora/compare/v6.8.2...v6.8.3) (2026-10-25)
+
+
+### Changes
+
+* **visuals:** unify Mini Nora eyes and inventory visual assets ([ef324b3](https://github.com/mikeng-io/nora/commit/ef324b30f3e22921107f6c8c3fb23d0e79eced06))
+
+## [6.8.2](https://github.com/mikeng-io/nora/compare/v6.8.1...v6.8.2) (2026-10-25)
+
+
+### Bug Fixes
+
+* **profile:** name a room by its policy label, never its platform conversation id ([1483383](https://github.com/mikeng-io/nora/commit/1483383bf9ad71c710f80b2a89ecb92af9e4ed96))
+
+## [6.8.1](https://github.com/mikeng-io/nora/compare/v6.8.0...v6.8.1) (2026-10-25)
+
+
+### Changes
+
+* **egress:** disable optional content filters by default ([9ed6675](https://github.com/mikeng-io/nora/commit/9ed6675743c58300301cdfd92080b24b7e8ce65d))
+
+## [6.8.0](https://github.com/mikeng-io/nora/compare/v6.7.0...v6.8.0) (2026-10-25)
+
+
+### Features
+
+* **record:** write message readings for new arrival batches ([35f68cd](https://github.com/mikeng-io/nora/commit/35f68cdc3583430e1738f0cd9f198848df790a71))
+
+
+### Bug Fixes
+
+* **record:** count reported reading tokens during ledger outages ([6470db5](https://github.com/mikeng-io/nora/commit/6470db5a270d68021089a00bafc017a5b12e7901))
+* **record:** integrate readings with context and schema contracts ([dbb58d9](https://github.com/mikeng-io/nora/commit/dbb58d9edf6d4e4fd16159565e88b66a5d818fe3))
+* **record:** preserve source control characters through assembly ([771aa22](https://github.com/mikeng-io/nora/commit/771aa22d0a377a5e710a6aa81409f47f74a3c0bd))
+
+## [6.7.0](https://github.com/mikeng-io/nora/compare/v6.6.16...v6.7.0) (2026-10-23)
+
+
+### Features
+
+* **version:** list published releases and read exact release notes ([d050e43](https://github.com/mikeng-io/nora/commit/d050e436b77f7218b0e6b813a348b7044a5693aa))
+
+
+### Bug Fixes
+
+* **version:** read named release notes without listing ([b70352d](https://github.com/mikeng-io/nora/commit/b70352d66b546fe346ab575c7eff82dfc17d8cce))
+* **version:** satisfy release tool gate checks ([e2f312a](https://github.com/mikeng-io/nora/commit/e2f312ab56e15864a76ae25ec4e0c12a4c665b5e))
+
+
+### Changes
+
+* **version:** read releases from the shipped manifest ([0077c11](https://github.com/mikeng-io/nora/commit/0077c11540b969777928a5f7c7b0f695e3ef98f2))
+
+## [6.6.16](https://github.com/mikeng-io/nora/compare/v6.6.15...v6.6.16) (2026-10-23)
+
+
+### Bug Fixes
+
+* **security:** preserve newer sign-ins and refuse unsafe OAuth state ([6812a6f](https://github.com/mikeng-io/nora/commit/6812a6f1ac3383c035a8b4c9d75a95c2c24639f2))
+
+
+### Security
+
+* **hardening:** keep local state private and isolate eval and portal sessions ([837d5bf](https://github.com/mikeng-io/nora/commit/837d5bf977049fbe3afa468eee49d6def0b3bdf5))
+
+## [6.6.15](https://github.com/mikeng-io/nora/compare/v6.6.14...v6.6.15) (2026-10-23)
+
+
+### Bug Fixes
+
+* **voice:** preserve valid audio and enforce configured guild admission ([1cf9f01](https://github.com/mikeng-io/nora/commit/1cf9f0177b4b34e52c4b2a62b05182b12b1185a0))
+
+
+### Security
+
+* **voice:** authenticate the voice event route and dispose a discarded core's sweep timer ([e5ecee6](https://github.com/mikeng-io/nora/commit/e5ecee602adf12e0554cc5e672e11de8be981d46))
+* **voice:** authenticate voice ingress and bound retained work ([e8e23e8](https://github.com/mikeng-io/nora/commit/e8e23e8a05a1196f1eb1d603f635e8ccac28795c))
+
+## [6.6.14](https://github.com/mikeng-io/nora/compare/v6.6.13...v6.6.14) (2026-10-23)
+
+
+### Security
+
+* **bridge:** authenticate the alert bridge, bound inbound bodies and streams ([eba96b2](https://github.com/mikeng-io/nora/commit/eba96b29667f32f55e7b777ecef0a0d7d16a4add))
+* **bridge:** bound refused bodies, drop the stream lifetime, scrub an obsolete cookie paste ([3bfa9f1](https://github.com/mikeng-io/nora/commit/3bfa9f1fd1e6204c0b0a9d6994ac0f5c184b0704))
+* **bridge:** leave a cookie paste the bridge did not consume alone ([ecc985d](https://github.com/mikeng-io/nora/commit/ecc985d11662ffdeecb44c7d9a9e9e127427be51))
+* **bridge:** scrub a cookie paste only when it repeats the jar's session ([06a1b89](https://github.com/mikeng-io/nora/commit/06a1b89dd9ee371c642157d2f3c4aa7594bee181))
+* **bridge:** the session probe sends the bridge bearer, and a newer cookie paste is kept ([4ed52e8](https://github.com/mikeng-io/nora/commit/4ed52e89fbc2451ec31ced0eef84c055c3ccbc4f))
+
+## [6.6.13](https://github.com/mikeng-io/nora/compare/v6.6.12...v6.6.13) (2026-10-23)
+
+
+### Security
+
+* **computer:** verify Chrome revocation before exposing CDP ([62076ca](https://github.com/mikeng-io/nora/commit/62076ca18ed7cc3884e07b90021beca432392c8f))
+
+## [6.6.12](https://github.com/mikeng-io/nora/compare/v6.6.11...v6.6.12) (2026-10-23)
+
+
+### Security
+
+* **build:** patch emSign trust in installers and deployment fetches ([ccfdfea](https://github.com/mikeng-io/nora/commit/ccfdfea7f3f9eab2d345ec7767f3212366785146))
+
 ## [6.6.11](https://github.com/mikeng-io/nora/compare/v6.6.10...v6.6.11) (2026-10-23)
 
 

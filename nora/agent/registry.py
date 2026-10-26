@@ -39,7 +39,6 @@ from ..domain.computer_sessions import ComputerSessionStore
 from ..domain.media_join import MediaJoin
 from ..domain.memo import MemoStore
 from ..domain.models import TranscriptRow
-from ..domain.persona import PersonaWriter
 from ..domain.ports import (
     BlobStore,
     BrowserRunner,
@@ -60,6 +59,7 @@ from ..domain.ports import (
     VoicePresenceSource,
     WeatherProvider,
 )
+from ..domain.profile import ProfileWriter
 from ..domain.reminders import ReminderCaps, ReminderStore
 from ..domain.tool_call_log import ToolCallLogStore
 from ..infra.parking import ParkingClient, StreetParkingClient
@@ -68,7 +68,7 @@ from ..infra.transit import TransitClient
 from ..infra.version import VersionManifest
 from ..infra.vision import VisionCache, VisionClient
 from ..infra.vision.preprocess import VIDEO_CHUNK_SECONDS, VIDEO_MAX_CHUNKS
-from ..language.persona_render import PersonaHeads
+from ..language.profile_render import ProfileHeads
 from .lineage import LineagePolicy
 from .links import LinkCarry
 from .mcp import McpToolGroup
@@ -343,22 +343,24 @@ class ToolRegistry:
         # `memory_search` answers from, and the switch between the two memory
         # surfaces (DEC-316): wired, every build offers `memory_search` and no
         # Honcho tool (`about` included; `remember` is on both surfaces, a
-        # Persona write here and Honcho's there); `None` keeps the Honcho
+        # Profile write here and Honcho's there); `None` keeps the Honcho
         # surface.
         # Process-lifetime like `record`.
         memory_search: MemorySearch | None = None,
-        # The Persona write the graph surface's `remember` makes (a `told`
+        # The Profile write the graph surface's `remember` makes (a `told`
         # line, design/unified-memory/45). Wired with `memory_search`.
-        persona: PersonaWriter | None = None,
-        # THE SWITCH (45 §5): `character_read`'s Persona source while
-        # `[persona] render` is on beside `[persona] enabled`. Wired, it
+        profile: ProfileWriter | None = None,
+        # THE SWITCH (45 §5): `character_read`'s Profile source while
+        # `[profile] render` is on beside `[profile] enabled`. Wired, it
         # answers where `culture` would, so the tool reads the accounts the
-        # prompt's `<persona>` blocks render; both `None` withholds the tool.
-        persona_read: PersonaHeads | None = None,
+        # prompt's `<profile>` blocks render; both `None` withholds the tool.
+        profile_read: ProfileHeads | None = None,
+        content_checks: bool = True,
     ) -> None:
+        self._content_checks = content_checks
         self._budget_overrides = dict(budget_overrides or {})
-        self._persona = persona
-        self._persona_read = persona_read
+        self._profile = profile
+        self._profile_read = profile_read
         self._external_files = external_files
         self._memory_search = memory_search
         self._record = record
@@ -380,7 +382,7 @@ class ToolRegistry:
             (frozenset() if record is not None else frozenset({"record_query"}))
             | (frozenset() if rollup is not None else frozenset({"rollup_read"}))
             | (frozenset() if standing_head is not None else frozenset({"standing_read"}))
-            | (frozenset() if culture is not None or persona_read is not None
+            | (frozenset() if culture is not None or profile_read is not None
                else frozenset({"character_read"}))
             | (frozenset() if social_items is not None else frozenset({"social_read"}))
             | (frozenset() if memos is not None else frozenset({"memo_read"}))
@@ -589,16 +591,7 @@ class ToolRegistry:
         # discloses names. `.specs()`/`.build()`'s `allowed_mcp` is the SAME
         # value a caller must pass here.
         self._mcp_tools = dict(mcp_tools) if mcp_tools is not None else {}
-        # The baked build stamp (DEC-97), DEFAULT-CONSTRUCTED like `transit` and
-        # unlike `route`/`search`/`weather`: there is no key to resolve and no
-        # service to reach, only a file that either shipped with this code or
-        # did not, so there is nothing an unconfigured deployment could be
-        # missing. Reading it costs one open, once, on the first `version` call;
-        # a source checkout has no `nora/version.json`, and the reader answers
-        # `unavailable` for it (never `nothing_found`, R-27). Held HERE for the
-        # reason the transit catalogue is: it is a process-lifetime fact, and
-        # the alternative, a module-level cache, is the mutable singleton the
-        # test-seam policy forbids.
+        # One immutable snapshot for running identity and shipped release history.
         self._versions = versions if versions is not None else VersionManifest()
         self._giphy = giphy
         # `nora.agent.reaction`: None keeps every reply exactly as written.
@@ -959,7 +952,12 @@ class ToolRegistry:
             # its description (DEC-307); without the generator the portal
             # would show a description no deployed turn reads.
             image_generator=self._image_generator,
+            content_checks=self._content_checks,
         )
+
+    @property
+    def content_checks(self) -> bool:
+        return self._content_checks
 
     @property
     def video_chunk_seconds(self) -> int:
@@ -1143,12 +1141,12 @@ class ToolRegistry:
             rooms=self._rooms,
             record=self._record,
             memory_retrieval=self._memory_search,
-            persona=self._persona,
+            profile=self._profile,
             lineage=self._lineage,
             rollup=self._rollup,
             standing_head=self._standing_head,
             culture=self._culture,
-            persona_read=self._persona_read,
+            profile_read=self._profile_read,
             social_items=self._social_items,
             versions=self._versions,
             giphy_source=self._giphy,
@@ -1173,6 +1171,7 @@ class ToolRegistry:
             external_files=self._external_files,
             shelf=shelf,
             on_rows=on_rows,
+            content_checks=self._content_checks,
         )
 
     def build(

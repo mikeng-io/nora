@@ -1,5 +1,28 @@
 # Site art: provenance
 
+## Current 2D Bauhinia sources — 2026-10-26
+
+All seven site character sources and the shared notebook master now use the
+parent-accepted 2D anime Mini Bauhinia artwork, including closed-eye quiet.
+The canonical Mini supplies identity: option08 eyes, Mini proportions, one tiny
+mouth without a nose marker, compact broad hair clumps, five-petal clasp and
+Bauhinia clothing. The prior compositions supply scene/pose intent only.
+Transparent sources retain alpha; encoding follows the existing WebP recipe
+at each source's actual aspect ratio. The standalone stool is unchanged.
+
+The [central inventory](../../../../assets/visual-assets.json) records semantic
+repository image parents, dated prompt intent, consumers and byte fingerprints.
+Original PNGs and generation metadata remain private. The notebook master is
+shared by the app/showreel; its old placement on this site remains retired.
+Fresh static/rig alignment and browser acceptance are separate from source-art
+acceptance. Runtime media ingest and deployment were not performed.
+
+## September generation history
+
+The following dates describe the original generation, before the option08
+refresh. The brief and prompts below are historical recipes; prior eye wording is
+preserved in the original operator spec and Git history.
+
 Renders of Mini Nora made for the public site with the image-generation tool
 of Codex CLI (`codex-cli 0.157.0`, `codex exec`): six on 2026-09-26, and on
 2026-09-27 two more poses and a prop for her live presence
@@ -36,12 +59,12 @@ not: a stool that arrives and leaves with her reads as wrong. `ledge.webp`
 `notebook.webp` so it matches the one she used to sit on) replaced it; the two
 are placed in `components/Memory.astro`, measured on both renders.
 
-## Shared brief
+## Historical shared brief — superseded by the 2D production setting
 
 ```text
 You are an art director's image-generation collaborator. Use your built-in image generation tool (do not draw with code, do not use PIL/SVG).
 
-The attached images are the canonical reference for a character called Nora (Mini Nora): a stylized soft 3D mascot, about 2.5-3 heads tall, very large rounded head, messy dark-brown high bun with loose strands, long face-framing strands, side-parted messy fringe, minimal face (large vertical dark oval eyes with no visible iris, tiny short line mouth, nose effectively absent, soft pink blush on both cheeks), oversized light-grey zip hoodie worn open over a plain white top, loose baggy blue-grey jeans, chunky white low-top sneakers, and WHITE WIRED EARPHONES in both ears with the thin white cable falling across her front and a small white inline remote on it. Stay exactly on-model with the reference: same proportions, same render style and material quality (soft 3D, subsurface skin, fine hair strands), same outfit, earphones and cable visible. Expression minimal and calm, slightly deadpan; never over-acted, never anime. No logos, no text, no jewellery, no watermark.
+The attached images are the canonical reference for a character called Nora (Mini Nora): a stylized soft 3D mascot, about 2.5-3 heads tall, very large rounded head, messy dark-brown high bun with loose strands, long face-framing strands, side-parted messy fringe, option08 Balanced face (visible warm sclera, large brown irises, dark pupils, restrained highlights and a defined upper lid line, one tiny short-line mouth, no nose marker, soft pink blush on both cheeks), oversized light-grey zip hoodie worn open over a plain white top, loose baggy blue-grey jeans, chunky white low-top sneakers, and WHITE WIRED EARPHONES in both ears with the thin white cable falling across her front and a small white inline remote on it. Stay exactly on-model with the reference: same proportions, same render style and material quality (soft 3D, subsurface skin, fine hair strands), same outfit, earphones and cable visible. Expression minimal and calm, slightly deadpan; never over-acted, preserve mascot body proportions. No logos, no text, no jewellery, no watermark.
 ```
 
 ## `night-portrait`

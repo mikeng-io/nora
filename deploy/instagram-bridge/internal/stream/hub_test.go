@@ -2,12 +2,23 @@ package stream
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 )
 
 type probe struct {
 	Kind string `json:"kind"`
 	N    int    `json:"n"`
+}
+
+// mustSubscribe is Subscribe for a test that expects a slot.
+func mustSubscribe(t *testing.T, h *Hub) (chan []byte, [][]byte, int) {
+	t.Helper()
+	ch, replay, notice, err := h.Subscribe()
+	if err != nil {
+		t.Fatalf("subscribe refused: %v", err)
+	}
+	return ch, replay, notice
 }
 
 func drain(ch chan []byte) [][]byte {
@@ -29,12 +40,12 @@ func TestBufferedEventsReplayOnConnect(t *testing.T) {
 	for i := range 3 {
 		h.Emit(&probe{Kind: "message", N: i})
 	}
-	_, buffered, dropped := h.Stats()
+	_, buffered, dropped, _ := h.Stats()
 	if buffered != 3 || dropped != 0 {
 		t.Fatalf("buffered=%d dropped=%d, want 3/0", buffered, dropped)
 	}
 
-	ch, replay, notice := h.Subscribe()
+	ch, replay, notice := mustSubscribe(t, h)
 	defer h.Unsubscribe(ch)
 	if notice != 0 {
 		t.Errorf("drop notice %d raised with nothing dropped", notice)
@@ -52,7 +63,7 @@ func TestBufferedEventsReplayOnConnect(t *testing.T) {
 			t.Errorf("replay[%d].n = %d", i, got.N)
 		}
 	}
-	if _, buffered, _ := h.Stats(); buffered != 0 {
+	if _, buffered, _, _ := h.Stats(); buffered != 0 {
 		t.Errorf("buffer still holds %d after replay", buffered)
 	}
 }
@@ -66,7 +77,7 @@ func TestOverflowDropsOldestAndCounts(t *testing.T) {
 	for i := range bufferCap + 10 {
 		h.Emit(&probe{Kind: "message", N: i})
 	}
-	_, buffered, dropped := h.Stats()
+	_, buffered, dropped, _ := h.Stats()
 	if buffered != bufferCap {
 		t.Errorf("buffered=%d, want the cap %d", buffered, bufferCap)
 	}
@@ -74,7 +85,7 @@ func TestOverflowDropsOldestAndCounts(t *testing.T) {
 		t.Fatalf("dropped=%d, want 10 — a loss that is not counted is a loss nobody can see", dropped)
 	}
 
-	ch, replay, notice := h.Subscribe()
+	ch, replay, notice := mustSubscribe(t, h)
 	defer h.Unsubscribe(ch)
 	if notice != 10 {
 		t.Errorf("connecting client was told %d drops, want 10", notice)
@@ -96,18 +107,18 @@ func TestDropNoticeIsOneShotButTheCounterPersists(t *testing.T) {
 	for i := range bufferCap + 1 {
 		h.Emit(&probe{Kind: "message", N: i})
 	}
-	ch1, _, notice1 := h.Subscribe()
+	ch1, _, notice1 := mustSubscribe(t, h)
 	if notice1 != 1 {
 		t.Fatalf("first client notice = %d", notice1)
 	}
 	h.Unsubscribe(ch1)
 
-	ch2, _, notice2 := h.Subscribe()
+	ch2, _, notice2 := mustSubscribe(t, h)
 	defer h.Unsubscribe(ch2)
 	if notice2 != 0 {
 		t.Errorf("second client was told about the same drop again (%d)", notice2)
 	}
-	if _, _, dropped := h.Stats(); dropped != 1 {
+	if _, _, dropped, _ := h.Stats(); dropped != 1 {
 		t.Errorf("counter reset to %d — /health would report a clean run", dropped)
 	}
 }
@@ -117,12 +128,12 @@ func TestDropNoticeIsOneShotButTheCounterPersists(t *testing.T) {
 // would turn one stuck HTTP reader into a dead bridge.
 func TestSlowClientIsDroppedNotBlockedOn(t *testing.T) {
 	h := NewHub()
-	ch, _, _ := h.Subscribe()
+	ch, _, _ := mustSubscribe(t, h)
 	defer h.Unsubscribe(ch)
 	for i := range clientQueue + 5 {
 		h.Emit(&probe{Kind: "message", N: i})
 	}
-	if _, _, dropped := h.Stats(); dropped != 5 {
+	if _, _, dropped, _ := h.Stats(); dropped != 5 {
 		t.Fatalf("dropped=%d, want 5 overflow drops for the slow client", dropped)
 	}
 	if got := len(drain(ch)); got != clientQueue {
@@ -135,10 +146,10 @@ func TestSlowClientIsDroppedNotBlockedOn(t *testing.T) {
 // the next disconnection.
 func TestLiveClientBypassesTheBuffer(t *testing.T) {
 	h := NewHub()
-	ch, _, _ := h.Subscribe()
+	ch, _, _ := mustSubscribe(t, h)
 	defer h.Unsubscribe(ch)
 	h.Emit(&probe{Kind: "message", N: 1})
-	if _, buffered, _ := h.Stats(); buffered != 0 {
+	if _, buffered, _, _ := h.Stats(); buffered != 0 {
 		t.Errorf("buffered %d while a client was attached", buffered)
 	}
 	if got := len(drain(ch)); got != 1 {
@@ -152,7 +163,7 @@ func TestLiveClientBypassesTheBuffer(t *testing.T) {
 func TestUnserializableEventIsCountedAsADrop(t *testing.T) {
 	h := NewHub()
 	h.Emit(make(chan int)) // channels have no JSON representation
-	_, buffered, dropped := h.Stats()
+	_, buffered, dropped, _ := h.Stats()
 	if dropped != 1 || buffered != 0 {
 		t.Fatalf("dropped=%d buffered=%d, want 1/0", dropped, buffered)
 	}
@@ -160,13 +171,37 @@ func TestUnserializableEventIsCountedAsADrop(t *testing.T) {
 
 func TestUnsubscribeIsIdempotent(t *testing.T) {
 	h := NewHub()
-	ch, _, _ := h.Subscribe()
+	ch, _, _ := mustSubscribe(t, h)
 	h.Unsubscribe(ch)
 	// A second call must not close an already-closed channel: the HTTP handler
 	// defers this and an early return would otherwise panic the whole process
 	// over one disconnecting client.
 	h.Unsubscribe(ch)
-	if clients, _, _ := h.Stats(); clients != 0 {
+	if clients, _, _, _ := h.Stats(); clients != 0 {
 		t.Errorf("clients=%d after unsubscribe", clients)
+	}
+}
+
+// Every event stream holds a goroutine, a socket and a queue of payloads, so
+// the number open at once is a bound, not a courtesy. Past it a stream is
+// refused and counted, and a slot freed by a disconnect is usable again.
+func TestTheStreamCountIsBoundedAndRefusalsAreCounted(t *testing.T) {
+	h := NewHub()
+	var open []chan []byte
+	for i := 0; i < maxClients; i++ {
+		ch, _, _ := mustSubscribe(t, h)
+		open = append(open, ch)
+	}
+	for i := 0; i < 2; i++ {
+		if _, _, _, err := h.Subscribe(); !errors.Is(err, ErrTooManyClients) {
+			t.Fatalf("stream %d past the bound: err = %v, want ErrTooManyClients", maxClients+i+1, err)
+		}
+	}
+	if clients, _, _, rejected := h.Stats(); clients != maxClients || rejected != 2 {
+		t.Fatalf("clients = %d, rejected = %d; want %d and 2", clients, rejected, maxClients)
+	}
+	h.Unsubscribe(open[0])
+	if _, _, _, err := h.Subscribe(); err != nil {
+		t.Fatalf("a freed slot was not reusable: %v", err)
 	}
 }

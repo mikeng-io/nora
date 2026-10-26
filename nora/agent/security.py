@@ -1,4 +1,10 @@
 """R-28's identifier/coordinate egress screen. Applied at every place where
+
+Runtime composition defaults `[content_checks] enabled` to false. The original
+phone/UUID/coordinate, place/person-name and location-audience predicates remain
+available in enabled mode. Credentials and LeakGuard are independent of this
+switch; admission, unit scope, location opt-in and availability still apply.
+
 a string that might name a person or carry a raw coordinate is about to
 leave the host in a tool argument (Google Places/Routes), so that
 `nora.agent.tools` and `nora.app.gatherings.GatheringService` apply the
@@ -63,7 +69,7 @@ def looks_like_coordinate(text: str) -> bool:
 TRACE_WITHHELD = "(withheld from the trace: {reason})"
 
 
-def trace_safe(text: str) -> tuple[str, str]:
+def trace_safe(text: str, *, content_checks: bool = True) -> tuple[str, str]:
     """`(what may go on a span, why the rest did not)`.
 
     **A trace is an egress.** The collector is a third party over the network,
@@ -93,10 +99,10 @@ def trace_safe(text: str) -> tuple[str, str]:
     every generation span (`docs/observability.md`), and `generation`'s
     `prompt`/`completion` parameters take already-screened text.
     """
-    offence = scan_identifiers(text)
+    offence = scan_identifiers(text, content_checks=content_checks)
     if offence is not None:
         return TRACE_WITHHELD.format(reason=offence), offence
-    if looks_like_coordinate(text):
+    if (content_checks and looks_like_coordinate(text)):
         return TRACE_WITHHELD.format(reason="coordinate"), "coordinate"
     return text, ""
 
@@ -128,13 +134,17 @@ class PlaceScreenResult:
     data: dict[str, Any] | None = None
 
 
-def _refused_before_the_call(query: str, person_names: frozenset[str] | None) -> str | None:
+def _refused_before_the_call(
+    query: str, person_names: frozenset[str] | None, *, content_checks: bool = True
+) -> str | None:
     """Why a place query may not leave the host, or `None`: an identifier or a coordinate
     (`identifier`), or a known person's name (`person`). The outbound half of R-28, shared
     by `screen_and_resolve_place` and `screen_and_locate_place` so the two cannot drift."""
-    if scan_identifiers(query) is not None or looks_like_coordinate(query):
+    if scan_identifiers(query, content_checks=content_checks) is not None or (
+        content_checks and looks_like_coordinate(query)
+    ):
         return "identifier"
-    if person_names is not None and _names_a_person(query, person_names):
+    if person_names is not None and (content_checks and _names_a_person(query, person_names)):
         return "person"
     return None
 
@@ -148,12 +158,13 @@ async def screen_and_locate_place(
     *,
     place_locator: PlaceLocator | None,
     person_names: frozenset[str] | None = None,
+    content_checks: bool = True,
 ) -> PlaceScreenResult:
     """`screen_and_resolve_place`'s twin for a SERVICE that needs the coordinate: the
     same outbound screen, the call wrapped so it never raises, and the same return-path screen on
     Google's name, but the reply carries `lat` and `lng`. Only a caller that stores the pair may
     use it; its result must never reach a tool result (DEC-24)."""
-    reason = _refused_before_the_call(query, person_names)
+    reason = _refused_before_the_call(query, person_names, content_checks=content_checks)
     if reason is not None:
         return PlaceScreenResult(status="refused", reason=reason)
     if place_locator is None:
@@ -164,7 +175,7 @@ async def screen_and_locate_place(
         log.exception("screen_and_locate_place: locate call failed")
         return PlaceScreenResult(status="unavailable")
     out = dict(out)
-    if scan_identifiers(str(out.get("name", ""))) is not None:
+    if scan_identifiers(str(out.get("name", "")), content_checks=content_checks) is not None:
         out.pop("name", None)
     return PlaceScreenResult(status="resolved", data=out)
 
@@ -174,6 +185,7 @@ async def screen_and_resolve_place(
     *,
     route_source: _PlaceSource | None,
     person_names: frozenset[str] | None = None,
+    content_checks: bool = True,
 ) -> PlaceScreenResult:
     """The FULL R-28 screen-call-screen sandwich for resolving a free-text
     venue/place name through Google Places — shared by `nora.agent.tools`'s
@@ -198,7 +210,7 @@ async def screen_and_resolve_place(
     A caller that has it should always pass it; one without it still gets
     the identifier/coordinate half of the screen, both ways.
     """
-    reason = _refused_before_the_call(query, person_names)
+    reason = _refused_before_the_call(query, person_names, content_checks=content_checks)
     if reason is not None:
         return PlaceScreenResult(status="refused", reason=reason)
     if route_source is None:
@@ -209,9 +221,11 @@ async def screen_and_resolve_place(
         log.exception("screen_and_resolve_place: place_info call failed")
         return PlaceScreenResult(status="unavailable")
     out = dict(out)
-    if scan_identifiers(str(out.get("name", ""))) is not None:
+    if scan_identifiers(str(out.get("name", "")), content_checks=content_checks) is not None:
         out.pop("name", None)
     addr = str(out.get("address", ""))
-    if scan_identifiers(addr) is not None or looks_like_coordinate(addr):
+    if scan_identifiers(addr, content_checks=content_checks) is not None or (
+        content_checks and looks_like_coordinate(addr)
+    ):
         out.pop("address", None)
     return PlaceScreenResult(status="resolved", data=out)

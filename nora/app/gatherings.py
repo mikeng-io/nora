@@ -86,7 +86,7 @@ class _RouteSource(Protocol):
     async def place_info(self, name: str) -> dict[str, Any]: ...
 
 
-def screened_area(area: PlaceArea | None) -> PlaceArea | None:
+def screened_area(area: PlaceArea | None, *, content_checks: bool = True) -> PlaceArea | None:
     """`area` with each name that carries an identifier or a coordinate
     dropped (R-28, the return-path screen `_resolve_place` gives Google's
     name and address); None when nothing is left."""
@@ -94,7 +94,11 @@ def screened_area(area: PlaceArea | None) -> PlaceArea | None:
         return None
 
     def clean(name: str | None) -> str | None:
-        if not name or scan_identifiers(name) is not None or looks_like_coordinate(name):
+        if (
+            not name
+            or scan_identifiers(name, content_checks=content_checks) is not None
+            or (content_checks and looks_like_coordinate(name))
+        ):
             return None
         return name
 
@@ -169,7 +173,9 @@ class GatheringService:
         ai_peer: str,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
         place_areas: _PlaceAreas | None = None,
+        content_checks: bool = True,
     ) -> None:
+        self._content_checks = content_checks
         self._store = store
         self._route_source = route_source
         # A resolved venue's district and city, by its place id
@@ -606,7 +612,7 @@ class GatheringService:
         except Exception:
             log.exception("venue area lookup failed; the venue keeps no area")
             return None
-        return screened_area(area)
+        return screened_area(area, content_checks=self._content_checks)
 
     async def _resolve_place(
         self, text: str, *, person_names: frozenset[str] | None = None,
@@ -624,6 +630,7 @@ class GatheringService:
         without it, this still gets the identifier/coordinate half."""
         result = await screen_and_resolve_place(
             text, route_source=self._route_source, person_names=person_names,
+            content_checks=self._content_checks,
         )
         if result.status != "resolved":
             return None

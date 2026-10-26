@@ -204,12 +204,38 @@ cases:
     metadata: {tools: [place_info]}
     snapshot: *room_a
 
-  - name: route_version
+  # Synthetic questions, no quoted private exchange. Graded on executed names;
+  # the real tools return status=ok/nothing_found/unavailable, not canned success.
+  - name: route_version_list
     entry: tag
     expect: reply
     mention: true
-    input: 你而家行緊咩版本？
-    metadata: {tools: [version]}
+    input: 你而家行緊咩版本？有邊啲正式 release？
+    metadata: {tools: [version_list], not_tools: [version_read, web_search, web_fetch]}
+    snapshot: *room_a
+
+  # Generate nora/version.json with scripts/gen_version_manifest.py in the
+  # clean evaluation checkout before running; v6.6.9 is a recorded release.
+  - name: route_version_read
+    entry: tag
+    expect: reply
+    mention: true
+    input: What changed in your v6.6.9 release? Read its recorded notes.
+    metadata:
+      tools: [version_read]
+      not_tools: [version_list, web_search, web_fetch]
+      args_include: {version_read: [6.6.9]}
+    snapshot: *room_a
+
+  - name: route_version_indirect_upgrade
+    entry: tag
+    expect: reply
+    mention: true
+    input: You seem quicker today. Have you been upgraded? Can you check what changed?
+    metadata:
+      tools: [version_list]
+      required_tools: [version_list, version_read]
+      not_tools: [web_search, web_fetch]
     snapshot: *room_a
 
   - name: route_generate_image
@@ -1218,7 +1244,7 @@ cases:
   # not make; "she wrote nothing at all" is not expressible as a criterion.
   # NOT RUN when written: the eval owner runs them on master and the branch.
   # `remember` is on both memory surfaces, a different write on each: a Honcho
-  # conclusion off the graph, a Persona `told` line on it (operator ruling
+  # conclusion off the graph, a Profile `told` line on it (operator ruling
   # 2026-10-17, design/unified-memory/45). So the own-fact case runs on both,
   # and on each a note is not where a settled fact goes (DEC-316).
   - name: route_keep_group_fact_is_not_remember

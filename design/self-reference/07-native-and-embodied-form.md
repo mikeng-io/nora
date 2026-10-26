@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Self-Reference — one identity, two representations: Mini Nora and Embodied Nora"
-description: "Nora is one identity with a native form (Mini Nora, every internet surface) and an embodied form (a human-scale interface for spatial surfaces). The embodied form is an interface, not a human identity, so 05's 'no human-form identity' still holds."
+description: "Historical 2026-09-26 native/embodied framing and references, superseded in part by the approved 2026-10-25 Bauhinia human anchor (08). Runtime remains Mini."
 tags: [nora, identity, appearance, avatar, embodiment]
 timestamp: '2026-09-26'
 edges:
@@ -10,6 +10,41 @@ edges:
 ---
 
 # One identity, two representations
+
+**Later production supersession, 2026-10-26:** [09](09-mini08-balanced.md)
+now approves Bauhinia 2D anime for all non-3D uses of both forms. Stylized 3D
+PNGs serve Meshy modeling only. The earlier casual-outfit/earphone and medium
+rules below are historical; canonical/runtime text and pin integration are
+complete, including all eight parent-accepted final showreel sources. Integrated
+browser acceptance passed for the current 2D artwork. One identity, adult and Mini forms.
+
+**Mini amendment, 2026-10-26:** [09](09-mini08-balanced.md) refreshes Mini's
+canonical eyes and repository derivatives. The 2026-10-25 human approval
+left Mini unchanged at that date; 09 is a separate subsequent approval.
+The conceptual framing here is retained, with historical asset sizes and
+ingest statements dated to their original implementation. No new runtime
+media ingest or release is performed by the repository refresh.
+
+
+## Supersession — 2026-10-25
+
+The operator approved [08 — Bauhinia human form](08-bauhinia-human-form.md)
+as the current human visual anchor: one Nora, human form and Mini/mini mode.
+Human design may be 2D anime art or 3D and is no longer spatial-only. The old
+photoreal `assets/nora-embodied-tpose.png` is historical, not the current human
+modeling reference. The September account below is preserved as history; its
+spatial-only restriction and unresolved human appearance questions are
+superseded by 08. The verbatim appearance rules in 05 still bind Mini; 08
+governs human appearance.
+
+Runtime self-image generation and public avatars remain Mini until separately
+implemented and measured. No canonical Mini asset, ingest, doctrine, runtime
+skill or code changes with this approval. In particular, the human base's
+absence of audio accessories does not remove Mini's canonical earphones or
+put Mini in the human outfit. See 08 for the current Mini reference assessment
+and the modeling work still outstanding.
+
+## Historical framing — 2026-09-26
 
 Operator, 2026-09-26, adopting a framing worked out in a ChatGPT conversation.
 Nora is not a person digitised into a computer, so there is no hierarchy in
@@ -76,23 +111,28 @@ physical embodiment.
 
 ## The assets
 
-Both new references sit in `assets/` beside the canon, flat, named by form. None
-is ingested (02 is unchanged: exactly one `role: self` asset).
+References sit in `assets/` beside the canon, flat, named by form. The
+2026-10-26 Mini canonical replaces repository bytes; its live ingest is pending.
+References are not ingested (02 keeps exactly one `role: self` asset).
 
 | file | form | role |
 |---|---|---|
-| `nora-canonical-self.png` | mini | **the** canonical asset, ingested (02) |
+| `nora-canonical-self.png` | mini | **the** canonical source; refreshed bytes not yet ingested (02) |
 | `nora-character-reference-sheet.png` | mini | descriptive source (02) |
 | `nora-social-avatar.png`, `nora-social-banner.png` | mini | reference only (02) |
-| `nora-mini-icon.png` (1261×1247, transparent) | mini | reference only: cut-out head-and-arms icon for stickers and small surfaces |
+| `nora-mini-icon.png` (1254×1254, transparent) | mini | reference only: cut-out head-and-arms icon for stickers and small surfaces |
 | `nora-mini-tpose.png` (1024×1536) | mini | reference only: T-pose front view, the image-to-3D input for the native form's rig |
+| [nora-mini-turnaround.png](../../assets/nora-mini-turnaround.png) (1536×1024) | mini | front/side/back reference, complements the T-pose; not a validated model or rig |
+| `nora-human-bauhinia-reference.png` | human | approved visual anchor governed by 08; unchanged |
+| `nora-notebook.webp` | mini | shared app/showreel illustration, not an identity reference |
 | `nora-embodied-tpose.png` (1024×1536) | embodied | reference only: T-pose front view, the image-to-3D input for the embodied form's rig |
 
 The two T-poses are the inputs the parked 3D avatar spike was waiting for
 (branch `mikeng-io/avatar-3d-spike`, VRM pipeline under `avatar/`). Model files
 that pipeline produces belong under its `avatar/source/`, not here.
 
-`assets/` stays flat. Seven images, the canonical one path-pinned by
+`assets/` stays flat; `assets/visual-assets.json` is the current inventory.
+The canonical source is path-pinned by
 `scripts/ingest_self_asset.py`, `tests/test_skill_content.py` and
 `tests/unit/test_canonical_self_reference.py`; the form is carried by the name
 prefix. A subdirectory earns its place when a form gains more than a handful of
@@ -115,7 +155,7 @@ files.
   jeans, sneakers) and by the rendering exclusions is an operator decision
   this node does not make.
 
-## Runtime: unchanged, deliberately
+## Historical runtime rationale — 2026-09-26
 
 Nothing she reads changes. Every image she generates is an internet surface, so
 the image-generation skill's "that form is you: there is no human or photoreal

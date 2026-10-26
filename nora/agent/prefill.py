@@ -34,7 +34,7 @@ from ..domain.framing import (
     ContextHeader,
 )
 from ..domain.models import TagContext, TranscriptRow
-from ..domain.persona import PersonaView
+from ..domain.profile import ProfileView
 from ..domain.prompt import escape
 from ..domain.quote_window import first_by_ts
 from ..domain.self_presence import Presence
@@ -49,8 +49,8 @@ from ..language.documents_render import render_documents
 from ..language.lesson_render import render_lessons
 from ..language.memo_render import render_memos
 from ..language.note_render import render_notes
-from ..language.persona_render import render_persona, render_persona_people
 from ..language.presence_render import render_presence
+from ..language.profile_render import render_profile, render_profile_people
 from ..language.standing_render import render_standing, render_standing_working_set
 from ..language.subagents_render import render_subagents
 from ..obs.tracing import annotate, span
@@ -303,12 +303,12 @@ def _declared(rendered: Sequence[ContextBlock | None]) -> list[ContextBlock]:
     return out
 
 
-#: The block names `<persona>` replaces when the assembler fills
-#: `TagContext.personas` (`[persona] render`, 45 §5). Their rows stay in
+#: The block names `<profile>` replaces when the assembler fills
+#: `TagContext.profiles` (`[profile] render`, 45 §5). Their rows stay in
 #: `_BLOCKS` — the Honcho surface is the default and the flag is the whole
 #: rollback — but on a switched turn their stubs leave the declared list, so
 #: the span's `blocks_declared`/`blocks_empty` describe the prompt she got.
-_PERSONA_REPLACES = frozenset({
+_PROFILE_REPLACES = frozenset({
     "self", "peer_card", "peer_history", "people_in_window",
     "culture", "unit_culture", "character",
 })
@@ -682,13 +682,14 @@ def _people_in_window_block(ctx: TagContext) -> ContextBlock | None:
     )
 
 
-def _persona_name_of(ctx: TagContext) -> Callable[[str], str]:
-    """The `told by <name>` resolver for this turn's persona blocks.
+def _profile_name_of(ctx: TagContext) -> Callable[[str], str]:
+    """The `told by <name>` resolver for this turn's profile blocks.
 
     Built from the room's listed persons and the tagger — the names already in
     this prompt, so a told line's teller joins to them by literal match. An
-    id with no name in this turn renders as "someone": a raw person id never
-    reaches a prompt (R-18), and a told line's teller is usually in the room.
+    id with no name in this turn renders as "someone" to keep this attribution
+    readable. Operator-written person_id slugs may appear in prompts; R-18
+    forbids reply egress of E.164 numbers, UUIDs and key-shaped strings.
     """
     names = {ref.person_id: ref.name for ref in ctx.room_members}
     if ctx.tagger is not None:
@@ -700,38 +701,38 @@ def _persona_name_of(ctx: TagContext) -> Callable[[str], str]:
     return name_of
 
 
-def _persona_blocks(ctx: TagContext, *, now: datetime) -> list[ContextBlock]:
-    """The switch's blocks (45 §5): one `<persona>` per entity of the turn,
+def _profile_blocks(ctx: TagContext, *, now: datetime) -> list[ContextBlock]:
+    """The switch's blocks (45 §5): one `<profile>` per entity of the turn,
     stamped into the rows of the blocks they replace.
 
     Nora's own account sits at `self`'s row (first, directly after the
     doctrine, for the same reason), the room's at `culture`'s and the unit's
-    at `unit_culture`'s, and the persons share `render_persona_people`'s one
+    at `unit_culture`'s, and the persons share `render_profile_people`'s one
     budget at `peer_card`'s row — "her own past, then theirs", the table's
-    order argument. Returns [] on the Honcho surface (`ctx.personas` empty).
+    order argument. Returns [] on the Honcho surface (`ctx.profiles` empty).
     """
-    if not ctx.personas:
+    if not ctx.profiles:
         return []
-    name_of = _persona_name_of(ctx)
+    name_of = _profile_name_of(ctx)
     blocks: list[ContextBlock] = []
-    people: list[PersonaView] = []
-    for view in ctx.personas:
+    people: list[ProfileView] = []
+    for view in ctx.profiles:
         if view.entity == "person":
             people.append(view)
             continue
-        row = {"self": "self", "room": "culture", "unit": "unit_culture"}.get(
+        row = {"nora": "self", "room": "culture", "unit": "unit_culture"}.get(
             view.entity,
         )
         if row is None:
             continue
-        block = render_persona(view, name_of=name_of, now=now)
+        block = render_profile(view, name_of=name_of, now=now)
         if block is not None:
             order, key = _ROW[row]
             blocks.append(replace(block, order=order, key=key))
     order, key = _ROW["peer_card"]
     blocks.extend(
         replace(b, order=order, key=key)
-        for b in render_persona_people(people, name_of=name_of, now=now)
+        for b in render_profile_people(people, name_of=name_of, now=now)
     )
     return blocks
 
@@ -1017,10 +1018,10 @@ def build_prefill(
         # RENDER first, DECLARE second, ASSEMBLE third. The order the blocks
         # reach her comes from `_BLOCKS`, so a block cannot be served without
         # an entry, and an entry cannot survive a block that stopped rendering.
-        # THE SWITCH (45 §5): with `ctx.personas` filled, the seven blocks it
+        # THE SWITCH (45 §5): with `ctx.profiles` filled, the seven blocks it
         # replaces are not rendered and their stubs leave the declared list —
-        # the persona blocks take their rows (`_persona_blocks`).
-        switched = bool(ctx.personas)
+        # the profile blocks take their rows (`_profile_blocks`).
+        switched = bool(ctx.profiles)
         declared = _declared([
             # `ToolSurface.prompt_catalogue`: the SAME admitted set the turn's
             # tools were built from, so it cannot name a tool this turn cannot
@@ -1052,8 +1053,8 @@ def build_prefill(
         ])
         if switched:
             declared = [
-                b for b in declared if b.name not in _PERSONA_REPLACES
-            ] + _persona_blocks(ctx, now=clock)
+                b for b in declared if b.name not in _PROFILE_REPLACES
+            ] + _profile_blocks(ctx, now=clock)
         # WHICH blocks were actually built (non-empty body, `assemble`'s own
         # test; see `_declared`'s docstring for why a block with nothing to
         # say is still DECLARED), and AT WHAT SIZE: each block's name already

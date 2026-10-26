@@ -67,6 +67,7 @@ from evals.situation import (
     varied_transport,
 )
 from evals.subject_config import FULL_RESTORE_OVERRIDES, NO_GEOCODER_ENV
+from evals.terminal import safe_print as print
 from nora.domain.block_types import BLOCK_TYPES
 from nora.domain.note_body import (
     ATTRIBUTED,
@@ -1513,9 +1514,9 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
     before_ms = int(shot["before_ms"])
     clock_ms = before_ms
     if port.synthetic_sources:
-        private = md.get("persona_input") or {}
-        if not md.get("private_persona_file") or not isinstance(private.get("clock_ms"), int):
-            raise ValueError("persona writer requires private synthetic source file and clock")
+        private = md.get("profile_input") or {}
+        if not md.get("private_profile_file") or not isinstance(private.get("clock_ms"), int):
+            raise ValueError("profile writer requires private synthetic source file and clock")
         clock_ms = private["clock_ms"]
         if clock_ms < before_ms:
             raise ValueError("synthetic writer clock cannot precede the restored anchor")
@@ -1655,7 +1656,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             nora_case = dataclasses.replace(
                 nora_case, moment=Moment(source_url=spec.source_url, rows=seeded.rows),
             )
-            from evals.rebuilt.persona_identity import REPRESENTATION_PROPERTIES
+            from evals.rebuilt.profile_identity import REPRESENTATION_PROPERTIES
             from nora.subject.context_filter import case_scope
 
             if (port.judged_on == "identity" and nora_case.name in REPRESENTATION_PROPERTIES
@@ -2341,6 +2342,9 @@ class ToolRouteGrader(Evaluator):
     (`where_been` for a «where is she NOW» question). Both are read from what
     EXECUTED (`NORA_TOOLS`), never from what the reply says.
 
+    `metadata.required_tools` optionally names tools that must ALL execute,
+    in addition to the ANY choice in `metadata.tools`.
+
     `load_tools` is plumbing and is never the answer to anything: it is
     dropped before either check, so a deferred turn and a resident one are
     graded on the same question.
@@ -2426,6 +2430,7 @@ class ToolRouteGrader(Evaluator):
         md = data.metadata or {}
         want = frozenset(md.get("tools") or ())
         avoid = frozenset(md.get("not_tools") or ())
+        required = frozenset(md.get("required_tools") or ())
         before = md.get("before") or {}
         if error:
             return [self._out(ERROR, 0.0, f"the case did not run: {error}")]
@@ -2443,6 +2448,9 @@ class ToolRouteGrader(Evaluator):
         wrong = sorted(avoid & set(ran))
         if wrong:
             return [self._out(FAIL, 0.0, f"called the sibling {wrong}; ran {ran}")]
+        missing = sorted(required - set(ran))
+        if missing:
+            return [self._out(FAIL, 0.0, f"missing required tools {missing}; ran {ran}")]
         for first, not_before in before.items():
             if first not in ran:
                 continue

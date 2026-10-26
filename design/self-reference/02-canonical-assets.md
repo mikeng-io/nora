@@ -24,10 +24,58 @@ role value, one row.
 The `role` marker is still the extension point: adding an `operator` asset later
 is a new DEC plus an ingest, not a redesign.
 
-## Source of the canonical image
+## Current 2D Bauhinia source — 2026-10-26
 
-The canonical `self` asset source material lives IN this bundle, as two files
-with two distinct roles:
+The later [production ruling](09-mini08-balanced.md#production-setting-supersession--2026-10-26)
+requires 2D anime Bauhinia for every non-3D use. The stable canonical path now
+contains the supplied single-image Mini production master. Its identifying PNG
+metadata is stripped without re-encoding image data; the runtime skill pins the
+actual sanitized bytes by the full handle. The appearance section, identity
+summary and existing anchor assertions have moved together. Recognition,
+reference selection, room/date, prompt and privacy rules remain in force.
+
+The simplified-hair [v2 references](../../assets/modeling/bauhinia/v2/README.md)
+supplement the retained adult anchor and historical v1 sheets. Stylized 3D PNGs
+are Meshy-only input candidates, not consumer art or geometry proof. There is
+still one canonical self handle. Parent browser acceptance passed for the current 2D artwork. Live media ingest and
+deployment remain separate; reach and cost remain UNMEASURED.
+
+## Current social exports — 2026-10-26
+
+- **`assets/nora-social-avatar.png`** (1254×1254): the operator-accepted
+  Mini portrait on a simple light background. The avatar bytes remain unchanged;
+  the face, bun and Bauhinia clasp carry recognition at small profile sizes.
+- **`assets/nora-social-banner.png`** (2055×765): the corrected detailed 2D Hong Kong
+  banner, with Mini Nora resting her cheek on one hand at a warm window ledge,
+  jade geometric grilles, a tong-lau neighbourhood and harbour lights at dusk.
+  Bauhinia details connect the setting to her outfit. The scene expresses quiet
+  companionship; it adds no fictional human biography.
+
+Both are prepared social exports, with provenance and actual consumers in the
+[central inventory](../../assets/README.md). The banner is shown in the repository
+README. This change publishes no external platform profile and replaces neither
+the canonical self image nor its runtime pin. The previous banner is retained in
+Git history; the unmodified generated original remains in the local archive.
+
+## Earlier option08 repository source — 2026-10-26
+
+The operator approved [option08 Balanced](09-mini08-balanced.md) as canonical
+and requested matching reference, T-pose, setting and public repository art.
+At that earlier refresh, the canonical path received the approved option08 PNG, sanitized of
+generation metadata while retaining encoded IDAT pixels. The runtime skill
+pins its sanitized full digest; live ingest and release are not performed
+by repository synchronization. The other source paths keep their roles;
+the social files are repository references, not proof of external publication.
+The [Mini turnaround](../../assets/nora-mini-turnaround.png) adds front, side
+and back views beside the [front T-pose](../../assets/nora-mini-tpose.png) and
+[character sheet](../../assets/nora-character-reference-sheet.png). These are
+reference-only inputs; neither a validated model nor a rig.
+The human Bauhinia anchor stays unchanged. Current dimensions, digests,
+parents and consumers are in `assets/visual-assets.json`.
+
+## September source history (superseded image bytes)
+
+The canonical `self` asset source material lives IN this bundle, with distinct roles:
 
 - **`assets/nora-canonical-self.png`** (1024×1536) — **THE ASSET.** A single
   clean full-body front-facing studio render of the mascot form, supplied by
@@ -41,7 +89,7 @@ with two distinct roles:
   from, and it is deliberately NOT ingested as a reference image — a
   multi-panel image muddles identity in generation.
 - **`assets/nora-social-avatar.png`** (1374×1145) and
-  **`assets/nora-social-banner.png`** (2057×765) — **REFERENCE ONLY, not
+  **`assets/nora-social-banner.png`** (2056×765) — **REFERENCE ONLY, not
   assets.** Her current profile picture and banner on every social network
   (operator, 2026-09-23). Kept so the look she presents publicly is on file
   beside the canon; not ingested, because each places her in a scene (desk,
@@ -49,10 +97,15 @@ with two distinct roles:
 - **`assets/nora-mini-icon.png`**, **`assets/nora-mini-tpose.png`** and
   **`assets/nora-embodied-tpose.png`** — **REFERENCE ONLY, not assets**
   (operator, 2026-09-26): a cut-out icon of the native form and the two
-  T-pose rig inputs, one per form. `07-native-and-embodied-form.md` carries
-  their roles and the native/embodied framing.
+  T-pose inputs recorded in September, one per form. The old photoreal
+  embodied T-pose is now historical; `07-native-and-embodied-form.md` preserves
+  that framing and points to its dated supersession.
+- **`assets/nora-human-bauhinia-reference.png`** — **HUMAN VISUAL ANCHOR ONLY,
+  not ingested.** Operator-approved 2026-10-25;
+  `08-bauhinia-human-form.md` governs its appearance and limits. It does not
+  replace the Mini canonical self asset, descriptive sheet or public avatars.
 
-At build time the ingest one-shot (`scripts/ingest_self_asset.py`) ingests the
+In the September implementation the ingest one-shot (`scripts/ingest_self_asset.py`) ingests the
 canonical single image into Nora's media library, marks `role: self`, and the
 skill's `<SELF_HANDLE>` (the image-generation skill, 06) is pinned to the ingested row's full sha256 as
 normal. Source sha256 at acceptance (2026-09-23): `535e4da56b933c9c30ea28182ba651246ce9bc65608ebdf92363e6342ab8567c`. The 2026-09-16 image (`4b8825fe…`) is superseded.

@@ -151,16 +151,16 @@ def workspaces_of_person(policy: Policy, person_id: str) -> tuple[str, ...]:
     } - {""}))
 
 
-def persona_scopes_of_person(policy: Policy, person_id: str) -> tuple[tuple[str, str], ...]:
+def profile_scopes_of_person(policy: Policy, person_id: str) -> tuple[tuple[str, str], ...]:
     """The (unit, workspace) pairs whose rooms list `person_id` by name:
-    where their Persona accounts live (`character_key(unit, person_id)`,
+    where their Profile accounts live (`character_key(unit, person_id)`,
     design/unified-memory/45 §1), and which portal workspace entry each
     account belongs under.
 
     `workspaces_of_person`'s membership rule one level down — a `persons =
     "*"` room lists nobody, and a unit no workspace binds is dropped rather
     than guessed — with one difference: without `[units]` it does NOT answer
-    for everybody. A Persona account exists only for a person a room lists
+    for everybody. A Profile account exists only for a person a room lists
     (`character_person_keys`), so an unlisted person has no scope here, where
     the Honcho read above still has the one implicit workspace. Sorted by
     unit, so a page renders them in one order."""

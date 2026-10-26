@@ -1,5 +1,12 @@
 # Nora operator runbook
 
+Content filters default to `[content_checks] enabled = false`. To restore the
+retained phone/UUID/coordinate, place/person-name and location audience checks,
+set `enabled = true` in the deployment-owned config and restart through the
+normal validated deployment procedure. This does not toggle credential or
+doctrine protection, or grant a room/unit access. No live config is changed by
+the source change. See [the decision](adr/0030-content-filters-are-disabled-by-default-and-reversible.md).
+
 All example names, account IDs, nicknames and room mappings in this file are
 synthetic pseudonyms; replace them with your own installation values.
 
@@ -1492,25 +1499,25 @@ name keeps working while the door is open, so reopening the door alone (step 2)
 is the minimal rollback if the problem is a caller of the old port.
 
 
-## Typed Persona historical recovery
+## Typed Profile historical recovery
 
-Keep `[persona] render = false` until source coverage and the reply gates are
+Keep `[profile] render = false` until source coverage and the reply gates are
 accepted. The typed migration is nullable and retains every legacy row; a
 successful old shadow session is not historical coverage. The person adaptor
 now walks bounded oldest-first pages through a frozen Record boundary using
 its existing schedule and budget, independently of recent-message updates.
 
 The Character-card spike is an explicit operator command; it never runs on
-startup or changes `[persona] render`. Dates are inclusive HKT dates, and keys
+startup or changes `[profile] render`. Dates are inclusive HKT dates, and keys
 may be repeated. Dry-run constructs no runtime and writes no rows or cursors:
 
 ```bash
-nora memory persona-history --key '<unit>#character:<person>' --since 2026-10-01 --until 2026-10-02
+nora memory profile-history --key '<unit>#character:<person>' --since 2026-10-01 --until 2026-10-02
 # Only when the operator chooses to run the spike:
-nora memory persona-history --key '<unit>#character:<person>' --since 2026-10-01 --until 2026-10-02 --apply
-nora memory persona-report --key '<unit>#character:<person>' --since 2026-10-01 --until 2026-10-02
-nora memory persona-report --key '<unit>#character:<person>' --format card
-nora memory persona-report --key '<unit>#character:<person>' --judge
+nora memory profile-history --key '<unit>#character:<person>' --since 2026-10-01 --until 2026-10-02 --apply
+nora memory profile-report --key '<unit>#character:<person>' --since 2026-10-01 --until 2026-10-02
+nora memory profile-report --key '<unit>#character:<person>' --format card
+nora memory profile-report --key '<unit>#character:<person>' --judge
 ```
 
 The window reads messages/mentions oldest-first in day-sized pages, with cached
@@ -1532,26 +1539,26 @@ source text, cards and trace exports on owner hardware. No public receipt contai
 private rows. Migration downgrade refuses dimension rows rather than rewriting
 append-only history; preserve a database backup for schema rollback.
 
-`nora memory persona-history` prints per-account source boundary/progress,
+`nora memory profile-history` prints per-account source boundary/progress,
 eligible source counts, missing fields, untyped legacy heads and disputes,
 without message text. Completion means source exhaustion, not factual parity.
 Inspect original source messages for missing/ambiguous facts; never fill them
 from uncited memory conclusions or infer a birthday from an occasion date.
 
 To repeat an incomplete old shadow pass, use
-`nora memory persona-history --key '<unit>#character:<person>' --restart --apply`.
-Without `--apply` this is a dry run. Only the historical cursors reset; Persona
+`nora memory profile-history --key '<unit>#character:<person>' --restart --apply`.
+Without `--apply` this is a dry run. Only the historical cursors reset; Profile
 claim history and the recent watermark remain. Failures, conflicts and
 unsettled sessions retain the page. A crash after claim commit but before
 cursor settlement repeats evidence. Runtime traces and watermark row history
 retain per-page provenance. Render-on retires legacy model writers and reads
-Persona room accounts for person/unit context; render-off restores the old
+Profile room accounts for person/unit context; render-off restores the old
 configured writer/read surface. No legacy tables or Honcho client are removed.
 
 After fixing a cached-media reader, inspect one account's actual rendered input
 offline before spending another model pass. To wake just that account without
 resetting history or lowering the global interval, use
-`nora memory persona-retry-media --key '<unit>#character:<person>'` (read-only),
+`nora memory profile-retry-media --key '<unit>#character:<person>'` (read-only),
 then add `--apply` to queue one attempt. The command requires a listed account,
 completed history and pending cached media; it never composes a second Nora or
 calls a model. Duplicate pending submissions coalesce. The normal running
@@ -1562,9 +1569,9 @@ schedule and other wake signals remain active. A request arriving during an
 in-flight pass waits for the next eligible tick.
 
 The request token and its claim reuse a separate
-`persona-person:media-retry` consolidation namespace, retained in row history;
+`profile-person:media-retry` consolidation namespace, retained in row history;
 they never acknowledge a source or alter existing cursor timestamps. A claimed
 request proves only that an attempt began. Read the normal Dreamer trace and
-`persona-history` cached-media receipts afterwards; `unavailable` is not success,
+`profile-history` cached-media receipts afterwards; `unavailable` is not success,
 and no-change can settle rendered inputs without adding any identity fact.
 Stop after the first account to assess progress before requesting another.

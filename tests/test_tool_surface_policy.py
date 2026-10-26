@@ -97,7 +97,8 @@ def test_known_spec_tools_are_covered() -> None:
     docs = dict(_model_facing_docstrings())
     # A representative set must be present so a `_spec` rename or a docstring
     # that drops below the extraction floor turns this file red loudly.
-    assert {"send_reply", "weather", "note_create", "media_fetch", "version"} <= set(docs)
+    assert {"send_reply", "weather", "note_create", "media_fetch",
+            "version_list", "version_read"} <= set(docs)
 
 
 @pytest.mark.parametrize(

@@ -6,7 +6,12 @@ Choice: **plain TCP, length-prefixed binary frames**
 **A connection announces its GUILD once, on connect** (multi-guild,
 2026-09-17), in a frame whose `user_id_len` is ZERO:
 
-    hello  [u32be len][u8 0][guild_id utf8]
+    hello  [u32be len][u8 0][guild_id utf8][0x0A][token utf8]
+
+The hello also carries the shared service bearer (`NORA_BRIDGE_TOKEN`) after a
+newline. A gate that cannot verify it closes the connection before any audio is
+read, and a second hello, or audio before a valid hello, closes it too. A guild
+id is digits and cannot contain a newline, so the first newline is the separator.
 
 A real frame can never have a zero-length user id — Discord issues no empty
 snowflake — so the existing length byte discriminates and the audio layout is
@@ -33,4 +38,5 @@ so a 5 s utterance (250 frames) arrives intact with no buffering surprises.
 If the wake gate is down, frames are dropped (never queued) — audio is
 transient by design (`05-sidecar-receive.md`), so a down consumer must not
 grow memory. Only the connect handshake itself buffers, bounded at 200
-frames (~4 s), so utterance onsets survive socket startup. Codec: s16le 48 kHz stereo PCM, 3840 bytes per 20 ms frame.
+frames (~4 s), so utterance onsets survive socket startup. Codec: s16le 48 kHz stereo PCM, 3840 bytes per 20 ms frame. A payload above
+the maxima (one 20 ms frame; a hello of at most 513 bytes) is refused before it is buffered.

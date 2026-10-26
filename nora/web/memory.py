@@ -13,8 +13,8 @@ read). A missing or unrecognized person_id returns an empty list — fail-closed
 UI copy built on top of this must never say "Honcho"; this module
 doesn't render copy, so that rule lives in the frontend, not here.
 
-**Persona (design/unified-memory/45, the switch).** While `[persona] render`
-is on, each entry also carries `persona`: the caller's own Persona account
+**Profile (design/unified-memory/45, the switch).** While `[profile] render`
+is on, each entry also carries `profile`: the caller's own Profile account
 per unit that lists them — every chain head with its state, the evidence
 behind each line, and the account's open disputes (cognition-loop/50 §4: an
 account nobody sees cannot be corrected). A line's message and episode
@@ -34,8 +34,8 @@ from typing import Any, Protocol
 from nora.domain.character_card import format_card, format_line
 from nora.domain.culture import RoomMessage, character_key
 from nora.domain.models import PersonRef
-from nora.domain.persona import PersonaDispute, PersonaLine
 from nora.domain.ports import MemoryStore
+from nora.domain.profile import ProfileDispute, ProfileLine
 from nora.persons import Persons
 
 # Generous relative to the tagger card's small cap (nora/engagement/
@@ -47,7 +47,7 @@ _MAX_CONCLUSIONS = 20
 #: (`open_disputes`, 45 §4), bounded the same way here.
 _MAX_DISPUTES = 20
 
-#: A persona line's citations (nora/domain/persona.py's forms): a Record row
+#: A profile line's citations (nora/domain/profile.py's forms): a Record row
 #: id, a `response:<send id>` episode, a `social:<network>:<item id>` item, a
 #: `rollup:<kind>:<subject>` aggregate.
 _EPISODE = re.compile(r"response:(\d+)")
@@ -55,16 +55,16 @@ _SOCIAL = re.compile(r"social:([a-z]+):(\S+)")
 _ROLLUP = re.compile(r"rollup:[a-z]+:\S+")
 
 
-class PersonaPortal(Protocol):
-    """The portal's Persona reads, narrowed from `SqlPersonaStore` for
-    `nora.language.persona_render.PersonaHeads`' reason: a reader wired this
+class ProfilePortal(Protocol):
+    """The portal's Profile reads, narrowed from `SqlProfileStore` for
+    `nora.language.profile_render.ProfileHeads`' reason: a reader wired this
     way can never write a line."""
 
-    def account_heads(self, *, key: str) -> Awaitable[tuple[PersonaLine, ...]]: ...
+    def account_heads(self, *, key: str) -> Awaitable[tuple[ProfileLine, ...]]: ...
 
     def open_disputes(
         self, *, key: str, limit: int,
-    ) -> Awaitable[tuple[PersonaDispute, ...]]: ...
+    ) -> Awaitable[tuple[ProfileDispute, ...]]: ...
 
 
 class CitedMessages(Protocol):
@@ -77,8 +77,8 @@ class CitedMessages(Protocol):
 async def build_memory_payload(
     *, honcho: MemoryStore, persons: Persons, ai_peer: str, person_id: str | None,
     workspaces_of: Callable[[str], tuple[str, ...]] | None = None,
-    persona: PersonaPortal | None = None,
-    persona_scopes_of: Callable[[str], tuple[tuple[str, str], ...]] | None = None,
+    profile: ProfilePortal | None = None,
+    profile_scopes_of: Callable[[str], tuple[tuple[str, str], ...]] | None = None,
     cited: CitedMessages | None = None,
     rooms_of: Callable[[str], frozenset[tuple[str, str]]] | None = None,
 ) -> list[dict[str, Any]]:
@@ -116,9 +116,9 @@ async def build_memory_payload(
     an empty `identity` list is never surfaced as an error here, only
     `reachable` (sourced from `representation`'s own Recollection) is.
 
-    With `persona` wired (the switch), each entry also gains the caller's own
-    Persona accounts — see `_attach_persona`. `persona_scopes_of` is
-    `nora.app.memory_routing.persona_scopes_of_person`, a callable for
+    With `profile` wired (the switch), each entry also gains the caller's own
+    Profile accounts — see `_attach_profile`. `profile_scopes_of` is
+    `nora.app.memory_routing.profile_scopes_of_person`, a callable for
     `workspaces_of`'s reason: `nora.web` never sees a `Policy`."""
     if person_id is None:
         return []
@@ -132,11 +132,11 @@ async def build_memory_payload(
             await _entry(honcho, ref, ai_peer, workspace=name)
             for name in workspaces_of(person_id)
         ]
-    if persona is not None and persona_scopes_of is not None:
-        await _attach_persona(
-            entries, persona=persona, cited=cited, rooms_of=rooms_of,
+    if profile is not None and profile_scopes_of is not None:
+        await _attach_profile(
+            entries, profile=profile, cited=cited, rooms_of=rooms_of,
             persons=persons, person_id=ref.person_id,
-            scopes=persona_scopes_of(ref.person_id), scopes_of=persona_scopes_of,
+            scopes=profile_scopes_of(ref.person_id), scopes_of=profile_scopes_of,
             unrouted=workspaces_of is None,
         )
     return entries
@@ -162,13 +162,13 @@ async def _entry(
     return entry
 
 
-# --- Persona (45, the switch) -------------------------------------------------
+# --- Profile (45, the switch) -------------------------------------------------
 
 
-async def _attach_persona(
+async def _attach_profile(
     entries: list[dict[str, Any]],
     *,
-    persona: PersonaPortal,
+    profile: ProfilePortal,
     cited: CitedMessages | None,
     rooms_of: Callable[[str], frozenset[tuple[str, str]]] | None,
     persons: Persons,
@@ -177,7 +177,7 @@ async def _attach_persona(
     scopes_of: Callable[[str], tuple[tuple[str, str], ...]],
     unrouted: bool,
 ) -> None:
-    """Attach the caller's own Persona accounts to their entries: one account
+    """Attach the caller's own Profile accounts to their entries: one account
     per unit that lists them, under the entry of the workspace that unit
     belongs to. An account whose workspace has no entry is dropped, never
     re-homed — the same fail-closed shape as the workspace membership above.
@@ -202,18 +202,18 @@ async def _attach_persona(
         def identity_name(pid: str, current_unit: str = unit) -> str:
             return (_name_of(persons, pid) or "someone") if any(
                 u == current_unit for u, _ in scopes_of(pid)) else "someone"
-        account = await _persona_account(
-            persona=persona, cited=cited, persons=persons,
+        account = await _profile_account(
+            profile=profile, cited=cited, persons=persons,
             unit=unit, person_id=person_id, viewer_rooms=viewer_rooms,
             name_of=identity_name,
         )
         if account is not None:
-            entry.setdefault("persona", []).append(account)
+            entry.setdefault("profile", []).append(account)
 
 
-async def _persona_account(
+async def _profile_account(
     *,
-    persona: PersonaPortal,
+    profile: ProfilePortal,
     cited: CitedMessages | None,
     persons: Persons,
     unit: str,
@@ -226,8 +226,8 @@ async def _persona_account(
     ever written and no dispute is open — an account that does not exist is
     absent, not empty."""
     key = character_key(unit, person_id)
-    heads = await persona.account_heads(key=key)
-    disputes = await persona.open_disputes(key=key, limit=_MAX_DISPUTES)
+    heads = await profile.account_heads(key=key)
+    disputes = await profile.open_disputes(key=key, limit=_MAX_DISPUTES)
     if not heads and not disputes:
         return None
     rows = await _cited_rows(cited, heads)
@@ -245,7 +245,7 @@ async def _persona_account(
 
 
 async def _cited_rows(
-    cited: CitedMessages | None, heads: tuple[PersonaLine, ...],
+    cited: CitedMessages | None, heads: tuple[ProfileLine, ...],
 ) -> Mapping[int, RoomMessage]:
     """The Record rows the heads' message and episode citations name, in one
     read (hidden rows are left out by the store: a withdrawn message shows as
@@ -273,7 +273,7 @@ def _name_of(persons: Persons, person_id: str | None) -> str | None:
 
 
 def _line_payload(
-    line: PersonaLine,
+    line: ProfileLine,
     *,
     persons: Persons,
     rows: Mapping[int, RoomMessage],
@@ -305,7 +305,7 @@ def _line_payload(
     if line.fact_key == "attribute":
         # The fallback contains no person references; its text is still the shared formatter.
         payload["fact_value"] = line.fact_value
-    if line.part == "hypothesis":
+    if line.part == "guesses":
         payload["prediction"] = line.prediction
         payload["prediction_observable"] = line.prediction_observable
         payload["prediction_window_end"] = line.prediction_window_end
@@ -349,7 +349,7 @@ def _evidence(
     return {"ref": citation, "kind": "unknown"}
 
 
-def _dispute_payload(dispute: PersonaDispute, *, persons: Persons) -> dict[str, Any]:
+def _dispute_payload(dispute: ProfileDispute, *, persons: Persons) -> dict[str, Any]:
     """One open dispute: the claim as the disputant put it, who, and when.
     The claim was screened at write (35 §2); who is a display name, never an
     id."""

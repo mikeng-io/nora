@@ -8,24 +8,24 @@ import pytest
 import sqlalchemy as sa
 from alembic import command
 
-from nora.app.persona_spike import history_days, recorded_sessions, report, window
+from nora.app.profile_spike import history_days, recorded_sessions, report, window
 from nora.domain.character_card import format_line
-from nora.domain.persona import ReviseOp
+from nora.domain.profile import ReviseOp
 from nora.infra.sql.migrations_runner import alembic_config, run_migrations
-from nora.infra.sql.persona import SqlPersonaStore
+from nora.infra.sql.profile import SqlProfileStore
 from nora.infra.sql.schema import (
-    PERSONA_LINE,
     PRESENCE_CORRIDORS,
     PRESENCE_DERIVED_PLACES,
     PRESENCE_STAYS,
     PRESENCE_TRIPS,
+    PROFILE_LINE,
     ROLLUP_BUILD,
 )
-from tests.infra.test_persona_adaptor import BATCH, KEY, PK, _adaptor
-from tests.infra.test_persona_source_inputs import (
+from tests.infra.test_profile_adaptor import BATCH, KEY, PK, _adaptor
+from tests.infra.test_profile_source_inputs import (
     KEY as SOURCE_KEY,
 )
-from tests.infra.test_persona_source_inputs import (
+from tests.infra.test_profile_source_inputs import (
     PERSON,
     ROOMS,
     T0,
@@ -34,7 +34,7 @@ from tests.infra.test_persona_source_inputs import (
     source_inputs,
 )
 from tests.unit.test_character_card import trait
-from tests.unit.test_persona_rules import CITABLE, HUMAN, NOW, _plan
+from tests.unit.test_profile_rules import CITABLE, HUMAN, NOW, _plan
 
 # Pytest fixtures are intentionally shared with the existing owning-store tests.
 __all__ = ["env"]
@@ -44,15 +44,15 @@ DAY_MS = 24 * HOUR_MS
 
 
 async def test_new_content_roundtrips_and_supersedes_without_rewriting_history(env):
-    store = SqlPersonaStore(env, screen=lambda _: None)
-    result = await store.persona_write(
+    store = SqlProfileStore(env, screen=lambda _: None)
+    result = await store.profile_write(
         account=HUMAN, ops=[trait()], citable=CITABLE, now_ms=NOW,
         written_by_session="synthetic", apply_decay=False)
     assert result.status == "ok"
     [line] = await store.account_heads(key=HUMAN.key)
     assert line.content == trait().content and line.strength["occasions"] == 3
     assert format_line(line) == format_line(_plan([trait()]).inserts[0])
-    result = await store.persona_write(account=HUMAN,
+    result = await store.profile_write(account=HUMAN,
         ops=[ReviseOp(line="P1", citations=("101", "102", "103"),
                       content={**line.content, "stance": "compares interpretations"})],
         citable=CITABLE, now_ms=NOW + 1, written_by_session="synthetic-next", apply_decay=False)
@@ -60,8 +60,8 @@ async def test_new_content_roundtrips_and_supersedes_without_rewriting_history(e
     [revised] = await store.account_heads(key=HUMAN.key)
     assert revised.supersedes == line.id
     async with env.connect() as conn:
-        original = (await conn.execute(sa.select(PERSONA_LINE).where(
-            PERSONA_LINE.c.id == line.id))).one()
+        original = (await conn.execute(sa.select(PROFILE_LINE).where(
+            PROFILE_LINE.c.id == line.id))).one()
     assert original.content == dict(line.content) and original.state == "current"
 
 
@@ -180,13 +180,13 @@ async def test_window_dry_read_is_oldest_first_day_by_day_and_report_counts_only
         person=PERSON, since=start, until=end)]
     assert [[m.row.id for m in batch] for _, batch in pages] == [[2], [3]]
     async with env.connect() as conn:
-        count = (await conn.execute(sa.select(sa.func.count()).select_from(PERSONA_LINE))).scalar()
+        count = (await conn.execute(sa.select(sa.func.count()).select_from(PROFILE_LINE))).scalar()
         assert count == 0
-    store = SqlPersonaStore(env, screen=lambda _: None)
-    assert (await store.persona_write(account=HUMAN, ops=[trait()], citable=CITABLE,
+    store = SqlProfileStore(env, screen=lambda _: None)
+    assert (await store.profile_write(account=HUMAN, ops=[trait()], citable=CITABLE,
         now_ms=NOW, written_by_session="synthetic", apply_decay=False)).status == "ok"
     result = await report(env, key=HUMAN.key, since=None, until=None)
-    assert result["part_kind"] == {"character/topic": 1} and "card" not in result
+    assert result["part_kind"] == {"traits/topic": 1} and "card" not in result
     assert result["citations"] == {"resolved": 0, "unresolved": 3}
     assert result["usage_per_person_day"] is None and result["refused"] is None
     assert (await report(env, key=HUMAN.key, since=None, until=None, card=True))["card"]
@@ -213,18 +213,18 @@ def test_migration_up_down_keeps_one_head_and_legacy_rows(pg_url):
     from nora.infra.sql.migrations_runner import sync_url_for
     sync = sa.create_engine(sync_url_for(pg_url))
     with sync.begin() as conn:
-        conn.execute(sa.insert(PERSONA_LINE).values(id="00000000-0000-0000-0000-000000000001",
-            persona_key="invented#unit", part="character", kind="trait", text="legacy prose",
+        conn.execute(sa.insert(PROFILE_LINE).values(id="00000000-0000-0000-0000-000000000001",
+            profile_key="invented#unit", part="traits", kind="trait", text="legacy prose",
             mode="induced", citations=["1"], state="current", support_count=1,
             unit="invented", written_at=1, written_by_session="synthetic"))
     cfg = alembic_config(pg_url)
     command.downgrade(cfg, "0126_social_backfill_end")
     command.upgrade(cfg, "head")
     with sync.connect() as conn:
-        assert conn.execute(sa.select(PERSONA_LINE.c.text)).scalar_one() == "legacy prose"
+        assert conn.execute(sa.select(PROFILE_LINE.c.text)).scalar_one() == "legacy prose"
     sync.dispose()
     from alembic.script import ScriptDirectory
-    assert ScriptDirectory.from_config(cfg).get_heads() == ["0128_event_platform"]
+    assert ScriptDirectory.from_config(cfg).get_heads() == ["0130_profile_names"]
 
 
 async def test_coordinate_input_is_refused_before_any_model_can_read_it(env):
@@ -246,7 +246,7 @@ async def test_acknowledged_routine_does_not_wake_writer_until_revision_changes(
     from nora.app.runtime import _dream_evidence_once
     from nora.infra.sql.language import SqlLanguageStore
     from nora.obs.metrics import Metrics
-    from tests.infra.test_persona_source_inputs import wired
+    from tests.infra.test_profile_source_inputs import wired
 
     async with env.begin() as conn:
         build = (await conn.execute(sa.insert(ROLLUP_BUILD).values(code_version="synthetic",

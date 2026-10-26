@@ -1,5 +1,6 @@
 {
 	"mcpServers": {
+    "meshy": {"command": "npx", "args": ["-y", "@meshy-ai/meshy-mcp-server@0.6.6"]},
 		"strands": {
 			"type": "stdio",
 			"command": "uvx",

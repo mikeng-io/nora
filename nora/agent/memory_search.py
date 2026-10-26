@@ -810,11 +810,11 @@ class MemorySearch:
     def __init__(
         self, index: MemoryIndexRead, metrics: Any, *,
         embedder: QueryEmbedder | None = None, model: str | None = None,
-        drain_seconds: float | None = None, persona_render: bool = False,
+        drain_seconds: float | None = None, profile_render: bool = False,
     ) -> None:
         if (embedder is None) != (model is None):
             raise ValueError("an embedder and its model fingerprint come together")
-        self._persona_render = persona_render
+        self._profile_render = profile_render
         self._index = index
         self._metrics = metrics
         self._embedder = embedder
@@ -851,7 +851,7 @@ class MemorySearch:
             scope = scope_for(target, own_room=own_room, social_off=social_off)
             if scope is None:
                 return self._count("unavailable")
-            scope = replace(scope, persona_render=self._persona_render)
+            scope = replace(scope, profile_render=self._profile_render)
             only = MemoryFilter(
                 kinds=tuple(dict.fromkeys(kinds)), since_ms=since_ms, until_ms=until_ms,
                 person=person_id or None,
@@ -949,7 +949,7 @@ def _shown(node: IndexedNode, name_of: Callable[[str], str]) -> tuple[str, str]:
     story»), and the rest is its text; a medium of one says it is a picture
     or video of the network's, and its location that it is a tagged place.
     Every other kind is its kind."""
-    if node.kind == "persona_line" and node.identity_fact is not None:
+    if node.kind == "profile_line" and node.identity_fact is not None:
         from nora.domain.character_card import format_profile
 
         fact = node.identity_fact
@@ -991,6 +991,7 @@ def room_label(rooms: Sequence[RoomFacts], key: str) -> str:
 def render_packet(
     hits: Sequence[Hit], *, name_of: Callable[[str], str],
     room_label: Callable[[str], str], now: datetime, budget: int = PACKET_TOKENS,
+    content_checks: bool = True,
 ) -> tuple[list[dict[str, Any]], int]:
     """The evidence packet and how many items were withheld
     for carrying an identifier. Names, room labels and handles only: never a
@@ -1015,7 +1016,11 @@ def render_packet(
     # not a name, and the packet says `someone`.
     def packet_name(pid: str) -> str:
         name = name_of(pid)
-        if not name or name == pid or scan_identifiers(name) is not None:
+        if (
+            not name
+            or name == pid
+            or scan_identifiers(name, content_checks=content_checks) is not None
+        ):
             return "someone"
         return name
 
@@ -1023,7 +1028,10 @@ def render_packet(
     # would otherwise leave as a fragment the screen cannot recognise (R-18).
     # A withheld hit takes no part in the cut.
     shown = [_shown(h.node, packet_name) for h in hits]
-    screened = [bool(body and scan_identifiers(body) is not None) for _, body in shown]
+    screened = [
+        bool(body and scan_identifiers(body, content_checks=content_checks) is not None)
+        for _, body in shown
+    ]
     # The best relevance from each hit on, over the unpinned hits the screen
     # passes. The rank is age-decayed, so a recent weak hit can sit ahead of
     # an older strong one: the drop is read against the best still to come,
@@ -1046,7 +1054,9 @@ def render_packet(
             last = h.relevance
         kind, body = shown[i]
         text = render_file_links(body[:TEXT_CHARS]) if body else ""
-        places = sorted(p for p in h.places if scan_identifiers(p) is None)
+        places = sorted(
+            p for p in h.places if scan_identifiers(p, content_checks=content_checks) is None
+        )
         item: dict[str, Any] = {"kind": kind}
         if h.node.at_ms is not None:
             item["age"] = stamp(h.node.at_ms, now)

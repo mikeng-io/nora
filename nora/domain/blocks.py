@@ -312,9 +312,11 @@ class ContextBlock:
         # DERIVED, never passed. See `description` above: there is no `note=`
         # argument, so two renderers cannot describe the same block
         # differently.
-        parts.append(f'description="{escape_attr(self.description)}"')
-        if self.annotation:
-            parts.append(f'fields="{escape_attr(self.annotation)}"')
+        # ADR 0029's profile tag was measured without description/fields.
+        if self.name != "profile":
+            parts.append(f'description="{escape_attr(self.description)}"')
+            if self.annotation:
+                parts.append(f'fields="{escape_attr(self.annotation)}"')
         opening = f"<{' '.join(parts)}"
         if not self.body:
             # Only an opted-in empty block gets here through `assemble`; a

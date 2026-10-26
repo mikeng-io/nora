@@ -243,7 +243,7 @@ def test_the_registry_exposes_every_declared_tool():
         # (the four `subagent_*` tools are tag-turn only: this Dreamer-path build omits them,
         # and tests/unit/test_subagent_tools.py pins where they ARE built.)
         # DEC-97: what she is running, and what was in an earlier version.
-        "version",
+        "version_list", "version_read",
         # The note tier's four verbs.
         "note_read", "note_search", "note_create", "note_update",
         # DEC-306: one kept memo of the unit.
@@ -479,9 +479,8 @@ def test_budgets_match_todays_table():
         # second call in the same turn is a model looping on its own write.
         "event_search": 1, "event_propose": 3, "event_revise": 2,
         "event_rsvp": 1, "event_set_status": 2, "suggest_venue": 4,
-        # 2 — one call answers "what version are you", a second covers the
-        # follow-up about an earlier one (DEC-79).
-        "version": 2,
+        # One metadata list, then notes for up to two selected releases.
+        "version_list": 1, "version_read": 2,
         # The four note verbs. The RATIO is the
         # decision, not the absolute numbers: a revision costs two calls —
         # `note_read` then `note_update` — which is what makes the read
@@ -499,9 +498,9 @@ def test_budgets_match_todays_table():
         "memo_read": 3,
         # 1, like `note_create`: one write answers the ask; a second call is the
         # model looping on a tool it should have trusted to have worked (the
-        # remember verb's write lane). `persona_dispute` is its graph-surface
+        # remember verb's write lane). `profile_dispute` is its graph-surface
         # sibling (35 §2), the same one-call write.
-        "remember": 1, "persona_dispute": 1,
+        "remember": 1, "profile_dispute": 1,
         # `search_memory_workspace` is 4 like its room-scoped sibling — the
         # same verb at a wider scope, the same sizing.
         "search_memory_workspace": 4,
@@ -954,9 +953,9 @@ ACT_VERBS = frozenset({
     "note_create", "note_update",
     # The remember verb: writing a Honcho conclusion is a write —
     # the Dreamer may never be granted it, same as the note verbs.
-    # `persona_dispute` (the graph surface's dispute door, 35 §2) writes and
+    # `profile_dispute` (the graph surface's dispute door, 35 §2) writes and
     # can hide a line at once: an act for the same reason.
-    "remember", "persona_dispute",
+    "remember", "profile_dispute",
     # Discord-only music — every verb
     # but `music_status` mutates the voice session or its queue.
     "play_music", "skip_music", "top_music", "stop_music",
@@ -1002,7 +1001,7 @@ READ_ONLY = frozenset({
     "file_fetch",
     "media_search",
     "web_search", "web_fetch", "weather", "list_reminders", "event_search",
-    "suggest_venue", "version", "search_gifs",
+    "suggest_venue", "version_list", "version_read", "search_gifs",
     # The two parking verbs: live reads that act on nothing —
     # vacancy lookups and nearby discovery, no writes anywhere.
     "parking_status", "find_parking",

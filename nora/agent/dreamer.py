@@ -525,7 +525,7 @@ class DreamToolSource(Protocol):
 # test red rather than silently joining or silently missing. That is the same
 # structure `ACT_VERBS` uses in `tests/unit/test_tool_registry.py`.
 UNIT_SAFE_TOOLS: frozenset[str] = frozenset({
-    "web_search", "web_fetch", "now", "calculate", "weather", "version",
+    "web_search", "web_fetch", "now", "calculate", "weather", "version_list", "version_read",
     # `x_read` and `x_search` (DEC-201): read the open internet (public X content)
     # with no room state anywhere in the answer, the same shape as
     # `web_search`/`web_fetch`, and read-only at three layers besides (R-86).
@@ -1049,7 +1049,9 @@ class DreamerRuntime:
         grants: Mapping[str, AdaptorGrant] | None = None,
         store_timeout_seconds: float = DEFAULT_DREAM_STORE_TIMEOUT_SECONDS,
         reasoning_strip_store: Any = None,
+        content_checks: bool = True,
     ) -> None:
+        self._content_checks = content_checks
         self._models = models
         self._instructions = instructions
         self._tools = tools
@@ -1435,6 +1437,7 @@ class DreamerRuntime:
 
         kept, _rejected = screen(
             adaptor=adaptor.name, items=items, metrics=self._metrics,
+            content_checks=self._content_checks,
         )
         if items and not kept:
             # **TOTAL REJECTION, named rather than inferred.** An objective that asks
@@ -1688,7 +1691,7 @@ class DreamerRuntime:
         account without it."""
         @functools.wraps(verb)
         async def screened(*args: Any, **kwargs: Any) -> dict[str, object]:
-            found = offence(kwargs)
+            found = offence(kwargs, content_checks=self._content_checks)
             if found is not None:
                 reason, path = found
                 self._metrics.inc(

@@ -125,18 +125,22 @@ components:
 This file binds every visual surface of Nora: the web portal (`app/`), her
 social profiles, the images she generates of herself, stickers and icons, and
 any 3D or spatial form she is given. Her character is specified in
-`design/self-reference/05-visual-identity-spec.md` (the operator's spec,
-verbatim) and her forms in `design/self-reference/07-native-and-embodied-form.md`;
-this file derives a system from them and does not restate them. Where they
-disagree with this file on how she looks, they win.
+`design/self-reference/05-visual-identity-spec.md` (the operator's Mini spec,
+verbatim, with its dated Mini eye amendment in `design/self-reference/09-mini08-balanced.md`)
+and `design/self-reference/08-bauhinia-human-form.md` (the approved
+human visual anchor, 2026-10-25). They govern their respective forms and take
+precedence over this file on appearance. The September framing in
+`design/self-reference/07-native-and-embodied-form.md` is historical where
+superseded by 08; this file derives a system from these sources.
 
 ## 1. Overview
 
 **North Star: "Earphones in."**
 
 Nora is in the room, listening, not performing. She is calm, observant and a
-little deadpan; she dresses in a grey hoodie and loose jeans with no logos; the
-one thing always on her is a pair of white wired earphones. Every Nora surface
+little deadpan. Both forms now follow the approved Bauhinia production setting
+(08/09); every non-3D use is 2D anime. "Earphones in" remains the listening
+metaphor, not an accessory requirement for new Bauhinia bases. Every Nora surface
 should read the same way: **present, quiet, unbranded, warm.** A screen of hers
 is somewhere you look things up in, not a product being sold to you.
 
@@ -165,15 +169,26 @@ product, an influencer or an "AI assistant" with sparkles.
 
 ## 2. Representation
 
-One identity, rendered by context (07). Pick the form by the surface, never by
-taste:
+One identity, two forms: adult human Nora and Mini Nora (mini mode), per 08/09.
+**Later operator ruling, 2026-10-26:** all non-3D uses of either form use the
+2D anime production setting. Stylized 3D PNGs serve Meshy modeling only.
+This supersedes the earlier modeling-only Mini Bauhinia restriction. Mini's
+Bauhinia outfit is now approved production direction, retaining option08 eyes.
+Adult production uses A; modeling uses B's face plus D's materials, corrected
+to the anime face. C's Western game appearance is rejected.
+
+The canonical 2D source, full repository pin, runtime appearance text, identity
+summary and existing anchor assertions are synchronized. Per-file import and
+derivative state is recorded in the central inventory. Runtime/public-avatar
+form routing stays Mini. Parent integrated browser acceptance passed for the current 2D artwork;
+live ingest and deployment are separate. Representation boundaries:
 
 | surface | form | source |
 |---|---|---|
-| social profiles, web, chat, reactions, stickers, every generated image | **Mini Nora** (native) | `assets/nora-canonical-self.png`, `assets/nora-character-reference-sheet.png` |
+| social profiles, web, chat, reactions, stickers, runtime-generated self-images | **Mini Nora** (native) | `assets/nora-canonical-self.png`, `assets/nora-character-reference-sheet.png` |
 | small or square slots: favicon, PWA icon, app avatar, notification | **Mini Nora**, cut-out, bare (§7) | `assets/nora-mini-icon.png` |
-| 3D avatar of the native form (VRM, stickers in 3D) | **Mini Nora** rig | `assets/nora-mini-tpose.png` |
-| human-scale 3D, VR/AR, spatial display, mocap, full-body interaction | **Embodied Nora** (interface) | `assets/nora-embodied-tpose.png` |
+| actual 3D modeling of either form | **Adult or Mini Nora**, Meshy reference inputs; no validated mesh | `assets/modeling/bauhinia/v2/`, governed by 08/09 |
+| adult non-3D illustration | **Adult Nora**, 2D anime direction A; no runtime form-routing change | `assets/nora-human-bauhinia-reference.png`, governed by 08 |
 | voice | no visual form | — |
 
 Rules that hold on every surface:
@@ -181,12 +196,16 @@ Rules that hold on every surface:
 - **The mascot is Nora.** Mini Nora is not a chibi version of someone; there is
   no real Nora behind her. Never caption, frame or crop her as "cute version",
   "avatar of", or next to a human "real" one.
-- **The embodied form never appears on an internet surface.** Not as a profile
-  picture, not in a post, not in a generated image. It exists only where a
-  human-scale body is the interface.
-- **The eight core anchors (05) survive every rendering:** proportions, messy
-  high bun, minimal eyes and mouth, blush, grey hoodie, white wired earphones,
-  blue-grey jeans, white sneakers. A render that drops one is off-model.
+- **Human design approval does not change runtime or public avatars.** Their
+  Mini routing remains in force; the 2D Bauhinia appearance is integrated in
+  repository inputs, with live ingest/deployment and measurement separate.
+- **Current Mini anchors supersede 05's historical outfit/medium:** 2.5–3
+  heads tall, option08 eyes, one tiny mouth without a nose marker, cheek blush,
+  Bauhinia clothing and a calm expression. Both forms use scalp volume, a
+  compact high bun of four or five broad clumps, three broad bangs, two
+  thicker face-framing locks and a five-petal clasp. No fine flyaways or hair
+  loops; no bags, earphones, cables or inline remotes on new Bauhinia bases.
+  Adult proportions and almond eye shape remain distinct from Mini's.
 - **Never logo-ise her.** No flat vector mark, no monogram "N" in a circle
   standing in for her face. When a slot is too small for her, use the cut-out
   icon; when it is too small for that, use the wordmark.
@@ -430,23 +449,29 @@ the provider's default blue-black), so person hues keep their contrast.
   (`nora/skills/image-generation/SKILL.md`), which is the operative spec for her
   appearance at runtime. Mini Nora only.
 - **Social profiles:** the avatar and banner in `assets/` are her current
-  public look; a replacement must keep the eight anchors and her calm register.
+  repository 2D Bauhinia inputs following 08/09 and her calm register; external
+  publication is separate.
 - **Stickers and reactions:** Mini Nora, one pose or expression each, on a
   transparent background, expressions minimal (05: never over-acted).
 - **Backgrounds behind her:** soft neutral studio greys or a real, lived-in
   scene. Never a neon, gradient, or "digital" grid backdrop; she exists
   digitally but is not depicted as circuitry.
-- **3D:** the T-poses are rig inputs. Earphones are a separate mesh so the
-  cable does not deform with the arms.
+- **3D:** the [Bauhinia modeling pack](assets/modeling/bauhinia/v2/README.md)
+  separates 2D anime reference sheets from stylized 3D Meshy-input PNGs.
+  Neither is a validated mesh or rig. The Mini front T-pose and turnaround
+  at their stable paths use the new 2D references; hand rotation and projection
+  remain unresolved.
+  The old photoreal embodied T-pose is historical. Human modeling follows 08
+  and still needs consistent modeling views, a model and a rig.
 - **New renders of her** (the public site's art, `site/src/assets/art/`) are
   made from the canonical image and the character sheet, checked by eye
-  against the eight anchors before use, and kept with their brief and prompt
+  against the current production setting before use, and kept with their brief and prompt
   beside them. One that drifts (the site's first wave came back four heads
   tall) is re-rendered, not used.
 - **Her live form on the site** (§6, Presence) is those renders, not a new
   drawing of her: bent a little on a mesh, with her eyes and mouth, the two
   simplest shapes she has, drawn live so they can move. It adds no feature
-  the eight anchors do not have and removes none.
+  the current production setting does not have and removes none.
 - **A colour that continues a photograph** (the backdrop behind a render, as
   on the site's character plate) is sampled from that image, not taken from
   the tokens: it has to match the picture, not the theme. It is the one place
@@ -468,7 +493,8 @@ the provider's default blue-black), so person hues keep their contrast.
 - **Don't** add blobs, aurora, spinning or glowing borders, gradient text, or
   any perpetual decorative motion.
 - **Don't** use uppercase wide-tracked labels or black weights.
-- **Don't** put the embodied form on an internet surface, or reduce Mini Nora
+- **Don't** replace runtime self-images or public avatars with the human
+  anchor before separate implementation and measurement, or reduce Mini Nora
   to a flat logo.
 - **Don't** nest cards.
 

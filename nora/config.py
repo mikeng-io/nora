@@ -1107,6 +1107,26 @@ class OnlineConfig(BaseModel):
     timeout_seconds: float = Field(default=8.0, gt=0)
 
 
+class MessageReadingsConfig(BaseModel):
+    """Write-only Record perception; independent of the memory index read flag."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    enabled: bool = False
+    # Same gateway and credentials as [llm]; never inherit its tag/reasoning lane.
+    model: str = "ollamacloud/deepseek-v4.1-flash"
+    batch_size: int = Field(default=20, ge=1, le=100)
+    context_size: int = Field(default=20, ge=1, le=100)
+    settle_seconds: float = Field(default=2, ge=0, le=60)
+    timeout_seconds: float = Field(default=90, gt=0, le=300)
+    max_tokens: int = Field(default=6000, ge=256, le=32000)
+
+    @model_validator(mode="after")
+    def _reading_model_is_flash(self) -> MessageReadingsConfig:
+        if self.enabled and not re.fullmatch(r"[^/]+/deepseek-v4\.1-flash", self.model):
+            raise ValueError("message_readings requires a configured DeepSeek V4.1 Flash route")
+        return self
+
+
 class MemoryIndexConfig(BaseModel):
     """The memory index. The index is written by every store's own write whatever this
     says; `drain_seconds` is how often the nora process re-projects what those writes
@@ -2574,14 +2594,14 @@ class CultureConfig(BaseModel):
     batch_limit: int = Field(default=300, ge=1)
 
 
-class PersonaConfig(BaseModel):
-    """`[persona]`: the Persona sessions, in shadow (design/unified-memory/45 §4,
+class ProfileConfig(BaseModel):
+    """`[profile]`: the Profile sessions, in shadow (design/unified-memory/45 §4,
     00 «Sequence» step 6). One Dreamer session per (unit, listed person), woken
     like the person's Character session (`[culture] person_wake_batch` and
     `stale_seconds`) and at once by a `told` line a turn wrote about them,
-    writing typed lines through `persona_write`.
+    writing typed lines through `profile_write`.
 
-    **Off by default.** On, the sessions write `persona_line` and nothing reads
+    **Off by default.** On, the sessions write `profile_line` and nothing reads
     it: no prompt changes until the switch (step 8). The first session of each
     person is the backfill (35 §4). Needs `[dreamer] enabled` and `[culture]
     enabled` (it reads the Character head and the room cultures).
@@ -2591,8 +2611,8 @@ class PersonaConfig(BaseModel):
 
     enabled: bool = False
 
-    #: THE SWITCH (45 §5, 00 «Sequence» step 8). On, prompts read the Persona
-    #: accounts through `read_persona` and render `<persona>` blocks INSTEAD of
+    #: THE SWITCH (45 §5, 00 «Sequence» step 8). On, prompts read the Profile
+    #: accounts through `read_profile` and render `<profile>` blocks INSTEAD of
     #: `<peer_card>`, `<peer_history>`, `<people_in_window>`, `<culture>`,
     #: `<unit_culture>`, `<character>` and `<self>`. Off — the default — is the
     #: shadow: the sessions keep writing and every prompt renders the Honcho and
@@ -3851,11 +3871,26 @@ class ToolsConfig(BaseModel):
     mcp: dict[str, McpMountConfig] = Field(default_factory=dict)
 
 
+class ContentChecksConfig(BaseModel):
+    """Optional content/disclosure filters; credentials and doctrine stay guarded."""
+
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool = False
+
+
 class Config(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    @model_validator(mode="before")
+    @classmethod
+    def reject_retired_profile_section(cls, data: object) -> object:
+        if isinstance(data, dict) and "persona" in data:
+            raise ValueError("[persona] has been renamed to [profile]; rename the section")
+        return data
+
     # Optional and defaulted — see `AgentConfig`; the default is today's identity.
     agent: AgentConfig = AgentConfig()
+    content_checks: ContentChecksConfig = ContentChecksConfig()
     platforms: PlatformsConfig
     llm: LLMConfig
     memory: MemoryConfig
@@ -3878,6 +3913,7 @@ class Config(BaseModel):
     analytics: AnalyticsConfig = AnalyticsConfig()
     # Optional and defaulted — see `MemoryIndexConfig`.
     memory_index: MemoryIndexConfig = MemoryIndexConfig()
+    message_readings: MessageReadingsConfig = MessageReadingsConfig()
     # Optional and defaulted — see `SearchConfig`. Off (inert) unless an operator
     # turns it on AND a Tavily key is present (`api_key_env`, DEC-8/DEC-73); a
     # config.toml without a `[search]` section keeps loading.
@@ -3917,7 +3953,7 @@ class Config(BaseModel):
     culture: CultureConfig = CultureConfig()
     lessons: LessonsConfig = LessonsConfig()
     # Ships INERT (`enabled = false`): off, composition builds no adaptor.
-    persona: PersonaConfig = PersonaConfig()
+    profile: ProfileConfig = ProfileConfig()
     # Optional and defaulted — see `StandingConfig`. Ships INERT
     # (`enabled = false`); off, composition builds no `debrief.Wiring`, the
     # debrief stage returns without awaiting anything, and `<standing>` never

@@ -1,0 +1,2741 @@
+{
+  "version": 1,
+  "current_mini_design": "bauhinia-2d-production-approved-2026-10-26",
+  "assets": [
+    {
+      "id": "app.public.favicon",
+      "path": "app/public/favicon.ico",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-mini-icon.png"
+      ],
+      "recipe": "app-icons",
+      "consumers": [
+        "app/public/offline.html (standalone app URL /favicon.ico; deployed shared host uses site favicon)",
+        "app/public/sw.js (standalone app URL /favicon.ico; deployed shared host uses site favicon)"
+      ],
+      "provenance": "Standalone app fallback icon; the deployed shared hostname serves /favicon.ico from site/public/favicon.ico. Existing app icon processor; no publication.",
+      "unchanged_reason": null,
+      "sha256": "9a9d029ec7860fedca31a2911ecc1f939b444408c39df146d81ba224849688f7",
+      "size": [
+        48,
+        48
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "app.public.icons.apple-touch-icon",
+      "path": "app/public/icons/apple-touch-icon.png",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-mini-icon.png"
+      ],
+      "recipe": "app-icons",
+      "consumers": [
+        "app/public/sw.js (URL /icons/apple-touch-icon.png)",
+        "app/src/app/[locale]/layout.tsx (URL /icons/apple-touch-icon.png)"
+      ],
+      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "unchanged_reason": null,
+      "sha256": "3e41cb1ffefc6f4f936eeb46ff9df28ea893bad743831e2425e8d1950396f51b",
+      "size": [
+        180,
+        180
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "app.public.icons.icon-192",
+      "path": "app/public/icons/icon-192.png",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-mini-icon.png"
+      ],
+      "recipe": "app-icons",
+      "consumers": [
+        "app/public/manifest.webmanifest (URL /icons/icon-192.png)",
+        "app/public/offline.html (URL /icons/icon-192.png)",
+        "app/public/sw.js (URL /icons/icon-192.png)",
+        "app/src/app/[locale]/layout.tsx (URL /icons/icon-192.png)"
+      ],
+      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "unchanged_reason": null,
+      "sha256": "05ac4950b9c1e8902ff306451ecefeef0b2f37a8f030ae88b412a25fd9081e50",
+      "size": [
+        192,
+        192
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "app.public.icons.icon-512",
+      "path": "app/public/icons/icon-512.png",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-mini-icon.png"
+      ],
+      "recipe": "app-icons",
+      "consumers": [
+        "app/public/manifest.webmanifest (URL /icons/icon-512.png)",
+        "app/public/offline.html (URL /icons/icon-512.png)",
+        "app/public/sw.js (URL /icons/icon-512.png)",
+        "app/src/app/[locale]/layout.tsx (URL /icons/icon-512.png)"
+      ],
+      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "unchanged_reason": null,
+      "sha256": "77b5410b2bf0f3ec09aae7e418bdefb2d7c62c77cf062f9741f2747bcf0595a2",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "app.public.icons.icon-maskable-512",
+      "path": "app/public/icons/icon-maskable-512.png",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-mini-icon.png"
+      ],
+      "recipe": "app-icons",
+      "consumers": [
+        "app/public/manifest.webmanifest (URL /icons/icon-maskable-512.png)",
+        "app/public/sw.js (URL /icons/icon-maskable-512.png)"
+      ],
+      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "unchanged_reason": null,
+      "sha256": "84477686cba84d316df1bbad0ae82aa6226cc3bccd14cbdb26b327169370c4ee",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "app.public.screenshots.today-narrow",
+      "path": "app/public/screenshots/today-narrow.webp",
+      "form": "ui",
+      "role": "screenshot",
+      "status": "active",
+      "eyes": "mini08-ui",
+      "parents": [
+        "app/src/assets/art/nora-mini-icon.webp"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "app/public/manifest.webmanifest (URL /screenshots/today-narrow.webp)"
+      ],
+      "provenance": "2026-10-26 mock-only PWA recapture after 2D Bauhinia icon integration: app/README.md workflow, invented Miles account, local mock API, Chromium en-HK/light/reduced-motion. Narrow 390x844 at 2x; wide 1440x900 at 1x. Font/image decoding completed; no page errors or broken images. No real personal data.",
+      "unchanged_reason": null,
+      "sha256": "556544b3829b2ab332d9c4b079e951c4b96e640a95d97dea3a7205764525d125",
+      "visual_review": "Captured viewports inspected locally; synthetic data only, not live deployment proof.",
+      "size": [
+        780,
+        1688
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "app.public.screenshots.today-wide",
+      "path": "app/public/screenshots/today-wide.webp",
+      "form": "ui",
+      "role": "screenshot",
+      "status": "active",
+      "eyes": "mini08-ui",
+      "parents": [
+        "app/src/assets/art/nora-mini-icon.webp"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "app/public/manifest.webmanifest (URL /screenshots/today-wide.webp)"
+      ],
+      "provenance": "2026-10-26 mock-only PWA recapture after 2D Bauhinia icon integration: app/README.md workflow, invented Miles account, local mock API, Chromium en-HK/light/reduced-motion. Narrow 390x844 at 2x; wide 1440x900 at 1x. Font/image decoding completed; no page errors or broken images. No real personal data.",
+      "unchanged_reason": null,
+      "sha256": "385e8a511fd0402ae036987d735cffe623edf0ffb0e7ef7075f05ed14f93aa2d",
+      "visual_review": "Captured viewports inspected locally; synthetic data only, not live deployment proof.",
+      "size": [
+        1440,
+        900
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "app.src.assets.art.group-chat",
+      "path": "app/src/assets/art/group-chat.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "site/src/assets/art/group-chat.webp"
+      ],
+      "recipe": "copy",
+      "consumers": [
+        "app/src/components/nora/art.ts (direct import)",
+        "app/src/components/ui/states.tsx (art[artName], registry key groupChat)"
+      ],
+      "provenance": "Deterministic app export from declared master.",
+      "unchanged_reason": null,
+      "sha256": "859c3b7ad37a86236cbb253bf1a6dcf6f5f2288e58c5b7a7121931a8df0c0a53",
+      "size": [
+        996,
+        1578
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "app.src.assets.art.lost",
+      "path": "app/src/assets/art/lost.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "site/src/assets/art/lost.webp"
+      ],
+      "recipe": "copy",
+      "consumers": [
+        "app/src/components/nora/art.ts (direct import)",
+        "app/src/components/ui/states.tsx (art[artName], registry key lost)"
+      ],
+      "provenance": "Deterministic app export from declared master.",
+      "unchanged_reason": null,
+      "sha256": "90e00d7bea0b236eb24a3526a1bca43594815a867d46ed92a5a722770a29e835",
+      "size": [
+        963,
+        1633
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "app.src.assets.art.night-portrait",
+      "path": "app/src/assets/art/night-portrait.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "site/src/assets/art/night-portrait.webp"
+      ],
+      "recipe": "copy",
+      "consumers": [
+        "app/src/app/[locale]/(portal)/nora/nora-view.tsx (art.nightPortrait via registry)",
+        "app/src/app/[locale]/login/page.tsx (art.nightPortrait via registry)",
+        "app/src/components/nora/art.ts (direct import)",
+        "app/src/components/ui/states.tsx (art[artName], registry key nightPortrait)"
+      ],
+      "provenance": "Deterministic app export from declared master.",
+      "unchanged_reason": null,
+      "sha256": "e2f6f27f5b8e952dd4f6f4eef960844c7aa096fc2d855119606083f8b7caa7ee",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "app.src.assets.art.nora-canonical-self",
+      "path": "app/src/assets/art/nora-canonical-self.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "webp",
+      "consumers": [
+        "app/src/app/[locale]/(portal)/nora/nora-view.tsx (art.canonical via registry)",
+        "app/src/app/[locale]/login/page.tsx (art.canonical via registry)",
+        "app/src/components/nora/art.ts (direct import)",
+        "app/src/components/ui/states.tsx (art[artName], registry key canonical)"
+      ],
+      "provenance": "Deterministic app export from declared master.",
+      "unchanged_reason": null,
+      "sha256": "055535539f2007131ce7924797060f238d7cb5004517b77baba10d3fa2bfa5d0",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "app.src.assets.art.nora-mini-icon",
+      "path": "app/src/assets/art/nora-mini-icon.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-mini-icon.png"
+      ],
+      "recipe": "app-icon-webp",
+      "consumers": [
+        "app/src/components/nora/art.ts (direct import)",
+        "app/src/components/ui/avatar.tsx (art.icon via registry)",
+        "app/src/components/ui/states.tsx (art[artName], registry key icon)"
+      ],
+      "provenance": "Deterministic app export from declared master.",
+      "unchanged_reason": null,
+      "sha256": "c76e3f49533ba6ba2df2c926c69f61f75278811c7eff3a3eccc2e9fb26b06348",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "app.src.assets.art.notebook",
+      "path": "app/src/assets/art/notebook.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-notebook.webp"
+      ],
+      "recipe": "copy",
+      "consumers": [
+        "app/src/components/nora/art.ts (direct import)",
+        "app/src/components/ui/states.tsx (art[artName], registry key notebook)"
+      ],
+      "provenance": "Deterministic app export from declared master.",
+      "unchanged_reason": null,
+      "sha256": "03aa851177395ba2aab88e1490618331221518a1e2e5747a3ca3ced7a312ff08",
+      "size": [
+        984,
+        1599
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "app.src.assets.art.quiet",
+      "path": "app/src/assets/art/quiet.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "closed",
+      "parents": [
+        "site/src/assets/art/quiet.webp"
+      ],
+      "recipe": "copy",
+      "consumers": [
+        "app/src/components/nora/art.ts (direct import)",
+        "app/src/components/ui/states.tsx (art[artName], registry key quiet)"
+      ],
+      "provenance": "Deterministic app export from declared master.",
+      "unchanged_reason": null,
+      "sha256": "a6ea106d99c5f563516902a8b5989e97961652ee7a70ecc6d0aa82c8b5568dec",
+      "size": [
+        934,
+        1685
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "app.src.assets.art.wave",
+      "path": "app/src/assets/art/wave.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "site/src/assets/art/wave.webp"
+      ],
+      "recipe": "copy",
+      "consumers": [
+        "app/src/app/[locale]/login/page.tsx (art.wave via registry)",
+        "app/src/components/nora/art.ts (direct import)",
+        "app/src/components/ui/states.tsx (art[artName], registry key wave)"
+      ],
+      "provenance": "Deterministic app export from declared master.",
+      "unchanged_reason": null,
+      "sha256": "da07aabf3c5c73f8ae022780974219201933b87be754272a69d3685f4ffc653d",
+      "size": [
+        979,
+        1607
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "assets.modeling.bauhinia.v1.adult-style-study",
+      "path": "assets/modeling/bauhinia/v1/adult-style-study.png",
+      "form": "human",
+      "role": "reference",
+      "status": "historical",
+      "eyes": "human-bauhinia",
+      "parents": [
+        "assets/nora-human-bauhinia-reference.png",
+        "assets/modeling/bauhinia/v1/mini-style-study.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v1/README.md (reference link and provenance)"
+      ],
+      "provenance": "2026-10-26, parent built-in imagegen. Prompt intent: Adult anime and stylized 3D style comparison; preserve the authoritative adult face, silhouette and outfit while matching the accepted Mini study treatment. Repository parents record semantic visual authority only, not supplied 2D-to-3D translation lineage; exact retained-original mapping is private. Only caBX removed; all retained chunks, IHDR and compressed IDAT verified byte-identical; originals intact. Stylized 3D appearance is a PNG render, not a mesh.",
+      "unchanged_reason": "Retained v1 reference history with original approval/candidate facts intact; exact PNG bytes preserved. Superseded by v2 simplified-hair references and current 2D Bauhinia production inputs.",
+      "sha256": "02f2e222fcd58c3b4b7e77d90167aad51d06d886a8b7fe44b9582aadac032e7c",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB",
+      "visual_review": "Parent visually inspected silhouette/style matching as adequate reference candidates; final operator aesthetic/sheet acceptance pending. Hands, projection/alignment and small flower/cuff details remain unresolved; no mesh, rig or engineering proof."
+    },
+    {
+      "id": "assets.modeling.bauhinia.v1.human-anime-tpose",
+      "path": "assets/modeling/bauhinia/v1/human-anime-tpose.png",
+      "form": "human",
+      "role": "reference",
+      "status": "historical",
+      "eyes": "human-bauhinia",
+      "parents": [
+        "assets/nora-human-bauhinia-reference.png",
+        "assets/modeling/bauhinia/v1/adult-style-study.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v1/README.md (reference link and provenance)"
+      ],
+      "provenance": "2026-10-26, parent built-in imagegen. Prompt intent: Adult 2D anime front/right/back T-pose layout; preserve the authoritative adult face, silhouette and Bauhinia outfit, without bags or audio accessories. Repository parents record semantic visual authority only, not supplied 2D-to-3D translation lineage; exact retained-original mapping is private. Only caBX removed; all retained chunks, IHDR and compressed IDAT verified byte-identical; originals intact. Stylized 3D appearance is a PNG render, not a mesh.",
+      "unchanged_reason": "Retained v1 reference history with original approval/candidate facts intact; exact PNG bytes preserved. Superseded by v2 simplified-hair references and current 2D Bauhinia production inputs.",
+      "sha256": "328d0204ef51e5ad9abd57958e7af85f453a8f2533e045fbad1bea2816bfa5ea",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB",
+      "visual_review": "Parent visually inspected silhouette/style matching as adequate reference candidates; final operator aesthetic/sheet acceptance pending. Hands, projection/alignment and small flower/cuff details remain unresolved; no mesh, rig or engineering proof."
+    },
+    {
+      "id": "assets.modeling.bauhinia.v1.human-stylized3d-tpose",
+      "path": "assets/modeling/bauhinia/v1/human-stylized3d-tpose.png",
+      "form": "human",
+      "role": "reference",
+      "status": "historical",
+      "eyes": "human-bauhinia",
+      "parents": [
+        "assets/modeling/bauhinia/v1/human-anime-tpose.png",
+        "assets/modeling/bauhinia/v1/adult-style-study.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v1/README.md (reference link and provenance)"
+      ],
+      "provenance": "2026-10-26, parent built-in imagegen. Prompt intent: Translate the adult anime T-pose layout to stylized 3D shading while retaining its 2D geometry, view order and adult study appearance. Repository parents record the supplied anime T-pose geometry parent and style authority for this 3D translation; exact retained-original mapping is private. Only caBX removed; all retained chunks, IHDR and compressed IDAT verified byte-identical; originals intact. Stylized 3D appearance is a PNG render, not a mesh.",
+      "unchanged_reason": "Retained v1 reference history with original approval/candidate facts intact; exact PNG bytes preserved. Superseded by v2 simplified-hair references and current 2D Bauhinia production inputs.",
+      "sha256": "a4bee5687cbae7a115635ada805424cc40ca54fdf0833d14c4be0b0442026da6",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB",
+      "visual_review": "Parent visually inspected silhouette/style matching as adequate reference candidates; final operator aesthetic/sheet acceptance pending. Hands, projection/alignment and small flower/cuff details remain unresolved; no mesh, rig or engineering proof."
+    },
+    {
+      "id": "assets.modeling.bauhinia.v1.mini-anime-tpose",
+      "path": "assets/modeling/bauhinia/v1/mini-anime-tpose.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "historical",
+      "eyes": "mini08",
+      "parents": [
+        "assets/modeling/bauhinia/v1/mini-style-study.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v1/README.md (reference link and provenance)"
+      ],
+      "provenance": "2026-10-26, parent built-in imagegen. Prompt intent: Mini 2D anime front/right/back T-pose layout; preserve the approved outfit direction, Mini proportions and face, without bags or audio accessories. Repository parents record semantic visual authority only, not supplied 2D-to-3D translation lineage; exact retained-original mapping is private. Only caBX removed; all retained chunks, IHDR and compressed IDAT verified byte-identical; originals intact. Stylized 3D appearance is a PNG render, not a mesh.",
+      "unchanged_reason": "Retained v1 reference history with original approval/candidate facts intact; exact PNG bytes preserved. Superseded by v2 simplified-hair references and current 2D Bauhinia production inputs.",
+      "sha256": "f3e95840932ee31933d6b642dd3f319a9ea9babfa4f13da0c12eba700ef93741",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB",
+      "visual_review": "Parent visually inspected silhouette/style matching as adequate reference candidates; final operator aesthetic/sheet acceptance pending. Hands, projection/alignment and small flower/cuff details remain unresolved; no mesh, rig or engineering proof."
+    },
+    {
+      "id": "assets.modeling.bauhinia.v1.mini-style-study",
+      "path": "assets/modeling/bauhinia/v1/mini-style-study.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "historical",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-human-bauhinia-reference.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v1/README.md (reference link and provenance)"
+      ],
+      "provenance": "2026-10-26, parent built-in imagegen. Prompt intent: Mini anime and stylized 3D outfit study; adapt the adult Bauhinia clothing to Mini proportions and option08 face language. Repository parents record semantic visual authority only, not supplied 2D-to-3D translation lineage; exact retained-original mapping is private. Only caBX removed; all retained chunks, IHDR and compressed IDAT verified byte-identical; originals intact. Stylized 3D appearance is a PNG render, not a mesh.",
+      "unchanged_reason": "Retained v1 reference history with original approval/candidate facts intact; exact PNG bytes preserved. Superseded by v2 simplified-hair references and current 2D Bauhinia production inputs.",
+      "sha256": "18525c092b9a5da319ba2e0e9ea588f5038cbc860833bae2d0963d8f2112743e",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB",
+      "visual_review": "Operator accepted Mini outfit direction; final detail/sheet acceptance pending. Hands, projection/alignment and small flower/cuff details remain unresolved; no mesh, rig or engineering proof."
+    },
+    {
+      "id": "assets.modeling.bauhinia.v1.mini-stylized3d-tpose",
+      "path": "assets/modeling/bauhinia/v1/mini-stylized3d-tpose.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "historical",
+      "eyes": "mini08",
+      "parents": [
+        "assets/modeling/bauhinia/v1/mini-anime-tpose.png",
+        "assets/modeling/bauhinia/v1/mini-style-study.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v1/README.md (reference link and provenance)"
+      ],
+      "provenance": "2026-10-26, parent built-in imagegen. Prompt intent: Translate the Mini anime T-pose layout to stylized 3D shading while retaining its 2D geometry, view order and Mini study appearance. Repository parents record the supplied anime T-pose geometry parent and style authority for this 3D translation; exact retained-original mapping is private. Only caBX removed; all retained chunks, IHDR and compressed IDAT verified byte-identical; originals intact. Stylized 3D appearance is a PNG render, not a mesh.",
+      "unchanged_reason": "Retained v1 reference history with original approval/candidate facts intact; exact PNG bytes preserved. Superseded by v2 simplified-hair references and current 2D Bauhinia production inputs.",
+      "sha256": "c8e50e8d20540999a8eac478fc8614f19c5c02161744026c4131da3f03a35790",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB",
+      "visual_review": "Parent visually inspected silhouette/style matching as adequate reference candidates; final operator aesthetic/sheet acceptance pending. Hands, projection/alignment and small flower/cuff details remain unresolved; no mesh, rig or engineering proof."
+    },
+    {
+      "id": "assets.modeling.bauhinia.v1.shared-face-details",
+      "path": "assets/modeling/bauhinia/v1/shared-face-details.png",
+      "form": "shared",
+      "role": "reference",
+      "status": "historical",
+      "eyes": "human-bauhinia+mini08",
+      "parents": [
+        "assets/nora-human-bauhinia-reference.png",
+        "assets/modeling/bauhinia/v1/adult-style-study.png",
+        "assets/modeling/bauhinia/v1/mini-style-study.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v1/README.md (reference link and provenance)"
+      ],
+      "provenance": "2026-10-26, parent built-in imagegen. Prompt intent: Compare adult and Mini faces in both treatments, neutral/half-lid/closed eyes, and Bauhinia clasp, frog closures, cuff and coat-hem details; keep distinct eye shapes and no Mini nose marker. Repository parents record semantic visual authority only, not supplied 2D-to-3D translation lineage; exact retained-original mapping is private. Only caBX removed; all retained chunks, IHDR and compressed IDAT verified byte-identical; originals intact. Stylized 3D appearance is a PNG render, not a mesh.",
+      "unchanged_reason": "Retained v1 reference history with original approval/candidate facts intact; exact PNG bytes preserved. Superseded by v2 simplified-hair references and current 2D Bauhinia production inputs.",
+      "sha256": "6e6f34f0a890a7fb0ca51e75bf91fc4291bfc9850e4272094e954eda02fe331c",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB",
+      "visual_review": "Parent visually inspected silhouette/style matching as adequate reference candidates; final operator aesthetic/sheet acceptance pending. Hands, projection/alignment and small flower/cuff details remain unresolved; no mesh, rig or engineering proof."
+    },
+    {
+      "id": "assets.nora-canonical-self",
+      "path": "assets/nora-canonical-self.png",
+      "form": "mini",
+      "role": "canonical",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "DESIGN.md (explicit path reference)",
+        "assets/nora-mini-icon.md (explicit path reference)",
+        "design/self-reference/00-overview.md (explicit path reference)",
+        "design/self-reference/01-appearance-doctrine.md (explicit path reference)",
+        "design/self-reference/02-canonical-assets.md (explicit path reference)",
+        "design/self-reference/04-tests-and-files.md (explicit path reference)",
+        "design/self-reference/06-implementation-plan.md (explicit path reference)",
+        "design/self-reference/_index.yaml (explicit path reference)",
+        "design/video-generation/00-design.md (explicit path reference)",
+        "docs-site/src/pages/index.astro (direct import)",
+        "docs-site/src/pages/index.astro (explicit path reference)",
+        "scripts/ingest_self_asset.py (explicit path reference)",
+        "showreel/README.md (explicit path reference)",
+        "showreel/pipeline/gen_art.sh (explicit path reference)",
+        "showreel/pipeline/process_art.py (BORROWED input)",
+        "showreel/pipeline/process_art.py (explicit path reference)",
+        "site/src/assets/art.ts (direct import)",
+        "site/src/assets/art.ts (explicit path reference)",
+        "site/src/assets/art/README.md (explicit path reference)",
+        "site/src/assets/rig/README.md (explicit path reference)",
+        "site/src/components/Form.astro (art.canonical via registry)",
+        "site/src/components/Hero.astro (art.canonical via registry)"
+      ],
+      "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
+      "unchanged_reason": null,
+      "sha256": "c2a5c3549e6053707e53077b4774d46f4be93f39b6be74647b0f6b4e8227d989",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
+    },
+    {
+      "id": "assets.nora-character-reference-sheet",
+      "path": "assets/nora-character-reference-sheet.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "DESIGN.md (explicit path reference)",
+        "assets/nora-mini-icon.md (explicit path reference)",
+        "design/self-reference/01-appearance-doctrine.md (explicit path reference)",
+        "design/self-reference/02-canonical-assets.md (explicit path reference)",
+        "design/self-reference/02-canonical-assets.md (reference link)",
+        "design/self-reference/04-tests-and-files.md (explicit path reference)",
+        "design/self-reference/08-bauhinia-human-form.md (explicit path reference)",
+        "design/self-reference/09-mini08-balanced.md (reference link)",
+        "showreel/README.md (explicit path reference)",
+        "showreel/pipeline/gen_art.sh (explicit path reference)",
+        "site/src/assets/art.ts (direct import)",
+        "site/src/assets/art.ts (explicit path reference)",
+        "site/src/assets/art/README.md (explicit path reference)",
+        "site/src/components/Form.astro (art.sheet via registry)"
+      ],
+      "provenance": "2026-10-26, supplied 2D anime Mini Bauhinia source. Prompt intent: canonical Mini identity, option08 eyes, compact broad hair and five-petal clasp; clean 2D profile/reference composition, no bags or audio accessories. Parent viewed all five final sources PASS for style, crop and bun visibility; identifying PNG metadata omitted without re-encoding image data. Original files retained privately.",
+      "unchanged_reason": null,
+      "sha256": "dd33d8b5d52f080f92ca4386c0a7f4aee8d3c5991bd6c0c2572eae766a4bf14a",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB",
+      "visual_review": "Parent viewed final source artwork PASS; integrated app/site and runtime acceptance separate."
+    },
+    {
+      "id": "assets.nora-embodied-tpose",
+      "path": "assets/nora-embodied-tpose.png",
+      "form": "human",
+      "role": "reference",
+      "status": "historical",
+      "eyes": "historical",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "design/self-reference/02-canonical-assets.md (explicit path reference)",
+        "design/self-reference/07-native-and-embodied-form.md (explicit path reference)"
+      ],
+      "provenance": "September reference; exact original generator unknown.",
+      "unchanged_reason": "September photoreal human reference superseded by Bauhinia; retained as history.",
+      "sha256": "a8a758a35d5f3bfcabbb6c1f0d52c5295dddb3b48bcf41726b2860b1ad846223",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.nora-human-bauhinia-reference",
+      "path": "assets/nora-human-bauhinia-reference.png",
+      "form": "human",
+      "role": "reference",
+      "status": "approved-reference",
+      "eyes": "human-bauhinia",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "DESIGN.md (explicit path reference)",
+        "design/self-reference/02-canonical-assets.md (explicit path reference)",
+        "design/self-reference/08-bauhinia-human-form.md (explicit path reference)",
+        "design/self-reference/08-bauhinia-human-form.md (reference link)",
+        "assets/modeling/bauhinia/v1/README.md (adult anchor reference link)"
+      ],
+      "provenance": "2026-10-25 approval; design/self-reference/08-bauhinia-human-form.md.",
+      "unchanged_reason": "Approved human form is outside Mini eye refresh.",
+      "sha256": "a8ff83404677989d46985f97b0de24f546bf45321389d480f813cc48841c5dca",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.nora-mini-icon",
+      "path": "assets/nora-mini-icon.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "DESIGN.md (explicit path reference)",
+        "README.md (explicit path reference)",
+        "app/scripts/make-icons.py (explicit path reference)",
+        "assets/nora-mini-icon.md (explicit path reference)",
+        "design/self-reference/02-canonical-assets.md (explicit path reference)",
+        "docs-site/src/components/SiteTitle.astro (direct import)",
+        "docs-site/src/components/SiteTitle.astro (explicit path reference)",
+        "showreel/pipeline/process_art.py (BORROWED input)",
+        "showreel/pipeline/process_art.py (explicit path reference)",
+        "site/scripts/make_images.py (explicit path reference)",
+        "site/src/assets/art.ts (direct import)",
+        "site/src/assets/art.ts (explicit path reference)",
+        "site/src/components/NoraAvatar.astro (art.icon via registry)",
+        "site/src/components/NoraMark.astro (art.icon via registry)"
+      ],
+      "provenance": "2026-10-26, supplied 2D anime Mini Bauhinia source. Prompt intent: canonical Mini identity, option08 eyes, compact broad hair and five-petal clasp; clean 2D profile/reference composition, no bags or audio accessories. Parent viewed all five final sources PASS for style, crop and bun visibility; identifying PNG metadata omitted without re-encoding image data. Original files retained privately.",
+      "unchanged_reason": null,
+      "sha256": "e0115c0ff53e003356a6f0cdb198e912004badc149cacbd970c792035221730d",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGBA",
+      "visual_review": "Parent viewed final source artwork PASS; integrated app/site and runtime acceptance separate."
+    },
+    {
+      "id": "assets.nora-mini-tpose",
+      "path": "assets/nora-mini-tpose.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "DESIGN.md (explicit path reference)",
+        "DESIGN.md (reference link)",
+        "design/self-reference/02-canonical-assets.md (explicit path reference)",
+        "design/self-reference/02-canonical-assets.md (reference link)",
+        "design/self-reference/08-bauhinia-human-form.md (explicit path reference)",
+        "design/self-reference/09-mini08-balanced.md (reference link)",
+        "site/src/assets/art.ts (direct import)",
+        "site/src/assets/art.ts (explicit path reference)",
+        "site/src/components/Form.astro (art.tpose via registry)"
+      ],
+      "provenance": "2026-10-26, supplied 2D anime Mini Bauhinia source. Prompt intent: canonical Mini identity, option08 eyes, compact broad hair and five-petal clasp; clean 2D profile/reference composition, no bags or audio accessories. Parent viewed all five final sources PASS for style, crop and bun visibility; identifying PNG metadata omitted without re-encoding image data. Original files retained privately.",
+      "unchanged_reason": null,
+      "sha256": "db88b4744c56dfdc4655185b811c893ee2dde9118b4d252eb1c65574b60e3b4b",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB",
+      "visual_review": "Parent viewed final source artwork PASS; integrated app/site and runtime acceptance separate. Front arms horizontal and hands readable, but palms face viewer unlike edge-on modeling views; hand rotation/projection unresolved, not calibrated orthographic matching."
+    },
+    {
+      "id": "assets.nora-mini-turnaround",
+      "path": "assets/nora-mini-turnaround.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "DESIGN.md (explicit path reference)",
+        "DESIGN.md (reference link)",
+        "design/self-reference/02-canonical-assets.md (explicit path reference)",
+        "design/self-reference/02-canonical-assets.md (reference link)",
+        "design/self-reference/07-native-and-embodied-form.md (explicit path reference)",
+        "design/self-reference/07-native-and-embodied-form.md (reference link)",
+        "design/self-reference/09-mini08-balanced.md (reference link)"
+      ],
+      "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
+      "unchanged_reason": null,
+      "sha256": "15763ec3116dc2e241e48f333f92df388598bfda18ed0105b700585344c56cbd",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
+    },
+    {
+      "id": "assets.nora-notebook",
+      "path": "assets/nora-notebook.webp",
+      "form": "mini",
+      "role": "shared-master",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "showreel/README.md (explicit path reference)",
+        "showreel/pipeline/process_art.py (BORROWED input)",
+        "showreel/pipeline/process_art.py (explicit path reference)",
+        "site/src/assets/art/README.md (explicit path reference)"
+      ],
+      "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
+      "unchanged_reason": null,
+      "sha256": "03aa851177395ba2aab88e1490618331221518a1e2e5747a3ca3ced7a312ff08",
+      "size": [
+        984,
+        1599
+      ],
+      "mode": "RGBA",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
+    },
+    {
+      "id": "assets.nora-social-avatar",
+      "path": "assets/nora-social-avatar.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "design/self-reference/02-canonical-assets.md (explicit path reference)"
+      ],
+      "provenance": "2026-10-26, supplied 2D anime Mini Bauhinia source. Prompt intent: canonical Mini identity, option08 eyes, compact broad hair and five-petal clasp; clean 2D profile/reference composition, no bags or audio accessories. Parent viewed all five final sources PASS for style, crop and bun visibility; identifying PNG metadata omitted without re-encoding image data. Original files retained privately.",
+      "unchanged_reason": "Operator accepted the existing simple light-background avatar and requested no avatar redesign; bytes preserved during the Hong Kong banner refresh.",
+      "sha256": "f1c37f96d63e14f4c7561a9902790453655c020ef56cd4fac4ed3f2de0bc97db",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB",
+      "visual_review": "Operator accepted the existing avatar. Keep the simple light background so the face, bun and Bauhinia clasp remain legible at small profile sizes. External platform publication is not performed."
+    },
+    {
+      "id": "assets.nora-social-banner",
+      "path": "assets/nora-social-banner.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/modeling/bauhinia/v1/mini-style-study.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "README.md (explicit path reference)",
+        "design/self-reference/02-canonical-assets.md (explicit path reference)"
+      ],
+      "provenance": "2026-10-26, corrected detailed 2D Hong Kong social banner imported at operator request. The declared parent records style authority: the LEFT 2D anime Mini study, excluding its 3D treatment; it is not a claim about exact generation inputs. Layered brown bun and copper Bauhinia clasp, ivory blouse, navy waistcoat and patterned grey jade-lined coat; cheek resting on one hand at a jade window grille, warm room, tong-lau neighbourhood, harbour dusk and a Bauhinia pot. Identifying ancillary PNG metadata removed without re-encoding image data; decoded pixels unchanged. Generated original retained privately.",
+      "unchanged_reason": null,
+      "sha256": "b75671c737ff32fd475747c90c1606088973f480dfbd267d61fcb74407219c24",
+      "size": [
+        2055,
+        765
+      ],
+      "mode": "RGB",
+      "visual_review": "Parent viewed the corrected banner; operator requested repository integration. Prepared social artwork only; external platform publication not performed."
+    },
+    {
+      "id": "showreel.art.raw.hotpot-photo",
+      "path": "showreel/art/raw/hotpot-photo.png",
+      "form": "noncharacter",
+      "role": "reference",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
+      ],
+      "provenance": "Original prompt: showreel/art/prompts/hotpot-photo.txt; adjacent JSONL records September generation only, not current refresh.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "8805ed3533fdebcce0d76c595367af21cfe1fa686732f5379426fd2f87c93cc1",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "showreel.art.raw.macro-earbud-tall",
+      "path": "showreel/art/raw/macro-earbud-tall.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
+      ],
+      "provenance": "2026-10-26, supplied final 2D anime Bauhinia showreel source. Parent personally viewed all eight final originals PASS: bare ear/clasp listening detail, quiet closed eyes, matching master outfit and broad-clump hair, no extra nose marker; four scoped RGBA cutouts. Identifying ancillary PNG metadata removed without re-encoding image data; originals and exact source mapping retained privately.",
+      "unchanged_reason": null,
+      "sha256": "acb7d61751e51f54fdc8c9d6abf706a6fe4b626e8a4aca737b804d4a76131637",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB",
+      "visual_review": "Parent viewed final source artwork PASS; integrated browser/composition acceptance pending."
+    },
+    {
+      "id": "showreel.art.raw.macro-earbud-wide",
+      "path": "showreel/art/raw/macro-earbud-wide.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
+      ],
+      "provenance": "2026-10-26, supplied final 2D anime Bauhinia showreel source. Parent personally viewed all eight final originals PASS: bare ear/clasp listening detail, quiet closed eyes, matching master outfit and broad-clump hair, no extra nose marker; four scoped RGBA cutouts. Identifying ancillary PNG metadata removed without re-encoding image data; originals and exact source mapping retained privately.",
+      "unchanged_reason": null,
+      "sha256": "5c3e564389d648b3690d029c356140b656d8dd6c643c80f6e728b52c10f23553",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB",
+      "visual_review": "Parent viewed final source artwork PASS; integrated browser/composition acceptance pending."
+    },
+    {
+      "id": "showreel.art.raw.music",
+      "path": "showreel/art/raw/music.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "closed",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
+      ],
+      "provenance": "2026-10-26, supplied final 2D anime Bauhinia showreel source. Parent personally viewed all eight final originals PASS: bare ear/clasp listening detail, quiet closed eyes, matching master outfit and broad-clump hair, no extra nose marker; four scoped RGBA cutouts. Identifying ancillary PNG metadata removed without re-encoding image data; originals and exact source mapping retained privately.",
+      "unchanged_reason": null,
+      "sha256": "613779676992f4066247303ffea90590e2474adb3edb79d6c9f26bd2dff1173c",
+      "size": [
+        1122,
+        1402
+      ],
+      "mode": "RGBA",
+      "visual_review": "Parent viewed final source artwork PASS; integrated browser/composition acceptance pending."
+    },
+    {
+      "id": "showreel.art.raw.quiet-closeup-tall",
+      "path": "showreel/art/raw/quiet-closeup-tall.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "closed",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
+      ],
+      "provenance": "2026-10-26, supplied final 2D anime Bauhinia showreel source. Parent personally viewed all eight final originals PASS: bare ear/clasp listening detail, quiet closed eyes, matching master outfit and broad-clump hair, no extra nose marker; four scoped RGBA cutouts. Identifying ancillary PNG metadata removed without re-encoding image data; originals and exact source mapping retained privately.",
+      "unchanged_reason": null,
+      "sha256": "19e67a40d871c3806710e075935d3f398fa0304a41c6c5de4554f3f7bd9fc40e",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB",
+      "visual_review": "Parent viewed final source artwork PASS; integrated browser/composition acceptance pending."
+    },
+    {
+      "id": "showreel.art.raw.quiet-closeup-wide",
+      "path": "showreel/art/raw/quiet-closeup-wide.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "closed",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
+      ],
+      "provenance": "2026-10-26, supplied final 2D anime Bauhinia showreel source. Parent personally viewed all eight final originals PASS: bare ear/clasp listening detail, quiet closed eyes, matching master outfit and broad-clump hair, no extra nose marker; four scoped RGBA cutouts. Identifying ancillary PNG metadata removed without re-encoding image data; originals and exact source mapping retained privately.",
+      "unchanged_reason": null,
+      "sha256": "d6c9e0485700e4517ae9508b817fd8ca34e651fee9b040c9a4e0d1a28e080a3a",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB",
+      "visual_review": "Parent viewed final source artwork PASS; integrated browser/composition acceptance pending."
+    },
+    {
+      "id": "showreel.art.raw.room-night-tall",
+      "path": "showreel/art/raw/room-night-tall.png",
+      "form": "noncharacter",
+      "role": "reference",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
+      ],
+      "provenance": "Original prompt: showreel/art/prompts/room-night-tall.txt; adjacent JSONL records September generation only, not current refresh.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "a51c603bd609e2074f2a93c54c75a536f45f5826a5758d45a90331541e87cc0c",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "showreel.art.raw.room-night-wide",
+      "path": "showreel/art/raw/room-night-wide.png",
+      "form": "noncharacter",
+      "role": "reference",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
+      ],
+      "provenance": "Original prompt: showreel/art/prompts/room-night-wide.txt; adjacent JSONL records September generation only, not current refresh.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "9596700e43be8a35afcc6916583aac35a51194876cd65e89e0309f4de6372561",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "showreel.art.raw.thinking",
+      "path": "showreel/art/raw/thinking.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
+      ],
+      "provenance": "2026-10-26, supplied final 2D anime Bauhinia showreel source. Parent personally viewed all eight final originals PASS: bare ear/clasp listening detail, quiet closed eyes, matching master outfit and broad-clump hair, no extra nose marker; four scoped RGBA cutouts. Identifying ancillary PNG metadata removed without re-encoding image data; originals and exact source mapping retained privately.",
+      "unchanged_reason": null,
+      "sha256": "937dbb7f51aa265f65f974c5964aa90b631796c6c5d34495b6e9febbb2020aa8",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGBA",
+      "visual_review": "Parent viewed final source artwork PASS; integrated browser/composition acceptance pending."
+    },
+    {
+      "id": "showreel.art.raw.umbrella",
+      "path": "showreel/art/raw/umbrella.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
+      ],
+      "provenance": "2026-10-26, supplied final 2D anime Bauhinia showreel source. Parent personally viewed all eight final originals PASS: bare ear/clasp listening detail, quiet closed eyes, matching master outfit and broad-clump hair, no extra nose marker; four scoped RGBA cutouts. Identifying ancillary PNG metadata removed without re-encoding image data; originals and exact source mapping retained privately.",
+      "unchanged_reason": null,
+      "sha256": "170296835547b763417f980f64b5e56a05e426d09c2f8daf22a55c88bccec471",
+      "size": [
+        1122,
+        1402
+      ],
+      "mode": "RGBA",
+      "visual_review": "Parent viewed final source artwork PASS; integrated browser/composition acceptance pending."
+    },
+    {
+      "id": "showreel.art.raw.walking",
+      "path": "showreel/art/raw/walking.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
+      ],
+      "provenance": "2026-10-26, supplied final 2D anime Bauhinia showreel source. Parent personally viewed all eight final originals PASS: bare ear/clasp listening detail, quiet closed eyes, matching master outfit and broad-clump hair, no extra nose marker; four scoped RGBA cutouts. Identifying ancillary PNG metadata removed without re-encoding image data; originals and exact source mapping retained privately.",
+      "unchanged_reason": null,
+      "sha256": "dc2fa690019f3a9cdb5ef6ca0c99d86dcd69acbcf8d947f39e07cd9df82db193",
+      "size": [
+        1122,
+        1402
+      ],
+      "mode": "RGBA",
+      "visual_review": "Parent viewed final source artwork PASS; integrated browser/composition acceptance pending."
+    },
+    {
+      "id": "showreel.public.art.group-chat",
+      "path": "showreel/public/art/group-chat.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "site/src/assets/art/group-chat.webp"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Thread.tsx (staticFile/Cutout/Plate art/group-chat.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": null,
+      "sha256": "52332d1aeedbe4eb76a3eb158706d3050153184f73a21981d7f8369daaf24305",
+      "size": [
+        996,
+        1578
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "showreel.public.art.hotpot-photo",
+      "path": "showreel/public/art/hotpot-photo.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [
+        "showreel/art/raw/hotpot-photo.png"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Senses.tsx (staticFile/Cutout/Plate art/hotpot-photo.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "33b16059684d19af9629edddae9221dd0023ca8e829d0d66b68244f8bc06571c",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "showreel.public.art.macro-earbud-tall",
+      "path": "showreel/public/art/macro-earbud-tall.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "showreel/art/raw/macro-earbud-tall.png"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Thread.tsx (staticFile/Cutout/Plate art/macro-earbud-tall.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": null,
+      "sha256": "62e32aec622729b74de321b9ecab731914e41c9b0145e901538a1ce8e8424253",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB",
+      "visual_review": "Rebuilt from parent-accepted final 2D source; integrated browser/composition acceptance pending."
+    },
+    {
+      "id": "showreel.public.art.macro-earbud-wide",
+      "path": "showreel/public/art/macro-earbud-wide.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "showreel/art/raw/macro-earbud-wide.png"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Thread.tsx (staticFile/Cutout/Plate art/macro-earbud-wide.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": null,
+      "sha256": "c3b25479a7fa270c9f49892b7fad27b672a88d192e9afae9c6b54b9f2b89ebad",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB",
+      "visual_review": "Rebuilt from parent-accepted final 2D source; integrated browser/composition acceptance pending."
+    },
+    {
+      "id": "showreel.public.art.music",
+      "path": "showreel/public/art/music.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "closed",
+      "parents": [
+        "showreel/art/raw/music.png"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Senses.tsx (staticFile/Cutout/Plate art/music.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": null,
+      "sha256": "4fd9448f6e351ba67b6631a466d5689a8808b2f3f7e020847fb5a9026f0fe407",
+      "size": [
+        760,
+        1402
+      ],
+      "mode": "RGBA",
+      "visual_review": "Rebuilt from parent-accepted final 2D source; integrated browser/composition acceptance pending."
+    },
+    {
+      "id": "showreel.public.art.night-portrait",
+      "path": "showreel/public/art/night-portrait.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "site/src/assets/art/night-portrait.webp"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Quiet.tsx (staticFile/Cutout/Plate art/night-portrait.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": null,
+      "sha256": "e4ef2a727e1152375d9d4260536c82ef6b9c4a1925daf3ccef3f57be95a25e1b",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "showreel.public.art.nora-canonical-self",
+      "path": "showreel/public/art/nora-canonical-self.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": null,
+      "sha256": "bb002a821a46f1a603eb3ed3c0a7180ab0369cd83d022acd837386ec977fb184",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "showreel.public.art.nora-mini-icon",
+      "path": "showreel/public/art/nora-mini-icon.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-mini-icon.png"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Senses.tsx (staticFile/Cutout/Plate art/nora-mini-icon.webp)",
+        "showreel/src/scenes/Thread.tsx (staticFile/Cutout/Plate art/nora-mini-icon.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": null,
+      "sha256": "f2c0a1e1089963f847165b67a0323cf21184ce7cd40bc7bd0c0ce43236c05287",
+      "size": [
+        847,
+        1254
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "showreel.public.art.notebook",
+      "path": "showreel/public/art/notebook.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-notebook.webp"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Memory.tsx (staticFile/Cutout/Plate art/notebook.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": null,
+      "sha256": "74581c2dac0de285206dcdb08fcc91942fd6228fa6a410799787a686a9d96ebb",
+      "size": [
+        984,
+        1599
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "showreel.public.art.quiet-closeup-tall",
+      "path": "showreel/public/art/quiet-closeup-tall.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "closed",
+      "parents": [
+        "showreel/art/raw/quiet-closeup-tall.png"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Quiet.tsx (staticFile/Cutout/Plate art/quiet-closeup-tall.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": null,
+      "sha256": "b30ac23ecc5373f86beb07e6f3f9fbc44bfbe4c8538a9dd7d6c21ea2ab6ff86a",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB",
+      "visual_review": "Rebuilt from parent-accepted final 2D source; integrated browser/composition acceptance pending."
+    },
+    {
+      "id": "showreel.public.art.quiet-closeup-wide",
+      "path": "showreel/public/art/quiet-closeup-wide.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "closed",
+      "parents": [
+        "showreel/art/raw/quiet-closeup-wide.png"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Quiet.tsx (staticFile/Cutout/Plate art/quiet-closeup-wide.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": null,
+      "sha256": "943cf46e0427ece1e135332da68df720cdd35cebf536cb060e67ac85b15b7fa0",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB",
+      "visual_review": "Rebuilt from parent-accepted final 2D source; integrated browser/composition acceptance pending."
+    },
+    {
+      "id": "showreel.public.art.quiet",
+      "path": "showreel/public/art/quiet.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "closed",
+      "parents": [
+        "site/src/assets/art/quiet.webp"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": null,
+      "sha256": "3ac9c076073c8b6b152aea5572dfd9fee6b7745b05d9aaec2efccb70a1ebff8a",
+      "size": [
+        934,
+        1685
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "showreel.public.art.room-night-tall",
+      "path": "showreel/public/art/room-night-tall.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [
+        "showreel/art/raw/room-night-tall.png"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Thread.tsx (staticFile/Cutout/Plate art/room-night-tall.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "71f6024ca94942415ba3efce5e26e43ae3a85c68b41949d1acd5f4d04fcd80cf",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "showreel.public.art.room-night-wide",
+      "path": "showreel/public/art/room-night-wide.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [
+        "showreel/art/raw/room-night-wide.png"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Thread.tsx (staticFile/Cutout/Plate art/room-night-wide.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "aabd243523d13bd01284d422403aeb7e509540584e3e8802a0d8fe651b412329",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "showreel.public.art.thinking",
+      "path": "showreel/public/art/thinking.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "showreel/art/raw/thinking.png"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Thread.tsx (staticFile/Cutout/Plate art/thinking.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": null,
+      "sha256": "3d32c91b3908e72f0cdf1e38eec8fbe3287d8c9846c9c029fe0d2d1708f542a2",
+      "size": [
+        712,
+        1254
+      ],
+      "mode": "RGBA",
+      "visual_review": "Rebuilt from parent-accepted final 2D source; integrated browser/composition acceptance pending."
+    },
+    {
+      "id": "showreel.public.art.umbrella",
+      "path": "showreel/public/art/umbrella.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "showreel/art/raw/umbrella.png"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Senses.tsx (staticFile/Cutout/Plate art/umbrella.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": null,
+      "sha256": "c3e8b0ef092d479ba60af86f759cadaa69bef0e46d8ab29d0f44134e2b5cb01f",
+      "size": [
+        957,
+        1402
+      ],
+      "mode": "RGBA",
+      "visual_review": "Rebuilt from parent-accepted final 2D source; integrated browser/composition acceptance pending."
+    },
+    {
+      "id": "showreel.public.art.walking",
+      "path": "showreel/public/art/walking.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "showreel/art/raw/walking.png"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Senses.tsx (staticFile/Cutout/Plate art/walking.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": null,
+      "sha256": "3150bb3d91cf34580a0338fde570bb58f9b1514e65c0bca1aa3c1d2de2556ea0",
+      "size": [
+        805,
+        1402
+      ],
+      "mode": "RGBA",
+      "visual_review": "Rebuilt from parent-accepted final 2D source; integrated browser/composition acceptance pending."
+    },
+    {
+      "id": "showreel.public.art.wave",
+      "path": "showreel/public/art/wave.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "site/src/assets/art/wave.webp"
+      ],
+      "recipe": "showreel",
+      "consumers": [
+        "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)",
+        "showreel/src/scenes/Senses.tsx (staticFile/Cutout/Plate art/wave.webp)"
+      ],
+      "provenance": "showreel/pipeline/process_art.py from declared master.",
+      "unchanged_reason": null,
+      "sha256": "2ab4e93b4c2122899c41b488074a11826168b9e376c4c47e391b6dbd34a44ddb",
+      "size": [
+        979,
+        1607
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "showreel.public.fx.grain-0",
+      "path": "showreel/public/fx/grain-0.png",
+      "form": "noncharacter",
+      "role": "reference",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "showreel/src/components.tsx (Grain: staticFile(`fx/grain-${i}.png`), i=0..7)"
+      ],
+      "provenance": "Existing procedural grain tiles; original generator recipe not recorded in repository.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "530076c21e182d6283f683028756a0ec97371a8401da53eca4c3b014dd6276be",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "L"
+    },
+    {
+      "id": "showreel.public.fx.grain-1",
+      "path": "showreel/public/fx/grain-1.png",
+      "form": "noncharacter",
+      "role": "reference",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "showreel/src/components.tsx (Grain: staticFile(`fx/grain-${i}.png`), i=0..7)"
+      ],
+      "provenance": "Existing procedural grain tiles; original generator recipe not recorded in repository.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "e2e5833bac2a5f41c32d03261a52e775bb81c87cfa99402f7441da4526d92c6d",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "L"
+    },
+    {
+      "id": "showreel.public.fx.grain-2",
+      "path": "showreel/public/fx/grain-2.png",
+      "form": "noncharacter",
+      "role": "reference",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "showreel/src/components.tsx (Grain: staticFile(`fx/grain-${i}.png`), i=0..7)"
+      ],
+      "provenance": "Existing procedural grain tiles; original generator recipe not recorded in repository.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "2bdb81871274e0b5abc2713947b49d032b5a78e5a930d272d918f17fb70f0dcb",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "L"
+    },
+    {
+      "id": "showreel.public.fx.grain-3",
+      "path": "showreel/public/fx/grain-3.png",
+      "form": "noncharacter",
+      "role": "reference",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "showreel/src/components.tsx (Grain: staticFile(`fx/grain-${i}.png`), i=0..7)"
+      ],
+      "provenance": "Existing procedural grain tiles; original generator recipe not recorded in repository.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "f91e4bf8fd7088a0359203852028b68739faa4f2028bd120ada43294f5982c98",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "L"
+    },
+    {
+      "id": "showreel.public.fx.grain-4",
+      "path": "showreel/public/fx/grain-4.png",
+      "form": "noncharacter",
+      "role": "reference",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "showreel/src/components.tsx (Grain: staticFile(`fx/grain-${i}.png`), i=0..7)"
+      ],
+      "provenance": "Existing procedural grain tiles; original generator recipe not recorded in repository.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "70b7ce1d0c48fa6f1f525bd069b0b1c782161a73be9cdf460dbe1da6b3c3a7c6",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "L"
+    },
+    {
+      "id": "showreel.public.fx.grain-5",
+      "path": "showreel/public/fx/grain-5.png",
+      "form": "noncharacter",
+      "role": "reference",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "showreel/src/components.tsx (Grain: staticFile(`fx/grain-${i}.png`), i=0..7)"
+      ],
+      "provenance": "Existing procedural grain tiles; original generator recipe not recorded in repository.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "430fdb286ced4fa396e8761e1785d3aa788f50b3fcc0a99d754148f09323d69c",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "L"
+    },
+    {
+      "id": "showreel.public.fx.grain-6",
+      "path": "showreel/public/fx/grain-6.png",
+      "form": "noncharacter",
+      "role": "reference",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "showreel/src/components.tsx (Grain: staticFile(`fx/grain-${i}.png`), i=0..7)"
+      ],
+      "provenance": "Existing procedural grain tiles; original generator recipe not recorded in repository.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "cb9ca273359d5d5b97148646d48cbbdfb3a27dfa2fe9a4a1906c415cdb86b3dc",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "L"
+    },
+    {
+      "id": "showreel.public.fx.grain-7",
+      "path": "showreel/public/fx/grain-7.png",
+      "form": "noncharacter",
+      "role": "reference",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "showreel/src/components.tsx (Grain: staticFile(`fx/grain-${i}.png`), i=0..7)"
+      ],
+      "provenance": "Existing procedural grain tiles; original generator recipe not recorded in repository.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "0ab103f6fd30f386358659a0a9449eedf161f2c1116a6a26dac57c1106ef819f",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "L"
+    },
+    {
+      "id": "site.public._site.apple-touch-icon",
+      "path": "site/public/_site/apple-touch-icon.png",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-mini-icon.png"
+      ],
+      "recipe": "site-images",
+      "consumers": [
+        "site/src/layouts/Base.astro (URL /_site/apple-touch-icon.png)"
+      ],
+      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "unchanged_reason": null,
+      "sha256": "3e41cb1ffefc6f4f936eeb46ff9df28ea893bad743831e2425e8d1950396f51b",
+      "size": [
+        180,
+        180
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "site.public._site.icon-512",
+      "path": "site/public/_site/icon-512.png",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-mini-icon.png"
+      ],
+      "recipe": "site-images",
+      "consumers": [
+        "site/public/_site/site.webmanifest (URL /_site/icon-512.png)"
+      ],
+      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "unchanged_reason": null,
+      "sha256": "77b5410b2bf0f3ec09aae7e418bdefb2d7c62c77cf062f9741f2747bcf0595a2",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.public._site.icon-maskable",
+      "path": "site/public/_site/icon-maskable.png",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-mini-icon.png"
+      ],
+      "recipe": "site-images",
+      "consumers": [
+        "site/public/_site/site.webmanifest (URL /_site/icon-maskable.png)"
+      ],
+      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "unchanged_reason": null,
+      "sha256": "84477686cba84d316df1bbad0ae82aa6226cc3bccd14cbdb26b327169370c4ee",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.public._site.icon",
+      "path": "site/public/_site/icon.png",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-mini-icon.png"
+      ],
+      "recipe": "site-images",
+      "consumers": [
+        "site/public/_site/site.webmanifest (URL /_site/icon.png)",
+        "site/src/layouts/Base.astro (URL /_site/icon.png)"
+      ],
+      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "unchanged_reason": null,
+      "sha256": "05ac4950b9c1e8902ff306451ecefeef0b2f37a8f030ae88b412a25fd9081e50",
+      "size": [
+        192,
+        192
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.public._site.og-en",
+      "path": "site/public/_site/og-en.png",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-mini-icon.png",
+        "site/src/assets/art/group-chat.webp"
+      ],
+      "recipe": "site-images",
+      "consumers": [
+        "site/src/i18n/index.ts (URL /_site/og-en.png)"
+      ],
+      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "unchanged_reason": null,
+      "sha256": "b2b205916ebe2e1d2bce1cc4cf744dd67f4ee6988432517461d4d6b4bf59ceca",
+      "size": [
+        1200,
+        630
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "site.public._site.og-zh-hant",
+      "path": "site/public/_site/og-zh-hant.png",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-mini-icon.png",
+        "site/src/assets/art/group-chat.webp"
+      ],
+      "recipe": "site-images",
+      "consumers": [
+        "site/src/i18n/index.ts (URL /_site/og-zh-hant.png)"
+      ],
+      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "unchanged_reason": null,
+      "sha256": "961b4ac931975ecb2e0a806153aeafa808359ef05fa899bd4382cbb1ca396012",
+      "size": [
+        1200,
+        630
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "site.public.favicon",
+      "path": "site/public/favicon.ico",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-mini-icon.png"
+      ],
+      "recipe": "site-images",
+      "consumers": [
+        "app/public/offline.html (shared-host /favicon.ico resolves to site; standalone app has its own fallback)",
+        "app/public/sw.js (shared-host /favicon.ico precache resolves to site)",
+        "docs-site/astro.config.mjs (URL /favicon.ico)",
+        "site/src/layouts/Base.astro (URL /favicon.ico)"
+      ],
+      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "unchanged_reason": null,
+      "sha256": "5fe787ea6f17abac7d67c889c3e00a1b507512a790c6167c83b92c3a287ddf57",
+      "size": [
+        64,
+        64
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.art.group-chat",
+      "path": "site/src/assets/art/group-chat.webp",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (BORROWED input)",
+        "showreel/pipeline/process_art.py (explicit path reference)",
+        "site/scripts/make_rig.py (POSES input)",
+        "site/src/assets/art.ts (direct import)",
+        "site/src/components/ChatDemo.astro (art.groupChat via registry)"
+      ],
+      "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
+      "unchanged_reason": null,
+      "sha256": "859c3b7ad37a86236cbb253bf1a6dcf6f5f2288e58c5b7a7121931a8df0c0a53",
+      "size": [
+        996,
+        1578
+      ],
+      "mode": "RGBA",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
+    },
+    {
+      "id": "site.src.assets.art.hop",
+      "path": "site/src/assets/art/hop.webp",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "site/scripts/make_rig.py (POSES input)"
+      ],
+      "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
+      "unchanged_reason": null,
+      "sha256": "5459fffe95523b4cc99cb2d61950418ff85625727410c41b7f9a19db0cf44e05",
+      "size": [
+        977,
+        1609
+      ],
+      "mode": "RGBA",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
+    },
+    {
+      "id": "site.src.assets.art.ledge",
+      "path": "site/src/assets/art/ledge.webp",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "site/scripts/make_rig.py (POSES input)",
+        "site/src/assets/art.ts (direct import)",
+        "site/src/components/Memory.astro (art.ledge via registry)"
+      ],
+      "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
+      "unchanged_reason": null,
+      "sha256": "ba646abcca6889ca259ddfab57a232a57620741e19fe77758887402338b8c23d",
+      "size": [
+        959,
+        1640
+      ],
+      "mode": "RGBA",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
+    },
+    {
+      "id": "site.src.assets.art.lost",
+      "path": "site/src/assets/art/lost.webp",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "site/scripts/make_rig.py (POSES input)",
+        "site/src/assets/art.ts (direct import)",
+        "site/src/pages/404.astro (art.lost via registry)"
+      ],
+      "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
+      "unchanged_reason": null,
+      "sha256": "90e00d7bea0b236eb24a3526a1bca43594815a867d46ed92a5a722770a29e835",
+      "size": [
+        963,
+        1633
+      ],
+      "mode": "RGBA",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
+    },
+    {
+      "id": "site.src.assets.art.night-portrait",
+      "path": "site/src/assets/art/night-portrait.webp",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (BORROWED input)",
+        "showreel/pipeline/process_art.py (explicit path reference)",
+        "site/scripts/make_rig.py (POSES input)",
+        "site/src/assets/art.ts (direct import)",
+        "site/src/components/Form.astro (art.nightPortrait via registry)",
+        "site/src/components/Hero.astro (art.nightPortrait via registry)"
+      ],
+      "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
+      "unchanged_reason": null,
+      "sha256": "e2f6f27f5b8e952dd4f6f4eef960844c7aa096fc2d855119606083f8b7caa7ee",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
+    },
+    {
+      "id": "site.src.assets.art.quiet",
+      "path": "site/src/assets/art/quiet.webp",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "closed",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (BORROWED input)",
+        "showreel/pipeline/process_art.py (explicit path reference)",
+        "site/scripts/make_rig.py (POSES input)",
+        "site/src/assets/art.ts (direct import)",
+        "site/src/components/Manners.astro (art.quiet via registry)"
+      ],
+      "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
+      "unchanged_reason": null,
+      "sha256": "a6ea106d99c5f563516902a8b5989e97961652ee7a70ecc6d0aa82c8b5568dec",
+      "size": [
+        934,
+        1685
+      ],
+      "mode": "RGBA",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
+    },
+    {
+      "id": "site.src.assets.art.stool",
+      "path": "site/src/assets/art/stool.webp",
+      "form": "noncharacter",
+      "role": "reference",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "site/src/assets/art.ts (direct import)",
+        "site/src/components/Memory.astro (art.stool via registry)"
+      ],
+      "provenance": "Existing source retained; site art README or showreel prompts. Grain recipe: showreel/pipeline/grain.mjs.",
+      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
+      "sha256": "c8fe6a46fc9b0c93e9dec60fb44e7a51551e415342dfe8cb4fc2e3a430678f23",
+      "size": [
+        839,
+        911
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.art.wave",
+      "path": "site/src/assets/art/wave.webp",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "showreel/pipeline/process_art.py (BORROWED input)",
+        "showreel/pipeline/process_art.py (explicit path reference)",
+        "site/scripts/make_rig.py (POSES input)",
+        "site/src/assets/art.ts (direct import)",
+        "site/src/components/Portal.astro (art.wave via registry)"
+      ],
+      "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
+      "unchanged_reason": null,
+      "sha256": "da07aabf3c5c73f8ae022780974219201933b87be754272a69d3685f4ffc653d",
+      "size": [
+        979,
+        1607
+      ],
+      "mode": "RGBA",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
+    },
+    {
+      "id": "site.src.assets.rig.hop",
+      "path": "site/src/assets/rig/hop.webp",
+      "form": "mini",
+      "role": "rig-texture",
+      "status": "active",
+      "eyes": "procedural-mini08",
+      "parents": [
+        "site/src/assets/art/hop.webp"
+      ],
+      "recipe": "rig",
+      "consumers": [
+        "site/src/components/NoraRig.astro (direct import)",
+        "site/src/scripts/nora/rig.ts (texture URL from NoraRig.astro pose registry)"
+      ],
+      "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
+      "unchanged_reason": null,
+      "sha256": "555c07ff2bb1b7bb9d1392a39a5d87c6a3f0f95053a06b9e689bb2cf11b38588",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance.",
+      "size": [
+        977,
+        1609
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.rig.ledge",
+      "path": "site/src/assets/rig/ledge.webp",
+      "form": "mini",
+      "role": "rig-texture",
+      "status": "active",
+      "eyes": "procedural-mini08",
+      "parents": [
+        "site/src/assets/art/ledge.webp"
+      ],
+      "recipe": "rig",
+      "consumers": [
+        "site/src/components/NoraRig.astro (direct import)",
+        "site/src/scripts/nora/rig.ts (texture URL from NoraRig.astro pose registry)"
+      ],
+      "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
+      "unchanged_reason": null,
+      "sha256": "25536db12328b04b2182196127b1d072452022debae7cdffc7acc03bf0de8b7e",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance.",
+      "size": [
+        959,
+        1640
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.rig.lost",
+      "path": "site/src/assets/rig/lost.webp",
+      "form": "mini",
+      "role": "rig-texture",
+      "status": "active",
+      "eyes": "procedural-mini08",
+      "parents": [
+        "site/src/assets/art/lost.webp"
+      ],
+      "recipe": "rig",
+      "consumers": [
+        "site/src/components/NoraRig.astro (direct import)",
+        "site/src/scripts/nora/rig.ts (texture URL from NoraRig.astro pose registry)"
+      ],
+      "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
+      "unchanged_reason": null,
+      "sha256": "742ac341da2c3d6276f7166676867471337f74e3625e2f7c1916601b5d209552",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance.",
+      "size": [
+        963,
+        1633
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.rig.perch",
+      "path": "site/src/assets/rig/perch.webp",
+      "form": "mini",
+      "role": "rig-texture",
+      "status": "active",
+      "eyes": "procedural-mini08",
+      "parents": [
+        "site/src/assets/art/group-chat.webp"
+      ],
+      "recipe": "rig",
+      "consumers": [
+        "site/src/components/NoraRig.astro (direct import)",
+        "site/src/scripts/nora/rig.ts (texture URL from NoraRig.astro pose registry)"
+      ],
+      "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
+      "unchanged_reason": null,
+      "sha256": "85a66bc1c15d690bf926f1767560d00da166c752899cfaae6b81f2ed53d687b2",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance.",
+      "size": [
+        996,
+        1578
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.rig.plate-night",
+      "path": "site/src/assets/rig/plate-night.webp",
+      "form": "mini",
+      "role": "rig-plate",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "site/src/components/Form.astro (direct import)",
+        "site/src/components/Hero.astro (direct import)"
+      ],
+      "provenance": "Retained earlier empty studio background, 2026-10-26 2D integration. Original sweep/floor/grain reconstruction predates the new character art; exact existing bytes preserved after processor sync. Not derived from the current Bauhinia portrait.",
+      "unchanged_reason": "Operator requested preservation of empty background plates; new-character compositing acceptance is separate.",
+      "sha256": "627aa371f3f1d6a2056e9679e4d1cc39b321d641f8ebee007d649ad629233959",
+      "visual_review": "Retained background bytes; parent current 2D browser seam/placement inspection PASS, 2026-10-26.",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "site.src.assets.rig.plate-studio",
+      "path": "site/src/assets/rig/plate-studio.webp",
+      "form": "mini",
+      "role": "rig-plate",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "site/src/components/Form.astro (direct import)",
+        "site/src/components/Hero.astro (direct import)"
+      ],
+      "provenance": "Retained earlier empty studio background, 2026-10-26 2D integration. Original sweep/floor/grain reconstruction predates the new character art; exact existing bytes preserved after processor sync. Not derived from the current Bauhinia portrait.",
+      "unchanged_reason": "Operator requested preservation of empty background plates; new-character compositing acceptance is separate.",
+      "sha256": "9aed7be76d4342c0812a003aace651eb85ac4d5fcee4081fe228422bb93bd660",
+      "visual_review": "Retained background bytes; parent current 2D browser seam/placement inspection PASS, 2026-10-26.",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "site.src.assets.rig.quiet",
+      "path": "site/src/assets/rig/quiet.webp",
+      "form": "mini",
+      "role": "rig-texture",
+      "status": "active",
+      "eyes": "procedural-mini08",
+      "parents": [
+        "site/src/assets/art/quiet.webp"
+      ],
+      "recipe": "rig",
+      "consumers": [
+        "site/src/components/NoraRig.astro (direct import)",
+        "site/src/scripts/nora/rig.ts (texture URL from NoraRig.astro pose registry)"
+      ],
+      "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
+      "unchanged_reason": null,
+      "sha256": "7e516fa0853647cd58e9cef88366726fbeccbf0404f5899288dab15254c57cec",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance.",
+      "size": [
+        934,
+        1685
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.rig.stand-night",
+      "path": "site/src/assets/rig/stand-night.webp",
+      "form": "mini",
+      "role": "rig-texture",
+      "status": "active",
+      "eyes": "procedural-mini08",
+      "parents": [
+        "site/src/assets/art/night-portrait.webp"
+      ],
+      "recipe": "rig",
+      "consumers": [
+        "site/src/components/NoraRig.astro (direct import)",
+        "site/src/scripts/nora/rig.ts (texture URL from NoraRig.astro pose registry)"
+      ],
+      "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
+      "unchanged_reason": null,
+      "sha256": "5e6f5e9ac22b0b43701f06f3d44651439c57c63ac2ca78a6b86180659caaf33f",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance.",
+      "size": [
+        613,
+        1497
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.rig.stand",
+      "path": "site/src/assets/rig/stand.webp",
+      "form": "mini",
+      "role": "rig-texture",
+      "status": "active",
+      "eyes": "procedural-mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "rig",
+      "consumers": [
+        "site/src/components/NoraRig.astro (direct import)",
+        "site/src/scripts/nora/rig.ts (texture URL from NoraRig.astro pose registry)"
+      ],
+      "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
+      "unchanged_reason": null,
+      "sha256": "4e5a777620f58b75e01dd089b95800fb949886288f034a5db1254a6a4ab0b600",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance.",
+      "size": [
+        716,
+        1506
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.rig.wave",
+      "path": "site/src/assets/rig/wave.webp",
+      "form": "mini",
+      "role": "rig-texture",
+      "status": "active",
+      "eyes": "procedural-mini08",
+      "parents": [
+        "site/src/assets/art/wave.webp"
+      ],
+      "recipe": "rig",
+      "consumers": [
+        "site/src/components/NoraRig.astro (direct import)",
+        "site/src/scripts/nora/rig.ts (texture URL from NoraRig.astro pose registry)"
+      ],
+      "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
+      "unchanged_reason": null,
+      "sha256": "6c313a8d54a743c4bc0947a910bf116edf31826bc6dec2c617f3f18524bd197b",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance.",
+      "size": [
+        979,
+        1607
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "assets.modeling.bauhinia.v2.human-anime-tpose",
+      "path": "assets/modeling/bauhinia/v2/human-anime-tpose.png",
+      "form": "human",
+      "role": "reference",
+      "status": "approved-reference",
+      "eyes": "human-bauhinia",
+      "parents": [
+        "assets/nora-human-bauhinia-reference.png",
+        "assets/modeling/bauhinia/v1/adult-style-study.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v2/README.md (reference link and limitations)"
+      ],
+      "provenance": "2026-10-26, supplied built-in image artwork. Prompt intent: Adult direction A, 2D anime front/right/back; simplified hair, no bags/audio, horizontal T-pose. Retain original adult anchor. Repository image parents record semantic visual authority; exact original mapping stays private. Identifying ancillary PNG metadata removed without re-encoding image data.",
+      "unchanged_reason": null,
+      "sha256": "8b689107313eb40a8fd17a245af83158d4ed8199714b9b6186c56eb90e98c4a5",
+      "visual_review": "Parent viewed source artwork PASS; no 3D engineering acceptance.",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.modeling.bauhinia.v2.mini-anime-tpose",
+      "path": "assets/modeling/bauhinia/v2/mini-anime-tpose.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "approved-reference",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v2/README.md (reference link and limitations)"
+      ],
+      "provenance": "2026-10-26, supplied built-in image artwork. Prompt intent: Mini approved 2D Bauhinia front/right/back; option08 face, distinct Mini proportions; also supplies stable Mini turnaround. Repository image parents record semantic visual authority; exact original mapping stays private. Identifying ancillary PNG metadata removed without re-encoding image data.",
+      "unchanged_reason": null,
+      "sha256": "15763ec3116dc2e241e48f333f92df388598bfda18ed0105b700585344c56cbd",
+      "visual_review": "Parent viewed source artwork PASS; no 3D engineering acceptance.",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.modeling.bauhinia.v2.human-stylized3d-tpose",
+      "path": "assets/modeling/bauhinia/v2/human-stylized3d-tpose.png",
+      "form": "human",
+      "role": "reference",
+      "status": "modeling-candidate",
+      "eyes": "human-bauhinia",
+      "parents": [
+        "assets/modeling/bauhinia/v2/human-anime-tpose.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v2/README.md (reference link and limitations)"
+      ],
+      "provenance": "2026-10-26, supplied built-in image artwork. Prompt intent: Adult Meshy-only stylized 3D PNG: B face plus D materials, corrected anime face; preserve approved 2D layout. No mesh proof. Repository image parents record semantic visual authority; exact original mapping stays private. Identifying ancillary PNG metadata removed without re-encoding image data. Meshy-only PNG reference candidate, never non-3D consumer art; no geometry, topology, calibrated projection, rig or engineering proof.",
+      "unchanged_reason": null,
+      "sha256": "816be9b8e647a8c8295106baa29591471b2e9c0e676b00b770a6f188ceab53c2",
+      "visual_review": "Parent viewed PASS as input candidate; hand digits, projection, view margins and geometry remain unverified.",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.modeling.bauhinia.v2.mini-stylized3d-tpose",
+      "path": "assets/modeling/bauhinia/v2/mini-stylized3d-tpose.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "modeling-candidate",
+      "eyes": "mini08",
+      "parents": [
+        "assets/modeling/bauhinia/v2/mini-anime-tpose.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v2/README.md (reference link and limitations)"
+      ],
+      "provenance": "2026-10-26, supplied built-in image artwork. Prompt intent: Mini Meshy-only stylized 3D PNG preserving 2D geometry/view order, Mini proportions and option08 language. No production use or mesh proof. Repository image parents record semantic visual authority; exact original mapping stays private. Identifying ancillary PNG metadata removed without re-encoding image data. Meshy-only PNG reference candidate, never non-3D consumer art; no geometry, topology, calibrated projection, rig or engineering proof.",
+      "unchanged_reason": null,
+      "sha256": "3d462078a8b00c8e20aa487e5832e4cfae555edbab2b5a0d88ea970a0974f742",
+      "visual_review": "Parent viewed PASS as input candidate; hand digits, projection, view margins and geometry remain unverified.",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.modeling.bauhinia.v2.shared-face-details",
+      "path": "assets/modeling/bauhinia/v2/shared-face-details.png",
+      "form": "shared",
+      "role": "reference",
+      "status": "approved-reference",
+      "eyes": "human-bauhinia+mini08",
+      "parents": [
+        "assets/modeling/bauhinia/v2/human-anime-tpose.png",
+        "assets/modeling/bauhinia/v2/mini-anime-tpose.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v2/README.md (reference link and limitations)"
+      ],
+      "provenance": "2026-10-26, supplied built-in image artwork. Prompt intent: 2D adult/Mini face and eyes/hair details, distinct eye shapes, no Mini nose marker; broad clumps and five-petal clasp. Semantic authority, no blanket 2D-to-3D lineage claim. Repository image parents record semantic visual authority; exact original mapping stays private. Identifying ancillary PNG metadata removed without re-encoding image data.",
+      "unchanged_reason": null,
+      "sha256": "cfe76024d49946aa71f82dca024b019c788e05e86d00a0be4847b022f4ab5325",
+      "visual_review": "Parent viewed source artwork PASS; no 3D engineering acceptance.",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.modeling.bauhinia.v2.human-meshy-front",
+      "path": "assets/modeling/bauhinia/v2/human-meshy-front.png",
+      "form": "human",
+      "role": "reference",
+      "status": "modeling-candidate",
+      "eyes": "human-bauhinia",
+      "parents": [
+        "assets/modeling/bauhinia/v2/human-stylized3d-tpose.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v2/README.md (reference link and limitations)"
+      ],
+      "provenance": "2026-10-26, supplied built-in image artwork. Prompt intent: Isolated front Meshy input for human; only this form and one view, matching simplified-hair 3D sheet, no panel borders, labels, bags or audio. Validate projection, scale, hands and view order before any Meshy call. Repository image parents record semantic visual authority; exact original mapping stays private. Identifying ancillary PNG metadata removed without re-encoding image data. Meshy-only PNG reference candidate, never non-3D consumer art; no geometry, topology, calibrated projection, rig or engineering proof.",
+      "unchanged_reason": null,
+      "sha256": "06f675b0f7b31c08ad5359ca3337279a17586373253346340abf6a62bfb5c5d2",
+      "visual_review": "Parent viewed PASS as input candidate; hand digits, projection, view margins and geometry remain unverified.",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.modeling.bauhinia.v2.human-meshy-right",
+      "path": "assets/modeling/bauhinia/v2/human-meshy-right.png",
+      "form": "human",
+      "role": "reference",
+      "status": "modeling-candidate",
+      "eyes": "human-bauhinia",
+      "parents": [
+        "assets/modeling/bauhinia/v2/human-stylized3d-tpose.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v2/README.md (reference link and limitations)"
+      ],
+      "provenance": "2026-10-26, supplied built-in image artwork. Prompt intent: Isolated right Meshy input for human; only this form and one view, matching simplified-hair 3D sheet, no panel borders, labels, bags or audio. Validate projection, scale, hands and view order before any Meshy call. Repository image parents record semantic visual authority; exact original mapping stays private. Identifying ancillary PNG metadata removed without re-encoding image data. Meshy-only PNG reference candidate, never non-3D consumer art; no geometry, topology, calibrated projection, rig or engineering proof.",
+      "unchanged_reason": null,
+      "sha256": "329edd4438153db11dbac616223aa7092d29a4dc6ee27411aa24d47d4a482bd6",
+      "visual_review": "Parent viewed PASS as input candidate; hand digits, projection, view margins and geometry remain unverified.",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.modeling.bauhinia.v2.human-meshy-back",
+      "path": "assets/modeling/bauhinia/v2/human-meshy-back.png",
+      "form": "human",
+      "role": "reference",
+      "status": "modeling-candidate",
+      "eyes": "human-bauhinia",
+      "parents": [
+        "assets/modeling/bauhinia/v2/human-stylized3d-tpose.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v2/README.md (reference link and limitations)"
+      ],
+      "provenance": "2026-10-26, supplied built-in image artwork. Prompt intent: Isolated back Meshy input for human; only this form and one view, matching simplified-hair 3D sheet, no panel borders, labels, bags or audio. Validate projection, scale, hands and view order before any Meshy call. Repository image parents record semantic visual authority; exact original mapping stays private. Identifying ancillary PNG metadata removed without re-encoding image data. Meshy-only PNG reference candidate, never non-3D consumer art; no geometry, topology, calibrated projection, rig or engineering proof.",
+      "unchanged_reason": null,
+      "sha256": "ac7ee26c57e9fee73cc74454d972240608496695ae3c503c750bb9a0a84c462c",
+      "visual_review": "Parent viewed PASS as input candidate; hand digits, projection, view margins and geometry remain unverified.",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.modeling.bauhinia.v2.mini-meshy-front",
+      "path": "assets/modeling/bauhinia/v2/mini-meshy-front.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "modeling-candidate",
+      "eyes": "mini08",
+      "parents": [
+        "assets/modeling/bauhinia/v2/mini-stylized3d-tpose.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v2/README.md (reference link and limitations)"
+      ],
+      "provenance": "2026-10-26, supplied built-in image artwork. Prompt intent: Isolated front Meshy input for mini; only this form and one view, matching simplified-hair 3D sheet, no panel borders, labels, bags or audio. Validate projection, scale, hands and view order before any Meshy call. Repository image parents record semantic visual authority; exact original mapping stays private. Identifying ancillary PNG metadata removed without re-encoding image data. Meshy-only PNG reference candidate, never non-3D consumer art; no geometry, topology, calibrated projection, rig or engineering proof.",
+      "unchanged_reason": null,
+      "sha256": "41822371778ecdf6b74da600c096d23f2d7ea715d55edb46f269ab455af3617f",
+      "visual_review": "Parent viewed PASS as input candidate; hand digits, projection, view margins and geometry remain unverified.",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.modeling.bauhinia.v2.mini-meshy-right",
+      "path": "assets/modeling/bauhinia/v2/mini-meshy-right.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "modeling-candidate",
+      "eyes": "mini08",
+      "parents": [
+        "assets/modeling/bauhinia/v2/mini-stylized3d-tpose.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v2/README.md (reference link and limitations)"
+      ],
+      "provenance": "2026-10-26, supplied built-in image artwork. Prompt intent: Isolated right Meshy input for mini; only this form and one view, matching simplified-hair 3D sheet, no panel borders, labels, bags or audio. Validate projection, scale, hands and view order before any Meshy call. Repository image parents record semantic visual authority; exact original mapping stays private. Identifying ancillary PNG metadata removed without re-encoding image data. Meshy-only PNG reference candidate, never non-3D consumer art; no geometry, topology, calibrated projection, rig or engineering proof.",
+      "unchanged_reason": null,
+      "sha256": "a1fc396b61084ded733c33d0c49044c7dde410fa9a7129939301ac978e7d5341",
+      "visual_review": "Parent viewed PASS as input candidate; hand digits, projection, view margins and geometry remain unverified.",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.modeling.bauhinia.v2.mini-meshy-back",
+      "path": "assets/modeling/bauhinia/v2/mini-meshy-back.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "modeling-candidate",
+      "eyes": "mini08",
+      "parents": [
+        "assets/modeling/bauhinia/v2/mini-stylized3d-tpose.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v2/README.md (reference link and limitations)"
+      ],
+      "provenance": "2026-10-26, supplied built-in image artwork. Prompt intent: Isolated back Meshy input for mini; only this form and one view, matching simplified-hair 3D sheet, no panel borders, labels, bags or audio. Validate projection, scale, hands and view order before any Meshy call. Repository image parents record semantic visual authority; exact original mapping stays private. Identifying ancillary PNG metadata removed without re-encoding image data. Meshy-only PNG reference candidate, never non-3D consumer art; no geometry, topology, calibrated projection, rig or engineering proof.",
+      "unchanged_reason": null,
+      "sha256": "9b1dfc7334ff5504b4c8677cc952a00ba87172c27e9652c1a58a3f38a7cac2a7",
+      "visual_review": "Parent viewed PASS as input candidate; hand digits, projection, view margins and geometry remain unverified.",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.social.avatar-candidates.a2-window-tea",
+      "path": "assets/social/avatar-candidates/a2-window-tea.png",
+      "form": "mini",
+      "role": "avatar-candidate",
+      "status": "approved-candidate",
+      "eyes": "mini08",
+      "parents": [
+        "assets/modeling/bauhinia/v1/mini-style-study.png",
+        "assets/nora-social-banner.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/social/avatar-candidates/README.md (retained candidate preview)"
+      ],
+      "provenance": "2026-10-26, operator-approved A2 retained avatar candidate. Tea by a window, warm lantern light and a Hong Kong harbour backdrop. Detailed 2D anime with refined brown eyes, a layered brown bun, copper Bauhinia clasp, ivory blouse, navy waistcoat and grey jade-lined coat. Actual primary generation reference: LEFT 2D ANIME figure in the declared mini-style-study parent; right 3D figure excluded. Supporting actual generation reference: corrected Hong Kong banner, now tracked as assets/nora-social-banner.png. Identifying ancillary PNG metadata removed with scripts/visual_assets.py sanitize_png; retained chunks, compressed image data and decoded pixels unchanged; original retained privately.",
+      "unchanged_reason": null,
+      "sha256": "9829ed20b97350a1f17a11d84f64087420244136809981c11009ea6e1fa2bf86",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB",
+      "visual_review": "Operator approved retention as a candidate; no final winner selected or formal avatar replacement."
+    },
+    {
+      "id": "assets.social.avatar-candidates.b2-tram-window",
+      "path": "assets/social/avatar-candidates/b2-tram-window.png",
+      "form": "mini",
+      "role": "avatar-candidate",
+      "status": "approved-candidate",
+      "eyes": "mini08",
+      "parents": [
+        "assets/modeling/bauhinia/v1/mini-style-study.png",
+        "assets/nora-social-banner.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/social/avatar-candidates/README.md (retained candidate preview)"
+      ],
+      "provenance": "2026-10-26, operator-approved B2 retained avatar candidate. A tram interior by the window, with a sunlit Hong Kong street and tram outside. Detailed 2D anime with refined brown eyes, a layered brown bun, copper Bauhinia clasp, ivory blouse, navy waistcoat and grey jade-lined coat. Actual primary generation reference: LEFT 2D ANIME figure in the declared mini-style-study parent; right 3D figure excluded. Supporting actual generation reference: corrected Hong Kong banner, now tracked as assets/nora-social-banner.png. Identifying ancillary PNG metadata removed with scripts/visual_assets.py sanitize_png; retained chunks, compressed image data and decoded pixels unchanged; original retained privately.",
+      "unchanged_reason": null,
+      "sha256": "cf379536cfe4a65c7ee8a5d12231a6ab93581083f2a6d15106aea257e1ca9416",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB",
+      "visual_review": "Operator approved retention as a candidate; no final winner selected or formal avatar replacement."
+    },
+    {
+      "id": "assets.social.avatar-candidates.c2-rainy-street",
+      "path": "assets/social/avatar-candidates/c2-rainy-street.png",
+      "form": "mini",
+      "role": "avatar-candidate",
+      "status": "approved-candidate",
+      "eyes": "mini08",
+      "parents": [
+        "assets/modeling/bauhinia/v1/mini-style-study.png",
+        "assets/nora-social-banner.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/social/avatar-candidates/README.md (retained candidate preview)"
+      ],
+      "provenance": "2026-10-26, operator-approved C2 retained avatar candidate. A rainy Hong Kong street at dusk, warm shop lights and wet pavement reflections. Detailed 2D anime with refined brown eyes, a layered brown bun, copper Bauhinia clasp, ivory blouse, navy waistcoat and grey jade-lined coat. Actual primary generation reference: LEFT 2D ANIME figure in the declared mini-style-study parent; right 3D figure excluded. Supporting actual generation reference: corrected Hong Kong banner, now tracked as assets/nora-social-banner.png. Identifying ancillary PNG metadata removed with scripts/visual_assets.py sanitize_png; retained chunks, compressed image data and decoded pixels unchanged; original retained privately.",
+      "unchanged_reason": null,
+      "sha256": "c346634b3296fac36cf1114e80bfcd0531b645111f19dee4efd72a5271b70795",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB",
+      "visual_review": "Operator approved retention as a candidate; no final winner selected or formal avatar replacement."
+    }
+  ],
+  "historical_exports": [
+    {
+      "path": "showreel/renders/nora-showreel-en-16x9.mp4",
+      "status": "historical-export",
+      "reason": "Historical 2026-09-26 3D Mini export, retired from the current export catalogue. Only the explicitly historical showreel README table names it; no website or root README route found in repository source. 2D sources and focal logic are integrated; new current exports still require composition acceptance and Remotion rerender/mux. Original MP4 retained; no rerender performed."
+    },
+    {
+      "path": "showreel/renders/nora-showreel-en-1x1.mp4",
+      "status": "historical-export",
+      "reason": "Historical 2026-09-26 3D Mini export, retired from the current export catalogue. Only the explicitly historical showreel README table names it; no website or root README route found in repository source. 2D sources and focal logic are integrated; new current exports still require composition acceptance and Remotion rerender/mux. Original MP4 retained; no rerender performed."
+    },
+    {
+      "path": "showreel/renders/nora-showreel-en-4x5.mp4",
+      "status": "historical-export",
+      "reason": "Historical 2026-09-26 3D Mini export, retired from the current export catalogue. Only the explicitly historical showreel README table names it; no website or root README route found in repository source. 2D sources and focal logic are integrated; new current exports still require composition acceptance and Remotion rerender/mux. Original MP4 retained; no rerender performed."
+    },
+    {
+      "path": "showreel/renders/nora-showreel-en-9x16.mp4",
+      "status": "historical-export",
+      "reason": "Historical 2026-09-26 3D Mini export, retired from the current export catalogue. Only the explicitly historical showreel README table names it; no website or root README route found in repository source. 2D sources and focal logic are integrated; new current exports still require composition acceptance and Remotion rerender/mux. Original MP4 retained; no rerender performed."
+    },
+    {
+      "path": "showreel/renders/nora-showreel-yue-16x9.mp4",
+      "status": "historical-export",
+      "reason": "Historical 2026-09-26 3D Mini export, retired from the current export catalogue. Only the explicitly historical showreel README table names it; no website or root README route found in repository source. 2D sources and focal logic are integrated; new current exports still require composition acceptance and Remotion rerender/mux. Original MP4 retained; no rerender performed."
+    },
+    {
+      "path": "showreel/renders/nora-showreel-yue-1x1.mp4",
+      "status": "historical-export",
+      "reason": "Historical 2026-09-26 3D Mini export, retired from the current export catalogue. Only the explicitly historical showreel README table names it; no website or root README route found in repository source. 2D sources and focal logic are integrated; new current exports still require composition acceptance and Remotion rerender/mux. Original MP4 retained; no rerender performed."
+    },
+    {
+      "path": "showreel/renders/nora-showreel-yue-4x5.mp4",
+      "status": "historical-export",
+      "reason": "Historical 2026-09-26 3D Mini export, retired from the current export catalogue. Only the explicitly historical showreel README table names it; no website or root README route found in repository source. 2D sources and focal logic are integrated; new current exports still require composition acceptance and Remotion rerender/mux. Original MP4 retained; no rerender performed."
+    },
+    {
+      "path": "showreel/renders/nora-showreel-yue-9x16.mp4",
+      "status": "historical-export",
+      "reason": "Historical 2026-09-26 3D Mini export, retired from the current export catalogue. Only the explicitly historical showreel README table names it; no website or root README route found in repository source. 2D sources and focal logic are integrated; new current exports still require composition acceptance and Remotion rerender/mux. Original MP4 retained; no rerender performed."
+    },
+    {
+      "path": "voice-lab/tts-cmp/samples/minimax_T2V01_test.mp4",
+      "status": "historical-export",
+      "reason": "Historical voice-lab experiment sample; no website, root README or current-export consumer found in repository source. Retained without rerender; external usage unmeasured."
+    }
+  ],
+  "verification": {
+    "source_art": "2026-10-26: parent viewed all final production sources PASS: base/canonical, eight site/notebook, five profile and eight showreel sources. All 23 production target paths imported; source acceptance is separate from integrated browser/rig fit.",
+    "inventory": "Deterministic byte/coverage checks only; consumers resolved by scoped imports, public URLs and explicit dynamic registries, never basename matching.",
+    "shader_and_rig": "PASS, 2026-10-26: parent personally viewed current 2D Bauhinia feature placement and composition for all eight poses, blink, happy single-stroke arches, lidded, left/right gaze and halfblink. Day/night, reduced-motion static fallback and canonical reference cards/pins passed. Existing WebGL2 texture warp and procedural face retained; no actual 3D mesh/rig acceptance. Private evidence: /tmp/bauhinia-render-grid.png and browser captures listed in local_browser_smoke.",
+    "pwa_screenshots": "PASS, 2026-10-26: two mock-only captures after new 2D icon integration, invented Miles account, en-HK/light/reduced motion; 780x1688 and 1440x900, no page errors or broken images. Local capture inspection only, no real data. Parent personally viewed both public mock screenshots PASS, 2026-10-26.",
+    "runtime_reach_and_cost": "UNMEASURED",
+    "live_media_ingest": "NOT PERFORMED",
+    "deployment": "NOT PERFORMED",
+    "local_browser_smoke": "PASS, 2026-10-26: parent personally viewed /tmp/bauhinia-hero-open.png, /tmp/bauhinia-night-confirm.png (Late Night aria-pressed=true, html theme=dark), /tmp/bauhinia-room.png, /tmp/bauhinia-memory.png, /tmp/bauhinia-manners.png, /tmp/bauhinia-form-top.png, /tmp/bauhinia-form-section.png, /tmp/bauhinia-portal.png, /tmp/bauhinia-404.png, /tmp/bauhinia-static.png and /tmp/bauhinia-mobile.png (390px viewport, no horizontal overflow). Capture page errors: 0. T3 preview opened but two snapshots failed: Preview automation snapshot timed out after 15000ms. Local Python Playwright fallback used software-WebGL Chromium 1243; scripts and screenshots remain private outside the repository.",
+    "targeted_checks": "PASS from previous integration: 107 focused Python tests, six site script tests, app/site builds and scoped lint. Final showreel import: 105-image/9-video inventory PASS and two focused inventory tests PASS. No unrelated builds repeated; source changes affect showreel only. Showreel typecheck remains blocked by pre-existing absent timeline and VO timing JSON; rendering/runtime acceptance UNMEASURED. Parent browser acceptance of current 2D site PASS; parent owns final gate. Scoped copy alignment: npm run build PASS (Astro check: zero errors; three pages built; CJK coverage: 478 characters); font subset rebuilt only for new \u6cbf/\u5957 glyphs; no current video export accepted.",
+    "bauhinia_modeling_pack": "Seven v1 PNGs retained byte-identically as history. Five simplified-hair v2 sheets and six isolated Meshy-only input candidates registered; parent viewed sources PASS as artwork/candidates. Hand orientation/digits, calibrated projection, scale/alignment and margins remain unverified. No Meshy call, mesh, rig or operator 3D engineering approval.",
+    "bauhinia_2d_preparation": "Integration supersedes the preparatory state: 23 accepted production targets, full sanitized canonical pin, runtime appearance/identity text, derivatives and mock screenshots refreshed. Earlier parent gate applies only to the old staged tree. Final parent browser acceptance of current 2D site PASS; final gate remains parent-owned. No commit/publication/live ingest/deploy.",
+    "video_consumer_closure": "REPOSITORY DISCOVERY ONLY, 2026-10-26: nine MP4s. No website or root README reference found. The showreel README former current-export table is now explicitly historical; render.sh is a writer to those same eight paths, not a playback consumer. A new current export requires 2D image sync, Thread/Quiet focal-logic adaptation, picture render and existing-audio mux to separate versioned paths. External/live publication UNMEASURED; no video rerender performed.",
+    "site_2d_harmonization": "Existing WebGL2 texture warp and procedural 2D face retained. Eight new texture/pivot sets and static fallbacks rebuilt; empty studio/night plate bytes preserved as background inputs. Parent current 2D browser seam/feature/animation acceptance PASS, 2026-10-26; no shader redesign."
+  }
+}

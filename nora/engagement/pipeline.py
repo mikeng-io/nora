@@ -94,7 +94,6 @@ from nora.domain import audience as audience_names
 from nora.domain.culture import CultureRevision
 from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.external_files import render_file_links
-from nora.domain.persona import PersonaView
 from nora.domain.ports import (
     EngagementRequest,
     LinkPreviewSource,
@@ -102,6 +101,7 @@ from nora.domain.ports import (
     RecordStore,
     RosterSource,
 )
+from nora.domain.profile import ProfileView
 from nora.domain.tag_trace import VALID_OUTCOMES, TagTrace
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.obs.logging import bind_tag_id, clear_tag_id
@@ -466,8 +466,8 @@ class EngagementPipeline:
                 request.message.platform).resolve_identity()
             await self._run_admitted(request, identity, indicator)
 
-    def _persona_name_of(self, person_id: str) -> str:
-        """A told-by person id as a NAME for the fold's `<persona>` block
+    def _profile_name_of(self, person_id: str) -> str:
+        """A told-by person id as a NAME for the fold's `<profile>` block
         (45 §5): the identity index's name, "someone" when it has none (R-18 —
         never the id itself)."""
         ref = self._persons.by_person.get(person_id)
@@ -476,7 +476,7 @@ class EngagementPipeline:
     async def _debrief(
         self, *, trace: TagTrace | None, platform: str,
         culture: CultureRevision | None = None,
-        persona_room: PersonaView | None = None,
+        profile_room: ProfileView | None = None,
     ) -> None:
         """Hand this finished turn to the debrief stage, or do nothing at all.
 
@@ -534,10 +534,11 @@ class EngagementPipeline:
                 store_timeout_seconds=wiring.store_timeout_seconds,
                 working_set_max_items=wiring.working_set_max_items,
                 working_set_max_chars=wiring.working_set_max_chars,
+                content_checks=wiring.content_checks,
                 now_ms=int(time.time() * 1000),
                 culture=culture,
-                persona_room=persona_room,
-                persona_name_of=self._persona_name_of,
+                profile_room=profile_room,
+                profile_name_of=self._profile_name_of,
             )
 
     async def _run_admitted(
@@ -602,9 +603,9 @@ class EngagementPipeline:
         # than a second read that could land either side of a fold. Bound
         # here, before the `try`, for `trace`'s reason.
         culture: CultureRevision | None = None
-        # The turn's Persona views under the switch (45 §5): the room's one is
+        # The turn's Profile views under the switch (45 §5): the room's one is
         # what the debrief folds against, handed through like `culture`.
-        personas: tuple[PersonaView, ...] = ()
+        profiles: tuple[ProfileView, ...] = ()
         # Every log line emitted for the rest of this tag — across every stage
         # this method calls into — carries tag_id without any of them naming
         # it explicitly (nora.obs.logging's contextvar bridge).
@@ -617,7 +618,7 @@ class EngagementPipeline:
         try:
             ctx = await self._context.assemble(request=request)
             culture = ctx.culture
-            personas = ctx.personas
+            profiles = ctx.profiles
             # An @-mention is a placeholder plus a parallel array; left alone,
             # every name in the transcript — including Nora's own — would reach the
             # model as U+FFFC (DEC-34). Rehydrated HERE rather than at
@@ -628,6 +629,7 @@ class EngagementPipeline:
                 persons=self._persons, display_name=self._display_name,
                 self_ids=frozenset(getattr(identity, "aliases", ())),
                 metrics=self._metrics,
+                content_checks=self._tool_registry.content_checks,
             ).rehydrate(ctx)
             doctrine = self._doctrine_store.get(applies_to="tag")
             log.info(
@@ -691,6 +693,7 @@ class EngagementPipeline:
                     persons=self._persons, metrics=self._metrics,
                     roster_source=self._rosters.get(msg.platform),
                     preview_source=self._preview_source,
+                    content_checks=self._tool_registry.content_checks,
                 ),
                 # Routing: a precision-first, abstaining classifier over the
                 # message. Non-None only on a narrow high-precision surface (mall
@@ -705,6 +708,7 @@ class EngagementPipeline:
                 on_delivered=indicate.DeliverySettler(
                     indicator=indicator, spawn=self._spawn,
                 ),
+                content_checks=self._tool_registry.content_checks,
             )
             # One `Room` per tag, constructed here and closed over by the three
             # room-scoped tools. Nothing reads the platform roster unless one
@@ -1206,8 +1210,8 @@ class EngagementPipeline:
             try:
                 await self._debrief(
                     trace=trace, platform=msg.platform, culture=culture,
-                    persona_room=next(
-                        (v for v in personas if v.entity == "room"), None))
+                    profile_room=next(
+                        (v for v in profiles if v.entity == "room"), None))
             except BaseException:
                 # ABSORBED, not re-raised, and `BaseException` rather than
                 # `Exception` for `debrief.run`'s own reason one level down:

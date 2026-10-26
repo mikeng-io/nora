@@ -115,8 +115,8 @@ _UNJOINED_BY_OWN_SQL = {
 #: reader added later and never listed here passes both gates silently — the
 #: exact failure this file exists to catch, one AST shape further down.
 _NOT_A_RAW_READER = {
-    "nora/app/persona_spike.py": (
-        "operator window pages feed PersonaPersonAdaptor's existing MediaJoin; "
+    "nora/app/profile_spike.py": (
+        "operator window pages feed ProfilePersonAdaptor's existing MediaJoin; "
         "the read-only report resolves cached attachment fields as cited evidence, not a transcript"
     ),
     # `nora/infra/sql/audit.py` DEFINES `recent`/`since`/`since_including_nora`/
@@ -126,8 +126,8 @@ _NOT_A_RAW_READER = {
     "nora/infra/sql/audit.py": "defines the record store's own reads, is not a caller of them",
     # The Record read behind `record_query`, a store like `audit.py`. Its one caller, the tool in
     # `nora/agent/tools.py`, runs the rows through the shared `MediaJoin`.
-    "nora/infra/sql/persona_inputs.py": (
-        "owning-store source snapshots; PersonaPersonAdaptor joins their scoped roots "
+    "nora/infra/sql/profile_inputs.py": (
+        "owning-store source snapshots; ProfilePersonAdaptor joins their scoped roots "
         "through the shared MediaJoin before rendering"
     ),
     "nora/infra/sql/record_query.py": (
@@ -514,16 +514,25 @@ def test_the_screen_is_injected_rather_than_imported_by_the_join() -> None:
         isinstance(node, ast.Call)
         and getattr(node.func, "id", None) == "MediaJoin"
         and any(
-            kw.arg == "screen" and getattr(kw.value, "id", None) == "scan_identifiers"
+            kw.arg == "screen"
+            and ast.unparse(kw.value) == (
+                "functools.partial(scan_identifiers, content_checks=content_checks)"
+            )
             for kw in node.keywords
         )
         for node in ast.walk(tree)
     )
     assert screened, (
         "the composition root must hand `MediaJoin` the REAL `scan_identifiers` "
-        "screen as its `screen=` argument; a join built without one renders "
-        "model prose into eight prompts unscreened"
+        "screen bound to the configured content-check switch as its `screen=` "
+        "argument; a no-op loses enabled-mode and credential protection"
     )
+    assert any(
+        isinstance(node, ast.Assign)
+        and any(getattr(target, "id", None) == "content_checks" for target in node.targets)
+        and ast.unparse(node.value) == "cfg.content_checks.enabled"
+        for node in ast.walk(tree)
+    ), "the injected screen must follow config, not a hard-coded enabled/disabled value"
 
 
 @pytest.mark.parametrize("rel,path", sorted(PATHS.items()))

@@ -6,7 +6,7 @@ enabled` (the registry holding a `MemorySearch`) selects the graph's,
 Honcho surface: `ask_memory`, `search_memory`,
 `search_memory_workspace`, `who_said`, `about` and `remember`. The graph
 surface holds no Honcho tool at all: no `about`. `remember` is on both, a
-Honcho conclusion off the graph and a Persona `told` line on it (DEC-317);
+Honcho conclusion off the graph and a Profile `told` line on it (DEC-317);
 `load_transcript` reads the room's own rows and is on both.
 
 Pinned at every place tools are assembled, each through its own production
@@ -49,7 +49,7 @@ from tests.test_room_tools import GROUP, IDENTITY, MILES, NORA, TYLER, _NullStor
 #: would pass by no longer looking for it.
 MEMORY_VERBS = frozenset({
     "ask_memory", "search_memory", "search_memory_workspace", "who_said",
-    "about", "remember", "memory_search", "load_transcript", "persona_dispute",
+    "about", "remember", "memory_search", "load_transcript", "profile_dispute",
 })
 
 
@@ -58,7 +58,7 @@ def test_memory_verbs_cover_both_surfaces() -> None:
 
 #: What each assembly point offers of `MEMORY_VERBS`, per surface. The graph
 #: column is the Honcho column with every Honcho tool taken out (`about`
-#: included; `remember` stays, as the Persona write) and `memory_search` put
+#: included; `remember` stays, as the Profile write) and `memory_search` put
 #: in where that place had a Honcho search verb. The
 #: worker holds no `memory_search`: it reads the unit's other rooms, and the
 #: worker's reach is its one room (`NOT_LOOKUPS`).
@@ -66,13 +66,13 @@ EXPECTED: dict[str, dict[bool, frozenset[str]]] = {
     "tag": {
         False: frozenset({"ask_memory", "search_memory", "who_said", "about",
                           "remember", "load_transcript"}),
-        True: frozenset({"memory_search", "remember", "persona_dispute",
+        True: frozenset({"memory_search", "remember", "profile_dispute",
                          "load_transcript"}),
     },
     "fire": {
         False: frozenset({"ask_memory", "search_memory", "who_said", "about",
                           "remember", "load_transcript"}),
-        True: frozenset({"memory_search", "remember", "persona_dispute",
+        True: frozenset({"memory_search", "remember", "profile_dispute",
                          "load_transcript"}),
     },
     "cognition": {
@@ -196,7 +196,7 @@ def test_the_graph_surface_offers_memory_search_and_no_honcho_memory_verb(
 ) -> None:
     """`[memory_index]` on: `memory_search`, and none of `ask_memory`,
     `search_memory`, `search_memory_workspace`, `who_said` or `about`: no
-    Honcho tool at all (`remember` there is the Persona write, below)."""
+    Honcho tool at all (`remember` there is the Profile write, below)."""
     offered = _built(where, True, persons) & MEMORY_VERBS
     assert offered == EXPECTED[where][True]
     assert not offered & HONCHO_MEMORY_TOOLS
@@ -204,11 +204,11 @@ def test_the_graph_surface_offers_memory_search_and_no_honcho_memory_verb(
 
 
 @pytest.mark.parametrize(("graph", "closure"), [(False, "remember"), (True, "remember_told")])
-def test_remember_is_the_persona_write_on_the_graph_and_honchos_off_it(
+def test_remember_is_the_profile_write_on_the_graph_and_honchos_off_it(
     persons: Any, graph: bool, closure: str,
 ) -> None:
     """One name, two writes: off the graph `remember` is Honcho's conclusion,
-    on it the Persona `told` line, never the Honcho closure under the graph."""
+    on it the Profile `told` line, never the Honcho closure under the graph."""
     specs = build_tool_specs(
         store=_NullStore(), conversation_id=GROUP, conversation_type="group",
         persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),

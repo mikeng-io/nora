@@ -105,8 +105,8 @@ def _fire_path(*, culture, policy) -> FirePath:
     path._policy = policy
     path._metrics = Metrics()
     path._standing_store_timeout_seconds = 5.0
-    # Pre-switch (45 §5): no Persona reader wired, so the culture reads run.
-    path._persona_reader = None
+    # Pre-switch (45 §5): no Profile reader wired, so the culture reads run.
+    path._profile_reader = None
     return path
 
 
@@ -251,7 +251,7 @@ async def test_the_TAG_path_reads_the_rooms_account_by_PRIMARY_ID():
     assembler._culture_reader = culture
     assembler._policy = _Policy("the-conversation")
     assembler._metrics = Metrics()
-    assembler._persona_reader = None
+    assembler._profile_reader = None
     msg = type("_Msg", (), {
         "platform": "discord", "conversation_id": "the-arriving-thread"})()
 
@@ -267,7 +267,7 @@ async def test_the_TAG_path_reads_nothing_when_the_tier_is_off():
     assembler._culture_reader = None
     assembler._policy = _Policy("g1")
     assembler._metrics = Metrics()
-    assembler._persona_reader = None
+    assembler._profile_reader = None
     msg = type("_Msg", (), {"platform": "discord", "conversation_id": "g1"})()
     assert await assembler._culture(msg) is None  # type: ignore[arg-type]
 
@@ -329,7 +329,7 @@ async def test_both_paths_read_the_units_culture_by_the_rooms_UNIT():
     assembler._culture_reader = culture
     assembler._policy = _UnitPolicy()
     assembler._metrics = Metrics()
-    assembler._persona_reader = None
+    assembler._profile_reader = None
     msg = type("_Msg", (), {"platform": "discord", "conversation_id": "x"})()
     assert await assembler._unit_culture(msg) is None  # type: ignore[arg-type]
     assert culture.reads == [unit_culture_key("friends")] * 2

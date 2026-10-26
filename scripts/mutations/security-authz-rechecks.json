@@ -72,8 +72,8 @@
   {
     "name": "8765_44856 presence: an unmapped account in a flagged room no longer refuses the presence scope",
     "file": "nora/agent/lineage.py",
-    "old": "    if live is None or not live.available or live.degraded or live.unnamed > 0:\n        return False\n    return any(",
-    "new": "    if live is None or not live.available or live.degraded:\n        return False\n    return any(",
+    "old": "    if live.unnamed > 0:\n        return False\n    return any(",
+    "new": "    return any(",
     "target": "tests/unit/test_lineage.py::test_presence_is_refused"
   },
   {

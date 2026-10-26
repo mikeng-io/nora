@@ -43,7 +43,7 @@
   },
   {
     "name": "routine uses source acknowledgement",
-    "file": "nora/infra/sql/persona_inputs.py",
+    "file": "nora/infra/sql/profile_inputs.py",
     "old": "))] if pending_routine and any(",
     "new": "))] if any(",
     "target": "tests/infra/test_character_card.py::test_acknowledged_routine_does_not_wake_writer_until_revision_changes"

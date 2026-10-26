@@ -2464,7 +2464,7 @@ async def test_a_proactive_turn_with_no_runner_is_a_counted_wiring_fault(
 
 def test_the_proactive_doctrine_audience_carries_her_doctrine(doctrine_store) -> None:
     """The occasion-neutral files reach the proactive audience; an
-    audience missing any of them would deliver with no persona and no
+    audience missing any of them would deliver with no profile and no
     constraints. The may-speak rule is `ProactiveHeader`'s."""
     text = doctrine_store.get(applies_to="proactive").text
     for name in ("identity", "voice", "conduct", "constraints"):

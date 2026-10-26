@@ -1,5 +1,11 @@
 """`whereis(person)` and its R-21 disclosure seam.
 
+Runtime composition defaults `[content_checks] enabled` to false. The original
+phone/UUID/coordinate, place/person-name and location-audience predicates remain
+available in enabled mode. Credentials and LeakGuard are independent of this
+switch; admission, unit scope, location opt-in and availability still apply.
+
+
 `whereis` reads the LOCAL presence record for one person in this conversation,
 carries the fix's AGE to the model, and degrades to `unavailable` (never
 null-island) when there is no usable fix. Nora reads a local table; the collector
@@ -175,6 +181,7 @@ def _within_place(lat: float, lng: float, place: SavedPlace) -> bool:
 async def resolvable_places(
     *, room: Room, circles: tuple[Circle, ...], presence: PresenceReader,
     location_trusted: bool = False,
+    content_checks: bool = True,
 ) -> tuple[SavedPlace, ...] | None:
     """The saved places THIS room may resolve by name: only from circles the room
     is a verified subset of, and EMPTY on doubt about the ROOM (degraded room,
@@ -197,13 +204,13 @@ async def resolvable_places(
     same reason they do there."""
     try:
         view = await room.scope()
-        unnamed_blocks = view.unnamed > 0 and not location_trusted
+        unnamed_blocks = content_checks and view.unnamed > 0 and not location_trusted
         if not view.available or view.degraded or unnamed_blocks:
             return ()
         room_ids = frozenset(p.person_id for p in view.people)
         out: list[SavedPlace] = []
         for circle in circles:
-            if location_trusted or DisclosureGuard(circle).permits(room_ids):
+            if not content_checks or location_trusted or DisclosureGuard(circle).permits(room_ids):
                 out.extend(await presence.places_for(circle_id=circle.circle_id))
         return tuple(out)
     except Exception:
@@ -273,6 +280,7 @@ PresenceAudience = Literal["ok", "unavailable", "unnamed", "not_subset"]
 
 def presence_audience(
     view: RoomView, circle: Circle, *, location_trusted: bool,
+    content_checks: bool = True,
 ) -> PresenceAudience:
     """May a DERIVED-presence answer (a place a person goes, what is usual for
     them) be said in this room? The ONE decision `where_been`/`routine_read`
@@ -284,10 +292,12 @@ def presence_audience(
     location-trusted room (DEC-79)."""
     if not view.available or view.degraded:
         return "unavailable"
-    if view.unnamed > 0 and not location_trusted:
+    if content_checks and view.unnamed > 0 and not location_trusted:
         return "unnamed"
     room_person_ids = frozenset(p.person_id for p in view.people)
-    if not (location_trusted or DisclosureGuard(circle).permits(room_person_ids)):
+    if content_checks and not (
+        location_trusted or DisclosureGuard(circle).permits(room_person_ids)
+    ):
         return "not_subset"
     return "ok"
 
@@ -334,7 +344,7 @@ def check_disclosure_invariant(
     return ok
 
 
-def _ok_note(*, place: bool, moving: bool) -> str:
+def _ok_note(*, place: bool, moving: bool, content_checks: bool = True) -> str:
     """The reporting rules for a `where_is` `ok` (ADR 0015 §3: result
     interpretation lives in the result). They arrive with the answer they are
     about, and the place and movement clauses only when those fields do."""
@@ -344,10 +354,11 @@ def _ok_note(*, place: bool, moving: bool) -> str:
     ]
     if place:
         parts.append("Call the spot by `place`, the household's own name for it.")
-    parts.append(
-        "Never read lat/lng aloud: pass them to reverse_geocode for a street "
-        "address, and route from that address to a saved place for a travel time."
-    )
+    if content_checks:
+        parts.append(
+            "Never read lat/lng aloud: pass them to reverse_geocode for a street "
+            "address, and route from that address to a saved place for a travel time."
+        )
     if moving:
         parts.append(
             "driving, moving, towards and speed_kmh are measured movement: say "
@@ -374,7 +385,9 @@ class Whereis:
         geocoder: ReverseGeocoder | None = None,
         location_trusted: bool = False,
         metrics: Any = None,
+        content_checks: bool = True,
     ) -> None:
+        self._content_checks = content_checks
         self._room = room
         self._circle = circle
         self._presence = presence
@@ -446,8 +459,12 @@ class Whereis:
         # number on the wire, never spoken, so nothing to key `identity.toml` on).
         # `degraded` still refuses for everyone: trust can overrule what a roster
         # SAYS, never the absence of a roster.
-        subset_ok = self._location_trusted or self._guard.permits(room_person_ids)
-        unnamed_blocks = view.unnamed > 0 and not self._location_trusted
+        subset_ok = (
+            not self._content_checks
+            or self._location_trusted
+            or self._guard.permits(room_person_ids)
+        )
+        unnamed_blocks = self._content_checks and view.unnamed > 0 and not self._location_trusted
         # A DEGRADED room is an ERROR, not a policy decision, and it is the ONLY
         # refusal a trusted room can reach. Reporting it as `refused` would put a
         # false sentence in Nora's mouth when signal-cli is wedged and
@@ -496,7 +513,7 @@ class Whereis:
         # account that joins later would otherwise produce no signal. `unnamed` is
         # a LABEL VALUE, not a count, so the cardinality stays fixed; the count
         # goes in the log line beside it.
-        if view.unnamed > 0 and self._location_trusted:
+        if self._content_checks and view.unnamed > 0 and self._location_trusted:
             if self._metrics is not None:
                 self._metrics.inc(
                     "nora_presence_disclosure_waived_total", reason="unnamed"
@@ -634,7 +651,8 @@ class Whereis:
             # warning (`STALE_AFTER_MS`) leads: it changes what the rest means.
             "note": " ".join(filter(None, (
                 stale.get("note"),
-                _ok_note(place=place_name is not None, moving=bool(movement)),
+                _ok_note(place=place_name is not None, moving=bool(movement),
+                         content_checks=self._content_checks),
             ))),
         }
 

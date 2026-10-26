@@ -1,5 +1,38 @@
 # Mini Nora icon: provenance
 
+## Current: 2D anime Bauhinia — 2026-10-26
+
+The supplied final transparent portrait follows the approved Mini Bauhinia
+production setting: compact high bun, broad hair locks, five-petal clasp,
+option08 eyes, one tiny mouth without a nose marker and the new outfit.
+No earphones or cables. Parent viewed the final crop and bun visibility PASS.
+It remains an icon derivative, never the full-body canonical self reference.
+
+The central inventory records the canonical semantic parent, dated prompt
+intent and all app/site/showreel outputs. Existing icon and OG processors keep
+bare transparent icons and full-bleed studio squares where required. Two PWA
+screenshots were recaptured using the documented synthetic mock workflow;
+no real account or live data was used. External profile publication, media
+ingest and deployment were not performed.
+
+## Earlier option08 Balanced refresh — historical, 2026-10-26
+
+The operator approved option08 eyes for Mini and requested this portrait refreshed
+from the new canonical image: visible sclera, brown irises, dark pupils, restrained
+highlights and upper lid line; no nose marker and one tiny mouth. The transparent
+head-and-shoulders crop retains the bun, cheek blush, hoodie and wired earphones.
+It is an icon derivative, not a replacement full-body reference.
+
+`assets/visual-assets.json` declares every consumer and derivative. Run
+`uv run python scripts/visual_assets.py sync` to rebuild app/site icons, the
+portal portrait and showreel images through their existing processors.
+Transparent exports remain bare; iOS and maskable icons use the studio square
+from `DESIGN.md`. Original generated PNG metadata stays in the local archive;
+repository PNGs omit generation metadata. No external profile publication or
+runtime media ingest is performed by this pipeline.
+
+## Historical icon, 2026-10-20 (superseded)
+
 Generated with the built-in imagegen tool on 2026-10-20. The operator selected
 the second candidate for the repository and web app. This replaces the previous
 chin-on-hands icon; the canonical full-body image and character sheet are unchanged.

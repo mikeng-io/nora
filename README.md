@@ -1,10 +1,10 @@
 
 <p align="center">
-  <img src="assets/nora-social-banner.png" alt="Mini Nora at her desk, earphones in, beside a sleeping cat." width="100%">
+  <img src="assets/nora-social-banner.png" alt="Mini Nora at a warm window ledge overlooking a Hong Kong neighbourhood at dusk." width="100%">
 </p>
 
 <p align="center">
-  <img src="assets/nora-mini-icon.png" alt="Mini Nora wearing her grey hoodie and wired earphones" width="128">
+  <img src="assets/nora-mini-icon.png" alt="Mini Nora portrait" width="128">
 </p>
 
 <h1 align="center">Nora</h1>
@@ -151,7 +151,8 @@ and explicitly allow the intended rooms before starting Nora.
 
 ## Development
 
-Use Python 3.12 and [uv](https://docs.astral.sh/uv/). From a checkout:
+Use Python 3.12 and [uv](https://docs.astral.sh/uv/) 0.13.4 or newer
+(the emSign TLS fix). From a checkout:
 
 ```bash
 uv sync --frozen --extra evals
@@ -167,6 +168,12 @@ See [Contributing](CONTRIBUTING.md) for the full workflow, branch and pull
 request rules, and local hooks.
 
 ## Configuration
+
+`[content_checks] enabled = false` is the default: phone/UUID/coordinate,
+third-party place/person-name and location audience filters are bypassed while
+credential and doctrine guards remain enabled. Set it to `true` and restart
+to restore those retained filters. Admission, unit scope and location consent
+remain required. See [the decision](docs/adr/0030-content-filters-are-disabled-by-default-and-reversible.md).
 
 The tracked examples describe three separate inputs:
 
@@ -203,6 +210,15 @@ image records the source revision and its generated version manifest. The
 [deployment guide](deploy/README.md) describes the procedure, and the
 [runbook](docs/runbook.md) carries health checks and rollback constraints,
 including database migrations. Do not use old phase tags as rollback targets.
+
+Nora reads the release history shipped in her image with `version_list()` and
+`version_read(version)`. The list includes the immutable running version and
+recorded version metadata; the read returns one version's recorded notes and
+changes. Both use the same baked snapshot, with no runtime GitHub access or
+credentials. Releases after the build are invisible until another image is
+deployed. Notes are capped at 2,000 characters and changes at 20 commit subjects,
+so this is a release summary, not the complete live GitHub release body.
+An absent or unreadable stamp is unavailable; an unrecorded version is not found.
 
 ## Help and contributions
 

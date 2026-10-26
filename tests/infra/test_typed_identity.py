@@ -6,17 +6,17 @@ from datetime import UTC, datetime
 import pytest
 import sqlalchemy as sa
 
-from nora.domain.persona import (
+from nora.domain.profile import (
     AddOp,
-    PersonaView,
+    ProfileView,
     ReviseOp,
     identity_text,
 )
 from nora.infra.sql.character import SqlCharacterEvidence
-from nora.infra.sql.schema import MESSAGES, PERSONA_LINE
-from nora.language.persona_render import account_text
-from tests.infra.test_persona_store import ACCOUNT, CITABLE, KIT, NOW, _write
-from tests.infra.test_persona_store import env as env
+from nora.infra.sql.schema import MESSAGES, PROFILE_LINE
+from nora.language.profile_render import account_text
+from tests.infra.test_profile_store import ACCOUNT, CITABLE, KIT, NOW, _write
+from tests.infra.test_profile_store import env as env
 
 
 @pytest.mark.parametrize(
@@ -42,7 +42,7 @@ async def test_typed_values_round_trip_and_override_conflicting_model_text(env, 
         env,
         [
             AddOp(
-                part="identity",
+                part="facts",
                 kind=kind,
                 mode="told",
                 text="conflicting model prose",
@@ -60,12 +60,12 @@ async def test_typed_values_round_trip_and_override_conflicting_model_text(env, 
     rendered = identity_text(line)
     assert "conflicting model prose" not in rendered
     body = account_text(
-        PersonaView(entity="person", of="Kit", lines=(line,)),
+        ProfileView(entity="person", of="Kit", lines=(line,)),
         name_of=lambda _: "Kit",
         now=datetime.fromtimestamp(NOW / 1000, UTC),
     )
     from nora.domain.character_card import format_line
-    assert body and format_line(line) in body[0]
+    assert body and format_line(line, name_of=lambda _: "Kit") in body[0]
     if key == "birthday":
         assert "birthday: 02-29" in rendered and "2000-02-29" not in rendered
     if key == "dietary_restrictions":
@@ -91,7 +91,7 @@ async def test_typed_values_round_trip_and_override_conflicting_model_text(env, 
 )
 async def test_invalid_shapes_are_refused_without_a_row(env, key, value):
     op = AddOp(
-        part="identity",
+        part="facts",
         kind="relationship" if key == "relationship" else "attribute",
         text="claim",
         mode="told",
@@ -108,7 +108,7 @@ async def test_invalid_shapes_are_refused_without_a_row(env, key, value):
 
 async def test_residence_correction_keeps_source_effective_and_write_history(env):
     first = AddOp(
-        part="identity",
+        part="facts",
         kind="attribute",
         text="lives here",
         mode="told",
@@ -139,7 +139,7 @@ async def test_residence_correction_keeps_source_effective_and_write_history(env
     assert head.valid_until is None and head.as_of == CITABLE.messages[102].ts
     async with env.engine.connect() as conn:
         rows = (
-            await conn.execute(sa.select(PERSONA_LINE).order_by(PERSONA_LINE.c.written_at))
+            await conn.execute(sa.select(PROFILE_LINE).order_by(PROFILE_LINE.c.written_at))
         ).all()
     assert [(r.fact_value, r.valid_until) for r in rows] == [("London", 20), ("Hong Kong", None)]
 
@@ -148,10 +148,10 @@ async def test_legacy_prose_is_retained_but_not_promoted(env):
     # A migration leaves all typed fields null on this pre-existing row.
     async with env.engine.begin() as conn:
         await conn.execute(
-            sa.insert(PERSONA_LINE).values(
+            sa.insert(PROFILE_LINE).values(
                 id="00000000-0000-0000-0000-000000000001",
-                persona_key=ACCOUNT.key,
-                part="identity",
+                profile_key=ACCOUNT.key,
+                part="facts",
                 kind="attribute",
                 text="birthday meal on Saturday",
                 mode="told",
@@ -168,7 +168,7 @@ async def test_legacy_prose_is_retained_but_not_promoted(env):
     assert identity_text(line) == "" and line.fact_value is None
     assert (
         account_text(
-            PersonaView(entity="person", of="Kit", lines=(line,)),
+            ProfileView(entity="person", of="Kit", lines=(line,)),
             name_of=lambda _: "Kit",
             now=datetime.fromtimestamp(NOW / 1000, UTC),
         )
@@ -236,7 +236,7 @@ async def test_historical_union_freezes_boundary_and_resumes_without_consuming_u
 
 async def test_a_current_singleton_requires_explicit_correction_and_old_claims_stay_history(env):
     first = AddOp(
-        part="identity",
+        part="facts",
         kind="attribute",
         text="current home",
         mode="told",
@@ -261,7 +261,7 @@ async def test_historical_unsettled_and_conflicted_sessions_hold_the_same_page(e
     from nora.domain.errors import AccountNotRecordableError
     from nora.domain.models import PersonRef
     from nora.language.character import CharacterRoom, PersonKey
-    from nora.language.persona import PersonaEvidence, PersonaPersonAdaptor
+    from nora.language.profile import ProfileEvidence, ProfilePersonAdaptor
     from nora.testing import InMemoryCultureStore
 
     await _message(env.engine, 1, person=KIT)
@@ -275,11 +275,11 @@ async def test_historical_unsettled_and_conflicted_sessions_hold_the_same_page(e
     )
 
     def build():
-        evidence = PersonaEvidence(
-            store=reads, persona=env.store, keys={ACCOUNT.key: pk}, wake_batch=5
+        evidence = ProfileEvidence(
+            store=reads, profile=env.store, keys={ACCOUNT.key: pk}, wake_batch=5
         )
-        return PersonaPersonAdaptor(
-            persona=env.store,
+        return ProfilePersonAdaptor(
+            profile=env.store,
             culture=InMemoryCultureStore(),
             evidence=evidence,
             reads=reads,
@@ -304,7 +304,7 @@ async def test_historical_unsettled_and_conflicted_sessions_hold_the_same_page(e
         env,
         [
             AddOp(
-                part="identity",
+                part="facts",
                 kind="role",
                 text="organiser",
                 mode="told",
@@ -349,26 +349,26 @@ async def test_historical_unsettled_and_conflicted_sessions_hold_the_same_page(e
     assert await reads.history_state(key=ACCOUNT.key) == (1, 1)
 
 
-async def test_render_on_person_and_unit_inputs_use_persona_rooms_without_legacy_culture(env):
+async def test_render_on_person_and_unit_inputs_use_profile_rooms_without_legacy_culture(env):
     from nora.domain.culture import unit_culture_key
     from nora.domain.models import PersonRef
-    from nora.domain.persona import Account
+    from nora.domain.profile import Account
     from nora.language.character import CharacterRoom, PersonKey
-    from nora.language.persona import PersonaEvidence, PersonaPersonAdaptor
-    from nora.language.persona_collective import (
+    from nora.language.profile import ProfileEvidence, ProfilePersonAdaptor
+    from nora.language.profile_collective import (
         CollectiveEvidence,
         CollectiveKey,
-        PersonaCollectiveAdaptor,
+        ProfileCollectiveAdaptor,
     )
     from nora.testing import InMemoryCultureStore
 
     await _message(env.engine, 101, person=KIT)
     room = CharacterRoom(key="room-a", platform="signal", label="Friends")
-    result = await env.store.persona_write(
+    result = await env.store.profile_write(
         account=Account(key="room-a", entity_kind="room", unit=ACCOUNT.unit),
         ops=[
             AddOp(
-                part="identity",
+                part="facts",
                 kind="norm",
                 text="conflicting prose",
                 mode="told",
@@ -390,9 +390,9 @@ async def test_render_on_person_and_unit_inputs_use_persona_rooms_without_legacy
     evidence = CollectiveEvidence(store=reads, keys=keys, kind="unit", render=True)
     assert await evidence.count(key=key, after=0) == 1
     batch, cursor = await evidence.newest(key=key, after=0, limit=10)
-    unit = PersonaCollectiveAdaptor(
+    unit = ProfileCollectiveAdaptor(
         kind="unit",
-        persona=env.store,
+        profile=env.store,
         culture=InMemoryCultureStore(),
         evidence=evidence,
         reads=reads,
@@ -410,11 +410,11 @@ async def test_render_on_person_and_unit_inputs_use_persona_rooms_without_legacy
         listed=("room-a",),
         home="room-a",
     )
-    person = PersonaPersonAdaptor(
-        persona=env.store,
+    person = ProfilePersonAdaptor(
+        profile=env.store,
         culture=InMemoryCultureStore(),
-        evidence=PersonaEvidence(
-            store=reads, persona=env.store, keys={ACCOUNT.key: pk}, wake_batch=5
+        evidence=ProfileEvidence(
+            store=reads, profile=env.store, keys={ACCOUNT.key: pk}, wake_batch=5
         ),
         reads=reads,
         keys={ACCOUNT.key: pk},
@@ -445,7 +445,7 @@ async def test_history_cli_receipts_and_explicit_rerun_preserve_claims(
         env,
         [
             AddOp(
-                part="identity",
+                part="facts",
                 kind="role",
                 text="organiser",
                 mode="told",
@@ -461,14 +461,14 @@ async def test_history_cli_receipts_and_explicit_rerun_preserve_claims(
     monkeypatch.setattr(cli, "_policy", lambda _: SimpleNamespace(conversations=()))
     monkeypatch.setattr(cli, "_persons", lambda _: Persons(by_person={}, index={}))
     args = Namespace(key=ACCOUNT.key, restart=True, apply=False)
-    assert await cli.cmd_persona_history(args) == 0
+    assert await cli.cmd_profile_history(args) == 0
     receipt = json.loads(capsys.readouterr().out)
     assert receipt["complete"] and not receipt["restart_applied"]
     assert receipt["typed_current"] == 1 and "gender" in receipt["missing_fields"]
     assert await reads.history_state(key=ACCOUNT.key) == (1, 1)
     await _message(env.engine, 2, person=KIT)
     args.apply = True
-    assert await cli.cmd_persona_history(args) == 0
+    assert await cli.cmd_profile_history(args) == 0
     receipt = json.loads(capsys.readouterr().out)
     assert receipt["restart_applied"] and not receipt["complete"]
     assert await reads.history_state(key=ACCOUNT.key) == (2, 0)
@@ -478,7 +478,7 @@ async def test_history_cli_receipts_and_explicit_rerun_preserve_claims(
 
 @pytest.mark.parametrize("key", ["gender", "sex"])
 async def test_gender_and_sex_require_explicit_statements_not_deductions(env, key):
-    result = await _write(env, [AddOp(part="identity", kind="attribute", text="claim",
+    result = await _write(env, [AddOp(part="facts", kind="attribute", text="claim",
         mode="deduced", citations=("101", "102"), fact_key=key, fact_value="female")])
     assert result.status == "refused"
     assert result.refusals[0].reason == "invalid_fact"
@@ -487,7 +487,7 @@ async def test_gender_and_sex_require_explicit_statements_not_deductions(env, ke
 
 async def test_fallback_revision_preserves_same_fact_and_dates_changed_fact(env):
     value = {"name": "height", "value": 178, "unit": "cm"}
-    op = AddOp(part="identity", kind="attribute", text="height", mode="told",
+    op = AddOp(part="facts", kind="attribute", text="height", mode="told",
                citations=("101",), told_by=KIT, fact_key="attribute", fact_value=value)
     assert (await _write(env, [op])).status == "ok"
     [original] = await env.store.account_heads(key=ACCOUNT.key)
@@ -503,8 +503,8 @@ async def test_fallback_revision_preserves_same_fact_and_dates_changed_fact(env)
     [head] = await env.store.account_heads(key=ACCOUNT.key)
     assert head.fact_value == changed and head.as_of == CITABLE.messages[103].ts
     async with env.engine.connect() as conn:
-        rows = (await conn.execute(sa.select(PERSONA_LINE.c.fact_value)
-                                   .order_by(PERSONA_LINE.c.written_at))).scalars().all()
+        rows = (await conn.execute(sa.select(PROFILE_LINE.c.fact_value)
+                                   .order_by(PROFILE_LINE.c.written_at))).scalars().all()
     assert rows == [value, value, changed]
 
 
@@ -512,11 +512,11 @@ async def test_fallback_revision_preserves_same_fact_and_dates_changed_fact(env)
 @pytest.mark.parametrize("unsafe", ["+85291234567", "22.31234, 114.12345"])
 async def test_fallback_all_components_pass_real_egress_screen(env, field, unsafe):
     from nora.agent.dream_screen import text_offence
-    from nora.infra.sql.persona import SqlPersonaStore
+    from nora.infra.sql.profile import SqlProfileStore
 
-    env.store = SqlPersonaStore(env.engine, screen=text_offence)
+    env.store = SqlProfileStore(env.engine, screen=text_offence)
     value = {"name": "height", "value": 178, "unit": "cm", field: unsafe}
-    op = AddOp(part="identity", kind="attribute", text="safe prose", mode="told",
+    op = AddOp(part="facts", kind="attribute", text="safe prose", mode="told",
                citations=("101",), told_by=KIT, fact_key="attribute", fact_value=value)
     result = await _write(env, [op])
     assert result.status == "refused"
@@ -525,7 +525,7 @@ async def test_fallback_all_components_pass_real_egress_screen(env, field, unsaf
 
 
 async def test_boolean_and_number_are_distinct_fallback_revisions(env):
-    first = AddOp(part="identity", kind="attribute", text="explicit value", mode="told",
+    first = AddOp(part="facts", kind="attribute", text="explicit value", mode="told",
                   citations=("101",), told_by=KIT, fact_key="attribute",
                   fact_value={"name": "test_result", "value": True})
     assert (await _write(env, [first])).status == "ok"
@@ -539,10 +539,10 @@ async def test_boolean_and_number_are_distinct_fallback_revisions(env):
 
 async def test_numeric_value_and_unit_cannot_assemble_unscreened_coordinates(env):
     from nora.agent.dream_screen import text_offence
-    from nora.infra.sql.persona import SqlPersonaStore
+    from nora.infra.sql.profile import SqlProfileStore
 
-    env.store = SqlPersonaStore(env.engine, screen=text_offence)
-    op = AddOp(part="identity", kind="attribute", text="safe prose", mode="told",
+    env.store = SqlProfileStore(env.engine, screen=text_offence)
+    op = AddOp(part="facts", kind="attribute", text="safe prose", mode="told",
                citations=("101",), told_by=KIT, fact_key="attribute",
                fact_value={"name": "location", "value": 22.31234, "unit": ", 114.12345"})
     result = await _write(env, [op])

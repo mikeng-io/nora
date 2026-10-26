@@ -119,8 +119,8 @@ from nora.agent.dream_screen import screen
 from nora.domain.culture import CultureRevision
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
-from nora.domain.persona import PersonaView
 from nora.domain.ports import RecordStore, StandingStore
+from nora.domain.profile import ProfileView
 from nora.domain.standing import (
     DEFAULT_WORKING_SET_MAX_CHARS,
     DEFAULT_WORKING_SET_MAX_ITEMS,
@@ -292,6 +292,7 @@ def _working_set(
     max_items: int,
     max_chars: int,
     metrics: Metrics,
+    content_checks: bool = True,
 ) -> tuple[WorkingSetItem, ...]:
     """The revised `working_set`, from the model's raw array
     — never raises, and every
@@ -392,6 +393,7 @@ def _working_set(
             for item in candidates
         ],
         metrics=metrics,
+        content_checks=content_checks,
     )
     rejected_indices = {r.index for r in rejected}
     survivors = tuple(
@@ -448,6 +450,7 @@ class Wiring:
     # actually carries. LAST, because a defaulted field cannot precede the
     # ones above it.
     media_join: MediaJoin | None = None
+    content_checks: bool = True
     # `working_set`'s own two operating caps — `max_chars`'s siblings and, like
     # it, config (`StandingConfig.working_set_max_items`/`_max_chars`).
     # Defaulted so a caller that omits them still builds a `Wiring`.
@@ -473,13 +476,14 @@ async def run(
     media_join: MediaJoin | None = None,
     tz: tzinfo | None = None,
     culture: CultureRevision | None = None,
-    # The switch (45 §5): the room's Persona account as the TURN read it,
+    # The switch (45 §5): the room's Profile account as the TURN read it,
     # handed through for `culture`'s own reason (the fold reads the SAME
     # account the reply did). Set, it replaces `culture` in the fold's input.
-    persona_room: PersonaView | None = None,
-    persona_name_of: Callable[[str], str] | None = None,
+    profile_room: ProfileView | None = None,
+    profile_name_of: Callable[[str], str] | None = None,
     working_set_max_items: int = DEFAULT_WORKING_SET_MAX_ITEMS,
     working_set_max_chars: int = DEFAULT_WORKING_SET_MAX_CHARS,
+    content_checks: bool = True,
 ) -> None:
     """Fold this finished turn into the conversation's position. **Never
     raises, and never returns anything** — a stage that runs after delivery has
@@ -577,10 +581,10 @@ async def run(
             display_name=display_name, metrics=metrics, since_rows=batch, tz=tz,
             # The room's account (DEC-207) — the one the turn itself read at
             # its start, handed through rather than read a second time. Under
-            # the switch (45 §5) that account is the Persona view.
+            # the switch (45 §5) that account is the Profile view.
             culture=culture,
-            persona_room=persona_room,
-            persona_name_of=persona_name_of,
+            profile_room=profile_room,
+            profile_name_of=profile_name_of,
         )
         # ONE `wait_for` around the whole fold, the consolidate retry
         # included: the budget the slot can afford is a total, and a retry
@@ -645,6 +649,7 @@ async def run(
         # it persists by design rather than by attack.
         kept, rejected = screen(
             adaptor="debrief", items=[{"standing": body}], metrics=metrics,
+            content_checks=content_checks,
         )
         if not kept:
             log.warning(
@@ -666,6 +671,7 @@ async def run(
             prior=prior.working_set if prior is not None else (),
             max_items=working_set_max_items, max_chars=working_set_max_chars,
             metrics=metrics,
+            content_checks=content_checks,
         )
 
         # Bounded and labelled `unavailable`, NOT `timeout`, exactly as the read

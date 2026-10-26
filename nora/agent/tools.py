@@ -199,21 +199,6 @@ from ..domain.notes import (
     has_duplicate_open_title,
     note_handle,
 )
-from ..domain.persona import (
-    FACT_KINDS,
-    SINGLETON_FACTS,
-    PersonaCitable,
-    PersonaView,
-    PersonaWriter,
-    handles_for,
-)
-from ..domain.persona import LINE_MAX_CHARS as PERSONA_LINE_MAX_CHARS
-from ..domain.persona import Account as PersonaAccount
-from ..domain.persona import AddOp as PersonaAddOp
-from ..domain.persona import (
-    ReviseOp as PersonaReviseOp,
-)
-from ..domain.persona import Said as PersonaSaid
 from ..domain.ports import (
     BrowserRunner,
     CultureReader,
@@ -237,6 +222,21 @@ from ..domain.ports import (
     VoiceChannelRef,
     VoicePresenceSource,
 )
+from ..domain.profile import (
+    FACT_KINDS,
+    SINGLETON_FACTS,
+    ProfileCitable,
+    ProfileView,
+    ProfileWriter,
+    handles_for,
+)
+from ..domain.profile import LINE_MAX_CHARS as PROFILE_LINE_MAX_CHARS
+from ..domain.profile import Account as ProfileAccount
+from ..domain.profile import AddOp as ProfileAddOp
+from ..domain.profile import (
+    ReviseOp as ProfileReviseOp,
+)
+from ..domain.profile import Said as ProfileSaid
 from ..domain.prompt import stamp
 from ..domain.quote_window import first_by_ts
 from ..domain.record_query import RECORD_QUERY_MAX, RecordHit, RecordQuery
@@ -264,8 +264,6 @@ from ..domain.x_links import is_handle as _is_x_handle
 from ..domain.x_links import parse_link as _parse_x_link
 from ..infra.social.readings import READ_CONCURRENCY as _INSTAGRAM_READ_CONCURRENCY
 from ..infra.social.readings import TurnLook
-from ..infra.version import NOTHING_FOUND as VERSION_NOTHING_FOUND
-from ..infra.version import UNAVAILABLE as VERSION_UNAVAILABLE
 from ..infra.vision.client import DESCRIBE_PROMPTS
 from ..infra.vision.comprehend import describe_coverage, read_video_windows
 from ..infra.vision.preprocess import (
@@ -277,13 +275,13 @@ from ..infra.vision.preprocess import (
     video_encode_signature,
 )
 from ..language.culture import CULTURE_ADAPTOR_NAME
-from ..language.persona_render import PersonaHeads, account_text, authored_identity
+from ..language.profile_render import ProfileHeads, account_text, authored_identity
 from ..obs.logging import current_tag_id
 from ..obs.tracing import annotate, current_span_ids, span
 from .arithmetic import evaluate as evaluate_expression
 from .character_read import account_key, person_named, room_named, rooms_listing
 from .egress import scan_reply
-from .lineage import LineagePolicy, entry_permits, persona_lines_for
+from .lineage import LineagePolicy, entry_permits, profile_lines_for
 
 # Re-exported, explicitly (`as`-aliased to themselves so ruff's F401 reads
 # them as intentional, not dead): `tests/test_media_fetch.py` and
@@ -1557,7 +1555,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # question or later: remember, note_create or remind). Its one non-English
     # string is the trigger 記低; «say 記低咗 only when saved» is an output
     # rule and rides in the `ok` result's `note`.
-    # On the graph surface the same name is `remember_told`, a Persona `told`
+    # On the graph surface the same name is `remember_told`, a Profile `told`
     # line (design/unified-memory/45), with the same declaration: one write,
     # confirmed, never retried, level 2.
     "remember": NativeTool(1,
@@ -1566,9 +1564,9 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                            output_contract="three_state", level=2),
     # The dispute door beside `remember_told` (35 §2): «that's wrong» or
     # «forget that» about a remembered fact, on the graph surface only (the
-    # Persona account it rules on exists there). One write, confirmed, never
+    # Profile account it rules on exists there). One write, confirmed, never
     # retried; level 2 beside `remember`.
-    "persona_dispute": NativeTool(1,
+    "profile_dispute": NativeTool(1,
                                   side_effect_state="confirmed", idempotency="non_idempotent",
                                   retry="never",
                                   output_contract="three_state", level=2),
@@ -1743,31 +1741,16 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                     side_effect_state="confirmed", idempotency="idempotent",
                                     retry="safe",
                                     output_contract="three_state", level=2),
-    # WHAT SHE IS RUNNING, and what was in each version (DEC-97). ONE verb with
-    # two shapes rather than two tools (`weather`'s DEC-72 argument): "咩version"
-    # and "V2 有咩" are one capability asked from two angles, and two tools would
-    # fight over every version question the way DEC-58 measured.
-    #
-    # Budget 2, sized like `lookup_person` — by model round trips, not by cost
-    # (the answer is a dict parsed from one small local file). One call answers
-    # "what version are you"; a second covers the follow-up "and what was in the
-    # one before", which is a genuinely different question with a different
-    # argument. A third in one turn is a model looping.
-    #
-    # `source_tier="confirmed"`: this is Nora's own build stamp, read off the
-    # artifact she is executing — the closest source there is for a fact about
-    # herself, and the reason she must never web-search her own version.
-    # `time_shiftable` is None, like `calculate`: the manifest cannot change
-    # under a running process, so the answer is neither about this instant nor
-    # shiftable to another one.
-    #
-    # `level=2` (ADR 0015 §3): one constraint, never work a version out from the
-    # chat or the web. Whether to paraphrase `notes` or say none were recorded
-    # is the `ok` result's `note`.
-    "version": NativeTool(2,
-                          source_tier="confirmed", read_only=True,
-                          side_effect_state="none", idempotency="idempotent", retry="safe",
-                          output_contract="three_state", level=2),
+    # One list call discovers shipped history and the running build. Two reads
+    # allow notes for the running release and one selected earlier release.
+    "version_list": NativeTool(1,
+                               source_tier="confirmed", read_only=True,
+                               side_effect_state="none", idempotency="idempotent", retry="safe",
+                               output_contract="three_state", level=3),
+    "version_read": NativeTool(2,
+                               source_tier="confirmed", read_only=True,
+                               side_effect_state="none", idempotency="idempotent", retry="safe",
+                               output_contract="three_state", level=3),
     # THE ONLY TERMINAL TOOL, and **the number that caps how many messages one
     # tag may send**. Both facts are easy to miss from the guard's side, so they
     # are stated here, where the number is.
@@ -3126,7 +3109,7 @@ _CHARACTER_OK = (
     "Each account is as of its own time and is one room's view. Link it by its "
     "`revision`; do not quote it as what someone said."
 )
-_CHARACTER_PERSONA_OK = (
+_CHARACTER_PROFILE_OK = (
     "Each account is as of its own time and is this group's view of that room "
     "or person; a (disputed) line is being weighed, not settled. Do not quote "
     "it as what someone said."
@@ -3336,7 +3319,7 @@ def _spec(name: str, call) -> ToolSpec:
     )
 
 
-def _asked_about(name: str) -> dict:
+def _asked_about(name: str, *, content_checks: bool = True) -> dict:
     """Echo the model's own word back, unless the word is an identifier.
 
     Echoing helps: a turn that called `lookup_person` twice needs to know which
@@ -3354,10 +3337,10 @@ def _asked_about(name: str) -> dict:
     refuse model names either (there is no model-name veto; see `egress.py`),
     so echoing it cannot cost the message.
     """
-    return {} if scan_identifiers(name) else {"asked_about": name}
+    return {} if scan_identifiers(name, content_checks=content_checks) else {"asked_about": name}
 
 
-def _miss(name: str, view: RoomView) -> dict:
+def _miss(name: str, view: RoomView, *, content_checks: bool = True) -> dict:
     """The answer when a name resolves to nobody in this room.
 
     **`not_found` says nothing about whether that person exists.** A person in
@@ -3374,12 +3357,12 @@ def _miss(name: str, view: RoomView) -> dict:
     """
     if view.degraded:
         return {
-            "status": "unavailable", **_asked_about(name),
+            "status": "unavailable", **_asked_about(name, content_checks=content_checks),
             "note": "I can't check who is in this group right now, so I can't tell "
                     "you who that is. Say so rather than guessing.",
         }
     return {
-        "status": "not_found", **_asked_about(name),
+        "status": "not_found", **_asked_about(name, content_checks=content_checks),
         "note": "Nobody in this conversation goes by that. Say you're not sure who "
                 "they mean. Do not guess, and do not answer as if you knew them.",
     }
@@ -3447,6 +3430,7 @@ def _memory_result(payload: dict) -> dict:
 def _memory_hits_result(
     *, hits: Sequence[tuple[str, str]], roster: Mapping[str, str],
     record: Callable[..., None], partial_view: bool | None,
+    content_checks: bool = True,
 ) -> dict:
     """The shared tail of both memory-search verbs: roster filter, withhold,
     and status shaping over Honcho's raw hits.
@@ -3484,7 +3468,7 @@ def _memory_hits_result(
         name = roster.get(peer)
         if name is None:
             continue                       # only what named people said
-        if scan_reply(content) is not None:
+        if scan_reply(content, content_checks=content_checks) is not None:
             withheld += 1
             continue
         # Honcho holds what it was fed, and older rows carry the raw URL:
@@ -4116,17 +4100,6 @@ _VENUE_REPORT: Mapping[str, str] = {
     "unavailable": "I can't read what people here like right now. Say you "
                    "couldn't check, and don't guess a venue.",
 }
-# The «no build stamp» payload for `version` (DEC-97). A source checkout has no
-# `nora/version.json` (it is generated at build time and gitignored), so this is
-# the ordinary state outside a built image — and it is `unavailable`, NEVER
-# `nothing_found`: «I can't read my own build stamp» and «I have no versions»
-# are different claims, and the second one is a false statement about herself
-# manufactured out of a wiring gap (R-27).
-_VERSION_OFF: Mapping[str, object] = {
-    "status": "unavailable",
-    "note": "I can't read my own build stamp. Say you're not sure which version "
-            "you're on, and don't guess one or work it out from the chat.",
-}
 
 
 def _weather_result(obs: WeatherObservation) -> dict[str, object]:
@@ -4659,15 +4632,15 @@ _MEMORY_BAD_SPAN: Mapping[str, str] = MappingProxyType({
     "note": "That span ends before it starts, so I didn't search. Swap since and "
             "until and call again.",
 })
-_PERSONA_UNAVAILABLE: Mapping[str, str] = MappingProxyType({
+_PROFILE_UNAVAILABLE: Mapping[str, str] = MappingProxyType({
     "status": "unavailable",
     "note": "I couldn't keep that right now, so nothing was saved. Say so, never "
             "say 記低咗, and don't write it down as a note instead.",
 })
 
-#: The note for each Persona refusal the turn's `remember` can meet; any other
+#: The note for each Profile refusal the turn's `remember` can meet; any other
 #: reason takes the generic refusal note.
-_PERSONA_REFUSED_NOTES: Mapping[str, str] = MappingProxyType({
+_PROFILE_REFUSED_NOTES: Mapping[str, str] = MappingProxyType({
     "instruction_not_subject": "Nothing was saved: only they can tell me how they "
                                "want to be treated. Say so.",
     "unlisted_room": "Nothing was saved: they are not one of this room's members, so "
@@ -4682,21 +4655,21 @@ _PERSONA_REFUSED_NOTES: Mapping[str, str] = MappingProxyType({
                    "itself, then call again.",
 })
 
-_PERSONA_DISPUTE_UNAVAILABLE: Mapping[str, str] = MappingProxyType({
+_PROFILE_DISPUTE_UNAVAILABLE: Mapping[str, str] = MappingProxyType({
     "status": "unavailable",
     "note": "I couldn't record that right now, so nothing was recorded. Say so.",
 })
 
 #: The `note` for each `effect` a recorded dispute carries (35 §2), and for
 #: each refusal reason the store's own judge returns.
-_PERSONA_DISPUTE_NOTES: Mapping[str, str] = MappingProxyType({
+_PROFILE_DISPUTE_NOTES: Mapping[str, str] = MappingProxyType({
     "hidden": "It is forgotten. Say so, and do not bring it up again.",
     "disputed": "It is marked as disputed and I will weigh it. Meanwhile, do "
                 "not state it as fact.",
     "recorded": "It is recorded. I could not tell which remembered fact it "
                 "was about, so ask which one if that matters.",
 })
-_PERSONA_DISPUTE_REFUSED_NOTES: Mapping[str, str] = MappingProxyType({
+_PROFILE_DISPUTE_REFUSED_NOTES: Mapping[str, str] = MappingProxyType({
     "forget_not_subject": "Nothing was recorded: only they can ask me to "
                           "forget something about themselves. Say so.",
     "identifier": "Nothing was recorded: it carries a number or handle I never "
@@ -4727,9 +4700,9 @@ _MEMORY_UNLISTED: Mapping[str, str] = MappingProxyType({
 #: `about` (the profile read) is Honcho's, so it sits on the Honcho surface
 #: alone; a profile question on the graph is `memory_search` with `person`.
 #: `remember` (the person-fact write) is on BOTH, built from one of two
-#: closures: Honcho's conclusion off the graph, a Persona `told` line on it
-#: (DEC-317). `persona_dispute` (35 §2's dispute door) is the graph's alone:
-#: the Persona account it rules on exists only there, and the Honcho surface
+#: closures: Honcho's conclusion off the graph, a Profile `told` line on it
+#: (DEC-317). `profile_dispute` (35 §2's dispute door) is the graph's alone:
+#: the Profile account it rules on exists only there, and the Honcho surface
 #: has no dispute. `load_transcript` reads the room's own rows
 #: and is on both too.
 #: `who_said` is deprecated: the graph surface does without it
@@ -4738,7 +4711,7 @@ _MEMORY_UNLISTED: Mapping[str, str] = MappingProxyType({
 HONCHO_MEMORY_TOOLS: frozenset[str] = frozenset({
     "ask_memory", "search_memory", "search_memory_workspace", "who_said", "about",
 })
-GRAPH_MEMORY_TOOLS: frozenset[str] = frozenset({"memory_search", "persona_dispute"})
+GRAPH_MEMORY_TOOLS: frozenset[str] = frozenset({"memory_search", "profile_dispute"})
 #: The Dreamer adaptors whose `memory_search` reads their OWN room alone
 #: (`nora.agent.memory_search.scope_for`'s `own_room`; DEC-316). The culture fold writes one room's
 #: culture, which must
@@ -4927,14 +4900,15 @@ def build_tool_specs(
     # shipped default, offline, eval) is the Honcho path.
     memory_retrieval: MemorySearch | None = None,
     all_memory_surfaces: bool = False,
-    # The Persona write (design/unified-memory/45): the graph surface's
+    # The Profile write (design/unified-memory/45): the graph surface's
     # `remember` writes a `told` line through it. `None` answers `unavailable`.
-    persona: PersonaWriter | None = None,
-    # THE SWITCH (45 §5): wired only while `[persona] render` is on beside
-    # `[persona] enabled`, and `character_read` then answers from the Persona
+    profile: ProfileWriter | None = None,
+    # THE SWITCH (45 §5): wired only while `[profile] render` is on beside
+    # `[profile] enabled`, and `character_read` then answers from the Profile
     # accounts instead of the culture store — the same accounts the prompt's
-    # `<persona>` blocks render, so the tool and the prompt cannot disagree.
-    persona_read: PersonaHeads | None = None,
+    # `<profile>` blocks render, so the tool and the prompt cannot disagree.
+    profile_read: ProfileHeads | None = None,
+    content_checks: bool = True,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -4963,11 +4937,8 @@ def build_tool_specs(
     an error; the caps and the clock fall back to `ReminderCaps()` and
     `utc_now`, so a caller that never sets a reminder needs neither.
 
-    `versions` is a `nora.infra.version.VersionManifest` (DEC-97) and comes from
-    `ToolRegistry` for the same reason: the build stamp is a PROCESS-lifetime
-    fact, read once, never per turn. `None` — a caller that wired none — makes
-    `version` answer `unavailable`, which is the same honest wiring-gap state
-    `reminders=None` gives `remind`, and never `nothing_found`.
+    `versions` is the immutable process-lifetime build stamp and shipped
+    release history. Both version tools read this same snapshot.
 
     `tool_call_log_store` is `recall_lookups`'s own collaborator, wired the
     identical way: `None` in the offline/eval compositions and any composition
@@ -5144,7 +5115,7 @@ def build_tool_specs(
                 })
                 _record(metrics, "who_said", "unavailable")
                 return {
-                    "status": "unavailable", **_asked_about(words),
+                    "status": "unavailable", **_asked_about(words, content_checks=content_checks),
                     "note": "I can't re-read the messages in front of me, so I can't "
                             "check who said that. Say you couldn't check, and never "
                             "say nobody said it.",
@@ -5179,7 +5150,7 @@ def build_tool_specs(
                 })
                 _record(metrics, "who_said", "nothing_found", rows=len(lookup_rows))
                 return {
-                    "status": "nothing_found", **_asked_about(words),
+                    "status": "nothing_found", **_asked_about(words, content_checks=content_checks),
                     "note": "Nobody in the messages you can see said that. Do not put "
                             "it in anyone's mouth. Look further back with "
                             "load_transcript or search_memory, or say you can't find "
@@ -5208,7 +5179,12 @@ def build_tool_specs(
             # `identity.toml` or a platform profile, never a `sender_id` — this
             # tool accepts no identifier and emits none (R-18/R-28).
             return _memory_result(
-                {"status": "ok", "said_by": hits, **_asked_about(words)})
+                {
+                    "status": "ok",
+                    "said_by": hits,
+                    **_asked_about(words, content_checks=content_checks),
+                }
+            )
 
     async def load_transcript(
         limit: int = LOAD_TRANSCRIPT_DEFAULT, before: str | None = None,
@@ -5885,7 +5861,7 @@ def build_tool_specs(
             entity: room for a room's culture, person for one person's account.
             subject: The room's label, or the person's name.
         """
-        if persona_read is None and culture is None:
+        if profile_read is None and culture is None:
             _record(metrics, "character_read", "unavailable", reason="unwired")
             return {"status": "unavailable", "note": _CHARACTER_OFF}
         if lineage is None:
@@ -5922,17 +5898,17 @@ def build_tool_specs(
             return {"status": "unavailable", "note": _CHARACTER_OFF}
         keyed = [(r, pid, key) for r, pid in wanted
                  if (key := account_key(r, pid)) is not None]
-        if persona_read is not None:
-            # THE SWITCH (45 §5): the same resolution, the Persona accounts as
-            # the source. Lines were screened at WRITE (SqlPersonaStore's
+        if profile_read is not None:
+            # THE SWITCH (45 §5): the same resolution, the Profile accounts as
+            # the source. Lines were screened at WRITE (SqlProfileStore's
             # `screen`), so there is no read-time withhold here; a line whose
             # `exclude_persons` names a member of THIS room is dropped, as the
             # assembler drops it before the prompt's blocks.
             try:
-                persona_heads = await asyncio.gather(
-                    *(persona_read.account_heads(key=key) for _, _, key in keyed))
+                profile_heads = await asyncio.gather(
+                    *(profile_read.account_heads(key=key) for _, _, key in keyed))
             except Exception:
-                log.exception("character_read (persona) failed")
+                log.exception("character_read (profile) failed")
                 _record(metrics, "character_read", "unavailable", reason="store")
                 return {"status": "unavailable", "note": _CHARACTER_OFF}
             target = lineage.render_room(
@@ -5943,8 +5919,8 @@ def build_tool_specs(
                 named = persons.by_person.get(person_id)
                 return named.name if named is not None else "someone"
 
-            persona_accounts = []
-            for (r, pid, _), lines in zip(keyed, persona_heads, strict=True):
+            profile_accounts = []
+            for (r, pid, _), lines in zip(keyed, profile_heads, strict=True):
                 of = r.label or platform_name(r.platform)
                 authored: tuple[str, ...] = ()
                 if pid is not None and pid in persons.by_person:
@@ -5958,9 +5934,9 @@ def build_tool_specs(
                             if owner == pid
                         })),
                     )
-                kept = await persona_lines_for(lines, target, room)
+                kept = await profile_lines_for(lines, target, room)
                 rendered = account_text(
-                    PersonaView(entity=entity, of=of, lines=kept, authored=authored),
+                    ProfileView(entity=entity, of=of, lines=kept, authored=authored),
                     name_of=name_of, now=now_fn(),
                 )
                 if rendered is None:
@@ -5969,16 +5945,16 @@ def build_tool_specs(
                 entry: dict = {"room": of, "account": text}
                 if written is not None:
                     entry["as_of"] = rollup_iso(written)
-                persona_accounts.append(entry)
-            if not persona_accounts:
+                profile_accounts.append(entry)
+            if not profile_accounts:
                 _record(metrics, "character_read", "nothing_found", entity=entity)
                 return {"status": "nothing_found", "note": _CHARACTER_NONE}
             _record(metrics, "character_read", "ok",
-                    entity=entity, accounts=len(persona_accounts))
-            return {"status": "ok", "entity": entity, "accounts": persona_accounts,
-                    "note": _CHARACTER_PERSONA_OK}
+                    entity=entity, accounts=len(profile_accounts))
+            return {"status": "ok", "entity": entity, "accounts": profile_accounts,
+                    "note": _CHARACTER_PROFILE_OK}
         if culture is None:
-            # persona_read answered above, so a miss here means NEITHER store
+            # profile_read answered above, so a miss here means NEITHER store
             # is wired — the same unwired case as the first guard, seen from
             # the culture path (and the narrowing mypy cannot do itself).
             _record(metrics, "character_read", "unavailable", reason="unwired")
@@ -5997,9 +5973,14 @@ def build_tool_specs(
         # identifier is withheld whole here, as `ask_memory` withholds an
         # answer: nothing screened these bodies when they were written.
         accounts = [
-            {"room": r.label or platform_name(r.platform), "account": head.body,
-             "as_of": rollup_iso(head.written_at), "revision": head.id}
-            for r, head in held if scan_identifiers(head.body) is None
+            {
+                "room": r.label or platform_name(r.platform),
+                "account": head.body,
+                "as_of": rollup_iso(head.written_at),
+                "revision": head.id,
+            }
+            for r, head in held
+            if scan_identifiers(head.body, content_checks=content_checks) is None
         ]
         withheld = len(held) - len(accounts)
         if not accounts and withheld:
@@ -6079,6 +6060,7 @@ def build_tool_specs(
         shown, withheld, cut = render_items(
             got[:SOCIAL_READ_MAX], by=who.name,
             place=location_shown(who.person_id, target), now=now_fn().astimezone(_HKT),
+            content_checks=content_checks,
         )
         if not shown:
             _record(metrics, "social_read", "nothing_found", withheld=withheld)
@@ -6174,20 +6156,22 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # these tools take, and `_asked_about` exists because a model does put
         # phone numbers in it.
         if not matches:
-            miss = _miss(name, view)
+            miss = _miss(name, view, content_checks=content_checks)
             _record_room(metrics, "lookup_person", miss["status"], candidates=0)
             return miss
         if len(matches) > 1:
             _record_room(metrics, "lookup_person", "ambiguous", candidates=len(matches))
             return {
-                "status": "ambiguous", **_asked_about(name),
+                "status": "ambiguous", **_asked_about(name, content_checks=content_checks),
                 "could_be": [p.name for p in matches],
                 "note": "More than one person here goes by that. Ask which one.",
             }
         person = matches[0]
         _record_room(metrics, "lookup_person", "ok", candidates=1)
         return {
-            "status": "ok", **_asked_about(name), "name": person.name,
+            "status": "ok",
+            **_asked_about(name, content_checks=content_checks),
+            "name": person.name,
             "also_called": list(person.aliases),
             "note": "This person is in this conversation.",
         }
@@ -6222,13 +6206,13 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             }
         matches = view.find(person)
         if not matches:
-            miss = _miss(person, view)
+            miss = _miss(person, view, content_checks=content_checks)
             _record_room(metrics, "about", miss["status"], candidates=0)
             return miss
         if len(matches) > 1:
             _record_room(metrics, "about", "ambiguous", candidates=len(matches))
             return {
-                "status": "ambiguous", **_asked_about(person),
+                "status": "ambiguous", **_asked_about(person, content_checks=content_checks),
                 "could_be": [p.name for p in matches],
                 "note": "More than one person here goes by that. Ask which one.",
             }
@@ -6327,13 +6311,19 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # `sonnet` and four more — from a group of software engineers who talk about
         # them constantly. What she runs on stays hers because `Deliverer` refuses to
         # SAY it, not because she is made to forget what other people said.
-        kept = tuple(c for c in memory.conclusions if scan_identifiers(c) is None)
+        kept = tuple(
+            c
+            for c in memory.conclusions
+            if scan_identifiers(c, content_checks=content_checks) is None
+        )
         # THE CARD GETS THE SAME SCREEN, and it needs it more than the
         # conclusions do: a card renders IDENTITY claims distilled from what
         # people said, and «Phone: +852…» is exactly the shape of thing that
         # ends up in one. Scrubbing conclusions but not the card would have put
         # the identifier back on the reply that R-18 then fails closed on.
-        kept_card = tuple(c for c in card if scan_identifiers(c) is None)
+        kept_card = tuple(
+            c for c in card if scan_identifiers(c, content_checks=content_checks) is None
+        )
         withheld = (
             (len(memory.conclusions) - len(kept)) + (len(card) - len(kept_card))
         )
@@ -6425,6 +6415,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 return {"status": "unavailable", **asked, "note": _INDEX_UNAVAILABLE}
             items, withheld = render_packet(
                 found.hits, name_of=_rollup_name, room_label=_index_room_label, now=now,
+                content_checks=content_checks,
             )
         except Exception as exc:  # noqa: BLE001 — «I couldn't check», counted
             log.warning("memory_search index path failed (%s)", type(exc).__name__)
@@ -6520,13 +6511,13 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 }
             matches = view.find(person)
             if not matches:
-                miss = _miss(person, view)
+                miss = _miss(person, view, content_checks=content_checks)
                 _record_room(metrics, "memory_search", miss["status"], candidates=0)
                 return miss
             if len(matches) > 1:
                 _record_room(metrics, "memory_search", "ambiguous", candidates=len(matches))
                 return {
-                    "status": "ambiguous", **_asked_about(person),
+                    "status": "ambiguous", **_asked_about(person, content_checks=content_checks),
                     "could_be": [p.name for p in matches],
                     "note": "More than one person here goes by that. Ask which one.",
                 }
@@ -6583,13 +6574,13 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             }
         matches = view.find(person)
         if not matches:
-            miss = _miss(person, view)
+            miss = _miss(person, view, content_checks=content_checks)
             _record_room(metrics, "ask_memory", miss["status"], candidates=0)
             return miss
         if len(matches) > 1:
             _record_room(metrics, "ask_memory", "ambiguous", candidates=len(matches))
             return {
-                "status": "ambiguous", **_asked_about(person),
+                "status": "ambiguous", **_asked_about(person, content_checks=content_checks),
                 "could_be": [p.name for p in matches],
                 "note": "More than one person here goes by that. Ask which one.",
             }
@@ -6626,7 +6617,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # kept, so it is withheld whole. `scan_identifiers`, not the reply
         # predicate (the `about` rationale: what she runs on stays hers because
         # the Deliverer refuses to SAY it, not because she is made to forget).
-        if scan_identifiers(answer) is not None:
+        if scan_identifiers(answer, content_checks=content_checks) is not None:
             # `status="empty"` to match `about`'s all-withheld path (nothing usable
             # surfaced), not a new label value: the recall metric keeps its
             # ok/empty/unavailable cardinality.
@@ -6705,6 +6696,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             hits=hits, roster=roster,
             record=lambda s, **kw: _record_room(metrics, "search_memory", s, **kw),
             partial_view=view.degraded,
+            content_checks=content_checks,
         )
 
     async def now() -> str:
@@ -6760,7 +6752,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # Only the ECHO is recoverable: the RESULT of that expression is
         # `85290000101`, which is a number and nothing distinguishes it from
         # arithmetic, here or at egress.
-        if scan_identifiers(expression) is not None:
+        if scan_identifiers(expression, content_checks=content_checks) is not None:
             out.pop("expression", None)
         # ADR 0015 §3: how to report the answer rides in the result. A refusal
         # already says what to fix (`arithmetic`'s own sentence); the tool adds the
@@ -6820,7 +6812,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # already narrowed to `[A-Z0-9]{1,7}` before it reaches a URL, so
         # nothing that looks like a phone number can survive to the echo — this
         # is the belt for that, and it costs one regex.
-        if scan_identifiers(str(out.get("route", ""))) is not None:
+        if scan_identifiers(str(out.get("route", "")), content_checks=content_checks) is not None:
             out.pop("route", None)
         # And the fourth: `near` is free text, echoed back as `near.asked` for
         # the same two-calls-one-turn disambiguation `_asked_about` buys, and
@@ -6832,12 +6824,15 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         near_info = out.get("near")
         if isinstance(near_info, dict):
             for key in ("asked", "stop"):
-                if scan_identifiers(str(near_info.get(key, ""))) is not None:
+                if (
+                    scan_identifiers(str(near_info.get(key, "")), content_checks=content_checks)
+                    is not None
+                ):
                     near_info.pop(key, None)
             if isinstance(near_info.get("could_be"), list):
                 near_info["could_be"] = [
                     name for name in near_info["could_be"]
-                    if scan_identifiers(str(name)) is None
+                    if scan_identifiers(str(name), content_checks=content_checks) is None
                 ]
         _record(
             metrics, "transit", out["status"],
@@ -6896,8 +6891,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         """How to get from one place to another, and how long it takes. Call
         this for ANY «how do I get from A to B».
 
-        Give places as they were named: a place, never a person or a
-        coordinate. It looks each one up itself. For a
+        Give places as they were named. It looks each one up itself. For a
         PERSONAL place name (home, someone's home, work), call `saved_places`
         first and pass the saved name; never guess one from earlier messages.
         An `address` that `reverse_geocode` gave you for a `where_is` position
@@ -6947,14 +6941,14 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 # guard below; the person screen would refuse «a home of theirs (Grant)»
                 # for its name.
                 continue
-            if scan_identifiers(place) is not None:
+            if scan_identifiers(place, content_checks=content_checks) is not None:
                 _record(metrics, "route", "refused", reason="identifier")
                 return {
                     "status": "refused",
                     "note": "That looks like an identifier, not a place. Ask for "
                             "a place name: a building, a stop, a mall.",
                 }
-            if _looks_like_coordinate(place):
+            if (content_checks and _looks_like_coordinate(place)):
                 # A stored presence position must never leave in a tool argument (R-28).
                 # Revert this and a Life360 coordinate reaches Google once `whereis` is
                 # wired.
@@ -6964,7 +6958,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     "note": "That's a raw coordinate, not a place I can route from. "
                             "Ask for the place by name: a building, a stop, a mall.",
                 }
-            if _names_a_person(place, _route_person_names):
+            if (content_checks and _names_a_person(place, _route_person_names)):
                 _record(metrics, "route", "refused", reason="person")
                 return {
                     "status": "refused",
@@ -7036,6 +7030,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             saved = await resolvable_places(
                 room=room, circles=presence_circles, presence=presence_source,
                 location_trusted=location_trusted,
+                content_checks=content_checks,
             )
             # `None` (failed read) and `()` (nothing you may resolve) both leave
             # `local_places` unset here, and that is right for THIS caller: the
@@ -7080,11 +7075,15 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             asked_ref = ref_places.get(str(out.get(key, "")).strip().casefold())
             if asked_ref is not None:
                 out[key] = asked_ref.name
-            if scan_identifiers(str(out.get(key, ""))) is not None:
+            if scan_identifiers(str(out.get(key, "")), content_checks=content_checks) is not None:
                 out.pop(key, None)
         for key in ("origin_could_be", "destination_could_be"):
             if isinstance(out.get(key), list):
-                out[key] = [c for c in out[key] if scan_identifiers(str(c)) is None]
+                out[key] = [
+                    c
+                    for c in out[key]
+                    if scan_identifiers(str(c), content_checks=content_checks) is None
+                ]
         # No link for a trip from a place presence named: «a home of theirs»
         # is not words anyone can open, and a resolved pin must never publish.
         if out.get("status") == "ok" and not ref_places:
@@ -7142,6 +7141,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # `GatheringService._resolve_place`.
         result = await _screen_and_resolve_place(
             name, route_source=route_source, person_names=_route_person_names,
+            content_checks=content_checks,
         )
         if result.status == "refused":
             _record(metrics, "place_info", "refused", reason=result.reason)
@@ -7174,7 +7174,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             }
         if isinstance(out.get("could_be"), list):
             out["could_be"] = [c for c in out["could_be"]
-                               if scan_identifiers(str(c)) is None]
+                               if scan_identifiers(str(c), content_checks=content_checks) is None]
         # ADR 0015 §3: the client answers these three bare; how to report each
         # rides in the result, not in the description.
         if out.get("status") == "ambiguous":
@@ -7230,6 +7230,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         places = await resolvable_places(
             room=room, circles=presence_circles, presence=presence_source,
             location_trusted=location_trusted,
+            content_checks=content_checks,
         )
         # `None` is a FAILED READ, not an empty answer (R-27). Folding it into
         # «no names» would tell the model `ok` with an empty list while the presence
@@ -7309,7 +7310,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 room=room, circle=circle, presence=presence_source,
                 refresher=refresher, geocoder=geocoder,
                 location_trusted=location_trusted, metrics=metrics,
-            ).locate(person)
+                content_checks=content_checks).locate(person,
+            )
             if str(out.get("status", "")) == "ok":
                 _record(metrics, "where_is", "ok", age_seconds=out.get("age_seconds"))
                 # `where_is` carries NO address (position + saved place + lat/lng only),
@@ -7430,7 +7432,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             }
         # The decision is `presence_audience`'s, shared with a Cognition
         # rollup line's place release; the branches below word and count it.
-        audience = presence_audience(view, circle, location_trusted=location_trusted)
+        audience = presence_audience(
+            view, circle, location_trusted=location_trusted, content_checks=content_checks
+        )
         subset_ok = audience != "not_subset"
         unnamed_blocks = audience == "unnamed"
         if view.degraded:
@@ -7471,7 +7475,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             }
         # A WAIVED guard is counted, not silent — the same DEC-79 rule
         # `Whereis.locate` runs one branch below its own guard.
-        if view.unnamed > 0 and location_trusted:
+        if content_checks and view.unnamed > 0 and location_trusted:
             if metrics is not None:
                 metrics.inc(
                     "nora_presence_disclosure_waived_total", reason="unnamed",
@@ -7834,8 +7838,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             to the answer it is about."""
             if what == "day":
                 note = (
-                    f"Give the date ({day_iso}) with anything you quote, and "
-                    "never read lat/lng aloud."
+                    f"Give the date ({day_iso}) with anything you quote."
+                    + (" Never read lat/lng aloud." if content_checks else "")
                 )
                 if any(s.get("unusual") for p in people for s in p.get("stays", ())):
                     note += (
@@ -9033,8 +9037,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # origin through this tool.
         _disclosed_live_addresses.add(address.strip().casefold())
         return {"status": "ok", "address": address, "lat": lat_f, "lng": lng_f,
-                "note": "Say the address in your reply. The coordinate never goes "
-                        "in it."}
+                "note": "Say the address in your reply." + (
+                    " The coordinate never goes in it." if content_checks else "")}
 
     # ---- media_fetch: read a stored image back through MiMo (DEC-56) ---------
     #
@@ -9211,7 +9215,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # did not ask, on bytes she cannot re-check. The value is never echoed back:
         # repeating it into the transcript is the leak one surface over.
         if question:
-            kind = scan_identifiers(question)
+            kind = scan_identifiers(question, content_checks=content_checks)
             if kind is not None:
                 _record_media(metrics, "nothing_found", reason="identifier")
                 metrics.inc("nora_egress_blocks_total", kind=kind)
@@ -9288,14 +9292,14 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             # percent-encoded identifier in a query cannot ride past a
             # raw-string match. `nothing_found`, and the value is not echoed.
             decoded_url = urllib.parse.unquote(url)
-            if scan_identifiers(decoded_url) is not None:
+            if scan_identifiers(decoded_url, content_checks=content_checks) is not None:
                 _record_media(metrics, "nothing_found", reason="identifier")
                 return {
                     "status": "nothing_found",
                     "note": "That link has what looks like a phone number or "
                             "ID in it, so I won't open it.",
                 }
-            if _looks_like_coordinate(decoded_url):
+            if (content_checks and _looks_like_coordinate(decoded_url)):
                 _record_media(metrics, "nothing_found", reason="coordinate")
                 return {
                     "status": "nothing_found",
@@ -9860,7 +9864,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         model read is one frame; without that sentence a correct description of
         it reads as a description of the whole reel.
         """
-        if scan_identifiers(description) is not None:
+        if scan_identifiers(description, content_checks=content_checks) is not None:
             # An identifier the model transcribed off the image — dropped with a
             # note, the shape `about` uses for a conclusion that carries one. The
             # status stays `ok` (she DID look), but the words never leave.
@@ -10608,7 +10612,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             # reading is never matched on either: matching it would let a model
             # confirm hidden digits one query at a time.
             hidden = obj is not None and read and (
-                scan_identifiers(_stored_reading(obj)) is not None
+                scan_identifiers(_stored_reading(obj), content_checks=content_checks) is not None
             )
             if not asked:
                 results.append(_room_result(photo, obj, hidden=hidden))
@@ -10814,7 +10818,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # `scan_identifiers`, NOT `scan_reply`: this tool filters on the floor because an
         # identifier is unsafe at every exit (see `egress.py`). A MODEL NAME in a query
         # is fine (「搵首 haiku」 must work).
-        if scan_identifiers(query) is not None:
+        if scan_identifiers(query, content_checks=content_checks) is not None:
             _record(metrics, "web_search", "nothing_found", reason="identifier")
             return {
                 "status": "nothing_found",
@@ -10826,7 +10830,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # received could otherwise ride a search query to Tavily. The R-28 barrier
         # screens `route`; the web query is the other free-text egress and needs the
         # same screen. `nothing_found`, and the coordinate is not echoed back.
-        if _looks_like_coordinate(query):
+        if (content_checks and _looks_like_coordinate(query)):
             _record(metrics, "web_search", "nothing_found", reason="coordinate")
             return {
                 "status": "nothing_found",
@@ -10912,14 +10916,14 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # match. `scan_identifiers`, NOT `scan_reply` — DEC-30's split, same as
         # `web_search`'s own screen below.
         decoded_url = urllib.parse.unquote(url)
-        if scan_identifiers(decoded_url) is not None:
+        if scan_identifiers(decoded_url, content_checks=content_checks) is not None:
             _record(metrics, "web_fetch", "nothing_found", reason="identifier")
             return {
                 "status": "nothing_found",
                 "note": "That link has what looks like a phone number or ID in "
                         "it, so I won't open it.",
             }
-        if _looks_like_coordinate(decoded_url):
+        if (content_checks and _looks_like_coordinate(decoded_url)):
             _record(metrics, "web_fetch", "nothing_found", reason="coordinate")
             return {
                 "status": "nothing_found",
@@ -11212,7 +11216,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # username or the post id. The rest of a link (its query, its
         # fragment) never leaves, so it is not what this screens. `refused`:
         # a boundary, not a failure, as in `instagram_search`.
-        if scan_identifiers(target) is not None or _looks_like_coordinate(target):
+        if scan_identifiers(target, content_checks=content_checks) is not None or (
+            content_checks and _looks_like_coordinate(target)
+        ):
             _record(metrics, "x_read", "refused", reason="egress")
             return {
                 "status": "refused",
@@ -11271,7 +11277,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # coordinate, must not leave in a search. Decoded first, so a
         # percent-encoded identifier cannot ride past a raw-string match.
         decoded = urllib.parse.unquote(text)
-        if scan_identifiers(decoded) is not None or _looks_like_coordinate(decoded):
+        if scan_identifiers(decoded, content_checks=content_checks) is not None or (
+            content_checks and _looks_like_coordinate(decoded)
+        ):
             _record(metrics, "x_search", "refused", reason="egress")
             return {
                 "status": "refused",
@@ -11436,7 +11444,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             read = what
             target = name
         # The egress screen on exactly what leaves.
-        if scan_identifiers(target) is not None or _looks_like_coordinate(target):
+        if scan_identifiers(target, content_checks=content_checks) is not None or (
+            content_checks and _looks_like_coordinate(target)
+        ):
             _record(metrics, "linkedin_read", "refused", reason="egress")
             return {
                 "status": "refused",
@@ -11493,7 +11503,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # A phone number pasted into a PEOPLE search would be looked up
         # against real people, so the screen matters most here.
         decoded = urllib.parse.unquote(text)
-        if scan_identifiers(decoded) is not None or _looks_like_coordinate(decoded):
+        if scan_identifiers(decoded, content_checks=content_checks) is not None or (
+            content_checks and _looks_like_coordinate(decoded)
+        ):
             _record(metrics, "linkedin_search", "refused", reason="egress")
             return {
                 "status": "refused",
@@ -11745,7 +11757,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                             "it again.",
                 }
             target = username
-        if kind == "handle" and scan_identifiers(target) is not None:
+        if kind == "handle" and scan_identifiers(target, content_checks=content_checks) is not None:
             # The egress screen `instagram_search` applies, on EVERY username
             # that is about to leave: a typed handle, and the username of a
             # profile or story link alike. A phone number or an ID must not
@@ -11786,24 +11798,26 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     # couldn't check», never «nobody here» (`_miss`'s rule).
                     _record(metrics, "instagram_read", "unavailable", reason="room")
                     return {
-                        "status": "unavailable", **_asked_about(spoken),
+                        "status": "unavailable",
+                        **_asked_about(spoken, content_checks=content_checks),
                         "note": "I can't check who is in this group right now, "
-                                "so I can't tell whose Instagram that is. Say so.",
+                        "so I can't tell whose Instagram that is. Say so.",
                     }
                 # No match is `nothing_found`. Identical for «not in this
                 # room» and «does not exist», on purpose: a
                 # difference would disclose who is in Nora's other rooms.
                 _record(metrics, "instagram_read", "nothing_found", reason="person")
                 return {
-                    "status": "nothing_found", **_asked_about(spoken),
+                    "status": "nothing_found",
+                    **_asked_about(spoken, content_checks=content_checks),
                     "note": "Nobody in this conversation goes by that. Say "
-                            "you're not sure who they mean. Do not guess an "
-                            "account.",
+                    "you're not sure who they mean. Do not guess an "
+                    "account.",
                 }
             if len(matches) > 1:
                 _record(metrics, "instagram_read", "ambiguous", reason="person")
                 return {
-                    "status": "ambiguous", **_asked_about(spoken),
+                    "status": "ambiguous", **_asked_about(spoken, content_checks=content_checks),
                     "could_be": [p.name for p in matches],
                     "note": "More than one person here goes by that. Ask which "
                             "one.",
@@ -11924,7 +11938,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # apply to what they send: a phone number or ID, or a raw coordinate,
         # must not leave in a search. `refused`: a boundary, not a failure.
         decoded = urllib.parse.unquote(text)
-        if scan_identifiers(decoded) is not None or _looks_like_coordinate(decoded):
+        if scan_identifiers(decoded, content_checks=content_checks) is not None or (
+            content_checks and _looks_like_coordinate(decoded)
+        ):
             _record(metrics, "instagram_search", "refused", reason="egress")
             return {
                 "status": "refused",
@@ -12067,13 +12083,15 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             # must NOT travel to Google Places as a search query — that is
             # the exact exfil shape the screen exists to close (route
             # screens args the same way).
-            if scan_identifiers(place) is not None or _looks_like_coordinate(place):
+            if scan_identifiers(place, content_checks=content_checks) is not None or (
+                content_checks and _looks_like_coordinate(place)
+            ):
                 _record(metrics, "find_parking", "refused")
                 return {"status": "not_found",
                         "note": "That doesn't look like a place name I can search for. "
                                 "Ask which place they mean."}
             if (_route_person_names is not None
-                    and _names_a_person(place, _route_person_names)):
+                    and (content_checks and _names_a_person(place, _route_person_names))):
                 _record(metrics, "find_parking", "refused")
                 return {"status": "not_found",
                         "note": "That looks like a person, not a place to park near. "
@@ -12117,13 +12135,15 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 return {"status": "unavailable",
                         "note": "I can't confirm who's here, so I can't use your "
                                 "position. Say you couldn't check."}
-            unnamed_blocks = view.unnamed > 0 and not location_trusted
+            unnamed_blocks = content_checks and view.unnamed > 0 and not location_trusted
             room_ids = frozenset(p.person_id for p in view.people)
             pos: tuple[float, float] | None = None
             for circle in presence_circles:
                 if unnamed_blocks:
                     continue
-                if not (location_trusted or DisclosureGuard(circle).permits(room_ids)):
+                if content_checks and not (
+                    location_trusted or DisclosureGuard(circle).permits(room_ids)
+                ):
                     continue
                 # The asker's own latest fix (the room's tagger) FIRST — the
                 # person being asked is the natural search centre; another
@@ -13579,7 +13599,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             "revision_id": memo.head.id,
         }
         superseded = result["superseded"]
-        if any(scan_identifiers(t) is not None for t in (memo.head.body, *superseded)):
+        if any(
+            scan_identifiers(t, content_checks=content_checks) is not None
+            for t in (memo.head.body, *superseded)
+        ):
             result["note"] = (
                 "This memo holds a value a reply cannot carry (a phone number, an "
                 "id or a key-shaped string): a reply containing it is not sent. "
@@ -13659,6 +13682,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             record=lambda s, **kw: _record(
                 metrics, "search_memory_workspace", s, **kw),
             partial_view=None,
+            content_checks=content_checks,
         )
 
     async def remember(content: str) -> dict:
@@ -13776,8 +13800,8 @@ Args:
     valid_from: Evidence-grounded effective start, epoch milliseconds or null.
     valid_until: Evidence-grounded effective end, epoch milliseconds or null."""
         # The graph surface's `remember` (DEC-317): the
-        # Persona `told` line, through the one write path and its judge
-        # (`nora.domain.persona.plan_write`). The Honcho surface keeps
+        # Profile `told` line, through the one write path and its judge
+        # (`nora.domain.profile.plan_write`). The Honcho surface keeps
         # `remember` above; `build_tool_specs` registers one or the other.
         tagger = room.tagger
         if tagger is None:
@@ -13795,35 +13819,35 @@ Args:
                 "note": "Nothing was saved: there's no fact in that. Say the "
                         "fact itself, one line, then call again.",
             }
-        if len(text) > PERSONA_LINE_MAX_CHARS:
+        if len(text) > PROFILE_LINE_MAX_CHARS:
             _record(metrics, "remember", "refused", reason="too_long")
             return {
                 "status": "refused",
-                "note": f"Nothing was saved: one fact fits in {PERSONA_LINE_MAX_CHARS} "
+                "note": f"Nothing was saved: one fact fits in {PROFILE_LINE_MAX_CHARS} "
                         "characters. Say it shorter, then call again.",
             }
         cites = room.trigger_message_ids
         unit = _unit()
-        if persona is None or lineage is None or unit is None or not cites:
+        if profile is None or lineage is None or unit is None or not cites:
             # A wiring gap, or a turn no Record message raised (a told line
             # cites the message it was said in): «I couldn't», never a save.
             _record(metrics, "remember", "unavailable", reason="unwired")
-            return dict(_PERSONA_UNAVAILABLE)
+            return dict(_PROFILE_UNAVAILABLE)
         subject = tagger
         if person.strip():
             view = await room.scope()
             if not view.available:
                 _record(metrics, "remember", "unavailable", reason="roster")
-                return dict(_PERSONA_UNAVAILABLE)
+                return dict(_PROFILE_UNAVAILABLE)
             matches = view.find(person)
             if not matches:
-                miss = _miss(person, view)
+                miss = _miss(person, view, content_checks=content_checks)
                 _record(metrics, "remember", miss["status"], candidates=0)
                 return miss
             if len(matches) > 1:
                 _record(metrics, "remember", "ambiguous", candidates=len(matches))
                 return {
-                    "status": "ambiguous", **_asked_about(person),
+                    "status": "ambiguous", **_asked_about(person, content_checks=content_checks),
                     "could_be": [p.name for p in matches],
                     "note": "More than one person here goes by that. Ask which one.",
                 }
@@ -13845,34 +13869,34 @@ Args:
             source = {r.id: r for r in (transcript or ()) if r.id in cites}
             if set(source) != set(cites):
                 _record(metrics, "remember", "unavailable", reason="source")
-                return dict(_PERSONA_UNAVAILABLE)
-            said = {n: PersonaSaid(ts=r.ts, person_id=r.person_id, room=here)
+                return dict(_PROFILE_UNAVAILABLE)
+            said = {n: ProfileSaid(ts=r.ts, person_id=r.person_id, room=here)
                     for n, r in source.items()}
-            account = PersonaAccount(
+            account = ProfileAccount(
                 key=character_key(unit, subject.person_id), entity_kind="human",
                 unit=unit, subject=subject.person_id)
-            revision, _ = await persona.account_state(key=account.key)
-            heads = await persona.account_heads(key=account.key)
+            revision, _ = await profile.account_state(key=account.key)
+            heads = await profile.account_heads(key=account.key)
             candidates = [h for h in heads if fact_key in SINGLETON_FACTS
-                          and h.part == "identity" and h.fact_key == fact_key
+                          and h.part == "facts" and h.fact_key == fact_key
                           and h.state in ("current", "disputed")]
             old = candidates[0] if len(candidates) == 1 else None
             handle = next((h for h, lid in handles_for(heads).items()
                            if old is not None and lid == old.id), None)
             cites_text = tuple(str(n) for n in cites)
-            op = (PersonaReviseOp(
+            op = (ProfileReviseOp(
                 line=handle, citations=cites_text, text=text,
                 fact_key=fact_key, fact_value=fact_value,
                 valid_from=valid_from, valid_until=valid_until,
             ) if old is not None and handle is not None and old.mode == "told"
-                and old.told_by == tagger.person_id else PersonaAddOp(
-                    part="identity", kind=FACT_KINDS[fact_key], text=text, mode="told",
+                and old.told_by == tagger.person_id else ProfileAddOp(
+                    part="facts", kind=FACT_KINDS[fact_key], text=text, mode="told",
                     fact_key=fact_key, fact_value=fact_value,
                     valid_from=valid_from, valid_until=valid_until,
                     citations=cites_text, told_by=tagger.person_id, conflicts_with=handle))
-            result = await persona.persona_write(
+            result = await profile.profile_write(
                 account=account, ops=(op,), expected_revision=revision,
-                citable=PersonaCitable(
+                citable=ProfileCitable(
                     messages=said,
                     # Evidence about a person counts only if said in a room they
                     # are listed in (35 §3); a `*` room lists nobody by name.
@@ -13882,9 +13906,9 @@ Args:
                 now_ms=now_ms, written_by_session="tag", apply_decay=False,
             )
         except Exception:
-            log.exception("remember (persona) failed")
+            log.exception("remember (profile) failed")
             _record(metrics, "remember", "unavailable")
-            return dict(_PERSONA_UNAVAILABLE)
+            return dict(_PROFILE_UNAVAILABLE)
         if result.status == "ok":
             _record(metrics, "remember", "ok")
             return {
@@ -13893,13 +13917,13 @@ Args:
             }
         if result.status == "conflict":
             _record(metrics, "remember", "unavailable", reason="conflict")
-            return dict(_PERSONA_UNAVAILABLE)
+            return dict(_PROFILE_UNAVAILABLE)
         reason = result.refusals[0].reason if result.refusals else "refused"
         _record(metrics, "remember", "refused", reason=reason)
-        return {"status": "refused", "note": _PERSONA_REFUSED_NOTES.get(
+        return {"status": "refused", "note": _PROFILE_REFUSED_NOTES.get(
             reason, "Nothing was saved. Say you couldn't keep it, and don't say 記低咗.")}
 
-    async def persona_dispute(
+    async def profile_dispute(
         claim: str, person: str = "",
         kind: Literal["dispute", "forget"] = "dispute",
     ) -> dict:
@@ -13922,11 +13946,11 @@ Args:
         # The dispute door (35 §2), mirroring `remember_told`: the speaker is
         # the disputer, the named person is the account's subject, and the
         # store rules on it in one transaction. The line the claim names is
-        # matched by code (`nora.domain.persona.match_disputed_line`), never
+        # matched by code (`nora.domain.profile.match_disputed_line`), never
         # by the model: an unmatched claim is recorded, not guessed at.
         tagger = room.tagger
         if tagger is None:
-            _record(metrics, "persona_dispute", "refused", reason="no_tagger")
+            _record(metrics, "profile_dispute", "refused", reason="no_tagger")
             return {
                 "status": "refused",
                 "note": "Nothing was recorded: I don't know who you are well "
@@ -13935,49 +13959,49 @@ Args:
             }
         text = claim.strip()
         if not text:
-            _record(metrics, "persona_dispute", "refused", reason="empty")
+            _record(metrics, "profile_dispute", "refused", reason="empty")
             return {
                 "status": "refused",
                 "note": "Nothing was recorded: say what is wrong, one line, "
                         "then call again.",
             }
-        if len(text) > PERSONA_LINE_MAX_CHARS:
-            _record(metrics, "persona_dispute", "refused", reason="too_long")
+        if len(text) > PROFILE_LINE_MAX_CHARS:
+            _record(metrics, "profile_dispute", "refused", reason="too_long")
             return {
                 "status": "refused",
                 "note": f"Nothing was recorded: a dispute fits in "
-                        f"{PERSONA_LINE_MAX_CHARS} characters. Say it shorter, "
+                        f"{PROFILE_LINE_MAX_CHARS} characters. Say it shorter, "
                         "then call again.",
             }
         cites = room.trigger_message_ids
         unit = _unit()
-        if persona is None or lineage is None or unit is None or not cites:
+        if profile is None or lineage is None or unit is None or not cites:
             # A wiring gap, or a turn no Record message raised: «I couldn't»,
             # never a record.
-            _record(metrics, "persona_dispute", "unavailable", reason="unwired")
-            return dict(_PERSONA_DISPUTE_UNAVAILABLE)
+            _record(metrics, "profile_dispute", "unavailable", reason="unwired")
+            return dict(_PROFILE_DISPUTE_UNAVAILABLE)
         subject = tagger
         if person.strip():
             view = await room.scope()
             if not view.available:
-                _record(metrics, "persona_dispute", "unavailable", reason="roster")
-                return dict(_PERSONA_DISPUTE_UNAVAILABLE)
+                _record(metrics, "profile_dispute", "unavailable", reason="roster")
+                return dict(_PROFILE_DISPUTE_UNAVAILABLE)
             matches = view.find(person)
             if not matches:
-                miss = _miss(person, view)
-                _record(metrics, "persona_dispute", miss["status"], candidates=0)
+                miss = _miss(person, view, content_checks=content_checks)
+                _record(metrics, "profile_dispute", miss["status"], candidates=0)
                 return miss
             if len(matches) > 1:
-                _record(metrics, "persona_dispute", "ambiguous", candidates=len(matches))
+                _record(metrics, "profile_dispute", "ambiguous", candidates=len(matches))
                 return {
-                    "status": "ambiguous", **_asked_about(person),
+                    "status": "ambiguous", **_asked_about(person, content_checks=content_checks),
                     "could_be": [p.name for p in matches],
                     "note": "More than one person here goes by that. Ask which one.",
                 }
             subject = matches[0]
         try:
-            result = await persona.record_dispute(
-                account=PersonaAccount(
+            result = await profile.record_dispute(
+                account=ProfileAccount(
                     key=character_key(unit, subject.person_id), entity_kind="human",
                     unit=unit, subject=subject.person_id,
                 ),
@@ -13985,22 +14009,22 @@ Args:
                 message_id=cites[0], now_ms=_now_ms(),
             )
         except Exception:
-            log.exception("persona_dispute failed")
-            _record(metrics, "persona_dispute", "unavailable")
-            return dict(_PERSONA_DISPUTE_UNAVAILABLE)
+            log.exception("profile_dispute failed")
+            _record(metrics, "profile_dispute", "unavailable")
+            return dict(_PROFILE_DISPUTE_UNAVAILABLE)
         if result.status == "ok":
-            _record(metrics, "persona_dispute", "ok", effect=result.effect)
+            _record(metrics, "profile_dispute", "ok", effect=result.effect)
             return {
                 "status": "ok", "effect": result.effect, "person": subject.name,
-                "note": _PERSONA_DISPUTE_NOTES.get(
+                "note": _PROFILE_DISPUTE_NOTES.get(
                     result.effect or "", "It is recorded."),
             }
         if result.status == "conflict":
-            _record(metrics, "persona_dispute", "unavailable", reason="conflict")
-            return dict(_PERSONA_DISPUTE_UNAVAILABLE)
+            _record(metrics, "profile_dispute", "unavailable", reason="conflict")
+            return dict(_PROFILE_DISPUTE_UNAVAILABLE)
         reason = result.refusal.reason if result.refusal else "refused"
-        _record(metrics, "persona_dispute", "refused", reason=reason)
-        return {"status": "refused", "note": _PERSONA_DISPUTE_REFUSED_NOTES.get(
+        _record(metrics, "profile_dispute", "refused", reason=reason)
+        return {"status": "refused", "note": _PROFILE_DISPUTE_REFUSED_NOTES.get(
             reason, "Nothing was recorded. Say you couldn't record it.")}
 
     def _held_to_schema(tool: str, body: str, *, carried: frozenset[int]) -> str | dict:
@@ -14264,67 +14288,68 @@ Args:
         _record(metrics, "note_update", "ok", chars=len(body))
         return {"status": "ok", "title": note.title}
 
-    async def version(which: str = "") -> dict:
-        """Read which version of you is running, and what was in it. Call this
-        the moment somebody asks about YOU as software.
+    async def version_list() -> dict:
+        """List version history when somebody asks about upgrades or what is running.
 
-        This build stamp is the only source: never work a version out from the
-        chat, from what somebody said, or from the web. Leave `which` empty for
-        the running version, or name an earlier one.
+        Discover an unknown upgrade here, then use version_read for its notes.
+        For a known or named version, use version_read directly instead.
 
-        Returns `status`: ok, nothing_found or unavailable, with a `note` on how
-        to report it.
+        Returns `status`: ok or unavailable, with a `note` on how to report it.
+        History is the shipped snapshot, without notes or changes bodies.
+        """
+        current = versions.current() if versions is not None else None
+        if current is None or current.status != "ok" or current.entry is None:
+            _record(metrics, "version_list", "unavailable")
+            return {"status": "unavailable", "note": "I couldn't read my build stamp. "
+                    "Don't guess the running version or claim there is no history."}
+        releases = []
+        for name in versions.known():
+            entry = versions.lookup(name).entry
+            if entry is not None:
+                releases.append({"version": entry.version, "released": entry.released,
+                                 "commit": entry.commit})
+        _record(metrics, "version_list", "ok")
+        return {"status": "ok", "running": {"status": "ok", "version": current.entry.version},
+                "releases": releases,
+                "note": "This is shipped history, newest first, not live release or deployment "
+                        "history. Only running identifies this process. Releases after this "
+                        "build are invisible until another image is deployed. "
+                        "Read recorded notes with version_read; notes alone cannot explain speed."}
+
+    async def version_read(version: str) -> dict:
+        """Read version notes when somebody names a version.
+
+        For a known version, read directly without version_list before or after.
+
+        Returns `status`: ok, nothing_found or unavailable, with a `note` on
+        how to report it. Notes and changes come from the shipped snapshot.
 
         Args:
-            which: A version name, to read an earlier one. Leave it out for the
-                one running now.
+            version: Recorded version from version_list or the question.
         """
-        asked = str(which).strip()
-        if versions is None:
-            _record(metrics, "version", "unavailable", reason="not_wired")
-            return dict(_VERSION_OFF)
-        lookup = versions.lookup(asked) if asked else versions.current()
-        if lookup.status == VERSION_UNAVAILABLE:
-            # `lookup.reason` (absent / unreadable / no_current_version) goes in
-            # the LOG, never the payload: it is an operator's diagnosis of this
-            # host's build, and the model has one thing to do with it either way
-            # — say she cannot check.
-            _record(metrics, "version", "unavailable", reason=lookup.reason)
-            return dict(_VERSION_OFF)
-        if lookup.status == VERSION_NOTHING_FOUND:
-            _record(metrics, "version", "nothing_found", known=len(lookup.known))
-            return {
-                "status": "nothing_found",
-                "known": list(lookup.known),
-                "note": "There's no version by that name. Offer the ones in `known`, "
-                        "and don't describe one that isn't there.",
-            }
+        tag = version.strip() if isinstance(version, str) else ""
+        if not tag:
+            _record(metrics, "version_read", "unavailable")
+            return {"status": "unavailable", "note": "I need a version to read its recorded notes."}
+        lookup = versions.lookup(tag) if versions is not None else None
+        if lookup is None or lookup.status == "unavailable":
+            _record(metrics, "version_read", "unavailable")
+            return {"status": "unavailable", "note": "I couldn't read my shipped history. "
+                    "Don't describe that version or claim it is absent."}
+        if lookup.status == "nothing_found" or lookup.entry is None:
+            _record(metrics, "version_read", "nothing_found")
+            return {"status": "nothing_found", "known": list(lookup.known),
+                    "note": "That version is not recorded in this shipped snapshot. "
+                            "It may exist outside the snapshot; don't invent its contents."}
         entry = lookup.entry
-        out: dict = {"status": "ok", "version": entry.version}
-        # Only what the manifest actually recorded. An absent `notes` or `changes` is
-        # left OUT rather than sent as an empty string: a tool result is re-sent on
-        # every subsequent model call (DEC-73), and an empty field invites the model to
-        # fill it.
-        if entry.released:
-            out["released"] = entry.released
-        if entry.notes:
-            out["notes"] = entry.notes
-        if entry.changes:
-            out["changes"] = list(entry.changes)
-        out["known"] = list(lookup.known)
-        # How to report it (ADR 0015), per whether `notes` was recorded: an
-        # absent field is «nothing recorded», never a gap to fill.
-        out["note"] = (
-            "Put notes in your own words rather than reading them out."
-            if entry.notes else
-            "No notes were recorded for this version. Say its name and that you "
-            "have no notes for it, and don't fill the gap."
-        )
-        _record(
-            metrics, "version", "ok",
-            asked=bool(asked), noted=bool(entry.notes), changes=len(entry.changes),
-        )
-        return out
+        _record(metrics, "version_read", "ok")
+        return {"status": "ok", "version": entry.version, "released": entry.released,
+                "commit": entry.commit, "notes": entry.notes, "changes": list(entry.changes),
+                "note": "These are shipped release summaries, not a complete live GitHub body: "
+                        "notes are capped at 2,000 characters and changes at 20 subjects. "
+                        "Empty fields mean nothing was recorded. Releases after this build "
+                        "are invisible until another image is deployed. These notes don't "
+                        "prove deployment or that an upgrade caused faster responses."}
 
     def _resolve_quote(reply_to: int | None) -> OutboundQuote | None:
         """`n` from the rendered transcript -> the row's platform handles.
@@ -14503,8 +14528,13 @@ Returns `status`: ok, nothing_found or unavailable, with a `note` on what to do.
 
 Args:
     query: A generic visual reaction phrase, not copied chat text."""
-        if (not query or len(query) > 120 or len(query.split()) > 12
-                or scan_identifiers(query) is not None or giphy_source is None):
+        if (
+            not query
+            or len(query) > 120
+            or len(query.split()) > 12
+            or scan_identifiers(query, content_checks=content_checks) is not None
+            or giphy_source is None
+        ):
             return {"status": "unavailable", "note": "Reply in words instead."}
         found = await giphy_source.search(query=query)
         gif_candidates.clear()
@@ -16772,11 +16802,11 @@ Args:
         *((_spec("remember", remember_told),) if memory_retrieval is not None
           else (_spec("remember", remember),)),
         # Built on both surfaces (no `remember`-style name collision);
-        # `on_memory_surface` keeps it off the Honcho one, and `persona=None`
+        # `on_memory_surface` keeps it off the Honcho one, and `profile=None`
         # answers `unavailable`. The introspection build
         # (`all_memory_surfaces`) must see it, or its catalogue line ships
         # with no description.
-        _spec("persona_dispute", persona_dispute),
+        _spec("profile_dispute", profile_dispute),
         _spec("computer_run", computer_run),
         _spec("computer_read", computer_read),
         _spec("computer_write", computer_write),
@@ -16785,7 +16815,8 @@ Args:
         _spec("computer_import", computer_import),
         _spec("computer_session_list", computer_session_list),
         _spec("computer_browse", computer_browse),
-        _spec("version", version),
+        _spec("version_list", version_list),
+        _spec("version_read", version_read),
         _spec("send_reply", send_reply),
         _spec("send_to", send_to),
         _spec("search_gifs", search_gifs),
@@ -17013,10 +17044,11 @@ def build_tools(
     video: VideoDesk | None = None,
     video_ref_kinds: frozenset[str] = frozenset(),
     memory_retrieval: MemorySearch | None = None,
-    persona: PersonaWriter | None = None,
-    persona_read: PersonaHeads | None = None,
+    profile: ProfileWriter | None = None,
+    profile_read: ProfileHeads | None = None,
     relay: Relay | None = None,
     relay_turn: bool = False,
+    content_checks: bool = True,
 ) -> list:
     """The Strands-ready form of `build_tool_specs` — `adapt()` each spec so
     the docstrings above become the tool's model-facing description/schema
@@ -17073,8 +17105,9 @@ def build_tools(
         subagent=subagent,
         video=video, video_ref_kinds=video_ref_kinds,
         memory_retrieval=memory_retrieval,
-        persona=persona,
-        persona_read=persona_read,
+        profile=profile,
+        profile_read=profile_read,
         relay=relay, relay_turn=relay_turn,
+        content_checks=content_checks,
     )
     return [adapt(spec) for spec in specs]

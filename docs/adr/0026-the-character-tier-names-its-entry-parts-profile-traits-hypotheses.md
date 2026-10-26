@@ -1,6 +1,6 @@
 # 0026 · The Character tier's entry parts are profile, traits and hypotheses
 
-- **Status:** proposed
+- **Status:** superseded by [0029](0029-a-prompt-block-names-its-subject-and-author-by-id.md)
 - **Date:** 2026-10-21
 - **Reverses, in part:** [design/unified-memory/45](../../design/unified-memory/45-persona-adaptor.md)'s "Persona" naming.
 - **Index:** a DEC number is taken at merge.

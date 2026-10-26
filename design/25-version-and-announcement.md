@@ -11,6 +11,41 @@ timestamp: '2026-08-11'
 > nothing is announced to a room. The build-time stamp and the three-state read below still
 > hold. Read the rest of this file as history.
 
+## Current release tools (issue #217, 2026-10-23)
+
+`version_list()` replaces the old `version(which)` interface. It reads the
+existing immutable `VersionManifest` and returns a separate `running` identity
+plus recorded version metadata (`version`, `released`, `commit`) in the
+generator's newest-first order, without `notes` or `changes` bodies. A readable
+stamp with no history still identifies the running build and returns an empty
+history list as `ok`; it does not invent a history entry for the running build.
+
+`version_read(version)` reads the selected entry's recorded `notes` and `changes`
+from that same snapshot, retaining the reader's case-insensitive matching and
+optional `v` prefix. Empty content stays empty. A readable manifest without that
+entry is `nothing_found`, including when the running build has no history entry.
+This means not recorded here, not that the release does not exist. An absent,
+unreadable or unstamped manifest is `unavailable` for both tools. Every outcome
+carries a reporting note and records its tool metric.
+
+This is **shipped history**. Releases after the build are invisible until another
+image is deployed. The existing generator caps notes at 2,000 characters and
+changes at 20 commit subjects: the result is a recorded release summary, not a
+complete exact live GitHub release body. Running identity and history remain
+fixed for the process. Only the running stamp establishes this process's version;
+history alone establishes neither deployment nor that an upgrade caused faster
+responses.
+
+The two calls keep budgets 1 and 2, respectively, and remain read-only and
+unit-safe. There is no runtime HTTP, GitHub credential, second store, cache or
+polling. Generator limits, build stamping and publication controls are unchanged.
+Routing cases cover direct version questions, one historical read, and an indirect
+upgrade question with sibling exclusions. Generate `nora/version.json` using
+`scripts/gen_version_manifest.py` in the clean evaluation checkout before the
+live measurement; the selected historical release is `v6.6.9`. Parent-owned live
+routing/reporting measurement remains separate from deterministic file-reader
+and wiring tests. The old tool and announcement sections below are historical.
+
 # Version, and the upgrade note
 
 ## 0. Two questions and one event

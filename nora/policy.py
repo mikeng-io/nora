@@ -84,6 +84,8 @@ class Conversation:
     # The MCP servers this conversation may use. Empty means none — deny-by-default,
     # the same posture as the rest of this file (R-5).
     tools: frozenset[str] = frozenset()
+    # Location opt-in remains independent of `[content_checks]`. The audience
+    # checks below apply only in enabled mode; collection consent is unchanged.
     # LOCATION-DISCLOSURE TRUST (DEC-74). Default False: `where_is` refuses to
     # disclose a member's position unless this conversation is a verified SUBSET
     # of that member's Life360 circle (R-31/DisclosureGuard). Setting `location =

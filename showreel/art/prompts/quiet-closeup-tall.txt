@@ -1,4 +1,4 @@
-Generate ONE image, portrait 2:3 (1024x1536), cinematic.
-- PROPORTIONS FIRST: the very large rounded head of the reference.
-- Medium close-up of Nora (head and chest, down to the hoodie pockets), centred, late at night. Eyes gently closed (two soft downward curves), calm, head tilted very slightly. One small hand raised to chest height, lightly pinching the small white inline remote on her earphone cable between thumb and finger, as if about to press it. Earbuds in both ears, the cable falling across the white top and the open grey hoodie.
-- Background: deep warm charcoal (around #141112 to #241F20, never blue-black) with a soft warm glow from a lamp just out of frame upper left; warm rim light on the hair; shallow depth of field. Serene, quiet. No props, no text.
+Generate ONE 2D anime image, portrait (1024x1536), from the new Mini Bauhinia master.
+- Head-and-chest listening portrait, centred with space below her hands. Eyes gently closed as two soft downward curves, head slightly tilted, serene and quiet. One small hand rests naturally near the blouse collar or waistcoat; the other is relaxed.
+- Preserve the simplified broad hair, five-petal clasp and Bauhinia outfit from the master. Warm late-night lamp light against deep warm charcoal (#141112 to #241F20), clean linework and restrained cel shading.
+- No earphones, cable, remote, bag or added prop; do not pinch or press an imaginary remote. No text or watermark. The old remote-based camera pivot and click effect need a new measured focal point before composition acceptance.

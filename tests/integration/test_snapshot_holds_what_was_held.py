@@ -70,6 +70,22 @@ def _UNIT_ROLLUP(i: int) -> dict[str, Any]:
 
 #: A valid row per in-place table, for key `i`.
 ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
+    "message_reading": lambda i: {
+        "id": 81000 + i, "unit": "u", "platform": "signal", "origin_room": "g1",
+        "source_ids": [], "context_ids": [], "snapshot": {}, "version": 1, "model": "m",
+    },
+    "message_reading_queue": lambda i: {
+        "id": 84000 + i,
+        "message_id": 1000 + i, "unit": "u", "platform": "signal", "origin_room": "g1",
+        "source_key": f"s{i}", "reading_id": 81000,
+    },
+    "message_reading_claim": lambda i: {
+        "id": 82000 + i, "reading_id": 81000, "ordinal": i, "unit": "u",
+        "platform": "signal", "origin_room": "g1", "source_ids": [], "content": {},
+    },
+    "message_reading_attempt": lambda i: {
+        "id": 83000 + i, "reading_id": 81000, "attempt": i, "model": "m",
+    },
     "messages": lambda i: {
         "id": 1000 + i, "platform": "signal", "conversation_id": "g1",
         "conversation_type": "group", "sender_id": f"s{i}", "sender_name": f"n{i}",
@@ -239,7 +255,7 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
         "actor": "tag", "created_by_tag": f"t{i}",
     },
     # 0117_persona: an account's head, its revision bumped by each write.
-    "persona": lambda i: {
+    "profile": lambda i: {
         "key": f"u#character:p{i}", "entity_kind": "human", "unit": "u",
         "revision": 1, "updated_at": MS0 + i,
     },
@@ -247,6 +263,10 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
 
 #: The column each revision moves, and to what.
 REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
+    "message_reading": ("attempts", lambda i: i + 10),
+    "message_reading_queue": ("source_key", lambda i: f"revised-{i}"),
+    "message_reading_claim": ("content", lambda i: {"what": f"revised {i}"}),
+    "message_reading_attempt": ("input_tokens", lambda i: i + 10),
     "messages": ("delivery_status", lambda i: f"delivered-{i}"),
     "message_edit": ("body", lambda i: f"re-edited {i}"),
     "message_reaction": ("removed", lambda i: 1),
@@ -255,7 +275,7 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
     "note": ("strikes", lambda i: 1 + i),
     "culture": ("updated_at", lambda i: MS0 + 1000 + i),
     "computer_sessions": ("objective", lambda i: f"task {i}, continued"),
-    "persona": ("revision", lambda i: 2 + i),
+    "profile": ("revision", lambda i: 2 + i),
     "standing": ("body", lambda i: f"revised position {i}"),
     "reminders": ("state", lambda i: "cancelled"),
     "compute_jobs": ("state", lambda i: "firing"),
@@ -356,15 +376,15 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "established_by": "test",
     },
     # 0117_persona: one told line.
-    "persona_line": lambda n: {
-        "id": _uuid("pl", n), "persona_key": f"u#character:p{n}", "part": "identity",
+    "profile_line": lambda n: {
+        "id": _uuid("pl", n), "profile_key": f"u#character:p{n}", "part": "facts",
         "kind": "attribute", "text": f"fact {n}", "mode": "told", "citations": [str(n + 1)],
         "told_by": f"p{n}", "state": "current", "support_count": 1, "unit": "u",
         "written_at": MS0 + n, "written_by_session": "test",
     },
-    # 0121_persona_dispute: one dispute of a Persona line.
-    "persona_dispute": lambda n: {
-        "id": _uuid("pd", n), "persona_key": f"u#character:p{n}", "line_id": None,
+    # 0121_persona_dispute: one dispute of a Profile line.
+    "profile_dispute": lambda n: {
+        "id": _uuid("pd", n), "profile_key": f"u#character:p{n}", "line_id": None,
         "disputed_by": f"p{n}", "kind": "dispute", "claim": f"not so {n}",
         "message_id": n + 1, "unit": "u", "written_at": MS0 + n,
     },

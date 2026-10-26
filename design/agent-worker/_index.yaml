@@ -1,0 +1,44 @@
+kind: design_index
+title: "Agent worker: Nora hands computer work to an existing coding harness, behind two switchable ports"
+description: >
+  Nora's computer tools make Nora herself the coding harness: each
+  computer_run, read, write and edit is one model round of hers, through
+  computerd in the sbx microVM. A coding task of many steps reinvents what Pi,
+  Hermes, Claude Code and Codex already do well. This bundle adds an
+  AGENT WORKER port, shaped on the Agent Client Protocol's session semantics
+  (start, prompt, stream updates, permission requests, cancel), with a Pi
+  adapter first and an ACP adapter for the rest, so the harness is
+  switchable. The worker runs INSIDE the sandbox, which needs the
+  SandboxRuntime port to gain a long-lived streamed process, and that reshape
+  is what makes the VM switchable later (sbx today; Cloudflare, other microVM
+  services after). Model calls leave the VM only through a scoped relay, so
+  no key enters it. The sub-agent stays Nora (Strands) and is the one caller.
+  Proposal, not built.
+status: proposal
+governance: operator-directed
+timestamp: '2026-10-25'
+origin: >
+  Operator, 2026-10-25: «for computer use, I don't expect to build another
+  harness … is it possible to build an adapter so I can adapt the Pi agent, or
+  others like the Hermes agent»; «my preference would be the Pi agent because
+  it's cleaner and more abstracted for harnessing»; «we should make it an
+  adapter, because in the future we might want to switch … a Hermes agent, or
+  if possible, maybe ACP»; «in the future, not right now, I want the VM to
+  also become an adapter so it's switchable … the Perplexity VM, the
+  Cloudflare VM, or microVM sandboxes»; «a sub-agent is more like requesting
+  Nora to work behind the scenes, so it's still Nora».
+members:
+  - 00-intent.md
+  - 10-worker-port.md
+  - 20-adapters.md
+  - 30-sandbox-port.md
+  - 40-models-egress-permissions.md
+  - 50-verification-and-migration.md
+edges:
+  - {src: 00-intent, dst: 10-worker-port, rel: sequences, provenance: asserted}
+  - {src: 20-adapters, dst: 10-worker-port, rel: realizes, provenance: asserted}
+  - {src: 10-worker-port, dst: 30-sandbox-port, rel: depends_on, provenance: asserted}
+  - {src: 40-models-egress-permissions, dst: 10-worker-port, rel: constrained_by, provenance: asserted}
+  - {src: 50-verification-and-migration, dst: 10-worker-port, rel: measures, provenance: asserted}
+  - {src: 30-sandbox-port, dst: ../sandbox-runtime/00-design.md, rel: amends, provenance: asserted}
+  - {src: 10-worker-port, dst: ../subagent/00-design.md, rel: extends, provenance: asserted}

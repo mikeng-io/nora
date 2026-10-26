@@ -21,6 +21,7 @@ export const realClock = {
 
 export function createOutbox({
   url,
+  headers = {},
   fetchImpl,
   clock = realClock,
   maxEvents = 256,
@@ -63,7 +64,7 @@ export function createOutbox({
     try {
       res = await fetchImpl(url, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', ...headers },
         body: JSON.stringify(event),
         signal: aborter.signal,
       });

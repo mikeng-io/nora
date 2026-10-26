@@ -27,10 +27,22 @@ import (
 
 // Events is the SSE hub as /events and /health read it.
 type Events interface {
-	Subscribe() (chan []byte, [][]byte, int)
+	Subscribe() (chan []byte, [][]byte, int, error)
 	Unsubscribe(chan []byte)
-	Stats() (clients, buffered, dropped int)
+	Stats() (clients, buffered, dropped, rejected int)
 }
+
+// The limits on one event stream in TIME. Each is a variable so a test can
+// shorten it; nothing else replaces them.
+var (
+	// streamWriteTimeout is the longest one frame may take to reach its client.
+	// It is an inactivity bound, not a stream bound: a live client is written to
+	// at least every heartbeat (30s), so a write blocked for this long is a
+	// client that has stopped reading. Set per write, so a long stream is not
+	// cut for being long, and no WriteTimeout is set on the server, which
+	// /events must not have.
+	streamWriteTimeout = 2 * time.Minute
+)
 
 // Server is the HTTP surface over the use cases.
 type Server struct {
@@ -126,7 +138,11 @@ type healthBody struct {
 	DroppedEvents  int      `json:"dropped_events"`
 	BufferedEvents int      `json:"buffered_events"`
 	Clients        int      `json:"clients"`
-	UptimeSeconds  int      `json:"uptime_seconds"`
+	// RejectedClients counts event streams refused at the client bound. A
+	// rising number is an adapter that is reconnecting without closing its
+	// old stream, and it is the only trace such a refusal leaves.
+	RejectedClients int `json:"rejected_clients"`
+	UptimeSeconds   int `json:"uptime_seconds"`
 }
 
 // handleHealth ALWAYS answers 200 while the HTTP server serves.
@@ -137,18 +153,19 @@ type healthBody struct {
 // and restart a process whose restart fixes nothing.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	snap := s.app.Health()
-	clients, buffered, dropped := s.events.Stats()
+	clients, buffered, dropped, rejected := s.events.Stats()
 	writeJSON(w, http.StatusOK, healthBody{
-		OK:             true,
-		Session:        snap.State,
-		Connected:      snap.Connected,
-		Seq:            snap.Seq,
-		Detail:         snap.Detail,
-		Self:           selfBody(snap.Self),
-		DroppedEvents:  dropped,
-		BufferedEvents: buffered,
-		Clients:        clients,
-		UptimeSeconds:  int(time.Since(s.startedAt).Seconds()),
+		OK:              true,
+		Session:         snap.State,
+		Connected:       snap.Connected,
+		Seq:             snap.Seq,
+		Detail:          snap.Detail,
+		Self:            selfBody(snap.Self),
+		DroppedEvents:   dropped,
+		BufferedEvents:  buffered,
+		Clients:         clients,
+		RejectedClients: rejected,
+		UptimeSeconds:   int(time.Since(s.startedAt).Seconds()),
 	})
 }
 
@@ -160,6 +177,16 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "streaming unsupported"})
 		return
 	}
+	// Subscribed BEFORE the headers, so a refusal can still be answered as the
+	// envelope with a status. Past the bound it is a 503: retryable, once a
+	// stream closes, and not a server fault.
+	ch, replay, droppedTotal, err := s.events.Subscribe()
+	if err != nil {
+		writeErrorEnvelope(w, http.StatusServiceUnavailable, "unavailable", "too many event streams are open; close one and reconnect")
+		return
+	}
+	defer s.events.Unsubscribe(ch)
+
 	h := w.Header()
 	h.Set("Content-Type", "text/event-stream")
 	h.Set("Cache-Control", "no-cache")
@@ -172,32 +199,40 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, ":\n\n")
 	flusher.Flush()
 
-	ch, replay, droppedTotal := s.events.Subscribe()
-	defer s.events.Unsubscribe(ch)
+	rc := http.NewResponseController(w)
+	// send writes one frame under its own deadline. A writer that cannot set
+	// deadlines (a test recorder) is written to without one.
+	send := func(payload []byte) bool {
+		_ = rc.SetWriteDeadline(time.Now().Add(streamWriteTimeout))
+		writeSSE(w, payload)
+		return rc.Flush() == nil
+	}
 
 	// The drop notice goes FIRST, before the replay. A consumer that reads its
 	// backlog and only then learns some of it is missing has already made
 	// decisions on an incomplete record.
 	if droppedTotal > 0 {
-		if payload, err := json.Marshal(&droppedEvent{Kind: kindDropped, DroppedTotal: droppedTotal}); err == nil {
-			writeSSE(w, payload)
+		if payload, err := json.Marshal(&droppedEvent{Kind: kindDropped, DroppedTotal: droppedTotal}); err == nil && !send(payload) {
+			return
 		}
 	}
 	for _, payload := range replay {
-		writeSSE(w, payload)
+		if !send(payload) {
+			return
+		}
 	}
-	flusher.Flush()
 
+	// No stream lifetime: ending a healthy stream on a timer abandons whatever is
+	// queued for it, and a client that stopped reading is already cut by the write
+	// deadline above.
 	for {
 		select {
 		case <-r.Context().Done():
 			return
 		case payload, open := <-ch:
-			if !open {
+			if !open || !send(payload) {
 				return
 			}
-			writeSSE(w, payload)
-			flusher.Flush()
 		}
 	}
 }
@@ -206,5 +241,5 @@ func writeSSE(w http.ResponseWriter, payload []byte) {
 	// One JSON object per `data:` line, exactly as the contract specifies.
 	// The payloads are compact JSON from encoding/json, which never emits a
 	// raw newline, so no multi-line framing is needed.
-	fmt.Fprintf(w, "data: %s\n\n", payload)
+	_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
 }

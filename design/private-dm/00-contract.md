@@ -40,6 +40,10 @@ unit, a second Cognition engine or a new memory tier.
 
 The person's DM uses their **default unit** as its social context. Nora may
 read that unit's permitted group discussion and curated Notebook in the DM.
+**Amended 2026-10-25** ([06](06-cross-unit-reads.md)): a DM may also read the
+group context of every other unit that explicitly lists the person, gated per
+room; writes, history and the workspace stay anchored to the default unit, and
+publication into a unit is held by the laundering rule.
 Cognition and the existing Persona writer may learn from the unit's groups and
 its bound DMs. Raw private evidence remains protected; the shared account holds
 only the understanding curated for shared use. Confidential details that cannot

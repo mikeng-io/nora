@@ -30,7 +30,7 @@
   {
     "name": "the egress screen is removed from the search",
     "file": "nora/agent/tools.py",
-    "old": "if scan_identifiers(decoded) is not None or _looks_like_coordinate(decoded):\n            _record(metrics, \"instagram_search\", \"refused\", reason=\"egress\")",
+    "old": "if scan_identifiers(decoded, content_checks=content_checks) is not None or (\n            content_checks and _looks_like_coordinate(decoded)\n        ):\n            _record(metrics, \"instagram_search\", \"refused\", reason=\"egress\")",
     "new": "if False:\n            _record(metrics, \"instagram_search\", \"refused\", reason=\"egress\")",
     "target": "tests/unit/test_instagram_search_tool.py::test_an_identifier_or_coordinate_never_leaves_in_a_search"
   },
@@ -93,7 +93,7 @@
   {
     "name": "the egress screen is removed from x_search (DEC-201)",
     "file": "nora/agent/tools.py",
-    "old": "if scan_identifiers(decoded) is not None or _looks_like_coordinate(decoded):\n            _record(metrics, \"x_search\", \"refused\", reason=\"egress\")",
+    "old": "if scan_identifiers(decoded, content_checks=content_checks) is not None or (\n            content_checks and _looks_like_coordinate(decoded)\n        ):\n            _record(metrics, \"x_search\", \"refused\", reason=\"egress\")",
     "new": "if False:\n            _record(metrics, \"x_search\", \"refused\", reason=\"egress\")",
     "target": "tests/unit/test_x_tools.py::test_an_identifier_or_coordinate_is_refused_and_not_sent"
   },

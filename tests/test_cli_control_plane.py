@@ -154,25 +154,25 @@ async def invoke(env, *argv):
     return await cli.execute(args)
 
 
-async def test_persona_media_retry_only_queues_known_completed_account(env, capsys):
+async def test_profile_media_retry_only_queues_known_completed_account(env, capsys):
     import json
 
     import sqlalchemy as sa
 
     from nora.app.composition import character_person_keys
     from nora.infra.sql.character import SqlCharacterEvidence
-    from nora.infra.sql.persona_inputs import SqlPersonaInputs
+    from nora.infra.sql.profile_inputs import SqlProfileInputs
     from nora.infra.sql.schema import CONSOLIDATION_WATERMARK as W
     from nora.infra.sql.schema import MEDIA_OBJECTS, MESSAGES
 
     cfg = tomllib.loads(env['path'].read_text())
-    for section in ('dreamer', 'culture', 'persona'):
+    for section in ('dreamer', 'culture', 'profile'):
         cfg[section]['enabled'] = True
     env['path'].write_text(tomli_w.dumps(cfg))
     keys = character_person_keys(load_policy(Path(cfg['policy_file'])),
                                  load_persons(Path(cfg['identity_file'])))
     [key] = keys
-    assert await invoke(env, 'memory', 'persona-retry-media', '--key', 'unknown', '--apply') == 1
+    assert await invoke(env, 'memory', 'profile-retry-media', '--key', 'unknown', '--apply') == 1
     capsys.readouterr()
     engine = create_sql_engine(env['url'])
     try:
@@ -185,29 +185,29 @@ async def test_persona_media_retry_only_queues_known_completed_account(env, caps
             await conn.execute(sa.insert(MEDIA_OBJECTS).values(sha256=sha, media_type='image/png',
                 size=1, source='inbound', created_at_ms=1, description='cached synthetic scene'))
         # No history reset or bootstrap is permitted by the control command.
-        assert await invoke(env, 'memory', 'persona-retry-media', '--key', key, '--apply') == 1
+        assert await invoke(env, 'memory', 'profile-retry-media', '--key', key, '--apply') == 1
         capsys.readouterr()
         reads = SqlCharacterEvidence(engine)
         boundary, _ = await reads.history_state(key=key)
         await reads.advance_history(key=key, cursor=boundary)
         async with engine.connect() as conn:
             before = list((await conn.execute(sa.select(W))).all())
-        assert await invoke(env, 'memory', 'persona-retry-media', '--key', key) == 0
+        assert await invoke(env, 'memory', 'profile-retry-media', '--key', key) == 0
         dry = json.loads(capsys.readouterr().out)
         assert dry['pending_cached'] == 1 and not dry['requested'] and not dry['applied']
         async with engine.connect() as conn:
             assert list((await conn.execute(sa.select(W))).all()) == before
-        assert await invoke(env, 'memory', 'persona-retry-media', '--key', key, '--apply') == 0
+        assert await invoke(env, 'memory', 'profile-retry-media', '--key', key, '--apply') == 0
         applied = json.loads(capsys.readouterr().out)
         assert applied['requested'] and applied['applied']
-        source = SqlPersonaInputs(engine)
+        source = SqlProfileInputs(engine)
         assert await source.recovery_requested(key=key)
         assert await reads.history_state(key=key) == (boundary, boundary)
         await source.claim_recovery(key=key)
         pending = await source.messages(key=key, rooms=[('signal', GROUP_ID)],
                                         person='nobody', limit=100)
         await source.settle(key=key, revisions=pending)
-        assert await invoke(env, 'memory', 'persona-retry-media', '--key', key, '--apply') == 1
+        assert await invoke(env, 'memory', 'profile-retry-media', '--key', key, '--apply') == 1
         assert not await source.recovery_requested(key=key)
         assert env['seen'] == []  # no daemon/model/boot recovery is composed
     finally:
@@ -886,32 +886,32 @@ async def test_memory_rebuild_embeddings_only_clears_vectors_and_reports_counts(
         await engine.dispose()
 
 
-async def test_persona_window_and_report_are_read_only_until_explicit_apply(
+async def test_profile_window_and_report_are_read_only_until_explicit_apply(
     env, capsys, monkeypatch,
 ):
     import sqlalchemy as sa
 
     from nora.app.composition import character_person_keys
-    from nora.infra.sql.schema import PERSONA_LINE
-    cfg = cli._config(build_parser().parse_args(["memory", "persona-history",
+    from nora.infra.sql.schema import PROFILE_LINE
+    cfg = cli._config(build_parser().parse_args(["memory", "profile-history",
                                                "--config", str(env["path"])]))
     monkeypatch.delenv(cfg.evals.langfuse.headers_env, raising=False)
     [key] = character_person_keys(cli._policy(cfg), cli._persons(cfg))
     async def no_runtime(_cfg):
         pytest.fail("dry-run must never compose a runtime")
     monkeypatch.setattr("nora.app.composition.build_dependencies", no_runtime)
-    assert await invoke(env, "memory", "persona-history", "--key", key,
+    assert await invoke(env, "memory", "profile-history", "--key", key,
                         "--since", "2026-10-01", "--until", "2026-10-02") == 0
     output = capsys.readouterr().out
     assert '"dry_run": true' in output
-    assert await invoke(env, "memory", "persona-report", "--key", key) == 0
+    assert await invoke(env, "memory", "profile-report", "--key", key) == 0
     output = capsys.readouterr().out
     assert '"part_kind": {}' in output and '"card"' not in output
     engine = create_sql_engine(env["url"])
     try:
         async with engine.connect() as conn:
             count = (await conn.execute(
-                sa.select(sa.func.count()).select_from(PERSONA_LINE))).scalar()
+                sa.select(sa.func.count()).select_from(PROFILE_LINE))).scalar()
             assert count == 0
     finally:
         await engine.dispose()
@@ -941,9 +941,9 @@ async def test_character_report_requires_a_separately_configured_judge(monkeypat
     monkeypatch.setattr("nora.agent.structured.build_structured_model", factory)
     args = Namespace(since=None, until=None, judge=True)
     with pytest.raises(CliError, match="must differ"):
-        await cli.cmd_persona_report(args)
+        await cli.cmd_profile_report(args)
     assert not reached
     cfg.evals.judge_model = "independent"
     with pytest.raises(ModelSelected):
-        await cli.cmd_persona_report(args)
+        await cli.cmd_profile_report(args)
     assert reached == ["independent"]

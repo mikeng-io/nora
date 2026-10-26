@@ -1,5 +1,12 @@
 # 23 — Named places: the boundary map, and routing to a place this household has a name for
 
+> Content-policy update, 2026-10-25: phone/UUID/coordinate, place/person-name
+> and location audience filters described here remain implemented and tested in
+> enabled mode, but runtime defaults them off through `[content_checks]`.
+> Credentials, doctrine, scope, consent and availability are independent.
+> See the [current decision](../../docs/adr/0030-content-filters-are-disabled-by-default-and-reversible.md).
+
+
 Date: 2026-08-07. Status: PROPOSED (operator directed the build 2026-08-07;
 §1's boundary clarification was his explicit precondition). Probe evidence in
 §3 is live, not assumed.

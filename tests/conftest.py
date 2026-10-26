@@ -400,6 +400,16 @@ prune_enabled = false
 """
 
 
+@pytest.fixture(autouse=True)
+def eval_host_lock_is_this_test_s(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`python -m evals` takes the deploy host's eval lock. A test must never
+    contend with a real eval on the host, or with another test worker, so each
+    test's lock is its own file."""
+    from nora.subject import sandbox
+
+    monkeypatch.setattr(sandbox, "EVAL_HOST_LOCK", tmp_path / sandbox.EVAL_HOST_LOCK.name)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def evaluation_config() -> Path:
     """Materialise `config.evaluation.toml` before any subject is composed.

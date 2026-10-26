@@ -16,8 +16,16 @@ a test that needed the network would be one nobody runs.
 
 from __future__ import annotations
 
+import http.client
 import importlib.util
 import json
+import os
+import socket
+import subprocess
+import sys
+import threading
+import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -211,3 +219,243 @@ def test_an_unreachable_discord_returns_false_and_never_raises(bridge, monkeypat
 
     monkeypatch.setattr(bridge.urllib.request, "urlopen", boom)
     assert bridge.send("anything") is False
+
+
+# --- the inbound side: who may post, how much, how long, how many at once -----
+#
+# Every test below drives the REAL server over a socket, with `send` replaced so
+# nothing reaches Discord. A test of a Handler method alone would not see a
+# refused connection, a stalled body or a slot that never came back.
+
+_TOKEN = "synthetic-bridge-token"  # noqa: S105 - a fake
+
+
+@contextmanager
+def _serving(bridge, monkeypatch, *, token: str = _TOKEN):
+    """The bridge's real server on an ephemeral port, `send` recorded not sent."""
+    monkeypatch.setattr(bridge, "BRIDGE_TOKEN", token)
+    sent: list[str] = []
+    monkeypatch.setattr(bridge, "send", lambda message: sent.append(message) or True)
+    server = bridge.Server(("127.0.0.1", 0), bridge.Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield server.server_address[1], sent
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def _post(port: int, body: bytes, auth: str | None, timeout: float = 5.0):
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
+    headers = {"Content-Type": "application/json", "Content-Length": str(len(body))}
+    if auth is not None:
+        headers["Authorization"] = auth
+    conn.request("POST", "/alert", body=body, headers=headers)
+    response = conn.getresponse()
+    response.read()
+    conn.close()
+    return response.status
+
+
+_GOOD_BODY = json.dumps(_payload(_alert("TargetDown", summary="nora is down"))).encode()
+
+
+def test_the_alert_endpoint_refuses_a_post_without_the_bearer(bridge, monkeypatch):
+    """Any co-networked container can reach this port, so membership in the
+    network is not authority to post in the Discord channel. The bearer is the
+    same shared secret every other bridge in the stack already checks."""
+    with _serving(bridge, monkeypatch) as (port, sent):
+        assert _post(port, _GOOD_BODY, auth=None) == 401
+        assert _post(port, _GOOD_BODY, auth="Bearer wrong") == 401
+        assert _post(port, _GOOD_BODY, auth=f"Basic {_TOKEN}") == 401
+        assert _post(port, _GOOD_BODY, auth="Bearer ünïcode") == 401
+    assert sent == [], "a refused POST still reached the send path"
+
+
+def test_the_alert_endpoint_accepts_the_exact_bearer(bridge, monkeypatch):
+    """The positive control for the refusal above: the right credential is the
+    one thing that gets through, so the 401s are not a broken server."""
+    with _serving(bridge, monkeypatch) as (port, sent):
+        assert _post(port, _GOOD_BODY, auth=f"Bearer {_TOKEN}") == 200
+    assert len(sent) == 1 and "TargetDown" in sent[0]
+
+
+def test_an_empty_configured_token_fails_closed(bridge, monkeypatch):
+    """A bridge with no token must not become an open one."""
+    with _serving(bridge, monkeypatch, token="") as (port, sent):
+        assert _post(port, _GOOD_BODY, auth="Bearer ") == 401
+    assert sent == []
+
+
+def test_the_bridge_refuses_to_start_without_a_token():
+    """Started as the container starts it, with no token in the environment, it
+    must exit at once. A server that starts open and warns is the failure this
+    rule exists to prevent; the timeout turns that failure into a test failure
+    rather than a hang."""
+    env = {k: v for k, v in os.environ.items() if k != "NORA_BRIDGE_TOKEN"}
+    bot = "synthetic-bot-credential"
+    env.update(ALERT_DISCORD_CHANNEL="123", DISCORD_BOT_TOKEN=bot, ALERT_BRIDGE_PORT="0")
+    done = subprocess.run(  # noqa: S603 - this repo's own script, fixed argv
+        [sys.executable, str(_BRIDGE)], env=env, capture_output=True, text=True, timeout=15,
+        check=False,
+    )
+    assert done.returncode != 0
+    assert "NORA_BRIDGE_TOKEN" in done.stderr
+
+
+def test_a_declared_length_over_the_limit_is_refused_before_the_body_is_read(
+    bridge, monkeypatch,
+):
+    """413 is answered from the header alone. Reading first would let one request
+    make the bridge buffer whatever size it declared."""
+    with _serving(bridge, monkeypatch) as (port, sent):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5.0)
+        conn.putrequest("POST", "/alert")
+        conn.putheader("Authorization", f"Bearer {_TOKEN}")
+        conn.putheader("Content-Length", str(bridge.MAX_BODY + 1))
+        conn.endheaders()  # no body follows: a read would block until the timeout
+        assert conn.getresponse().status == 413
+        conn.close()
+    assert sent == []
+
+
+def test_a_non_numeric_length_is_a_400_not_a_dropped_connection(bridge, monkeypatch):
+    with _serving(bridge, monkeypatch) as (port, _sent):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5.0)
+        conn.putrequest("POST", "/alert")
+        conn.putheader("Authorization", f"Bearer {_TOKEN}")
+        conn.putheader("Content-Length", "twelve")
+        conn.endheaders()
+        assert conn.getresponse().status == 400
+        conn.close()
+
+
+def test_a_body_that_is_not_an_object_is_a_400(bridge, monkeypatch):
+    """A JSON list parses, then `render` would call `.get` on it and the handler
+    would die with no answer at all."""
+    with _serving(bridge, monkeypatch) as (port, sent):
+        assert _post(port, b"[1, 2]", auth=f"Bearer {_TOKEN}") == 400
+    assert sent == []
+
+
+def test_a_client_that_stalls_mid_body_is_disconnected(bridge, monkeypatch):
+    """Headers arrive and the body never does. Without an inbound socket timeout
+    the handler thread waits forever, and a few of these hold every slot."""
+    monkeypatch.setattr(bridge.Handler, "timeout", 0.5)
+    with _serving(bridge, monkeypatch) as (port, sent):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5.0)
+        conn.putrequest("POST", "/alert")
+        conn.putheader("Authorization", f"Bearer {_TOKEN}")
+        conn.putheader("Content-Length", "100")
+        conn.endheaders()
+        # The server gives up well inside the client's own 5s; a stall would
+        # surface here as socket.timeout instead.
+        with pytest.raises((http.client.HTTPException, ConnectionError)):
+            conn.getresponse()
+        conn.close()
+    assert sent == []
+
+
+def test_a_burst_past_the_concurrency_bound_is_refused_not_queued(bridge, monkeypatch):
+    """Each connection is a thread. With one slot held by a stalled client, the
+    next well-formed POST must be turned away at once, not admitted to grow the
+    thread count."""
+    monkeypatch.setattr(bridge, "MAX_CONCURRENT", 1)
+    monkeypatch.setattr(bridge.Handler, "timeout", 5.0)
+    with _serving(bridge, monkeypatch) as (port, sent):
+        stalled = socket.create_connection(("127.0.0.1", port), timeout=5.0)
+        stalled.sendall(
+            b"POST /alert HTTP/1.1\r\nHost: x\r\n"
+            + f"Authorization: Bearer {_TOKEN}\r\nContent-Length: 100\r\n\r\n".encode(),
+        )
+        try:
+            time.sleep(0.2)  # let the stalled connection take its slot
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2.0)
+            # A refused connection is closed with this request's body unread, which on a
+            # loaded host can reach the client as a reset before the 503 does; either way
+            # it was turned away at once and Alertmanager retries.
+            try:
+                conn.request(
+                    "POST", "/alert", body=_GOOD_BODY,
+                    headers={
+                        "Authorization": f"Bearer {_TOKEN}",
+                        "Content-Length": str(len(_GOOD_BODY)),
+                    },
+                )
+                assert conn.getresponse().status == 503
+            except (ConnectionResetError, http.client.RemoteDisconnected):
+                pass
+            finally:
+                conn.close()
+        finally:
+            stalled.close()
+    assert sent == []
+
+
+def test_a_body_cut_short_by_the_client_is_refused_not_delivered(bridge, monkeypatch):
+    """A client that disconnects after part of its declared body must not have
+    what arrived delivered as a complete alert. An empty read would otherwise
+    parse as `{}` and go to Discord as "[UNKNOWN] 0 alert(s)"."""
+    monkeypatch.setattr(bridge.Handler, "timeout", 5.0)
+    with _serving(bridge, monkeypatch) as (port, sent):
+        stalled = socket.create_connection(("127.0.0.1", port), timeout=5.0)
+        stalled.sendall(
+            b"POST /alert HTTP/1.1\r\nHost: x\r\n"
+            + f"Authorization: Bearer {_TOKEN}\r\nContent-Length: 100\r\n\r\n".encode()
+            + b'{"alerts": ',
+        )
+        stalled.shutdown(socket.SHUT_WR)
+        reply = stalled.recv(1024)
+        stalled.close()
+    assert reply.split(b" ")[1] == b"400", reply[:40]
+    assert sent == []
+
+
+def test_a_mention_in_an_alert_cannot_ping_anyone(bridge, monkeypatch):
+    """Alert text is copied from rule annotations and label values, some of which
+    echo request input. A bare `@everyone` in that text must not become a
+    notification, so Discord is told to parse no mention at all."""
+    seen = _wired(bridge, monkeypatch)
+    assert bridge.send("@everyone <@123> @here") is True
+    assert json.loads(seen[0].data)["allowed_mentions"] == {"parse": []}
+
+
+def test_a_label_or_annotation_is_capped_before_it_is_rendered(bridge):
+    """A runaway annotation must not become the message. The cap is applied to
+    each field as it is read, so one field cannot push the rest out of the
+    2000-character limit."""
+    text = bridge.render(_payload(_alert("Big", summary="x" * 50_000, description="y" * 50_000)))
+    assert "x" * 50_000 not in text and "y" * 50_000 not in text
+    assert "x" * (bridge.MAX_FIELD + 1) not in text
+    assert "y" * (bridge.MAX_FIELD + 1) not in text
+
+
+def test_the_inbound_socket_has_a_timeout(bridge):
+    """A client that stops sending must be disconnected. The stall test below
+    shortens this to 0.5s to run fast, so it cannot see a removed default; this
+    is the one that reads the real value."""
+    assert 0 < bridge.Handler.timeout <= 30
+
+
+def test_the_bridge_token_reaches_the_bridge_and_alertmanager():
+    """Both ends of the bearer, read from the committed config. If either is
+    dropped, every alert is refused with a 401: Alertmanager logs it, nothing
+    pages anyone, and the alert channel goes silent without a single error in
+    the bridge's own log. So this is checked as configuration, not assumed."""
+    import yaml
+
+    root = Path(__file__).resolve().parents[2]
+    compose = yaml.safe_load((root / "docker-compose.yml").read_text())
+    services = compose["services"]
+    # Required (`:?`), so an unset token fails the compose project rather than
+    # starting a bridge or an Alertmanager that sends nothing.
+    for name in ("alert-bridge", "alertmanager"):
+        env = services[name].get("environment") or []
+        assert any(e.startswith("NORA_BRIDGE_TOKEN=${NORA_BRIDGE_TOKEN:?") for e in env), name
+
+    am = yaml.safe_load((root / "deploy" / "alertmanager" / "alertmanager.yml").read_text())
+    hook = am["receivers"][0]["webhook_configs"][0]
+    assert hook["url"] == "http://alert-bridge:9110/alert"
+    auth = hook["http_config"]["authorization"]
+    assert auth == {"type": "Bearer", "credentials_file": "/run/alertmanager/bridge-token"}

@@ -51,6 +51,7 @@ from evals.scenarios import (
     selected_cases,
 )
 from evals.subject_config import materialise
+from evals.terminal import safe_print as print
 from nora.subject import (
     EMBEDDER_FROM_HOST,
     GraphIndexRefusedError,
@@ -67,6 +68,7 @@ from nora.subject import (
     sweep_stale_private_blank_templates,
 )
 from nora.subject.context_filter import exposure
+from nora.subject.sandbox import EvalLockHeldError, eval_host_lock
 
 #: Coarse S-class grouping for `--class`. Approximate on purpose where a
 #: corpus is not wholly one class — good enough to pick
@@ -101,13 +103,13 @@ CORPUS_CLASS: dict[str, str] = {
     # not touch, the nearest class the map has. Its `stale`
     # cases are S5-shaped (time misread) — approximate, as this map says.
     "standing": "S6",
-    "persona_identity": "S6",
-    "persona_coverage": "S6",
+    "profile_identity": "S6",
+    "profile_coverage": "S6",
 }
 
 #: The entry points that honour `metadata.print_input` — render the model
 #: call's input, record it as `shown`, and call no model.
-_PRINTS_INPUT = frozenset({"standing", "persona_identity", "persona_coverage"})
+_PRINTS_INPUT = frozenset({"standing", "profile_identity", "profile_coverage"})
 
 
 #: What one draw costs, in seconds, for the run budget below. Unjudged is
@@ -519,6 +521,18 @@ def memory_surface_line(deployed: bool, flag: bool) -> str:
 
 
 def main() -> int:
+    """One run per host: the whole run, from its first line to its last, holds
+    the host's eval lock (`eval_host_lock`). A run that finds it held is refused
+    before it does anything, so no two runs share the shared template."""
+    try:
+        with eval_host_lock():
+            return _main()
+    except EvalLockHeldError as exc:
+        print(f"refusing to run: {exc}", file=sys.stderr)
+        return 2
+
+
+def _main() -> int:
     ap = argparse.ArgumentParser(prog="python -m evals")
     ap.add_argument("corpus", nargs="*", help="corpus name(s) — see --list")
     ap.add_argument("--class", dest="cls", action="append",
@@ -627,7 +641,7 @@ def main() -> int:
                     help="exclusive private manifest destination; never derived from input name")
     args = ap.parse_args()
     if args.coverage_freeze_input:
-        from evals.persona_coverage_input import freeze_manifest
+        from evals.profile_coverage_input import freeze_manifest
         try:
             if not args.coverage_manifest:
                 raise ValueError("freeze requires --coverage-manifest")
@@ -638,7 +652,7 @@ def main() -> int:
             print(f"coverage freeze ERROR: {exc}", file=sys.stderr)
             return 2
     if args.coverage_export:
-        from evals.persona_coverage_input import export_input
+        from evals.profile_coverage_input import export_input
         try:
             if not all((args.coverage_inventory, args.coverage_semantic, args.coverage_recovery,
                         args.coverage_manifest)):
@@ -690,14 +704,14 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
-    if "persona_coverage" in names:
+    if "profile_coverage" in names:
         # A frozen read-only measurement has no subject to compose, sandbox to
         # mutate or Honcho workspace to create. It still runs the same task,
         # Experiment, Outcome grader, spend and positions report as every entry.
-        if names != ["persona_coverage"] or args.sample != 1:
+        if names != ["profile_coverage"] or args.sample != 1:
             print("coverage requires one corpus, one frozen census draw", file=sys.stderr)
             return 2
-        from evals.rebuilt.persona_coverage import load_input, plan
+        from evals.rebuilt.profile_coverage import load_input, plan
         try:
             doc = load_input(gold=not bool(args.print_input))
             print("coverage plan:", json.dumps(plan(doc), sort_keys=True))

@@ -124,41 +124,62 @@ float px;
 // exactly her closed crescent), or flat and tilted for a sleepy or an
 // unimpressed look; the lower one rising for the ^ ^ of her happy eyes.
 vec4 eye(vec4 e, float rotE, vec3 core, vec3 rim, float outer, vec2 q) {
-  vec2 c = vec2(e.x * u_aspect, e.y) + u_gaze * e.zw * vec2(0.55, 0.36);
-  float rx = e.z * u_eyeScale.x * (1.0 - 0.1 * abs(u_gaze.x));
-  float ry = e.w * u_eyeScale.y;
+  // The eye opening stays planted in her face; gaze moves iris and pupil.
+  vec2 c = vec2(e.x * u_aspect, e.y);
+  float rx = max(e.z * u_eyeScale.x, 1e-5);
+  float ry = max(e.w * u_eyeScale.y, 1e-5);
   vec2 d = q - c;
   float cs = cos(rotE), sn = sin(rotE);
   vec2 l = vec2(cs * d.x + sn * d.y, -sn * d.x + cs * d.y);
   vec2 n = l / vec2(rx, ry);
-  // her eyes are a touch squarer than an ellipse: a superellipse, p = 2.4
-  vec2 an = abs(n) + 1e-5;
-  float r = pow(pow(an.x, 2.4) + pow(an.y, 2.4), 1.0 / 2.4);
-  float fr = max(px * length(n / vec2(rx, ry)) / max(r, 1e-3), 1e-4);
-  float inside = 1.0 - smoothstep(1.0 - fr, 1.0 + fr, r);
-
-  // a closing lid starts nearly straight and curls into the crescent
-  float top = mix(-1.1, 0.55, u_lid);
-  float curved = top - 0.55 * pow(u_lid, 1.6) * n.x * n.x;
-  float flatLid = top + tan(u_tilt) * outer * n.x * (rx / ry);
-  float edge = mix(curved, flatLid, u_flat);
   float fy = max(px / ry, 1e-4);
+  float fx = max(px / rx, 1e-4);
+  float span = sqrt(max(0.0, 1.0 - n.x * n.x));
+  float validX = 1.0 - smoothstep(1.0 - fx, 1.0 + fx, abs(n.x));
+
+  // Balanced: rounded anime opening, warm sclera and one upper line.
+  // At closure the upper line reaches the lower edge; no iris remains.
+  float naturalTop = -span;
+  float closedTop = 0.38 - 0.38 * n.x * n.x;
+  float curved = mix(naturalTop, closedTop, u_lid);
+  float flatLid = mix(-1.1, 0.38, u_lid) + tan(u_tilt) * outer * n.x * (rx / ry);
+  float edge = mix(curved, max(naturalTop, flatLid), u_flat);
+  float bottom = mix(span, -0.38 + 0.38 * n.x * n.x, u_low);
+  // Happy closure brings the upper edge onto the lower arch: one lid line.
+  edge = mix(edge, bottom, u_low);
   float below = smoothstep(edge - fy, edge + fy, n.y);
-  float lowEdge = mix(1.1, -0.55, u_low) + 0.55 * n.x * n.x;
-  float above = 1.0 - smoothstep(lowEdge - fy, lowEdge + fy, n.y);
-  float a = inside * below * above;
+  float above = 1.0 - smoothstep(bottom - fy, bottom + fy, n.y);
+  float opening = validX * below * above;
+  opening *= 1.0 - smoothstep(0.92, 1.0, max(u_lid, u_low));
 
-  vec3 col = mix(core, rim, smoothstep(0.45, 1.0, r));
-  vec2 hd = normalize(vec2(0.62, -0.78));
-  float band = smoothstep(0.66, 0.86, r) * (1.0 - smoothstep(0.88, 1.0, r));
-  col += vec3(0.62, 0.52, 0.5) * band * pow(max(dot(n / max(r, 1e-4), hd), 0.0), 3.0) * 0.32;
+  vec2 irisPos = vec2(u_gaze.x * 0.30, u_gaze.y * 0.23 + 0.04);
+  vec2 irisN = (n - irisPos) / vec2(0.66, 1.02);
+  float irisR = length(irisN);
+  float irisA = 1.0 - smoothstep(1.0 - fy, 1.0 + fy, irisR);
+  // Brown iris with a warmer lower half and dark limbal rim.
+  vec3 iris = mix(core, rim, smoothstep(-0.6, 0.85, irisN.y));
+  iris = mix(iris, core * 0.65, smoothstep(0.84, 1.0, irisR));
+  float pupilR = length(irisN / vec2(0.37, 0.54));
+  float pupil = 1.0 - smoothstep(0.94, 1.06, pupilR);
+  iris = mix(iris, core * 0.40, pupil);
+  float glint = 1.0 - smoothstep(0.15, 0.19, length(irisN - vec2(0.24, -0.48)));
+  float smallGlint = 1.0 - smoothstep(0.045, 0.075, length(irisN - vec2(-0.30, 0.35)));
+  iris = mix(iris, vec3(1.0, 0.98, 0.94), max(glint, smallGlint * 0.65));
+  vec3 sclera = vec3(0.985, 0.966, 0.93) * (0.94 + 0.06 * smoothstep(-0.6, 0.5, n.y));
+  vec3 col = mix(sclera, iris, irisA);
 
-  // the lash line of a flat lid runs a little past the eye on its outer side
+  // Continuous lid line for open, blink, happy, sleepy and lidded states.
+  float lineWidth = mix(0.075, 0.055, u_lid) + u_lash * 0.025;
+  float topLine = validX * (1.0 - smoothstep(lineWidth, lineWidth + fy * 1.5, abs(n.y - edge)));
   float along = n.x * outer;
-  float lashA = u_lash * u_flat * (1.0 - smoothstep(0.1, 0.1 + 2.5 * fy, abs(n.y - edge)))
-              * smoothstep(-1.12, -0.98, along) * (1.0 - smoothstep(1.28, 1.42, along));
-  a = max(a, lashA);
-  col = mix(col, core, lashA);
+  float wingY = -0.13 - (along - 0.85) * 0.65;
+  float wing = (1.0 - smoothstep(0.055, 0.055 + fy, abs(n.y - wingY)))
+             * smoothstep(0.82, 0.94, along) * (1.0 - smoothstep(1.12, 1.28, along))
+             * (1.0 - max(u_lid, u_low));
+  float lineA = max(topLine, wing);
+  float a = max(opening, lineA);
+  col = mix(col, core * 0.55, lineA);
+
   return vec4(col * a, a);
 }
 
