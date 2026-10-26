@@ -379,6 +379,7 @@ rules were written down and not read at the moment they applied.
 | a new DEC or R row, an ADR, an issue, or citing a decision | `nora-decision` |
 | adding or changing one of Nora's tools (ADR 0015) | `nora-tool` |
 | adding or changing one of Nora's runtime skills in `nora/skills/` (ADR 0016) | `nora-runtime-skill` |
+| creating or editing digital 3D assets with Meshy | `meshy-3d-generation` |
 
 `nora/skills/` holds NORA's skills, which she loads at runtime; `.agents/skills/`
 holds the skills of the agents that build her. `tests/architecture/test_agent_skills.py`
