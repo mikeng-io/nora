@@ -1,3 +1,8 @@
 [mcp_servers.aikido]
 command = "npx"
 args = ["-y", "@aikidosec/mcp@latest"]
+
+[mcp_servers.meshy]
+command = "npx"
+args = ["-y", "@meshy-ai/meshy-mcp-server@0.6.6"]
+env_vars = ["MESHY_API_KEY"]
