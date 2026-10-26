@@ -1,6 +1,6 @@
 
 <p align="center">
-  <img src="assets/nora-social-banner.png" alt="Mini Nora at her desk beside a sleeping cat." width="100%">
+  <img src="assets/nora-social-banner.png" alt="Mini Nora at a warm window ledge overlooking a Hong Kong neighbourhood at dusk." width="100%">
 </p>
 
 <p align="center">
