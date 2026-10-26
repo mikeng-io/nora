@@ -45,9 +45,9 @@ deployment remain separate; reach and cost remain UNMEASURED.
 - **`assets/nora-social-avatar.png`** (1254×1254): the operator-accepted
   Mini portrait on a simple light background. The avatar bytes remain unchanged;
   the face, bun and Bauhinia clasp carry recognition at small profile sizes.
-- **`assets/nora-social-banner.png`** (2056×765): the new Hong Kong everyday-setting
-  banner, with Mini Nora at a warm window ledge, geometric grilles and jade tiles,
-  overlooking a tong-lau neighbourhood, distant harbour lights and restrained neon.
+- **`assets/nora-social-banner.png`** (2055×765): the corrected detailed 2D Hong Kong
+  banner, with Mini Nora resting her cheek on one hand at a warm window ledge,
+  jade geometric grilles, a tong-lau neighbourhood and harbour lights at dusk.
   Bauhinia details connect the setting to her outfit. The scene expresses quiet
   companionship; it adds no fictional human biography.
 

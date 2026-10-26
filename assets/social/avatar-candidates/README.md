@@ -16,8 +16,8 @@ blouse, navy waistcoat and grey jade-lined coat.
 
 The actual primary generation reference was the **left 2D anime figure** in
 [`mini-style-study.png`](../../modeling/bauhinia/v1/mini-style-study.png);
-the right 3D figure was excluded. A locally retained corrected Hong Kong banner
-preview supplied supporting reference; it is not tracked in this repository.
+the right 3D figure was excluded. The [corrected Hong Kong banner](../../nora-social-banner.png) supplied the
+supporting generation reference and is now tracked in this repository.
 
 Imported with the existing `scripts/visual_assets.py` PNG sanitizer. Only
 identifying ancillary metadata was removed; retained PNG chunks, encoded image
