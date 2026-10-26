@@ -1,5 +1,12 @@
 # Changelog
 
+## [6.8.4](https://github.com/mikeng-io/nora/compare/v6.8.3...v6.8.4) (2026-10-26)
+
+
+### Changes
+
+* **visuals:** use 2D Nora art outside 3D modeling ([c5060af](https://github.com/mikeng-io/nora/commit/c5060aff5018e05a518fdfa7254f0adb4a902701))
+
 ## [6.8.3](https://github.com/mikeng-io/nora/compare/v6.8.2...v6.8.3) (2026-10-25)
 
 
