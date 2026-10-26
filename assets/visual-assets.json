@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "current_mini_design": "bauhinia-2d-production-approved-2026-10-26-pending-art",
+  "current_mini_design": "bauhinia-2d-production-approved-2026-10-26",
   "assets": [
     {
       "id": "app.public.favicon",
@@ -814,14 +814,14 @@
         "design/self-reference/02-canonical-assets.md (explicit path reference)"
       ],
       "provenance": "2026-10-26, supplied 2D anime Mini Bauhinia source. Prompt intent: canonical Mini identity, option08 eyes, compact broad hair and five-petal clasp; clean 2D profile/reference composition, no bags or audio accessories. Parent viewed all five final sources PASS for style, crop and bun visibility; identifying PNG metadata omitted without re-encoding image data. Original files retained privately.",
-      "unchanged_reason": null,
+      "unchanged_reason": "Operator accepted the existing simple light-background avatar and requested no avatar redesign; bytes preserved during the Hong Kong banner refresh.",
       "sha256": "f1c37f96d63e14f4c7561a9902790453655c020ef56cd4fac4ed3f2de0bc97db",
       "size": [
         1254,
         1254
       ],
       "mode": "RGB",
-      "visual_review": "Parent viewed final source artwork PASS; integrated app/site and runtime acceptance separate."
+      "visual_review": "Operator accepted the existing avatar. Keep the simple light background so the face, bun and Bauhinia clasp remain legible at small profile sizes. External platform publication is not performed."
     },
     {
       "id": "assets.nora-social-banner",
@@ -831,22 +831,22 @@
       "status": "active",
       "eyes": "mini08",
       "parents": [
-        "assets/nora-canonical-self.png"
+        "assets/modeling/bauhinia/v1/mini-style-study.png"
       ],
       "recipe": "source",
       "consumers": [
         "README.md (explicit path reference)",
         "design/self-reference/02-canonical-assets.md (explicit path reference)"
       ],
-      "provenance": "2026-10-26, supplied 2D anime Mini Bauhinia source. Prompt intent: canonical Mini identity, option08 eyes, compact broad hair and five-petal clasp; clean 2D profile/reference composition, no bags or audio accessories. Parent viewed all five final sources PASS for style, crop and bun visibility; identifying PNG metadata omitted without re-encoding image data. Original files retained privately.",
+      "provenance": "2026-10-26, corrected detailed 2D Hong Kong social banner imported at operator request. The declared parent records style authority: the LEFT 2D anime Mini study, excluding its 3D treatment; it is not a claim about exact generation inputs. Layered brown bun and copper Bauhinia clasp, ivory blouse, navy waistcoat and patterned grey jade-lined coat; cheek resting on one hand at a jade window grille, warm room, tong-lau neighbourhood, harbour dusk and a Bauhinia pot. Identifying ancillary PNG metadata removed without re-encoding image data; decoded pixels unchanged. Generated original retained privately.",
       "unchanged_reason": null,
-      "sha256": "d4e3718c7e39c6f17803ade0af54b14cba43bacf0553d141a680cf35e8a4599c",
+      "sha256": "b75671c737ff32fd475747c90c1606088973f480dfbd267d61fcb74407219c24",
       "size": [
-        2056,
+        2055,
         765
       ],
       "mode": "RGB",
-      "visual_review": "Parent viewed final source artwork PASS; integrated app/site and runtime acceptance separate."
+      "visual_review": "Parent viewed the corrected banner; operator requested repository integration. Prepared social artwork only; external platform publication not performed."
     },
     {
       "id": "showreel.art.raw.hotpot-photo",
@@ -2599,6 +2599,81 @@
         1254
       ],
       "mode": "RGB"
+    },
+    {
+      "id": "assets.social.avatar-candidates.a2-window-tea",
+      "path": "assets/social/avatar-candidates/a2-window-tea.png",
+      "form": "mini",
+      "role": "avatar-candidate",
+      "status": "approved-candidate",
+      "eyes": "mini08",
+      "parents": [
+        "assets/modeling/bauhinia/v1/mini-style-study.png",
+        "assets/nora-social-banner.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/social/avatar-candidates/README.md (retained candidate preview)"
+      ],
+      "provenance": "2026-10-26, operator-approved A2 retained avatar candidate. Tea by a window, warm lantern light and a Hong Kong harbour backdrop. Detailed 2D anime with refined brown eyes, a layered brown bun, copper Bauhinia clasp, ivory blouse, navy waistcoat and grey jade-lined coat. Actual primary generation reference: LEFT 2D ANIME figure in the declared mini-style-study parent; right 3D figure excluded. Supporting actual generation reference: corrected Hong Kong banner, now tracked as assets/nora-social-banner.png. Identifying ancillary PNG metadata removed with scripts/visual_assets.py sanitize_png; retained chunks, compressed image data and decoded pixels unchanged; original retained privately.",
+      "unchanged_reason": null,
+      "sha256": "9829ed20b97350a1f17a11d84f64087420244136809981c11009ea6e1fa2bf86",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB",
+      "visual_review": "Operator approved retention as a candidate; no final winner selected or formal avatar replacement."
+    },
+    {
+      "id": "assets.social.avatar-candidates.b2-tram-window",
+      "path": "assets/social/avatar-candidates/b2-tram-window.png",
+      "form": "mini",
+      "role": "avatar-candidate",
+      "status": "approved-candidate",
+      "eyes": "mini08",
+      "parents": [
+        "assets/modeling/bauhinia/v1/mini-style-study.png",
+        "assets/nora-social-banner.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/social/avatar-candidates/README.md (retained candidate preview)"
+      ],
+      "provenance": "2026-10-26, operator-approved B2 retained avatar candidate. A tram interior by the window, with a sunlit Hong Kong street and tram outside. Detailed 2D anime with refined brown eyes, a layered brown bun, copper Bauhinia clasp, ivory blouse, navy waistcoat and grey jade-lined coat. Actual primary generation reference: LEFT 2D ANIME figure in the declared mini-style-study parent; right 3D figure excluded. Supporting actual generation reference: corrected Hong Kong banner, now tracked as assets/nora-social-banner.png. Identifying ancillary PNG metadata removed with scripts/visual_assets.py sanitize_png; retained chunks, compressed image data and decoded pixels unchanged; original retained privately.",
+      "unchanged_reason": null,
+      "sha256": "cf379536cfe4a65c7ee8a5d12231a6ab93581083f2a6d15106aea257e1ca9416",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB",
+      "visual_review": "Operator approved retention as a candidate; no final winner selected or formal avatar replacement."
+    },
+    {
+      "id": "assets.social.avatar-candidates.c2-rainy-street",
+      "path": "assets/social/avatar-candidates/c2-rainy-street.png",
+      "form": "mini",
+      "role": "avatar-candidate",
+      "status": "approved-candidate",
+      "eyes": "mini08",
+      "parents": [
+        "assets/modeling/bauhinia/v1/mini-style-study.png",
+        "assets/nora-social-banner.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/social/avatar-candidates/README.md (retained candidate preview)"
+      ],
+      "provenance": "2026-10-26, operator-approved C2 retained avatar candidate. A rainy Hong Kong street at dusk, warm shop lights and wet pavement reflections. Detailed 2D anime with refined brown eyes, a layered brown bun, copper Bauhinia clasp, ivory blouse, navy waistcoat and grey jade-lined coat. Actual primary generation reference: LEFT 2D ANIME figure in the declared mini-style-study parent; right 3D figure excluded. Supporting actual generation reference: corrected Hong Kong banner, now tracked as assets/nora-social-banner.png. Identifying ancillary PNG metadata removed with scripts/visual_assets.py sanitize_png; retained chunks, compressed image data and decoded pixels unchanged; original retained privately.",
+      "unchanged_reason": null,
+      "sha256": "c346634b3296fac36cf1114e80bfcd0531b645111f19dee4efd72a5271b70795",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB",
+      "visual_review": "Operator approved retention as a candidate; no final winner selected or formal avatar replacement."
     }
   ],
   "historical_exports": [

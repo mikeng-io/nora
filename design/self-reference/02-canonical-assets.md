@@ -40,6 +40,23 @@ are Meshy-only input candidates, not consumer art or geometry proof. There is
 still one canonical self handle. Parent browser acceptance passed for the current 2D artwork. Live media ingest and
 deployment remain separate; reach and cost remain UNMEASURED.
 
+## Current social exports — 2026-10-26
+
+- **`assets/nora-social-avatar.png`** (1254×1254): the operator-accepted
+  Mini portrait on a simple light background. The avatar bytes remain unchanged;
+  the face, bun and Bauhinia clasp carry recognition at small profile sizes.
+- **`assets/nora-social-banner.png`** (2055×765): the corrected detailed 2D Hong Kong
+  banner, with Mini Nora resting her cheek on one hand at a warm window ledge,
+  jade geometric grilles, a tong-lau neighbourhood and harbour lights at dusk.
+  Bauhinia details connect the setting to her outfit. The scene expresses quiet
+  companionship; it adds no fictional human biography.
+
+Both are prepared social exports, with provenance and actual consumers in the
+[central inventory](../../assets/README.md). The banner is shown in the repository
+README. This change publishes no external platform profile and replaces neither
+the canonical self image nor its runtime pin. The previous banner is retained in
+Git history; the unmodified generated original remains in the local archive.
+
 ## Earlier option08 repository source — 2026-10-26
 
 The operator approved [option08 Balanced](09-mini08-balanced.md) as canonical
