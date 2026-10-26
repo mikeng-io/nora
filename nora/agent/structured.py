@@ -49,13 +49,14 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 from opentelemetry.util.types import AttributeValue
 from pydantic import BaseModel
 from strands import Agent
 from strands.models.openai import OpenAIModel
 from strands.types.exceptions import MaxTokensReachedException
+from strands.types.traces import AttributeValue as StrandsAttributeValue
 
 from .factory import MAX_TOKENS_NOTICE_INFIX, MAX_TOKENS_NOTICE_PREFIX
 from .punctuation import DashFreeOpenAIModel
@@ -227,9 +228,11 @@ async def ask_text(
     `_DebriefModelClient`) discards `usage` either way, and Strands' own span
     records `gen_ai.usage.*` independently.
     """
+    # OTel 1.45 widened AttributeValue; Strands still filters to its own type.
     agent = Agent(model=model, tools=[], callback_handler=None,
                   system_prompt=system_prompt, name=agent_name,
-                  trace_attributes=trace_attributes)
+                  trace_attributes=cast(Mapping[str, StrandsAttributeValue] | None,
+                                        trace_attributes))
     try:
         result = await asyncio.wait_for(
             agent.invoke_async(prompt), timeout=timeout_seconds,
