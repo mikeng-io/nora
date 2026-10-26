@@ -1,5 +1,10 @@
 {
 	"mcpServers": {
+    "blender": {
+      "command": "uvx",
+      "args": ["mcp-for-blender==2.2.4"],
+      "env": {"BLENDER_HOST": "127.0.0.1", "BLENDER_PORT": "9876", "DISABLE_TELEMETRY": "true"}
+    },
     "meshy": {"command": "npx", "args": ["-y", "@meshy-ai/meshy-mcp-server@0.6.6"]},
 		"strands": {
 			"type": "stdio",

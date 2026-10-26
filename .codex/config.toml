@@ -6,3 +6,8 @@ args = ["-y", "@aikidosec/mcp@latest"]
 command = "npx"
 args = ["-y", "@meshy-ai/meshy-mcp-server@0.6.6"]
 env_vars = ["MESHY_API_KEY"]
+
+[mcp_servers.blender]
+command = "uvx"
+args = ["mcp-for-blender==2.2.4"]
+env = { BLENDER_HOST = "127.0.0.1", BLENDER_PORT = "9876", DISABLE_TELEMETRY = "true" }
