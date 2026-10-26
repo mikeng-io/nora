@@ -412,7 +412,10 @@ class ProfileEvidence:
             if await asyncio.wait_for(self._source_inputs.recovery_requested(key=key),
                                       timeout=self._source_timeout):
                 return self._wake_batch
-            n = len(await self._sources(key, 1, max(after, boundary)))
+            # Read up to a whole batch: the wake rule is `new >= wake_batch`,
+            # so a probe of one could never reach it (the person woke only
+            # on the stale rule).
+            n = len(await self._sources(key, self._wake_batch, max(after, boundary)))
             try:
                 recovery = await asyncio.wait_for(self._source_inputs.media_recovery(
                     key=key, rooms=_listed(pk), person=pk.person.person_id, initialize=True),
