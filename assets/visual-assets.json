@@ -814,14 +814,14 @@
         "design/self-reference/02-canonical-assets.md (explicit path reference)"
       ],
       "provenance": "2026-10-26, supplied 2D anime Mini Bauhinia source. Prompt intent: canonical Mini identity, option08 eyes, compact broad hair and five-petal clasp; clean 2D profile/reference composition, no bags or audio accessories. Parent viewed all five final sources PASS for style, crop and bun visibility; identifying PNG metadata omitted without re-encoding image data. Original files retained privately.",
-      "unchanged_reason": null,
+      "unchanged_reason": "Operator accepted the existing simple light-background avatar and requested no avatar redesign; bytes preserved during the Hong Kong banner refresh.",
       "sha256": "f1c37f96d63e14f4c7561a9902790453655c020ef56cd4fac4ed3f2de0bc97db",
       "size": [
         1254,
         1254
       ],
       "mode": "RGB",
-      "visual_review": "Parent viewed final source artwork PASS; integrated app/site and runtime acceptance separate."
+      "visual_review": "Operator accepted the existing avatar. Keep the simple light background so the face, bun and Bauhinia clasp remain legible at small profile sizes. External platform publication is not performed."
     },
     {
       "id": "assets.nora-social-banner",
@@ -838,15 +838,15 @@
         "README.md (explicit path reference)",
         "design/self-reference/02-canonical-assets.md (explicit path reference)"
       ],
-      "provenance": "2026-10-26, supplied 2D anime Mini Bauhinia source. Prompt intent: canonical Mini identity, option08 eyes, compact broad hair and five-petal clasp; clean 2D profile/reference composition, no bags or audio accessories. Parent viewed all five final sources PASS for style, crop and bun visibility; identifying PNG metadata omitted without re-encoding image data. Original files retained privately.",
+      "provenance": "2026-10-26, operator-requested Hong Kong everyday-setting banner, edited with built-in image generation using the preceding approved Mini banner as the actual image input. The declared canonical parent records identity, not a claim that it was supplied directly to this edit. Prompt intent: preserve Mini Nora, folded-hands pose and 2D Bauhinia styling; add a warm room/window ledge, geometric window grilles, jade tiles, tong-lau neighbourhood, distant harbour lights, restrained neon and Bauhinia details. No text, bags or audio accessories. Identifying PNG metadata removed; encoded image data and decoded pixels unchanged. Original retained privately.",
       "unchanged_reason": null,
-      "sha256": "d4e3718c7e39c6f17803ade0af54b14cba43bacf0553d141a680cf35e8a4599c",
+      "sha256": "d662980dc3ca2f662b1f8ee23e878d088edb98460580f9966a51b921cd24ce2d",
       "size": [
         2056,
         765
       ],
       "mode": "RGB",
-      "visual_review": "Parent viewed final source artwork PASS; integrated app/site and runtime acceptance separate."
+      "visual_review": "Parent inspected the generated banner for character continuity, 2D treatment, composition and requested Hong Kong setting. Operator instructed repository integration after viewing the preview. External platform publication is not performed."
     },
     {
       "id": "showreel.art.raw.hotpot-photo",
@@ -2657,7 +2657,7 @@
     "live_media_ingest": "NOT PERFORMED",
     "deployment": "NOT PERFORMED",
     "local_browser_smoke": "PASS, 2026-10-26: parent personally viewed /tmp/bauhinia-hero-open.png, /tmp/bauhinia-night-confirm.png (Late Night aria-pressed=true, html theme=dark), /tmp/bauhinia-room.png, /tmp/bauhinia-memory.png, /tmp/bauhinia-manners.png, /tmp/bauhinia-form-top.png, /tmp/bauhinia-form-section.png, /tmp/bauhinia-portal.png, /tmp/bauhinia-404.png, /tmp/bauhinia-static.png and /tmp/bauhinia-mobile.png (390px viewport, no horizontal overflow). Capture page errors: 0. T3 preview opened but two snapshots failed: Preview automation snapshot timed out after 15000ms. Local Python Playwright fallback used software-WebGL Chromium 1243; scripts and screenshots remain private outside the repository.",
-    "targeted_checks": "PASS from previous integration: 107 focused Python tests, six site script tests, app/site builds and scoped lint. Final showreel import: 105-image/9-video inventory PASS and two focused inventory tests PASS. No unrelated builds repeated; source changes affect showreel only. Showreel typecheck remains blocked by pre-existing absent timeline and VO timing JSON; rendering/runtime acceptance UNMEASURED. Parent browser acceptance of current 2D site PASS; parent owns final gate. Scoped copy alignment: npm run build PASS (Astro check: zero errors; three pages built; CJK coverage: 478 characters); font subset rebuilt only for new \u6cbf/\u5957 glyphs; no current video export accepted.",
+    "targeted_checks": "PASS from previous integration: 107 focused Python tests, six site script tests, app/site builds and scoped lint. Final showreel import: 105-image/9-video inventory PASS and two focused inventory tests PASS. No unrelated builds repeated; source changes affect showreel only. Showreel typecheck remains blocked by pre-existing absent timeline and VO timing JSON; rendering/runtime acceptance UNMEASURED. Parent browser acceptance of current 2D site PASS; parent owns final gate. Scoped copy alignment: npm run build PASS (Astro check: zero errors; three pages built; CJK coverage: 478 characters); font subset rebuilt only for new 沿/套 glyphs; no current video export accepted.",
     "bauhinia_modeling_pack": "Seven v1 PNGs retained byte-identically as history. Five simplified-hair v2 sheets and six isolated Meshy-only input candidates registered; parent viewed sources PASS as artwork/candidates. Hand orientation/digits, calibrated projection, scale/alignment and margins remain unverified. No Meshy call, mesh, rig or operator 3D engineering approval.",
     "bauhinia_2d_preparation": "Integration supersedes the preparatory state: 23 accepted production targets, full sanitized canonical pin, runtime appearance/identity text, derivatives and mock screenshots refreshed. Earlier parent gate applies only to the old staged tree. Final parent browser acceptance of current 2D site PASS; final gate remains parent-owned. No commit/publication/live ingest/deploy.",
     "video_consumer_closure": "REPOSITORY DISCOVERY ONLY, 2026-10-26: nine MP4s. No website or root README reference found. The showreel README former current-export table is now explicitly historical; render.sh is a writer to those same eight paths, not a playback consumer. A new current export requires 2D image sync, Thread/Quiet focal-logic adaptation, picture render and existing-audio mux to separate versioned paths. External/live publication UNMEASURED; no video rerender performed.",
