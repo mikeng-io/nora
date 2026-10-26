@@ -1,5 +1,17 @@
 # Changelog
 
+## [6.8.6](https://github.com/mikeng-io/nora/compare/v6.8.5...v6.8.6) (2026-10-26)
+
+
+### Bug Fixes
+
+* **profile:** wake when new messages reach the batch threshold ([5c4d9e6](https://github.com/mikeng-io/nora/commit/5c4d9e6ed90918b5a3a2ac0fba6e3631cb16723e))
+
+
+### Security
+
+* **deps:** bump opentelemetry-api ([2f693dd](https://github.com/mikeng-io/nora/commit/2f693dd1fc93329bd3fae5e3b6d77ce206a7229a))
+
 ## [6.8.5](https://github.com/mikeng-io/nora/compare/v6.8.4...v6.8.5) (2026-10-26)
 
 
