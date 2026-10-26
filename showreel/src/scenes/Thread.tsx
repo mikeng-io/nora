@@ -1,5 +1,5 @@
-// 0–8 s: the cold open, the room and the tag. One cable runs through all three:
-// it drops from her earbud, becomes the thread the messages hang on, and the
+// 0–8 s: the cold open, the room and the tag. One graphic thread runs through all three:
+// it leaves the listening-detail frame, becomes the thread the messages hang on, and the
 // line her answer arrives on.
 import React from "react";
 import { Img, staticFile } from "remotion";
@@ -31,11 +31,11 @@ import {
 
 const N = NIGHT;
 
-// The macro plates and where their cable leaves the bottom edge, in image px
-// at 80% of the plate's height (measured from the renders with numpy, 2026-09-26).
+// Accessory-free 2D listening plates, 2026-10-26. The graphic thread aligns
+// below the Bauhinia clasp; it is not a physical earphone cable in the art.
 export const MACRO = {
-  wide: { src: "art/macro-earbud-wide.webp", iw: 1536, ih: 1024, cableX: 972, bud: [910, 500] },
-  tall: { src: "art/macro-earbud-tall.webp", iw: 1024, ih: 1536, cableX: 578, bud: [440, 627] },
+  wide: { src: "art/macro-earbud-wide.webp", iw: 1536, ih: 1024, threadX: 728 },
+  tall: { src: "art/macro-earbud-tall.webp", iw: 1024, ih: 1536, threadX: 290 },
 };
 
 // Chat skins: the room changes, she doesn't.
@@ -88,7 +88,7 @@ const Open: React.FC<{ t: number; L: L }> = ({ t, L }) => {
   const { w, h, u, kind } = useFmt();
   const m = kind === "tall" ? MACRO.tall : MACRO.wide;
   const s0 = Math.max(w / m.iw, h / m.ih);
-  // camera: settle in, then tilt down the cable
+  // camera: settle in, then tilt down into the graphic thread
   const push = lerp(1.1, 1.0, expoOut(prog(t, 0, 1.6)));
   const tilt = expoInOut(prog(t, 0.95, 2.15));
   const s = s0 * push;
@@ -122,13 +122,13 @@ const Open: React.FC<{ t: number; L: L }> = ({ t, L }) => {
           }}
         />
       </div>
-      {/* the cable, continuing past the plate's edge */}
-      <CableRun t={t} L={L} fromX={ox + m.cableX * s} fromY={oy + m.ih * s * 0.8} />
+      {/* the graphic thread starts at the fading frame, not a drawn accessory */}
+      <CableRun t={t} L={L} fromX={ox + m.threadX * s} fromY={oy + m.ih * s * 0.8} />
     </Abs>
   );
 };
 
-/** The line from the plate's cable exit to the spine of the thread. */
+/** The graphic connector from the listening frame to the message spine. */
 const CableRun: React.FC<{ t: number; L: L; fromX: number; fromY: number }> = ({ t, L, fromX, fromY }) => {
   const { h, u } = useFmt();
   const [a, b] = CUE.cableDraw;

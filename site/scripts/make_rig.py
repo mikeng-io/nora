@@ -69,111 +69,109 @@ POSES: dict[str, dict] = {
 # on; bun: the part that lags; hips and ground: where breathing and a weight
 # shift pivot; gaze: where the render's own eyes are looking, so drawn eyes
 # at rest look where hers did; limbs: a region that rotates about a joint.
+# Remeasured on the 2D Bauhinia sources; prior 3D coordinates
+# are not transferable. Radii remain fractions of source HEIGHT.
 _STAND = {
-    "faceBox": (0.36, 0.43, 0.74, 0.58),
-    "mouthBox": (0.47, 0.515, 0.64, 0.565),
-    "head": {"cx": 0.50, "cy": 0.38, "rx": 0.187, "ry": 0.25},
-    "neck": (0.52, 0.605),
-    "face": {"cx": 0.55, "cy": 0.50, "rx": 0.133, "ry": 0.10},
-    "bun": {"cx": 0.48, "cy": 0.20, "r": 0.075},
-    "hips": (0.50, 0.78),
-    "ground": 0.905,
-    # the floor band her feet and her shadow are in (the studio key throws
-    # it far to her right, the lamp to her left), rebuilt top to bottom
-    "floor": (0.852, 0.945),
+    "faceBox": (0.30, 0.295, 0.73, 0.355),
+    "mouthBox": (0.46, 0.355, 0.58, 0.375),
+    "head": {"cx": 0.50, "cy": 0.235, "rx": 0.18, "ry": 0.21},
+    "neck": (0.50, 0.415),
+    "face": {"cx": 0.51, "cy": 0.345, "rx": 0.12, "ry": 0.075},
+    "bun": {"cx": 0.46, "cy": 0.105, "r": 0.063},
+    "hips": (0.50, 0.615),
+    "ground": 0.95,
+    "floor": (0.90, 0.985),
+    # Flat 2D sclera touches the skin colour; automatic seed pairing joins
+    # the two eyes. Measure complete openings on the supplied source instead.
+    "eyes": [
+        {"cx": 0.413, "cy": 0.327, "rx": 0.031, "ry": 0.027},
+        {"cx": 0.593, "cy": 0.328, "rx": 0.032, "ry": 0.027},
+    ],
 }
 
 MANUAL: dict[str, dict] = {
     "stand": _STAND,
-    # the same pose and framing as `stand`, lit by a lamp (art/README.md)
     "stand-night": _STAND,
     "perch": {
-        "faceBox": (0.35, 0.44, 0.82, 0.62),
-        "mouthBox": (0.50, 0.55, 0.68, 0.60),
-        "head": {"cx": 0.51, "cy": 0.36, "rx": 0.221, "ry": 0.30},
-        "neck": (0.56, 0.635),
-        "face": {"cx": 0.585, "cy": 0.53, "rx": 0.148, "ry": 0.10},
-        "bun": {"cx": 0.49, "cy": 0.13, "r": 0.10},
-        "hips": (0.53, 0.84),
-        "ground": 0.95,
-        "gaze": [0.3, 0.55],  # down at the phone in her hands
-        "limbs": [{"id": "phone", "pivot": (0.60, 0.80), "region": {"cx": 0.64, "cy": 0.70, "rx": 0.09, "ry": 0.085}}],
+        "faceBox": (0.32, 0.42, 0.82, 0.50),
+        "mouthBox": (0.53, 0.50, 0.62, 0.525),
+        "head": {"cx": 0.51, "cy": 0.30, "rx": 0.21, "ry": 0.28},
+        "neck": (0.56, 0.56),
+        "face": {"cx": 0.56, "cy": 0.485, "rx": 0.15, "ry": 0.09},
+        "bun": {"cx": 0.43, "cy": 0.105, "r": 0.085},
+        "hips": (0.52, 0.79), "ground": 0.955,
+        "gaze": [0.3, 0.55],
+        "limbs": [{"id": "phone", "pivot": (0.57, 0.70), "region": {"cx": 0.62, "cy": 0.63, "rx": 0.08, "ry": 0.085}}],
     },
     "ledge": {
-        "faceBox": (0.33, 0.44, 0.82, 0.60),
-        "mouthBox": (0.50, 0.54, 0.69, 0.575),
-        "head": {"cx": 0.50, "cy": 0.36, "rx": 0.222, "ry": 0.30},
-        "neck": (0.54, 0.615),
-        "face": {"cx": 0.56, "cy": 0.515, "rx": 0.146, "ry": 0.10},
-        "bun": {"cx": 0.46, "cy": 0.14, "r": 0.10},
-        "hips": (0.52, 0.80),
-        "ground": 0.815,  # the invisible ledge she sits on
-        "gaze": [0.25, 0.6],  # down at the notebook
+        "faceBox": (0.31, 0.412, 0.83, 0.50),
+        "mouthBox": (0.53, 0.497, 0.63, 0.518),
+        "head": {"cx": 0.51, "cy": 0.30, "rx": 0.21, "ry": 0.27},
+        "neck": (0.55, 0.555),
+        "face": {"cx": 0.56, "cy": 0.48, "rx": 0.145, "ry": 0.085},
+        "bun": {"cx": 0.43, "cy": 0.12, "r": 0.08},
+        "hips": (0.54, 0.76), "ground": 0.87,
+        "gaze": [0.25, 0.6],
         "limbs": [
-            {"id": "pencil", "pivot": (0.44, 0.745), "region": {"cx": 0.53, "cy": 0.715, "rx": 0.05, "ry": 0.045}},
-            {"id": "legs", "pivot": (0.60, 0.82), "region": {"cx": 0.615, "cy": 0.895, "rx": 0.155, "ry": 0.075}},
+            {"id": "pencil", "pivot": (0.43, 0.705), "region": {"cx": 0.47, "cy": 0.66, "rx": 0.05, "ry": 0.045}},
+            {"id": "legs", "pivot": (0.58, 0.79), "region": {"cx": 0.63, "cy": 0.88, "rx": 0.14, "ry": 0.075}},
         ],
     },
     "quiet": {
-        "faceBox": (0.30, 0.40, 0.80, 0.52),
-        "mouthBox": (0.48, 0.47, 0.65, 0.505),
-        "head": {"cx": 0.50, "cy": 0.31, "rx": 0.222, "ry": 0.28},
-        "neck": (0.53, 0.555),
-        "face": {"cx": 0.55, "cy": 0.445, "rx": 0.144, "ry": 0.10},
-        "bun": {"cx": 0.46, "cy": 0.12, "r": 0.085},
-        "hips": (0.52, 0.76),
-        "ground": 0.94,
+        "faceBox": (0.29, 0.33, 0.77, 0.365),
+        "mouthBox": (0.46, 0.366, 0.59, 0.39),
+        "head": {"cx": 0.50, "cy": 0.24, "rx": 0.18, "ry": 0.21},
+        "neck": (0.51, 0.425),
+        "face": {"cx": 0.52, "cy": 0.36, "rx": 0.12, "ry": 0.075},
+        "bun": {"cx": 0.44, "cy": 0.11, "r": 0.065},
+        "hips": (0.51, 0.62), "ground": 0.965, "eyeAspect": 1.0,
         "gaze": [0.0, 0.2],
-        "limbs": [{"id": "cable", "pivot": (0.37, 0.69), "region": {"cx": 0.45, "cy": 0.645, "rx": 0.04, "ry": 0.05}}],
+        "limbs": [{"id": "hand", "pivot": (0.36, 0.535), "region": {"cx": 0.39, "cy": 0.485, "rx": 0.045, "ry": 0.055}}],
     },
     "wave": {
-        "faceBox": (0.30, 0.38, 0.82, 0.54),
-        "mouthBox": (0.46, 0.475, 0.65, 0.515),
-        "head": {"cx": 0.51, "cy": 0.32, "rx": 0.2375, "ry": 0.29},
-        "neck": (0.53, 0.565),
-        "face": {"cx": 0.54, "cy": 0.45, "rx": 0.158, "ry": 0.105},
-        "bun": {"cx": 0.48, "cy": 0.12, "r": 0.09},
-        "hips": (0.50, 0.78),
-        "ground": 0.94,
-        "limbs": [{"id": "wave", "pivot": (0.23, 0.70), "region": {"cx": 0.17, "cy": 0.575, "rx": 0.07, "ry": 0.085}}],
+        "faceBox": (0.31, 0.316, 0.77, 0.372),
+        "mouthBox": (0.48, 0.372, 0.61, 0.398),
+        "head": {"cx": 0.51, "cy": 0.24, "rx": 0.19, "ry": 0.22},
+        "neck": (0.52, 0.43),
+        "face": {"cx": 0.53, "cy": 0.36, "rx": 0.12, "ry": 0.075},
+        "bun": {"cx": 0.46, "cy": 0.11, "r": 0.07},
+        "hips": (0.51, 0.62), "ground": 0.965,
+        "eyes": [
+            {"cx": 0.435, "cy": 0.342, "rx": 0.033, "ry": 0.027},
+            {"cx": 0.637, "cy": 0.340, "rx": 0.033, "ry": 0.028},
+        ],
+        "limbs": [{"id": "wave", "pivot": (0.25, 0.49), "region": {"cx": 0.21, "cy": 0.44, "rx": 0.065, "ry": 0.075}}],
     },
     "lost": {
-        "faceBox": (0.40, 0.36, 0.84, 0.50),
-        "mouthBox": (0.58, 0.45, 0.70, 0.49),
-        "head": {"cx": 0.50, "cy": 0.30, "rx": 0.225, "ry": 0.28},
-        "neck": (0.56, 0.54),
-        "face": {"cx": 0.62, "cy": 0.44, "rx": 0.13, "ry": 0.10},
-        "bun": {"cx": 0.40, "cy": 0.13, "r": 0.10},
-        "hips": (0.52, 0.77),
-        "ground": 0.95,
-        # her render already looks up and aside for it; the drawn eyes rest there
+        "faceBox": (0.35, 0.265, 0.76, 0.385),
+        "mouthBox": (0.54, 0.358, 0.61, 0.372),
+        "head": {"cx": 0.49, "cy": 0.24, "rx": 0.20, "ry": 0.22},
+        "neck": (0.55, 0.425),
+        "face": {"cx": 0.55, "cy": 0.35, "rx": 0.13, "ry": 0.08},
+        "bun": {"cx": 0.38, "cy": 0.105, "r": 0.07},
+        "hips": (0.52, 0.62), "ground": 0.965,
         "gaze": [0.0, 0.0],
-        # the hand scratching the back of her head
-        "limbs": [{"id": "scratch", "pivot": (0.34, 0.63), "region": {"cx": 0.32, "cy": 0.52, "rx": 0.06, "ry": 0.07}}],
-        # lidded (unimpressed) in the render, so placed by hand: the open eye
-        # each lid is cutting, tilted with her head
+        "limbs": [{"id": "scratch", "pivot": (0.30, 0.47), "region": {"cx": 0.27, "cy": 0.41, "rx": 0.06, "ry": 0.065}}],
         "eyes": [
-            {"cx": 0.471, "cy": 0.443, "rx": 0.041, "ry": 0.0315, "rot": -0.25},
-            {"cx": 0.744, "cy": 0.4105, "rx": 0.031, "ry": 0.031, "rot": -0.25},
+            {"cx": 0.448, "cy": 0.349, "rx": 0.034, "ry": 0.0275, "rot": -0.28},
+            {"cx": 0.663, "cy": 0.309, "rx": 0.029, "ry": 0.032, "rot": -0.28},
         ],
-        # Measured on the option08 source: whole sclera, iris, lid and crease.
         "paintOut": [
-            [(0.395, 0.431), (0.445, 0.417), (0.52, 0.409), (0.548, 0.413), (0.548, 0.46), (0.52, 0.477), (0.438, 0.477), (0.408, 0.459)],
-            [(0.688, 0.394), (0.735, 0.378), (0.795, 0.375), (0.806, 0.388), (0.8, 0.433), (0.77, 0.45), (0.72, 0.44), (0.695, 0.418)],
+            [(0.386, 0.331), (0.409, 0.315), (0.468, 0.315), (0.501, 0.329), (0.507, 0.361), (0.488, 0.378), (0.435, 0.382), (0.397, 0.366)],
+            [(0.609, 0.288), (0.630, 0.268), (0.679, 0.264), (0.711, 0.279), (0.714, 0.322), (0.693, 0.343), (0.653, 0.347), (0.623, 0.332)],
         ],
     },
     "hop": {
-        "faceBox": (0.30, 0.38, 0.80, 0.54),
-        "mouthBox": (0.46, 0.48, 0.65, 0.52),
-        "head": {"cx": 0.51, "cy": 0.32, "rx": 0.243, "ry": 0.29},
-        "neck": (0.53, 0.565),
-        "face": {"cx": 0.54, "cy": 0.45, "rx": 0.152, "ry": 0.105},
-        "bun": {"cx": 0.50, "cy": 0.12, "r": 0.09},
-        "hips": (0.52, 0.76),
-        "ground": 0.95,
+        "faceBox": (0.31, 0.352, 0.82, 0.425),
+        "mouthBox": (0.54, 0.427, 0.64, 0.451),
+        "head": {"cx": 0.51, "cy": 0.27, "rx": 0.20, "ry": 0.245},
+        "neck": (0.55, 0.48),
+        "face": {"cx": 0.56, "cy": 0.41, "rx": 0.13, "ry": 0.08},
+        "bun": {"cx": 0.44, "cy": 0.105, "r": 0.07},
+        "hips": (0.53, 0.71), "ground": 0.96,
         "limbs": [
-            {"id": "armL", "pivot": (0.33, 0.62), "region": {"cx": 0.19, "cy": 0.69, "rx": 0.10, "ry": 0.055}},
-            {"id": "armR", "pivot": (0.69, 0.62), "region": {"cx": 0.82, "cy": 0.69, "rx": 0.10, "ry": 0.055}},
+            {"id": "armL", "pivot": (0.39, 0.56), "region": {"cx": 0.24, "cy": 0.61, "rx": 0.10, "ry": 0.05}},
+            {"id": "armR", "pivot": (0.72, 0.57), "region": {"cx": 0.86, "cy": 0.635, "rx": 0.09, "ry": 0.05}},
         ],
     },
 }
@@ -472,7 +470,11 @@ def build(pose: str, spec: dict, debug: bool) -> dict:
     eyes: list[dict] = []
 
     if spec["eyes"] == "open":
-        found = find_open_eyes(rgba, face_box)
+        found = [
+            {"cx": m["cx"] * w, "cy": m["cy"] * h,
+             "rx": m["rx"] * h, "ry": m["ry"] * h, "rot": m.get("rot", 0.0)}
+            for m in manual["eyes"]
+        ] if "eyes" in manual else find_open_eyes(rgba, face_box)
         for e in found:
             e["core"] = [0.19, 0.105, 0.067]
             e["rim"] = [0.59, 0.34, 0.16]

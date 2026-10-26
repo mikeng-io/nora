@@ -24,11 +24,27 @@ role value, one row.
 The `role` marker is still the extension point: adding an `operator` asset later
 is a new DEC plus an ingest, not a redesign.
 
-## Current Mini source, 2026-10-26
+## Current 2D Bauhinia source — 2026-10-26
+
+The later [production ruling](09-mini08-balanced.md#production-setting-supersession--2026-10-26)
+requires 2D anime Bauhinia for every non-3D use. The stable canonical path now
+contains the supplied single-image Mini production master. Its identifying PNG
+metadata is stripped without re-encoding image data; the runtime skill pins the
+actual sanitized bytes by the full handle. The appearance section, identity
+summary and existing anchor assertions have moved together. Recognition,
+reference selection, room/date, prompt and privacy rules remain in force.
+
+The simplified-hair [v2 references](../../assets/modeling/bauhinia/v2/README.md)
+supplement the retained adult anchor and historical v1 sheets. Stylized 3D PNGs
+are Meshy-only input candidates, not consumer art or geometry proof. There is
+still one canonical self handle. Parent browser acceptance passed for the current 2D artwork. Live media ingest and
+deployment remain separate; reach and cost remain UNMEASURED.
+
+## Earlier option08 repository source — 2026-10-26
 
 The operator approved [option08 Balanced](09-mini08-balanced.md) as canonical
 and requested matching reference, T-pose, setting and public repository art.
-The same canonical path now contains the approved new PNG, sanitized of
+At that earlier refresh, the canonical path received the approved option08 PNG, sanitized of
 generation metadata while retaining encoded IDAT pixels. The runtime skill
 pins its sanitized full digest; live ingest and release are not performed
 by repository synchronization. The other source paths keep their roles;

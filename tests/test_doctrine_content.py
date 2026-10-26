@@ -408,11 +408,11 @@ def test_identity_carries_the_form_sentence():
 
     # At least one of the anchors that makes the mascot recognisable, and it
     # must not be negated either ('no bun' does not answer the question).
-    anchors = ("bun", "hoodie", "earphone")
+    anchors = ("bun", "clasp", "waistcoat")
     found = [a for a in anchors if a in lower and not _negated(a)]
     assert found, (
         "identity.md names a mascot form but no un-negated recognisable "
-        "anchor (bun, hoodie, earphones) — 'you have a form' with nothing "
+        "anchor (bun, clasp, waistcoat) — 'you have a form' with nothing "
         "to picture, or a negated anchor, is not enough to answer 'what do "
         "you look like?'"
     )

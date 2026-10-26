@@ -142,7 +142,7 @@
     "codeSlow": "That's a few codes in a short time. Wait a few minutes and try again.",
     "devTitle": "Development sign-in",
     "devBody": "Only on a development server. Pick someone from the dev roster.",
-    "portraitAlt": "Nora: a small 3D figure with a messy dark-brown bun, an oversized grey hoodie, loose jeans, white sneakers and white wired earphones, standing with her hands in her pockets.",
+    "portraitAlt": "Nora: a small 2D anime character with a dark-brown bun and Bauhinia flower clasp, an ivory blouse, navy waistcoat, grey coat, wide navy trousers and ivory boots, standing with her arms at her sides.",
     "portraitNightAlt": "Nora standing in the same pose in a dim room, late at night, lit by a warm lamp.",
     "caption": "Earphones in.",
     "toSite": "Back to Nora's page"
@@ -604,7 +604,7 @@
     "evidenceUnknown": "Something she can no longer show."
   },
   "noraPage": {
-    "portraitAlt": "Nora: a small 3D figure with a messy dark-brown bun, an oversized grey hoodie, loose jeans, white sneakers and white wired earphones, standing with her hands in her pockets.",
+    "portraitAlt": "Nora: a small 2D anime character with a dark-brown bun and Bauhinia flower clasp, an ivory blouse, navy waistcoat, grey coat, wide navy trousers and ivory boots, standing with her arms at her sides.",
     "portraitNightAlt": "Nora standing in the same pose in a dim room, late at night, lit by a warm lamp.",
     "caption": "Earphones in.",
     "state": {

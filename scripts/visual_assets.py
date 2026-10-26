@@ -114,10 +114,12 @@ def report(data: dict) -> str:
         ),
         "",
         (
-            "Current Mini design: **option08 Balanced, approved 2026-10-26**. Brown irises, "
-            "visible sclera, pupils, restrained highlights and an upper lid line. No nose "
-            "marker; one tiny mouth. Human Bauhinia stays unchanged. Closed-eye and "
-            "noncharacter art is explicitly identified below."
+            "Approved production setting, 2026-10-26: **2D anime Bauhinia for all non-3D "
+            "uses of adult and Mini Nora**; stylized 3D PNGs are Meshy inputs only. "
+            "Mini retains option08 eyes, no nose marker and one tiny mouth. Simplified "
+            "broad hair clumps and five-petal clasp apply to new references. Per-file rows "
+            "record current source imports and derivative state. Parent integrated browser "
+            "acceptance passed for the current 2D artwork; props and historical exports retain bytes."
         ),
         "",
         (
@@ -266,7 +268,7 @@ def import_sources(data: dict, mapping: dict[str, str]) -> None:
         )
         assets[target]["unchanged_reason"] = None
         assets[target]["provenance"] = (
-            "Option08 refresh from parent-supplied generation map, 2026-10-26; "
+            "2D anime Bauhinia production source import, 2026-10-26; "
             "original metadata retained locally."
         )
         if path.suffix == ".png":

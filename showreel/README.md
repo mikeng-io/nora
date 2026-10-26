@@ -4,12 +4,33 @@ A 20-second motion showreel for Nora in English and Hong Kong Cantonese, for
 four frames. The idea, the beat sheet, the script and the decisions behind
 them are in `BRIEF.md`; this file is how it is made and how to make it again.
 
-## The renders
+## Historical renders — 2026-09-26, superseded production appearance
 
-`renders/`, eight files, each 20.00 s, 30 fps, H.264 (CRF 16, yuv420p,
-BT.709) with AAC 320k at -14 LUFS integrated, peak at or under -1 dBFS:
+`renders/` retains eight original 20-second MP4s with the earlier 3D Mini
+appearance. They are archival outputs, **not current production exports** or
+recommendations for public use. The former distribution targets below record
+the September export contract only; no website embed or root README route to
+these MP4s was found in the repository. External publication is unmeasured.
 
-| file | frame | for |
+The 2D image sources and processor sync are integrated. `Thread.tsx` now joins
+the accessory-free listening frame to the message thread; `Quiet.tsx` holds its
+camera/pause pulse on the Bauhinia clasp. Audio timing is unchanged. A future
+current export still needs picture composition acceptance, a Remotion render
+and mux with the retained language mix. No new image generation, TTS, score or
+alignment run is required by an art-only update. Render only the composition
+being published; all current language/format exports would require all eight.
+`pipeline/render.sh` writes these same archive filenames, so preserve the
+originals and use separate versioned 2D output paths before making a new current
+export catalogue. Relabeling archives does not turn their frames into 2D.
+No video was rerendered in this integration. The pre-existing
+`src/data/timeline.json` and `src/data/vo-{en,yue}.json` are absent from this
+checkout; restore their original timing data before typechecking/rendering.
+No substitute timings, alignment or audio regeneration were invented.
+
+Original encoding: 30 fps, H.264 (CRF 16, yuv420p, BT.709), AAC 320k,
+-14 LUFS integrated, peak at or under -1 dBFS:
+
+| historical file | frame | original intended distribution |
 |---|---|---|
 | `renders/nora-showreel-en-16x9.mp4` | 1920×1080 | the master: web, YouTube, a screen |
 | `renders/nora-showreel-en-9x16.mp4` | 1080×1920 | Reels, Stories, Shorts, TikTok |
@@ -147,10 +168,24 @@ Noto Sans HK. The Noto subset holds exactly the CJK characters in
 `src/copy/*.json` (`public/fonts/noto-sans-hk.txt`); change the Cantonese
 copy, rerun it.
 
+## Bauhinia production transition — 2026-10-26
+
+The later operator ruling in `design/self-reference/09-mini08-balanced.md`
+requires 2D anime Bauhinia art for all non-3D uses, including closed-eye art.
+All 23 production sources and their image derivatives are integrated through
+`scripts/visual_assets.py sync`, with public filenames preserved. Props, empty
+plates, grain, original archives and historical videos retain bytes. Parent
+browser inspection accepted the current 2D site artwork and rig composition.
+Legacy `macro-earbud-*` paths now contain bare-ear/hair-clasp listening details,
+with no earbuds or cable. `Thread.tsx` and `Quiet.tsx` use remeasured clasp-based
+focal coordinates. Future video exports still require render acceptance; the
+existing MP4s and historical generation records remain unchanged. Runtime
+ingest and deployment remain separate.
+
 ## Mini option08 refresh, 2026-10-26
 
 Current character inputs follow option08 Balanced eyes. The shared brief and
-earbud detail prompts describe the new design; adjacent raw JSONL files
+listening-detail prompts describe the integrated 2D Bauhinia design; adjacent raw JSONL files
 record the historical September generation, not the replacement's provenance.
 See `assets/visual-assets.json` for masters, consumers and unchanged reasons.
 Notebook now comes from `assets/nora-notebook.webp`. Run

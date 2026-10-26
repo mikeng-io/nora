@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "current_mini_design": "mini08-balanced-2026-10-26",
+  "current_mini_design": "bauhinia-2d-production-approved-2026-10-26-pending-art",
   "assets": [
     {
       "id": "app.public.favicon",
@@ -19,7 +19,7 @@
       ],
       "provenance": "Standalone app fallback icon; the deployed shared hostname serves /favicon.ico from site/public/favicon.ico. Existing app icon processor; no publication.",
       "unchanged_reason": null,
-      "sha256": "bd379de3dc1a314bf3b5616e06bd19a6c2cc665af6bbbaf2082a7cdd4bbc64eb",
+      "sha256": "9a9d029ec7860fedca31a2911ecc1f939b444408c39df146d81ba224849688f7",
       "size": [
         48,
         48
@@ -43,7 +43,7 @@
       ],
       "provenance": "Existing icon/OG processor; no external profile publication.",
       "unchanged_reason": null,
-      "sha256": "3d28fb5c5bfe9c7b9d2f35bf3150fde25e2246f0b3ab8f12a213337d6d4fc748",
+      "sha256": "3e41cb1ffefc6f4f936eeb46ff9df28ea893bad743831e2425e8d1950396f51b",
       "size": [
         180,
         180
@@ -69,7 +69,7 @@
       ],
       "provenance": "Existing icon/OG processor; no external profile publication.",
       "unchanged_reason": null,
-      "sha256": "9b6fa7c30a4a6528b6a8f6334b16697b872810445db20463a0a7f8c367d5ad42",
+      "sha256": "05ac4950b9c1e8902ff306451ecefeef0b2f37a8f030ae88b412a25fd9081e50",
       "size": [
         192,
         192
@@ -95,7 +95,7 @@
       ],
       "provenance": "Existing icon/OG processor; no external profile publication.",
       "unchanged_reason": null,
-      "sha256": "b48acacdbdf30420b3fd0bebfc3d6a2ae097e39a6de2a9877128a98eabc573ee",
+      "sha256": "77b5410b2bf0f3ec09aae7e418bdefb2d7c62c77cf062f9741f2747bcf0595a2",
       "size": [
         512,
         512
@@ -119,7 +119,7 @@
       ],
       "provenance": "Existing icon/OG processor; no external profile publication.",
       "unchanged_reason": null,
-      "sha256": "417db501a87434dbc69ac5d2980e8bcb4a47717a75df0108fab427a1a124cb84",
+      "sha256": "84477686cba84d316df1bbad0ae82aa6226cc3bccd14cbdb26b327169370c4ee",
       "size": [
         512,
         512
@@ -140,10 +140,10 @@
       "consumers": [
         "app/public/manifest.webmanifest (URL /screenshots/today-narrow.webp)"
       ],
-      "provenance": "Mock-only recapture 2026-10-26: app/README.md documented dev server and invented Miles sign-in, local mock :9198 / app :3498; Playwright Chromium, en-HK, light, reduced motion, no page errors. No real personal data. See app/README.md PWA screenshots.",
+      "provenance": "2026-10-26 mock-only PWA recapture after 2D Bauhinia icon integration: app/README.md workflow, invented Miles account, local mock API, Chromium en-HK/light/reduced-motion. Narrow 390x844 at 2x; wide 1440x900 at 1x. Font/image decoding completed; no page errors or broken images. No real personal data.",
       "unchanged_reason": null,
-      "sha256": "b99333fea73b8bd8d5fe0707286f93c2440abc9feff3a514b9911b06ee279a26",
-      "visual_review": "captured and inspected; screenshot only, not general UI/accessibility acceptance",
+      "sha256": "556544b3829b2ab332d9c4b079e951c4b96e640a95d97dea3a7205764525d125",
+      "visual_review": "Captured viewports inspected locally; synthetic data only, not live deployment proof.",
       "size": [
         780,
         1688
@@ -164,10 +164,10 @@
       "consumers": [
         "app/public/manifest.webmanifest (URL /screenshots/today-wide.webp)"
       ],
-      "provenance": "Mock-only recapture 2026-10-26: app/README.md documented dev server and invented Miles sign-in, local mock :9198 / app :3498; Playwright Chromium, en-HK, light, reduced motion, no page errors. No real personal data. See app/README.md PWA screenshots.",
+      "provenance": "2026-10-26 mock-only PWA recapture after 2D Bauhinia icon integration: app/README.md workflow, invented Miles account, local mock API, Chromium en-HK/light/reduced-motion. Narrow 390x844 at 2x; wide 1440x900 at 1x. Font/image decoding completed; no page errors or broken images. No real personal data.",
       "unchanged_reason": null,
-      "sha256": "af23f51d83eff417aeb0e84c5f7ac0720dc9033deeafe80f2a63bb06867581fd",
-      "visual_review": "captured and inspected; screenshot only, not general UI/accessibility acceptance",
+      "sha256": "385e8a511fd0402ae036987d735cffe623edf0ffb0e7ef7075f05ed14f93aa2d",
+      "visual_review": "Captured viewports inspected locally; synthetic data only, not live deployment proof.",
       "size": [
         1440,
         900
@@ -191,10 +191,10 @@
       ],
       "provenance": "Deterministic app export from declared master.",
       "unchanged_reason": null,
-      "sha256": "e41e8d86307f166972989c4c4697f5abb0034786cc73d991c908ccf67e0181a0",
+      "sha256": "859c3b7ad37a86236cbb253bf1a6dcf6f5f2288e58c5b7a7121931a8df0c0a53",
       "size": [
         996,
-        1579
+        1578
       ],
       "mode": "RGBA"
     },
@@ -215,10 +215,10 @@
       ],
       "provenance": "Deterministic app export from declared master.",
       "unchanged_reason": null,
-      "sha256": "78e8678f823184ea7c3a886e876a64093abaef8c77abf695c2619e2e8c45ae83",
+      "sha256": "90e00d7bea0b236eb24a3526a1bca43594815a867d46ed92a5a722770a29e835",
       "size": [
         963,
-        1634
+        1633
       ],
       "mode": "RGBA"
     },
@@ -241,7 +241,7 @@
       ],
       "provenance": "Deterministic app export from declared master.",
       "unchanged_reason": null,
-      "sha256": "3f1179afc259493005df25fd6b4fafef8cd79eb9937eb03959aeecbb59a245bc",
+      "sha256": "e2f6f27f5b8e952dd4f6f4eef960844c7aa096fc2d855119606083f8b7caa7ee",
       "size": [
         1024,
         1536
@@ -267,7 +267,7 @@
       ],
       "provenance": "Deterministic app export from declared master.",
       "unchanged_reason": null,
-      "sha256": "80e6025a154e8136d8bbb6e2112dd33b6bd909d4099d0d5acb4922c5ce57fb0f",
+      "sha256": "055535539f2007131ce7924797060f238d7cb5004517b77baba10d3fa2bfa5d0",
       "size": [
         1024,
         1536
@@ -292,7 +292,7 @@
       ],
       "provenance": "Deterministic app export from declared master.",
       "unchanged_reason": null,
-      "sha256": "66a25040b97cd39d622863fac3f738c261f6819ac26048ce3dadf446f2b2460a",
+      "sha256": "c76e3f49533ba6ba2df2c926c69f61f75278811c7eff3a3eccc2e9fb26b06348",
       "size": [
         512,
         512
@@ -316,7 +316,7 @@
       ],
       "provenance": "Deterministic app export from declared master.",
       "unchanged_reason": null,
-      "sha256": "51641f7cf563109f89aafcf94cab8c42304bd8af089d0860d9372314122b9a12",
+      "sha256": "03aa851177395ba2aab88e1490618331221518a1e2e5747a3ca3ced7a312ff08",
       "size": [
         984,
         1599
@@ -339,11 +339,11 @@
         "app/src/components/ui/states.tsx (art[artName], registry key quiet)"
       ],
       "provenance": "Deterministic app export from declared master.",
-      "unchanged_reason": "Closed-eye Mini rendering; no open eye design to replace.",
-      "sha256": "066b8b0fcb538f8078a9633d94bf6cd64edd3cdabb81d3fe1f7f19a596e1fd17",
+      "unchanged_reason": null,
+      "sha256": "a6ea106d99c5f563516902a8b5989e97961652ee7a70ecc6d0aa82c8b5568dec",
       "size": [
-        777,
-        1402
+        934,
+        1685
       ],
       "mode": "RGBA"
     },
@@ -365,12 +365,186 @@
       ],
       "provenance": "Deterministic app export from declared master.",
       "unchanged_reason": null,
-      "sha256": "a0e1cc317312c47e42bef53d77cf2e413187e369ba3de7e64c6319980c6ead39",
+      "sha256": "da07aabf3c5c73f8ae022780974219201933b87be754272a69d3685f4ffc653d",
       "size": [
         979,
         1607
       ],
       "mode": "RGBA"
+    },
+    {
+      "id": "assets.modeling.bauhinia.v1.adult-style-study",
+      "path": "assets/modeling/bauhinia/v1/adult-style-study.png",
+      "form": "human",
+      "role": "reference",
+      "status": "historical",
+      "eyes": "human-bauhinia",
+      "parents": [
+        "assets/nora-human-bauhinia-reference.png",
+        "assets/modeling/bauhinia/v1/mini-style-study.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v1/README.md (reference link and provenance)"
+      ],
+      "provenance": "2026-10-26, parent built-in imagegen. Prompt intent: Adult anime and stylized 3D style comparison; preserve the authoritative adult face, silhouette and outfit while matching the accepted Mini study treatment. Repository parents record semantic visual authority only, not supplied 2D-to-3D translation lineage; exact retained-original mapping is private. Only caBX removed; all retained chunks, IHDR and compressed IDAT verified byte-identical; originals intact. Stylized 3D appearance is a PNG render, not a mesh.",
+      "unchanged_reason": "Retained v1 reference history with original approval/candidate facts intact; exact PNG bytes preserved. Superseded by v2 simplified-hair references and current 2D Bauhinia production inputs.",
+      "sha256": "02f2e222fcd58c3b4b7e77d90167aad51d06d886a8b7fe44b9582aadac032e7c",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB",
+      "visual_review": "Parent visually inspected silhouette/style matching as adequate reference candidates; final operator aesthetic/sheet acceptance pending. Hands, projection/alignment and small flower/cuff details remain unresolved; no mesh, rig or engineering proof."
+    },
+    {
+      "id": "assets.modeling.bauhinia.v1.human-anime-tpose",
+      "path": "assets/modeling/bauhinia/v1/human-anime-tpose.png",
+      "form": "human",
+      "role": "reference",
+      "status": "historical",
+      "eyes": "human-bauhinia",
+      "parents": [
+        "assets/nora-human-bauhinia-reference.png",
+        "assets/modeling/bauhinia/v1/adult-style-study.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v1/README.md (reference link and provenance)"
+      ],
+      "provenance": "2026-10-26, parent built-in imagegen. Prompt intent: Adult 2D anime front/right/back T-pose layout; preserve the authoritative adult face, silhouette and Bauhinia outfit, without bags or audio accessories. Repository parents record semantic visual authority only, not supplied 2D-to-3D translation lineage; exact retained-original mapping is private. Only caBX removed; all retained chunks, IHDR and compressed IDAT verified byte-identical; originals intact. Stylized 3D appearance is a PNG render, not a mesh.",
+      "unchanged_reason": "Retained v1 reference history with original approval/candidate facts intact; exact PNG bytes preserved. Superseded by v2 simplified-hair references and current 2D Bauhinia production inputs.",
+      "sha256": "328d0204ef51e5ad9abd57958e7af85f453a8f2533e045fbad1bea2816bfa5ea",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB",
+      "visual_review": "Parent visually inspected silhouette/style matching as adequate reference candidates; final operator aesthetic/sheet acceptance pending. Hands, projection/alignment and small flower/cuff details remain unresolved; no mesh, rig or engineering proof."
+    },
+    {
+      "id": "assets.modeling.bauhinia.v1.human-stylized3d-tpose",
+      "path": "assets/modeling/bauhinia/v1/human-stylized3d-tpose.png",
+      "form": "human",
+      "role": "reference",
+      "status": "historical",
+      "eyes": "human-bauhinia",
+      "parents": [
+        "assets/modeling/bauhinia/v1/human-anime-tpose.png",
+        "assets/modeling/bauhinia/v1/adult-style-study.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v1/README.md (reference link and provenance)"
+      ],
+      "provenance": "2026-10-26, parent built-in imagegen. Prompt intent: Translate the adult anime T-pose layout to stylized 3D shading while retaining its 2D geometry, view order and adult study appearance. Repository parents record the supplied anime T-pose geometry parent and style authority for this 3D translation; exact retained-original mapping is private. Only caBX removed; all retained chunks, IHDR and compressed IDAT verified byte-identical; originals intact. Stylized 3D appearance is a PNG render, not a mesh.",
+      "unchanged_reason": "Retained v1 reference history with original approval/candidate facts intact; exact PNG bytes preserved. Superseded by v2 simplified-hair references and current 2D Bauhinia production inputs.",
+      "sha256": "a4bee5687cbae7a115635ada805424cc40ca54fdf0833d14c4be0b0442026da6",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB",
+      "visual_review": "Parent visually inspected silhouette/style matching as adequate reference candidates; final operator aesthetic/sheet acceptance pending. Hands, projection/alignment and small flower/cuff details remain unresolved; no mesh, rig or engineering proof."
+    },
+    {
+      "id": "assets.modeling.bauhinia.v1.mini-anime-tpose",
+      "path": "assets/modeling/bauhinia/v1/mini-anime-tpose.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "historical",
+      "eyes": "mini08",
+      "parents": [
+        "assets/modeling/bauhinia/v1/mini-style-study.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v1/README.md (reference link and provenance)"
+      ],
+      "provenance": "2026-10-26, parent built-in imagegen. Prompt intent: Mini 2D anime front/right/back T-pose layout; preserve the approved outfit direction, Mini proportions and face, without bags or audio accessories. Repository parents record semantic visual authority only, not supplied 2D-to-3D translation lineage; exact retained-original mapping is private. Only caBX removed; all retained chunks, IHDR and compressed IDAT verified byte-identical; originals intact. Stylized 3D appearance is a PNG render, not a mesh.",
+      "unchanged_reason": "Retained v1 reference history with original approval/candidate facts intact; exact PNG bytes preserved. Superseded by v2 simplified-hair references and current 2D Bauhinia production inputs.",
+      "sha256": "f3e95840932ee31933d6b642dd3f319a9ea9babfa4f13da0c12eba700ef93741",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB",
+      "visual_review": "Parent visually inspected silhouette/style matching as adequate reference candidates; final operator aesthetic/sheet acceptance pending. Hands, projection/alignment and small flower/cuff details remain unresolved; no mesh, rig or engineering proof."
+    },
+    {
+      "id": "assets.modeling.bauhinia.v1.mini-style-study",
+      "path": "assets/modeling/bauhinia/v1/mini-style-study.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "historical",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-human-bauhinia-reference.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v1/README.md (reference link and provenance)"
+      ],
+      "provenance": "2026-10-26, parent built-in imagegen. Prompt intent: Mini anime and stylized 3D outfit study; adapt the adult Bauhinia clothing to Mini proportions and option08 face language. Repository parents record semantic visual authority only, not supplied 2D-to-3D translation lineage; exact retained-original mapping is private. Only caBX removed; all retained chunks, IHDR and compressed IDAT verified byte-identical; originals intact. Stylized 3D appearance is a PNG render, not a mesh.",
+      "unchanged_reason": "Retained v1 reference history with original approval/candidate facts intact; exact PNG bytes preserved. Superseded by v2 simplified-hair references and current 2D Bauhinia production inputs.",
+      "sha256": "18525c092b9a5da319ba2e0e9ea588f5038cbc860833bae2d0963d8f2112743e",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB",
+      "visual_review": "Operator accepted Mini outfit direction; final detail/sheet acceptance pending. Hands, projection/alignment and small flower/cuff details remain unresolved; no mesh, rig or engineering proof."
+    },
+    {
+      "id": "assets.modeling.bauhinia.v1.mini-stylized3d-tpose",
+      "path": "assets/modeling/bauhinia/v1/mini-stylized3d-tpose.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "historical",
+      "eyes": "mini08",
+      "parents": [
+        "assets/modeling/bauhinia/v1/mini-anime-tpose.png",
+        "assets/modeling/bauhinia/v1/mini-style-study.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v1/README.md (reference link and provenance)"
+      ],
+      "provenance": "2026-10-26, parent built-in imagegen. Prompt intent: Translate the Mini anime T-pose layout to stylized 3D shading while retaining its 2D geometry, view order and Mini study appearance. Repository parents record the supplied anime T-pose geometry parent and style authority for this 3D translation; exact retained-original mapping is private. Only caBX removed; all retained chunks, IHDR and compressed IDAT verified byte-identical; originals intact. Stylized 3D appearance is a PNG render, not a mesh.",
+      "unchanged_reason": "Retained v1 reference history with original approval/candidate facts intact; exact PNG bytes preserved. Superseded by v2 simplified-hair references and current 2D Bauhinia production inputs.",
+      "sha256": "c8e50e8d20540999a8eac478fc8614f19c5c02161744026c4131da3f03a35790",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB",
+      "visual_review": "Parent visually inspected silhouette/style matching as adequate reference candidates; final operator aesthetic/sheet acceptance pending. Hands, projection/alignment and small flower/cuff details remain unresolved; no mesh, rig or engineering proof."
+    },
+    {
+      "id": "assets.modeling.bauhinia.v1.shared-face-details",
+      "path": "assets/modeling/bauhinia/v1/shared-face-details.png",
+      "form": "shared",
+      "role": "reference",
+      "status": "historical",
+      "eyes": "human-bauhinia+mini08",
+      "parents": [
+        "assets/nora-human-bauhinia-reference.png",
+        "assets/modeling/bauhinia/v1/adult-style-study.png",
+        "assets/modeling/bauhinia/v1/mini-style-study.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v1/README.md (reference link and provenance)"
+      ],
+      "provenance": "2026-10-26, parent built-in imagegen. Prompt intent: Compare adult and Mini faces in both treatments, neutral/half-lid/closed eyes, and Bauhinia clasp, frog closures, cuff and coat-hem details; keep distinct eye shapes and no Mini nose marker. Repository parents record semantic visual authority only, not supplied 2D-to-3D translation lineage; exact retained-original mapping is private. Only caBX removed; all retained chunks, IHDR and compressed IDAT verified byte-identical; originals intact. Stylized 3D appearance is a PNG render, not a mesh.",
+      "unchanged_reason": "Retained v1 reference history with original approval/candidate facts intact; exact PNG bytes preserved. Superseded by v2 simplified-hair references and current 2D Bauhinia production inputs.",
+      "sha256": "6e6f34f0a890a7fb0ca51e75bf91fc4291bfc9850e4272094e954eda02fe331c",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB",
+      "visual_review": "Parent visually inspected silhouette/style matching as adequate reference candidates; final operator aesthetic/sheet acceptance pending. Hands, projection/alignment and small flower/cuff details remain unresolved; no mesh, rig or engineering proof."
     },
     {
       "id": "assets.nora-canonical-self",
@@ -405,14 +579,15 @@
         "site/src/components/Form.astro (art.canonical via registry)",
         "site/src/components/Hero.astro (art.canonical via registry)"
       ],
-      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
       "unchanged_reason": null,
-      "sha256": "5f1a43327bcc81959c794951c550a511e2cfbda4fda25b8c55bc8b93e42f9b57",
+      "sha256": "c2a5c3549e6053707e53077b4774d46f4be93f39b6be74647b0f6b4e8227d989",
       "size": [
         1024,
         1536
       ],
-      "mode": "RGB"
+      "mode": "RGB",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
     },
     {
       "id": "assets.nora-character-reference-sheet",
@@ -441,14 +616,15 @@
         "site/src/assets/art/README.md (explicit path reference)",
         "site/src/components/Form.astro (art.sheet via registry)"
       ],
-      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "provenance": "2026-10-26, supplied 2D anime Mini Bauhinia source. Prompt intent: canonical Mini identity, option08 eyes, compact broad hair and five-petal clasp; clean 2D profile/reference composition, no bags or audio accessories. Parent viewed all five final sources PASS for style, crop and bun visibility; identifying PNG metadata omitted without re-encoding image data. Original files retained privately.",
       "unchanged_reason": null,
-      "sha256": "41a7862cfb0b3d668c51efd8f46bb57003426a8c05591086efe14111448d8d62",
+      "sha256": "dd33d8b5d52f080f92ca4386c0a7f4aee8d3c5991bd6c0c2572eae766a4bf14a",
       "size": [
         1536,
         1024
       ],
-      "mode": "RGB"
+      "mode": "RGB",
+      "visual_review": "Parent viewed final source artwork PASS; integrated app/site and runtime acceptance separate."
     },
     {
       "id": "assets.nora-embodied-tpose",
@@ -485,7 +661,8 @@
         "DESIGN.md (explicit path reference)",
         "design/self-reference/02-canonical-assets.md (explicit path reference)",
         "design/self-reference/08-bauhinia-human-form.md (explicit path reference)",
-        "design/self-reference/08-bauhinia-human-form.md (reference link)"
+        "design/self-reference/08-bauhinia-human-form.md (reference link)",
+        "assets/modeling/bauhinia/v1/README.md (adult anchor reference link)"
       ],
       "provenance": "2026-10-25 approval; design/self-reference/08-bauhinia-human-form.md.",
       "unchanged_reason": "Approved human form is outside Mini eye refresh.",
@@ -523,14 +700,15 @@
         "site/src/components/NoraAvatar.astro (art.icon via registry)",
         "site/src/components/NoraMark.astro (art.icon via registry)"
       ],
-      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "provenance": "2026-10-26, supplied 2D anime Mini Bauhinia source. Prompt intent: canonical Mini identity, option08 eyes, compact broad hair and five-petal clasp; clean 2D profile/reference composition, no bags or audio accessories. Parent viewed all five final sources PASS for style, crop and bun visibility; identifying PNG metadata omitted without re-encoding image data. Original files retained privately.",
       "unchanged_reason": null,
-      "sha256": "e885ec0cb9ba391ef4a5bb3c88ffca988d4588d9296d87ad47de15e12ba8d0cb",
+      "sha256": "e0115c0ff53e003356a6f0cdb198e912004badc149cacbd970c792035221730d",
       "size": [
         1254,
         1254
       ],
-      "mode": "RGBA"
+      "mode": "RGBA",
+      "visual_review": "Parent viewed final source artwork PASS; integrated app/site and runtime acceptance separate."
     },
     {
       "id": "assets.nora-mini-tpose",
@@ -554,14 +732,15 @@
         "site/src/assets/art.ts (explicit path reference)",
         "site/src/components/Form.astro (art.tpose via registry)"
       ],
-      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "provenance": "2026-10-26, supplied 2D anime Mini Bauhinia source. Prompt intent: canonical Mini identity, option08 eyes, compact broad hair and five-petal clasp; clean 2D profile/reference composition, no bags or audio accessories. Parent viewed all five final sources PASS for style, crop and bun visibility; identifying PNG metadata omitted without re-encoding image data. Original files retained privately.",
       "unchanged_reason": null,
-      "sha256": "f2519df57d5725bc8b96af6a24733ee341b8057ebbf30f6516443dad464ab00d",
+      "sha256": "db88b4744c56dfdc4655185b811c893ee2dde9118b4d252eb1c65574b60e3b4b",
       "size": [
         1024,
         1536
       ],
-      "mode": "RGB"
+      "mode": "RGB",
+      "visual_review": "Parent viewed final source artwork PASS; integrated app/site and runtime acceptance separate. Front arms horizontal and hands readable, but palms face viewer unlike edge-on modeling views; hand rotation/projection unresolved, not calibrated orthographic matching."
     },
     {
       "id": "assets.nora-mini-turnaround",
@@ -583,14 +762,15 @@
         "design/self-reference/07-native-and-embodied-form.md (reference link)",
         "design/self-reference/09-mini08-balanced.md (reference link)"
       ],
-      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
       "unchanged_reason": null,
-      "sha256": "d572281fcc52289ae7ce84b0431c8477d16821966c18352c69c828e8b2916a2f",
+      "sha256": "15763ec3116dc2e241e48f333f92df388598bfda18ed0105b700585344c56cbd",
       "size": [
         1536,
         1024
       ],
-      "mode": "RGB"
+      "mode": "RGB",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
     },
     {
       "id": "assets.nora-notebook",
@@ -609,14 +789,15 @@
         "showreel/pipeline/process_art.py (explicit path reference)",
         "site/src/assets/art/README.md (explicit path reference)"
       ],
-      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
       "unchanged_reason": null,
-      "sha256": "51641f7cf563109f89aafcf94cab8c42304bd8af089d0860d9372314122b9a12",
+      "sha256": "03aa851177395ba2aab88e1490618331221518a1e2e5747a3ca3ced7a312ff08",
       "size": [
         984,
         1599
       ],
-      "mode": "RGBA"
+      "mode": "RGBA",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
     },
     {
       "id": "assets.nora-social-avatar",
@@ -632,14 +813,15 @@
       "consumers": [
         "design/self-reference/02-canonical-assets.md (explicit path reference)"
       ],
-      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "provenance": "2026-10-26, supplied 2D anime Mini Bauhinia source. Prompt intent: canonical Mini identity, option08 eyes, compact broad hair and five-petal clasp; clean 2D profile/reference composition, no bags or audio accessories. Parent viewed all five final sources PASS for style, crop and bun visibility; identifying PNG metadata omitted without re-encoding image data. Original files retained privately.",
       "unchanged_reason": null,
-      "sha256": "2faac9a529ac741040046caee677368dd72a3513e1c03009f7d0e425bcb3ebf8",
+      "sha256": "f1c37f96d63e14f4c7561a9902790453655c020ef56cd4fac4ed3f2de0bc97db",
       "size": [
-        1374,
-        1145
+        1254,
+        1254
       ],
-      "mode": "RGB"
+      "mode": "RGB",
+      "visual_review": "Parent viewed final source artwork PASS; integrated app/site and runtime acceptance separate."
     },
     {
       "id": "assets.nora-social-banner",
@@ -656,14 +838,15 @@
         "README.md (explicit path reference)",
         "design/self-reference/02-canonical-assets.md (explicit path reference)"
       ],
-      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; banner IDAT losslessly recompressed to remove a coincidental printable email shape, preserving dimensions, mode and decoded pixels. Unlike the canonical source, its compressed IDAT bytes are not exact; canonical source and original archive unchanged.",
+      "provenance": "2026-10-26, supplied 2D anime Mini Bauhinia source. Prompt intent: canonical Mini identity, option08 eyes, compact broad hair and five-petal clasp; clean 2D profile/reference composition, no bags or audio accessories. Parent viewed all five final sources PASS for style, crop and bun visibility; identifying PNG metadata omitted without re-encoding image data. Original files retained privately.",
       "unchanged_reason": null,
-      "sha256": "f8314b8cc91a0cd9edb7448ea066bbafeb029cc0949222b8b13116619845f9f1",
+      "sha256": "d4e3718c7e39c6f17803ade0af54b14cba43bacf0553d141a680cf35e8a4599c",
       "size": [
         2056,
         765
       ],
-      "mode": "RGB"
+      "mode": "RGB",
+      "visual_review": "Parent viewed final source artwork PASS; integrated app/site and runtime acceptance separate."
     },
     {
       "id": "showreel.art.raw.hotpot-photo",
@@ -700,14 +883,15 @@
       "consumers": [
         "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
       ],
-      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "provenance": "2026-10-26, supplied final 2D anime Bauhinia showreel source. Parent personally viewed all eight final originals PASS: bare ear/clasp listening detail, quiet closed eyes, matching master outfit and broad-clump hair, no extra nose marker; four scoped RGBA cutouts. Identifying ancillary PNG metadata removed without re-encoding image data; originals and exact source mapping retained privately.",
       "unchanged_reason": null,
-      "sha256": "007d879606f4cb7514fa92dd6d920993dfb3b8fe9e62b2a498ca2282e89071a4",
+      "sha256": "acb7d61751e51f54fdc8c9d6abf706a6fe4b626e8a4aca737b804d4a76131637",
       "size": [
         1024,
         1536
       ],
-      "mode": "RGB"
+      "mode": "RGB",
+      "visual_review": "Parent viewed final source artwork PASS; integrated browser/composition acceptance pending."
     },
     {
       "id": "showreel.art.raw.macro-earbud-wide",
@@ -723,14 +907,15 @@
       "consumers": [
         "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
       ],
-      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "provenance": "2026-10-26, supplied final 2D anime Bauhinia showreel source. Parent personally viewed all eight final originals PASS: bare ear/clasp listening detail, quiet closed eyes, matching master outfit and broad-clump hair, no extra nose marker; four scoped RGBA cutouts. Identifying ancillary PNG metadata removed without re-encoding image data; originals and exact source mapping retained privately.",
       "unchanged_reason": null,
-      "sha256": "a07334cf2d78bdfb275b64b446db3d9679265b1148d3ba2b06eb612edc340c9b",
+      "sha256": "5c3e564389d648b3690d029c356140b656d8dd6c643c80f6e728b52c10f23553",
       "size": [
         1536,
         1024
       ],
-      "mode": "RGB"
+      "mode": "RGB",
+      "visual_review": "Parent viewed final source artwork PASS; integrated browser/composition acceptance pending."
     },
     {
       "id": "showreel.art.raw.music",
@@ -746,14 +931,15 @@
       "consumers": [
         "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
       ],
-      "provenance": "Original prompt: showreel/art/prompts/music.txt; adjacent JSONL records September generation only, not current refresh.",
-      "unchanged_reason": "Closed-eye Mini rendering; no open eye design to replace.",
-      "sha256": "ed2a64b39d6d412cdeadcec6d530493a759ecef08eb5a88069b43064f9f308a1",
+      "provenance": "2026-10-26, supplied final 2D anime Bauhinia showreel source. Parent personally viewed all eight final originals PASS: bare ear/clasp listening detail, quiet closed eyes, matching master outfit and broad-clump hair, no extra nose marker; four scoped RGBA cutouts. Identifying ancillary PNG metadata removed without re-encoding image data; originals and exact source mapping retained privately.",
+      "unchanged_reason": null,
+      "sha256": "613779676992f4066247303ffea90590e2474adb3edb79d6c9f26bd2dff1173c",
       "size": [
         1122,
         1402
       ],
-      "mode": "RGBA"
+      "mode": "RGBA",
+      "visual_review": "Parent viewed final source artwork PASS; integrated browser/composition acceptance pending."
     },
     {
       "id": "showreel.art.raw.quiet-closeup-tall",
@@ -769,14 +955,15 @@
       "consumers": [
         "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
       ],
-      "provenance": "Original prompt: showreel/art/prompts/quiet-closeup-tall.txt; adjacent JSONL records September generation only, not current refresh.",
-      "unchanged_reason": "Closed-eye Mini rendering; no open eye design to replace.",
-      "sha256": "e3b01120c0bc2d2fcacdadf5937d698ebd9345824b136930049daf87065d9ccb",
+      "provenance": "2026-10-26, supplied final 2D anime Bauhinia showreel source. Parent personally viewed all eight final originals PASS: bare ear/clasp listening detail, quiet closed eyes, matching master outfit and broad-clump hair, no extra nose marker; four scoped RGBA cutouts. Identifying ancillary PNG metadata removed without re-encoding image data; originals and exact source mapping retained privately.",
+      "unchanged_reason": null,
+      "sha256": "19e67a40d871c3806710e075935d3f398fa0304a41c6c5de4554f3f7bd9fc40e",
       "size": [
         1024,
         1536
       ],
-      "mode": "RGB"
+      "mode": "RGB",
+      "visual_review": "Parent viewed final source artwork PASS; integrated browser/composition acceptance pending."
     },
     {
       "id": "showreel.art.raw.quiet-closeup-wide",
@@ -792,14 +979,15 @@
       "consumers": [
         "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
       ],
-      "provenance": "Original prompt: showreel/art/prompts/quiet-closeup-wide.txt; adjacent JSONL records September generation only, not current refresh.",
-      "unchanged_reason": "Closed-eye Mini rendering; no open eye design to replace.",
-      "sha256": "1c6383405ba4f89631c224d94aed2811bd7c1618656bd799dafcab5c65215173",
+      "provenance": "2026-10-26, supplied final 2D anime Bauhinia showreel source. Parent personally viewed all eight final originals PASS: bare ear/clasp listening detail, quiet closed eyes, matching master outfit and broad-clump hair, no extra nose marker; four scoped RGBA cutouts. Identifying ancillary PNG metadata removed without re-encoding image data; originals and exact source mapping retained privately.",
+      "unchanged_reason": null,
+      "sha256": "d6c9e0485700e4517ae9508b817fd8ca34e651fee9b040c9a4e0d1a28e080a3a",
       "size": [
         1536,
         1024
       ],
-      "mode": "RGB"
+      "mode": "RGB",
+      "visual_review": "Parent viewed final source artwork PASS; integrated browser/composition acceptance pending."
     },
     {
       "id": "showreel.art.raw.room-night-tall",
@@ -857,14 +1045,15 @@
       "consumers": [
         "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
       ],
-      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "provenance": "2026-10-26, supplied final 2D anime Bauhinia showreel source. Parent personally viewed all eight final originals PASS: bare ear/clasp listening detail, quiet closed eyes, matching master outfit and broad-clump hair, no extra nose marker; four scoped RGBA cutouts. Identifying ancillary PNG metadata removed without re-encoding image data; originals and exact source mapping retained privately.",
       "unchanged_reason": null,
-      "sha256": "5d87defc4ec5fbfaaf3493a46863e4e71725e5d8321a91eec5631426af314371",
+      "sha256": "937dbb7f51aa265f65f974c5964aa90b631796c6c5d34495b6e9febbb2020aa8",
       "size": [
         1254,
         1254
       ],
-      "mode": "RGBA"
+      "mode": "RGBA",
+      "visual_review": "Parent viewed final source artwork PASS; integrated browser/composition acceptance pending."
     },
     {
       "id": "showreel.art.raw.umbrella",
@@ -880,14 +1069,15 @@
       "consumers": [
         "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
       ],
-      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "provenance": "2026-10-26, supplied final 2D anime Bauhinia showreel source. Parent personally viewed all eight final originals PASS: bare ear/clasp listening detail, quiet closed eyes, matching master outfit and broad-clump hair, no extra nose marker; four scoped RGBA cutouts. Identifying ancillary PNG metadata removed without re-encoding image data; originals and exact source mapping retained privately.",
       "unchanged_reason": null,
-      "sha256": "f37780840ed70c37264b76dc29ac5c905b2d769c890fcfee64332c0f16f1200c",
+      "sha256": "170296835547b763417f980f64b5e56a05e426d09c2f8daf22a55c88bccec471",
       "size": [
         1122,
         1402
       ],
-      "mode": "RGBA"
+      "mode": "RGBA",
+      "visual_review": "Parent viewed final source artwork PASS; integrated browser/composition acceptance pending."
     },
     {
       "id": "showreel.art.raw.walking",
@@ -903,14 +1093,15 @@
       "consumers": [
         "showreel/pipeline/process_art.py (art/raw/*.png input glob)"
       ],
-      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "provenance": "2026-10-26, supplied final 2D anime Bauhinia showreel source. Parent personally viewed all eight final originals PASS: bare ear/clasp listening detail, quiet closed eyes, matching master outfit and broad-clump hair, no extra nose marker; four scoped RGBA cutouts. Identifying ancillary PNG metadata removed without re-encoding image data; originals and exact source mapping retained privately.",
       "unchanged_reason": null,
-      "sha256": "689ef81a55e68cc7276b33cd4d2c2cf67577a8919739c824364b20b9cfd3f1a3",
+      "sha256": "dc2fa690019f3a9cdb5ef6ca0c99d86dcd69acbcf8d947f39e07cd9df82db193",
       "size": [
         1122,
         1402
       ],
-      "mode": "RGBA"
+      "mode": "RGBA",
+      "visual_review": "Parent viewed final source artwork PASS; integrated browser/composition acceptance pending."
     },
     {
       "id": "showreel.public.art.group-chat",
@@ -929,10 +1120,10 @@
       ],
       "provenance": "showreel/pipeline/process_art.py from declared master.",
       "unchanged_reason": null,
-      "sha256": "15ddabf68707acc55e55d4ab77147066716c531f3cb73dc3d4b2f26d9cd9a2e6",
+      "sha256": "52332d1aeedbe4eb76a3eb158706d3050153184f73a21981d7f8369daaf24305",
       "size": [
         996,
-        1579
+        1578
       ],
       "mode": "RGBA"
     },
@@ -977,12 +1168,13 @@
       ],
       "provenance": "showreel/pipeline/process_art.py from declared master.",
       "unchanged_reason": null,
-      "sha256": "5b1cb45a794522399b18457da8c226997e30dfa1f66d1b0a22eafff4ac11eb36",
+      "sha256": "62e32aec622729b74de321b9ecab731914e41c9b0145e901538a1ce8e8424253",
       "size": [
         1024,
         1536
       ],
-      "mode": "RGB"
+      "mode": "RGB",
+      "visual_review": "Rebuilt from parent-accepted final 2D source; integrated browser/composition acceptance pending."
     },
     {
       "id": "showreel.public.art.macro-earbud-wide",
@@ -1001,12 +1193,13 @@
       ],
       "provenance": "showreel/pipeline/process_art.py from declared master.",
       "unchanged_reason": null,
-      "sha256": "850bd9373a39a7b530ff790511a0ddfdc97382d61b28f25f7a5b87a7fcf681b3",
+      "sha256": "c3b25479a7fa270c9f49892b7fad27b672a88d192e9afae9c6b54b9f2b89ebad",
       "size": [
         1536,
         1024
       ],
-      "mode": "RGB"
+      "mode": "RGB",
+      "visual_review": "Rebuilt from parent-accepted final 2D source; integrated browser/composition acceptance pending."
     },
     {
       "id": "showreel.public.art.music",
@@ -1024,13 +1217,14 @@
         "showreel/src/scenes/Senses.tsx (staticFile/Cutout/Plate art/music.webp)"
       ],
       "provenance": "showreel/pipeline/process_art.py from declared master.",
-      "unchanged_reason": "Closed-eye Mini rendering; no open eye design to replace.",
-      "sha256": "412706520558c70b7feec0e107c7322de28766a13b035f99b7289e4c73678b3e",
+      "unchanged_reason": null,
+      "sha256": "4fd9448f6e351ba67b6631a466d5689a8808b2f3f7e020847fb5a9026f0fe407",
       "size": [
-        820,
+        760,
         1402
       ],
-      "mode": "RGBA"
+      "mode": "RGBA",
+      "visual_review": "Rebuilt from parent-accepted final 2D source; integrated browser/composition acceptance pending."
     },
     {
       "id": "showreel.public.art.night-portrait",
@@ -1049,7 +1243,7 @@
       ],
       "provenance": "showreel/pipeline/process_art.py from declared master.",
       "unchanged_reason": null,
-      "sha256": "59b11a938825b770de4b9fd70d8f493b27f679c18b31d5fe46a5f56440cc672f",
+      "sha256": "e4ef2a727e1152375d9d4260536c82ef6b9c4a1925daf3ccef3f57be95a25e1b",
       "size": [
         1024,
         1536
@@ -1071,8 +1265,8 @@
         "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)"
       ],
       "provenance": "showreel/pipeline/process_art.py from declared master.",
-      "unchanged_reason": " No current scene displays this generated output. No current scene displays this generated output.",
-      "sha256": "b7cb38e39eee24cd907be8192a78dfb85942304194f7d0fe5cfbe102bbdac71f",
+      "unchanged_reason": null,
+      "sha256": "bb002a821a46f1a603eb3ed3c0a7180ab0369cd83d022acd837386ec977fb184",
       "size": [
         1024,
         1536
@@ -1097,9 +1291,9 @@
       ],
       "provenance": "showreel/pipeline/process_art.py from declared master.",
       "unchanged_reason": null,
-      "sha256": "7af4ef03abf7063e1cf1665a4c2ecf0f7ecba5123455573347d00f9591acda8e",
+      "sha256": "f2c0a1e1089963f847165b67a0323cf21184ce7cd40bc7bd0c0ce43236c05287",
       "size": [
-        1237,
+        847,
         1254
       ],
       "mode": "RGBA"
@@ -1121,7 +1315,7 @@
       ],
       "provenance": "showreel/pipeline/process_art.py from declared master.",
       "unchanged_reason": null,
-      "sha256": "968f65a7955b41a04adcb517cc920136cb5d7da550d538156e35cdf6df98215d",
+      "sha256": "74581c2dac0de285206dcdb08fcc91942fd6228fa6a410799787a686a9d96ebb",
       "size": [
         984,
         1599
@@ -1144,13 +1338,14 @@
         "showreel/src/scenes/Quiet.tsx (staticFile/Cutout/Plate art/quiet-closeup-tall.webp)"
       ],
       "provenance": "showreel/pipeline/process_art.py from declared master.",
-      "unchanged_reason": "Closed-eye Mini rendering; no open eye design to replace.",
-      "sha256": "149c0a936613c5e19af383210da2963b8c70da6a244370c938086b7f6c9ab7d7",
+      "unchanged_reason": null,
+      "sha256": "b30ac23ecc5373f86beb07e6f3f9fbc44bfbe4c8538a9dd7d6c21ea2ab6ff86a",
       "size": [
         1024,
         1536
       ],
-      "mode": "RGB"
+      "mode": "RGB",
+      "visual_review": "Rebuilt from parent-accepted final 2D source; integrated browser/composition acceptance pending."
     },
     {
       "id": "showreel.public.art.quiet-closeup-wide",
@@ -1168,13 +1363,14 @@
         "showreel/src/scenes/Quiet.tsx (staticFile/Cutout/Plate art/quiet-closeup-wide.webp)"
       ],
       "provenance": "showreel/pipeline/process_art.py from declared master.",
-      "unchanged_reason": "Closed-eye Mini rendering; no open eye design to replace.",
-      "sha256": "b2b48a72c0192e9fdce4339e6ed504e509e757a0d83c1b1b77cdb333550e86b7",
+      "unchanged_reason": null,
+      "sha256": "943cf46e0427ece1e135332da68df720cdd35cebf536cb060e67ac85b15b7fa0",
       "size": [
         1536,
         1024
       ],
-      "mode": "RGB"
+      "mode": "RGB",
+      "visual_review": "Rebuilt from parent-accepted final 2D source; integrated browser/composition acceptance pending."
     },
     {
       "id": "showreel.public.art.quiet",
@@ -1191,11 +1387,11 @@
         "showreel/src/data/art.json -> showreel/src/lib.tsx (aspect metadata; generated)"
       ],
       "provenance": "showreel/pipeline/process_art.py from declared master.",
-      "unchanged_reason": "Closed-eye Mini rendering; no open eye design to replace. No current scene displays this generated output. No current scene displays this generated output.",
-      "sha256": "30cbb4669316e130cc35ff4fd81de154826e2b4b7ef8964a79444d34c3c6bf29",
+      "unchanged_reason": null,
+      "sha256": "3ac9c076073c8b6b152aea5572dfd9fee6b7745b05d9aaec2efccb70a1ebff8a",
       "size": [
-        777,
-        1402
+        934,
+        1685
       ],
       "mode": "RGBA"
     },
@@ -1264,12 +1460,13 @@
       ],
       "provenance": "showreel/pipeline/process_art.py from declared master.",
       "unchanged_reason": null,
-      "sha256": "73f4073983e3a3199558a9cf2a0ff019a711a1563ada033d6157c36bd8445792",
+      "sha256": "3d32c91b3908e72f0cdf1e38eec8fbe3287d8c9846c9c029fe0d2d1708f542a2",
       "size": [
-        748,
+        712,
         1254
       ],
-      "mode": "RGBA"
+      "mode": "RGBA",
+      "visual_review": "Rebuilt from parent-accepted final 2D source; integrated browser/composition acceptance pending."
     },
     {
       "id": "showreel.public.art.umbrella",
@@ -1288,12 +1485,13 @@
       ],
       "provenance": "showreel/pipeline/process_art.py from declared master.",
       "unchanged_reason": null,
-      "sha256": "48270f4a7fec5d2b950b4a9f98151d3722b5fb06eb20e34b5d10b4702733a49a",
+      "sha256": "c3e8b0ef092d479ba60af86f759cadaa69bef0e46d8ab29d0f44134e2b5cb01f",
       "size": [
-        996,
-        1315
+        957,
+        1402
       ],
-      "mode": "RGBA"
+      "mode": "RGBA",
+      "visual_review": "Rebuilt from parent-accepted final 2D source; integrated browser/composition acceptance pending."
     },
     {
       "id": "showreel.public.art.walking",
@@ -1312,12 +1510,13 @@
       ],
       "provenance": "showreel/pipeline/process_art.py from declared master.",
       "unchanged_reason": null,
-      "sha256": "088b4f0312a368bac696f72dbb903aeb943d558076ac2096bafc6f87c4183686",
+      "sha256": "3150bb3d91cf34580a0338fde570bb58f9b1514e65c0bca1aa3c1d2de2556ea0",
       "size": [
-        796,
+        805,
         1402
       ],
-      "mode": "RGBA"
+      "mode": "RGBA",
+      "visual_review": "Rebuilt from parent-accepted final 2D source; integrated browser/composition acceptance pending."
     },
     {
       "id": "showreel.public.art.wave",
@@ -1336,7 +1535,7 @@
       ],
       "provenance": "showreel/pipeline/process_art.py from declared master.",
       "unchanged_reason": null,
-      "sha256": "097df30576a88284091db040dc0fdd53b012dbe025ef4e62d1bf96736fbbdff9",
+      "sha256": "2ab4e93b4c2122899c41b488074a11826168b9e376c4c47e391b6dbd34a44ddb",
       "size": [
         979,
         1607
@@ -1527,7 +1726,7 @@
       ],
       "provenance": "Existing icon/OG processor; no external profile publication.",
       "unchanged_reason": null,
-      "sha256": "3d28fb5c5bfe9c7b9d2f35bf3150fde25e2246f0b3ab8f12a213337d6d4fc748",
+      "sha256": "3e41cb1ffefc6f4f936eeb46ff9df28ea893bad743831e2425e8d1950396f51b",
       "size": [
         180,
         180
@@ -1550,7 +1749,7 @@
       ],
       "provenance": "Existing icon/OG processor; no external profile publication.",
       "unchanged_reason": null,
-      "sha256": "b48acacdbdf30420b3fd0bebfc3d6a2ae097e39a6de2a9877128a98eabc573ee",
+      "sha256": "77b5410b2bf0f3ec09aae7e418bdefb2d7c62c77cf062f9741f2747bcf0595a2",
       "size": [
         512,
         512
@@ -1573,7 +1772,7 @@
       ],
       "provenance": "Existing icon/OG processor; no external profile publication.",
       "unchanged_reason": null,
-      "sha256": "417db501a87434dbc69ac5d2980e8bcb4a47717a75df0108fab427a1a124cb84",
+      "sha256": "84477686cba84d316df1bbad0ae82aa6226cc3bccd14cbdb26b327169370c4ee",
       "size": [
         512,
         512
@@ -1597,7 +1796,7 @@
       ],
       "provenance": "Existing icon/OG processor; no external profile publication.",
       "unchanged_reason": null,
-      "sha256": "9b6fa7c30a4a6528b6a8f6334b16697b872810445db20463a0a7f8c367d5ad42",
+      "sha256": "05ac4950b9c1e8902ff306451ecefeef0b2f37a8f030ae88b412a25fd9081e50",
       "size": [
         192,
         192
@@ -1621,7 +1820,7 @@
       ],
       "provenance": "Existing icon/OG processor; no external profile publication.",
       "unchanged_reason": null,
-      "sha256": "b6083a176b8f8d66df720a2f90ac43239ce6e336304161524f6f8bea8b2b92c0",
+      "sha256": "b2b205916ebe2e1d2bce1cc4cf744dd67f4ee6988432517461d4d6b4bf59ceca",
       "size": [
         1200,
         630
@@ -1645,7 +1844,7 @@
       ],
       "provenance": "Existing icon/OG processor; no external profile publication.",
       "unchanged_reason": null,
-      "sha256": "a0426183c33458649b1f442c6c720b3b26af661ea911b32cc144e29a9c37d4fc",
+      "sha256": "961b4ac931975ecb2e0a806153aeafa808359ef05fa899bd4382cbb1ca396012",
       "size": [
         1200,
         630
@@ -1671,7 +1870,7 @@
       ],
       "provenance": "Existing icon/OG processor; no external profile publication.",
       "unchanged_reason": null,
-      "sha256": "3ee93c34c2b5c282206ebefa34d889c6ed1c78dfa6cda71f289ce53479766ca0",
+      "sha256": "5fe787ea6f17abac7d67c889c3e00a1b507512a790c6167c83b92c3a287ddf57",
       "size": [
         64,
         64
@@ -1696,14 +1895,15 @@
         "site/src/assets/art.ts (direct import)",
         "site/src/components/ChatDemo.astro (art.groupChat via registry)"
       ],
-      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
       "unchanged_reason": null,
-      "sha256": "e41e8d86307f166972989c4c4697f5abb0034786cc73d991c908ccf67e0181a0",
+      "sha256": "859c3b7ad37a86236cbb253bf1a6dcf6f5f2288e58c5b7a7121931a8df0c0a53",
       "size": [
         996,
-        1579
+        1578
       ],
-      "mode": "RGBA"
+      "mode": "RGBA",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
     },
     {
       "id": "site.src.assets.art.hop",
@@ -1719,14 +1919,15 @@
       "consumers": [
         "site/scripts/make_rig.py (POSES input)"
       ],
-      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
       "unchanged_reason": null,
-      "sha256": "b3f24a1e9e5bc26ed19df985eb80e72df21fe9d48c2eeba2bbdde5695831cd37",
+      "sha256": "5459fffe95523b4cc99cb2d61950418ff85625727410c41b7f9a19db0cf44e05",
       "size": [
         977,
-        1610
+        1609
       ],
-      "mode": "RGBA"
+      "mode": "RGBA",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
     },
     {
       "id": "site.src.assets.art.ledge",
@@ -1744,14 +1945,15 @@
         "site/src/assets/art.ts (direct import)",
         "site/src/components/Memory.astro (art.ledge via registry)"
       ],
-      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
       "unchanged_reason": null,
-      "sha256": "a4905252445ae462384eb29c802891ae79fbc25a1b7a5be22a934a3048492c9c",
+      "sha256": "ba646abcca6889ca259ddfab57a232a57620741e19fe77758887402338b8c23d",
       "size": [
         959,
-        1641
+        1640
       ],
-      "mode": "RGBA"
+      "mode": "RGBA",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
     },
     {
       "id": "site.src.assets.art.lost",
@@ -1769,14 +1971,15 @@
         "site/src/assets/art.ts (direct import)",
         "site/src/pages/404.astro (art.lost via registry)"
       ],
-      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
       "unchanged_reason": null,
-      "sha256": "78e8678f823184ea7c3a886e876a64093abaef8c77abf695c2619e2e8c45ae83",
+      "sha256": "90e00d7bea0b236eb24a3526a1bca43594815a867d46ed92a5a722770a29e835",
       "size": [
         963,
-        1634
+        1633
       ],
-      "mode": "RGBA"
+      "mode": "RGBA",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
     },
     {
       "id": "site.src.assets.art.night-portrait",
@@ -1797,14 +2000,15 @@
         "site/src/components/Form.astro (art.nightPortrait via registry)",
         "site/src/components/Hero.astro (art.nightPortrait via registry)"
       ],
-      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
       "unchanged_reason": null,
-      "sha256": "3f1179afc259493005df25fd6b4fafef8cd79eb9937eb03959aeecbb59a245bc",
+      "sha256": "e2f6f27f5b8e952dd4f6f4eef960844c7aa096fc2d855119606083f8b7caa7ee",
       "size": [
         1024,
         1536
       ],
-      "mode": "RGB"
+      "mode": "RGB",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
     },
     {
       "id": "site.src.assets.art.quiet",
@@ -1824,14 +2028,15 @@
         "site/src/assets/art.ts (direct import)",
         "site/src/components/Manners.astro (art.quiet via registry)"
       ],
-      "provenance": "Existing closed-eye source, compatible with option08; retained unless map refreshes it.",
-      "unchanged_reason": "Closed-eye Mini rendering; no open eye design to replace.",
-      "sha256": "066b8b0fcb538f8078a9633d94bf6cd64edd3cdabb81d3fe1f7f19a596e1fd17",
+      "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
+      "unchanged_reason": null,
+      "sha256": "a6ea106d99c5f563516902a8b5989e97961652ee7a70ecc6d0aa82c8b5568dec",
       "size": [
-        777,
-        1402
+        934,
+        1685
       ],
-      "mode": "RGBA"
+      "mode": "RGBA",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
     },
     {
       "id": "site.src.assets.art.stool",
@@ -1873,14 +2078,15 @@
         "site/src/assets/art.ts (direct import)",
         "site/src/components/Portal.astro (art.wave via registry)"
       ],
-      "provenance": "Option08 refresh from parent-supplied generation map, 2026-10-26; generated source visually inspected by parent, imported with identifying metadata omitted; original archive unchanged.",
+      "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
       "unchanged_reason": null,
-      "sha256": "a0e1cc317312c47e42bef53d77cf2e413187e369ba3de7e64c6319980c6ead39",
+      "sha256": "da07aabf3c5c73f8ae022780974219201933b87be754272a69d3685f4ffc653d",
       "size": [
         979,
         1607
       ],
-      "mode": "RGBA"
+      "mode": "RGBA",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
     },
     {
       "id": "site.src.assets.rig.hop",
@@ -1899,11 +2105,11 @@
       ],
       "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
       "unchanged_reason": null,
-      "sha256": "ff5890b030d4e8876f67326076fb944ea65cfcea321521f3cbc4e2b55a727784",
-      "visual_review": "PASS: parent browser visual inspection, 2026-10-26; all eight pose feature placements and expression/gaze states inspected; see verification.shader_and_rig",
+      "sha256": "555c07ff2bb1b7bb9d1392a39a5d87c6a3f0f95053a06b9e689bb2cf11b38588",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance.",
       "size": [
         977,
-        1610
+        1609
       ],
       "mode": "RGBA"
     },
@@ -1924,11 +2130,11 @@
       ],
       "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
       "unchanged_reason": null,
-      "sha256": "202e7f3401c837036bdf3c9ccd62721192c103670c7f44c35be6cadaa0f515c9",
-      "visual_review": "PASS: parent browser visual inspection, 2026-10-26; all eight pose feature placements and expression/gaze states inspected; see verification.shader_and_rig",
+      "sha256": "25536db12328b04b2182196127b1d072452022debae7cdffc7acc03bf0de8b7e",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance.",
       "size": [
         959,
-        1641
+        1640
       ],
       "mode": "RGBA"
     },
@@ -1949,11 +2155,11 @@
       ],
       "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
       "unchanged_reason": null,
-      "sha256": "63af70fcc6c03dfcbb1ac33d0e8e5aa7681231935e576a614fc02fb69b8dce0c",
-      "visual_review": "PASS: parent browser visual inspection, 2026-10-26; all eight pose feature placements and expression/gaze states inspected; see verification.shader_and_rig",
+      "sha256": "742ac341da2c3d6276f7166676867471337f74e3625e2f7c1916601b5d209552",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance.",
       "size": [
         963,
-        1634
+        1633
       ],
       "mode": "RGBA"
     },
@@ -1974,11 +2180,11 @@
       ],
       "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
       "unchanged_reason": null,
-      "sha256": "29e6c55a7feff2e9e4be18e3ae235130437beb0659b4145cad32c5173245ccd3",
-      "visual_review": "PASS: parent browser visual inspection, 2026-10-26; all eight pose feature placements and expression/gaze states inspected; see verification.shader_and_rig",
+      "sha256": "85a66bc1c15d690bf926f1767560d00da166c752899cfaae6b81f2ed53d687b2",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance.",
       "size": [
         996,
-        1579
+        1578
       ],
       "mode": "RGBA"
     },
@@ -1989,18 +2195,16 @@
       "role": "rig-plate",
       "status": "active",
       "eyes": "no-eyes",
-      "parents": [
-        "site/src/assets/art/night-portrait.webp"
-      ],
-      "recipe": "rig",
+      "parents": [],
+      "recipe": "source",
       "consumers": [
         "site/src/components/Form.astro (direct import)",
         "site/src/components/Hero.astro (direct import)"
       ],
-      "provenance": "site/scripts/make_rig.py reconstructs the empty studio from its declared portrait; no character or eyes. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig.",
-      "unchanged_reason": null,
+      "provenance": "Retained earlier empty studio background, 2026-10-26 2D integration. Original sweep/floor/grain reconstruction predates the new character art; exact existing bytes preserved after processor sync. Not derived from the current Bauhinia portrait.",
+      "unchanged_reason": "Operator requested preservation of empty background plates; new-character compositing acceptance is separate.",
       "sha256": "627aa371f3f1d6a2056e9679e4d1cc39b321d641f8ebee007d649ad629233959",
-      "visual_review": "PASS: parent browser visual inspection, 2026-10-26; both lighting themes inspected; see verification.shader_and_rig",
+      "visual_review": "Retained background bytes; parent current 2D browser seam/placement inspection PASS, 2026-10-26.",
       "size": [
         1024,
         1536
@@ -2014,18 +2218,16 @@
       "role": "rig-plate",
       "status": "active",
       "eyes": "no-eyes",
-      "parents": [
-        "assets/nora-canonical-self.png"
-      ],
-      "recipe": "rig",
+      "parents": [],
+      "recipe": "source",
       "consumers": [
         "site/src/components/Form.astro (direct import)",
         "site/src/components/Hero.astro (direct import)"
       ],
-      "provenance": "site/scripts/make_rig.py reconstructs the empty studio from its declared portrait; no character or eyes. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig.",
-      "unchanged_reason": null,
+      "provenance": "Retained earlier empty studio background, 2026-10-26 2D integration. Original sweep/floor/grain reconstruction predates the new character art; exact existing bytes preserved after processor sync. Not derived from the current Bauhinia portrait.",
+      "unchanged_reason": "Operator requested preservation of empty background plates; new-character compositing acceptance is separate.",
       "sha256": "9aed7be76d4342c0812a003aace651eb85ac4d5fcee4081fe228422bb93bd660",
-      "visual_review": "PASS: parent browser visual inspection, 2026-10-26; both lighting themes inspected; see verification.shader_and_rig",
+      "visual_review": "Retained background bytes; parent current 2D browser seam/placement inspection PASS, 2026-10-26.",
       "size": [
         1024,
         1536
@@ -2048,12 +2250,12 @@
         "site/src/scripts/nora/rig.ts (texture URL from NoraRig.astro pose registry)"
       ],
       "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
-      "unchanged_reason": "Closed-eye Mini rendering; no open eye design to replace.",
-      "sha256": "6d2977d3793517611f34e80954e3a2e051a98a3220e468983600dc223801b7aa",
-      "visual_review": "PASS: parent browser visual inspection, 2026-10-26; all eight pose feature placements and expression/gaze states inspected; see verification.shader_and_rig",
+      "unchanged_reason": null,
+      "sha256": "7e516fa0853647cd58e9cef88366726fbeccbf0404f5899288dab15254c57cec",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance.",
       "size": [
-        777,
-        1402
+        934,
+        1685
       ],
       "mode": "RGBA"
     },
@@ -2074,11 +2276,11 @@
       ],
       "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
       "unchanged_reason": null,
-      "sha256": "7dc8eb0d045e71f6c65626d7e775aa7d8cae30b9c06c8d30c314711a2b18d314",
-      "visual_review": "PASS: parent browser visual inspection, 2026-10-26; all eight pose feature placements and expression/gaze states inspected; see verification.shader_and_rig",
+      "sha256": "5e6f5e9ac22b0b43701f06f3d44651439c57c63ac2ca78a6b86180659caaf33f",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance.",
       "size": [
-        776,
-        1316
+        613,
+        1497
       ],
       "mode": "RGBA"
     },
@@ -2099,11 +2301,11 @@
       ],
       "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
       "unchanged_reason": null,
-      "sha256": "0072ec272da142c7ad2bb9c78cda4c7b146bb05e400e512af013cfa5435f27ad",
-      "visual_review": "PASS: parent browser visual inspection, 2026-10-26; all eight pose feature placements and expression/gaze states inspected; see verification.shader_and_rig",
+      "sha256": "4e5a777620f58b75e01dd089b95800fb949886288f034a5db1254a6a4ab0b600",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance.",
       "size": [
-        774,
-        1311
+        716,
+        1506
       ],
       "mode": "RGBA"
     },
@@ -2124,71 +2326,341 @@
       ],
       "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
       "unchanged_reason": null,
-      "sha256": "87ec358a9f8e0c9d3dd98bed6c36f41d6ded380c46b6438dcf0295abce79519a",
-      "visual_review": "PASS: parent browser visual inspection, 2026-10-26; all eight pose feature placements and expression/gaze states inspected; see verification.shader_and_rig",
+      "sha256": "6c313a8d54a743c4bc0947a910bf116edf31826bc6dec2c617f3f18524bd197b",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance.",
       "size": [
         979,
         1607
       ],
       "mode": "RGBA"
+    },
+    {
+      "id": "assets.modeling.bauhinia.v2.human-anime-tpose",
+      "path": "assets/modeling/bauhinia/v2/human-anime-tpose.png",
+      "form": "human",
+      "role": "reference",
+      "status": "approved-reference",
+      "eyes": "human-bauhinia",
+      "parents": [
+        "assets/nora-human-bauhinia-reference.png",
+        "assets/modeling/bauhinia/v1/adult-style-study.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v2/README.md (reference link and limitations)"
+      ],
+      "provenance": "2026-10-26, supplied built-in image artwork. Prompt intent: Adult direction A, 2D anime front/right/back; simplified hair, no bags/audio, horizontal T-pose. Retain original adult anchor. Repository image parents record semantic visual authority; exact original mapping stays private. Identifying ancillary PNG metadata removed without re-encoding image data.",
+      "unchanged_reason": null,
+      "sha256": "8b689107313eb40a8fd17a245af83158d4ed8199714b9b6186c56eb90e98c4a5",
+      "visual_review": "Parent viewed source artwork PASS; no 3D engineering acceptance.",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.modeling.bauhinia.v2.mini-anime-tpose",
+      "path": "assets/modeling/bauhinia/v2/mini-anime-tpose.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "approved-reference",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v2/README.md (reference link and limitations)"
+      ],
+      "provenance": "2026-10-26, supplied built-in image artwork. Prompt intent: Mini approved 2D Bauhinia front/right/back; option08 face, distinct Mini proportions; also supplies stable Mini turnaround. Repository image parents record semantic visual authority; exact original mapping stays private. Identifying ancillary PNG metadata removed without re-encoding image data.",
+      "unchanged_reason": null,
+      "sha256": "15763ec3116dc2e241e48f333f92df388598bfda18ed0105b700585344c56cbd",
+      "visual_review": "Parent viewed source artwork PASS; no 3D engineering acceptance.",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.modeling.bauhinia.v2.human-stylized3d-tpose",
+      "path": "assets/modeling/bauhinia/v2/human-stylized3d-tpose.png",
+      "form": "human",
+      "role": "reference",
+      "status": "modeling-candidate",
+      "eyes": "human-bauhinia",
+      "parents": [
+        "assets/modeling/bauhinia/v2/human-anime-tpose.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v2/README.md (reference link and limitations)"
+      ],
+      "provenance": "2026-10-26, supplied built-in image artwork. Prompt intent: Adult Meshy-only stylized 3D PNG: B face plus D materials, corrected anime face; preserve approved 2D layout. No mesh proof. Repository image parents record semantic visual authority; exact original mapping stays private. Identifying ancillary PNG metadata removed without re-encoding image data. Meshy-only PNG reference candidate, never non-3D consumer art; no geometry, topology, calibrated projection, rig or engineering proof.",
+      "unchanged_reason": null,
+      "sha256": "816be9b8e647a8c8295106baa29591471b2e9c0e676b00b770a6f188ceab53c2",
+      "visual_review": "Parent viewed PASS as input candidate; hand digits, projection, view margins and geometry remain unverified.",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.modeling.bauhinia.v2.mini-stylized3d-tpose",
+      "path": "assets/modeling/bauhinia/v2/mini-stylized3d-tpose.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "modeling-candidate",
+      "eyes": "mini08",
+      "parents": [
+        "assets/modeling/bauhinia/v2/mini-anime-tpose.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v2/README.md (reference link and limitations)"
+      ],
+      "provenance": "2026-10-26, supplied built-in image artwork. Prompt intent: Mini Meshy-only stylized 3D PNG preserving 2D geometry/view order, Mini proportions and option08 language. No production use or mesh proof. Repository image parents record semantic visual authority; exact original mapping stays private. Identifying ancillary PNG metadata removed without re-encoding image data. Meshy-only PNG reference candidate, never non-3D consumer art; no geometry, topology, calibrated projection, rig or engineering proof.",
+      "unchanged_reason": null,
+      "sha256": "3d462078a8b00c8e20aa487e5832e4cfae555edbab2b5a0d88ea970a0974f742",
+      "visual_review": "Parent viewed PASS as input candidate; hand digits, projection, view margins and geometry remain unverified.",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.modeling.bauhinia.v2.shared-face-details",
+      "path": "assets/modeling/bauhinia/v2/shared-face-details.png",
+      "form": "shared",
+      "role": "reference",
+      "status": "approved-reference",
+      "eyes": "human-bauhinia+mini08",
+      "parents": [
+        "assets/modeling/bauhinia/v2/human-anime-tpose.png",
+        "assets/modeling/bauhinia/v2/mini-anime-tpose.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v2/README.md (reference link and limitations)"
+      ],
+      "provenance": "2026-10-26, supplied built-in image artwork. Prompt intent: 2D adult/Mini face and eyes/hair details, distinct eye shapes, no Mini nose marker; broad clumps and five-petal clasp. Semantic authority, no blanket 2D-to-3D lineage claim. Repository image parents record semantic visual authority; exact original mapping stays private. Identifying ancillary PNG metadata removed without re-encoding image data.",
+      "unchanged_reason": null,
+      "sha256": "cfe76024d49946aa71f82dca024b019c788e05e86d00a0be4847b022f4ab5325",
+      "visual_review": "Parent viewed source artwork PASS; no 3D engineering acceptance.",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.modeling.bauhinia.v2.human-meshy-front",
+      "path": "assets/modeling/bauhinia/v2/human-meshy-front.png",
+      "form": "human",
+      "role": "reference",
+      "status": "modeling-candidate",
+      "eyes": "human-bauhinia",
+      "parents": [
+        "assets/modeling/bauhinia/v2/human-stylized3d-tpose.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v2/README.md (reference link and limitations)"
+      ],
+      "provenance": "2026-10-26, supplied built-in image artwork. Prompt intent: Isolated front Meshy input for human; only this form and one view, matching simplified-hair 3D sheet, no panel borders, labels, bags or audio. Validate projection, scale, hands and view order before any Meshy call. Repository image parents record semantic visual authority; exact original mapping stays private. Identifying ancillary PNG metadata removed without re-encoding image data. Meshy-only PNG reference candidate, never non-3D consumer art; no geometry, topology, calibrated projection, rig or engineering proof.",
+      "unchanged_reason": null,
+      "sha256": "06f675b0f7b31c08ad5359ca3337279a17586373253346340abf6a62bfb5c5d2",
+      "visual_review": "Parent viewed PASS as input candidate; hand digits, projection, view margins and geometry remain unverified.",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.modeling.bauhinia.v2.human-meshy-right",
+      "path": "assets/modeling/bauhinia/v2/human-meshy-right.png",
+      "form": "human",
+      "role": "reference",
+      "status": "modeling-candidate",
+      "eyes": "human-bauhinia",
+      "parents": [
+        "assets/modeling/bauhinia/v2/human-stylized3d-tpose.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v2/README.md (reference link and limitations)"
+      ],
+      "provenance": "2026-10-26, supplied built-in image artwork. Prompt intent: Isolated right Meshy input for human; only this form and one view, matching simplified-hair 3D sheet, no panel borders, labels, bags or audio. Validate projection, scale, hands and view order before any Meshy call. Repository image parents record semantic visual authority; exact original mapping stays private. Identifying ancillary PNG metadata removed without re-encoding image data. Meshy-only PNG reference candidate, never non-3D consumer art; no geometry, topology, calibrated projection, rig or engineering proof.",
+      "unchanged_reason": null,
+      "sha256": "329edd4438153db11dbac616223aa7092d29a4dc6ee27411aa24d47d4a482bd6",
+      "visual_review": "Parent viewed PASS as input candidate; hand digits, projection, view margins and geometry remain unverified.",
+      "size": [
+        1024,
+        1536
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.modeling.bauhinia.v2.human-meshy-back",
+      "path": "assets/modeling/bauhinia/v2/human-meshy-back.png",
+      "form": "human",
+      "role": "reference",
+      "status": "modeling-candidate",
+      "eyes": "human-bauhinia",
+      "parents": [
+        "assets/modeling/bauhinia/v2/human-stylized3d-tpose.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v2/README.md (reference link and limitations)"
+      ],
+      "provenance": "2026-10-26, supplied built-in image artwork. Prompt intent: Isolated back Meshy input for human; only this form and one view, matching simplified-hair 3D sheet, no panel borders, labels, bags or audio. Validate projection, scale, hands and view order before any Meshy call. Repository image parents record semantic visual authority; exact original mapping stays private. Identifying ancillary PNG metadata removed without re-encoding image data. Meshy-only PNG reference candidate, never non-3D consumer art; no geometry, topology, calibrated projection, rig or engineering proof.",
+      "unchanged_reason": null,
+      "sha256": "ac7ee26c57e9fee73cc74454d972240608496695ae3c503c750bb9a0a84c462c",
+      "visual_review": "Parent viewed PASS as input candidate; hand digits, projection, view margins and geometry remain unverified.",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.modeling.bauhinia.v2.mini-meshy-front",
+      "path": "assets/modeling/bauhinia/v2/mini-meshy-front.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "modeling-candidate",
+      "eyes": "mini08",
+      "parents": [
+        "assets/modeling/bauhinia/v2/mini-stylized3d-tpose.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v2/README.md (reference link and limitations)"
+      ],
+      "provenance": "2026-10-26, supplied built-in image artwork. Prompt intent: Isolated front Meshy input for mini; only this form and one view, matching simplified-hair 3D sheet, no panel borders, labels, bags or audio. Validate projection, scale, hands and view order before any Meshy call. Repository image parents record semantic visual authority; exact original mapping stays private. Identifying ancillary PNG metadata removed without re-encoding image data. Meshy-only PNG reference candidate, never non-3D consumer art; no geometry, topology, calibrated projection, rig or engineering proof.",
+      "unchanged_reason": null,
+      "sha256": "41822371778ecdf6b74da600c096d23f2d7ea715d55edb46f269ab455af3617f",
+      "visual_review": "Parent viewed PASS as input candidate; hand digits, projection, view margins and geometry remain unverified.",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.modeling.bauhinia.v2.mini-meshy-right",
+      "path": "assets/modeling/bauhinia/v2/mini-meshy-right.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "modeling-candidate",
+      "eyes": "mini08",
+      "parents": [
+        "assets/modeling/bauhinia/v2/mini-stylized3d-tpose.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v2/README.md (reference link and limitations)"
+      ],
+      "provenance": "2026-10-26, supplied built-in image artwork. Prompt intent: Isolated right Meshy input for mini; only this form and one view, matching simplified-hair 3D sheet, no panel borders, labels, bags or audio. Validate projection, scale, hands and view order before any Meshy call. Repository image parents record semantic visual authority; exact original mapping stays private. Identifying ancillary PNG metadata removed without re-encoding image data. Meshy-only PNG reference candidate, never non-3D consumer art; no geometry, topology, calibrated projection, rig or engineering proof.",
+      "unchanged_reason": null,
+      "sha256": "a1fc396b61084ded733c33d0c49044c7dde410fa9a7129939301ac978e7d5341",
+      "visual_review": "Parent viewed PASS as input candidate; hand digits, projection, view margins and geometry remain unverified.",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.modeling.bauhinia.v2.mini-meshy-back",
+      "path": "assets/modeling/bauhinia/v2/mini-meshy-back.png",
+      "form": "mini",
+      "role": "reference",
+      "status": "modeling-candidate",
+      "eyes": "mini08",
+      "parents": [
+        "assets/modeling/bauhinia/v2/mini-stylized3d-tpose.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/modeling/bauhinia/v2/README.md (reference link and limitations)"
+      ],
+      "provenance": "2026-10-26, supplied built-in image artwork. Prompt intent: Isolated back Meshy input for mini; only this form and one view, matching simplified-hair 3D sheet, no panel borders, labels, bags or audio. Validate projection, scale, hands and view order before any Meshy call. Repository image parents record semantic visual authority; exact original mapping stays private. Identifying ancillary PNG metadata removed without re-encoding image data. Meshy-only PNG reference candidate, never non-3D consumer art; no geometry, topology, calibrated projection, rig or engineering proof.",
+      "unchanged_reason": null,
+      "sha256": "9b1dfc7334ff5504b4c8677cc952a00ba87172c27e9652c1a58a3f38a7cac2a7",
+      "visual_review": "Parent viewed PASS as input candidate; hand digits, projection, view margins and geometry remain unverified.",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB"
     }
   ],
   "historical_exports": [
     {
       "path": "showreel/renders/nora-showreel-en-16x9.mp4",
       "status": "historical-export",
-      "reason": "Historical rendered video, outside image refresh; no video rerender performed."
+      "reason": "Historical 2026-09-26 3D Mini export, retired from the current export catalogue. Only the explicitly historical showreel README table names it; no website or root README route found in repository source. 2D sources and focal logic are integrated; new current exports still require composition acceptance and Remotion rerender/mux. Original MP4 retained; no rerender performed."
     },
     {
       "path": "showreel/renders/nora-showreel-en-1x1.mp4",
       "status": "historical-export",
-      "reason": "Historical rendered video, outside image refresh; no video rerender performed."
+      "reason": "Historical 2026-09-26 3D Mini export, retired from the current export catalogue. Only the explicitly historical showreel README table names it; no website or root README route found in repository source. 2D sources and focal logic are integrated; new current exports still require composition acceptance and Remotion rerender/mux. Original MP4 retained; no rerender performed."
     },
     {
       "path": "showreel/renders/nora-showreel-en-4x5.mp4",
       "status": "historical-export",
-      "reason": "Historical rendered video, outside image refresh; no video rerender performed."
+      "reason": "Historical 2026-09-26 3D Mini export, retired from the current export catalogue. Only the explicitly historical showreel README table names it; no website or root README route found in repository source. 2D sources and focal logic are integrated; new current exports still require composition acceptance and Remotion rerender/mux. Original MP4 retained; no rerender performed."
     },
     {
       "path": "showreel/renders/nora-showreel-en-9x16.mp4",
       "status": "historical-export",
-      "reason": "Historical rendered video, outside image refresh; no video rerender performed."
+      "reason": "Historical 2026-09-26 3D Mini export, retired from the current export catalogue. Only the explicitly historical showreel README table names it; no website or root README route found in repository source. 2D sources and focal logic are integrated; new current exports still require composition acceptance and Remotion rerender/mux. Original MP4 retained; no rerender performed."
     },
     {
       "path": "showreel/renders/nora-showreel-yue-16x9.mp4",
       "status": "historical-export",
-      "reason": "Historical rendered video, outside image refresh; no video rerender performed."
+      "reason": "Historical 2026-09-26 3D Mini export, retired from the current export catalogue. Only the explicitly historical showreel README table names it; no website or root README route found in repository source. 2D sources and focal logic are integrated; new current exports still require composition acceptance and Remotion rerender/mux. Original MP4 retained; no rerender performed."
     },
     {
       "path": "showreel/renders/nora-showreel-yue-1x1.mp4",
       "status": "historical-export",
-      "reason": "Historical rendered video, outside image refresh; no video rerender performed."
+      "reason": "Historical 2026-09-26 3D Mini export, retired from the current export catalogue. Only the explicitly historical showreel README table names it; no website or root README route found in repository source. 2D sources and focal logic are integrated; new current exports still require composition acceptance and Remotion rerender/mux. Original MP4 retained; no rerender performed."
     },
     {
       "path": "showreel/renders/nora-showreel-yue-4x5.mp4",
       "status": "historical-export",
-      "reason": "Historical rendered video, outside image refresh; no video rerender performed."
+      "reason": "Historical 2026-09-26 3D Mini export, retired from the current export catalogue. Only the explicitly historical showreel README table names it; no website or root README route found in repository source. 2D sources and focal logic are integrated; new current exports still require composition acceptance and Remotion rerender/mux. Original MP4 retained; no rerender performed."
     },
     {
       "path": "showreel/renders/nora-showreel-yue-9x16.mp4",
       "status": "historical-export",
-      "reason": "Historical rendered video, outside image refresh; no video rerender performed."
+      "reason": "Historical 2026-09-26 3D Mini export, retired from the current export catalogue. Only the explicitly historical showreel README table names it; no website or root README route found in repository source. 2D sources and focal logic are integrated; new current exports still require composition acceptance and Remotion rerender/mux. Original MP4 retained; no rerender performed."
     },
     {
       "path": "voice-lab/tts-cmp/samples/minimax_T2V01_test.mp4",
       "status": "historical-export",
-      "reason": "Historical rendered video, outside image refresh; no video rerender performed."
+      "reason": "Historical voice-lab experiment sample; no website, root README or current-export consumer found in repository source. Retained without rerender; external usage unmeasured."
     }
   ],
   "verification": {
-    "source_art": "Parent visually inspected generated sources before import; derivative browser acceptance is separate.",
+    "source_art": "2026-10-26: parent viewed all final production sources PASS: base/canonical, eight site/notebook, five profile and eight showreel sources. All 23 production target paths imported; source acceptance is separate from integrated browser/rig fit.",
     "inventory": "Deterministic byte/coverage checks only; consumers resolved by scoped imports, public URLs and explicit dynamic registries, never basename matching.",
-    "shader_and_rig": "PASS: parent browser visual inspection, 2026-10-26, software WebGL Chromium. Inspected /tmp/mini08-live-hero.png, /tmp/mini08-dark.png, /tmp/mini08-live-room.png, /tmp/mini08-live-memory.png, /tmp/mini08-live-manners.png, /tmp/mini08-live-portal.png, /tmp/mini08-live-404.png and /tmp/mini08-render-grid.png after the happy stroke fix. All eight pose feature placements, blink/happy/lidded/left-right gaze/halfblink manually inspected; quiet page correctly closes eyes at baseline. Reduced-motion static fallback PASS; source static inspected previously. Browser visual inspection only: not 3D rig/model acceptance, deployment or runtime ingestion.",
-    "pwa_screenshots": "CAPTURED and inspected from documented mock-only workflow, 2026-10-26; narrow 390x844 at 2x, wide 1440x900 at 1x; no real personal data.",
+    "shader_and_rig": "PASS, 2026-10-26: parent personally viewed current 2D Bauhinia feature placement and composition for all eight poses, blink, happy single-stroke arches, lidded, left/right gaze and halfblink. Day/night, reduced-motion static fallback and canonical reference cards/pins passed. Existing WebGL2 texture warp and procedural face retained; no actual 3D mesh/rig acceptance. Private evidence: /tmp/bauhinia-render-grid.png and browser captures listed in local_browser_smoke.",
+    "pwa_screenshots": "PASS, 2026-10-26: two mock-only captures after new 2D icon integration, invented Miles account, en-HK/light/reduced motion; 780x1688 and 1440x900, no page errors or broken images. Local capture inspection only, no real data. Parent personally viewed both public mock screenshots PASS, 2026-10-26.",
     "runtime_reach_and_cost": "UNMEASURED",
     "live_media_ingest": "NOT PERFORMED",
     "deployment": "NOT PERFORMED",
-    "local_browser_smoke": "PASS: built /en/ on local preview, Playwright Chromium with software WebGL2 reached live canvas; switching reduced motion restored static fallback. No page errors or shader compile errors; software GPU emitted ReadPixels performance warnings. This is not visual acceptance.",
-    "targeted_checks": "PASS: 58 Python inventory/runtime-skill tests, 6 site script tests, site astro check/build, scoped ruff and git diff --check. No full suite or gate."
+    "local_browser_smoke": "PASS, 2026-10-26: parent personally viewed /tmp/bauhinia-hero-open.png, /tmp/bauhinia-night-confirm.png (Late Night aria-pressed=true, html theme=dark), /tmp/bauhinia-room.png, /tmp/bauhinia-memory.png, /tmp/bauhinia-manners.png, /tmp/bauhinia-form-top.png, /tmp/bauhinia-form-section.png, /tmp/bauhinia-portal.png, /tmp/bauhinia-404.png, /tmp/bauhinia-static.png and /tmp/bauhinia-mobile.png (390px viewport, no horizontal overflow). Capture page errors: 0. T3 preview opened but two snapshots failed: Preview automation snapshot timed out after 15000ms. Local Python Playwright fallback used software-WebGL Chromium 1243; scripts and screenshots remain private outside the repository.",
+    "targeted_checks": "PASS from previous integration: 107 focused Python tests, six site script tests, app/site builds and scoped lint. Final showreel import: 105-image/9-video inventory PASS and two focused inventory tests PASS. No unrelated builds repeated; source changes affect showreel only. Showreel typecheck remains blocked by pre-existing absent timeline and VO timing JSON; rendering/runtime acceptance UNMEASURED. Parent browser acceptance of current 2D site PASS; parent owns final gate. Scoped copy alignment: npm run build PASS (Astro check: zero errors; three pages built; CJK coverage: 478 characters); font subset rebuilt only for new \u6cbf/\u5957 glyphs; no current video export accepted.",
+    "bauhinia_modeling_pack": "Seven v1 PNGs retained byte-identically as history. Five simplified-hair v2 sheets and six isolated Meshy-only input candidates registered; parent viewed sources PASS as artwork/candidates. Hand orientation/digits, calibrated projection, scale/alignment and margins remain unverified. No Meshy call, mesh, rig or operator 3D engineering approval.",
+    "bauhinia_2d_preparation": "Integration supersedes the preparatory state: 23 accepted production targets, full sanitized canonical pin, runtime appearance/identity text, derivatives and mock screenshots refreshed. Earlier parent gate applies only to the old staged tree. Final parent browser acceptance of current 2D site PASS; final gate remains parent-owned. No commit/publication/live ingest/deploy.",
+    "video_consumer_closure": "REPOSITORY DISCOVERY ONLY, 2026-10-26: nine MP4s. No website or root README reference found. The showreel README former current-export table is now explicitly historical; render.sh is a writer to those same eight paths, not a playback consumer. A new current export requires 2D image sync, Thread/Quiet focal-logic adaptation, picture render and existing-audio mux to separate versioned paths. External/live publication UNMEASURED; no video rerender performed.",
+    "site_2d_harmonization": "Existing WebGL2 texture warp and procedural 2D face retained. Eight new texture/pivot sets and static fallbacks rebuilt; empty studio/night plate bytes preserved as background inputs. Parent current 2D browser seam/feature/animation acceptance PASS, 2026-10-26; no shader redesign."
   }
 }
