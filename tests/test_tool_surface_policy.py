@@ -3,8 +3,8 @@ match the tool-surface policy.
 
 The policy (docs/adr/0007-tool-surface-policy.md):
 
-1. Opening = what + when-to-call. The first sentence(s) state what the tool
-   does and when to call it. Style guidance, voice control and negative
+1. Opening = what + when-to-call, in the first paragraph (ADR 0015 §2).
+   Wrapped lines belong to that same paragraph. Style guidance, voice control and negative
    examples live AFTER the opening in a labelled SHOULD block, never as
    conditions on calling.
 2. RFC 2119 register: MUST is only turn correctness; SHOULD is style;
@@ -28,6 +28,8 @@ from pathlib import Path
 
 import pytest
 
+from nora.agent.registry import _opening
+
 TOOLS_PATH = Path(__file__).parent.parent / "nora" / "agent" / "tools.py"
 
 #: When-to-call trigger frames, in the tool's own register. A description
@@ -44,11 +46,10 @@ WHEN_TRIGGERS = re.compile(
     re.IGNORECASE,
 )
 
-#: Permission-suppression tokens: advisory style that a reasoning model can
-#: read as "do not call". If any appears in the OPENING (before the first
-#: SHOULD/labelled block), the description fails. NOTE: "skip" as a leading
-#: action verb ("Skip the track") is a tool's WHAT, not a suppression — the
-#: pattern only matches "skip" when it reads as a recommendation not to act.
+#: Lexical suppression guard over the first paragraph, unwrapped by the same
+#: extractor the catalogue uses (ADR 0015 §2). Later scope/contract content is
+#: outside this check; this regex does not classify its meaning. A SHOULD/MAY
+#: label inside the opening does not exempt the remainder of that paragraph.
 SUPPRESSION_TOKENS = re.compile(
     r"too long|too soft|only a scoreboard|do not send|never send|"
     r"is not worth|not good enough|do not call|don't call|"
@@ -107,11 +108,8 @@ def test_known_spec_tools_are_covered() -> None:
     ids=[t for t, _ in _model_facing_docstrings()],
 )
 def test_opening_has_a_when_to_call_clause(tool: str, doc: str) -> None:
-    # The opening is everything before the first labelled block (SHOULD/MAY)
-    # or before 8 lines of body, whichever comes first.
-    head = doc.split("SHOULD")[0].split("MAY")[0]
-    head_lines = [ln for ln in head.splitlines() if ln.strip()]
-    head_text = " ".join(head_lines[:8])
+    # The complete first paragraph, with soft line wraps joined (ADR 0015 §2).
+    head_text = _opening(doc)
     assert WHEN_TRIGGERS.search(head_text), (
         f"{tool}: opening has no when-to-call trigger. First sentences: "
         f"{head_text[:120]!r}"
@@ -124,13 +122,44 @@ def test_opening_has_a_when_to_call_clause(tool: str, doc: str) -> None:
     ids=[t for t, _ in _model_facing_docstrings()],
 )
 def test_no_permission_suppression_in_the_opening(tool: str, doc: str) -> None:
-    head = doc.split("SHOULD")[0].split("MAY")[0]
-    head_text = " ".join(ln for ln in head.splitlines() if ln.strip())[:8]
+    head_text = _opening(doc)
     hit = SUPPRESSION_TOKENS.search(head_text)
     assert hit is None, (
         f"{tool}: opening contains permission-suppression phrasing "
         f"{hit.group(0)!r} — style guidance must come after the opening, "
         "labelled SHOULD, never as a condition on calling"
+    )
+
+
+def test_the_suppression_guard_rejects_a_phrase_late_in_the_opening() -> None:
+    doc = "Read a public page. Call this when asked; do not call if the reply is too long."
+    assert doc.index("do not call") > 8
+    with pytest.raises(AssertionError, match="permission-suppression"):
+        test_no_permission_suppression_in_the_opening("synthetic", doc)
+
+
+def test_the_suppression_guard_reads_wrapped_opening_lines() -> None:
+    # Both suppression phrases cross soft wraps, with no paragraph break.
+    doc = "Read a public page. Call this when asked; do not\ncall if the reply is too\nlong."
+    with pytest.raises(AssertionError, match="permission-suppression"):
+        test_no_permission_suppression_in_the_opening("synthetic", doc)
+
+
+def test_a_style_label_inside_the_opening_does_not_hide_suppression() -> None:
+    doc = "Read a public page. Call this when asked. SHOULD: do not call if the reply is too long."
+    with pytest.raises(AssertionError, match="permission-suppression"):
+        test_no_permission_suppression_in_the_opening("synthetic", doc)
+
+
+@pytest.mark.parametrize("content", [
+    "It knows only people in this conversation, so do not call it for a name already given.",
+    "Returns ok or unavailable. Do not call another backend after unavailable.",
+    "SHOULD: Do not send a draft that is too long.",
+    "MAY: Call again; no need to call when the result is already known.",
+], ids=["scope", "contract", "style", "permission"])
+def test_the_suppression_guard_accepts_guidance_after_the_opening(content: str) -> None:
+    test_no_permission_suppression_in_the_opening(
+        "synthetic", f"Read a public page. Call this when asked.\n\n{content}",
     )
 
 
@@ -215,8 +244,8 @@ def test_the_opening_paragraph_is_an_l1(tool: str, doc: str) -> None:
     _opening`). So it must carry the when-to-call clause ITSELF, not somewhere
     in the next eight lines, and fit a line.
 
-    `test_opening_has_a_when_to_call_clause` above reads eight lines, not the
-    unit the catalogue is cut from, so it cannot hold this.
+    The trigger-only guard above uses the same boundary; this also checks
+    the catalogue line's token ceiling, extracted independently below.
     """
     import tiktoken
 

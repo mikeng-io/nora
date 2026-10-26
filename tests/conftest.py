@@ -13,7 +13,6 @@ majority of the suite (which uses `FakeRecordStore`) pays nothing for it.
 
 from __future__ import annotations
 
-import os
 import time
 import urllib.error
 import urllib.request
@@ -375,7 +374,8 @@ def no_build_stamp():
 #:
 #: NOT a second composition path. It is the SAME generator, fed a STATED
 #: deployment instead of a discovered one — which is what a fixture is. A test
-#: run on the deploy host uses the real `config.toml` and gets the real thing.
+#: run always uses public stated inputs; the live eval CLI explicitly materialises
+#: the requested deployment separately.
 _STATED_DEPLOYMENT = """\
 [llm]
 model = "nora"
@@ -411,28 +411,22 @@ def eval_host_lock_is_this_test_s(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 
 
 @pytest.fixture(scope="session", autouse=True)
-def evaluation_config() -> Path:
-    """Materialise `config.evaluation.toml` before any subject is composed.
+def evaluation_config(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
+    """Public stated input, generated once in each pytest worker's own directory.
 
-    Prefers the DEPLOYMENT's own config when it is reachable, so a run on the
-    deploy host measures the deployed Nora. Falls back to a stated deployment
-    elsewhere, and says which it used: a silent fallback to the example would
-    diverge from the deployment, so the fallback is explicit and narrow.
+    Ordinary tests never discover a deployment through HOME or the environment.
+    The eval CLI and explicit deployment-subject checks keep their own inputs.
     """
-    from evals.subject_config import build, materialise
+    import importlib
+
+    from evals.subject_config import build
 
     root = Path(__file__).resolve().parents[1]
-    target = root / "config.evaluation.toml"
+    target = tmp_path_factory.mktemp("evaluation") / "config.evaluation.toml"
     example = root / "config.example.toml"
-    deployment = Path(
-        os.environ.get("NORA_DEPLOYMENT_DIR") or str(Path.home() / "workspace" / "nora")
-    ) / "config.toml"
-
-    if deployment.is_file():
-        materialise(example=example, deployment=deployment, target=target)
-    else:
-        target.write_text(
-            build(example.read_text(encoding="utf-8"), _STATED_DEPLOYMENT),
-            encoding="utf-8",
-        )
-    return target
+    target.write_text(
+        build(example.read_text(encoding="utf-8"), _STATED_DEPLOYMENT), encoding="utf-8",
+    )
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(importlib.import_module("nora.subject.obtain"), "_TEMPLATE", target)
+        yield target

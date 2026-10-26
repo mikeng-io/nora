@@ -53,6 +53,52 @@ def test_the_generated_policy_still_parses() -> None:
     assert parsed["conversations"][0]["unit"] == "friends"
 
 
+def test_subject_consumers_read_the_pytest_owned_config(
+    evaluation_config, tmp_path_factory, tmp_path, monkeypatch,
+) -> None:
+    import importlib
+
+    module = importlib.import_module("nora.subject.obtain")
+    assert evaluation_config.is_relative_to(tmp_path_factory.getbasetemp())
+    assert evaluation_config == module._TEMPLATE
+    stated = tomllib.loads(evaluation_config.read_text(encoding="utf-8"))
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    cfg = build_config(_spec(tmp_path))
+    copied = tomllib.loads((tmp_path / "config.toml").read_text(encoding="utf-8"))
+    assert copied == stated
+    assert cfg.llm.model == stated["llm"]["model"] == "nora"
+    assert cfg.relevance_gate.enabled is True
+    assert module.memory_endpoint()[1] == stated["memory"]["workspace_id"]
+
+
+@pytest.mark.parametrize("ambient", ["absent", "home", "deployment_env"])
+def test_evaluation_config_ignores_ambient_deployments(
+    ambient, evaluation_config, tmp_path_factory, tmp_path, monkeypatch,
+) -> None:
+    from tests.conftest import evaluation_config as fixture
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("NORA_DEPLOYMENT_DIR", raising=False)
+    if ambient != "absent":
+        deployment = home / "workspace" / "nora"
+        deployment.mkdir(parents=True)
+        (deployment / "config.toml").write_text("[synthetic broken\n", encoding="utf-8")
+        if ambient == "deployment_env":
+            monkeypatch.setenv("NORA_DEPLOYMENT_DIR", str(deployment))
+    # Exercise the real fixture again after setting the synthetic ambient input;
+    # the outer session fixture necessarily ran before this test's monkeypatch.
+    generated = fixture.__wrapped__(tmp_path_factory)
+    try:
+        target = next(generated)
+        assert target != evaluation_config
+        assert target.is_relative_to(tmp_path_factory.getbasetemp())
+        assert target.read_bytes() == evaluation_config.read_bytes()
+    finally:
+        generated.close()
+
+
 def test_build_config_writes_a_policy_naming_the_room(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     build_config(_spec(tmp_path))
