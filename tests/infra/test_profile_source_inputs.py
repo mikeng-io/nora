@@ -742,3 +742,27 @@ async def test_preupgrade_withdrawal_does_not_require_cached_source_progress(env
     await source.settle(key=KEY, revisions=[row])
     assert await source_inputs(env).messages(key=KEY, rooms=ROOMS, person=PERSON,
                                              after=20, limit=12) == []
+
+
+async def test_a_person_with_a_wake_batch_of_new_messages_counts_the_whole_batch(env):
+    """The wake rule is `new >= wake_batch` (`nora.app.runtime`). `count` used to
+    read the message domain with `limit=1`, so a person's count could never
+    reach the batch and they only woke on the stale rule."""
+    from nora.domain.models import PersonRef
+    from nora.infra.sql.character import SqlCharacterEvidence
+    from nora.infra.sql.profile import SqlProfileStore
+    from nora.language.character import CharacterRoom, PersonKey
+    from nora.language.profile import ProfileEvidence
+
+    await message(env, ident=1, body='an old plain message')
+    reads = SqlCharacterEvidence(env)
+    boundary, _ = await reads.history_state(key=KEY)
+    await reads.advance_history(key=KEY, cursor=boundary)
+    for i in range(5):
+        await message(env, ident=100 + i, body=f'a new plain message {i}', ts=T0 + i + 1)
+    pk = PersonKey(unit='unit', person=PersonRef(person_id=PERSON, name='Synthetic',
+        honcho_peer_id='synthetic'), rooms=(CharacterRoom(key='room-a', platform='signal',
+        label='Allowed'),), home='room-a', listed=('room-a',))
+    evidence = ProfileEvidence(store=reads, profile=SqlProfileStore(env, screen=lambda _: None),
+                               keys={KEY: pk}, source_inputs=source_inputs(env), wake_batch=3)
+    assert await evidence.count(key=KEY, after=boundary) >= 3
