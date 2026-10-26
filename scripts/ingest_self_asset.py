@@ -60,8 +60,10 @@ SELF_PROVENANCE: dict[str, object] = {
 }
 TITLE = "Nora, canonical self"
 DESCRIPTION = (
-    "Nora's canonical self picture: a stylized 3D mascot, full body, front "
-    "facing, on a plain light-grey background."
+    "Nora's canonical self picture: Mini Nora in 2D anime Bauhinia styling, "
+    "full body, front facing, with a compact dark-brown bun and flower clasp, "
+    "an ivory blouse, navy waistcoat, open grey coat, wide navy trousers and "
+    "ivory boots. No bag or audio accessories."
 )
 DESCRIBE_MODEL = "operator-provided"
 
