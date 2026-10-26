@@ -1,5 +1,12 @@
 # Changelog
 
+## [6.8.5](https://github.com/mikeng-io/nora/compare/v6.8.4...v6.8.5) (2026-10-26)
+
+
+### Security
+
+* **deps:** bump dompurify ([45b146b](https://github.com/mikeng-io/nora/commit/45b146b2e15ace20baec8f808e0bd98947fa4985))
+
 ## [6.8.4](https://github.com/mikeng-io/nora/compare/v6.8.3...v6.8.4) (2026-10-26)
 
 
