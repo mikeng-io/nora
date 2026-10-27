@@ -1,5 +1,5 @@
 """Where each unit's memory lives: policy structure + identity binding +
-`memory.workspace_id`, resolved once (`nora.app.memory_routing`, DEC-214).
+`honcho.workspace_id`, resolved once (`nora.app.memory_routing`, DEC-214).
 
 A Nora workspace and a Honcho workspace are different names for different
 things; these tests hold the line between them. Placeholder names throughout,

@@ -339,7 +339,7 @@ class ToolRegistry:
         # link is opened through, held for the life of the process like
         # `route`. `None` answers the open `unavailable`.
         external_files: ExternalFilesSource | None = None,
-        # `[memory_index] enabled` (ships off): the retrieval service
+        # `[memory.index] read` (ships off): the retrieval service
         # `memory_search` answers from, and the switch between the two memory
         # surfaces (DEC-316): wired, every build offers `memory_search` and no
         # Honcho tool (`about` included; `remember` is on both surfaces, a
@@ -351,7 +351,7 @@ class ToolRegistry:
         # line, design/unified-memory/45). Wired with `memory_search`.
         profile: ProfileWriter | None = None,
         # THE SWITCH (45 §5): `character_read`'s Profile source while
-        # `[profile] render` is on beside `[profile] enabled`. Wired, it
+        # `[memory.profile] read` is on beside `[memory.profile] write`. Wired, it
         # answers where `culture` would, so the tool reads the accounts the
         # prompt's `<profile>` blocks render; both `None` withholds the tool.
         profile_read: ProfileHeads | None = None,
@@ -518,7 +518,7 @@ class ToolRegistry:
         # offline/eval compositions, where the tool answers `unavailable`
         # rather than a guessed empty (R-5).
         self._mobility = mobility
-        # The OBSERVER peer: Nora's Honcho peer id (cfg.memory.ai_peer). The
+        # The OBSERVER peer: Nora's Honcho peer id (cfg.honcho.ai_peer). The
         # `about`/`ask_memory` tools read her model of a person as
         # (observer=ai_peer, observed=person), so the registry threads it like
         # any other long-lived collaborator.

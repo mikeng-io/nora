@@ -174,7 +174,7 @@ persons  = "*"               # Anyone in this chat, including senders Nora canno
 #    use one when a group's people must not share memory with another's.
 #
 #    With no [units] table, every unit is in one implicit workspace bound to
-#    config.toml's `memory.workspace_id`. Once the table exists it must name
+#    config.toml's `honcho.workspace_id`. Once the table exists it must name
 #    every unit a room uses, and no unit without a room.
 #
 #    The Honcho workspace a Nora workspace maps to is set in identity.toml's

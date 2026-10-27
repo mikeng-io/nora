@@ -94,8 +94,8 @@ def build_assembler(
         # not opted in) is the plain `context_window` fetch, no quote-aware
         # growth.
         quote_window=quote_window,
-        ai_peer=cfg.memory.ai_peer,
-        tagger_card_conclusions=cfg.memory.tagger_card_conclusions,
+        ai_peer=cfg.honcho.ai_peer,
+        tagger_card_conclusions=cfg.honcho.tagger_card_conclusions,
         notes=notes, policy=policy,
         memos=memos,
         standing=standing,
@@ -134,15 +134,15 @@ def build_assembler(
         subagents=subagents,
         # `<recalled>`, the pre-fetch (design/unified-memory/00 step 3b): the
         # SAME `MemorySearch` the tool registry's `memory_search` holds.
-        # `None` on the Honcho surface (`[memory_index] enabled = false`),
+        # `None` on the Honcho surface (`[memory.index] read = false`),
         # which renders no block.
         memory_search=memory_search,
         # The graph's one clock, so the pre-fetch dates and ranks its items
         # at the instant every other component reads.
         clock=clock,
         # THE SWITCH (design/unified-memory/45 §5): the Profile accounts'
-        # reader. `None` until `[profile] render` is on beside `[profile]
-        # enabled`, and in every harness that wires none — the turn then
+        # reader. `None` until `[memory.profile] read` is on beside `[memory.profile]
+        # write`, and in every harness that wires none — the turn then
         # renders the Honcho and prose-culture blocks it always has.
         profile=profile, rosters=rosters, self_ids=self_ids,
     )

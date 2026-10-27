@@ -354,7 +354,7 @@ composes a draft.
 
 The operator, on why she is not in `identity.toml`: «identity.toml 嘅存在意義，
 就係俾 Nora 去 identify 返有乜嘢 identity。佢自身已經有一個 identity.» She has
-one: `[memory].ai_peer` and `[agent].name`, which DEC-66 (5) calls «the
+one: `[honcho].ai_peer` and `[agent].name`, which DEC-66 (5) calls «the
 agent's machine identity», reserved by the composition root so no human may
 hold it. `identity.toml` is the book of the people she identifies, and she is
 not one of them.
@@ -596,7 +596,7 @@ values are what the host held that day.
 [dreamer]   enabled=true  model=nora-dreamer  reasoning_effort=none
 [notes]     enabled=true  curator_enabled=false  candidates_enabled=true
 [standing]  enabled=true  max_chars=1200  event_enabled=true
-[memory]    workspace_id=nora  self_card_conclusions=8
+[honcho]    workspace_id=nora  self_card_conclusions=8
 [presence]  enabled=true
 ```
 

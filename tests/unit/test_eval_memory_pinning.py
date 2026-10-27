@@ -4,7 +4,7 @@ whatever the policy and identity it is composed with bind (DEC-214).
 With `[units]` a unit routes to the Honcho workspace its Nora workspace is
 BOUND to, and the eval suite composes against the deployment's own files by
 default, whose binding names production's live workspace; rewriting
-`memory.workspace_id` alone is not the guarantee. This builds a subject's
+`honcho.workspace_id` alone is not the guarantee. This builds a subject's
 config from files shaped like that and asks the production router where it can
 reach. Placeholder ids; the workspace names are the operator's own mapping.
 """
@@ -79,7 +79,7 @@ def test_a_subject_reaches_only_the_eval_workspace_across_every_binding(
         database_url="postgresql+asyncpg://x/x", workdir=tmp_path,
         identity=_IDENTITY, policy=_POLICY, room=_ROOM,
     ))
-    eval_workspace = cfg.memory.workspace_id
+    eval_workspace = cfg.honcho.workspace_id
     assert eval_workspace.endswith("-eval")
     router = build_workspace_router(
         policy=load_policy(tmp_path / "policy.toml"),
@@ -97,14 +97,14 @@ def test_a_subject_reaches_only_the_eval_workspace_across_every_binding(
 def test_a_draw_workspace_override_is_what_every_unit_reaches(tmp_path, monkeypatch):
     """A draw names its workspace through an override; the pinning follows it."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    deployment = obtain_module._load_config(obtain_module._TEMPLATE).memory.workspace_id
+    deployment = obtain_module._load_config(obtain_module._TEMPLATE).honcho.workspace_id
     draw = f"{deployment}-eval-run-case-1-abcd"
     cfg = obtain_module.build_config(SubjectSpec(
         database_url="postgresql+asyncpg://x/x", workdir=tmp_path,
         identity=_IDENTITY, policy=_POLICY, room=_ROOM,
-        overrides={"memory.workspace_id": draw},
+        overrides={"honcho.workspace_id": draw},
     ))
-    assert cfg.memory.workspace_id == draw
+    assert cfg.honcho.workspace_id == draw
     router = build_workspace_router(
         policy=load_policy(tmp_path / "policy.toml"),
         bindings=load_persons(tmp_path / "identity.toml").honcho_workspaces,

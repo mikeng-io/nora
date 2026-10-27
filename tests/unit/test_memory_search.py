@@ -440,7 +440,7 @@ async def test_status(nodes: list[IndexedNode], state: IndexState, status: str) 
 
 
 async def test_the_lexical_fallback_is_always_partial_never_nothing_found() -> None:
-    """With no embedder (`[memory_index] embed` off) the seeds are
+    """With no embedder (`[memory.index] embed` off) the seeds are
     lexical, and a lexical miss is not «you never said that»."""
     hit = await _lexical(FakeMemoryIndex([_msg("1", "ramen")]))
     assert (hit.status, [h.node.source_id for h in hit.hits]) == ("partial", ["1"])

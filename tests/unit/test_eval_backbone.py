@@ -578,14 +578,14 @@ async def test_drive_composes_the_real_room_at_its_own_instant(monkeypatch, one_
     assert spec.policy == 'default = "deny"\n'
     assert spec.overrides["llm.base_url"] == "http://127.0.0.1:9/v1"
     assert spec.database_url.endswith("_sb"), "composed against the SANDBOX, not the source"
-    assert spec.overrides["memory.workspace_id"].startswith(
+    assert spec.overrides["honcho.workspace_id"].startswith(
         f"nora-eval-{backbone.RUN_ID}-compose-probe-"
     ), "every draw composes against a Honcho workspace of its own (#462)"
 
 
 async def test_a_spec_override_cannot_redirect_the_draws_workspace(monkeypatch, one_path):
     """The draw's workspace is applied LAST: a `Spec.overrides` naming
-    `memory.workspace_id` (the shared sibling, say) does not win over it."""
+    `honcho.workspace_id` (the shared sibling, say) does not win over it."""
     captured: dict[str, Any] = {}
 
     async def capturing_obtain(spec: Any) -> _FakeSubject:
@@ -598,9 +598,9 @@ async def test_a_spec_override_cannot_redirect_the_draws_workspace(monkeypatch, 
     monkeypatch.setitem(ENTRY_POINTS, "dreamer", EntryPoint(drive=fake_drive))
     monkeypatch.setattr(backbone, "obtain", capturing_obtain)
     await backbone._drive(
-        _case("redirect-probe"), _spec("dreamer", overrides={"memory.workspace_id": "nora-eval"}),
+        _case("redirect-probe"), _spec("dreamer", overrides={"honcho.workspace_id": "nora-eval"}),
     )
-    assert captured["spec"].overrides["memory.workspace_id"].startswith(
+    assert captured["spec"].overrides["honcho.workspace_id"].startswith(
         f"nora-eval-{backbone.RUN_ID}-redirect-probe-"
     )
 

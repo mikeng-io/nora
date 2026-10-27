@@ -541,7 +541,7 @@ async def build_production_seed(
     # the synthetic room through `_IDENTITY_TOML`.
     conclusions: dict[str, list[str]] = {}
     honcho = HonchoClient(
-        cfg.memory.base_url, cfg.memory.workspace_id, ai_peer=cfg.memory.ai_peer,
+        cfg.honcho.base_url, cfg.honcho.workspace_id, ai_peer=cfg.honcho.ai_peer,
     )
     try:
         card = await asyncio.wait_for(
@@ -551,7 +551,7 @@ async def build_production_seed(
             cards[_EVAL_PERSON_ID] = card
         rec = await asyncio.wait_for(
             honcho.representation(
-                peer_id=cfg.memory.ai_peer,
+                peer_id=cfg.honcho.ai_peer,
                 search_query="personal facts about this person",
                 # `max_conclusions` deliberately NOT passed — same contract as
                 # the production `about` tool (Honcho splits it three ways).
@@ -612,7 +612,7 @@ def seed_from_dict(raw: dict[str, Any], *, now_ms: int | None = None) -> Product
     reason. That is the same footgun the unit note above describes, on the
     one tier whose key is a PERSON rather than a unit.
 
-    `nora` is the observer-equals-observed key: `cfg.memory.ai_peer` on every
+    `nora` is the observer-equals-observed key: `cfg.honcho.ai_peer` on every
     shipped config, and `<self_card>` is the block it feeds.
 
     **`now_ms`.** Every seeded timestamp is rendered as an age

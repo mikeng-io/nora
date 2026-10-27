@@ -84,7 +84,7 @@ From [20](20-embedding-bakeoff.md) and PRs #22 and #24:
 |---|---|---|
 | **V1** | migration `0106_memory_vectors`: `memory_node.embedding halfvec(2048)`, `embedding_model text` (the fingerprint: model file hash plus format version), `embedded_at`, `embed_attempts`, `embed_error`, `embed_input` (§1.1); the HNSW expression index; a partial index on the unembedded embeddable nodes, in the pick's order; drop `embedding`. An `embedder` compose service (llama.cpp server with the bake-off's flags, §1.7, the model files bind-mounted read-only, threads capped so turns keep the CPU). `nora/infra/embedder.py`: the one client, over the one formatter `nora/domain/embedder_input.py`. The embedding worker in the runtime's drain loop: a batch per tick, a failure counted and backed off, given up after 8 (§1.5), never a hot loop. `nora memory rebuild --embeddings-only` and a media throttle sized from the measured media count | the upsert clears a vector when its recorded input changes and keeps it otherwise; a poisoned image, an unexpected exception and an oversized text are each one node's recorded failure; a restarted server's new marker still embeds; the worker fills NULLs and records the model; an embedder error leaves the node NULL and counted; a node from another model reads as unembedded; the HNSW index exists and the planner uses it; the bake-off adapter and production format a query, a document and an image identically; schema-parity, row-history and single-head tests |
 | **V2** | S5 seeds: **dense** (the two-stage search, scope inside the scan, `hnsw.iterative_scan` so a scoped search still returns its 50) and **exact** (a literal handle, URL, id or listed person's name contained in the node: the first five pinned ahead of every dense hit, operator 2026-10-16; §4.1). Trigram similarity remains only as the fallback when the embedder is down, and the answer is then `partial`. Coverage: while embeddable nodes are unembedded, the answer is `partial` | the scope suite again with dense seeds; an exact name match ranks above a closer dense neighbour; embedder down gives `partial` with lexical results, never `nothing_found`; an out-of-scope node never returned however near its vector |
-| **V3** | the acceptance run: deploy (asked first), backfill, `[memory_index] enabled = true` in a sandbox, `conversational_recall` no worse than 7/8; `tool_selection --memory-index` re-run on the built index (on an empty index every `memory_search` answers `partial` with no items, so sibling calls after it cannot be judged, PR #32). Then the **adaptive cut** (operator, 2026-10-16): from the cosine spread of labelled hits and misses on the built index, set the dense relevance floor and a score-gap stop, and replace `RESULT_LIMIT = 10` with a token budget (about 2,000 tokens of packet text, not the embedder's 2,000-token input cut of §1; at least one item before the identifier screen, which can still withhold it); `PINNED_LIMIT`, now derived from `RESULT_LIMIT`, becomes its own value (a count or a share of the budget) so half the answer still goes by score; the walk's floor and the `about` seed's 0.6 are set in the same step. `RESULT_LIMIT` is a temporary cap until then. **The cut as built: §6** | the eval read-back; the cosine spread recorded here (§6) |
+| **V3** | the acceptance run: deploy (asked first), backfill, `[memory.index] read = true` in a sandbox, `conversational_recall` no worse than 7/8; `tool_selection --memory-index` re-run on the built index (on an empty index every `memory_search` answers `partial` with no items, so sibling calls after it cannot be judged, PR #32). Then the **adaptive cut** (operator, 2026-10-16): from the cosine spread of labelled hits and misses on the built index, set the dense relevance floor and a score-gap stop, and replace `RESULT_LIMIT = 10` with a token budget (about 2,000 tokens of packet text, not the embedder's 2,000-token input cut of §1; at least one item before the identifier screen, which can still withhold it); `PINNED_LIMIT`, now derived from `RESULT_LIMIT`, becomes its own value (a count or a share of the budget) so half the answer still goes by score; the walk's floor and the `about` seed's 0.6 are set in the same step. `RESULT_LIMIT` is a temporary cap until then. **The cut as built: §6** | the eval read-back; the cosine spread recorded here (§6) |
 
 **V3's harness (2026-10-16).** Two things stood between V3 and a reading.
 The eval runs on the deploy host, where `embedder:8080` does not resolve and
@@ -196,16 +196,16 @@ What V2 decided where the plan above left room (DEC-315; the code is
    cosines of real hits off the backfilled index, then set both. **Set in
    V3 (§6):** a dense floor of 0.38 and an `about` score of 0.45.
 5. **Statuses.** The answer is `partial` in three cases:
-   - the seeds were lexical. That happens when `[memory_index] embed` is
-     off (so `enabled` on with `embed` off answers `partial` every time),
+   - the seeds were lexical. That happens when `[memory.index] embed` is
+     off (so `read` on with `embed` off answers `partial` every time),
      when the embedder failed, timed out (10 s per call, in a turn) or is
      serving another GGUF file than the configured one (checked per query
      against /props, the worker's rule), or when no node holds a current
      vector yet;
    - the embedding worker has a **backlog in the search's scope**: a live
      embeddable node has owed a vector of the current model for longer
-     than `BACKLOG_TICKS` (3) drain periods (`[memory_index]
-     drain_seconds`, 60 s, so 180 s). This includes nodes holding another model's
+     than `BACKLOG_TICKS` (3) drain periods (`[memory.index]
+     refresh_seconds`, 60 s, so 180 s). This includes nodes holding another model's
      vector and failing nodes in backoff once they are that old. A node
      waiting in another unit does not count (review of #31: one pending
      node anywhere made every search `partial`);
@@ -259,7 +259,7 @@ What V2 decided where the plan above left room (DEC-315; the code is
    Cost: that seed filters a bitmap scan over the scope, about 10 ms in
    steady state and about 720 ms with a full backlog, the same as the
    lexical fallback.
-   `memory_search` without the tick (`drain_seconds` unwired) treats
+   `memory_search` without the tick (`refresh_seconds` unwired) treats
    every wait as a backlog, the safe side; composition wires it.
 
    A node the worker **gave up on** (8 attempts) does not count either, or
@@ -289,11 +289,11 @@ What V2 decided where the plan above left room (DEC-315; the code is
 
 ## 5. One memory surface, and its verb (2026-10-16, DEC-316)
 
-> 2026-10-21 (18 / ADR 0026): [18](18-message-readings.md) extends what this surface searches: message readings join the Record inputs. The `memory_search` tool surface and pre-fetch stand; Nora’s own turn does the reasoning Honcho’s dialectic agent does. No new tool.
+> 2026-10-21 (18 / ADR 0026): [18](18-extraction.md) extends what this surface searches: extraction join the Record inputs. The `memory_search` tool surface and pre-fetch stand; Nora’s own turn does the reasoning Honcho’s dialectic agent does. No new tool.
 
 The index is read through ONE tool, `memory_search(query, person?, since?,
 until?, kinds?)`, and only on the memory graph's tool surface.
-`[memory_index] enabled` selects the surface wherever tools are built (a
+`[memory.index] read` selects the surface wherever tools are built (a
 tag, a fire turn, the Cognition session, every Dreamer adaptor, the
 sub-agent worker); the two never sit side by side.
 

@@ -485,8 +485,8 @@ MEMORY_SURFACES = frozenset({"graph", "honcho"})
 #: sandbox gets its index and the source's vectors before the drive
 #: (`nora.subject.index_sandbox`).
 MEMORY_INDEX_OVERRIDES: dict[str, object] = {
-    "memory_index.enabled": True,
-    "memory_index.embedder_url": EMBEDDER_FROM_HOST,
+    "memory.index.read": True,
+    "memory.index.embedder_url": EMBEDDER_FROM_HOST,
 }
 
 
@@ -545,7 +545,7 @@ def experiment_for(
     people skimp on.
 
     `memory_index` is the RESOLVED arm (`python -m evals` takes it from the
-    generated config's `[memory_index] enabled`, or `--memory-index`): it
+    generated config's `[memory.index] read`, or `--memory-index`): it
     selects the cases, composes the subject on the graph surface
     (`MEMORY_INDEX_OVERRIDES`), and is checked against the composed config
     per case (`Spec.memory_surface`).

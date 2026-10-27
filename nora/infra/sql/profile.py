@@ -11,7 +11,7 @@ row the tables carry.
 account is its chain heads, the rows nothing supersedes. `profile` changes in
 place and keeps `row_history`.
 
-**The index (45 §1, the switch).** With `index` on (`[profile] render`),
+**The index (45 §1, the switch).** With `index` on (`[memory.profile] read`),
 every write projects the rows it inserted and the rows they supersede into
 the memory index in the write's own `begin()` block (25 §7). Off is the
 shadow: the write lands, no node does, and no prompt changes. Lines written

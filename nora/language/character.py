@@ -127,7 +127,7 @@ CHARACTER_PERSON_ADAPTOR_NAME = "character-person"
 #: so they were the least that was not needed (DEC-290).
 #:
 #: `memory_search` is the same reach on the graph surface (DEC-316): built
-#: instead of `ask_memory` and `search_memory` while `[memory_index] enabled`.
+#: instead of `ask_memory` and `search_memory` while `[memory.index] read`.
 CHARACTER_PERSON_TOOLS: frozenset[str] = frozenset({
     "ask_memory", "search_memory", "about", "lookup_person", "group_members",
     "memory_search",

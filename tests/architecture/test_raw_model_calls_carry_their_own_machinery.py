@@ -100,7 +100,7 @@ def _enclosing_functions_with_raw_calls(
 #: Reducing a requirement here is a design change and reads as one in review.
 REQUIRED: dict[str, tuple[str, ...]] = {
     # Write-only Record batch extraction; all raw-call guards apply.
-    "nora/app/message_readings.py": ("timeout", "finish_reason", "usage"),
+    "nora/app/extraction.py": ("timeout", "finish_reason", "usage"),
     # **`_RelevanceGateModelClient` is raw on evidence.** The relevance gate
     # decides whether Nora speaks into a room she was not invited into, and the
     # SDK's structured-output transport breached the suite's safety bar: a

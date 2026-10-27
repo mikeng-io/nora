@@ -268,7 +268,7 @@ INDEXED_WRITES: dict[str, str] = {
     "social_item_state": "social",
     "social_perception": "social",
     # A Profile line (45 §1) — projected by the store's write paths only while
-    # `[profile] render` is on; the shadow's lines join at the switch through
+    # `[memory.profile] read` is on; the shadow's lines join at the switch through
     # the flip's rebuild (45 §8), never the queue, whose drain runs either way.
     "profile_line": "profile_line",
 }

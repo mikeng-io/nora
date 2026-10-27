@@ -381,7 +381,7 @@ def unit_self_profile_reader(
 ) -> Callable[[str], Awaitable[tuple[ProfileLine, ...]] | None] | None:
     """`build_grounder`'s `self_profile`: her Profile account of the unit, or
     none — `unit_self_reader`'s gate (R-31: the session can reach any room of
-    the unit) on the switch's account (45 §5). `None` while `[profile] render`
+    the unit) on the switch's account (45 §5). `None` while `[memory.profile] read`
     is off.
 
     The session can reach every room of the unit but has no live roster to
@@ -615,7 +615,7 @@ def build_grounder(
         # Bounded and counted like the tag and fire reads (`read_culture`,
         # `stage="cognition_self"`).
         #
-        # THE SWITCH (45 §5): with the profile reader wired (`[profile]
+        # THE SWITCH (45 §5): with the profile reader wired (`[memory.profile]
         # render`), her Profile account is read instead — the prose read is
         # not made — and renders as `<profile of="nora">`. A failed profile
         # read is counted (`stage="cognition_self_profile"`, R-27) and drops

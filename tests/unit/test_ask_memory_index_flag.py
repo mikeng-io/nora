@@ -1,4 +1,4 @@
-"""`ask_memory` and `[memory_index] enabled` (DEC-316).
+"""`ask_memory` and `[memory.index] read` (DEC-316).
 
 Off (no `memory_search`, the shipped default): the Honcho path, the same
 call and the same result. On: `ask_memory` is not offered; the memory graph's
@@ -74,7 +74,7 @@ def _build_with(
 
 
 def _dense(index: FakeMemoryIndex, metrics: Metrics) -> MemorySearch:
-    """The search as `[memory_index] embed` builds it (65 V2): dense seeds
+    """The search as `[memory.index] embed` builds it (65 V2): dense seeds
     over the fake's vectors of model `m`, the question embedded by a fake."""
     return MemorySearch(index, metrics, embedder=FakeQueryEmbedder(), model="m")
 

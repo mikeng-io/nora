@@ -995,7 +995,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # GRAPH's one search verb, the retrieval service over the memory index,
     # its `person`, `since`, `until` and
     # `kinds` applied inside the index's reads. No Honcho behind it. It is
-    # offered only while `[memory_index] enabled`, and then `ask_memory`,
+    # offered only while `[memory.index] read`, and then `ask_memory`,
     # `search_memory`, `search_memory_workspace`, `who_said` and `about` are
     # not (`GRAPH_MEMORY_TOOLS`, `HONCHO_MEMORY_TOOLS`): one memory surface at
     # a time, never both. `remember` is on both, a different write on each.
@@ -4594,7 +4594,7 @@ def _file_modified(ms: int | None) -> str:
     )
 
 
-#: `ask_memory`'s notes while `[memory_index] enabled`. The
+#: `ask_memory`'s notes while `[memory.index] read`. The
 #: description names the statuses; how to read each is here, paid only when
 #: it fires (ADR 0015 §3).
 _INDEX_OK = (
@@ -4692,7 +4692,7 @@ _MEMORY_UNLISTED: Mapping[str, str] = MappingProxyType({
 })
 
 #: The two memory surfaces (DEC-316). Honcho and
-#: the memory graph never sit on one tool surface: `[memory_index] enabled`
+#: the memory graph never sit on one tool surface: `[memory.index] read`
 #: selects one, wherever tools are built (`build_tool_specs`, so the tag,
 #: fire, Cognition, every Dreamer adaptor and the sub-agent worker alike).
 #: Off (the default, and the rollback): the Honcho tools. On:
@@ -4895,7 +4895,7 @@ def build_tool_specs(
     # `unavailable`; the tool is still offered, so a claimed link has
     # somewhere to go and «I can't open that» is said, not guessed around.
     external_files: ExternalFilesSource | None = None,
-    # `[memory_index] enabled`: the retrieval
+    # `[memory.index] read`: the retrieval
     # service `ask_memory` answers from instead of Honcho. `None` (the
     # shipped default, offline, eval) is the Honcho path.
     memory_retrieval: MemorySearch | None = None,
@@ -4903,8 +4903,8 @@ def build_tool_specs(
     # The Profile write (design/unified-memory/45): the graph surface's
     # `remember` writes a `told` line through it. `None` answers `unavailable`.
     profile: ProfileWriter | None = None,
-    # THE SWITCH (45 §5): wired only while `[profile] render` is on beside
-    # `[profile] enabled`, and `character_read` then answers from the Profile
+    # THE SWITCH (45 §5): wired only while `[memory.profile] read` is on beside
+    # `[memory.profile] write`, and `character_read` then answers from the Profile
     # accounts instead of the culture store — the same accounts the prompt's
     # `<profile>` blocks render, so the tool and the prompt cannot disagree.
     profile_read: ProfileHeads | None = None,
@@ -6367,7 +6367,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         search: MemorySearch, text: str, ref: PersonRef | None, view: RoomView,
         kinds: tuple[str, ...], since_ms: int | None, until_ms: int | None,
     ) -> dict:
-        """`memory_search` while `[memory_index] enabled`: the one retrieval
+        """`memory_search` while `[memory.index] read`: the one retrieval
         service, scoped to this room's unit from the live policy and this
         room's live roster, seeded by the question (and by the person, when
         one is named), and narrowed by `ref`, `kinds`, `since_ms` and

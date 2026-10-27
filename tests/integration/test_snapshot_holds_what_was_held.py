@@ -70,21 +70,21 @@ def _UNIT_ROLLUP(i: int) -> dict[str, Any]:
 
 #: A valid row per in-place table, for key `i`.
 ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
-    "message_reading": lambda i: {
+    "extraction": lambda i: {
         "id": 81000 + i, "unit": "u", "platform": "signal", "origin_room": "g1",
         "source_ids": [], "context_ids": [], "snapshot": {}, "version": 1, "model": "m",
     },
-    "message_reading_queue": lambda i: {
+    "extraction_queue": lambda i: {
         "id": 84000 + i,
         "message_id": 1000 + i, "unit": "u", "platform": "signal", "origin_room": "g1",
-        "source_key": f"s{i}", "reading_id": 81000,
+        "source_key": f"s{i}", "extraction_id": 81000,
     },
-    "message_reading_claim": lambda i: {
-        "id": 82000 + i, "reading_id": 81000, "ordinal": i, "unit": "u",
+    "extraction_claim": lambda i: {
+        "id": 82000 + i, "extraction_id": 81000, "ordinal": i, "unit": "u",
         "platform": "signal", "origin_room": "g1", "source_ids": [], "content": {},
     },
-    "message_reading_attempt": lambda i: {
-        "id": 83000 + i, "reading_id": 81000, "attempt": i, "model": "m",
+    "extraction_attempt": lambda i: {
+        "id": 83000 + i, "extraction_id": 81000, "attempt": i, "model": "m",
     },
     "messages": lambda i: {
         "id": 1000 + i, "platform": "signal", "conversation_id": "g1",
@@ -263,10 +263,10 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
 
 #: The column each revision moves, and to what.
 REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
-    "message_reading": ("attempts", lambda i: i + 10),
-    "message_reading_queue": ("source_key", lambda i: f"revised-{i}"),
-    "message_reading_claim": ("content", lambda i: {"what": f"revised {i}"}),
-    "message_reading_attempt": ("input_tokens", lambda i: i + 10),
+    "extraction": ("attempts", lambda i: i + 10),
+    "extraction_queue": ("source_key", lambda i: f"revised-{i}"),
+    "extraction_claim": ("content", lambda i: {"what": f"revised {i}"}),
+    "extraction_attempt": ("input_tokens", lambda i: i + 10),
     "messages": ("delivery_status", lambda i: f"delivered-{i}"),
     "message_edit": ("body", lambda i: f"re-edited {i}"),
     "message_reaction": ("removed", lambda i: 1),

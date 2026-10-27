@@ -1,6 +1,6 @@
 """`memory_search`, the memory graph's one search verb (DEC-316).
 
-It is offered only while `[memory_index] enabled` (the surface tests are
+It is offered only while `[memory.index] read` (the surface tests are
 `tests/unit/test_memory_surfaces.py`), and there is no Honcho behind it: the
 index answers. `person`, `since`, `until` and `kinds` narrow the search
 INSIDE the index's reads, so a node outside them is never returned and never
@@ -80,7 +80,7 @@ def _build_with(
 
 
 def _dense(index: FakeMemoryIndex, metrics: Metrics) -> MemorySearch:
-    """The search as `[memory_index] embed` builds it: dense seeds
+    """The search as `[memory.index] embed` builds it: dense seeds
     over the fake's vectors of model `m`, the question embedded by a fake."""
     return MemorySearch(index, metrics, embedder=FakeQueryEmbedder(), model="m")
 
