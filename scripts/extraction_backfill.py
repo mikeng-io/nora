@@ -107,6 +107,11 @@ async def status(engine: AsyncEngine) -> dict[str, Any]:
                 .group_by(state, QUEUE.c.is_source)
             )).all()}
             batch_ids = sa.select(QUEUE.c.extraction_id).where(QUEUE.c.historical.is_(True))
+            dropped_claims: Counter[str] = Counter()
+            for counts in (await conn.execute(
+                sa.select(ATTEMPT.c.dropped_claims).where(ATTEMPT.c.extraction_id.in_(batch_ids))
+            )).scalars():
+                dropped_claims.update(counts)
             claims = (await conn.execute(sa.select(sa.func.count()).select_from(CLAIM).where(
                 CLAIM.c.extraction_id.in_(batch_ids), CLAIM.c.retired_at.is_(None),
             ))).scalar_one()
@@ -129,6 +134,7 @@ async def status(engine: AsyncEngine) -> dict[str, Any]:
         "context_rows": {state: states.get((state, False), 0) for state in
                          ("unbatched", "pending", "done", "failed", "retired")},
         "claims_written": claims,
+        "dropped_claims": dict(dropped_claims),
         "failed_batches": [{"id": key, "failure_stages": value} for key, value in failed.items()],
     }
 

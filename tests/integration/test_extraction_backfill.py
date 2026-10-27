@@ -12,6 +12,7 @@ import pytest
 import sqlalchemy as sa
 
 from nora.app.composition import _note_unit_of
+from nora.app.extraction import ExtractionWorker
 from nora.domain.extraction import validate_claims
 from nora.domain.models import DeliveryStatus
 from nora.infra.sql.audit import SqlRecordStore
@@ -22,15 +23,46 @@ from nora.infra.sql.schema import EXTRACTION_ATTEMPT as ATTEMPT
 from nora.infra.sql.schema import EXTRACTION_CLAIM as CLAIM
 from nora.infra.sql.schema import EXTRACTION_QUEUE as QUEUE
 from nora.infra.sql.schema import MESSAGE_DELETE, MESSAGES
+from nora.obs.metrics import Metrics
 from nora.policy import load_policy
 from scripts.extraction_backfill import backfill, status
+from tests.builders import override_config
 from tests.conftest import _async_url
-from tests.contract.test_extraction_contract import finish, rows, take
+from tests.contract.test_extraction_contract import Gateway, finish, rows, take
 from tests.contract.test_extraction_contract import message as source_message
 from tests.unit.test_extraction import ASSERTED, claim, parsed
 
 HISTORY = ASSERTED - 10 * 365 * 86400000
 BEFORE = HISTORY + 1000
+
+
+async def test_status_reports_historical_drop_counts_by_reason(db, policy, example_config):
+    record = SqlRecordStore(db)
+    for n in range(1, 5):
+        await record.append(message=message(n), person_id="subject-a")
+    assert (await backfill(db, policy, before_ms=BEFORE))["enqueued"] == 4
+    live = SqlRecordStore(db, extraction_unit=_note_unit_of(policy))
+    await live.append(message=source_message(10, room="room-b"), person_id="subject-a")
+    store = SqlExtraction(db)
+    config = override_config(example_config.memory.extraction, {
+        "enabled": True, "min_message_age_seconds": 0,
+    })
+    # Live failure is counted durably but must not contaminate history status.
+    live_worker = ExtractionWorker(
+        store=store, client=Gateway(claims_mode="all_invalid"), config=config, metrics=Metrics(),
+    )
+    assert await live_worker.run_once() == 0
+    history_worker = ExtractionWorker(
+        store=store, client=Gateway(claims_mode="mixed"), config=config, metrics=Metrics(),
+    )
+    assert await history_worker.run_once() == 3
+    attempts = await rows(db, ATTEMPT)
+    assert [a["dropped_claims"] for a in attempts] == [{"place_absent": 1}, {"place_absent": 1}]
+    report = await status(db)
+    assert report["dropped_claims"] == {"place_absent": 1}
+    assert report["claims_written"] == 3
+    assert report["rows"]["done"] == 4
+    assert report["failed_batches"] == []
 
 
 def message(n=1, **kw):

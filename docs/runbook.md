@@ -1621,6 +1621,17 @@ rows remain unbatched because they are never extracted; they do not prevent
 completion. `claims_written` counts their currently active claims.
 Each failed batch is listed by id with failure-stage attempt counts; old attempts
 and expired leases without a recorded stage are `unknown`, never inferred.
+`dropped_claims` reports reason counts across attempts of the historical batches
+currently linked to the queue (including failed batches); live batches are
+excluded. A mixed batch publishes its valid claims and records each rejected
+claim's first provenance failure. All-invalid output still fails at `claims`;
+unparseable or schema-invalid output still fails as a whole at `schema`.
+These drops are not silent skips: counts persist in
+`extraction_attempt.dropped_claims` with no dropped content or message text.
+Retries can count the same rejected claim again. Requeue detaches the old batch
+from its queue rows, so status then follows the replacement batch; old attempt
+counts remain queryable by `extraction_id` in the attempt table. Attempts made
+before this instrumentation have empty counts, not measured zero drops.
 Pruned source tombstones without a batch count as retired. A batch may contain
 many source rows, so these row counts are not batch counts.
 

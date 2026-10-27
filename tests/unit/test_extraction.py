@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 import pytest
 
 from nora.app.extraction import SYSTEM, ExtractionOutput
-from nora.domain.extraction import event_time, validate_claims
+from nora.domain.extraction import event_time, partition_claims, validate_claims
 
 
 def parsed(payload):
@@ -325,3 +325,60 @@ def test_place_source_spans_match_verbatim_or_decoded(place):
     )
     assert len(stored) == 1
     assert stored[0]["where"] == place
+
+
+@pytest.mark.parametrize("change,reason", [
+    ({"source_ids": [999]}, "citation_outside_batch"),
+    ({"source_ids": [1, 1]}, "duplicate_citation"),
+    ({"evidence": [{"source_id": 2, "quote": "tomorrow"}]}, "evidence_not_covering_citations"),
+    ({"evidence": [{"source_id": 1, "quote": "invented"}]}, "evidence_absent"),
+    ({"about": [{"person_id": "unknown-person", "reference": "someone"}]}, "unknown_subject"),
+    ({"happened_at": {"source_id": 2, "expression": None}}, "event_reference_outside_citations"),
+    ({"happened_at": {"source_id": 1, "expression": "next year"}}, "event_expression_absent"),
+    ({"where": "Invented Venue"}, "place_absent"),
+])
+def test_partition_keeps_valid_claims_and_maps_each_provenance_check(change, reason):
+    output = parsed({"claims": [claim(), {**claim(), **change}, claim()]})
+    valid, dropped = partition_claims(output, {"messages": [source()], "context": [source(2)]})
+    assert len(valid) == 2
+    assert all(c["assertions"][0]["source_id"] == 1 for c in valid)
+    assert dropped == [reason]
+
+
+def test_partition_does_not_disguise_unparsed_output_as_a_drop():
+    with pytest.raises(KeyError):
+        partition_claims({"claims": [{}]}, {"messages": [source()], "context": []})
+
+
+def test_drop_vocabulary_is_derived_declared_and_runtime_checked():
+    from typing import get_args
+
+    from nora.domain.extraction import CLAIM_DROP_REASONS, ClaimDropReason, ClaimProvenanceError
+    from nora.obs.metric_specs import _COUNTERS
+
+    assert get_args(ClaimDropReason) == CLAIM_DROP_REASONS
+    assert set(CLAIM_DROP_REASONS) == {
+        "citation_outside_batch", "duplicate_citation", "evidence_not_covering_citations",
+        "evidence_absent", "unknown_subject", "event_reference_outside_citations",
+        "event_expression_absent", "place_absent",
+    }
+    spec = next(s for s in _COUNTERS if s.name == "nora_extraction_dropped_claims_total")
+    assert spec.labelnames == ("reason",)
+    assert " / ".join(CLAIM_DROP_REASONS) in spec.help_text
+    with pytest.raises(ValueError, match="unknown claim drop reason"):
+        ClaimProvenanceError("private-or-unbounded-text", "private text")
+    assert ClaimProvenanceError("place_absent", "place absent").reason == "place_absent"
+
+
+def test_system_binds_places_times_and_persons_to_supplied_new_sources():
+    text = " ".join(SYSTEM.split())
+    assert (
+        "where and happened_at.expression must be copied verbatim from a NEW message "
+        "the claim cites"
+        in text
+    )
+    assert "never from context rows or a reply's parent. Cite only new messages" in text
+    assert (
+        "person_id must come only from the supplied persons; otherwise use null with reference"
+        in text
+    )
