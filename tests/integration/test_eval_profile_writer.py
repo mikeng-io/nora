@@ -382,7 +382,7 @@ async def test_representation_sources_use_composed_writer_and_store(
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     policy = ('default = "deny"\n[[conversations]]\nplatform = "signal"\n'
               'id = "g1"\nlabel = "Common room"\npersons = ["miles_novak"]\nunit = "nora"\n'
-              '[[conversations]]\nplatform = "discord"\nid = "d1"\nlabel = "Common room"\n'
+              '[[conversations]]\nplatform = "discord"\nid = "d1"\nlabel = "Games room"\n'
               'persons = ["miles_novak"]\nunit = "nora"\n')
     identity = _DEFAULT_IDENTITY + '[[persons.miles_novak.discord]]\nuser_id = "12345"\n'
     source = await seed_source(pg_url, tmp_path, Knowledge(transcript=("background",)),

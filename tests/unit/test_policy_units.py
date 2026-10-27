@@ -125,3 +125,51 @@ def test_one_room_per_platform_across_units_is_allowed(tmp_path):
     policy = _load(tmp_path, _ROOMS + _UNITS)
     signal_units = sorted(c.unit for c in policy.conversations if c.platform == "signal")
     assert signal_units == ["alpha", "beta", "gamma"]
+
+
+@pytest.mark.parametrize("units", ["", _UNITS], ids=["no-units", "with-units"])
+def test_duplicate_room_names_are_refused_after_case_and_spacing_fold(tmp_path, units):
+    body = _ROOMS.replace('label = "Alpha on Discord"', 'label = " alpha  ON Signal "')
+    with pytest.raises(PolicyError, match="duplicate room names") as exc:
+        _load(tmp_path, body + units)
+    assert "Alpha on Signal" in str(exc.value)
+    assert " alpha  ON Signal " in str(exc.value)
+    assert "signal:" in str(exc.value) and "discord:" in str(exc.value)
+
+
+@pytest.mark.parametrize("units", ["", _UNITS], ids=["no-units", "with-units"])
+def test_a_network_name_cannot_label_another_networks_room(tmp_path, units):
+    body = _ROOMS.replace('label = "Alpha on Discord"', 'label = " sIgNaL "')
+    with pytest.raises(PolicyError, match="reserved network name") as exc:
+        _load(tmp_path, body + units)
+    assert " sIgNaL " in str(exc.value)
+    assert "Alpha on Signal" in str(exc.value)
+
+
+@pytest.mark.parametrize("units", ["", _UNITS], ids=["no-units", "with-units"])
+def test_a_network_name_cannot_hide_a_second_room_on_that_network(tmp_path, units):
+    body = _ROOMS.replace('label = "Alpha on Signal"', 'label = "Signal"')
+    body = body.replace('platform = "discord"', 'platform = "signal"')
+    with pytest.raises(PolicyError, match="reserved network name") as exc:
+        _load(tmp_path, body + units)
+    assert "Signal" in str(exc.value)
+    assert "Alpha on Discord" in str(exc.value)
+
+
+@pytest.mark.parametrize("units", ["", _UNITS], ids=["no-units", "with-units"])
+def test_a_network_name_can_label_its_own_networks_only_room(tmp_path, units):
+    body = _ROOMS.replace('label = "Alpha on Signal"', 'label = "Signal"')
+    assert len(_load(tmp_path, body + units).conversations) == 4
+
+
+@pytest.mark.parametrize("units", ["", _UNITS], ids=["no-units", "with-units"])
+def test_room_names_may_repeat_in_different_units(tmp_path, units):
+    body = _ROOMS.replace('label = "Beta on Signal"', 'label = "Alpha on Signal"')
+    assert len(_load(tmp_path, body + units).conversations) == 4
+
+
+@pytest.mark.parametrize("units", ["", _UNITS], ids=["no-units", "with-units"])
+def test_a_missing_room_label_still_refuses_to_start(tmp_path, units):
+    body = _ROOMS.replace('label = "Alpha on Signal"\n', "")
+    with pytest.raises(PolicyError, match="has no label"):
+        _load(tmp_path, body + units)
