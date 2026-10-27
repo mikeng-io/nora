@@ -128,7 +128,13 @@ regression proves the endpoint-match fix, not live causation or a fix for every
 hosted failure. Keep unattended updates disabled until a manual hosted generation
 succeeds.
 
-Generation has a 35-minute step timeout inside the 45-minute job. An always-run
+Generation has a 330-minute step timeout inside the 345-minute job, both below
+GitHub's six-hour job limit. The 15-minute difference allows finalizers and the
+build, with setup consuming part of that margin. The measured
+[manual run](https://github.com/mikeng-io/nora/actions/runs/40445387483) planned
+34 pages in 17m38s; its first page took 7m42s, leaving one complete and 33 pending
+when the former 35-minute timeout expired. Extrapolating from that one page gives
+roughly 4h39m overall, not a forecast or guarantee. An always-run
 finalizer writes only `summary.json` under the runner's private
 `$RUNNER_TEMP/openwiki-safe-summary` directory and retains that single artifact
 for three days. It contains outcome/exit code when available, fixed phase/status
@@ -150,7 +156,8 @@ Configuration:
   replace the secret with a key for that provider as well.
 
 The default uses one page worker, high reasoning and a 32,768-token output
-ceiling per model response; the job has a 45-minute wall clock. These are not a
+ceiling per model response; generation has a 330-minute step timeout within the
+345-minute job wall clock. These are not a
 currency budget. Native generation and each provider's multi-turn tool replay
 must be checked in a bounded manual run before enabling unattended updates.
 Endpoint compatibility alone does not prove successful generation or accurate

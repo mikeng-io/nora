@@ -27,7 +27,7 @@ jobs:
     # The operator enables unattended inference only after a successful manual run.
     if: github.event_name == 'workflow_dispatch' || vars.OPENWIKI_AUTO_UPDATE == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 345
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -47,7 +47,7 @@ jobs:
       - run: npm ci --prefix docs-site
       - name: Update repository wiki
         id: generation
-        timeout-minutes: 35
+        timeout-minutes: 330
         run: |
           mkdir -p "$RUNNER_TEMP/openwiki-safe-summary"
           chmod 700 "$RUNNER_TEMP/openwiki-safe-summary"
