@@ -46,7 +46,12 @@ That is R-76; `docs/maintainers/conventions-rationale.md` has the argument and t
 Metric names are append-only. Extraction records through `nora_extraction_*`;
 the six retired `nora_message_reading_*` counters stay declared at zero so saved
 queries remain valid. Their new names start fresh series; historical samples
-are not moved.
+are not moved. `nora_extraction_failures_total{stage}` identifies the failing
+boundary: input, request, usage, provider_model, incomplete, schema, claims,
+publish, cancelled or storage. The vocabulary and metric help derive from
+`ExtractionFailureStage`; no exception text or private content is recorded.
+Failure counts retain their existing semantics, including one failure when
+recording a failed attempt also encounters a storage outage.
 
 **Three states on every instrument, never two** — `ok` / `nothing_found` /
 `unavailable`. A wiring gap is `unavailable` ("I could not check"), never

@@ -20,5 +20,6 @@ releases do not have a separate security maintenance commitment. Reports and fix
 are handled on a best-effort basis, without a guaranteed response time.
 
 Each operator manages their installation's credentials, platform registrations,
-network access and backups. Use synthetic fixtures for development and keep
+network access and backups. What is exposed, to whom, and what is accepted risk
+is in [`SECURITY_MODEL.md`](SECURITY_MODEL.md). Use synthetic fixtures for development and keep
 production configuration and data outside version control.
