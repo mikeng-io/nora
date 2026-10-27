@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.8.0](https://github.com/mikeng-io/nora/compare/v7.7.0...v7.8.0) (2026-10-27)
+
+
+### Features
+
+* **app:** let a downloaded video convert to an audio format ([34ef871](https://github.com/mikeng-io/nora/commit/34ef87180bb16f52b13902dbf1f620f6175bcf4b))
+
 ## [7.7.0](https://github.com/mikeng-io/nora/compare/v7.6.0...v7.7.0) (2026-10-27)
 
 
