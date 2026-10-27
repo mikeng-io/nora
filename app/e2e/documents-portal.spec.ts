@@ -38,13 +38,21 @@ test("Documents is one tap away on a desktop's rail and on a phone's bottom bar"
   await signIn(page);
   const bar = page.getByRole("navigation", { name: "Main" });
   if (testInfo.project.name === "phone") {
-    // Five places, each wide enough to read: none is clipped or pushed off the screen.
-    await expect(bar.getByRole("link")).toHaveCount(5);
-    for (const link of await bar.getByRole("link").all()) {
-      const box = await link.boundingBox();
+    // Four places and a More button, each wide enough to read: none is clipped
+    // or pushed off the screen.
+    await expect(bar.getByRole("link")).toHaveCount(4);
+    const cells = [...(await bar.getByRole("link").all()), bar.getByRole("button", { name: "More" })];
+    for (const cell of cells) {
+      const box = await cell.boundingBox();
       const view = page.viewportSize();
       expect(box && view && box.x >= 0 && box.x + box.width <= view.width + 0.5).toBe(true);
     }
+    // More opens a sheet that lists the places the bar does not hold.
+    await bar.getByRole("button", { name: "More" }).click();
+    const sheet = page.getByRole("dialog");
+    await expect(sheet.getByRole("link", { name: "Games" })).toBeVisible();
+    await expect(sheet.getByRole("link", { name: "People" })).toBeVisible();
+    await page.keyboard.press("Escape");
   }
   await bar.getByRole("link", { name: "Documents" }).click();
   await expect(page).toHaveURL(/\/documents$/);
