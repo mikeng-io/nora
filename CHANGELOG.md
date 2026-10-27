@@ -1,5 +1,18 @@
 # Changelog
 
+## [7.5.0](https://github.com/mikeng-io/nora/compare/v7.4.0...v7.5.0) (2026-10-27)
+
+
+### Features
+
+* **standing:** retain decisions and topic threads beside the paragraph ([ad4c86b](https://github.com/mikeng-io/nora/commit/ad4c86bae9425d1d2530fc8d9672892aff316c82))
+
+
+### Bug Fixes
+
+* **standing:** report uncheckable threads and preserve timestamp groups ([8e613d0](https://github.com/mikeng-io/nora/commit/8e613d0ee6f4f7b66444522d9052766de1ce3d9f))
+* **standing:** retain ledger read provenance in turn records ([1061d4e](https://github.com/mikeng-io/nora/commit/1061d4e0c29d58647313276a16f98a23c32fb6d1))
+
 ## [7.4.0](https://github.com/mikeng-io/nora/compare/v7.3.1...v7.4.0) (2026-10-27)
 
 
