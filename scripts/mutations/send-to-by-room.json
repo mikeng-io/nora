@@ -1,0 +1,86 @@
+[
+  {
+    "name": "room names use the shared resolver",
+    "file": "nora/agent/relay.py",
+    "old": "found = _find_room(known, room)",
+    "new": "found = None",
+    "target": "tests/test_relay.py::test_room_names_fold_and_a_unique_network_still_resolves"
+  },
+  {
+    "name": "a network with several rooms is genuinely ambiguous",
+    "file": "nora/agent/relay.py",
+    "old": "\"status\": \"ambiguous\",",
+    "new": "\"status\": \"refused\",",
+    "target": "tests/test_relay.py::test_two_rooms_of_one_platform_are_ambiguous_rather_than_picked"
+  },
+  {
+    "name": "same network is not the same room",
+    "file": "nora/agent/relay.py",
+    "old": "if (destination.platform, destination.primary_id) == (source.platform, source.primary_id):",
+    "new": "if destination.platform == source.platform:",
+    "target": "tests/test_relay.py::test_two_rooms_on_one_network_send_between_them_but_not_to_itself"
+  },
+  {
+    "name": "the same room cannot be relayed into",
+    "file": "nora/agent/relay.py",
+    "old": "if (destination.platform, destination.primary_id) == (source.platform, source.primary_id):",
+    "new": "if False:",
+    "target": "tests/test_relay.py::test_two_rooms_on_one_network_send_between_them_but_not_to_itself"
+  },
+  {
+    "name": "the resolver never considers another unit",
+    "file": "nora/agent/relay.py",
+    "old": "c for c in self._policy.conversations if c.unit == unit",
+    "new": "c for c in self._policy.conversations",
+    "target": "tests/test_relay.py::test_a_room_in_another_unit_is_refused"
+  },
+  {
+    "name": "an unmapped asker cannot borrow a mapped identity",
+    "file": "nora/agent/relay.py",
+    "old": "        if requester is None:\n            return self._refuse(\n                \"unmapped\",\n                \"I don't know who you are well enough to pass something on in your \"\n                \"name. Say you can't, and do not send it unattributed.\",\n            )\n",
+    "new": "        if requester is None:\n            requester = PersonRef(\n                person_id=next(iter(self._policy.conversations[0].persons)),\n                name=\"Kit\", honcho_peer_id=\"kit\",\n            )\n",
+    "target": "tests/test_relay.py::test_an_unmapped_asker_is_refused_rather_than_sent_unattributed"
+  },
+  {
+    "name": "the asker must be allowed in the destination",
+    "file": "nora/agent/relay.py",
+    "old": "if not self._policy.is_allowed(",
+    "new": "if False and not self._policy.is_allowed(",
+    "target": "tests/test_relay.py::test_somebody_not_in_the_destination_cannot_speak_into_it"
+  },
+  {
+    "name": "egress scanning remains a delivery gate",
+    "file": "nora/agent/relay.py",
+    "old": "if (kind := scan_reply(outbound, content_checks=self._content_checks)) is not None:",
+    "new": "if False and (kind := scan_reply(outbound, content_checks=self._content_checks)) is not None:",
+    "target": "tests/test_relay.py::test_text_that_fails_the_egress_scan_never_leaves"
+  },
+  {
+    "name": "thread topics pass the ledger lineage gate",
+    "file": "nora/agent/tools.py",
+    "old": "visible = [e for e in threads if ledger_permits(e, target)]",
+    "new": "visible = threads",
+    "target": "tests/infra/test_standing_ledger.py::test_room_list_never_calls_an_unreadable_ledger_empty[withheld]"
+  },
+  {
+    "name": "withheld threads are not an empty readable ledger",
+    "file": "nora/agent/tools.py",
+    "old": "if len(visible) != len(threads):",
+    "new": "if False:",
+    "target": "tests/infra/test_standing_ledger.py::test_room_list_never_calls_an_unreadable_ledger_empty[withheld]"
+  },
+  {
+    "name": "unreadable threads have unavailable status",
+    "file": "nora/agent/tools.py",
+    "old": "unavailable = {\"status\": \"unavailable\", \"note\": \"I couldn't check this room's threads.\"}",
+    "new": "unavailable = {\"status\": \"nothing_found\", \"note\": \"No threads on record.\"}",
+    "target": "tests/infra/test_standing_ledger.py::test_room_list_never_calls_an_unreadable_ledger_empty"
+  },
+  {
+    "name": "thread previews carry their source requirements",
+    "file": "nora/agent/tools.py",
+    "old": "            for e in visible:\n                record_requirement(DisclosureRequirement(\n                    room_key(e.platform, e.conversation_id), e.lineage.section(ROW),\n                    e.exclude_persons,\n                ))\n            topics =",
+    "new": "            topics =",
+    "target": "tests/infra/test_standing_ledger.py::test_room_list_threads_are_topics_by_room_newest_first"
+  }
+]

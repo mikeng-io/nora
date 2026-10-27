@@ -799,3 +799,81 @@ async def test_standing_read_records_each_entrys_source_requirements(ledger, led
     requirements = recording.requirements["ledger-read"]
     assert all(r.known for r in requirements)
     assert any(r.entries == entry.lineage.section(ROW) for r in requirements)
+
+
+async def test_room_list_threads_are_topics_by_room_newest_first(ledger, ledger_db):
+    from types import SimpleNamespace
+
+    from nora.agent.turn_recording import TurnRecording
+
+    ids = [await message(ledger_db, r, n=n) for r, n in
+           (("room-a", 1), ("room-b", 2), ("room-a", 3), ("room-c", 4))]
+    for subject, scope, room, id in (
+        ("Older topic", "unit", "room-a", ids[0]),
+        ("Other room topic", "unit", "room-a", ids[1]),
+        ("Newer topic", "room", "room-a", ids[2]),
+        ("Other unit topic", "room", "room-c", ids[3]),
+    ):
+        got = await ledger.apply(
+            LedgerOp("open", "thread", subject=subject, scope=scope, message_ids=(id,)),
+            target=target(room), shown=frame(id), now_ms=9000,
+        )
+        assert got.entry is not None, got.refusal
+    # An unrelated entry is not a topic preview.
+    await plant(ledger, ledger_db)
+    tools = await toolset(ledger, ledger_db)
+    recording = TurnRecording()
+    recording.before(SimpleNamespace(tool_use={"toolUseId": "room-topics"}))
+    try:
+        got = await tools["room_list"]()
+    finally:
+        recording.after(None)
+    assert got["status"] == "ok"
+    rooms = {r["room"]: r for r in got["rooms"]}
+    assert set(rooms) == {"room-a", "room-b"}
+    assert rooms["room-a"]["threads"] == {
+        "status": "ok", "topics": ["Newer topic", "Older topic"],
+    }
+    assert rooms["room-b"]["threads"] == {
+        "status": "ok", "topics": ["Other room topic"],
+    }
+    assert "Other unit topic" not in str(got)
+    assert len(recording.requirements["room-topics"]) == 4
+    assert all(r.known for r in recording.requirements["room-topics"])
+
+
+@pytest.mark.parametrize("blocked", ["withheld", "unwired", "failed", "roster"])
+async def test_room_list_never_calls_an_unreadable_ledger_empty(
+    ledger, ledger_db, monkeypatch, blocked,
+):
+    tools = await toolset(ledger, ledger_db)
+    empty = await tools["room_list"]()
+    assert all(r["threads"]["status"] == "nothing_found" for r in empty["rooms"])
+    id = await message(ledger_db, "room-b")
+    got = await ledger.apply(
+        LedgerOp("open", "thread", subject="Withheld topic", scope="room", message_ids=(id,)),
+        target=target("room-b"), shown=frame(id), now_ms=1000,
+    )
+    assert got.entry is not None
+    context = collaborators()
+    if blocked == "unwired":
+        ledger = None
+    elif blocked == "failed":
+        read = ledger.read
+
+        async def read_room(*, unit, platform, conversation_id):
+            if conversation_id == "room-b":
+                raise RuntimeError("ledger unavailable")
+            return await read(unit=unit, platform=platform, conversation_id=conversation_id)
+
+        monkeypatch.setattr(ledger, "read", read_room)
+    elif blocked == "roster":
+        context[2].fail = True
+    result = await (await toolset(ledger, ledger_db, context=context))["room_list"]()
+    previews = {r["room"]: r["threads"] for r in result["rooms"]}
+    assert previews["room-b"]["status"] == "unavailable"
+    assert previews["room-b"]["note"]
+    assert "topics" not in previews["room-b"]
+    assert "Withheld topic" not in str(result)
+    if blocked in {"withheld", "failed"}:
+        assert previews["room-a"]["status"] == "nothing_found"
