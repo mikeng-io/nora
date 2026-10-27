@@ -358,6 +358,7 @@ async def test_cross_unit_citations_and_uncited_claims_are_refused(ledger, ledge
         shown=frame(id),
         now_ms=1000,
     )
+    assert got.status == "refused"
     assert got.refusal.reason == "uncited"
     assert await ledger.read(unit="u", platform="signal", conversation_id="room-a") == ()
 
