@@ -186,6 +186,11 @@
     text-size-adjust: 100%;
     -webkit-tap-highlight-color: transparent;
     background: var(--studio);
+    /* Reserve the scrollbar's gutter even when a drawer or menu scroll-locks
+       the page. Without it, classic scrollbars (Windows, a mouse on macOS —
+       never overlay-scroll phones) vanish on open and viewport-sized fixed
+       elements like the bottom bar re-lay out: a visible pop on the right edge. */
+    scrollbar-gutter: stable;
   }
 
   body {
