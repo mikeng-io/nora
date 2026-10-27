@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertPublicHost, isPrivateAddress, validateBatch, validateSubmissionUrl } from "./validate";
 import { DownloadStore, listJobFiles, mediaTypeFor, thumbPath } from "./store";
 import { DownloadRunner, sizeToBytes, type RunnerOptions } from "./runner";
+import { serveContent } from "./service";
 
 vi.mock("server-only", () => ({}));
 
@@ -564,6 +565,20 @@ describe("conversion", () => {
     const job = store.create("https://media.example/v/2", "miles");
     store.update(job.id, { status: "done", fileName: "download.mp4" });
     await expect(runner.convert(job.id, "../../etc/passwd", "mp3")).rejects.toThrow("bad file name");
+  });
+
+  it("a converted output downloads under its own name, not the original's", async () => {
+    const { store, runner } = makeRunner();
+    const job = store.create("https://media.example/v/4", "miles");
+    const d = path.join(dir, "files", job.id);
+    mkdirSync(d, { recursive: true });
+    writeFileSync(path.join(d, "download.mp4"), "media-bytes");
+    writeFileSync(path.join(d, "download.webm"), "converted-bytes");
+    store.update(job.id, { status: "done", fileName: "download.mp4", mediaType: "video/mp4" });
+    const res = await serveContent(runner, job.id, null, "download.webm");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-disposition")).toContain("download.webm");
+    await res.body?.cancel();
   });
 });
 
