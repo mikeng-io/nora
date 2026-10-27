@@ -447,7 +447,11 @@
       "downloading": "下載緊",
       "done": "下載好咗",
       "failed": "失敗"
-    }
+    },
+    "convert": "轉格式",
+    "convertLabel": "幫呢個檔轉格式",
+    "converting": "緊轉格式…",
+    "ttlHint": "檔案 24 個鐘後自動刪除"
   },
   "map": {
     "title": "大家喺邊",

@@ -160,14 +160,16 @@ export class DownloadStore {
     return job;
   }
 
-  /** Forget the job and its files. Kill a live process first (the runner does). */
+  /** Forget the job and its files. Kill a live process first (the runner does).
+   * The directory goes FIRST: if its removal fails the registry record stays,
+   * so a later sweep can retry instead of orphaning the files. */
   async remove(id: string): Promise<boolean> {
     const job = this.jobs.get(id);
     if (!job) return false;
+    await rm(jobDir(this.root, id), { recursive: true, force: true });
     this.jobs.delete(id);
     this.markDirty();
     await this.flush();
-    await rm(jobDir(this.root, id), { recursive: true, force: true });
     return true;
   }
 
@@ -243,4 +245,61 @@ export class DownloadStore {
       throw err;
     }
   }
+}
+
+const IMAGE_EXT = new Set(["jpg", "jpeg", "png", "webp", "gif"]);
+
+/** Media kind from the stored content type: drives which conversion targets a
+ * done job may take (video→video, audio→audio, image→image only). */
+export function mediaKind(job: DownloadJob): "video" | "audio" | "image" | null {
+  const t = job.mediaType ?? "";
+  if (t.startsWith("video/")) return "video";
+  if (t.startsWith("audio/")) return "audio";
+  if (IMAGE_EXT.has(path.extname(job.fileName ?? "").slice(1).toLowerCase()) || t.startsWith("image/"))
+    return "image";
+  return null;
+}
+
+const TRANSIENT = /\.f\d+\.|\.converting\.|\.(part|ytdl)$/;
+
+/** Real files sitting in a job dir: the download plus any converted outputs,
+ * minus yt-dlp's partials and the thumbnail (which has its own endpoint).
+ * A failed read reports nothing — a guessed name would serve a phantom file
+ * through content?file=. */
+export async function listJobFiles(root: string, job: DownloadJob): Promise<string[]> {
+  if (!job.fileName) return [];
+  const dir = jobDir(root, job.id);
+  try {
+    return (await readdir(dir)).filter(
+      (f) =>
+        !TRANSIENT.test(f) &&
+        !isThumbName(f) &&
+        (f === job.fileName || mediaTypeFor(path.extname(f).slice(1)) !== "application/octet-stream"),
+    );
+  } catch {
+    return [];
+  }
+}
+
+// yt-dlp writes thumbnails under the -o "thumbnail:download-thumb" template so
+// they can never collide with a media file or a converted output of the same
+// extension — the earlier prefix scan confused converted images for thumbs.
+const isThumbName = (f: string) => /^download-thumb\./.test(f);
+
+/** The job's thumbnail: yt-dlp's --write-thumbnail artifact when present, else
+ * the media file itself when it is already an image. */
+export async function thumbPath(root: string, job: DownloadJob): Promise<string | null> {
+  if (!job.fileName) return null;
+  const dir = jobDir(root, job.id);
+  try {
+    for (const f of await readdir(dir)) {
+      if (isThumbName(f) && IMAGE_EXT.has(path.extname(f).slice(1).toLowerCase())) {
+        return path.join(dir, f);
+      }
+    }
+  } catch {
+    return null;
+  }
+  if (IMAGE_EXT.has(path.extname(job.fileName).slice(1).toLowerCase())) return path.join(dir, job.fileName);
+  return null;
 }

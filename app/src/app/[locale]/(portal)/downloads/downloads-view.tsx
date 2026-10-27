@@ -22,11 +22,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, UnavailableState } from "@/components/ui/states";
 import {
   downloadContentPath,
+  downloadThumbnailPath,
   type DownloadJob,
   type DownloadStatus,
 } from "@/lib/api/downloads";
 import { formatBytes, formatRate, formatRelative } from "@/lib/format";
-import { useDeleteDownload, useDownloads, useRetryDownload, useSubmitDownloads } from "@/lib/queries";
+import { useConvertDownload, useDeleteDownload, useDownloads, useRetryDownload, useSubmitDownloads } from "@/lib/queries";
 import { cn } from "@/lib/cn";
 import { useNow } from "@/hooks/use-now";
 
@@ -42,6 +43,7 @@ export function DownloadsView() {
   const submit = useSubmitDownloads();
   const retry = useRetryDownload();
   const remove = useDeleteDownload();
+  const convert = useConvertDownload();
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -94,7 +96,9 @@ export function DownloadsView() {
         <PanelHeader
           title={t("library")}
           description={
-            list.data ? t("used", { size: formatBytes(list.data.usedBytes) }) : undefined
+            list.data
+              ? `${t("used", { size: formatBytes(list.data.usedBytes) })} · ${t("ttlHint")}`
+              : t("ttlHint")
           }
         />
         {list.isPending ? (
@@ -120,7 +124,8 @@ export function DownloadsView() {
                 t={t}
                 onRetry={() => retry.mutate(job.id)}
                 onDelete={() => remove.mutate(job.id)}
-                busy={retry.isPending || remove.isPending}
+                onConvert={(target) => convert.mutate({ id: job.id, target })}
+                busy={retry.isPending || remove.isPending || convert.isPending}
               />
             ))}
           </Rows>
@@ -151,6 +156,7 @@ function JobRow({
   t,
   onRetry,
   onDelete,
+  onConvert,
   busy,
 }: {
   job: DownloadJob;
@@ -159,6 +165,7 @@ function JobRow({
   t: ReturnType<typeof useTranslations>;
   onRetry: () => void;
   onDelete: () => void;
+  onConvert: (target: string) => void;
   busy: boolean;
 }) {
   const Icon = mediaIcon(job);
@@ -168,7 +175,17 @@ function JobRow({
 
   return (
     <li className="flex items-start gap-3 px-4 py-3 sm:px-5">
-      <Icon className="mt-0.5 size-5 shrink-0 text-ink-muted" aria-hidden="true" />
+      {job.status === "done" && job.hasThumb ? (
+        // eslint-disable-next-line @next/next/no-img-element -- a job's own stored thumbnail
+        <img
+          src={downloadThumbnailPath(job.id)}
+          alt=""
+          className="mt-0.5 size-10 shrink-0 rounded-control border border-hairline object-cover"
+          loading="lazy"
+        />
+      ) : (
+        <Icon className="mt-0.5 size-5 shrink-0 text-ink-muted" aria-hidden="true" />
+      )}
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           {job.status === "done" ? (
@@ -211,6 +228,22 @@ function JobRow({
             </p>
           </div>
         ) : null}
+        {job.status === "done" && job.files && job.files.length > 1 ? (
+          <p className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-meta">
+            {job.files
+              .filter((f) => f !== job.fileName)
+              .map((f) => (
+                <a
+                  key={f}
+                  href={downloadContentPath(job.id, f)}
+                  download
+                  className="text-denim underline-offset-2 hover:underline"
+                >
+                  {f}
+                </a>
+              ))}
+          </p>
+        ) : null}
         {job.status === "failed" && job.error ? (
           <p className="mt-1 flex items-start gap-1 text-meta text-danger">
             <CircleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
@@ -219,6 +252,31 @@ function JobRow({
         ) : null}
       </div>
       <div className="flex shrink-0 items-center gap-1">
+        {job.status === "done" && job.convertTargets && job.convertTargets.length > 0 ? (
+          job.converting ? (
+            <Loader2 className="size-4 animate-spin text-ink-muted" aria-label={t("converting")} />
+          ) : (
+            <select
+              aria-label={t("convertLabel")}
+              defaultValue=""
+              disabled={busy}
+              onChange={(e) => {
+                if (e.target.value) onConvert(e.target.value);
+                e.target.value = "";
+              }}
+              className="rounded-control border border-hairline bg-surface px-1.5 py-1 text-meta text-ink-muted"
+            >
+              <option value="" disabled>
+                {t("convert")}
+              </option>
+              {job.convertTargets.map((tgt) => (
+                <option key={tgt} value={tgt}>
+                  {tgt}
+                </option>
+              ))}
+            </select>
+          )
+        ) : null}
         {job.status === "done" ? (
           <a
             href={downloadContentPath(job.id)}

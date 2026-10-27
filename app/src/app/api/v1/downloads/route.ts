@@ -13,7 +13,7 @@ export async function GET() {
   if (check.status !== "ok") {
     return NextResponse.json({ error: "unauthorized" }, { status: 401, headers: PRIVATE });
   }
-  return NextResponse.json(list(downloadRunner()), { headers: PRIVATE });
+  return NextResponse.json(await list(downloadRunner()), { headers: PRIVATE });
 }
 
 export async function POST(request: Request) {

@@ -49,7 +49,11 @@ any the browser sends. `src/server/upstream.test.ts` pins every rule, and
 
 One group of `/api/v1/*` routes does NOT reach Nora: `/api/v1/downloads/*`
 is the portal's own yt-dlp batch downloader (`src/server/downloads/`), a
-batch submit plus list/get/retry/delete and a content stream. Jobs and media
+batch submit plus list/get/retry/delete and a content stream, a thumbnail
+preview (`--write-thumbnail`), and a `POST /:id/convert` that transcodes a
+finished file with ffmpeg (video→mp4/webm/mkv, audio→mp3/m4a/opus/wav,
+image→png/jpg/webp). Finished jobs are swept after `NORA_DOWNLOADS_TTL_HOURS`
+(default 24; `0` keeps them). Jobs and media
 live under `NORA_DOWNLOADS_DIR` (one `jobs.json` registry, one directory per
 download); the image ships the yt-dlp binary and ffmpeg, and the compose
 service keeps it in the `app-downloads` named volume (which inherits the
