@@ -5935,6 +5935,11 @@ def build_tool_specs(
                 visible = [e for e in entries if ledger_permits(e, target)]
                 withheld += len(entries) - len(visible)
                 if visible:
+                    for e in visible:
+                        record_requirement(DisclosureRequirement(
+                            room_key(e.platform, e.conversation_id), e.lineage.section(ROW),
+                            e.exclude_persons,
+                        ))
                     shown["entries"] = [{
                         "id": e.id, "kind": e.kind, "scope": e.scope, "status": e.status,
                         "subject": e.subject, "body": e.body, "revision": e.revision,

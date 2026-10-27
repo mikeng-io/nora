@@ -61,5 +61,12 @@
     "old": "body=new_turns, unit=entry.unit",
     "new": "body=entry.body, unit=entry.unit",
     "target": "tests/infra/test_standing_ledger.py::test_revising_one_section_preserves_evidence_after_source_retention"
+  },
+  {
+    "name": "ledger reads retain entry requirements in the turn record",
+    "file": "nora/agent/tools.py",
+    "old": "                    for e in visible:\n                        record_requirement(DisclosureRequirement(\n                            room_key(e.platform, e.conversation_id), e.lineage.section(ROW),\n                            e.exclude_persons,\n                        ))",
+    "new": "                    for e in visible:\n                        pass",
+    "target": "tests/infra/test_standing_ledger.py::test_standing_read_records_each_entrys_source_requirements"
   }
 ]

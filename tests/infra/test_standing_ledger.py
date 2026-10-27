@@ -58,6 +58,8 @@ async def ledger_db(ledger_url):
             "standing_thread_revision",
             "tag_trace",
             "messages",
+            "standing",
+            "standing_revision",
         ):
             await conn.execute(sa.text(f"TRUNCATE {table} CASCADE"))
     try:
@@ -709,3 +711,23 @@ async def test_revising_one_section_preserves_evidence_after_source_retention(le
     assert revised.status == "ok", revised.refusal
     assert f"- Option A turn({trace.handle})" in revised.entry.body
     assert revised.entry.lineage == opened.entry.lineage
+
+
+async def test_standing_read_records_each_entrys_source_requirements(ledger, ledger_db):
+    from types import SimpleNamespace
+
+    from nora.agent.turn_recording import TurnRecording
+    from nora.domain.lineage import ROW
+
+    entry, _ = await plant(ledger, ledger_db)
+    tool = (await toolset(ledger, ledger_db, room_id="room-b"))["standing_read"]
+    recording = TurnRecording()
+    recording.before(SimpleNamespace(tool_use={"toolUseId": "ledger-read"}))
+    try:
+        result = await tool()
+    finally:
+        recording.after(None)
+    assert result["status"] == "ok"
+    requirements = recording.requirements["ledger-read"]
+    assert all(r.known for r in requirements)
+    assert any(r.entries == entry.lineage.section(ROW) for r in requirements)
