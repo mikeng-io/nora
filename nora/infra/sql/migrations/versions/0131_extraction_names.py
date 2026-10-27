@@ -127,7 +127,7 @@ def _migrate(*, reverse: bool) -> None:
         if target != "extraction":
             op.alter_column(destination, old_column, new_column_name=new_column)
         for name in constraints:
-            new_name = name.replace(old_prefix, new_prefix).replace(old_column, new_column)
+            new_name = name.replace(old_column, new_column).replace(old_prefix, new_prefix)
             op.execute(f'ALTER TABLE "{destination}" RENAME CONSTRAINT "{name}" TO "{new_name}"')
         for name in indexes:
             new_name = name.replace(old_prefix, new_prefix)

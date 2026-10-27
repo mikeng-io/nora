@@ -11,9 +11,18 @@ from nora.infra.sql.migrations_runner import alembic_config, sync_url_for
 def test_extraction_rename_round_trip_preserves_rows_history_and_sql_names(pg_url):
     cfg = alembic_config(pg_url)
     engine = sa.create_engine(sync_url_for(pg_url))
-    command.downgrade(cfg, "0130_profile_names")
+    command.downgrade(cfg, "0128_event_platform")
+    command.upgrade(cfg, "0130_profile_names")
+    constraints_sql = sa.text(
+        "SELECT conrelid::regclass::text, conname FROM pg_constraint "
+        "WHERE connamespace = 'public'::regnamespace "
+        "AND conrelid::regclass::text LIKE 'message_reading%' "
+        "ORDER BY 1, 2"
+    )
     try:
         with engine.begin() as conn:
+            original_constraints = conn.execute(constraints_sql).all()
+            assert original_constraints
             conn.execute(
                 sa.text("""
                 INSERT INTO message_reading
@@ -89,6 +98,7 @@ def test_extraction_rename_round_trip_preserves_rows_history_and_sql_names(pg_ur
                 )
             command.downgrade(cfg, "0130_profile_names")
             with engine.connect() as conn:
+                assert conn.execute(constraints_sql).all() == original_constraints
                 for suffix, rows in before.items():
                     assert (
                         conn.execute(sa.text(f"SELECT to_jsonb(t) FROM message_reading{suffix} t"))  # noqa: S608 - fixed test identifiers

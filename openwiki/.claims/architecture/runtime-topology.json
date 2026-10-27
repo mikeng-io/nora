@@ -78,7 +78,7 @@
     },
     {
       "id": "claim_e689703d2ecf4e0b8059814a4688aacb",
-      "statement": "The startup sequence is ordered and fatal at each artifact the process cannot be correct without: `identity.toml` (persons), the reserved `honcho.ai_peer` check, `policy.toml`, the database URL from the env var named by `store.database_url_env` (default `DATABASE_URL`), and `run_migrations` — each failure raised as `StartupError` with its own message.",
+      "statement": "The startup sequence is ordered and fatal at each artifact the process cannot be correct without: `identity.toml` (persons), the reserved `memory.ai_peer` check, `policy.toml`, the database URL from the env var named by `store.database_url_env` (default `DATABASE_URL`), and `run_migrations` — each failure raised as `StartupError` with its own message.",
       "evidence": [
         {
           "resource": "repo://nora/app/composition.py#L1425-L1464",

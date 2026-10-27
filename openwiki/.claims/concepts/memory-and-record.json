@@ -332,7 +332,7 @@
     },
     {
       "id": "claim_7040151eeb5843adaa98c35cca9fb7fa",
-      "statement": "`[memory.index] read` is the read switch and selects exactly one memory tool surface wherever tools are built: off (the shipped default and the rollback) the Honcho verbs are offered and no `memory_search`; on, `memory_search` and `persona_dispute` are offered and no Honcho memory tool. Exclusivity is structural — one filter in `build_tool_specs` over `on_memory_surface`, plus the registry withholding the unselected set so the prompt catalogue, the routing digest and `withheld_tools()` agree — while the projection into the index runs either way.",
+      "statement": "`[memory_index] enabled` is the read switch and selects exactly one memory tool surface wherever tools are built: off (the shipped default and the rollback) the Honcho verbs are offered and no `memory_search`; on, `memory_search` and `persona_dispute` are offered and no Honcho memory tool. Exclusivity is structural — one filter in `build_tool_specs` over `on_memory_surface`, plus the registry withholding the unselected set so the prompt catalogue, the routing digest and `withheld_tools()` agree — while the projection into the index runs either way.",
       "evidence": [
         {
           "resource": "repo://nora/agent/registry.py#L320-L339",
@@ -354,7 +354,7 @@
     },
     {
       "id": "claim_e7038b6fef6f4cfd99b8bfd673c04161",
-      "statement": "`remember` and `load_transcript` are on both memory surfaces — `remember` writes a Honcho conclusion off the graph and a Persona `told` line on it — and `[memory.index] embed` independently selects vectors: with `enabled` on and `embed` off, every answer is the lexical fallback's `partial`.",
+      "statement": "`remember` and `load_transcript` are on both memory surfaces — `remember` writes a Honcho conclusion off the graph and a Persona `told` line on it — and `[memory_index] embed` independently selects vectors: with `enabled` on and `embed` off, every answer is the lexical fallback's `partial`.",
       "evidence": [
         {
           "resource": "repo://nora/agent/tools.py#L13765-L13770",
@@ -372,7 +372,7 @@
     },
     {
       "id": "claim_2a76b27770d6405ba2db2dc50498ac5c",
-      "statement": "The composition root builds one `MemorySearch` instance shared by the tool registry and the tag path's pre-fetch while `[memory.index] read`, and `None` otherwise — which keeps the Honcho surface and builds no pre-fetch — while the same `SqlMemoryIndex` answers `/health`'s index block either way.",
+      "statement": "The composition root builds one `MemorySearch` instance shared by the tool registry and the tag path's pre-fetch while `[memory_index] enabled`, and `None` otherwise — which keeps the Honcho surface and builds no pre-fetch — while the same `SqlMemoryIndex` answers `/health`'s index block either way.",
       "evidence": [
         {
           "resource": "repo://nora/app/composition.py#L2171-L2199",
@@ -520,7 +520,7 @@
     },
     {
       "id": "claim_faeee9ba560d4a16a0a7abe29965c14c",
-      "statement": "The memory drain loop re-projects queued sources every `[memory.index] drain_seconds` and, when `embed` is on, runs one embedding batch after each drain; either failure is counted on its own stage (`memory_drain`, `memory_embed`) and never stops the loop.",
+      "statement": "The memory drain loop re-projects queued sources every `[memory_index] drain_seconds` and, when `embed` is on, runs one embedding batch after each drain; either failure is counted on its own stage (`memory_drain`, `memory_embed`) and never stops the loop.",
       "evidence": [
         {
           "resource": "repo://nora/app/runtime.py#L139-L171",
@@ -590,7 +590,7 @@
     },
     {
       "id": "claim_42e260c327c043da9f6f1fcf5be350ce",
-      "statement": "The unified-memory cutover has two independent axes: `[memory.index] read` selects the retrieval surface (the graph verbs `memory_search` and `persona_dispute` plus the `<recalled>` pre-fetch when on, the Honcho verbs when off), while `[persona] enabled` beside `[persona] render` selects what a prompt renders about a person (`<persona>` in place of the seven legacy blocks). Neither setting moves the other, so graph retrieval with the legacy blocks and Honcho retrieval with `<persona>` are both supported deployments.",
+      "statement": "The unified-memory cutover has two independent axes: `[memory_index] enabled` selects the retrieval surface (the graph verbs `memory_search` and `persona_dispute` plus the `<recalled>` pre-fetch when on, the Honcho verbs when off), while `[persona] enabled` beside `[persona] render` selects what a prompt renders about a person (`<persona>` in place of the seven legacy blocks). Neither setting moves the other, so graph retrieval with the legacy blocks and Honcho retrieval with `<persona>` are both supported deployments.",
       "evidence": [
         {
           "resource": "repo://nora/agent/prefill.py#L306-L314",

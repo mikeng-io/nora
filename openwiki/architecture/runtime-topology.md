@@ -153,7 +153,7 @@ The boundaries are enforced by `pyproject.toml`'s import-linter contracts plus A
 | 2 | `setup_logging` with the LLM key registered as a secret, then `setup_errors` (Sentry) — wired before anything that can fail, because a reporter installed after the crash reports nothing | — |
 | 3 | tracing, if `[obs.tracing] enabled` | degrades: `log.warning` and continue, because tracing is never load-bearing and `nora.obs` may not import `nora.agent` to guard it itself |
 | 4 | `load_persons(identity_file)` | fatal (`person mapping error`) |
-| 5 | the reserved-`aiPeer` check: no human may hold `honcho.ai_peer`, or their words merge irreversibly into Nora's self-model card | fatal |
+| 5 | the reserved-`aiPeer` check: no human may hold `memory.ai_peer`, or their words merge irreversibly into Nora's self-model card | fatal |
 | 6 | `load_policy(policy_file)` | fatal (`policy error`) |
 | 7 | the database URL, read from the env var named by `store.database_url_env` (default `DATABASE_URL`) | fatal if unset |
 | 8 | `run_migrations(database_url)` — Alembic, synchronously, under a Postgres session-level advisory lock shared with the presence and analytics containers, and with a deadline so a lost race is an ordinary startup failure rather than a hang | fatal (`migration error`) |
@@ -285,7 +285,7 @@ presence pre-flight, `_tell_about_lost_jobs`) run during boot.
 |---|---|---|---|---|---|
 | adapter supervision | `runtime.supervise_adapter`, `start_adapters` | `App.run` | one task per enabled platform; restart with capped backoff 1 s → 60 s | one platform's `listen()` loop | logs, `nora_adapter_restarts_total{platform}`, retries; other platforms and the process survive |
 | retention prune | `runtime.prune_loop` | `App.run` | 300 s (`PRUNE_INTERVAL_SECONDS`), only while `store.prune_enabled` | deleting rows past `max_per_conversation` | `nora_errors_total{stage="prune"}`, keeps looping |
-| memory drain | `runtime.memory_drain_loop` | `App.run` | `[memory.index] drain_seconds` (60), unconditional | re-projecting what the index queued; one embed batch after each drain | `{stage="memory_drain"}`; the embed step fails separately as `{stage="memory_embed"}` and never stops the drain |
+| memory drain | `runtime.memory_drain_loop` | `App.run` | `[memory_index] drain_seconds` (60), unconditional | re-projecting what the index queued; one embed batch after each drain | `{stage="memory_drain"}`; the embed step fails separately as `{stage="memory_embed"}` and never stops the drain |
 | debounce sweep | `runtime.debounce_sweep_loop` | `App.run` | 300 s tick, 3600 s TTL | bounding `Debounce`'s per-conversation entries | `{stage="debounce_sweep"}` |
 | reminder heartbeat | `HeartbeatLoop.run` (`nora.app.heartbeat`) | root | `[heartbeat] tick_seconds` (60); needs `enabled` **and** a fire path | due-reminder turns, the conversation slot, deferrals | per-group `try/except`, `{stage="heartbeat"}`; the liveness gauge is stamped only by a pass that finished |
 | compute poll | `ComputeJobPoller.run` (`nora.app.compute_poller`) | root | `[compute] poll_tick_seconds` (10); needs `enabled`, a fire path and at least one backend | delivering a finished job through `FirePath.speak` | `{stage="compute_poller"}`; a held slot is `deferred` and the row stays `PENDING` |

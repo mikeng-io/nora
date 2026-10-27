@@ -298,7 +298,7 @@ HALF_LIFE_DAYS = 180.0
 SOCIAL_HALF_LIFE_DAYS = 1095.0
 #: Characters of one item's text in the packet.
 TEXT_CHARS = 600
-#: How many drain periods (`[memory.index] drain_seconds`, the embedding
+#: How many drain periods (`[memory.index] refresh_seconds`, the embedding
 #: worker's tick) a node may wait for its vector before it is a backlog
 #: that answers `partial`. The worker sleeps a period, drains, then embeds
 #: one batch, the newest first (`embed_pick`), so a node written just after
@@ -804,7 +804,7 @@ class MemorySearch:
     the model its vectors are stored under (`nora.infra.embedder.
     fingerprint`); without them every search is the lexical fallback.
     `drain_seconds` is the embedding worker's tick (`[memory.index]
-    drain_seconds`); without it no wait is fresh, and every node waiting
+    refresh_seconds`); without it no wait is fresh, and every node waiting
     for a vector is a backlog (`partial`), the safe side."""
 
     def __init__(
