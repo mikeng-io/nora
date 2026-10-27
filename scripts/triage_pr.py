@@ -4,10 +4,9 @@ Nobody should have to remember a label. The type comes from the Conventional Com
 title (a closed list), the areas from the paths the PR changes, `breaking` from `!`,
 and the author is assigned when the author is a person. Runs from trusted default-branch
 code with API data only: the title and the file list are strings in an allow-list lookup
-and never reach a shell or a request path unquoted. Only the Devin integration bot
-receives these data-only labels; labels do not authorize work. Other bot PRs
-(Dependabot, the release App) are left to their own configuration, because a
-Dependabot-triggered workflow gets a read-only token. Bots are never assigned.
+and never reach a shell or a request path unquoted. People and bots use the same
+data-only classification; labels do not authorize work. Authors that manage their
+own labels are configured in .github/pr-triage.json. Bots are never assigned.
 """
 
 from __future__ import annotations
@@ -65,6 +64,11 @@ DEPENDENCY_FILES = {
     "go.sum",
 }
 MAX_FILE_PAGES = 30
+SELF_MANAGED_AUTHORS = frozenset(
+    json.loads((Path(__file__).resolve().parents[1] / ".github/pr-triage.json").read_text())[
+        "self_managed_authors"
+    ]
+)
 
 
 def areas(path: str) -> set[str]:
@@ -150,8 +154,10 @@ def triage(github, repository: str, number: int) -> dict:
     item = github("GET", f"/repos/{repository}/pulls/{number}")
     login = item["user"]["login"]
     is_person = item["user"]["type"] == "User"
-    if not is_person and (item["user"]["type"], login) != ("Bot", "devin-ai-integration[bot]"):
-        return {"skipped": "bot author"}
+    if login in SELF_MANAGED_AUTHORS:
+        return {"skipped": "author manages its own labels"}
+    if item["user"]["type"] not in {"User", "Bot"}:
+        return {"skipped": "unsupported author type"}
     want = wanted(item["title"], changed_paths(github, repository, number))
     have = {label["name"] for label in item["labels"]}
     managed_have = {n for n in have if n.startswith(MANAGED) or n == BREAKING}

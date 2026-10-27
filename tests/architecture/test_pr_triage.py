@@ -2,8 +2,8 @@
 
 The triage job runs with write access on `pull_request_target`, so it must read data
 only: the title and the file list select labels from a fixed list and never reach a
-shell. Only the Devin integration bot receives labels, without assignment or work
-authorization. Other bots are skipped; a Dependabot-triggered job has a read-only token.
+shell. People and bots share classification; assignment is person-only. Authors
+with their own labeling are selected by trusted configuration, not bot-specific code.
 """
 
 from __future__ import annotations
@@ -117,31 +117,29 @@ def test_stale_managed_labels_are_removed_and_foreign_labels_are_left_alone():
     )
 
 
-@pytest.mark.parametrize(
-    "login,kind",
-    [
-        ("dependabot[bot]", "Bot"),
-        ("github-actions[bot]", "Bot"),
-        ("other[bot]", "Bot"),
-        ("devin-ai-integration", "Bot"),
-        ("devin-ai-integration[bot]", "Organization"),
-    ],
-)
-def test_a_bot_pr_is_left_to_its_own_configuration(login, kind):
-    github = Fake(user_pr(kind=kind, login=login))
-    assert triage.triage(github, "o/r", 7) == {"skipped": "bot author"}
+@pytest.mark.parametrize("login", sorted(triage.SELF_MANAGED_AUTHORS))
+def test_self_managed_authors_are_left_to_their_own_configuration(login):
+    github = Fake(user_pr(kind="Bot", login=login))
+    assert triage.triage(github, "o/r", 7) == {"skipped": "author manages its own labels"}
     assert [c[0] for c in github.calls] == ["GET"], "no write for a bot author"
 
 
+def test_unsupported_author_type_never_writes():
+    github = Fake(user_pr(kind="Organization"))
+    assert triage.triage(github, "o/r", 7) == {"skipped": "unsupported author type"}
+    assert [c[0] for c in github.calls] == ["GET"]
+
+
+@pytest.mark.parametrize("login", ["devin-ai-integration[bot]", "future-agent[bot]"])
 @pytest.mark.parametrize("assignees", [(), ("maintainer",)])
-def test_devin_receives_managed_labels_without_assigning_a_bot_or_changing_assignees(assignees):
+def test_bots_share_classification_without_assignment_or_registration(login, assignees):
     github = Fake(
         user_pr(
             title="security(portal): protect a request",
             labels=["type: fix", "area: docs", "review: pending"],
             assignees=assignees,
             kind="Bot",
-            login="devin-ai-integration[bot]",
+            login=login,
         ),
         files=["app/src/a.ts", "nora/app/x.py", "tests/unit/test_x.py"],
     )
@@ -159,6 +157,13 @@ def test_devin_receives_managed_labels_without_assigning_a_bot_or_changing_assig
     }
     writes = [c for c in github.calls if c[0] != "GET"]
     assert all("/labels" in c[1] for c in writes), "only label writes, never assignee or PR edits"
+
+
+def test_configuring_an_author_as_self_managed_needs_no_classifier_change(monkeypatch):
+    monkeypatch.setattr(triage, "SELF_MANAGED_AUTHORS", {"future-agent[bot]"})
+    github = Fake(user_pr(kind="Bot", login="future-agent[bot]"))
+    assert triage.triage(github, "o/r", 7) == {"skipped": "author manages its own labels"}
+    assert [c[0] for c in github.calls] == ["GET"]
 
 
 def test_an_author_who_cannot_be_assigned_is_not_an_error():
