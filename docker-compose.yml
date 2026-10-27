@@ -495,11 +495,15 @@ services:
       # bearer its /app/v1/otp/* routes require. Empty, the login page offers
       # Discord alone.
       - NORA_OTP_API_TOKEN=${NORA_OTP_API_TOKEN:-}
+      # /downloads: where yt-dlp's output lands. Under the same data root as
+      # Nora's so backups cover it; the job registry is jobs.json inside it.
+      - NORA_DOWNLOADS_DIR=/data/downloads
     volumes:
       # Same file, same read-only mount as `nora`/`presence` below — the web
       # portal's whitelist can never drift from Nora's own roster because it
       # reads the identical bytes.
       - ./identity.toml:/app/identity.toml:ro
+      - ${NORA_DATA_HOST_ROOT:-./data}/downloads:/data/downloads
 
   # site — Nora's public site (site/, Astro, static). Loopback-only like
   # `app`; it answers `/`, `/en/`, `/_astro/*`, `/_site/*`, `/favicon.ico`,
