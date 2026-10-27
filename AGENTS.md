@@ -472,14 +472,17 @@ when there is no `[units]`. History and drift-check limits: `docs/maintainers/co
 
 Load **`nora-release`** for manual bumping (operator, 2026-10-28). Ordinary
 master merges do not release. Manually dispatch `release-please` with
-`action=prepare` and an explicit patch/minor/major bump, review and manually merge
-the metadata PR, then separately dispatch `action=publish`. No auto-merge, release
-fragments, hand tags or room announcements. `scripts/release_plan.py` keeps the
+`action=prepare` and an explicit patch/minor/major bump, review and merge
+the metadata PR (maintainer or admitted daily agent), then separately dispatch
+`action=publish`. No per-push release, unconditional auto-merge, release fragments,
+hand tags or room announcements. `scripts/release_plan.py` keeps the
 reachable-history notes and enforces the declared minimum bump; release-please
 still owns tagging/publication. Subjects remain the changelog source.
 Publishing triggers `release-images.yml` and the existing Komodo poller, so obtain
-deployment admission before publishing. Publication and verified deployment remain
-separate states. Daily AI assessment recommends; it does not publish or deploy.
+deployment admission before publishing, or use the daily automation's standing
+authorization only after all `nora-release/assessment.md` criteria pass. Publication
+and verified deployment remain separate states. The daily agent evaluates and
+executes the release pipeline; it is not advisory-only.
 
 ## Adding or changing a tool
 

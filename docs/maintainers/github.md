@@ -80,30 +80,43 @@ publish that merged PR, without preparing another version.
 The release App is required for these dispatches so its PR changes trigger checks
 and its Release triggers image publication. There is no GITHUB_TOKEN fallback
 that appears successful but suppresses downstream events. `Release-As:` footers
-remain unsupported. Daily Devin assessment is advisory; it has no merge, tag,
-publish or deployment authority. See `.agents/skills/nora-release/SKILL.md`.
+remain unsupported. The specifically admitted daily Devin automation evaluates
+`.agents/skills/nora-release/assessment.md` and, when all criteria pass, executes
+prepare/checks/merge/publish through `.agents/skills/nora-release/SKILL.md`.
+Normal master pushes still have no release authority.
 
 Publishing still triggers the complete release image bundle and Komodo poller;
-obtain deployment admission first. This change does not add RC/nightly support
+use operator deployment admission or the qualified daily automation's standing
+authorization. This change does not add RC/nightly support
 to the stable-only publisher or a second deployment mechanism.
 
-### Daily Devin assessment
+### Daily Devin release automation
 
-Use one native Devin Automation with a Schedule trigger, an explicit
-Asia/Hong_Kong timezone, one concurrent run and a bounded per-session ACU limit.
-Its prompt references `.agents/skills/nora-release/assessment.md` on current master.
-The initial task is read-only: assess all still-unreleased changes and return
-wait, RC, stable or unavailable with a pinned candidate and evidence. Keep the
-report in the Devin session; it may not open PRs, dispatch Actions or publish.
-Bind a dedicated mandatory read-only security profile, with no GitHub CLI token,
-no extra MCP servers and only the GitHub destinations needed for reading. Do not
-change organization defaults or reuse the CI repair dispatcher for this task.
+Use one native Devin Automation with a daily Schedule trigger, Asia/Hong_Kong
+timezone, one concurrent run and bounded ACU/invocation limits. It follows current
+master `.agents/skills/nora-release/assessment.md`: actual unreleased range,
+exact-head checks, completed prerequisites and migration readiness are hard gates.
+Urgent fixes, a complete useful capability, or routine fixes held for seven days
+can qualify. Missing evidence is blocked; no changes means wait.
 
-Preflight scripts are account-dependent. If available, they can skip unchanged
-input before starting a session; the same no-change check remains in the task
-because Run now bypasses Preflight. Read back the saved recurrence, timezone,
-enabled state, ACU/invocation/concurrency limits and bound profile before claiming
-the automation is active. Creating it does not prove a scheduled assessment ran.
+Once the gates pass, it explicitly selects the bump, dispatches prepare with the
+full assessed candidate, verifies the generated metadata PR and its required
+checks, merges that PR only, dispatches publish and follows the existing pipeline.
+This includes the normal image/Komodo path under the operator's standing daily
+authorization. It never merges implementation PRs or bypasses the #250/#317 hold.
+
+Bind a dedicated mandatory release-operator profile that permits the necessary
+GitHub release operations and GitHub CLI token, read-only Devin MCP, no extra MCP
+servers, no messaging access and only required GitHub destinations. Do not change
+organization defaults or enable the generic CI repair dispatcher. While #250/#317
+are unresolved, keep this executing automation disabled with its future task saved.
+Read back the bound profile, task, schedule, enabled state and limits before activation;
+configuration alone does not prove the task or a deployment ran.
+
+Preflight scripts are account-dependent. If available they may skip unchanged
+input; keep that check in the task because Run now bypasses Preflight. Budget or
+API failure preserves existing workflow progress and stops, rather than starting
+a second release or claiming success. RC/nightly publishing remains separate work.
 
 Only `feat`, `fix`, `security`, `perf`, `change`, `doctrine` and `revert` commits
 with changes to runtime inputs qualify for creating/updating a release PR.

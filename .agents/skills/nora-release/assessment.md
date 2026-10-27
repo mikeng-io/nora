@@ -1,43 +1,79 @@
-# Daily release assessment
+# Daily release evaluation and execution
 
-Read-only instructions for a native Devin Automation. It recommends a release;
-it does not prepare or execute one. `SKILL.md` owns the manual release procedure.
+The operator authorizes this automation to evaluate the criteria below and, when
+all pass, execute the formal release pipeline through `SKILL.md`. Ordinary master
+pushes never release. This is conditional daily automation, not advisory-only.
 
-1. Read the repository's current `AGENTS.md`, this file and `SKILL.md`. Resolve
-   the latest published stable release and pin its source commit and current
-   `master` head. Use the full unreleased range, including changes held on prior
-   days. Also read existing release PRs, RCs and their candidate commits.
-2. Use trusted git history and read-only GitHub metadata. Do not run repository
-   code, tests, builds or production probes. If no eligible user-visible runtime
-   changes exist, report **wait — no unreleased change** and stop. Reuse the
-   scope described by `scripts/release_scope.py`; do not execute the planner,
-   which writes release metadata.
-3. Read the actual changes and commit bodies. Assess user-visible value, urgent
-   fixes, completeness of a useful change set, compatibility and migration
-   requirements. Commit counts and days elapsed do not force publication.
-   Report the Conventional Commit minimum and any discrepancy with actual
-   compatibility; never conceal a breaking change or rewrite commit history.
-4. Read existing checks on the exact candidate and relevant review/acceptance
-   evidence. Label anything missing, stale or inaccessible as unverified. An RC
-   suffix or earlier green head does not prove this candidate is ready. A newer
-   master head invalidates an older head-specific recommendation.
-5. Return one recommendation: **wait**, **prepare RC**, **propose stable**, or
-   **unavailable**. For RC/stable, name a proposed SemVer and explain why now;
-   for wait, explain what would make the next assessment different. Unavailable
-   is an inability to assess, not a conclusion that no release is needed.
+## Evidence and hard gates
 
-The report includes the stable baseline, candidate SHA/range, covered changes,
-suggested version, migration needs, exact-head check links and unresolved gaps.
-For an existing candidate, update the recommendation rather than suggesting a
-duplicate PR. Read current facts each run; session memory is only context.
+1. Read current `AGENTS.md`, this file and `SKILL.md`. Pin the latest published
+   stable tag/commit/time, current master SHA, all still-unreleased eligible
+   runtime changes, existing release PRs and any in-flight publication/build.
+   Session memory is context, not the baseline. No eligible change means wait.
+2. Honor operator holds. Bootstrap requires #250 fixed with merged evidence and
+   #317 merged with its final gate/review complete. A closed issue or an RC suffix
+   alone is not proof. Do not merge either implementation PR from this automation.
+3. Read successful CI on the exact source candidate and relevant merged PR
+   checks/review/acceptance evidence. No unresolved release blocker, known failing
+   gate, missing required evidence or unavailable check may be treated as green.
+   Use recorded evidence; do not launch live model evals or production probes.
+4. Identify actual compatibility impact from diffs and contract evidence, not
+   only commit markers. Patch = compatible fixes; minor = compatible capability;
+   major = an evidenced incompatible supported interface. Respect the planner's
+   declared minimum. A disagreement between the diff and markers is blocked for
+   correction, not permission to hide the break. Required migrations, rollback
+   limits and live config prerequisites must be documented and ready before
+   publication; unfinished manual work is blocked.
+5. Re-read the candidate and existing release state immediately before acting.
+   A changed candidate requires reassessment. Never create a competing release
+   PR, duplicate version or second active pipeline. Resume matching existing
+   release work only after checking its candidate, checks and prior progress.
 
-Keep the report in the Devin session. Do not write to GitHub, modify files,
-create/merge a PR, change branch rules, dispatch workflows, tag, publish, deploy,
-repair code, send messages, create child sessions or extend this automation.
-Do not access live config, credentials, production rows, logs or hosts. Stop at
-the configured session budget and report incomplete evidence without retrying
-through another agent. Missing tools or permissions are unavailable.
+## Is a release worthwhile now?
 
-The live schedule, enabled state, profile and budget are configured and read back
-in Devin, not duplicated here. Native Preflight is optional; the no-change check
-above must run even if a manual Run now bypasses it.
+After all hard gates pass, release when at least ONE condition is evidenced:
+
+- A fix addresses an active security exposure, service failure, data-loss risk
+  or regression in a supported, currently used path.
+- A complete user-visible capability or coherent improvement is ready, with its
+  relevant acceptance evidence. Internal renaming alone is not such a capability.
+- Eligible routine fixes remain unreleased and the previous stable release was
+  published at least seven days ago (use its actual timestamp).
+
+Otherwise wait and name the condition that is not met. Counts of commits or PRs
+alone never force a release. These are the initial policy defaults; changing them
+is an operator decision, not a decision the scheduled agent rewrites for itself.
+
+## Execute the admitted release
+
+- Record the candidate, gate readings, worth-releasing condition, chosen SemVer
+  and migration facts in the session, then follow `SKILL.md`.
+- Dispatch prepare on master with the chosen bump and full assessed `candidate`.
+  The workflow rejects a different source head. Read back its run and the one
+  generated release PR. Its diff must contain only the five release metadata
+  files; read the changelog for range coverage and breaking/migration details.
+- Require the release PR's actual required checks/review state to pass on its
+  exact head. Confirm its base still matches the assessed source. Merge only
+  that release metadata PR, with `--match-head-commit`, a real merge commit and
+  the authored subject. Never bypass checks or merge application/implementation PRs.
+- Read back the merge and dispatch publish. Release-please alone creates the
+  formal tag/Release. Publication starts the existing image bundle and Komodo
+  deployment pipeline; the operator's daily authorization includes this normal
+  path once the criteria pass. Do not SSH to production, edit live config, invent
+  tags, rebuild host images or introduce another deployment route.
+- Verify the Release/tag/source and follow the existing pipeline's run/receipt
+  evidence. Started, queued, built, published and deployed are separate states.
+  If image/deploy evidence is pending or inaccessible, report that state honestly;
+  never declare deployed from a tag or green image build alone.
+
+Return wait, blocked/unavailable, pipeline in progress, or verified outcome,
+with evidence links. Keep partial progress in the existing PR/workflow/session
+records so the next run can resume without a second release. Budget exhaustion
+or an API/check failure stops further mutations, preserves progress and is never
+success. No blind retry, new child session, code repair, unrelated GitHub writes,
+branch-rule change, credential inspection or external messages. Native Preflight
+is optional; the no-change check must also run when Run now bypasses it.
+
+RC/nightly image publication remains unsupported. If stabilization is needed,
+report blocked/needs RC and its missing prerequisites; never label an unready
+candidate stable merely to fit the current publisher.

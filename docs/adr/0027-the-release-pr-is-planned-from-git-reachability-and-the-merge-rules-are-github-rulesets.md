@@ -16,8 +16,10 @@ patch/minor/major, keeping git-reachability scope and a declared semantic minimu
 The maintainer reviews and merges the metadata PR; a separate manual publish
 dispatch lets release-please tag/publish it. Release-PR auto-merge is removed.
 Publication still triggers the image/Komodo path, requiring deployment admission.
-Daily Devin assessment recommends only; RC/nightly publication remains separate
-unbuilt work. The historical automatic-release consequences below describe the
+The operator clarified that daily Devin must measure versioned release criteria
+and execute the full pipeline when they pass, including the normal image/Komodo
+path; unresolved #250/#317 holds block activation. RC/nightly publication remains
+separate unbuilt work. The historical automatic-release consequences below describe the
 pre-amendment behavior. Branch rules and immutable published tags are unchanged.
 
 ## Context

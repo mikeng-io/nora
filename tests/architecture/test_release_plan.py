@@ -230,6 +230,25 @@ def test_manual_bump_can_collect_fixes_into_a_larger_release(repo, plan):
     assert '## [1.1.0]' in (repo / "CHANGELOG.md").read_text()
 
 
+def test_assessed_candidate_must_still_be_the_prepared_head(repo, plan):
+    assessed = commit(repo, "nora/f.py", "fix: repair a thing")
+    commit(repo, "nora/g.py", "feat: add a later capability")
+    with pytest.raises(ValueError, match="candidate changed"):
+        plan.main([
+            "--repo", REPO, "--bump", "minor", "--candidate", assessed,
+            "--out", str(repo / "out"),
+        ])
+    assert json.loads((repo / ".release-please-manifest.json").read_text()) == {".": "1.0.0"}
+    assert not (repo / "out").exists()
+
+    current = run("rev-parse", "HEAD").strip()
+    assert plan.main([
+        "--repo", REPO, "--bump", "minor", "--candidate", current,
+        "--out", str(repo / "out"),
+    ]) == 0
+    assert json.loads((repo / ".release-please-manifest.json").read_text()) == {".": "1.1.0"}
+
+
 @pytest.mark.parametrize("subject,selected", [("feat: add a verb", "patch"),
                                              ("change!: remove a verb", "minor")])
 def test_manual_bump_cannot_hide_a_declared_compatibility_change(repo, plan, subject, selected):
@@ -257,4 +276,6 @@ def test_release_requires_manual_prepare_and_publish_without_auto_merge():
     prepare = next(s for s in job["steps"] if s.get("id") == "plan")
     assert prepare["if"] == "inputs.action == 'prepare'"
     assert '--bump "$RELEASE_BUMP"' in prepare["run"]
+    assert '--candidate "$RELEASE_CANDIDATE"' in prepare["run"]
+    assert '${RELEASE_CANDIDATE:?' in prepare["run"]
     assert all("gh pr merge" not in s.get("run", "") for s in job["steps"])

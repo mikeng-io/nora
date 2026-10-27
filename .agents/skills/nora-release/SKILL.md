@@ -5,15 +5,17 @@ description: Prepares and publishes a Nora release with an explicit manual versi
 
 # Nora releases: manual bumping
 
-Formal releases have three separate operator actions: prepare a version PR,
-review and merge it, then publish it. The `release-please` workflow is
+Formal releases have three explicit actions: prepare a version PR, review and
+merge it, then publish it. A maintainer or the specifically admitted daily
+automation may execute them. The `release-please` workflow is
 `workflow_dispatch` only. It never runs on a master push or auto-merges a PR.
 `release-please` remains the sole tag/GitHub Release publisher; no hand tags.
 
 Publishing still triggers `release-images.yml`, which publishes a complete
 bundle to `deployments` for Komodo's enabled poller. A publish therefore reaches
-the existing automatic deployment path: obtain the operator's deployment
-admission before publishing. Preparing or merging metadata alone deploys nothing.
+the existing automatic deployment path. The admitted daily automation has standing
+release/deployment authorization only when every criterion in assessment.md passes;
+other publication needs operator admission. Preparing or merging metadata deploys nothing.
 Read publication and deployment back separately through `nora-deploy`.
 
 ## 1. Assess the unreleased range and choose the bump
@@ -43,22 +45,24 @@ choice may be larger but cannot be lower than that declared minimum. Hidden
 commit types and docs/design-only changes do not qualify on their own.
 Read commit bodies and the actual diff; a marker is not proof of compatibility.
 
-A Devin daily assessment follows [assessment.md](assessment.md), recommending
-wait, RC, stable or unavailable with base/head, reasons and evidence. It does not
-authorize preparing, merging, publishing or deploying. RC/nightly deployment is not implemented by this skill;
-the current publisher still accepts stable `vX.Y.Z` only.
+The daily automation follows [assessment.md](assessment.md): it measures hard
+gates and release-worth criteria, then executes prepare/checks/merge/publish when
+all pass. It is blocked until the implementation prerequisites land. An API or
+check failure is not permission to proceed. RC/nightly deployment remains
+unsupported; the current publisher accepts stable `vX.Y.Z` only.
 
 ## 2. Prepare the release PR manually
 
 Run from the trusted default branch via GitHub Actions, not a local deploy host:
 
 ```bash
-gh workflow run release-please.yml --ref master -f action=prepare -f bump=minor
+gh workflow run release-please.yml --ref master -f action=prepare -f bump=minor -f candidate=<assessed-full-sha>
 gh run list --workflow release-please.yml -L 3 --json databaseId,status,conclusion,headSha
 gh pr list --label 'autorelease: pending' --json number,title,headRefName,headRefOid
 ```
 
-Substitute the chosen bump. Check the dispatched run's own result, then read the
+Substitute the chosen bump and assessed source SHA. A changed candidate requires
+reassessment; the automation must always supply it. Check the dispatched run's own result, then read the
 PR: one `chore(master): release X.Y.Z`, with exactly `CHANGELOG.md`,
 `.release-please-manifest.json`, `pyproject.toml`, `nora/__init__.py` and `uv.lock`.
 The CHANGELOG must cover all eligible changes and identify any required migration.
@@ -70,7 +74,7 @@ No qualifying changes produces `eligible=false` and no new PR. A manifest/tag
 mismatch means a merged metadata PR may still need publication; do not overwrite
 or force a second version. `Release-As:` footers remain unsupported.
 
-## 3. Review and manually merge the metadata PR
+## 3. Review and merge the metadata PR
 
 ```bash
 gh pr view <N> --json headRefOid,mergeable,files,statusCheckRollup
@@ -87,7 +91,7 @@ hand. A merged metadata PR is not yet a published release.
 
 ## 4. Publish explicitly, then read back
 
-Only after release/deployment admission:
+Only after the daily criteria pass or separate operator release/deployment admission:
 
 ```bash
 gh workflow run release-please.yml --ref master -f action=publish

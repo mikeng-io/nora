@@ -159,6 +159,7 @@ def main(argv: list[str] | None = None) -> int:
         "--bump", choices=("patch", "minor", "major"), required=True,
         help="operator-selected bump; cannot hide a declared breaking change or feature",
     )
+    parser.add_argument("--candidate", help="full commit SHA already assessed for this preparation")
     parser.add_argument(
         "--out", type=Path, required=True, help="directory for title.txt and body.md"
     )
@@ -166,6 +167,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if not args.repo:
         raise SystemExit("release_plan: --repo or GITHUB_REPOSITORY is required")
+    if args.candidate and (
+        not re.fullmatch(r"[0-9a-f]{40}", args.candidate)
+        or git("rev-parse", "HEAD").strip() != args.candidate
+    ):
+        raise ValueError("release candidate changed or is not a full commit SHA; reassess first")
     previous = previous_release(ROOT)
     found = entries(f"v{previous}")
     if not found:

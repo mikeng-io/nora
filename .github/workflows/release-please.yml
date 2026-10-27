@@ -17,6 +17,10 @@ on:
         type: choice
         options: [patch, minor, major]
         default: patch
+      candidate:
+        description: Full assessed source SHA (required for prepare, ignored by publish)
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -72,13 +76,19 @@ jobs:
           APP_SLUG: ${{ steps.app.outputs.app-slug }}
           APP_BOT_ID: ${{ vars.RELEASE_APP_BOT_USER_ID }}
           RELEASE_BUMP: ${{ inputs.bump }}
+          RELEASE_CANDIDATE: ${{ inputs.candidate }}
         run: |
           set -euo pipefail
+          : "${RELEASE_CANDIDATE:?prepare requires the full assessed source SHA}"
           # checkout dropped its credentials (persist-credentials: false) and the repo is
           # private, so every git remote operation below needs the helper first.
           gh auth setup-git
           git fetch --tags --force origin
-          python3 -m scripts.release_plan --bump "$RELEASE_BUMP" --out "$RUNNER_TEMP/release" > "$RUNNER_TEMP/plan.txt"
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/master)" || {
+            echo '::error::master advanced after dispatch; reassess and prepare again.'
+            exit 1
+          }
+          python3 -m scripts.release_plan --bump "$RELEASE_BUMP" --candidate "$RELEASE_CANDIDATE" --out "$RUNNER_TEMP/release" > "$RUNNER_TEMP/plan.txt"
           cat "$RUNNER_TEMP/plan.txt" >> "$GITHUB_OUTPUT"
           grep -qx 'eligible=true' "$RUNNER_TEMP/plan.txt" || exit 0
           version=$(sed -n 's/^version=//p' "$RUNNER_TEMP/plan.txt")
