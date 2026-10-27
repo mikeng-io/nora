@@ -34,16 +34,23 @@ export function fileNameOf(disposition: string | null): string {
   return SAFE_NAME.test(name) && !/^\.+$/.test(name) ? name : "file";
 }
 
-export function fileHeaders(type: string, name: string): Record<string, string> {
+export function fileHeaders(type: string, name: string, utf8Name?: string): Record<string, string> {
   const inline = mayDisplayInline(type);
   return {
     "content-type": type || "application/octet-stream",
-    "content-disposition": `${inline ? "inline" : "attachment"}; filename="${name}"`,
+    "content-disposition":
+      `${inline ? "inline" : "attachment"}; filename="${name}"` +
+      (utf8Name ? `; filename*=UTF-8''${rfc5987(utf8Name)}` : ""),
     "x-content-type-options": "nosniff",
     "content-security-policy": "sandbox; default-src 'none'",
     ...PRIVATE,
   };
 }
+
+/** RFC 5987 attr-char: percent-encode everything outside the unreserved set so
+ * a UTF-8 name rides the header legally (encodeURIComponent leaves '()*). */
+const rfc5987 = (s: string) =>
+  encodeURIComponent(s).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {

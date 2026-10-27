@@ -8,6 +8,7 @@ import { fileHeaders } from "../artifact-download";
 import { assertPublicHost, validateBatch, type Lookup } from "./validate";
 import { JOB_ID, jobDir, listJobFiles, mediaKind, mediaTypeFor, thumbPath, type DownloadJob } from "./store";
 import type { DownloadRunner } from "./runner";
+import { planEntry, streamZip, zipBytes, ZIP32_LIMIT, type PlannedEntry } from "./zip";
 
 // The route-level rules for /api/v1/downloads/*, kept apart from the route
 // files so they run under vitest without a server (the same split as
@@ -173,11 +174,11 @@ export async function serveContent(
 
   const size = (await stat(filePath)).size;
   const ext = path.extname(filePath).slice(1);
-  const name = safeFileName(job, ext, path.basename(filePath));
+  const name = downloadName(job, ext, path.basename(filePath));
   // A converted output takes its own extension's type — a webm made from an
   // mp4 must not keep the job's video/mp4 label.
   const type = file ? mediaTypeFor(ext) : (job.mediaType ?? "application/octet-stream");
-  const headers = { ...fileHeaders(type, name), "accept-ranges": "bytes" };
+  const headers = { ...fileHeaders(type, name.ascii, name.utf8), "accept-ranges": "bytes" };
 
   const m = rangeHeader && BYTE_RANGE.exec(rangeHeader);
   let start = 0;
@@ -208,18 +209,76 @@ export async function serveContent(
   return new Response(stream, { status: 200, headers: { ...headers, "content-length": String(size) } });
 }
 
-/** The download name the browser is offered: the media's title when it makes a
- * safe ASCII filename, else the name of the file actually being served — a
- * converted output must not borrow the original's name and extension. */
-function safeFileName(job: DownloadJob, ext: string, servedName?: string): string {
+/** Every finished file in the library as one zip stream — each done job a
+ * directory `<title>-<id8>/` so entries stay unique and readable. */
+export async function serveArchive(runner: DownloadRunner): Promise<Response> {
+  const specs: { name: string; path: string }[] = [];
+  for (const job of runner.store.list()) {
+    if (job.status !== "done") continue;
+    const dir = jobDir(runner.store.root, job.id);
+    const base = `${sanitizeName(job.title ?? "") || "job"}-${job.id.slice(0, 8)}`;
+    for (const f of await listJobFiles(runner.store.root, job)) {
+      specs.push({ name: `${base}/${f}`, path: path.join(dir, f) });
+    }
+  }
+  const plans = (await Promise.all(specs.map((s) => planEntry(s.name, s.path)))).filter(
+    (p): p is PlannedEntry => p !== null,
+  );
+  if (!plans.length) return json(404, { error: "nothing to download" });
+  // Classic zip caps at 4 GiB and 65535 entries: refuse whole rather than
+  // serve a file that opens broken. # ponytail: ZIP64 if it ever hits.
+  if (plans.length > 0xffff || zipBytes(plans) >= ZIP32_LIMIT) {
+    return json(413, { error: "library too large to zip" });
+  }
+  const day = new Date().toISOString().slice(0, 10);
+  const stream = Readable.toWeb(Readable.from(streamZip(plans))) as ReadableStream;
+  return new Response(stream, {
+    status: 200,
+    headers: fileHeaders("application/zip", `nora-downloads-${day}.zip`),
+  });
+}
+
+interface DownloadName {
+  /** For the plain filename= slot: ASCII-only, always present. */
+  ascii: string;
+  /** For filename*= when the name is not pure ASCII — browsers prefer it. */
+  utf8?: string;
+}
+
+/** The download name the browser is offered: the media's title, else the
+ * source URL's own file name, else the name of the file actually being
+ * served — a converted output must not borrow the original's name and
+ * extension. A non-ASCII name rides in filename* so a CJK title survives. */
+function downloadName(job: DownloadJob, ext: string, servedName?: string): DownloadName {
   const extName = ext || "bin";
-  const title = (job.title ?? "")
-    .normalize("NFKD")
-    .replace(/[^A-Za-z0-9._ -]+/g, "")
-    .trim()
+  const raw = sanitizeName(job.title ?? urlName(job.url) ?? "");
+  const stem = raw.normalize("NFKD").replace(/[^A-Za-z0-9._ -]+/g, "").trim();
+  return {
+    ascii: stem ? `${stem}.${extName}` : (servedName ?? `download.${extName}`),
+    utf8: raw && raw !== stem ? `${raw}.${extName}` : undefined,
+  };
+}
+
+/** What a name may keep: anything but filesystem-hostile bytes, control
+ * characters and quotes — it is quoted inside content-disposition. */
+const sanitizeName = (raw: string) =>
+  raw
+    .replace(/[\\/:*?"<>|\x00-\x1f]+/g, " ")
     .replace(/\s+/g, " ")
+    .trim()
     .slice(0, 120);
-  return title ? `${title}.${extName}` : (servedName ?? `download.${extName}`);
+
+/** The title a direct-file link never produced: the URL's own basename when
+ * it carries a media extension (https://host/clip.mp4 → "clip"). */
+function urlName(url: string): string | null {
+  try {
+    const base = decodeURIComponent(new URL(url).pathname.split("/").filter(Boolean).pop() ?? "");
+    const ext = path.extname(base).slice(1).toLowerCase();
+    const stem = base.slice(0, base.length - ext.length - 1);
+    return stem && mediaTypeFor(ext) !== "application/octet-stream" ? stem : null;
+  } catch {
+    return null;
+  }
 }
 
 function json(status: number, body: unknown): Response {
