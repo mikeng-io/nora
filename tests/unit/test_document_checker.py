@@ -472,10 +472,18 @@ def test_a_dict_is_judged_exactly_like_the_same_bytes() -> None:
     root = Lying(type="Page", props={"title": "T"}, children=grids)
     assert _rules(check_document({"version": 1, "root": root})) == {"nodes"}
 
-    deep: Any = []
-    for _ in range(100_000):
-        deep = [deep]
-    assert _rules(check_document(_page(title=deep))) == {"json"}  # refused, not `error`
+    # JSON arrays are valid JSON even in a title; the schema refuses their type.
+    # A 100,000-deep value only failed serialization with some interpreter/stack
+    # budgets (GNU Make 3.81 raises the stack limit on macOS). Exercise equivalent
+    # serializable input here; the serialization-exception test pins RecursionError.
+    nested: Any = []
+    for _ in range(32):
+        nested = [nested]
+    document = _page(title=nested)
+    result = check_document(document)
+    assert result.status == "refused"
+    assert result.findings == (checker.Finding("/root/props/title", "type", "must be string"),)
+    assert check_document(json.dumps(document).encode("utf-8")) == result
 
     assert _rules(check_document(_page(title="x" * (MAX_BYTES + 1)))) == {"size"}
     assert _rules(check_document(_page({"type": "Badge", "props": {"text": {"a"}}}))) == {"json"}
@@ -690,14 +698,21 @@ def test_a_number_python_reads_as_infinity_is_refused_by_the_schema() -> None:
     assert "maximum" in _rules(result)
 
 
-def test_a_dict_that_raises_while_being_written_is_refused_not_an_error() -> None:
+@pytest.mark.parametrize("error", [RuntimeError, RecursionError])
+def test_a_dict_that_raises_while_being_written_is_refused_not_an_error(
+    error: type[Exception],
+) -> None:
     class Angry(dict[str, Any]):
         def items(self) -> Any:
-            raise RuntimeError("no")
+            raise error("no")
 
-    result = check_document({"version": 1, "root": Angry(type="Page", props={}, children=[])})
+    document = {"version": 1, "root": Angry(type="Page", props={}, children=[])}
+    with pytest.raises(error, match="no"):
+        json.dumps(document)
+    result = check_document(document)
     assert result.status == "refused"
     assert _rules(result) == {"json"}
+    assert result.findings[0].message == f"cannot be written as JSON ({error.__name__})"
 
 
 def test_bidi_overrides_are_refused_and_zero_width_characters_are_not() -> None:
