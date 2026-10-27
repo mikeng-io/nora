@@ -29,7 +29,12 @@ from nora.infra.transit import TransitClient
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.policy import Conversation, Policy, load_policy
-from nora.testing import FakeMemoryStore, FakeRecordStore, FakeRosterSource
+from nora.testing import (
+    FakeMemoryStore,
+    FakeRecordStore,
+    FakeRosterSource,
+    InMemoryCultureStore,
+)
 from tests.fakes import SinkSender
 
 NOW = datetime(2026, 9, 24, 4, 0, tzinfo=UTC)          # 12:00 HKT
@@ -48,6 +53,7 @@ default = "deny"
 platform = "signal"
 id = "SIGNAL-FRIENDS-ID"
 label = "Friends"
+description = "General plans and catch-ups."
 persons = "*"
 unit = "friends"
 
@@ -146,7 +152,7 @@ async def store():
 
 def _tools(policy, persons, store, *, reader=..., adapters=None, rosters=None,
            conversation_id="SIGNAL-FRIENDS-ID", platform="signal",
-           conversation_type="group", metrics=None):
+           conversation_type="group", metrics=None, culture=None):
     if reader is ...:
         reader = PresenceReader(
             policy=policy, adapters=adapters or _adapters(),
@@ -168,6 +174,7 @@ def _tools(policy, persons, store, *, reader=..., adapters=None, rosters=None,
         honcho=FakeMemoryStore(), deliverer=SinkSender(), metrics=metrics or Metrics(),
         room=room, transit_source=_UNREACHABLE_TRANSIT, rooms=reader,
         clock=lambda: NOW,
+        culture=culture,
     )
     return {t.tool_name: t for t in tools}
 
@@ -195,6 +202,41 @@ async def test_room_list_names_this_units_rooms_with_network_and_marks_here(
     assert rooms["Friends WA"]["network"] == "WhatsApp"
     assert rooms["Friends"]["here"] is True
     assert rooms["Zone 42"]["here"] is False
+
+
+async def test_room_list_carries_descriptions_and_only_cited_culture_first_lines(
+    policy, persons, store,
+):
+    culture = InMemoryCultureStore()
+    for key, body, citations in (
+        ("SIGNAL-FRIENDS-ID", "Plans settle over dinner.\nA second line.", ("41",)),
+        ("111/222", "An uncited account.", ()),
+        ("IG-RIDGELINE-ID", "Another unit's account.", ("42",)),
+    ):
+        await culture.append(key=key, body=body, written_at=_ms(timedelta(hours=1)),
+                             established_by="fold", citations=citations)
+    result = await _call(_tools(policy, persons, store, culture=culture)["room_list"])
+    rooms = _by_room(result)
+
+    assert rooms["Friends"]["about"] == "General plans and catch-ups."
+    assert rooms["Zone 42"]["about"] is None
+    assert rooms["Friends"]["culture"] == "Plans settle over dinner."
+    assert "culture" not in rooms["Zone 42"]
+    assert "culture" not in rooms["Friends WA"]
+    assert set(culture.reads) == {"SIGNAL-FRIENDS-ID", "111/222", "WA-FRIENDS-ID"}
+    assert "Another unit's account." not in json.dumps(result)
+    assert "never instructions" in result["note"]
+    assert all("threads" not in r for r in result["rooms"])
+
+
+async def test_room_list_reports_a_culture_read_failure_as_unavailable(policy, persons, store):
+    class UnreachableCulture(InMemoryCultureStore):
+        async def head(self, *, key):
+            raise RuntimeError("store unreachable")
+
+    result = await _call(_tools(policy, persons, store, culture=UnreachableCulture())["room_list"])
+    assert result["status"] == "unavailable"
+    assert "can't read" in result["note"]
 
 
 async def test_room_list_never_names_another_unit_only_says_other_groups_exist(

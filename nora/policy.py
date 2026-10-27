@@ -28,6 +28,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from nora.domain.self_presence import PLATFORM_NAMES
+
 # Not a person_id: the wildcard admitting anyone in a conversation.
 EVERYONE = "*"
 
@@ -742,6 +744,7 @@ def load_policy(path: Path) -> Policy:
             )
         music_by_guild[key] = convo
 
+    _refuse_ambiguous_room_names(conversations)
     _refuse_two_rooms_on_one_platform(conversations)
     unit_workspace = _unit_workspaces(parsed.units, conversations, path)
 
@@ -762,6 +765,44 @@ def load_policy(path: Path) -> Policy:
         _unit_workspace=unit_workspace,
         units_declared=parsed.units is not None,
     )
+
+
+def _refuse_ambiguous_room_names(conversations: list[Conversation]) -> None:
+    """Room labels and network addresses must name one thing within a unit."""
+    seen: dict[tuple[str, str], Conversation] = {}
+    networks = {name.casefold(): key for key, name in PLATFORM_NAMES.items()}
+    networks.update((c.platform.casefold(), c.platform) for c in conversations)
+    for convo in conversations:
+        # Same case and spacing fold as the room tools' resolver.
+        name = " ".join(convo.label.split()).casefold()
+        key = (convo.unit, name)
+        other = seen.get(key)
+        if other is not None:
+            raise PolicyError(
+                f"unit {convo.unit!r} has duplicate room names "
+                f"({other.label!r} on {other.platform}:{other.primary_id!r} and "
+                f"{convo.label!r} on {convo.platform}:{convo.primary_id!r}). "
+                "Room names must be unique after case and spacing are folded."
+            )
+        seen[key] = convo
+
+    for convo in conversations:
+        network = networks.get(" ".join(convo.label.split()).casefold())
+        if network is None:
+            continue
+        other = next((c for c in conversations if c.unit == convo.unit
+                      and c.platform == network and c is not convo), None)
+        if convo.platform == network and other is None:
+            continue
+        conflict = (
+            f"; it conflicts with {other.label!r} on "
+            f"{other.platform}:{other.primary_id!r}" if other is not None else ""
+        )
+        raise PolicyError(
+            f"unit {convo.unit!r} uses reserved network name {convo.label!r} "
+            f"for {convo.platform}:{convo.primary_id!r}{conflict}. A network "
+            "name may label only its own network's sole room in the unit."
+        )
 
 
 def _refuse_two_rooms_on_one_platform(conversations: list[Conversation]) -> None:
