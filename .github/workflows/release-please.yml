@@ -9,10 +9,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
+      - name: Reproduce the production token action
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          repositories: nora
+          permission-administration: read
+          permission-contents: write
+          permission-pull-requests: write
       - name: Read existing App grants and Git capability advertisement
         env:
           APP_ID: ${{ vars.RELEASE_APP_ID }}
           APP_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          ACTION_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           node <<'JS'
           const crypto = require('node:crypto');
@@ -46,14 +57,18 @@ jobs:
             console.log(JSON.stringify({token_permissions:grant.permissions,repositories:grant.repositories.map(repo=>repo.full_name)}));
             const repo = await api('/repos/mikeng-io/nora',token);
             console.log(JSON.stringify({repository:repo.full_name,archived:repo.archived,permissions:repo.permissions ?? null}));
+            if(!process.env.ACTION_TOKEN) throw new Error('Read-back action token unavailable');
+            console.log(JSON.stringify({action_and_direct_token_equal:process.env.ACTION_TOKEN===token}));
+            for(const [token_source,probeToken] of [['direct',token],['production-action',process.env.ACTION_TOKEN]]) {
             for (const service of ['git-upload-pack','git-receive-pack']) {
-              const response = await fetch('https://github.com/mikeng-io/nora.git/info/refs?service='+service,{redirect:'error',headers:{Authorization:'Basic '+Buffer.from('x-access-token:'+token).toString('base64')}});
-              console.log(JSON.stringify({service,status:response.status,content_type:response.headers.get('content-type')}));
+              const response = await fetch('https://github.com/mikeng-io/nora.git/info/refs?service='+service,{redirect:'error',headers:{Authorization:'Basic '+Buffer.from('x-access-token:'+probeToken).toString('base64')}});
+              console.log(JSON.stringify({token_source,service,status:response.status,content_type:response.headers.get('content-type')}));
               await response.arrayBuffer();
             }
             const scratch = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP,'release-readback-'));
-            const env = {...process.env,GH_TOKEN:token,GIT_TERMINAL_PROMPT:'0'};
+            const env = {...process.env,GH_TOKEN:probeToken,GIT_TERMINAL_PROMPT:'0'};
             delete env.APP_KEY;
+            delete env.ACTION_TOKEN;
             const commands = [
               ['git',['init','--quiet']],
               ['git',['remote','add','origin','https://github.com/mikeng-io/nora.git']],
@@ -66,16 +81,17 @@ jobs:
               if(result.status!==0) throw new Error('Read-back setup unavailable');
             }
             const dry=spawnSync('git',['push','--dry-run','--force','origin','HEAD:refs/heads/release-please--branches--master--components--nora'],{cwd:scratch,env:{...env,GIT_TRACE_CURL:'1',GIT_TRACE_CURL_NO_DATA:'1',GIT_TRACE_REDACT:'1'},encoding:'utf8',timeout:45000});
-            console.log(JSON.stringify({probe:'gh-helper-dry-run',exit_code:dry.status}));
+            console.log(JSON.stringify({token_source,probe:'gh-helper-dry-run',exit_code:dry.status}));
             for(const line of (dry.stderr??'').split('\n')) {
               const match=line.match(/(?:=> Send header: ((?:GET|POST) [^\r\n]+)|<= Recv header: ((?:HTTP\/[^\r\n]+|x-github-request-id:[^\r\n]+)))/i);
               if(match) console.log(match[1]??match[2]);
             }
             fs.rmSync(scratch,{recursive:true,force:true});
             for(const service of ['git-receive-pack','git-upload-pack']) {
-              const response=await fetch('https://github.com/mikeng-io/nora.git/'+service,{method:'POST',redirect:'error',headers:{Authorization:'Basic '+Buffer.from('x-access-token:'+token).toString('base64'),'Content-Type':'application/x-'+service+'-request'},body:'0000'});
-              console.log(JSON.stringify({probe:'zero-command-post',service,status:response.status,request_id:response.headers.get('x-github-request-id'),content_type:response.headers.get('content-type')}));
+              const response=await fetch('https://github.com/mikeng-io/nora.git/'+service,{method:'POST',redirect:'error',headers:{Authorization:'Basic '+Buffer.from('x-access-token:'+probeToken).toString('base64'),'Content-Type':'application/x-'+service+'-request'},body:'0000'});
+              console.log(JSON.stringify({token_source,probe:'zero-command-post',service,status:response.status,request_id:response.headers.get('x-github-request-id'),content_type:response.headers.get('content-type')}));
               await response.arrayBuffer();
+            }
             }
           })().catch(error=>{console.error(error.message.startsWith('GitHub API ') || error.message.startsWith('Expected exactly') ? error.message : 'Read-back unavailable');process.exitCode=1;}).finally(async()=>{
             if (token) {
