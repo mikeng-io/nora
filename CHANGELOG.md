@@ -1,5 +1,17 @@
 # Changelog
 
+## [7.9.0](https://github.com/mikeng-io/nora/compare/v7.8.1...v7.9.0) (2026-10-27)
+
+
+### Features
+
+* **portal:** a More sheet on the phone's bottom bar reaches every rail destination ([1b1c287](https://github.com/mikeng-io/nora/commit/1b1c2872a30b059ad0e778b30857a1c81f2d12ba))
+
+
+### Bug Fixes
+
+* **portal:** reserve the scrollbar gutter so scroll-lock no longer pops the page ([2086a1d](https://github.com/mikeng-io/nora/commit/2086a1df53e69b5082a9ae3f05cae012a97864c1))
+
 ## [7.8.1](https://github.com/mikeng-io/nora/compare/v7.8.0...v7.8.1) (2026-10-27)
 
 
