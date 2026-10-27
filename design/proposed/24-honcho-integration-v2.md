@@ -15,7 +15,7 @@ Named properly:
 
 | layer | what it IS | authority / scope |
 |---|---|---|
-| **workspace** | ~~a **group of PEOPLE**~~ — ~~**REVISED 2026-09-19: one whole NORA.**~~ **SUPERSEDED 2026-09-28 (DEC-214):** a Nora WORKSPACE is a group of UNITS (`policy.toml` `[units.<unit>] workspace`), and each is bound to exactly one **Honcho workspace** (`identity.toml` `[workspaces.<name>] honcho_workspace`; unbound = its own name; no `[units]` = one implicit workspace bound to `memory.workspace_id`). The two are separate names for separate things. | the PERSON-MODEL boundary: Honcho peers are per Honcho workspace, so units of one workspace share one model of a person and different workspaces never do |
+| **workspace** | ~~a **group of PEOPLE**~~ — ~~**REVISED 2026-09-19: one whole NORA.**~~ **SUPERSEDED 2026-09-28 (DEC-214):** a Nora WORKSPACE is a group of UNITS (`policy.toml` `[units.<unit>] workspace`), and each is bound to exactly one **Honcho workspace** (`identity.toml` `[workspaces.<name>] honcho_workspace`; unbound = its own name; no `[units]` = one implicit workspace bound to `honcho.workspace_id`). The two are separate names for separate things. | the PERSON-MODEL boundary: Honcho peers are per Honcho workspace, so units of one workspace share one model of a person and different workspaces never do |
 | **unit** | a **group of PEOPLE** — a social unit (my-friends, my-family, a team). DEC-105's key, from policy.toml. At most one room per platform (enforced since DEC-214). | the NOTE tier's scope, the bound on `send_to`, and — since DEC-214 — a Honcho NAMED SCOPE: every room's session joins its unit's scope and every memory read for the unit passes `scope`. |
 | **session** | a **channel** that same unit uses — their Signal group, Discord group, WhatsApp group | one conversation stream (same people, different app); `conversation_id = platform group id` |
 | **peer** | a **person** (all their accounts → one person_id via identity.toml) | one identity |
@@ -210,7 +210,7 @@ warning). Consequences:
 
 ## 8. Config & code surface (once decisions are locked)
 
-- `config.toml [memory]`: add `ai_peer` (the Nora peer id) and, if A2, the
+- `config.toml [honcho]`: add `ai_peer` (the Nora peer id) and, if A2, the
   workspace-per-group strategy. `workspace_id` stays for A1.
 - `HonchoClient.ensure_session(conversation_id)` — re-key; keep the idempotent,
   deterministic-id, best-effort contract.

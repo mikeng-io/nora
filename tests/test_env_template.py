@@ -21,12 +21,12 @@ def test_config_example_exists_and_parses():
     data = tomllib.loads((ROOT / "config.example.toml").read_text())
     assert set(data) == {
         "agent",
-        "message_readings", "content_checks",
-        "platforms", "llm", "memory", "store", "media", "route", "presence",
-        "analytics", "memory_index", "compute", "computer", "otp",
+        "content_checks",
+        "platforms", "llm", "honcho", "memory", "store", "media", "route", "presence",
+        "analytics", "compute", "computer", "otp",
         "search", "online", "weather", "preview", "heartbeat", "reminders",
         "speech", "social",
-        "notes", "culture", "profile", "lessons", "standing", "music", "image_gen", "video_gen",
+        "notes", "culture", "lessons", "standing", "music", "image_gen", "video_gen",
         "engagement", "participation", "proactive", "relevance_gate", "reaction",
         "doctrine", "dreamer", "cognition", "subagent", "assess", "lineage", "record_query",
         "documents", "external_files", "google",
@@ -153,7 +153,7 @@ def _load_live_or_skip() -> dict[str, object]:
 # argued for here, which is the fail-closed direction.
 _MAY_DIFFER = {
     # Hosts, ports, accounts and paths — the deployment's own topology.
-    "llm.base_url", "memory.base_url", "platforms.signal.base_url",
+    "llm.base_url", "honcho.base_url", "platforms.signal.base_url",
     "platforms.signal.account", "store.data_dir", "obs.logging.path",
     "obs.tracing.endpoint", "obs.tracing.exporter", "obs.tracing.headers_env",
     "evals.langfuse.host", "evals.langfuse.headers_env",
@@ -284,10 +284,10 @@ _MAY_DIFFER = {
     # (4)): a fresh operator copying the file gets the more filtered of the two, and picks
     # the other deliberately.
     "search.provider",
-    # `[memory_index] enabled`: which memory `ask_memory` answers from is the operator's
+    # `[memory.index] read`: which memory `ask_memory` answers from is the operator's
     # switch, measured on the deployment (`conversational_recall`) before it is turned on;
     # the template ships the Honcho path, OFF.
-    "memory_index.enabled",
+    "memory.index.read",
     # Per-deployment policy/cost knobs.
     "doctrine.canary",            # deliberately CHANGE-ME in the template
     "presence.retention_days",    # disk and privacy, the operator's call

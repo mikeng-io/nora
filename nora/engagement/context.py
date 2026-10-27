@@ -168,7 +168,7 @@ class TranscriptInjection:
         self._audit = audit
         # `<recalled>`, the pre-fetch: the SAME retrieval service the tool
         # registry's `memory_search` holds, `None` on the Honcho surface
-        # (`[memory_index] enabled = false`) and in every harness that wires
+        # (`[memory.index] read = false`) and in every harness that wires
         # none, which renders no block.
         self._memory_search = memory_search
         # The graph's one clock (`build_dependencies`' `clock`), so a harness
@@ -250,7 +250,7 @@ class TranscriptInjection:
         # holds no such reader.
         self._subagents_reader = subagents
         # THE SWITCH (45 §5): the Profile accounts' reader, wired by
-        # composition only when `[profile] render` is on. Not `None` means this
+        # composition only when `[memory.profile] read` is on. Not `None` means this
         # turn renders `<profile>` blocks and the seven reads they replace —
         # `_peer_card`, `_recall_tagger`, `_culture`, `_unit_culture`,
         # `_self_account` and `_character` — are not made at all: a switched
@@ -536,7 +536,7 @@ class TranscriptInjection:
         (`read_character`'s timeout) is added to the transcript's, not to the
         whole gather's.
 
-        Switched (`[profile] render`): the character read is not made at all
+        Switched (`[memory.profile] read`): the character read is not made at all
         and the turn's Profile accounts are read instead — the room's, the
         unit's, hers, and every person the turn is about."""
         read = await self._recent(msg)

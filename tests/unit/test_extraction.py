@@ -7,12 +7,12 @@ from datetime import UTC, datetime
 
 import pytest
 
-from nora.app.message_readings import ReadingOutput
-from nora.domain.message_readings import event_time, validate_claims
+from nora.app.extraction import ExtractionOutput
+from nora.domain.extraction import event_time, validate_claims
 
 
 def parsed(payload):
-    return ReadingOutput.model_validate(payload).model_dump()
+    return ExtractionOutput.model_validate(payload).model_dump()
 
 
 ASSERTED = int(datetime(2030, 4, 1, 16, 30, tzinfo=UTC).timestamp() * 1000)
@@ -104,15 +104,15 @@ def test_unknown_reference_and_time_are_explicit_not_invented():
 
 
 @pytest.mark.parametrize("model", ["other-provider/other-model", "ollamacloud/deepseek-v4-pro", ""])
-def test_enabled_readings_refuse_an_unapproved_route(example_config_path, monkeypatch, model):
+def test_enabled_extraction_refuses_an_unapproved_route(example_config_path, monkeypatch, model):
     import tomlkit
 
     from nora.config import ConfigError, load
 
     monkeypatch.setenv("OMNIROUTE_API_KEY", "synthetic-key")
     doc = tomlkit.parse(example_config_path.read_text())
-    doc["message_readings"]["enabled"] = True
-    doc["message_readings"]["model"] = model
+    doc["memory"]["extraction"]["enabled"] = True
+    doc["memory"]["extraction"]["model"] = model
     example_config_path.write_text(tomlkit.dumps(doc))
     with pytest.raises(ConfigError, match=r"DeepSeek V4\.1 Flash"):
         load(example_config_path)

@@ -356,9 +356,9 @@ fixed schedule, and none is woken by a single message, except a
 
 **As built (DEC-290, 2026-10-07), the wake batch is per kind**, in `[culture]`:
 room `wake_batch` 200 (new human messages in the room), person
-`person_wake_batch` 100 (their messages across the unit's rooms), unit
-`unit_wake_batch` 5 (new revisions of its rooms' cultures) and Nora
-`nora_wake_batch` 100 (closed episodes that are evidence,
+`memory.profile.person.update_every_messages` 100 (their messages across the unit's rooms), unit
+`memory.profile.unit.update_every_room_profile_changes` 5 (new revisions of its rooms' cultures) and Nora
+`memory.profile.nora.update_every_replies` 100 (closed episodes that are evidence,
 `Episode.is_evidence`); `stale_seconds` (7 days) is shared. A person's session
 reads at most its wake batch of their newest messages, and Nora's at most hers.
 

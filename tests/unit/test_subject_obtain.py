@@ -8,7 +8,7 @@ Two properties:
   scope would key under some other room's identifiers, and ingest would
   refuse every message with nothing raising;
 - the room's `unit` is whatever the policy says. It is NOT required to equal
-  `memory.workspace_id`: that is Honcho's per-deployment workspace, and the
+  `honcho.workspace_id`: that is Honcho's per-deployment workspace, and the
   deployment's own `policy.toml` fails that equality on every room it has.
 """
 
@@ -68,7 +68,7 @@ def test_subject_consumers_read_the_pytest_owned_config(
     assert copied == stated
     assert cfg.llm.model == stated["llm"]["model"] == "nora"
     assert cfg.relevance_gate.enabled is True
-    assert module.memory_endpoint()[1] == stated["memory"]["workspace_id"]
+    assert module.memory_endpoint()[1] == stated["honcho"]["workspace_id"]
 
 
 @pytest.mark.parametrize("ambient", ["absent", "home", "deployment_env"])
@@ -115,7 +115,7 @@ def test_an_explicit_policy_is_used_verbatim(tmp_path, monkeypatch) -> None:
 def test_a_deployment_shaped_policy_whose_unit_is_not_the_workspace_is_accepted(
     tmp_path, monkeypatch,
 ) -> None:
-    """Production's own shape: `memory.workspace_id = "nora"` and rooms in
+    """Production's own shape: `honcho.workspace_id = "nora"` and rooms in
     units `friends`/`ridgeline`. Refusing it would refuse the deployment."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     spec = _spec(tmp_path, room=("signal", "friends-sig"), policy=_DEPLOYMENT_SHAPED)
@@ -123,7 +123,7 @@ def test_a_deployment_shaped_policy_whose_unit_is_not_the_workspace_is_accepted(
     convo = _conversation_for(spec)
     assert convo.unit == "friends"
     assert convo.primary_id == "friends-sig"
-    assert cfg.memory.workspace_id != "friends", "the unit is the room's, not Honcho's"
+    assert cfg.honcho.workspace_id != "friends", "the unit is the room's, not Honcho's"
 
 
 def test_conversation_for_resolves_the_rooms_own_entry_among_several(tmp_path, monkeypatch) -> None:
@@ -140,17 +140,17 @@ def test_the_honcho_workspace_is_a_fixed_sibling_of_the_deployments(tmp_path, mo
     replay into it can be shared; never per case, never the real one."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     cfg = build_config(_spec(tmp_path))
-    assert cfg.memory.workspace_id.endswith("-eval")
-    assert cfg.memory.workspace_id != "-eval"
+    assert cfg.honcho.workspace_id.endswith("-eval")
+    assert cfg.honcho.workspace_id != "-eval"
 
 
 def test_a_draw_names_its_own_workspace(tmp_path, monkeypatch) -> None:
     """An eval draw composes against a workspace of its own."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     cfg = build_config(_spec(
-        tmp_path, overrides={"memory.workspace_id": "nora-eval-run-case-1-abc123"},
+        tmp_path, overrides={"honcho.workspace_id": "nora-eval-run-case-1-abc123"},
     ))
-    assert cfg.memory.workspace_id == "nora-eval-run-case-1-abc123"
+    assert cfg.honcho.workspace_id == "nora-eval-run-case-1-abc123"
 
 
 @pytest.mark.parametrize("workspace", ["nora", "probe", "nora-eval-", "nora-48b00d52c0ff"])
@@ -162,7 +162,7 @@ def test_no_spelling_of_the_workspace_reaches_outside_the_eval_namespace(
     that would write eval speech into real peer cards with nothing raising."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     with pytest.raises(ValueError, match="draw workspace"):
-        build_config(_spec(tmp_path, overrides={"memory.workspace_id": workspace}))
+        build_config(_spec(tmp_path, overrides={"honcho.workspace_id": workspace}))
 
 
 def test_a_policy_naming_the_rooms_id_on_a_different_entry_is_refused(

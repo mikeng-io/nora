@@ -9,7 +9,7 @@ Three files each hold one part, and this is the one place they meet:
 - `identity.toml` holds the external BINDING — which Honcho workspace a Nora
   workspace's person models live in (`[workspaces.<name>] honcho_workspace
   = "..."`). A Nora workspace with no binding uses its own name.
-- `config.toml`'s `memory.workspace_id` is only the back-compat default: the
+- `config.toml`'s `honcho.workspace_id` is only the back-compat default: the
   Honcho workspace of the IMPLICIT workspace a policy with no `[units]`
   table puts every unit in.
 
@@ -45,7 +45,7 @@ def honcho_workspaces(
     this policy belongs to.
 
     Without `[units]` there is one workspace, the implicit one, and it is
-    bound to `default_workspace` (`memory.workspace_id`) so a deployment that
+    bound to `default_workspace` (`honcho.workspace_id`) so a deployment that
     has not adopted the hierarchy reads and writes exactly where it did. A
     binding in `identity.toml` then has nothing to bind and is refused, since
     it would read as though it did something.
@@ -62,7 +62,7 @@ def honcho_workspaces(
                 "identity.toml binds [workspaces."
                 f"{sorted(bindings)[0]}], but policy.toml declares no [units], so "
                 "every unit is in the one implicit workspace, bound to "
-                "config.toml's memory.workspace_id. Add [units] to policy.toml, "
+                "config.toml's honcho.workspace_id. Add [units] to policy.toml, "
                 "or remove the binding."
             )
         return {DEFAULT_WORKSPACE: default_workspace}

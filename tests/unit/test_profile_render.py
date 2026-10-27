@@ -37,9 +37,9 @@ def test_profile_tag_names_its_subject_and_author_by_id(entity, subject):
 
 def test_retired_config_section_refuses_and_names_replacement(example_config_path):
     from nora.config import ConfigError, load
-    text = example_config_path.read_text().replace("[profile]", "[persona]")
+    text = example_config_path.read_text().replace("[memory.profile]", "[persona]")
     example_config_path.write_text(text)
-    with pytest.raises(ConfigError, match=r"\[persona\].*\[profile\]"):
+    with pytest.raises(ConfigError, match=r"\[persona\].*\[memory.profile\]"):
         load(example_config_path)
 
 

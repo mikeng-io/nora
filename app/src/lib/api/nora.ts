@@ -26,7 +26,7 @@ export type Status = z.infer<typeof StatusSchema>;
 // `workspace`. `identity` (who they are) and `episodes` (what happened) are
 // two distinct reads and never collapse into one list.
 // `profile` is optional: only a backend running the Profile switch
-// (`[profile] render`) sends it — the caller's own account per unit, every
+// (`[memory.profile] read`) sends it — the caller's own account per unit, every
 // chain head with its state, the evidence behind each line, and the open
 // disputes (cognition-loop/50 §4).
 export const ProfileEvidenceSchema = z.object({

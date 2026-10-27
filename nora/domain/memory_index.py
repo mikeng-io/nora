@@ -157,7 +157,7 @@ PROJECTION_OUTCOMES: tuple[str, ...] = get_args(ProjectionOutcome)
 # --- the read ----------------------------------------------------------------
 
 #: `nora_memory_search_total`'s `status`, and what `memory_search` answers while
-#: `[memory_index] enabled`: `partial` while a rebuild has not
+#: `[memory.index] read`: `partial` while a rebuild has not
 #: completed, the projection queue is not empty, the search fell back to the
 #: lexical seed (no embedder, or it failed), or embeddable nodes have waited
 #: past a fresh line's window for a vector of the current model (a backlog,

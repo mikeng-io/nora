@@ -124,7 +124,7 @@ class Persons:
     # Nora workspace -> the Honcho workspace id it is bound to, from
     # `[workspaces.<name>] honcho_workspace = "..."` (DEC-214). Only the
     # bindings the operator WROTE: resolving an unbound workspace to its own
-    # name, and the implicit workspace to `memory.workspace_id`, is
+    # name, and the implicit workspace to `honcho.workspace_id`, is
     # `nora.app.memory_routing`'s job, because it needs the policy and the
     # config as well as this file.
     honcho_workspaces: dict[str, str] = field(default_factory=dict)

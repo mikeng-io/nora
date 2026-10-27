@@ -52,7 +52,7 @@ from nora.testing.memory_index import DIMENSIONS, FakeQueryEmbedder
 
 NOW = 1_790_000_000_000
 MODEL = "model-a.gguf@0000+fmt1"
-#: `[memory_index] drain_seconds`' default, as composition passes it.
+#: `[memory.index] drain_seconds`' default, as composition passes it.
 DRAIN_SECONDS = 60.0
 _B = RoomFacts("signal", frozenset({"b"}), "u1", frozenset({"kit", "rin"}), label="B")
 _C = RoomFacts("signal", frozenset({"c"}), "u1", frozenset({"rin"}), label="C")

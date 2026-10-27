@@ -34,7 +34,7 @@ async def env(tmp_path, monkeypatch, aiohttp_server, pg_url, example_config_path
         cfg = tomllib.load(f)
     base = str(daemon.make_url("")).rstrip("/")
     cfg["platforms"]["signal"]["base_url"] = base
-    cfg["memory"]["base_url"] = base
+    cfg["honcho"]["base_url"] = base
     cfg["store"]["data_dir"] = str(tmp_path)
     cfg["doctrine"]["dir"] = str(ROOT / "nora" / "doctrine")
     # Same reason as the doctrine line above: the config file lives in tmp_path,
@@ -132,7 +132,7 @@ async def test_an_undeterminable_account_refuses_to_start(env):
 
 async def test_honcho_being_down_does_not_prevent_startup(env):
     cfg = tomllib.loads(env.read_text())
-    cfg["memory"]["base_url"] = "http://127.0.0.1:1"
+    cfg["honcho"]["base_url"] = "http://127.0.0.1:1"
     env.write_text(tomli_w.dumps(cfg))
     app = await build_app(env)
     try:
@@ -302,7 +302,7 @@ async def test_the_retention_sweep_is_spawned_when_the_flag_is_on(env, monkeypat
 
 
 async def test_the_memory_index_drain_is_spawned_at_the_configured_interval(env, monkeypatch):
-    """`App.run` spawns `memory_drain_loop` with `[memory_index]
+    """`App.run` spawns `memory_drain_loop` with `[memory.index]
     drain_seconds`: the queue a failed projection fills
     is drained by the nora process, not only by analytics."""
     import asyncio
@@ -314,7 +314,7 @@ async def test_the_memory_index_drain_is_spawned_at_the_configured_interval(env,
     import nora.__main__ as main_module
 
     cfg = tomllib.loads(env.read_text())
-    cfg["memory_index"] = {"drain_seconds": 7.5}
+    cfg["memory"]["index"] = {"refresh_seconds": 7.5}
     env.write_text(tomli_w.dumps(cfg))
     calls: list[dict] = []
 
@@ -338,7 +338,7 @@ async def test_the_memory_index_drain_is_spawned_at_the_configured_interval(env,
             await task
     finally:
         await app.shutdown()
-    # `[memory_index] embed` is off by default: no embedding worker is handed in.
+    # `[memory.index] embed` is off by default: no embedding worker is handed in.
     assert calls == [{"interval_seconds": 7.5, "embed": None}]
 
 

@@ -175,7 +175,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "stage=\"fire_people_in_window\" "
         "(one speaker's <people_in_window> read did, counted once per failed "
         "speaker), stage=\"fire_memory\" (the whole concurrent batch hit "
-        "[memory] read_timeout_seconds — a port that never answers, which is "
+        "[honcho] read_timeout_seconds — a port that never answers, which is "
         "not the same failure as one that raises). Both are issue #210 "
         "and both are "
         "fail-soft: the block is lost, never the turn, so absence is the only "
@@ -2120,28 +2120,53 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("source", "outcome"),
     ),
     _CounterSpec(
+        "nora_extraction_calls_total",
+        "Transport attempts for extraction, including retries.",
+    ),
+    _CounterSpec(
+        "nora_extraction_input_tokens_total",
+        "Reported input tokens for every extraction response, including rejected output.",
+    ),
+    _CounterSpec(
+        "nora_extraction_output_tokens_total",
+        "Reported output tokens for every extraction response, including rejected output.",
+    ),
+    _CounterSpec(
+        "nora_extraction_failures_total",
+        "Failed extraction attempts or storage operations; durable work is retained.",
+    ),
+    _CounterSpec(
+        "nora_extraction_claims_written_total",
+        "New claims committed by the extraction writer.",
+    ),
+    _CounterSpec(
+        "nora_extraction_usage_missing_total",
+        "Extraction requests whose usage is unavailable; measured cost is incomplete.",
+    ),
+    # Retired message-reading counters stay declared at zero (append-only contract).
+    _CounterSpec(
         "nora_message_reading_calls_total",
-        "Transport attempts for message readings, including retries.",
+        "Retired message-reading counter; frozen at zero. Use nora_extraction_*.",
     ),
     _CounterSpec(
         "nora_message_reading_input_tokens_total",
-        "Reported input tokens for every reading response, including rejected output.",
+        "Retired message-reading counter; frozen at zero. Use nora_extraction_*.",
     ),
     _CounterSpec(
         "nora_message_reading_output_tokens_total",
-        "Reported output tokens for every reading response, including rejected output.",
+        "Retired message-reading counter; frozen at zero. Use nora_extraction_*.",
     ),
     _CounterSpec(
         "nora_message_reading_failures_total",
-        "Failed message reading attempts or storage operations; durable work is retained.",
+        "Retired message-reading counter; frozen at zero. Use nora_extraction_*.",
     ),
     _CounterSpec(
         "nora_message_reading_claims_written_total",
-        "New claims committed by the message reading writer.",
+        "Retired message-reading counter; frozen at zero. Use nora_extraction_*.",
     ),
     _CounterSpec(
         "nora_message_reading_usage_missing_total",
-        "Reading requests whose usage is unavailable; measured cost is incomplete.",
+        "Retired message-reading counter; frozen at zero. Use nora_extraction_*.",
     ),
 )
 

@@ -197,8 +197,8 @@ def test_config_uses_the_target_shape(toml_path):
     # operator typed — with two platforms wired one configured name is
     # necessarily wrong for one of them.
     assert not hasattr(cfg.platforms.signal, "nora_sender_id")
-    # memory replaces honcho
-    assert cfg.memory.workspace_id == "nora"
+    # Honcho client settings are separate from Nora memory settings
+    assert cfg.honcho.workspace_id == "nora"
     # store replaces buffer
     assert cfg.store.max_per_conversation == 500
     assert cfg.store.context_window == 40
@@ -2101,3 +2101,64 @@ def test_video_gen_refuses_a_resolution_other_than_480p(toml_path):
     toml_path.write_text(text.replace('resolution = "480P"', 'resolution = "768P"', 1))
     with pytest.raises(ConfigError):
         load(toml_path)
+
+
+@pytest.mark.parametrize(('section', 'key', 'new_home'), [
+    ('persona', None, '[memory.profile]'),
+    ('profile', None, '[memory.profile]'),
+    ('message_readings', None, '[memory.extraction]'),
+    ('memory_index', None, '[memory.index]'),
+    ('persona', 'enabled', '[memory.profile] write'),
+    ('persona', 'render', '[memory.profile] read'),
+    ('profile', 'enabled', '[memory.profile] write'),
+    ('profile', 'render', '[memory.profile] read'),
+    ('message_readings', 'batch_size', '[memory.extraction] messages_per_call'),
+    ('message_readings', 'context_size', '[memory.extraction] context_messages'),
+    ('message_readings', 'settle_seconds', '[memory.extraction] min_message_age_seconds'),
+    ('memory_index', 'enabled', '[memory.index] read'),
+    ('memory_index', 'drain_seconds', '[memory.index] refresh_seconds'),
+    *[('memory', key, f'[honcho] {key}') for key in (
+        'base_url', 'workspace_id', 'ai_peer', 'tagger_card_conclusions',
+        'people_in_window_conclusions', 'people_in_window_speakers', 'read_timeout_seconds',
+    )],
+    ('memory.extraction', 'batch_size', '[memory.extraction] messages_per_call'),
+    ('memory.extraction', 'context_size', '[memory.extraction] context_messages'),
+    ('memory.extraction', 'settle_seconds', '[memory.extraction] min_message_age_seconds'),
+    ('memory.index', 'enabled', '[memory.index] read'),
+    ('memory.index', 'drain_seconds', '[memory.index] refresh_seconds'),
+    ('memory.profile', 'enabled', '[memory.profile] write'),
+    ('memory.profile', 'render', '[memory.profile] read'),
+    ('culture', 'person_wake_batch', '[memory.profile.person] update_every_messages'),
+    ('culture', 'unit_wake_batch', '[memory.profile.unit] update_every_room_profile_changes'),
+    ('culture', 'nora_wake_batch', '[memory.profile.nora] update_every_replies'),
+])
+def test_retired_memory_config_names_are_refused_with_the_new_home(
+    toml_path, section, key, new_home,
+):
+    import tomli_w
+
+    data = tomllib.loads(toml_path.read_text())
+    target = data
+    for part in section.split('.'):
+        target = target.setdefault(part, {})
+    if key is not None:
+        target[key] = 'retired-value'
+    toml_path.write_text(tomli_w.dumps(data))
+    with pytest.raises(ConfigError, match=re.escape(new_home)):
+        load(toml_path)
+
+
+def test_example_loads_with_the_memory_config_names(toml_path):
+    cfg = load(toml_path)
+    assert cfg.honcho.workspace_id == 'nora'
+    assert cfg.memory.extraction.messages_per_call == 20
+    assert cfg.memory.extraction.context_messages == 20
+    assert cfg.memory.extraction.min_message_age_seconds == 2
+    assert cfg.memory.index.read is False
+    assert cfg.memory.index.refresh_seconds == 60
+    assert cfg.memory.profile.write is False
+    assert cfg.memory.profile.read is False
+    assert cfg.memory.profile.person.update_every_messages == 100
+    assert cfg.memory.profile.unit.update_every_room_profile_changes == 5
+    assert cfg.memory.profile.nora.update_every_replies == 100
+    assert cfg.memory.profile.update_every_seconds == cfg.culture.stale_seconds == 604800

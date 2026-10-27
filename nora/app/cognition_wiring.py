@@ -72,7 +72,7 @@ COGNITION_READ_CATALOGUE: frozenset[str] = frozenset({
     # memory
     "about", "ask_memory", "search_memory", "search_memory_workspace",
     # the graph surface's (DEC-316): built instead of the Honcho memory verbs
-    # above while `[memory_index] enabled`, never beside them
+    # above while `[memory.index] read`, never beside them
     "memory_search",
 })
 

@@ -13,13 +13,13 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from nora.domain.message_readings import VERSION
+from nora.domain.extraction import VERSION
 from nora.domain.models import NormalizedMessage
+from nora.infra.sql.schema import EXTRACTION as EXTRACTION
+from nora.infra.sql.schema import EXTRACTION_ATTEMPT as ATTEMPT
+from nora.infra.sql.schema import EXTRACTION_CLAIM as CLAIM
+from nora.infra.sql.schema import EXTRACTION_QUEUE as QUEUE
 from nora.infra.sql.schema import MESSAGE_DELETE, MESSAGE_EDIT, MESSAGES
-from nora.infra.sql.schema import MESSAGE_READING as READING
-from nora.infra.sql.schema import MESSAGE_READING_ATTEMPT as ATTEMPT
-from nora.infra.sql.schema import MESSAGE_READING_CLAIM as CLAIM
-from nora.infra.sql.schema import MESSAGE_READING_QUEUE as QUEUE
 
 
 async def enqueue(
@@ -30,7 +30,7 @@ async def enqueue(
     unit: str,
     is_source: bool = True,
 ) -> None:
-    """The audit INSERT's transaction; a replay never owes a second reading."""
+    """The audit INSERT's transaction; a replay never owes a second extraction."""
     source_key = json.dumps(
         [message.message_id] if message.message_id else [message.sender_id, message.timestamp]
     )
@@ -52,7 +52,7 @@ async def source_rows(conn: AsyncConnection, ids: list[int]) -> list[dict[str, A
     if not ids:
         return []
     # Locks serialize publication with hide/edit/delete. Invalidation triggers
-    # take the same source row lock before retiring the dependent reading.
+    # take the same source row lock before retiring the dependent extraction.
     rows = (
         (
             await conn.execute(
@@ -102,33 +102,33 @@ async def source_rows(conn: AsyncConnection, ids: list[int]) -> list[dict[str, A
     return result
 
 
-class SqlMessageReadings:
+class SqlExtraction:
     def __init__(self, engine: AsyncEngine) -> None:
         self.engine = engine
 
-    async def take_reading_batch(
+    async def take_extraction_batch(
         self,
         *,
         model: str,
-        batch_size: int,
-        context_size: int,
+        messages_per_call: int,
+        context_messages: int,
         lease_seconds: float,
-        settle_seconds: float,
+        min_message_age_seconds: float,
     ) -> dict[str, Any] | None:
         async with self.engine.begin() as conn:
             # ponytail: one short transaction lock for batch formation, never a
             # model await. Per-room formation if worker contention is measured.
             await conn.execute(sa.text("SELECT pg_advisory_xact_lock(1290081)"))
             now = datetime.now(UTC)
-            reading = (
+            extraction = (
                 (
                     await conn.execute(
-                        sa.select(READING)
+                        sa.select(EXTRACTION)
                         .where(
-                            READING.c.state == "pending",
-                            READING.c.due_at <= now,
+                            EXTRACTION.c.state == "pending",
+                            EXTRACTION.c.due_at <= now,
                         )
-                        .order_by(READING.c.due_at, READING.c.id)
+                        .order_by(EXTRACTION.c.due_at, EXTRACTION.c.id)
                         .limit(1)
                         .with_for_update()
                     )
@@ -136,16 +136,17 @@ class SqlMessageReadings:
                 .mappings()
                 .first()
             )
-            if reading is None:
+            if extraction is None:
                 first = (
                     (
                         await conn.execute(
                             sa.select(QUEUE)
                             .where(
-                                QUEUE.c.reading_id.is_(None),
+                                QUEUE.c.extraction_id.is_(None),
                                 QUEUE.c.is_source.is_(True),
                                 QUEUE.c.message_id.is_not(None),
-                                QUEUE.c.queued_at <= now - timedelta(seconds=settle_seconds),
+                                QUEUE.c.queued_at
+                                <= now - timedelta(seconds=min_message_age_seconds),
                             )
                             .order_by(QUEUE.c.queued_at, QUEUE.c.message_id)
                             .limit(1)
@@ -161,7 +162,7 @@ class SqlMessageReadings:
                         await conn.execute(
                             sa.select(QUEUE.c.message_id)
                             .where(
-                                QUEUE.c.reading_id.is_(None),
+                                QUEUE.c.extraction_id.is_(None),
                                 QUEUE.c.is_source.is_(True),
                                 QUEUE.c.message_id.is_not(None),
                                 QUEUE.c.unit == first["unit"],
@@ -169,7 +170,7 @@ class SqlMessageReadings:
                                 QUEUE.c.origin_room == first["origin_room"],
                             )
                             .order_by(QUEUE.c.message_id)
-                            .limit(batch_size)
+                            .limit(messages_per_call)
                         )
                     ).scalars()
                 )
@@ -186,16 +187,16 @@ class SqlMessageReadings:
                                 QUEUE.c.message_id < min(ids),
                             )
                             .order_by(QUEUE.c.message_id.desc())
-                            .limit(context_size)
+                            .limit(context_messages)
                         )
                     ).scalars()
                 )
                 messages = await source_rows(conn, ids)
                 context = await source_rows(conn, context_ids)
-                reading = (
+                extraction = (
                     (
                         await conn.execute(
-                            sa.insert(READING)
+                            sa.insert(EXTRACTION)
                             .values(
                                 unit=first["unit"],
                                 platform=first["platform"],
@@ -208,7 +209,7 @@ class SqlMessageReadings:
                                 state="pending" if messages else "retired",
                                 retired_at=None if messages else now,
                             )
-                            .returning(READING)
+                            .returning(EXTRACTION)
                         )
                     )
                     .mappings()
@@ -217,14 +218,14 @@ class SqlMessageReadings:
                 await conn.execute(
                     sa.update(QUEUE)
                     .where(QUEUE.c.message_id.in_(ids))
-                    .values(reading_id=reading["id"])
+                    .values(extraction_id=extraction["id"])
                 )
                 if not messages:
                     return None
-            attempt = reading["attempts"] + 1
+            attempt = extraction["attempts"] + 1
             await conn.execute(
-                sa.update(READING)
-                .where(READING.c.id == reading["id"])
+                sa.update(EXTRACTION)
+                .where(EXTRACTION.c.id == extraction["id"])
                 .values(
                     attempts=attempt,
                     due_at=now + timedelta(seconds=lease_seconds),
@@ -234,14 +235,14 @@ class SqlMessageReadings:
                 await conn.execute(
                     sa.insert(ATTEMPT)
                     .values(
-                        reading_id=reading["id"],
+                        extraction_id=extraction["id"],
                         attempt=attempt,
-                        model=reading["model"],
+                        model=extraction["model"],
                     )
                     .returning(ATTEMPT.c.id)
                 )
             ).scalar_one()
-            return {**reading, "attempts": attempt, "attempt_id": attempt_id}
+            return {**extraction, "attempts": attempt, "attempt_id": attempt_id}
 
     async def set_trace(self, job: dict[str, Any], trace_id: str | None) -> None:
         async with self.engine.begin() as conn:
@@ -272,20 +273,20 @@ class SqlMessageReadings:
                 )
             )
 
-    async def publish_reading_batch(
+    async def publish_extraction_batch(
         self, job: dict[str, Any], *, claims: list[dict[str, Any]]
     ) -> int:
         async with self.engine.begin() as conn:
-            # Sources before reading: the invalidator's lock order, including
+            # Sources before extraction: the invalidator's lock order, including
             # edits inserted while the model was running.
             messages = await source_rows(conn, job["source_ids"])
             context = await source_rows(conn, job["context_ids"])
             current = (
                 (
                     await conn.execute(
-                        sa.select(READING)
+                        sa.select(EXTRACTION)
                         .where(
-                            READING.c.id == job["id"],
+                            EXTRACTION.c.id == job["id"],
                         )
                         .with_for_update()
                     )
@@ -305,20 +306,20 @@ class SqlMessageReadings:
                 return 0  # a retired batch or a stale lease cannot publish
             if {"messages": messages, "context": context} != job["snapshot"]:
                 await conn.execute(
-                    sa.update(READING)
-                    .where(READING.c.id == job["id"])
+                    sa.update(EXTRACTION)
+                    .where(EXTRACTION.c.id == job["id"])
                     .values(
                         state="retired",
                         retired_at=sa.func.now(),
                     )
                 )
-                # Still-eligible arrival rows are owed their first valid reading.
+                # Still-eligible arrival rows are owed their first valid extraction.
                 await conn.execute(
                     sa.update(QUEUE)
                     .where(
-                        QUEUE.c.reading_id == job["id"],
+                        QUEUE.c.extraction_id == job["id"],
                     )
-                    .values(reading_id=None)
+                    .values(extraction_id=None)
                 )
                 await conn.execute(
                     sa.update(ATTEMPT)
@@ -331,7 +332,7 @@ class SqlMessageReadings:
             for ordinal, content in enumerate(claims):
                 await conn.execute(
                     sa.insert(CLAIM).values(
-                        reading_id=job["id"],
+                        extraction_id=job["id"],
                         ordinal=ordinal,
                         unit=job["unit"],
                         platform=job["platform"],
@@ -341,8 +342,8 @@ class SqlMessageReadings:
                     )
                 )
             await conn.execute(
-                sa.update(READING)
-                .where(READING.c.id == job["id"])
+                sa.update(EXTRACTION)
+                .where(EXTRACTION.c.id == job["id"])
                 .values(
                     state="done",
                     built_at=sa.func.now(),
@@ -362,11 +363,11 @@ class SqlMessageReadings:
     async def fail(self, job: dict[str, Any]) -> None:
         async with self.engine.begin() as conn:
             await conn.execute(
-                sa.update(READING)
+                sa.update(EXTRACTION)
                 .where(
-                    READING.c.id == job["id"],
-                    READING.c.state == "pending",
-                    READING.c.attempts == job["attempts"],
+                    EXTRACTION.c.id == job["id"],
+                    EXTRACTION.c.state == "pending",
+                    EXTRACTION.c.attempts == job["attempts"],
                 )
                 .values(
                     due_at=datetime.now(UTC)
