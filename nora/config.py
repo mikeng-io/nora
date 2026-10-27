@@ -3338,13 +3338,16 @@ class DreamerConfig(BaseModel):
             )
         if (adaptor in ("profile-unit", "profile-room", "profile-nora")
                 and adaptor not in self.budgets):
-            # 60k rendered source chars (~50k mixed Cantonese/English tokens)
-            # plus instructions/held lines: two 60k-input calls, 8k refusal
-            # history and 16k output fit below 160k. Six turns leave room to
-            # finish after repair; 360s allows two 120s calls plus tool time.
+            # ponytail: allow 60k source tokens for the 60k-char ceiling, plus
+            # 25k non-source tokens (instructions, room-culture heads read every
+            # unit session, held profile lines, first-session prose backfill).
+            # Two 85k-input calls + 8k repair history + 16k output = 194k,
+            # below 240k; revisit if the source ceiling or outside context grows.
+            # Six turns leave room to finish after repair; 360s allows two
+            # 120s calls plus tool time.
             # Starting allowances, not measured provider latency/token ratios.
             return DreamBudgetConfig(
-                turns=6, total_tokens=160_000, output_tokens=16_000,
+                turns=6, total_tokens=240_000, output_tokens=16_000,
                 timeout_seconds=360.0,
             )
         return self.budgets.get(adaptor, DreamBudgetConfig())

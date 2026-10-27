@@ -231,9 +231,12 @@ def test_collective_budgets_admit_bounded_first_call_and_one_repair(kind):
     assert budget == config.budget_for(f"profile-{kind}")
     assert DreamerConfig(budgets={"culture": DreamBudgetConfig()}).budgets.get(
         f"profile-{kind}") == budget
-    # 60k input tokens allows the ~50k bounded evidence plus instructions/held
-    # lines. The repair replays that input plus the first 6k output/refusals.
-    first_input, first_output, refusal = 60_000, 6_000, 2_000
+    assert budget.total_tokens == 240_000
+    # Conservatively allow one token per source char, plus 25k outside the
+    # ceiling: instructions, room-culture heads, held lines and prose backfill.
+    # The repair replays that input plus the first 6k output/refusals.
+    first_input = COLLECTIVE_SOURCE_CHARS + 25_000
+    first_output, refusal = 6_000, 2_000
     repair_input, repair_output = first_input + first_output + refusal, 6_000
     assert budget.total_tokens > first_input + first_output + repair_input + repair_output
     assert budget.output_tokens > first_output + repair_output
