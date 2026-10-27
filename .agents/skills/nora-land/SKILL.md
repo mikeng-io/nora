@@ -140,14 +140,14 @@ gh pr view <N> --json baseRefName,headRefOid       # master, and == git rev-pars
 
 ## 7. Review, when the change earns one
 
-- Whether and at which level: `AGENTS.md` «Review is adaptive». Level
+- Whether and at which level: `ORCHESTRATION.md` «Capability and review requirements». Level
   none: go straight to step 8. The PR's Gate section names the row.
-- Otherwise, a fresh agent from a vendor that did not build the change:
-  DeepSeek for light, and Kimi or `gpt-6.1-sol` (whichever did not build it)
-  for full, launched through T3 (lane and effort: `AGENTS.md`).
+- Otherwise follow `ORCHESTRATION.md` «Resolve a worker at launch» to select
+  a fresh reviewer and actual advertised options. Verify it is neither builder
+  nor brief-author and uses a different model vendor from the builder.
   Give it the diff (`gh pr diff <N>`) and the PR's claims.
-- Triage every finding (`AGENTS.md` «Triage decides what blocks»). Only a
-  BLOCKER buys another round, and that round reviews the fix diff only.
+- Triage every finding (`ORCHESTRATION.md` «Bounded independent review»). Only a
+  BLOCKER buys another round; at most two, with the second checking the fix diff only.
 - Verify each finding before acting on or dismissing it: open the line, run the
   test, revert the fix and watch the named test fail.
 - A clean review is not a pass: one plus a green gate missed an empty-body read
