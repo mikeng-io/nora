@@ -1918,7 +1918,7 @@ async def test_send_to_with_no_relay_wired_carries_a_note(wiring):
     """`send_to`'s own unwired path; every relay outcome is pinned in
     `tests/test_relay.py`."""
     out = await _call(_tools_over(wiring, wiring["deliverer"])["send_to"],
-                      platform="signal", text="we're starting")
+                      room="signal", text="we're starting")
     _assert_noted("send_to/unwired", out, "unavailable")
 
 
@@ -1946,7 +1946,7 @@ async def test_send_to_on_a_relayed_turn_is_refused_and_relays_nothing(wiring):
     a refusal, and nothing reaches the relay."""
     relay = _RecordingRelay()
     tools = _tools_over(wiring, wiring["deliverer"], relay=relay, relay_turn=True)
-    out = await _call(tools["send_to"], platform="signal", text="pass this on")
+    out = await _call(tools["send_to"], room="signal", text="pass this on")
     assert out["status"] == "refused"
     assert relay.calls == []
 
@@ -1955,6 +1955,12 @@ async def test_send_to_on_an_ordinary_turn_still_reaches_the_relay(wiring):
     """The positive control: the same call off a relayed turn is handed to the relay."""
     relay = _RecordingRelay()
     tools = _tools_over(wiring, wiring["deliverer"], relay=relay, relay_turn=False)
-    out = await _call(tools["send_to"], platform="signal", text="pass this on")
+    out = await _call(tools["send_to"], room="signal", text="pass this on")
     assert out["status"] == "ok"
     assert len(relay.calls) == 1
+    assert relay.calls[0]["room"] == "signal"
+    assert "platform" not in relay.calls[0]
+    schema = tools["send_to"].tool_spec["inputSchema"]["json"]
+    assert schema["properties"]["room"]["type"] == "string"
+    assert "enum" not in schema["properties"]["room"]
+    assert "platform" not in schema["properties"]

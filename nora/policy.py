@@ -809,11 +809,10 @@ def _refuse_two_rooms_on_one_platform(conversations: list[Conversation]) -> None
     """A unit holds AT MOST ONE room per platform (DEC-105, DEC-214).
 
     Breaching it is costly to undo by hand (messages, notes and a culture
-    table end up split across rooms). Everything that addresses a
-    unit's room by PLATFORM leans on it — `send_to`'s «tell the Signal lot»
-    names one room only because there is one — and so does every unit-keyed
-    read that picks "the unit's room on X". Refused in every form of the
-    file, `[units]` or not: the invariant is the unit's, not the workspace's.
+    table end up split across rooms). This startup restriction stays during
+    the room-topology migration; send_to already resolves room names and
+    accepts a network only when it names one room. Refused in every form of
+    the file, `[units]` or not: the invariant is the unit's, not the workspace's.
     """
     seen: dict[tuple[str, str], Conversation] = {}
     for convo in conversations:
