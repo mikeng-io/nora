@@ -157,6 +157,7 @@ from nora.domain.stimuli import (
     prove_overflow_is_the_agenda,
     restart_detail,
 )
+from nora.domain.turn_record import cited_turn_lineage, turn_handles_in
 from nora.infra.sql.standing_revise import standing_revise as live_standing_revise
 from nora.language.cognition_render import (
     RenderBudget,
@@ -1700,6 +1701,8 @@ class CognitionSessionRunner:
                 parsed = parse_note_body(body, shown=replace(
                     shown, carried=shown.carried | cited_ids_in(survivor[1].body)
                     | cited_ids_in(duplicate[1].body),
+                    turn_handles=shown.turn_handles | turn_handles_in(survivor[1].body)
+                    | turn_handles_in(duplicate[1].body),
                 ), require_open=True)
             except NoteBodyError as exc:
                 return _refused(exc.rule, str(exc))
@@ -1745,6 +1748,7 @@ class CognitionSessionRunner:
         async def _memo_body(
             verb: str, title: str, body: str, platform: str, conversation_id: str,
             carried: frozenset[int] = frozenset(),
+            carried_turns: frozenset[str] = frozenset(),
         ) -> tuple[Any, tuple[str, ...]] | dict[str, object]:
             """`(parsed body, citations)` of a memo write, or its refusal: the
             title and body caps, the note-body grammar over what this session
@@ -1762,8 +1766,14 @@ class CognitionSessionRunner:
                 return shown
             try:
                 parsed = parse_memo_body(
-                    body, shown=replace(shown, carried=shown.carried | carried),
+                    body, shown=replace(shown, carried=shown.carried | carried,
+                                        turn_handles=shown.turn_handles | carried_turns),
                 )
+                for handle in turn_handles_in(parsed.text):
+                    trace = await self._tag_trace_store.get(
+                        turn_id=int(handle[1:]), unit=unit,
+                    ) if self._tag_trace_store is not None else None
+                    cited_turn_lineage(trace, unit=unit)
             except NoteBodyError as exc:
                 return _refused(exc.rule, str(exc))
             value = title_carries_value(title, parsed)
@@ -1895,6 +1905,7 @@ class CognitionSessionRunner:
             checked = await _memo_body(
                 "memo_revise", new_title, body, platform, conversation_id,
                 carried=cited_ids_in(head.head.body),
+                carried_turns=turn_handles_in(head.head.body),
             )
             if isinstance(checked, dict):
                 return checked

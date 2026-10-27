@@ -8,7 +8,17 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any
 
-from nora.domain.lineage import LineageEntry
+from nora.domain.lineage import (
+    KINDS,
+    PERCEPTION,
+    PRESENCE,
+    ROW,
+    Lineage,
+    LineageEntry,
+    message,
+    room_key,
+)
+from nora.domain.note_body import NoteBodyError, citations_in
 from nora.domain.tag_trace import TagTrace
 
 
@@ -44,6 +54,27 @@ class DisclosureRequirement:
     location: bool = False
     location_subjects: tuple[str, ...] = ()
     resolved: bool = True
+
+    @property
+    def known(self) -> bool:
+        def known_entry(e: LineageEntry) -> bool:
+            return (
+                e.kind in KINDS
+                and (e.kind != "message" or bool(e.origin))
+                and (e.kind not in {"presence", "face", "social", "play"} or bool(e.subject))
+                and (e.kind != PERCEPTION or bool(e.reads))
+                and all(known_entry(r) for r in e.reads)
+            )
+        return bool(self.resolved and self.entries and all(known_entry(e) for e in self.entries)
+                    and (not self.location or self.location_subjects))
+
+    def entry(self) -> LineageEntry:
+        """Keep the full requirement in the existing recursive lineage path."""
+        return LineageEntry(
+            PERCEPTION, origin=self.origin, exclude_persons=self.exclude_persons,
+            reads=(*self.entries, *(LineageEntry(PRESENCE, p, self.origin)
+                                   for p in self.location_subjects if self.location)),
+        )
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -88,8 +119,8 @@ def turn_items(
 ) -> tuple[TurnItem, ...]:
     """A view of tool calls and results only; narration and reasoning never enter it."""
     calls, results = [], {}
-    for message in messages:
-        for block in message.get("content") or ():
+    for exchange_message in messages:
+        for block in exchange_message.get("content") or ():
             if "toolUse" in block:
                 calls.append(block["toolUse"])
             if "toolResult" in block:
@@ -101,3 +132,23 @@ def turn_items(
         requirements=tuple(DisclosureRequirement.from_json(r)
                            for r in requirements.get(c["toolUseId"], ())),
     ) for c in calls)
+
+
+def turn_handles_in(body: str) -> frozenset[str]:
+    return frozenset(c[5:-1] for c in citations_in(body) if c.startswith("turn("))
+
+
+def cited_turn_lineage(trace: TagTrace | None, *, unit: str) -> Lineage:
+    """A citation reaches every item, never just the subset one room could open."""
+    if trace is None or not unit or trace.unit != unit:
+        raise NoteBodyError("unknown_turn", "the cited turn cannot be resolved in this unit")
+    origins = ((room_key(trace.platform, trace.conversation_id),)
+               if trace.platform else trace.bound_rooms)
+    if not origins:
+        raise NoteBodyError("unknown_turn", "the cited turn has no resolved room")
+    entries = [message(origin) for origin in origins]
+    for item in turn_items(trace.messages, trace.requirements):
+        if not item.requirements or not all(r.known for r in item.requirements):
+            raise NoteBodyError("unknown_turn", "the cited turn's requirements are unresolved")
+        entries.extend(r.entry() for r in item.requirements)
+    return Lineage.of({ROW: entries})

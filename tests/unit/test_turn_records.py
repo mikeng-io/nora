@@ -231,3 +231,169 @@ async def test_character_read_records_exclusions_and_location_subjects():
     captured = recording.to_json()["call-1"]
     assert any(r["exclude_persons"] == ["p2"] and r["location"]
                and r["location_subjects"] == ["p1"] for r in captured)
+
+
+class _RecordConnection:
+    """Local SQL scaffolding: answer only matching table, handle and unit reads."""
+
+    def __init__(self, trace, memo=None):
+        self.trace = trace
+        self.memo = memo
+
+    async def execute(self, stmt):
+        from types import SimpleNamespace
+
+        params = stmt.compile().params
+        tables = str(stmt)
+        if tables.startswith("INSERT INTO tag_trace"):
+            return None
+        if "FROM tag_trace" in tables:
+            found = self.trace if (
+                params.get("turn_id_1") == self.trace.turn_id
+                and params.get("unit_1") == self.trace.unit
+            ) else None
+            row = None if found is None else SimpleNamespace(**{
+                    field: getattr(found, field) for field in found.__dataclass_fields__
+                })
+            return SimpleNamespace(first=lambda: row)
+        if "FROM messages" in tables:
+            return SimpleNamespace(scalar_one_or_none=lambda: "signal")
+        if "FROM memo" in tables:
+            return SimpleNamespace(one_or_none=lambda: self.memo, all=lambda: [self.memo])
+        raise AssertionError(str(stmt))
+
+
+def _record_engine(conn):
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+
+    @asynccontextmanager
+    async def connect():
+        yield conn
+
+    return SimpleNamespace(connect=connect, begin=connect)
+
+
+async def test_turn_citations_derive_note_and_memo_disclosure_and_refuse_unknown_records():
+    from types import SimpleNamespace
+    from uuid import UUID
+
+    from nora.agent.lineage import section_permits
+    from nora.domain.lineage import ROW, Lineage, LiveRoom
+    from nora.infra.sql.memo import SqlMemoStore
+    from nora.infra.sql.notes import _revision_lineage
+
+    req = replace(REQ, location=True, location_subjects=("p2",), exclude_persons=("p2",))
+    trace = _trace([[req.to_json()]])
+    body = "## Open\n- checked turn(t7)\n"
+    row = SimpleNamespace(
+        mid=str(UUID(int=7)), unit="u1", platform="signal", conversation_id="room-a",
+        created_at=1, id="generated-revision", memo_id="generated-memo", seq=1,
+        title="checked fact", body="## Kept\n- checked turn(t7)", citations=["turn(t7)"],
+        mode="told", state="kept", written_at=1, established_by="cognition:u1", model=None,
+    )
+    conn = _RecordConnection(trace, row)
+    note_lineage, _ = await _revision_lineage(
+        conn, body=body, origin="room-a", first=True, unit="u1",
+    )
+    live = LiveRoom(frozenset({"p1"}))
+    allowed = _target().with_live(live)
+    denied = _target(replace(B, location=False)).with_live(live)
+    assert section_permits(note_lineage.section(ROW), allowed, origin="room-a")
+    assert not section_permits(note_lineage.section(ROW), denied, origin="room-a")
+    memo = await SqlMemoStore(_record_engine(conn)).get(
+        unit="u1", memo_id=str(UUID(int=7)),
+    )
+    assert memo is not None
+    for lineage in (note_lineage, memo.head.lineage):
+        # The stored JSON round trip preserves exclusions and location together.
+        entries = Lineage.from_json(lineage.to_json()).section(ROW)
+        assert section_permits(entries, allowed, origin=None)
+        assert not section_permits(entries, denied, origin=None)
+        assert not section_permits(entries, _target(replace(B, persons=frozenset({"p2"})))
+                                   .with_live(live), origin=None)
+    from nora.agent.registry import ToolRegistry
+    from nora.obs.metrics import Metrics
+    from nora.testing import FakeMemoryStore, FakeRecordStore
+    from tests.fakes import SinkSender
+
+    for target, expected in ((B, "ok"), (replace(B, location=False), "nothing_found")):
+        policy = LineagePolicy(
+            rooms=(A, target, C), circles=(frozenset({"p1", "p2"}),),
+            _by_id={("discord", "room-b"): target},
+        )
+        registry = ToolRegistry(memos=SqlMemoStore(_record_engine(conn)),
+                                lineage=policy, unit_for=lambda _p, _c: "u1")
+        room = _room()
+        specs = registry.specs(
+            store=FakeRecordStore(), conversation_id="room-b", conversation_type="group",
+            persons=Persons(by_person={}, index={}), honcho=FakeMemoryStore(),
+            deliverer=SinkSender(),
+            metrics=Metrics(), room=room,
+        )
+        read = next(s.call for s in specs if s.name == "memo_read")
+        assert (await read(memo_id=row.mid))["status"] == expected
+    for unknown_body, unit in ((body.replace("t7", "t8"), "u1"), (body, "u2")):
+        with pytest.raises(NoteBodyError, match="unknown_turn"):
+            await _revision_lineage(conn, body=unknown_body, origin="room-a", first=True, unit=unit)
+    conn.trace = replace(trace, requirements={})
+    with pytest.raises(NoteBodyError, match="unknown_turn"):
+        await _revision_lineage(conn, body=body, origin="room-a", first=True, unit="u1")
+
+
+async def test_saved_turn_citations_survive_note_and_memo_revision_and_are_rechecked():
+    from nora.agent.fetch_watch import RoomFetched
+    from nora.domain.memo import parse_memo_body
+    from nora.infra.sql.tag_traces import SqlTagTraceStore
+    from tests.unit.cognition_rig import NOW, Stores, session
+
+    body = "## Kept\n- checked turn(t7)"
+    fetched = RoomFetched()
+    fetched.take("note_read", {"status": "ok", "body": "## Open\n- checked turn(t7)"})
+    assert parse_memo_body(body, shown=Shown(turn_handles=frozenset(fetched.turn_handles)))
+    stores = Stores()
+    memo = await stores.memos.create(
+        unit="u", platform="signal", conversation_id="room-a", title="checked fact",
+        body=body, citations=("turn(t7)",), mode="told", established_by="cognition:u",
+        model=None, now_ms=NOW,
+    )
+    conn = _RecordConnection(replace(_trace([[REQ.to_json()]]), unit="u"))
+    answers = []
+
+    async def revise(by, tools):
+        head = await stores.memos.get(unit="u", memo_id=memo.id)
+        answers.append(await by["memo_revise"](
+            memo_id=memo.id, base_revision_id=head.head.id, body=body,
+        ))
+
+    kwargs = {"tag_trace_store": SqlTagTraceStore(_record_engine(conn))}
+    await session(revise, stores=stores, runner_kwargs=kwargs)
+    assert answers[-1]["status"] == "ok"
+    assert (await stores.memos.get(unit="u", memo_id=memo.id)).head.seq == 2
+    conn.trace = replace(conn.trace, requirements={})
+    await session(revise, stores=stores, runner_kwargs=kwargs)
+    assert answers[-1]["status"] == "refused" and answers[-1]["reason"] == "unknown_turn"
+    assert (await stores.memos.get(unit="u", memo_id=memo.id)).head.seq == 2
+
+
+async def test_unresolved_record_items_are_unavailable_and_denied_items_stay_resolved():
+    for requirement in (
+        {},
+        {"call-0": [replace(REQ, entries=(LineageEntry("unknown"),)).to_json()]},
+        {"call-0": [replace(REQ, location=True).to_json()]},
+    ):
+        trace = replace(_trace([[REQ.to_json()]]), requirements=requirement)
+        result = await turn_record_view(trace, _target(), _room())
+        assert result["status"] == "unavailable" and result["unavailable"] == 1
+        assert result["withheld"] == 1 and result["items"] == []
+    named = _trace([[REQ.to_json()]])
+    result = await turn_record_view(named, _target(), _room(unnamed=True))
+    assert result["status"] == "unavailable" and result["unavailable"] == 1
+    denied = replace(REQ, location=True, location_subjects=("p2",))
+    result = await turn_record_view(_trace([[denied.to_json()]]),
+                                    _target(replace(B, location=False)), _room())
+    assert result["status"] == "ok" and result["withheld"] == 1
+    assert result["unavailable"] == 0
+    result = await turn_record_view(_trace([[REQ.to_json()], [{}]]), _target(), _room())
+    assert result["status"] == "partial" and result["unavailable"] == 1
+    assert len(result["items"]) == 1 and result["withheld"] == 1

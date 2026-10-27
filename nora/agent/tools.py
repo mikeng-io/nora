@@ -138,7 +138,16 @@ from ..domain.gatherings import (
 )
 from ..domain.instagram_links import is_handle as _is_instagram_handle
 from ..domain.instagram_links import parse_link as _parse_instagram_link
-from ..domain.lineage import SOCIAL, LineageEntry, LiveRoom, RenderRoom, RoomFacts, room_key
+from ..domain.lineage import (
+    ROW,
+    SOCIAL,
+    UNRESOLVED,
+    LineageEntry,
+    LiveRoom,
+    RenderRoom,
+    RoomFacts,
+    room_key,
+)
 from ..domain.lineage import message as message_lineage
 from ..domain.linkedin_links import is_handle as _is_linkedin_handle
 from ..domain.linkedin_links import parse_link as _parse_linkedin_link
@@ -259,7 +268,7 @@ from ..domain.social_stream import RecordedItem
 from ..domain.standing import StandingHead
 from ..domain.subagent import Decision, SubagentBrief
 from ..domain.tool_call_log import ToolCallLogStore
-from ..domain.turn_record import DisclosureRequirement
+from ..domain.turn_record import DisclosureRequirement, turn_handles_in
 from ..domain.video import ReferenceKind, VideoReference, VideoRequest
 from ..domain.x_links import is_handle as _is_x_handle
 from ..domain.x_links import parse_link as _parse_x_link
@@ -282,7 +291,7 @@ from ..obs.tracing import annotate, current_span_ids, span
 from .arithmetic import evaluate as evaluate_expression
 from .character_read import account_key, person_named, room_named, rooms_listing
 from .egress import scan_reply
-from .lineage import LineagePolicy, entry_permits, profile_lines_for
+from .lineage import LineagePolicy, entry_permits, memo_permits, profile_lines_for
 
 # Re-exported, explicitly (`as`-aliased to themselves so ruff's F401 reads
 # them as intentional, not dead): `tests/test_media_fetch.py` and
@@ -13616,6 +13625,21 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 "note": "No memo by that id is kept here. Only the ones in <memos> "
                         "exist, so check it, and don't describe one that isn't there.",
             }
+        if any(turn_handles_in(r.body) for r in (memo.head, *chain)):
+            target = await _lineage_target("memo_read")
+            if target is None:
+                return dict(memos_off)
+            entries = memo.head.lineage.section(ROW)
+            if turn_handles_in(memo.head.body) and (
+                not entries or any(e.kind == UNRESOLVED for e in entries)
+            ):
+                _record(metrics, "memo_read", "unavailable")
+                return dict(memos_off)
+            if not memo_permits(memo.head, target[0]):
+                _record(metrics, "memo_read", "nothing_found")
+                return {"status": "nothing_found",
+                        "note": "This room cannot read that memo's cited evidence."}
+            chain = tuple(r for r in chain if memo_permits(r, target[0]))
         _record(metrics, "memo_read", "ok", chars=len(memo.head.body))
         result: dict = {
             "status": "ok", "memo_id": memo.id, "title": memo.title,
@@ -14051,7 +14075,10 @@ Args:
         return {"status": "refused", "note": _PROFILE_DISPUTE_REFUSED_NOTES.get(
             reason, "Nothing was recorded. Say you couldn't record it.")}
 
-    def _held_to_schema(tool: str, body: str, *, carried: frozenset[int]) -> str | dict:
+    def _held_to_schema(
+        tool: str, body: str, *, carried: frozenset[int],
+        carried_turns: frozenset[str] = frozenset(),
+    ) -> str | dict:
         """The tag path's body held to the note-body schema: her `[#n]`
         positions mapped to the row ids her transcript showed, then parsed
         against those rows, the roster and the ids the note already cites.
@@ -14072,6 +14099,7 @@ Args:
                     for r in bound_window
                 ),
                 carried=carried,
+                turn_handles=carried_turns,
                 roster={
                     ref.name: pid
                     for pid, ref in getattr(persons, "by_person", {}).items()
@@ -14271,6 +14299,7 @@ Args:
         held = _held_to_schema(
             "note_update", body,
             carried=cited_ids_in(current[1].body) if current is not None else frozenset(),
+            carried_turns=turn_handles_in(current[1].body) if current is not None else frozenset(),
         )
         if isinstance(held, dict):
             return held

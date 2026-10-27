@@ -73,8 +73,10 @@ from ..domain.lineage import (
     RoomFacts,
     room_key,
 )
+from ..domain.memo import MemoRevision
 from ..domain.notes import Note
 from ..domain.standing import Standing
+from ..domain.turn_record import turn_handles_in
 from ..policy import Policy
 from .room import Room
 from .whereis import Circle, DisclosureGuard
@@ -192,6 +194,8 @@ PREDICATES: Mapping[str, Callable[[LineageEntry, RenderRoom], bool]] = {
 def entry_permits(entry: LineageEntry, target: RenderRoom, *, origin: str | None) -> bool:
     """May B be shown something resting on `entry`? `origin` is the room the
     row carrying it was written in: the only room an unknown kind is shown in."""
+    if excluded(entry.exclude_persons, target):
+        return False
     predicate = PREDICATES.get(entry.kind)
     if predicate is None:
         return target.room is not None and target.room.is_room(origin)
@@ -207,6 +211,14 @@ def section_permits(
     if not listed:
         return target.room is not None and target.room.is_room(origin)
     return all(entry_permits(e, target, origin=origin) for e in listed)
+
+
+def memo_permits(revision: MemoRevision, target: RenderRoom | None) -> bool:
+    """Legacy memos remain unit-wide; a turn citation carries its requirements."""
+    if not turn_handles_in(revision.body):
+        return True
+    entries = revision.lineage.section(ROW)
+    return bool(target is not None and entries and section_permits(entries, target, origin=None))
 
 
 def excluded(exclude_persons: Iterable[str], target: RenderRoom) -> bool:

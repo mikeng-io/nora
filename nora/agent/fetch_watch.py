@@ -44,6 +44,7 @@ from strands.types.tools import AgentTool, ToolSpec, ToolUse
 
 from nora.agent.room_routing import ROOM_ARG
 from nora.domain.note_body import cited_ids_in, rollup_key
+from nora.domain.turn_record import turn_handles_in
 
 #: The read tools whose results hand out citable rows.
 WATCHED_TOOLS: frozenset[str] = frozenset({"note_read", "record_query", "rollup_read"})
@@ -69,6 +70,7 @@ class RoomFetched:
             body = result.get("body")
             if isinstance(body, str):
                 self.carried_ids |= cited_ids_in(body)
+                self.turn_handles |= turn_handles_in(body)
         elif tool == "record_query":
             for row in result.get("messages") or ():
                 n = row.get("n") if isinstance(row, dict) else None

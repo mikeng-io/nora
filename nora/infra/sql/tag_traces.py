@@ -21,11 +21,34 @@ from typing import Any
 from uuid import uuid4
 
 import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
+from nora.domain.lineage import ROW, Lineage, unresolved
 from nora.domain.models import DeliveryStatus, RowEdit, TranscriptRow
+from nora.domain.note_body import NoteBodyError
 from nora.domain.tag_trace import TagTrace
+from nora.domain.turn_record import cited_turn_lineage, turn_handles_in
 from nora.infra.sql.schema import TAG_TRACE
+
+
+async def body_turn_lineage(
+    conn: AsyncConnection, *, body: str, unit: str, strict: bool = True,
+) -> Lineage:
+    lineage = Lineage()
+    for handle in sorted(turn_handles_in(body)):
+        row = (await conn.execute(sa.select(TAG_TRACE).where(
+            TAG_TRACE.c.turn_id == int(handle[1:]), TAG_TRACE.c.unit == unit,
+        ))).first()
+        try:
+            reached = cited_turn_lineage(
+                SqlTagTraceStore._trace(row) if row is not None else None, unit=unit,
+            )
+        except NoteBodyError:
+            if strict:
+                raise
+            reached = Lineage.of({ROW: (unresolved(None),)})
+        lineage = lineage.union(reached)
+    return lineage
 
 
 def _row_to_json(row: TranscriptRow) -> dict[str, Any]:

@@ -37,9 +37,10 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
+from nora.domain.lineage import Lineage
 from nora.domain.note_body import (
     NoteBody,
     NoteBodyError,
@@ -110,13 +111,14 @@ class MemoRevision:
     written_at: int
     established_by: str
     model: str | None = None
+    lineage: Lineage = field(default_factory=Lineage)
 
 
 @dataclass(frozen=True, slots=True)
 class Memo:
     """A memo identity and its head revision. `platform`/`conversation_id` are
     the room it was first kept in, provenance only: a memo is the UNIT's and
-    renders in every room of it."""
+    renders where its cited disclosure requirements permit."""
 
     id: str
     unit: str
