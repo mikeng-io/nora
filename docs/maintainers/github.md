@@ -45,12 +45,12 @@ to Actions. Keep outside PRs on hosted runners, with no deployment credentials o
 host access. In Actions settings, require approval for **all outside collaborators**
 before their workflows run; never give fork PR workflows write tokens or secrets.
 
-## Automatic releases
+## Manual releases
 
 Install a **free GitHub App**, restricted to this repository. Give it repository
-Contents: read/write, Pull requests: read/write and Administration: read-only.
-The last permission lets the release job verify branch protection before queuing
-a merge; it cannot change that protection. Store its App ID as Actions variable
+Contents: read/write and Pull requests: read/write.
+Administration is no longer requested by the workflow: release PRs are merged
+manually through the existing branch rules. Store its App ID as Actions variable
 `RELEASE_APP_ID` and its PEM private key as Actions secret `RELEASE_APP_PRIVATE_KEY`.
 Use GitHub Settings or `gh secret set` interactively; never paste the key into an
 issue, chat, tracked file or workflow log. No personal token is needed.
@@ -62,13 +62,48 @@ This is a separate identifier from the App ID. The metadata job checks the live
 PR author's user ID; it receives no App key or installation token. Private Apps
 cannot be discovered through `/apps/{slug}` using that job's repository token.
 
-`scripts/release_plan.py` creates/updates the version PR from the commits reachable from
-`master` and not from the last tag (ADR 0027); the release-please action only tags and
-publishes it once it is merged. The App queues that PR for a real merge commit; required
-checks must pass before GitHub merges it, and queuing is refused unless the `master` ruleset
-requires `checks`. The resulting master run publishes the tag and GitHub Release. Installing
-this App does not permit deployment. Without the App, the existing manual release-PR workflow
-continues and prints a setup notice.
+The `release-please` workflow is manual-only (`workflow_dispatch` on master):
+
+```bash
+gh workflow run release-please.yml --ref master -f action=prepare -f bump=minor
+# Review the generated PR and its checks, then manually merge it.
+gh workflow run release-please.yml --ref master -f action=publish
+```
+
+Choose patch/minor/major explicitly. `scripts/release_plan.py --bump <level>`
+collects all eligible commits reachable since the last tag and rejects a choice
+below the minimum declared by those commits. Preparation never merges, tags or
+publishes; normal master pushes do none of these. Merging the metadata PR also
+does not publish. The separate publish dispatch lets release-please tag and
+publish that merged PR, without preparing another version.
+
+The release App is required for these dispatches so its PR changes trigger checks
+and its Release triggers image publication. There is no GITHUB_TOKEN fallback
+that appears successful but suppresses downstream events. `Release-As:` footers
+remain unsupported. Daily Devin assessment is advisory; it has no merge, tag,
+publish or deployment authority. See `.agents/skills/nora-release/SKILL.md`.
+
+Publishing still triggers the complete release image bundle and Komodo poller;
+obtain deployment admission first. This change does not add RC/nightly support
+to the stable-only publisher or a second deployment mechanism.
+
+### Daily Devin assessment
+
+Use one native Devin Automation with a Schedule trigger, an explicit
+Asia/Hong_Kong timezone, one concurrent run and a bounded per-session ACU limit.
+Its prompt references `.agents/skills/nora-release/assessment.md` on current master.
+The initial task is read-only: assess all still-unreleased changes and return
+wait, RC, stable or unavailable with a pinned candidate and evidence. Keep the
+report in the Devin session; it may not open PRs, dispatch Actions or publish.
+Bind a dedicated mandatory read-only security profile, with no GitHub CLI token,
+no extra MCP servers and only the GitHub destinations needed for reading. Do not
+change organization defaults or reuse the CI repair dispatcher for this task.
+
+Preflight scripts are account-dependent. If available, they can skip unchanged
+input before starting a session; the same no-change check remains in the task
+because Run now bypasses Preflight. Read back the saved recurrence, timezone,
+enabled state, ACU/invocation/concurrency limits and bound profile before claiming
+the automation is active. Creating it does not prove a scheduled assessment ran.
 
 Only `feat`, `fix`, `security`, `perf`, `change`, `doctrine` and `revert` commits
 with changes to runtime inputs qualify for creating/updating a release PR.
@@ -346,7 +381,7 @@ lower-severity advisory has been resolved.
 
 Run the activation command immediately after the owner changes visibility, then
 read back the settings and run the Security workflow. Complete the release App
-setup above before expecting unattended releases. The activation script refuses
+setup above before manually preparing or publishing a release. The activation script refuses
 private repositories and does not create an App or its private key. While private
 on GitHub Free, branch protection cannot be enforced; publication or an eligible
 paid plan is an owner decision.

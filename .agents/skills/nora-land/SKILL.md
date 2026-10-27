@@ -101,10 +101,10 @@ git log -1 --format='%h %s'
 
 ## 5. The subject is the release note
 
-There is no release fragment (DEC-314). release-please turns the `feat`, `fix`,
-`security`, `perf`, `change` and `doctrine` subjects merged since the last tag
-into the CHANGELOG and the GitHub Release (`nora-release`). Other types never
-show up there.
+There is no release fragment (DEC-314). On manual preparation,
+`scripts/release_plan.py` turns the visible commit subjects since the last tag
+into the CHANGELOG. A separate manual publish dispatch lets release-please
+publish it (`nora-release`); ordinary master merges never release.
 
 - Write a user-visible subject as a changelog line: `fix(music): resume after a
   voice reconnect`. A breaking change gets `!` or a `BREAKING CHANGE:` footer.

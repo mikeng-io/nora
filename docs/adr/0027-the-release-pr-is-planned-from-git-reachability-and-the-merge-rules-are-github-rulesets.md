@@ -8,6 +8,18 @@
   Replaces its release-PR step.
 - **Index:** DEC-314
 
+## Manual release amendment (operator, 2026-10-28)
+
+Issue #316 replaces the automatic cadence described below: master pushes no
+longer run release planning or publication. A manual prepare dispatch selects
+patch/minor/major, keeping git-reachability scope and a declared semantic minimum.
+The maintainer reviews and merges the metadata PR; a separate manual publish
+dispatch lets release-please tag/publish it. Release-PR auto-merge is removed.
+Publication still triggers the image/Komodo path, requiring deployment admission.
+Daily Devin assessment recommends only; RC/nightly publication remains separate
+unbuilt work. The historical automatic-release consequences below describe the
+pre-amendment behavior. Branch rules and immutable published tags are unchanged.
+
 ## Context
 
 Read from the repository and the Actions logs on 2026-10-22:
