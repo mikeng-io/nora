@@ -18,8 +18,10 @@ from typing import Any
 
 from nora.agent.lineage import visible_sections
 from nora.agent.rollup_read import iso
+from nora.agent.turn_recording import record_requirement
 from nora.domain.lineage import BODY, HOLD_OPEN, I_OWE, WORKING_SET, RenderRoom, room_key
 from nora.domain.standing import StandingHead
+from nora.domain.turn_record import DisclosureRequirement
 
 __all__ = ["render_standing"]
 
@@ -36,6 +38,12 @@ def render_standing(head: StandingHead, target: RenderRoom) -> tuple[dict[str, A
         exclude_persons=standing.exclude_persons,
     )
     out: dict[str, Any] = {}
+    for section, permitted in allowed.items():
+        if permitted:
+            record_requirement(DisclosureRequirement(
+                room_key(standing.platform, standing.conversation_id),
+                standing.lineage.section(section), tuple(standing.exclude_persons),
+            ))
     if allowed[BODY]:
         out["where_it_stands"] = standing.body
     if allowed[HOLD_OPEN] and standing.hold_open is not None:

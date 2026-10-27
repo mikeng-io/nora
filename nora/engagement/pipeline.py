@@ -1259,6 +1259,12 @@ class EngagementPipeline:
             # `release_and_dispatch` (already run, above) or this turn's own
             # latency observation (right below).
             if trace is not None and self._tag_trace_store is not None:
+                source = msg.platform + ":" + msg.conversation_id
+                trace = dataclasses.replace(
+                    trace, platform=msg.platform, unit=convo.unit if convo else None,
+                    bound_rooms=(source,),
+                    sent_message_ids=handle.deliverer.sent_message_ids if handle else (),
+                )
                 self._spawn(self._tag_trace_store.save(trace))
                 # Counted HERE — beside the spawn, not inside the store —
                 # for the same reason the spawn itself is not awaited: what

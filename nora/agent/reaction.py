@@ -134,6 +134,8 @@ def render_recent(rows: Sequence[TranscriptRow], *, display_name: str = "Nora") 
         if not body:
             continue
         who = display_name if row.is_nora else row_speaker(row)
+        if row.turn_handle is not None:
+            who += f" (turn {row.turn_handle})"
         lines.append(f"{speaker_label(who)}: {escape(body)}")
     return "\n".join(lines)
 

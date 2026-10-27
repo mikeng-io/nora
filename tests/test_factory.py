@@ -385,7 +385,7 @@ def test_the_dream_agent_takes_none_of_the_tag_paths_welded_parameters():
     # bounded executor, and a test passes its own to observe the bound.
     assert params == {"model", "system_prompt", "tools", "guard",
                       "reasoning_watch", "trace_attributes", "retry",
-                      "agent_name", "tool_executor"}
+                      "agent_name", "tool_executor", "tool_hooks"}
 
 
 def test_the_dream_agent_is_named_apart_from_her_turns():
