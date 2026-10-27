@@ -3117,6 +3117,8 @@ class DreamerConfig(BaseModel):
     `budgets` maps an ADAPTOR NAME to its `DreamBudgetConfig`. An adaptor with
     no block of its own gets `DreamBudgetConfig`'s own field defaults through
     `budget_for` — never a `KeyError` at tick time, and never an unbounded run.
+    Collective Profile defaults are materialized in this map before composition
+    and timeout derivation; explicit blocks still win.
     A PARTIAL block fills its missing fields from those same defaults rather
     than zeroing them, which matters because `output_tokens = 0` is not "no
     limit", it is a subsystem that silently never produces anything.
@@ -3291,6 +3293,15 @@ class DreamerConfig(BaseModel):
     # need to update a literal by hand, not the proof itself.
     max_unit_hold_seconds: float | None = Field(default=None, gt=0)
 
+    @model_validator(mode="after")
+    def _collective_profile_defaults(self) -> DreamerConfig:
+        # Composition passes this map to the runtime before Culture inheritance;
+        # the outer unit timeout also reads it. Materialize the code defaults so
+        # neither consumer silently falls back to the generic 40k/120s budget.
+        for name in ("profile-unit", "profile-room", "profile-nora"):
+            self.budgets.setdefault(name, self.budget_for(name))
+        return self
+
     def budget_for(self, adaptor: str) -> DreamBudgetConfig:
         """The budget one adaptor runs under, ALWAYS bounded.
 
@@ -3324,6 +3335,17 @@ class DreamerConfig(BaseModel):
                 turns=COGNITION_TURNS, total_tokens=COGNITION_TOTAL_TOKENS,
                 output_tokens=COGNITION_OUTPUT_TOKENS,
                 timeout_seconds=COGNITION_TIMEOUT_SECONDS,
+            )
+        if (adaptor in ("profile-unit", "profile-room", "profile-nora")
+                and adaptor not in self.budgets):
+            # 60k rendered source chars (~50k mixed Cantonese/English tokens)
+            # plus instructions/held lines: two 60k-input calls, 8k refusal
+            # history and 16k output fit below 160k. Six turns leave room to
+            # finish after repair; 360s allows two 120s calls plus tool time.
+            # Starting allowances, not measured provider latency/token ratios.
+            return DreamBudgetConfig(
+                turns=6, total_tokens=160_000, output_tokens=16_000,
+                timeout_seconds=360.0,
             )
         return self.budgets.get(adaptor, DreamBudgetConfig())
 

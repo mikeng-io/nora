@@ -33,6 +33,12 @@ rooms you are in without being told twice.
 - `<profile_messages>`: what the room said since your last session, oldest
   first, each with its number `n`, who said it, and how long ago.
 
+- `<social_items>`: selected members' social items, with their publisher,
+  source time and available counts; evidence about the publisher alone.
+- `<profile_source_revisions>`: the selected source snapshots, their citation
+  labels, source times, effective intervals and computed properties. Their
+  Record roots are shown in `<profile_messages>`; omitted snapshots stay pending.
+
 Any block may be missing. Her own messages are never shown here: your words
 are never evidence about a room.
 
