@@ -173,7 +173,7 @@ export async function serveContent(
 
   const size = (await stat(filePath)).size;
   const ext = path.extname(filePath).slice(1);
-  const name = safeFileName(job, ext);
+  const name = safeFileName(job, ext, path.basename(filePath));
   // A converted output takes its own extension's type — a webm made from an
   // mp4 must not keep the job's video/mp4 label.
   const type = file ? mediaTypeFor(ext) : (job.mediaType ?? "application/octet-stream");
@@ -209,8 +209,9 @@ export async function serveContent(
 }
 
 /** The download name the browser is offered: the media's title when it makes a
- * safe ASCII filename, else the stored download.<ext>. */
-function safeFileName(job: DownloadJob, ext: string): string {
+ * safe ASCII filename, else the name of the file actually being served — a
+ * converted output must not borrow the original's name and extension. */
+function safeFileName(job: DownloadJob, ext: string, servedName?: string): string {
   const extName = ext || "bin";
   const title = (job.title ?? "")
     .normalize("NFKD")
@@ -218,7 +219,7 @@ function safeFileName(job: DownloadJob, ext: string): string {
     .trim()
     .replace(/\s+/g, " ")
     .slice(0, 120);
-  return title ? `${title}.${extName}` : (job.fileName ?? `download.${extName}`);
+  return title ? `${title}.${extName}` : (servedName ?? `download.${extName}`);
 }
 
 function json(status: number, body: unknown): Response {
