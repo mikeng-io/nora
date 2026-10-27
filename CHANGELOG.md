@@ -1,5 +1,17 @@
 # Changelog
 
+## [7.10.0](https://github.com/mikeng-io/nora/compare/v7.9.0...v7.10.0) (2026-10-27)
+
+
+### Features
+
+* **app:** archive the downloads library as one zip ([a16f734](https://github.com/mikeng-io/nora/commit/a16f734cdcafb851434dcddb29deaf4dff874bce))
+
+
+### Bug Fixes
+
+* **app:** name downloads after the media, not download.<ext> ([9a78514](https://github.com/mikeng-io/nora/commit/9a78514375e13bacc8d3adc1d93a972134c1159f))
+
 ## [7.9.0](https://github.com/mikeng-io/nora/compare/v7.8.1...v7.9.0) (2026-10-27)
 
 
