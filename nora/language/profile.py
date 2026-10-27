@@ -1120,6 +1120,7 @@ class ProfilePersonAdaptor:
                  r.ts if shas_in(r.media_json) else None)
                 for r in e.replies if r.person_id == person)],
             row_id=lambda m: m[0],
+            turn=lambda m: e.turn_handle if m[0] == e.send_id else None,
             attrs=lambda m: (("from", m[1]),) + (() if m[3] is None else (
                 ("source_at", datetime.fromtimestamp(m[3] / 1000, PROFILE_HKT).isoformat()),
             )), body=lambda m: m[2],

@@ -256,6 +256,7 @@ def build_offline_pipeline(
         # so a collaborator added on one side and forgotten here fails a test
         # instead of letting the eval prompt drift from production's.
         fire_path = FirePath(
+            tag_trace_store=None,
             persons=persons, records=audit, memory=memory,
             # The SAME join the tag assembler above is given, so an eval's fire
             # prompt shows what an eval's tag prompt shows (the parity gate

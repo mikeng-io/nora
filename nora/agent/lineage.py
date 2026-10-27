@@ -52,6 +52,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
+from typing import Protocol, TypeVar
 
 from ..domain.culture import CultureRevision
 from ..domain.lineage import (
@@ -73,11 +74,22 @@ from ..domain.lineage import (
     room_key,
 )
 from ..domain.notes import Note
-from ..domain.profile import ProfileLine
 from ..domain.standing import Standing
 from ..policy import Policy
 from .room import Room
 from .whereis import Circle, DisclosureGuard
+
+
+class _ProfileDisclosure(Protocol):
+    @property
+    def exclude_persons(self) -> tuple[str, ...]: ...
+    @property
+    def location(self) -> bool: ...
+    @property
+    def location_subjects(self) -> tuple[str, ...]: ...
+
+
+_ProfileItem = TypeVar("_ProfileItem", bound=_ProfileDisclosure)
 
 __all__ = [
     "PREDICATES",
@@ -335,8 +347,8 @@ def derived_view(
 
 
 async def profile_lines_for(
-    lines: tuple[ProfileLine, ...], target: RenderRoom, room: Room,
-) -> tuple[ProfileLine, ...]:
+    lines: tuple[_ProfileItem, ...], target: RenderRoom, room: Room,
+) -> tuple[_ProfileItem, ...]:
     """Apply the existing exclusion boundary, reading the roster only if needed."""
     if any(line.exclude_persons or line.location for line in lines):
         view = await room.scope()
@@ -344,7 +356,7 @@ async def profile_lines_for(
             person_ids=frozenset(p.person_id for p in view.people),
             unnamed=view.unnamed, available=view.available, degraded=view.degraded,
         ))
-    def permitted(line: ProfileLine) -> bool:
+    def permitted(line: _ProfileItem) -> bool:
         if excluded(line.exclude_persons, target):
             return False
         if not line.location:

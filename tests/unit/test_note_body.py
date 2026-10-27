@@ -333,6 +333,10 @@ def test_every_rule_is_asserted_by_a_test_here():
     assert set(RULES) <= asserted, sorted(set(RULES) - asserted)
 
 
+def test_a_turn_the_writer_was_not_shown_is_refused():
+    assert _refused("## Decided\n## Open\n- checked turn(t7)\n") == "unknown_turn"
+
+
 def test_in_schema_form_reads_form_not_evidence():
     """`form`: a stored body is in the sections when it
     parses with every cited id carried and every owner a roster name. A

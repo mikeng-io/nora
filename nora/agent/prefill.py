@@ -470,6 +470,7 @@ def render_transcript(
         now=now,
         edited=lambda row: row.edit.ts if row.edit else None,
         was=lambda row: row.edit.was if row.edit else None,
+        turn=lambda row: row.turn_handle,
     )
 
 

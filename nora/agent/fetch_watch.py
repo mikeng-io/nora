@@ -59,6 +59,7 @@ class RoomFetched:
     messages: dict[int, str] = field(default_factory=dict)
     #: `rollup_key(...)` of every Rollup row `rollup_read` returned.
     rollup_keys: set[str] = field(default_factory=set)
+    turn_handles: set[str] = field(default_factory=set)
 
     def take(self, tool: str, result: Any) -> None:
         """Keep what `result`, the answer of read tool `tool`, handed out."""
@@ -74,6 +75,9 @@ class RoomFetched:
                 sender = row.get("sender") if isinstance(row, dict) else None
                 if isinstance(n, int) and not isinstance(n, bool) and isinstance(sender, str):
                     self.messages[n] = sender
+                    handle = row.get("turn")
+                    if isinstance(handle, str):
+                        self.turn_handles.add(handle)
         elif tool == "rollup_read":
             for row in result.get("rows") or ():
                 if not isinstance(row, dict):

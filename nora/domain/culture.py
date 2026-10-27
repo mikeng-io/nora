@@ -518,6 +518,11 @@ class Episode:
     #: Unquoted `follow` responses. Not shown to the session yet, so an
     #: episode with only these is not evidence (`is_evidence`).
     follows: int = 0
+    turn_id: int | None = None
+
+    @property
+    def turn_handle(self) -> str | None:
+        return f"t{self.turn_id}" if self.turn_id is not None else None
 
     @property
     def is_evidence(self) -> bool:

@@ -259,6 +259,7 @@ from ..domain.social_stream import RecordedItem
 from ..domain.standing import StandingHead
 from ..domain.subagent import Decision, SubagentBrief
 from ..domain.tool_call_log import ToolCallLogStore
+from ..domain.turn_record import DisclosureRequirement
 from ..domain.video import ReferenceKind, VideoReference, VideoRequest
 from ..domain.x_links import is_handle as _is_x_handle
 from ..domain.x_links import parse_link as _parse_x_link
@@ -308,6 +309,7 @@ from .standing_read import render_standing
 from .subagent_desk import JobView, SubagentDesk
 from .subagent_progress import SubagentProgress
 from .surface import LOAD_TOOLS_UNAVAILABLE_NOTE, ToolShelf, load_onto
+from .turn_recording import in_room, record_requirement
 from .video_desk import VideoDesk
 from .whereis import (
     STALE_AFTER_MS,
@@ -2931,6 +2933,8 @@ def _transcript_messages(
             # A Dreamer pass's citation handle: the same number its batch lines carry
             # as `n`. Never on a tag turn (R-18).
             item = {"n": r.id, **item}
+        if r.turn_handle is not None:
+            item["turn"] = r.turn_handle
         if r.edit is not None:
             item["edited"] = stamp(r.edit.ts, now)
             item["was"] = _file_handles(r.edit.was)
@@ -5251,6 +5255,8 @@ def build_tool_specs(
         # keeps its profile name rather than collapsing to "unknown", so the two
         # renderers cannot disagree in EITHER direction.
         rows = persons.name_transcript(rows, platform=room.platform)
+        origin = room_key(room.platform, bound_conversation_id)
+        record_requirement(DisclosureRequirement(origin, (message_lineage(origin),)))
         # And the media join, for the SAME argument one paragraph up. Without
         # the join the prefill performs, the identical blob renders
         # `[image a3f2c1: a plate of noodles - …]` inside `<group_transcript>`
@@ -5481,6 +5487,8 @@ def build_tool_specs(
         # `(platform, sender_id)`, and this room's platform would resolve
         # nobody (or the wrong person) in a room on another network.
         rows = persons.name_transcript(rows, platform=target.platform)
+        origin = room_key(target.platform, target.conversation_id)
+        record_requirement(DisclosureRequirement(origin, (message_lineage(origin),)))
         if media_join is not None:
             # `load_transcript`'s label on purpose: the path labels a COST
             # class for the join's histograms (a tool's window of at most
@@ -5649,6 +5657,8 @@ def build_tool_specs(
         }
         out: list[dict] = []
         for hit, row in zip(hits, rows, strict=True):
+            origin = room_key(hit.platform, hit.conversation_id)
+            record_requirement(DisclosureRequirement(origin, (message_lineage(origin),)))
             item = _transcript_messages(
                 [row], now=now, with_ids=dream_adaptor == COGNITION_ADAPTOR,
             )[0][0]
@@ -5784,6 +5794,8 @@ def build_tool_specs(
             _record(metrics, "rollup_read", "unavailable", reason="build")
             return {"status": "unavailable", "note": _ROLLUP_NO_BUILD}
         shown, withheld = visible_rows(got.rows, target)
+        for row in shown:
+            record_requirement(DisclosureRequirement(None, row.lineage.section("row")))
         through = rollup_iso(got.through_ms)
         notes: list[str] = []
         if not shown:
@@ -5935,6 +5947,12 @@ def build_tool_specs(
                         })),
                     )
                 kept = await profile_lines_for(lines, target, room)
+                origin = room_key(r.platform, sorted(r.ids)[0])
+                for line in kept:
+                    record_requirement(DisclosureRequirement(
+                        origin, (message_lineage(origin),), line.exclude_persons,
+                        line.location, line.location_subjects,
+                    ))
                 rendered = account_text(
                     ProfileView(entity=entity, of=of, lines=kept, authored=authored),
                     name_of=name_of, now=now_fn(),
@@ -5982,6 +6000,12 @@ def build_tool_specs(
             for r, head in held
             if scan_identifiers(head.body, content_checks=content_checks) is None
         ]
+        for r, head in held:
+            if scan_identifiers(head.body, content_checks=content_checks) is None:
+                record_requirement(DisclosureRequirement(
+                    room_key(r.platform, sorted(r.ids)[0]), head.lineage.section("body"),
+                    tuple(head.exclude_persons),
+                ))
         withheld = len(held) - len(accounts)
         if not accounts and withheld:
             _record(metrics, "character_read", "nothing_found", entity=entity, withheld=withheld)
@@ -14043,6 +14067,7 @@ Args:
                     ShownMessage(
                         id=r.id, sender=_speaker(r), person_id=r.person_id,
                         is_nora=r.is_nora,
+                        turn_handle=r.turn_handle,
                     )
                     for r in bound_window
                 ),
@@ -16834,7 +16859,9 @@ Args:
     # build's alone (`ToolRegistry._introspection_specs`): the catalog and the
     # R-99 argument table describe every tool the code declares.
     return _apply_link_owners(tuple(
-        spec for spec in specs
+        (in_room(spec, platform=room.platform, conversation_id=bound_conversation_id)
+         if room is not None else spec)
+        for spec in specs
         if on_memory_surface(
             spec.name, graph=memory_retrieval is not None, everything=all_memory_surfaces,
         )

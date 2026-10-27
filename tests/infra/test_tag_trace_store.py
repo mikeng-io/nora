@@ -201,3 +201,26 @@ async def test_an_invalid_outcome_is_refused_before_any_write(
             tag_id="t1", conversation_id="c-bad", messages=(), transcript=(),
             outcome="not-a-real-outcome", created_at=1000,
         )
+
+
+@pytest.mark.parametrize("occasion", ["tag", "fire", "cognition"])
+async def test_each_occasion_round_trips_disclosure_and_sent_handles(tag_trace_engine, occasion):
+    from nora.domain.lineage import message
+    from nora.domain.turn_record import DisclosureRequirement
+
+    store = SqlTagTraceStore(tag_trace_engine)
+    requirement = DisclosureRequirement(
+        "signal:room-a", (message("signal:room-a"),), exclude_persons=("p2",),
+        location=True, location_subjects=("p1",),
+    )
+    trace = TagTrace(
+        tag_id=f"generated-{occasion}", conversation_id="room-a", messages=(), transcript=(),
+        outcome="silent", created_at=1, occasion=occasion, platform="signal", unit="u1",
+        bound_rooms=("signal:room-a",), requirements={"call-1": [requirement.to_json()]},
+        sent_message_ids=(12,),
+    )
+    await store.save(trace)
+    got = (await store.recent(conversation_id="room-a", limit=1))[0]
+    assert got == trace and got.turn_id is not None
+    assert await store.get(turn_id=got.turn_id, unit="u1") == got
+    assert await store.get(turn_id=got.turn_id, unit="u2") is None

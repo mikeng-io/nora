@@ -346,6 +346,7 @@ async def _own_sends(
                 ref=f"messages:{h.row.id}", kind="message", message_id=h.row.id,
                 room=Room(h.platform, h.conversation_id), author=ai_name, at_ms=h.row.ts,
                 text=None if h.deleted else (h.row.body or ""), own=True,
+                turn_id=h.row.turn_id,
             )
             for h in mine
         )

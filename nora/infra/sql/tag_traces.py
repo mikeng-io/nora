@@ -61,6 +61,10 @@ class SqlTagTraceStore:
                 transcript=[_row_to_json(row) for row in trace.transcript],
                 outcome=trace.outcome,
                 created_at=trace.created_at,
+                started_at=trace.started_at,
+                occasion=trace.occasion, platform=trace.platform, unit=trace.unit,
+                bound_rooms=list(trace.bound_rooms), requirements=trace.requirements,
+                sent_message_ids=list(trace.sent_message_ids),
             ))
 
     async def recent(
@@ -81,14 +85,26 @@ class SqlTagTraceStore:
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        return tuple(
-            TagTrace(
+        return tuple(self._trace(r) for r in rows)
+
+    @staticmethod
+    def _trace(r: Any) -> TagTrace:
+        return TagTrace(
                 tag_id=r.tag_id,
                 conversation_id=r.conversation_id,
                 messages=tuple(r.messages),
                 transcript=tuple(_json_to_row(row) for row in r.transcript),
                 outcome=r.outcome,
                 created_at=r.created_at,
+                started_at=r.started_at,
+                occasion=r.occasion, platform=r.platform, unit=r.unit,
+                bound_rooms=tuple(r.bound_rooms), requirements=r.requirements,
+                sent_message_ids=tuple(r.sent_message_ids), turn_id=r.turn_id,
             )
-            for r in rows
-        )
+
+    async def get(self, *, turn_id: int, unit: str) -> TagTrace | None:
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(sa.select(TAG_TRACE).where(
+                TAG_TRACE.c.turn_id == turn_id, TAG_TRACE.c.unit == unit,
+            ))).first()
+        return self._trace(row) if row is not None else None

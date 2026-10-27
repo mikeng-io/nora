@@ -248,4 +248,6 @@ def citations_of(body: NoteBody) -> tuple[str, ...]:
                 seen.setdefault(str(i), None)
             for key in line.rollup_keys:
                 seen.setdefault(f"rollup({key})", None)
+            for handle in line.turn_handles:
+                seen.setdefault(f"turn({handle})", None)
     return tuple(seen)

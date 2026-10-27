@@ -91,6 +91,11 @@ class RecordItem:
     #: Nora's OWN send in the item's window (D1, DEC-245): context the room is
     #: answering, marked as hers, never a stimulus and never something to cite.
     own: bool = False
+    turn_id: int | None = None
+
+    @property
+    def turn_handle(self) -> str | None:
+        return f"t{self.turn_id}" if self.own and self.turn_id is not None else None
 
 
 @dataclass(frozen=True, slots=True)

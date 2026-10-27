@@ -1,4 +1,4 @@
-"""The default prefill remains byte-identical to the pre-rename capture."""
+"""The default prefill matches its capture, including the shared turn-record gloss."""
 import json
 from dataclasses import replace
 from datetime import UTC, datetime

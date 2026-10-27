@@ -26,7 +26,12 @@ from nora.domain.profile_inputs import PersonSourceRevision
 from nora.domain.rollup import Citation
 from nora.domain.rollup_read import RollupReadQuery
 from nora.domain.social_stream import PersonSocialItem, Reading, RecordedCounts, to_us
-from nora.infra.sql.audit import _latest_edit, transcript_row, transcript_select
+from nora.infra.sql.audit import (
+    _latest_edit,
+    transcript_row,
+    transcript_select,
+    turn_id_for_message,
+)
 from nora.infra.sql.character import _in_rooms
 from nora.infra.sql.mobility import SqlMobilityStore, current_build_id
 from nora.infra.sql.rollup_read import SqlRollupRead, _row
@@ -203,6 +208,7 @@ class SqlProfileInputs:
         return sa.select(
             m.id, m.sender_id, m.sender_name, m.ts, m.body, m.is_nora,
             m.delivery_status, m.raw_json, m.quoted_ts, m.media_json, m.person_id,
+            turn_id_for_message().label("turn_id"),
             m.external_files_json, latest.c.ts.label('edit_ts'),
             latest.c.body.label('edit_body'), latest.c.raw_json.label('edit_raw_json'),
 
@@ -678,6 +684,7 @@ class SqlProfileInputs:
                     if not origin:
                         continue
                     episode = Episode(send_id=send_id, room=sent.conversation_id,
+                        turn_id=sent.turn_id,
                         text=transcript_row(sent).body or '', outcome=r.outcome,
                         reactions=r.reactions, edits=r.edits,
                         replies=tuple(x.row for x in origin))
