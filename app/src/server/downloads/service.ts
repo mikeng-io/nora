@@ -6,7 +6,7 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import { fileHeaders } from "../artifact-download";
 import { assertPublicHost, validateBatch, type Lookup } from "./validate";
-import { JOB_ID, jobDir, listJobFiles, mediaKind, thumbPath, type DownloadJob } from "./store";
+import { JOB_ID, jobDir, listJobFiles, mediaKind, mediaTypeFor, thumbPath, type DownloadJob } from "./store";
 import type { DownloadRunner } from "./runner";
 
 // The route-level rules for /api/v1/downloads/*, kept apart from the route
@@ -168,7 +168,10 @@ export async function serveContent(
   const size = (await stat(filePath)).size;
   const ext = path.extname(filePath).slice(1);
   const name = safeFileName(job, ext);
-  const headers = { ...fileHeaders(job.mediaType ?? "application/octet-stream", name), "accept-ranges": "bytes" };
+  // A converted output takes its own extension's type — a webm made from an
+  // mp4 must not keep the job's video/mp4 label.
+  const type = file ? mediaTypeFor(ext) : (job.mediaType ?? "application/octet-stream");
+  const headers = { ...fileHeaders(type, name), "accept-ranges": "bytes" };
 
   const m = rangeHeader && BYTE_RANGE.exec(rangeHeader);
   let start = 0;

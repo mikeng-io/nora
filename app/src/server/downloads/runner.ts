@@ -1,6 +1,6 @@
 import "server-only";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { mkdir, stat } from "node:fs/promises";
+import { mkdir, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { jobDir, mediaTypeFor, DownloadStore } from "./store";
 import { assertPublicHost, type Lookup } from "./validate";
@@ -233,6 +233,9 @@ export class DownloadRunner {
       "--write-thumbnail",
       "--convert-thumbnails",
       "jpg",
+      // Its own template so a .jpg payload and a thumbnail never share a name.
+      "-o",
+      "thumbnail:download-thumb.%(ext)s",
       "--no-playlist",
       "--newline",
       "--no-warnings",
@@ -317,6 +320,10 @@ export class DownloadRunner {
       return Promise.reject(new Error("bad file name"));
     }
     const output = path.join(dir, `${path.basename(fileName, path.extname(fileName))}.${target}`);
+    // ffmpeg writes a staging name and success renames it into place — a killed
+    // or failed run can never leave a half-written file that looks finished,
+    // and a retry can't clobber a previous good output.
+    const staging = `${output}.converting`;
     this.converting.add(id);
     const spawnImpl = this.opts.spawnImpl ?? spawn;
     return new Promise<void>((resolve, reject) => {
@@ -324,53 +331,76 @@ export class DownloadRunner {
       // default is a real transcode because a mismatched -c copy produces a file
       // players cannot open (the common "converted but won't play" failure).
       const args = ffmpegArgs(target);
-      const child = spawnImpl(this.opts.ffmpegPath ?? "ffmpeg", ["-hide_banner", "-y", "-i", input, ...args, output], {
-        stdio: ["ignore", "ignore", "pipe"],
-      });
+      let child: ChildProcess;
+      try {
+        child = spawnImpl(this.opts.ffmpegPath ?? "ffmpeg", ["-hide_banner", "-y", "-i", input, ...args, staging], {
+          stdio: ["ignore", "ignore", "pipe"],
+        });
+      } catch (err) {
+        this.converting.delete(id);
+        return reject(new Error(`ffmpeg could not start: ${err instanceof Error ? err.message : String(err)}`));
+      }
       this.running.set(id, child);
       let stderrTail = "";
       child.stderr?.on("data", (c: Buffer) => {
         stderrTail = (stderrTail + c.toString("utf-8")).slice(-2000);
       });
+      let killed = false;
       const timer = setTimeout(() => {
+        killed = true;
         child.kill("SIGKILL");
-        this.converting.delete(id);
-        reject(new Error(`exceeded the ${Math.round(this.opts.timeoutMs / 60000)} minute limit`));
       }, this.opts.timeoutMs);
       timer.unref?.();
       child.on("error", (err) => {
         clearTimeout(timer);
         this.converting.delete(id);
-        this.running.delete(id);
+        if (this.running.get(id) === child) this.running.delete(id);
+        void rm(staging, { force: true });
         reject(new Error(`ffmpeg could not start: ${err.message}`));
       });
       child.on("close", (code) => {
         clearTimeout(timer);
         this.converting.delete(id);
-        this.running.delete(id);
-        if (this.cancelled.has(id)) return reject(new Error("cancelled"));
+        if (this.running.get(id) === child) this.running.delete(id);
+        const fail = (msg: string) => {
+          void rm(staging, { force: true });
+          reject(new Error(msg));
+        };
+        if (this.cancelled.has(id)) return fail("cancelled");
+        if (killed || code === null) return fail(`exceeded the ${Math.round(this.opts.timeoutMs / 60000)} minute limit`);
         if (code !== 0) {
           const tail = stderrTail.trim().split("\n").pop() ?? "";
-          return reject(new Error(tail || `ffmpeg exited with code ${code}`));
+          return fail(tail || `ffmpeg exited with code ${code}`);
         }
-        resolve();
+        // Publishing refreshes the retention clock: the 24h window starts from
+        // the last thing that touched the file, not the original download.
+        rename(staging, output)
+          .then(() => {
+            this.opts.store.update(id, {});
+            resolve();
+          })
+          .catch((err: Error) => fail(`publish failed: ${err.message}`));
       });
     });
   }
 
   /** Remove done/failed jobs older than the retention window. Called on boot
-   * and by the sweep timer; active jobs are never touched. */
-  sweep(ttlHours = this.opts.ttlHours ?? 0): number {
+   * and by the sweep timer; active jobs and in-flight conversions are never
+   * touched (a converting job keeps status "done", so check the set). */
+  async sweep(ttlHours = this.opts.ttlHours ?? 0): Promise<number> {
     if (!ttlHours) return 0;
     const cutoff = Date.now() - ttlHours * 3_600_000;
     let removed = 0;
     for (const job of this.opts.store.list()) {
-      if (job.status === "done" || job.status === "failed") {
-        if (new Date(job.updatedAt).getTime() < cutoff) {
-          this.cancel(job.id);
-          void this.opts.store.remove(job.id);
-          removed++;
-        }
+      if (job.status !== "done" && job.status !== "failed") continue;
+      if (this.converting.has(job.id)) continue;
+      if (new Date(job.updatedAt).getTime() >= cutoff) continue;
+      this.cancel(job.id);
+      try {
+        if (await this.opts.store.remove(job.id)) removed++;
+      } catch {
+        // A failed removal stays in the registry for the next sweep; the count
+        // only reports jobs actually gone.
       }
     }
     return removed;
@@ -432,8 +462,8 @@ export function downloadRunner(env: RunnerEnv = process.env as RunnerEnv): Downl
     runner.requeueStored();
     // Retention sweep: once at boot, then hourly. Operator-asked window is
     // 24h; NORA_DOWNLOADS_TTL_HOURS=0 keeps files forever.
-    runner.sweep();
-    const t = setInterval(() => runner.sweep(), 3_600_000);
+    void runner.sweep();
+    const t = setInterval(() => void runner.sweep(), 3_600_000);
     t.unref?.();
     g[GLOBAL_KEY] = runner;
   }

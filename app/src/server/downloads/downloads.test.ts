@@ -206,7 +206,8 @@ interface FakeProc extends EventEmitter {
   kill: (signal?: string) => void;
 }
 
-/** A yt-dlp that behaves like the binary: reads -o for its output template,
+/** A yt-dlp that behaves like the binary: reads the LAST -o for its output
+ * template (a typed section like -o "thumbnail:..." can precede it),
  * writes download.<ext>, streams [download] progress lines, closes 0 — or,
  * given a URL containing "fail", closes 1 with a stderr error like a real
  * extractor error. "hang" URLs never close (for cancel/timeout tests). */
@@ -223,7 +224,7 @@ function fakeSpawn(behavior: (args: string[], proc: FakeProc) => void) {
 
 const goodYtdlp = (args: string[], proc: FakeProc) => {
   const url = args[args.length - 1];
-  const outIdx = args.indexOf("-o") + 1;
+  const outIdx = args.lastIndexOf("-o") + 1;
   const file = args[outIdx].replace("%(ext)s", "mp4");
   if (url.includes("fail")) {
     proc.stderr.emit("data", Buffer.from("ERROR: [generic] fail: no video\n"));
@@ -345,7 +346,7 @@ describe("DownloadRunner", () => {
     const spawnImpl = fakeSpawn((args, proc) => {
       live += 1;
       peak = Math.max(peak, live);
-      const outIdx = args.indexOf("-o") + 1;
+      const outIdx = args.lastIndexOf("-o") + 1;
       const file = args[outIdx].replace("%(ext)s", "mp4");
       setTimeout(() => {
         writeFileSync(file, "x");
@@ -388,7 +389,7 @@ describe("DownloadRunner", () => {
 
   it("a Destination line split across chunks still lands the file name", async () => {
     const spawnImpl = fakeSpawn((args, proc) => {
-      const outIdx = args.indexOf("-o") + 1;
+      const outIdx = args.lastIndexOf("-o") + 1;
       const file = args[outIdx].replace("%(ext)s", "mp4");
       writeFileSync(file, "x");
       const line = `[download] Destination: ${file}\n`;
@@ -429,7 +430,7 @@ describe("DownloadRunner", () => {
     const spawnImpl = fakeSpawn((args, proc) => {
       attempt += 1;
       if (attempt === 1) return; // first run hangs so we can retry mid-flight
-      const outIdx = args.indexOf("-o") + 1;
+      const outIdx = args.lastIndexOf("-o") + 1;
       const file = args[outIdx].replace("%(ext)s", "mp4");
       writeFileSync(file, "x");
       proc.stdout.emit("data", Buffer.from(`[download] Destination: ${file}\n`));
@@ -450,7 +451,7 @@ describe("DownloadRunner", () => {
 
   it("a final output line without a trailing newline still lands the file name", async () => {
     const spawnImpl = fakeSpawn((args, proc) => {
-      const outIdx = args.indexOf("-o") + 1;
+      const outIdx = args.lastIndexOf("-o") + 1;
       const file = args[outIdx].replace("%(ext)s", "mp4");
       writeFileSync(file, "x");
       proc.stdout.emit("data", Buffer.from(`[download] Destination: ${file}`)); // no \n
@@ -578,7 +579,7 @@ describe("sweep", () => {
     const active = store.create("https://media.example/act", "miles");
     store.update(active.id, { status: "downloading" });
     store.get(active.id)!.updatedAt = new Date(Date.now() - 25 * 3_600_000).toISOString();
-    expect(runner.sweep(24)).toBe(1);
+    expect(await runner.sweep(24)).toBe(1);
     expect(store.get(old.id)).toBeNull();
     expect(store.get(fresh.id)).toBeDefined();
     expect(store.get(active.id)).toBeDefined();
@@ -593,13 +594,13 @@ describe("listJobFiles / thumbPath", () => {
     const d = path.join(dir, "files", job.id);
     mkdirSync(d, { recursive: true });
     writeFileSync(path.join(d, "download.mp4"), "m");
-    writeFileSync(path.join(d, "download.jpg"), "t");
+    writeFileSync(path.join(d, "download-thumb.jpg"), "t");
     writeFileSync(path.join(d, "download.part"), "p");
     writeFileSync(path.join(d, "download.f140.m4a"), "x");
     writeFileSync(path.join(d, "clip.mp3"), "c");
     const files = await listJobFiles(dir, store.get(job.id)!);
     expect(files.sort()).toEqual(["clip.mp3", "download.mp4"]);
     const thumb = await thumbPath(dir, store.get(job.id)!);
-    expect(thumb).toBe(path.join(d, "download.jpg"));
+    expect(thumb).toBe(path.join(d, "download-thumb.jpg"));
   });
 });

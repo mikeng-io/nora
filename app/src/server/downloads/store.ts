@@ -261,32 +261,39 @@ export function mediaKind(job: DownloadJob): "video" | "audio" | "image" | null 
 const TRANSIENT = /\.f\d+\.|\.(part|ytdl)$/;
 
 /** Real files sitting in a job dir: the download plus any converted outputs,
- * minus yt-dlp's partials and the thumbnail (which has its own endpoint). */
+ * minus yt-dlp's partials and the thumbnail (which has its own endpoint).
+ * A failed read reports nothing — a guessed name would serve a phantom file
+ * through content?file=. */
 export async function listJobFiles(root: string, job: DownloadJob): Promise<string[]> {
   if (!job.fileName) return [];
   const dir = jobDir(root, job.id);
-  const thumb = path.basename((await thumbPath(root, job)) ?? "");
   try {
     return (await readdir(dir)).filter(
       (f) =>
-        f === job.fileName ||
-        (!TRANSIENT.test(f) && f !== thumb && mediaTypeFor(path.extname(f).slice(1)) !== "application/octet-stream"),
+        !TRANSIENT.test(f) &&
+        !isThumbName(f) &&
+        (f === job.fileName || mediaTypeFor(path.extname(f).slice(1)) !== "application/octet-stream"),
     );
   } catch {
-    return [job.fileName];
+    return [];
   }
 }
+
+// yt-dlp writes thumbnails under the -o "thumbnail:download-thumb" template so
+// they can never collide with a media file or a converted output of the same
+// extension — the earlier prefix scan confused converted images for thumbs.
+const isThumbName = (f: string) => /^download-thumb\./.test(f);
 
 /** The job's thumbnail: yt-dlp's --write-thumbnail artifact when present, else
  * the media file itself when it is already an image. */
 export async function thumbPath(root: string, job: DownloadJob): Promise<string | null> {
   if (!job.fileName) return null;
   const dir = jobDir(root, job.id);
-  const base = path.basename(job.fileName, path.extname(job.fileName));
   try {
     for (const f of await readdir(dir)) {
-      const ext = path.extname(f).slice(1).toLowerCase();
-      if (f !== job.fileName && f.startsWith(base) && IMAGE_EXT.has(ext)) return path.join(dir, f);
+      if (isThumbName(f) && IMAGE_EXT.has(path.extname(f).slice(1).toLowerCase())) {
+        return path.join(dir, f);
+      }
     }
   } catch {
     return null;
