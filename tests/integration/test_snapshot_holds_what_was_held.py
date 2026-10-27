@@ -68,8 +68,28 @@ def _UNIT_ROLLUP(i: int) -> dict[str, Any]:
     }
 
 
+def _ledger_row(kind: str, i: int) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "id": f"{kind}-{i}", "revision": 1, "parent_revision": None,
+        "unit": "u", "scope": "unit", "platform": "signal", "conversation_id": "g1",
+        "status": "open", "last_revised_at": MS0 + i,
+        "made_at" if kind == "commitment" else "opened_at": MS0 + i,
+        "topic" if kind == "thread" else "subject": f"Generated work {i}",
+    }
+    if kind == "thread":
+        row.update(note_ids=[], decision_ids=[], message_ids=[], spans=[], last_moved_at=MS0 + i)
+    else:
+        row["body"] = f"Generated evidence {i}"
+    if kind == "commitment":
+        row["owed_to"] = ["room"]
+    return row
+
+
 #: A valid row per in-place table, for key `i`.
 ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
+    "standing_decision": lambda i: _ledger_row("decision", i),
+    "standing_commitment": lambda i: _ledger_row("commitment", i),
+    "standing_thread": lambda i: _ledger_row("thread", i),
     "extraction": lambda i: {
         "id": 81000 + i, "unit": "u", "platform": "signal", "origin_room": "g1",
         "source_ids": [], "context_ids": [], "snapshot": {}, "version": 1, "model": "m",
@@ -263,6 +283,9 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
 
 #: The column each revision moves, and to what.
 REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
+    "standing_decision": ("subject", lambda i: f"Revised choice {i}"),
+    "standing_commitment": ("subject", lambda i: f"Revised promise {i}"),
+    "standing_thread": ("topic", lambda i: f"Revised topic {i}"),
     "extraction": ("attempts", lambda i: i + 10),
     "extraction_queue": ("source_key", lambda i: f"revised-{i}"),
     "extraction_claim": ("content", lambda i: {"what": f"revised {i}"}),
@@ -312,6 +335,9 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
 
 #: One append-only row, number `n`, citing the stable key-0 parents.
 APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
+    "standing_decision_revision": lambda n: _ledger_row("decision", n),
+    "standing_commitment_revision": lambda n: _ledger_row("commitment", n),
+    "standing_thread_revision": lambda n: _ledger_row("thread", n),
     "note_revision": lambda n: {
         "id": _uuid("nr", n), "note_id": _uuid("note", 0), "body": f"body {n}",
         "written_at": MS0 + n, "established_by": "test", "citations": [],
