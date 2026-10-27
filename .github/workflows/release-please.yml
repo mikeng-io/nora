@@ -1,102 +1,57 @@
-# Release metadata; release-images publishes deployments for the installed Komodo poller.
-# scripts/release_plan.py opens the release PR from git reachability (ADR 0025);
-# the release-please action only tags and publishes it once that PR is merged.
-name: release-please
-
+# Isolated diagnostic branch only. Never merge this replacement into master.
+name: Release access read-back
 on:
-  push:
-    branches: [master]
   workflow_dispatch:
-
-permissions:
-  contents: read
-
-concurrency:
-  group: release-please
-  cancel-in-progress: false
-
+permissions: {}
 jobs:
-  release-please:
+  readback:
+    if: github.repository == 'mikeng-io/nora' && github.actor == 'mikeng-io'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
-      pull-requests: write
+    timeout-minutes: 3
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Create a repository-scoped release token
-        if: vars.RELEASE_APP_ID != ''
-        id: app
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        with:
-          app-id: ${{ vars.RELEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          repositories: ${{ github.event.repository.name }}
-          permission-administration: read
-          permission-contents: write
-          permission-pull-requests: write
-      # Tag first: the plan below measures from the newest tag, so a release PR that
-      # just merged must be tagged before it is measured, or it would be planned twice.
-      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
-        id: release
-        with:
-          token: ${{ steps.app.outputs.token || secrets.GITHUB_TOKEN }}
-          config-file: release-please-config.json
-          manifest-file: .release-please-manifest.json
-          skip-github-pull-request: true
-      - name: Open or update the release PR from unreleased runtime changes
-        id: plan
-        if: steps.app.outputs.token != ''
+      - name: Read existing App grants and Git capability advertisement
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
-          GH_REPO: ${{ github.repository }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          PR_HEAD: release-please--branches--master--components--nora
-          APP_SLUG: ${{ steps.app.outputs.app-slug }}
-          APP_BOT_ID: ${{ vars.RELEASE_APP_BOT_USER_ID }}
+          APP_ID: ${{ vars.RELEASE_APP_ID }}
+          APP_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
         run: |
-          set -euo pipefail
-          # checkout dropped its credentials (persist-credentials: false) and the repo is
-          # private, so every git remote operation below needs the helper first.
-          gh auth setup-git
-          git fetch --tags --force origin
-          python3 -m scripts.release_plan --out "$RUNNER_TEMP/release" | tee "$RUNNER_TEMP/plan.txt" >> "$GITHUB_OUTPUT"
-          grep -qx 'eligible=true' "$RUNNER_TEMP/plan.txt" || exit 0
-          version=$(sed -n 's/^version=//p' "$RUNNER_TEMP/plan.txt")
-          # The App's own bot identity, so GitHub links the commit to it. A generic
-          # noreply address resolves to an unrelated account that owns that login.
-          test -n "$APP_SLUG" && test -n "$APP_BOT_ID"
-          git config user.name "${APP_SLUG}[bot]"
-          git config user.email "${APP_BOT_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
-          git switch -C "$PR_HEAD"
-          git add -- .release-please-manifest.json CHANGELOG.md nora/__init__.py pyproject.toml uv.lock
-          git commit -m "chore(master): release $version"
-          git push --force origin "HEAD:$PR_HEAD"
-          number=$(gh pr list --head "$PR_HEAD" --base master --state open --json number --jq '.[0].number // empty')
-          if [ -n "$number" ]; then
-            gh pr edit "$number" --title "$(cat "$RUNNER_TEMP/release/title.txt")" --body-file "$RUNNER_TEMP/release/body.md"
-          else
-            number=$(gh pr create --base master --head "$PR_HEAD" --label 'autorelease: pending' \
-              --title "$(cat "$RUNNER_TEMP/release/title.txt")" --body-file "$RUNNER_TEMP/release/body.md" | grep -oE '[0-9]+$')
-          fi
-          echo "pr=$number" >> "$GITHUB_OUTPUT"
-      - name: Queue the generated release PR for merge after required checks
-        if: steps.plan.outputs.pr != ''
-        env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_PR: ${{ steps.plan.outputs.pr }}
-        run: |
-          # Refuse to merge unattended until the required-check policy exists.
-          gh api repos/"$GH_REPO"/rules/branches/master \
-            --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | index("checks") != null' | grep -qx true
-          sha=$(gh pr view "$RELEASE_PR" --json headRefOid --jq .headRefOid)
-          gh pr merge "$RELEASE_PR" --auto --merge --match-head-commit "$sha" \
-            --subject "merge: publish release (#$RELEASE_PR)" \
-            --body "Release metadata; required checks gate automatic publication."
-      - name: Report manual bootstrap requirement
-        if: vars.RELEASE_APP_ID == ''
-        run: echo '::notice::Install the free release GitHub App and configure public branch protection to enable unattended releases. See docs/maintainers/github.md.'
+          node <<'JS'
+          const crypto = require('node:crypto');
+          const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
+          const now = Math.floor(Date.now() / 1000);
+          const unsigned = encode({alg:'RS256',typ:'JWT'}) + '.' + encode({iat:now-60,exp:now+300,iss:process.env.APP_ID});
+          let token;
+          async function api(path, auth, method='GET', body) {
+            const response = await fetch('https://api.github.com' + path, {
+              method, redirect:'error',
+              headers:{Authorization:'Bearer '+auth,Accept:'application/vnd.github+json','User-Agent':'nora-release-readback','X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'},
+              body:body === undefined ? undefined : JSON.stringify(body)
+            });
+            if (!response.ok) throw new Error('GitHub API '+path.split('?')[0]+' HTTP '+response.status);
+            return response.status === 204 ? null : response.json();
+          }
+          (async () => {
+            const jwt = unsigned + '.' + crypto.sign('RSA-SHA256',Buffer.from(unsigned),process.env.APP_KEY).toString('base64url');
+            const app = await api('/app',jwt);
+            console.log(JSON.stringify({app:app.slug,app_permissions:app.permissions}));
+            const installations = await api('/app/installations?per_page=100',jwt);
+            const matching = installations.filter(item=>item.account.login==='mikeng-io');
+            if (matching.length!==1) throw new Error('Expected exactly one owner installation');
+            const installation = matching[0];
+            console.log(JSON.stringify({installation_permissions:installation.permissions,repository_selection:installation.repository_selection,suspended:installation.suspended_at!==null}));
+            const grant = await api('/app/installations/'+installation.id+'/access_tokens',jwt,'POST',{repositories:['nora'],permissions:{administration:'read',contents:'write',pull_requests:'write'}});
+            token = grant.token;
+            console.log(JSON.stringify({token_permissions:grant.permissions,repositories:grant.repositories.map(repo=>repo.full_name)}));
+            const repo = await api('/repos/mikeng-io/nora',token);
+            console.log(JSON.stringify({repository:repo.full_name,archived:repo.archived,permissions:repo.permissions ?? null}));
+            for (const service of ['git-upload-pack','git-receive-pack']) {
+              const response = await fetch('https://github.com/mikeng-io/nora.git/info/refs?service='+service,{redirect:'error',headers:{Authorization:'Basic '+Buffer.from('x-access-token:'+token).toString('base64')}});
+              console.log(JSON.stringify({service,status:response.status,content_type:response.headers.get('content-type')}));
+              await response.arrayBuffer();
+            }
+          })().catch(error=>{console.error(error.message.startsWith('GitHub API ') || error.message.startsWith('Expected exactly') ? error.message : 'Read-back unavailable');process.exitCode=1;}).finally(async()=>{
+            if (token) {
+              try {await api('/installation/token',token,'DELETE');console.log('Ephemeral installation token revoked');}
+              catch {console.error('Token revocation unavailable');process.exitCode=1;}
+            }
+          });
+          JS
