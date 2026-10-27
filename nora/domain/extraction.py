@@ -58,6 +58,11 @@ def event_time(expression: str | None, assertion_ms: int) -> dict[str, str | Non
     }
 
 
+def _exact_span(span: str, body: str) -> bool:
+    """Accept a verbatim source span or its HTML-decoded form."""
+    return span in body or unescape(span) in body
+
+
 def validate_claims(output: dict[str, Any], snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     """Bind every claim to batch members and exact supporting source spans.
 
@@ -81,7 +86,7 @@ def validate_claims(output: dict[str, Any], snapshot: dict[str, Any]) -> list[di
         if {e["source_id"] for e in claim["evidence"]} != ids:
             raise ValueError("evidence does not cover citations")
         for evidence in claim["evidence"]:
-            if unescape(evidence["quote"]) not in sources[evidence["source_id"]]["body"]:
+            if not _exact_span(evidence["quote"], sources[evidence["source_id"]]["body"]):
                 raise ValueError("evidence absent from source")
         if any(s["person_id"] is not None and s["person_id"] not in known for s in claim["about"]):
             raise ValueError("unknown resolved subject")
@@ -89,9 +94,9 @@ def validate_claims(output: dict[str, Any], snapshot: dict[str, Any]) -> list[di
         if claim["happened_at"]["source_id"] not in ids or time_source is None:
             raise ValueError("event reference outside citations")
         expression = claim["happened_at"]["expression"]
-        if expression and unescape(expression) not in time_source["body"]:
+        if expression and not _exact_span(expression, time_source["body"]):
             raise ValueError("event expression absent from source")
-        if claim["where"] and not any(claim["where"] in sources[i]["body"] for i in ids):
+        if claim["where"] and not any(_exact_span(claim["where"], sources[i]["body"]) for i in ids):
             raise ValueError("place absent from source")
         content = dict(claim)
         content["happened_at"] = {

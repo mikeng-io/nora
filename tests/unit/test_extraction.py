@@ -246,15 +246,17 @@ def test_resolved_subject_keeps_required_message_reference():
         parsed({"claims": [raw]})
 
 
-@pytest.mark.parametrize("slot", ["evidence", "expression"])
+@pytest.mark.parametrize("slot", ["evidence", "expression", "where"])
 def test_xml_escaped_source_spans_match_after_decoding(slot):
     body = 'tomorrow visit Workshop & <studio> "early"'
     escaped = "Workshop &amp; &lt;studio&gt; &quot;early&quot;"
     raw = claim(body=body)
     if slot == "evidence":
         raw["evidence"][0]["quote"] = escaped
-    else:
+    elif slot == "expression":
         raw["happened_at"]["expression"] = escaped
+    else:
+        raw["where"] = escaped
     stored = validate_claims(
         parsed({"claims": [raw]}), {"messages": [source(body=body)], "context": []},
     )
@@ -262,7 +264,7 @@ def test_xml_escaped_source_spans_match_after_decoding(slot):
     assert stored[0]["about"][0]["person_id"] == "subject-a"
 
 
-@pytest.mark.parametrize("slot", ["evidence", "expression"])
+@pytest.mark.parametrize("slot", ["evidence", "expression", "where"])
 def test_xml_decoding_still_requires_an_exact_source_span(slot):
     body = 'tomorrow visit Workshop & <studio> "early"'
     mismatch = "Workshop &amp; &lt;studio&gt; &quot;late&quot;"
@@ -270,9 +272,12 @@ def test_xml_decoding_still_requires_an_exact_source_span(slot):
     if slot == "evidence":
         raw["evidence"][0]["quote"] = mismatch
         reason = "evidence absent from source"
-    else:
+    elif slot == "expression":
         raw["happened_at"]["expression"] = mismatch
         reason = "event expression absent from source"
+    else:
+        raw["where"] = mismatch
+        reason = "place absent from source"
     with pytest.raises(ValueError, match=reason):
         validate_claims(
             parsed({"claims": [raw]}), {"messages": [source(body=body)], "context": []},
@@ -285,3 +290,38 @@ def test_system_defines_empty_person_subjects_and_reply_citation_boundary():
     assert "EMPTY list when no person is the subject (an event, place, group plan or thing)" in text
     assert "Never put the speaker in about just because they said it" in text
     assert "use it to interpret the reply, cite only the new message" in text
+
+
+@pytest.mark.parametrize("slot", ["evidence", "expression", "where"])
+def test_entity_shaped_source_spans_match_verbatim(slot):
+    body = "tomorrow visit Workshop; Tom said &quot;hi&quot;"
+    span = "&quot;hi&quot;"
+    raw = claim(body="tomorrow visit Workshop")
+    if slot == "evidence":
+        raw["evidence"][0]["quote"] = span
+    elif slot == "expression":
+        raw["happened_at"]["expression"] = span
+    else:
+        raw["where"] = span
+    stored = validate_claims(
+        parsed({"claims": [raw]}), {"messages": [source(body=body)], "context": []},
+    )
+    assert len(stored) == 1
+    assert stored[0]["evidence"] == raw["evidence"]
+    assert stored[0]["happened_at"]["expression"] == raw["happened_at"]["expression"]
+    assert stored[0]["where"] == raw["where"]
+
+
+@pytest.mark.parametrize(
+    "place",
+    ['"The Loft"', "&quot;The Loft&quot;", "Boiler & Co", "Boiler &amp; Co"],
+)
+def test_place_source_spans_match_verbatim_or_decoded(place):
+    body = 'tomorrow visit Workshop, "The Loft" and Boiler & Co'
+    raw = claim(body=body)
+    raw["where"] = place
+    stored = validate_claims(
+        parsed({"claims": [raw]}), {"messages": [source(body=body)], "context": []},
+    )
+    assert len(stored) == 1
+    assert stored[0]["where"] == place
