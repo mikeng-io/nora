@@ -176,7 +176,7 @@ class ExtractionWorker:
                 stage = exc.stage if isinstance(exc, _ExtractionError) else "storage"
                 self.metrics.inc("nora_extraction_failures_total", stage=stage)
                 try:
-                    if await self.store.fail(job):
+                    if await self.store.fail(job, stage=stage):
                         self.metrics.inc("nora_extraction_terminal_batches_total")
                 except Exception:  # noqa: BLE001 - lease retains work during a store outage
                     log.warning("extraction failure not recorded; durable lease retained")

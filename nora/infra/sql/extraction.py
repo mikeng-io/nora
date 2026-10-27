@@ -6,6 +6,7 @@ No retrieval API and no index projection. All reads here are writer inputs.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -13,8 +14,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from nora.domain.extraction import VERSION
-from nora.domain.models import NormalizedMessage
+from nora.domain.extraction import VERSION, ExtractionFailureStage
 from nora.infra.sql.schema import EXTRACTION as EXTRACTION
 from nora.infra.sql.schema import EXTRACTION_ATTEMPT as ATTEMPT
 from nora.infra.sql.schema import EXTRACTION_CLAIM as CLAIM
@@ -26,30 +26,56 @@ from nora.infra.sql.schema import MESSAGE_DELETE, MESSAGE_EDIT, MESSAGES
 MAX_ATTEMPTS = 5
 
 
+def admission(
+    row: Mapping[str, Any],
+    unit_of: Callable[[str, str], str | None],
+    *,
+    sources_only: bool = False,
+) -> tuple[str | None, str | None]:
+    """One arrival/backfill admission; Nora may supply live context, never history sources.
+
+    No person/body/category filter: unattributed humans and media-only messages
+    are sources too. The stored visibility flags also govern source_rows.
+    """
+    if row.get("hidden_at") is not None:
+        return None, "hidden"
+    if row.get("deleted", False):
+        return None, "deleted"
+    if sources_only and row["is_nora"]:
+        return None, "nora"
+    unit = unit_of(row["platform"], row["conversation_id"])
+    return (unit, None) if unit is not None else (None, "unmapped")
+
+
+def source_key(row: Mapping[str, Any]) -> str:
+    return json.dumps(
+        [row["platform_message_id"]]
+        if row["platform_message_id"] else [row["sender_id"], row["ts"]]
+    )
+
+
 async def enqueue(
     conn: AsyncConnection,
     *,
-    message_id: int,
-    message: NormalizedMessage,
+    row: Mapping[str, Any],
     unit: str,
-    is_source: bool = True,
-) -> None:
-    """The audit INSERT's transaction; a replay never owes a second extraction."""
-    source_key = json.dumps(
-        [message.message_id] if message.message_id else [message.sender_id, message.timestamp]
-    )
-    await conn.execute(
+    historical: bool = False,
+) -> bool:
+    """Shared arrival INSERT; both replay keys and message ids are idempotent."""
+    return (await conn.execute(
         insert(QUEUE)
         .values(
-            message_id=message_id,
-            platform=message.platform,
-            origin_room=message.conversation_id,
+            message_id=row["id"],
+            platform=row["platform"],
+            origin_room=row["conversation_id"],
             unit=unit,
-            source_key=source_key,
-            is_source=is_source,
+            source_key=source_key(row),
+            is_source=not row["is_nora"],
+            historical=historical,
         )
         .on_conflict_do_nothing()
-    )
+        .returning(QUEUE.c.id)
+    )).scalar_one_or_none() is not None
 
 
 async def source_rows(
@@ -136,6 +162,14 @@ class SqlExtraction:
             # model await. Per-room formation if worker contention is measured.
             await conn.execute(sa.text("SELECT pg_advisory_xact_lock(1290081)"))
             now = datetime.now(UTC)
+            live_waiting = sa.exists().where(
+                QUEUE.c.extraction_id.is_(None), QUEUE.c.is_source.is_(True),
+                QUEUE.c.message_id.is_not(None), QUEUE.c.historical.is_(False),
+                QUEUE.c.queued_at <= now - timedelta(seconds=min_message_age_seconds),
+            )
+            historical_batch = sa.exists().where(
+                QUEUE.c.extraction_id == EXTRACTION.c.id, QUEUE.c.historical.is_(True),
+            )
             extraction = (
                 (
                     await conn.execute(
@@ -143,6 +177,8 @@ class SqlExtraction:
                         .where(
                             EXTRACTION.c.state == "pending",
                             EXTRACTION.c.due_at <= now,
+                            # A due historical retry must yield to unbatched live traffic too.
+                            sa.or_(~historical_batch, ~live_waiting),
                         )
                         .order_by(EXTRACTION.c.due_at, EXTRACTION.c.id)
                         .limit(1)
@@ -164,7 +200,9 @@ class SqlExtraction:
                                 QUEUE.c.queued_at
                                 <= now - timedelta(seconds=min_message_age_seconds),
                             )
-                            .order_by(QUEUE.c.queued_at, QUEUE.c.message_id)
+                            # ponytail: live arrivals precede history; an in-flight call/retry
+                            # is not preempted. Add fairness if history starvation is measured.
+                            .order_by(QUEUE.c.historical, QUEUE.c.queued_at, QUEUE.c.id)
                             .limit(1)
                         )
                     )
@@ -181,11 +219,12 @@ class SqlExtraction:
                                 QUEUE.c.extraction_id.is_(None),
                                 QUEUE.c.is_source.is_(True),
                                 QUEUE.c.message_id.is_not(None),
+                                QUEUE.c.historical == first["historical"],
                                 QUEUE.c.unit == first["unit"],
                                 QUEUE.c.platform == first["platform"],
                                 QUEUE.c.origin_room == first["origin_room"],
                             )
-                            .order_by(QUEUE.c.message_id)
+                            .order_by(QUEUE.c.queued_at, QUEUE.c.id)
                             .limit(messages_per_call)
                         )
                     ).scalars()
@@ -425,7 +464,9 @@ class SqlExtraction:
             )
             return len(claims)
 
-    async def fail(self, job: dict[str, Any]) -> bool:
+    async def fail(
+        self, job: dict[str, Any], *, stage: ExtractionFailureStage = "storage",
+    ) -> bool:
         async with self.engine.begin() as conn:
             terminal = job["attempts"] >= MAX_ATTEMPTS
             changed = await conn.execute(
@@ -448,6 +489,7 @@ class SqlExtraction:
                 .where(ATTEMPT.c.id == job["attempt_id"], ATTEMPT.c.outcome == "started")
                 .values(
                     outcome="error",
+                    failure_stage=stage,
                     finished_at=sa.func.now(),
                 )
             )

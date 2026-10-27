@@ -215,7 +215,7 @@ async def test_null_happened_at_fails_at_schema_stage(example_config, caplog, nu
     store.record_usage.assert_awaited_once()
     if null_object:
         store.publish_extraction_batch.assert_not_awaited()
-        store.fail.assert_awaited_once_with(job)
+        store.fail.assert_awaited_once_with(job, stage="schema")
     else:
         store.fail.assert_not_awaited()
         stored = store.publish_extraction_batch.call_args.kwargs["claims"][0]

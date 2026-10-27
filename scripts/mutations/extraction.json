@@ -23,8 +23,8 @@
   {
     "name": "arrival replay keeps one queue entry",
     "file": "nora/infra/sql/extraction.py",
-    "old": "source_key=source_key,",
-    "new": "source_key=source_key + str(message_id),",
+    "old": "source_key=source_key(row),",
+    "new": "source_key=source_key(row) + str(row[\"id\"]),",
     "target": "tests/contract/test_extraction_contract.py::test_replay_and_stale_worker_cannot_double_publish"
   },
   {
@@ -58,7 +58,7 @@
   {
     "name": "failure recorder outage does not double count",
     "file": "nora/app/extraction.py",
-    "old": "                try:\n                    if await self.store.fail(job):\n                        self.metrics.inc(\"nora_extraction_terminal_batches_total\")\n                except Exception:  # noqa: BLE001 - lease retains work during a store outage\n                    log.warning(\"extraction failure not recorded; durable lease retained\")",
+    "old": "                try:\n                    if await self.store.fail(job, stage=stage):\n                        self.metrics.inc(\"nora_extraction_terminal_batches_total\")\n                except Exception:  # noqa: BLE001 - lease retains work during a store outage\n                    log.warning(\"extraction failure not recorded; durable lease retained\")",
     "new": "                await self.store.fail(job)",
     "target": "tests/contract/test_extraction_contract.py::test_failure_recording_outage_counts_one_failed_attempt"
   },

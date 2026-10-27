@@ -1575,3 +1575,61 @@ request proves only that an attempt began. Read the normal Dreamer trace and
 `profile-history` cached-media receipts afterwards; `unavailable` is not success,
 and no-change can settle rendered inputs without adding any identity fact.
 Stop after the first account to assess progress before requesting another.
+
+## Extraction history backfill
+
+`scripts/extraction_backfill.py` queues human messages from the last 61 days
+(default; override with `--days N`). It never calls a model itself. The existing
+worker drains them when `[memory.extraction] enabled = true`; processing incurs
+that worker's ordinary model usage. Use the current deployed policy file: room
+ownership, including aliases, is resolved exactly as live enqueue resolves it
+**today**. Unmapped rooms/platforms, Nora's replies, hidden and deleted messages
+are skipped. Unattributed humans and media-only messages remain eligible.
+Already queued rows and replay tombstones are preserved, never reassigned.
+
+From a checkout with `DATABASE_URL` already set, first inspect counts:
+
+```bash
+uv run python scripts/extraction_backfill.py --policy policy.toml --days 61 --dry-run
+```
+
+Output is JSON containing only window timestamps, eligible/already queued/would
+enqueue/enqueued counts and skips by reason; no message text. Dry-run uses a
+PostgreSQL read-only transaction. Copy its `before_ms` value to freeze the same
+half-open timestamp window for execution and later completion checks:
+
+```bash
+uv run python scripts/extraction_backfill.py --policy policy.toml --days 61 --before-ms <before_ms>
+uv run python scripts/extraction_backfill.py --status
+```
+
+The enqueue is idempotent, oldest message timestamp first (id breaks ties).
+Live sources have priority over historical sources, including **due historical
+retries**; a live message arriving during a historical call is eligible at the
+next worker take after its normal minimum age. Calls already in flight finish
+normally. History remains oldest-first, uses the existing snapshot/context
+builder and retry allowance, and may wait during sustained live traffic. No
+second worker or new configuration is required.
+
+Status covers **all rows marked historical**, regardless of the command's time
+window or current policy, and counts queue rows by `unbatched`, `pending`, `done`,
+`failed` and `retired`. `claims_written` counts their currently active claims.
+Each failed batch is listed by id with failure-stage attempt counts; old attempts
+and expired leases without a recorded stage are `unknown`, never inferred.
+Pruned source tombstones without a batch count as retired. A batch may contain
+many source rows, so these row counts are not batch counts.
+
+**Done:** the same frozen-window dry-run reports `would_enqueue = 0`, and status
+reports zero `unbatched`, `pending` **and** `failed` rows. Review any retired rows:
+withdrawal/edit/pruning can invalidate a reading, so zero claims is not proof of
+success. Claims can legitimately be empty when a completed batch asserted
+nothing; check `done` as well. A failed batch is not done. After repairing its
+cause, retain the failed attempt history and release its sources with:
+
+```bash
+uv run python scripts/extraction_requeue.py <failed_batch_id>
+uv run python scripts/extraction_backfill.py --status
+```
+
+Requeue keeps historical priority on those sources. Repeat status after the
+worker has processed them; do not mark a failed or unavailable read as complete.

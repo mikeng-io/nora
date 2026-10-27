@@ -5105,6 +5105,7 @@ EXTRACTION_QUEUE = sa.Table(
     sa.Column("extraction_id", sa.BigInteger, sa.ForeignKey("extraction.id")),
     sa.Column("queued_at", sa.DateTime(timezone=True), nullable=False,
               server_default=sa.func.now()),
+    sa.Column("historical", sa.Boolean, nullable=False, server_default=sa.false()),
     sa.UniqueConstraint("platform", "origin_room", "source_key", name="uq_extraction_arrival"),
     sa.UniqueConstraint("message_id", name="uq_extraction_queue_message"),
 )
@@ -5138,6 +5139,7 @@ EXTRACTION_ATTEMPT = sa.Table(
     sa.Column("input_tokens", sa.BigInteger),
     sa.Column("output_tokens", sa.BigInteger),
     sa.Column("outcome", sa.Text, nullable=False, server_default=sa.text("'started'")),
+    sa.Column("failure_stage", sa.Text),
     sa.UniqueConstraint("extraction_id", "attempt", name="uq_extraction_attempt"),
 )
 sa.Index("idx_extraction_due", EXTRACTION.c.state, EXTRACTION.c.due_at)

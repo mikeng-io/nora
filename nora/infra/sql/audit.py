@@ -246,13 +246,19 @@ class SqlRecordStore:
         async with self._engine.begin() as conn:
             row_id = int((await conn.execute(stmt)).scalar_one())
             if self._extraction_unit is not None:
-                from nora.infra.sql.extraction import enqueue
+                from nora.infra.sql.extraction import admission, enqueue
 
-                unit = self._extraction_unit(message.platform, message.conversation_id)
-                if unit is None:
+                row = {
+                    "id": row_id, "platform": message.platform,
+                    "conversation_id": message.conversation_id,
+                    "sender_id": message.sender_id, "ts": message.timestamp,
+                    "platform_message_id": message.message_id, "is_nora": is_nora,
+                }
+                unit, reason = admission(row, self._extraction_unit)
+                if reason == "unmapped":
                     raise ValueError("extraction owner unavailable")
-                await enqueue(conn, message_id=row_id, message=message, unit=unit,
-                              is_source=not is_nora)
+                if unit is not None:
+                    await enqueue(conn, row=row, unit=unit)
             # Its node, attachments and edges in the same transaction; a failure
             # queues the projection and never costs the message.
             await memory_index.project(conn, "message", row_id, metrics=self._metrics)
