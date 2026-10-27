@@ -89,20 +89,54 @@ presented as completed updates. A weekly run is off until the operator sets
 For a scope expansion without runtime source changes, supply the manual
 dispatch's optional `request` field. OpenWiki uses it as planning context and
 forces a fresh plan. Ordinary scheduled updates leave it empty.
-The optional manual `diagnostics` switch reports model finish reasons and
+The manual `diagnostics` switch defaults to true; scheduled runs also enable
+structural diagnostics. It reports model finish reasons and
 tool-call counts from JSON provider responses. It logs no prompts, response
 text, tool arguments, credentials or arbitrary error/metadata values.
 It also reports malformed argument-JSON counts, repeated-ID booleans/counts
 without the IDs, and closed tool/error classifications when tool invocation
 throws. These observations do not change responses, retry tools or repair calls.
+Print mode now emits native stage/tool start, end and error metadata immediately,
+including elapsed milliseconds and counts, even when generation throws. Native
+debug mode is enabled in the workflow, but debug event text is not copied into
+these records. Authored CLI output and original exceptions retain their handling.
 
-Native generation preloads `provider-compat.mjs`. Ollama's JSON chat-completion
+Native generation preloads `provider-compat.mjs`. Successful JSON chat-completion
 responses receive a fresh completion ID before LangGraph consumes them: reused
 provider IDs otherwise replace earlier assistant messages in the conversation.
-Tool-call IDs, content and arguments remain intact; other providers and SSE
-responses are unchanged. This shim covers the current non-streaming CI setup.
+The match is the configured `OPENAI_COMPATIBLE_BASE_URL` origin and full
+`chat/completions` path, including a base path, plus the direct Ollama default.
+Tool-call IDs, content and arguments remain intact; other endpoints and SSE
+responses are unchanged. This shim covers the current non-streaming setup.
 Optional diagnostics still observe the original response before normalization.
 See [Ollama's small completion-ID pool](https://github.com/ollama/ollama/issues/18655).
+
+For a local gateway, export its `OPENAI_COMPATIBLE_BASE_URL`,
+`OPENAI_COMPATIBLE_API_KEY` and gateway-qualified `OPENWIKI_MODEL_ID` privately,
+then run from the repository root:
+
+```bash
+OPENWIKI_PROVIDER=openai-compatible OPENWIKI_PROVIDER_DIAGNOSTICS=true \
+  OPENWIKI_DEBUG=1 OPENWIKI_TELEMETRY_DISABLED=1 \
+  NODE_OPTIONS='--import=./docs-site/scripts/provider-compat.mjs' \
+  npm run wiki:update --prefix docs-site
+```
+
+The hosted default calls Ollama directly with an unqualified model ID; a local
+gateway uses its own routing and may transform responses. The offline gateway
+regression proves the endpoint-match fix, not live causation or a fix for every
+hosted failure. Keep unattended updates disabled until a manual hosted generation
+succeeds.
+
+Generation has a 35-minute step timeout inside the 45-minute job. An always-run
+finalizer writes only `summary.json` under the runner's private
+`$RUNNER_TEMP/openwiki-safe-summary` directory and retains that single artifact
+for three days. It contains outcome/exit code when available, fixed phase/status
+values, checkpoint/plan presence and page queue counts. Missing or unreadable
+state is explicitly unavailable; unavailable counts and exit codes are null.
+Native `.run.json` may contain private planning context and instructions: it,
+raw logs, source state and configuration are never uploaded. Failure or timeout
+still skips completion checking, building and creation of a write token or PR.
 
 Configuration:
 

@@ -8,10 +8,10 @@ on:
         required: false
         type: string
       diagnostics:
-        description: 'Log model finish reasons and tool-call counts without content'
+        description: 'Log safe provider response structure and native stage/tool progress'
         required: false
         type: boolean
-        default: false
+        default: true
   schedule:
     - cron: '23 3 * * 1'
 
@@ -46,15 +46,24 @@ jobs:
           test -n "$APP_ID" || { echo '::error::Configure the repository GitHub App described in docs/maintainers/github.md.'; exit 1; }
       - run: npm ci --prefix docs-site
       - name: Update repository wiki
+        id: generation
+        timeout-minutes: 35
         run: |
+          mkdir -p "$RUNNER_TEMP/openwiki-safe-summary"
+          chmod 700 "$RUNNER_TEMP/openwiki-safe-summary"
+          set +e
           if [[ -n "${OPENWIKI_UPDATE_REQUEST//[[:space:]]/}" ]]; then
             npm run wiki:update --prefix docs-site -- "$OPENWIKI_UPDATE_REQUEST"
           else
             npm run wiki:update --prefix docs-site
           fi
+          rc=$?
+          printf '%s\n' "$rc" > "$RUNNER_TEMP/openwiki-safe-summary/generation.rc"
+          exit "$rc"
         env:
           NODE_OPTIONS: '--import=./docs-site/scripts/provider-compat.mjs'
-          OPENWIKI_PROVIDER_DIAGNOSTICS: ${{ inputs.diagnostics && 'true' || 'false' }}
+          OPENWIKI_PROVIDER_DIAGNOSTICS: ${{ (github.event_name == 'schedule' || inputs.diagnostics != false) && 'true' || 'false' }}
+          OPENWIKI_DEBUG: ${{ (github.event_name == 'schedule' || inputs.diagnostics != false) && '1' || '0' }}
           OPENWIKI_UPDATE_REQUEST: ${{ inputs.request }}
           OPENWIKI_PROVIDER: openai-compatible
           OPENAI_COMPATIBLE_API_KEY: ${{ secrets.OPENWIKI_API_KEY }}
@@ -65,6 +74,19 @@ jobs:
           OPENWIKI_MAX_OUTPUT_TOKENS: '32768'
           OPENWIKI_PAGE_CONCURRENCY: '1'
           OPENWIKI_TELEMETRY_DISABLED: '1'
+      - name: Save safe checkpoint summary
+        if: always()
+        env:
+          OPENWIKI_GENERATION_OUTCOME: ${{ steps.generation.outcome }}
+        run: node docs-site/scripts/safe-run-summary.mjs
+      - name: Retain only the content-free checkpoint summary
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: openwiki-safe-summary
+          path: ${{ runner.temp }}/openwiki-safe-summary/summary.json
+          if-no-files-found: error
+          retention-days: 3
       - name: Require a fully completed OpenWiki run
         run: node docs-site/scripts/check-completion.mjs
       - name: Build the proposed public wiki
