@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.1.1](https://github.com/mikeng-io/nora/compare/v7.1.0...v7.1.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* **openwiki:** normalize gateway completion IDs and retain safe failure diagnostics ([f2b5746](https://github.com/mikeng-io/nora/commit/f2b57465e5e41f3389fc6dad43da66ba786cdc2b))
+
 ## [7.1.0](https://github.com/mikeng-io/nora/compare/v7.0.0...v7.1.0) (2026-10-27)
 
 
