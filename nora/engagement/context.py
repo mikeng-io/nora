@@ -34,6 +34,7 @@ from nora.agent.memory_search import (
     room_label,
 )
 from nora.agent.room import Room
+from nora.agent.standing_ledger import read_ledger
 from nora.domain.computer_context import ComputerView
 from nora.domain.culture import (
     CultureRevision,
@@ -66,6 +67,7 @@ from nora.domain.quote_window import QuoteWindow
 from nora.domain.rollup import room_key
 from nora.domain.self_presence import Presence, platform_name
 from nora.domain.standing import Standing
+from nora.domain.standing_ledger import LedgerEntry, StandingLedger
 from nora.domain.subagents_context import SubagentsView
 from nora.engagement.character_who import tag_character_people
 from nora.engagement.computer_context import ComputerContextReader
@@ -148,6 +150,7 @@ class TranscriptInjection:
         notes: StandingNotesReader | None = None,
         policy: Policy | None = None,
         standing: StandingStore | None = None,
+        ledger: StandingLedger | None = None,
         media_join: MediaJoin | None = None,
         presence: PresenceReader | None = None,
         culture: CultureReader | None = None,
@@ -214,6 +217,7 @@ class TranscriptInjection:
         # unlike `notes`: a position is held in a room, not shared
         # across a unit's rooms, so there is no unit to resolve.
         self._standing_store = standing
+        self._ledger_store = ledger
         # THE MEDIA JOIN. `messages.body` carries `[image a3f2c1]` and nothing
         # more; the comprehension lives in `media_objects`, and the join is
         # where the two meet — in the ASSEMBLER and not in
@@ -286,7 +290,7 @@ class TranscriptInjection:
         # `<presence>` is on the front of the turn like the rest because adapter
         # health must be read now, not remembered.
         (
-            ((transcript, character, profiles), card, tagger_card, standing, notes),
+            ((transcript, character, profiles), card, tagger_card, standing, notes, ledger),
             presence,
             culture,
             (unit_culture, self_account, lessons),
@@ -298,6 +302,7 @@ class TranscriptInjection:
                 self._recall_tagger(ref, msg),
                 self._standing(msg),
                 self._notes(msg),
+                self._ledger(msg, ref),
             ),
             self._presence(msg),
             self._culture(msg),
@@ -348,6 +353,7 @@ class TranscriptInjection:
             notes=notes,
             memos=memos,
             standing=standing,
+            ledger=ledger,
             presence=presence,
             culture=culture,
             character=character,
@@ -926,6 +932,23 @@ class TranscriptInjection:
                 "nora_errors_total", stage="tagger_card", platform=msg.platform)
             return ()
         return recall.conclusions
+
+    async def _ledger(
+        self, msg: NormalizedMessage, ref: PersonRef | None,
+    ) -> tuple[LedgerEntry, ...]:
+        if self._ledger_store is None or self._lineage is None:
+            return ()
+        room = Room(platform=msg.platform, conversation_id=msg.conversation_id,
+                    roster_source=self._rosters.get(msg.platform), persons=self._persons,
+                    tagger=ref, self_ids=self._self_ids)
+        target = self._lineage.render_room(
+            platform=msg.platform, conversation_id=msg.conversation_id)
+        try:
+            return await asyncio.wait_for(read_ledger(self._ledger_store, target, room), timeout=5)
+        except Exception:
+            log.exception("ledger context read failed")
+            self._metrics.inc("nora_errors_total", stage="standing_ledger", platform=msg.platform)
+            return ()
 
     async def _standing(self, msg: NormalizedMessage) -> Standing | None:
         """Her own position in THIS conversation, or `None`

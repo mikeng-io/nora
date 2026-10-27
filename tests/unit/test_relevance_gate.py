@@ -1157,6 +1157,7 @@ def test_the_digest_is_derived_from_the_registry_and_read_only():
 
     registry = ToolRegistry(
         record=object(), computer=FakeSandboxRuntime(), documents=object(), memos=object(),
+        standing_head=object(),
     )
     digest = registry.capability_digest()
     named = {line.split(" — ")[0].removeprefix("- ").strip()

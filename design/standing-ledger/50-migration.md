@@ -40,4 +40,4 @@ replacement has measured at least as well.
 | whether the debrief keeps running on every tag turn once the in-turn op tool exists, or only when the turn wrote no op | measured: how often a turn that decided something wrote no op | after step 3 |
 | retention of turn records beyond `tag_trace`'s | the operator | before step 5 |
 | whether `tool_call_log` and its hook are deleted at step 5 (its only reader retires, and the traces hold every call it logged) or kept as an archive | the operator | step 5 |
-| how an entry moves from room to unit scope: on the second room's touch automatically, or by the writer's op | design review of step 2 | step 2 |
+| how an entry moves from room to unit scope | **Decided for step 2:** the writer explicitly sets or changes scope; never automatic on touch ([20 §6](20-the-ledger.md#6-scopes)) | step 2 |

@@ -26,6 +26,7 @@ from nora.domain.models import (
 from nora.domain.notes import Note
 from nora.domain.prompt import escape_attr
 from nora.domain.standing import Standing, WorkingSetItem
+from nora.domain.standing_ledger import LedgerEntry
 from nora.domain.subagents_context import SubagentLine, SubagentsView
 
 
@@ -35,7 +36,7 @@ def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None,
          room_members=(), computer=None, documents=None, character=(),
          subagents=None, unit_culture=None, self_account=None,
          lessons=(), memos=(), voice=False, recalled=(),
-         recalled_partial=False) -> TagContext:
+         recalled_partial=False, ledger=()) -> TagContext:
     msg = NormalizedMessage(platform, "g1", "group", "+852111", "Miles", 1, body, {},
                             quote=quote, voice=voice)
     kwargs = {"tagger_card": tuple(tagger_card),
@@ -47,7 +48,7 @@ def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None,
               "subagents": subagents, "unit_culture": unit_culture,
               "self_account": self_account, "lessons": tuple(lessons),
               "memos": tuple(memos), "recalled": tuple(recalled),
-              "recalled_partial": recalled_partial}
+              "recalled_partial": recalled_partial, "ledger": tuple(ledger)}
     return TagContext("tag-1", msg, tagger, tuple(transcript), tuple(peer_card), 0.0,
                       **kwargs)
 
@@ -266,6 +267,12 @@ def _full_prefill_body() -> str:
         tagger_card=("asked about dinner",), tagger=PersonRef("miles", "Miles", "miles"),
         notes=(_note(),), memos=(_memo(),),
         standing=_standing(working_set=(_working_set_item(),)),
+        ledger=(LedgerEntry(
+            id="generated-decision", kind="decision", unit="u", scope="room",
+            platform="signal", conversation_id="g1", revision=1, status="open",
+            subject="Generated choice", opened_at=1, last_revised_at=1,
+            body="## Options\n- Generated option [1]\n## Leaning\n- none yet",
+        ),),
         culture=_culture(), decisions=_decisions(),
         people_in_window=(("Grant", ("asked about dinner",)),),
         room_members=(PersonRef("p_ann", "Ann Lee", "p_ann", aliases=("Annie", "阿Ann")),),

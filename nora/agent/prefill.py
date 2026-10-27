@@ -56,6 +56,7 @@ from ..language.subagents_render import render_subagents
 from ..obs.tracing import annotate, span
 from .clock import local_now, state_time
 from .lineage import DerivedView, derived_view, memo_permits
+from .standing_ledger import render_ledger
 
 # `TAG_HEADER`, `CLOSING_LINE` and the text of the clock line and of the
 # `<context_header>` message live in `nora.domain.framing` with every other
@@ -198,6 +199,7 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     # a job in the window.
     ("subagents", 59, "turn"),
     ("standing", 60, "room"),
+    ("standing_ledger", 62, "room"),
     # The Standing working set. Immediately after `standing` and before the
     # transcript, on purpose: the read order stays "here is my position, here
     # is what I have not told you, here is what has been said since". `room`,
@@ -1048,6 +1050,8 @@ def build_prefill(
             _restamp(render_computer(ctx.computer)),
             _restamp(render_documents(ctx.documents)),
             _restamp(render_subagents(ctx.subagents)),
+            _restamp(render_ledger(ctx.ledger, now=clock,
+                                   rooms=ctx.lineage_room.rooms if ctx.lineage_room else ())),
             _restamp(_standing_block(ctx, view)),
             _restamp(_standing_working_set_block(ctx, now=clock, view=view)),
             _transcript_block(ctx, display_name, clock, context_window),

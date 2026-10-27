@@ -37,6 +37,7 @@ from nora.domain.ports import (
     StandingStore,
 )
 from nora.domain.quote_window import QuoteWindow
+from nora.domain.standing_ledger import StandingLedger
 from nora.engagement.context import StandingNotesReader
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.self_presence import PresenceReader
@@ -69,6 +70,7 @@ def build_offline_pipeline(
     # caller keeps working unchanged.
     notes: StandingNotesReader | None = None,
     standing: StandingStore | None = None,
+    ledger: StandingLedger | None = None,
     media_join: MediaJoin | None = None,
     quote_window: QuoteWindow | None = None,
     participation: ParticipationTrigger | None = None,
@@ -139,7 +141,7 @@ def build_offline_pipeline(
     assembler = build_assembler(
         cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
         policy=permissive_policy(),
-        notes=notes, standing=standing,
+        notes=notes, standing=standing, ledger=ledger,
         # The media join. `None` renders the bare handles a row actually carries; an eval
         # that wants `[image a3f2c1: …]` in its prompt builds a `MediaJoin` over
         # `nora.testing.FakeMediaObjectStore`, exactly as it passes its own doubles for
@@ -301,7 +303,7 @@ def build_offline_pipeline(
                 # The proactive act turn, registered as production registers it.
                 "proactive": proactive_occasion,
             },
-            standing=standing,
+            standing=standing, ledger=ledger,
             standing_store_timeout_seconds=cfg.standing.store_timeout_seconds,
             # The participation turn's memory reads. ONE knob set, read at the composition
             # root exactly as the tag assembler reads `tagger_card_conclusions`: two

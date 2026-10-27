@@ -5141,3 +5141,70 @@ EXTRACTION_ATTEMPT = sa.Table(
 sa.Index("idx_extraction_due", EXTRACTION.c.state, EXTRACTION.c.due_at)
 sa.Index("idx_extraction_queue_pending", EXTRACTION_QUEUE.c.extraction_id,
          EXTRACTION_QUEUE.c.queued_at)
+
+
+def _ledger_table(name: str, kind: str, *, history: bool = False) -> sa.Table:
+    columns: list[Any] = [
+        sa.Column("id", sa.Text, primary_key=True),
+        sa.Column("revision", sa.Integer, nullable=False, primary_key=history),
+        sa.Column("parent_revision", sa.Integer),
+        sa.Column("unit", sa.Text, nullable=False),
+        sa.Column("scope", sa.Text, nullable=False),
+        sa.Column("platform", sa.Text, nullable=False),
+        sa.Column("conversation_id", sa.Text, nullable=False),
+        sa.Column("status", sa.Text, nullable=False),
+        sa.Column("topic" if kind == "thread" else "subject", sa.Text, nullable=False),
+        sa.Column("made_at" if kind == "commitment" else "opened_at",
+                  sa.BigInteger, nullable=False),
+        sa.Column("last_revised_at", sa.BigInteger, nullable=False),
+        sa.Column("closed_at", sa.BigInteger),
+
+    ]
+    if history:
+        columns.append(sa.Column("recorded_at", sa.DateTime(timezone=True), nullable=False,
+                                 server_default=sa.text("clock_timestamp()")))
+    if kind != "thread":
+        columns.append(sa.Column("body", sa.Text, nullable=False))
+    if kind == "decision":
+        columns.append(sa.Column("note_id", sa.Text))
+    elif kind == "commitment":
+        columns.extend([
+            sa.Column("owed_to", pg.ARRAY(sa.Text), nullable=False),
+            sa.Column("due_at", sa.BigInteger),
+        ])
+    else:
+        columns.extend([
+            sa.Column("note_ids", pg.ARRAY(sa.Text), nullable=False),
+            sa.Column("decision_ids", pg.ARRAY(sa.Text), nullable=False),
+            sa.Column("message_ids", pg.ARRAY(sa.Integer), nullable=False),
+            sa.Column("spans", pg.JSONB, nullable=False),
+            sa.Column("last_moved_at", sa.BigInteger),
+        ])
+    statuses = {"decision": "'open', 'closed', 'dropped'",
+                "commitment": "'open', 'done', 'released'", "thread": "'open'"}[kind]
+    table = sa.Table(
+        name, METADATA, *columns, *_derived(name, per_row=True),
+        sa.CheckConstraint("scope in ('room', 'unit')", name=f"{name}_scope_check"),
+        sa.CheckConstraint(f"status in ({statuses})", name=f"{name}_status_check"),
+        sa.CheckConstraint("revision > 0", name=f"{name}_revision_check"),
+        sa.CheckConstraint(f"length(btrim({'topic' if kind == 'thread' else 'subject'})) > 0 AND "
+            f"position(chr(10) in {'topic' if kind == 'thread' else 'subject'}) = 0",
+                           name=f"{name}_subject_check"),
+        sa.CheckConstraint("length(btrim(unit)) > 0", name=f"{name}_unit_check"),
+        sa.CheckConstraint("(revision = 1 AND parent_revision IS NULL) OR "
+                           "(revision > 1 AND parent_revision = revision - 1)",
+                           name=f"{name}_parent_check"),
+    )
+    sa.Index(f"idx_{name}_scope", table.c.unit, table.c.scope,
+             table.c.platform, table.c.conversation_id)
+    return table
+
+
+LEDGER_DECISION = _ledger_table("standing_decision", "decision")
+LEDGER_COMMITMENT = _ledger_table("standing_commitment", "commitment")
+LEDGER_THREAD = _ledger_table("standing_thread", "thread")
+LEDGER_DECISION_REVISION = _ledger_table("standing_decision_revision", "decision", history=True)
+LEDGER_COMMITMENT_REVISION = _ledger_table(
+    "standing_commitment_revision", "commitment", history=True,
+)
+LEDGER_THREAD_REVISION = _ledger_table("standing_thread_revision", "thread", history=True)

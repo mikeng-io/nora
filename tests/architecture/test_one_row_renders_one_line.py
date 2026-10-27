@@ -75,6 +75,10 @@ _COLLAPSERS = _DIRECT_COLLAPSERS | {"render_rows"}
 #: somewhere upstream" without that constructor and that test is how this gate
 #: becomes a formality.
 _NOT_A_LINE = {
+    ("nora/domain/standing_revise.py", "check_ledger_op", "sections[name]"): (
+        "The validator serializes a whole Markdown body for storage; this is not a prompt row. "
+        "The ledger renderer parses its sections and joins the individual cited lines."
+    ),
     (
         "nora/agent/prefill.py", "build_tag_message",
         'escape(render_file_links(ctx.message.body))',

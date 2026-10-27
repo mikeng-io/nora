@@ -1,0 +1,72 @@
+[
+  {
+    "name": "compare and append rejects the second writer",
+    "file": "nora/domain/standing_revise.py",
+    "old": "if op.base != prior.revision:",
+    "new": "if False:",
+    "target": "tests/infra/test_standing_ledger.py::test_two_rooms_compare_and_append_from_one_base"
+  },
+  {
+    "name": "the entry lock serializes compare and append",
+    "file": "nora/infra/sql/standing_ledger.py",
+    "old": ".with_for_update()",
+    "new": "",
+    "target": "tests/infra/test_standing_ledger.py::test_two_rooms_compare_and_append_from_one_base"
+  },
+  {
+    "name": "ledger changes require a base",
+    "file": "nora/domain/standing_revise.py",
+    "old": "if op.base is None:",
+    "new": "if False:",
+    "target": "tests/infra/test_standing_ledger.py::test_existing_entry_without_base_is_refused"
+  },
+  {
+    "name": "lineage subset gates each entry even with legacy checks off",
+    "file": "nora/agent/standing_ledger.py",
+    "old": "and section_permits(requirement.entries, target, origin=requirement.origin)",
+    "new": "and True",
+    "target": "tests/infra/test_standing_ledger.py::test_unit_entry_lineage_denies_extra_or_unknown_listener"
+  },
+  {
+    "name": "unknown listeners withhold unit entries",
+    "file": "nora/agent/standing_ledger.py",
+    "old": "or live.unnamed or not live.person_ids:",
+    "new": "or not live.person_ids:",
+    "target": "tests/infra/test_standing_ledger.py::test_unit_entry_lineage_denies_extra_or_unknown_listener"
+  },
+  {
+    "name": "turn restrictions survive entry citations",
+    "file": "nora/infra/sql/standing_ledger.py",
+    "old": "lineage = lineage.union(await body_turn_lineage(conn, body=new_turns, unit=entry.unit))",
+    "new": "lineage = lineage.union(Lineage.of({ROW: (message(room_key(entry.platform, entry.conversation_id)),)}))",
+    "target": "tests/infra/test_standing_ledger.py::test_cited_turn_exclusions_and_location_survive_in_entry"
+  },
+  {
+    "name": "cited evidence cannot cross the unit boundary",
+    "file": "nora/infra/sql/standing_ledger.py",
+    "old": "if any(len(target.resolve(origin)) != 1 for origin in _origins(lineage.section(ROW))):",
+    "new": "if False:",
+    "target": "tests/infra/test_standing_ledger.py::test_cross_unit_citations_and_uncited_claims_are_refused"
+  },
+  {
+    "name": "ledger claims require citations",
+    "file": "nora/domain/standing_revise.py",
+    "old": "cited_line(heading, item, shown, may_cite_nora=True)",
+    "new": "pass",
+    "target": "tests/infra/test_standing_ledger.py::test_cross_unit_citations_and_uncited_claims_are_refused"
+  },
+  {
+    "name": "carried citations survive source retention",
+    "file": "nora/infra/sql/standing_ledger.py",
+    "old": "body=new_turns, unit=entry.unit",
+    "new": "body=entry.body, unit=entry.unit",
+    "target": "tests/infra/test_standing_ledger.py::test_revising_one_section_preserves_evidence_after_source_retention"
+  },
+  {
+    "name": "ledger reads retain entry requirements in the turn record",
+    "file": "nora/agent/tools.py",
+    "old": "                    for e in visible:\n                        record_requirement(DisclosureRequirement(\n                            room_key(e.platform, e.conversation_id), e.lineage.section(ROW),\n                            e.exclude_persons,\n                        ))",
+    "new": "                    for e in visible:\n                        pass",
+    "target": "tests/infra/test_standing_ledger.py::test_standing_read_records_each_entrys_source_requirements"
+  }
+]
