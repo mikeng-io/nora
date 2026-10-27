@@ -495,11 +495,19 @@ services:
       # bearer its /app/v1/otp/* routes require. Empty, the login page offers
       # Discord alone.
       - NORA_OTP_API_TOKEN=${NORA_OTP_API_TOKEN:-}
+      # /downloads: where yt-dlp's output lands — the media files and the
+      # jobs.json registry, on the app-downloads named volume below.
+      - NORA_DOWNLOADS_DIR=/data/downloads
     volumes:
       # Same file, same read-only mount as `nora`/`presence` below — the web
       # portal's whitelist can never drift from Nora's own roster because it
       # reads the identical bytes.
       - ./identity.toml:/app/identity.toml:ro
+      # Named, not a bind mount: a named volume inherits the image's
+      # `chown node:node /data/downloads` on first creation, while a fresh
+      # bind-mounted host dir would be root-owned and unwritable. Same fix as
+      # audio-controller-state below.
+      - app-downloads:/data/downloads
 
   # site — Nora's public site (site/, Astro, static). Loopback-only like
   # `app`; it answers `/`, `/en/`, `/_astro/*`, `/_site/*`, `/favicon.ico`,
@@ -1118,3 +1126,6 @@ volumes:
   # Named (not a bind mount) so the volume inherits the image's
   # `chown node:node /var/lib/audio-controller` on first use (B-1).
   audio-controller-state:
+  # The /downloads media library + jobs.json registry — same named-volume
+  # ownership trick: the app's node user needs it writable on first boot.
+  app-downloads:
