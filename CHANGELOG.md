@@ -1,5 +1,17 @@
 # Changelog
 
+## [7.1.0](https://github.com/mikeng-io/nora/compare/v7.0.0...v7.1.0) (2026-10-27)
+
+
+### Features
+
+* **topology:** give rooms unique names and richer directory entries ([18d0915](https://github.com/mikeng-io/nora/commit/18d0915f897ef5713d0ae1c3d13a2b8cf0f2ab80))
+
+
+### Bug Fixes
+
+* **topology:** keep the room list when a culture read fails ([26e146f](https://github.com/mikeng-io/nora/commit/26e146f14be34eb08199e79e8357c5fc51caa133))
+
 ## [7.0.0](https://github.com/mikeng-io/nora/compare/v6.8.7...v7.0.0) (2026-10-27)
 
 
