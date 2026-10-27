@@ -60,6 +60,7 @@ def test_documented_examples_are_valid_and_cover_every_state() -> None:
         pytest.param("review", "run_ref", id="review-without-run-link"),
         pytest.param("review", "evidence_refs", id="review-without-inspectable-result"),
         pytest.param("done", "evidence_refs", id="done-without-acceptance-evidence"),
+        pytest.param("blocked", "issue_ref", id="blocked-without-owning-issue"),
         pytest.param("blocked", "blocked_ref", id="blocked-without-unblock-record"),
         pytest.param("resolved_run", "selection", id="run-without-actual-selection"),
         pytest.param("resolved_run", "selection_reason", id="run-without-fit-justification"),

@@ -89,7 +89,7 @@
         },
         {
           "if": {"properties": {"status": {"const": "Blocked"}}},
-          "then": {"required": ["blocked_ref"]}
+          "then": {"required": ["issue_ref", "blocked_ref"]}
         }
       ]
     },

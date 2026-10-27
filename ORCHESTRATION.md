@@ -168,7 +168,10 @@ The orchestrator checks references and admission before changing status:
   dependencies/environment/permissions available, priority and appropriate tiers.
 - **Running** also links a real launched run; choosing a worker is insufficient.
 - **Review** links the run and inspectable result/check evidence for acceptance.
-- **Blocked** links an issue/run entry stating the reason and unblock next step.
+- **Blocked** must link its owning issue and an issue/run entry stating the reason
+  and unblock next step. Before admission, priority, tiers and acceptance may be
+  omitted while unclassified because scope, permissions or dependencies are missing;
+  do not fabricate Ready metadata.
 - **Done** has acceptance evidence for the whole slice, including merge or live
   read-back when specified. Cancellation/supersession is recorded with its reason
   and archived/closed as not planned; it is never successful Done. Partial work
@@ -178,8 +181,10 @@ The orchestrator checks references and admission before changing status:
 
 [`.agents/orchestration.schema.json`](.agents/orchestration.schema.json) is one
 JSON Schema Draft 2020-12. Its `$defs` own the canonical status, priority and
-tier identifier vocabularies; policy frontmatter is validated against them,
-including catalogue coverage/order. Capabilities/evidence live only above.
+tier identifier vocabularies. The schema validates policy shape and allowed IDs;
+`tests/architecture/test_orchestration_contract.py::test_schema_and_canonical_policy`
+checks catalogue coverage/order, including omissions and duplicates.
+Capabilities/evidence live only above.
 The discriminator `kind` selects policy, task metadata or run record. Task
 metadata is a small interchange projection, **not the GitHub API payload**.
 Additional properties are rejected at each fixed object boundary; run `options`
@@ -225,6 +230,7 @@ done:
   evidence_refs: [https://example.invalid/acceptance/accepted-head]
 blocked:
   kind: task
+  issue_ref: https://github.com/example/nora-synthetic/issues/1
   status: Blocked
   blocked_ref: https://example.invalid/tasks/1#reason-and-unblock
 resolved_run:
