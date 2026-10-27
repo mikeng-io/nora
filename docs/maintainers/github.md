@@ -144,6 +144,9 @@ verify the live check after merge. Keep manual dispatch on master.
 `Engineering dispatch` runs only trusted `master` source, using API JSON. PR
 ready/synchronize/reopen events are read-only review intake; completed CI events
 are notifications requiring explicit owner admission. Neither launches paid work.
+Valid notifications return `nothing_found` with rc 0 without querying task
+eligibility; malformed/unsupported events and failed manual measurements remain
+`unavailable` with rc 1. A notification is not an admission or review result.
 There is no issue-comment command, Project event trigger, PR-code execution,
 CLI integration, board writer, auto-enrollment, approval, merge or Done action.
 GitHub Issues remain canonical and Project 8 is their scheduling view.
@@ -168,7 +171,9 @@ the separate native CI Automation disabled so there is only one dispatcher.
 
 The pilot accepts only owner-authored, open, non-draft, same-repository PRs to
 master; both author and dispatch actor must currently have write/maintain/admin
-permission. Forks, bots and non-owner collaborators are outside this initial
+permission. GitHub's built-in `GITHUB_TRIGGERING_ACTOR` must also be the owner,
+including on reruns; the original actor/event alone is insufficient. Forks, bots
+and non-owner collaborators are outside this initial
 ceiling. Exactly one native closing-issue link must resolve to an open nonempty
 issue. Immediately before dispatch, the orchestrator uses its existing connected
 `gh` authentication to verify that same issue's live membership in owner Project
@@ -235,9 +240,16 @@ receipts. Two reservations across all actions per rolling 24 hours is the cap;
 action+PR+head never relaunches, and any unresolved claim blocks all launches.
 The accounting covers this controller, not unrelated/native/manual spending.
 
-A real returned session URL changes a receipt to running; a claim alone is never
-Running. Timeouts, failed receipt updates or ambiguous creation retain the claim
-and never retry. For a known running receipt, owner-dispatch `action=reconcile`
+A validated session URL plus a subsequent GET confirming its identity and pinned
+profile changes a receipt to running; create responses do not populate the profile
+binding. A claim alone is never Running. If readback or receipt update fails, the
+validated URL is retained in the failure output and, when writable, the pending
+receipt. Request/authentication/validation rejections (400/401/403/404/405/415/422)
+resolve the claim as rejected; it still counts toward the cap and blocks the same
+action/PR/head. A preflight abort before the create call similarly resolves as
+`not_started`. Conflict, timeout, throttling, server errors and ambiguous creation
+retain the global claim and never retry. For a known running or pending-with-run
+receipt, owner-dispatch `action=reconcile`
 with `admission={"receipt_id": <comment-id>}`. This reads the current official v3
 session and resolves the receipt only for exit/error with no children; it does not
 establish acceptance or update Project status. An ambiguous claim without a run
@@ -249,7 +261,7 @@ owner-dispatch `action=review` with number, head and the same current admission
 object (no CI check ID). The exact qualified signal is JSON `state: "ok"` plus
 `candidate: {pr, head, issue, acceptance_ref, review_tier}` in the workflow log.
 It means admission qualified a request, not that a review ran. Automatic intake
-without this confirmation remains unavailable. The cheap exclusion skips only
+without this confirmation is only a notification. The cheap exclusion skips only
 Markdown at the root or under docs/design (excluding policy/security/boundary
 paths), and exact client config paths `.mcp.json`, `.cursor/mcp.json`,
 `.vscode/mcp.json`, `.codex/config.toml`, `.claude/.mcp.json`, `.claude/mcp.json`.

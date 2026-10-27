@@ -63,6 +63,7 @@ def environment():
         "GITHUB_REPOSITORY": REPO,
         "GITHUB_REF": "refs/heads/master",
         "GITHUB_ACTOR": dispatch.OWNER,
+        "GITHUB_TRIGGERING_ACTOR": dispatch.OWNER,
         "GITHUB_RUN_ID": "42",
         "ENGINEERING_CI_ENABLED": "true",
         "DEVIN_SECURITY_PROFILE_ID": "synthetic-profile",
@@ -127,6 +128,9 @@ class Fake:
             "child_session_ids": [],
         }
         self.timeout = False
+        self.create_status = None
+        self.patch_failure = False
+        self.session_binding = {"selection": "profile", "profile_id": "synthetic-profile"}
         self.race = False
         self.edit_body_on_claim = False
         self.weaken_profile_on_claim = False
@@ -170,9 +174,16 @@ class Fake:
                 and path == "/v3/organizations/org-synthetic/sessions/synthetic-session"
             )
             assert method in {"POST", "GET"}
+            if method == "POST" and self.create_status is not None:
+                raise dispatch.APIError("devin", self.create_status)
             if method == "POST" and self.timeout:
                 raise dispatch.UnavailableError("devin response unavailable; no retry")
-            return self.session
+            # Official create omits the binding; only GET/list populate it.
+            return (
+                self.session
+                if method == "POST"
+                else {**self.session, "security_profile": self.session_binding}
+            )
         assert service == "github"
         if method == "GET":
             if path == f"{BASE}/pulls/7":
@@ -221,6 +232,8 @@ class Fake:
                 self.pr["head"]["sha"] = "c" * 40
             return comment
         if method == "PATCH" and path.startswith(f"{BASE}/issues/comments/"):
+            if self.patch_failure:
+                raise dispatch.UnavailableError("github receipt update unavailable")
             comment = next(c for c in self.comments if str(c["id"]) == path.rsplit("/", 1)[1])
             comment.update(body)
             return comment
@@ -351,6 +364,8 @@ def test_truncated_linked_issue_read_cannot_authorize():
     "key,value",
     [
         ("GITHUB_ACTOR", "untrusted"),
+        ("GITHUB_TRIGGERING_ACTOR", "another-writer"),
+        ("GITHUB_TRIGGERING_ACTOR", ""),
         ("GITHUB_REF", "refs/heads/feature"),
         ("ENGINEERING_REPOSITORY", "example/nora-synthetic"),
         ("ENGINEERING_CI_ENABLED", ""),
@@ -486,6 +501,8 @@ def test_exact_head_is_read_again_after_claim_before_spending():
     with pytest.raises(dispatch.UnavailableError, match="stale PR head"):
         execute(api)
     assert api.comments and not api.paid()
+    receipt = json.loads(api.comments[0]["body"][len(dispatch.MARKER) : -4])
+    assert receipt["state"] == "resolved" and receipt["resolution"]["status"] == "not_started"
 
 
 def test_issue_body_edit_after_claim_blocks_even_though_receipt_also_changes_timestamp():
@@ -594,7 +611,7 @@ def test_automatic_and_comment_only_events_never_spend():
         "pull_request": {"number": 7, "head": {"sha": HEAD}},
     }
     controller = dispatch.Controller(api, environment())
-    assert controller.run("pull_request_target", pr_event)["state"] == "unavailable"
+    assert controller.run("pull_request_target", pr_event)["state"] == "nothing_found"
     with pytest.raises(dispatch.UnavailableError, match="unsupported"):
         controller.run("issue_comment", pr_event)
     ci_event = {
@@ -607,8 +624,89 @@ def test_automatic_and_comment_only_events_never_spend():
             "head_sha": HEAD,
         },
     }
-    assert controller.run("workflow_run", ci_event)["state"] == "unavailable"
-    assert not api.paid()
+    assert controller.run("workflow_run", ci_event)["state"] == "nothing_found"
+    ci_event["workflow_run"]["pull_requests"] = []  # A master CI run is an expected notification.
+    assert controller.run("workflow_run", ci_event)["state"] == "nothing_found"
+    assert not api.calls
+
+
+@pytest.mark.parametrize("status", [400, 401, 403, 404, 405, 415, 422])
+def test_definite_creation_rejection_releases_only_the_global_claim(status):
+    api = Fake()
+    api.create_status = status
+    with pytest.raises(dispatch.APIError, match=f"HTTP {status}"):
+        execute(api)
+    receipt = json.loads(api.comments[0]["body"][len(dispatch.MARKER) : -4])
+    assert receipt["state"] == "resolved"
+    assert receipt["resolution"] == {"status": "rejected", "http_status": status}
+    with pytest.raises(dispatch.UnavailableError, match="duplicate"):
+        execute(api, current_request(api))
+    api.create_status = None
+    assert execute(api, current_request(api, "investigate"))["state"] == "ok"
+    assert len(api.paid()) == 2
+
+
+@pytest.mark.parametrize("status", [408, 409, 429, 500, 503])
+def test_ambiguous_creation_error_retains_the_global_claim(status):
+    api = Fake()
+    api.create_status = status
+    with pytest.raises(dispatch.APIError):
+        execute(api)
+    assert '"state": "pending"' in api.comments[0]["body"]
+    with pytest.raises(dispatch.UnavailableError, match="unresolved"):
+        execute(api, current_request(api, "investigate"))
+    assert len(api.paid()) == 1
+
+
+@pytest.mark.parametrize(
+    "binding",
+    [None, {"selection": "inherit"}, {"selection": "profile", "profile_id": "different"}],
+)
+def test_created_session_binding_is_read_back_and_kept_pending_on_mismatch(binding):
+    api = Fake()
+    api.session_binding = binding
+    with pytest.raises(dispatch.UnavailableError, match=api.session["url"]):
+        execute(api)
+    assert (
+        "devin",
+        "GET",
+        "/v3/organizations/org-synthetic/sessions/synthetic-session",
+        None,
+    ) in api.calls
+    receipt = json.loads(api.comments[0]["body"][len(dispatch.MARKER) : -4])
+    assert receipt["state"] == "pending" and receipt["run_ref"] == api.session["url"]
+    request = event("reconcile")
+    request["inputs"]["admission"] = json.dumps({"receipt_id": api.comments[0]["id"]})
+    api.session["status"] = "exit"
+    assert execute(api, request)["state"] == "ok"  # Actual terminal run, not acceptance.
+
+
+def test_created_session_url_survives_a_failed_running_receipt_update():
+    api = Fake()
+    api.patch_failure = True
+    with pytest.raises(dispatch.UnavailableError, match=api.session["url"]):
+        execute(api)
+    assert '"state": "pending"' in api.comments[0]["body"]
+    assert len(api.paid()) == 1
+
+
+def test_expected_intake_skips_exit_zero_but_invalid_events_still_fail(
+    tmp_path, monkeypatch, capsys
+):
+    api = Fake()
+    event_file = tmp_path / "event.json"
+    for key, value in environment().items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event_file))
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "pull_request_target")
+    monkeypatch.setattr(dispatch, "API", lambda env: api)
+    event_file.write_text(json.dumps({"repository": {"full_name": REPO}, "action": "synchronize"}))
+    assert dispatch.main() == 0
+    assert json.loads(capsys.readouterr().out)["state"] == "nothing_found"
+    event_file.write_text(json.dumps({"repository": {"full_name": REPO}, "action": "unknown"}))
+    assert dispatch.main() == 1
+    assert json.loads(capsys.readouterr().out)["state"] == "unavailable"
+    assert not api.calls
 
 
 def test_transport_fixed_origins_no_auth_redirects_and_sanitized_errors(capsys):
@@ -632,8 +730,9 @@ def test_transport_fixed_origins_no_auth_redirects_and_sanitized_errors(capsys):
         }
     )
     api.opener = urllib.request.build_opener(dispatch.NoRedirect(), RedirectingHandler())
-    with pytest.raises(dispatch.UnavailableError, match="HTTP 302"):
+    with pytest.raises(dispatch.APIError, match="HTTP 302") as failure:
         api("devin", "POST", "/v3/organizations/org-synthetic/sessions", {"prompt": "synthetic"})
+    assert (failure.value.service, failure.value.status) == ("devin", 302)
     assert len(requests) == 1 and requests[0].full_url.startswith("https://api.devin.ai/")
     assert requests[0].get_header("Authorization") == "Bearer synthetic-devin"
     with pytest.raises(dispatch.UnavailableError, match="HTTP 302"):
