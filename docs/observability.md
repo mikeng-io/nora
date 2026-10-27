@@ -53,6 +53,19 @@ publish, cancelled or storage. The vocabulary and metric help derive from
 Failure counts retain their existing semantics, including one failure when
 recording a failed attempt also encounters a storage outage.
 
+`nora_extraction_dropped_claims_total{reason}` counts individual claims that fail
+a provenance check. Valid claims still publish; a nonempty output with no valid
+claims fails at `claims`, while zero claims still completes. Schema-invalid
+output fails as a whole at `schema`, with no salvage. The reason vocabulary and
+help derive from `ClaimDropReason` and are runtime-checked. Each rejected claim
+gets its first failing reason, not one count per failed check.
+`extraction_attempt.dropped_claims` durably holds only reason-to-count JSON,
+never dropped claim content or message text. Counts are saved before publication
+and retained if publication or the all-invalid check fails. A failed count write
+prevents publication (`storage`). Counters count attempts, including retries;
+they are process-local and are not a precision measurement. A drop is a recorded
+rejection, never a silent skip or proof that every assertion was extracted.
+
 Extraction allows five attempts per batch: transient failures can recover, while
 identical invalid output cannot consume calls forever. A failed fifth attempt
 sets `extraction.state = 'failed'`, never `done`; it is no longer automatically
