@@ -40,6 +40,7 @@
     "artifacts": "檔案",
     "downloads": "下載",
     "games": "遊戲",
+    "more": "更多",
     "nora": "關於佢",
     "memory": "佢記得你乜",
     "doctrine": "佢點做人",
@@ -451,7 +452,8 @@
     "convert": "轉格式",
     "convertLabel": "幫呢個檔轉格式",
     "converting": "緊轉格式…",
-    "ttlHint": "檔案 24 個鐘後自動刪除"
+    "ttlHint": "檔案 24 個鐘後自動刪除",
+    "downloadAll": "Download 晒全部"
   },
   "map": {
     "title": "大家喺邊",
