@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertPublicHost, isPrivateAddress, validateBatch, validateSubmissionUrl } from "./validate";
 import { DownloadStore, listJobFiles, mediaTypeFor, thumbPath } from "./store";
 import { DownloadRunner, sizeToBytes, type RunnerOptions } from "./runner";
-import { convert, serveContent } from "./service";
+import { convert, serveArchive, serveContent } from "./service";
 
 vi.mock("server-only", () => ({}));
 
@@ -592,6 +592,70 @@ describe("conversion", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("content-disposition")).toContain("download.webm");
     await res.body?.cancel();
+  });
+
+  it("offers the media title in filename* when it is not ASCII", async () => {
+    const { store, runner } = makeRunner();
+    const job = store.create("https://media.example/v/5", "miles");
+    const d = path.join(dir, "files", job.id);
+    mkdirSync(d, { recursive: true });
+    writeFileSync(path.join(d, "download.mp4"), "media-bytes");
+    writeFileSync(path.join(d, "download.mp3"), "converted-bytes");
+    store.update(job.id, { status: "done", fileName: "download.mp4", mediaType: "video/mp4", title: "測試影片" });
+    const res = await serveContent(runner, job.id, null, "download.mp3");
+    const cd = res.headers.get("content-disposition") ?? "";
+    expect(decodeURIComponent(cd.split("filename*=UTF-8''")[1] ?? "")).toBe("測試影片.mp3");
+    await res.body?.cancel();
+  });
+
+  it("a title-less job borrows the source URL's file name", async () => {
+    const { store, runner } = makeRunner();
+    const job = store.create("https://media.example/media/clip.mp4", "miles");
+    const d = path.join(dir, "files", job.id);
+    mkdirSync(d, { recursive: true });
+    writeFileSync(path.join(d, "download.mp4"), "media-bytes");
+    store.update(job.id, { status: "done", fileName: "download.mp4", mediaType: "video/mp4" });
+    const res = await serveContent(runner, job.id, null);
+    expect(res.headers.get("content-disposition")).toContain('filename="clip.mp4"');
+    await res.body?.cancel();
+  });
+});
+
+describe("archive", () => {
+  it("bundles every done job's files into one zip stream", async () => {
+    const { store, runner } = makeRunner();
+    const a = store.create("https://media.example/a/1", "miles");
+    const b = store.create("https://media.example/b/2", "miles");
+    for (const [job, file] of [
+      [a, "download.mp4"],
+      [b, "download.webm"],
+    ] as const) {
+      const d = path.join(dir, "files", job.id);
+      mkdirSync(d, { recursive: true });
+      writeFileSync(path.join(d, file), `bytes-${file}`);
+      store.update(job.id, {
+        status: "done",
+        fileName: file,
+        mediaType: mediaTypeFor(path.extname(file).slice(1)),
+      });
+    }
+    // A job still running contributes nothing.
+    store.create("https://media.example/c/3", "miles");
+    const res = await serveArchive(runner);
+    expect(res.status).toBe(200);
+    const buf = Buffer.from(await res.arrayBuffer());
+    expect(buf.readUInt32LE(0)).toBe(0x04034b50);
+    const text = buf.toString("latin1");
+    expect(text).toContain(`-${a.id.slice(0, 8)}/download.mp4`);
+    expect(text).toContain(`-${b.id.slice(0, 8)}/download.webm`);
+    expect(text).toContain("bytes-download.mp4");
+    expect(buf.readUInt32LE(buf.length - 22)).toBe(0x06054b50);
+  });
+
+  it("answers 404 when nothing has finished", async () => {
+    const { store, runner } = makeRunner();
+    store.create("https://media.example/queued", "miles");
+    expect((await serveArchive(runner)).status).toBe(404);
   });
 });
 

@@ -452,7 +452,8 @@
     "convert": "Convert",
     "convertLabel": "Convert this file",
     "converting": "Converting…",
-    "ttlHint": "files auto-delete after 24 hours"
+    "ttlHint": "files auto-delete after 24 hours",
+    "downloadAll": "Download all"
   },
   "map": {
     "title": "Where everyone is",

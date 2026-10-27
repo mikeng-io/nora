@@ -22,6 +22,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, UnavailableState } from "@/components/ui/states";
 import {
   downloadContentPath,
+  downloadsArchivePath,
   downloadThumbnailPath,
   type DownloadJob,
   type DownloadStatus,
@@ -62,7 +63,18 @@ export function DownloadsView() {
 
   return (
     <PageFrame>
-      <PageHeader title={t("title")} description={t("lede")} />
+      <PageHeader
+        title={t("title")}
+        description={t("lede")}
+        actions={
+          list.data?.jobs.some((j) => j.status === "done") ? (
+            <a href={downloadsArchivePath} download className={buttonClass("quiet", "sm")}>
+              <Download aria-hidden="true" />
+              {t("downloadAll")}
+            </a>
+          ) : undefined
+        }
+      />
 
       <Panel className="mb-4">
         <PanelBody className="pt-4">

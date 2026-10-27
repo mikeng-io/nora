@@ -52,6 +52,9 @@ export const fetchDownloads = (signal?: AbortSignal) =>
 export const downloadContentPath = (id: string, file?: string) =>
   `/api/v1/downloads/${encodeURIComponent(id)}/content${file ? `?file=${encodeURIComponent(file)}` : ""}`;
 
+/** One zip holding every finished file in the library. */
+export const downloadsArchivePath = "/api/v1/downloads/archive";
+
 /** Submit a batch of URLs. A job that failed its validation or already exists is
  * reported in `rejected`, never silently dropped. */
 export async function submitDownloads(urls: string[]): Promise<SubmitResult> {
