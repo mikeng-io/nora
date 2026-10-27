@@ -147,7 +147,7 @@ async def memory_drain_loop(
     rebuild` too: a drain calls the projector a rebuild calls, which writes
     the source's current row, so the two converge whichever lands last.
 
-    `embed` (`[memory_index] embed`) is the
+    `embed` (`[memory.index] embed`) is the
     embedding worker: one batch after each drain, so a node re-projected
     this tick is embedded on it. Its failure is its own
     (`nora_errors_total{stage=memory_embed}`) and never stops the drain."""

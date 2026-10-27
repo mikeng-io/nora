@@ -44,7 +44,7 @@ members:
   - 00-intent.md
   - 10-honcho-audit.md
   - 15-memory-map.md
-  - 18-message-readings.md
+  - 18-extraction.md
   - 20-embedding-bakeoff.md
   - 25-memory-graph.md
   - 30-identity-and-character.md
@@ -89,11 +89,11 @@ edges:
   - {src: 20-embedding-bakeoff, dst: ../dreamer-agent-loop/24-embedding-seam, rel: extends, provenance: asserted}
   - {src: 20-embedding-bakeoff, dst: ../conversational-recall/10-findings, rel: depends_on, provenance: asserted}
   - {src: 15-memory-map, dst: ../cognition-loop/05-data-model, rel: extends, provenance: asserted}
-  - {src: 18-message-readings, dst: 00-intent, rel: extends, provenance: asserted}
-  - {src: 18-message-readings, dst: 10-honcho-audit, rel: depends_on, provenance: asserted}
-  - {src: 18-message-readings, dst: 45-persona-adaptor, rel: extends, provenance: asserted}
-  - {src: 18-message-readings, dst: ../cognition-loop/05-data-model, rel: extends, provenance: asserted}
-  - {src: 18-message-readings, dst: ../cognition-loop/25-rollup, rel: extends, provenance: asserted}
+  - {src: 18-extraction, dst: 00-intent, rel: extends, provenance: asserted}
+  - {src: 18-extraction, dst: 10-honcho-audit, rel: depends_on, provenance: asserted}
+  - {src: 18-extraction, dst: 45-persona-adaptor, rel: extends, provenance: asserted}
+  - {src: 18-extraction, dst: ../cognition-loop/05-data-model, rel: extends, provenance: asserted}
+  - {src: 18-extraction, dst: ../cognition-loop/25-rollup, rel: extends, provenance: asserted}
   - {src: 25-memory-graph, dst: 15-memory-map, rel: depends_on, provenance: asserted}
   - {src: 25-memory-graph, dst: 20-embedding-bakeoff, rel: depends_on, provenance: asserted}
   - {src: 25-memory-graph, dst: ../context-plan/15-what-the-composer-decides, rel: follows, provenance: asserted}
@@ -104,7 +104,7 @@ edges:
   - {src: 45-persona-adaptor, dst: 35-persona, rel: depends_on, provenance: asserted}
   - {src: 45-persona-adaptor, dst: ../self-growth/10-character, rel: supersedes, provenance: asserted}
   - {src: 47-character-dimensions, dst: 45-persona-adaptor, rel: extends, provenance: asserted}
-  - {src: 47-character-dimensions, dst: 18-message-readings, rel: extends, provenance: asserted}
+  - {src: 47-character-dimensions, dst: 18-extraction, rel: extends, provenance: asserted}
   - {src: 50-learning-from-acts, dst: 45-persona-adaptor, rel: depends_on, provenance: asserted}
   - {src: 50-learning-from-acts, dst: ../self-growth/40-lessons, rel: extends, provenance: asserted}
   - {src: 60-build-step-3, dst: 25-memory-graph, rel: realizes, provenance: asserted}

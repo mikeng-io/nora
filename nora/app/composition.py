@@ -92,13 +92,13 @@ from nora.app.cognition_wiring import (
 from nora.app.computer_metrics import ComputerMetrics
 from nora.app.computer_sweeper import ComputerSessionSweeper, SweepRules
 from nora.app.documents_service import DocumentService, room_label, rooms_named
+from nora.app.extraction import ExtractionWorker
 from nora.app.memory_routing import (
     MemoryRoutingError,
     build_workspace_router,
     profile_scopes_of_person,
     workspaces_of_person,
 )
-from nora.app.message_readings import MessageReadingWorker
 from nora.app.oauth_keepalive import KeepaliveTiming, KeptLane, OAuthKeepalive
 from nora.app.otp import OtpService
 from nora.app.social_expiry import StoryMediaExpiry
@@ -179,6 +179,7 @@ from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.decision_log import SqlDecisionLogStore
 from nora.infra.sql.documents import SqlDocumentStore
 from nora.infra.sql.dream_schedule import SqlDreamScheduleClock
+from nora.infra.sql.extraction import SqlExtraction
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.lessons import SqlLessonStore
@@ -187,7 +188,6 @@ from nora.infra.sql.media_objects import SqlMediaObjectStore
 from nora.infra.sql.memo import SqlMemoStore
 from nora.infra.sql.memory_embed import MemoryEmbedWorker
 from nora.infra.sql.memory_read import SqlMemoryIndex
-from nora.infra.sql.message_readings import SqlMessageReadings
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.music_queue import SqlMusicQueueStore
 from nora.infra.sql.music_session import SqlMusicSessionStore
@@ -1103,7 +1103,7 @@ class Dependencies:
     # `nora.web` never sees a `Policy`.
     workspaces_of: Callable[[str], tuple[str, ...]]
     # The portal's Profile reads (45, the switch): the read-only store (None
-    # until `[profile] render` is on — `profile_reader` above), a person_id ->
+    # until `[memory.profile] read` is on — `profile_reader` above), a person_id ->
     # the (unit, workspace) pairs their accounts live under, and the Record
     # read that resolves a line's message/episode citations for the page.
     profile_portal: SqlProfileStore | None
@@ -1314,10 +1314,10 @@ class Dependencies:
     # `keepalive = true`. `nora/__main__.py` starts it; the eval subject,
     # which composes the same graph, does not.
     oauth_keepalive: OAuthKeepalive | None = None
-    # The memory index's embedding worker: `None` under `[memory_index] embed =
+    # The memory index's embedding worker: `None` under `[memory.index] embed =
     # false`, the default. `__main__` hands it to the memory drain loop.
     memory_embed: MemoryEmbedWorker | None = None
-    message_readings: MessageReadingWorker | None = None
+    extraction: ExtractionWorker | None = None
     # The social stream's poller: `None` unless `[social.poll] enabled`.
     # `nora/__main__.py` starts it; the eval subject, which composes the same
     # graph, does not.
@@ -1475,10 +1475,10 @@ async def build_dependencies(
     # aiPeer and merge IRREVERSIBLY into Nora's self-model card (Honcho keeps
     # conclusions, not text). Fail closed at startup rather than pollute the
     # corpus.
-    if cfg.memory.ai_peer in persons.by_person:
+    if cfg.honcho.ai_peer in persons.by_person:
         raise StartupError(
-            f"identity.toml maps a person to the id '{cfg.memory.ai_peer}', which "
-            "is reserved for Nora's own aiPeer (memory.ai_peer) — a human under "
+            f"identity.toml maps a person to the id '{cfg.honcho.ai_peer}', which "
+            "is reserved for Nora's own aiPeer (honcho.ai_peer) — a human under "
             "that id would corrupt her self-model card. Rename the person or the "
             "aiPeer."
         )
@@ -1515,7 +1515,7 @@ async def build_dependencies(
         engine,
         max_per_conversation=cfg.store.max_per_conversation,
         metrics=metrics,
-        message_reading_unit=_note_unit_of(allowlist) if cfg.message_readings.enabled else None,
+        extraction_unit=_note_unit_of(allowlist) if cfg.memory.extraction.enabled else None,
     )
     # The dashboard consumer reads the derived analytics tables through the
     # same pool as every other Nora store. A second engine would fork the pool
@@ -1999,17 +1999,17 @@ async def build_dependencies(
         raise StartupError(f"Dreamer instruction error: {exc}") from exc
 
     # Two machine ids for one agent: `[agent].name` (trace lineage) and
-    # `[memory].ai_peer` (the Honcho observer peer). A clone ("delia") must set
+    # `[honcho].ai_peer` (the Honcho observer peer). A clone ("delia") must set
     # BOTH; if they diverge, the agent traces under one name but builds its
     # memory under another — a silent split. Warn rather than fail: a deliberate
     # divergence is rare but conceivable, and this is a config smell, not an
     # invariant.
-    if cfg.agent.name != cfg.memory.ai_peer:
+    if cfg.agent.name != cfg.honcho.ai_peer:
         log.warning(
-            "agent.name (%r) != memory.ai_peer (%r): traces and Honcho memory "
+            "agent.name (%r) != honcho.ai_peer (%r): traces and Honcho memory "
             "will use different agent identities — set both to the same value "
             "unless this split is intended",
-            cfg.agent.name, cfg.memory.ai_peer,
+            cfg.agent.name, cfg.honcho.ai_peer,
         )
     # workspace > unit > room (DEC-214): every Honcho call is routed from its
     # room or unit to the Honcho workspace its Nora workspace is bound to, and
@@ -2020,12 +2020,12 @@ async def build_dependencies(
     try:
         router = build_workspace_router(
             policy=allowlist, bindings=persons.honcho_workspaces,
-            default_workspace=cfg.memory.workspace_id,
+            default_workspace=cfg.honcho.workspace_id,
         )
     except MemoryRoutingError as exc:
         raise StartupError(f"memory routing error: {exc}") from exc
     memory = HonchoClient(
-        cfg.memory.base_url, cfg.memory.workspace_id, ai_peer=cfg.memory.ai_peer,
+        cfg.honcho.base_url, cfg.honcho.workspace_id, ai_peer=cfg.honcho.ai_peer,
         workspace_router=router,
     )
     # Best-effort, never fatal — no try/except. Every bound Honcho workspace,
@@ -2175,24 +2175,24 @@ async def build_dependencies(
     # Profile accounts' read half — one store, read-only by the Protocol the
     # readers are typed against (`ProfileHeads` has `account_heads` and nothing
     # else), handed to the tag assembler, the fire path, the Cognition
-    # grounder and the debrief fold. Wired only when `[profile] enabled` AND
-    # `[profile] render` are both on: `enabled` alone is the shadow (the
-    # sessions write, nothing reads), and `render` without `enabled` has no
-    # store to read. Flipping `render` back off is the whole rollback.
+    # grounder and the debrief fold. Wired only when `[memory.profile] write` AND
+    # `[memory.profile] read` are both on: `write` alone is the shadow (the
+    # sessions write, nothing reads), and `read` without `write` has no
+    # store to read. Flipping `read` back off is the whole rollback.
     # `profile_store_reader` keeps the concrete type for the portal, whose
     # page reads the open disputes too (`ProfileHeads` has no such read).
     profile_store_reader = (
         SqlProfileStore(
             engine, screen=functools.partial(text_offence, content_checks=content_checks),
         )
-        if cfg.profile.enabled and cfg.profile.render else None
+        if cfg.memory.profile.write and cfg.memory.profile.read else None
     )
     profile_reader: ProfileHeads | None = profile_store_reader
     # The same gate, for the writers (the dream sessions and the graph
     # surface's `remember`): on, a profile write projects its lines into the
     # memory index in its own transaction (45 §1, 25 §7); off is the shadow,
     # and the shadow's lines join at the flip through `nora memory rebuild`.
-    profile_index = cfg.profile.enabled and cfg.profile.render
+    profile_index = cfg.memory.profile.write and cfg.memory.profile.read
     # The join from a note to its room's account (DEC-207):
     # EVERY id a room is known by — `Note.established_in` holds whichever one
     # the note was born under — within the note's UNIT, since ids are unique
@@ -2221,7 +2221,7 @@ async def build_dependencies(
     def note_platform_for(cid: str, unit: str) -> str | None:
         return note_platforms.get((cid, unit))
 
-    # `[memory_index] enabled` (ships off): the one retrieval service, held
+    # `[memory.index] read` (ships off): the one retrieval service, held
     # by the tag path's pre-fetch (`<recalled>`) and by the tool registry's
     # `memory_search` below, one instance for both; `None` keeps the Honcho
     # surface and no pre-fetch. The same SqlMemoryIndex answers /health's
@@ -2231,24 +2231,24 @@ async def build_dependencies(
     memory_search = (
         MemorySearch(
             memory_index_reader, metrics,
-            profile_render=cfg.profile.enabled and cfg.profile.render,
-            # `[memory_index] embed`: dense and exact seeds, the
+            profile_render=cfg.memory.profile.write and cfg.memory.profile.read,
+            # `[memory.index] embed`: dense and exact seeds, the
             # lexical seed only as the fallback; off, every answer is
             # the fallback's `partial`.
             embedder=LlamaEmbedder(
-                cfg.memory_index.embedder_url,
+                cfg.memory.index.embedder_url,
                 timeout_seconds=QUERY_TIMEOUT_SECONDS,
-                query_model_file=model_file(cfg.memory_index.embedder_model),
-            ) if cfg.memory_index.embed else None,
+                query_model_file=model_file(cfg.memory.index.embedder_model),
+            ) if cfg.memory.index.embed else None,
             model=(
-                fingerprint(cfg.memory_index.embedder_model)
-                if cfg.memory_index.embed else None
+                fingerprint(cfg.memory.index.embedder_model)
+                if cfg.memory.index.embed else None
             ),
             # The embedding worker's tick: a node waiting less than a
             # few of them is fresh, not a backlog that answers `partial`.
-            drain_seconds=cfg.memory_index.drain_seconds,
+            drain_seconds=cfg.memory.index.refresh_seconds,
         )
-        if cfg.memory_index.enabled else None
+        if cfg.memory.index.read else None
     )
     assembler = build_assembler(
         cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
@@ -2286,8 +2286,8 @@ async def build_dependencies(
         quote_window=quote_window,
         presence=presence_reader,
         culture=culture_reader,
-        # `<profile>`, the switch (45 §5): `None` until `[profile] render` is
-        # on beside `[profile] enabled`, and the same reader the fire path,
+        # `<profile>`, the switch (45 §5): `None` until `[memory.profile] read` is
+        # on beside `[memory.profile] write`, and the same reader the fire path,
         # the Cognition grounder and the debrief fold hold.
         profile=profile_reader,
         # `<lessons>`: `None` while `[lessons]
@@ -2480,7 +2480,7 @@ async def build_dependencies(
     # the SAME `RouteClient` (or `None`) `place_info`/`route` already use —
     # a second instance would be a second, unrelated key check and a second
     # client the composition root has no other reason to own. `honcho=memory`
-    # and `ai_peer=cfg.memory.ai_peer` are the SAME Honcho client and id
+    # and `ai_peer=cfg.honcho.ai_peer` are the SAME Honcho client and id
     # already threaded to `TranscriptInjection`/`ToolRegistry` below.
     event_store = SqlGatheringStore(engine)
     # Events stored before units existed carry `unit_id=""` — units live in
@@ -2501,7 +2501,7 @@ async def build_dependencies(
         store=event_store,
         route_source=route_client,
         honcho=memory,
-        ai_peer=cfg.memory.ai_peer,
+        ai_peer=cfg.honcho.ai_peer,
         place_areas=place_areas,
         content_checks=content_checks,
     )
@@ -3093,7 +3093,7 @@ async def build_dependencies(
         # `[record_query] enabled` (ships off): without the read the registry
         # withholds the tool from every turn.
         record=SqlRecordQuery(engine) if cfg.record_query.enabled else None,
-        # `[memory_index] enabled` (ships off):
+        # `[memory.index] read` (ships off):
         # one memory surface: `memory_search` over the index; off, the Honcho
         # verbs as before (DEC-316, `nora.agent.tools.GRAPH_MEMORY_TOOLS`).
         # Built once above: the assembler's pre-fetch holds the same one.
@@ -3104,7 +3104,7 @@ async def build_dependencies(
                     engine, screen=functools.partial(text_offence, content_checks=content_checks),
                     index=profile_index)
                  if memory_search is not None else None),
-        # THE SWITCH (45 §5): while `[profile] render` is on, `character_read`
+        # THE SWITCH (45 §5): while `[memory.profile] read` is on, `character_read`
         # answers from the Profile accounts — the same reader the tag
         # assembler and the fire path hold, so tool and prompt cannot disagree.
         profile_read=profile_reader,
@@ -3155,7 +3155,7 @@ async def build_dependencies(
         rooms=presence_reader,
         refresher=refresher,
         geocoder=geocoder,
-        ai_peer=cfg.memory.ai_peer,
+        ai_peer=cfg.honcho.ai_peer,
         mcp_tools=mcp_tool_groups,
         # The SAME store the tick reads from — two would be two queues, and the
         # rows `remind` wrote would sit in one while the heartbeat watched the
@@ -3353,7 +3353,7 @@ async def build_dependencies(
         # at all (DEC-71).
         policy=allowlist,
         debounce=debounce, canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
-        ai_peer=cfg.memory.ai_peer,
+        ai_peer=cfg.honcho.ai_peer,
         context_window=cfg.store.context_window, timeout_seconds=tier.timeout_seconds,
         limits=limits, defer_tools=cfg.llm.defer_tools,
         metrics=metrics, spawn=background.spawn, llm_state=llm_state,
@@ -3437,7 +3437,7 @@ async def build_dependencies(
             doctrine_store=doctrine_store, metrics=metrics,
             runner=runner, adapters=dict(registry.adapters), registry=tool_registry,
             canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
-                ai_peer=cfg.memory.ai_peer,
+                ai_peer=cfg.honcho.ai_peer,
             context_window=cfg.store.context_window,
             limits=limits, defer_tools=cfg.llm.defer_tools,
             # `[heartbeat]`, not `[llm]`: nobody is waiting on a fire turn, so
@@ -3479,7 +3479,7 @@ async def build_dependencies(
             # before reading (`FirePath._read_culture`).
             culture=culture_reader,
             # THE SWITCH (45 §5): the SAME profile reader the tag assembler
-            # holds; `None` until `[profile] render` is on.
+            # holds; `None` until `[memory.profile] read` is on.
             profile=profile_reader,
             lessons=lessons_reader,
             standing_store_timeout_seconds=cfg.standing.store_timeout_seconds,
@@ -3491,9 +3491,9 @@ async def build_dependencies(
             # read is gated on `occasion.kind == "participation"` in
             # `_read_memory`, which is a condition no other occasion can meet,
             # and a second gate here would be a place for the two to disagree.
-            people_in_window_conclusions=cfg.memory.people_in_window_conclusions,
-            people_in_window_speakers=cfg.memory.people_in_window_speakers,
-            memory_read_timeout_seconds=cfg.memory.read_timeout_seconds,
+            people_in_window_conclusions=cfg.honcho.people_in_window_conclusions,
+            people_in_window_speakers=cfg.honcho.people_in_window_speakers,
+            memory_read_timeout_seconds=cfg.honcho.read_timeout_seconds,
             # The shared decision log, written from
             # `_determined` — the one method all four determination
             # exits already converge on. Participation and proactive
@@ -3735,7 +3735,7 @@ async def build_dependencies(
         keep_days=cfg.social.story_media_keep_days,
         max_days=cfg.social.story_media_keep_max_days,
         tick_seconds=cfg.social.poll.tick_seconds, metrics=metrics,
-        embedded=_story_frames_embedded(engine, fingerprint(cfg.memory_index.embedder_model)),
+        embedded=_story_frames_embedded(engine, fingerprint(cfg.memory.index.embedder_model)),
     ) if blobs is not None and cfg.social.story_expiry_enabled else None
 
     # The participation occasion: trigger, then
@@ -3904,7 +3904,7 @@ async def build_dependencies(
         #
         # Gated on `[culture] enabled` alone — no note-tier dependency: the
         # corpus is `messages`, which every deployment has.
-        if cfg.culture.enabled or cfg.profile.enabled:
+        if cfg.culture.enabled or cfg.memory.profile.write:
             dream_schedules = {
                 **dream_schedules,
                 "culture": AdaptorSchedule(
@@ -3994,12 +3994,12 @@ async def build_dependencies(
                 **dream_schedules,
                 CHARACTER_PERSON_ADAPTOR_NAME: AdaptorSchedule(
                     min_interval_seconds=cfg.culture.stale_seconds,
-                    wake_batch=cfg.culture.person_wake_batch,
+                    wake_batch=cfg.memory.profile.person.update_every_messages,
                     # THE WAKE BATCH, as Nora's session reads its own: a
-                    # person's session reads their newest `person_wake_batch`
+                    # person's session reads its own message wake threshold
                     # messages, not a room's `batch_limit`, which sizes a room's
                     # whole corpus.
-                    batch_limit=cfg.culture.person_wake_batch,
+                    batch_limit=cfg.memory.profile.person.update_every_messages,
                 ),
             }
             dream_adaptors = (
@@ -4029,7 +4029,7 @@ async def build_dependencies(
                 **dream_schedules,
                 CHARACTER_UNIT_ADAPTOR_NAME: AdaptorSchedule(
                     min_interval_seconds=cfg.culture.stale_seconds,
-                    wake_batch=cfg.culture.unit_wake_batch,
+                    wake_batch=cfg.memory.profile.unit.update_every_room_profile_changes,
                     batch_limit=cfg.culture.batch_limit,
                 ),
             }
@@ -4043,8 +4043,8 @@ async def build_dependencies(
                 **dream_schedules,
                 CHARACTER_NORA_ADAPTOR_NAME: AdaptorSchedule(
                     min_interval_seconds=cfg.culture.stale_seconds,
-                    wake_batch=cfg.culture.nora_wake_batch,
-                    batch_limit=cfg.culture.nora_wake_batch,
+                    wake_batch=cfg.memory.profile.nora.update_every_replies,
+                    batch_limit=cfg.memory.profile.nora.update_every_replies,
                 ),
             }
             dream_adaptors = (
@@ -4102,7 +4102,7 @@ async def build_dependencies(
             # wake plus a turn's `told` line; it writes `profile_line`, which
             # nothing renders until the switch. Inside the culture block: it
             # reads the Character head and the rooms' cultures.
-            if cfg.profile.enabled:
+            if cfg.memory.profile.write:
                 profile_store = SqlProfileStore(
                     engine, screen=functools.partial(text_offence, content_checks=content_checks),
                     index=profile_index)
@@ -4114,17 +4114,17 @@ async def build_dependencies(
                 dream_schedules = {
                     **dream_schedules,
                     PROFILE_PERSON_ADAPTOR_NAME: AdaptorSchedule(
-                        min_interval_seconds=cfg.culture.stale_seconds,
-                        wake_batch=cfg.culture.person_wake_batch,
-                        batch_limit=cfg.culture.person_wake_batch,
+                        min_interval_seconds=cfg.memory.profile.update_every_seconds,
+                        wake_batch=cfg.memory.profile.person.update_every_messages,
+                        batch_limit=cfg.memory.profile.person.update_every_messages,
                     ),
                     # The verdict judge (45 §3): one unit's docket of
                     # window-closed open hypotheses, fired the tick one is due
                     # (wake_batch 1), never by its writer.
                     PROFILE_VERDICT_ADAPTOR_NAME: AdaptorSchedule(
-                        min_interval_seconds=cfg.culture.stale_seconds,
+                        min_interval_seconds=cfg.memory.profile.update_every_seconds,
                         wake_batch=1,
-                        batch_limit=cfg.culture.person_wake_batch,
+                        batch_limit=cfg.memory.profile.person.update_every_messages,
                     ),
                 }
                 dream_adaptors = (
@@ -4134,7 +4134,7 @@ async def build_dependencies(
                         media_join=media_join,
                         evidence=ProfileEvidence(
                             store=profile_reads, profile=profile_store, keys=person_keys,
-                            wake_batch=cfg.culture.person_wake_batch,
+                            wake_batch=cfg.memory.profile.person.update_every_messages,
                             source_inputs=SqlProfileInputs(engine, social=profile_social),
                             source_timeout_seconds=cfg.standing.store_timeout_seconds,
                             social=profile_social,
@@ -4186,23 +4186,23 @@ async def build_dependencies(
             # and Nora's own account, each woken by its own evidence — the
             # room's messages, the rooms' culture revisions, the unit's
             # closed response episodes.
-            if cfg.profile.enabled:
+            if cfg.memory.profile.write:
                 dream_schedules = {
                     **dream_schedules,
                     PROFILE_ROOM_ADAPTOR_NAME: AdaptorSchedule(
-                        min_interval_seconds=cfg.culture.stale_seconds,
+                        min_interval_seconds=cfg.memory.profile.update_every_seconds,
                         wake_batch=cfg.culture.wake_batch,
                         batch_limit=cfg.culture.batch_limit,
                     ),
                     PROFILE_UNIT_ADAPTOR_NAME: AdaptorSchedule(
-                        min_interval_seconds=cfg.culture.stale_seconds,
-                        wake_batch=cfg.culture.unit_wake_batch,
+                        min_interval_seconds=cfg.memory.profile.update_every_seconds,
+                        wake_batch=cfg.memory.profile.unit.update_every_room_profile_changes,
                         batch_limit=cfg.culture.batch_limit,
                     ),
                     PROFILE_NORA_ADAPTOR_NAME: AdaptorSchedule(
-                        min_interval_seconds=cfg.culture.stale_seconds,
-                        wake_batch=cfg.culture.nora_wake_batch,
-                        batch_limit=cfg.culture.nora_wake_batch,
+                        min_interval_seconds=cfg.memory.profile.update_every_seconds,
+                        wake_batch=cfg.memory.profile.nora.update_every_replies,
+                        batch_limit=cfg.memory.profile.nora.update_every_replies,
                     ),
                 }
                 collective_kinds: tuple[
@@ -4370,7 +4370,7 @@ async def build_dependencies(
         # other than what the runtime enforces.
         dream_tools = RegistryToolSource(
             registry=tool_registry, store=audit, persons=persons,
-            honcho=memory, metrics=metrics, ai_peer=cfg.memory.ai_peer,
+            honcho=memory, metrics=metrics, ai_peer=cfg.honcho.ai_peer,
             # The home rooms, from the SAME allowlist read the
             # adaptor's room map came from, with each room's `location`
             # flag threaded as DEC-74 threads it on a tag. Passed whether or
@@ -4591,7 +4591,7 @@ async def build_dependencies(
                 records=SqlRecordQuery(engine), persons=persons, media_join=media_join,
                 note_index=_note_index, events_in=_room_events,
                 memo_index=lambda unit: memo_store.kept(unit=unit),
-                pending_reminds=lambda: reminders.pending_of(cfg.memory.ai_peer),
+                pending_reminds=lambda: reminders.pending_of(cfg.honcho.ai_peer),
                 lineage=lineage,
                 unit_rooms=lambda unit: cognition_unit_rooms.get(unit, set()),
                 ai_display_name=cfg.doctrine.display_name,
@@ -4631,7 +4631,7 @@ async def build_dependencies(
                 # Her own account in the unit, shown only where every room of the
                 # unit agrees on `location` (R-31; `unit_self_reader`).
                 self_account=unit_self_reader(culture_reader, allowlist),
-                # THE SWITCH (45 §5): when `[profile] render` is on, her
+                # THE SWITCH (45 §5): when `[memory.profile] read` is on, her
                 # Profile account replaces the prose one; the SAME reader the
                 # tag and fire paths hold.
                 self_profile=unit_self_profile_reader(
@@ -4655,7 +4655,7 @@ async def build_dependencies(
                     note_titles=_note_titles, open_events_in=_open_events,
                     notes=note_store, events=events, standing=standing_store,
                     memos=memo_store,
-                    reminders=reminders, ai_peer=cfg.memory.ai_peer,
+                    reminders=reminders, ai_peer=cfg.honcho.ai_peer,
                     reminder_caps=reminder_caps,
                     room_proactive=lambda platform, conversation_id: allowlist.proactive_allowed(
                         platform=platform, conversation_id=conversation_id,
@@ -4808,19 +4808,19 @@ async def build_dependencies(
         social_poller=social_poller,
         social_perception=social_perception,
         story_expiry=story_expiry,
-        message_readings=(MessageReadingWorker(
-            store=SqlMessageReadings(engine), client=client,
-            config=cfg.message_readings, metrics=metrics,
-        ) if cfg.message_readings.enabled else None),
+        extraction=(ExtractionWorker(
+            store=SqlExtraction(engine), client=client,
+            config=cfg.memory.extraction, metrics=metrics,
+        ) if cfg.memory.extraction.enabled else None),
         memory_embed=(
             MemoryEmbedWorker(
-                engine, LlamaEmbedder(cfg.memory_index.embedder_url), blobs,
-                model=fingerprint(cfg.memory_index.embedder_model),
-                model_file=model_file(cfg.memory_index.embedder_model),
-                batch=cfg.memory_index.embed_batch,
-                images_per_hour=cfg.memory_index.embed_images_per_hour,
+                engine, LlamaEmbedder(cfg.memory.index.embedder_url), blobs,
+                model=fingerprint(cfg.memory.index.embedder_model),
+                model_file=model_file(cfg.memory.index.embedder_model),
+                batch=cfg.memory.index.embed_batch,
+                images_per_hour=cfg.memory.index.embed_images_per_hour,
                 metrics=metrics,
-            ) if cfg.memory_index.embed else None
+            ) if cfg.memory.index.embed else None
         ),
     )
 

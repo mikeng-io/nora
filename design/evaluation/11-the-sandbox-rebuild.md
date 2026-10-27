@@ -232,8 +232,8 @@ dropped when the case ends. So:
   minted id, no one-person roster;
 - the unit and the culture key are RESOLVED from the room's policy entry at
   `obtain()` (`Subject.unit`, `Subject.culture_key`) and are not a case's to
-  state. An earlier check that `unit == memory.workspace_id` is deleted: the
-  deployment itself fails it on every room, because `memory.workspace_id` is
+  state. An earlier check that `unit == honcho.workspace_id` is deleted: the
+  deployment itself fails it on every room, because `honcho.workspace_id` is
   Honcho's per-deployment workspace and a unit is per room;
 - the subject's clock is frozen AT `before_ms` and every seeded row keeps its
   real `ts`. Nothing is shifted. The clock is a port (`01-boundaries` §3), so
@@ -244,7 +244,7 @@ dropped when the case ends. So:
   source whose name is not a clone's (`*_eval`).
 
 **Honcho** is the one store a database does not isolate. `_baseline()` points
-`memory.workspace_id` at a fixed `<deployment>-eval` sibling — stable, not
+`honcho.workspace_id` at a fixed `<deployment>-eval` sibling — stable, not
 per case, so §3's replay can one day fill it. Until then every sandbox's peer
 card is EMPTY. That is a stated tier gap, not a hidden one.
 
@@ -565,7 +565,7 @@ draw of the very case being probed.
 
 - a workspace named `<deployment>-eval-<run>-<case>-<draw>-<nonce>` is
   created, marked `nora_eval_draw` in its metadata, BEFORE the subject is
-  composed, and the subject composes against it (`memory.workspace_id`,
+  composed, and the subject composes against it (`honcho.workspace_id`,
   applied last so no `Spec` override can redirect it). A create that fails
   is an ERROR: a draw with no workspace of its own is not isolated;
 - it is deleted when the draw ends, raising or not, after the subject is
@@ -586,7 +586,7 @@ draw of the very case being probed.
   the admin refuses it before any request, so production's `nora` cannot be
   reached from this path.
 
-The composition root builds ONE `HonchoClient`, from `memory.workspace_id`,
+The composition root builds ONE `HonchoClient`, from `honcho.workspace_id`,
 and no caller passes a `workspace_id=` to a verb, so the config IS every read
 and write. `tests/integration/test_eval_draws_isolate_honcho.py` holds that on
 a composed subject against a fake shaped after Honcho's OpenAPI.

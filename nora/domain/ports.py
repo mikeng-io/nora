@@ -2377,7 +2377,7 @@ DREAM_MAX_STORE_CALLS_PER_TICK = 20
 
 #: The wall-clock bound on the participation turn's Honcho reads
 #: (`FirePath._read_memory`), and the default for
-#: `[memory] read_timeout_seconds`.
+#: `[honcho] read_timeout_seconds`.
 #:
 #: It lives HERE for `DEFAULT_DREAM_STORE_TIMEOUT_SECONDS`' reason above, the
 #: same arrangement `DEFAULT_STANDING_STORE_TIMEOUT_SECONDS` has in

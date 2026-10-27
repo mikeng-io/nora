@@ -756,7 +756,7 @@ async def know(
     # the pair reports that the knowledge cut works having cut nothing.
     known = set(await subject.deps.persons.all_ids()) if hasattr(
         subject.deps.persons, "all_ids"
-    ) else {_KNOWN_PERSON, subject.cfg.memory.ai_peer}
+    ) else {_KNOWN_PERSON, subject.cfg.honcho.ai_peer}
     for peer, lines in knowledge.conclusions.items():
         if peer not in known:
             # LOUD. A conclusion under an id that is nobody is written and
@@ -784,12 +784,12 @@ async def know(
         )
         for line in lines:
             if not await subject.deps.memory.conclude(
-                peer_id=subject.cfg.memory.ai_peer, content=line, target=peer,
+                peer_id=subject.cfg.honcho.ai_peer, content=line, target=peer,
                 conversation_id=conversation_id,
             ):
                 raise RuntimeError(
                     f"could not write a conclusion for {peer!r} — Honcho is "
-                    f"at {subject.cfg.memory.base_url} and did not accept it"
+                    f"at {subject.cfg.honcho.base_url} and did not accept it"
                 )
 
     # The OTHER rooms of this workspace, each written into its own room.
@@ -861,7 +861,7 @@ async def know(
                     continue
                 await notes.create(
                     # The ROOM'S unit, resolved from its policy entry at
-                    # `obtain()` — not `memory.workspace_id`, which is
+                    # `obtain()` — not `honcho.workspace_id`, which is
                     # Honcho's per-deployment workspace and in production is
                     # not the unit of any room.
                     unit=subject.unit,

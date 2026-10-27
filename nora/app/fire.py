@@ -607,7 +607,7 @@ class FirePath:
         # keyed on the unit like `notes`. `None` renders no block.
         memos: MemoStore | None = None,
         # THE SWITCH (45 §5): the Profile accounts' reader, wired only when
-        # `[profile] render` is on. Not `None` means a fire turn renders
+        # `[memory.profile] read` is on. Not `None` means a fire turn renders
         # `<profile>` blocks and none of the reads they replace — the peer
         # card, `people_in_window`, the culture/unit/self heads and the
         # character heads — is made at all.
@@ -659,7 +659,7 @@ class FirePath:
         # BOUNDED for `standing_store_timeout_seconds`' reason, and it is its
         # OWN knob rather than a reuse of that one: an operator tuning how long
         # a single-row Postgres read may take must not silently retune how long
-        # an HTTP call to Honcho may take. See `MemoryConfig.read_timeout_seconds`.
+        # an HTTP call to Honcho may take. See `HonchoConfig.read_timeout_seconds`.
         self._memory_read_timeout_seconds = memory_read_timeout_seconds
         # The note tier on the fire path. A participation determination
         # grounds on «transcript + standing/notes», so `build_context` passes
@@ -674,7 +674,7 @@ class FirePath:
         self._notes = notes
         self._memos = memos
         self._policy = policy
-        # THE SWITCH (45 §5): `None` until `[profile] render` is on — see the
+        # THE SWITCH (45 §5): `None` until `[memory.profile] read` is on — see the
         # parameter. The reads it replaces check it and are not made.
         self._profile_reader = profile
         # Lineage: the SAME value the
@@ -882,7 +882,7 @@ class FirePath:
 
         card: tuple[str, ...] = ()
         if ref is not None and self._profile_reader is None:
-            # (The switch: with `[profile] render` the occasion person's
+            # (The switch: with `[memory.profile] read` the occasion person's
             # `<profile>` replaces the card and this read is not made.)
             try:
                 card = tuple(await self._memory.peer_card(
@@ -915,7 +915,7 @@ class FirePath:
 
         # Read AFTER the transcript, because both reads are
         # curated to the window's own text and keyed on the people in it.
-        # The switch: with `[profile] render` the persons' `<profile>` blocks
+        # The switch: with `[memory.profile] read` the persons' `<profile>` blocks
         # replace `<people_in_window>` and the Honcho recall is not made.
         people = (
             () if self._profile_reader is not None
@@ -1091,7 +1091,7 @@ class FirePath:
         self, occasion: Event, transcript: Sequence[TranscriptRow],
     ) -> tuple[PersonRef, ...]:
         """The distinct people who SPOKE in this window, most recent first,
-        bounded by `[memory] people_in_window_speakers`.
+        bounded by `[honcho] people_in_window_speakers`.
 
         **Most recent first, and the bound is what makes the order matter.** A
         window of twelve rows can hold more speakers than the bound admits, and

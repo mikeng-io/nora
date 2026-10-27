@@ -387,13 +387,13 @@ def test_context_experiment_requires_a_prefill_receipt_for_each_draw(monkeypatch
     (False, True, True, "memory surface: graph (--memory-index"),
     # The live config already runs the graph surface: a run without the flag
     # must measure it, not the Honcho surface's case filter (DEC-316).
-    (True, False, True, "memory surface: graph ([memory_index] enabled = true"),
+    (True, False, True, "memory surface: graph ([memory.index] read = true"),
 ])
 def test_main_resolves_the_memory_surface_from_the_generated_config(
     monkeypatch, capsys, tmp_path, deployed, flag, graph, header,
 ):
     generated = tmp_path / "config.evaluation.toml"
-    generated.write_text(f"[memory_index]\nenabled = {'true' if deployed else 'false'}\n")
+    generated.write_text(f"[memory.index]\nread = {'true' if deployed else 'false'}\n")
     monkeypatch.setattr(m, "source_url_for", lambda *a, **k: "URL")
     monkeypatch.setattr(m, "refuse_if_source_diverges_from_head", lambda url: None)
     _stub_leaked_blank_sweep(monkeypatch)
@@ -433,7 +433,7 @@ def test_a_graph_surface_run_refuses_before_any_draw(monkeypatch, capsys, tmp_pa
     from nora.subject import GraphIndexRefusedError
 
     generated = tmp_path / "config.evaluation.toml"
-    generated.write_text("[memory_index]\nenabled = false\n")
+    generated.write_text("[memory.index]\nread = false\n")
     monkeypatch.setattr(m, "source_url_for", lambda *a, **k: "URL")
     monkeypatch.setattr(m, "refuse_if_source_diverges_from_head", lambda url: None)
     _stub_leaked_blank_sweep(monkeypatch)

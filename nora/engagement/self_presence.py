@@ -173,6 +173,7 @@ class PresenceReader:
                     here=c is convo,
                     state=states[c.platform],
                     members=count,
+                    description=c.description,
                 )
                 for c, count in zip(convos, counts, strict=True)
             ),

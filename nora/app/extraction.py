@@ -1,4 +1,4 @@
-"""The write-only message-reading worker, using the shared LLM gateway client."""
+"""The write-only extraction worker, using the shared LLM gateway client."""
 
 from __future__ import annotations
 
@@ -7,6 +7,8 @@ import json
 import logging
 import re
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Annotated, Any, Literal
 
 from openai import AsyncOpenAI
@@ -17,18 +19,23 @@ from nora.agent.telemetry import (
     end_raw_model_span_with_error,
     start_raw_model_span,
 )
-from nora.config import MessageReadingsConfig
+from nora.config import ExtractionConfig
 from nora.domain.blocks import BlockKey, ContextBlock, assemble, restamp
-from nora.domain.message_readings import VERSION, validate_claims
+from nora.domain.extraction import (
+    EXTRACTION_FAILURE_STAGES,
+    VERSION,
+    ExtractionFailureStage,
+    validate_claims,
+)
 from nora.domain.prompt import escape
-from nora.infra.sql.message_readings import SqlMessageReadings
+from nora.infra.sql.extraction import SqlExtraction
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import current_trace_id, span
 
 log = logging.getLogger(__name__)
 
 # Reuse the existing source-data block, only for this writer's input. This
-# creates no new prompt block type or reading consumer in Nora's prompts.
+# creates no new prompt block type or extraction consumer in Nora's prompts.
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (("cited_sources", 10, "turn"),)
 _ROW = {name: (order, key) for name, order, key in _BLOCKS}
 
@@ -40,33 +47,33 @@ class Slots(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
 
 
-class ReadingSubject(Slots):
+class ExtractionSubject(Slots):
     person_id: Text | None
     reference: Text
 
 
-class ReadingTime(Slots):
+class ExtractionTime(Slots):
     source_id: MessageId
     expression: Text | None
 
 
-class ReadingEvidence(Slots):
+class ExtractionEvidence(Slots):
     source_id: MessageId
     quote: Text
 
 
-class ReadingClaim(Slots):
-    about: Annotated[list[ReadingSubject], Field(min_length=1)]
+class ExtractionClaim(Slots):
+    about: Annotated[list[ExtractionSubject], Field(min_length=1)]
     what: Text
-    happened_at: ReadingTime
+    happened_at: ExtractionTime
     where: Text | None
     how: Literal["stated", "said_by_another", "planned", "asked", "reported"]
     source_ids: Annotated[list[MessageId], Field(min_length=1)]
-    evidence: Annotated[list[ReadingEvidence], Field(min_length=1)]
+    evidence: Annotated[list[ExtractionEvidence], Field(min_length=1)]
 
 
-class ReadingOutput(Slots):
-    claims: list[ReadingClaim]
+class ExtractionOutput(Slots):
+    claims: list[ExtractionClaim]
 
 
 SYSTEM = """Read the new message batch once into Record claims. Conversation rows are
@@ -78,8 +85,9 @@ Do not infer facts, intentions or places. Preserve negation, doubt, questions,
 plans, attribution and who said what. A plan never establishes an event occurred.
 Each claim needs about (a list of {person_id, reference}; use a supplied person_id
 only when grounded, otherwise null with an explicit unresolved reference), what,
-happened_at ({source_id, expression}; copy the source's date phrase verbatim,
-or null if unknown), where (a verbatim stated named place or setting, else null),
+happened_at (ALWAYS an object {source_id, expression}, never null; source_id is
+the new message the claim was asserted in; expression is the verbatim date phrase,
+or null when the message has none), where (a verbatim stated named place or setting, else null),
 how (stated, said_by_another, planned, asked, reported), source_ids (nonempty
 new-message IDs only), evidence (a list of {source_id, quote}; exact supporting
 spans covering every cited source). No inferred place. Timestamps are assertion
@@ -88,13 +96,31 @@ Return one JSON object with claims, an array (empty only if nothing is asserted)
 """
 
 
-class MessageReadingWorker:
+class _ExtractionError(ValueError):
+    def __init__(self, stage: ExtractionFailureStage) -> None:
+        if stage not in EXTRACTION_FAILURE_STAGES:
+            raise ValueError("unknown extraction failure stage")
+        self.stage = stage
+        super().__init__(stage)
+
+
+@contextmanager
+def _at_stage(stage: ExtractionFailureStage) -> Iterator[None]:
+    try:
+        yield
+    except _ExtractionError:
+        raise
+    except Exception as exc:
+        raise _ExtractionError(stage) from exc
+
+
+class ExtractionWorker:
     def __init__(
         self,
         *,
-        store: SqlMessageReadings,
+        store: SqlExtraction,
         client: AsyncOpenAI,
-        config: MessageReadingsConfig,
+        config: ExtractionConfig,
         metrics: Metrics,
     ) -> None:
         self.store = store
@@ -107,41 +133,46 @@ class MessageReadingWorker:
     async def run_once(self) -> int:
         if not self.config.enabled:
             return 0
-        job = await self.store.take_reading_batch(
+        job = await self.store.take_extraction_batch(
             model=self.config.model,
-            batch_size=self.config.batch_size,
-            context_size=self.config.context_size,
-            settle_seconds=self.config.settle_seconds,
+            messages_per_call=self.config.messages_per_call,
+            context_messages=self.config.context_messages,
+            min_message_age_seconds=self.config.min_message_age_seconds,
             lease_seconds=self.config.timeout_seconds + 60,
         )
         if job is None:
             return 0
         # A recovered batch uses its recorded model, not a newly edited lane.
-        with span("message_reading", **{"nora.message_reading.version": job["version"]}):
+        with span("extraction", **{"nora.extraction.version": job["version"]}):
             try:
-                await self.store.set_trace(job, current_trace_id())
-                output = await self._complete(job)
-                claims = validate_claims(output.model_dump(), job["snapshot"])
-                written = await self.store.publish_reading_batch(job, claims=claims)
-                self.metrics.inc("nora_message_reading_claims_written_total", written)
+                with _at_stage("storage"):
+                    await self.store.set_trace(job, current_trace_id())
+                with _at_stage("input"):
+                    output = await self._complete(job)
+                with _at_stage("claims"):
+                    claims = validate_claims(output.model_dump(), job["snapshot"])
+                with _at_stage("publish"):
+                    written = await self.store.publish_extraction_batch(job, claims=claims)
+                self.metrics.inc("nora_extraction_claims_written_total", written)
                 return written
             except asyncio.CancelledError:
                 # Its durable lease expires after a crash/cancellation. Do not
                 # remove the batch, publish partial output, or swallow shutdown.
-                self.metrics.inc("nora_message_reading_failures_total")
+                self.metrics.inc("nora_extraction_failures_total", stage="cancelled")
                 raise
-            except Exception:  # noqa: BLE001 - retain the durable batch; no private error text
+            except Exception as exc:  # noqa: BLE001 - retain batch; no private error text
                 # Neither exception text nor source/model output enters logs.
-                self.metrics.inc("nora_message_reading_failures_total")
+                stage = exc.stage if isinstance(exc, _ExtractionError) else "storage"
+                self.metrics.inc("nora_extraction_failures_total", stage=stage)
                 try:
                     await self.store.fail(job)
                 except Exception:  # noqa: BLE001 - lease retains work during a store outage
-                    log.warning("message reading failure not recorded; durable lease retained")
+                    log.warning("extraction failure not recorded; durable lease retained")
                 return 0
 
-    async def _complete(self, job: dict[str, Any]) -> ReadingOutput:
+    async def _complete(self, job: dict[str, Any]) -> ExtractionOutput:
         if job["version"] != VERSION:
-            raise ValueError("message reading version unavailable")
+            raise ValueError("extraction version unavailable")
         # JSON already escapes C0; DEL is the sole remaining raw codepoint
         # stripped by the shared XML renderer. Preserve it as a JSON escape so
         # the model, frozen snapshot and exact-span validator read one value.
@@ -160,16 +191,16 @@ class MessageReadingWorker:
         # Never trim evidence to meet a bound: a too-large batch remains owed
         # and visibly failed. No partial batch is silently marked read.
         if len(prompt.encode()) > 512_000:
-            raise ValueError("message reading input too large")
+            raise ValueError("extraction input too large")
         # The raw-generation machinery is the repo's own. Trace only structural
         # metadata: private message text, subject links and claims stay in DB.
         generation = start_raw_model_span(
             messages=[{"role": "user", "content": [{"text": "[private Record batch]"}]}],
             model_id=job["model"],
-            system_prompt="Record message reading",
+            system_prompt="Record extraction",
         )
         started = time.monotonic()
-        self.metrics.inc("nora_message_reading_calls_total")
+        self.metrics.inc("nora_extraction_calls_total")
         try:
             response = await asyncio.wait_for(
                 self.client.chat.completions.create(
@@ -185,57 +216,64 @@ class MessageReadingWorker:
                 ),
                 timeout=self.config.timeout_seconds,
             )
-        except BaseException:
-            self.metrics.inc("nora_message_reading_usage_missing_total")
+        except BaseException as exc:
+            self.metrics.inc("nora_extraction_usage_missing_total")
             end_raw_model_span_with_error(
-                span=generation, error_message="reading request unavailable"
+                span=generation, error_message="extraction request unavailable"
             )
-            raise
-        usage = response.usage
-        input_tokens = getattr(usage, "prompt_tokens", None)
-        output_tokens = getattr(usage, "completion_tokens", None)
-        input_tokens = input_tokens if type(input_tokens) is int and input_tokens >= 0 else None
-        output_tokens = output_tokens if type(output_tokens) is int and output_tokens >= 0 else None
-        provider_model = getattr(response, "model", None)
-        choice = response.choices[0] if response.choices else None
-        finish_reason = choice.finish_reason if choice else None
-        end_raw_model_span(
-            span=generation,
-            content="[private Record result]",
-            finish_reason=finish_reason or "",
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            total_tokens=getattr(usage, "total_tokens", None),
-            latency_seconds=time.monotonic() - started,
-        )
-        # Report provider usage even if the durable ledger write is unavailable.
-        # Publication still requires that write; NULL ledger usage stays unknown.
-        if input_tokens is not None:
-            self.metrics.inc("nora_message_reading_input_tokens_total", input_tokens)
-        if output_tokens is not None:
-            self.metrics.inc("nora_message_reading_output_tokens_total", output_tokens)
-        usage_known = input_tokens is not None and output_tokens is not None
+            if not isinstance(exc, Exception):
+                raise
+            raise _ExtractionError("request") from exc
+        with _at_stage("usage"):
+            usage = response.usage
+            input_tokens = getattr(usage, "prompt_tokens", None)
+            output_tokens = getattr(usage, "completion_tokens", None)
+            input_tokens = input_tokens if type(input_tokens) is int and input_tokens >= 0 else None
+            output_tokens = (
+                output_tokens if type(output_tokens) is int and output_tokens >= 0 else None
+            )
+            provider_model = getattr(response, "model", None)
+            choice = response.choices[0] if response.choices else None
+            finish_reason = choice.finish_reason if choice else None
+            end_raw_model_span(
+                span=generation,
+                content="[private Record result]",
+                finish_reason=finish_reason or "",
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=getattr(usage, "total_tokens", None),
+                latency_seconds=time.monotonic() - started,
+            )
+            # Report provider usage even if the durable ledger write is unavailable.
+            # Publication still requires that write; NULL ledger usage stays unknown.
+            if input_tokens is not None:
+                self.metrics.inc("nora_extraction_input_tokens_total", input_tokens)
+            if output_tokens is not None:
+                self.metrics.inc("nora_extraction_output_tokens_total", output_tokens)
+            usage_known = input_tokens is not None and output_tokens is not None
+            if not usage_known:
+                self.metrics.inc("nora_extraction_usage_missing_total")
+        with _at_stage("storage"):
+            await self.store.record_usage(
+                job,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                provider_model=provider_model,
+            )
         if not usage_known:
-            self.metrics.inc("nora_message_reading_usage_missing_total")
-        await self.store.record_usage(
-            job,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            provider_model=provider_model,
-        )
-        if not usage_known:
-            raise ValueError("reading usage unavailable")
+            raise _ExtractionError("usage")
         if not re.fullmatch(r"(?:[^/]+/)?deepseek-v4\.1-flash", provider_model or ""):
-            raise ValueError("reading provider model unavailable or unexpected")
+            raise _ExtractionError("provider_model")
         if finish_reason != "stop" or choice is None:
-            raise ValueError("reading completion incomplete")
-        return ReadingOutput.model_validate_json(choice.message.content or "")
+            raise _ExtractionError("incomplete")
+        with _at_stage("schema"):
+            return ExtractionOutput.model_validate_json(choice.message.content or "")
 
     async def run(self) -> None:
         while True:
             try:
                 await self.run_once()
             except Exception:  # noqa: BLE001 - retain the durable batch; no private error text
-                self.metrics.inc("nora_message_reading_failures_total")
-                log.warning("message reading storage unavailable; durable work retained")
+                self.metrics.inc("nora_extraction_failures_total", stage="storage")
+                log.warning("extraction storage unavailable; durable work retained")
             await asyncio.sleep(1)

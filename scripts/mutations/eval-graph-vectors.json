@@ -72,7 +72,7 @@
  {
   "name": "the graph arm queries the embedder at its loopback publish",
   "file": "evals/scenarios.py",
-  "old": "    \"memory_index.embedder_url\": EMBEDDER_FROM_HOST,\n",
+  "old": "    \"memory.index.embedder_url\": EMBEDDER_FROM_HOST,\n",
   "new": "",
   "target": "tests/unit/test_eval_scenarios.py::test_memory_index_composes_the_graph_surface_and_only_when_asked"
  },

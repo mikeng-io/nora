@@ -301,7 +301,7 @@ class Subject:
     #: because `know()` writes notes and culture under them and would
     #: otherwise re-derive both from a second reading of the same file.
     #:
-    #: NOT `cfg.memory.workspace_id`. That is Honcho's workspace, one per
+    #: NOT `cfg.honcho.workspace_id`. That is Honcho's workspace, one per
     #: deployment (`nora`), while a unit is per room (`friends`, `ridgeline`);
     #: the two are distinct.
     unit: str
@@ -364,7 +364,7 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     # fidelity means running where the deployment runs.
     for name in _CREDENTIALS_ENABLED_FEATURES_DEMAND:
         os.environ.setdefault(name, "eval-subject-placeholder")
-    # `memory.workspace_id` — Honcho is the ONE store the sandbox database
+    # `honcho.workspace_id` — Honcho is the ONE store the sandbox database
     # does not isolate: it is an external service keyed by workspace, and the
     # deployment's workspace is where every real peer card lives. An eval
     # turn's ingest FEEDS Honcho (`nora/ingest/stages/memory_feed.py`), so a
@@ -372,13 +372,13 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     # into production's peer representations.
     #
     # The fixed `-eval` sibling is the DEFAULT only. An eval draw overrides it
-    # with a workspace of its own (`memory.workspace_id`, from
+    # with a workspace of its own (`honcho.workspace_id`, from
     # `memory_workspace.draw_workspace`), because the shared sibling made
     # draws correlated: the tag path read earlier draws' conclusions back.
     # Configuration, not a new seam: which workspace is a value
     # one deployment differs from another by, which is what `overrides` is
     # for, and `build_config` refuses any value outside the eval namespace.
-    cfg = _with(cfg, "memory.workspace_id", shared_eval_workspace(cfg.memory.workspace_id))
+    cfg = _with(cfg, "honcho.workspace_id", shared_eval_workspace(cfg.honcho.workspace_id))
     # THE HOST, FROM THE HOST. The deployment's config reaches OmniRoute at
     # `host.docker.internal`, the name docker gives a container for the machine
     # it runs on, and Honcho at `honcho`, a name on a private docker network
@@ -392,7 +392,7 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     # it does, and nothing is touched.
     if not _resolves(_DOCKER_HOST):
         cfg = _with(cfg, "llm.base_url", _from_host(cfg.llm.base_url))
-        cfg = _with(cfg, "memory.base_url", _from_host(cfg.memory.base_url))
+        cfg = _with(cfg, "honcho.base_url", _from_host(cfg.honcho.base_url))
     # `doctrine.dir` and `dreamer.dir` resolve RELATIVE TO THE CONFIG FILE, and
     # the copy lives in the caller's workdir, which has no such subdirectories.
     # The Dreamer's corpus is validated at startup — deliberately, so a
@@ -432,10 +432,10 @@ def memory_endpoint() -> tuple[str, str]:
     every draw workspace is derived from and guarded by.
     """
     cfg = _load_config(_TEMPLATE, require_secrets=False)
-    base_url = cfg.memory.base_url
+    base_url = cfg.honcho.base_url
     if not _resolves(_DOCKER_HOST):
         base_url = _from_host(base_url)
-    return base_url, cfg.memory.workspace_id
+    return base_url, cfg.honcho.workspace_id
 
 
 def build_config(spec: SubjectSpec) -> Config:
@@ -463,14 +463,14 @@ def build_config(spec: SubjectSpec) -> Config:
     cfg_path = spec.workdir / "config.toml"
     shutil.copy(_TEMPLATE, cfg_path)
     loaded = _load_config(cfg_path)
-    deployment = loaded.memory.workspace_id
+    deployment = loaded.honcho.workspace_id
     cfg = _baseline(loaded, spec.workdir)
     for path, value in (spec.overrides or {}).items():
         cfg = _with(cfg, path, value)
-    _refuse_a_workspace_outside_the_eval_namespace(cfg.memory.workspace_id, deployment)
+    _refuse_a_workspace_outside_the_eval_namespace(cfg.honcho.workspace_id, deployment)
     policy = spec.policy or default_policy(spec.room)
     (spec.workdir / "policy.toml").write_text(policy, encoding="utf-8")
-    _pin_memory_to_the_eval_workspace(spec.workdir, cfg.memory.workspace_id, deployment)
+    _pin_memory_to_the_eval_workspace(spec.workdir, cfg.honcho.workspace_id, deployment)
     _conversation_for(spec)
     return cfg
 
@@ -479,7 +479,7 @@ def _pin_memory_to_the_eval_workspace(workdir: Path, workspace: str, deployment:
     """Every Honcho workspace this subject can route to is `workspace` — the
     eval namespace's — and that is measured, not assumed (DEC-214).
 
-    Rewriting `memory.workspace_id` alone is not the guarantee: a policy with
+    Rewriting `honcho.workspace_id` alone is not the guarantee: a policy with
     `[units]`
     routes each unit to the Honcho workspace its Nora workspace is BOUND to
     in `identity.toml`, and the eval suite composes against the deployment's
@@ -491,7 +491,7 @@ def _pin_memory_to_the_eval_workspace(workdir: Path, workspace: str, deployment:
     declares `[units]` keeps it — the subject stays strict and scoped, the
     way production reads — but every unit is put in one workspace, `eval`,
     and `identity.toml`'s `[workspaces]` becomes that one binding, to
-    `memory.workspace_id` (already the eval namespace's). A policy without
+    `honcho.workspace_id` (already the eval namespace's). A policy without
     `[units]` loses any `[workspaces]` table and stays implicit. Every room,
     unit and scope survives; the divergence from production is that two Nora
     workspaces' people share this ONE throwaway workspace's peers. Then the
@@ -628,7 +628,7 @@ async def obtain(spec: SubjectSpec) -> Subject:
             deps = await build_dependencies(cfg, clock=clock)
     finally:
         os.environ.pop(var, None)
-    # NO EMBEDDING WORKER, whatever `[memory_index] embed` says. The flag also
+    # NO EMBEDDING WORKER, whatever `[memory.index] embed` says. The flag also
     # switches the graph surface's query embedding on (`composition.py`), so
     # it stays as deployed; the worker is the write half, which only
     # `nora/__main__.py`'s drain loop runs, and a subject must never hold one:

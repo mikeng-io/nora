@@ -304,7 +304,7 @@ def _declared(rendered: Sequence[ContextBlock | None]) -> list[ContextBlock]:
 
 
 #: The block names `<profile>` replaces when the assembler fills
-#: `TagContext.profiles` (`[profile] render`, 45 §5). Their rows stay in
+#: `TagContext.profiles` (`[memory.profile] read`, 45 §5). Their rows stay in
 #: `_BLOCKS` — the Honcho surface is the default and the flag is the whole
 #: rollback — but on a switched turn their stubs leave the declared list, so
 #: the span's `blocks_declared`/`blocks_empty` describe the prompt she got.

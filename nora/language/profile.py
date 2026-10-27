@@ -4,10 +4,10 @@ writing typed lines through `profile_write` (design/unified-memory/45 §4).
 **Shadow** (45 §6, 00 «Sequence» step 6): it writes `profile_line` and
 nothing reads it. The Character head, `peer_card` and `peer_history` keep
 rendering, Honcho's feed keeps running, and no prompt changes until the
-switch (step 8). `[profile] enabled` turns the sessions on.
+switch (step 8). `[memory.profile] write` turns the sessions on.
 
 **The wake** is the person's Character rule, counted over the rooms that
-list them (35 §3): `[culture] person_wake_batch` of their messages since the
+list them (35 §3): `[memory.profile.person] update_every_messages` of their messages since the
 key's watermark, or `stale_seconds` with any. **Plus the stimulus wake** (45
 §4 prerequisite 4): a `told` line a turn wrote about them (`remember` on the
 graph surface) or a dispute of one of its lines (`profile_dispute` on the
@@ -1151,13 +1151,15 @@ class ProfilePersonAdaptor:
             return None
 
         async def profile_write(ops: list[dict[str, Any]]) -> dict[str, object]:
-            """Change this person's account in one call: every add, keep,
-            revise and retire together. Call this once, when you know what the
-            account now holds; the whole call is refused if any op is.
+            """Change this account when its evidence supports changes: submit
+            every add, keep, revise and retire together.
+
+            A refused write settles nothing.
 
             Returns `status`: ok, or refused with `refusals` (each a `reason`,
-            a `detail` and the `op` index) saying what to fix before calling
-            again.
+            a `detail` and the `op` index). Fix or drop the refused ops and
+            call profile_write again. If nothing valid remains, call
+            profile_no_change. Stop only after status: ok.
 
             Args:
                 ops: The changes, each an object with `op`: add (part, kind,
@@ -1204,7 +1206,8 @@ class ProfilePersonAdaptor:
 
         async def profile_no_change(why: str) -> dict[str, object]:
             """Close this session with nothing added. Call this when what you
-            were given adds nothing the account does not already say.
+            were given adds nothing the account does not already say, or a
+            refused write leaves no valid changes.
 
             Returns `status`: ok, or refused when the session already settled.
 
@@ -1218,6 +1221,12 @@ class ProfilePersonAdaptor:
             log.info("profile: key=%s unchanged: %s", key, why[:200])
             return {"status": "ok"}
 
+        run = self._runs.get(key)
+        if run is not None:
+            owner = {"human": "this person's", "room": "the room's",
+                     "unit": "the unit's", "nora": "Nora's"}[run.account.entity_kind]
+            profile_write.__doc__ = (profile_write.__doc__ or "").replace(
+                "this account", f"{owner} account")
         return [profile_write, profile_no_change]
 
     # -- accept / commit ---------------------------------------------------

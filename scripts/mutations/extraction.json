@@ -1,0 +1,100 @@
+[
+  {
+    "name": "batch citations cannot name context or outsiders",
+    "file": "nora/domain/extraction.py",
+    "old": "if not ids <= sources.keys():",
+    "new": "if False:",
+    "target": "tests/unit/test_extraction.py::test_claim_cannot_cite_context_or_a_non_member"
+  },
+  {
+    "name": "unknown event dates are not invented",
+    "file": "nora/domain/extraction.py",
+    "old": "start = end = None",
+    "new": "start = end = \"2030-04-01\"",
+    "target": "tests/unit/test_extraction.py::test_unknown_event_time_stays_unknown"
+  },
+  {
+    "name": "flag off does not drain durable work",
+    "file": "nora/app/extraction.py",
+    "old": "if not self.config.enabled:",
+    "new": "if False:",
+    "target": "tests/contract/test_extraction_contract.py::test_flag_off_writes_no_queue_and_worker_makes_no_call"
+  },
+  {
+    "name": "arrival replay keeps one queue entry",
+    "file": "nora/infra/sql/extraction.py",
+    "old": "source_key=source_key,",
+    "new": "source_key=source_key + str(message_id),",
+    "target": "tests/contract/test_extraction_contract.py::test_replay_and_stale_worker_cannot_double_publish"
+  },
+  {
+    "name": "stale lease cannot publish",
+    "file": "nora/infra/sql/extraction.py",
+    "old": "current[\"attempts\"] != job[\"attempts\"]",
+    "new": "False",
+    "target": "tests/contract/test_extraction_contract.py::test_crash_reclaims_the_same_frozen_batch_and_fences_old_worker"
+  },
+  {
+    "name": "source hide retires dependent claims",
+    "file": "nora/infra/sql/migrations/versions/0131_extraction_names.py",
+    "old": "PERFORM extraction_retire(NEW.id);",
+    "new": "PERFORM 1;",
+    "target": "tests/contract/test_extraction_contract.py::test_source_change_retires_claims_and_preserves_versions[hide]"
+  },
+  {
+    "name": "truncated completions cannot publish",
+    "file": "nora/app/extraction.py",
+    "old": "if finish_reason != \"stop\" or choice is None:",
+    "new": "if choice is None:",
+    "target": "tests/contract/test_extraction_contract.py::test_worker_counts_usage_for_rejected_results_and_never_publishes_partial_claims[length-True-False-False]"
+  },
+  {
+    "name": "wrong provider model cannot publish",
+    "file": "nora/app/extraction.py",
+    "old": "if not re.fullmatch(r\"(?:[^/]+/)?deepseek-v4\\.1-flash\", provider_model or \"\"):",
+    "new": "if False:",
+    "target": "tests/contract/test_extraction_contract.py::test_wrong_provider_model_is_counted_but_cannot_write"
+  },
+  {
+    "name": "retry backoff reaches one hour",
+    "file": "nora/infra/sql/extraction.py",
+    "old": "min(job[\"attempts\"], 12)",
+    "new": "min(job[\"attempts\"], 11)",
+    "target": "tests/contract/test_extraction_contract.py::test_retry_backoff_reaches_the_documented_hour"
+  },
+  {
+    "name": "failure recorder outage does not double count",
+    "file": "nora/app/extraction.py",
+    "old": "                try:\n                    await self.store.fail(job)\n                except Exception:  # noqa: BLE001 - lease retains work during a store outage\n                    log.warning(\"extraction failure not recorded; durable lease retained\")",
+    "new": "                await self.store.fail(job)",
+    "target": "tests/contract/test_extraction_contract.py::test_failure_recording_outage_counts_one_failed_attempt"
+  },
+  {
+    "name": "writer joins the declared context assembly",
+    "file": "nora/app/extraction.py",
+    "old": "prompt = assemble(",
+    "new": "prompt = str(",
+    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_nothing_builds_a_prompt_outside_context_assembly"
+  },
+  {
+    "name": "source markup stays inside its existing block",
+    "file": "nora/app/extraction.py",
+    "old": "body=escape(payload),",
+    "new": "body=payload,",
+    "target": "tests/contract/test_extraction_contract.py::test_writer_input_keeps_message_markup_inside_existing_source_block"
+  },
+  {
+    "name": "JSON transport preserves the exact source control character",
+    "file": "nora/app/extraction.py",
+    "old": "json.dumps(job[\"snapshot\"], ensure_ascii=False).replace(\"\\x7f\", r\"\\u007f\")",
+    "new": "json.dumps(job[\"snapshot\"], ensure_ascii=False)",
+    "target": "tests/contract/test_extraction_contract.py::test_json_transport_preserves_del_in_source_evidence"
+  },
+  {
+    "name": "reported usage survives a ledger outage",
+    "file": "nora/app/extraction.py",
+    "old": "            # Report provider usage even if the durable ledger write is unavailable.\n            # Publication still requires that write; NULL ledger usage stays unknown.\n            if input_tokens is not None:\n                self.metrics.inc(\"nora_extraction_input_tokens_total\", input_tokens)\n            if output_tokens is not None:\n                self.metrics.inc(\"nora_extraction_output_tokens_total\", output_tokens)\n            usage_known = input_tokens is not None and output_tokens is not None\n            if not usage_known:\n                self.metrics.inc(\"nora_extraction_usage_missing_total\")\n        with _at_stage(\"storage\"):\n            await self.store.record_usage(\n                job,\n                input_tokens=input_tokens,\n                output_tokens=output_tokens,\n                provider_model=provider_model,\n            )\n        if not usage_known:\n",
+    "new": "        with _at_stage(\"storage\"):\n            await self.store.record_usage(\n                job,\n                input_tokens=input_tokens,\n                output_tokens=output_tokens,\n                provider_model=provider_model,\n            )\n        with _at_stage(\"usage\"):\n            # Report provider usage even if the durable ledger write is unavailable.\n            # Publication still requires that write; NULL ledger usage stays unknown.\n            if input_tokens is not None:\n                self.metrics.inc(\"nora_extraction_input_tokens_total\", input_tokens)\n            if output_tokens is not None:\n                self.metrics.inc(\"nora_extraction_output_tokens_total\", output_tokens)\n            usage_known = input_tokens is not None and output_tokens is not None\n            if not usage_known:\n                self.metrics.inc(\"nora_extraction_usage_missing_total\")\n        if not usage_known:\n",
+    "target": "tests/contract/test_extraction_contract.py::test_usage_counters_survive_ledger_outage"
+  }
+]

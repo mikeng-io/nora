@@ -644,7 +644,7 @@ async def run_case(
         # one-speaker-per-peer streams (DEC-36), so no `"[Nora]"` prefix exists
         # anywhere in `nora/` and a prefix count would be structurally 0.
         # Vacuously true while nothing delivers on this path.
-        feeds = len([f for f in memory.fed if f[0] == cfg.memory.ai_peer])
+        feeds = len([f for f in memory.fed if f[0] == cfg.honcho.ai_peer])
         sent = list(adapter.texts)
         # Live mode has no script to read tool intent from — reconstruct it from
         # what the tools actually recorded this run (see the helper's caveat).

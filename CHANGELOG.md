@@ -1,5 +1,56 @@
 # Changelog
 
+## [7.1.2](https://github.com/mikeng-io/nora/compare/v7.1.1...v7.1.2) (2026-10-27)
+
+
+### Bug Fixes
+
+* **record:** clarify extraction time objects and label failure stages ([b298c51](https://github.com/mikeng-io/nora/commit/b298c51dc16535e5662ada11284ff70d03f5ce8a))
+
+## [7.1.1](https://github.com/mikeng-io/nora/compare/v7.1.0...v7.1.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* **openwiki:** normalize gateway completion IDs and retain safe failure diagnostics ([f2b5746](https://github.com/mikeng-io/nora/commit/f2b57465e5e41f3389fc6dad43da66ba786cdc2b))
+
+## [7.1.0](https://github.com/mikeng-io/nora/compare/v7.0.0...v7.1.0) (2026-10-27)
+
+
+### Features
+
+* **topology:** give rooms unique names and richer directory entries ([18d0915](https://github.com/mikeng-io/nora/commit/18d0915f897ef5713d0ae1c3d13a2b8cf0f2ab80))
+
+
+### Bug Fixes
+
+* **topology:** keep the room list when a culture read fails ([26e146f](https://github.com/mikeng-io/nora/commit/26e146f14be34eb08199e79e8357c5fc51caa133))
+
+## [7.0.0](https://github.com/mikeng-io/nora/compare/v6.8.7...v7.0.0) (2026-10-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* **config:** name memory configuration by its role ([ea36e50](https://github.com/mikeng-io/nora/commit/ea36e5087bf3a36ee4259cc53f4c4305f968deda))
+
+
+### Bug Fixes
+
+* **record:** preserve upgrade constraint names while restoring downgrade names ([404eb79](https://github.com/mikeng-io/nora/commit/404eb79c18fc04afecc00e17819eb4e54a69b905))
+* **record:** restore original constraint names on extraction downgrade ([c7bc886](https://github.com/mikeng-io/nora/commit/c7bc8863eee2931dfe881f5b954ed4c8e055c79e))
+
+
+### Changes
+
+* **config:** name memory configuration by its role ([ea36e50](https://github.com/mikeng-io/nora/commit/ea36e5087bf3a36ee4259cc53f4c4305f968deda))
+
+## [6.8.7](https://github.com/mikeng-io/nora/compare/v6.8.6...v6.8.7) (2026-10-27)
+
+
+### Bug Fixes
+
+* **profile:** guide collective writers to repair refusals and settle ([7974a3d](https://github.com/mikeng-io/nora/commit/7974a3d4dcb03269d33f49748654ff03da02bb4c))
+
 ## [6.8.6](https://github.com/mikeng-io/nora/compare/v6.8.5...v6.8.6) (2026-10-26)
 
 

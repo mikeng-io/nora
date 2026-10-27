@@ -485,7 +485,7 @@ projector in its own transaction (§9;
     instruction and the writes keep the rest. Raising `total_tokens` instead
     would cost nothing until spent, but would let a session read longer
     before it is cut off, a behaviour change; the block was made smaller.
-  - **The wake and the hand-off.** `person_wake_batch` (DEC-290,
+  - **The wake and the hand-off.** `memory.profile.person.update_every_messages` (DEC-290,
     [20](20-observe.md) §3) counts the person's new messages plus their
     polled items recorded since the last settled read began and not yet
     handed, at most 6 (one session's worth); an item polled while a session
