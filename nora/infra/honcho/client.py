@@ -238,7 +238,7 @@ class WorkspaceRouter:
     """Conversation -> unit -> Honcho workspace + the unit's scope (DEC-214).
 
     **The hierarchy is workspace > unit > room.** A Nora workspace holds one or
-    more units, a unit holds one or more rooms (at most one per platform), and
+    more units, a unit holds one or more uniquely labelled rooms, and
     each Nora workspace is bound to exactly ONE Honcho workspace. Units in one
     workspace SHARE its Honcho workspace — so one person is one Honcho peer, one
     model, across every unit of a workspace — and each unit is a Honcho NAMED

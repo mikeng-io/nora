@@ -42,8 +42,8 @@ ADA, BEN, CY, DEE, EVE = (
     "+85200000001", "+85200000002", "+85200000003", "+85200000004", "+85200000005",
 )
 
-#: One room per platform per unit (DEC-105), so each room is its own unit: the
-#: read is scoped by who a room lists, never by its unit.
+#: Each fixture room has its own unit to show that the read is scoped by
+#: who a room lists, never by its unit.
 _POLICY = '''
 default = "deny"
 

@@ -10,6 +10,9 @@ edges:
 
 # 30 · What reads the platform
 
+Historical before/after audit: the policy refusal below is deleted at step 3;
+unique labels within a unit replace it. The addressing changes ship at step 2.
+
 Read in the tree on 2026-10-25 (`git grep` for the rule's wording and for
 platform comparisons in `nora/agent/`, `nora/app/`, `nora/language/` and
 `nora/engagement/`). Step 1 of [50](50-migration.md) re-runs this search on

@@ -59,9 +59,10 @@ mechanism as every Nora room, per `design/10-identity-and-policy-schema.md`:
   admitted. Recreate, not restart: the single-file bind-mount inode gotcha
   silently served a stale policy.toml twice on 2026-08-08
   (`nora/obs/health.py:14-21` — "a recreate is needed, not a restart").
-- `tools` / `location` stay omitted (deny-by-default), honoring the
-  one-room-per-platform-per-unit convention from the
-  adding-conversation-to-policy reference. (DEC-105 is the `send_to` relay
+- `tools` / `location` stay omitted (deny-by-default). Room labels are unique
+  within the unit; several rooms per platform are allowed (room-topology
+  migration step 3 supersedes the old one-room-per-platform convention).
+  (DEC-105 is the `send_to` relay
   rule — "one room may speak into another, bounded by the unit",
   `design/09-decision-index.md:232` — not a room-count rule; do not cite it
   as one.)

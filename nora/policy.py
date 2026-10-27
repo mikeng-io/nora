@@ -174,9 +174,8 @@ class Conversation:
     # Voice is not a room. It is a SURFACE of a room: `voice = true` on a
     # guild's text room means "every voice channel in this guild speaks into
     # HERE". Per-channel allowlisting would be unmaintainable (a server has
-    # many voice channels) AND would put N Discord rooms in one unit, which
-    # DEC-105 forbids: a unit holds at most one room per platform. With one
-    # room there is one notebook, one culture, one unit, one `persons` list —
+    # many voice channels). One designated text room gives spoken and typed
+    # plans the same notebook, culture and `persons` list —
     # a plan spoken aloud and the same plan typed land in the same place.
     # The GUILD is what is checked; the channel is provenance only.
     #
@@ -202,9 +201,8 @@ class Conversation:
     # `persons`, `unit`, `location`, `relevance_gate`, `proactive`,
     # `home_room` — and every one of them is meaningless for a channel that is
     # written to and never read. Listing one means inventing trust answers
-    # about a non-conversation; it also puts a second room in the guild's
-    # unit, which DEC-105 says holds at most one room per platform, and makes
-    # Nora RECORD whatever else is said there — her OWN posts are dropped
+    # about a non-conversation and makes Nora RECORD whatever else is said
+    # there — her OWN posts are dropped
     # before ingest (`parser.py`), but nobody else's are, and `persons` gates
     # ANSWERING rather than recording. That is why the loader REFUSES a
     # `music_channel` that is itself a listed conversation, rather than merely
@@ -745,7 +743,6 @@ def load_policy(path: Path) -> Policy:
         music_by_guild[key] = convo
 
     _refuse_ambiguous_room_names(conversations)
-    _refuse_two_rooms_on_one_platform(conversations)
     unit_workspace = _unit_workspaces(parsed.units, conversations, path)
 
     if not conversations:
@@ -803,31 +800,6 @@ def _refuse_ambiguous_room_names(conversations: list[Conversation]) -> None:
             f"for {convo.platform}:{convo.primary_id!r}{conflict}. A network "
             "name may label only its own network's sole room in the unit."
         )
-
-
-def _refuse_two_rooms_on_one_platform(conversations: list[Conversation]) -> None:
-    """A unit holds AT MOST ONE room per platform (DEC-105, DEC-214).
-
-    Breaching it is costly to undo by hand (messages, notes and a culture
-    table end up split across rooms). This startup restriction stays during
-    the room-topology migration; send_to already resolves room names and
-    accepts a network only when it names one room. Refused in every form of
-    the file, `[units]` or not: the invariant is the unit's, not the workspace's.
-    """
-    seen: dict[tuple[str, str], Conversation] = {}
-    for convo in conversations:
-        key = (convo.unit, convo.platform)
-        other = seen.get(key)
-        if other is not None:
-            raise PolicyError(
-                f"unit {convo.unit!r} has two {convo.platform} rooms "
-                f"({other.label or other.primary_id!r} and "
-                f"{convo.label or convo.primary_id!r}). A unit holds at most "
-                "one room per platform (DEC-105): anything that addresses the "
-                "unit's room on a platform would otherwise be guessing. Give "
-                "one of them its own unit."
-            )
-        seen[key] = convo
 
 
 def _unit_workspaces(
