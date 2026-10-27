@@ -40,9 +40,11 @@ from typing import Any
 from nora.agent import factory
 from nora.agent.guards import ReplyGuard
 from nora.agent.tag_trace_extract import extract_tag_trace
+from nora.agent.turn_recording import TurnRecording
 from nora.doctrine.loader import Doctrine
 from nora.domain.models import TagContext
 from nora.domain.tag_trace import TagTrace
+from nora.domain.turn_record import retain_exchange
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger(__name__)
@@ -164,6 +166,8 @@ class LiveAgentRunner:
         is stamped here (frozen dataclass, so `dataclasses.replace`) because the
         real timestamp is already knowable.
         """
+        recording = TurnRecording()
+        started_at = int(time.time() * 1000)
         agent = factory.create_agent(
             # ONE MODEL PER TAG. See this module's docstring: `tool_choice` is
             # per-turn state and two tags overlap.
@@ -182,76 +186,83 @@ class LiveAgentRunner:
             # `ShelfLoader` when anything is deferred). Threaded, not built
             # here, for `tool_call_log`'s reason: this module may not import
             # `strands`.
-            tool_hooks=tool_hooks,
+            tool_hooks=(*tool_hooks, recording),
             trace_attributes=trace_attributes,
             retry=self._retry,
             skills_dir=self._skills_dir,
             agent_name=self._agent_name,
         )
         baseline = len(agent.messages)
-        result = await factory.invoke(agent, tag_message, invocation_state={}, limits=limits)
-        # `isinstance`, not a cast: `factory.invoke` is typed `Any` to keep
-        # `strands` out of this module, and an unchecked `Any` returned from a
-        # `str | None` signature is precisely what mypy's `warn_return_any`
-        # exists to stop. A shape that is not a string is not a stop reason.
-        stop_reason = getattr(result, "stop_reason", None)
-        stop_reason = stop_reason if isinstance(stop_reason, str) else None
-        text = factory.final_text(result)
-        followed_up = False
-        # `end_turn` ONLY: the one stop that means she finished on her own. A
-        # cap, a guardrail, a stop sequence or an unreadable reason is not a
-        # turn she chose to end in prose, and is never continued.
-        if follow_up is not None and stop_reason == "end_turn":
-            remaining = factory.remaining_limits(agent, limits)
-            message = follow_up(text) if remaining is not None else None
-            if message:
-                followed_up = True
-                result = await factory.invoke(
-                    agent, message, invocation_state={}, limits=remaining or {},
+        try:
+            result = await factory.invoke(agent, tag_message, invocation_state={}, limits=limits)
+            # `isinstance`, not a cast: `factory.invoke` is typed `Any` to keep
+            # `strands` out of this module, and an unchecked `Any` returned from a
+            # `str | None` signature is precisely what mypy's `warn_return_any`
+            # exists to stop. A shape that is not a string is not a stop reason.
+            stop_reason = getattr(result, "stop_reason", None)
+            stop_reason = stop_reason if isinstance(stop_reason, str) else None
+            text = factory.final_text(result)
+            followed_up = False
+            # `end_turn` ONLY: the one stop that means she finished on her own. A
+            # cap, a guardrail, a stop sequence or an unreadable reason is not a
+            # turn she chose to end in prose, and is never continued.
+            if follow_up is not None and stop_reason == "end_turn":
+                remaining = factory.remaining_limits(agent, limits)
+                message = follow_up(text) if remaining is not None else None
+                if message:
+                    followed_up = True
+                    result = await factory.invoke(
+                        agent, message, invocation_state={}, limits=remaining or {},
+                    )
+                    stop_reason = getattr(result, "stop_reason", None)
+                    stop_reason = stop_reason if isinstance(stop_reason, str) else None
+                    text = factory.final_text(result)
+            # THE BUDGET-EXHAUSTION DRAFT. The loop hit one of R-8's caps mid-work
+            # and left no prose behind, so the only thing the pipeline could
+            # deliver is a canned apology. One more completion over this agent's
+            # OWN accumulated context turns that into an answer.
+            #
+            # HERE, not in the pipeline, because `agent` is the only thing that
+            # holds the full context and it does not outlive this method. The
+            # pipeline sees the result as a non-empty `final_text` and delivers it
+            # through the branch that already handles DEC-93's recovered prose — no
+            # new delivery path, so R-4/R-6/R-18 and the audit row are untouched.
+            #
+            # Guarded on `text` being empty so this NEVER costs a call on a turn
+            # that already has words: a cut-off that left prose is DEC-93's case
+            # and needs no model. `guard.spoke` is not consulted — a turn that
+            # already sent something has `final_text == ""` too, and the pipeline
+            # checks `deliverer.delivered` before delivering anything from here.
+            drafted = False
+            if not followed_up and stop_reason in _BUDGET_STOP_REASONS and not text.strip():
+                text = await factory.draft_from_exhausted_loop(
+                    agent,
+                    timeout_seconds=self._draft_timeout_seconds,
+                    limits=DEFAULT_DRAFT_LIMITS,
                 )
-                stop_reason = getattr(result, "stop_reason", None)
-                stop_reason = stop_reason if isinstance(stop_reason, str) else None
-                text = factory.final_text(result)
-        # THE BUDGET-EXHAUSTION DRAFT. The loop hit one of R-8's caps mid-work
-        # and left no prose behind, so the only thing the pipeline could
-        # deliver is a canned apology. One more completion over this agent's
-        # OWN accumulated context turns that into an answer.
-        #
-        # HERE, not in the pipeline, because `agent` is the only thing that
-        # holds the full context and it does not outlive this method. The
-        # pipeline sees the result as a non-empty `final_text` and delivers it
-        # through the branch that already handles DEC-93's recovered prose — no
-        # new delivery path, so R-4/R-6/R-18 and the audit row are untouched.
-        #
-        # Guarded on `text` being empty so this NEVER costs a call on a turn
-        # that already has words: a cut-off that left prose is DEC-93's case
-        # and needs no model. `guard.spoke` is not consulted — a turn that
-        # already sent something has `final_text == ""` too, and the pipeline
-        # checks `deliverer.delivered` before delivering anything from here.
-        drafted = False
-        if not followed_up and stop_reason in _BUDGET_STOP_REASONS and not text.strip():
-            text = await factory.draft_from_exhausted_loop(
-                agent,
-                timeout_seconds=self._draft_timeout_seconds,
-                limits=DEFAULT_DRAFT_LIMITS,
+                drafted = bool(text.strip())
+                self._metrics.inc(
+                    "nora_budget_drafts_total",
+                    outcome="drafted" if drafted else "empty",
+                    reason=stop_reason,
+                )
+        finally:
+            trace = extract_tag_trace(
+                agent, baseline=baseline, tag_id=ctx.tag_id,
+                conversation_id=ctx.message.conversation_id, transcript=(),
+                outcome="send_reply", max_chars=self._max_trace_chars,
+                metrics=self._metrics,
             )
-            drafted = bool(text.strip())
-            self._metrics.inc(
-                "nora_budget_drafts_total",
-                outcome="drafted" if drafted else "empty",
-                reason=stop_reason,
+            # `TagTrace` is frozen (`nora/domain/tag_trace.py`) — `dataclasses.
+            # replace` produces a corrected instance. Stamped here because this is
+            # the earliest point the real clock is knowable and the trace must
+            # carry it before going anywhere persistent.
+            trace = dataclasses.replace(
+                trace, created_at=int(time.time() * 1000), started_at=started_at,
+                platform=ctx.message.platform,
+                requirements=recording.to_json(),
             )
-        trace = extract_tag_trace(
-            agent, baseline=baseline, tag_id=ctx.tag_id,
-            conversation_id=ctx.message.conversation_id, transcript=(),
-            outcome="send_reply", max_chars=self._max_trace_chars,
-            metrics=self._metrics,
-        )
-        # `TagTrace` is frozen (`nora/domain/tag_trace.py`) — `dataclasses.
-        # replace` produces a corrected instance. Stamped here because this is
-        # the earliest point the real clock is knowable and the trace must
-        # carry it before going anywhere persistent.
-        trace = dataclasses.replace(trace, created_at=int(time.time() * 1000))
+            retain_exchange(trace)
         if drafted:
             log.info(
                 "drafted a reply from an exhausted loop (tag=%s, reason=%s, %d chars)",

@@ -74,7 +74,7 @@ ATTRIBUTED: frozenset[str] = frozenset({"Decided", "Proposed", "Ruled out"})
 RULES: frozenset[str] = frozenset({
     "unknown_section", "section_order", "missing_section", "not_a_line",
     "uncited", "unknown_id", "cites_nora", "misattributed", "unknown_owner",
-    "bad_date", "unknown_rollup_key",
+    "bad_date", "unknown_rollup_key", "unknown_turn",
     # A memo body's `## Superseded` written by the model (`nora.domain.memo`):
     # code renders it from the revision chain.
     "code_written",
@@ -96,6 +96,8 @@ _IDS = re.compile(r"^\s*[0-9]+(\s*,\s*[0-9]+)*\s*$")
 #: <from>/<to>)`, the `(kind, subject, interval)` `rollup_read` shows a row by.
 #: A group holds message ids, keys, or both.
 _ROLLUP_KEY = re.compile(r"rollup\(([^()\[\]]*)\)")
+_TURN_KEY = re.compile(r"turn\((t[0-9]+)\)")
+_TURN_TAIL = re.compile(r"^(?P<rest>.+?)\s+(?P<ids>turn\(t[0-9]+\))$")
 _IDS_OR_KEYS = re.compile(r"^\s*(?:[0-9]+|K)(?:\s*,\s*(?:[0-9]+|K))*\s*$")
 _NAMED = re.compile(r"^(?P<content>.+) \((?P<names>[^()]*)\)$")
 _FROM_MEMORY = re.compile(r"^(?P<what>.+) \(as of (?P<date>[^()]+)\)$")
@@ -142,6 +144,7 @@ class ShownMessage:
     sender: str
     person_id: str | None = None
     is_nora: bool = False
+    turn_handle: str | None = None
 
 
 #: The names Nora goes by in a note body, ONE value for the tag path and the
@@ -174,6 +177,7 @@ class Shown:
     roster: Mapping[str, str] = field(default_factory=dict)
     nora_names: frozenset[str] = frozenset()
     rollup_keys: frozenset[str] = frozenset()
+    turn_handles: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,6 +192,7 @@ class NoteLine:
     owner: str | None = None
     person_ids: tuple[str, ...] = ()
     rollup_keys: tuple[str, ...] = ()
+    turn_handles: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,6 +237,7 @@ def cited_ids_in(text: str) -> frozenset[int]:
     """
     ids: set[int] = set()
     for group in _BRACKET_GROUP.findall(text):
+        group = _TURN_KEY.sub("K", group)
         # A group may hold ids, Rollup keys or both (`[4812, rollup(...)]`): a key
         # carries commas of its own, so it is blanked before the ids are split.
         shape = _ROLLUP_KEY.sub("K", group)
@@ -264,11 +270,11 @@ def citations_in(text: str) -> tuple[str, ...]:
     the parser, so a stored body that predates the schema answers too."""
     seen: dict[str, None] = {}
     for line in text.splitlines():
-        m = _CITED.match(line.strip())
+        m = _CITED.match(line.strip()) or _TURN_TAIL.match(line.strip())
         if m is None:
             continue
         group = m.group("ids")
-        shape = _ROLLUP_KEY.sub("K", group)
+        shape = _TURN_KEY.sub("K", _ROLLUP_KEY.sub("K", group))
         if not _IDS_OR_KEYS.match(shape):
             continue
         for token in shape.split(","):
@@ -277,6 +283,8 @@ def citations_in(text: str) -> tuple[str, ...]:
         for key in _ROLLUP_KEY.findall(group):
             if key.strip():
                 seen.setdefault(f"rollup({key.strip()})", None)
+        for handle in _TURN_KEY.findall(group):
+            seen.setdefault(f"turn({handle})", None)
     return tuple(seen)
 
 
@@ -435,12 +443,15 @@ def rollup_key(kind: str, subject: str, start: str, end: str) -> str:
     return f"{kind}|{subject}|{start}/{end}"
 
 
-def _ids(item: str, heading: str) -> tuple[str, tuple[int, ...], tuple[str, ...]]:
-    m = _CITED.match(item)
+def _ids(item: str, heading: str) -> tuple[
+    str, tuple[int, ...], tuple[str, ...], tuple[str, ...],
+]:
+    m = _CITED.match(item) or _TURN_TAIL.match(item)
     group = "" if m is None else m.group("ids")
     keys = tuple(k.strip() for k in _ROLLUP_KEY.findall(group))
-    shape = _ROLLUP_KEY.sub("K", group)
-    ok = _IDS.match(group) if not keys else _IDS_OR_KEYS.match(shape)
+    turns = tuple(_TURN_KEY.findall(group))
+    shape = _TURN_KEY.sub("K", _ROLLUP_KEY.sub("K", group))
+    ok = _IDS.match(group) if not keys and not turns else _IDS_OR_KEYS.match(shape)
     if m is None or not ok:
         raise NoteBodyError(
             "uncited",
@@ -453,7 +464,18 @@ def _ids(item: str, heading: str) -> tuple[str, tuple[int, ...], tuple[str, ...]
             "not_a_line", f"under ## {heading}, {item!r} says nothing before its ids",
         )
     ids = tuple(int(t) for t in shape.split(",") if t.strip().isdigit())
-    return rest, ids, keys
+    return rest, ids, keys, turns
+
+
+def check_turn_citations(turns: Sequence[str], shown: Shown) -> None:
+    known = shown.turn_handles | frozenset(
+        m.turn_handle for m in shown.rendered if m.turn_handle is not None
+    )
+    for handle in turns:
+        if handle not in known:
+            raise NoteBodyError(
+                "unknown_turn", "the cited turn was not shown or run by this writer",
+            )
 
 
 def _check_ids(
@@ -600,12 +622,13 @@ def cited_line(
     memo, which may keep what she found or said; never a note). The memo
     body's parser (`nora.domain.memo.parse_memo_body`) is its caller."""
     _check_dates(item)
-    _rest, ids, keys = _ids(item, heading)
+    _rest, ids, keys, turns = _ids(item, heading)
+    check_turn_citations(turns, shown)
     _check_ids(
         ids, item, {m.id: m for m in shown.rendered}, shown.carried, keys,
         shown.rollup_keys, may_cite_nora=may_cite_nora,
     )
-    return NoteLine(text=item, ids=ids, rollup_keys=keys)
+    return NoteLine(text=item, ids=ids, rollup_keys=keys, turn_handles=turns)
 
 
 def _line(
@@ -630,7 +653,8 @@ def _line(
         _check_stamp(m.group("date").strip(), item)
         return NoteLine(text=item)
 
-    rest, ids, keys = _ids(item, heading)
+    rest, ids, keys, turns = _ids(item, heading)
+    check_turn_citations(turns, shown)
     _check_ids(ids, item, rendered, shown.carried, keys, shown.rollup_keys)
 
     if heading == "Owed":
@@ -654,10 +678,11 @@ def _line(
         _check_due(due, item)
         return NoteLine(
             text=item, ids=ids, owner=owner, person_ids=(person_id,), rollup_keys=keys,
+            turn_handles=turns,
         )
 
     if heading not in ATTRIBUTED:  # ## Open: `<question> [<ids>]`
-        return NoteLine(text=item, ids=ids, rollup_keys=keys)
+        return NoteLine(text=item, ids=ids, rollup_keys=keys, turn_handles=turns)
 
     m = _NAMED.match(rest)
     names = tuple(n.strip() for n in m.group("names").split(",")) if m else ()
@@ -699,6 +724,8 @@ def _line(
             "not_a_line",
             f"under ## Ruled out, {item!r} is not `<option>: <reason> (<names>) [<ids>]`",
         )
+    if turns and not ids:
+        raise NoteBodyError("misattributed", "a turn record does not say who said a line")
     if keys and not ids:
         raise NoteBodyError(
             "misattributed",
@@ -722,7 +749,8 @@ def _line(
                 f"{item!r} names {name!r}, who wrote none of the messages it cites",
             )
     person_ids = tuple(p for n in names if (p := authors.get(n)) is not None)
-    return NoteLine(text=item, ids=ids, names=names, person_ids=person_ids, rollup_keys=keys)
+    return NoteLine(text=item, ids=ids, names=names, person_ids=person_ids,
+                    rollup_keys=keys, turn_handles=turns)
 
 
 def parse_note_body(text: str, *, shown: Shown, require_open: bool = False) -> NoteBody:

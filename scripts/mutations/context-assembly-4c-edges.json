@@ -16,8 +16,8 @@
   {
     "name": "4c: her own display name skips the label, so a colon in it reads as a body",
     "file": "nora/agent/reaction.py",
-    "old": "        who = display_name if row.is_nora else row_speaker(row)\n        lines.append(f\"{speaker_label(who)}: {escape(body)}\")",
-    "new": "        who = display_name if row.is_nora else row_speaker(row)\n        lines.append(f\"{escape(display_name if row.is_nora else speaker_label(who))}: {escape(body)}\")",
+    "old": "        who = display_name if row.is_nora else row_speaker(row)\n        if row.turn_handle is not None:\n            who += f\" (turn {row.turn_handle})\"\n        lines.append(f\"{speaker_label(who)}: {escape(body)}\")",
+    "new": "        who = display_name if row.is_nora else row_speaker(row)\n        if row.turn_handle is not None:\n            who += f\" (turn {row.turn_handle})\"\n        lines.append(f\"{escape(display_name if row.is_nora else speaker_label(who))}: {escape(body)}\")",
     "target": "tests/unit/test_reaction.py -k hers_goes_through_the_same_label"
   },
   {

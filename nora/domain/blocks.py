@@ -711,6 +711,7 @@ def render_messages(
     now: datetime | None = None,
     edited: Callable[[Row], int | None] = lambda _: None,
     was: Callable[[Row], str | None] = lambda _: None,
+    turn: Callable[[Row], str | None] = lambda _: None,
 ) -> str:
     """A conversation as one TAG PER MESSAGE, not one line per message.
 
@@ -767,6 +768,7 @@ def render_messages(
             ("n", str(i)),
             ("age", age(ts, clock) if ts is not None else None),
             ("from", one_line(speaker(row))),
+            ("turn", turn(row)),
             ("replying_to", None if parent is None else str(parent)),
             ("edited", age(changed, clock) if changed is not None else None),
             ("edited_after", _edited_after(i, changed) if changed is not None else None),
@@ -913,6 +915,7 @@ def render_row_window(
     row_id: Callable[[Row], int],
     attrs: Callable[[Row], Sequence[tuple[str, str | None]]],
     body: Callable[[Row], str | None],
+    turn: Callable[[Row], str | None] = lambda _: None,
 ) -> str:
     """A window of transcript rows as `<m n="<row id>" …>body</m>`, one element
     per row — `render_elements` with the one thing every pass that cites rows
@@ -934,6 +937,6 @@ def render_row_window(
     """
     return render_elements(
         rows, tag="m",
-        attrs=lambda row, _i: (("n", str(row_id(row))), *attrs(row)),
+        attrs=lambda row, _i: (("n", str(row_id(row))), *attrs(row), ("turn", turn(row))),
         body=body,
     )

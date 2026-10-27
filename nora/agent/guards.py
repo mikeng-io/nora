@@ -141,6 +141,7 @@ class Deliverer:
         self._adapter = adapter
         self._target = target
         self._tag_id = tag_id
+        self._sent_message_ids: list[int] = []
         self._nora_sender_id = nora_sender_id
         # Which path is speaking: `"tag"` or `"heartbeat"`. Carried only onto
         # `nora_silent_failures_total`; see the class docstring.
@@ -238,6 +239,10 @@ class Deliverer:
     @property
     def delivered(self) -> bool:
         return self._delivered_count > 0
+
+    @property
+    def sent_message_ids(self) -> tuple[int, ...]:
+        return tuple(self._sent_message_ids)
 
     @property
     def delivered_count(self) -> int:
@@ -527,6 +532,7 @@ class Deliverer:
             log.exception("delivery_status update failed (tag=%s)", self._tag_id)
 
         if result.ok:
+            self._sent_message_ids.append(row_id)
             self._delivered_count += 1
             # The never-silent fallback (`source="fallback"`) is delivered to the
             # group, so the turn counts as non-silent (`delivered`), but it is a

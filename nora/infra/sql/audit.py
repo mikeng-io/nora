@@ -43,6 +43,7 @@ from nora.infra.sql.schema import (
     MESSAGE_EDIT,
     MESSAGE_REACTION,
     MESSAGES,
+    TAG_TRACE,
 )
 
 DEFAULT_MAX_PER_CONVERSATION = 500
@@ -73,6 +74,20 @@ def _latest_edit(*, edits_before: int | None = None) -> Any:
     )
 
 
+def turn_id_for_message(messages: Any = MESSAGES) -> Any:
+    """Resolve a sent row through the indexed ids its trace actually recorded."""
+    return (
+        sa.select(TAG_TRACE.c.turn_id)
+        .where(
+            messages.c.is_nora == 1,
+            TAG_TRACE.c.sent_message_ids.op("@>")(sa.func.jsonb_build_array(messages.c.id)),
+            TAG_TRACE.c.conversation_id == messages.c.conversation_id,
+            TAG_TRACE.c.platform == messages.c.platform,
+        )
+        .order_by(TAG_TRACE.c.turn_id.desc()).limit(1).correlate(messages).scalar_subquery()
+    )
+
+
 def transcript_select(*, edits_before: int | None = None) -> Any:
     """The columns every transcript read returns, with the newest edit
     folded in. ONE select for `recent`, `since`, `since_including_nora`,
@@ -86,12 +101,14 @@ def transcript_select(*, edits_before: int | None = None) -> Any:
     as it stood at T) into the sandbox and then reads it through this same
     select, so a snapshot before a forget correctly shows the row unhidden."""
     latest = _latest_edit(edits_before=edits_before)
+    turn_id = turn_id_for_message()
     return sa.select(
         MESSAGES.c.id, MESSAGES.c.sender_id, MESSAGES.c.sender_name,
         MESSAGES.c.ts, MESSAGES.c.body, MESSAGES.c.is_nora,
         MESSAGES.c.delivery_status, MESSAGES.c.raw_json,
         MESSAGES.c.quoted_ts, MESSAGES.c.media_json, MESSAGES.c.person_id,
         MESSAGES.c.external_files_json,
+        turn_id.label("turn_id"),
         latest.c.ts.label("edit_ts"), latest.c.body.label("edit_body"),
         latest.c.raw_json.label("edit_raw_json"),
     ).select_from(MESSAGES.outerjoin(latest, sa.true())).where(
@@ -127,6 +144,7 @@ def transcript_row(r: Any) -> TranscriptRow:
         media_json=r.media_json,
         external_files_json=r.external_files_json,
         person_id=r.person_id,
+        turn_id=r.turn_id,
         edit=(
             RowEdit(ts=r.edit_ts, was=r.body, raw_json=r.edit_raw_json)
             if edited else None

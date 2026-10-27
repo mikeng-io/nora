@@ -371,6 +371,7 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
         messages = list({m.row.id: m for m in [*old, *messages]}.values())
         # An episode whose send's time cannot be read is unavailable, never
         # guessed (R-27).
+        turns = {e.send_id: e.turn_handle for e in episodes}
         stamps = {m.row.id: m.row.ts for m in grounded}
         episodes = [e for e in episodes if e.send_id in stamps]
         replies = [RoomMessage(room=e.room, row=r) for e in episodes
@@ -539,6 +540,7 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
                                 ),
                             ],
                             row_id=lambda m: m[0],
+                            turn=lambda m: turns.get(m[0]),
                             attrs=lambda m: (("from", m[1]),),
                             body=lambda m: m[2],
                         ),

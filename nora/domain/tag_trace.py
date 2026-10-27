@@ -12,7 +12,7 @@ Framework-free, per `nora/domain/`'s rule: stdlib and dataclasses only.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from .models import TranscriptRow
@@ -35,6 +35,18 @@ class TagTrace:
     transcript: tuple[TranscriptRow, ...]
     outcome: str
     created_at: int
+    started_at: int | None = None
+    occasion: str = "tag"
+    platform: str = ""
+    unit: str | None = None
+    bound_rooms: tuple[str, ...] = ()
+    requirements: dict[str, Any] = field(default_factory=dict)
+    sent_message_ids: tuple[int, ...] = ()
+    turn_id: int | None = field(default=None, compare=False)
+
+    @property
+    def handle(self) -> str | None:
+        return f"t{self.turn_id}" if self.turn_id is not None else None
 
     def __post_init__(self) -> None:
         if self.outcome not in VALID_OUTCOMES:

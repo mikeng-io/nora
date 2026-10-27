@@ -306,6 +306,11 @@ class TranscriptRow:
     # platform handle from. What it first said and the latest envelope ride
     # here.
     edit: RowEdit | None = None
+    turn_id: int | None = None
+
+    @property
+    def turn_handle(self) -> str | None:
+        return f"t{self.turn_id}" if self.is_nora and self.turn_id is not None else None
 
 
 @dataclass(frozen=True)

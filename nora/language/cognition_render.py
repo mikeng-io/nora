@@ -299,6 +299,7 @@ def _own_row(rec: RecordItem, *, now_ms: int, tz: tzinfo, message_chars: int) ->
             [rec], row_id=lambda r: r.message_id,
             attrs=lambda r: (
                 ("at", when), ("from", speaker_of(r.author)), ("own", "yes"),
+                ("turn", r.turn_handle),
                 ("withdrawn", "yes" if r.text is None else None),
             ),
             body=lambda _r: words,

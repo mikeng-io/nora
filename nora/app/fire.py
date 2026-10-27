@@ -150,6 +150,7 @@ from nora.domain.standing import (
 from nora.domain.subagent import written_title
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.domain.turn_deadline import turn_deadline
+from nora.domain.turn_record import TurnCapture, capture_turn
 from nora.engagement.character_who import fire_character_people
 from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.context import StandingNotesReader
@@ -611,6 +612,7 @@ class FirePath:
         # card, `people_in_window`, the culture/unit/self heads and the
         # character heads — is made at all.
         profile: ProfileHeads | None = None,
+        tag_trace_store: Any = None,
     ) -> None:
         # `<standing>` renders on the fire path too. `build_prefill` is shared
         # and parameterised only by `header=`, so SUPPRESSING the block here
@@ -626,6 +628,7 @@ class FirePath:
         # the `TagTrace` that `AgentRunner.invoke` hands back, so there is
         # nothing to fold.
         self._standing = standing
+        self._tag_trace_store = tag_trace_store
         # THE CULTURE HEAD, read on EVERY fire occasion (DEC-207) — see
         # `_read_culture`.
         #
@@ -2216,14 +2219,14 @@ class FirePath:
                     "composition root to build one"
                 )
             runner = self._proactive_runner
+        trace = None
+        captured = TurnCapture()
         try:
-            # `AgentRunner.invoke` also hands back a `TagTrace`, which this path
-            # discards: it builds no debrief record of its own.
             # `[heartbeat].timeout_seconds`, published to the turn's tools:
             # the vision describer was built from the `[llm]` loop and would
             # otherwise spend a heartbeat's whole budget on one read.
-            with turn_deadline(self._timeout_seconds):
-                stop_reason, final_text, _trace = await asyncio.wait_for(
+            with turn_deadline(self._timeout_seconds), capture_turn() as captured:
+                stop_reason, final_text, trace = await asyncio.wait_for(
                     runner.invoke(
                         doctrine=doctrine, tools=tools, pre_fill=pre_fill, guard=guard,
                         tool_call_log=tool_call_log, reasoning_watch=reasoning_watch,
@@ -2344,6 +2347,31 @@ class FirePath:
                     "nora_silent_failures_total", reason=reason,
                     platform=platform, audience=audience,
                 )
+        if self._tag_trace_store is not None:
+            from nora.domain.tag_trace import TagTrace
+            convo = (self._policy.conversation(platform, ctx.message.conversation_id)
+                     if self._policy else None)
+            outcome = ("timeout" if failure == FAILED_TIMEOUT else "llm_error") if failure else (
+                "send_reply" if deliverer.delivered else "silent"
+            )
+            trace = trace or captured.trace or TagTrace(
+                tag_id=ctx.tag_id, conversation_id=ctx.message.conversation_id,
+                messages=(), transcript=ctx.transcript, outcome=outcome,
+                created_at=int(self._clock().timestamp() * 1000),
+            )
+            trace = replace(
+                trace, outcome=outcome, transcript=ctx.transcript, platform=platform,
+                occasion="participation" if participation else "fire",
+                unit=convo.unit if convo else None,
+                bound_rooms=(platform + ":" + ctx.message.conversation_id,),
+                sent_message_ids=deliverer.sent_message_ids,
+            )
+            try:
+                await asyncio.wait_for(
+                    self._tag_trace_store.save(trace), self._standing_store_timeout_seconds,
+                )
+            except Exception:
+                log.exception("fire turn trace could not be retained")
         return failure, stop_reason, final_text
 
     async def _determined(

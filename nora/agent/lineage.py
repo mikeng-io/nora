@@ -52,6 +52,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
+from typing import Protocol, TypeVar
 
 from ..domain.culture import CultureRevision
 from ..domain.lineage import (
@@ -72,12 +73,25 @@ from ..domain.lineage import (
     RoomFacts,
     room_key,
 )
+from ..domain.memo import MemoRevision
 from ..domain.notes import Note
-from ..domain.profile import ProfileLine
 from ..domain.standing import Standing
+from ..domain.turn_record import turn_handles_in
 from ..policy import Policy
 from .room import Room
 from .whereis import Circle, DisclosureGuard
+
+
+class _ProfileDisclosure(Protocol):
+    @property
+    def exclude_persons(self) -> tuple[str, ...]: ...
+    @property
+    def location(self) -> bool: ...
+    @property
+    def location_subjects(self) -> tuple[str, ...]: ...
+
+
+_ProfileItem = TypeVar("_ProfileItem", bound=_ProfileDisclosure)
 
 __all__ = [
     "PREDICATES",
@@ -180,6 +194,8 @@ PREDICATES: Mapping[str, Callable[[LineageEntry, RenderRoom], bool]] = {
 def entry_permits(entry: LineageEntry, target: RenderRoom, *, origin: str | None) -> bool:
     """May B be shown something resting on `entry`? `origin` is the room the
     row carrying it was written in: the only room an unknown kind is shown in."""
+    if excluded(entry.exclude_persons, target):
+        return False
     predicate = PREDICATES.get(entry.kind)
     if predicate is None:
         return target.room is not None and target.room.is_room(origin)
@@ -195,6 +211,14 @@ def section_permits(
     if not listed:
         return target.room is not None and target.room.is_room(origin)
     return all(entry_permits(e, target, origin=origin) for e in listed)
+
+
+def memo_permits(revision: MemoRevision, target: RenderRoom | None) -> bool:
+    """Legacy memos remain unit-wide; a turn citation carries its requirements."""
+    if not turn_handles_in(revision.body):
+        return True
+    entries = revision.lineage.section(ROW)
+    return bool(target is not None and entries and section_permits(entries, target, origin=None))
 
 
 def excluded(exclude_persons: Iterable[str], target: RenderRoom) -> bool:
@@ -335,8 +359,8 @@ def derived_view(
 
 
 async def profile_lines_for(
-    lines: tuple[ProfileLine, ...], target: RenderRoom, room: Room,
-) -> tuple[ProfileLine, ...]:
+    lines: tuple[_ProfileItem, ...], target: RenderRoom, room: Room,
+) -> tuple[_ProfileItem, ...]:
     """Apply the existing exclusion boundary, reading the roster only if needed."""
     if any(line.exclude_persons or line.location for line in lines):
         view = await room.scope()
@@ -344,7 +368,7 @@ async def profile_lines_for(
             person_ids=frozenset(p.person_id for p in view.people),
             unnamed=view.unnamed, available=view.available, degraded=view.degraded,
         ))
-    def permitted(line: ProfileLine) -> bool:
+    def permitted(line: _ProfileItem) -> bool:
         if excluded(line.exclude_persons, target):
             return False
         if not line.location:
