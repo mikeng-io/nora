@@ -56,6 +56,10 @@ describe("validateSubmissionUrl", () => {
     expect(validateSubmissionUrl("http://172.32.0.1/").ok).toBe(true);
   });
 
+  it("accepts a public IPv6 literal — no dot does not mean a service name", () => {
+    expect(validateSubmissionUrl("http://[2001:4860:4860::8888]/v").ok).toBe(true);
+  });
+
   it("rejects internal names: single-label hosts and private TLDs", () => {
     // The hole that was live: a compose service name is not a private IP, so
     // http://nora:9100/status would have passed the literal-IP check alone.
@@ -442,6 +446,57 @@ describe("DownloadRunner", () => {
     await settle(store, job.id); // …and the queued mark is re-admitted, run again.
     expect(attempt).toBe(2);
     expect(store.get(job.id)!.status).toBe("done");
+  });
+
+  it("a final output line without a trailing newline still lands the file name", async () => {
+    const spawnImpl = fakeSpawn((args, proc) => {
+      const outIdx = args.indexOf("-o") + 1;
+      const file = args[outIdx].replace("%(ext)s", "mp4");
+      writeFileSync(file, "x");
+      proc.stdout.emit("data", Buffer.from(`[download] Destination: ${file}`)); // no \n
+      proc.emit("close", 0);
+    });
+    const { store, runner } = makeRunner({ spawnImpl: spawnImpl as never });
+    const job = store.create("https://media.example/notail", "miles");
+    runner.enqueue(job.id);
+    await settle(store, job.id);
+    expect(store.get(job.id)!.status).toBe("done");
+  });
+
+  it("a delete landing inside the DNS lookup never starts the probe", async () => {
+    const spawnImpl = fakeSpawn(goodYtdlp);
+    const probeImpl = vi.fn(async () => ({ title: "x", extractor: "e", fileSize: 1 }));
+    const { store, runner } = makeRunner({
+      spawnImpl: spawnImpl as never,
+      probeImpl,
+      lookupImpl: async () => {
+        await new Promise((r) => setTimeout(r, 60));
+        return [{ address: "93.184.216.34" }];
+      },
+    });
+    const job = store.create("https://media.example/dns-gap", "miles");
+    runner.enqueue(job.id);
+    await new Promise((r) => setTimeout(r, 20)); // DNS await in flight
+    runner.cancel(job.id);
+    await store.remove(job.id);
+    await new Promise((r) => setTimeout(r, 80)); // lookup resolves; cancel check fires
+    expect(probeImpl).not.toHaveBeenCalled();
+    expect(spawnImpl).not.toHaveBeenCalled();
+    expect(store.get(job.id)).toBeNull();
+  });
+
+  it("a failed registry write keeps the state and a later flush writes it", async () => {
+    const { chmodSync, readFileSync } = await import("node:fs");
+    const store = DownloadStore.load(dir);
+    const job = store.create("https://media.example/fs-fail", "miles");
+    chmodSync(dir, 0o555); // the disk is now broken for writes
+    await expect(store.flush()).rejects.toThrow();
+    expect(store.get(job.id)).not.toBeNull(); // memory kept, not reported clean
+    chmodSync(dir, 0o755);
+    store.update(job.id, { status: "failed", error: "x" });
+    await store.flush();
+    const onDisk = JSON.parse(readFileSync(path.join(dir, "jobs.json"), "utf-8"));
+    expect(onDisk.jobs[0].status).toBe("failed");
   });
 
   it("a job whose DNS answers internal at run time fails refused, never spawned", async () => {

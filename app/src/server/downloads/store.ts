@@ -79,6 +79,10 @@ export function mediaTypeFor(ext: string): string {
 export class DownloadStore {
   private jobs = new Map<string, DownloadJob>();
   private dirty = false;
+  // True when the last write failed: dirty stays set so the NEXT update retries
+  // the lost state, but a failure must not reschedule itself — on a full disk
+  // that would be an immediate retry storm with a log per attempt.
+  private writeFailed = false;
   private flushing: Promise<void> | null = null;
   // Every write goes through this one chain: two jobs finishing together each
   // await flush(), and two writes to jobs.json.tmp would otherwise interleave
@@ -202,8 +206,10 @@ export class DownloadStore {
         .catch((e) => console.error("[downloads] registry write failed:", e instanceof Error ? e.message : e))
         .finally(() => {
           this.flushing = null;
-          // An update that landed during the write is still dirty: persist again.
-          if (this.dirty) this.markDirty();
+          // An update that landed during the write is still dirty: persist
+          // again — unless the write itself failed; then wait for the next
+          // update instead of hammering a broken filesystem.
+          if (this.dirty && !this.writeFailed) this.markDirty();
         });
     }
   }
@@ -222,6 +228,7 @@ export class DownloadStore {
   private async writeNow(): Promise<void> {
     if (!this.dirty) return;
     this.dirty = false;
+    this.writeFailed = false;
     // Unique tmp name per write: a second store on the same root (tests do it)
     // must not rename another writer's tmp out from under it.
     const tmp = path.join(this.root, `${REGISTRY}.${process.pid}.${this.writes++}.tmp`);
@@ -232,6 +239,7 @@ export class DownloadStore {
       // The change was not persisted: stay dirty so the next update retries it
       // rather than reporting a state the disk never learned.
       this.dirty = true;
+      this.writeFailed = true;
       throw err;
     }
   }

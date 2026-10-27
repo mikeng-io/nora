@@ -125,6 +125,9 @@ export class DownloadRunner {
       // resolve the host again, refuse anything that now answers internal.
       const host = await assertPublicHost(job.url, this.opts.lookupImpl);
       if (!host.ok) throw new Error(`refused: ${host.error}`);
+      // The DNS await has no child to kill — a delete landing inside it must
+      // still stop the probe from ever spawning.
+      if (this.cancelled.has(id)) throw new Error("cancelled");
       const info = await this.probe(id, job.url);
       if (info.fileSize && info.fileSize > this.opts.maxBytes) {
         throw new Error(`declared size exceeds the limit (${info.fileSize} > ${this.opts.maxBytes} bytes)`);
@@ -275,6 +278,8 @@ export class DownloadRunner {
       });
       child.on("close", (code) => {
         clearTimeout(timer);
+        // The last line may arrive without a trailing newline.
+        if (tail) onLine(tail);
         if (this.cancelled.has(id)) return reject(new Error("cancelled"));
         if (killed || code === null) return reject(new Error(`exceeded the ${Math.round(this.opts.timeoutMs / 60000)} minute limit`));
         if (code !== 0) {

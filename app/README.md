@@ -52,13 +52,12 @@ is the portal's own yt-dlp batch downloader (`src/server/downloads/`), a
 batch submit plus list/get/retry/delete and a content stream. Jobs and media
 live under `NORA_DOWNLOADS_DIR` (one `jobs.json` registry, one directory per
 download); the image ships the yt-dlp binary and ffmpeg, and the compose
-service bind-mounts `./data/downloads` there. URLs are restricted to
-http/https; private, loopback, link-local and single-label (service-name)
-hosts are refused, and the resolved addresses are checked too — a public name
-that resolves to an internal address is rejected at submit and again when the
-job runs. On the host, create the bind-mounted directory once with
-`install -d -o 1000:1000 data/downloads` (compose makes it root-owned
-otherwise, and the container's `node` user could not write the registry).
+service keeps it in the `app-downloads` named volume (which inherits the
+image's `node`-owned directory — a fresh bind mount would arrive root-owned
+and unwritable). URLs are restricted to http/https; private, loopback,
+link-local and single-label (service-name) hosts are refused, and the
+resolved addresses are checked too — a public name that resolves to an
+internal address is rejected at submit and again when the job runs.
 
 Every read is typed at the edge (`src/lib/api/*.ts`, zod schemas mirroring
 `nora/web/*.py`) and ends in one of four states the pages render differently:

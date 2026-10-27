@@ -8,9 +8,11 @@ import dns from "node:dns/promises";
 // The boundary is enforced twice: the literal hostname here, and the resolved
 // addresses in assertPublicHost() — a public name that resolves privately is
 // refused at submit and again when the job runs (DNS can be rebound between
-// them). Residual hole: yt-dlp follows HTTP redirects inside its own process,
-// so a public URL that 302s to an internal address is not pinned — closing that
-// needs an egress proxy, not a hostname check. Noted, not silently missing.
+// them). Residual holes, named rather than silently missing: yt-dlp follows
+// HTTP redirects inside its own process (a public URL that 302s to an internal
+// address is not pinned), and it resolves the host again on its own clock, so
+// a name that flips answers between our check and its fetch (rebinding) is not
+// pinned either. Closing both needs an egress proxy, not a hostname check.
 
 // hostname arrives bracketed for IPv6 literals ("[::1]"); strip the brackets
 // before testing so the anchors below apply to either form.
@@ -31,13 +33,14 @@ export function validateSubmissionUrl(url: string): { ok: true; url: string } | 
     return { ok: false, error: "scheme" };
   }
   const host = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  if (
-    PRIVATE_HOST.test(host) ||
-    isPrivateAddress(host) ||
-    // A single label is a compose service name or a LAN host, never a site.
-    !host.includes(".") ||
-    INTERNAL_TLD.test(host)
-  ) {
+  if (PRIVATE_HOST.test(host) || isPrivateAddress(host)) {
+    return { ok: false, error: "private" };
+  }
+  // IP literals are done: a public v6 literal like [2001:4860:4860::8888] has
+  // no dot but is not a service name. The single-label/TLD rules below judge
+  // DNS names only — a bare "nora" is a compose service, never a site.
+  const looksLikeIp = host.includes(":") || /^\d+\.\d+\.\d+\.\d+$/.test(host);
+  if (!looksLikeIp && (!host.includes(".") || INTERNAL_TLD.test(host))) {
     return { ok: false, error: "private" };
   }
   return { ok: true, url: parsed.toString() };
