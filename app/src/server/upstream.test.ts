@@ -72,8 +72,8 @@ describe("resolveUpstream", () => {
   });
 
   it("forwards only the query parameters a route names", () => {
-    expect(ok(["presence", "ken", "history"], "hours=24&personId=x&evil=1")).toBe(
-      "/app/v1/presence/ken/history?hours=24",
+    expect(ok(["presence", "ken", "history"], "hours=24&personId=x&evil=1", "jo")).toBe(
+      "/app/v1/presence/ken/history?hours=24&personId=jo",
     );
     expect(ok(["games", "servers", "a", "players"], "page=2&online=true&x=1")).toBe(
       "/app/v1/games/servers/a/players?page=2&online=true",
@@ -81,7 +81,9 @@ describe("resolveUpstream", () => {
   });
 
   it("prefers literal segments over parameters", () => {
-    expect(ok(["presence", "analytics", "places"])).toBe("/app/v1/presence/analytics/places");
+    expect(ok(["presence", "analytics", "places"], "", "jo")).toBe(
+      "/app/v1/presence/analytics/places?personId=jo",
+    );
   });
 
   it("refuses paths outside the table", () => {
@@ -122,6 +124,12 @@ describe("resolveUpstream", () => {
       "documents/:id/revisions/:n",
       "artifacts",
       "artifacts/:id",
+      "presence",
+      "presence/places",
+      "presence/analytics/places",
+      "presence/analytics/rhythm",
+      "presence/analytics/routes",
+      "presence/:personId/history",
     ]);
   });
 
