@@ -452,7 +452,7 @@ def collaborators():
     return persons, policy, roster, LineagePolicy.from_policy(policy, mode="off")
 
 
-async def toolset(ledger, ledger_db, *, room_id="room-a"):
+async def toolset(ledger, ledger_db, *, room_id="room-a", context=None, tagger=None):
     from nora.agent.room import Room
     from nora.agent.tools import build_tools
     from nora.engagement.self_presence import PresenceReader
@@ -461,7 +461,7 @@ async def toolset(ledger, ledger_db, *, room_id="room-a"):
     from nora.testing import FakeAdapter, FakeMemoryStore
     from tests.fakes import SinkSender
 
-    persons, policy, roster, lineage = collaborators()
+    persons, policy, roster, lineage = context or collaborators()
     directory = PresenceReader(
         policy=policy, adapters={"signal": FakeAdapter(account="self")}, rosters={"signal": roster}
     )
@@ -474,7 +474,8 @@ async def toolset(ledger, ledger_db, *, room_id="room-a"):
         deliverer=SinkSender(),
         metrics=Metrics(),
         room=Room(
-            platform="signal", conversation_id=room_id, roster_source=roster, persons=persons
+            platform="signal", conversation_id=room_id, roster_source=roster, persons=persons,
+            tagger=tagger,
         ),
         transit_source=TransitClient(
             kmb_base_url="http://127.0.0.1:1",
@@ -524,6 +525,73 @@ async def test_thread_arguments_read_spans_beyond_the_prompt_window(ledger, ledg
     assert await tools["room_read"](room="room-b", thread="th-absent") == (
         await tools["room_read"](room="room-b", thread="th-foreign")
     )
+
+
+@pytest.mark.parametrize("reader", ["load_transcript", "room_read"])
+@pytest.mark.parametrize("blocked", ["lineage", "unit", "unavailable", "degraded", "unnamed"])
+async def test_thread_read_unavailable_is_not_an_empty_record(ledger, ledger_db, reader, blocked):
+    a = await message(ledger_db)
+    b = await message(ledger_db, "room-b", n=2)
+    got = await ledger.apply(
+        LedgerOp("open", "thread", subject="Generated topic", scope="unit", message_ids=(a, b)),
+        target=target(), shown=frame(a, b), now_ms=3000,
+    )
+    assert got.entry is not None
+    kwargs = {"room": "room-b"} if reader == "room_read" else {}
+    allowed = (await toolset(ledger, ledger_db))[reader]
+    assert len((await allowed(thread=got.entry.id, **kwargs))["messages"]) == 1
+    absent = await allowed(thread="th-absent", **kwargs)
+    if reader == "room_read":
+        assert absent["status"] == "nothing_found"
+    else:
+        assert absent["messages"] == [] and "note" not in absent
+
+    persons, policy, roster, lineage = collaborators()
+    tagger = None
+    if blocked == "lineage":
+        # A named listener outside the source audience denies disclosure.
+        roster.groups["room-a"] += (frozenset({"generated-extra"}),)
+        persons = replace(persons, index={**persons.index, ("signal", "generated-extra"): "extra"},
+                          by_person={**persons.by_person,
+                                     "extra": replace(persons.by_person["kit"], person_id="extra")})
+    elif blocked == "unit":
+        lineage = replace(lineage, _by_id={})
+    elif blocked in {"unavailable", "degraded"}:
+        roster.fail = True
+        tagger = persons.by_person["kit"] if blocked == "degraded" else None
+    else:
+        roster.groups["room-a"] += (frozenset({"generated-unknown"}),)
+    tools = await toolset(ledger, ledger_db, context=(persons, policy, roster, lineage),
+                          tagger=tagger)
+    result = await tools[reader](thread=got.entry.id, **kwargs)
+    assert result.get("status") == "unavailable"
+    assert result.get("messages", []) == []
+    assert got.entry.id not in str(result)
+    assert "on record" not in result["note"]
+    if blocked != "lineage":
+        assert await tools[reader](thread="th-absent", **kwargs) == result
+
+
+@pytest.mark.parametrize("reader", ["load_transcript", "room_read"])
+async def test_thread_paging_keeps_a_same_second_group_together(ledger, ledger_db, reader):
+    room_id = "room-b" if reader == "room_read" else "room-a"
+    ids = [await message(ledger_db, room_id, n=n) for n in (1, 2, 2, 3, 4)]
+    got = await ledger.apply(
+        LedgerOp("open", "thread", subject="Generated topic", scope="unit",
+                 message_ids=(ids[0], ids[-1])),
+        target=target(), shown=frame(*ids), now_ms=5000,
+    )
+    assert got.entry is not None
+    tools = await toolset(ledger, ledger_db)
+    kwargs = {"room": room_id} if reader == "room_read" else {}
+    newest = await tools[reader](thread=got.entry.id, limit=3, **kwargs)
+    assert [m["body"] for m in newest["messages"]] == ["Generated topic 3", "Generated topic 4"]
+    before = newest["note"].split('before="')[1].split('"')[0]
+    oldest = await tools[reader](thread=got.entry.id, limit=3, before=before, **kwargs)
+    assert [m["body"] for m in oldest["messages"]] == [
+        "Generated topic 1", "Generated topic 2", "Generated topic 2",
+    ]
+    assert "note" not in oldest
 
 
 async def test_standing_read_keeps_all_entries_and_history_outside_render_budget(ledger, ledger_db):

@@ -3280,6 +3280,13 @@ async def _read_window(
         rows = await store.recent_before(
             conversation_id=conversation_id, before_ts=before_ts, limit=fetch,
         )
+    return _trim_window(rows, asked=asked)
+
+
+def _trim_window(
+    rows: Sequence[TranscriptRow], *, asked: int,
+) -> tuple[list[TranscriptRow], bool]:
+    """Trim a probed window without splitting its oldest timestamp group."""
     if len(rows) <= asked:
         return list(rows), False
     kept = list(rows[-asked:])
@@ -5213,19 +5220,24 @@ def build_tool_specs(
             platform=room.platform, conversation_id=bound_conversation_id,
         ), room)
         if target.room is None:
-            return [], False
+            raise RuntimeError("thread reader is unavailable")
+        live = target.live
+        if (live is None or not live.available or live.degraded
+                or live.unnamed or not live.person_ids):
+            raise RuntimeError("thread reader is unavailable")
         entries = await ledger.read(unit=target.room.unit, platform=room.platform,
                                     conversation_id=bound_conversation_id)
-        entry = next((e for e in entries if e.kind == "thread" and e.id == handle
-                      and ledger_permits(e, target)), None)
+        entry = next((e for e in entries if e.kind == "thread" and e.id == handle), None)
         if entry is None:
             return [], False
+        if not ledger_permits(entry, target):
+            raise RuntimeError("thread reader is unavailable")
         span = next((s for s in entry.spans if s.platform == platform
                      and s.conversation_id == conversation_id), None)
         if span is None:
             return [], False
         rows = await ledger.span_rows(span, limit=asked, before_ts=before_ts)
-        return rows[-asked:], len(rows) > asked
+        return _trim_window(rows, asked=asked)
 
     async def load_transcript(
         limit: int = LOAD_TRANSCRIPT_DEFAULT, before: str | None = None,
@@ -5283,10 +5295,12 @@ def build_tool_specs(
             # Still the envelope, and still stamped: `messages` is present on
             # every return of this tool, so the model reads ONE shape here
             # rather than a dict on the happy path and something else on the
-            # sad one. The empty list is the status-free answer
-            # to a failed read.
+            # sad one. Non-thread reads keep the legacy status-free envelope.
             if thread is not None:
-                return _memory_result({"messages": [], "note": "The thread could not be read."})
+                return _memory_result({
+                    "status": "unavailable", "messages": [],
+                    "note": "The thread could not be read.",
+                })
             return _memory_result({"messages": []})
         # A renderer of these rows beside the prefill's, under DEC-80.
         # `store.recent` returns rows straight from the

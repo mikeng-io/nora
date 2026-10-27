@@ -3477,7 +3477,7 @@ async def build_dependencies(
             # way: there is no tagging message to infer it from. Reads only;
             # the fire path writes no position (see `FirePath.__init__`).
             standing=standing_store if cfg.standing.enabled else None,
-        ledger=ledger_store,
+            ledger=ledger_store,
             # THE CULTURE HEAD (DEC-207) — the SAME reader
             # the tag assembler holds. Keyed on `primary_id`, which is why this
             # path resolves the occasion through the policy it already holds
