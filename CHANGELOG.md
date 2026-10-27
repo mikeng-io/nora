@@ -1,5 +1,17 @@
 # Changelog
 
+## [7.11.0](https://github.com/mikeng-io/nora/compare/v7.10.0...v7.11.0) (2026-10-27)
+
+
+### Features
+
+* **record:** backfill historical extraction without delaying live messages ([e3c54f2](https://github.com/mikeng-io/nora/commit/e3c54f2af10e800f9327ec3731347b7e5127c704))
+
+
+### Bug Fixes
+
+* **record:** retain historical Nora context and commit backfill in chunks ([2662a5d](https://github.com/mikeng-io/nora/commit/2662a5d1a05acc6d39e701b29817f1604488b3d1))
+
 ## [7.10.0](https://github.com/mikeng-io/nora/compare/v7.9.0...v7.10.0) (2026-10-27)
 
 
