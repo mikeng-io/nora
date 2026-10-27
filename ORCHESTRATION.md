@@ -44,8 +44,11 @@ review_tiers:
 
 This is the canonical policy for agents **building Nora**, not Nora's runtime.
 The operator's ruling of 2026-10-27 replaces fixed positive vendor/model routing.
-The schema and examples below describe an interoperable contract; no dispatcher,
-worker integration, live board enforcement or checked-in task database exists.
+The schema and examples below describe an interoperable contract. The
+[engineering controller](docs/maintainers/github.md#engineering-admission-pilot)
+adds default-off owner-admitted CI sessions and a review candidate selector;
+general worker dispatch, automatic paid intake and live board enforcement remain
+unbuilt. There is no checked-in task database.
 The broader evaluation remains open in [issue #277](https://github.com/mikeng-io/nora/issues/277).
 The [Project](https://github.com/users/mikeng-io/projects/8) is a scheduling view;
 adopting this file does not update its fields or launch work.
@@ -196,7 +199,8 @@ source; evidence links bind the issue/design/policy snapshot and review base.
 Validation checks shapes and conditional required fields, not link resolution,
 live execution, worker competence, independent identity, acceptance truth or
 successful deployment. The orchestrator must read back those facts. The schema
-does not enforce a dispatcher, which remains unbuilt. This allocation holds
+does not itself enforce dispatch; the bounded controller checks its admitted
+route. This allocation holds
 unless measured delivery gaps require a revised contract; it does not authorize
 automation or spending by itself.
 

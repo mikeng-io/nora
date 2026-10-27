@@ -139,6 +139,135 @@ the contribution number. This workflow must first exist on master; its initial
 implementation PR is tested by the ordinary CI before merge, then dispatched to
 verify the live check after merge. Keep manual dispatch on master.
 
+## Engineering admission pilot
+
+`Engineering dispatch` runs only trusted `master` source, using API JSON. PR
+ready/synchronize/reopen events are read-only review intake; completed CI events
+are notifications requiring explicit owner admission. Neither launches paid work.
+There is no issue-comment command, Project event trigger, PR-code execution,
+CLI integration, board writer, auto-enrollment, approval, merge or Done action.
+GitHub Issues remain canonical and Project 8 is their scheduling view.
+
+All flags default off when absent. After independent review, the parent owns
+credential setup and activation: `ENGINEERING_REPOSITORY=mikeng-io/nora`, secret
+`PROJECT_TOKEN` with read access to the owner's personal Project 8 and repository,
+secret `DEVIN_API_KEY`, variable `DEVIN_ORG_ID`, and `ENGINEERING_CI_ENABLED=true`
+for session spending. `GITHUB_TOKEN` cannot read personal Projects. Also configure
+`DEVIN_SECURITY_PROFILE_ID` for a dedicated organization-owned profile, created
+by the parent after review without changing org defaults. Before claim and
+immediately before creation, the controller reads the official v3beta1 profile
+endpoint and requires matching profile/org IDs, mandatory enforcement, read-only
+Devin MCP and git, removed GitHub CLI token, explicit empty MCP server list, and
+only exact hostname destinations `github.com` and `api.github.com`. Null MCP or
+network policy means no opinion and is rejected; wildcards/extra hosts are
+rejected. Session creation pins that profile and `secret_ids: []`. Missing or
+weakened profiles block spending. Keep CI off until profile setup/readback and
+parent acceptance; this implementation has not activated a paid pipeline. Leave
+the separate native CI Automation disabled so there is only one dispatcher.
+
+The pilot accepts only owner-authored, open, non-draft, same-repository PRs to
+master; both author and dispatch actor must currently have write/maintain/admin
+permission. Forks, bots and non-owner collaborators are outside this initial
+ceiling. Exactly one native closing-issue link must resolve to an open nonempty
+issue in owner Project 8. Its actual single-select `Status`, `Priority`,
+`Execution tier`, `Review tier` values must match the root schema. CI requires
+Ready; review candidates require Ready or Review and a non-none review tier.
+Labels, titles, PR body assertions and Project membership alone grant nothing.
+
+Dispatch **on master**, with `action=investigate` or `repair`, `number`, the full
+current PR `head`, the current failed CI `check_run_id`, and an `admission` JSON
+object. The object has these keys (no copied task/design body):
+
+| Key | Owner confirms |
+|---|---|
+| `head` | Same exact input head as the dispatch |
+| `issue_updated_at` | Current canonical issue GraphQL `updatedAt` |
+| `execution_tier`, `review_tier` | Exact current canonical Project values; semantic classification resolved |
+| `scope_ref` | Current issue section bounds paths, non-goals and investigation or repair authority |
+| `acceptance_ref` | Current issue section gives acceptance or revisioned design acceptance pointer |
+| `prerequisites_ref` | Current issue section records resolved dependencies, environment and permission prerequisites |
+| `ownership_ref` | Current issue section confirms no other active run/PR worker owns this work |
+| `capability_ref` | Current issue section records evidence that the normal service route meets the assigned capability |
+| `confirmed` | JSON `true`: the owner has read and confirms all those current facts |
+
+Each reference must be the canonical issue URL plus a section anchor. The issue
+may link immutable design/evidence there; the dispatcher does not guess semantics
+or resolve arbitrary external URLs. Existing issue forms lack structured fields,
+so this explicit trusted confirmation is required. It is bound to issue revision,
+head, Project fields, base and full changed-path list; these are read again before
+claim and immediately before dispatch. After its own receipt comment, comparison
+ignores only issue `updatedAt` and still binds the body digest and other scope
+fields. Actual issue body or classification changes require fresh admission.
+Investigation is read-only; repair needs its own explicit admitted scope and
+produces a local patch/evidence only. The parent owns push and landing. The
+already-read issue body, paths and base are ephemeral session input, never a
+tracked task copy. Missing logs/check tooling must be reported unavailable. Operator confirmation covers external workers; only controller
+receipts and Project status are machine-measured ownership signals in this pilot.
+
+CI must be a completed failure from the GitHub Actions App, the current latest
+check of that name on that exact SHA, linked to the repository's `ci.yml` run and
+matching check suite. Missing associations, merge-SHA-only evidence, stale/pending
+checks, unknown values and API/pagination errors are unavailable, never a clear
+result. No automatic repair or background retry follows a notification.
+
+CI uses official v3 session creation, normal **service mode** (underlying model
+and vendor are not asserted), `max_acu_limit=1`, `bypass_approval=false`, disposable
+sessions and instructions forbidding children/review/auto-fix/merge/deploy. One
+Actions concurrency group serializes all controller operations. Before spending,
+a pending receipt is written on the canonical issue. All repository issue/PR
+comments are read with bounded pagination; hitting the bound blocks. Only the
+Actions bot's marked receipts whose producing run is this owner-dispatched master
+workflow count. Other trusted default-branch workflows and repository admins
+share that trust boundary; preserve receipt history and do not forge/edit/delete
+receipts. Two reservations across all actions per rolling 24 hours is the cap;
+action+PR+head never relaunches, and any unresolved claim blocks all launches.
+The accounting covers this controller, not unrelated/native/manual spending.
+
+A real returned session URL changes a receipt to running; a claim alone is never
+Running. Timeouts, failed receipt updates or ambiguous creation retain the claim
+and never retry. For a known running receipt, owner-dispatch `action=reconcile`
+with `admission={"receipt_id": <comment-id>}`. This reads the current official v3
+session and resolves the receipt only for exit/error with no children; it does not
+establish acceptance or update Project status. An ambiguous claim without a run
+identity cannot be released by this route: investigate the issue/run evidence
+and escalate to the parent. There is no automated recovery/relaunch engine.
+
+For **review selection**, set `ENGINEERING_REVIEW_SELECTOR_ENABLED=true`, then
+owner-dispatch `action=review` with number, head and the same current admission
+object (no CI check ID). The exact qualified signal is JSON `state: "ok"` plus
+`candidate: {pr, head, issue, acceptance_ref, review_tier}` in the workflow log.
+It means admission qualified a request, not that a review ran. Automatic intake
+without this confirmation remains unavailable. The cheap exclusion skips only
+Markdown at the root or under docs/design (excluding policy/security/boundary
+paths), and exact client config paths `.mcp.json`, `.cursor/mcp.json`,
+`.vscode/mcp.json`, `.codex/config.toml`, `.claude/.mcp.json`, `.claude/mcp.json`.
+Both sides of renames count. Runtime Markdown, mixed changes, general Claude
+settings, tests, CI, gate and unknown paths remain subject to canonical tiers.
+This exclusion does not assign tiers or override an unresolved semantic decision.
+
+The operator configures Review Console themselves. For each qualified candidate:
+
+1. Recheck its exact head, current issue acceptance, non-none Project review tier
+   and absence of another active reviewer before selecting that PR in Console.
+2. Verify **automatic-review** enrollment scope and the budget mechanism applicable
+   to that route; avoid blanket repository enrollment/every-push review. Console
+   authentication is an external prerequisite, never bypassed by this controller.
+3. Read back the actual reviewed commit SHA and findings. The API/Console may fetch
+   a newer head after selection: a raced result does not review the admitted head.
+4. Treat Devin Review as supplemental; vendor independence remains unproven unless
+   separately evidenced. Never autoapprove, auto-fix, merge or mark Done from it.
+
+**Manual Review API creation is absent.** Its documented per-PR Console spend cap
+applies only to automatic reviews and does not cap a manual API trigger. No flag
+can enable that POST here. A verified applicable account/org budget mechanism
+and separately reviewed implementation would be needed to add it. `REVIEW.md`
+supplies context, not enrollment control, and cannot cancel a paid review.
+[Official security profile](https://docs.devin.ai/api-reference/v3/security-profiles/get-organizations-security-profile),
+[profile enforcement](https://docs.devin.ai/product-guides/security-profiles),
+[official session API](https://docs.devin.ai/api-reference/v3/sessions/post-organizations-sessions),
+[manual Review API](https://docs.devin.ai/api-reference/v3/pr-reviews/post-organizations-pr-reviews),
+[Review budget scope](https://docs.devin.ai/work-with-devin/devin-review).
+
 ## Publication readiness
 
 The private PII scrub is complete. Keep its private records outside GitHub.
