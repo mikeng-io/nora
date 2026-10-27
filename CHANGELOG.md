@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.8.1](https://github.com/mikeng-io/nora/compare/v7.8.0...v7.8.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* **app:** name a converted download after its own file ([61d108a](https://github.com/mikeng-io/nora/commit/61d108a64937d01a78d6f5b43dfe19555b025f4a))
+
 ## [7.8.0](https://github.com/mikeng-io/nora/compare/v7.7.0...v7.8.0) (2026-10-27)
 
 
