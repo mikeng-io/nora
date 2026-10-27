@@ -478,7 +478,7 @@ async def test_games_sessions_route_forwards_player_key(client_with_games):
 
 
 async def test_presence_route_returns_empty_list_when_presence_is_disabled(client):
-    resp = await client.get("/app/v1/presence")
+    resp = await client.get("/app/v1/presence?personId=miles")
     assert resp.status == 200
     assert await resp.json() == []
 
@@ -486,13 +486,14 @@ async def test_presence_route_returns_empty_list_when_presence_is_disabled(clien
 async def test_presence_history_route_is_404_when_presence_is_disabled(client):
     """No circle at all → nobody is a known circle member — a 404, not an
     empty history, matching build_presence_history_payload's own contract."""
-    resp = await client.get("/app/v1/presence/miles/history")
+    resp = await client.get("/app/v1/presence/miles/history?personId=miles")
     assert resp.status == 404
 
 
 @pytest.fixture
 async def client_with_presence(aiohttp_client):
     circle = Circle(circle_id="c1", person_ids=frozenset({"miles", "ada"}), people=(MILES, ADA))
+    other = Circle(circle_id="c2", person_ids=frozenset({"sam"}), people=(SAM,))
     fix = PresenceFix(
         circle_id="c1",
         person_id="miles",
@@ -512,9 +513,18 @@ async def client_with_presence(aiohttp_client):
         wire_state=WireState.LIVE,
         recorded_at=1_754_999_000_000,
     )
+    sam_fix = PresenceFix(
+        circle_id="c2",
+        person_id="sam",
+        ts=1_755_000_000_000,
+        lat=22.28,
+        lng=114.16,
+        wire_state=WireState.LIVE,
+        recorded_at=1_755_000_000_000,
+    )
     reader = FakePresenceReader(
-        fixes={"miles": fix},
-        windows={"miles": [older, fix]},
+        fixes={"miles": fix, "sam": sam_fix},
+        windows={"miles": [older, fix], "sam": [sam_fix]},
     )
     app = web.Application()
     register_web_routes(
@@ -522,12 +532,14 @@ async def client_with_presence(aiohttp_client):
         store=FakeRecordStore(),
         honcho=FakeMemoryStore(),
         reminders=FakeReminderStore(),
-        persons=Persons(by_person={"miles": MILES, "ada": ADA}, index={}),
+        persons=Persons(
+            by_person={"miles": MILES, "ada": ADA, "sam": SAM, "daisy": DAISY}, index={},
+        ),
         ai_peer="nora",
         started_at=0.0,
         games_client=None,
         presence=reader,
-        presence_circles=(circle,),
+        presence_circles=(circle, other),
         skills_dir=NO_SKILLS_DIR,
         events=_fake_events(),
         doctrine_store=build_test_doctrine_store(),
@@ -536,7 +548,7 @@ async def client_with_presence(aiohttp_client):
 
 
 async def test_presence_route_lists_every_circle_member(client_with_presence):
-    resp = await client_with_presence.get("/app/v1/presence")
+    resp = await client_with_presence.get("/app/v1/presence?personId=miles")
     assert resp.status == 200
     body = await resp.json()
     by_id = {entry["personId"]: entry for entry in body}
@@ -547,12 +559,49 @@ async def test_presence_route_lists_every_circle_member(client_with_presence):
     assert by_id["ada"]["current"] is None
 
 
+async def test_presence_shows_only_the_viewers_own_circles(client_with_presence):
+    """Miles shares c1 with Ada, not c2 with Sam: Sam is not on his map and
+    Sam's route is the same 404 as a stranger's."""
+    body = await (await client_with_presence.get("/app/v1/presence?personId=miles")).json()
+    assert {entry["personId"] for entry in body} == {"miles", "ada"}
+    resp = await client_with_presence.get("/app/v1/presence/sam/history?personId=miles")
+    assert resp.status == 404
+    body = await (await client_with_presence.get("/app/v1/presence?personId=sam")).json()
+    assert [entry["personId"] for entry in body] == ["sam"]
+
+
+async def test_presence_shows_nothing_to_a_known_person_in_no_circle(client_with_presence):
+    """Daisy can sign in (she is in identity.toml) but shares no circle: every
+    presence route answers empty or 404, never a circle member's position."""
+    resp = await client_with_presence.get("/app/v1/presence?personId=daisy")
+    assert resp.status == 200
+    assert await resp.json() == []
+    resp = await client_with_presence.get("/app/v1/presence/places?personId=daisy")
+    assert resp.status == 200
+    assert await resp.json() == []
+    for member in ("miles", "ada", "sam"):
+        resp = await client_with_presence.get(
+            f"/app/v1/presence/{member}/history?hours=24&personId=daisy"
+        )
+        assert resp.status == 404
+
+
+async def test_presence_routes_refuse_a_missing_or_unknown_viewer(client_with_presence):
+    for path in (
+        "/app/v1/presence",
+        "/app/v1/presence/places",
+        "/app/v1/presence/miles/history",
+    ):
+        assert (await client_with_presence.get(path)).status == 400
+        assert (await client_with_presence.get(f"{path}?personId=mallory")).status == 400
+
+
 async def test_presence_history_route_snaps_stay_points_within_10m(client_with_presence):
     """The two fixes in the fake's window are ~1.4m apart — well under the
     10m stay-point radius — so the route must collapse them to ONE point,
     proving the snapping actually runs at the route layer, not just in a
     unit test of the pure function."""
-    resp = await client_with_presence.get("/app/v1/presence/miles/history?hours=24")
+    resp = await client_with_presence.get("/app/v1/presence/miles/history?hours=24&personId=miles")
     assert resp.status == 200
     body = await resp.json()
     assert len(body["points"]) == 1
@@ -560,22 +609,24 @@ async def test_presence_history_route_snaps_stay_points_within_10m(client_with_p
 
 
 async def test_presence_history_route_404s_for_a_non_circle_member(client_with_presence):
-    resp = await client_with_presence.get("/app/v1/presence/stranger/history")
+    resp = await client_with_presence.get("/app/v1/presence/stranger/history?personId=miles")
     assert resp.status == 404
 
 
 async def test_presence_history_route_rejects_a_non_numeric_hours(client_with_presence):
-    resp = await client_with_presence.get("/app/v1/presence/miles/history?hours=nope")
+    resp = await client_with_presence.get(
+        "/app/v1/presence/miles/history?hours=nope&personId=miles"
+    )
     assert resp.status == 400
 
 
 async def test_presence_history_route_rejects_a_non_positive_hours(client_with_presence):
-    resp = await client_with_presence.get("/app/v1/presence/miles/history?hours=0")
+    resp = await client_with_presence.get("/app/v1/presence/miles/history?hours=0&personId=miles")
     assert resp.status == 400
 
 
 async def test_presence_places_route_returns_empty_list_when_presence_is_disabled(client):
-    resp = await client.get("/app/v1/presence/places")
+    resp = await client.get("/app/v1/presence/places?personId=miles")
     assert resp.status == 200
     assert await resp.json() == []
 

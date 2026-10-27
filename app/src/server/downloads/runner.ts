@@ -1,6 +1,6 @@
 import "server-only";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { mkdir, stat } from "node:fs/promises";
+import { mkdir, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { jobDir, mediaTypeFor, DownloadStore } from "./store";
 import { assertPublicHost, type Lookup } from "./validate";
@@ -28,6 +28,10 @@ export interface RunnerOptions {
   probeImpl?: (id: string, url: string) => Promise<ProbeResult>;
   /** Test seam: the DNS re-check before each run. Defaults to real resolution. */
   lookupImpl?: Lookup;
+  /** ffmpeg binary for post-download conversion. */
+  ffmpegPath?: string;
+  /** Hours before a finished job's files are swept; 0 keeps them forever. */
+  ttlHours?: number;
 }
 
 export interface ProbeResult {
@@ -62,6 +66,11 @@ export class DownloadRunner {
   // counting only spawned children would let pump start the whole queue at once.
   private inFlight = new Set<string>();
   private cancelled = new Set<string>();
+  private converting = new Set<string>();
+
+  isConverting(id: string): boolean {
+    return this.converting.has(id);
+  }
 
   constructor(private opts: RunnerOptions) {
     this.store = opts.store;
@@ -219,6 +228,15 @@ export class DownloadRunner {
       "bv*+ba/b",
       "--merge-output-format",
       "mp4",
+      // Ask yt-dlp for the site's own cover art (jpg) — a frame grab via ffmpeg
+      // is slower and usually uglier than the thumbnail the page advertises.
+      "--write-thumbnail",
+      "--convert-thumbnails",
+      "jpg",
+      // Its own template INSIDE the job dir so a .jpg payload and a thumbnail
+      // never share a name and jobs cannot collide on a working-dir file.
+      "-o",
+      `thumbnail:${dir}/download-thumb.%(ext)s`,
       "--no-playlist",
       "--newline",
       "--no-warnings",
@@ -291,6 +309,136 @@ export class DownloadRunner {
       });
     });
   }
+
+  /** Transcode a finished download with ffmpeg. The output lands beside the
+   * original as <base>.<target>; service.ts decides which targets a kind may
+   * take, this method only refuses work that cannot exist. */
+  convert(id: string, fileName: string, target: string): Promise<void> {
+    if (this.converting.has(id)) return Promise.reject(new Error("already converting"));
+    const dir = jobDir(this.opts.store.root, id);
+    const input = path.join(dir, fileName);
+    if (path.dirname(path.resolve(input)) !== path.resolve(dir)) {
+      return Promise.reject(new Error("bad file name"));
+    }
+    const base = path.basename(fileName, path.extname(fileName));
+    const output = path.join(dir, `${base}.${target}`);
+    // ffmpeg writes a staging name and success renames it into place — a killed
+    // or failed run can never leave a half-written file that looks finished,
+    // and a retry can't clobber a previous good output. The staging name keeps
+    // the target extension LAST: ffmpeg picks its muxer from the filename.
+    const staging = path.join(dir, `${base}.converting.${target}`);
+    this.converting.add(id);
+    const spawnImpl = this.opts.spawnImpl ?? spawn;
+    return new Promise<void>((resolve, reject) => {
+      const args = ffmpegArgs(target);
+      let child: ChildProcess;
+      try {
+        child = spawnImpl(this.opts.ffmpegPath ?? "ffmpeg", ["-hide_banner", "-y", "-i", input, ...args, staging], {
+          stdio: ["ignore", "ignore", "pipe"],
+        });
+      } catch (err) {
+        this.converting.delete(id);
+        return reject(new Error(`ffmpeg could not start: ${err instanceof Error ? err.message : String(err)}`));
+      }
+      this.running.set(id, child);
+      let stderrTail = "";
+      child.stderr?.on("data", (c: Buffer) => {
+        stderrTail = (stderrTail + c.toString("utf-8")).slice(-2000);
+      });
+      let killed = false;
+      const timer = setTimeout(() => {
+        killed = true;
+        child.kill("SIGKILL");
+      }, this.opts.timeoutMs);
+      timer.unref?.();
+      // Ownership holds through publish AND cleanup: until `converting` clears,
+      // sweep cannot expire the job and a second convert cannot claim the same
+      // staging path, so the rm/rename below cannot race a follow-up run.
+      let settled = false;
+      const finish = async (msg?: string) => {
+        // error can precede close on the same child — first entry wins.
+        if (settled) return;
+        settled = true;
+        try {
+          if (this.running.get(id) === child) this.running.delete(id);
+          if (msg) throw new Error(msg);
+          // A delete that landed between close and here must not publish.
+          if (this.cancelled.has(id)) throw new Error("cancelled");
+          await rename(staging, output);
+          const job = this.opts.store.get(id);
+          if (!job) {
+            // Deleted mid-publish: the job dir is on its way out; never report
+            // success for a file nobody can reach.
+            await rm(output, { force: true }).catch(() => {});
+            throw new Error("deleted");
+          }
+          // Publishing refreshes the retention clock: the 24h window starts
+          // from the last thing that touched the file, not the download.
+          this.opts.store.update(id, {});
+          resolve();
+        } catch (err) {
+          await rm(staging, { force: true }).catch(() => {});
+          reject(err instanceof Error ? err : new Error(String(err)));
+        } finally {
+          this.converting.delete(id);
+        }
+      };
+      child.on("error", (err) => {
+        clearTimeout(timer);
+        void finish(`ffmpeg could not start: ${err.message}`);
+      });
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        if (this.cancelled.has(id)) return void finish("cancelled");
+        if (killed || code === null) return void finish(`exceeded the ${Math.round(this.opts.timeoutMs / 60000)} minute limit`);
+        if (code !== 0) {
+          const tail = stderrTail.trim().split("\n").pop() ?? "";
+          return void finish(tail || `ffmpeg exited with code ${code}`);
+        }
+        void finish();
+      });
+    });
+  }
+
+  /** Remove done/failed jobs older than the retention window. Called on boot
+   * and by the sweep timer; active jobs and in-flight conversions are never
+   * touched (a converting job keeps status "done", so check the set). */
+  async sweep(ttlHours = this.opts.ttlHours ?? 0): Promise<number> {
+    if (!ttlHours) return 0;
+    const cutoff = Date.now() - ttlHours * 3_600_000;
+    let removed = 0;
+    for (const job of this.opts.store.list()) {
+      if (job.status !== "done" && job.status !== "failed") continue;
+      if (this.converting.has(job.id)) continue;
+      if (new Date(job.updatedAt).getTime() >= cutoff) continue;
+      this.cancel(job.id);
+      try {
+        if (await this.opts.store.remove(job.id)) removed++;
+      } catch {
+        // A failed removal stays in the registry for the next sweep; the count
+        // only reports jobs actually gone.
+      }
+    }
+    return removed;
+  }
+}
+
+/** ffmpeg's codec flag for each target. Audio targets drop the video stream;
+ * image targets take a single frame. */
+function ffmpegArgs(target: string): string[] {
+  switch (target) {
+    case "mp3": return ["-vn", "-c:a", "libmp3lame", "-q:a", "3"];
+    case "m4a": return ["-vn", "-c:a", "aac", "-b:a", "192k"];
+    case "opus": return ["-vn", "-c:a", "libopus", "-b:a", "160k"];
+    case "wav": return ["-vn", "-c:a", "pcm_s16le"];
+    case "png": return ["-frames:v", "1"];
+    case "jpg": return ["-frames:v", "1", "-q:v", "2"];
+    case "webp": return ["-frames:v", "1"];
+    case "mp4": return ["-c:v", "libx264", "-preset", "fast", "-crf", "23", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"];
+    case "webm": return ["-c:v", "libvpx-vp9", "-crf", "32", "-b:v", "0", "-c:a", "libopus", "-b:a", "128k"];
+    case "mkv": return ["-c:v", "libx264", "-preset", "fast", "-crf", "23", "-c:a", "aac", "-b:a", "192k"];
+    default: return [];
+  }
 }
 
 // The one runner the process shares. Route handlers come and go (and in dev the
@@ -305,6 +453,8 @@ export interface RunnerEnv {
   YTDLP_TIMEOUT_MS?: string;
   NORA_DOWNLOADS_MAX_BYTES?: string;
   NORA_DOWNLOADS_CONCURRENCY?: string;
+  FFMPEG_PATH?: string;
+  NORA_DOWNLOADS_TTL_HOURS?: string;
 }
 
 export function downloadRunner(env: RunnerEnv = process.env as RunnerEnv): DownloadRunner {
@@ -322,8 +472,15 @@ export function downloadRunner(env: RunnerEnv = process.env as RunnerEnv): Downl
       timeoutMs: Math.max(60_000, Number(env.YTDLP_TIMEOUT_MS ?? 3_600_000) || 3_600_000),
       maxBytes: Math.max(1, Number(env.NORA_DOWNLOADS_MAX_BYTES ?? 5_368_709_120) || 5_368_709_120),
       concurrency: Math.max(1, Math.min(8, Number(env.NORA_DOWNLOADS_CONCURRENCY ?? 2) || 2)),
+      ffmpegPath: env.FFMPEG_PATH ?? "ffmpeg",
+      ttlHours: Math.max(0, Number(env.NORA_DOWNLOADS_TTL_HOURS ?? 24) || 0),
     });
     runner.requeueStored();
+    // Retention sweep: once at boot, then hourly. Operator-asked window is
+    // 24h; NORA_DOWNLOADS_TTL_HOURS=0 keeps files forever.
+    void runner.sweep();
+    const t = setInterval(() => void runner.sweep(), 3_600_000);
+    t.unref?.();
     g[GLOBAL_KEY] = runner;
   }
   return g[GLOBAL_KEY];

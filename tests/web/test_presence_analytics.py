@@ -13,6 +13,7 @@ from nora.web.api import register_web_routes
 from tests.conftest import build_test_doctrine_store
 
 MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
+DAISY = PersonRef(person_id="daisy", name="Daisy", honcho_peer_id="daisy")
 CIRCLE = Circle(circle_id="c1", person_ids=frozenset({"miles"}), people=(MILES,))
 
 
@@ -94,7 +95,7 @@ def _app(*, presence: object | None, mobility: FakeAnalyticsStore) -> web.Applic
         store=FakeRecordStore(),
         honcho=FakeMemoryStore(),
         reminders=FakeReminderStore(),
-        persons=Persons(by_person={"miles": MILES}, index={}),
+        persons=Persons(by_person={"miles": MILES, "daisy": DAISY}, index={}),
         ai_peer="nora",
         started_at=0.0,
         games_client=None,
@@ -112,7 +113,7 @@ async def test_analytics_endpoints_return_the_spec_shapes(aiohttp_client):
     mobility = FakeAnalyticsStore()
     client = await aiohttp_client(_app(presence=object(), mobility=mobility))
 
-    places = await (await client.get("/app/v1/presence/analytics/places")).json()
+    places = await (await client.get("/app/v1/presence/analytics/places?personId=miles")).json()
     assert places == {
         "subjects": [
             {
@@ -137,7 +138,7 @@ async def test_analytics_endpoints_return_the_spec_shapes(aiohttp_client):
     }
 
     rhythm = await (await client.get(
-        "/app/v1/presence/analytics/rhythm?subjectId=miles"
+        "/app/v1/presence/analytics/rhythm?subjectId=miles&personId=miles"
     )).json()
     assert rhythm == {
         "subjectId": "miles",
@@ -146,7 +147,7 @@ async def test_analytics_endpoints_return_the_spec_shapes(aiohttp_client):
     }
 
     routes = await (await client.get(
-        "/app/v1/presence/analytics/routes?subjectId=miles"
+        "/app/v1/presence/analytics/routes?subjectId=miles&personId=miles"
     )).json()
     assert routes == {
         "subjectId": "miles",
@@ -180,14 +181,14 @@ async def test_analytics_endpoints_return_empty_shapes_when_presence_is_disabled
     mobility = FakeAnalyticsStore()
     client = await aiohttp_client(_app(presence=None, mobility=mobility))
 
-    assert await (await client.get("/app/v1/presence/analytics/places")).json() == {
+    assert await (await client.get("/app/v1/presence/analytics/places?personId=miles")).json() == {
         "subjects": [],
     }
     assert await (await client.get(
-        "/app/v1/presence/analytics/rhythm?subjectId=miles"
+        "/app/v1/presence/analytics/rhythm?subjectId=miles&personId=miles"
     )).json() == {"subjectId": "miles", "bins": [], "windowDays": 30}
     assert await (await client.get(
-        "/app/v1/presence/analytics/routes?subjectId=miles"
+        "/app/v1/presence/analytics/routes?subjectId=miles&personId=miles"
     )).json() == {"subjectId": "miles", "trips": [], "corridors": []}
     assert mobility.rhythm_windows == []
     assert mobility.route_windows == []
@@ -197,14 +198,14 @@ async def test_analytics_endpoints_keep_empty_subjects_in_the_r27_shape(aiohttp_
     mobility = FakeAnalyticsStore(empty=True)
     client = await aiohttp_client(_app(presence=object(), mobility=mobility))
 
-    assert await (await client.get("/app/v1/presence/analytics/places")).json() == {
+    assert await (await client.get("/app/v1/presence/analytics/places?personId=miles")).json() == {
         "subjects": [{"subjectId": "miles", "places": []}],
     }
     assert await (await client.get(
-        "/app/v1/presence/analytics/rhythm?subjectId=miles"
+        "/app/v1/presence/analytics/rhythm?subjectId=miles&personId=miles"
     )).json() == {"subjectId": "miles", "bins": [], "windowDays": 30}
     assert await (await client.get(
-        "/app/v1/presence/analytics/routes?subjectId=miles"
+        "/app/v1/presence/analytics/routes?subjectId=miles&personId=miles"
     )).json() == {"subjectId": "miles", "trips": [], "corridors": []}
 
 
@@ -213,10 +214,10 @@ async def test_analytics_windows_are_capped_at_90_days(aiohttp_client):
     client = await aiohttp_client(_app(presence=object(), mobility=mobility))
 
     assert (await client.get(
-        "/app/v1/presence/analytics/rhythm?subjectId=miles&days=999"
+        "/app/v1/presence/analytics/rhythm?subjectId=miles&days=999&personId=miles"
     )).status == 200
     body = await (await client.get(
-        "/app/v1/presence/analytics/routes?subjectId=miles&days=999"
+        "/app/v1/presence/analytics/routes?subjectId=miles&days=999&personId=miles"
     )).json()
     assert body["subjectId"] == "miles"
     assert mobility.rhythm_windows[-1] == 90 * 24 * 60 * 60 * 1000
@@ -228,10 +229,10 @@ async def test_analytics_unknown_subjects_are_empty_and_not_read(aiohttp_client)
     client = await aiohttp_client(_app(presence=object(), mobility=mobility))
 
     rhythm = await (await client.get(
-        "/app/v1/presence/analytics/rhythm?subjectId=stranger"
+        "/app/v1/presence/analytics/rhythm?subjectId=stranger&personId=miles"
     )).json()
     routes = await (await client.get(
-        "/app/v1/presence/analytics/routes?subjectId=stranger"
+        "/app/v1/presence/analytics/routes?subjectId=stranger&personId=miles"
     )).json()
     assert rhythm == {"subjectId": "stranger", "bins": [], "windowDays": 30}
     assert routes == {"subjectId": "stranger", "trips": [], "corridors": []}
@@ -251,9 +252,9 @@ async def test_no_rollup_build_yet_answers_503_not_an_empty_200(aiohttp_client, 
         mobility = SqlMobilityStore(engine)
         client = await aiohttp_client(_app(presence=object(), mobility=mobility))  # type: ignore[arg-type]
         paths = [
-            "/app/v1/presence/analytics/places",
-            "/app/v1/presence/analytics/rhythm?subjectId=miles",
-            "/app/v1/presence/analytics/routes?subjectId=miles",
+            "/app/v1/presence/analytics/places?personId=miles",
+            "/app/v1/presence/analytics/rhythm?subjectId=miles&personId=miles",
+            "/app/v1/presence/analytics/routes?subjectId=miles&personId=miles",
         ]
         for path in paths:
             resp = await client.get(path)
@@ -264,3 +265,32 @@ async def test_no_rollup_build_yet_answers_503_not_an_empty_200(aiohttp_client, 
             assert (await client.get(path)).status == 200, path
     finally:
         await engine.dispose()
+
+
+async def test_analytics_show_nothing_to_a_known_person_in_no_circle(aiohttp_client):
+    """Daisy can sign in but shares no circle with Miles: his places, rhythm
+    and routes are empty for her, and the store is never asked."""
+    mobility = FakeAnalyticsStore()
+    client = await aiohttp_client(_app(presence=object(), mobility=mobility))
+
+    assert await (await client.get(
+        "/app/v1/presence/analytics/places?personId=daisy"
+    )).json() == {"subjects": []}
+    assert await (await client.get(
+        "/app/v1/presence/analytics/rhythm?subjectId=miles&days=90&personId=daisy"
+    )).json() == {"subjectId": "miles", "bins": [], "windowDays": 90}
+    assert await (await client.get(
+        "/app/v1/presence/analytics/routes?subjectId=miles&days=90&personId=daisy"
+    )).json() == {"subjectId": "miles", "trips": [], "corridors": []}
+    assert mobility.rhythm_windows == []
+    assert mobility.route_windows == []
+
+
+async def test_analytics_refuse_a_missing_viewer(aiohttp_client):
+    client = await aiohttp_client(_app(presence=object(), mobility=FakeAnalyticsStore()))
+    for path in (
+        "/app/v1/presence/analytics/places",
+        "/app/v1/presence/analytics/rhythm?subjectId=miles",
+        "/app/v1/presence/analytics/routes?subjectId=miles",
+    ):
+        assert (await client.get(path)).status == 400

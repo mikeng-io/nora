@@ -1,5 +1,26 @@
 # Changelog
 
+## [7.4.0](https://github.com/mikeng-io/nora/compare/v7.3.1...v7.4.0) (2026-10-27)
+
+
+### Features
+
+* **app:** downloads conversion, thumbnails, and 24h retention ([20c7c85](https://github.com/mikeng-io/nora/commit/20c7c856e4ccc2d1519cb546d43cff06d4e8b9d5))
+
+
+### Bug Fixes
+
+* **app:** conversion round 3 — muxer-safe staging, job-dir thumbs, owned publish ([4d5d8c0](https://github.com/mikeng-io/nora/commit/4d5d8c05bc156165ec8f465d4a6c690d51a478bc))
+* **app:** downloads round-2 review — thumb collisions, atomic convert, sweep ([7956a11](https://github.com/mikeng-io/nora/commit/7956a1117e2ae1cb692c1530f585fd9a45cad6d2))
+* **app:** single-entry conversion finish, delete-safe publish ([ef45bc0](https://github.com/mikeng-io/nora/commit/ef45bc0a465f4f05a97b2a6d7a6110eda6d9699a))
+
+## [7.3.1](https://github.com/mikeng-io/nora/compare/v7.3.0...v7.3.1) (2026-10-27)
+
+
+### Security
+
+* **portal:** show presence only to people who share a circle ([6d8ce7c](https://github.com/mikeng-io/nora/commit/6d8ce7c691f37fb3e10e8334edad67c67dc9d0a5))
+
 ## [7.3.0](https://github.com/mikeng-io/nora/compare/v7.2.0...v7.3.0) (2026-10-27)
 
 
