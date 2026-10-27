@@ -1,0 +1,70 @@
+name: Engineering dispatch
+
+on:
+  pull_request_target:
+    branches: [master]
+    types: [ready_for_review, synchronize, reopened]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Owner-admitted operation (review selects only; reconcile never launches)
+        required: true
+        type: choice
+        options: [investigate, repair, review, reconcile]
+      number:
+        description: Current same-repository pull request number
+        type: string
+      head:
+        description: Full admitted PR head SHA
+        type: string
+      check_run_id:
+        description: Current failed GitHub Actions CI check ID (investigate/repair)
+        type: string
+      admission:
+        description: Structured owner confirmation; see GitHub maintenance documentation
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# All sources/actions share one lock. Cancellation must not discard a spending claim.
+concurrency:
+  group: nora-engineering-dispatch
+  cancel-in-progress: false
+
+jobs:
+  controller:
+    if: >-
+      github.repository == 'mikeng-io/nora' &&
+      vars.ENGINEERING_REPOSITORY == github.repository &&
+      (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/master') &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: write
+      checks: read
+      actions: read
+    steps:
+      # Never check out PR source, run its code, or interpolate payload text in shell.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: mikeng-io/nora
+          ref: master
+          persist-credentials: false
+      - name: Read intake or perform explicitly admitted operation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
+          DEVIN_ORG_ID: ${{ vars.DEVIN_ORG_ID }}
+          ENGINEERING_REPOSITORY: ${{ vars.ENGINEERING_REPOSITORY }}
+          ENGINEERING_CI_ENABLED: ${{ vars.ENGINEERING_CI_ENABLED }}
+          DEVIN_SECURITY_PROFILE_ID: ${{ vars.DEVIN_SECURITY_PROFILE_ID }}
+          ENGINEERING_REVIEW_SELECTOR_ENABLED: ${{ vars.ENGINEERING_REVIEW_SELECTOR_ENABLED }}
+        run: python3 -m scripts.engineering_dispatch
