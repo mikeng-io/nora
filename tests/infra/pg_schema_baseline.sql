@@ -622,7 +622,7 @@ CONSTRAINT ck_events_field_meta_shape CHECK ((jsonb_typeof(field_meta) = 'object
 CONSTRAINT ck_events_lineage_shape CHECK ((jsonb_typeof(lineage) = 'object'::text)),
 CONSTRAINT ck_events_reasoning_is_a_mode CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'abduced'::text])))),
 CONSTRAINT ck_events_status CHECK ((status = ANY (ARRAY['staged'::text, 'proposed'::text, 'confirmed'::text, 'happened'::text, 'cancelled'::text, 'lapsed'::text, 'evicted'::text])))
-CONSTRAINT ck_extraction_state CHECK ((state = ANY (ARRAY['pending'::text, 'done'::text, 'retired'::text])))
+CONSTRAINT ck_extraction_state CHECK ((state = ANY (ARRAY['pending'::text, 'done'::text, 'retired'::text, 'failed'::text])))
 CONSTRAINT ck_instagram_summons_mode CHECK ((mode = ANY (ARRAY['dry_run'::text, 'live'::text]))),
 CONSTRAINT ck_instagram_summons_state CHECK ((state = ANY (ARRAY['claimed'::text, 'unresolved'::text, 'ignored_summoner'::text, 'stale'::text, 'unreadable'::text, 'silent'::text, 'staged'::text, 'flushing'::text, 'published'::text, 'refused'::text, 'capped'::text, 'duplicate'::text, 'ambiguous'::text, 'failed'::text])))
 CONSTRAINT ck_lesson_has_a_unit CHECK ((length(btrim(unit)) > 0))

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import sys
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from xml.etree import ElementTree
@@ -13,7 +15,7 @@ import sqlalchemy as sa
 
 from nora.app.extraction import ExtractionOutput, ExtractionWorker
 from nora.domain.extraction import validate_claims
-from nora.domain.models import DeliveryStatus, NormalizedMessage
+from nora.domain.models import DeliveryStatus, NormalizedMessage, Quote
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.extraction import SqlExtraction
@@ -27,7 +29,9 @@ from tests.builders import override_config
 from tests.unit.test_extraction import ASSERTED, claim
 
 
-def message(n=1, *, room="room-a", platform="signal", body="tomorrow visit Workshop"):
+def message(
+    n=1, *, room="room-a", platform="signal", body="tomorrow visit Workshop", quoted_ts=None
+):
     return NormalizedMessage(
         platform=platform,
         conversation_id=room,
@@ -37,6 +41,8 @@ def message(n=1, *, room="room-a", platform="signal", body="tomorrow visit Works
         timestamp=ASSERTED + n,
         body=body,
         raw={},
+        quote=Quote(quoted_ts=quoted_ts, author_id="synthetic-sender", text="untrusted quoted text")
+        if quoted_ts is not None else None,
         message_id=f"source-{n}",
     )
 
@@ -50,14 +56,14 @@ async def stores(pg_url):
 
 
 async def take(store, **kw):
-    return await store.take_extraction_batch(
-        model="ollamacloud/deepseek-v4.1-flash",
-        messages_per_call=20,
-        context_messages=20,
-        lease_seconds=150,
-        min_message_age_seconds=0,
+    return await store.take_extraction_batch(**{
+        "model": "ollamacloud/deepseek-v4.1-flash",
+        "messages_per_call": 20,
+        "context_messages": 20,
+        "lease_seconds": 150,
+        "min_message_age_seconds": 0,
         **kw,
-    )
+    })
 
 
 async def rows(engine, table):
@@ -475,17 +481,17 @@ async def test_trace_payloads_contain_only_structural_placeholders(
     assert (await rows(engine, ATTEMPT))[0]["trace_id"] == format(root.context.trace_id, "032x")
 
 
-async def test_retry_backoff_reaches_the_documented_hour(stores):
+async def test_retry_backoff_before_the_ceiling(stores):
     record, store, engine = stores
     await record.append(message=message(), person_id="subject-a")
     job = await take(store)
-    job["attempts"] = 20
+    job["attempts"] = 4
     async with engine.begin() as conn:
-        await conn.execute(sa.update(EXTRACTION).values(attempts=20))
+        await conn.execute(sa.update(EXTRACTION).values(attempts=4))
     before = datetime.now(UTC)
     await store.fail(job)
     due = (await rows(engine, EXTRACTION))[0]["due_at"]
-    assert 3590 <= (due - before).total_seconds() <= 3610
+    assert 15 <= (due - before).total_seconds() <= 17
 
 
 async def test_failure_recording_outage_counts_one_failed_attempt(
@@ -521,3 +527,190 @@ async def test_failure_recording_outage_counts_one_failed_attempt(
         await worker.run()
     assert metrics.get("nora_extraction_failures_total") == 1
     assert metrics.get("nora_extraction_calls_total") == 1
+
+
+async def test_claim_without_person_subject_validates_and_publishes(stores):
+    record, store, engine = stores
+    source_id = await record.append(
+        message=message(body="tomorrow visit Workshop"), person_id="subject-a"
+    )
+    job = await take(store)
+    raw = {**claim(source_id), "about": [], "what": "A visit is planned"}
+    content = validate_claims(
+        ExtractionOutput.model_validate({"claims": [raw]}).model_dump(), job["snapshot"]
+    )
+    assert await store.publish_extraction_batch(job, claims=content) == 1
+    held = (await rows(engine, CLAIM))[0]
+    assert held["content"]["about"] == []
+    assert held["source_ids"] == [source_id]
+
+
+@pytest.mark.parametrize("context_limit", [0, 1, 2])
+async def test_direct_reply_parent_has_priority_is_linked_and_uncitable(stores, context_limit):
+    record, store, engine = stores
+    grandparent = await record.append(message=message(1), person_id="subject-a")
+    parent = await record.append(message=message(2, quoted_ts=ASSERTED + 1), person_id="subject-a")
+    nearby = await record.append(message=message(3), person_id="subject-a")
+    await finish(store, await take(store))
+    reply = await record.append(message=message(4, quoted_ts=ASSERTED + 2), person_id="subject-a")
+    job = await take(store, context_messages=context_limit)
+    assert job["source_ids"] == [reply]
+    assert job["context_ids"] == (
+        [parent, nearby] if context_limit == 2 else [parent] if context_limit else []
+    )
+    row = job["snapshot"]["messages"][0]
+    assert "untrusted quoted text" not in json.dumps(job["snapshot"])
+    assert row["quoted_ts"] == ASSERTED + 2
+    assert row["reply_to"] == (parent if context_limit else None)
+    assert grandparent not in job["context_ids"]  # one hop, no ancestor walk
+    if context_limit:
+        with pytest.raises(ValueError, match="citation outside batch"):
+            validate_claims(
+                ExtractionOutput.model_validate({"claims": [claim(parent)]}).model_dump(),
+                job["snapshot"],
+            )
+    assert await finish(store, job) == 1
+    assert (await rows(engine, EXTRACTION))[-1]["state"] == "done"
+
+
+@pytest.mark.parametrize("boundary", ["hidden", "deleted", "pending", "unit", "platform", "room"])
+async def test_ineligible_reply_parent_stays_unresolved(stores, boundary):
+    record, store, engine = stores
+    owner = (
+        SqlRecordStore(engine, extraction_unit=lambda p, r: "unit-b")
+        if boundary == "unit"
+        else record
+    )
+    parent = await owner.append(
+        message=message(
+            1,
+            platform="discord" if boundary == "platform" else "signal",
+            room="other-room" if boundary == "room" else "room-a",
+        ),
+        person_id="subject-a",
+        is_nora=boundary == "pending",
+    )
+    # Leave only the later reply owed by this test; parent remains available as context if eligible.
+    async with engine.begin() as conn:
+        await conn.execute(sa.update(QUEUE).values(is_source=False))
+        if boundary == "hidden":
+            await conn.execute(
+                sa.update(MESSAGES).where(MESSAGES.c.id == parent).values(hidden_at=ASSERTED + 10)
+            )
+        elif boundary == "deleted":
+            await conn.execute(
+                sa.insert(MESSAGE_DELETE).values(
+                    message_id=parent, ts=ASSERTED + 10, raw_json="{}", sender_id="synthetic-sender"
+                )
+            )
+    reply = await record.append(message=message(2, quoted_ts=ASSERTED + 1), person_id="subject-a")
+    job = await take(store, context_messages=1)
+    assert job["source_ids"] == [reply]
+    assert job["context_ids"] == []
+    assert job["snapshot"]["context"] == []
+    assert job["snapshot"]["messages"][0]["reply_to"] is None
+    assert job["snapshot"]["messages"][0]["quoted_ts"] == ASSERTED + 1
+    assert await finish(store, job) == 1
+
+
+@pytest.mark.parametrize("context_limit", [1, 2])
+async def test_reply_parents_dedupe_and_overflow_stays_explicit(stores, context_limit):
+    record, store, _engine = stores
+    parents = [await record.append(message=message(i), person_id="subject-a") for i in (1, 2)]
+    await finish(store, await take(store))
+    replies = [
+        await record.append(message=message(i, quoted_ts=ASSERTED + target), person_id="subject-a")
+        for i, target in ((3, 1), (4, 1), (5, 2), (6, 3))
+    ]
+    job = await take(store, context_messages=context_limit)
+    assert job["context_ids"] == parents[:context_limit]
+    assert [r["reply_to"] for r in job["snapshot"]["messages"]] == [
+        parents[0],
+        parents[0],
+        parents[1] if context_limit == 2 else None,
+        replies[0],
+    ]
+    assert await finish(store, job) == 4
+
+
+async def test_old_pending_snapshot_keeps_its_shape_and_can_publish(stores):
+    record, store, engine = stores
+    await record.append(message=message(), person_id="subject-a")
+    job = await take(store)
+    for row in job["snapshot"]["messages"]:
+        del row["quoted_ts"], row["reply_to"]
+    async with engine.begin() as conn:
+        await conn.execute(
+            sa.update(EXTRACTION).values(snapshot=job["snapshot"], due_at=sa.func.now())
+        )
+    resumed = await take(store)
+    assert resumed["version"] == 1
+    assert resumed["snapshot"] == job["snapshot"]
+    assert await finish(store, resumed) == 1
+
+
+async def test_fifth_failure_is_terminal_counted_once_and_requeueable(
+    stores, example_config, pg_url
+):
+    record, store, engine = stores
+    await record.append(message=message(), person_id="subject-a")
+    cfg = override_config(
+        example_config.memory.extraction, {"enabled": True, "min_message_age_seconds": 0}
+    )
+    metrics = Metrics()
+    gateway = Gateway(finish_reason="length")
+    worker = ExtractionWorker(store=store, client=gateway, config=cfg, metrics=metrics)
+    for attempt in range(1, 6):
+        assert await worker.run_once() == 0
+        held = (await rows(engine, EXTRACTION))[0]
+        assert held["attempts"] == attempt
+        assert held["state"] == ("failed" if attempt == 5 else "pending")
+        assert metrics.get("nora_extraction_terminal_batches_total") == int(attempt == 5)
+        async with engine.begin() as conn:
+            await conn.execute(sa.update(EXTRACTION).values(due_at=sa.func.now()))
+    assert metrics.get("nora_extraction_failures_total", stage="incomplete") == 5
+    assert metrics.get("nora_extraction_calls_total") == 5
+    assert await worker.run_once() == 0
+    assert len(gateway.calls) == 5
+    assert len(await rows(engine, ATTEMPT)) == 5
+    assert await rows(engine, CLAIM) == []
+    stale = {**held, "attempt_id": (await rows(engine, ATTEMPT))[-1]["id"]}
+    assert await store.fail(stale) is False
+    assert await finish(store, stale) == 0
+    process = await asyncio.create_subprocess_exec(
+        sys.executable, "scripts/extraction_requeue.py", str(held["id"]),
+        env={**os.environ, "DATABASE_URL": pg_url}, stdout=asyncio.subprocess.PIPE,
+    )
+    output, _ = await process.communicate()
+    assert process.returncode == 0 and output == b"requeued\n"
+    assert await store.requeue(held["id"]) is False
+    resumed = await take(store)
+    assert resumed is not None
+    assert resumed["id"] != held["id"] and resumed["attempts"] == 1
+    assert resumed["source_ids"] == held["source_ids"]
+    assert await finish(store, resumed) == 1
+    assert [r["state"] for r in await rows(engine, EXTRACTION)] == ["retired", "done"]
+    assert metrics.get("nora_extraction_terminal_batches_total") == 1
+
+
+async def test_exhausted_lease_or_legacy_batch_fails_without_another_call(stores, example_config):
+    record, store, engine = stores
+    await record.append(message=message(), person_id="subject-a")
+    job = await take(store)
+    async with engine.begin() as conn:
+        await conn.execute(sa.update(EXTRACTION).values(attempts=5, due_at=sa.func.now()))
+    cfg = override_config(
+        example_config.memory.extraction, {"enabled": True, "min_message_age_seconds": 0}
+    )
+    metrics = Metrics()
+    gateway = Gateway()
+    worker = ExtractionWorker(store=store, client=gateway, config=cfg, metrics=metrics)
+    assert await worker.run_once() == 0
+    assert metrics.get("nora_extraction_terminal_batches_total") == 1
+    assert gateway.calls == []
+    held = (await rows(engine, EXTRACTION))[0]
+    assert held["state"] == "failed" and held["attempts"] == 5
+    assert len(await rows(engine, ATTEMPT)) == 1
+    assert await finish(store, job) == 0
+    assert await worker.run_once() == 0
+    assert metrics.get("nora_extraction_terminal_batches_total") == 1

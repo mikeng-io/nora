@@ -1,5 +1,18 @@
 # Changelog
 
+## [7.6.0](https://github.com/mikeng-io/nora/compare/v7.5.0...v7.6.0) (2026-10-27)
+
+
+### Features
+
+* **record:** ground reply claims and bound extraction retries ([d39ce44](https://github.com/mikeng-io/nora/commit/d39ce4434409b51fc0b3702cb77dd70d6db3d508))
+
+
+### Bug Fixes
+
+* **record:** accept extraction spans verbatim or decoded ([4c42314](https://github.com/mikeng-io/nora/commit/4c4231432c701441446ab56c05737715a344e2d6))
+* **record:** align extraction references and escaped source spans ([8df302c](https://github.com/mikeng-io/nora/commit/8df302ce03b5995a88b4d14f370ffa1b5e4e8722))
+
 ## [7.5.0](https://github.com/mikeng-io/nora/compare/v7.4.0...v7.5.0) (2026-10-27)
 
 
