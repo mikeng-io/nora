@@ -196,11 +196,15 @@ export class DownloadStore {
       // Persist on the next turn: progress ticks at many-per-second during a
       // download, and a state a beat old on disk is fine — only a job reaching
       // or leaving a state has to be durable at once (callers await flush()).
-      this.flushing = this.flush().finally(() => {
-        this.flushing = null;
-        // An update that landed during the write is still dirty: persist again.
-        if (this.dirty) this.markDirty();
-      });
+      // A failed write stays dirty so the next update retries it, and logs —
+      // an unhandled rejection would be a crash, a silent one a lost registry.
+      this.flushing = this.flush()
+        .catch((e) => console.error("[downloads] registry write failed:", e instanceof Error ? e.message : e))
+        .finally(() => {
+          this.flushing = null;
+          // An update that landed during the write is still dirty: persist again.
+          if (this.dirty) this.markDirty();
+        });
     }
   }
 
@@ -221,7 +225,14 @@ export class DownloadStore {
     // Unique tmp name per write: a second store on the same root (tests do it)
     // must not rename another writer's tmp out from under it.
     const tmp = path.join(this.root, `${REGISTRY}.${process.pid}.${this.writes++}.tmp`);
-    await writeFile(tmp, JSON.stringify({ jobs: this.list() } satisfies RegistryFile), "utf-8");
-    await rename(tmp, path.join(this.root, REGISTRY));
+    try {
+      await writeFile(tmp, JSON.stringify({ jobs: this.list() } satisfies RegistryFile), "utf-8");
+      await rename(tmp, path.join(this.root, REGISTRY));
+    } catch (err) {
+      // The change was not persisted: stay dirty so the next update retries it
+      // rather than reporting a state the disk never learned.
+      this.dirty = true;
+      throw err;
+    }
   }
 }

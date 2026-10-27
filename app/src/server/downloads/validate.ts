@@ -1,12 +1,22 @@
-// What a submitted URL may be (cc-downloader's rules, kept): http or https, and
-// never a private, loopback or link-local address — a download makes THIS server
-// fetch the URL, so an internal name would be SSRF from inside the compose
-// network. The check is on the URL's literal hostname; a public name that
-// resolves to a private address is the residual hole DNS pinning would close.
+import "server-only";
+import dns from "node:dns/promises";
+
+// What a submitted URL may be: http or https, and never a private, loopback,
+// link-local or internal address — a download makes THIS server fetch the URL,
+// so anything internal is SSRF from inside the compose network (a circle member
+// could ask for http://nora:9100/status and read it back from the shelf).
+// The boundary is enforced twice: the literal hostname here, and the resolved
+// addresses in assertPublicHost() — a public name that resolves privately is
+// refused at submit and again when the job runs (DNS can be rebound between
+// them). Residual hole: yt-dlp follows HTTP redirects inside its own process,
+// so a public URL that 302s to an internal address is not pinned — closing that
+// needs an egress proxy, not a hostname check. Noted, not silently missing.
+
 // hostname arrives bracketed for IPv6 literals ("[::1]"); strip the brackets
 // before testing so the anchors below apply to either form.
 const PRIVATE_HOST =
-  /^(?:localhost|127\.|0\.|10\.|172\.(?:1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|::1|fc|fd|fe80|::)/i;
+  /^(?:localhost|127\.|0\.|10\.|172\.(?:1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|169\.254\.|::|fc|fd|fe[89ab])/i;
+const INTERNAL_TLD = /\.(?:internal|local|lan|home|corp|localhost|arpa)$/i;
 
 export function validateSubmissionUrl(url: string): { ok: true; url: string } | { ok: false; error: string } {
   const trimmed = url.trim();
@@ -20,10 +30,66 @@ export function validateSubmissionUrl(url: string): { ok: true; url: string } | 
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     return { ok: false, error: "scheme" };
   }
-  if (PRIVATE_HOST.test(parsed.hostname.replace(/^\[|\]$/g, ""))) {
+  const host = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (
+    PRIVATE_HOST.test(host) ||
+    isPrivateAddress(host) ||
+    // A single label is a compose service name or a LAN host, never a site.
+    !host.includes(".") ||
+    INTERNAL_TLD.test(host)
+  ) {
     return { ok: false, error: "private" };
   }
   return { ok: true, url: parsed.toString() };
+}
+
+/** One resolved IP (v4 or v6) is internal. Fail-closed on anything ambiguous. */
+export function isPrivateAddress(addr: string): boolean {
+  const a = addr.replace(/^\[|\]$/g, "").split("%")[0].toLowerCase();
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(a);
+  if (v4) {
+    const [a1, a2] = [Number(v4[1]), Number(v4[2])];
+    if (a1 === 0 || a1 === 10 || a1 === 127) return true; // this-net, private, loopback
+    if (a1 === 169 && a2 === 254) return true; // link-local
+    if (a1 === 172 && a2 >= 16 && a2 <= 31) return true;
+    if (a1 === 192 && a2 === 168) return true;
+    if (a1 === 100 && a2 >= 64 && a2 <= 127) return true; // CGNAT / tailnets
+    return a1 >= 224; // multicast + reserved
+  }
+  if (a === "::1" || a === "::" || a.startsWith("::")) return true; // loopback, unspecified, mapped
+  if (/^fe[89ab]/.test(a)) return true; // fe80::/10 link-local
+  return /^f[cd]/.test(a); // fc00::/7 unique-local
+}
+
+export type Lookup = (hostname: string) => Promise<{ address: string }[]>;
+
+const defaultLookup: Lookup = async (hostname) => dns.lookup(hostname, { all: true, verbatim: true });
+
+/** Resolve the URL's host and refuse when ANY answer is internal. A lookup that
+ * fails means we cannot check, which is a refusal — never a pass (R-27). */
+export async function assertPublicHost(
+  url: string,
+  lookup: Lookup = defaultLookup,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { ok: false, error: "invalid" };
+  }
+  const host = parsed.hostname.replace(/^\[|\]$/g, "");
+  // Literal IPs skip DNS (and must, so a race cannot swap the check).
+  if (isPrivateAddress(host)) return { ok: false, error: "private" };
+  let addrs: { address: string }[];
+  try {
+    addrs = await lookup(host);
+  } catch {
+    return { ok: false, error: "unresolvable" };
+  }
+  if (!addrs.length || addrs.some((a) => isPrivateAddress(a.address))) {
+    return { ok: false, error: "private" };
+  }
+  return { ok: true };
 }
 
 /** The URLs a batch body may carry: non-empty lines / array entries, deduped,

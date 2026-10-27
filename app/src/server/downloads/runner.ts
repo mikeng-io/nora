@@ -2,8 +2,8 @@ import "server-only";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { mkdir, stat } from "node:fs/promises";
 import path from "node:path";
-import { promisify } from "node:util";
 import { jobDir, mediaTypeFor, DownloadStore } from "./store";
+import { assertPublicHost, type Lookup } from "./validate";
 
 // The downloader itself: an in-process FIFO in place of cc-downloader's
 // BullMQ+Redis worker (this deployment has no Redis — one server process is the
@@ -16,8 +16,6 @@ import { jobDir, mediaTypeFor, DownloadStore } from "./store";
 // Bound by the tool, not just by us: --max-filesize makes yt-dlp itself refuse an
 // oversize file, and the process is killed at YTDLP_TIMEOUT_MS either way.
 
-const execFileAsync = promisify(execFile);
-
 export interface RunnerOptions {
   store: DownloadStore;
   ytdlpPath: string;
@@ -27,7 +25,9 @@ export interface RunnerOptions {
   /** Test seam: the process spawner. Defaults to node:child_process.spawn. */
   spawnImpl?: typeof spawn;
   /** Test seam: the --dump-json call. */
-  probeImpl?: (url: string) => Promise<ProbeResult>;
+  probeImpl?: (id: string, url: string) => Promise<ProbeResult>;
+  /** Test seam: the DNS re-check before each run. Defaults to real resolution. */
+  lookupImpl?: Lookup;
 }
 
 export interface ProbeResult {
@@ -69,7 +69,9 @@ export class DownloadRunner {
 
   /** Queue a stored job; picks up work left queued by a previous process too. */
   enqueue(id: string): void {
-    if (this.queue.includes(id) || this.running.has(id)) return;
+    // inFlight, not running: a claimed job holds its slot from dequeue to the
+    // end of run(), including the probe gap where no child exists yet.
+    if (this.queue.includes(id) || this.inFlight.has(id)) return;
     this.queue.push(id);
     void this.pump();
   }
@@ -83,12 +85,12 @@ export class DownloadRunner {
   /** Stop a job: a queued one simply never starts; a running one's process is
    * killed and its .part files stay for a later retry. */
   cancel(id: string): void {
+    // Mark unconditionally: a job still probing has a live execFile child too
+    // (it sits in `running` the same as a download), and one mid-lifecycle must
+    // not spawn its download after being deleted.
+    this.cancelled.add(id);
     this.queue = this.queue.filter((q) => q !== id);
-    const proc = this.running.get(id);
-    if (proc) {
-      this.cancelled.add(id);
-      proc.kill("SIGTERM");
-    }
+    this.running.get(id)?.kill("SIGTERM");
   }
 
   private async pump(): Promise<void> {
@@ -99,6 +101,10 @@ export class DownloadRunner {
       this.inFlight.add(id);
       void this.run(id).finally(() => {
         this.inFlight.delete(id);
+        // A retry that landed while the job was still finishing left it queued
+        // but unqueued (enqueue refused the id still claimed) — admit it now.
+        const job = this.opts.store.get(id);
+        if (job?.status === "queued" && !this.queue.includes(id)) this.queue.push(id);
         void this.pump();
       });
     }
@@ -112,8 +118,14 @@ export class DownloadRunner {
     await mkdir(dir, { recursive: true });
 
     try {
+      // Mark probing first: "queued" at catch-time must mean a retry landed
+      // mid-flight, not the initial state a pre-start failure would preserve.
       store.update(id, { status: "probing", error: null });
-      const info = await this.probe(job.url);
+      // The submit-time check is hours stale by the time a queued job runs:
+      // resolve the host again, refuse anything that now answers internal.
+      const host = await assertPublicHost(job.url, this.opts.lookupImpl);
+      if (!host.ok) throw new Error(`refused: ${host.error}`);
+      const info = await this.probe(id, job.url);
       if (info.fileSize && info.fileSize > this.opts.maxBytes) {
         throw new Error(`declared size exceeds the limit (${info.fileSize} > ${this.opts.maxBytes} bytes)`);
       }
@@ -126,6 +138,7 @@ export class DownloadRunner {
       await store.flush();
       if (this.cancelled.has(id)) throw new Error("cancelled");
 
+      store.update(id, { status: "downloading" });
       const fileName = await this.download(id, job.url, dir);
       const file = path.join(dir, fileName);
       const bytes = (await stat(file)).size;
@@ -138,10 +151,15 @@ export class DownloadRunner {
         error: null,
       });
     } catch (err) {
-      store.update(id, {
-        status: "failed",
-        error: err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500),
-      });
+      // A retry that landed while the job was still finishing re-marked it
+      // queued — keep that, and pump's finally re-admits it. Anything else is a
+      // real failure.
+      if (store.get(id)?.status !== "queued") {
+        store.update(id, {
+          status: "failed",
+          error: err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500),
+        });
+      }
     } finally {
       this.running.delete(id);
       this.cancelled.delete(id);
@@ -149,23 +167,44 @@ export class DownloadRunner {
     }
   }
 
-  private async probe(url: string): Promise<ProbeResult> {
-    if (this.opts.probeImpl) return this.opts.probeImpl(url);
+  private async probe(id: string, url: string): Promise<ProbeResult> {
+    if (this.opts.probeImpl) return this.opts.probeImpl(id, url);
+    let info: string;
     try {
-      const { stdout } = await execFileAsync(this.opts.ytdlpPath, ["--dump-json", "--no-playlist", "--no-warnings", url], {
-        timeout: PROBE_TIMEOUT_MS,
-        maxBuffer: PROBE_BUFFER,
-        killSignal: "SIGKILL",
+      info = await new Promise<string>((resolve, reject) => {
+        // execFile with a callback, not promisified: the child must sit in
+        // `running` so a delete mid-probe can kill it like any download.
+        const child = execFile(
+          this.opts.ytdlpPath,
+          ["--dump-json", "--no-playlist", "--no-warnings", url],
+          { timeout: PROBE_TIMEOUT_MS, maxBuffer: PROBE_BUFFER, killSignal: "SIGKILL" },
+          (err, stdout) => (err ? reject(err) : resolve(stdout)),
+        );
+        this.running.set(id, child);
       });
-      const info = JSON.parse(stdout) as { title?: string; extractor?: string; filesize?: number; filesize_approx?: number };
-      return {
-        title: info.title ?? null,
-        extractor: info.extractor ?? null,
-        fileSize: info.filesize ?? info.filesize_approx ?? null,
-      };
     } catch (err) {
       // A failed probe is the download failing early, not "there is no video".
-      throw new Error(`probe failed: ${err instanceof Error ? err.message.split("\n").pop() : String(err)}`);
+      const msg = err instanceof Error ? err.message.split("\n").pop() : String(err);
+      throw new Error(`probe failed: ${msg}`);
+    } finally {
+      // The probe finished before its download spawns, so the slot clears here;
+      // download() claims `running` again for its own child.
+      this.running.delete(id);
+    }
+    try {
+      const parsed = JSON.parse(info) as {
+        title?: string;
+        extractor?: string;
+        filesize?: number;
+        filesize_approx?: number;
+      };
+      return {
+        title: parsed.title ?? null,
+        extractor: parsed.extractor ?? null,
+        fileSize: parsed.filesize ?? parsed.filesize_approx ?? null,
+      };
+    } catch {
+      throw new Error("probe failed: unreadable metadata");
     }
   }
 
@@ -201,23 +240,31 @@ export class DownloadRunner {
       }, this.opts.timeoutMs);
       timer.unref?.();
 
-      const onLine = (chunk: Buffer) => {
-        for (const line of chunk.toString("utf-8").split("\n")) {
-          const named = DESTINATION.exec(line) ?? MERGED.exec(line) ?? ALREADY.exec(line);
-          if (named?.[1]) fileName = path.basename(named[1].trim());
-          const m = PROGRESS.exec(line);
-          if (m) {
-            store.update(id, {
-              progress: {
-                percent: Math.min(100, parseFloat(m[1])),
-                totalBytes: sizeToBytes(m[2], m[3]),
-                speedBps: sizeToBytes(m[4], m[5]),
-              },
-            });
-          }
+      // Chunks split wherever the pipe felt like it: buffer the partial tail
+      // and only score complete lines, or a Destination/Merger line cut in two
+      // leaves a finished download reporting "finished without a file name".
+      let tail = "";
+      const onLine = (line: string) => {
+        const named = DESTINATION.exec(line) ?? MERGED.exec(line) ?? ALREADY.exec(line);
+        if (named?.[1]) fileName = path.basename(named[1].trim());
+        const m = PROGRESS.exec(line);
+        if (m) {
+          store.update(id, {
+            progress: {
+              percent: Math.min(100, parseFloat(m[1])),
+              totalBytes: sizeToBytes(m[2], m[3]),
+              speedBps: sizeToBytes(m[4], m[5]),
+            },
+          });
         }
       };
-      child.stdout?.on("data", onLine);
+      const feed = (chunk: Buffer) => {
+        const text = tail + chunk.toString("utf-8");
+        const lines = text.split("\n");
+        tail = lines.pop() ?? "";
+        for (const line of lines) onLine(line);
+      };
+      child.stdout?.on("data", feed);
       child.stderr?.on("data", (chunk: Buffer) => {
         stderrTail = (stderrTail + chunk.toString("utf-8")).slice(-2000);
       });

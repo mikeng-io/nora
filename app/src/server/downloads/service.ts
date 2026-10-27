@@ -5,7 +5,7 @@ import { stat } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { fileHeaders } from "../artifact-download";
-import { validateBatch } from "./validate";
+import { assertPublicHost, validateBatch, type Lookup } from "./validate";
 import { JOB_ID, type DownloadJob } from "./store";
 import type { DownloadRunner } from "./runner";
 
@@ -25,15 +25,23 @@ export interface Rejected {
   existingId?: string;
 }
 
-export function submit(
+export async function submit(
   runner: DownloadRunner,
   personId: string,
   urls: string[],
-): { status: number; body: { jobs: DownloadJob[]; rejected: Rejected[] } } {
+  lookup?: Lookup,
+): Promise<{ status: number; body: { jobs: DownloadJob[]; rejected: Rejected[] } }> {
   const { accepted, rejected: checked } = validateBatch(urls, MAX_BATCH);
   const rejected: Rejected[] = checked;
   const jobs: DownloadJob[] = [];
   for (const url of accepted) {
+    // Literal-hostname validation is not enough: a public name can resolve to a
+    // private address. Refuse it here, and again at run start in the runner.
+    const host = await assertPublicHost(url, lookup);
+    if (!host.ok) {
+      rejected.push({ url, error: host.error });
+      continue;
+    }
     const existing = runner.store.findActive(url);
     if (existing) {
       rejected.push({ url, error: "exists", existingId: existing.id });

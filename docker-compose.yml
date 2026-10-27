@@ -503,6 +503,9 @@ services:
       # portal's whitelist can never drift from Nora's own roster because it
       # reads the identical bytes.
       - ./identity.toml:/app/identity.toml:ro
+      # A bind mount the image's chown cannot reach: if the host dir is absent,
+      # compose creates it root-owned and the `node` user (uid 1000) cannot
+      # write. Provision once on the host: install -d -o 1000:1000 data/downloads
       - ${NORA_DATA_HOST_ROOT:-./data}/downloads:/data/downloads
 
   # site — Nora's public site (site/, Astro, static). Loopback-only like

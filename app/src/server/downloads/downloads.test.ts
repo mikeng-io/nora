@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ChildProcess } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { validateBatch, validateSubmissionUrl } from "./validate";
+import { assertPublicHost, isPrivateAddress, validateBatch, validateSubmissionUrl } from "./validate";
 import { DownloadStore, mediaTypeFor } from "./store";
 import { DownloadRunner, sizeToBytes, type RunnerOptions } from "./runner";
 
@@ -44,13 +44,81 @@ describe("validateSubmissionUrl", () => {
       "http://172.31.255.1/",
       "http://192.168.1.1/",
       "http://169.254.169.254/latest/meta-data",
+      `http://${[100, 64, 0, 1].join(".")}/`, // CGNAT range (tailnets)
       "http://[::1]/",
       "http://[fc00::1]/",
       "http://[fe80::1]/",
+      "http://[fe90::1]/", // fe80::/10 runs through febf
+      "http://[::ffff:127.0.0.1]/",
     ];
     for (const url of bad) expect(validateSubmissionUrl(url).ok).toBe(false);
     expect(validateSubmissionUrl("http://172.15.0.1/").ok).toBe(true);
     expect(validateSubmissionUrl("http://172.32.0.1/").ok).toBe(true);
+  });
+
+  it("rejects internal names: single-label hosts and private TLDs", () => {
+    // The hole that was live: a compose service name is not a private IP, so
+    // http://nora:9100/status would have passed the literal-IP check alone.
+    for (const url of [
+      "http://nora:9100/status",
+      "http://signal-cli:8080/",
+      "http://nas.internal/",
+      "http://router.local/",
+      "http://prn.lan/",
+    ]) {
+      const r = validateSubmissionUrl(url);
+      expect(r.ok, url).toBe(false);
+      if (!r.ok) expect(r.error).toBe("private");
+    }
+  });
+});
+
+describe("assertPublicHost (DNS-level SSRF bound)", () => {
+  const publicIp = { address: "93.184.216.34" };
+
+  it("refuses a public name that resolves to a private address", async () => {
+    const r = await assertPublicHost("https://sneaky.example/", async () => [{ address: "10.9.9.9" }]);
+    expect(r).toEqual({ ok: false, error: "private" });
+  });
+
+  it("refuses when ANY resolved address is internal (round-robin rebinding)", async () => {
+    const r = await assertPublicHost("https://sneaky.example/", async () => [publicIp, { address: "169.254.10.10" }]);
+    expect(r.ok).toBe(false);
+  });
+
+  it("refuses when the name cannot be resolved — could not check is never a pass", async () => {
+    const r = await assertPublicHost("https://nx.example/", async () => {
+      throw new Error("ENOTFOUND");
+    });
+    expect(r).toEqual({ ok: false, error: "unresolvable" });
+  });
+
+  it("refuses an empty answer set", async () => {
+    const r = await assertPublicHost("https://empty.example/", async () => []);
+    expect(r.ok).toBe(false);
+  });
+
+  it("accepts a public resolution", async () => {
+    const r = await assertPublicHost("https://media.example/", async () => [publicIp]);
+    expect(r.ok).toBe(true);
+  });
+
+  it("checks literal IPs without asking DNS at all", async () => {
+    const lookup = vi.fn(async () => [publicIp]);
+    expect((await assertPublicHost("http://192.168.0.5/x", lookup)).ok).toBe(false);
+    expect(lookup).not.toHaveBeenCalled();
+    expect((await assertPublicHost("http://8.8.8.8/dns", lookup)).ok).toBe(true);
+  });
+});
+
+describe("isPrivateAddress", () => {
+  it("covers v4 private/loopback/link-local/CGNAT/reserved and v6 local scopes", () => {
+    for (const a of ["0.0.0.0", "10.0.0.1", "127.0.0.1", "169.254.1.1", "172.16.0.1", "192.168.0.1", [100, 64, 5, 5].join("."), "224.0.0.1", "::1", "::", "::ffff:8.8.8.8", "fe80::1", "febf::1", "fc00::1", "fd12::1"]) {
+      expect(isPrivateAddress(a), a).toBe(true);
+    }
+    for (const a of ["8.8.8.8", "93.184.216.34", "172.15.0.1", "100.63.0.1", "2001:4860:4860::8888"]) {
+      expect(isPrivateAddress(a), a).toBe(false);
+    }
   });
 });
 
@@ -175,7 +243,9 @@ function makeRunner(over: Partial<RunnerOptions> = {}) {
     maxBytes: 1_000_000,
     concurrency: 2,
     spawnImpl: fakeSpawn(goodYtdlp) as never,
-    probeImpl: async (url) => ({ title: `T:${url}`, extractor: "generic", fileSize: 10 }),
+    probeImpl: async (_id, url) => ({ title: `T:${url}`, extractor: "generic", fileSize: 10 }),
+    // Tests never touch real DNS: every host answers as one public address.
+    lookupImpl: async () => [{ address: "93.184.216.34" }],
     ...over,
   });
   return { store, runner };
@@ -297,6 +367,95 @@ describe("DownloadRunner", () => {
     await settle(store, job.id);
     expect(store.get(job.id)!.status).toBe("failed");
     expect(store.get(job.id)!.error).toBe("cancelled");
+  });
+
+  it("a job is 'downloading' while its download runs, never stuck at probing", async () => {
+    const { store, runner } = makeRunner();
+    const job = store.create("https://media.example/hang", "miles");
+    runner.enqueue(job.id);
+    // Wait for the probe to pass and the spawn to be in flight.
+    for (let i = 0; i < 100 && store.get(job.id)!.status !== "downloading"; i++) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    expect(store.get(job.id)!.status).toBe("downloading");
+    runner.cancel(job.id);
+    await settle(store, job.id);
+  });
+
+  it("a Destination line split across chunks still lands the file name", async () => {
+    const spawnImpl = fakeSpawn((args, proc) => {
+      const outIdx = args.indexOf("-o") + 1;
+      const file = args[outIdx].replace("%(ext)s", "mp4");
+      writeFileSync(file, "x");
+      const line = `[download] Destination: ${file}\n`;
+      const cut = Math.floor(line.length / 2);
+      proc.stdout.emit("data", Buffer.from(line.slice(0, cut)));
+      proc.stdout.emit("data", Buffer.from(line.slice(cut)));
+      proc.emit("close", 0);
+    });
+    const { store, runner } = makeRunner({ spawnImpl: spawnImpl as never });
+    const job = store.create("https://media.example/split", "miles");
+    runner.enqueue(job.id);
+    await settle(store, job.id);
+    expect(store.get(job.id)!.status).toBe("done");
+    expect(store.get(job.id)!.fileName).toBe("download.mp4");
+  });
+
+  it("a delete during the probe stops the job before any download spawns", async () => {
+    const spawnImpl = fakeSpawn(goodYtdlp);
+    const { store, runner } = makeRunner({
+      spawnImpl: spawnImpl as never,
+      probeImpl: async () => {
+        await new Promise((r) => setTimeout(r, 60));
+        return { title: "late", extractor: "generic", fileSize: 10 };
+      },
+    });
+    const job = store.create("https://media.example/slow-probe", "miles");
+    runner.enqueue(job.id);
+    await new Promise((r) => setTimeout(r, 20)); // probe in flight
+    runner.cancel(job.id);
+    await store.remove(job.id);
+    await new Promise((r) => setTimeout(r, 80)); // probe resolves; cancel check fires
+    expect(spawnImpl).not.toHaveBeenCalled();
+    expect(store.get(job.id)).toBeNull();
+  });
+
+  it("a retry that lands while the run finishes is re-admitted, not stranded", async () => {
+    let attempt = 0;
+    const spawnImpl = fakeSpawn((args, proc) => {
+      attempt += 1;
+      if (attempt === 1) return; // first run hangs so we can retry mid-flight
+      const outIdx = args.indexOf("-o") + 1;
+      const file = args[outIdx].replace("%(ext)s", "mp4");
+      writeFileSync(file, "x");
+      proc.stdout.emit("data", Buffer.from(`[download] Destination: ${file}\n`));
+      proc.emit("close", 0);
+    });
+    const { store, runner } = makeRunner({ spawnImpl: spawnImpl as never });
+    const job = store.create("https://media.example/twice", "miles");
+    runner.enqueue(job.id);
+    await new Promise((r) => setTimeout(r, 30)); // first run is in flight
+    // The retry path: mark queued and try to enqueue — refused (slot held)…
+    store.update(job.id, { status: "queued" });
+    runner.enqueue(job.id);
+    runner.cancel(job.id); // …then the first run dies…
+    await settle(store, job.id); // …and the queued mark is re-admitted, run again.
+    expect(attempt).toBe(2);
+    expect(store.get(job.id)!.status).toBe("done");
+  });
+
+  it("a job whose DNS answers internal at run time fails refused, never spawned", async () => {
+    const spawnImpl = fakeSpawn(goodYtdlp);
+    const { store, runner } = makeRunner({
+      spawnImpl: spawnImpl as never,
+      lookupImpl: async () => [{ address: "10.9.9.9" }],
+    });
+    const job = store.create("https://sneaky.example/v", "miles");
+    runner.enqueue(job.id);
+    await settle(store, job.id);
+    expect(store.get(job.id)!.status).toBe("failed");
+    expect(store.get(job.id)!.error).toContain("refused");
+    expect(spawnImpl).not.toHaveBeenCalled();
   });
 
   it("requeueStored resumes jobs left queued by a previous process", async () => {

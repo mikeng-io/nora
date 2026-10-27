@@ -31,6 +31,6 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: "invalid body" }, { status: 400, headers: PRIVATE });
   }
-  const out = submit(downloadRunner(), check.personId, parsed.data.urls);
+  const out = await submit(downloadRunner(), check.personId, parsed.data.urls);
   return NextResponse.json(out.body, { status: out.status, headers: PRIVATE });
 }
