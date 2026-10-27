@@ -1451,3 +1451,25 @@ cases:
     # and `who_said` is not on the graph surface (deprecated, DEC-316).
     metadata: {tools: [who_said], not_tools: [memory_search], memory_surface: honcho}
     snapshot: *room_a
+
+  - name: route_load_transcript_thread
+    entry: tag
+    expect: reply
+    mention: true
+    input: "Standing thread th7 points to the travel discussion in this room. Open that thread and check which option Kit preferred."
+    snapshot: *room_a
+    metadata:
+      tools: [load_transcript]
+      not_tools: [standing_read, record_read]
+      args_include: {load_transcript: [thread, th7]}
+
+  - name: route_room_read_thread
+    entry: tag
+    expect: reply
+    mention: true
+    input: "Standing thread th7 points to the travel discussion in the other room. Use room_list to find its name, then open that thread there and check what Ana asked."
+    snapshot: *room_a
+    metadata:
+      tools: [room_read]
+      not_tools: [standing_read, record_read]
+      args_include: {room_read: [thread, th7]}

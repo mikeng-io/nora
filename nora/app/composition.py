@@ -205,6 +205,7 @@ from nora.infra.sql.rollup_read import SqlRollupRead
 from nora.infra.sql.social_stream import SqlSocialStreamStore, readable_social_store
 from nora.infra.sql.source_health import SqlSourceHealthLog
 from nora.infra.sql.standing import SqlStandingStore
+from nora.infra.sql.standing_ledger import SqlStandingLedger
 from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.infra.sql.tag_debounce import SqlTagDebounceStore
 from nora.infra.sql.tag_traces import SqlTagTraceStore
@@ -1617,6 +1618,7 @@ async def build_dependencies(
     # writer, forgot the reader" mistake. What the flag gates is the FOLD,
     # which is the part that spends a model call inside the reply slot.
     standing_store = SqlStandingStore(engine)
+    ledger_store = SqlStandingLedger(engine, metrics=metrics)
     # The unified media index (DEC-138), built HERE rather than beside the
     # vision client below because THREE readers now hold it and the earliest is
     # the context assembler: ingest writes the custody row, the comprehension
@@ -2275,6 +2277,7 @@ async def build_dependencies(
         # is that the read and the write are the same row seen twice, and two
         # objects for one row is how that stops being structurally true.
         standing=standing_store if cfg.standing.enabled else None,
+        ledger=ledger_store,
         # The media join. The same instance every other
         # transcript builder holds — the comprehension a spawned job wrote is
         # the one the transcript renders, the one the note tier reads and the
@@ -3115,6 +3118,7 @@ async def build_dependencies(
         # the same lineage as the session's.
         rollup=SqlRollupRead(engine),
         standing_head=standing_store,
+        ledger=ledger_store,
         # `character_read`: withheld while `[culture]` is off.
         culture=culture_reader,
         # `social_read`: the social stream's recorded items, a SELECT, so no
@@ -3473,6 +3477,7 @@ async def build_dependencies(
             # way: there is no tagging message to infer it from. Reads only;
             # the fire path writes no position (see `FirePath.__init__`).
             standing=standing_store if cfg.standing.enabled else None,
+        ledger=ledger_store,
             # THE CULTURE HEAD (DEC-207) — the SAME reader
             # the tag assembler holds. Keyed on `primary_id`, which is why this
             # path resolves the occasion through the policy it already holds

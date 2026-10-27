@@ -47,16 +47,16 @@ DISCORD_ONLY_TOOLS: frozenset[str] = frozenset({
 #: people in none of its units — the crossing `send_to` refuses (R-49).
 #:
 #: `rollup_read` is also a tag-path tool (`TAG_READABLE_LOOP_TOOLS`, below).
-#: `standing_read` shows her own held position to the session that revises it.
+#: `standing_read` is an ordinary read: ledger budgets point every occasion to it.
 #: `character_read` shows the unit's accounts; it would join the tag path only
 #: after a `tool_selection` run (`nora-tool`). `social_read` reads the social
 #: stream's recorded items; the tag path keeps the live `instagram_*` reads
-#: instead (design/cognition-loop/20 §2). None of those three is a tag-path
+#: instead (design/cognition-loop/20 §2). Neither of those two is a tag-path
 #: tool, so a reply neither pays their prompt nor can route to them, and the
 #: Relevance Gate's capability digest does not offer them as something she can
 #: serve (`ToolRegistry.capability_digest`).
 DREAMER_LOOP_TOOLS: frozenset[str] = frozenset(
-    {"rollup_read", "standing_read", "character_read", "social_read"})
+    {"rollup_read", "character_read", "social_read"})
 
 #: Cognition-loop tools a person's TAG turn may also call. `rollup_read` joins
 #: the tag path because «where have we been together lately» has no other way to

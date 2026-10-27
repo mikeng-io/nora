@@ -31,6 +31,7 @@ from nora.domain.ports import (
     StandingStore,
 )
 from nora.domain.quote_window import QuoteWindow
+from nora.domain.standing_ledger import StandingLedger
 from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.context import (
     StandingNotesReader,
@@ -68,6 +69,7 @@ def build_assembler(
     policy: Policy,
     notes: StandingNotesReader | None = None,
     standing: StandingStore | None = None,
+    ledger: StandingLedger | None = None,
     media_join: MediaJoin | None = None,
     quote_window: QuoteWindow | None = None,
     presence: PresenceReader | None = None,
@@ -98,7 +100,7 @@ def build_assembler(
         tagger_card_conclusions=cfg.honcho.tagger_card_conclusions,
         notes=notes, policy=policy,
         memos=memos,
-        standing=standing,
+        standing=standing, ledger=ledger,
         # The media join: the transcript's `[image a3f2c1]`
         # placeholders gain their stored comprehension here, in the assembler,
         # so `nora/agent/prefill.py` stays a pure renderer over `TagContext`.
