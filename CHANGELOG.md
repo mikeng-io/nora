@@ -1,5 +1,12 @@
 # Changelog
 
+## [6.8.7](https://github.com/mikeng-io/nora/compare/v6.8.6...v6.8.7) (2026-10-27)
+
+
+### Bug Fixes
+
+* **profile:** guide collective writers to repair refusals and settle ([7974a3d](https://github.com/mikeng-io/nora/commit/7974a3d4dcb03269d33f49748654ff03da02bb4c))
+
 ## [6.8.6](https://github.com/mikeng-io/nora/compare/v6.8.5...v6.8.6) (2026-10-26)
 
 
