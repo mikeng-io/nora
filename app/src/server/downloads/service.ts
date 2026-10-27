@@ -61,9 +61,13 @@ export interface JobView extends DownloadJob {
   convertTargets: string[];
 }
 
+const AUDIO_TARGETS = ["mp3", "m4a", "opus", "wav"] as const;
+
 const CONVERT_TARGETS = {
-  video: ["mp4", "webm", "mkv"],
-  audio: ["mp3", "m4a", "opus", "wav"],
+  // A clip may shed its picture entirely: every audio target is an ffmpeg
+  // -vn recipe, so video takes the audio list as well as its own.
+  video: ["mp4", "webm", "mkv", ...AUDIO_TARGETS],
+  audio: AUDIO_TARGETS,
   image: ["png", "jpg", "webp"],
 } as const;
 
