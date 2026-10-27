@@ -908,7 +908,7 @@ human messages into that unit's own Honcho workspace — for a unit that has jus
 moved to a Nora workspace of its own, whose Honcho workspace starts empty. It is
 a DRY RUN unless `--apply`; it refuses a session that already holds messages
 unless `--resume` (which skips what it holds), refuses a policy with no
-`[units]`, and refuses the unit's workspace when that is `memory.workspace_id`
+`[units]`, and refuses the unit's workspace when that is `honcho.workspace_id`
 (the history is already there), and refuses a Honcho workspace another
 application uses. It reads the record store read-only, writes only Honcho,
 and deletes nothing. It replays PEOPLE's messages only — Nora's own replies are
@@ -1019,7 +1019,7 @@ real dates.
 **Nora refuses to start on a Honcho workspace that is not hers**: a bound
 `honcho_workspace` that holds sessions and lacks her `nora_owner` metadata
 marker belongs to another application on the same Honcho. Bind the workspace
-to another id in identity.toml. `memory.workspace_id` is exempt (it predates
+to another id in identity.toml. `honcho.workspace_id` is exempt (it predates
 the marker).
 
 **`nora groups`** answers "I cannot tell which group id is which". It prints
@@ -1431,12 +1431,12 @@ docker network inspect honcho_memory >/dev/null 2>&1 || docker network create --
 cd ~/workspace/honcho && docker compose up -d api </dev/null
 docker exec nora curl -fsS -m 5 http://honcho:8000/health </dev/null   # {"status":"ok"}
 
-# 3. nora's live config: [memory] base_url = "http://honcho:8000". This is a
+# 3. nora's live config: [honcho] base_url = "http://honcho:8000". This is a
 #    config-only edit: follow the validated-copy procedure under the lock in
 #    nora-deploy step 3 (linked below), then release the lock before running
 #    native DeployStack on nora-releases. Read it back from the container:
 docker exec nora /app/.venv/bin/python -c \
-  'from pathlib import Path; from nora.config import load; print(load(Path("config.toml"), require_secrets=False).memory.base_url)' </dev/null
+  'from pathlib import Path; from nora.config import load; print(load(Path("config.toml"), require_secrets=False).honcho.base_url)' </dev/null
 
 # 4. Only now close the door. In the honcho compose, service `api`:
 #        ports: ["127.0.0.1:8000:8000"]        # was "8000:8000"
@@ -1484,7 +1484,7 @@ docker logs --since 1h honcho-api-1 </dev/null 2>&1 \
 
 **Rollback**, in this order (the order is the whole point):
 
-1. Put `[memory] base_url` back to `"http://host.docker.internal:8000"` in nora's
+1. Put `[honcho] base_url` back to `"http://host.docker.internal:8000"` in nora's
    live `config.toml` (the config-only edit, `nora-deploy` step 3) and recreate
    nora on it. Do this FIRST.
 2. Only then publish `8000:8000` again in the honcho compose and `up -d api`.
@@ -1501,14 +1501,14 @@ is the minimal rollback if the problem is a caller of the old port.
 
 ## Typed Profile historical recovery
 
-Keep `[profile] render = false` until source coverage and the reply gates are
+Keep `[memory.profile] read = false` until source coverage and the reply gates are
 accepted. The typed migration is nullable and retains every legacy row; a
 successful old shadow session is not historical coverage. The person adaptor
 now walks bounded oldest-first pages through a frozen Record boundary using
 its existing schedule and budget, independently of recent-message updates.
 
 The Character-card spike is an explicit operator command; it never runs on
-startup or changes `[profile] render`. Dates are inclusive HKT dates, and keys
+startup or changes `[memory.profile] read`. Dates are inclusive HKT dates, and keys
 may be repeated. Dry-run constructs no runtime and writes no rows or cursors:
 
 ```bash

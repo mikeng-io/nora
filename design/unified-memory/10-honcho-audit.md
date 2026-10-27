@@ -97,7 +97,7 @@ estimates were stale by three orders of magnitude, so these are `count(*)`.
 
 ## 4. What replaces each, and what is not yet known
 
-> 2026-10-21 (18 / ADR 0026): [18](18-message-readings.md) and [§6](#6-honchos-architecture-mapped) amend the replacements below: source statements live in Record message readings, Character entries are the bounded card, and Views use `memory_search` + pre-fetch, with Nora’s own turn doing the reasoning Honcho’s dialectic agent does. The old `feed` and explicit-conclusion rows are historical: in the revised design every batch gets a reading; Q3 decides Honcho observations are measurement reference only for the first measure (Q1 gate and coverage comparisons), with nothing imported; decide any source-rechecked seed on that result. No unchecked conclusion becomes evidence.
+> 2026-10-21 (18 / ADR 0026): [18](18-extraction.md) and [§6](#6-honchos-architecture-mapped) amend the replacements below: source statements live in Record extraction, Character entries are the bounded card, and Views use `memory_search` + pre-fetch, with Nora’s own turn doing the reasoning Honcho’s dialectic agent does. The old `feed` and explicit-conclusion rows are historical: in the revised design every batch gets a reading; Q3 decides Honcho observations are measurement reference only for the first measure (Q1 gate and coverage comparisons), with nothing imported; decide any source-rechecked seed on that result. No unchecked conclusion becomes evidence.
 
 | Honcho output | replaced by | open |
 |---|---|---|
@@ -145,7 +145,7 @@ With §4 and §5 together, every Honcho call site in `nora/` has a fate.
 
 ## 6. Honcho's architecture, mapped
 
-> 2026-10-21 (operator audit): Honcho v3.1.2 on norty (`~/workspace/honcho/src`) has three stages. This supplements the earlier call-site snapshot; [18](18-message-readings.md) records the resulting design revision.
+> 2026-10-21 (operator audit): Honcho v3.1.2 on norty (`~/workspace/honcho/src`) has three stages. This supplements the earlier call-site snapshot; [18](18-extraction.md) records the resulting design revision.
 
 1. **Deriver** (`src/deriver/prompts.py`): every message batch, a cheap model
    extracts all explicit atomic facts, with no cap.
@@ -160,7 +160,7 @@ existing layers; Memory no longer sits beside the flow:
 
 | Honcho | ours | layer |
 |---|---|---|
-| deriver (explicit facts) | message readings | Record |
+| deriver (explicit facts) | extraction | Record |
 | (none) | Rollup | Rollup |
 | dreamer deduction / induction (+ our abduction) | Character entries: traits, hypotheses | Notebook |
 | peer card | Character entry profile | Notebook |

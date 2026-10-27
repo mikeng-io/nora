@@ -12,7 +12,7 @@ edges:
 
 | step | ships | gate |
 |---|---|---|
-| **1. Profile likes and constraints** | in future `nora/personalisation/`, a read-time likes projection over profile facts/traits/guesses and their citations, no second store; a destination-filtered constraint/dated-plan reader over original messages, message readings and applicable typed profile facts; preserve valid time and recorded revision | labelled extraction and source attribution; unknown stays unknown; group choices create no individual likes; no prompt or send changes |
+| **1. Profile likes and constraints** | in future `nora/personalisation/`, a read-time likes projection over profile facts/traits/guesses and their citations, no second store; a destination-filtered constraint/dated-plan reader over original messages, extraction and applicable typed profile facts; preserve valid time and recorded revision | labelled extraction and source attribution; unknown stays unknown; group choices create no individual likes; no prompt or send changes |
 | **2. The origin model** | rungs 1 to 4, with rung 1 supplied by step 1 and rung 3 using the existing stays-based forecaster; destination location gates and provenance | historical known origins versus predicted distributions, with fallback/support recorded |
 | **3. The ranker, offline** | eight stages, venue type data, **coverage feature** with formula/unknown handling, frozen frames and historical revision reads for replay; retained run inputs, no sends | paired held-out replay beats both baselines, coverage reported; disclosure invariance and future-leak probes ([50](50-verification.md)) |
 | **4. Venues, live** | a recommendation act and Standing decision; **recommendation send** metadata (`kind`, `decision_id`) on all delivered parts, including tag/fire paths; intent stays `tell`/`ask`; learning from picks under the cap | validate intent and abduced-question rules; read back the decision/send/episode link; open/unknown/unanswered never become negatives; disclosure checked before delivery |
@@ -41,8 +41,8 @@ edges:
 ## Scope and evidence
 
 This bundle is design only: none of these build steps is implemented by this
-PR. The retained fact table is not a writer, and the new message-reading
-writer has no retrieval consumer (`docs/maintainers/message-readings.md:9`).
+PR. The retained fact table is not a writer, and the new extraction
+writer has no retrieval consumer (`docs/maintainers/extraction.md:9`).
 Profiles retain their one existing owner; the new ranker projects likes at
 read time. ADR 0029's naming/identity migration and historical profile reads
 are explicit prerequisites, not assumed completed work. The existing profile

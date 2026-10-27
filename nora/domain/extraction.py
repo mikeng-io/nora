@@ -1,4 +1,4 @@
-"""Record message readings: structured statements, never assertions of truth."""
+"""Record extraction: structured statements, never assertions of truth."""
 
 from __future__ import annotations
 

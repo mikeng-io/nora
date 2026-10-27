@@ -186,7 +186,7 @@ async def dream(
     # the pass returns `nothing_found` with an empty diff, which every case
     # expecting `none` would score as a PASS.
     # The ROOM'S unit (`Subject.unit`, resolved from its policy entry) — not
-    # `memory.workspace_id`, which is Honcho's per-deployment workspace and in
+    # `honcho.workspace_id`, which is Honcho's per-deployment workspace and in
     # production is not the unit of any room.
     workspace = subject.unit
     platform, conversation_id = room or subject.room

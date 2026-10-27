@@ -138,7 +138,7 @@ guesses (unconfirmed):
 - **The test is small.** One reader model, one judge, synthetic content, and n=8. It
   separates names; it does not prove behaviour in live rooms.
 - **Untested names.** Other blocks (standing, memos, lessons, notes, rollup) and the
-  proposed `observations` name for message readings have not been measured yet. They are
+  proposed `observations` name for extraction have not been measured yet. They are
   audited the same way before they are renamed.
 
 ## Rejected

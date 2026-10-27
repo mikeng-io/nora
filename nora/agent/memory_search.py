@@ -1,6 +1,6 @@
 """The one retrieval service over the memory index: scope, seed, expand hop by
 hop, rank, and an evidence packet with the path that reached each item.
-`memory_search` calls it while `[memory_index] enabled`, and so does the tag
+`memory_search` calls it while `[memory.index] read`, and so does the tag
 path's pre-fetch (`nora.engagement.context`, the `<recalled>` block), from the
 message's own seeds, cut at `PREFETCH_TOKENS`.
 
@@ -29,7 +29,7 @@ path is cut at its first out-of-scope node.
   their cosine (`SqlMemoryIndex.dense`). A scan that comes back with fewer
   than the scope holds is counted (`nora_memory_dense_short_total`).
 - **Lexical**, by the question's terms (`terms_of`), when there is no query
-  vector: `[memory_index] embed` is off, no node in scope holds a vector of
+  vector: `[memory.index] embed` is off, no node in scope holds a vector of
   the current model yet, or the embedder failed. The answer is then
   `partial`. Beside a dense seed, it reads only the embeddable nodes holding
   no vector of the current model: those waiting for the worker's next tick
@@ -298,7 +298,7 @@ HALF_LIFE_DAYS = 180.0
 SOCIAL_HALF_LIFE_DAYS = 1095.0
 #: Characters of one item's text in the packet.
 TEXT_CHARS = 600
-#: How many drain periods (`[memory_index] drain_seconds`, the embedding
+#: How many drain periods (`[memory.index] drain_seconds`, the embedding
 #: worker's tick) a node may wait for its vector before it is a backlog
 #: that answers `partial`. The worker sleeps a period, drains, then embeds
 #: one batch, the newest first (`embed_pick`), so a node written just after
@@ -800,10 +800,10 @@ async def place_anchors(
 
 class MemorySearch:
     """`search` for one read. Takes the index and the metrics registry, and,
-    while `[memory_index] embed`, the query embedder and the fingerprint of
+    while `[memory.index] embed`, the query embedder and the fingerprint of
     the model its vectors are stored under (`nora.infra.embedder.
     fingerprint`); without them every search is the lexical fallback.
-    `drain_seconds` is the embedding worker's tick (`[memory_index]
+    `drain_seconds` is the embedding worker's tick (`[memory.index]
     drain_seconds`); without it no wait is fresh, and every node waiting
     for a vector is a backlog (`partial`), the safe side."""
 

@@ -486,16 +486,16 @@ def _print_input(name: str, case_name: str, *, source_url: str) -> int:
 
 
 def memory_index_enabled(config_toml: str) -> bool:
-    """`[memory_index] enabled` in a config's text; absent is the code
+    """`[memory.index] read` in a config's text; absent is the code
     default, off."""
-    return bool(tomllib.loads(config_toml).get("memory_index", {}).get("enabled", False))
+    return bool(tomllib.loads(config_toml).get("memory", {}).get("index", {}).get("read", False))
 
 
 def embedder_model_of(config_toml: str) -> str:
-    """`[memory_index] embedder_model` in a config's text; absent is the
+    """`[memory.index] embedder_model` in a config's text; absent is the
     code default."""
-    stated = tomllib.loads(config_toml).get("memory_index", {}).get("embedder_model")
-    return str(stated or config_default("memory_index.embedder_model"))
+    stated = tomllib.loads(config_toml).get("memory", {}).get("index", {}).get("embedder_model")
+    return str(stated or config_default("memory.index.embedder_model"))
 
 
 def graph_surface_lines(source_url: str, model_id: str) -> list[str]:
@@ -514,10 +514,10 @@ def graph_surface_lines(source_url: str, model_id: str) -> list[str]:
 def memory_surface_line(deployed: bool, flag: bool) -> str:
     """The run header's account of which memory surface it measures, and why."""
     if deployed:
-        return "graph ([memory_index] enabled = true in the deployment's config)"
+        return "graph ([memory.index] read = true in the deployment's config)"
     if flag:
         return "graph (--memory-index; the deployment runs the honcho surface)"
-    return "honcho ([memory_index] enabled = false in the deployment's config)"
+    return "honcho ([memory.index] read = false in the deployment's config)"
 
 
 def main() -> int:
@@ -612,7 +612,7 @@ def _main() -> int:
     )
     ap.add_argument(
         "--memory-index", action="store_true",
-        help="compose every subject with [memory_index] enabled = true: the "
+        help="compose every subject with [memory.index] read = true: the "
              "memory graph's tool surface (memory_search, no Honcho memory "
              "verb; DEC-316). The after arm of a memory routing run while the "
              "deployment runs the Honcho surface. A subject override, so the "

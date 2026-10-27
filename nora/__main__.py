@@ -152,7 +152,7 @@ class App:
         )
         register_web_routes(
             health_app, store=deps.audit, honcho=deps.memory, reminders=deps.reminders,
-            persons=deps.persons, ai_peer=self.cfg.memory.ai_peer, started_at=started_at,
+            persons=deps.persons, ai_peer=self.cfg.honcho.ai_peer, started_at=started_at,
             games_client=deps.games_client,
             presence=deps.presence, presence_circles=deps.presence_circles,
             mobility=deps.mobility,
@@ -224,14 +224,14 @@ class App:
             ))
         else:
             log.info("retention sweep disabled (store.prune_enabled = false)")
-        if deps.message_readings is not None:
-            deps.background.spawn(deps.message_readings.run())
+        if deps.extraction is not None:
+            deps.background.spawn(deps.extraction.run())
         # Unconditional: every store write projects into the memory index,
         # so there is always a queue a failed projection may have filled.
         deps.background.spawn(runtime.memory_drain_loop(
             deps.audit, deps.metrics,
-            interval_seconds=self.cfg.memory_index.drain_seconds,
-            # `[memory_index] embed`; None while off.
+            interval_seconds=self.cfg.memory.index.refresh_seconds,
+            # `[memory.index] embed`; None while off.
             embed=deps.memory_embed,
         ))
         # The Dreamer's clock, the SAME conditional shape as the retention

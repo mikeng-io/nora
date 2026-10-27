@@ -153,7 +153,7 @@ flowchart TD
     P -->|raises| Q["memory_projection_queue row, outcome queued or lost"]
     Q --> D["memory_drain_loop, every drain_seconds"]
     D --> P
-    N --> E["MemoryEmbedWorker, while memory_index.embed"]
+    N --> E["MemoryEmbedWorker, while memory.index.embed"]
     E --> N
     N --> R["SqlMemoryIndex: scope applied inside every statement"]
     R --> S["MemorySearch: seeds, hops, rank, packet"]
@@ -187,7 +187,7 @@ Two consequences worth knowing before changing anything:
 ## Embeddings: the node is its own queue
 
 `nora/infra/sql/memory_embed.py` is one batch per tick of the same drain loop,
-and only while `[memory_index] embed` is on. There is no separate embeddings
+and only while `[memory.index] embed` is on. There is no separate embeddings
 table: `memory_node.embedding` is the queue.
 
 - **What is embedded.** Text, for most kinds. An image attachment or an image
@@ -324,21 +324,21 @@ forever). The residual `unembedded - fresh` count is the backlog. Whether that
 backlog exists is counted *within the search's scope*, so a node waiting in
 another unit cannot spoil this room's answer.
 
-Concretely: with `[memory_index] embed` off, every answer is the lexical
+Concretely: with `[memory.index] embed` off, every answer is the lexical
 fallback's `partial`, by design. With the embedder down, the same. `unavailable`
 means "I could not check" and the tool's note tells the model to say so — it is
 never a licence to say there was nothing.
 
 ## Which retrieval surface a deployment gets
 
-`[memory_index] enabled` is the READ switch, and it selects exactly **one**
+`[memory.index] read` is the READ switch, and it selects exactly **one**
 memory tool surface, wherever tools are built. The projection runs either way.
 This is the first of the cutover's two axes; the second — what a prompt renders
 about a person — has its own section below, and neither setting moves the other.
 
 ```mermaid
 flowchart TD
-    F{"memory_index.enabled"}
+    F{"memory.index.read"}
     F -->|"false, the shipped default"| H["composition builds no MemorySearch"]
     H --> HS["Honcho surface: ask_memory, search_memory, search_memory_workspace, who_said, about"]
     F -->|"true"| G["one MemorySearch instance, also held by the tag path's pre-fetch"]
@@ -391,21 +391,21 @@ Nora workspace to a Honcho workspace with a named `scope.<unit>` (see
 refuses to guess, because a guessed Honcho workspace is one group's speech written
 into another group's person models.
 
-`[memory_index] enabled` and `[memory_index] embed` are independent, and the
+`[memory.index] read` and `[memory.index] embed` are independent, and the
 interesting operator state inside this axis is "enabled, not embedded": the graph
 surface is on, no node has a current vector, and every answer is `partial` from
-the lexical seed until `[memory_index] embed` is turned on and the worker catches
+the lexical seed until `[memory.index] embed` is turned on and the worker catches
 up.
 
 ## The cutover's other axis: what a prompt renders
 
 The migration has two axes, and neither moves the other. The first is *which
-retrieval surface answers* — `[memory_index] enabled`, above. The second is *what
+retrieval surface answers* — `[memory.index] read`, above. The second is *what
 a prompt renders about a person*: `[persona] enabled` beside `[persona] render`,
 which is what the Persona sessions replace. Because the two are separate
 settings, the four combinations all exist:
 
-| `[memory_index] enabled` | `[persona] enabled` + `render` | verbs the model is offered | person and culture blocks in the prompt |
+| `[memory.index] read` | `[memory.profile] write` + `read` | verbs the model is offered | person and culture blocks in the prompt |
 |---|---|---|---|
 | off, the shipped default | off, the shipped default | `ask_memory`, `search_memory`, `search_memory_workspace`, `who_said`, `about` | the seven legacy blocks, each only while its own reader is wired |
 | off | on | the same Honcho verbs, and `remember` writes a Honcho conclusion | `<persona>` instead of all seven |
@@ -466,7 +466,7 @@ Concretely, with the graph surface on and Persona rendering:
    session, spawned off the listener path, *before* the engage gate. The tag path's
    `engagement/stages/feedback` feeds only Nora's own sent messages under the
    `nora` peer (one peer's stream holds one speaker's words — DEC-36), building
-   her self-model. Neither is gated by `[memory_index] enabled`: the graph surface
+   her self-model. Neither is gated by `[memory.index] read`: the graph surface
    reads no Honcho, but Honcho keeps accruing.
 2. **The portal still reads Honcho.** `GET /app/v1/memory` builds its showcase
    from `MemoryStore` (per Nora workspace the caller belongs to), regardless of
@@ -491,7 +491,7 @@ There is **no single flag** that puts a deployment back on Honcho retrieval *and
 the legacy person blocks. What the code supports is a setting on each axis, then a
 process reload:
 
-1. `[memory_index] enabled = false` — `build_tool_specs` offers the Honcho verbs
+1. `[memory.index] read = false` — `build_tool_specs` offers the Honcho verbs
    again and withholds the graph's, and the assembler is handed no `MemorySearch`,
    so the `<recalled>` pre-fetch is absent rather than empty. Nothing else moves:
    the projector, the drain loop and the embedding worker keep running on their

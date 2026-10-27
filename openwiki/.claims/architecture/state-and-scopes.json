@@ -582,7 +582,7 @@
     },
     {
       "id": "claim_ea4cfdb8b0454b428f608992683f41bb",
-      "statement": "Every Honcho workspace Nora creates is stamped with nora_owner = <ai_peer>; the default memory.workspace_id is exempt because it predates the marker, while a bound workspace that holds sessions and carries neither marker is another application's — every call routed to it is refused for the life of the process, and the composition root turns that into a startup failure naming the workspace.",
+      "statement": "Every Honcho workspace Nora creates is stamped with nora_owner = <ai_peer>; the default honcho.workspace_id is exempt because it predates the marker, while a bound workspace that holds sessions and carries neither marker is another application's — every call routed to it is refused for the life of the process, and the composition root turns that into a startup failure naming the workspace.",
       "evidence": [
         {
           "resource": "repo://nora/app/composition.py#L1980-L1996",

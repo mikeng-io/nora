@@ -816,7 +816,7 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
        name="what you call them"),
     # THE SWITCH'S BLOCK (design/unified-memory/45 §5): one per entity in the
     # turn, replacing peer_card, peer_history, people_in_window, culture,
-    # unit_culture, character and self when `[profile] render` is on. One TYPE
+    # unit_culture, character and self when `[memory.profile] read` is on. One TYPE
     # for all four entity kinds, because what the block IS does not vary with
     # who it is of; `of` carries that.
     _t("profile",

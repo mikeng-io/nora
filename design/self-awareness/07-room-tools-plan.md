@@ -210,7 +210,7 @@ reading each room is how she answers the question as asked. The note answers
 a question she was not asked. Two readings would test this, one variable
 each: a `speakers_last_24h` count in `room_activity` (people, not rows), or
 the row reworded to ask for messages (「邊個group今日最多訊息」). The sort and
-the note stay: they are correct for the message reading and cost nothing.
+the note stay: they are correct for the extraction and cost nothing.
 
 **Counting people (option 1, measured 2026-09-24).** `room_activity` now
 also returns distinct speakers in the window (`coalesce(person_id,

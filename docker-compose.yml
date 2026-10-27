@@ -664,15 +664,15 @@ services:
   # the Q4_K_M GGUF and its f16 projector, served by llama.cpp's server with
   # `--embedding --pooling last`, the setup the bake-off measured (#22, #24:
   # ~3.06 GB peak RSS, ~0.4 s a text and ~3.4 s an image on norty's CPU).
-  # nora reaches it as `embedder:8080` (`[memory_index] embedder_url`); the
-  # worker that calls it runs only under `[memory_index] embed = true`.
+  # nora reaches it as `embedder:8080` (`[memory.index] embedder_url`); the
+  # worker that calls it runs only under `[memory.index] embed = true`.
   #
   # - Profile `embedder`: not started by a plain `docker compose up`. Bring it
   #   up with `docker compose --profile embedder up -d embedder`, then turn the
   #   worker on.
   # - The model files are bind-mounted READ-ONLY from EMBEDDER_MODELS_DIR
   #   (.env; default ./models/embedder), never downloaded by the container.
-  #   The two file names are the ones `config.toml [memory_index]
+  #   The two file names are the ones `config.toml [memory.index]
   #   embedder_model` describes; a different file is a different model.
   # - Threads capped at 4 and memory at 4g with no swap (`stt`'s reason: the
   #   weights stay resident), so a backfill leaves the turn path its CPU.

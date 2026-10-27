@@ -142,7 +142,7 @@ async def test_every_other_corpus_keeps_the_snapshot_path_unchanged(seams) -> No
     }
     [spec] = seams["obtain"]
     assert spec.database_url == f"{_SOURCE}_sb"
-    assert list(spec.overrides) == ["port.key", "spec.key", "memory.workspace_id"]
+    assert list(spec.overrides) == ["port.key", "spec.key", "honcho.workspace_id"]
     assert not set(spec.overrides) & set(FULL_RESTORE_OVERRIDES)
 
 
@@ -159,7 +159,7 @@ async def test_a_full_restore_corpus_seeds_every_store_as_of_the_instant(seams) 
     assert spec.database_url == f"{_SOURCE}_asof"
     assert spec.now == _NOW
     assert spec.overrides["presence.enabled"] is True
-    assert spec.overrides["memory.workspace_id"].startswith(f"nora-eval-{backbone.RUN_ID}-restore-")
+    assert spec.overrides["honcho.workspace_id"].startswith(f"nora-eval-{backbone.RUN_ID}-restore-")
 
 
 async def test_a_spec_override_still_wins_over_the_restore_override(seams) -> None:

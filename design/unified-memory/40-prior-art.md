@@ -63,7 +63,7 @@ Re-pointed 2026-10-15: node 30's proposals were superseded by
 [35](35-persona.md) and [45](45-persona-adaptor.md), which are where each
 taken idea now lives.
 
-> 2026-10-21 (18 / ADR 0026): the identity/behaviour vocabulary below is historical; [ADR 0026](../../docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md) names Character entries’ parts profile, traits and hypotheses. [18](18-message-readings.md) places source statements in Record readings and keeps the entry as the bounded card.
+> 2026-10-21 (18 / ADR 0026): the identity/behaviour vocabulary below is historical; [ADR 0026](../../docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md) names Character entries’ parts profile, traits and hypotheses. [18](18-extraction.md) places source statements in Record readings and keeps the entry as the bounded card.
 
 | taken | from | where |
 |---|---|---|

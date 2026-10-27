@@ -106,7 +106,7 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     # after the doctrine (the system prompt). No block while the unit has no account.
     ("self", 5, "turn"),
     # THE SWITCH (45 §5): her Profile account instead of the prose `self`
-    # when `[profile] render` is on; the grounder fills one or the other,
+    # when `[memory.profile] read` is on; the grounder fills one or the other,
     # never both, so the shared order cannot collide.
     ("profile", 5, "turn"),
     ("clock", 10, "turn"),

@@ -169,7 +169,7 @@ late in a long transaction would otherwise claim to have been held before rows w
 
 Honcho is the one state surface outside both the database and the host's files, and the only one that
 holds a copy of the Record's own text. The client is `nora/infra/honcho/client.py`, speaking HTTP to
-`[memory] base_url`, and **it is never load-bearing**: every method logs and returns a benign value
+`[honcho] base_url`, and **it is never load-bearing**: every method logs and returns a benign value
 (`None`, `False`, `[]`) on any failure, which is the deliberate opposite of the record store's
 contract — a failed append there drops the message rather than degrading quietly
 ([ADR 0001](../../docs/adr/0001-honcho-is-interpretation-not-record.md)). Three things live there:
@@ -211,7 +211,7 @@ is the only thing that deletes there: it removes a departed unit's sessions and 
 and cannot reach a conclusion stored under no session.
 
 **Ownership is a marker, not a name.** Every workspace Nora creates is stamped
-`nora_owner = <ai_peer>`; the default `memory.workspace_id` is hers without one, because it predates
+`nora_owner = <ai_peer>`; the default `honcho.workspace_id` is hers without one, because it predates
 the marker and holds every deployment's history. A *bound* workspace that holds sessions and carries
 neither is another application's: every call routed to it is refused for the life of the process and
 `foreign_workspaces` makes startup fail naming it. That refusal and the routing refusals below are
@@ -535,7 +535,7 @@ consequence stated in the file: allowlisting a person grants *every* account the
 
 The memory hierarchy is deliberately split across all three (DEC-214): `policy.toml` says which
 workspace a unit belongs to, `identity.toml` binds a Nora workspace to its Honcho workspace, and
-`config.toml`'s `memory.workspace_id` is only the back-compat default — the Honcho workspace of the
+`config.toml`'s `honcho.workspace_id` is only the back-compat default — the Honcho workspace of the
 implicit workspace a policy with no `[units]` puts every unit in. That is why
 `nora/app/memory_routing.py` exists as the composition-layer mediator rather than a reader in any one
 of them.

@@ -279,10 +279,10 @@ async def test_the_root_hands_the_loader_the_tool_names_its_gate_needs(cfg, tmp_
 async def test_the_nora_aipeer_id_is_reserved_and_no_human_may_hold_it(cfg):
     """Honcho v2 corpus-safety: the aiPeer id is Nora's self-model peer. A human mapped to it
     would feed under it and merge IRREVERSIBLY into her card (Honcho keeps conclusions,
-    not text). Setting `memory.ai_peer` to an existing person id ("miles" in this fixture)
+    not text). Setting `honcho.ai_peer` to an existing person id ("miles" in this fixture)
     must refuse to start, not silently corrupt the corpus."""
     with pytest.raises(StartupError, match="reserved for Nora"):
-        await build_dependencies(override_config(cfg, {"memory.ai_peer": "miles"}))
+        await build_dependencies(override_config(cfg, {"honcho.ai_peer": "miles"}))
 
 
 async def test_no_enabled_platform_refuses_to_start(cfg):
@@ -1348,7 +1348,7 @@ async def test_the_granted_verbs_are_actually_BUILT_for_a_culture_key(cfg, tmp_p
     names = {
         getattr(t, "tool_name", None) or getattr(t, "__name__", "") for t in built
     }
-    # `[memory_index]` is off here: the Honcho memory surface, so the graph's
+    # `[memory.index]` is off here: the Honcho memory surface, so the graph's
     # `memory_search` is granted and not built (DEC-316).
     expected = set(culture.tools) - GRAPH_MEMORY_TOOLS
     assert names == expected, sorted(expected - names)
@@ -1977,12 +1977,12 @@ async def test_no_wired_adaptor_holds_an_act_verb(cfg, tmp_path):
 
 async def test_a_person_session_reads_its_wake_batch_not_a_rooms_batch_limit(cfg, tmp_path):
     """Cost: a person session read `[culture] batch_limit` (300, sized for a
-    whole room's corpus) messages. It reads the newest `person_wake_batch`,
+    whole room's corpus) messages. It reads its own person message wake threshold,
     as Nora's session reads its own wake batch."""
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(cfg, {
         "dreamer.enabled": True, "notes.enabled": True, "culture.enabled": True,
-        "culture.person_wake_batch": 40, "culture.batch_limit": 300,
+        "memory.profile.person.update_every_messages": 40, "culture.batch_limit": 300,
     }))
     assert deps.dream_schedules["character-person"].batch_limit == 40
     assert deps.dream_schedules["character-nora"].batch_limit == 100
@@ -2085,13 +2085,13 @@ async def test_the_senders_hold_identity_toml_as_their_direct_message_allowlist(
 
 
 async def test_memory_search_holds_a_fresh_line_for_the_configured_worker_tick(cfg):
-    """`memory_search` takes the embedding worker's tick from `[memory_index]
+    """`memory_search` takes the embedding worker's tick from `[memory.index]
     drain_seconds`: a node waiting under `BACKLOG_TICKS` of them is fresh,
     not a backlog. Unwired, every wait would read as a backlog."""
     from nora.agent.memory_search import BACKLOG_TICKS
 
     deps = await build_dependencies(override_config(
-        cfg, {"memory_index.enabled": True, "memory_index.drain_seconds": 7.5},
+        cfg, {"memory.index.read": True, "memory.index.refresh_seconds": 7.5},
     ))
     search = deps.engagement._tool_registry._memory_search
     assert search is not None
@@ -2102,10 +2102,10 @@ async def test_memory_search_holds_a_fresh_line_for_the_configured_worker_tick(c
 async def test_the_prefetch_holds_the_tools_search_only_on_the_graph_surface(cfg, graph):
     """`<recalled>` (design/unified-memory/00 step 3b): the tag path's
     assembler holds the SAME `MemorySearch` the registry's `memory_search`
-    does under `[memory_index] enabled`, and none off it, so the Honcho
+    does under `[memory.index] read`, and none off it, so the Honcho
     surface runs no pre-fetch."""
     deps = await build_dependencies(override_config(
-        cfg, {"memory_index.enabled": graph},
+        cfg, {"memory.index.read": graph},
     ))
     search = deps.engagement._tool_registry._memory_search
     assert deps.engagement._context._memory_search is search
@@ -2114,7 +2114,7 @@ async def test_the_prefetch_holds_the_tools_search_only_on_the_graph_surface(cfg
 
 @pytest.mark.parametrize("graph", [False, True])
 async def test_cognition_holds_the_memory_surface_the_flag_selects(cfg, tmp_path, graph):
-    """DEC-316, through the real composition: `[memory_index] enabled` picks
+    """DEC-316, through the real composition: `[memory.index] read` picks
     the session's memory verbs exactly as it picks every other occasion's.
     The session's `wired` set (its guard's read-only set) and what it BUILDS
     agree, and neither holds the other surface."""
@@ -2122,7 +2122,7 @@ async def test_cognition_holds_the_memory_surface_the_flag_selects(cfg, tmp_path
 
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(
-        cfg, {**_SESSION_ON, "memory_index.enabled": graph},
+        cfg, {**_SESSION_ON, "memory.index.read": graph},
     ))
     runner = deps.cognition_runner
     assert runner is not None
@@ -2139,7 +2139,7 @@ async def test_cognition_holds_the_memory_surface_the_flag_selects(cfg, tmp_path
 async def test_profile_render_switch_selects_one_account_writer_and_keeps_the_judge(cfg, render):
     configured = override_config(cfg, {
         "dreamer.enabled": True, "culture.enabled": True,
-        "profile.enabled": True, "profile.render": render,
+        "memory.profile.write": True, "memory.profile.read": render,
     })
     deps = await build_dependencies(configured)
     names = {a.name for a in deps.dream_adaptors}

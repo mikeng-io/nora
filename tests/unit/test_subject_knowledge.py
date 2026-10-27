@@ -23,7 +23,7 @@ from typing import Any
 
 import pytest
 
-from nora.config import MemoryConfig
+from nora.config import HonchoConfig
 from nora.domain.models import PersonRef
 from nora.persons import Persons
 from nora.subject.knowledge import Knowledge, Message, know
@@ -74,8 +74,8 @@ class _FakeDeps:
 
 @dataclass
 class _FakeCfg:
-    memory: MemoryConfig = field(
-        default_factory=lambda: MemoryConfig(base_url="http://fake", workspace_id="nora")
+    honcho: HonchoConfig = field(
+        default_factory=lambda: HonchoConfig(base_url="http://fake", workspace_id="nora")
     )
 
 

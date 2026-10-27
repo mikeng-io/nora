@@ -151,8 +151,8 @@ operational:
 
 | kind | examples | behaviour when the section is absent |
 |---|---|---|
-| **required** | `[platforms]`, `[llm]`, `[memory]`, `[store]`, `[engagement]`, `[doctrine]`, `[obs]`, `[evals]` | load fails |
-| **defaulted, inert** | `[dreamer]`, `[cognition]`, `[standing]`, `[notes]`, `[culture]`, `[lessons]`, `[persona]`, `[participation]`, `[relevance_gate]`, `[music]`, `[compute]`, `[computer]`, `[otp]`, `[image_gen]`, `[video_gen]`, `[presence]`, `[search]`, `[online]`, `[weather]`, `[social]`, `[preview]`, `[route]`, `[analytics]`, `[memory_index]`, `[heartbeat]`, `[documents]`, `[record_query]`, `[external_files]` | loads with the feature **off** |
+| **required** | `[platforms]`, `[llm]`, `[honcho]`, `[store]`, `[engagement]`, `[doctrine]`, `[obs]`, `[evals]` | load fails |
+| **defaulted, inert** | `[dreamer]`, `[cognition]`, `[standing]`, `[notes]`, `[culture]`, `[lessons]`, `[persona]`, `[participation]`, `[relevance_gate]`, `[music]`, `[compute]`, `[computer]`, `[otp]`, `[image_gen]`, `[video_gen]`, `[presence]`, `[search]`, `[online]`, `[weather]`, `[social]`, `[preview]`, `[route]`, `[analytics]`, `[memory.index]`, `[heartbeat]`, `[documents]`, `[record_query]`, `[external_files]` | loads with the feature **off** |
 | **defaulted, on** | `[media]`, `[engagement.trigger]` (`enabled = true`), `[engagement.reactions]`, `store.prune_enabled` | loads with the feature **on** |
 
 Two further shapes sit inside sections: per-adaptor budget blocks
@@ -471,7 +471,7 @@ the enable-side refusals are in the cross-section table above.
 | `social.poll.enabled`, `social.instagram.summons.enabled` | the member poller and the comment-summons consumer | no poller / no consumer; summoned turns additionally default to `dry_run` | nothing is read or posted; a summons that arrives while off is counted and dropped |
 | `preview.enabled` | OpenGraph link cards on outbound replies | a reply carrying a link goes out with no card | the reply itself is unchanged |
 | `reaction.enabled` (+ `GIPHY_API_KEY`) | the GIF picker on a tag turn's first reply | her words go out unchanged | any failure sends the reply as written |
-| `memory_index.enabled` (+ `embed`) | the memory-graph tool surface: `memory_search` over the index, and the Honcho memory tools are not offered; `embed` adds the vector worker on the same drain tick | the Honcho surface is offered instead and `memory_search` does not exist | with `enabled` on and `embed` off, every search answers `partial` from the lexical fallback — and the index is written by every store's own write either way |
+| `memory.index.read` (+ `embed`) | the memory-graph tool surface: `memory_search` over the index, and the Honcho memory tools are not offered; `embed` adds the vector worker on the same drain tick | the Honcho surface is offered instead and `memory_search` does not exist | with `enabled` on and `embed` off, every search answers `partial` from the lexical fallback — and the index is written by every store's own write either way |
 | `documents.enabled` | the three document tools and the `<documents>` block | no turn is offered any of the three, and no room renders the block | she can still point to a document by title when `public_url` is empty |
 | `record_query.enabled` | the recorded-messages-over-a-span tool | not offered | Cognition's own record window is independent of it |
 | `external_files.enabled` (+ `[google]` variables) | opening shared Google Doc/Sheet/Slides links | a posted link is still recorded as a handle | opening answers `unavailable` |

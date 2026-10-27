@@ -137,7 +137,7 @@ _TOOL_RESULT_CAPS: Mapping[str, int] = {
     "about": MAX_MEMORY_RESULT_CHARS,
     "ask_memory": MAX_MEMORY_RESULT_CHARS,
     # The memory graph's one search verb (DEC-316), offered instead of the
-    # Honcho verbs above while `[memory_index] enabled`: same number.
+    # Honcho verbs above while `[memory.index] read`: same number.
     "memory_search": MAX_MEMORY_RESULT_CHARS,
 }
 
@@ -172,7 +172,7 @@ TOOL_RESULT_CAPS: Mapping[str, int] = _TOOL_RESULT_CAPS
 #: holds.
 #:
 #: `memory_search` (DEC-316) is the graph surface's memory verb, offered INSTEAD
-#: of `about`, `ask_memory` and `search_memory_workspace` while `[memory_index]
+#: of `about`, `ask_memory` and `search_memory_workspace` while `[memory.index]
 #: enabled`.
 #: The ration holds every memory verb of both surfaces, so it binds whichever one
 #: a deployment registers.
@@ -561,7 +561,7 @@ UNIT_SAFE_TOOLS: frozenset[str] = frozenset({
     # `memory_search` (DEC-316), the graph surface's memory verb: it reads the
     # memory index through a room's scope, so a unit-keyed run with no home room
     # answers `unavailable` (`media_search`'s shape above), never an empty answer.
-    # Offered only while `[memory_index] enabled`.
+    # Offered only while `[memory.index] read`.
     "memory_search",
     # `load_tools` reads neither a room nor a unit: it registers tools from THIS
     # run's own shelf onto THIS run's own agent, so it is as unit-safe as `now`.

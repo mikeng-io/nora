@@ -35,7 +35,7 @@ EVERYONE = "*"
 #: table at all (DEC-214). A workspace holds units,
 #: a unit holds rooms; a policy written before the hierarchy existed names no
 #: workspace, so all of its units share this implicit one, and that one is
-#: bound to `config.toml`'s `memory.workspace_id` rather than to its own name
+#: bound to `config.toml`'s `honcho.workspace_id` rather than to its own name
 #: (`nora.app.memory_routing`). Not a Honcho workspace id: a Nora workspace
 #: and a Honcho workspace are separate names for separate things.
 DEFAULT_WORKSPACE = "default"
@@ -116,7 +116,7 @@ class Conversation:
     # groups and may never be relayed between, however trusted each is on its
     # own.
     #
-    # Defaults to `memory.workspace_id`'s shipped value rather than being
+    # Defaults to `honcho.workspace_id`'s shipped value rather than being
     # required, so an existing policy.toml keeps working — but the default is
     # the LOOSE direction, so an operator who runs two real social units must
     # say so. That is why `send_to` also requires the requester to be allowed

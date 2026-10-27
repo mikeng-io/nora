@@ -249,7 +249,7 @@ async def index_sandbox(
     cache: IndexCache | None = None, key: Hashable = (),
 ) -> SandboxIndex:
     """Project the sandbox's index, adopt the source's vectors of `model_id`
-    (`[memory_index] embedder_model`), and read the coverage back; refused
+    (`[memory.index] embedder_model`), and read the coverage back; refused
     under the floor (module docstring). With `cache`, an index already built
     for the same `key` and the same seeded index is applied instead of
     built, and checked before its coverage is read."""
