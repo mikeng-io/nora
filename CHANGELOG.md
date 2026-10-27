@@ -1,5 +1,19 @@
 # Changelog
 
+## [7.2.0](https://github.com/mikeng-io/nora/compare/v7.1.2...v7.2.0) (2026-10-27)
+
+
+### Features
+
+* **standing:** retain each turn's exchange with its disclosure requirements ([68d5101](https://github.com/mikeng-io/nora/commit/68d5101e4bc8f240058e45e7edc4be29530813ee))
+
+
+### Bug Fixes
+
+* **profile:** bound collective source inputs and allow refusal repair ([2fe0e69](https://github.com/mikeng-io/nora/commit/2fe0e699c852912fa2265a196d006ceda49b6d25))
+* **profile:** leave the collective repair call room for non-source context ([cc1fe22](https://github.com/mikeng-io/nora/commit/cc1fe2271f9421ae57a0600b3e5852bd07b34b62))
+* **standing:** preserve turn citation restrictions and revision evidence ([5372baf](https://github.com/mikeng-io/nora/commit/5372baf5e8c38027ae7ae5012386bfbb9ebefc19))
+
 ## [7.1.2](https://github.com/mikeng-io/nora/compare/v7.1.1...v7.1.2) (2026-10-27)
 
 
