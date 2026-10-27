@@ -3420,6 +3420,7 @@ async def build_dependencies(
         # set would be a second Nora with her own memory and her own budgets.
         # It reads doctrine at `applies_to="heartbeat"` itself.
         fire_path = FirePath(
+            tag_trace_store=tag_trace_store,
             persons=persons, records=audit, memory=memory,
             lineage=lineage,
             self_ids=registry.self_aliases(),
@@ -4644,6 +4645,7 @@ async def build_dependencies(
 
             try:
                 cognition_runner = build_cognition_runner(
+                    tag_trace_store=tag_trace_store,
                     cfg=cfg, models=dream_models,
                     retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
                     metrics=metrics, tools=dream_tools, instructions=dreamer_instructions,

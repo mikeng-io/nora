@@ -26,6 +26,7 @@ there is nothing to wake on but the evidence count and the stale rule.
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -96,6 +97,11 @@ PROFILE_COLLECTIVE_ADAPTOR_NAMES = (
 #: read); `commit`'s one write is the parent's, counted in its own
 #: declaration.
 COLLECTIVE_STORE_CALLS_PER_TICK = 6
+
+# ponytail: 60,000 rendered characters across ALL sources, three person-source
+# allowances shared by the collective (~50k tokens for mixed Cantonese/English),
+# never multiplied by members; use token-counted selection if live usage needs it.
+COLLECTIVE_SOURCE_CHARS = 60_000
 
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("about_entity", 5, "turn"),
@@ -322,6 +328,7 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
         heads = await self._profile.account_heads(key=key)
         allowed = frozenset(r.key for r in ck.rooms)
         revisions = [x for x in batch if isinstance(x, PersonSourceRevision)]
+        direct_ids = {m.row.id for m in batch if isinstance(m, RoomMessage)}
         roots = [m for x in revisions for m in x.roots]
         batch = [*batch, *roots]
         social = [x for x in revisions if x.social is not None]
@@ -364,16 +371,11 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
         messages = list({m.row.id: m for m in [*old, *messages]}.values())
         # An episode whose send's time cannot be read is unavailable, never
         # guessed (R-27).
+        turns = {e.send_id: e.turn_handle for e in episodes}
         stamps = {m.row.id: m.row.ts for m in grounded}
         episodes = [e for e in episodes if e.send_id in stamps]
         replies = [RoomMessage(room=e.room, row=r) for e in episodes
                    for r in e.replies if not r.is_nora]
-        said = {m.row.id: _said(m) for m in [*messages, *replies]}
-        for episode in episodes:
-            for reply in episode.replies:
-                if not reply.is_nora:
-                    said[reply.id] = Said(reply.ts, reply.person_id, episode.room,
-                        occasion=f"response:{episode.send_id}", medium="act")
         shown, social_block = _within_budget([
             _Shown(item=r.social, caption=_caption(r.social.caption, person=r.subject or "",
                 owners=self._handle_owners), counts=r.counts,
@@ -384,11 +386,76 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
         shown_ids = {(x.item.network, x.item.item_id) for x in shown}
         revisions = [r for r in revisions if r.social is None
                      or (r.social.network, r.social.item_id) in shown_ids]
-        social = [r for r in revisions if r.social is not None]
-        self.evidence.handed(key, revisions)
         if self._media_join is not None:
             enriched = await self._media_join.enrich(tuple(m.row for m in messages), path="dreamer")
             messages = [replace(m, row=row) for m, row in zip(messages, enriched, strict=True)]
+        now = self._clock()
+        handle_of = {i: h for h, i in handles_for(heads).items()}
+        labels = {r.key: r.label for r in ck.rooms}
+
+        def message_block(rows: Sequence[RoomMessage]) -> ContextBlock | None:
+            if not rows:
+                return None
+            return ContextBlock(
+                name="profile_messages", **_at("profile_messages"),
+                body=render_row_window(
+                    sorted(rows, key=lambda m: (m.row.ts, m.row.id)),
+                    row_id=lambda m: m.row.id,
+                    attrs=lambda m: (
+                        ("from", self._name_of(m.row.person_id)),
+                        ("room", labels.get(m.room) or "unnamed room"),
+                        ("age", age(m.row.ts, now)),
+                        ("source_at", datetime.fromtimestamp(
+                            m.row.ts / 1000, PROFILE_HKT).isoformat()),
+                    ),
+                    body=lambda m: m.row.body or "",
+                ),
+            )
+
+        def source_block(rows: Sequence[PersonSourceRevision]) -> ContextBlock:
+            return ContextBlock(name="profile_source_revisions",
+                **_at("profile_source_revisions"),
+                body=escape(json.dumps([{"source": r.source, "cite": r.citable,
+                    "from": self._name_of(r.subject) if r.subject else "computed",
+                    "as_of": r.as_of, "from_time": r.effective_from,
+                    "to_time": r.effective_until, "properties": dict(r.properties)}
+                    for r in rows], ensure_ascii=False)))
+
+        # The person writer's whole-source selection, after the media join:
+        # measure what is actually shown (including escaping and metadata).
+        # Repeated roots/block wrappers are charged per source, conservatively.
+        joined = {m.row.id: m for m in messages}
+        selected: list[PersonSourceRevision] = []
+        used = 0
+        for candidate in revisions:
+            blocks = [source_block([candidate]), message_block([
+                joined[m.row.id] for m in candidate.roots if m.row.id in joined])]
+            if candidate.social is not None:
+                _, item_block = _within_budget([x for x in shown if (
+                    x.item.network, x.item.item_id) == (
+                        candidate.social.network, candidate.social.item_id)], now)
+                blocks.append(item_block)
+            size = sum(len(b.render()) + 2 for b in blocks if b is not None)
+            if used + size > COLLECTIVE_SOURCE_CHARS:
+                continue
+            used += size
+            selected.append(candidate)
+        revisions = selected
+        retained = direct_ids | {m.row.id for m in old}
+        retained.update(m.row.id for r in revisions for m in r.roots)
+        messages = [m for m in messages if m.row.id in retained]
+        social = [r for r in revisions if r.social is not None]
+        selected_social = {(r.social.network, r.social.item_id)
+                           for r in social if r.social is not None}
+        _, social_block = _within_budget([x for x in shown
+            if (x.item.network, x.item.item_id) in selected_social], now)
+        self.evidence.handed(key, revisions)
+        said = {m.row.id: _said(m) for m in [*messages, *replies]}
+        for episode in episodes:
+            for reply in episode.replies:
+                if not reply.is_nora:
+                    said[reply.id] = Said(reply.ts, reply.person_id, episode.room,
+                        occasion=f"response:{episode.send_id}", medium="act")
         self._runs[key] = _Run(
             account=Account(key=key, entity_kind=self._kind, unit=ck.unit),
             citable=ProfileCitable(
@@ -410,9 +477,6 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
         identity_names = {s.person_id for s in said.values()}
         def identity_name(pid: str) -> str:
             return self._name_of(pid) if pid in identity_names else "someone"
-        now = self._clock()
-        handle_of = {i: h for h, i in handles_for(heads).items()}
-        labels = {r.key: r.label for r in ck.rooms}
         parts: list[ContextBlock | None] = [
             ContextBlock(
                 name="about_entity",
@@ -449,24 +513,7 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
                 + ((("cites", ", ".join(str(m.row.id) for m in old_cited)),) if old_cited else ()),
             ),
             room_cultures_block(ck.rooms, list(cultures), now, cites=True) if cultures else None,
-            None
-            if not messages
-            else ContextBlock(
-                name="profile_messages",
-                **_at("profile_messages"),
-                body=render_row_window(
-                    sorted(messages, key=lambda m: (m.row.ts, m.row.id)),
-                    row_id=lambda m: m.row.id,
-                    attrs=lambda m: (
-                        ("from", self._name_of(m.row.person_id)),
-                        ("room", labels.get(m.room) or "unnamed room"),
-                        ("age", age(m.row.ts, now)),
-                        ("source_at", datetime.fromtimestamp(
-                            m.row.ts / 1000, PROFILE_HKT).isoformat()),
-                    ),
-                    body=lambda m: m.row.body or "",
-                ),
-            ),
+            message_block(messages),
             None
             if not episodes
             else ContextBlock(
@@ -493,6 +540,7 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
                                 ),
                             ],
                             row_id=lambda m: m[0],
+                            turn=lambda m: turns.get(m[0]),
                             attrs=lambda m: (("from", m[1]),),
                             body=lambda m: m[2],
                         ),
@@ -504,12 +552,5 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
         if social_block is not None:
             parts.append(restamp(social_block, _ROW))
         if revisions:
-            import json
-            parts.append(ContextBlock(name="profile_source_revisions",
-                **_at("profile_source_revisions"),
-                body=escape(json.dumps([{"source": r.source, "cite": r.citable,
-                    "from": self._name_of(r.subject) if r.subject else "computed",
-                    "as_of": r.as_of, "from_time": r.effective_from,
-                    "to_time": r.effective_until, "properties": dict(r.properties)}
-                    for r in revisions], ensure_ascii=False))))
+            parts.append(source_block(revisions))
         return self._checked_input(key, assemble([p for p in parts if p is not None], sep="\n\n"))

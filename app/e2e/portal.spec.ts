@@ -16,6 +16,7 @@ const PAGES: Array<{ path: string; heading: RegExp }> = [
   { path: "/en/games/abiotic", heading: /Abiotic Factor/ },
   { path: "/en/games/abiotic?tab=insights", heading: /Abiotic Factor/ },
   { path: "/en/games/bigwalk?tab=world", heading: /The Big Walk/ },
+  { path: "/en/downloads", heading: /^Downloads$/ },
   { path: "/en/nora", heading: /Nora/ },
   { path: "/en/nora/memory", heading: /memory/i },
   { path: "/en/nora/doctrine", heading: /.+/ },

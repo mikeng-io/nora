@@ -1,6 +1,7 @@
 import {
   BookOpenText,
   CalendarDays,
+  Download,
   FileText,
   FolderOpen,
   Gamepad2,
@@ -25,6 +26,7 @@ export interface NavItem {
     | "plans"
     | "documents"
     | "artifacts"
+    | "downloads"
     | "games"
     | "nora"
     | "memory"
@@ -58,6 +60,8 @@ export const MAIN_NAV: NavItem[] = [
   { key: "documents", href: "/documents", icon: FileText, mobile: true },
   // The files Nora sent in your rooms (ADR 0023). Not on the phone's bar, which is full.
   { key: "artifacts", href: "/artifacts", icon: FolderOpen },
+  // Media the circle asked yt-dlp to fetch. Rail and palette only: the phone's bar is full.
+  { key: "downloads", href: "/downloads", icon: Download },
   { key: "games", href: "/games", icon: Gamepad2, mobile: true },
 ];
 

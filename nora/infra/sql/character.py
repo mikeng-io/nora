@@ -39,7 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from nora.domain.culture import EPISODE_EVIDENCE_OUTCOMES, Episode, RoomMessage
 from nora.domain.lessons import NAMES_HER
 from nora.domain.social_stream import from_us, to_us
-from nora.infra.sql.audit import transcript_row, transcript_select
+from nora.infra.sql.audit import transcript_row, transcript_select, turn_id_for_message
 from nora.infra.sql.mobility import current_build_id
 from nora.infra.sql.schema import (
     CONSOLIDATION_WATERMARK,
@@ -613,6 +613,7 @@ class SqlCharacterEvidence:
                 ROLLUP_RESPONSE.c.valid_to_ms, ROLLUP_RESPONSE.c.outcome,
                 ROLLUP_RESPONSE.c.reactions, ROLLUP_RESPONSE.c.edits,
                 ROLLUP_RESPONSE.c.follows, send.c.body,
+                turn_id_for_message(send).label("turn_id"),
             )
             .select_from(ROLLUP_RESPONSE.outerjoin(
                 send, send.c.id == ROLLUP_RESPONSE.c.message_id,
@@ -640,7 +641,7 @@ class SqlCharacterEvidence:
                     send_id=int(r.message_id), room=r.conversation_id,
                     text=r.body or "", outcome=r.outcome,
                     reactions=int(r.reactions), edits=int(r.edits),
-                    follows=int(r.follows),
+                    follows=int(r.follows), turn_id=r.turn_id,
                     replies=tuple(transcript_row(x) for x in replies),
                 ))
         return out, int(cursor or after)

@@ -25,6 +25,7 @@ own files sit under paths the site does not claim (`/sw.js`,
 | `/plans`, `/plans/<id>` | plans by week and by month; a plan's venue, who is coming, add to calendar, open in maps, share |
 | `/documents`, `/documents/<id>` | what Nora has written up for the rooms you are in, newest first; one document drawn from its stored spec in the portal theme. Pictures come through `/api/v1/documents/<id>/media/<sha>` (raster only) |
 | `/games`, `/games/<id>`, `/games/<id>/players/<key>` | servers; a server's overview, players, activity, insights and world; a player's character, body, combat and playtime |
+| `/downloads` | the circle's media shelf: paste URLs (one per line), the server runs yt-dlp on them, finished files play or download from the list. One shared library — a job says who asked for it |
 | `/nora`, `/nora/memory`, `/nora/doctrine`, `/nora/abilities` | about her and her status; her memory of you; her doctrine as a reader; her tools and skills |
 | `/login` | Discord sign-in, the code sign-in when `NORA_OTP_API_TOKEN` is set, and the refusal when an account is not on the list |
 
@@ -45,6 +46,18 @@ only, id-shaped path segments only. Memory and events are the viewer's own:
 the proxy puts `personId` from the session on the upstream call and ignores
 any the browser sends. `src/server/upstream.test.ts` pins every rule, and
 `e2e/portal.spec.ts` checks the memory rule against the running app.
+
+One group of `/api/v1/*` routes does NOT reach Nora: `/api/v1/downloads/*`
+is the portal's own yt-dlp batch downloader (`src/server/downloads/`), a
+batch submit plus list/get/retry/delete and a content stream. Jobs and media
+live under `NORA_DOWNLOADS_DIR` (one `jobs.json` registry, one directory per
+download); the image ships the yt-dlp binary and ffmpeg, and the compose
+service keeps it in the `app-downloads` named volume (which inherits the
+image's `node`-owned directory — a fresh bind mount would arrive root-owned
+and unwritable). URLs are restricted to http/https; private, loopback,
+link-local and single-label (service-name) hosts are refused, and the
+resolved addresses are checked too — a public name that resolves to an
+internal address is rejected at submit and again when the job runs.
 
 Every read is typed at the edge (`src/lib/api/*.ts`, zod schemas mirroring
 `nora/web/*.py`) and ends in one of four states the pages render differently:

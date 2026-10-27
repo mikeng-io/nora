@@ -623,12 +623,11 @@ async def walk(
     ) -> bool:
         if node.key in reached or score < least:
             return False
-        # Episodes only, not every `PRESENCE_KINDS`: `admits` reads a row's
-        # presence lineage, and a social item's tagged place carries none (an
-        # empty lineage is denied outside its origin room, and it has no
-        # room), so it would never be kept. The index's scope already gates
-        # it by presence.
-        if node.kind in EPISODE_KINDS and not admits(node):
+        # Episodes and turn-citing Register rows carry lineage; social places
+        # do not, and the index's scope already gates those by presence.
+        if (
+            node.kind in EPISODE_KINDS or (node.kind in {"note", "memo"} and node.lineage)
+        ) and not admits(node):
             return False
         reached[node.key] = Hit(node, score, path)
         return True

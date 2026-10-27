@@ -112,6 +112,7 @@ from nora.infra.sql.schema import (
     NOTE_REVISION,
     REMINDERS,
 )
+from nora.infra.sql.tag_traces import body_turn_lineage
 
 log = logging.getLogger("nora.infra.sql.notes")
 
@@ -177,7 +178,7 @@ async def _revision_lineage(
         cited=cited, rooms=rooms, origin=origin, origin_key=origin_key,
         first=first, evidence_room=evidence_room, rollup_lineages=rollups,
     )
-    return lineage, newest
+    return lineage.union(await body_turn_lineage(conn, body=body, unit=unit)), newest
 
 
 async def _room_key_of(conn: AsyncConnection, conversation_id: str) -> str | None:

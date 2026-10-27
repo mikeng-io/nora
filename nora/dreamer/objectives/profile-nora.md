@@ -35,6 +35,12 @@ edit, a silence where an answer was expected — never on what you said.
   edits). Your send is shown so the replies make sense; cite the episode,
   never your send.
 
+- `<social_items>`: selected members' social items, with their publisher,
+  source time and available counts; evidence about the publisher alone.
+- `<profile_source_revisions>`: the selected source snapshots, their citation
+  labels, source times, effective intervals and computed properties. Their
+  Record roots are shown in `<profile_messages>`; omitted snapshots stay pending.
+
 Any block may be missing.
 
 ## The three parts

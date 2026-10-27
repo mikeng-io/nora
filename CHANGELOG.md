@@ -1,5 +1,32 @@
 # Changelog
 
+## [7.3.0](https://github.com/mikeng-io/nora/compare/v7.2.0...v7.3.0) (2026-10-27)
+
+
+### Features
+
+* **app:** /downloads, a yt-dlp batch downloader for the circle ([6f06f73](https://github.com/mikeng-io/nora/commit/6f06f73e5514a25dd3ba753f17af38fc5737fd93))
+
+
+### Bug Fixes
+
+* **app:** close downloads SSRF and lifecycle holes found in review ([5c7ad51](https://github.com/mikeng-io/nora/commit/5c7ad51a5e979982c490ed32ffa7699093d96643))
+* **app:** downloads round 2 — cancel during DNS, write-storm guard, named volume ([6cdc2ea](https://github.com/mikeng-io/nora/commit/6cdc2ea4dc0850dab879a038fa1a1a76e8bbe781))
+
+## [7.2.0](https://github.com/mikeng-io/nora/compare/v7.1.2...v7.2.0) (2026-10-27)
+
+
+### Features
+
+* **standing:** retain each turn's exchange with its disclosure requirements ([68d5101](https://github.com/mikeng-io/nora/commit/68d5101e4bc8f240058e45e7edc4be29530813ee))
+
+
+### Bug Fixes
+
+* **profile:** bound collective source inputs and allow refusal repair ([2fe0e69](https://github.com/mikeng-io/nora/commit/2fe0e699c852912fa2265a196d006ceda49b6d25))
+* **profile:** leave the collective repair call room for non-source context ([cc1fe22](https://github.com/mikeng-io/nora/commit/cc1fe2271f9421ae57a0600b3e5852bd07b34b62))
+* **standing:** preserve turn citation restrictions and revision evidence ([5372baf](https://github.com/mikeng-io/nora/commit/5372baf5e8c38027ae7ae5012386bfbb9ebefc19))
+
 ## [7.1.2](https://github.com/mikeng-io/nora/compare/v7.1.1...v7.1.2) (2026-10-27)
 
 

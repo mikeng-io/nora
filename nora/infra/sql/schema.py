@@ -2643,6 +2643,14 @@ IDX_NOTE_REVISION_BODY_TRGM = sa.Index(
 TAG_TRACE = sa.Table(
     "tag_trace",
     METADATA,
+    sa.Column("turn_id", sa.BigInteger, sa.Identity(), nullable=False, unique=True),
+    sa.Column("started_at", sa.BigInteger),
+    sa.Column("occasion", sa.Text, nullable=False, server_default="tag"),
+    sa.Column("platform", sa.Text, nullable=False, server_default=""),
+    sa.Column("unit", sa.Text),
+    sa.Column("bound_rooms", pg.JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")),
+    sa.Column("requirements", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+    sa.Column("sent_message_ids", pg.JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")),
     sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
               server_default=sa.text("gen_random_uuid()")),
     sa.Column("tag_id", sa.Text, nullable=False),
@@ -2665,6 +2673,9 @@ TAG_TRACE = sa.Table(
 IDX_TAG_TRACE_CONVERSATION_CREATED = sa.Index(
     "idx_tag_trace_conversation_created",
     TAG_TRACE.c.conversation_id, TAG_TRACE.c.created_at,
+)
+IDX_TAG_TRACE_SENT_MESSAGES = sa.Index(
+    "idx_tag_trace_sent_messages", TAG_TRACE.c.sent_message_ids, postgresql_using="gin",
 )
 
 # ── music_queue ────────────────────────────────────────────────────────────

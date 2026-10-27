@@ -15,6 +15,7 @@ unit, so another unit's memo is not found.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Any
 from uuid import UUID
 
@@ -24,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from nora.domain.memo import Memo, MemoRevision, MemoWithdrawnError, StaleMemoError
 from nora.infra.sql import memory_index
 from nora.infra.sql.schema import MEMO, MEMO_REVISION
+from nora.infra.sql.tag_traces import body_turn_lineage
 
 __all__ = ["SqlMemoStore"]
 
@@ -36,11 +38,13 @@ def _revision(row: sa.Row[Any]) -> MemoRevision:
     )
 
 
-def _memo(row: sa.Row[Any]) -> Memo:
+async def _memo(conn: Any, row: sa.Row[Any]) -> Memo:
     return Memo(
         id=row.mid, unit=row.unit, platform=row.platform,
         conversation_id=row.conversation_id, created_at=row.created_at,
-        head=_revision(row),
+        head=replace(_revision(row), lineage=await body_turn_lineage(
+            conn, body=row.body, unit=row.unit, strict=False,
+        )),
     )
 
 
@@ -81,7 +85,7 @@ class SqlMemoStore:
             .order_by(MEMO.c.created_at, MEMO.c.id)
         )
         async with self._engine.connect() as conn:
-            return tuple(_memo(r) for r in (await conn.execute(stmt)).all())
+            return tuple([await _memo(conn, r) for r in (await conn.execute(stmt)).all()])
 
     async def get(self, *, unit: str, memo_id: str) -> Memo | None:
         if not _is_uuid(memo_id):
@@ -89,7 +93,7 @@ class SqlMemoStore:
         stmt = _heads().where(MEMO.c.unit == unit, MEMO.c.id == memo_id)
         async with self._engine.connect() as conn:
             row = (await conn.execute(stmt)).one_or_none()
-        return None if row is None else _memo(row)
+            return None if row is None else await _memo(conn, row)
 
     async def revisions(self, *, unit: str, memo_id: str) -> tuple[MemoRevision, ...]:
         if not _is_uuid(memo_id):
@@ -101,7 +105,9 @@ class SqlMemoStore:
             .order_by(MEMO_REVISION.c.seq.desc())
         )
         async with self._engine.connect() as conn:
-            return tuple(_revision(r) for r in (await conn.execute(stmt)).all())
+            return tuple([replace(_revision(r), lineage=await body_turn_lineage(
+                conn, body=r.body, unit=unit, strict=False,
+            )) for r in (await conn.execute(stmt)).all()])
 
     async def create(
         self, *, unit: str, platform: str, conversation_id: str, title: str, body: str,
@@ -109,6 +115,7 @@ class SqlMemoStore:
         now_ms: int,
     ) -> Memo:
         async with self._engine.begin() as conn:
+            lineage = await body_turn_lineage(conn, body=body, unit=unit)
             memo_id = (await conn.execute(
                 sa.insert(MEMO).values(
                     unit=unit, platform=platform, conversation_id=conversation_id,
@@ -125,7 +132,7 @@ class SqlMemoStore:
             await memory_index.project(conn, "memo", str(memo_id))
         return Memo(
             id=memo_id, unit=unit, platform=platform, conversation_id=conversation_id,
-            created_at=now_ms, head=_revision(row),
+            created_at=now_ms, head=replace(_revision(row), lineage=lineage),
         )
 
     async def append(
@@ -137,6 +144,7 @@ class SqlMemoStore:
             raise LookupError(f"no memo {memo_id!r}")
         try:
             async with self._engine.begin() as conn:
+                lineage = await body_turn_lineage(conn, body=body, unit=unit)
                 head = (await conn.execute(
                     _heads().where(MEMO.c.unit == unit, MEMO.c.id == memo_id)
                 )).one_or_none()
@@ -161,4 +169,4 @@ class SqlMemoStore:
             if "uq_memo_revision_seq" not in str(exc):
                 raise
             raise StaleMemoError(f"memo {memo_id} was revised concurrently") from exc
-        return _revision(row)
+        return replace(_revision(row), lineage=lineage)

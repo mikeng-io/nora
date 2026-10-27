@@ -56,6 +56,7 @@ def _rec(sid: int, kind: str, *, mid: int, text: str | None, room: Room = A, emo
     return RecordItem(
         ref=f"messages:{sid}", kind=kind, message_id=mid, room=room, author=author,  # type: ignore[arg-type]
         at_ms=NOW - 10 * 60_000, text=text, emoji=emoji, edited=edited, own=own,
+        turn_id=7 if own else None,
     )
 
 
@@ -141,7 +142,7 @@ def test_the_fixture_makes_every_element_carry_every_attribute_it_can():
     assert seen["agenda"] == {
         "index", "kind", "room", "summary", "returning", "window", "earlier_not_shown",
         "earlier_range", "unreadable", "n", "at", "from", "edited", "reaction",
-        "withdrawn", "deleted", "own", "cues",
+        "withdrawn", "deleted", "own", "cues", "turn",
     }
     assert seen["note_index"] == {
         "n", "title", "not_listed", "review", "may_duplicate", "reminds",

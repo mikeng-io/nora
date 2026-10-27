@@ -1,6 +1,7 @@
 """The reaction picker and the debrief declare a `_BLOCKS` table and are built
-through `assemble`, and the debrief's prompt text lives in its renderer. NOT ONE
-BYTE any model reads differs from the hand-joined form.
+through `assemble`, and the debrief's prompt text lives in its renderer.
+The captures include the turn-record glosses added by Standing Ledger step 1;
+before/after live evals for that prompt change are pending.
 
 **The goldens in `tests/fixtures/context_assembly_step2b_goldens.json` were
 captured from the hand-joined occasions**, over synthetic fixtures, and are the

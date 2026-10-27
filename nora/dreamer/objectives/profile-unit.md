@@ -33,6 +33,12 @@ one claim, each saying how you know it. Nobody reads it yet.
 - `<profile_messages>`: the cited messages themselves, each with its number
   `n`, who said it, its room and how long ago.
 
+- `<social_items>`: selected members' social items, with their publisher,
+  source time and available counts; evidence about the publisher alone.
+- `<profile_source_revisions>`: the selected source snapshots, their citation
+  labels, source times, effective intervals and computed properties. Their
+  Record roots are shown in `<profile_messages>`; omitted snapshots stay pending.
+
 Any block may be missing.
 
 ## The three parts

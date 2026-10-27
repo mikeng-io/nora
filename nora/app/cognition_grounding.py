@@ -58,6 +58,7 @@ from nora.agent.lineage import (
     LineagePolicy,
     derived_view,
     excluded,
+    memo_permits,
     profile_lines_for,
     visible_sections,
 )
@@ -346,6 +347,7 @@ async def _own_sends(
                 ref=f"messages:{h.row.id}", kind="message", message_id=h.row.id,
                 room=Room(h.platform, h.conversation_id), author=ai_name, at_ms=h.row.ts,
                 text=None if h.deleted else (h.row.body or ""), own=True,
+                turn_id=h.row.turn_id,
             )
             for h in mine
         )
@@ -565,9 +567,10 @@ def build_grounder(
                 reminds="; ".join(held[n.id]) if n.id in held else None,
             ))
         notes = tuple(notes_out)
-        # The unit's kept memos (DEC-306): unit-wide, no lineage (the unit is the
-        # read boundary, DEC-231). A failed read raises like the note index's.
-        memos = tuple(await memo_index(unit)) if memo_index is not None else ()
+        # Turn citations carry their recorded requirements into the index too.
+        # A failed read raises like the note index's.
+        memos = tuple(m for m in await memo_index(unit)
+                      if all(memo_permits(m.head, t) for t in targets)) if memo_index else ()
         events: list[EventLine] = []
         for room in agenda_rooms:
             if (room.platform, room.conversation_id) not in allowed:

@@ -958,7 +958,7 @@ def test_a_config_written_before_the_dreamer_section_existed_still_loads(toml_pa
     # model asked to emit nothing.
     assert cfg.dreamer.max_tokens == 0
     assert cfg.dreamer_max_tokens() == cfg.llm.max_tokens
-    assert cfg.dreamer.budgets == {}
+    assert set(cfg.dreamer.budgets) == {"profile-unit", "profile-room", "profile-nora"}
     assert cfg.dreamer.budget_for("note-curation") == DreamBudgetConfig()
     # The clock's own five numbers, which moved here from the deleted
     # `[language]`: a config predating the move still gets a bounded loop.
@@ -1894,7 +1894,7 @@ def test_the_template_pins_the_budget_blocks_it_declares(toml_path):
     """`budget_for` falls back SILENTLY for an unknown key, so an adaptor with no
     block runs on numbers nobody chose. The template declares three: culture, the
     Cognition session and the sub-agent worker (DEC-247: rounds, tokens and
-    time, no call ceiling)."""
+    time, no call ceiling). Collective Profile budgets also have code defaults."""
     from nora.config import (
         COGNITION_OUTPUT_TOKENS,
         COGNITION_TIMEOUT_SECONDS,
@@ -1903,7 +1903,8 @@ def test_the_template_pins_the_budget_blocks_it_declares(toml_path):
     )
 
     budgets = load(toml_path).dreamer.budgets
-    assert set(budgets) == {"culture", "cognition", "subagent"}
+    assert set(budgets) == {"culture", "cognition", "subagent",
+                            "profile-unit", "profile-room", "profile-nora"}
     culture = budgets["culture"]
     assert (culture.turns, culture.total_tokens) == (10, 120_000)
     assert (culture.output_tokens, culture.max_memory_calls) == (6_000, 12)

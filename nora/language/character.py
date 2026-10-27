@@ -1078,6 +1078,7 @@ class CharacterNoraAdaptor(EntitySessions):
                 (r.id, self._name_of(r.person_id), r.body or "") for r in e.replies
             )],
             row_id=lambda m: m[0],
+            turn=lambda m: e.turn_handle if m[0] == e.send_id else None,
             attrs=lambda m: (("from", m[1]),),
             body=lambda m: m[2],
         )

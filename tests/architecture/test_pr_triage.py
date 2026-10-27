@@ -2,7 +2,8 @@
 
 The triage job runs with write access on `pull_request_target`, so it must read data
 only: the title and the file list select labels from a fixed list and never reach a
-shell. Bot PRs are skipped because a Dependabot-triggered job has a read-only token.
+shell. People and bots share classification; assignment is person-only. Authors
+with their own labeling are selected by trusted configuration, not bot-specific code.
 """
 
 from __future__ import annotations
@@ -17,10 +18,12 @@ from scripts import triage_pr as triage
 from scripts.check_commit_subject import TYPES
 
 
-def user_pr(title="fix(bridge): require a token", labels=(), assignees=(), kind="User"):
+def user_pr(
+    title="fix(bridge): require a token", labels=(), assignees=(), kind="User", login="owner"
+):
     return {
         "title": title,
-        "user": {"login": "owner", "type": kind},
+        "user": {"login": login, "type": kind},
         "labels": [{"name": n} for n in labels],
         "assignees": [{"login": n} for n in assignees],
     }
@@ -83,7 +86,11 @@ def test_paths_map_to_areas(path, expected):
 
 
 def test_triage_adds_missing_labels_creates_absent_ones_and_assigns_the_author():
-    github = Fake(user_pr(), files=["nora/app/x.py", "tests/test_x.py"], existing=["type: fix"])
+    github = Fake(
+        user_pr(assignees=["maintainer"]),
+        files=["nora/app/x.py", "tests/test_x.py"],
+        existing=["type: fix"],
+    )
     result = triage.triage(github, "o/r", 7)
     assert result["added"] == ["area: runtime", "area: tests", "type: fix"]
     posted = [c for c in github.calls if c[:2] == ("POST", "/repos/o/r/issues/7/labels")]
@@ -91,6 +98,7 @@ def test_triage_adds_missing_labels_creates_absent_ones_and_assigns_the_author()
     created = [c[2]["name"] for c in github.calls if c[:2] == ("POST", "/repos/o/r/labels")]
     assert created == ["area: runtime", "area: tests"], "only the labels that did not exist"
     assert ("POST", "/repos/o/r/issues/7/assignees", {"assignees": ["owner"]}) in github.calls
+    assert not any(c[0] in {"DELETE", "PATCH", "PUT"} for c in github.calls)
 
 
 def test_stale_managed_labels_are_removed_and_foreign_labels_are_left_alone():
@@ -109,10 +117,53 @@ def test_stale_managed_labels_are_removed_and_foreign_labels_are_left_alone():
     )
 
 
-def test_a_bot_pr_is_left_to_its_own_configuration():
-    github = Fake(user_pr(kind="Bot"))
-    assert triage.triage(github, "o/r", 7) == {"skipped": "bot author"}
+@pytest.mark.parametrize("login", sorted(triage.SELF_MANAGED_AUTHORS))
+def test_self_managed_authors_are_left_to_their_own_configuration(login):
+    github = Fake(user_pr(kind="Bot", login=login))
+    assert triage.triage(github, "o/r", 7) == {"skipped": "author manages its own labels"}
     assert [c[0] for c in github.calls] == ["GET"], "no write for a bot author"
+
+
+def test_unsupported_author_type_never_writes():
+    github = Fake(user_pr(kind="Organization"))
+    assert triage.triage(github, "o/r", 7) == {"skipped": "unsupported author type"}
+    assert [c[0] for c in github.calls] == ["GET"]
+
+
+@pytest.mark.parametrize("login", ["devin-ai-integration[bot]", "future-agent[bot]"])
+@pytest.mark.parametrize("assignees", [(), ("maintainer",)])
+def test_bots_share_classification_without_assignment_or_registration(login, assignees):
+    github = Fake(
+        user_pr(
+            title="security(portal): protect a request",
+            labels=["type: fix", "area: docs", "review: pending"],
+            assignees=assignees,
+            kind="Bot",
+            login=login,
+        ),
+        files=["app/src/a.ts", "nora/app/x.py", "tests/unit/test_x.py"],
+    )
+    result = triage.triage(github, "o/r", 7)
+    expected = ["area: portal", "area: runtime", "area: tests", "type: security"]
+    assert result == {
+        "added": expected,
+        "removed": ["area: docs", "type: fix"],
+        "assignee": None,
+    }
+    assert ("POST", "/repos/o/r/issues/7/labels", {"labels": expected}) in github.calls
+    assert {c[1] for c in github.calls if c[0] == "DELETE"} == {
+        "/repos/o/r/issues/7/labels/area%3A%20docs",
+        "/repos/o/r/issues/7/labels/type%3A%20fix",
+    }
+    writes = [c for c in github.calls if c[0] != "GET"]
+    assert all("/labels" in c[1] for c in writes), "only label writes, never assignee or PR edits"
+
+
+def test_configuring_an_author_as_self_managed_needs_no_classifier_change(monkeypatch):
+    monkeypatch.setattr(triage, "SELF_MANAGED_AUTHORS", {"future-agent[bot]"})
+    github = Fake(user_pr(kind="Bot", login="future-agent[bot]"))
+    assert triage.triage(github, "o/r", 7) == {"skipped": "author manages its own labels"}
+    assert [c[0] for c in github.calls] == ["GET"]
 
 
 def test_an_author_who_cannot_be_assigned_is_not_an_error():
