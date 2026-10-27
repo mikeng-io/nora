@@ -5231,8 +5231,8 @@ def build_tool_specs(
         limit: int = LOAD_TRANSCRIPT_DEFAULT, before: str | None = None,
         thread: str | None = None,
     ) -> dict:
-        """Read older messages from this conversation. Only call this if you need
-        to look further back than what you were shown, or open a Standing thread.
+        """Read this room's older messages or a Standing thread. Call this when
+        you need earlier context.
 
         You already have the most recent messages. Returns `messages`, oldest
         first, each with `sender`, `body` and `when` it was sent.
@@ -5484,8 +5484,8 @@ def build_tool_specs(
         room: str, limit: int = LOAD_TRANSCRIPT_DEFAULT, before: str | None = None,
         thread: str | None = None,
     ) -> dict:
-        """Read another room's messages or a Standing thread. Call this when
-        someone asks what was said elsewhere in this group.
+        """Read another room's messages or thread. Call this when you need its
+        conversation.
 
         Name the room as room_list does.
 
@@ -5905,8 +5905,7 @@ def build_tool_specs(
         return result
 
     async def standing_read() -> dict:
-        """Read this room's Standing: what she holds, holds open and owes. Call this
-        before you revise the position.
+        """Read Standing and its history. Call this when you need the full ledger.
 
         Returns the legacy sections and their revision, plus all visible ledger
         entries, each with its revision and history. Statuses: ok, nothing_found, unavailable.
