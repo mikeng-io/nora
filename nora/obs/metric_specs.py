@@ -17,7 +17,7 @@ from nora.domain.assess import DQ_CHECKS
 from nora.domain.cues import CUES
 from nora.domain.culture import CHARACTER_KINDS, CHARACTER_OUTCOMES, CULTURE_OUTCOMES
 from nora.domain.doctrine_check import CHECK_OUTCOMES
-from nora.domain.extraction import EXTRACTION_FAILURE_STAGES
+from nora.domain.extraction import CLAIM_DROP_REASONS, EXTRACTION_FAILURE_STAGES
 from nora.domain.lessons import LESSONS_OUTCOMES
 from nora.domain.media import MEDIA_FETCH_CALLERS
 from nora.domain.media_join import JOIN_PATHS
@@ -2141,6 +2141,12 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_extraction_terminal_batches_total",
         "Extraction batches transitioned to failed after exhausting their attempt allowance.",
+    ),
+    _CounterSpec(
+        "nora_extraction_dropped_claims_total",
+        "Provenance-invalid claims dropped, durably counted per attempt. reason: "
+        + " / ".join(CLAIM_DROP_REASONS) + ".",
+        ("reason",),
     ),
     _CounterSpec(
         "nora_extraction_claims_written_total",

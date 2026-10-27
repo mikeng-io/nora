@@ -14,7 +14,12 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from nora.domain.extraction import VERSION, ExtractionFailureStage
+from nora.domain.extraction import (
+    CLAIM_DROP_REASONS,
+    VERSION,
+    ClaimDropReason,
+    ExtractionFailureStage,
+)
 from nora.infra.sql.schema import EXTRACTION as EXTRACTION
 from nora.infra.sql.schema import EXTRACTION_ATTEMPT as ATTEMPT
 from nora.infra.sql.schema import EXTRACTION_CLAIM as CLAIM
@@ -369,6 +374,20 @@ class SqlExtraction:
                     output_tokens=output_tokens,
                     provider_model=provider_model,
                 )
+            )
+
+    async def record_drops(
+        self, job: dict[str, Any], *, counts: dict[ClaimDropReason, int],
+    ) -> None:
+        """Counts only, tied to this attempt even if publication subsequently fails."""
+        if any(reason not in CLAIM_DROP_REASONS or type(count) is not int or count <= 0
+               for reason, count in counts.items()):
+            raise ValueError("invalid claim drop counts")
+        async with self.engine.begin() as conn:
+            await conn.execute(
+                sa.update(ATTEMPT)
+                .where(ATTEMPT.c.id == job["attempt_id"], ATTEMPT.c.outcome == "started")
+                .values(dropped_claims=counts)
             )
 
     async def publish_extraction_batch(

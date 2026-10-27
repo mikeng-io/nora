@@ -5140,6 +5140,7 @@ EXTRACTION_ATTEMPT = sa.Table(
     sa.Column("output_tokens", sa.BigInteger),
     sa.Column("outcome", sa.Text, nullable=False, server_default=sa.text("'started'")),
     sa.Column("failure_stage", sa.Text),
+    sa.Column("dropped_claims", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
     sa.UniqueConstraint("extraction_id", "attempt", name="uq_extraction_attempt"),
 )
 sa.Index("idx_extraction_due", EXTRACTION.c.state, EXTRACTION.c.due_at)
