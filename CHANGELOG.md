@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.1.2](https://github.com/mikeng-io/nora/compare/v7.1.1...v7.1.2) (2026-10-27)
+
+
+### Bug Fixes
+
+* **record:** clarify extraction time objects and label failure stages ([b298c51](https://github.com/mikeng-io/nora/commit/b298c51dc16535e5662ada11284ff70d03f5ce8a))
+
 ## [7.1.1](https://github.com/mikeng-io/nora/compare/v7.1.0...v7.1.1) (2026-10-27)
 
 
