@@ -450,7 +450,7 @@ flowchart TD
   P["person: person_id, one per human"]
   W -->|bound to exactly one Honcho workspace| H["Honcho workspace: fed sessions and person models"]
   W --> U
-  U -->|at most one room per platform| R
+  U -->|unique room labels within the unit| R
   R -->|the persons list, or the wildcard| P
 ```
 
@@ -459,15 +459,15 @@ The four keys, and the one external binding that hangs off the widest of them.
 | key | literal form | set by | where it is enforced |
 |---|---|---|---|
 | **workspace** | an identifier matching `^[a-zA-Z0-9_-]+$`, or the implicit `DEFAULT_WORKSPACE` | `policy.toml`'s `[units.<unit>] workspace = …`; bound to a Honcho workspace by `identity.toml`'s `[workspaces.<name>]` | `Policy.workspace_of`, `Policy.unit_workspaces`, and `nora.app.memory_routing` |
-| **unit** | a free string; `Conversation.unit` defaults to the shipped unit name | `[[conversations]] unit = …` | `load_policy`'s one-room-per-platform invariant; `MemoryScope.units`; `SqlRollupRead`'s `WHERE unit = …`; `character_key(unit, person_id)` |
+| **unit** | a free string; `Conversation.unit` defaults to the shipped unit name | `[[conversations]] unit = …` | `load_policy`'s unique-room-name invariant; `MemoryScope.units`; `SqlRollupRead`'s `WHERE unit = …`; `character_key(unit, person_id)` |
 | **room** | `room_key(platform, conversation_id)` → `platform:conversation_id`; matched over `id` **and** `also_ids` | `[[conversations]]` `id`/`also_ids` | `Policy.is_allowed` (the room must be listed); `MemoryScope.rooms` / `origin_room`; every `RecordStore` verb keyed by `conversation_id` |
 | **person** | `person_id`, also the Honcho peer id by construction | `identity.toml`'s `[[persons.<id>.<platform>]]` accounts | `Policy.is_allowed` (the sender must be allowed *in that room*); `MemoryScope.listed_here` / `persons` / `exclude_persons`; `rollup_read`'s required subject set |
 
 Three of those need more than a sentence.
 
 **The unit is the boundary, and its invariants are checked at startup.** `load_policy` refuses a unit
-that names two rooms on one platform (DEC-105), because everything that addresses "the unit's room on
-Signal" names one room only because there is one; it refuses two home rooms in a unit (a unit has
+with duplicate labels after case/spacing folding or a reserved network label that would hide ambiguity.
+Several rooms may share a platform (room-topology migration step 3); it refuses two home rooms in a unit (a unit has
 exactly one room its proactive adaptor stands in); it refuses two voice rooms or two music channels in
 one guild; it refuses duplicate conversation ids, an unlabelled room, and a policy that allows nothing.
 `[units]` is optional, but when present it must be **complete and exact**: a unit some room uses with

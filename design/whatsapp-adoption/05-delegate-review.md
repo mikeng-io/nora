@@ -186,6 +186,9 @@ every WhatsApp voice note is either dropped or an undefined interaction.
 with the engagement consequence stated ("voice-note engagement does not work
 until media ingestion lands").
 
+Historical review: room-topology migration step 3 supersedes the room-count
+convention discussed below; unique labels within a unit are now the invariant.
+
 ### M3. DEC-105 is misquoted — the bundle's "one-room-per-platform-per-unit" rule is not what DEC-105 says
 
 **What:** `02:108` claims reuse of `friends` "satisfies DEC-105's one-room-

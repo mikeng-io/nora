@@ -1,8 +1,7 @@
 """`policy.toml`'s `[units]` — workspace > unit > room (DEC-214).
 
 The structure half of the hierarchy: which Nora workspace each unit belongs
-to, and DEC-105's one-room-per-platform-per-unit rule, which the loader
-enforces. Every id below is a placeholder.
+to, and unique room names within a unit. Every id below is a placeholder.
 """
 
 from __future__ import annotations
@@ -104,9 +103,8 @@ def test_a_workspace_name_honcho_would_refuse_is_refused_at_startup(tmp_path):
 
 
 @pytest.mark.parametrize("units", ["", _UNITS], ids=["no-units", "with-units"])
-def test_two_rooms_on_one_platform_in_one_unit_refuse_to_start(tmp_path, units):
-    """DEC-105's invariant, enforced in both forms of the file: the rule is
-    the unit's, not the workspace's."""
+def test_two_labelled_signal_rooms_in_one_unit_load(tmp_path, units):
+    """Distinct room names address two Signal rooms in either policy form."""
     second = """
 [[conversations]]
 platform = "signal"
@@ -115,13 +113,18 @@ label = "Alpha's second Signal room"
 persons = "*"
 unit = "alpha"
 """
-    with pytest.raises(PolicyError, match=r"unit 'alpha' has two signal rooms"):
-        _load(tmp_path, _ROOMS + second + units)
+    policy = _load(tmp_path, _ROOMS + second + units)
+    rooms = [c for c in policy.conversations if c.unit == "alpha" and c.platform == "signal"]
+    assert [(c.primary_id, c.label) for c in rooms] == [
+        ("sig-alpha", "Alpha on Signal"),
+        ("sig-alpha-2", "Alpha's second Signal room"),
+    ]
+    assert all(policy.conversation("signal", c.primary_id) is c for c in rooms)
+    assert policy.workspace_of("alpha") == ("one" if units else DEFAULT_WORKSPACE)
 
 
-def test_one_room_per_platform_across_units_is_allowed(tmp_path):
-    """The positive control: two Signal rooms are fine in two units — the
-    refusal above is about the unit, not the platform."""
+def test_rooms_on_one_platform_across_units_are_allowed(tmp_path):
+    """Rooms on one network may also belong to different units."""
     policy = _load(tmp_path, _ROOMS + _UNITS)
     signal_units = sorted(c.unit for c in policy.conversations if c.platform == "signal")
     assert signal_units == ["alpha", "beta", "gamma"]
