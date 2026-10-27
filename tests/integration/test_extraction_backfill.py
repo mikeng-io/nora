@@ -12,6 +12,8 @@ import pytest
 import sqlalchemy as sa
 
 from nora.app.composition import _note_unit_of
+from nora.domain.extraction import validate_claims
+from nora.domain.models import DeliveryStatus
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.extraction import SqlExtraction, admission
@@ -25,7 +27,7 @@ from scripts.extraction_backfill import backfill, status
 from tests.conftest import _async_url
 from tests.contract.test_extraction_contract import finish, rows, take
 from tests.contract.test_extraction_contract import message as source_message
-from tests.unit.test_extraction import ASSERTED
+from tests.unit.test_extraction import ASSERTED, claim, parsed
 
 HISTORY = ASSERTED - 10 * 365 * 86400000
 BEFORE = HISTORY + 1000
@@ -114,7 +116,7 @@ async def test_history_and_live_share_admission_and_current_ownership(db, policy
         wanted.append(await historical.append(message=message(n, room=room)))
         # Unattributed humans are eligible: identity/category filters would lose evidence.
         await live.append(message=message(n + 20, room=room))
-    await historical.append(message=message(3), is_nora=True)
+    nora = await historical.append(message=message(3), is_nora=True)
     hidden = await historical.append(message=message(4))
     deleted = await historical.append(message=message(5))
     await historical.append(message=message(6, room="unmapped"))
@@ -129,8 +131,11 @@ async def test_history_and_live_share_admission_and_current_ownership(db, policy
         ))
     result = await backfill(db, policy, before_ms=BEFORE)
     assert result["eligible"] == 4 and result["already_queued"] == result["enqueued"] == 2
-    assert result["skipped"] == {"nora": 1, "hidden": 1, "deleted": 1, "unmapped": 2}
+    assert result["context_eligible"] == result["context_enqueued"] == 1
+    assert result["skipped"] == {"hidden": 1, "deleted": 1, "unmapped": 2}
     queue = await rows(db, QUEUE)
+    nora_row = next(r for r in queue if r["message_id"] == nora)
+    assert nora_row["historical"] and not nora_row["is_source"]
     for source, unit in zip(wanted, ["unit-current", "unit-other"], strict=True):
         assert next(r for r in queue if r["message_id"] == source)["unit"] == unit
     assert {r["unit"] for r in queue if not r["historical"]} == {"unit-current", "unit-other"}
@@ -219,3 +224,69 @@ async def test_status_lists_failed_stages_and_requeue_to_checkable_done(db, poli
     assert report["claims_written"] == 4 and report["failed_batches"] == []
     # Status prints structural data only, never message or claim text.
     assert "Workshop" not in json.dumps(report)
+
+
+async def test_historical_nora_reply_is_idempotent_uncitable_context(db, policy):
+    record = SqlRecordStore(db)
+    first = await record.append(message=message(1), person_id="subject-a")
+    nora = await record.append(
+        message=message(2), is_nora=True, delivery_status=DeliveryStatus.SENT,
+    )
+    last = await record.append(message=message(3), person_id="subject-a")
+    preview = await backfill(db, policy, before_ms=BEFORE, dry_run=True)
+    assert preview["would_enqueue"] == 2 and preview["context_would_enqueue"] == 1
+    assert preview["context_enqueued"] == 0
+    applied = await backfill(db, policy, before_ms=BEFORE)
+    assert applied["enqueued"] == 2 and applied["context_enqueued"] == 1
+    again = await backfill(db, policy, before_ms=BEFORE)
+    assert again["already_queued"] == 2 and again["context_already_queued"] == 1
+    assert again["enqueued"] == again["context_enqueued"] == 0
+    queue = await rows(db, QUEUE)
+    assert len(queue) == 3 and all(r["historical"] for r in queue)
+    assert {r["message_id"] for r in queue if r["is_source"]} == {first, last}
+    store = SqlExtraction(db)
+    assert await finish(store, await take(store, messages_per_call=1)) == 1
+    job = await take(store)
+    assert job["source_ids"] == [last]
+    context = next(r for r in job["snapshot"]["context"] if r["id"] == nora)
+    assert context["is_nora"] and context["body"] == "tomorrow visit Workshop"
+    with pytest.raises(ValueError, match="citation outside batch"):
+        validate_claims(parsed({"claims": [claim(nora)]}), job["snapshot"])
+    assert await finish(store, job) == 1
+    assert await take(store) is None
+    report = await status(db)
+    assert report["rows"] == {"unbatched": 0, "pending": 0, "done": 2, "failed": 0, "retired": 0}
+    assert report["context_rows"] == {
+        "unbatched": 1, "pending": 0, "done": 0, "failed": 0, "retired": 0,
+    }
+    assert report["claims_written"] == 2
+
+
+async def test_enqueue_commits_each_chunk_without_candidate_share_locks(db, policy, monkeypatch):
+    from scripts import extraction_backfill as command
+
+    record = SqlRecordStore(db)
+    for n in range(5):
+        await record.append(message=message(n))
+    monkeypatch.setattr(command, "CHUNK_SIZE", 2)
+    enqueue = command.enqueue
+    observed = []
+    statements = []
+
+    async def observe(conn, **kwargs):
+        # An independent reader must see earlier chunks before this INSERT.
+        observed.append(len(await rows(db, QUEUE)))
+        return await enqueue(conn, **kwargs)
+
+    def sql(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    monkeypatch.setattr(command, "enqueue", observe)
+    sa.event.listen(db.sync_engine, "before_cursor_execute", sql)
+    try:
+        result = await backfill(db, policy, before_ms=BEFORE)
+    finally:
+        sa.event.remove(db.sync_engine, "before_cursor_execute", sql)
+    assert result["enqueued"] == 5
+    assert observed == [0, 0, 2, 2, 4]
+    assert not any("FOR SHARE" in statement for statement in statements)

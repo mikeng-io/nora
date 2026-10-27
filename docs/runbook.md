@@ -1583,8 +1583,9 @@ Stop after the first account to assess progress before requesting another.
 worker drains them when `[memory.extraction] enabled = true`; processing incurs
 that worker's ordinary model usage. Use the current deployed policy file: room
 ownership, including aliases, is resolved exactly as live enqueue resolves it
-**today**. Unmapped rooms/platforms, Nora's replies, hidden and deleted messages
-are skipped. Unattributed humans and media-only messages remain eligible.
+**today**. Unmapped rooms/platforms, hidden and deleted messages are skipped.
+Nora replies are queued as context only: never extracted or citable. Unattributed
+humans and media-only messages remain eligible.
 Already queued rows and replay tombstones are preserved, never reassigned.
 
 From a checkout with `DATABASE_URL` already set, first inspect counts:
@@ -1594,8 +1595,8 @@ uv run python scripts/extraction_backfill.py --policy policy.toml --days 61 --dr
 ```
 
 Output is JSON containing only window timestamps, eligible/already queued/would
-enqueue/enqueued counts and skips by reason; no message text. Dry-run uses a
-PostgreSQL read-only transaction. Copy its `before_ms` value to freeze the same
+enqueue/enqueued source counts, separate `context_*` counts and skips by reason;
+no message text. Dry-run uses PostgreSQL read-only transactions. Copy its `before_ms` value to freeze the same
 half-open timestamp window for execution and later completion checks:
 
 ```bash
@@ -1603,7 +1604,9 @@ uv run python scripts/extraction_backfill.py --policy policy.toml --days 61 --be
 uv run python scripts/extraction_backfill.py --status
 ```
 
-The enqueue is idempotent, oldest message timestamp first (id breaks ties).
+The enqueue is idempotent, oldest message timestamp first (id breaks ties),
+committing every 500 candidates without a run-wide source lock. Visibility is
+rechecked at batch formation and publication.
 Live sources have priority over historical sources, including **due historical
 retries**; a live message arriving during a historical call is eligible at the
 next worker take after its normal minimum age. Calls already in flight finish
@@ -1613,14 +1616,16 @@ second worker or new configuration is required.
 
 Status covers **all rows marked historical**, regardless of the command's time
 window or current policy, and counts queue rows by `unbatched`, `pending`, `done`,
-`failed` and `retired`. `claims_written` counts their currently active claims.
+`failed` and `retired` under `rows` (sources) and `context_rows` (Nora). Context
+rows remain unbatched because they are never extracted; they do not prevent
+completion. `claims_written` counts their currently active claims.
 Each failed batch is listed by id with failure-stage attempt counts; old attempts
 and expired leases without a recorded stage are `unknown`, never inferred.
 Pruned source tombstones without a batch count as retired. A batch may contain
 many source rows, so these row counts are not batch counts.
 
-**Done:** the same frozen-window dry-run reports `would_enqueue = 0`, and status
-reports zero `unbatched`, `pending` **and** `failed` rows. Review any retired rows:
+**Done:** the same frozen-window dry-run reports both `would_enqueue = 0` and
+`context_would_enqueue = 0`, and status reports zero `unbatched`, `pending` **and** `failed` rows. Review any retired rows:
 withdrawal/edit/pruning can invalidate a reading, so zero claims is not proof of
 success. Claims can legitimately be empty when a completed batch asserted
 nothing; check `done` as well. A failed batch is not done. After repairing its

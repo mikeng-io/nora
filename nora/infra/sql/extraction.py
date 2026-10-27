@@ -32,7 +32,7 @@ def admission(
     *,
     sources_only: bool = False,
 ) -> tuple[str | None, str | None]:
-    """One arrival/backfill admission; Nora may supply live context, never history sources.
+    """One arrival/backfill admission; Nora supplies live/historical context, never sources.
 
     No person/body/category filter: unattributed humans and media-only messages
     are sources too. The stored visibility flags also govern source_rows.
