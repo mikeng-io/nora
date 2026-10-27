@@ -85,6 +85,43 @@ The App is required for unattended PR checks: PRs created with `GITHUB_TOKEN`
 can await workflow approval, and its pushes normally do not trigger another
 workflow. [GitHub token behavior](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
 
+## Release notifications
+
+`.github/workflows/release-notify.yml` posts one Discord message when a GitHub Release is
+published: a notice line carrying the link, then the release notes in a fixed embed (tag,
+stable or pre-release, body). It is a separate workflow from
+`.github/workflows/release-images.yml` on purpose — a notification that shares a failure
+domain with the build is silent exactly when the build is broken, the rule
+`deploy/alert-bridge/bridge.py` states for alerts.
+
+It takes one secret and one variable, both set by an owner/admin:
+
+```bash
+# Discord: Channel → Integrations → Webhooks → New Webhook → Copy URL.
+gh secret set DISCORD_RELEASE_WEBHOOK
+gh variable set RELEASE_NOTIFY_ENABLED --body true
+```
+
+The variable is the opt-in, so this workflow can merge before the webhook exists: it skips
+rather than fails on every release until an operator turns it on. Enabled with the secret
+missing is a hard failure, never a quiet success for a message nobody sent.
+
+`release: published` also fires for pre-releases; the job labels them (amber,
+`Type: pre-release`) rather than dropping them. Like `.github/workflows/release-images.yml`
+it depends on the release App token: a release published with `GITHUB_TOKEN` triggers no
+workflow run at all.
+
+The message is one POST with `?wait=true`, so a Discord 400 fails the job instead of reading
+as a successful 204. The body is truncated on a line boundary at 4000 characters with a link
+to the full notes, `#` headings become bold because Discord renders no headings, and
+`allowed_mentions` is empty so changelog text cannot ping. Re-send a past release from
+Actions → release-notify → Run workflow.
+
+It uses no third-party action — `gh` and `python3` only. That is also a constraint:
+`scripts/configure_public_github.py` allows GitHub-owned actions plus `astral-sh/setup-uv`
+and `googleapis/release-please-action`, so a marketplace Discord action would be refused at
+run time.
+
 ## Merge rules
 
 On a private repository these need GitHub Pro (or Team for an organisation); on a public one
