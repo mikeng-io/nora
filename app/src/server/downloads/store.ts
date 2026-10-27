@@ -160,14 +160,16 @@ export class DownloadStore {
     return job;
   }
 
-  /** Forget the job and its files. Kill a live process first (the runner does). */
+  /** Forget the job and its files. Kill a live process first (the runner does).
+   * The directory goes FIRST: if its removal fails the registry record stays,
+   * so a later sweep can retry instead of orphaning the files. */
   async remove(id: string): Promise<boolean> {
     const job = this.jobs.get(id);
     if (!job) return false;
+    await rm(jobDir(this.root, id), { recursive: true, force: true });
     this.jobs.delete(id);
     this.markDirty();
     await this.flush();
-    await rm(jobDir(this.root, id), { recursive: true, force: true });
     return true;
   }
 
@@ -258,7 +260,7 @@ export function mediaKind(job: DownloadJob): "video" | "audio" | "image" | null 
   return null;
 }
 
-const TRANSIENT = /\.f\d+\.|\.(part|ytdl)$/;
+const TRANSIENT = /\.f\d+\.|\.converting\.|\.(part|ytdl)$/;
 
 /** Real files sitting in a job dir: the download plus any converted outputs,
  * minus yt-dlp's partials and the thumbnail (which has its own endpoint).

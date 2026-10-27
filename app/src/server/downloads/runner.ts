@@ -233,9 +233,10 @@ export class DownloadRunner {
       "--write-thumbnail",
       "--convert-thumbnails",
       "jpg",
-      // Its own template so a .jpg payload and a thumbnail never share a name.
+      // Its own template INSIDE the job dir so a .jpg payload and a thumbnail
+      // never share a name and jobs cannot collide on a working-dir file.
       "-o",
-      "thumbnail:download-thumb.%(ext)s",
+      `thumbnail:${dir}/download-thumb.%(ext)s`,
       "--no-playlist",
       "--newline",
       "--no-warnings",
@@ -319,17 +320,16 @@ export class DownloadRunner {
     if (path.dirname(path.resolve(input)) !== path.resolve(dir)) {
       return Promise.reject(new Error("bad file name"));
     }
-    const output = path.join(dir, `${path.basename(fileName, path.extname(fileName))}.${target}`);
+    const base = path.basename(fileName, path.extname(fileName));
+    const output = path.join(dir, `${base}.${target}`);
     // ffmpeg writes a staging name and success renames it into place — a killed
     // or failed run can never leave a half-written file that looks finished,
-    // and a retry can't clobber a previous good output.
-    const staging = `${output}.converting`;
+    // and a retry can't clobber a previous good output. The staging name keeps
+    // the target extension LAST: ffmpeg picks its muxer from the filename.
+    const staging = path.join(dir, `${base}.converting.${target}`);
     this.converting.add(id);
     const spawnImpl = this.opts.spawnImpl ?? spawn;
     return new Promise<void>((resolve, reject) => {
-      // Codec choices: mp4/mkv remux cheaply only when the source already fits;
-      // default is a real transcode because a mismatched -c copy produces a file
-      // players cannot open (the common "converted but won't play" failure).
       const args = ffmpegArgs(target);
       let child: ChildProcess;
       try {
@@ -351,35 +351,38 @@ export class DownloadRunner {
         child.kill("SIGKILL");
       }, this.opts.timeoutMs);
       timer.unref?.();
+      // Ownership holds through publish AND cleanup: until `converting` clears,
+      // sweep cannot expire the job and a second convert cannot claim the same
+      // staging path, so the rm/rename below cannot race a follow-up run.
+      const finish = async (msg?: string) => {
+        try {
+          if (this.running.get(id) === child) this.running.delete(id);
+          if (msg) throw new Error(msg);
+          await rename(staging, output);
+          // Publishing refreshes the retention clock: the 24h window starts
+          // from the last thing that touched the file, not the download.
+          if (this.opts.store.get(id)) this.opts.store.update(id, {});
+          resolve();
+        } catch (err) {
+          await rm(staging, { force: true }).catch(() => {});
+          reject(err instanceof Error ? err : new Error(String(err)));
+        } finally {
+          this.converting.delete(id);
+        }
+      };
       child.on("error", (err) => {
         clearTimeout(timer);
-        this.converting.delete(id);
-        if (this.running.get(id) === child) this.running.delete(id);
-        void rm(staging, { force: true });
-        reject(new Error(`ffmpeg could not start: ${err.message}`));
+        void finish(`ffmpeg could not start: ${err.message}`);
       });
       child.on("close", (code) => {
         clearTimeout(timer);
-        this.converting.delete(id);
-        if (this.running.get(id) === child) this.running.delete(id);
-        const fail = (msg: string) => {
-          void rm(staging, { force: true });
-          reject(new Error(msg));
-        };
-        if (this.cancelled.has(id)) return fail("cancelled");
-        if (killed || code === null) return fail(`exceeded the ${Math.round(this.opts.timeoutMs / 60000)} minute limit`);
+        if (this.cancelled.has(id)) return void finish("cancelled");
+        if (killed || code === null) return void finish(`exceeded the ${Math.round(this.opts.timeoutMs / 60000)} minute limit`);
         if (code !== 0) {
           const tail = stderrTail.trim().split("\n").pop() ?? "";
-          return fail(tail || `ffmpeg exited with code ${code}`);
+          return void finish(tail || `ffmpeg exited with code ${code}`);
         }
-        // Publishing refreshes the retention clock: the 24h window starts from
-        // the last thing that touched the file, not the original download.
-        rename(staging, output)
-          .then(() => {
-            this.opts.store.update(id, {});
-            resolve();
-          })
-          .catch((err: Error) => fail(`publish failed: ${err.message}`));
+        void finish();
       });
     });
   }
