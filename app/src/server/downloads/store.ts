@@ -250,7 +250,8 @@ export class DownloadStore {
 const IMAGE_EXT = new Set(["jpg", "jpeg", "png", "webp", "gif"]);
 
 /** Media kind from the stored content type: drives which conversion targets a
- * done job may take (video→video, audio→audio, image→image only). */
+ * done job may take (video→video or an audio extract, audio→audio,
+ * image→image only). */
 export function mediaKind(job: DownloadJob): "video" | "audio" | "image" | null {
   const t = job.mediaType ?? "";
   if (t.startsWith("video/")) return "video";

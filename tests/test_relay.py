@@ -155,7 +155,7 @@ def _relay(policy: Policy, fire=None, slots=None, metrics=None, reader=None):
 
 async def _send(relay, **kw):
     base = {
-        "platform": "signal", "text": "we're starting", "requester": MILES,
+        "room": "signal", "text": "we're starting", "requester": MILES,
         "from_platform": "discord", "from_conversation_id": DISCORD_ROOM,
     }
     return await relay.send(**{**base, **kw})
@@ -217,7 +217,7 @@ async def test_a_room_in_another_unit_is_refused():
     relay, fire, _ = _relay(_policy(other_unit=True))
 
     out = await _send(
-        relay, platform="discord", from_platform="signal",
+        relay, room="discord", from_platform="signal",
         from_conversation_id=SIGNAL_ROOM,
     )
 
@@ -243,17 +243,14 @@ async def test_somebody_not_in_the_destination_cannot_speak_into_it():
 async def test_an_unknown_room_name_is_refused_not_guessed():
     relay, fire, _ = _relay(_policy())
 
-    out = await _send(relay, platform="telegram")
+    out = await _send(relay, room="telegram")
 
     assert out["status"] == "refused"
     assert fire.spoken == []
 
 
-async def test_two_rooms_of_one_platform_in_a_unit_refuse_rather_than_pick():
-    """A unit holds at most one room per platform BY DESIGN, which is what
-    makes the platform a usable address. Two is the invariant broken, and
-    guessing would turn a misconfiguration into a delivery to the wrong group.
-    """
+async def test_two_rooms_of_one_platform_are_ambiguous_rather_than_picked():
+    """A network is an address only while it names exactly one room."""
     dupe = Conversation(
         platform="signal", ids=frozenset({OTHER_ROOM}), persons=frozenset({"miles_novak"}),
         label="Friends Overflow", primary_id=OTHER_ROOM, unit="friends",
@@ -268,14 +265,16 @@ async def test_two_rooms_of_one_platform_in_a_unit_refuse_rather_than_pick():
 
     out = await _send(relay)
 
-    assert out["status"] == "refused"
+    assert out["status"] == "ambiguous"
+    assert out["rooms"] == ["Friends", "Friends Overflow"]
+    assert "Ask which room" in out["note"]
     assert fire.spoken == []
 
 
 async def test_relaying_into_this_very_room_is_refused():
     relay, fire, _ = _relay(_policy())
 
-    out = await _send(relay, platform="discord")
+    out = await _send(relay, room="discord")
 
     assert out["status"] == "refused"
     assert fire.spoken == []
@@ -429,8 +428,8 @@ async def test_the_policy_gates_are_decided_before_the_network_is_read():
     ("kwargs", "outcome"),
     [
         ({"requester": None}, "unmapped"),
-        ({"platform": "telegram"}, "unknown_room"),
-        ({"platform": "discord"}, "same_room"),
+        ({"room": "telegram"}, "unknown_room"),
+        ({"room": "discord"}, "same_room"),
         ({"text": "+85290000101"}, "egress_blocked"),
         ({}, "ok"),
     ],
@@ -472,9 +471,9 @@ async def test_every_non_ok_relay_outcome_carries_a_note():
         "refused/empty": (plain, {"text": "   "}),
         "refused/unmapped": (plain, {"requester": None}),
         "refused/unknown_source": (plain, {"from_conversation_id": "not-a-room"}),
-        "refused/same_room": (plain, {"platform": "discord"}),
-        "refused/unknown_room": (plain, {"platform": "telegram"}),
-        "refused/ambiguous_room": (_relay(doubled)[0], {}),
+        "refused/same_room": (plain, {"room": "discord"}),
+        "refused/unknown_room": (plain, {"room": "telegram"}),
+        "ambiguous/ambiguous_room": (_relay(doubled)[0], {}),
         "refused/not_allowed_there": (_relay(_policy(ada_in_discord=True))[0],
                                       {"requester": ADA}),
         "refused/egress": (plain, {"text": "call him on +85290000101"}),
@@ -501,3 +500,65 @@ async def test_a_relay_that_went_tells_her_to_say_so_here():
     out = await _send(_relay(_policy())[0])
     assert out["status"] == "ok" and out["room"] == "Friends"
     assert "send_reply" in out["note"]
+
+
+@pytest.mark.parametrize("address", ["Friends", "  fRiEnDs  ", " SIGNAL "])
+async def test_room_names_fold_and_a_unique_network_still_resolves(address):
+    relay, fire, _ = _relay(_policy())
+    out = await _send(relay, room=address)
+    assert out["status"] == "ok" and out["room"] == "Friends"
+    assert fire.spoken == [("signal", SIGNAL_ROOM, "Miles: we're starting")]
+    assert "Friends" in out["note"]
+
+
+async def test_another_units_room_and_an_unknown_name_have_the_same_refusal():
+    relay, fire, _ = _relay(_policy(other_unit=True))
+    other = await _send(relay, room="Friends")
+    unknown = await _send(relay, room="No such room")
+    assert other == unknown
+    assert other["status"] == "refused" and fire.spoken == []
+
+
+async def test_two_rooms_on_one_network_send_between_them_but_not_to_itself():
+    from dataclasses import replace
+
+    base = _policy()
+    first = base.conversations[0]
+    dinner = replace(first, ids=frozenset({OTHER_ROOM}), primary_id=OTHER_ROOM,
+                     label="Dinner Plans")
+    rooms = (*base.conversations, dinner)
+    policy = Policy(conversations=rooms,
+                    _by_id={(c.platform, cid): c for c in rooms for cid in c.ids})
+    relay, fire, slots = _relay(policy)
+    out = await _send(relay, room="  dInNeR   pLaNs ", from_platform="signal",
+                      from_conversation_id=SIGNAL_ROOM)
+    assert out["status"] == "ok" and out["room"] == "Dinner Plans"
+    assert fire.spoken == [("signal", OTHER_ROOM, "Miles: we're starting")]
+    assert slots.acquired == slots.released == [("signal", OTHER_ROOM)]
+
+    out = await _send(relay, room="Friends", from_platform="signal",
+                      from_conversation_id=SIGNAL_ROOM)
+    assert out["status"] == "refused"
+    assert len(fire.spoken) == 1 and len(slots.acquired) == 1
+
+    # Include the source among network candidates: two rooms still require a choice.
+    out = await _send(relay, room="signal", from_platform="signal",
+                      from_conversation_id=SIGNAL_ROOM)
+    assert out["status"] == "ambiguous"
+    assert out["rooms"] == ["Friends", "Dinner Plans"]
+    assert len(fire.spoken) == 1
+
+
+async def test_room_identity_includes_the_network_even_when_ids_match():
+    from dataclasses import replace
+
+    base = _policy()
+    destination = replace(base.conversations[0], ids=frozenset({DISCORD_ROOM}),
+                          primary_id=DISCORD_ROOM)
+    rooms = (destination, base.conversations[1])
+    policy = Policy(conversations=rooms,
+                    _by_id={(c.platform, cid): c for c in rooms for cid in c.ids})
+    relay, fire, _ = _relay(policy)
+    out = await _send(relay, room="Friends")
+    assert out["status"] == "ok"
+    assert fire.spoken == [("signal", DISCORD_ROOM, "Miles: we're starting")]

@@ -13,16 +13,13 @@ appear in front of an audience that made its own trust decisions. So the gate is
 not "is this allowed here", it is "are these two rooms the same group of people,
 and is the asker one of them".
 
-The five refusals, all fail-closed, in the order they are cheapest to decide:
+The five checks, all fail-closed, in the order they are cheapest to decide:
 
 1. **An unmapped asker gets nothing.** A person Nora cannot name cannot be
    attributed, and an unattributed relay is what this module exists to prevent.
-2. **The destination is named by PLATFORM, not by room** — «tell Signal». A
-   unit holds at most one room per platform, so within a unit the platform IS
-   the address. Never an id: a model that could name one could be talked into
-   naming one. Two rooms of one platform in one unit REFUSES rather than
-   picking: that violates the invariant, and guessing would turn a
-   misconfiguration into a delivery to the wrong group.
+2. **The destination is a room name**, or a network with exactly one room
+   in this unit. Several rooms on a network return `ambiguous` and ask which;
+   an identifier is never an address the model can supply.
 3. **Both rooms must share a `unit`** (`nora.policy.Conversation`). Rooms in one
    unit are one social unit reachable in more than one place (a friend group
    with a Signal group AND a Discord channel), so the audience is already the
@@ -71,7 +68,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from ..domain.models import PersonRef
-from ..domain.self_presence import TransportState
+from ..domain.self_presence import KnownRoom, TransportState, platform_name
 from ..language.presence_render import state_phrase
 from ..policy import Conversation, Policy
 from .egress import scan_reply
@@ -133,33 +130,37 @@ class Relay:
         self._count(outcome)
         return {"status": "refused", "note": note}
 
-    def _find(self, platform: str, *, unit: str, exclude: str) -> tuple[Conversation, ...]:
-        """The room of `platform` inside `unit`, excluding the source.
+    def _find(self, room: str, *, unit: str) -> tuple[Conversation, ...]:
+        """Resolve only within this unit, using the room tools' shared resolver."""
+        # Local import: tools declares Relay and owns the shared name resolver.
+        from .tools import _find_room
 
-        Returns a tuple so the caller can tell none from more than one: a
-        unit holding two rooms of one platform breaks the invariant this
-        addressing scheme rests on, and it must refuse rather than choose.
-        """
-        wanted = _key(platform)
-        if not wanted:
-            return ()
-        return tuple(
-            c for c in self._policy.conversations
-            if _key(c.platform) == wanted
-            and c.unit == unit
-            and c.primary_id != exclude
-        )
+        candidates = tuple(c for c in self._policy.conversations if c.unit == unit)
+        known = tuple(KnownRoom(
+            platform=c.platform, label=c.label, conversation_id=c.primary_id,
+            here=False, state="unknown",
+        ) for c in candidates)
+        found = _find_room(known, room)
+        if found is not None:
+            return tuple(c for c in candidates if
+                         (c.platform, c.primary_id) == (found.platform, found.conversation_id))
+        # Only a network with several rooms is ambiguous. Unknown names and
+        # another unit's room take the same refusal without consulting it.
+        wanted = _key(room)
+        return tuple(c for c in candidates if wanted and wanted in {
+            _key(c.platform), _key(platform_name(c.platform)),
+        })
 
     async def send(
         self,
         *,
-        platform: str,
+        room: str,
         text: str,
         requester: PersonRef | None,
         from_platform: str,
         from_conversation_id: str,
     ) -> dict:
-        """Relay `text` into the `platform` room of the source unit, as `requester`."""
+        """Relay `text` into the named room of the source unit, as `requester`."""
         body = (text or "").strip()
         if not body:
             return self._refuse(
@@ -184,22 +185,15 @@ class Relay:
                 "unknown_source", "I can't tell which room I'm in well enough to do that."
             )
 
-        if _key(platform) == _key(source.platform):
-            return self._refuse(
-                "same_room",
-                "That's where we already are: just say it here instead of "
-                "passing it on.",
-            )
-
         # Scoped to the SOURCE's unit from the start: a room belonging to
         # another group is never a candidate, so there is no way to name it and
         # be told no. It does not exist from here.
         matches = self._find(
-            platform, unit=source.unit, exclude=source.primary_id,
+            room, unit=source.unit,
         )
         if not matches:
             log.warning(
-                "relay refused: no %r room in unit %r", platform, source.unit,
+                "relay refused: no %r room in unit %r", room, source.unit,
             )
             return self._refuse(
                 "unknown_room",
@@ -207,18 +201,20 @@ class Relay:
                 "guessing at one.",
             )
         if len(matches) > 1:
-            log.error(
-                "relay refused: unit %r holds %d %r rooms — a unit is "
-                "meant to hold at most one room per platform, and with two there "
-                "is no way to tell which was meant",
-                source.unit, len(matches), platform,
-            )
-            return self._refuse(
-                "ambiguous_room",
-                "There's more than one of those and I can't tell which they mean. "
-                "Ask them.",
-            )
+            self._count("ambiguous_room")
+            return {
+                "status": "ambiguous",
+                "rooms": [c.label for c in matches],
+                "note": "Several rooms fit that network. Ask which room they mean; "
+                        "nothing was sent.",
+            }
         destination = matches[0]
+
+        if (destination.platform, destination.primary_id) == (source.platform, source.primary_id):
+            return self._refuse(
+                "same_room",
+                "That's where we already are: just say it here instead of passing it on.",
+            )
 
         if not self._policy.is_allowed(
             platform=destination.platform,
@@ -308,5 +304,6 @@ class Relay:
         # is about (ADR 0015); every refusal above already says what to say.
         return {
             "status": "ok", "room": destination.label,
-            "note": "It went. Tell the person here, with send_reply.",
+            "note": f"It went to {destination.label}. Tell the person here which room, "
+                    "with send_reply.",
         }
