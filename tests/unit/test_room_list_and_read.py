@@ -229,14 +229,44 @@ async def test_room_list_carries_descriptions_and_only_cited_culture_first_lines
     assert all("threads" not in r for r in result["rooms"])
 
 
-async def test_room_list_reports_a_culture_read_failure_as_unavailable(policy, persons, store):
+async def test_room_list_marks_failed_culture_reads_as_unchecked(policy, persons, store):
     class UnreachableCulture(InMemoryCultureStore):
         async def head(self, *, key):
             raise RuntimeError("store unreachable")
 
     result = await _call(_tools(policy, persons, store, culture=UnreachableCulture())["room_list"])
-    assert result["status"] == "unavailable"
-    assert "can't read" in result["note"]
+    assert result["status"] == "ok"
+    assert len(result["rooms"]) == 3
+    assert all(r["culture"] == "could not check" for r in result["rooms"])
+
+
+async def test_room_list_keeps_all_rooms_when_one_culture_read_fails(
+    policy, persons, store, monkeypatch,
+):
+    culture = InMemoryCultureStore()
+    await culture.append(
+        key="SIGNAL-FRIENDS-ID", body="Plans settle over dinner.",
+        written_at=_ms(timedelta(hours=1)), established_by="fold", citations=("41",),
+    )
+    head = culture.head
+
+    async def read_head(*, key):
+        if key == "111/222":
+            raise RuntimeError("store unreachable for this room")
+        return await head(key=key)
+
+    monkeypatch.setattr(culture, "head", read_head)
+    result = await _call(_tools(policy, persons, store, culture=culture)["room_list"])
+
+    assert result["status"] == "ok"
+    rooms = _by_room(result)
+    assert set(rooms) == {"Friends", "Zone 42", "Friends WA"}
+    assert rooms["Zone 42"]["culture"] == "could not check"
+    assert rooms["Friends"]["culture"] == "Plans settle over dinner."
+    assert rooms["Friends"]["about"] == "General plans and catch-ups."
+    assert rooms["Friends WA"]["connection"] == "up"
+    assert rooms["Friends WA"]["messages_last_24h"] == 2
+    assert "culture" not in rooms["Friends WA"]
 
 
 async def test_room_list_never_names_another_unit_only_says_other_groups_exist(
