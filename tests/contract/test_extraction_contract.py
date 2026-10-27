@@ -334,6 +334,9 @@ async def test_worker_counts_usage_for_rejected_results_and_never_publishes_part
     attempt = (await rows(engine, ATTEMPT))[0]
     assert attempt["input_tokens"] == (100 if usage else None)
     assert attempt["outcome"] == ("ok" if success else "error")
+    expected_stage = None if success else ("usage" if not usage else
+                                            "incomplete" if finish_reason != "stop" else "claims")
+    assert attempt["failure_stage"] == expected_stage
 
 
 async def test_claim_publication_and_source_hide_are_serialized(stores):
@@ -511,7 +514,7 @@ async def test_failure_recording_outage_counts_one_failed_attempt(
         store=store, client=Gateway(finish_reason="length"), config=cfg, metrics=metrics
     )
 
-    async def unavailable(job):
+    async def unavailable(job, **kw):
         raise ConnectionError("synthetic database outage")
 
     real_sleep = asyncio.sleep

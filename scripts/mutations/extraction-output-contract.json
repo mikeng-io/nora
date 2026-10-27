@@ -93,8 +93,8 @@
   {
     "name": "terminal transition is counted",
     "file": "nora/app/extraction.py",
-    "old": "if await self.store.fail(job):",
-    "new": "if await self.store.fail(job) and False:",
+    "old": "if await self.store.fail(job, stage=stage):",
+    "new": "if await self.store.fail(job, stage=stage) and False:",
     "target": "tests/contract/test_extraction_contract.py::test_fifth_failure_is_terminal_counted_once_and_requeueable"
   },
   {
