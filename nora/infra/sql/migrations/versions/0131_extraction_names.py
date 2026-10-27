@@ -127,7 +127,12 @@ def _migrate(*, reverse: bool) -> None:
         if target != "extraction":
             op.alter_column(destination, old_column, new_column_name=new_column)
         for name in constraints:
-            new_name = name.replace(old_column, new_column).replace(old_prefix, new_prefix)
+            # Only child tables rename a column. On downgrade, replace it
+            # before the prefix replacement consumes extraction_id.
+            if reverse and target != "extraction":
+                new_name = name.replace(old_column, new_column).replace(old_prefix, new_prefix)
+            else:
+                new_name = name.replace(old_prefix, new_prefix).replace(old_column, new_column)
             op.execute(f'ALTER TABLE "{destination}" RENAME CONSTRAINT "{name}" TO "{new_name}"')
         for name in indexes:
             new_name = name.replace(old_prefix, new_prefix)
