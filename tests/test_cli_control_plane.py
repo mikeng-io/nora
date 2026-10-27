@@ -166,8 +166,9 @@ async def test_profile_media_retry_only_queues_known_completed_account(env, caps
     from nora.infra.sql.schema import MEDIA_OBJECTS, MESSAGES
 
     cfg = tomllib.loads(env['path'].read_text())
-    for section in ('dreamer', 'culture', 'profile'):
+    for section in ('dreamer', 'culture'):
         cfg[section]['enabled'] = True
+    cfg['memory']['profile']['write'] = True
     env['path'].write_text(tomli_w.dumps(cfg))
     keys = character_person_keys(load_policy(Path(cfg['policy_file'])),
                                  load_persons(Path(cfg['identity_file'])))
@@ -877,7 +878,7 @@ async def test_memory_rebuild_embeddings_only_clears_vectors_and_reports_counts(
         assert "vectors: cleared 1 (of other models)" in out
         assert "waiting for the worker: 1" in out
         assert "given up after 8 attempts: 0" in out
-        assert "[memory_index] embed is false" in out
+        assert "[memory.index] embed is false" in out
         assert await vectors() == [None]
 
         assert await invoke(env, "memory", "rebuild", "--other-models") == 1

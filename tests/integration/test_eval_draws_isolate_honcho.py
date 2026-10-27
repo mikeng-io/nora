@@ -103,7 +103,7 @@ def _faked_seams(monkeypatch, *, drive) -> list[Any]:
 
 def _ws(spec: SubjectSpec) -> str:
     """The Honcho workspace a SubjectSpec composes against."""
-    return (spec.overrides or {})["memory.workspace_id"]
+    return (spec.overrides or {})["honcho.workspace_id"]
 
 
 def _spec() -> backbone.Spec:
@@ -274,7 +274,7 @@ async def test_no_memory_call_of_a_composed_subject_escapes_the_draws_workspace(
     and every request any memory verb makes lands under it.
 
     The composition root builds ONE `HonchoClient`, from
-    `cfg.memory.workspace_id` with a router of no overrides, and no caller
+    `cfg.honcho.workspace_id` with a router of no overrides, and no caller
     passes `workspace_id=` to a verb.
     So the workspace on the config IS every read and write, and this is the
     reading that would move if a second client or an explicit workspace ever
@@ -285,7 +285,7 @@ async def test_no_memory_call_of_a_composed_subject_escapes_the_draws_workspace(
         before = {id(o) for o in gc.get_objects() if isinstance(o, HonchoClient)}
         subject = await obtain(SubjectSpec(
             database_url=os.environ["DATABASE_URL"], workdir=tmp_path,
-            overrides={"memory.base_url": honcho.url, "memory.workspace_id": draw.id},
+            overrides={"honcho.base_url": honcho.url, "honcho.workspace_id": draw.id},
         ))
         try:
             clients = [
@@ -293,9 +293,9 @@ async def test_no_memory_call_of_a_composed_subject_escapes_the_draws_workspace(
                 if isinstance(o, HonchoClient) and id(o) not in before
             ]
             assert clients == [subject.deps.memory], "one memory client, the subject's own"
-            assert subject.cfg.memory.workspace_id == draw.id
+            assert subject.cfg.honcho.workspace_id == draw.id
             memory = subject.deps.memory
-            peer = subject.cfg.memory.ai_peer
+            peer = subject.cfg.honcho.ai_peer
             assert await memory.feed(peer_id="miles_novak", text="hi", conversation_id="g1")
             assert await memory.feed(peer_id=peer, text="hello", conversation_id="g1")
             assert await memory.conclude(peer_id=peer, content="likes tea", target="miles_novak")
@@ -327,7 +327,7 @@ async def test_the_draw_workspace_is_created_on_the_subjects_own_server(
     cfg = obtain_module.build_config(SubjectSpec(
         database_url="postgresql+asyncpg://x/x", workdir=tmp_path,
     ))
-    assert cfg.memory.base_url == base_url
-    assert cfg.memory.workspace_id == f"{deployment}-eval"
+    assert cfg.honcho.base_url == base_url
+    assert cfg.honcho.workspace_id == f"{deployment}-eval"
 
 

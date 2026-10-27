@@ -49,7 +49,7 @@
     "target": "tests/unit/test_people_in_window.py -k no_more_conclusions_are_asked_for_than_the_bound"
   },
   {
-    "name": "#210 — a port that never answers is bounded by [memory] read_timeout_seconds",
+    "name": "#210 — a port that never answers is bounded by [honcho] read_timeout_seconds",
     "file": "nora/app/fire.py",
     "old": "                timeout=self._memory_read_timeout_seconds,",
     "new": "                timeout=3600,",

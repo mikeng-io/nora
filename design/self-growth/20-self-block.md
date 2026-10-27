@@ -62,7 +62,7 @@ nothing, and the longest live head is 1,797) and says how many it dropped. Tag a
 Cognition grounder reads it into `Grounding.self_account`. No account, no
 block. No lineage filter, like `<unit_culture>`: the unit is the read boundary.
 `self_card` is deleted with its renderer, both Honcho reads,
-`[memory] self_card_conclusions` and the `fire_self_card` stage. The eval
+`[honcho] self_card_conclusions` and the `fire_self_card` stage. The eval
 sandbox copies her account as of the case's instant (`Snapshot.nora_account`,
 `Knowledge.nora_account`).
 

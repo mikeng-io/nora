@@ -1,7 +1,7 @@
 """The embedding worker.
 
 One batch per tick of the nora process's memory drain loop
-(`nora.app.runtime.memory_drain_loop`), only while `[memory_index] embed`.
+(`nora.app.runtime.memory_drain_loop`), only while `[memory.index] embed`.
 The node is the queue: `embed_pick` finds live, embeddable nodes
 with no vector, each is embedded and stored with the model's fingerprint, and
 lexical search finds a node before its vector exists.

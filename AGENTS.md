@@ -613,7 +613,7 @@ Identity takes one `[[persons.<id>.<platform>]]` block **per account**, all
 resolving to one `person_id` (Honcho peer, A2/DEC-14). Policy is deny-by-default;
 Nora **refuses to start** if it is missing or allows nothing (R-5).
 Memory hierarchy (DEC-214): policy `[units]` maps units to workspaces; identity
-`[workspaces]` binds each to Honcho; `memory.workspace_id` is only the fallback
+`[workspaces]` binds each to Honcho; `honcho.workspace_id` is only the fallback
 when there is no `[units]`. History and drift-check limits: `docs/maintainers/conventions-rationale.md`.
 
 ## Releases

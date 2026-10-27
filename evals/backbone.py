@@ -936,7 +936,7 @@ def refuse_a_memory_surface_mismatch(selected: str | None, enabled: bool) -> Non
     if selected is not None and enabled != (selected == "graph"):
         raise ValueError(
             f"the cases were selected for the {selected} memory surface, and the "
-            f"subject composed [memory_index] enabled = {enabled}: the case filter "
+            f"subject composed [memory.index] read = {enabled}: the case filter "
             "and the config disagree (DEC-316). Resolve the arm from the "
             "generated config, or pass --memory-index."
         )
@@ -1554,7 +1554,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                             # otherwise; empty on every other corpus.
                             **(FULL_RESTORE_OVERRIDES if spec.full_restore else {}),
                             **(spec.overrides or {}),
-                            "memory.workspace_id": memory_workspace,
+                            "honcho.workspace_id": memory_workspace,
                         },
                         # The deployment's OWN roster and room set, verbatim.
                         # `_DEFAULT_IDENTITY` knows ONE person; a real room has
@@ -1602,7 +1602,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                     )
             if spec.memory_surface is not None:
                 refuse_a_memory_surface_mismatch(
-                    spec.memory_surface, subject.cfg.memory_index.enabled,
+                    spec.memory_surface, subject.cfg.memory.index.read,
                 )
             transport = _hold_the_transport_tier(subject, spec, md)
             if spec.full_restore:
@@ -1638,7 +1638,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                 # `index_sandbox` adds the digest of what seeding projected.
                 built = await index_sandbox(
                     subject.database_url, source_url=spec.source_url,
-                    model_id=subject.cfg.memory_index.embedder_model,
+                    model_id=subject.cfg.memory.index.embedder_model,
                     cache=_INDEX_CACHE,
                     key=(
                         spec.full_restore, room, before_ms, port.delivers_input,

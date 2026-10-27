@@ -13,7 +13,7 @@ read). A missing or unrecognized person_id returns an empty list — fail-closed
 UI copy built on top of this must never say "Honcho"; this module
 doesn't render copy, so that rule lives in the frontend, not here.
 
-**Profile (design/unified-memory/45, the switch).** While `[profile] render`
+**Profile (design/unified-memory/45, the switch).** While `[memory.profile] read`
 is on, each entry also carries `profile`: the caller's own Profile account
 per unit that lists them — every chain head with its state, the evidence
 behind each line, and the account's open disputes (cognition-loop/50 §4: an

@@ -31,7 +31,7 @@ should learn from it, both about herself and about the person.
 
 ## 2. The loop
 
-> 2026-10-21 (18 / ADR 0026): the Persona labels in the loop below are historical. [ADR 0026](../../docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md) names these Character entries, with profile, traits and hypotheses; [18](18-message-readings.md) keeps them bounded and places source statements in Record message readings.
+> 2026-10-21 (18 / ADR 0026): the Persona labels in the loop below are historical. [ADR 0026](../../docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md) names these Character entries, with profile, traits and hypotheses; [18](18-extraction.md) keeps them bounded and places source statements in Record extraction.
 
 ```
  ACT       a room send · a proactive message · an Instagram comment reply ·

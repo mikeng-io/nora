@@ -153,7 +153,7 @@ CULTURE_TOOLS: frozenset[str] = frozenset({
     # is a few days.
     "ask_memory", "search_memory",
     # The same reach on the graph surface (DEC-316): built instead of the two
-    # above while `[memory_index] enabled`, never beside them.
+    # above while `[memory.index] read`, never beside them.
     "memory_search",
     # THE ROSTER — who is actually in this room, and who a handle IS. A batch
     # renders display names; an account that calls one person by two names, or

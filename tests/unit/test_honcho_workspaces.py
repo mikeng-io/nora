@@ -287,7 +287,7 @@ async def test_an_absent_workspace_is_created_marked_and_an_empty_one_is_marked(
 
 
 async def test_the_default_workspace_is_nora_s_without_a_marker(honcho):
-    """`memory.workspace_id` holds every deployment's history, with probe
+    """`honcho.workspace_id` holds every deployment's history, with probe
     sessions no naming rule would call Nora's. It is accepted as it is, and
     never re-marked."""
     honcho.seed("nora", created_at="2026-01-01T00:00:00Z")

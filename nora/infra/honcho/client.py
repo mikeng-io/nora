@@ -252,7 +252,7 @@ class WorkspaceRouter:
     `None`, and the client fails the call closed (a read is `unavailable`, a
     write is `False`) rather than widening it to some default workspace.
     Without `[units]` there is one implicit workspace, bound to
-    `memory.workspace_id`, and anything unknown (a harness's synthetic room)
+    `honcho.workspace_id`, and anything unknown (a harness's synthetic room)
     falls back to it UNSCOPED. Built by `nora.app.memory_routing`, never here:
     this layer may not read the policy."""
 
@@ -276,7 +276,7 @@ class WorkspaceRouter:
 
     @property
     def default(self) -> str:
-        """`memory.workspace_id`: the implicit workspace's Honcho workspace, and
+        """`honcho.workspace_id`: the implicit workspace's Honcho workspace, and
         the one Honcho workspace Nora is known to own without a marker (it
         predates the marker, and every deployment's history is in it)."""
         return self._default
@@ -537,7 +537,7 @@ class HonchoClient:
     async def _owned(self, workspace: str, *, claim: bool = True) -> bool:
         """Whether calls may go to this Honcho workspace (DEC-214).
 
-        The DEFAULT (`memory.workspace_id`) always may: it is the workspace
+        The DEFAULT (`honcho.workspace_id`) always may: it is the workspace
         every deployment's history is already in, created before the marker
         existed, and the eval harness's draw workspaces arrive through it. Any
         other bound workspace must be OURS: marked with `OWNER_KEY`, or

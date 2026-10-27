@@ -193,6 +193,14 @@ ADD CONSTRAINT event_rsvps_pkey PRIMARY KEY (id);
 ADD CONSTRAINT events_pkey PRIMARY KEY (id);
 ADD CONSTRAINT exchange_observation_pkey PRIMARY KEY (id);
 ADD CONSTRAINT exchange_observation_scope_id_act_message_ids_key UNIQUE (scope_id, act, message_ids);
+ADD CONSTRAINT extraction_attempt_extraction_id_fkey FOREIGN KEY (extraction_id) REFERENCES public.extraction(id);
+ADD CONSTRAINT extraction_attempt_pkey PRIMARY KEY (id);
+ADD CONSTRAINT extraction_claim_extraction_id_fkey FOREIGN KEY (extraction_id) REFERENCES public.extraction(id);
+ADD CONSTRAINT extraction_claim_pkey PRIMARY KEY (id);
+ADD CONSTRAINT extraction_pkey PRIMARY KEY (id);
+ADD CONSTRAINT extraction_queue_extraction_id_fkey FOREIGN KEY (extraction_id) REFERENCES public.extraction(id);
+ADD CONSTRAINT extraction_queue_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.messages(id) ON DELETE SET NULL;
+ADD CONSTRAINT extraction_queue_pkey PRIMARY KEY (id);
 ADD CONSTRAINT fact_asserter_fact_id_fkey FOREIGN KEY (fact_id) REFERENCES public.fact(id) ON DELETE CASCADE;
 ADD CONSTRAINT fact_asserter_pkey PRIMARY KEY (fact_id, person_id, message_id);
 ADD CONSTRAINT fact_candidate_pkey PRIMARY KEY (id);
@@ -227,14 +235,6 @@ ADD CONSTRAINT message_edit_message_id_fkey FOREIGN KEY (message_id) REFERENCES 
 ADD CONSTRAINT message_edit_pkey PRIMARY KEY (id);
 ADD CONSTRAINT message_reaction_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.messages(id) ON DELETE CASCADE;
 ADD CONSTRAINT message_reaction_pkey PRIMARY KEY (id);
-ADD CONSTRAINT message_reading_attempt_pkey PRIMARY KEY (id);
-ADD CONSTRAINT message_reading_attempt_reading_id_fkey FOREIGN KEY (reading_id) REFERENCES public.message_reading(id);
-ADD CONSTRAINT message_reading_claim_pkey PRIMARY KEY (id);
-ADD CONSTRAINT message_reading_claim_reading_id_fkey FOREIGN KEY (reading_id) REFERENCES public.message_reading(id);
-ADD CONSTRAINT message_reading_pkey PRIMARY KEY (id);
-ADD CONSTRAINT message_reading_queue_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.messages(id) ON DELETE SET NULL;
-ADD CONSTRAINT message_reading_queue_pkey PRIMARY KEY (id);
-ADD CONSTRAINT message_reading_queue_reading_id_fkey FOREIGN KEY (reading_id) REFERENCES public.message_reading(id);
 ADD CONSTRAINT messages_pkey PRIMARY KEY (id);
 ADD CONSTRAINT music_queue_pkey PRIMARY KEY (id);
 ADD CONSTRAINT music_session_pkey PRIMARY KEY (guild_id);
@@ -298,11 +298,11 @@ ADD CONSTRAINT tag_trace_pkey PRIMARY KEY (id);
 ADD CONSTRAINT tool_call_log_pkey PRIMARY KEY (id);
 ADD CONSTRAINT turn_verdict_pkey PRIMARY KEY (tag_id);
 ADD CONSTRAINT uq_computer_events_operation_phase UNIQUE (operation_id, phase);
+ADD CONSTRAINT uq_extraction_arrival UNIQUE (platform, origin_room, source_key);
+ADD CONSTRAINT uq_extraction_attempt UNIQUE (extraction_id, attempt);
+ADD CONSTRAINT uq_extraction_claim UNIQUE (extraction_id, ordinal);
+ADD CONSTRAINT uq_extraction_queue_message UNIQUE (message_id);
 ADD CONSTRAINT uq_memory_node_kind_source UNIQUE (kind, source_id);
-ADD CONSTRAINT uq_message_reading_arrival UNIQUE (platform, origin_room, source_key);
-ADD CONSTRAINT uq_message_reading_attempt UNIQUE (reading_id, attempt);
-ADD CONSTRAINT uq_message_reading_claim UNIQUE (reading_id, ordinal);
-ADD CONSTRAINT uq_message_reading_queue_message UNIQUE (message_id);
 ADD CONSTRAINT uq_music_queue_guild_position UNIQUE (guild_id, "position");
 ADD CONSTRAINT uq_occupancy_bin UNIQUE (subject_id, place_id, hour_of_week);
 ADD CONSTRAINT version_announcements_pkey PRIMARY KEY (version, platform, conversation_id);
@@ -346,6 +346,18 @@ ALTER TABLE ONLY public.event_rsvps
 ALTER TABLE ONLY public.events
 ALTER TABLE ONLY public.exchange_observation
 ALTER TABLE ONLY public.exchange_observation
+ALTER TABLE ONLY public.extraction
+ALTER TABLE ONLY public.extraction_attempt
+ALTER TABLE ONLY public.extraction_attempt
+ALTER TABLE ONLY public.extraction_attempt
+ALTER TABLE ONLY public.extraction_claim
+ALTER TABLE ONLY public.extraction_claim
+ALTER TABLE ONLY public.extraction_claim
+ALTER TABLE ONLY public.extraction_queue
+ALTER TABLE ONLY public.extraction_queue
+ALTER TABLE ONLY public.extraction_queue
+ALTER TABLE ONLY public.extraction_queue
+ALTER TABLE ONLY public.extraction_queue
 ALTER TABLE ONLY public.fact
 ALTER TABLE ONLY public.fact
 ALTER TABLE ONLY public.fact
@@ -380,18 +392,6 @@ ALTER TABLE ONLY public.message_edit
 ALTER TABLE ONLY public.message_edit
 ALTER TABLE ONLY public.message_reaction
 ALTER TABLE ONLY public.message_reaction
-ALTER TABLE ONLY public.message_reading
-ALTER TABLE ONLY public.message_reading_attempt
-ALTER TABLE ONLY public.message_reading_attempt
-ALTER TABLE ONLY public.message_reading_attempt
-ALTER TABLE ONLY public.message_reading_claim
-ALTER TABLE ONLY public.message_reading_claim
-ALTER TABLE ONLY public.message_reading_claim
-ALTER TABLE ONLY public.message_reading_queue
-ALTER TABLE ONLY public.message_reading_queue
-ALTER TABLE ONLY public.message_reading_queue
-ALTER TABLE ONLY public.message_reading_queue
-ALTER TABLE ONLY public.message_reading_queue
 ALTER TABLE ONLY public.messages
 ALTER TABLE ONLY public.music_queue
 ALTER TABLE ONLY public.music_queue
@@ -469,15 +469,15 @@ ALTER TABLE public.deploy_revision ALTER COLUMN id ADD GENERATED BY DEFAULT AS I
 ALTER TABLE public.doctrine_revision ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.document_state ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.exchange_observation ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+ALTER TABLE public.extraction ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+ALTER TABLE public.extraction_attempt ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+ALTER TABLE public.extraction_claim ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+ALTER TABLE public.extraction_queue ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.language_observation ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.memory_node ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.message_delete ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.message_edit ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.message_reaction ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
-ALTER TABLE public.message_reading ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
-ALTER TABLE public.message_reading_attempt ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
-ALTER TABLE public.message_reading_claim ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
-ALTER TABLE public.message_reading_queue ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.messages ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.otp_attempt ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.presence_corridors ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
@@ -599,6 +599,7 @@ CONSTRAINT ck_events_field_meta_shape CHECK ((jsonb_typeof(field_meta) = 'object
 CONSTRAINT ck_events_lineage_shape CHECK ((jsonb_typeof(lineage) = 'object'::text)),
 CONSTRAINT ck_events_reasoning_is_a_mode CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'abduced'::text])))),
 CONSTRAINT ck_events_status CHECK ((status = ANY (ARRAY['staged'::text, 'proposed'::text, 'confirmed'::text, 'happened'::text, 'cancelled'::text, 'lapsed'::text, 'evicted'::text])))
+CONSTRAINT ck_extraction_state CHECK ((state = ANY (ARRAY['pending'::text, 'done'::text, 'retired'::text])))
 CONSTRAINT ck_instagram_summons_mode CHECK ((mode = ANY (ARRAY['dry_run'::text, 'live'::text]))),
 CONSTRAINT ck_instagram_summons_state CHECK ((state = ANY (ARRAY['claimed'::text, 'unresolved'::text, 'ignored_summoner'::text, 'stale'::text, 'unreadable'::text, 'silent'::text, 'staged'::text, 'flushing'::text, 'published'::text, 'refused'::text, 'capped'::text, 'duplicate'::text, 'ambiguous'::text, 'failed'::text])))
 CONSTRAINT ck_lesson_has_a_unit CHECK ((length(btrim(unit)) > 0))
@@ -629,7 +630,6 @@ CONSTRAINT ck_memory_node_embed_input CHECK (((embed_input IS NULL) OR (embed_in
 CONSTRAINT ck_memory_node_has_a_scope CHECK (((kind = ANY (ARRAY['person'::text, 'room'::text, 'unit'::text, 'nora'::text, 'place'::text])) OR (unit IS NOT NULL) OR (origin_room IS NOT NULL) OR (cardinality(persons) > 0))),
 CONSTRAINT ck_memory_node_kind CHECK ((kind = ANY (ARRAY['message'::text, 'media'::text, 'note'::text, 'memo'::text, 'event'::text, 'lesson'::text, 'character'::text, 'outing'::text, 'stay'::text, 'trip'::text, 'person'::text, 'room'::text, 'unit'::text, 'nora'::text, 'place'::text, 'social'::text, 'social_media'::text, 'social_location'::text, 'profile_line'::text]))),
 CONSTRAINT ck_memory_node_state CHECK ((state = ANY (ARRAY['live'::text, 'retired'::text, 'superseded'::text])))
-CONSTRAINT ck_message_reading_state CHECK ((state = ANY (ARRAY['pending'::text, 'done'::text, 'retired'::text])))
 CONSTRAINT ck_music_queue_position_non_negative CHECK (("position" >= 0))
 CONSTRAINT ck_music_session_volume_range CHECK (((volume >= (0.0)::double precision) AND (volume <= (2.0)::double precision)))
 CONSTRAINT ck_occupancy_how CHECK (((hour_of_week >= 0) AND (hour_of_week < 168)))
@@ -800,8 +800,8 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 CREATE FUNCTION public.computer_events_refuse_change() RETURNS trigger
 CREATE FUNCTION public.computer_exports_refuse_change() RETURNS trigger
-CREATE FUNCTION public.message_readings_retire(source integer) RETURNS void
-CREATE FUNCTION public.message_readings_source_changed() RETURNS trigger
+CREATE FUNCTION public.extraction_retire(source integer) RETURNS void
+CREATE FUNCTION public.extraction_source_changed() RETURNS trigger
 CREATE FUNCTION public.nora_row_history() RETURNS trigger
 CREATE FUNCTION public.nora_row_history_refuse_truncate() RETURNS trigger
 CREATE INDEX idx_assess_report_kind_run ON public.assess_report USING btree (kind, run_at_ms);
@@ -831,6 +831,8 @@ CREATE INDEX idx_event_rsvps_event_person ON public.event_rsvps USING btree (eve
 CREATE INDEX idx_events_conversation ON public.events USING btree (conversation_id, status);
 CREATE INDEX idx_events_unit ON public.events USING btree (unit_id, status);
 CREATE INDEX idx_exchange_observation_scope ON public.exchange_observation USING btree (scope_id);
+CREATE INDEX idx_extraction_due ON public.extraction USING btree (state, due_at);
+CREATE INDEX idx_extraction_queue_pending ON public.extraction_queue USING btree (extraction_id, queued_at);
 CREATE INDEX idx_fact_disputed ON public.fact USING btree (unit) WHERE (disputed_at IS NOT NULL);
 CREATE INDEX idx_fact_premise_premise_fact_id ON public.fact_premise USING btree (premise_fact_id);
 CREATE INDEX idx_fact_standing ON public.fact USING btree (unit, subject_id) WHERE (superseded_at IS NULL);
@@ -848,8 +850,6 @@ CREATE INDEX idx_memory_node_unit ON public.memory_node USING btree (unit);
 CREATE INDEX idx_message_delete_message ON public.message_delete USING btree (message_id);
 CREATE INDEX idx_message_edit_message_ts ON public.message_edit USING btree (message_id, ts);
 CREATE INDEX idx_message_reaction_message ON public.message_reaction USING btree (message_id);
-CREATE INDEX idx_message_reading_due ON public.message_reading USING btree (state, due_at);
-CREATE INDEX idx_message_reading_queue_pending ON public.message_reading_queue USING btree (reading_id, queued_at);
 CREATE INDEX idx_messages_body_trgm ON public.messages USING gin (body public.gin_trgm_ops);
 CREATE INDEX idx_messages_conv_platform_message_id ON public.messages USING btree (conversation_id, platform_message_id);
 CREATE INDEX idx_messages_conv_ts ON public.messages USING btree (conversation_id, ts DESC);
@@ -930,6 +930,10 @@ CREATE TABLE public.event_revision (
 CREATE TABLE public.event_rsvps (
 CREATE TABLE public.events (
 CREATE TABLE public.exchange_observation (
+CREATE TABLE public.extraction (
+CREATE TABLE public.extraction_attempt (
+CREATE TABLE public.extraction_claim (
+CREATE TABLE public.extraction_queue (
 CREATE TABLE public.fact (
 CREATE TABLE public.fact_asserter (
 CREATE TABLE public.fact_candidate (
@@ -950,10 +954,6 @@ CREATE TABLE public.memory_projection_queue (
 CREATE TABLE public.message_delete (
 CREATE TABLE public.message_edit (
 CREATE TABLE public.message_reaction (
-CREATE TABLE public.message_reading (
-CREATE TABLE public.message_reading_attempt (
-CREATE TABLE public.message_reading_claim (
-CREATE TABLE public.message_reading_queue (
 CREATE TABLE public.messages (
 CREATE TABLE public.music_queue (
 CREATE TABLE public.music_session (
@@ -1014,9 +1014,9 @@ CREATE TRIGGER computer_events_append_only BEFORE DELETE OR UPDATE ON public.com
 CREATE TRIGGER computer_events_no_truncate BEFORE TRUNCATE ON public.computer_events FOR EACH STATEMENT EXECUTE FUNCTION public.computer_events_refuse_change();
 CREATE TRIGGER computer_exports_append_only BEFORE DELETE OR UPDATE ON public.computer_exports FOR EACH ROW EXECUTE FUNCTION public.computer_exports_refuse_change();
 CREATE TRIGGER computer_exports_no_truncate BEFORE TRUNCATE ON public.computer_exports FOR EACH STATEMENT EXECUTE FUNCTION public.computer_exports_refuse_change();
-CREATE TRIGGER message_readings_changed BEFORE DELETE OR UPDATE ON public.messages FOR EACH ROW EXECUTE FUNCTION public.message_readings_source_changed();
-CREATE TRIGGER message_readings_changed BEFORE INSERT ON public.message_delete FOR EACH ROW EXECUTE FUNCTION public.message_readings_source_changed();
-CREATE TRIGGER message_readings_changed BEFORE INSERT ON public.message_edit FOR EACH ROW EXECUTE FUNCTION public.message_readings_source_changed();
+CREATE TRIGGER extraction_changed BEFORE DELETE OR UPDATE ON public.messages FOR EACH ROW EXECUTE FUNCTION public.extraction_source_changed();
+CREATE TRIGGER extraction_changed BEFORE INSERT ON public.message_delete FOR EACH ROW EXECUTE FUNCTION public.extraction_source_changed();
+CREATE TRIGGER extraction_changed BEFORE INSERT ON public.message_edit FOR EACH ROW EXECUTE FUNCTION public.extraction_source_changed();
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.analytics_watermark FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('deriver_name', 'subject_id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.compute_jobs FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.computer_sessions FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
@@ -1024,16 +1024,16 @@ CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.conso
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.culture FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('key');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.dream_schedule_state FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('adaptor_name', 'scope_id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.events FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.extraction FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.extraction_attempt FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.extraction_claim FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.extraction_queue FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.geocode_cache FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('lat_rounded', 'lng_rounded');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.instagram_summons FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.media_objects FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('sha256');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.message_delete FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.message_edit FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.message_reaction FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
-CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.message_reading FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
-CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.message_reading_attempt FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
-CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.message_reading_claim FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
-CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.message_reading_queue FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.messages FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.music_queue FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.music_session FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('guild_id');
@@ -1069,16 +1069,16 @@ CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.consolidation
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.culture FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.dream_schedule_state FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.events FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.extraction FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.extraction_attempt FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.extraction_claim FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.extraction_queue FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.geocode_cache FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.instagram_summons FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.media_objects FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.message_delete FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.message_edit FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.message_reaction FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
-CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.message_reading FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
-CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.message_reading_attempt FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
-CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.message_reading_claim FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
-CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.message_reading_queue FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.messages FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.music_queue FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.music_session FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
@@ -1296,10 +1296,10 @@ OR NEW.body IS DISTINCT FROM OLD.body
 OR NEW.mention_persons_json IS DISTINCT FROM OLD.mention_persons_json THEN
 OR NEW.person_id IS DISTINCT FROM OLD.person_id
 OR NEW.ts IS DISTINCT FROM OLD.ts
+PERFORM extraction_retire(NEW.id);
+PERFORM extraction_retire(NEW.message_id);
+PERFORM extraction_retire(OLD.id);
 PERFORM id FROM messages WHERE id = NEW.message_id FOR UPDATE;
-PERFORM message_readings_retire(NEW.id);
-PERFORM message_readings_retire(NEW.message_id);
-PERFORM message_readings_retire(OLD.id);
 RAISE EXCEPTION USING
 RAISE EXCEPTION USING
 RAISE EXCEPTION USING MESSAGE = 'TRUNCATE ' || TG_TABLE_NAME
@@ -1325,15 +1325,15 @@ SEQUENCE NAME public.deploy_revision_id_seq
 SEQUENCE NAME public.doctrine_revision_id_seq
 SEQUENCE NAME public.document_state_id_seq
 SEQUENCE NAME public.exchange_observation_id_seq
+SEQUENCE NAME public.extraction_attempt_id_seq
+SEQUENCE NAME public.extraction_claim_id_seq
+SEQUENCE NAME public.extraction_id_seq
+SEQUENCE NAME public.extraction_queue_id_seq
 SEQUENCE NAME public.language_observation_id_seq
 SEQUENCE NAME public.memory_node_id_seq
 SEQUENCE NAME public.message_delete_id_seq
 SEQUENCE NAME public.message_edit_id_seq
 SEQUENCE NAME public.message_reaction_id_seq
-SEQUENCE NAME public.message_reading_attempt_id_seq
-SEQUENCE NAME public.message_reading_claim_id_seq
-SEQUENCE NAME public.message_reading_id_seq
-SEQUENCE NAME public.message_reading_queue_id_seq
 SEQUENCE NAME public.messages_id_seq
 SEQUENCE NAME public.otp_attempt_id_seq
 SEQUENCE NAME public.presence_corridors_id_seq
@@ -1391,16 +1391,16 @@ START WITH 1
 START WITH 1
 START WITH 1
 START WITH 1
-UPDATE message_reading SET state = 'retired', retired_at = now()
-UPDATE message_reading_claim SET retired_at = now()
-UPDATE message_reading_queue SET reading_id = NULL
+UPDATE extraction SET state = 'retired', retired_at = now()
+UPDATE extraction_claim SET retired_at = now()
+UPDATE extraction_queue SET extraction_id = NULL
 UPDATE row_history SET superseded_at = at, superseded_by = version_id
 UPDATE row_history SET superseded_at = at, superseded_by = version_id
 VALUES (version_id, TG_TABLE_NAME, new_key, lower(TG_OP), new_image, at);
 VALUES (version_id, TG_TABLE_NAME, old_key, 'delete', old_image, at);
 WHEN (mode = 'abduced'::text) THEN ((prediction IS NOT NULL) AND (prediction_observable IS NOT NULL) AND (prediction_window_end IS NOT NULL))
-WHERE reading_id = ANY(retired) AND retired_at IS NULL;
-WHERE reading_id = ANY(retired);
+WHERE extraction_id = ANY(retired) AND retired_at IS NULL;
+WHERE extraction_id = ANY(retired);
 WHERE state <> 'retired'
 WHERE table_name = TG_TABLE_NAME AND row_key = new_key
 WHERE table_name = TG_TABLE_NAME AND row_key = old_key
@@ -1705,6 +1705,9 @@ expires_at bigint
 expires_at timestamp with time zone NOT NULL,
 expires_at timestamp with time zone,
 external_files_json text,
+extraction_id bigint NOT NULL,
+extraction_id bigint NOT NULL,
+extraction_id bigint,
 extractor_confidence double precision NOT NULL,
 extractor_confidence double precision NOT NULL,
 fact_id uuid NOT NULL,
@@ -2184,9 +2187,6 @@ read_id uuid,
 read_id uuid,
 reading text NOT NULL,
 reading_digest text NOT NULL,
-reading_id bigint NOT NULL,
-reading_id bigint NOT NULL,
-reading_id bigint,
 reason text DEFAULT ''::text NOT NULL,
 reason text DEFAULT ''::text NOT NULL,
 reason text NOT NULL,

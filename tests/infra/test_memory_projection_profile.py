@@ -1,5 +1,5 @@
 """The Profile store's projection into the memory index (45 §1, the switch):
-with `index` on (`[profile] render`), every write keeps its lines' nodes and
+with `index` on (`[memory.profile] read`), every write keeps its lines' nodes and
 edges in the write's own transaction — a line's scope its account key's, its
 citations `cites`, its premises `draws_on`, its chain `supersedes`, and a
 hidden line («forget that», 35 §2) out of the index entirely. With `index`

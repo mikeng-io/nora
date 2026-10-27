@@ -82,7 +82,7 @@ def test_no_service_is_pointed_at_honcho_through_the_host_any_more() -> None:
 
 def test_the_host_reaches_honcho_on_loopback_where_the_container_uses_its_name() -> None:
     """The eval suite runs on the host, outside any container, where `honcho`
-    does not resolve. The deployment's `[memory] base_url` is `http://honcho:8000`,
+    does not resolve. The deployment's `[honcho] base_url` is `http://honcho:8000`,
     and the suite must read it as loopback, exactly as it already reads
     `host.docker.internal`."""
     # By module path: `nora.subject.obtain` as an attribute is the function.
@@ -110,7 +110,7 @@ def test_the_rollback_puts_the_config_back_before_it_touches_the_compose_or_the_
     so, and says the config goes back FIRST."""
     runbook = (ROOT / "docs" / "runbook.md").read_text(encoding="utf-8")
     rollback = runbook[runbook.index("**Rollback**, in this order"):]
-    config_back = rollback.index('`[memory] base_url` back to')
+    config_back = rollback.index('`[honcho] base_url` back to')
     port_back = rollback.index("publish `8000:8000` again")
     old_compose = rollback.index("recreate nora from an OLD compose")
     assert config_back < port_back < old_compose

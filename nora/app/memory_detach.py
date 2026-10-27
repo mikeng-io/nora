@@ -38,7 +38,7 @@ remove them either.
 
 REFUSED (step 1): the unit's current binding being the SAME Honcho workspace
 (that would delete its live memory); the old workspace not being Nora's (the
-default `memory.workspace_id`, or marked with her owner key); any room of
+default `honcho.workspace_id`, or marked with her owner key); any room of
 the unit whose session in the NEW workspace holds no message yet; and a
 backfill that would still feed anything (a dry run of `backfill_unit` over
 the same rows must count zero) — the history has not fully landed, and this

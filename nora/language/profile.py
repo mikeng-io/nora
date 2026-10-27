@@ -4,10 +4,10 @@ writing typed lines through `profile_write` (design/unified-memory/45 §4).
 **Shadow** (45 §6, 00 «Sequence» step 6): it writes `profile_line` and
 nothing reads it. The Character head, `peer_card` and `peer_history` keep
 rendering, Honcho's feed keeps running, and no prompt changes until the
-switch (step 8). `[profile] enabled` turns the sessions on.
+switch (step 8). `[memory.profile] write` turns the sessions on.
 
 **The wake** is the person's Character rule, counted over the rooms that
-list them (35 §3): `[culture] person_wake_batch` of their messages since the
+list them (35 §3): `[memory.profile.person] update_every_messages` of their messages since the
 key's watermark, or `stale_seconds` with any. **Plus the stimulus wake** (45
 §4 prerequisite 4): a `told` line a turn wrote about them (`remember` on the
 graph surface) or a dispute of one of its lines (`profile_dispute` on the

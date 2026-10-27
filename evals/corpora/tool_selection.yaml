@@ -1298,7 +1298,7 @@ cases:
     snapshot: *room_a
 
   # --- memory_search (DEC-316, operator ruling 2026-10-16) ----------------------
-  # `[memory_index] enabled` selects ONE memory surface: the graph's
+  # `[memory.index] read` selects ONE memory surface: the graph's
   # (`memory_search`) or Honcho's (`ask_memory`, `search_memory`,
   # `search_memory_workspace`, `who_said`, `about`), never both.
   # `load_transcript` and `remember` are on both. These cases measure

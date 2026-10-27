@@ -414,7 +414,7 @@ def add_subcommands(
     rebuild.add_argument(
         "--other-models", action="store_true",
         help="with --embeddings-only: clear only vectors made by another model "
-             "than [memory_index] embedder_model",
+             "than [memory.index] embedder_model",
     )
     rebuild.set_defaults(func=cmd_memory_rebuild)
     # `memory backfill-places`: WRITES the events (through
@@ -755,12 +755,12 @@ def _memory_client(cfg: Config) -> tuple[Policy, Persons, WorkspaceRouter, Honch
     try:
         router = build_workspace_router(
             policy=policy, bindings=persons.honcho_workspaces,
-            default_workspace=cfg.memory.workspace_id,
+            default_workspace=cfg.honcho.workspace_id,
         )
     except MemoryRoutingError as exc:
         raise CliError(f"memory routing error: {exc}") from exc
     memory = HonchoClient(
-        cfg.memory.base_url, cfg.memory.workspace_id, ai_peer=cfg.memory.ai_peer,
+        cfg.honcho.base_url, cfg.honcho.workspace_id, ai_peer=cfg.honcho.ai_peer,
         workspace_router=router,
     )
     return policy, persons, router, memory
@@ -775,7 +775,7 @@ async def cmd_memory_detach(args: argparse.Namespace) -> int:
             raise CliError("--refresh-cards is its own step; do not combine it with --apply")
         try:
             refreshed = await refresh_cards(
-                peers_file=args.peers_file, memory=memory, ai_peer=cfg.memory.ai_peer,
+                peers_file=args.peers_file, memory=memory, ai_peer=cfg.honcho.ai_peer,
             )
         except DetachRefusedError as exc:
             raise CliError(str(exc)) from exc
@@ -824,7 +824,7 @@ async def cmd_memory_carry(args: argparse.Namespace) -> int:
     try:
         result = await carry_conclusions(
             workspace=args.workspace, policy=policy, router=router, memory=memory,
-            ai_peer=cfg.memory.ai_peer, before=_cutover(args.before),
+            ai_peer=cfg.honcho.ai_peer, before=_cutover(args.before),
             apply=bool(args.apply),
         )
     except CarryRefusedError as exc:
@@ -860,7 +860,7 @@ async def cmd_memory_backfill(args: argparse.Namespace) -> int:
     try:
         result = await backfill_unit(
             unit=args.unit, policy=policy, persons=persons, router=router,
-            records=store, memory=memory, default_workspace=cfg.memory.workspace_id,
+            records=store, memory=memory, default_workspace=cfg.honcho.workspace_id,
             media_join=media_join,
             apply=bool(args.apply), resume=bool(args.resume),
         )
@@ -1108,7 +1108,7 @@ async def cmd_profile_retry_media(args: argparse.Namespace) -> int:
     from nora.infra.sql.schema import CONSOLIDATION_WATERMARK as W
 
     cfg = _config(args)
-    if not (cfg.dreamer.enabled and cfg.culture.enabled and cfg.profile.enabled):
+    if not (cfg.dreamer.enabled and cfg.culture.enabled and cfg.memory.profile.write):
         raise CliError("the Profile Dreamer must be enabled before requesting recovery")
     keys = character_person_keys(_policy(cfg), _persons(cfg))
     if args.key not in keys:
@@ -1197,9 +1197,9 @@ async def cmd_memory_backfill_places(args: argparse.Namespace) -> int:
 async def _memory_rebuild_embeddings(args: argparse.Namespace, cfg: Config) -> int:
     """`nora memory rebuild --embeddings-only [--other-models] [--dry-run]`
     clears vectors, every one or only another model's, and reports counts: the
-    embedding worker (`[memory_index] embed`) backfills them on its own ticks.
+    embedding worker (`[memory.index] embed`) backfills them on its own ticks.
     The projection is untouched."""
-    model = fingerprint(cfg.memory_index.embedder_model)
+    model = fingerprint(cfg.memory.index.embedder_model)
     keep = model if args.other_models else None
     engine = create_sql_engine(_database_url(cfg))
     try:
@@ -1218,8 +1218,8 @@ async def _memory_rebuild_embeddings(args: argparse.Namespace, cfg: Config) -> i
         f"failed at least once: {after.failing}; given up after "
         f"{memory_index.EMBED_MAX_ATTEMPTS} attempts: {after.given_up}"
     )
-    if not cfg.memory_index.embed:
-        print("[memory_index] embed is false: nothing backfills until it is on")
+    if not cfg.memory.index.embed:
+        print("[memory.index] embed is false: nothing backfills until it is on")
     return 0
 
 

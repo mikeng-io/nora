@@ -510,7 +510,7 @@ neither reachable by any hand-written S4/S5/S6/S2 case this session wrote**:
 2. `_drive()`'s policy passthrough never rewrote the policy template's own
    `workspace = "..."` to the ISOLATED workspace name (the same
    substitution `run_once()` already does) — so the composed subject's
-   real `memory.workspace_id` and its policy's declared room workspace
+   real `honcho.workspace_id` and its policy's declared room workspace
    disagreed, and the proactive adaptor reported "no home room" for a
    workspace whose policy plainly named one.
 

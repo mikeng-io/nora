@@ -393,7 +393,7 @@ nothing (`nora_unmapped_senders_total` is the tell). `identity.toml` takes one
 Nora **refuses to start** if it is missing or allows nothing (R-5). Memory's
 hierarchy is split across them on the same lines (DEC-214): `policy.toml`
 `[units]` says which workspace each unit is in, `identity.toml` `[workspaces]`
-binds each workspace to its Honcho workspace, and `memory.workspace_id` is only
+binds each workspace to its Honcho workspace, and `honcho.workspace_id` is only
 the binding used when there is no `[units]`.
 
 ## Design discipline — incidents

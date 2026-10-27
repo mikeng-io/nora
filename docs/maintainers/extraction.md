@@ -1,10 +1,10 @@
-# Message readings: write-only Record arrival perception
+# Extraction: write-only Record arrival perception
 
-This implements phase 2 of [the reading design](../../design/unified-memory/18-message-readings.md)
+This implements phase 2 of [the reading design](../../design/unified-memory/18-extraction.md)
 and its [claim slots](../../design/unified-memory/47-character-dimensions.md#reading-claims).
-Migration `0129_message_readings` creates `message_reading`,
-`message_reading_claim`, `message_reading_queue` and `message_reading_attempt`.
-The default is `[message_readings] enabled = false`.
+Migration `0131_extraction_names` renames the original Record tables to `extraction`,
+`extraction_claim`, `extraction_queue` and `extraction_attempt`.
+The default is `[memory.extraction] enabled = false`.
 
 No production retrieval consumer, prompt block, history backfill, Character
 consumption, Honcho cutover or `memory_node` projection is added. The existing
@@ -20,10 +20,10 @@ does not queue a second reading. The source and its queue entry commit together.
 Flag-off compositions enqueue nothing and start no worker; existing versions
 still retire when their sources change, even after disabling the writer.
 
-One background worker checks once a second, grouping at most `batch_size`
-arrivals after a `settle_seconds` collection window. Platform, room and recorded
+One background worker checks once a second, grouping at most `messages_per_call`
+arrivals once the first queued message reaches `min_message_age_seconds`. Platform, room and recorded
 unit must all match. The batch stores its source/context snapshot, version and
-model before a model request. Context is at most `context_size` earlier queued
+model before a model request. Context is at most `context_messages` earlier queued
 messages from that same recorded owner, oldest first; it is never an extraction
 source. This intentionally does not import pre-enable history whose unit at
 arrival is unknown: `messages` has no unit column, and message index nodes are
@@ -32,7 +32,7 @@ batches accumulate context. The arrival boundary, rather than today's mutable
 policy, owns this context.
 
 The shared gateway endpoint/credential/client comes from `[llm]`; the model is
-selected explicitly by `message_readings.model`, using the existing
+selected explicitly by `memory.extraction.model`, using the existing
 `ollamacloud/deepseek-v4.1-flash` route documented for the Flash eval arm in
 [the eval SOP](../eval-sop.md). There is no model fallback or inherited tag lane.
 The schema refuses a non-Flash route when enabled, and the writer also refuses
@@ -93,7 +93,7 @@ and retain its shared lock, backups, candidate validation and readback.
 
 Under `flock -o -E 75 -w 900 /tmp/nora-deploy.lock`, back up the live runtime
 root's `config.toml`. Copy it into the **running new-code container** at
-`/app/message-readings.candidate.toml` so its relative paths retain `/app` as base.
+`/app/extraction.candidate.toml` so its relative paths retain `/app` as base.
 Run the existing config CLI on that candidate before copying it into the live file.
 
 The complete host-side candidate operation, after the new release is verified,
@@ -104,21 +104,21 @@ cd ~/workspace/nora
 flock -o -E 75 -w 900 /tmp/nora-deploy.lock bash <<'SH'
 set -euo pipefail
 umask 077
-backup=$(mktemp /tmp/nora-before-message-readings.XXXXXX.toml)
-candidate=$(mktemp /tmp/nora-message-readings.XXXXXX.toml)
+backup=$(mktemp /tmp/nora-before-extraction.XXXXXX.toml)
+candidate=$(mktemp /tmp/nora-extraction.XXXXXX.toml)
 trap 'rm -f "$candidate"' EXIT
 cp config.toml "$backup"
-docker compose cp config.toml nora:/app/message-readings.candidate.toml
-docker compose exec -T --user root nora chown nora:nora /app/message-readings.candidate.toml
-docker compose exec -T nora /app/.venv/bin/nora config set message_readings.model \
-  'ollamacloud/deepseek-v4.1-flash' --config /app/message-readings.candidate.toml
-docker compose exec -T nora /app/.venv/bin/nora config set message_readings.enabled true \
-  --config /app/message-readings.candidate.toml
+docker compose cp config.toml nora:/app/extraction.candidate.toml
+docker compose exec -T --user root nora chown nora:nora /app/extraction.candidate.toml
+docker compose exec -T nora /app/.venv/bin/nora config set memory.extraction.model \
+  'ollamacloud/deepseek-v4.1-flash' --config /app/extraction.candidate.toml
+docker compose exec -T nora /app/.venv/bin/nora config set memory.extraction.enabled true \
+  --config /app/extraction.candidate.toml
 docker compose exec -T nora /app/.venv/bin/nora config validate \
-  --config /app/message-readings.candidate.toml
-docker compose cp nora:/app/message-readings.candidate.toml "$candidate"
+  --config /app/extraction.candidate.toml
+docker compose cp nora:/app/extraction.candidate.toml "$candidate"
 cp "$candidate" config.toml
-docker compose exec -T nora rm /app/message-readings.candidate.toml
+docker compose exec -T nora rm /app/extraction.candidate.toml
 printf 'Private config backup: %s\n' "$backup"
 SH
 ```
@@ -128,7 +128,7 @@ Release the shared lock before native
 release receipt, healthy recreated process, loaded config freshness and newly
 arriving queue/attempt rows. Do not infer enablement from a file edit alone.
 Restore the backup under the lock and use native recovery on failure. Disable
-with the same candidate procedure and `message_readings.enabled false`.
+with the same candidate procedure and `memory.extraction.enabled false`.
 Disabling preserves queued work for resumption and stops new enqueues/calls.
 
 ## One day of measured tokens
@@ -136,15 +136,15 @@ Disabling preserves queued work for resumption and stops new enqueues/calls.
 Counters are append-only, have no person/room/unit labels, and export on the
 existing Nora metrics endpoint:
 
-- `nora_message_reading_calls_total`
-- `nora_message_reading_input_tokens_total`
-- `nora_message_reading_output_tokens_total`
-- `nora_message_reading_failures_total`
-- `nora_message_reading_claims_written_total`
-- `nora_message_reading_usage_missing_total`
+- `nora_extraction_calls_total`
+- `nora_extraction_input_tokens_total`
+- `nora_extraction_output_tokens_total`
+- `nora_extraction_failures_total`
+- `nora_extraction_claims_written_total`
+- `nora_extraction_usage_missing_total`
 
 Each request uses the existing raw-generation telemetry helpers under
-`message_reading`, with actual token usage. Only structural placeholders enter
+`extraction`, with actual token usage. Only structural placeholders enter
 traces: source text, subject links, identifiers and output claims stay in the DB.
 Attempt rows bind to the trace (NULL when tracing is off), and durably record
 reported provider identity and usage **before** output
@@ -169,7 +169,7 @@ docker compose exec -T db psql -X -U nora -d nora \
   -v start="$READING_DAY_START" -v pi="$READING_INPUT_PRICE" -v po="$READING_OUTPUT_PRICE" <<'SQL'
 BEGIN READ ONLY;
 WITH day AS (
-  SELECT * FROM message_reading_attempt
+  SELECT * FROM extraction_attempt
   WHERE started_at >= :'start'::timestamptz
     AND started_at < :'start'::timestamptz + interval '24 hours'
 ), totals AS (
@@ -186,7 +186,7 @@ SELECT attempts, published_attempts, unknown_usage, i, o,
        CASE WHEN attempts = 0 OR unknown_usage > 0 THEN 'UNMEASURED'
             ELSE 'MEASURED' END AS status
 FROM totals;
-SELECT state, count(*) FROM message_reading GROUP BY state;
+SELECT state, count(*) FROM extraction GROUP BY state;
 COMMIT;
 SQL
 ```
@@ -200,7 +200,10 @@ do not erase spent tokens. If the provider prices cache hits separately, use
 verified effective input prices or its billing receipt; a two-price estimate is
 not an invoice. Choose the daily budget only after this real measurement.
 
-Prometheus `increase(nora_message_reading_*_total[24h])` is a useful cross-check
+Prometheus `increase(nora_extraction_*_total[24h])` is a useful cross-check
 across restarts; it extrapolates and may be fractional. The durable query above
 is the exact reported-token count. Failures, pending rows and unknown usage must
 be reported beside cost; zero claims alone does not establish a working reader.
+
+The retired `nora_message_reading_*` metric names remain declared at zero.
+Active counters use `nora_extraction_*`; update dashboards and saved queries accordingly.

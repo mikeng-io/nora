@@ -666,7 +666,7 @@ ENTRY_POINTS = {
     # entry point's.
     "profile_identity": EntryPoint(
         drive=profile_identity, synthetic_sources=True, judged_on="identity",
-        config={"dreamer.enabled": True, "profile.enabled": True},
+        config={"dreamer.enabled": True, "memory.profile.write": True},
     ),
     "dreamer": EntryPoint(drive=dreamer, config={"dreamer.enabled": True}),
     # The act turn needs the FIRE PATH, which `[participation]` also builds,
