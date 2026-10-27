@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.3.1](https://github.com/mikeng-io/nora/compare/v7.3.0...v7.3.1) (2026-10-27)
+
+
+### Security
+
+* **portal:** show presence only to people who share a circle ([6d8ce7c](https://github.com/mikeng-io/nora/commit/6d8ce7c691f37fb3e10e8334edad67c67dc9d0a5))
+
 ## [7.3.0](https://github.com/mikeng-io/nora/compare/v7.2.0...v7.3.0) (2026-10-27)
 
 

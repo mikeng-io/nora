@@ -1208,10 +1208,8 @@ class Dependencies:
     # UNLIKE `Whereis.locate`, `nora.web.presence` does NOT apply
     # `DisclosureGuard`/R-21 — that guard is a PER-ROOM, per-conversation
     # check with no web equivalent (no "conversation" exists on a portal
-    # page); the web map's own access control is `checkSession()`'s
-    # identity.toml allowlist, the same gate every other portal page uses
-    # (design decision: web presence visibility = portal-wide, matching
-    # status/memory, not per-room disclosure).
+    # page); the web routes instead scope every read to the circles the
+    # signed-in viewer belongs to (`nora.web.api._viewer_circles`).
     presence: PresenceStore | None
     presence_circles: tuple[Circle, ...]
     # Read-only analytics dashboard consumer over the SAME engine as audit and

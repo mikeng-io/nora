@@ -3,14 +3,11 @@ members' live and historical positions for the web portal's map.
 
 Deliberately does NOT apply `nora.agent.whereis.DisclosureGuard`/R-21: that
 guard answers "may THIS ROOM be told?", and a portal page is not a
-conversation — there is no room roster to check a circle against. Web
-presence visibility is instead gated the same way every other portal page
-already is: `checkSession()`'s identity.toml allowlist, enforced by
-`requireApiSession()` before either handler below is ever reached. Every
-logged-in friend sees every circle member here, matching status/memory's
-existing group-wide model — a deliberate product decision, not an
-oversight. See `Dependencies.presence`'s docstring in
-`nora/app/composition.py` for the fuller reasoning.
+conversation. The portal's rule is the viewer's own circles: the routes in
+`nora/web/api.py` pass only the circles the signed-in viewer (`personId`,
+from the session) belongs to, so a viewer sees the people they share a
+circle with and nothing about a circle they are not in. A known person in
+no circle sees an empty map.
 
 `presence=None` (either `[presence] enabled = false`, or identity.toml
 yields no circle — see `nora.app.composition`) makes both endpoints answer

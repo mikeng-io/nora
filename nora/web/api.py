@@ -167,6 +167,21 @@ def _analytics_subject_ids(circles: tuple[Circle, ...]) -> list[str]:
     return subject_ids
 
 
+def _viewer_circles(request: web.Request) -> tuple[Circle, ...] | None:
+    """The circles the viewer (`personId`, set from the portal session) belongs
+    to: presence is visible only between people who share a circle, so a known
+    person in no circle sees nothing. `None` is a missing or unknown viewer."""
+    person_id = request.query.get("personId")
+    if not person_id or request.app["web_persons"].by_person.get(person_id) is None:
+        return None
+    return tuple(
+        c for c in request.app["web_presence_circles"] if person_id in c.person_ids
+    )
+
+
+_VIEWER_REQUIRED = {"status": "refused", "note": "a valid personId is required"}
+
+
 def _place_payload(place: dict[str, Any]) -> dict[str, Any]:
     return {
         "kind": place["kind"],
@@ -456,20 +471,27 @@ def register_web_routes(
         return web.json_response(body)
 
     async def presence_positions(request: web.Request) -> web.Response:
-        a = request.app
+        circles = _viewer_circles(request)
+        if circles is None:
+            return web.json_response(_VIEWER_REQUIRED, status=400)
         body = await build_presence_payload(
-            presence=a["web_presence"], circles=a["web_presence_circles"],
+            presence=request.app["web_presence"], circles=circles,
         )
         return web.json_response(body)
 
     async def presence_places(request: web.Request) -> web.Response:
-        a = request.app
+        circles = _viewer_circles(request)
+        if circles is None:
+            return web.json_response(_VIEWER_REQUIRED, status=400)
         body = await build_presence_places_payload(
-            presence=a["web_presence"], circles=a["web_presence_circles"],
+            presence=request.app["web_presence"], circles=circles,
         )
         return web.json_response(body)
 
     async def presence_analytics_places(request: web.Request) -> web.Response:
+        circles = _viewer_circles(request)
+        if circles is None:
+            return web.json_response(_VIEWER_REQUIRED, status=400)
         a = request.app
         # Bind through a local NAME, not `a["web_mobility"].method(...)` — the
         # store-caller architecture walk only credits attribute calls on a
@@ -479,7 +501,7 @@ def register_web_routes(
         if a["web_presence"] is None or mobility is None:
             return web.json_response({"subjects": []})
         subjects = []
-        for subject_id in _analytics_subject_ids(a["web_presence_circles"]):
+        for subject_id in _analytics_subject_ids(circles):
             places = await mobility.places_with_aggregates(
                 subject_id=subject_id,
             )
@@ -493,6 +515,9 @@ def register_web_routes(
 
     async def presence_analytics_rhythm(request: web.Request) -> web.Response:
         subject_id = request.query.get("subjectId")
+        circles = _viewer_circles(request)
+        if circles is None:
+            return web.json_response(_VIEWER_REQUIRED, status=400)
         try:
             days = _int_query(request, "days", _DEFAULT_ANALYTICS_DAYS)
         except _BadQueryError:
@@ -509,7 +534,7 @@ def register_web_routes(
             a["web_presence"] is None
             or mobility is None
             or subject_id is None
-            or subject_id not in _analytics_subject_ids(a["web_presence_circles"])
+            or subject_id not in _analytics_subject_ids(circles)
         ):
             return web.json_response(empty)
         bins = await mobility.rhythm_bins(
@@ -532,6 +557,9 @@ def register_web_routes(
 
     async def presence_analytics_routes(request: web.Request) -> web.Response:
         subject_id = request.query.get("subjectId")
+        circles = _viewer_circles(request)
+        if circles is None:
+            return web.json_response(_VIEWER_REQUIRED, status=400)
         try:
             days = _int_query(request, "days", _DEFAULT_ANALYTICS_DAYS)
         except _BadQueryError:
@@ -548,7 +576,7 @@ def register_web_routes(
             a["web_presence"] is None
             or mobility is None
             or subject_id is None
-            or subject_id not in _analytics_subject_ids(a["web_presence_circles"])
+            or subject_id not in _analytics_subject_ids(circles)
         ):
             return web.json_response(empty)
         result = await mobility.trips_with_corridors(
@@ -572,9 +600,11 @@ def register_web_routes(
             return web.json_response({"error": "invalid hours"}, status=400)
         if hours <= 0:
             return web.json_response({"error": "invalid hours"}, status=400)
-        a = request.app
+        circles = _viewer_circles(request)
+        if circles is None:
+            return web.json_response(_VIEWER_REQUIRED, status=400)
         body = await build_presence_history_payload(
-            presence=a["web_presence"], circles=a["web_presence_circles"],
+            presence=request.app["web_presence"], circles=circles,
             person_id=request.match_info["person_id"], hours=hours,
         )
         if body is None:
