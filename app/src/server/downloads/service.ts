@@ -107,7 +107,9 @@ export async function convert(runner: DownloadRunner, id: string, target: string
   } catch (err) {
     return { status: 409, body: { error: err instanceof Error ? err.message : String(err) } };
   }
-  return { status: 200, body: { job: await jobView(runner, runner.store.get(id)!) } };
+  const after = runner.store.get(id);
+  if (!after) return { status: 404, body: { error: "deleted" } };
+  return { status: 200, body: { job: await jobView(runner, after) } };
 }
 
 /** The job's thumbnail for the list's preview cell. */

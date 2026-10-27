@@ -354,14 +354,27 @@ export class DownloadRunner {
       // Ownership holds through publish AND cleanup: until `converting` clears,
       // sweep cannot expire the job and a second convert cannot claim the same
       // staging path, so the rm/rename below cannot race a follow-up run.
+      let settled = false;
       const finish = async (msg?: string) => {
+        // error can precede close on the same child — first entry wins.
+        if (settled) return;
+        settled = true;
         try {
           if (this.running.get(id) === child) this.running.delete(id);
           if (msg) throw new Error(msg);
+          // A delete that landed between close and here must not publish.
+          if (this.cancelled.has(id)) throw new Error("cancelled");
           await rename(staging, output);
+          const job = this.opts.store.get(id);
+          if (!job) {
+            // Deleted mid-publish: the job dir is on its way out; never report
+            // success for a file nobody can reach.
+            await rm(output, { force: true }).catch(() => {});
+            throw new Error("deleted");
+          }
           // Publishing refreshes the retention clock: the 24h window starts
           // from the last thing that touched the file, not the download.
-          if (this.opts.store.get(id)) this.opts.store.update(id, {});
+          this.opts.store.update(id, {});
           resolve();
         } catch (err) {
           await rm(staging, { force: true }).catch(() => {});
