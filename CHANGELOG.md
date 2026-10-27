@@ -1,5 +1,18 @@
 # Changelog
 
+## [7.3.0](https://github.com/mikeng-io/nora/compare/v7.2.0...v7.3.0) (2026-10-27)
+
+
+### Features
+
+* **app:** /downloads, a yt-dlp batch downloader for the circle ([6f06f73](https://github.com/mikeng-io/nora/commit/6f06f73e5514a25dd3ba753f17af38fc5737fd93))
+
+
+### Bug Fixes
+
+* **app:** close downloads SSRF and lifecycle holes found in review ([5c7ad51](https://github.com/mikeng-io/nora/commit/5c7ad51a5e979982c490ed32ffa7699093d96643))
+* **app:** downloads round 2 — cancel during DNS, write-storm guard, named volume ([6cdc2ea](https://github.com/mikeng-io/nora/commit/6cdc2ea4dc0850dab879a038fa1a1a76e8bbe781))
+
 ## [7.2.0](https://github.com/mikeng-io/nora/compare/v7.1.2...v7.2.0) (2026-10-27)
 
 
