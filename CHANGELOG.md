@@ -1,5 +1,23 @@
 # Changelog
 
+## [7.0.0](https://github.com/mikeng-io/nora/compare/v6.8.7...v7.0.0) (2026-10-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* **config:** name memory configuration by its role ([ea36e50](https://github.com/mikeng-io/nora/commit/ea36e5087bf3a36ee4259cc53f4c4305f968deda))
+
+
+### Bug Fixes
+
+* **record:** preserve upgrade constraint names while restoring downgrade names ([404eb79](https://github.com/mikeng-io/nora/commit/404eb79c18fc04afecc00e17819eb4e54a69b905))
+* **record:** restore original constraint names on extraction downgrade ([c7bc886](https://github.com/mikeng-io/nora/commit/c7bc8863eee2931dfe881f5b954ed4c8e055c79e))
+
+
+### Changes
+
+* **config:** name memory configuration by its role ([ea36e50](https://github.com/mikeng-io/nora/commit/ea36e5087bf3a36ee4259cc53f4c4305f968deda))
+
 ## [6.8.7](https://github.com/mikeng-io/nora/compare/v6.8.6...v6.8.7) (2026-10-27)
 
 
