@@ -4,10 +4,16 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, date, datetime, timedelta
-from typing import Any
+from typing import Any, Literal, get_args
 from zoneinfo import ZoneInfo
 
 VERSION = 1
+
+ExtractionFailureStage = Literal[
+    "input", "request", "usage", "provider_model", "incomplete", "schema",
+    "claims", "publish", "cancelled", "storage",
+]
+EXTRACTION_FAILURE_STAGES: tuple[str, ...] = get_args(ExtractionFailureStage)
 
 
 def event_time(expression: str | None, assertion_ms: int) -> dict[str, str | None]:

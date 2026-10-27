@@ -17,6 +17,7 @@ from nora.domain.assess import DQ_CHECKS
 from nora.domain.cues import CUES
 from nora.domain.culture import CHARACTER_KINDS, CHARACTER_OUTCOMES, CULTURE_OUTCOMES
 from nora.domain.doctrine_check import CHECK_OUTCOMES
+from nora.domain.extraction import EXTRACTION_FAILURE_STAGES
 from nora.domain.lessons import LESSONS_OUTCOMES
 from nora.domain.media import MEDIA_FETCH_CALLERS
 from nora.domain.media_join import JOIN_PATHS
@@ -2133,7 +2134,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     ),
     _CounterSpec(
         "nora_extraction_failures_total",
-        "Failed extraction attempts or storage operations; durable work is retained.",
+        "Failed extraction attempts or storage operations; durable work is retained. "
+        "stage: " + " / ".join(EXTRACTION_FAILURE_STAGES) + ".",
+        ("stage",),
     ),
     _CounterSpec(
         "nora_extraction_claims_written_total",
