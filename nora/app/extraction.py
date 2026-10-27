@@ -83,8 +83,10 @@ only claims made in the new messages, never new claims from context alone.
 Store every supported statement regardless of category, medium or sensitivity.
 Do not infer facts, intentions or places. Preserve negation, doubt, questions,
 plans, attribution and who said what. A plan never establishes an event occurred.
-Each claim needs about (a list of {person_id, reference}; use a supplied person_id
-only when grounded, otherwise null with an explicit unresolved reference), what,
+Each claim needs about (a list of {person_id, reference}; reference is ALWAYS required:
+the subject as written in the message, e.g. a name, nickname, "my sister" or "he",
+whether or not person_id is filled; use a supplied person_id only when grounded,
+otherwise null), what,
 happened_at (ALWAYS an object {source_id, expression}, never null; source_id is
 the new message the claim was asserted in; expression is the verbatim date phrase,
 or null when the message has none), where (a verbatim stated named place or setting, else null),

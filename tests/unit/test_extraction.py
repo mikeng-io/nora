@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from nora.app.extraction import ExtractionOutput
+from nora.app.extraction import SYSTEM, ExtractionOutput
 from nora.domain.extraction import event_time, validate_claims
 
 
@@ -222,3 +222,58 @@ async def test_null_happened_at_fails_at_schema_stage(example_config, caplog, nu
         assert stored["happened_at"]["expression"] is None
         assert metrics.get("nora_extraction_claims_written_total") == 1
     assert "visit Workshop" not in caplog.text
+
+
+def test_resolved_subject_keeps_required_message_reference():
+    from pydantic import ValidationError
+
+    raw = claim(body="he plans tomorrow visit Workshop")
+    raw["about"] = [{"person_id": "subject-a", "reference": "he"}]
+    stored = validate_claims(
+        parsed({"claims": [raw]}),
+        {"messages": [source(body="he plans tomorrow visit Workshop")], "context": []},
+    )[0]
+    assert stored["about"] == [{"person_id": "subject-a", "reference": "he"}]
+    text = " ".join(SYSTEM.split())
+    assert "reference is ALWAYS required: the subject as written in the message" in text
+    assert "whether or not person_id is filled" in text
+    for reference in (None, ""):
+        raw["about"][0]["reference"] = reference
+        with pytest.raises(ValidationError):
+            parsed({"claims": [raw]})
+    del raw["about"][0]["reference"]
+    with pytest.raises(ValidationError):
+        parsed({"claims": [raw]})
+
+
+@pytest.mark.parametrize("slot", ["evidence", "expression"])
+def test_xml_escaped_source_spans_match_after_decoding(slot):
+    body = 'tomorrow visit Workshop & <studio> "early"'
+    escaped = "Workshop &amp; &lt;studio&gt; &quot;early&quot;"
+    raw = claim(body=body)
+    if slot == "evidence":
+        raw["evidence"][0]["quote"] = escaped
+    else:
+        raw["happened_at"]["expression"] = escaped
+    stored = validate_claims(
+        parsed({"claims": [raw]}), {"messages": [source(body=body)], "context": []},
+    )
+    assert len(stored) == 1
+    assert stored[0]["about"][0]["person_id"] == "subject-a"
+
+
+@pytest.mark.parametrize("slot", ["evidence", "expression"])
+def test_xml_decoding_still_requires_an_exact_source_span(slot):
+    body = 'tomorrow visit Workshop & <studio> "early"'
+    mismatch = "Workshop &amp; &lt;studio&gt; &quot;late&quot;"
+    raw = claim(body=body)
+    if slot == "evidence":
+        raw["evidence"][0]["quote"] = mismatch
+        reason = "evidence absent from source"
+    else:
+        raw["happened_at"]["expression"] = mismatch
+        reason = "event expression absent from source"
+    with pytest.raises(ValueError, match=reason):
+        validate_claims(
+            parsed({"claims": [raw]}), {"messages": [source(body=body)], "context": []},
+        )
