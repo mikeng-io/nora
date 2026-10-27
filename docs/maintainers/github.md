@@ -149,10 +149,11 @@ CLI integration, board writer, auto-enrollment, approval, merge or Done action.
 GitHub Issues remain canonical and Project 8 is their scheduling view.
 
 All flags default off when absent. After independent review, the parent owns
-credential setup and activation: `ENGINEERING_REPOSITORY=mikeng-io/nora`, secret
-`PROJECT_TOKEN` with read access to the owner's personal Project 8 and repository,
-secret `DEVIN_API_KEY`, variable `DEVIN_ORG_ID`, and `ENGINEERING_CI_ENABLED=true`
-for session spending. `GITHUB_TOKEN` cannot read personal Projects. Also configure
+activation: `ENGINEERING_REPOSITORY=mikeng-io/nora`, the configured secret
+`DEVIN_API_KEY`, variable `DEVIN_ORG_ID`, and `ENGINEERING_CI_ENABLED=true` for
+session spending. No Project PAT or copied GitHub credential is needed. Actions
+uses its ordinary `GH_TOKEN` for repository facts and native linked-issue reads;
+it does not read the private Project. Also configure
 `DEVIN_SECURITY_PROFILE_ID` for a dedicated organization-owned profile, created
 by the parent after review without changing org defaults. Before claim and
 immediately before creation, the controller reads the official v3beta1 profile
@@ -169,9 +170,15 @@ The pilot accepts only owner-authored, open, non-draft, same-repository PRs to
 master; both author and dispatch actor must currently have write/maintain/admin
 permission. Forks, bots and non-owner collaborators are outside this initial
 ceiling. Exactly one native closing-issue link must resolve to an open nonempty
-issue in owner Project 8. Its actual single-select `Status`, `Priority`,
-`Execution tier`, `Review tier` values must match the root schema. CI requires
-Ready; review candidates require Ready or Review and a non-none review tier.
+issue. Immediately before dispatch, the orchestrator uses its existing connected
+`gh` authentication to verify that same issue's live membership in owner Project
+8 and read its current Status, Priority, Execution tier and Review tier. No token
+is copied into Actions and no local executor, daemon or signing layer is added.
+The owner's explicit dispatch confirms that scheduling snapshot. Actions validates
+its canonical shape and binds its issue/head, but **does not revalidate live
+Project membership or fields**. CI requires admitted Ready; review candidates
+require admitted Ready or Review and a non-none review tier. A Project change
+after the orchestrator's readback is outside this controller's measurement.
 Labels, titles, PR body assertions and Project membership alone grant nothing.
 
 Dispatch **on master**, with `action=investigate` or `repair`, `number`, the full
@@ -182,7 +189,9 @@ object. The object has these keys (no copied task/design body):
 |---|---|
 | `head` | Same exact input head as the dispatch |
 | `issue_updated_at` | Current canonical issue GraphQL `updatedAt` |
-| `execution_tier`, `review_tier` | Exact current canonical Project values; semantic classification resolved |
+| `project_ref` | Exactly `https://github.com/users/mikeng-io/projects/8` |
+| `project_issue_ref` | Exact same native canonical issue URL read by Actions |
+| `status`, `priority`, `execution_tier`, `review_tier` | Current Project readback via existing `gh`; values from the root schema, semantic classification resolved |
 | `scope_ref` | Current issue section bounds paths, non-goals and investigation or repair authority |
 | `acceptance_ref` | Current issue section gives acceptance or revisioned design acceptance pointer |
 | `prerequisites_ref` | Current issue section records resolved dependencies, environment and permission prerequisites |
@@ -190,19 +199,22 @@ object. The object has these keys (no copied task/design body):
 | `capability_ref` | Current issue section records evidence that the normal service route meets the assigned capability |
 | `confirmed` | JSON `true`: the owner has read and confirms all those current facts |
 
-Each reference must be the canonical issue URL plus a section anchor. The issue
+The five scope/evidence references must be the canonical issue URL plus a section anchor. The issue
 may link immutable design/evidence there; the dispatcher does not guess semantics
 or resolve arbitrary external URLs. Existing issue forms lack structured fields,
-so this explicit trusted confirmation is required. It is bound to issue revision,
-head, Project fields, base and full changed-path list; these are read again before
-claim and immediately before dispatch. After its own receipt comment, comparison
-ignores only issue `updatedAt` and still binds the body digest and other scope
-fields. Actual issue body or classification changes require fresh admission.
+so this explicit trusted confirmation is required. Actions binds it to issue
+revision/head and the owner-confirmed scheduling fields; repeated API reads before
+claim and immediately before dispatch cover the current issue, base, paths and
+CI evidence only. After its own receipt comment, comparison ignores only issue
+`updatedAt` and still binds the body digest and other repository facts. Actual
+issue body changes block launch. Project classification/status changes require
+fresh orchestrator admission; they are not detected by an Actions Project query.
 Investigation is read-only; repair needs its own explicit admitted scope and
 produces a local patch/evidence only. The parent owns push and landing. The
 already-read issue body, paths and base are ephemeral session input, never a
-tracked task copy. Missing logs/check tooling must be reported unavailable. Operator confirmation covers external workers; only controller
-receipts and Project status are machine-measured ownership signals in this pilot.
+tracked task copy. Missing logs/check tooling must be reported unavailable.
+Operator confirmation covers external workers and Project status; controller
+receipts are the machine-measured ownership signal in Actions.
 
 CI must be a completed failure from the GitHub Actions App, the current latest
 check of that name on that exact SHA, linked to the repository's `ci.yml` run and

@@ -18,13 +18,14 @@ from pathlib import Path
 
 REPOSITORY = "mikeng-io/nora"
 OWNER = REPOSITORY.split("/")[0]
+PROJECT_URL = f"https://github.com/users/{OWNER}/projects/8"
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = json.loads((ROOT / ".agents/orchestration.schema.json").read_text())["$defs"]
 WORKFLOW = ".github/workflows/engineering-dispatch.yml"
 MARKER = "<!-- nora-engineering-v1\n"
 MAX_PAGES = 30
 SHA = r"[0-9a-f]{40}"
-PROJECT_QUERY = """
+ISSUE_QUERY = """
 query($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
@@ -33,21 +34,6 @@ query($owner: String!, $repo: String!, $number: Int!) {
         nodes {
           __typename number state body updatedAt url
           repository { nameWithOwner }
-          projectItems(first: 100, includeArchived: false) {
-            pageInfo { hasNextPage }
-            nodes {
-              id isArchived
-              project { number owner { ... on User { login } ... on Organization { login } } }
-              fieldValues(first: 100) {
-                pageInfo { hasNextPage }
-                nodes {
-                  ... on ProjectV2ItemFieldSingleSelectValue {
-                    name field { ... on ProjectV2SingleSelectField { name } }
-                  }
-                }
-              }
-            }
-          }
         }
       }
     }
@@ -76,7 +62,6 @@ class API:
     def __init__(self, env):
         self.tokens = {
             "github": env.get("GH_TOKEN"),
-            "project": env.get("PROJECT_TOKEN"),
             "devin": env.get("DEVIN_API_KEY"),
         }
         self.opener = urllib.request.build_opener(NoRedirect())
@@ -175,46 +160,21 @@ class Controller:
         require(pr["user"]["login"] == OWNER and pr["user"]["type"] == "User", "owner-only pilot")
         self.permission(pr["user"]["login"])
         graph = self.api(
-            "project",
+            "github",
             "POST",
             "/graphql",
             {
-                "query": PROJECT_QUERY,
+                "query": ISSUE_QUERY,
                 "variables": {"owner": OWNER, "repo": "nora", "number": number},
             },
         )
-        require(not graph.get("errors"), "Project GraphQL unavailable")
+        require(not graph.get("errors"), "linked-issue GraphQL unavailable")
         linked = connection(graph["data"]["repository"]["pullRequest"]["closingIssuesReferences"])
         require(len(linked) == 1, "exactly one native linked issue required")
         issue = linked[0]
         require(issue["__typename"] == "Issue", "not a native issue")
         require(issue["repository"]["nameWithOwner"] == REPOSITORY, "foreign issue")
         require(issue["state"] == "OPEN" and issue["body"].strip(), "closed or empty issue")
-        cards = [
-            item
-            for item in connection(issue["projectItems"])
-            if item["project"]["number"] == 8
-            and item["project"]["owner"]["login"] == OWNER
-            and item["isArchived"] is False
-        ]
-        require(len(cards) == 1, "issue not in owner Project 8")
-        fields = {}
-        for value in connection(cards[0]["fieldValues"]):
-            if "name" in value and "field" in value:
-                name = value["field"]["name"]
-                require(name not in fields, "duplicate Project field")
-                fields[name] = value["name"]
-        for field, definition in (
-            ("Status", "status"),
-            ("Priority", "priority"),
-            ("Execution tier", "execution_tier"),
-            ("Review tier", "review_tier"),
-        ):
-            require(fields.get(field) in SCHEMA[definition]["enum"], f"unknown/missing {field}")
-        if action == "review":
-            require(fields["Status"] in {"Ready", "Review"}, "review is not ready")
-        else:
-            require(fields["Status"] == "Ready", "CI task is not Ready")
         files = pages(self.api, f"{self.repo}/pulls/{number}/files")
         require(len(files) == pr["changed_files"] and files, "incomplete PR file list")
         paths = sorted(
@@ -228,7 +188,6 @@ class Controller:
         return {
             "issue": issue,
             "issue_body_sha256": hashlib.sha256(issue["body"].encode()).hexdigest(),
-            "fields": fields,
             "paths": paths,
             "head": head,
             "base": pr["base"]["sha"],
@@ -272,7 +231,7 @@ class Controller:
         )
         return {"id": check_id, "run": int(match[1])}
 
-    def admission(self, data, snapshot, head):
+    def admission(self, data, snapshot, head, action):
         require(
             data.get("confirmed") is True,
             "explicit scope/prerequisite/ownership confirmation required",
@@ -281,12 +240,16 @@ class Controller:
         require(
             data["issue_updated_at"] == snapshot["issue"]["updatedAt"], "issue revision changed"
         )
-        require(
-            data["execution_tier"] == snapshot["fields"]["Execution tier"]
-            and data["review_tier"] == snapshot["fields"]["Review tier"],
-            "tier confirmation mismatch",
-        )
         issue_url = snapshot["issue"]["url"]
+        # Scheduling is the owner's current gh readback, not a live Actions measurement.
+        require(data.get("project_ref") == PROJECT_URL, "wrong/missing Project reference")
+        require(data.get("project_issue_ref") == issue_url, "Project issue reference mismatch")
+        for field in ("status", "priority", "execution_tier", "review_tier"):
+            require(data.get(field) in SCHEMA[field]["enum"], f"unknown/missing {field}")
+        require(
+            data["status"] in ({"Ready", "Review"} if action == "review" else {"Ready"}),
+            "admitted scheduling status is not ready",
+        )
         for key in (
             "acceptance_ref",
             "scope_ref",
@@ -486,19 +449,19 @@ class Controller:
                 "reason": "CI intake requires owner dispatch with current check ID and admission",
             }
         snapshot = self.snapshot(number, head, action, check_id)
-        if action == "review" and review_exempt(snapshot["paths"]):
-            return {
-                "state": "nothing_found",
-                "reason": "authored docs/design or ordinary MCP client config only",
-            }
         if not manual:
             return {
                 "state": "unavailable",
                 "reason": "intake requires owner acceptance/tier confirmation",
             }
-        self.admission(data, snapshot, head)
+        self.admission(data, snapshot, head, action)
+        if action == "review" and review_exempt(snapshot["paths"]):
+            return {
+                "state": "nothing_found",
+                "reason": "authored docs/design or ordinary MCP client config only",
+            }
         if action == "review":
-            require(snapshot["fields"]["Review tier"] != "none", "no authoritative required review")
+            require(data["review_tier"] != "none", "no authoritative required review")
             require(
                 self.env.get("ENGINEERING_REVIEW_SELECTOR_ENABLED") == "true",
                 "review selector disabled",
@@ -511,7 +474,7 @@ class Controller:
                     "head": head,
                     "issue": snapshot["issue"]["url"],
                     "acceptance_ref": data["acceptance_ref"],
-                    "review_tier": snapshot["fields"]["Review tier"],
+                    "review_tier": data["review_tier"],
                 },
                 "reason": "candidate only; manual Review budget unverified; no trigger/enrollment",
             }

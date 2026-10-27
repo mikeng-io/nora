@@ -33,6 +33,7 @@ def test_workflow_executes_only_pinned_default_branch_controller_with_global_loc
     assert checkout["uses"] == "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
     assert checkout["with"] == {"repository": REPO, "ref": "master", "persist-credentials": False}
     assert runner["run"] == "python3 -m scripts.engineering_dispatch"
+    assert "PROJECT_TOKEN" not in runner["env"]
     assert all("${{" not in step.get("run", "") for step in job["steps"])
     assert not any(
         "pr-reviews" in value

@@ -24,6 +24,10 @@ def admission():
         "confirmed": True,
         "head": HEAD,
         "issue_updated_at": "2026-01-01T00:00:00Z",
+        "project_ref": "https://github.com/users/mikeng-io/projects/8",
+        "project_issue_ref": ISSUE,
+        "status": "Ready",
+        "priority": "P1",
         "execution_tier": "critical",
         "review_tier": "full",
         **{
@@ -85,17 +89,6 @@ class Fake:
             "base": {"sha": "b" * 40, "ref": "master", "repo": {"full_name": REPO}},
         }
         self.files = [{"filename": "nora/agent/main.py"}]
-        self.fields = {
-            "Status": "Ready",
-            "Priority": "P1",
-            "Execution tier": "critical",
-            "Review tier": "full",
-        }
-        self.card = {
-            "id": "synthetic-card",
-            "isArchived": False,
-            "project": {"number": 8, "owner": {"login": dispatch.OWNER}},
-        }
         self.issue = {
             "__typename": "Issue",
             "number": 3,
@@ -154,21 +147,13 @@ class Fake:
         return copy.deepcopy(self.route(service, method, path, body))
 
     def route(self, service, method, path, body):
-        if service == "project" and (method, path) == ("POST", "/graphql"):
+        if service == "github" and (method, path) == ("POST", "/graphql"):
             assert body["variables"] == {"owner": dispatch.OWNER, "repo": "nora", "number": 7}
             assert "closingIssuesReferences" in body["query"]
-            card, issue = copy.deepcopy(self.card), copy.deepcopy(self.issue)
-            card["fieldValues"] = connected(
-                [{"name": v, "field": {"name": k}} for k, v in self.fields.items()]
-            )
-            issue["projectItems"] = connected([card])
-            linked = connected([issue])
+            assert "projectItems" not in body["query"] and "fieldValues" not in body["query"]
+            linked = connected([copy.deepcopy(self.issue)])
             if self.more:
-                {
-                    "linked": linked,
-                    "projects": issue["projectItems"],
-                    "fields": card["fieldValues"],
-                }[self.more]["pageInfo"]["hasNextPage"] = True
+                linked["pageInfo"]["hasNextPage"] = True
             return (
                 {"errors": ["synthetic"]}
                 if self.graph_error
@@ -316,12 +301,6 @@ def test_admitted_ci_claim_precedes_one_capped_official_session_and_records_real
         ("issue", "__typename", "PullRequest"),
         ("issue", "body", ""),
         ("issue", "updatedAt", "changed"),
-        ("fields", "Status", "Running"),
-        ("fields", "Status", "Inbox"),
-        ("fields", "Priority", None),
-        ("fields", "Execution tier", "unknown"),
-        ("fields", "Review tier", ""),
-        ("card", "isArchived", True),
         ("check", "head_sha", "e" * 40),
         ("check", "status", "in_progress"),
         ("check", "conclusion", "timed_out"),
@@ -339,9 +318,9 @@ def test_missing_unknown_stale_or_owned_work_never_spends(target, key, value):
 
 
 @pytest.mark.parametrize(
-    "change", ["fork", "author", "permission", "project", "foreign_issue", "app", "graph_error"]
+    "change", ["fork", "author", "permission", "foreign_issue", "app", "graph_error"]
 )
-def test_foreign_untrusted_nonmember_or_failed_evidence_never_spends(change):
+def test_foreign_untrusted_or_failed_repository_evidence_never_spends(change):
     api = Fake()
     if change == "fork":
         api.pr["head"]["repo"]["full_name"] = "example/nora-synthetic"
@@ -349,8 +328,6 @@ def test_foreign_untrusted_nonmember_or_failed_evidence_never_spends(change):
         api.pr["user"]["login"] = "untrusted"
     elif change == "permission":
         api.permission = "read"
-    elif change == "project":
-        api.card["project"]["number"] = 9
     elif change == "foreign_issue":
         api.issue["repository"]["nameWithOwner"] = "example/nora-synthetic"
     elif change == "app":
@@ -362,10 +339,9 @@ def test_foreign_untrusted_nonmember_or_failed_evidence_never_spends(change):
     assert not api.paid()
 
 
-@pytest.mark.parametrize("field", ["linked", "projects", "fields"])
-def test_truncated_graph_reads_cannot_authorize(field):
+def test_truncated_linked_issue_read_cannot_authorize():
     api = Fake()
-    api.more = field
+    api.more = True
     with pytest.raises(dispatch.UnavailableError, match="incomplete"):
         execute(api)
     assert not api.paid()
@@ -390,23 +366,34 @@ def test_manual_request_does_not_bypass_permissions_flags_credentials_or_confine
     assert not api.paid()
 
 
-def test_owner_confirmation_requires_current_scope_prerequisites_tiers_and_acceptance():
-    for key, value in [
+@pytest.mark.parametrize(
+    "key,value",
+    [
         ("confirmed", False),
         ("head", "f" * 40),
+        ("project_ref", "https://github.com/users/mikeng-io/projects/9"),
+        ("project_ref", None),
+        ("project_issue_ref", ISSUE + "0"),
+        ("status", "Running"),
+        ("status", "Inbox"),
+        ("status", "Review"),
+        ("priority", None),
+        ("execution_tier", "unknown"),
+        ("review_tier", "unknown"),
         ("scope_ref", ""),
         ("prerequisites_ref", ""),
         ("acceptance_ref", "https://example.invalid/"),
-        ("review_tier", "none"),
         ("ownership_ref", ""),
         ("capability_ref", ""),
-    ]:
-        api, request, data = Fake(), event(), admission()
-        data[key] = value
-        request["inputs"]["admission"] = json.dumps(data)
-        with pytest.raises(dispatch.UnavailableError):
-            execute(api, request)
-        assert not api.paid()
+    ],
+)
+def test_owner_admission_requires_bound_scheduling_scope_prerequisites_and_acceptance(key, value):
+    api, request, data = Fake(), event(), admission()
+    data[key] = value
+    request["inputs"]["admission"] = json.dumps(data)
+    with pytest.raises(dispatch.UnavailableError):
+        execute(api, request)
+    assert not api.paid()
 
 
 @pytest.mark.parametrize(
@@ -463,10 +450,20 @@ def test_rename_out_of_runtime_still_requires_review_and_never_triggers_manual_a
 
 def test_review_tier_none_cannot_make_a_candidate_or_spend():
     api, request, data = Fake(), event("review"), admission()
-    api.fields["Review tier"] = data["review_tier"] = "none"
+    data["review_tier"] = "none"
     request["inputs"]["admission"] = json.dumps(data)
     with pytest.raises(dispatch.UnavailableError, match="no authoritative"):
         execute(api, request)
+    assert not api.paid()
+
+
+def test_review_status_accepts_owner_scheduling_snapshot_without_reading_private_project():
+    api, request, data = Fake(), event("review"), admission()
+    data["status"] = "Review"
+    request["inputs"]["admission"] = json.dumps(data)
+    result = execute(api, request)
+    assert result["candidate"]["review_tier"] == "full"
+    assert all(service == "github" for service, *_ in api.calls)
     assert not api.paid()
 
 
@@ -630,7 +627,6 @@ def test_transport_fixed_origins_no_auth_redirects_and_sanitized_errors(capsys):
     api = dispatch.API(
         {
             "GH_TOKEN": "synthetic-token",
-            "PROJECT_TOKEN": "synthetic-project",
             "DEVIN_API_KEY": "synthetic-devin",
             "GITHUB_API_URL": "https://example.invalid",
         }
@@ -641,10 +637,10 @@ def test_transport_fixed_origins_no_auth_redirects_and_sanitized_errors(capsys):
     assert len(requests) == 1 and requests[0].full_url.startswith("https://api.devin.ai/")
     assert requests[0].get_header("Authorization") == "Bearer synthetic-devin"
     with pytest.raises(dispatch.UnavailableError, match="HTTP 302"):
-        api("project", "POST", "/graphql", {})
+        api("github", "POST", "/graphql", {})
     assert requests[-1].full_url == "https://api.github.com/graphql"
-    assert requests[-1].get_header("Authorization") == "Bearer synthetic-project"
-    api.tokens["project"] = None
-    with pytest.raises(dispatch.UnavailableError, match="missing project"):
-        api("project", "POST", "/graphql", {})
+    assert requests[-1].get_header("Authorization") == "Bearer synthetic-token"
+    api.tokens["github"] = None
+    with pytest.raises(dispatch.UnavailableError, match="missing github"):
+        api("github", "POST", "/graphql", {})
     assert "secret-error-body" not in capsys.readouterr().out

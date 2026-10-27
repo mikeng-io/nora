@@ -61,7 +61,6 @@ jobs:
       - name: Read intake or perform explicitly admitted operation
         env:
           GH_TOKEN: ${{ github.token }}
-          PROJECT_TOKEN: ${{ secrets.PROJECT_TOKEN }}
           DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
           DEVIN_ORG_ID: ${{ vars.DEVIN_ORG_ID }}
           ENGINEERING_REPOSITORY: ${{ vars.ENGINEERING_REPOSITORY }}
