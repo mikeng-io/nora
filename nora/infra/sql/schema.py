@@ -5088,7 +5088,9 @@ EXTRACTION = sa.Table(
               server_default=sa.func.now()),
     sa.Column("built_at", sa.DateTime(timezone=True)),
     sa.Column("retired_at", sa.DateTime(timezone=True)),
-    sa.CheckConstraint("state IN ('pending', 'done', 'retired')", name="ck_extraction_state"),
+    sa.CheckConstraint(
+        "state IN ('pending', 'done', 'retired', 'failed')", name="ck_extraction_state",
+    ),
 )
 
 EXTRACTION_QUEUE = sa.Table(

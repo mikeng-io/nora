@@ -21,6 +21,10 @@ from nora.infra.sql.schema import EXTRACTION_CLAIM as CLAIM
 from nora.infra.sql.schema import EXTRACTION_QUEUE as QUEUE
 from nora.infra.sql.schema import MESSAGE_DELETE, MESSAGE_EDIT, MESSAGES
 
+# ponytail: five attempts absorb transient outages without repeating deterministic
+# bad output 13-15 times; re-queue failed sources after repair, rather than tune a lane.
+MAX_ATTEMPTS = 5
+
 
 async def enqueue(
     conn: AsyncConnection,
@@ -48,7 +52,9 @@ async def enqueue(
     )
 
 
-async def source_rows(conn: AsyncConnection, ids: list[int]) -> list[dict[str, Any]]:
+async def source_rows(
+    conn: AsyncConnection, ids: list[int], *, include_reply: bool = False,
+) -> list[dict[str, Any]]:
     if not ids:
         return []
     # Locks serialize publication with hide/edit/delete. Invalidation triggers
@@ -97,9 +103,19 @@ async def source_rows(conn: AsyncConnection, ids: list[int]) -> list[dict[str, A
                 ),
                 "revision": edit["id"] if edit else None,
                 "is_nora": bool(row["is_nora"]),
+                **({"quoted_ts": row["quoted_ts"]} if include_reply else {}),
             }
         )
     return result
+
+
+def link_replies(messages: list[dict[str, Any]], context: list[dict[str, Any]]) -> None:
+    targets: dict[int, list[int]] = {}
+    for row in messages + context:
+        targets.setdefault(row["ts"], []).append(row["id"])
+    for row in messages:
+        matches = targets.get(row["quoted_ts"], [])
+        row["reply_to"] = matches[0] if len(matches) == 1 else None
 
 
 class SqlExtraction:
@@ -176,23 +192,57 @@ class SqlExtraction:
                 )
                 # Context is from the same immutable queued owner, so a later
                 # policy reassignment cannot import another unit's history.
-                context_ids = list(
-                    (
-                        await conn.execute(
-                            sa.select(QUEUE.c.message_id)
-                            .where(
-                                QUEUE.c.unit == first["unit"],
-                                QUEUE.c.platform == first["platform"],
-                                QUEUE.c.origin_room == first["origin_room"],
-                                QUEUE.c.message_id < min(ids),
-                            )
-                            .order_by(QUEUE.c.message_id.desc())
-                            .limit(context_messages)
+                messages = await source_rows(conn, ids, include_reply=True)
+                quoted = {r["quoted_ts"] for r in messages if r["quoted_ts"] is not None}
+                parent_ids = list((await conn.execute(
+                    sa.select(MESSAGES.c.id)
+                    .join(QUEUE, QUEUE.c.message_id == MESSAGES.c.id)
+                    .where(
+                        QUEUE.c.unit == first["unit"],
+                        QUEUE.c.platform == first["platform"],
+                        QUEUE.c.origin_room == first["origin_room"],
+                        MESSAGES.c.ts.in_(quoted),
+                    )
+                    .order_by(MESSAGES.c.id)
+                )).scalars())
+                parents = await source_rows(conn, parent_ids)
+                by_ts: dict[int, list[dict[str, Any]]] = {}
+                for row in parents:
+                    by_ts.setdefault(row["ts"], []).append(row)
+                # Direct parents first, in new-message order; no recursive walk.
+                context: list[dict[str, Any]] = []
+                selected = set(ids)
+                for row in messages:
+                    matches = by_ts.get(row["quoted_ts"], [])
+                    if len(matches) == 1 and len(context) < context_messages:
+                        parent = matches[0]
+                        if parent["id"] not in selected:
+                            context.append(parent)
+                            selected.add(parent["id"])
+                before = min(ids)
+                while len(context) < context_messages:
+                    nearby = list((await conn.execute(
+                        sa.select(QUEUE.c.message_id)
+                        .where(
+                            QUEUE.c.unit == first["unit"],
+                            QUEUE.c.platform == first["platform"],
+                            QUEUE.c.origin_room == first["origin_room"],
+                            QUEUE.c.message_id < before,
+                            QUEUE.c.message_id.not_in(selected),
                         )
-                    ).scalars()
-                )
-                messages = await source_rows(conn, ids)
-                context = await source_rows(conn, context_ids)
+                        .order_by(QUEUE.c.message_id.desc())
+                        .limit(context_messages - len(context))
+                    )).scalars())
+                    if not nearby:
+                        break
+                    context.extend(await source_rows(conn, nearby))
+                    selected.update(nearby)
+                    before = min(nearby)
+                context.sort(key=lambda r: r["id"])
+                link_replies(messages, context)
+                for row in messages:
+                    if len(by_ts.get(row["quoted_ts"], [])) > 1:
+                        row["reply_to"] = None
                 extraction = (
                     (
                         await conn.execute(
@@ -222,6 +272,15 @@ class SqlExtraction:
                 )
                 if not messages:
                     return None
+            if extraction["attempts"] >= MAX_ATTEMPTS:
+                # An exhausted lease (or a legacy over-ceiling batch) must not
+                # buy another model call. The caller counts this committed transition.
+                await conn.execute(
+                    sa.update(EXTRACTION)
+                    .where(EXTRACTION.c.id == extraction["id"])
+                    .values(state="failed")
+                )
+                return {**extraction, "state": "failed"}
             attempt = extraction["attempts"] + 1
             await conn.execute(
                 sa.update(EXTRACTION)
@@ -279,8 +338,14 @@ class SqlExtraction:
         async with self.engine.begin() as conn:
             # Sources before extraction: the invalidator's lock order, including
             # edits inserted while the model was running.
-            messages = await source_rows(conn, job["source_ids"])
+            # Pre-change pending snapshots retain their exact frozen shape.
+            with_reply = "quoted_ts" in job["snapshot"]["messages"][0]
+            messages = await source_rows(conn, job["source_ids"], include_reply=with_reply)
             context = await source_rows(conn, job["context_ids"])
+            if with_reply:
+                links = {r["id"]: r["reply_to"] for r in job["snapshot"]["messages"]}
+                for row in messages:
+                    row["reply_to"] = links[row["id"]]
             current = (
                 (
                     await conn.execute(
@@ -360,9 +425,10 @@ class SqlExtraction:
             )
             return len(claims)
 
-    async def fail(self, job: dict[str, Any]) -> None:
+    async def fail(self, job: dict[str, Any]) -> bool:
         async with self.engine.begin() as conn:
-            await conn.execute(
+            terminal = job["attempts"] >= MAX_ATTEMPTS
+            changed = await conn.execute(
                 sa.update(EXTRACTION)
                 .where(
                     EXTRACTION.c.id == job["id"],
@@ -370,6 +436,7 @@ class SqlExtraction:
                     EXTRACTION.c.attempts == job["attempts"],
                 )
                 .values(
+                    state="failed" if terminal else "pending",
                     due_at=datetime.now(UTC)
                     + timedelta(
                         seconds=min(3600, 2 ** min(job["attempts"], 12)),
@@ -378,9 +445,27 @@ class SqlExtraction:
             )
             await conn.execute(
                 sa.update(ATTEMPT)
-                .where(ATTEMPT.c.id == job["attempt_id"])
+                .where(ATTEMPT.c.id == job["attempt_id"], ATTEMPT.c.outcome == "started")
                 .values(
                     outcome="error",
                     finished_at=sa.func.now(),
                 )
             )
+            return terminal and changed.rowcount == 1
+
+    async def requeue(self, extraction_id: int) -> bool:
+        """Retain failed history and owe its sources a fresh batch/attempt allowance."""
+        async with self.engine.begin() as conn:
+            changed = await conn.execute(
+                sa.update(EXTRACTION)
+                .where(EXTRACTION.c.id == extraction_id, EXTRACTION.c.state == "failed")
+                .values(state="retired", retired_at=sa.func.now())
+            )
+            if changed.rowcount != 1:
+                return False
+            await conn.execute(
+                sa.update(QUEUE)
+                .where(QUEUE.c.extraction_id == extraction_id)
+                .values(extraction_id=None)
+            )
+            return True

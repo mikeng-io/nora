@@ -145,6 +145,12 @@ class _Pin(NamedTuple):
 # the artifact that gets re-derived from scratch by the next session that
 # notices one of them.
 _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
+    ("extraction.py", "requeue"): _Pin(
+        "operator_script",
+        "The operator repairs terminal extraction failures with scripts/extraction_requeue.py. "
+        "It deliberately stays outside the daemon, retaining failed history and releasing sources "
+        "for a fresh batch only after an explicit operator invocation.",
+    ),
     ("culture.py", "chain"): _Pin(
         "deferred_consumer",
         "The revision chain, newest first, walked through parent links. The "

@@ -193,7 +193,7 @@ async def test_null_happened_at_fails_at_schema_stage(example_config, caplog, nu
         })
 
     job = {
-        "version": VERSION, "model": "ollamacloud/deepseek-v4.1-flash",
+        "state": "pending", "version": VERSION, "model": "ollamacloud/deepseek-v4.1-flash",
         "snapshot": {"messages": [source(body="visit Workshop")], "context": []},
     }
     store = AsyncMock(spec=SqlExtraction)
@@ -277,3 +277,11 @@ def test_xml_decoding_still_requires_an_exact_source_span(slot):
         validate_claims(
             parsed({"claims": [raw]}), {"messages": [source(body=body)], "context": []},
         )
+
+
+def test_system_defines_empty_person_subjects_and_reply_citation_boundary():
+    text = " ".join(SYSTEM.split())
+    assert "about lists the persons the claim is about" in text
+    assert "EMPTY list when no person is the subject (an event, place, group plan or thing)" in text
+    assert "Never put the speaker in about just because they said it" in text
+    assert "use it to interpret the reply, cite only the new message" in text

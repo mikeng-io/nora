@@ -58,7 +58,9 @@ statements a Record home and leaves the Notebook to judge.
 A extraction is a **Record item**, kind **extraction**, next to
 the messages it reads. It states what was said:
 
-- **About whom** the statement is made.
+- **About whom** the statement is made: `about` lists only person subjects.
+  Use `about: []` for an event, place, group plan or thing with no person
+  subject; never add the speaker merely because they said it.
 - **The claim**, preserving what the source actually says.
 - **How** it was said: stated by the person / said by another / planned /
   asked / reported.
