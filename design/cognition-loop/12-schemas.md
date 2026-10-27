@@ -138,13 +138,23 @@ wakes the Lessons adaptor to re-evidence or retire it
   (`nora/dreamer/objectives/standing-debrief.md`); the working set becomes
   the `Found, not yet given` section.
 
+This section is amended by
+[design/standing-ledger](../standing-ledger/20-the-ledger.md). Room and unit
+Standing become entries (decisions, commitments, threads) revised by id;
+`Where it stands` splits into threads and decisions; `Found, not yet given`
+retires into a decision's options
+([10](../standing-ledger/10-what-standing-holds.md) §5); the unit sections map
+onto threads, decisions and commitments
+([20](../standing-ledger/20-the-ledger.md) §6). Person Standing is not covered
+by the ledger.
+
 ## 6. What changes for the existing stores
 
 | store | today | becomes |
 |---|---|---|
 | note | schema (DEC-213) | unchanged |
 | culture | continuous prose, "no headings" by its objective | the sectioned account above; prose inside each section |
-| room Standing | one paragraph + JSON working set, the head rewritten by every fold (its chain, `standing_revision`, exists) | the sections above, each with its own support and age; the head is no longer a lossy fold ([50](50-character-and-standing.md) §2) |
+| room Standing | one paragraph + JSON working set, the head rewritten by every fold (its chain, `standing_revision`, exists) | the sections above, each with its own support and age; the head is no longer a lossy fold ([50](50-character-and-standing.md) §2); amended to ledger entries by [standing-ledger](../standing-ledger/20-the-ledger.md) |
 | event | typed columns, no body, updated in place | columns with per-field modes + body, revision chain |
 | Lessons | — | new ([§4a](#4a-lessons)) |
 
