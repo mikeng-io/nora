@@ -29,9 +29,10 @@ own files sit under paths the site does not claim (`/sw.js`,
 | `/nora`, `/nora/memory`, `/nora/doctrine`, `/nora/abilities` | about her and her status; her memory of you; her doctrine as a reader; her tools and skills |
 | `/login` | Discord sign-in, the code sign-in when `NORA_OTP_API_TOKEN` is set, and the refusal when an account is not on the list |
 
-On a phone the bottom bar holds Today, Map, Plans and Games; People is one
-tap from Today and the map, and Nora is her own mark in the top bar
-(DESIGN.md §7: four destinations). ⌘K or `/` opens a search over everything;
+On a phone the bottom bar holds Today, Map, Plans and Documents, plus a More
+cell that opens a sheet with everywhere else — Games, People, Artifacts,
+Downloads and the four pages about her (DESIGN.md §7: five cells, no raised
+centre button). ⌘K or `/` opens a search over everything;
 `g` then `t`, `m`, `p`, `l`, `g` or `n` jumps to a page. The first portal's
 URLs (`/status`, `/memory`, `/doctrine`, `/tools`, `/events`, the old game
 sub-pages) redirect to where their content lives now (`next.config.ts`).

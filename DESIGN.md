@@ -422,8 +422,9 @@ status):
 ### Navigation
 Desktop: a left rail on surface with a hairline edge, icon plus sentence-case
 label, the active item in denim with a hoodie fill. Mobile: a bottom bar on
-surface, five destinations at most (a sixth would crowd the labels on a 320px
-phone), no raised centre button.
+surface, five cells at most (a sixth would crowd the labels on a 320px
+phone) — destinations plus a More cell that opens a sheet listing everywhere
+else — no raised centre button.
 
 ### Map
 Warm-grey basemap, people in their person hue, routes as a single 2px line
