@@ -62,15 +62,31 @@ jobs:
               text = re.sub(r"^#{1,6}\s+(.+)$", r"**\1**", text, flags=re.M)
               return re.sub(r"\n{3,}", "\n\n", text).strip()
 
-          # The embed description caps at 4096. Keep the link to the full notes in the
-          # body rather than in a field, so a truncated message still says where the
-          # rest is.
+          def units(text):
+              """Discord's limits count UTF-16 units, so an emoji costs two."""
+              return len(text.encode("utf-16-le")) // 2
+
+          def clip(text, room):
+              """The longest prefix of `text` that fits in `room` UTF-16 units."""
+              used = 0
+              for index, char in enumerate(text):
+                  used += 2 if ord(char) > 0xFFFF else 1
+                  if used > room:
+                      return text[:index]
+              return text
+
+          # The embed description caps at 4096 units. The link to the full notes is part
+          # of that budget, so a truncated message still says where the rest is.
           body = plain(release["body"] or "")
-          if len(body) > 4000:
-              cut = body[:4000]
-              # Cut on a line boundary so a link or a bullet is never half-rendered.
-              cut = cut.rsplit("\n", 1)[0] if "\n" in cut else cut
-              body = cut.rstrip() + f"\n\n[Read the full notes]({release['url']})"
+          suffix = f"\n\n[Read the full notes]({release['url']})"
+          if units(body) + units(suffix) > 4080:
+              cut = clip(body, 4080 - units(suffix))
+              # Prefer a line boundary so a link or a bullet is not half-rendered — but
+              # not when the tail is one enormous line, which would throw the message
+              # away to save a line break.
+              if "\n" in cut and len(cut) - cut.rfind("\n") < 500:
+                  cut = cut[: cut.rfind("\n")]
+              body = cut.rstrip() + suffix
 
           name = (release["name"] or "").strip()
           title = release["tagName"] if name in ("", release["tagName"]) else f"{release['tagName']} — {name}"
