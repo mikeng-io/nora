@@ -29,7 +29,7 @@ RUN apt-get update \
     && apt-get purge -y curl && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/* /tmp/SHA2-256SUMS \
     && mkdir -p /data/downloads && chown node:node /data/downloads
-ENV YTDLP_PATH=/usr/local/bin/yt-dlp NORA_DOWNLOADS_DIR=/data/downloads
+ENV YTDLP_PATH=/usr/local/bin/yt-dlp NORA_DOWNLOADS_DIR=/data/downloads NORA_DOWNLOADS_TTL_HOURS=24
 COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
 COPY --from=build --chown=node:node /app/public ./public

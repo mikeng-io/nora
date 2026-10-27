@@ -14,5 +14,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     });
   }
   const { id } = await params;
-  return serveContent(downloadRunner(), id, request.headers.get("range"));
+  const file = new URL(request.url).searchParams.get("file");
+  return serveContent(downloadRunner(), id, request.headers.get("range"), file);
 }

@@ -6,7 +6,7 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import { fileHeaders } from "../artifact-download";
 import { assertPublicHost, validateBatch, type Lookup } from "./validate";
-import { JOB_ID, type DownloadJob } from "./store";
+import { JOB_ID, jobDir, listJobFiles, mediaKind, thumbPath, type DownloadJob } from "./store";
 import type { DownloadRunner } from "./runner";
 
 // The route-level rules for /api/v1/downloads/*, kept apart from the route
@@ -54,9 +54,74 @@ export async function submit(
   return { status: jobs.length ? 201 : 200, body: { jobs, rejected } };
 }
 
-export function list(runner: DownloadRunner): { jobs: DownloadJob[]; usedBytes: number } {
+export interface JobView extends DownloadJob {
+  files: string[];
+  hasThumb: boolean;
+  converting: boolean;
+  convertTargets: string[];
+}
+
+const CONVERT_TARGETS = {
+  video: ["mp4", "webm", "mkv"],
+  audio: ["mp3", "m4a", "opus", "wav"],
+  image: ["png", "jpg", "webp"],
+} as const;
+
+export async function jobView(runner: DownloadRunner, job: DownloadJob): Promise<JobView> {
+  const kind = mediaKind(job);
+  const cur = path.extname(job.fileName ?? "").slice(1).toLowerCase();
+  return {
+    ...job,
+    files: await listJobFiles(runner.store.root, job),
+    hasThumb: (await thumbPath(runner.store.root, job)) !== null,
+    converting: runner.isConverting(job.id),
+    convertTargets: kind ? CONVERT_TARGETS[kind].filter((t) => t !== cur) : [],
+  };
+}
+
+export async function list(runner: DownloadRunner): Promise<{ jobs: JobView[]; usedBytes: number }> {
   const jobs = runner.store.list();
-  return { jobs, usedBytes: jobs.reduce((n, j) => n + (j.fileSize ?? 0), 0) };
+  return {
+    jobs: await Promise.all(jobs.map((j) => jobView(runner, j))),
+    usedBytes: jobs.reduce((n, j) => n + (j.fileSize ?? 0), 0),
+  };
+}
+
+export async function get(runner: DownloadRunner, id: string): Promise<{ status: number; body: unknown }> {
+  const job = runner.store.get(id);
+  if (!job) return { status: 404, body: { error: "not found" } };
+  return { status: 200, body: { job: await jobView(runner, job) } };
+}
+
+/** Start an ffmpeg conversion on a finished job. The output lands next to the
+ * original and shows up in the job's files list. */
+export async function convert(runner: DownloadRunner, id: string, target: string): Promise<{ status: number; body: unknown }> {
+  const job = runner.store.get(id);
+  if (!job || !JOB_ID.test(id)) return { status: 404, body: { error: "not found" } };
+  if (job.status !== "done" || !job.fileName) return { status: 409, body: { error: "not finished" } };
+  const kind = mediaKind(job);
+  const allowed = kind ? (CONVERT_TARGETS[kind] as readonly string[]) : [];
+  if (!allowed.includes(target)) return { status: 400, body: { error: `cannot convert to ${target}` } };
+  try {
+    await runner.convert(id, job.fileName, target);
+  } catch (err) {
+    return { status: 409, body: { error: err instanceof Error ? err.message : String(err) } };
+  }
+  return { status: 200, body: { job: await jobView(runner, runner.store.get(id)!) } };
+}
+
+/** The job's thumbnail for the list's preview cell. */
+export async function serveThumbnail(runner: DownloadRunner, id: string): Promise<Response> {
+  const job = runner.store.get(id);
+  if (!job || !JOB_ID.test(id)) return json(404, { error: "not found" });
+  const thumb = await thumbPath(runner.store.root, job);
+  if (!thumb) return json(404, { error: "not found" });
+  const ext = path.extname(thumb).slice(1);
+  const stream = Readable.toWeb(createReadStream(thumb)) as ReadableStream;
+  return new Response(stream, {
+    status: 200,
+    headers: { ...fileHeaders(`image/${ext === "jpg" ? "jpeg" : ext}`, `thumb.${ext}`), "content-length": String((await stat(thumb)).size) },
+  });
 }
 
 export function retry(runner: DownloadRunner, id: string): { status: number; body: unknown } {
@@ -85,10 +150,19 @@ export async function serveContent(
   runner: DownloadRunner,
   id: string,
   rangeHeader: string | null,
+  file?: string | null,
 ): Promise<Response> {
   const job = runner.store.get(id);
   if (!job || !JOB_ID.test(id)) return json(404, { error: "not found" });
-  const filePath = await runner.store.filePath(id);
+  let filePath: string | null;
+  if (file) {
+    // A converted output can be fetched by name — but only names the dir scan
+    // itself reports, so the param can never leave the job dir.
+    const files = await listJobFiles(runner.store.root, job);
+    filePath = files.includes(file) ? path.join(jobDir(runner.store.root, id), file) : null;
+  } else {
+    filePath = await runner.store.filePath(id);
+  }
   if (!filePath) return json(404, { error: "not found" });
 
   const size = (await stat(filePath)).size;

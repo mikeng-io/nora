@@ -5,7 +5,7 @@ import path from "node:path";
 import type { ChildProcess } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertPublicHost, isPrivateAddress, validateBatch, validateSubmissionUrl } from "./validate";
-import { DownloadStore, mediaTypeFor } from "./store";
+import { DownloadStore, listJobFiles, mediaTypeFor, thumbPath } from "./store";
 import { DownloadRunner, sizeToBytes, type RunnerOptions } from "./runner";
 
 vi.mock("server-only", () => ({}));
@@ -522,5 +522,84 @@ describe("DownloadRunner", () => {
     runner2.requeueStored();
     await settle(store2, job.id);
     expect(store2.get(job.id)!.status).toBe("done");
+  });
+});
+
+
+describe("conversion", () => {
+  // ffmpeg fake: writes "converted-bytes" to the last arg (the output path).
+  const spawnFfmpeg = () =>
+    vi.fn((_cmd: string, args: string[]) => {
+      const proc = new EventEmitter() as never;
+      Object.assign(proc as object, {
+        stdout: new EventEmitter(),
+        stderr: new EventEmitter(),
+        kill: vi.fn(),
+      });
+      queueMicrotask(() => {
+        writeFileSync(args[args.length - 1], "converted-bytes");
+        (proc as EventEmitter).emit("close", 0);
+      });
+      return proc as never;
+    }) as never;
+
+  it("converts a done job and the output sits in the job dir", async () => {
+    const { store, runner } = makeRunner({ spawnImpl: spawnFfmpeg() });
+    const job = store.create("https://media.example/v/1", "miles");
+    const d = path.join(dir, "files", job.id);
+    mkdirSync(d, { recursive: true });
+    writeFileSync(path.join(d, "download.mp4"), "media-bytes");
+    store.update(job.id, { status: "done", fileName: "download.mp4", mediaType: "video/mp4" });
+    expect(runner.isConverting(job.id)).toBe(false);
+    const started = runner.convert(job.id, "download.mp4", "mp3");
+    expect(runner.isConverting(job.id)).toBe(true);
+    await started;
+    expect(runner.isConverting(job.id)).toBe(false);
+    expect(existsSync(path.join(d, "download.mp3"))).toBe(true);
+  });
+
+  it("refuses a fileName that escapes the job dir", async () => {
+    const { store, runner } = makeRunner();
+    const job = store.create("https://media.example/v/2", "miles");
+    store.update(job.id, { status: "done", fileName: "download.mp4" });
+    await expect(runner.convert(job.id, "../../etc/passwd", "mp3")).rejects.toThrow("bad file name");
+  });
+});
+
+describe("sweep", () => {
+  it("removes done and failed jobs older than the TTL, keeps fresh and active ones", async () => {
+    const { store, runner } = makeRunner();
+    const old = store.create("https://media.example/old", "miles");
+    store.update(old.id, { status: "done", fileName: "download.mp4" });
+    // update() rewrites updatedAt on every patch, so age the record directly.
+    store.get(old.id)!.updatedAt = new Date(Date.now() - 25 * 3_600_000).toISOString();
+    const fresh = store.create("https://media.example/fresh", "miles");
+    store.update(fresh.id, { status: "done", fileName: "download.mp4" });
+    const active = store.create("https://media.example/act", "miles");
+    store.update(active.id, { status: "downloading" });
+    store.get(active.id)!.updatedAt = new Date(Date.now() - 25 * 3_600_000).toISOString();
+    expect(runner.sweep(24)).toBe(1);
+    expect(store.get(old.id)).toBeNull();
+    expect(store.get(fresh.id)).toBeDefined();
+    expect(store.get(active.id)).toBeDefined();
+  });
+});
+
+describe("listJobFiles / thumbPath", () => {
+  it("lists real outputs, skipping partials and the thumbnail", async () => {
+    const { store } = makeRunner();
+    const job = store.create("https://media.example/v/3", "miles");
+    store.update(job.id, { status: "done", fileName: "download.mp4", mediaType: "video/mp4" });
+    const d = path.join(dir, "files", job.id);
+    mkdirSync(d, { recursive: true });
+    writeFileSync(path.join(d, "download.mp4"), "m");
+    writeFileSync(path.join(d, "download.jpg"), "t");
+    writeFileSync(path.join(d, "download.part"), "p");
+    writeFileSync(path.join(d, "download.f140.m4a"), "x");
+    writeFileSync(path.join(d, "clip.mp3"), "c");
+    const files = await listJobFiles(dir, store.get(job.id)!);
+    expect(files.sort()).toEqual(["clip.mp3", "download.mp4"]);
+    const thumb = await thumbPath(dir, store.get(job.id)!);
+    expect(thumb).toBe(path.join(d, "download.jpg"));
   });
 });

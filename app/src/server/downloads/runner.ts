@@ -28,6 +28,10 @@ export interface RunnerOptions {
   probeImpl?: (id: string, url: string) => Promise<ProbeResult>;
   /** Test seam: the DNS re-check before each run. Defaults to real resolution. */
   lookupImpl?: Lookup;
+  /** ffmpeg binary for post-download conversion. */
+  ffmpegPath?: string;
+  /** Hours before a finished job's files are swept; 0 keeps them forever. */
+  ttlHours?: number;
 }
 
 export interface ProbeResult {
@@ -62,6 +66,11 @@ export class DownloadRunner {
   // counting only spawned children would let pump start the whole queue at once.
   private inFlight = new Set<string>();
   private cancelled = new Set<string>();
+  private converting = new Set<string>();
+
+  isConverting(id: string): boolean {
+    return this.converting.has(id);
+  }
 
   constructor(private opts: RunnerOptions) {
     this.store = opts.store;
@@ -219,6 +228,11 @@ export class DownloadRunner {
       "bv*+ba/b",
       "--merge-output-format",
       "mp4",
+      // Ask yt-dlp for the site's own cover art (jpg) — a frame grab via ffmpeg
+      // is slower and usually uglier than the thumbnail the page advertises.
+      "--write-thumbnail",
+      "--convert-thumbnails",
+      "jpg",
       "--no-playlist",
       "--newline",
       "--no-warnings",
@@ -291,6 +305,94 @@ export class DownloadRunner {
       });
     });
   }
+
+  /** Transcode a finished download with ffmpeg. The output lands beside the
+   * original as <base>.<target>; service.ts decides which targets a kind may
+   * take, this method only refuses work that cannot exist. */
+  convert(id: string, fileName: string, target: string): Promise<void> {
+    if (this.converting.has(id)) return Promise.reject(new Error("already converting"));
+    const dir = jobDir(this.opts.store.root, id);
+    const input = path.join(dir, fileName);
+    if (path.dirname(path.resolve(input)) !== path.resolve(dir)) {
+      return Promise.reject(new Error("bad file name"));
+    }
+    const output = path.join(dir, `${path.basename(fileName, path.extname(fileName))}.${target}`);
+    this.converting.add(id);
+    const spawnImpl = this.opts.spawnImpl ?? spawn;
+    return new Promise<void>((resolve, reject) => {
+      // Codec choices: mp4/mkv remux cheaply only when the source already fits;
+      // default is a real transcode because a mismatched -c copy produces a file
+      // players cannot open (the common "converted but won't play" failure).
+      const args = ffmpegArgs(target);
+      const child = spawnImpl(this.opts.ffmpegPath ?? "ffmpeg", ["-hide_banner", "-y", "-i", input, ...args, output], {
+        stdio: ["ignore", "ignore", "pipe"],
+      });
+      this.running.set(id, child);
+      let stderrTail = "";
+      child.stderr?.on("data", (c: Buffer) => {
+        stderrTail = (stderrTail + c.toString("utf-8")).slice(-2000);
+      });
+      const timer = setTimeout(() => {
+        child.kill("SIGKILL");
+        this.converting.delete(id);
+        reject(new Error(`exceeded the ${Math.round(this.opts.timeoutMs / 60000)} minute limit`));
+      }, this.opts.timeoutMs);
+      timer.unref?.();
+      child.on("error", (err) => {
+        clearTimeout(timer);
+        this.converting.delete(id);
+        this.running.delete(id);
+        reject(new Error(`ffmpeg could not start: ${err.message}`));
+      });
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        this.converting.delete(id);
+        this.running.delete(id);
+        if (this.cancelled.has(id)) return reject(new Error("cancelled"));
+        if (code !== 0) {
+          const tail = stderrTail.trim().split("\n").pop() ?? "";
+          return reject(new Error(tail || `ffmpeg exited with code ${code}`));
+        }
+        resolve();
+      });
+    });
+  }
+
+  /** Remove done/failed jobs older than the retention window. Called on boot
+   * and by the sweep timer; active jobs are never touched. */
+  sweep(ttlHours = this.opts.ttlHours ?? 0): number {
+    if (!ttlHours) return 0;
+    const cutoff = Date.now() - ttlHours * 3_600_000;
+    let removed = 0;
+    for (const job of this.opts.store.list()) {
+      if (job.status === "done" || job.status === "failed") {
+        if (new Date(job.updatedAt).getTime() < cutoff) {
+          this.cancel(job.id);
+          void this.opts.store.remove(job.id);
+          removed++;
+        }
+      }
+    }
+    return removed;
+  }
+}
+
+/** ffmpeg's codec flag for each target. Audio targets drop the video stream;
+ * image targets take a single frame. */
+function ffmpegArgs(target: string): string[] {
+  switch (target) {
+    case "mp3": return ["-vn", "-c:a", "libmp3lame", "-q:a", "3"];
+    case "m4a": return ["-vn", "-c:a", "aac", "-b:a", "192k"];
+    case "opus": return ["-vn", "-c:a", "libopus", "-b:a", "160k"];
+    case "wav": return ["-vn", "-c:a", "pcm_s16le"];
+    case "png": return ["-frames:v", "1"];
+    case "jpg": return ["-frames:v", "1", "-q:v", "2"];
+    case "webp": return ["-frames:v", "1"];
+    case "mp4": return ["-c:v", "libx264", "-preset", "fast", "-crf", "23", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"];
+    case "webm": return ["-c:v", "libvpx-vp9", "-crf", "32", "-b:v", "0", "-c:a", "libopus", "-b:a", "128k"];
+    case "mkv": return ["-c:v", "libx264", "-preset", "fast", "-crf", "23", "-c:a", "aac", "-b:a", "192k"];
+    default: return [];
+  }
 }
 
 // The one runner the process shares. Route handlers come and go (and in dev the
@@ -305,6 +407,8 @@ export interface RunnerEnv {
   YTDLP_TIMEOUT_MS?: string;
   NORA_DOWNLOADS_MAX_BYTES?: string;
   NORA_DOWNLOADS_CONCURRENCY?: string;
+  FFMPEG_PATH?: string;
+  NORA_DOWNLOADS_TTL_HOURS?: string;
 }
 
 export function downloadRunner(env: RunnerEnv = process.env as RunnerEnv): DownloadRunner {
@@ -322,8 +426,15 @@ export function downloadRunner(env: RunnerEnv = process.env as RunnerEnv): Downl
       timeoutMs: Math.max(60_000, Number(env.YTDLP_TIMEOUT_MS ?? 3_600_000) || 3_600_000),
       maxBytes: Math.max(1, Number(env.NORA_DOWNLOADS_MAX_BYTES ?? 5_368_709_120) || 5_368_709_120),
       concurrency: Math.max(1, Math.min(8, Number(env.NORA_DOWNLOADS_CONCURRENCY ?? 2) || 2)),
+      ffmpegPath: env.FFMPEG_PATH ?? "ffmpeg",
+      ttlHours: Math.max(0, Number(env.NORA_DOWNLOADS_TTL_HOURS ?? 24) || 0),
     });
     runner.requeueStored();
+    // Retention sweep: once at boot, then hourly. Operator-asked window is
+    // 24h; NORA_DOWNLOADS_TTL_HOURS=0 keeps files forever.
+    runner.sweep();
+    const t = setInterval(() => runner.sweep(), 3_600_000);
+    t.unref?.();
     g[GLOBAL_KEY] = runner;
   }
   return g[GLOBAL_KEY];

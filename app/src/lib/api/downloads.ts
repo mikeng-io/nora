@@ -26,6 +26,10 @@ export const DownloadJobSchema = z.object({
   submittedBy: z.string(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  files: z.array(z.string()).optional(),
+  hasThumb: z.boolean().optional(),
+  converting: z.boolean().optional(),
+  convertTargets: z.array(z.string()).optional(),
 });
 export type DownloadJob = z.infer<typeof DownloadJobSchema>;
 
@@ -45,8 +49,8 @@ export type SubmitResult = z.infer<typeof SubmitResultSchema>;
 export const fetchDownloads = (signal?: AbortSignal) =>
   apiGet("/downloads", DownloadsListSchema, { signal });
 
-export const downloadContentPath = (id: string) =>
-  `/api/v1/downloads/${encodeURIComponent(id)}/content`;
+export const downloadContentPath = (id: string, file?: string) =>
+  `/api/v1/downloads/${encodeURIComponent(id)}/content${file ? `?file=${encodeURIComponent(file)}` : ""}`;
 
 /** Submit a batch of URLs. A job that failed its validation or already exists is
  * reported in `rejected`, never silently dropped. */
@@ -64,6 +68,13 @@ export async function deleteDownload(id: string): Promise<void> {
 export async function retryDownload(id: string): Promise<void> {
   await mutate(`/downloads/${encodeURIComponent(id)}/retry`, "POST");
 }
+
+export async function convertDownload(id: string, target: string): Promise<void> {
+  await mutate(`/downloads/${encodeURIComponent(id)}/convert`, "POST", { target });
+}
+
+export const downloadThumbnailPath = (id: string) =>
+  `/api/v1/downloads/${encodeURIComponent(id)}/thumbnail`;
 
 async function mutate(path: string, method: "POST" | "DELETE", body?: unknown): Promise<unknown> {
   let res: Response;
