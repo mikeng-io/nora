@@ -163,7 +163,9 @@ export const useDownloads = () =>
     // While anything is queued or moving, poll briskly so the progress bars move;
     // idle, a slow tick keeps a second window honest. No data yet → the slow tick.
     refetchInterval: (query) =>
-      query.state.data?.jobs.some((j) => ACTIVE_DOWNLOAD.includes(j.status)) ? 2 * S : 15 * S,
+      query.state.data?.jobs.some((j) => ACTIVE_DOWNLOAD.includes(j.status) || j.converting)
+        ? 2 * S
+        : 15 * S,
   });
 
 /** One mutation helper: every change invalidates the list so the page always shows
@@ -184,6 +186,14 @@ export const useDeleteDownload = () =>
 
 export const useRetryDownload = () =>
   useDownloadsMutation((id: string) => downloads.retryDownload(id));
+
+export const useConvertDownload = () =>
+  useDownloadsMutation((args: { id: string; target: string }) =>
+    downloads.convertDownload(args.id, args.target),
+  );
+
+// Polling while a conversion runs: the in-memory flag is not in ACTIVE_DOWNLOAD
+// (it is not a status), so active conversion reads through the job's flag.
 
 // ------------------------------------------------------------- documents
 

@@ -447,7 +447,11 @@
       "downloading": "Downloading",
       "done": "Ready",
       "failed": "Failed"
-    }
+    },
+    "convert": "Convert",
+    "convertLabel": "Convert this file",
+    "converting": "Converting…",
+    "ttlHint": "files auto-delete after 24 hours"
   },
   "map": {
     "title": "Where everyone is",
