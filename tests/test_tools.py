@@ -290,7 +290,7 @@ def test_no_tool_asks_the_model_which_conversation_it_is_in(wiring):
     # can read, or a time after now, reads the newest rows exactly as before.
     assert set(
         wiring["tools"]["load_transcript"].tool_spec["inputSchema"]["json"]["properties"]
-    ) == {"limit", "before"}
+    ) == {"limit", "before", "thread"}
     # `reply_to` is the one thing DEC-24 permits that looks like what it
     # forbids. The rule is against a parameter the model must INVENT — a
     # conversation id it cannot know, a limit nothing downstream honours
@@ -382,7 +382,7 @@ def test_strands_drops_an_out_of_schema_argument_instead_of_rejecting_the_call(w
                         "text": "hi"}, {"text": "hi", "reply_to": None, "more": False,
                                        "heads_up": False}),
         ("load_transcript", {"conversation_id": "gEVIL", "limit": 5},
-         {"limit": 5, "before": None}),
+         {"limit": 5, "before": None, "thread": None}),
     ):
         assert wiring["tools"][name]._metadata.validate_input(supplied) == expected
 

@@ -19,6 +19,7 @@ from .notes import Note
 from .profile import ProfileView
 from .self_presence import Presence
 from .standing import Standing
+from .standing_ledger import LedgerEntry
 from .subagents_context import SubagentsView
 
 
@@ -522,6 +523,7 @@ class TagContext:
     # `render_standing(None)` emits no block for exactly that reason. With
     # `[standing] enabled = false` it stays `None` on every turn.
     standing: Standing | None = None
+    ledger: tuple[LedgerEntry, ...] = ()
     # The room's CULTURE head — an account of what this room is and why it
     # became so. Beside `standing` because both are
     # room-scoped and both are her own output, and apart from it on the one

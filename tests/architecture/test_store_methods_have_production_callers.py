@@ -281,7 +281,7 @@ _STORE_MODULES: frozenset[str] = frozenset(
         "snapshot_at.py", "social_stream.py",
         "stimuli.py",
         "source_health.py", "tag_debounce.py",
-        "standing.py", "summons.py", "tag_traces.py", "tool_call_log.py",
+        "standing_ledger.py", "standing.py", "summons.py", "tag_traces.py", "tool_call_log.py",
         "video_readings.py",
     }
 )

@@ -148,8 +148,9 @@ two room paragraphs that each know half. It replaces the unit sections
 following`, `What I am watching for`, `I owe`), which map onto threads,
 decisions and commitments.
 
-An entry moves from room to unit scope when a second room touches it; the move
-is a revision, so its history shows when and why.
+An entry moves from room to unit scope only when the writer explicitly sets
+`scope` in a revision. A second room touching it never promotes it. The move
+is recorded in its revision history (step-2 operator ruling).
 
 ## 7. The operations
 

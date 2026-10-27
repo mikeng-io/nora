@@ -80,6 +80,7 @@ from nora.agent.prefill import (
 )
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
+from nora.agent.standing_ledger import read_ledger
 from nora.agent.tools import turn_occasion
 from nora.doctrine.loader import DoctrineStore
 from nora.domain import audience as audience_names
@@ -147,6 +148,7 @@ from nora.domain.standing import (
     DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
     Standing,
 )
+from nora.domain.standing_ledger import LedgerEntry, StandingLedger
 from nora.domain.subagent import written_title
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.domain.turn_deadline import turn_deadline
@@ -578,6 +580,7 @@ class FirePath:
         reasoning_strip_store: Any = None,
         event_registry: Mapping[str, EventFactory] | None = None,
         standing: StandingStore | None = None,
+        ledger: StandingLedger | None = None,
         culture: CultureReader | None = None,
         lessons: ActiveLessons | None = None,
         standing_store_timeout_seconds: float = DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
@@ -628,6 +631,7 @@ class FirePath:
         # the `TagTrace` that `AgentRunner.invoke` hands back, so there is
         # nothing to fold.
         self._standing = standing
+        self._ledger_store = ledger
         self._tag_trace_store = tag_trace_store
         # THE CULTURE HEAD, read on EVERY fire occasion (DEC-207) — see
         # `_read_culture`.
@@ -940,7 +944,7 @@ class FirePath:
             character,
             unit_culture,
             self_account,
-            (lessons, memos),
+            (lessons, memos, ledger),
         ) = await asyncio.gather(
             asyncio.gather(
                 self._read_standing(occasion),
@@ -954,7 +958,8 @@ class FirePath:
             self._read_character(occasion, ref, transcript),
             self._read_unit_culture(occasion),
             self._read_self_account(occasion),
-            asyncio.gather(self._read_lessons(occasion), self._read_memos(occasion, unit)),
+            asyncio.gather(self._read_lessons(occasion), self._read_memos(occasion, unit),
+                           self._read_ledger(occasion, ref)),
         )
         return TagContext(
             tag_id=uuid.uuid4().hex,
@@ -965,7 +970,7 @@ class FirePath:
             started_at=time.perf_counter(),
             people_in_window=people,
             profiles=profiles,
-            standing=standing,
+            standing=standing, ledger=ledger,
             culture=culture,
             character=character,
             unit_culture=unit_culture,
@@ -1559,6 +1564,23 @@ class FirePath:
             if view is not None:
                 views.append(view)
         return tuple(views)
+
+    async def _read_ledger(self, occasion: Event, ref: PersonRef | None) -> tuple[LedgerEntry, ...]:
+        if self._ledger_store is None or self._lineage is None:
+            return ()
+        room = Room(platform=occasion.platform, conversation_id=occasion.conversation_id,
+                    roster_source=self._rosters.get(occasion.platform), persons=self._persons,
+                    tagger=ref, self_ids=self._profile_self_ids)
+        target = self._lineage.render_room(platform=occasion.platform,
+                                           conversation_id=occasion.conversation_id)
+        try:
+            return await asyncio.wait_for(read_ledger(self._ledger_store, target, room),
+                                          timeout=self._standing_store_timeout_seconds)
+        except Exception:
+            log.exception("fire ledger context read failed")
+            self._metrics.inc(
+                "nora_errors_total", stage="standing_ledger", platform=occasion.platform)
+            return ()
 
     async def _read_standing(self, occasion: Event) -> Standing | None:
         """This conversation's position, or `None`.

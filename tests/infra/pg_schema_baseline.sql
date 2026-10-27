@@ -158,6 +158,12 @@ $$;
 );
 );
 );
+);
+);
+);
+);
+);
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -289,8 +295,14 @@ ADD CONSTRAINT social_item_state_pkey PRIMARY KEY (id);
 ADD CONSTRAINT social_perception_pkey PRIMARY KEY (id);
 ADD CONSTRAINT social_poll_pkey PRIMARY KEY (id);
 ADD CONSTRAINT source_health_pkey PRIMARY KEY (id);
+ADD CONSTRAINT standing_commitment_pkey PRIMARY KEY (id);
+ADD CONSTRAINT standing_commitment_revision_pkey PRIMARY KEY (id, revision);
+ADD CONSTRAINT standing_decision_pkey PRIMARY KEY (id);
+ADD CONSTRAINT standing_decision_revision_pkey PRIMARY KEY (id, revision);
 ADD CONSTRAINT standing_pkey PRIMARY KEY (platform, conversation_id);
 ADD CONSTRAINT standing_revision_pkey PRIMARY KEY (id);
+ADD CONSTRAINT standing_thread_pkey PRIMARY KEY (id);
+ADD CONSTRAINT standing_thread_revision_pkey PRIMARY KEY (id, revision);
 ADD CONSTRAINT sticker_index_pkey PRIMARY KEY (platform, fetch_token);
 ADD CONSTRAINT stimulus_pkey PRIMARY KEY (id);
 ADD CONSTRAINT stimulus_retraction_pkey PRIMARY KEY (id);
@@ -449,7 +461,13 @@ ALTER TABLE ONLY public.social_perception
 ALTER TABLE ONLY public.social_poll
 ALTER TABLE ONLY public.source_health
 ALTER TABLE ONLY public.standing
+ALTER TABLE ONLY public.standing_commitment
+ALTER TABLE ONLY public.standing_commitment_revision
+ALTER TABLE ONLY public.standing_decision
+ALTER TABLE ONLY public.standing_decision_revision
 ALTER TABLE ONLY public.standing_revision
+ALTER TABLE ONLY public.standing_thread
+ALTER TABLE ONLY public.standing_thread_revision
 ALTER TABLE ONLY public.sticker_index
 ALTER TABLE ONLY public.stimulus
 ALTER TABLE ONLY public.stimulus_retraction
@@ -784,7 +802,43 @@ CONSTRAINT room_lexeme_state_check CHECK ((state = ANY (ARRAY['live'::text, 'fad
 CONSTRAINT row_history_op_is_known_check CHECK ((op = ANY (ARRAY['backfill'::text, 'insert'::text, 'update'::text, 'delete'::text]))),
 CONSTRAINT row_history_supersession_is_whole_check CHECK (((superseded_at IS NULL) = (superseded_by IS NULL)))
 CONSTRAINT standing_body_fits_the_ceiling_check CHECK (((length(btrim(body)) > 0) AND (length(body) <= 4000))),
+CONSTRAINT standing_commitment_confidence_is_a_level_check CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT standing_commitment_lineage_shape_check CHECK ((jsonb_typeof(lineage) = 'array'::text)),
+CONSTRAINT standing_commitment_parent_check CHECK ((((revision = 1) AND (parent_revision IS NULL)) OR ((revision > 1) AND (parent_revision = (revision - 1))))),
+CONSTRAINT standing_commitment_reasoning_is_a_mode_check CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['computed'::text, 'told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text, 'said'::text])))),
+CONSTRAINT standing_commitment_revision_check CHECK ((revision > 0)),
+CONSTRAINT standing_commitment_revision_confidence_is_a_level_check CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT standing_commitment_revision_lineage_shape_check CHECK ((jsonb_typeof(lineage) = 'array'::text)),
+CONSTRAINT standing_commitment_revision_parent_check CHECK ((((revision = 1) AND (parent_revision IS NULL)) OR ((revision > 1) AND (parent_revision = (revision - 1))))),
+CONSTRAINT standing_commitment_revision_reasoning_is_a_mode_check CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['computed'::text, 'told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text, 'said'::text])))),
+CONSTRAINT standing_commitment_revision_revision_check CHECK ((revision > 0)),
+CONSTRAINT standing_commitment_revision_scope_check CHECK ((scope = ANY (ARRAY['room'::text, 'unit'::text]))),
+CONSTRAINT standing_commitment_revision_status_check CHECK ((status = ANY (ARRAY['open'::text, 'done'::text, 'released'::text]))),
+CONSTRAINT standing_commitment_revision_subject_check CHECK (((length(btrim(subject)) > 0) AND (POSITION((chr(10)) IN (subject)) = 0))),
+CONSTRAINT standing_commitment_revision_unit_check CHECK ((length(btrim(unit)) > 0))
+CONSTRAINT standing_commitment_scope_check CHECK ((scope = ANY (ARRAY['room'::text, 'unit'::text]))),
+CONSTRAINT standing_commitment_status_check CHECK ((status = ANY (ARRAY['open'::text, 'done'::text, 'released'::text]))),
+CONSTRAINT standing_commitment_subject_check CHECK (((length(btrim(subject)) > 0) AND (POSITION((chr(10)) IN (subject)) = 0))),
+CONSTRAINT standing_commitment_unit_check CHECK ((length(btrim(unit)) > 0))
 CONSTRAINT standing_confidence_is_a_level_check CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT standing_decision_confidence_is_a_level_check CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT standing_decision_lineage_shape_check CHECK ((jsonb_typeof(lineage) = 'array'::text)),
+CONSTRAINT standing_decision_parent_check CHECK ((((revision = 1) AND (parent_revision IS NULL)) OR ((revision > 1) AND (parent_revision = (revision - 1))))),
+CONSTRAINT standing_decision_reasoning_is_a_mode_check CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['computed'::text, 'told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text, 'said'::text])))),
+CONSTRAINT standing_decision_revision_check CHECK ((revision > 0)),
+CONSTRAINT standing_decision_revision_confidence_is_a_level_check CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT standing_decision_revision_lineage_shape_check CHECK ((jsonb_typeof(lineage) = 'array'::text)),
+CONSTRAINT standing_decision_revision_parent_check CHECK ((((revision = 1) AND (parent_revision IS NULL)) OR ((revision > 1) AND (parent_revision = (revision - 1))))),
+CONSTRAINT standing_decision_revision_reasoning_is_a_mode_check CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['computed'::text, 'told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text, 'said'::text])))),
+CONSTRAINT standing_decision_revision_revision_check CHECK ((revision > 0)),
+CONSTRAINT standing_decision_revision_scope_check CHECK ((scope = ANY (ARRAY['room'::text, 'unit'::text]))),
+CONSTRAINT standing_decision_revision_status_check CHECK ((status = ANY (ARRAY['open'::text, 'closed'::text, 'dropped'::text]))),
+CONSTRAINT standing_decision_revision_subject_check CHECK (((length(btrim(subject)) > 0) AND (POSITION((chr(10)) IN (subject)) = 0))),
+CONSTRAINT standing_decision_revision_unit_check CHECK ((length(btrim(unit)) > 0))
+CONSTRAINT standing_decision_scope_check CHECK ((scope = ANY (ARRAY['room'::text, 'unit'::text]))),
+CONSTRAINT standing_decision_status_check CHECK ((status = ANY (ARRAY['open'::text, 'closed'::text, 'dropped'::text]))),
+CONSTRAINT standing_decision_subject_check CHECK (((length(btrim(subject)) > 0) AND (POSITION((chr(10)) IN (subject)) = 0))),
+CONSTRAINT standing_decision_unit_check CHECK ((length(btrim(unit)) > 0))
 CONSTRAINT standing_fold_count_is_not_negative_check CHECK ((fold_count >= 0)),
 CONSTRAINT standing_lineage_shape_check CHECK ((jsonb_typeof(lineage) = 'object'::text)),
 CONSTRAINT standing_reasoning_is_a_mode_check CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['computed'::text, 'told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text, 'said'::text])))),
@@ -797,6 +851,24 @@ CONSTRAINT standing_revision_sections_are_not_blank_when_given_check CHECK ((((h
 CONSTRAINT standing_revision_source_check CHECK ((source = ANY (ARRAY['fold'::text, 'operator'::text, 'cognition'::text]))),
 CONSTRAINT standing_revision_working_set_fits_the_ceiling_check CHECK (((jsonb_array_length(working_set) <= 20) AND (octet_length((working_set)::text) <= 2400)))
 CONSTRAINT standing_sections_are_not_blank_when_given_check CHECK ((((hold_open IS NULL) OR (length(btrim(hold_open)) > 0)) AND ((i_owe IS NULL) OR (length(btrim(i_owe)) > 0)))),
+CONSTRAINT standing_thread_confidence_is_a_level_check CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT standing_thread_lineage_shape_check CHECK ((jsonb_typeof(lineage) = 'array'::text)),
+CONSTRAINT standing_thread_parent_check CHECK ((((revision = 1) AND (parent_revision IS NULL)) OR ((revision > 1) AND (parent_revision = (revision - 1))))),
+CONSTRAINT standing_thread_reasoning_is_a_mode_check CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['computed'::text, 'told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text, 'said'::text])))),
+CONSTRAINT standing_thread_revision_check CHECK ((revision > 0)),
+CONSTRAINT standing_thread_revision_confidence_is_a_level_check CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT standing_thread_revision_lineage_shape_check CHECK ((jsonb_typeof(lineage) = 'array'::text)),
+CONSTRAINT standing_thread_revision_parent_check CHECK ((((revision = 1) AND (parent_revision IS NULL)) OR ((revision > 1) AND (parent_revision = (revision - 1))))),
+CONSTRAINT standing_thread_revision_reasoning_is_a_mode_check CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['computed'::text, 'told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text, 'said'::text])))),
+CONSTRAINT standing_thread_revision_revision_check CHECK ((revision > 0)),
+CONSTRAINT standing_thread_revision_scope_check CHECK ((scope = ANY (ARRAY['room'::text, 'unit'::text]))),
+CONSTRAINT standing_thread_revision_status_check CHECK ((status = 'open'::text)),
+CONSTRAINT standing_thread_revision_subject_check CHECK (((length(btrim(topic)) > 0) AND (POSITION((chr(10)) IN (topic)) = 0))),
+CONSTRAINT standing_thread_revision_unit_check CHECK ((length(btrim(unit)) > 0))
+CONSTRAINT standing_thread_scope_check CHECK ((scope = ANY (ARRAY['room'::text, 'unit'::text]))),
+CONSTRAINT standing_thread_status_check CHECK ((status = 'open'::text)),
+CONSTRAINT standing_thread_subject_check CHECK (((length(btrim(topic)) > 0) AND (POSITION((chr(10)) IN (topic)) = 0))),
+CONSTRAINT standing_thread_unit_check CHECK ((length(btrim(unit)) > 0))
 CONSTRAINT standing_working_set_fits_the_ceiling_check CHECK (((jsonb_array_length(working_set) <= 20) AND (octet_length((working_set)::text) <= 2400)))
 CONSTRAINT tag_trace_outcome_check CHECK ((outcome = ANY (ARRAY['send_reply'::text, 'recovered'::text, 'silent'::text, 'vetoed'::text, 'timeout'::text, 'llm_error'::text])))
 CONSTRAINT turn_verdict_grounded_has_no_unsupported_check CHECK ((NOT (grounded AND (cardinality(unsupported) > 0)))),
@@ -896,7 +968,13 @@ CREATE INDEX idx_social_perception_at ON public.social_perception USING btree (a
 CREATE INDEX idx_social_perception_item ON public.social_perception USING btree (network, item_id, at);
 CREATE INDEX idx_social_poll_person ON public.social_poll USING btree (network, person, recorded_at);
 CREATE INDEX idx_source_health_source_at ON public.source_health USING btree (source, at_ms);
+CREATE INDEX idx_standing_commitment_revision_scope ON public.standing_commitment_revision USING btree (unit, scope, platform, conversation_id);
+CREATE INDEX idx_standing_commitment_scope ON public.standing_commitment USING btree (unit, scope, platform, conversation_id);
+CREATE INDEX idx_standing_decision_revision_scope ON public.standing_decision_revision USING btree (unit, scope, platform, conversation_id);
+CREATE INDEX idx_standing_decision_scope ON public.standing_decision USING btree (unit, scope, platform, conversation_id);
 CREATE INDEX idx_standing_revision_room_updated ON public.standing_revision USING btree (platform, conversation_id, updated_at DESC, id DESC);
+CREATE INDEX idx_standing_thread_revision_scope ON public.standing_thread_revision USING btree (unit, scope, platform, conversation_id);
+CREATE INDEX idx_standing_thread_scope ON public.standing_thread USING btree (unit, scope, platform, conversation_id);
 CREATE INDEX idx_stimulus_unit_due ON public.stimulus USING btree (unit, due_ms) WHERE (due_ms IS NOT NULL);
 CREATE INDEX idx_stimulus_unit_id ON public.stimulus USING btree (unit, id);
 CREATE INDEX idx_stimulus_unit_message_recorded ON public.stimulus USING btree (unit, recorded_at) WHERE (kind = 'message'::text);
@@ -1006,7 +1084,13 @@ CREATE TABLE public.social_perception (
 CREATE TABLE public.social_poll (
 CREATE TABLE public.source_health (
 CREATE TABLE public.standing (
+CREATE TABLE public.standing_commitment (
+CREATE TABLE public.standing_commitment_revision (
+CREATE TABLE public.standing_decision (
+CREATE TABLE public.standing_decision_revision (
 CREATE TABLE public.standing_revision (
+CREATE TABLE public.standing_thread (
+CREATE TABLE public.standing_thread_revision (
 CREATE TABLE public.sticker_index (
 CREATE TABLE public.stimulus (
 CREATE TABLE public.stimulus_retraction (
@@ -1064,6 +1148,9 @@ CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.rollu
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.rollup_response FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.rollup_tie FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.standing FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('platform', 'conversation_id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.standing_commitment FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.standing_decision FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.standing_thread FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.sticker_index FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('platform', 'fetch_token');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.tag_debounce_state FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('platform', 'conversation_id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.version_announcements FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('version', 'platform', 'conversation_id');
@@ -1109,6 +1196,9 @@ CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.rollup_outing
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.rollup_response FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.rollup_tie FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.standing FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.standing_commitment FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.standing_decision FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.standing_thread FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.sticker_index FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.tag_debounce_state FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.version_announcements FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
@@ -1449,6 +1539,12 @@ as_of bigint,
 as_of bigint,
 as_of bigint,
 as_of bigint,
+as_of bigint,
+as_of bigint,
+as_of bigint,
+as_of bigint,
+as_of bigint,
+as_of bigint,
 as_of_ms bigint NOT NULL,
 as_of_ms bigint NOT NULL,
 as_of_ms bigint NOT NULL,
@@ -1480,6 +1576,10 @@ avg_speed_kmh double precision NOT NULL,
 backend_job_id text NOT NULL,
 battery double precision,
 blob_key text,
+body text NOT NULL,
+body text NOT NULL,
+body text NOT NULL,
+body text NOT NULL,
 body text NOT NULL,
 body text NOT NULL,
 body text NOT NULL,
@@ -1534,6 +1634,12 @@ citations text[] NOT NULL,
 city text
 city text
 claim text NOT NULL,
+closed_at bigint,
+closed_at bigint,
+closed_at bigint,
+closed_at bigint,
+closed_at bigint,
+closed_at bigint,
 closing_condition text NOT NULL,
 closing_condition text,
 code_hash text NOT NULL,
@@ -1546,6 +1652,12 @@ comment_id text,
 comments bigint,
 completed_at timestamp with time zone,
 confidence double precision NOT NULL,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
 confidence text,
 confidence text,
 confidence text,
@@ -1567,6 +1679,12 @@ context text NOT NULL,
 context_ids integer[] NOT NULL,
 context_sha256 text DEFAULT ''::text NOT NULL,
 continuation_calls integer NOT NULL,
+conversation_id text NOT NULL,
+conversation_id text NOT NULL,
+conversation_id text NOT NULL,
+conversation_id text NOT NULL,
+conversation_id text NOT NULL,
+conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
@@ -1630,6 +1748,8 @@ cues text[] DEFAULT '{}'::text[] CONSTRAINT signal_cues_not_null NOT NULL,
 culture_key text NOT NULL,
 cursor text,
 cut_cooldown integer DEFAULT 0 NOT NULL,
+decision_ids text[] NOT NULL,
+decision_ids text[] NOT NULL,
 deleted_at timestamp with time zone NOT NULL,
 delivery_status text DEFAULT 'pending'::text NOT NULL,
 deriver_name text NOT NULL,
@@ -1664,6 +1784,8 @@ document_id uuid NOT NULL,
 draws_on uuid[] DEFAULT '{}'::uuid[] NOT NULL,
 dst_id text NOT NULL,
 dst_kind text NOT NULL,
+due_at bigint,
+due_at bigint,
 due_at timestamp with time zone DEFAULT now() NOT NULL,
 due_at timestamp with time zone NOT NULL,
 due_ms bigint,
@@ -1703,6 +1825,12 @@ event_id uuid,
 examples jsonb DEFAULT '[]'::jsonb NOT NULL,
 examples jsonb DEFAULT '[]'::jsonb NOT NULL,
 exchange_basis text[] DEFAULT '{}'::text[] NOT NULL,
+exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
+exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
+exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
+exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
+exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
+exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
 exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
 exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
 exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
@@ -1815,6 +1943,12 @@ id integer NOT NULL,
 id integer NOT NULL,
 id text NOT NULL,
 id text NOT NULL,
+id text NOT NULL,
+id text NOT NULL,
+id text NOT NULL,
+id text NOT NULL,
+id text NOT NULL,
+id text NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -1904,10 +2038,18 @@ last_fix_id integer DEFAULT 0 NOT NULL,
 last_folded_row_id bigint,
 last_folded_row_id bigint,
 last_message_id bigint DEFAULT 0 NOT NULL,
+last_moved_at bigint,
+last_moved_at bigint,
 last_played_locator text,
 last_played_source text,
 last_played_title text,
 last_rendered_at bigint NOT NULL,
+last_revised_at bigint NOT NULL,
+last_revised_at bigint NOT NULL,
+last_revised_at bigint NOT NULL,
+last_revised_at bigint NOT NULL,
+last_revised_at bigint NOT NULL,
+last_revised_at bigint NOT NULL,
 last_seen timestamp with time zone DEFAULT now() NOT NULL,
 last_seen_at bigint NOT NULL,
 last_seen_at bigint NOT NULL,
@@ -1935,6 +2077,12 @@ lexeme_basis text[] DEFAULT '{}'::text[] NOT NULL,
 likes bigint,
 likes_hidden boolean NOT NULL,
 line_id uuid,
+lineage jsonb DEFAULT '[]'::jsonb NOT NULL,
+lineage jsonb DEFAULT '[]'::jsonb NOT NULL,
+lineage jsonb DEFAULT '[]'::jsonb NOT NULL,
+lineage jsonb DEFAULT '[]'::jsonb NOT NULL,
+lineage jsonb DEFAULT '[]'::jsonb NOT NULL,
+lineage jsonb DEFAULT '[]'::jsonb NOT NULL,
 lineage jsonb DEFAULT '[]'::jsonb NOT NULL,
 lineage jsonb DEFAULT '[]'::jsonb NOT NULL,
 lineage jsonb DEFAULT '[]'::jsonb NOT NULL,
@@ -1967,6 +2115,8 @@ local_date text NOT NULL,
 location boolean DEFAULT false NOT NULL,
 location text,
 logical_now_ms bigint NOT NULL,
+made_at bigint NOT NULL,
+made_at bigint NOT NULL,
 manifest_status text NOT NULL,
 mean_arrival_minute double precision,
 mean_departure_minute double precision,
@@ -1998,6 +2148,8 @@ message_id integer NOT NULL,
 message_id integer,
 message_id text NOT NULL,
 message_ids integer[] DEFAULT '{}'::integer[] NOT NULL,
+message_ids integer[] NOT NULL,
+message_ids integer[] NOT NULL,
 message_ids integer[] NOT NULL,
 messages integer NOT NULL,
 messages jsonb NOT NULL,
@@ -2039,8 +2191,12 @@ new_key := new_key || jsonb_build_object(col, new_image -> col);
 new_key jsonb := '{}'::jsonb;
 note text,
 note_id text,
+note_id text,
+note_id text,
 note_id uuid NOT NULL,
 note_id uuid NOT NULL,
+note_ids text[] NOT NULL,
+note_ids text[] NOT NULL,
 notify_channel_id text NOT NULL,
 now_playing_locator text,
 now_playing_source text,
@@ -2069,6 +2225,10 @@ op text NOT NULL,
 open integer DEFAULT 0 NOT NULL
 open integer DEFAULT 0 NOT NULL,
 open_stay jsonb,
+opened_at bigint NOT NULL,
+opened_at bigint NOT NULL,
+opened_at bigint NOT NULL,
+opened_at bigint NOT NULL,
 operation_id uuid NOT NULL,
 operation_id uuid NOT NULL,
 ordinal integer NOT NULL,
@@ -2093,9 +2253,17 @@ outings integer NOT NULL,
 output_ref jsonb DEFAULT '{}'::jsonb NOT NULL,
 output_tokens bigint,
 owed_since timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+owed_to text[] NOT NULL,
+owed_to text[] NOT NULL,
 p50_kmh double precision NOT NULL,
 p90_kmh double precision NOT NULL,
 params_sha256 text NOT NULL,
+parent_revision integer,
+parent_revision integer,
+parent_revision integer,
+parent_revision integer,
+parent_revision integer,
+parent_revision integer,
 parent_revision_id uuid,
 parent_revision_id uuid,
 parent_revision_id uuid,
@@ -2143,6 +2311,12 @@ place_label text,
 place_label text,
 platform text DEFAULT ''::text NOT NULL,
 platform text DEFAULT ''::text NOT NULL,
+platform text NOT NULL,
+platform text NOT NULL,
+platform text NOT NULL,
+platform text NOT NULL,
+platform text NOT NULL,
+platform text NOT NULL,
 platform text NOT NULL,
 platform text NOT NULL,
 platform text NOT NULL,
@@ -2216,6 +2390,12 @@ reasoning text,
 reasoning text,
 reasoning text,
 reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
 reasoning_effort text NOT NULL,
 recognition_score double precision DEFAULT 0 NOT NULL,
 recognition_score double precision DEFAULT 0 NOT NULL,
@@ -2228,6 +2408,9 @@ recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
+recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
@@ -2316,6 +2499,12 @@ retired_by text,
 revised boolean DEFAULT false NOT NULL,
 revision integer DEFAULT 0 NOT NULL,
 revision integer NOT NULL,
+revision integer NOT NULL,
+revision integer NOT NULL,
+revision integer NOT NULL,
+revision integer NOT NULL,
+revision integer NOT NULL,
+revision integer NOT NULL,
 revisit_at bigint,
 rooms jsonb NOT NULL,
 row_key jsonb NOT NULL,
@@ -2328,6 +2517,12 @@ saved_place_id text,
 saved_place_id text,
 saved_place_id text,
 scope text DEFAULT ''::text NOT NULL,
+scope text NOT NULL,
+scope text NOT NULL,
+scope text NOT NULL,
+scope text NOT NULL,
+scope text NOT NULL,
+scope text NOT NULL,
 scope text NOT NULL,
 scope text NOT NULL,
 scope text NOT NULL,
@@ -2395,6 +2590,8 @@ source_read_revision text
 source_revision text,
 source_url text,
 span_id text NOT NULL,
+spans jsonb NOT NULL,
+spans jsonb NOT NULL,
 spec jsonb NOT NULL,
 speed_kmh double precision
 src_id text NOT NULL,
@@ -2429,6 +2626,12 @@ status text NOT NULL,
 status text NOT NULL,
 status text NOT NULL,
 status text NOT NULL,
+status text NOT NULL,
+status text NOT NULL,
+status text NOT NULL,
+status text NOT NULL,
+status text NOT NULL,
+status text NOT NULL,
 status text,
 stay_count integer NOT NULL,
 stay_ms bigint NOT NULL,
@@ -2444,6 +2647,10 @@ strike integer NOT NULL,
 strikes integer DEFAULT 0 NOT NULL,
 strip_calls integer NOT NULL,
 stripped_blocks integer NOT NULL,
+subject text NOT NULL,
+subject text NOT NULL,
+subject text NOT NULL,
+subject text NOT NULL,
 subject_id text NOT NULL,
 subject_id text NOT NULL,
 subject_id text NOT NULL,
@@ -2508,6 +2715,8 @@ tool text NOT NULL,
 tool_input jsonb NOT NULL,
 tool_name text NOT NULL,
 tool_result jsonb NOT NULL,
+topic text NOT NULL,
+topic text NOT NULL,
 total_clips_count integer,
 trace_id text NOT NULL,
 trace_id text,
@@ -2527,6 +2736,12 @@ turn_id bigint NOT NULL,
 uncertainty text NOT NULL,
 unit text CONSTRAINT signal_unit_not_null NOT NULL,
 unit text DEFAULT ''::text NOT NULL,
+unit text NOT NULL,
+unit text NOT NULL,
+unit text NOT NULL,
+unit text NOT NULL,
+unit text NOT NULL,
+unit text NOT NULL,
 unit text NOT NULL,
 unit text NOT NULL,
 unit text NOT NULL,

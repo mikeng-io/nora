@@ -309,21 +309,21 @@ def test_an_adaptor_reaching_past_the_ceiling_refuses_to_start():
     assert "send_reply" in str(exc.value)
 
 
-def test_no_adaptor_may_hold_the_cognition_sessions_two_reads_however_it_derived_them():
-    """A grant DERIVED from the read-only ceiling (`granted_tools`) would swallow
-    `rollup_read` and `standing_read` silently. Both are
-    inside the ceiling, so only a check on the tools themselves refuses them,
-    at startup and at every run, granted a home room or not."""
-    ceiling = frozenset({"now", "rollup_read", "standing_read"})
-    adaptor = _Adaptor(sink=_Sink(), tools=frozenset({"now", "rollup_read", "standing_read"}))
+def test_no_adaptor_may_hold_reads_reserved_for_cognition():
+    """A derived read ceiling must still refuse the reads reserved for Cognition."""
+    reserved = frozenset({"rollup_read", "character_read", "social_read"})
+    ceiling = reserved | {"now", "standing_read"}
+    adaptor = _Adaptor(sink=_Sink(), tools=reserved | {"now"})
 
     for grant in (AdaptorGrant(), AdaptorGrant(home_room=True)):
-        (fault,) = tool_subset_faults(adaptor, ceiling=ceiling, grant=grant)
-        assert "rollup_read, standing_read" in fault and "Cognition" in fault
+        faults = tool_subset_faults(adaptor, ceiling=ceiling, grant=grant)
+        assert len(faults) == 1
+        assert all(name in faults[0] for name in reserved) and "Cognition" in faults[0]
     with pytest.raises(AdaptorToolError):
         verify_tool_subsets([adaptor], tools=_ToolSource(ceiling=ceiling))
     assert tool_subset_faults(
-        _Adaptor(sink=_Sink(), tools=frozenset({"now"})), ceiling=ceiling,
+        _Adaptor(sink=_Sink(), tools=frozenset({"now", "standing_read"})),
+        ceiling=ceiling, grant=AdaptorGrant(home_room=True),
     ) == ()
 
 

@@ -122,6 +122,12 @@ wakes the Lessons adaptor to re-evidence or retire it
 
 ## 5. Standing
 
+Room and unit Standing move to the decisions, commitments and threads in
+[standing-ledger 20](../standing-ledger/20-the-ledger.md). Migration step 2
+adds that ledger beside the paragraph; steps 3 and 4 switch the writers and
+retire the old sections. Person Standing below is unchanged.
+
+
 | subject | sections |
 |---|---|
 | **room** | `Where it stands` (her position, required), `I hold open`, `I owe`, `Found, not yet given` (today's working set; code ages lines out after 48 hours) |

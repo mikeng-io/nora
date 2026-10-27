@@ -224,7 +224,7 @@ def test_migration_up_down_keeps_one_head_and_legacy_rows(pg_url):
         assert conn.execute(sa.select(PROFILE_LINE.c.text)).scalar_one() == "legacy prose"
     sync.dispose()
     from alembic.script import ScriptDirectory
-    assert ScriptDirectory.from_config(cfg).get_heads() == ["0132_turn_records"]
+    assert ScriptDirectory.from_config(cfg).get_heads() == ["0133_standing_ledger"]
 
 
 async def test_coordinate_input_is_refused_before_any_model_can_read_it(env):

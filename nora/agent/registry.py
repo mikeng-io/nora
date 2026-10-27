@@ -31,6 +31,8 @@ from strands.tools.decorator import FunctionToolMetadata
 from strands.types._events import ToolResultEvent
 from strands.types.tools import AgentTool
 
+from nora.domain.standing_ledger import StandingLedger
+
 from ..domain.computer import ComputerToolSettings
 from ..domain.computer_events import ComputerEventStore
 from ..domain.computer_exports import ComputerExportStore
@@ -323,6 +325,7 @@ class ToolRegistry:
         # withheld from every surface while its read is not wired.
         rollup: RollupReadSource | None = None,
         standing_head: StandingHeadSource | None = None,
+        ledger: StandingLedger | None = None,
         # `character_read`'s culture store (`[culture] enabled`): `None` withholds it.
         culture: CultureReader | None = None,
         # `social_read`'s read of the social stream's Record: `None` withholds it.
@@ -368,6 +371,7 @@ class ToolRegistry:
         self._lineage = lineage
         self._rollup = rollup
         self._standing_head = standing_head
+        self._ledger = ledger
         self._culture = culture
         self._social_items = social_items
         # Tools no turn is offered in this process: `record_query` without its
@@ -1144,7 +1148,7 @@ class ToolRegistry:
             profile=self._profile,
             lineage=self._lineage,
             rollup=self._rollup,
-            standing_head=self._standing_head,
+            standing_head=self._standing_head, ledger=self._ledger,
             culture=self._culture,
             profile_read=self._profile_read,
             social_items=self._social_items,
