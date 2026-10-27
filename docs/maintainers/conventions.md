@@ -98,8 +98,23 @@ is a finding about the evidence and must be corrected before claiming proof.
 
 Not-yet-built design ideas discussed in a session get **filed as a GitHub
 issue** on `mikeng-io/nora`, not left in a chat transcript or a memory file.
-Scoping, comments and status live on the issue. **File through an issue form**
+Scope and task-specific deltas live on the issue; evidence comments link the run
+or review record. Project status is the scheduling view of that same issue.
+**File through an issue form**
 (`.github/ISSUE_TEMPLATE/`); blank issues are disabled.
+
+[ORCHESTRATION.md](../../ORCHESTRATION.md) owns engineering assignment and artifact
+boundaries. Design docs own architecture, rationale, requirements and acceptance,
+with links showing delivery coverage. Each issue owns one bounded outcome,
+scope/non-goals/delta and acceptance, or references revisioned design acceptance
+sections. “What's specified” below is an anchor plus the task's delta, never a
+copy of the full design. Project cards carry scheduling metadata and links:
+issue, status, priority, required execution/review tiers, run/evidence/unblock
+references. They are views of their issues, not separate task bodies. Keep
+assignees, milestones, relationships and Development links native. Run/review
+records own actual worker/model/toolset/options, input revision and measured
+evidence; no checked-in task database or run records. Generic rules stay in the
+root policy instead of being copied into issues, cards or design bundles.
 
 Use **Bug report** for a reproducible problem: Description, Steps to reproduce,
 Expected behavior, Actual behavior, and Version and environment. Use **Feature
@@ -126,7 +141,7 @@ content on close"*, not *"Add discharge pipeline"*.
 <what is broken or missing today, with file:line references>
 
 ## What's specified (decided, not open)
-<the settled shape, as bullets>
+<revisioned design acceptance anchors and only this task's scope/delta>
 
 ## Not built
 <what does not exist yet — "nothing" is a valid answer>
@@ -212,8 +227,9 @@ reading would have caught it sooner.
 
 **When NOT to close.** A multi-PR design track stays open across incremental
 landings. Reference it as "issue #N" in those PR bodies, without the closing
-keyword, and let the design document's status section carry what remains. The
-issue closes when the last piece lands, not when the first one does.
+keyword. The design's delivery coverage links each requirement to its issue and
+accepted PR/evidence; the issue carries its remaining slice and the Project its
+scheduling status. The issue closes when the last piece lands, not the first.
 
 **Linking, in both directions.** Each link exists so someone standing at one
 artifact can reach the others:
