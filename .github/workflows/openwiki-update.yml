@@ -63,7 +63,6 @@ jobs:
         env:
           NODE_OPTIONS: '--import=./docs-site/scripts/provider-compat.mjs'
           OPENWIKI_PROVIDER_DIAGNOSTICS: ${{ (github.event_name == 'schedule' || inputs.diagnostics != false) && 'true' || 'false' }}
-          OPENWIKI_DEBUG: ${{ (github.event_name == 'schedule' || inputs.diagnostics != false) && '1' || '0' }}
           OPENWIKI_UPDATE_REQUEST: ${{ inputs.request }}
           OPENWIKI_PROVIDER: openai-compatible
           OPENAI_COMPATIBLE_API_KEY: ${{ secrets.OPENWIKI_API_KEY }}

@@ -97,9 +97,9 @@ It also reports malformed argument-JSON counts, repeated-ID booleans/counts
 without the IDs, and closed tool/error classifications when tool invocation
 throws. These observations do not change responses, retry tools or repair calls.
 Print mode now emits native stage/tool start, end and error metadata immediately,
-including elapsed milliseconds and counts, even when generation throws. Native
-debug mode is enabled in the workflow, but debug event text is not copied into
-these records. Authored CLI output and original exceptions retain their handling.
+including elapsed milliseconds and counts, even when generation throws. The
+workflow leaves broad debug mode unset; structured stage/tool metadata remains
+available. Authored CLI output and original exceptions retain their handling.
 
 Native generation preloads `provider-compat.mjs`. Successful JSON chat-completion
 responses receive a fresh completion ID before LangGraph consumes them: reused
@@ -117,7 +117,7 @@ then run from the repository root:
 
 ```bash
 OPENWIKI_PROVIDER=openai-compatible OPENWIKI_PROVIDER_DIAGNOSTICS=true \
-  OPENWIKI_DEBUG=1 OPENWIKI_TELEMETRY_DISABLED=1 \
+  OPENWIKI_TELEMETRY_DISABLED=1 \
   NODE_OPTIONS='--import=./docs-site/scripts/provider-compat.mjs' \
   npm run wiki:update --prefix docs-site
 ```
