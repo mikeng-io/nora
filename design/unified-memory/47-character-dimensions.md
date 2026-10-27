@@ -299,8 +299,9 @@ Assent is not confirmation; confirmed explanations remain hypotheses.
 
 ### Reading claims
 
-Each claim in a batch reading carries `about` (resolved subject links, with
-unresolved references explicit), `what` (prose preserving the source's claim),
+Each claim in a batch reading carries `about` (person subjects, with unresolved
+references explicit; an empty list when no person is the subject, such as an
+event, place, group plan or thing; never the speaker merely for saying it), `what` (prose preserving the source's claim),
 `happened_at` (a date/interval or explicit unknown), `where` (optional named place or abstract
 setting, only when stated), `how` (the existing speech act), and the existing
 source message ids. Authors and assertion timestamps are obtained from those

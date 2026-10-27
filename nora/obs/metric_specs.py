@@ -2139,6 +2139,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("stage",),
     ),
     _CounterSpec(
+        "nora_extraction_terminal_batches_total",
+        "Extraction batches transitioned to failed after exhausting their attempt allowance.",
+    ),
+    _CounterSpec(
         "nora_extraction_claims_written_total",
         "New claims committed by the extraction writer.",
     ),

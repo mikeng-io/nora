@@ -109,3 +109,32 @@ def test_extraction_rename_round_trip_preserves_rows_history_and_sql_names(pg_ur
         command.upgrade(cfg, "head")
     finally:
         engine.dispose()
+
+
+def test_terminal_extraction_state_round_trip_preserves_pending_work(pg_url):
+    cfg = alembic_config(pg_url)
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.begin() as conn:
+            batch_id = conn.execute(sa.text("""
+                INSERT INTO extraction
+                  (unit, platform, origin_room, source_ids, context_ids, snapshot, version, model,
+                   state, attempts)
+                VALUES ('synthetic-unit', 'signal', 'synthetic-room', '{}', '{}', '{}',
+                        1, 'synthetic', 'failed', 5) RETURNING id
+            """)).scalar_one()
+        command.downgrade(cfg, "0133_standing_ledger")
+        with engine.connect() as conn:
+            held = conn.execute(sa.text(
+                "SELECT state, attempts, snapshot FROM extraction WHERE id = :id"
+            ), {"id": batch_id}).one()
+            assert held == ("pending", 5, {})
+        command.upgrade(cfg, "head")
+        with engine.begin() as conn:
+            conn.execute(sa.text("UPDATE extraction SET state = 'failed' WHERE id = :id"),
+                         {"id": batch_id})
+            assert conn.execute(sa.text(
+                "SELECT state FROM extraction WHERE id = :id"
+            ), {"id": batch_id}).scalar_one() == "failed"
+    finally:
+        engine.dispose()
