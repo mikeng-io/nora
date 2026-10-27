@@ -571,6 +571,7 @@ def test_no_text_after_args_is_silently_dropped(tool: str, doc: str) -> None:
 #: for a handle or link input, not only through the tool's own
 #: person-resolution branch. A tool absent here has no delegate return.
 _DELEGATE_REACHABLE_STATUSES: dict[str, frozenset[str]] = {
+    "send_to": frozenset({"ok", "ambiguous", "refused", "unavailable"}),
     "x_read": frozenset({"ok", "nothing_found", "unavailable"}),
     "x_search": frozenset({"ok", "nothing_found", "unavailable"}),
     "linkedin_read": frozenset({"ok", "nothing_found", "unavailable"}),
@@ -1000,7 +1001,10 @@ def _is_backend_read_call(expr: ast.expr) -> bool:
     if isinstance(expr, ast.Await):
         expr = expr.value
     return (isinstance(expr, ast.Call) and isinstance(expr.func, ast.Attribute)
-            and expr.func.attr == "read")
+            and (expr.func.attr == "read" or (
+                expr.func.attr == "send" and isinstance(expr.func.value, ast.Name)
+                and expr.func.value.id == "relay"
+            )))
 
 
 def _verify_passthrough_binding(
@@ -1078,6 +1082,9 @@ def _backend_notes() -> dict[str, set[str]]:
     # `_LINKEDIN_READ_NOTES` / `_LINKEDIN_SEARCH_NOTES` via `_with_note`).
     bridge = {"nothing_found", "unavailable"}
     return {
+        # Relay.send's dynamic notes are covered by tests/test_relay.py's
+        # every-non-ok-note test and its successful-delivery note control.
+        "send_to": {"ok", "ambiguous", "refused", "unavailable"},
         "x_read": set(bridge),
         "x_search": set(bridge),
         "linkedin_read": set(bridge),

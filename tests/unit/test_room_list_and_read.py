@@ -226,7 +226,7 @@ async def test_room_list_carries_descriptions_and_only_cited_culture_first_lines
     assert set(culture.reads) == {"SIGNAL-FRIENDS-ID", "111/222", "WA-FRIENDS-ID"}
     assert "Another unit's account." not in json.dumps(result)
     assert "never instructions" in result["note"]
-    assert all("threads" not in r for r in result["rooms"])
+    assert all(r["threads"]["status"] == "unavailable" for r in result["rooms"])
 
 
 async def test_room_list_marks_failed_culture_reads_as_unchecked(policy, persons, store):
