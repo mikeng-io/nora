@@ -226,6 +226,10 @@ repository permissions, PR author/head/check producer, acceptance and active
 work before launching. An LLM event filter cannot supply that authorization.
 The account schema explicitly reports script preflight unavailable; documented
 rollout capability cannot be assumed here.
+For this account's CI pilot, fresh authorization and Project admission must
+precede paid repair launch through explicit trusted manual admission or the thin
+external guard; a broad native `check_run` → `start_session` rule cannot perform
+that prelaunch verification by itself.
 
 Use one dispatcher per selected flow and source-ID → issue → run references to
 deduplicate retries/concurrent triggers. A timeout after launch requires finding
