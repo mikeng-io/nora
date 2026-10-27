@@ -494,8 +494,8 @@ def test_voice_defaults_to_false(tmp_path):
 #
 # A FIELD, not a `voice = true`-style flag, and the two reasons are what these
 # tests are really pinning: a dedicated music channel is not the discussion
-# room, so a flag would need a SECOND room per guild — DEC-105 forbids it, and
-# a listed room is a room Nora RECORDS.
+# room, so a flag would make it a listed room, and a listed room is a room
+# Nora RECORDS.
 
 MUSIC_GUILD = "100000000000000203"
 MUSIC_DECLARING_ROOM = f"{MUSIC_GUILD}/100000000000000204"

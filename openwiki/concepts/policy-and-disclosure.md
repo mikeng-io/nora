@@ -246,7 +246,7 @@ location  = false      # explicit: this room is NOT trusted with positions
 | two `home_room = true` in one unit | the proactive adaptor's room would be a guess — a disclosure decision nobody made |
 | `voice = true` on a non-Discord platform, an id that is not `<guild>/<channel>`, or two voice rooms per guild | speech has no fallback: an unmarked guild answers 400 |
 | a `music_channel` on a non-Discord platform, a room id that names no guild, a value that is not 17–20 ASCII digits, a destination that is itself a listed room, or two per guild | an announcement channel is written to and never read, so it must not be a room |
-| duplicate room labels after case/spacing folding, or a reserved network label hiding ambiguity | an address must identify one room within its unit; several rooms may share a platform |
+| two rooms of one unit on one platform | a unit holds at most one room per platform; everything that addresses "the unit's room on X" leans on it |
 | `[units]` present but a room's unit is missing, or an entry no room uses | the hierarchy must be complete and exact, or no workspace can be named |
 | a workspace name outside `^[a-zA-Z0-9_-]+$` | an unbound workspace name is used verbatim as a Honcho workspace id, which Honcho refuses — at feed time, silently |
 | no conversations at all | the loud failure R-5 requires |
@@ -668,7 +668,7 @@ floor at a different boundary (R-28) rather than a second policy:
   an allowed server, the unauthorized room's R-7 veto message never naming one,
   and `surface()`/`build()` appending only the allowed groups.
 - `tests/unit/test_policy_units.py` — the unit/workspace hierarchy and the
-  unique-room-name invariant and acceptance of two labelled Signal rooms in one unit.
+  one-room-per-platform rule.
 - `tests/test_boundaries.py` — the production composition root never uses
   `permissive_policy`.
 - `tests/test_whereis.py` — `DisclosureGuard`, the refusal/`unavailable` split, the
