@@ -1150,13 +1150,15 @@ class ProfilePersonAdaptor:
             return None
 
         async def profile_write(ops: list[dict[str, Any]]) -> dict[str, object]:
-            """Change this person's account in one call: every add, keep,
-            revise and retire together. Call this once, when you know what the
-            account now holds; the whole call is refused if any op is.
+            """Change this account when its evidence supports changes: submit
+            every add, keep, revise and retire together.
+
+            A refused write settles nothing.
 
             Returns `status`: ok, or refused with `refusals` (each a `reason`,
-            a `detail` and the `op` index) saying what to fix before calling
-            again.
+            a `detail` and the `op` index). Fix or drop the refused ops and
+            call profile_write again. If nothing valid remains, call
+            profile_no_change. Stop only after status: ok.
 
             Args:
                 ops: The changes, each an object with `op`: add (part, kind,
@@ -1203,7 +1205,8 @@ class ProfilePersonAdaptor:
 
         async def profile_no_change(why: str) -> dict[str, object]:
             """Close this session with nothing added. Call this when what you
-            were given adds nothing the account does not already say.
+            were given adds nothing the account does not already say, or a
+            refused write leaves no valid changes.
 
             Returns `status`: ok, or refused when the session already settled.
 
@@ -1217,6 +1220,12 @@ class ProfilePersonAdaptor:
             log.info("profile: key=%s unchanged: %s", key, why[:200])
             return {"status": "ok"}
 
+        run = self._runs.get(key)
+        if run is not None:
+            owner = {"human": "this person's", "room": "the room's",
+                     "unit": "the unit's", "nora": "Nora's"}[run.account.entity_kind]
+            profile_write.__doc__ = (profile_write.__doc__ or "").replace(
+                "this account", f"{owner} account")
         return [profile_write, profile_no_change]
 
     # -- accept / commit ---------------------------------------------------
