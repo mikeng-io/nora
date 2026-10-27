@@ -4,9 +4,10 @@ Nobody should have to remember a label. The type comes from the Conventional Com
 title (a closed list), the areas from the paths the PR changes, `breaking` from `!`,
 and the author is assigned when the author is a person. Runs from trusted default-branch
 code with API data only: the title and the file list are strings in an allow-list lookup
-and never reach a shell or a request path unquoted. Bot PRs (Dependabot, the release
-App) are left to their own configuration, because a Dependabot-triggered workflow gets a
-read-only token.
+and never reach a shell or a request path unquoted. Only the Devin integration bot
+receives these data-only labels; labels do not authorize work. Other bot PRs
+(Dependabot, the release App) are left to their own configuration, because a
+Dependabot-triggered workflow gets a read-only token. Bots are never assigned.
 """
 
 from __future__ import annotations
@@ -147,7 +148,9 @@ def changed_paths(github, repository: str, number: int) -> list[str]:
 
 def triage(github, repository: str, number: int) -> dict:
     item = github("GET", f"/repos/{repository}/pulls/{number}")
-    if item["user"]["type"] != "User":
+    login = item["user"]["login"]
+    is_person = item["user"]["type"] == "User"
+    if not is_person and (item["user"]["type"], login) != ("Bot", "devin-ai-integration[bot]"):
         return {"skipped": "bot author"}
     want = wanted(item["title"], changed_paths(github, repository, number))
     have = {label["name"] for label in item["labels"]}
@@ -160,15 +163,18 @@ def triage(github, repository: str, number: int) -> dict:
         ensure_label(github, repository, name, *want[name])
     if add:
         github("POST", f"/repos/{repository}/issues/{number}/labels", {"labels": add})
-    login = item["user"]["login"]
     assigned = {a["login"] for a in item.get("assignees", [])}
-    if login not in assigned:
+    if is_person and login not in assigned:
         try:
             github("POST", f"/repos/{repository}/issues/{number}/assignees", {"assignees": [login]})
         except urllib.error.HTTPError as error:
             if error.code != 422:  # an author who cannot be assigned is not an error
                 raise
-    return {"added": add, "removed": sorted(managed_have - set(want)), "assignee": login}
+    return {
+        "added": add,
+        "removed": sorted(managed_have - set(want)),
+        "assignee": login if is_person else None,
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
