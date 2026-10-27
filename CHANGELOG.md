@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.7.0](https://github.com/mikeng-io/nora/compare/v7.6.0...v7.7.0) (2026-10-27)
+
+
+### Features
+
+* **relay:** address send_to by room within the unit ([09bf838](https://github.com/mikeng-io/nora/commit/09bf838b2ec291848926e28bdbc25c5a15df9fc6))
+
 ## [7.6.0](https://github.com/mikeng-io/nora/compare/v7.5.0...v7.6.0) (2026-10-27)
 
 
