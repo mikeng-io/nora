@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.11.11](https://github.com/mikeng-io/nora/compare/v7.11.10...v7.11.11) (2026-10-28)
+
+
+### Maintenance
+
+* **memory:** let curation read the private scope and keep ledger links in the notebook layer ([4b6078c](https://github.com/mikeng-io/nora/commit/4b6078c79f9f9b8d4f07276df64e67d37ef847bf))
+* **memory:** settle where the graph meets the DM, ledger and personalisation bundles ([2d2958b](https://github.com/mikeng-io/nora/commit/2d2958be81a179893647da194d00867e2c821e20))
+
 ## [7.11.10](https://github.com/mikeng-io/nora/compare/v7.11.9...v7.11.10) (2026-10-28)
 
 
