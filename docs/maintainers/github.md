@@ -71,8 +71,11 @@ gh workflow run release-please.yml --ref master -f action=publish
 ```
 
 Choose patch/minor/major explicitly. `scripts/release_plan.py --bump <level>`
-collects all eligible commits reachable since the last tag and rejects a choice
-below the minimum declared by those commits. Preparation never merges, tags or
+collects all eligible commits reachable since the last tag. Compatible changes
+within an existing product capability default to patch, including feat-labelled
+improvements. Minor needs a complete new product capability or a new/deprecated
+documented supported integration API/CLI. Breaking markers still require major
+and cannot be overridden down. Preparation never merges, tags or
 publishes; normal master pushes do none of these. Merging the metadata PR also
 does not publish. The separate publish dispatch lets release-please tag and
 publish that merged PR, without preparing another version.

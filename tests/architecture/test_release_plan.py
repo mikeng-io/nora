@@ -104,12 +104,12 @@ def test_nothing_unreleased_plans_nothing(repo, plan):
     [
         (["fix: a"], "1.0.1"),
         (["security(x): a"], "1.0.1"),
-        (["fix: a", "feat: b"], "1.1.0"),
+        (["fix: a", "feat: b"], "1.0.1"),
         (["feat: a", "fix(x)!: b"], "2.0.0"),
         (["perf: a", "doctrine: b"], "1.0.1"),
     ],
 )
-def test_the_bump_follows_conventional_commits(repo, plan, subjects, expected):
+def test_only_breaking_markers_raise_the_default_product_bump(repo, plan, subjects, expected):
     for index, subject in enumerate(subjects):
         commit(repo, f"nora/f{index}.py", subject)
     assert plan.bump("1.0.0", plan.entries("v1.0.0")) == expected
@@ -249,8 +249,16 @@ def test_assessed_candidate_must_still_be_the_prepared_head(repo, plan):
     assert json.loads((repo / ".release-please-manifest.json").read_text()) == {".": "1.1.0"}
 
 
-@pytest.mark.parametrize("subject,selected", [("feat: add a verb", "patch"),
-                                             ("change!: remove a verb", "minor")])
+def test_a_compatible_feature_can_ship_as_an_assessed_product_patch(repo, plan):
+    commit(repo, "app/existing-feature.ts", "feat(app): improve an existing capability")
+    assert plan.main(["--repo", REPO, "--bump", "patch", "--out", str(repo / "out")]) == 0
+    assert json.loads((repo / ".release-please-manifest.json").read_text()) == {".": "1.0.1"}
+    assert '## [1.0.1]' in (repo / "CHANGELOG.md").read_text()
+
+
+@pytest.mark.parametrize("subject", ["change!: remove a verb",
+                                     "change: remove a verb\n\nBREAKING CHANGE: the verb is gone"])
+@pytest.mark.parametrize("selected", ["patch", "minor"])
 def test_manual_bump_cannot_hide_a_declared_compatibility_change(repo, plan, subject, selected):
     commit(repo, "nora/f.py", subject)
     with pytest.raises(ValueError, match="below the"):

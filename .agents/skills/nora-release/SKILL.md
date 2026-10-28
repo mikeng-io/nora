@@ -35,17 +35,18 @@ Review the complete still-unreleased range, not only the last day's merges.
 Decide whether the changes are useful and complete enough to release now.
 Waiting is valid; daily assessment does not imply daily publication.
 
-Choose `patch`, `minor` or `major` explicitly. Compatible fixes are patch,
-compatible new functionality is minor, and removing supported config/CLI/API
-behavior is major. Assess whether an incompatible change is necessary before
-shipping it. Never hide a real breaking change to keep the number small.
-Repairs to existing behavior and internal refactors are not new capabilities
-merely because a commit says `feat`; flag incorrect classification for correction.
+Choose `patch`, `minor` or `major` explicitly from the entire range. The operator's
+product policy defaults compatible maintenance, small features and improvements
+within an existing capability to patch. A complete new product capability or a
+new/deprecated documented supported integration API/CLI is minor. Internal UI
+controls and endpoints are not automatically public contracts. Removing supported
+config/CLI/API behavior is major and needs owner approval. Never hide a real break.
 
 `scripts/release_plan.py` uses reachable user-visible runtime commits for the
-notes and minimum bump: `feat` minor; `fix`, `security`, `perf`, `change`,
-`doctrine`, `revert` patch; `!` or a `BREAKING CHANGE:` footer major. The manual
-choice may be larger but cannot be lower than that declared minimum. Hidden
+notes. Non-breaking changes default to patch, including `feat`; the assessed
+explicit choice selects minor when the product/contract boundary requires it.
+`!` or a `BREAKING CHANGE:` footer requires major and cannot be overridden down.
+Commit types group release notes, not product milestones. Hidden
 commit types and docs/design-only changes do not qualify on their own.
 Read commit bodies and the actual diff; a marker is not proof of compatibility.
 

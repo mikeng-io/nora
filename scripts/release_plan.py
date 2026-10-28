@@ -68,9 +68,9 @@ def bump(current: str, found: list[Entry], requested: str | None = None) -> str:
     if not match:
         raise ValueError(f"manifest version {current!r} is not X.Y.Z")
     major, minor, patch = (int(part) for part in match.groups())
-    minimum = "major" if any(e.breaking for e in found) else (
-        "minor" if any(e.type == "feat" for e in found) else "patch"
-    )
+    # Product policy: a feat may improve an existing capability. Its label alone
+    # cannot require minor; the assessed explicit bump selects that milestone.
+    minimum = "major" if any(e.breaking for e in found) else "patch"
     levels = ("patch", "minor", "major")
     selected = requested or minimum
     if levels.index(selected) < levels.index(minimum):
@@ -157,7 +157,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", ""))
     parser.add_argument(
         "--bump", choices=("patch", "minor", "major"), required=True,
-        help="operator-selected bump; cannot hide a declared breaking change or feature",
+        help="assessed product bump; cannot hide a declared breaking change",
     )
     parser.add_argument("--candidate", help="full commit SHA already assessed for this preparation")
     parser.add_argument(

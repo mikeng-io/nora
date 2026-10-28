@@ -21,11 +21,16 @@ without it, report needs owner approval and perform no release mutations.
    gate, missing required evidence or unavailable check may be treated as green.
    Use recorded evidence; do not launch live model evals or production probes.
 4. Identify actual compatibility impact from diffs and contract evidence, not
-   only commit markers. Patch = compatible fixes; minor = compatible capability;
-   major = an evidenced incompatible supported interface. Respect the planner's
-   declared minimum. If major is required, stop for owner approval; never select
-   patch/minor to avoid that boundary. A disagreement between the diff and markers is blocked for
-   correction, not permission to hide the break. Required migrations, rollback
+   only commit markers. Patch is the default for compatible maintenance, small
+   features and improvements within an existing capability. Minor needs a complete
+   new product capability or an addition/deprecation to a documented supported
+   integration API/CLI; an internal endpoint or UI control alone does not establish
+   that boundary. Major is an evidenced incompatible supported interface/config.
+   A feat label alone never forces minor. Select the highest actual requirement
+   across the whole range and record its evidence. Breaking markers remain a hard
+   minimum: stop for owner approval, never downgrade them. A disputed breaking
+   declaration is blocked for correction, not permission to hide the break.
+   Required migrations, rollback
    limits and live config prerequisites must be documented and ready before
    publication; unfinished manual work is blocked.
 5. Re-read the candidate and existing release state immediately before acting.

@@ -478,6 +478,10 @@ the metadata PR (maintainer or admitted daily agent), then separately dispatch
 hand tags or room announcements. `scripts/release_plan.py` keeps the
 reachable-history notes and enforces the declared minimum bump; release-please
 still owns tagging/publication. Subjects remain the changelog source.
+Product versioning defaults compatible work within an existing capability to
+patch. Minor needs a complete new product capability or a new/deprecated
+documented supported integration API/CLI; `feat` alone does not force it.
+Breaking markers still require major. Keep published version numbers and tags.
 Publishing triggers `release-images.yml` and the existing Komodo poller, so obtain
 deployment admission before publishing, or use the daily automation's standing
 authorization only after all `nora-release/assessment.md` criteria pass. That

@@ -12,7 +12,11 @@
 
 Issue #316 replaces the automatic cadence described below: master pushes no
 longer run release planning or publication. A manual prepare dispatch selects
-patch/minor/major, keeping git-reachability scope and a declared semantic minimum.
+patch/minor/major, keeping git-reachability scope and a breaking-change minimum.
+The operator selected product versioning: compatible work within an existing
+capability defaults to patch; minor needs a complete new capability or a new/
+deprecated documented supported integration API/CLI. A feat label alone does not
+force minor; breaking markers still require major. Existing tags are not reset.
 The maintainer reviews and merges the metadata PR; a separate manual publish
 dispatch lets release-please tag/publish it. Release-PR auto-merge is removed.
 Publication still triggers the image/Komodo path, requiring deployment admission.
