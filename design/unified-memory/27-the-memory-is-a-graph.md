@@ -242,9 +242,8 @@ episodes), and external file content (only the link,
 ## 7. One Cognition loop: comprehend, measure, serialize
 
 **Operator, 2026-10-28:** everything said and everything done keeps shaping
-the memory and the profiles, so the Cognition loop is the one driver. Every
-stimulus (a message, a story, a stay, a state change) drives three steps in
-order. Each step is a bounded model session of its own, with its own
+the memory and the profiles, so the Cognition loop is the one driver. Every stimulus (a message, a story, a stay, a state change) drives steps 1
+and 2 on arrival; step 3 follows on the wake rules. Each step is a bounded model session of its own, with its own
 focused input: one owner and one order, never one prompt asked to read,
 profile and plan at once. The steps are CMS one level up:
 
@@ -252,7 +251,7 @@ profile and plan at once. The steps are CMS one level up:
 |---|---|---|---|---|
 | 1. comprehend | **on each arrival**, per work item | comprehend | read every new item once, resolve, relate, enrich | readings, entities, notebook relations |
 | 2. reshape | right after a step 1 that changed relations | measure | for each entity step 1 changed: what changed in what it is like, including a room's or unit's culture and Nora's lessons (§9) | traits and guesses ([ADR 0029](../../docs/adr/0029-a-prompt-block-names-its-subject-and-author-by-id.md)'s parts), culture baselines, lessons; facts are code (§9) |
-| 3. decide and act | on the existing wake rules (settled, strong cue, max age, time floors, `wake_at`) | measure, serialize | what needs doing: notes, memos, events, reminders, Standing, or a re-read of a social item that looks wrong | Register items with their own links (§7a), Standing |
+| 3. decide and act | on the existing wake reasons (`settled`, `strong_cue`, `batch`, `max_age`, `time`, and `self`, raised by `wake_at`) | measure, serialize | what needs doing: notes, memos, events, reminders, Standing, or a re-read of a social item that looks wrong | Register items with their own links (§7a), Standing |
 
 Every step ends in a staged write that code admits (serialize), and
 `serialize(N)` is `comprehend(N+1)`: the next wake reads the graph this one
@@ -281,8 +280,8 @@ the graph it reads is already up to date.
 4. **No step grades itself.** A guess is graded by a judge other than its
    writer ([45](45-persona-adaptor.md)), outside the loop.
 5. **A step 1 work item is never dropped.** Each work item has its own state
-   and input hash (§10), independent of wakes: a failed wake's stimuli may be
-   struck for step 3 after `max_consecutive_failures`, but a work item that
+   and input hash (§10), independent of wakes: an agenda-failed wake's stimuli may be struck for step 3 after
+   `max_consecutive_failures` (infrastructure failures never strike, DEC-244), but a work item that
    fails is retried and, past 5 attempts, parked `failed` for the operator's
    re-queue, never discarded. A missed item is a hole in the graph.
 6. **Each step commits on its own.** A step 3 failure never rolls back step 1
@@ -457,8 +456,9 @@ work items, [self-growth/40](../self-growth/40-lessons.md)). A room or unit
 is reshaped only when a member's or the room's relations changed in this pass;
 Nora only when a response episode closed. The `culture` and `lessons`
 adaptors retire when step 2 carries them; `lesson_write` / `lesson_retire`
-and the culture writes move to step 2, and their readers (the relevance
-gate's baseline, the lessons block) read the same stores as now.
+and the culture writes move to step 2, and their readers (the
+Character sessions' room-culture block, the tag path's `<culture>` and
+`<unit_culture>` prefill, the lessons block) read the same stores as now.
 
 ## 10. One backfill, built in time order
 
@@ -691,12 +691,12 @@ measured between them.
   separate, judged pass.
 - Step 1 falls behind arrivals (a backlog that grows across a day): step 1
   gets more workers, still owned and ordered by the loop.
-
-Loose ends noted, not blocking: no `play` stimulus arrived in the 7 days to
-2026-10-28 (the producer may be idle), and `wake_at` was used once in those
-7 days (172 sessions).
 - Query p95 over 200 ms at depth 3 with precomputed neighbourhoods: a graph
   engine (AGE first) is measured.
 - The answerability gate shows the subgraph preview answering no better than
   readings alone: the relations are not earning their cost, and the loop's
   enrichment and resolution steps are cut back to readings.
+
+Loose ends noted, not blocking: no `play` stimulus arrived in the 7 days to
+2026-10-28 (the producer may be idle), and `wake_at` was used once in those
+7 days (172 sessions).
