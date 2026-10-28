@@ -9,6 +9,7 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nora.domain.memory_graph import Key
 from nora.infra.sql import memory_index
 from nora.infra.sql.graph_projection import CODE_RELATIONS, ProjectionContext, project_rollups
 from nora.infra.sql.schema import (
@@ -20,6 +21,38 @@ from nora.infra.sql.schema import (
     RELATION,
     REMINDERS,
 )
+from nora.obs.metrics import Metrics
+from nora.persons import Persons
+from nora.policy import Policy
+
+
+def projection_context(
+    policy: Policy,
+    persons: Persons,
+    *,
+    nora_name: str,
+    metrics: Any = None,
+    produce: bool = True,
+) -> ProjectionContext:
+    """One authored identity/room-name mapping for live writes and backfill."""
+    members: dict[str, frozenset[str] | None] = {}
+    names: dict[Key, str] = {("person", pid): ref.name for pid, ref in persons.by_person.items()}
+    names["nora", "nora"] = nora_name
+    for conversation in policy.conversations:
+        old = members.get(conversation.unit, frozenset())
+        members[conversation.unit] = (
+            None if old is None or conversation.persons is None else old | conversation.persons
+        )
+        names["unit", conversation.unit] = conversation.unit
+        for cid in conversation.ids:
+            names["room", f"{conversation.platform}:{cid}"] = conversation.label or cid
+    return ProjectionContext(
+        rooms={f"{c.platform}:{cid}": c.unit for c in policy.conversations for cid in c.ids},
+        members=members,
+        names=names,
+        produce=produce,
+        metrics=metrics,
+    )
 
 
 async def graph_project(
@@ -31,7 +64,9 @@ async def graph_project(
 ) -> dict[str, Any]:
     if rows_per_second <= 0:
         raise ValueError("positive rate required")
-    engine = engine.execution_options(memory_graph=replace(scope, produce=False))
+    metrics = scope.metrics if scope.metrics is not None else Metrics()
+    excluded_before = metrics.get("nora_memory_graph_projection_total", outcome="excluded")
+    engine = engine.execution_options(memory_graph=replace(scope, produce=False, metrics=metrics))
     counts: dict[str, int] = {}
     sources = [
         *memory_index._sources(),
@@ -99,6 +134,9 @@ async def graph_project(
         "applied": apply,
         "sources": counts,
         "unprojected": unprojected,
+        "excluded": int(
+            metrics.get("nora_memory_graph_projection_total", outcome="excluded") - excluded_before
+        ),
         "relations": {
             r: {
                 "graph": graph.get(r, 0),

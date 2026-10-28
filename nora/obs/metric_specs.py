@@ -22,7 +22,7 @@ from nora.domain.extraction import CLAIM_DROP_REASONS, EXTRACTION_FAILURE_STAGES
 from nora.domain.lessons import LESSONS_OUTCOMES
 from nora.domain.media import MEDIA_FETCH_CALLERS
 from nora.domain.media_join import JOIN_PATHS
-from nora.domain.memory_admission import GRAPH_BATCH_OUTCOMES
+from nora.domain.memory_admission import GRAPH_BATCH_OUTCOMES, GRAPH_PROJECTION_OUTCOMES
 from nora.domain.memory_index import (
     EMBED_OUTCOMES,
     EMBEDDED_KINDS,
@@ -109,6 +109,11 @@ class _HistogramSpec(NamedTuple):
 # nora_silent_failures_total and nora_errors_total, so a stuck or failing
 # platform is visible per series.
 _COUNTERS: tuple[_CounterSpec, ...] = (
+    _CounterSpec(
+        "nora_memory_graph_projection_total",
+        "Graph projection skips: " + "/".join(GRAPH_PROJECTION_OUTCOMES),
+        ("outcome",),
+    ),
     _CounterSpec(
         "nora_memory_graph_batches_total",
         "Graph batch outcomes: " + "/".join(GRAPH_BATCH_OUTCOMES),

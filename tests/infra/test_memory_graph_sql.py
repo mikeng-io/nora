@@ -19,6 +19,7 @@ from tests.contract.test_memory_graph_contract import _graph_db as _graph_db
 
 BASE_MS = int(datetime(2026, 1, 1, tzinfo=UTC).timestamp() * 1000)
 
+
 @pytest.fixture
 async def sql(_graph_db):
     engine = create_sql_engine(_graph_db)
@@ -475,3 +476,181 @@ async def test_register_writers_enqueue_their_own_committed_revisions(sql):
     assert [r["source_kind"] for r in work].count("decision") == 1
     assert [r["source_kind"] for r in work].count("reminder") == 2
     assert all(r["state"] == "pending" for r in work)
+
+
+async def test_excluded_node_retires_projection_and_counts_skip(sql):
+    from uuid import uuid4
+
+    from nora.infra.sql.graph_projection import project_source
+    from nora.infra.sql.schema import MEMORY_EDGE, MEMORY_NODE
+
+    note_id = str(uuid4())
+    scope = ProjectionContext(
+        {"signal:generated-room": "u1"},
+        {"u1": frozenset({"p1"})},
+        produce=False,
+        metrics=sql.metrics,
+    )
+    sql.engine.update_execution_options(memory_graph=scope)
+    async with sql.engine.begin() as conn:
+        await conn.execute(
+            sa.insert(MEMORY_NODE).values(
+                kind="note",
+                source_id=note_id,
+                unit="u1",
+                origin_room="signal:generated-room",
+                persons=["p1"],
+                exclude_persons=[],
+                text="Generated note",
+                at_ms=BASE_MS,
+            )
+        )
+        await conn.execute(
+            sa.insert(MEMORY_EDGE).values(
+                src_kind="note",
+                src_id=note_id,
+                rel="in_room",
+                dst_kind="room",
+                dst_id="signal:generated-room",
+                provenance="generated",
+            )
+        )
+        await project_source(conn, "note", note_id)
+        current = (
+            sa.select(sa.func.count()).select_from(RELATION).where(RELATION.c.status == "current")
+        )
+        assert (await conn.execute(current)).scalar_one() == 1
+        await conn.execute(
+            sa.update(MEMORY_NODE)
+            .where(MEMORY_NODE.c.kind == "note", MEMORY_NODE.c.source_id == note_id)
+            .values(exclude_persons=["p1"])
+        )
+        await project_source(conn, "note", note_id)
+        assert (await conn.execute(current)).scalar_one() == 0
+        assert (await conn.execute(sa.select(RELATION.c.status))).scalar_one() == "retired"
+    assert sql.metrics.get("nora_memory_graph_projection_total", outcome="excluded") == 1
+
+
+async def test_sql_record_hub_stays_out_of_recursive_paths(sql):
+    await load(sql)
+    async with sql.engine.begin() as conn:
+        await conn.execute(
+            sa.text("""
+          INSERT INTO relation(id,src_kind,src_id,rel,dst_kind,dst_id,layer,
+                               asserted_at,written_by,unit,persons)
+          SELECT 'record-'||n,'message',n::text,'authored_by','person','p1',
+                 'record',now(),'generated','u1',ARRAY['p1'] FROM generate_series(1,5000) n
+        """)
+        )
+        await conn.execute(sa.text("ANALYZE relation"))
+        query = Walk("u1", frozenset({"p1"}), nodes=4, fan_out=20, layers=("record", "notebook"))
+        plan = (
+            await conn.execute(
+                sa.text("EXPLAIN (ANALYZE, FORMAT JSON) " + WALK_SQL),
+                walk_parameters((PERSON.key,), query),
+            )
+        ).scalar_one()
+    result = await sql.walk((PERSON.key,), query)
+    assert result.status == "ok"
+    assert len(result.nodes) == 2 and len(result.relations) == 1
+
+    def plan_nodes(node):
+        yield node
+        for child in node.get("Plans", []):
+            yield from plan_nodes(child)
+
+    recursive = next(n for n in plan_nodes(plan[0]["Plan"]) if n["Node Type"] == "Recursive Union")
+    # SQL must bound traversal before the Python hub filter sees its output.
+    # Removing layer!='record' materializes the record fan-out as extra paths.
+    assert recursive["Actual Rows"] <= query.nodes
+
+
+async def test_projected_pointers_use_authored_display_names(sql, tmp_path):
+    from nora.app.graph_project import projection_context
+    from nora.persons import load_persons
+    from nora.policy import load_policy
+
+    identity = tmp_path / "identity.toml"
+    identity.write_text(
+        '[persons.generated_a]\nname="Generated Alpha"\n'
+        '[persons.generated_b]\nname="Generated Beta"\n'
+    )
+    policy = tmp_path / "policy.toml"
+    policy.write_text(
+        'default="deny"\n[[conversations]]\nplatform="signal"\n'
+        'id="generated-room"\nlabel="Generated Room"\n'
+        'unit="generated-unit"\npersons=["generated_a","generated_b"]\n'
+    )
+    scope = projection_context(
+        load_policy(policy), load_persons(identity), nora_name="Generated Nora"
+    )
+    sql.engine.update_execution_options(memory_graph=scope)
+    store = SqlRecordStore(sql.engine)
+    for i, pid in enumerate(("generated_a", "generated_b")):
+        await store.append(
+            message=NormalizedMessage(
+                "signal",
+                "generated-room",
+                "group",
+                f"generated-account-{i}",
+                "Platform Alias",
+                BASE_MS + i,
+                "Generated source",
+                {},
+            ),
+            person_id=pid,
+        )
+    await store.append(
+        message=NormalizedMessage(
+            "signal",
+            "generated-room",
+            "group",
+            "generated-self",
+            "Platform Alias",
+            BASE_MS + 2,
+            "Generated send",
+            {},
+        ),
+        is_nora=True,
+    )
+    aliases = await sql.aliases(unit="generated-unit")
+    for kind, ref, name in (
+        ("person", "generated_a", "Generated Alpha"),
+        ("person", "generated_b", "Generated Beta"),
+        ("room", "signal:generated-room", "Generated Room"),
+        ("nora", "nora", "Generated Nora"),
+    ):
+        expected = pointer_entity(kind, "generated-unit", ref, name)
+        assert aliases[name.casefold()] == expected.key
+        matches = await sql.candidates(unit="generated-unit", kind=kind, name=name)
+        assert matches and matches[0].key == expected.key
+        assert matches[0].attributes["ref"] == ref
+    assert not await sql.aliases(unit="other-unit")
+
+
+async def test_graph_batch_tick_records_nothing_found(sql, monkeypatch):
+    import asyncio
+    from contextlib import suppress
+
+    from nora.app.graph_batches import GraphBatchProducer
+
+    recorded = asyncio.Event()
+    original = sql.metrics.inc
+
+    def record(name, value=1, **labels):
+        original(name, value, **labels)
+        if name == "nora_memory_graph_batches_total":
+            recorded.set()
+
+    monkeypatch.setattr(sql.metrics, "inc", record)
+    producer = GraphBatchProducer(sql.engine, metrics=sql.metrics)
+    task = asyncio.create_task(producer.run())
+    try:
+        await asyncio.wait_for(recorded.wait(), timeout=5)
+        assert sql.metrics.get("nora_memory_graph_batches_total", outcome="nothing_found") == 1
+        assert sql.metrics.get("nora_memory_graph_batches_total", outcome="ok") == 0
+        assert sql.metrics.get("nora_memory_graph_batches_total", outcome="unavailable") == 0
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task

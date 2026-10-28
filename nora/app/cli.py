@@ -1151,20 +1151,12 @@ async def cmd_profile_retry_media(args: argparse.Namespace) -> int:
 async def cmd_graph_project(args: argparse.Namespace) -> int:
     import json
 
-    from nora.app.graph_project import graph_project
-    from nora.infra.sql.graph_projection import ProjectionContext
+    from nora.app.graph_project import graph_project, projection_context
     cfg = _config(args)
     if not cfg.memory.graph.enabled:
         raise CliError("[memory.graph] enabled must be true")
-    policy = _policy(cfg)
-    members: dict[str, frozenset[str] | None] = {}
-    for conversation in policy.conversations:
-        old = members.get(conversation.unit, frozenset())
-        members[conversation.unit] = (
-            None if old is None or conversation.persons is None else old | conversation.persons)
-    scope=ProjectionContext(
-        rooms={f"{c.platform}:{cid}":c.unit for c in policy.conversations for cid in c.ids},
-        members=members,produce=False)
+    scope = projection_context(_policy(cfg), _persons(cfg),
+                               nora_name=cfg.doctrine.display_name, produce=False)
     engine = create_sql_engine(_database_url(cfg))
     try:
         result = await graph_project(engine,scope=scope,apply=args.apply,

@@ -1511,16 +1511,9 @@ async def build_dependencies(
     # is deliberately NOT also called on this shared engine.
     engine = create_sql_engine(database_url)
     if cfg.memory.graph.enabled:
-        from nora.infra.sql.graph_projection import ProjectionContext
-        members: dict[str, frozenset[str] | None] = {}
-        for conversation in allowlist.conversations:
-            old = members.get(conversation.unit, frozenset())
-            members[conversation.unit] = (
-                None if old is None or conversation.persons is None
-                else old | conversation.persons)
-        engine.update_execution_options(memory_graph=ProjectionContext(
-            rooms={f"{c.platform}:{cid}": c.unit for c in allowlist.conversations for cid in c.ids},
-            members=members, metrics=metrics))
+        from nora.app.graph_project import projection_context
+        engine.update_execution_options(memory_graph=projection_context(
+            allowlist, persons, nora_name=cfg.doctrine.display_name, metrics=metrics))
     audit = SqlRecordStore(
         engine,
         max_per_conversation=cfg.store.max_per_conversation,

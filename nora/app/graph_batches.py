@@ -30,8 +30,7 @@ class GraphBatchProducer:
             try:
                 async with self.engine.begin() as conn:
                     count = await form_batch(conn, now=datetime.now(UTC))
-                if count:
-                    self._record("ok")
+                self._record("ok" if count else "nothing_found")
             except Exception:
                 log.exception("graph batch production failed")
                 self._record("unavailable")

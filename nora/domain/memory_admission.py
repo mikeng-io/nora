@@ -22,8 +22,10 @@ from nora.domain.memory_graph import (
     validate_relation,
 )
 
-GraphBatchOutcome = Literal["ok", "unavailable"]
+GraphBatchOutcome = Literal["ok", "nothing_found", "unavailable"]
 GRAPH_BATCH_OUTCOMES: tuple[str, ...] = get_args(GraphBatchOutcome)
+GraphProjectionOutcome = Literal["excluded"]
+GRAPH_PROJECTION_OUTCOMES: tuple[str, ...] = get_args(GraphProjectionOutcome)
 
 
 class AdmissionState:

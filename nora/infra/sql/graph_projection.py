@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from itertools import combinations
 from typing import Any
@@ -54,6 +54,7 @@ class ProjectionContext:
     members: Mapping[str, frozenset[str] | None]
     produce: bool = True
     metrics: Any = None
+    names: Mapping[Key, str] = field(default_factory=dict)
 
     def _units(self, persons: tuple[str, ...]) -> tuple[str, ...]:
         return tuple(
@@ -98,7 +99,9 @@ async def work(
 
 async def _endpoint(conn: AsyncConnection, key: Key, unit: str) -> Key:
     if key[0] in POINTER_KINDS:
-        entity = pointer_entity(key[0], unit, key[1], key[0])
+        cfg = context(conn)
+        name = cfg.names.get(key, key[1]) if cfg is not None else key[1]
+        entity = pointer_entity(key[0], unit, key[1], name)
         await upsert_entity(conn, entity)
         return entity.key
     if key[0] == "place":
@@ -171,6 +174,12 @@ async def _scopes(
         .first()
     )
     if row is None:
+        return {}
+    if row["exclude_persons"]:
+        # The relation port cannot express exclusions yet. No relation from
+        # this node may widen its audience to someone the source excludes.
+        if cfg.metrics is not None:
+            cfg.metrics.inc("nora_memory_graph_projection_total", outcome="excluded")
         return {}
     persons = tuple(row["persons"])
     if row["unit"]:
