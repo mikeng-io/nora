@@ -1,5 +1,19 @@
 # Changelog
 
+## [7.11.1](https://github.com/mikeng-io/nora/compare/v7.11.0...v7.11.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* **record:** align extraction schema checks with drop counts ([08eb580](https://github.com/mikeng-io/nora/commit/08eb580cfaf57250b97aa2062a6d34427dc58bbd))
+* **record:** publish valid extraction claims and record provenance drops ([5e5cb5c](https://github.com/mikeng-io/nora/commit/5e5cb5c12de49c2884b7958090d12b9ddc2b0516))
+* **release:** describe internal-only releases in their notes ([9a1c646](https://github.com/mikeng-io/nora/commit/9a1c64686fd7056b06695b619b7a6bf22abd696a))
+
+
+### Changes
+
+* **policy:** a unit may hold two rooms on one platform ([02a0148](https://github.com/mikeng-io/nora/commit/02a014801e7a28e96532e9d50ebe00b15fec9587))
+
 ## [7.11.0](https://github.com/mikeng-io/nora/compare/v7.10.0...v7.11.0) (2026-10-27)
 
 
