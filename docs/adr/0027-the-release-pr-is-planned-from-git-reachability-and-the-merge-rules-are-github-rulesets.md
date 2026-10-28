@@ -1,8 +1,6 @@
 # 0027 · The release PR is planned from git reachability, and the merge rules are GitHub rulesets
 
-- **Status:** proposed (2026-10-22), on operator direction: "if file changes are detected within
-  the path, it will trigger the pipeline for a completely automatic release", and pull request
-  conventions "have to match; if not, the PR should be blocked and unable to merge"
+- **Status:** cadence superseded by [0031](0031-master-pushes-automatically-release-patch-and-minor.md) on 2026-10-28; the reachability planner and merge-rule decision remain in force.
 - **Date:** 2026-10-22
 - **Extends:** ADR 0024 (release-please cuts releases), which keeps tagging and publishing.
   Replaces its release-PR step.
