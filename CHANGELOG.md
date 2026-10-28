@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.11.9](https://github.com/mikeng-io/nora/compare/v7.11.8...v7.11.9) (2026-10-28)
+
+
+### Bug Fixes
+
+* **memory:** key identity pointers per unit and fix an entity's unit ([069b986](https://github.com/mikeng-io/nora/commit/069b986fff693247233f3e049a57f6a73c497fcf))
+* **memory:** make pointer ids unique across kinds and pin cross-unit same_as ([8b85661](https://github.com/mikeng-io/nora/commit/8b856617e2bf8ab204623d99b1c1991753dd938d))
+
 ## [7.11.8](https://github.com/mikeng-io/nora/compare/v7.11.7...v7.11.8) (2026-10-28)
 
 
