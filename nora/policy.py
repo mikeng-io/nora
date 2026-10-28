@@ -811,12 +811,12 @@ def _unit_workspaces(
 
     ABSENT table: `{}`, and `Policy.workspace_of` answers `DEFAULT_WORKSPACE`
     for every unit — the policy that existed before the hierarchy keeps
-    loading unchanged. PRESENT: it must be COMPLETE and EXACT. A room whose
+    loading unchanged. PRESENT: it must cover every room's unit. A room whose
     unit has no entry would belong to no workspace, which means no Honcho
     workspace could be named for it, so it is a startup error rather than a
-    guess (R-5's refuse-to-start shape). A unit entry that no room uses is
-    refused too: a unit holds one or more rooms, so an entry with none is a
-    typo or a stale line, and either way it is an answer nobody reads."""
+    guess (R-5's refuse-to-start shape). A declared unit may temporarily hold
+    no rooms: its workspace is admitted at boot so removing its last room and
+    adding a room back can both reload without changing workspace bindings."""
     if units is None:
         return {}
     used = {convo.unit for convo in conversations}
@@ -827,12 +827,5 @@ def _unit_workspaces(
             "every unit a room uses must name its workspace — add "
             f'[units.{missing[0]}] workspace = "..." — or delete [units] '
             "entirely to put every unit in the one implicit workspace."
-        )
-    unused = sorted(set(units) - used)
-    if unused:
-        raise PolicyError(
-            f"{path} declares [units.{unused[0]}] but no conversation has "
-            f"unit = {unused[0]!r}. A unit holds at least one room; remove the "
-            "entry or fix the unit name it was meant to match."
         )
     return {unit: entry.workspace for unit, entry in units.items()}
