@@ -1,5 +1,18 @@
 # Changelog
 
+## [7.11.13](https://github.com/mikeng-io/nora/compare/v7.11.12...v7.11.13) (2026-10-28)
+
+
+### Features
+
+* **memory:** persist the scoped graph and queue cognition inputs ([1ba8d3e](https://github.com/mikeng-io/nora/commit/1ba8d3e25ffec0833fe353f65e2b47273bd6c1fe))
+
+
+### Bug Fixes
+
+* **memory:** follow live identity and room policy in graph projection ([c172209](https://github.com/mikeng-io/nora/commit/c17220947bce802c839c613f18c0dfdcd6d7edc4))
+* **memory:** preserve graph projection exclusions and prove hub bounds ([b6c122b](https://github.com/mikeng-io/nora/commit/b6c122ba5f0ea939a0064862c5680ece632da3f4))
+
 ## [7.11.12](https://github.com/mikeng-io/nora/compare/v7.11.11...v7.11.12) (2026-10-28)
 
 
