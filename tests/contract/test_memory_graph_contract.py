@@ -19,6 +19,7 @@ from nora.domain.memory_graph import (
     Source,
     Walk,
     WorkItem,
+    pointer_entity,
 )
 from nora.testing.memory_graph import FakeMemoryGraph
 
@@ -561,3 +562,66 @@ async def test_record_correction_requires_evidence(graph: MemoryGraph) -> None:
         corrections=(corrected,),
     )
     assert result.corrections == (corrected,) and not result.refused
+
+
+async def test_one_person_in_two_units_is_two_entities(graph: MemoryGraph) -> None:
+    for unit in ("unit-a", "unit-b"):
+        person = pointer_entity("person", unit, "p-generated", "Generated Person")
+        place = Entity(f"place-{unit}", "place", unit, "Generated Place")
+        await graph.upsert_entity(person)
+        await graph.upsert_entity(place)
+        stay = Relation(
+            f"stay-{unit}",
+            person.key,
+            "stayed_at",
+            place.key,
+            "rollup",
+            unit,
+            ("p-generated",),
+            asserted_at=NOW,
+        )
+        result = await graph.stage_and_admit(
+            entities=(), relations=(stay,), evidence=(), sources={}
+        )
+        assert result.relations == (stay,)
+    for unit in ("unit-a", "unit-b"):
+        seed = pointer_entity("person", unit, "p-generated", "Generated Person").key
+        walk = await graph.walk((seed,), Walk(unit, frozenset({"p-generated"})))
+        assert [e.relation.id for e in walk.relations] == [f"stay-{unit}"]
+
+
+async def test_an_entity_never_changes_unit(graph: MemoryGraph) -> None:
+    place = Entity("place-fixed", "place", "unit-a", "Generated Place")
+    await graph.upsert_entity(place)
+    with pytest.raises(ValueError):
+        await graph.upsert_entity(replace(place, unit="unit-b"))
+
+
+async def test_same_as_never_joins_two_units(graph: MemoryGraph) -> None:
+    a = pointer_entity("person", "unit-a", "p-generated", "Generated Person")
+    b = pointer_entity("person", "unit-b", "p-generated", "Generated Person")
+    await graph.upsert_entity(a)
+    await graph.upsert_entity(b)
+    merge = Relation(
+        "merge",
+        a.key,
+        "same_as",
+        b.key,
+        "notebook",
+        "unit-a",
+        ("p-generated",),
+        asserted_at=NOW,
+    )
+    source = replace(SOURCE, unit="unit-a", persons=("p-generated",))
+    result = await graph.stage_and_admit(
+        entities=(),
+        relations=(merge,),
+        evidence=(replace(EV, relation_id="merge"),),
+        sources={source.key: source},
+    )
+    assert not result.relations
+    assert [r.reason for r in result.refused if r.kind == "relation"] == ["wrong_ends"]
+
+
+def test_pointer_ids_are_unique_across_kinds() -> None:
+    assert pointer_entity("person", "u", "x", "X").id != pointer_entity("room", "u", "x", "X").id

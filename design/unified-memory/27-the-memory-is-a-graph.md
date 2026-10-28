@@ -125,8 +125,7 @@ The graph adds three tables and no per-kind table:
   architecture test holds every writer to the schema.
   `# ponytail: JSONB attributes; promote one to a column only when a query plan needs it`.
 - **Persons, rooms, units and Nora** keep their authored identity
-  (`identity.toml`, `policy.toml`); their `entity` rows are pointers keyed by
-  `person_id` / room / unit, so the graph never owns who someone is.
+  (`identity.toml`, `policy.toml`); their `entity` rows are pointers keyed by `person_id` / room / unit, so the graph never owns who someone is. A pointer is **one entity per unit** (`<unit>:<kind>:<id>`, 2026-10-28): an entity's unit never changes, so a person in two units is two entities and neither unit's graph reaches the other's (DEC-231).
 - **Scope travels on the row.** `relation.unit` and `persons` are copied from
   the evidence (the strictest of it), so a scoped read filters inside the
   scan, exactly as `memory_node` does (25 §3). An entity with no unit-scoped
@@ -385,14 +384,13 @@ Three writers, one per layer, and no relation has two:
 |---|---|---|---|
 | record | code: the store's own `project(kind, id)` (25 §7) | in the same `begin()` as the row's write | columns: a message's room and author, a link's message, a reply's parent. No judgement. |
 | rollup | code: the Rollup's `apply` and the mobility writes | each Rollup tick, as an episode opens or closes | the episode row: a stay's place and interval, a co-location's two people |
-| notebook | the Cognition loop: step 1 for what it reads, step 3 for the Register items it writes | step 1 per work item, on arrival and when a work item's input hash changes (§10); step 3 in the same write as its note, memo or event | the model proposes, code admits (§7 step 1.6) |
+| notebook | the Cognition loop: step 1 for what it reads, step 3 for the Register items it writes | step 1 per work item, on arrival and when a work item's input hash changes (§10); step 3 right after its note, memo or event commits | the model proposes, code admits (§7 step 1.6) |
 
 Register rows with an explicit link column (a reminder's event entry, an
 RSVP's event) are record-layer and projected by code. **Whoever writes an
-item writes its own links, in the same write:** Cognition writes a note
+item writes its own links, right after it, in the same session:** Cognition writes a note
 together with its `concerns`, a memo with its `settles`, an event entry with
-its `records`, each with evidence, admitted by the same code checks. No item
-is linked later by a second writer. Step 2 reads relations and writes
+its `records`, each with evidence, admitted by the same code checks. No item is linked later by a second writer. The Register row commits first and is the source of truth; its links follow through `stage_and_admit` (2026-10-28: the Register stores commit in their own transactions and the graph port has none to share). A link write that fails is never dropped: every Register write is also a step 1 work item (§7), which retries it and parks it `failed` past 5 attempts, as [25](25-memory-graph.md) §7 already rules for a projection that fails. Step 2 reads relations and writes
 profile lines (§9); it never writes a relation.
 
 **When an entity is created.** Only as the end of a relation the same write
