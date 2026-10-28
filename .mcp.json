@@ -1,5 +1,9 @@
 {
 	"mcpServers": {
+		"sentry": {
+			"type": "http",
+			"url": "https://mcp.sentry.dev/mcp"
+		},
 		"devin": {
 			"type": "http",
 			"url": "https://mcp.devin.ai/mcp",
