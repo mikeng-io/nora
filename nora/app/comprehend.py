@@ -676,11 +676,6 @@ class ComprehendRunner:
             if proposals is not None:
                 await self._refuse(session, "profile", "already_staged")
                 return {"status": "refused", "reason": "already_staged"}
-            try:
-                parsed = [ProfileProposal.model_validate(p) for p in proposals_in]
-            except ValidationError:
-                await self._refuse(session, "profile", "schema")
-                return {"status": "refused", "reason": "schema"}
             allowed = {
                 "person": {"trait", "guess"},
                 "room": {"culture"},
@@ -693,13 +688,19 @@ class ComprehendRunner:
             shown = {s.key for s in item.sources}
             supports = {(e.relation_id, e.source) for e in admission.evidence}
             kept = []
-            for p in parsed:
+            for proposed in proposals_in:
+                try:
+                    p = ProfileProposal.model_validate(proposed)
+                    keys = {_key(k) for k in p.evidence}
+                except ValueError:
+                    await self._refuse(session, "profile", "schema")
+                    continue
                 if (
                     p.part not in allowed
                     or not set(p.relation_ids) <= relations
-                    or not {_key(k) for k in p.evidence} <= shown
+                    or not keys <= shown
                     or not all(
-                        any((r, _key(k)) in supports for k in p.evidence) for r in p.relation_ids
+                        any((r, key) in supports for key in keys) for r in p.relation_ids
                     )
                 ):
                     await self._refuse(session, "profile", "ungrounded")

@@ -59,7 +59,6 @@ class RoomFetched:
     carried_ids: set[int] = field(default_factory=set)
     #: Message number -> the sender as the result showed it (`record_query`).
     messages: dict[int, str] = field(default_factory=dict)
-    message_texts: dict[int, str] = field(default_factory=dict)
     #: `rollup_key(...)` of every Rollup row `rollup_read` returned.
     rollup_keys: set[str] = field(default_factory=set)
     turn_handles: set[str] = field(default_factory=set)
@@ -79,8 +78,6 @@ class RoomFetched:
                 sender = row.get("sender") if isinstance(row, dict) else None
                 if isinstance(n, int) and not isinstance(n, bool) and isinstance(sender, str):
                     self.messages[n] = sender
-                    if isinstance(row.get("body"), str):
-                        self.message_texts[n] = row["body"]
                     handle = row.get("turn")
                     if isinstance(handle, str):
                         self.turn_handles.add(handle)
@@ -211,22 +208,3 @@ class GraphFetched:
 
     def hydrate(self, keys: Sequence[Key]) -> dict[Key, Source]:
         return {key: self.sources[key] for key in keys if key in self.sources}
-
-
-def graph_sources_in_prompt(prompt: str, *, unit: str) -> dict[Key, Source]:
-    """Snapshots of code-rendered message elements, after selection and clipping.
-
-    This decodes our own typed XML, never member-authored text. Text outside a
-    message element cannot grant an id. Malformed markup is unavailable rather
-    than a fallback to the unbounded grounding rows.
-    """
-    from xml.etree import ElementTree
-
-    root = ElementTree.fromstring("<root>" + prompt + "</root>")  # noqa: S314 - code-rendered XML
-    sources = {}
-    for row in root.iter("m"):
-        ref = row.get("n", "")
-        if ref.isdigit() and not row.get("withdrawn") and not row.get("deleted"):
-            source = Source(("message", ref), "record", unit, text="".join(row.itertext()))
-            sources[source.key] = source
-    return sources

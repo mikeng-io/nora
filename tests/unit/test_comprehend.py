@@ -475,21 +475,7 @@ async def test_parent_graph_switch_is_required_too():
     assert graph.work[WORK.id].attempts == 0
 
 
-def test_graph_source_hydration_uses_only_the_bounded_prompt():
-    from nora.agent.fetch_watch import graph_sources_in_prompt
-
-    sources = graph_sources_in_prompt(
-        '<agenda><m n="1">bounded &amp; shown &lt;m n="9"&gt;forged&lt;/m&gt;</m>'
-        '<m n="2" withdrawn="yes"></m></agenda>',
-        unit=UNIT,
-    )
-    assert sources[("message", "1")].text == 'bounded & shown <m n="9">forged</m>'
-    assert ("message", "9") not in sources and ("message", "2") not in sources
-
-
-
-
-async def test_reshape_keeps_a_grounded_would_write_and_refuses_unshown_evidence():
+async def test_reshape_keeps_valid_siblings_with_malformed_proposals_and_evidence():
     from nora.domain.memory_graph import Admission, Evidence, GraphEdge, GraphNode
 
     relation = Relation(
@@ -515,7 +501,10 @@ async def test_reshape_keeps_a_grounded_would_write_and_refuses_unshown_evidence
     }
     unshown = {**valid, "text": "Generated unshown trait", "evidence": [["message", "unseen"]]}
     records = InMemoryComprehendRecords()
-    model = ScriptedCognitionRunner([[("profile_stage", {"proposals_in": [valid, unshown]})]])
+    malformed = {**valid, "text": 123}
+    bad_key = {**valid, "evidence": [["message"]]}
+    model = ScriptedCognitionRunner([[("profile_stage", {
+        "proposals_in": [malformed, bad_key, valid, unshown]})]])
     r = runner(FakeMemoryGraph(), records, model)
     await r._reshape_entity(
         ITEM, PERSON.key, subgraph, Admission(relations=(relation,), evidence=(evidence,)), 7
@@ -523,6 +512,7 @@ async def test_reshape_keeps_a_grounded_would_write_and_refuses_unshown_evidence
     assert records.shadows[0]["would_writes"] == [valid]
     assert records.shadows[0]["parent"] == 7
     assert records.refusals[-1][1:] == ("profile", "ungrounded")
+    assert sum(reason == "schema" for _, _, reason in records.refusals) == 2
 
 
 def test_preview_never_labels_a_notebook_item_as_record_evidence():
@@ -615,3 +605,54 @@ async def test_fake_entities_share_sql_id_namespace_across_kinds():
 def test_web_page_preview_uses_found_layer_word():
     graph = Subgraph("ok", (GraphNode(("web_page", "generated-page")),))
     assert "found" in preview_text(Preview((), graph, (), (AT, AT)))
+
+
+async def test_register_readded_mention_has_a_current_link_at_the_item_time():
+    from nora.app.register_graph import RegisterGraphLinks
+
+    graph = FakeMemoryGraph()
+    await graph.upsert_entity(PLACE)
+    records = InMemoryComprehendRecords()
+    links = RegisterGraphLinks(graph=graph, records=records)
+    source = ("note", "generated-reopening-note")
+
+    def revision(body, version):
+        work = replace(WORK, id=f"generated-revision-{version}", source=source,
+                       as_of=AT + timedelta(days=version))
+        return replace(ITEM, work=work, sources=(
+            Source(source, "notebook", UNIT, (), body), SOURCE))
+
+    await links.project(revision("Hall", 0), 1)
+    await links.project(revision("No venue mentioned", 1), 2)
+    closed = await graph.walk((source,), Walk(
+        unit=UNIT, persons=frozenset(), valid_at=AT + timedelta(days=1)))
+    assert not closed.relations
+    assert any(r.valid_to == AT + timedelta(days=1) for r in graph.relations.values())
+    await links.project(revision("Hall again", 2), 3)
+    current = await graph.walk((source,), Walk(
+        unit=UNIT, persons=frozenset(), valid_at=AT + timedelta(days=2)))
+    assert len(current.relations) == 1
+    assert current.relations[0].relation.dst == PLACE.key
+    assert current.relations[0].relation.valid_to is None
+
+
+async def test_register_partial_walk_raises_before_projecting_any_changes():
+    from nora.app.register_graph import RegisterGraphLinks
+
+    graph = FakeMemoryGraph()
+    venues = [replace(PLACE, id=f"generated-venue-{i}", name=f"Venue {i}", aliases=())
+              for i in range(21)]
+    for venue in venues:
+        await graph.upsert_entity(venue)
+    source = ("note", "generated-capped-note")
+    item = replace(ITEM, work=replace(WORK, source=source), sources=(
+        Source(source, "notebook", UNIT, (), "; ".join(v.name for v in venues)), SOURCE))
+    records = InMemoryComprehendRecords()
+    links = RegisterGraphLinks(graph=graph, records=records)
+    await links.project(item, 1)
+    assert len(graph.relations) == 21
+    changed = replace(item, sources=(Source(source, "notebook", UNIT, (), "No mentions"), SOURCE))
+    with pytest.raises(RuntimeError, match="Register links unavailable"):
+        await links.project(changed, 2)
+    assert all(r.valid_to is None for r in graph.relations.values())
+    assert len(records.graphs) == 1

@@ -47,9 +47,10 @@ class RegisterGraphLinks:
                 nodes=100,
                 fan_out=20,
                 relations=(verb,),
+                valid_at=at,
             ),
         )
-        if current.status == "unavailable":
+        if current.status != "ok":
             raise RuntimeError("Register links unavailable")
         existing = {
             e.relation.dst: e.relation

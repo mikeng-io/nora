@@ -59,8 +59,6 @@ _OWN_INJECTOR = {
 #: module a free pass to grow them. The module is checked and only the tag is
 #: allowed.
 _NOT_BUILT_HERE = {
-    ("nora/agent/fetch_watch.py", "root"):
-        "private XML parser wrapper around the already-rendered prompt; never emitted to a model",
     ("nora/ingest/relevance_gate.py", "nora_doctrine"):
         "strips the wrapper doctrine/loader.py builds",
 }
@@ -177,7 +175,6 @@ def test_a_module_that_writes_a_tag_by_hand_is_caught():
 #: `test_the_converted_list_is_not_quietly_shrinking` checks the list against the
 #: source, so a module that builds blocks and is missing here fails.
 CONVERTED = (
-    "nora/agent/fetch_watch.py",
     "nora/language/comprehend_render.py",
     "nora/agent/standing_ledger.py",
     "nora/app/extraction.py",
