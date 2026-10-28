@@ -111,6 +111,7 @@ from nora.app.summons_inbox import SummonsInbox
 from nora.app.voice_events import VoiceEventConsumer
 from nora.app.wake import Floor, WakeEvaluator
 from nora.config import Config, DreamBudgetConfig
+from nora.config_reload import ReloadFiles
 from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
 from nora.domain.compute import ComputeJobStore
 from nora.domain.computer import ComputerToolSettings
@@ -122,6 +123,7 @@ from nora.domain.computer_sessions import ComputerSessionStore
 from nora.domain.culture import character_key, nora_character_key, unit_culture_key
 from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.documents import DocumentStore, RoomKey
+from nora.domain.live import LiveMapping, LiveSequence, LiveSet
 from nora.domain.media_join import MediaJoin
 from nora.domain.memory_index import IndexState
 from nora.domain.ports import (
@@ -282,7 +284,7 @@ from nora.language.profile_verdict import (
 )
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
-from nora.persons import DIRECT_PLATFORMS, Persons, PersonsError, load_persons
+from nora.persons import DIRECT_PLATFORMS, Persons, PersonsError
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.discord.media import DiscordMediaSource
 from nora.platform.discord.music_manager import MusicPlayerManager
@@ -293,7 +295,7 @@ from nora.platform.registry import AdapterRegistry, AdapterRegistryError, MediaS
 from nora.platform.signal.adapter import SignalAdapter
 from nora.platform.signal.media import SignalMediaSource
 from nora.platform.signal.roster import SignalRoster
-from nora.policy import Policy, PolicyError, load_policy
+from nora.policy import Policy, PolicyError
 from nora.tag import Debounce
 from nora.web.games import PULSE_API_BASE, PulseGamesClient
 
@@ -342,6 +344,14 @@ def _room_claims(allowlist: Policy) -> dict[str, frozenset[tuple[str, str]]]:
         for cid in conv.ids:
             out.setdefault(cid, set()).add((conv.unit, conv.platform))
     return {cid: frozenset(owners) for cid, owners in out.items()}
+
+
+def _collective_members(
+    policy: Policy, keys: Mapping[str, CollectiveKey],
+) -> dict[str, tuple[str, ...]]:
+    return {k: tuple(sorted({pid for r in ck.rooms
+            for convo in policy.conversations if convo.primary_id == r.key
+            for pid in convo.persons or ()})) for k, ck in keys.items()}
 
 
 def _presence_reader(
@@ -1086,6 +1096,7 @@ class Dependencies:
     audit: RecordStore
     memory: MemoryStore
     persons: Persons
+    config_reload: ReloadFiles
     # The ONE media join, so `__main__` can hand the same
     # instance to the dream loop and to lazy adoption — the two transcript
     # builders this module does not construct itself.
@@ -1212,7 +1223,7 @@ class Dependencies:
     # page); the web routes instead scope every read to the circles the
     # signed-in viewer belongs to (`nora.web.api._viewer_circles`).
     presence: PresenceStore | None
-    presence_circles: tuple[Circle, ...]
+    presence_circles: Sequence[Circle]
     # Read-only analytics dashboard consumer over the SAME engine as audit and
     # presence. It has no independent lifecycle; audit closes the shared pool.
     mobility: SqlMobilityStore
@@ -1464,28 +1475,16 @@ async def build_dependencies(
     passing a clock.
     """
     content_checks = cfg.content_checks.enabled
+    metrics = Metrics()
     try:
-        persons = load_persons(cfg.identity_file)
-    except PersonsError as exc:
-        raise StartupError(f"person mapping error: {exc}") from exc
-
-    # The Nora aiPeer id is RESERVED — no human may hold it. If an operator
-    # gave a person the id `nora`, that human's words would feed under the
-    # aiPeer and merge IRREVERSIBLY into Nora's self-model card (Honcho keeps
-    # conclusions, not text). Fail closed at startup rather than pollute the
-    # corpus.
-    if cfg.honcho.ai_peer in persons.by_person:
-        raise StartupError(
-            f"identity.toml maps a person to the id '{cfg.honcho.ai_peer}', which "
-            "is reserved for Nora's own aiPeer (honcho.ai_peer) — a human under "
-            "that id would corrupt her self-model card. Rename the person or the "
-            "aiPeer."
+        reload_files = ReloadFiles(
+            policy_path=cfg.policy_file, identity_path=cfg.identity_file,
+            ai_peer=cfg.honcho.ai_peer, default_workspace=cfg.honcho.workspace_id,
+            metrics=metrics,
         )
-
-    try:
-        allowlist = load_policy(cfg.policy_file)
-    except PolicyError as exc:
-        raise StartupError(f"policy error: {exc}") from exc
+    except (PersonsError, PolicyError, ValueError, MemoryRoutingError) as exc:
+        raise StartupError(f"identity/policy error: {exc}") from exc
+    persons, allowlist = reload_files.persons, reload_files.policy
     if allowlist.dm_persons:
         log.warning(
             "policy.toml lists %d DM principal(s), but the Signal parser still "
@@ -1504,7 +1503,6 @@ async def build_dependencies(
         run_migrations(database_url)
     except Exception as exc:
         raise StartupError(f"migration error: {exc}") from exc
-    metrics = Metrics()
     # ONE engine (one pool) shared by the record store and the presence reader —
     # the shape `PresenceStore`'s own docstring asks for. `audit.aclose()` (in
     # `nora.__main__.App.shutdown`) disposes it for both; `PresenceStore.aclose`
@@ -1651,7 +1649,7 @@ async def build_dependencies(
         store=documents_store, records=audit, media=media_objects,
         media_window=cfg.store.context_window + LOAD_TRANSCRIPT_MAX,
         room_ids=_room_ids_of(allowlist),
-        is_person=persons.by_person.__contains__,
+        is_person=lambda person: person in persons.by_person,
         public_url=cfg.documents.public_url,
         # A Map names its places and the service looks them up. The same
         # client `route` and `place_info` use, so `[route]` off means a Map is `unavailable`.
@@ -1952,7 +1950,9 @@ async def build_dependencies(
             instagram_summons=summons_inbox,
             # A 1:1 message goes only to somebody in identity.toml; the
             # senders hold this set and refuse the rest.
-            dm_recipients={p: persons.direct_addresses(p) for p in DIRECT_PLATFORMS},
+            dm_recipients={
+                p: LiveSet(functools.partial(persons.direct_addresses, p)) for p in DIRECT_PLATFORMS
+            },
         )
     except AdapterRegistryError as exc:
         raise StartupError(str(exc)) from exc
@@ -2048,6 +2048,7 @@ async def build_dependencies(
 
     llm_state = LLMState()
     background = BackgroundTasks()
+    background.spawn(reload_files.run())
     # R-9's rate limiter, with its window persisted so a force-recreate does
     # not empty it (a duplicate tag arriving seconds after a restart would
     # otherwise run a second turn). `spawn` is REQUIRED alongside the store, not
@@ -2197,12 +2198,12 @@ async def build_dependencies(
     # EVERY id a room is known by — `Note.established_in` holds whichever one
     # the note was born under — within the note's UNIT, since ids are unique
     # per platform and a note carries no platform.
-    note_rooms: dict[tuple[str, str], tuple[str, str | None]] = {
+    note_rooms: Mapping[tuple[str, str], tuple[str, str | None]] = LiveMapping(lambda: {
         (cid, conv.unit): (conv.primary_id, conv.label or None)
         for conv in allowlist.conversations
         if conv.primary_id and conv.unit
         for cid in conv.ids
-    }
+    })
 
     def note_room_for(cid: str, unit: str) -> tuple[str, str | None] | None:
         return note_rooms.get((cid, unit))
@@ -2211,12 +2212,12 @@ async def build_dependencies(
     # id a room is known by, within the note's unit, to the room's platform —
     # what `Persons.name_transcript` needs and `Note.established_in` alone
     # cannot supply, since a note carries no platform of its own.
-    note_platforms: dict[tuple[str, str], str] = {
+    note_platforms: Mapping[tuple[str, str], str] = LiveMapping(lambda: {
         (cid, conv.unit): conv.platform
         for conv in allowlist.conversations
         if conv.primary_id and conv.unit
         for cid in conv.ids
-    }
+    })
 
     def note_platform_for(cid: str, unit: str) -> str | None:
         return note_platforms.get((cid, unit))
@@ -2316,9 +2317,8 @@ async def build_dependencies(
     api_key = os.environ.get(cfg.llm.api_key_env, "")  # presence already checked by config.load
     client = factory.create_client(base_url=cfg.llm.base_url, api_key=api_key)
     # `dream_loop`'s `scopes` callable — the policy.toml conversations,
-    # re-evaluated fresh each tick (cheap: `allowlist` is loaded once at
-    # startup and immutable) so a future policy-reload does not need this
-    # closure to change. No platform filter: this loop only READS
+    # re-evaluated fresh each tick through the live policy holder.
+    # No platform filter: this loop only READS
     # `RecordStore.since`, which needs no adapter for the platform.
     language_scopes: Callable[[], Sequence[str]] = lambda: tuple(  # noqa: E731
         conv.primary_id for conv in allowlist.conversations if conv.primary_id
@@ -2397,7 +2397,7 @@ async def build_dependencies(
     # reasoning effort. The act turn is wired when `policy.toml` names a home
     # room; its rows are written by the Cognition session's `remind`
     # (DEC-277).
-    proactive_homes = allowlist.home_rooms()
+    proactive_homes = LiveMapping(lambda: allowlist.home_rooms())
 
     def _auto_runner(
         effort: str, source: str, *, max_tokens: int | None = None,
@@ -2430,12 +2430,10 @@ async def build_dependencies(
     # (`ProactiveConfig`). It is not shared with the participation runner
     # because the two fail in opposite directions: at `none` a proactive turn
     # spoke on every case where silence was right.
-    proactive_runner: LiveAgentRunner | None = None
-    if proactive_homes:
-        proactive_runner = _auto_runner(
-            cfg.proactive.reasoning_effort, "[proactive] reasoning_effort",
-            max_tokens=cfg.proactive.max_tokens,
-        )
+    proactive_runner = _auto_runner(
+        cfg.proactive.reasoning_effort, "[proactive] reasoning_effort",
+        max_tokens=cfg.proactive.max_tokens,
+    )
     # The public Instagram summons' runner
     # (`nora.app.summons`): the SAME `AFTER_SPEAKING` shape as the
     # participation runner above, for the same reason — a summons may end in
@@ -2488,7 +2486,7 @@ async def build_dependencies(
     # `policy.toml`, not the DB, so the column cannot be filled — and policy
     # also knows the platform each id belongs to, which the row does not. The
     # service admits a legacy row only when this map names exactly one owner.
-    event_room_claims = _room_claims(allowlist)
+    event_room_claims = LiveMapping(lambda: _room_claims(allowlist))
 
     # A venue's district and city come from the Geocoding API by the place id
     # `place_info` resolved it to, with the route key (a Places id is that
@@ -2802,18 +2800,11 @@ async def build_dependencies(
     # `audit` engine (one pool, one lifecycle); the COLLECTOR process, not this
     # one, owns writing/pruning `presence_fixes` — Nora only ever reads it.
     presence_store: PresenceStore | None = None
-    presence_circles: tuple[Circle, ...] = ()
+    presence_circles: Sequence[Circle] = LiveSequence(lambda: circles_from_persons(persons))
     if cfg.presence.enabled:
-        presence_circles = circles_from_persons(persons)
-        if presence_circles:
-            presence_store = PresenceStore(
-                engine, retention_days=cfg.presence.retention_days, metrics=metrics,
-            )
-        else:
-            log.warning(
-                "presence enabled but identity.toml yields no circle "
-                "([[persons.<id>.life360]] with circle_id) — whereis stays unavailable"
-            )
+        presence_store = PresenceStore(
+            engine, retention_days=cfg.presence.retention_days, metrics=metrics,
+        )
     # Image generation ([image_gen], DEC-137): enabled AND refresh token
     # present → build the lane (the same keyless-`enabled` gate `route` uses).
     # Off (or tokenless) leaves the `generate_image` tool answering
@@ -3586,8 +3577,8 @@ async def build_dependencies(
             # `allowlist` — policy.toml — NOT `policy`, which is the
             # CompositePolicy deciding whether a message is a tag and has no
             # `is_allowed` at all. Re-checking the ALLOWLIST at fire time is the
-            # whole point of this parameter: the file is read once at
-            # startup and a row may be thirty days old.
+            # whole point of this parameter: the live policy may change while
+            # a row remains pending for thirty days.
             policy=allowlist,
             clock=clock,
             metrics=metrics,
@@ -3707,10 +3698,11 @@ async def build_dependencies(
             health=SqlSourceHealthLog(engine),
             roster=functools.partial(instagram_roster, social_subjects),
             settings=cfg.social.poll, metrics=metrics,
-            units=social_person_units(allowlist),
-            rooms={unit: tuple((c.platform, rid) for c in allowlist.conversations
+            units=LiveMapping(lambda: social_person_units(allowlist)),
+            rooms=LiveMapping(lambda: {unit: tuple((c.platform, rid)
+                               for c in allowlist.conversations
                                if c.unit == unit for rid in sorted(c.ids))
-                   for unit in {c.unit for c in allowlist.conversations if c.unit}},
+                   for unit in {c.unit for c in allowlist.conversations if c.unit}}),
             timezone=cfg.cognition.timezone,
             # The same custody every room's media goes through; `None` while
             # media custody is off, and then items are recorded without bytes.
@@ -3723,7 +3715,8 @@ async def build_dependencies(
         social_perception = SocialPerception(
             store=social_store, media_objects=media_objects,
             comprehension=comprehension, stimuli=stimulus_store,
-            units=social_person_units(allowlist), rooms=social_person_rooms(allowlist),
+            units=LiveMapping(lambda: social_person_units(allowlist)),
+            rooms=LiveMapping(lambda: social_person_rooms(allowlist)),
             daily_cap=cfg.social.poll.perception_daily_cap,
             tz=ZoneInfo(cfg.cognition.timezone),
             chunk_seconds=cfg.media.describe.video.chunk_seconds,
@@ -3991,7 +3984,7 @@ async def build_dependencies(
             # per (unit, person listed in that unit's rooms), woken by that
             # person's own messages across the unit's rooms. Same store,
             # same chain, the stale rule `[culture] stale_seconds` shares.
-            person_keys = character_person_keys(allowlist, persons)
+            person_keys = LiveMapping(lambda: character_person_keys(allowlist, persons))
             culture_store = SqlCultureStore(engine)
             dream_schedules = {
                 **dream_schedules,
@@ -4027,7 +4020,7 @@ async def build_dependencies(
 
             # CHARACTER · UNIT: one session per unit, woken by new
             # revisions of its rooms' cultures.
-            unit_keys = character_unit_keys(allowlist)
+            unit_keys = LiveMapping(lambda: character_unit_keys(allowlist))
             dream_schedules = {
                 **dream_schedules,
                 CHARACTER_UNIT_ADAPTOR_NAME: AdaptorSchedule(
@@ -4038,10 +4031,10 @@ async def build_dependencies(
             }
             # CHARACTER · NORA: her own account per unit, from closed
             # response episodes; read back as the `self` block.
-            nora_keys = {
+            nora_keys = LiveMapping(lambda: {
                 nora_character_key(uk.unit): NoraKey(unit=uk.unit, rooms=uk.rooms)
                 for uk in unit_keys.values()
-            }
+            })
             dream_schedules = {
                 **dream_schedules,
                 CHARACTER_NORA_ADAPTOR_NAME: AdaptorSchedule(
@@ -4079,7 +4072,7 @@ async def build_dependencies(
             # account under its `primary_id`, the unit's and Nora's under the
             # culture keys — the same key the prose head they backfill from
             # is written under.
-            profile_room_keys = {
+            profile_room_keys = LiveMapping(lambda: {
                 conv.primary_id: CollectiveKey(
                     unit=conv.unit,
                     rooms=(CharacterRoom(key=conv.primary_id, platform=conv.platform,
@@ -4087,18 +4080,18 @@ async def build_dependencies(
                     label=conv.label or "", description=conv.description or "",
                 )
                 for conv in allowlist.conversations if conv.primary_id and conv.unit
-            }
-            profile_unit_keys = {
+            })
+            profile_unit_keys = LiveMapping(lambda: {
                 key: CollectiveKey(unit=uk.unit, rooms=uk.rooms, label=uk.unit)
                 for key, uk in unit_keys.items()
-            }
-            profile_nora_keys = {
+            })
+            profile_nora_keys = LiveMapping(lambda: {
                 key: CollectiveKey(unit=nk.unit, rooms=nk.rooms, label="Nora")
                 for key, nk in nora_keys.items()
-            }
-            profile_collective_keys = {
+            })
+            profile_collective_keys = LiveMapping(lambda: {
                 **profile_room_keys, **profile_unit_keys, **profile_nora_keys,
-            }
+            })
 
             # PROFILE · PERSON, in shadow (design/unified-memory/45 §4): one
             # session per (unit, listed person), on the person's Character
@@ -4165,7 +4158,7 @@ async def build_dependencies(
                         # The docket covers every account of the unit, a
                         # collective's included: each mapped to who the judge
                         # says it is about and the rooms its window covers.
-                        keys={
+                        keys=LiveMapping(lambda: {
                             **{key: DocketAccount(
                                 about=(ref.name if (ref := persons.by_person.get(
                                     pk.person.person_id)) is not None else "someone"),
@@ -4176,7 +4169,7 @@ async def build_dependencies(
                                 about=ck.label or key,
                                 rooms=tuple((r.platform, r.key) for r in ck.rooms),
                             ) for key, ck in profile_collective_keys.items()},
-                        },
+                        }),
                         name_of=lambda pid: (
                             ref.name if pid and (ref := persons.by_person.get(pid)) is not None
                             else "someone"
@@ -4224,9 +4217,9 @@ async def build_dependencies(
                         evidence=CollectiveEvidence(
                             store=profile_reads, keys=keys, kind=kind, render=profile_index,
                             source_inputs=SqlProfileInputs(engine, social=profile_social),
-                            members={k: tuple(sorted({pid for r in ck.rooms
-                                for convo in allowlist.conversations if convo.primary_id == r.key
-                                for pid in convo.persons or ()})) for k, ck in keys.items()}),
+                            members=LiveMapping(functools.partial(
+                                _collective_members, allowlist, keys,
+                            ))),
                         reads=profile_reads, keys=keys,
                         name_of=lambda pid: (
                             ref.name if pid and (ref := persons.by_person.get(pid)) is not None
@@ -4247,10 +4240,10 @@ async def build_dependencies(
         # closed response episodes, writing through the book's checked verbs.
         # Gated on `[lessons] enabled` alone (off by default).
         if cfg.lessons.enabled:
-            lessons_keys = {
+            lessons_keys = LiveMapping(lambda: {
                 uk.unit: LessonsKey(unit=uk.unit, rooms=uk.rooms)
                 for uk in character_unit_keys(allowlist).values()
-            }
+            })
             # THE DOCTRINE CHECK: every lesson is read against the law by a
             # separate call before it is written; a conflict is a tension row.
             # Its instruction is read once HERE so a missing file stops startup
@@ -4380,14 +4373,14 @@ async def build_dependencies(
             # not the proactive adaptor is wired: the map is inert for an
             # adaptor with no home-room grant, and a grant with no map fails
             # closed inside `build`.
-            home_rooms={
+            home_rooms=LiveMapping(lambda: {
                 ws: HomeRoom(
                     unit=ws, platform=conv.platform,
                     conversation_id=conv.primary_id, conversation_type="group",
                     location_trusted=conv.location,
                 )
                 for ws, conv in proactive_homes.items()
-            },
+            }),
             # EVERY policy conversation, keyed by every id form it answers to
             # — the SCOPE-keyed half of a home-room grant
             # (`AdaptorGrant.home_room`). A scope-keyed adaptor's key already
@@ -4399,7 +4392,7 @@ async def build_dependencies(
             # disagree about which room an id names.
             # Inert for an adaptor with no home-room grant, exactly as
             # `home_rooms` is.
-            scope_rooms=scope_home_rooms(allowlist),
+            scope_rooms=LiveMapping(lambda: scope_home_rooms(allowlist)),
             rosters=rosters,
             # EVERY platform's aliases, for `_presence_preflight`'s reason: a
             # home room's roster must skip Nora's own account rather than
@@ -4517,11 +4510,11 @@ async def build_dependencies(
                 "cognition sessions: read tools wired=%s missing=%s withheld=%s",
                 sorted(surface.wired), sorted(surface.missing), sorted(surface.withheld),
             )
-            homes = allowlist.home_rooms()
+            homes = LiveMapping(lambda: allowlist.home_rooms())
             cognition_wakeable, cognition_skipped = units_with_home_rooms(
                 list(unit_scopes()), homes,
             )
-            cognition_session_units = frozenset(cognition_wakeable)
+            cognition_session_units = LiveSet(lambda: frozenset(allowlist.home_rooms()))
             metrics.gauge(
                 "nora_cognition_session_units", float(len(cognition_wakeable)),
                 state="runnable",
@@ -4557,17 +4550,17 @@ async def build_dependencies(
 
             # The unit -> its rooms' every id form, for the grounding read: a
             # stimulus naming a room outside its unit is never read (DEC-231).
-            cognition_unit_rooms: dict[str, set[tuple[str, str]]] = {}
-            for conv in allowlist.conversations:
-                cognition_unit_rooms.setdefault(conv.unit, set()).update(
-                    (conv.platform, cid) for cid in conv.ids
-                )
+            cognition_unit_rooms = LiveMapping(lambda: {
+                unit: {(c.platform, cid) for c in allowlist.conversations
+                       if c.unit == unit for cid in c.ids}
+                for unit in unit_scopes()
+            })
             if cfg.cognition.upcoming_days > 0:
-                upcoming_rooms: dict[str, list[tuple[str, str, Collection[str]]]] = {}
-                for conv in allowlist.conversations:
-                    upcoming_rooms.setdefault(conv.unit, []).append(
-                        (conv.platform, conv.primary_id, conv.ids),
-                    )
+                upcoming_rooms = LiveMapping(lambda: {
+                    unit: [(c.platform, c.primary_id, c.ids) for c in allowlist.conversations
+                           if c.unit == unit]
+                    for unit in unit_scopes()
+                })
                 cognition_upcoming = upcoming_reader(
                     _open_events, lambda unit: upcoming_rooms.get(unit, []),
                     days=cfg.cognition.upcoming_days,
@@ -4577,10 +4570,10 @@ async def build_dependencies(
                 )
             # The policy's label for each of those ids: the prompt calls a
             # room by it and never by the conversation id.
-            cognition_room_labels: dict[tuple[str, str], str] = {
+            cognition_room_labels: Mapping[tuple[str, str], str] = LiveMapping(lambda: {
                 (conv.platform, cid): conv.label
                 for conv in allowlist.conversations for cid in conv.ids
-            }
+            })
 
             async def _room_events(
                 unit: str, platform: str, conversation_id: str,
@@ -4669,7 +4662,7 @@ async def build_dependencies(
                         platform=platform, conversation_id=conversation_id,
                     ),
                     roster_of=_roster_names_of(rosters, persons, registry.self_aliases()),
-                    homes=homes, units=cognition_wakeable,
+                    homes=homes, units=LiveSequence(lambda: tuple(allowlist.home_rooms())),
                     skills=agenda_skills,
                     grounder=grounder,
                     person_known=lambda person_id: persons.by_person.get(
@@ -4734,6 +4727,7 @@ async def build_dependencies(
             clock=lambda: datetime.now(UTC),
         )
     return Dependencies(
+        config_reload=reload_files,
         audit=audit, memory=memory, persons=persons, metrics=metrics,
         media_join=media_join,
         policy=policy, assembler=assembler, ingest=ingest, engagement=engagement,
@@ -4933,7 +4927,7 @@ async def _presence_preflight(
     allowlist: Policy,
     rosters: Mapping[str, RosterSource],
     persons: Persons,
-    circles: tuple[Circle, ...],
+    circles: Sequence[Circle],
     metrics: Metrics,
     self_ids: frozenset[str] = frozenset(),
 ) -> None:

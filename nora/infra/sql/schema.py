@@ -3921,8 +3921,8 @@ IDX_DOCTRINE_REVISION_CORPUS_LOADED = sa.Index(
 )
 
 #: One row per config file per process start: `config.toml`, `policy.toml`,
-#: `identity.toml`. All three live only on the deploy host and are read once
-#: at startup, so the content each process ran on is recorded here, keyed to
+#: `identity.toml`. All three live only on the deploy host. This records their
+#: startup content; identity/policy may subsequently hot-reload. Keyed to
 #: `revision_blob` by content hash.
 CONFIG_REVISION = sa.Table(
     "config_revision",

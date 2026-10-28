@@ -116,7 +116,7 @@ class SocialPerception:
         # `(person, unit) -> (platform, conversation_id)`: the room each
         # stimulus binds (`composition.social_person_rooms`). A pair with none
         # binds the unit's home room.
-        self._rooms = rooms or {}
+        self._rooms = rooms if rooms is not None else {}
         self._cap = daily_cap
         self._tz = tz
         self._chunk_seconds = chunk_seconds

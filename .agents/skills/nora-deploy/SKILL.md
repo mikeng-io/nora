@@ -108,6 +108,13 @@ Secrets stay in `.env`; never print them. Release the lock before manual native
 `DeployStack`: the wrapper reacquires it, validates again and force-recreates only
 owned readers of the requested files. Without the request unchanged containers
 retain their IDs and loaded-once state. The request clears only after verified success.
+Ordinary identity and policy edits need no request: a valid file hot-reloads
+in-process within three seconds — read each consumer's `nora_config_reloads_total`
+`applied` outcome and `/health` config staleness. A `refused` outcome retains the
+last good file; restore/fix the copy. `restart_required` refuses the whole file:
+write the scoped reload request and use native Stack recreation for policy
+`[units]` or identity `[workspaces]` binding edits.
+See [the full capture audit](../../../design/policy-reload/00-design.md).
 On failure restore the backup under the lock, then use native Stack recovery
 and repeat receipt, image, health and process-config readback.
 

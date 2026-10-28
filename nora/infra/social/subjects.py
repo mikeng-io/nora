@@ -21,8 +21,8 @@ two read-only attributes this class reads, which `nora.policy.Policy` and its
 `Conversation` rows satisfy as they are. The composition root passes the real
 `Policy`; nothing here learns that `nora.policy` exists.
 
-Both answers are read once at startup, like the two files themselves (no hot
-reload), so neither method does I/O and neither can raise on a healthy index.
+Both answers read the current holders at use time. Neither method does I/O
+and neither can raise on a healthy index.
 Both still fail CLOSED behind a backstop, as the port requires: a broken index
 costs a read that should have happened and never grants one that should not.
 """

@@ -23,6 +23,8 @@ import os
 from dataclasses import dataclass
 
 from nora.config import Config
+from nora.config_reload import FileReload, LivePersons, RestartRequiredError
+from nora.domain.live import LiveSequence
 from nora.infra.life360 import Life360Client
 from nora.infra.sql import create_sql_engine, run_migrations
 from nora.infra.sql.presence import PresenceStore
@@ -83,6 +85,7 @@ class PresenceDependencies:
     store: PresenceStore | None
     metrics: Metrics
     metrics_port: int
+    identity_reload: FileReload[Persons] | None = None
 
 
 def build_collector(cfg: Config) -> PresenceDependencies:
@@ -97,10 +100,23 @@ def build_collector(cfg: Config) -> PresenceDependencies:
         )
 
     try:
-        persons = load_persons(cfg.identity_file)
+        persons = LivePersons(load_persons(cfg.identity_file))
     except PersonsError as exc:
         raise PresenceStartupError(f"identity.toml error: {exc}") from exc
-    circles = _circles_from_identity(persons)  # raises if none / any unplaced
+    boot_bindings = persons.honcho_workspaces
+
+    def validate_persons(candidate: Persons) -> None:
+        if cfg.honcho.ai_peer in candidate.by_person:
+            raise PresenceStartupError("identity.toml uses the reserved aiPeer person id")
+        _circles_from_identity(candidate)
+        if candidate.honcho_workspaces != boot_bindings:
+            raise RestartRequiredError("identity.workspaces Honcho binding")
+
+    validate_persons(persons)
+    identity_reload = FileReload(
+        cfg.identity_file, persons, load_persons, validate_persons, metrics,
+    )
+    circles = LiveSequence(lambda: _circles_from_identity(persons))
 
     credential = os.environ.get(presence.client_credential_env, "")
     username = os.environ.get(presence.username_env, "")
@@ -176,5 +192,5 @@ def build_collector(cfg: Config) -> PresenceDependencies:
         collector=collector,
         store=store,
         metrics=metrics,
-        metrics_port=presence.metrics_port,
+        metrics_port=presence.metrics_port, identity_reload=identity_reload,
     )
