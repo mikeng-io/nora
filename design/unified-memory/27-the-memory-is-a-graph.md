@@ -300,12 +300,15 @@ Three writers, one per layer, and no relation has two:
 |---|---|---|---|
 | record | code: the store's own `project(kind, id)` (25 §7) | in the same `begin()` as the row's write | columns: a message's room and author, a link's message, a reply's parent. No judgement. |
 | rollup | code: the Rollup's `apply` and the mobility writes | each Rollup tick, as an episode opens or closes | the episode row: a stay's place and interval, a co-location's two people |
-| notebook | the research loop (§7) | per work item, on arrival; and when a work item's input hash changes (§10) | the model proposes, code admits (§7 step 6) |
+| notebook | the research loop (§7) for what it reads; the Cognition session for the Register items it writes | per work item, on arrival, and when a work item's input hash changes (§10); Cognition in the same write as its note, memo or event | the model proposes, code admits (§7 step 6) |
 
 Register rows with an explicit link column (a reminder's event entry, an
-RSVP's event) are record-layer and projected by code. What a note or memo is
-*about* is a judgement and goes through the loop. Character writers read
-relations and write lines (§9); they never write a relation.
+RSVP's event) are record-layer and projected by code. **Whoever writes an
+item writes its own links, in the same write:** Cognition writes a note
+together with its `concerns`, a memo with its `settles`, an event entry with
+its `records`, each with evidence, admitted by the same code checks. No item
+is linked later by a second writer. Character writers read relations and
+write lines (§9); they never write a relation.
 
 **When an entity is created.** Only as the end of a relation the same write
 admits, with evidence. A name mentioned once with nothing said about it is a
@@ -334,6 +337,33 @@ past its window with only `plans` becomes `unconfirmed`. That is code, a sweep
 on the Rollup tick, not a model call.
 
 `# ponytail: candidate matching is alias + trigram + place/date; an embedding match joins only if the spike's wrong-merge rate (§11) misses its gate`
+
+## 7b. Three loops, one job each
+
+The research loop is the **memory loop**. It is not a new level: it takes
+extraction's place, on every arrival and before anything else reads the item
+(18's position, with a loop instead of one call).
+
+| loop | its one job | reads | writes |
+|---|---|---|---|
+| memory (this node) | comprehend every item once and connect it: readings, entities, relations, enrichment | the Record, the Rollup, the graph | readings, entities, notebook relations |
+| Cognition ([cognition-loop/30](../cognition-loop/30-cognition.md)) | decide what needs doing: notes, memos, events, reminders, Standing | its agenda, **with each item's readings and nearby subgraph** | Register items and their own links (§7a), Standing |
+| Character and profile adaptors (§9) | say what each person, room, unit and Nora is like | the entity's subgraph | Character lines |
+
+**Interpret once.** Cognition decides on the memory loop's reading of an item,
+not on its own second reading of the raw text: its agenda item carries the
+item's readings and the preview subgraph (§14), and its read tools stay for
+depth. An agenda item whose memory work item has not settled yet waits for it
+or is marked unread. Two models reading the same message independently is how
+two copies drift.
+
+**Why the memory loop is not folded into Cognition:** Cognition is selective
+(at most `max_items` per session, ordered by surprise, the rest deferred,
+`nora/domain/cognition_session.py`); memory must read every item exactly once.
+Cognition acts; the backfill must never create a note or a reminder. A memory
+failure must not stop Nora acting. **Why not into the profile adaptors:** one
+writer per tier; a loop that both records relations and summarises them grades
+its own work.
 
 ## 8. Enrichment and its limits
 
@@ -521,10 +551,12 @@ gate scores whether an answer is grounded, not only whether it is right.
    the vocabularies with their tests; code projection of record and rollup
    relations; the Register mapping (§6).
 3. **The research loop and enrichment** (§7, §8), on new arrivals in shadow:
-   it writes, nothing reads.
+   it writes, nothing reads. Cognition's links for its own Register writes
+   (§7a) land in the same change.
 4. **The spike** on a frozen snapshot, against §11.
 5. **One backfill** in time order (§10).
-6. **Query, presentation and tools** (§12–§14), with the routing measurement.
+6. **Query, presentation and tools** (§12–§14), with the routing measurement;
+   Cognition's agenda reads the memory loop's output (§7b).
 7. **Character writers read the graph** (§9; [00](00-intent.md) phase 4).
 8. **Answerability and reply-replay gates**, then the switch, the operator's
    call ([70](70-honcho-cutover.md)).
