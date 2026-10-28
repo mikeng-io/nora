@@ -311,6 +311,29 @@ media reading landing late on an old message, a Rollup episode closing (an
 outing, a co-location), a Register write. Each work item records the
 **input hash** of everything it rendered (§10).
 
+**What the graph already knows is pushed, not searched for** (operator,
+2026-10-28). Before the model runs, code builds the work item's **graph
+preview**, the same push / pre-fetch / pull split the reply turn has (§13):
+
+- **Seeds, by code, from the item alone:** its author, room and reply parent;
+  its mentions, and known names or aliases found in its text (a scan against
+  the unit's entity aliases); its link's URL or account; faces already
+  labelled in its media and a social item's tagged place; and its time window
+  ("Saturday" resolved against the item's own time, §10).
+- **Expansion:** the retrieval service's walk from those seeds (§12, the same
+  scope, caps and hub rule): each seed's entity with its key attributes, its
+  open relations (plans, commitments, upcoming events), the last readings in
+  the same thread, and the resolution candidates of §7a.
+- **Rendered** as the first block of step 1's input, in §14's preview format,
+  within a fixed token budget (a starting value, measured in the spike), with
+  `more=available` when a cap was hit.
+
+The model's own `memory_search` / `memory_read` calls are then for what code
+cannot seed: a name the graph has never held, a vague reference ("that place
+last time"), or one more hop. The same preview is carried to step 3's agenda
+(§7 rule 1), so the graph context is built once per item.
+`# ponytail: the alias scan finds only names the graph already holds; new names fall to the model's tools, and the spike's recall row (§11) says whether that gap matters`
+
 **Step 1, in order:**
 
 1. **Read every item fully.** The rendered input carries each message with
@@ -324,9 +347,10 @@ outing, a co-location), a Register write. Each work item records the
    where, how (stated / said by another / planned / asked / reported), with the
    exact span. The span checks stay code; a span may now come from an
    attachment's reading or a social caption, cited as that item.
-3. **Look up the graph.** `memory_search` / `memory_read` (§12) for the
-   entities and nearby evidence the item names: the venue already known, the
-   event already planned, the person's open commitment, last week's outing.
+3. **Read the graph preview, and pull more if needed.** The preview (above)
+   already holds the entities and nearby evidence the item names: the venue
+   already known, the event already planned, the person's open commitment,
+   last week's outing. `memory_search` / `memory_read` (§12) go further.
    This is the multiplier: a new item attaches to what exists.
 4. **Resolve.** Attach to an existing entity, create one, or propose
    `same_as`. Merging is never destructive: `same_as` is a notebook relation
