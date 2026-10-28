@@ -1,10 +1,10 @@
-"""Prepare a manually selected release from commits reachable since the last tag.
+"""Prepare an automatic patch/minor or owner-selected major release.
 
 release-please walks history in committer-date order and stops at the last release
 commit, so a branch whose commits were written before that release and merged after
 it is invisible to it: its `security` commits never reach a release PR.
 `git log base..HEAD` is topological and has no such blind spot, and
-`release_scope.releasable` already uses it to decide whether a release is due. This
+`release_scope.releasable` supplies the complete unreleased range. This
 script uses the same commits to write the release PR release-please would have
 written, byte for byte in its format, so the release-please action can still tag
 and publish it when it merges. No tag, a version that disagrees with the manifest,
@@ -30,7 +30,8 @@ CONFIG = ROOT / "release-please-config.json"
 MANIFEST = ".release-please-manifest.json"
 PR_HEAD = "release-please--branches--master--components--nora"
 CONVENTIONAL = re.compile(r"^(?P<type>[a-z]+)(?:\((?P<scope>[^)]*)\))?(?P<bang>!)?: (?P<text>.+)$")
-BREAKING_FOOTER = re.compile(r"^BREAKING[ -]CHANGE: ", re.M)
+BREAKING_FOOTER = re.compile(r"^BREAKING[ -]CHANGE:", re.M)
+MINOR_FOOTER = re.compile(r"^Release-Bump: minor[ \t]*$", re.M)
 SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 INTRO = ":robot: I have created a release *beep* *boop*\n---\n\n\n"
 OUTRO = (
@@ -47,6 +48,7 @@ class Entry:
     scope: str
     text: str
     breaking: bool
+    minor: bool = False
 
 
 def entries(base: str, head: str = "HEAD") -> list[Entry]:
@@ -57,9 +59,10 @@ def entries(base: str, head: str = "HEAD") -> list[Entry]:
         if match:
             kind, scope, text = match["type"], match["scope"] or "", match["text"]
             breaking = bool(match["bang"]) or bool(BREAKING_FOOTER.search(message))
-        else:  # git's own `Revert "<subject>"`
-            kind, scope, text, breaking = "revert", "", subject, False
-        result.append(Entry(sha, kind, scope, text, breaking))
+        else:
+            kind = "revert" if subject.startswith('Revert "') else "chore"
+            scope, text, breaking = "", subject, bool(BREAKING_FOOTER.search(message))
+        result.append(Entry(sha, kind, scope, text, breaking, bool(MINOR_FOOTER.search(message))))
     return result
 
 
@@ -70,8 +73,16 @@ def bump(current: str, found: list[Entry], requested: str | None = None) -> str:
     major, minor, patch = (int(part) for part in match.groups())
     # Product policy: a feat may improve an existing capability. Its label alone
     # cannot require minor; the assessed explicit bump selects that milestone.
-    minimum = "major" if any(e.breaking for e in found) else "patch"
+    minimum = (
+        "major"
+        if any(e.breaking for e in found)
+        else "minor"
+        if any(e.minor for e in found)
+        else "patch"
+    )
     levels = ("patch", "minor", "major")
+    if requested is None and minimum == "major":
+        raise ValueError("breaking changes require an owner-selected major at an exact candidate")
     selected = requested or minimum
     if levels.index(selected) < levels.index(minimum):
         raise ValueError(f"{selected} bump is below the {minimum} required by unreleased commits")
@@ -156,8 +167,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", ""))
     parser.add_argument(
-        "--bump", choices=("patch", "minor", "major"), required=True,
-        help="assessed product bump; cannot hide a declared breaking change",
+        "--bump",
+        choices=("patch", "minor", "major"),
+        help="owner-selected override; automatic processing defaults to patch/minor",
     )
     parser.add_argument("--candidate", help="full commit SHA already assessed for this preparation")
     parser.add_argument(
@@ -167,6 +179,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if not args.repo:
         raise SystemExit("release_plan: --repo or GITHUB_REPOSITORY is required")
+    if args.bump is not None and not args.candidate:
+        raise ValueError("an owner-selected bump requires an exact full candidate SHA")
     if args.candidate and (
         not re.fullmatch(r"[0-9a-f]{40}", args.candidate)
         or git("rev-parse", "HEAD").strip() != args.candidate
@@ -182,7 +196,10 @@ def main(argv: list[str] | None = None) -> int:
     apply(ROOT, previous, version, section)
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "title.txt").write_text(f"chore(master): release {version}\n", encoding="utf-8")
-    (args.out / "body.md").write_text(INTRO + section + OUTRO, encoding="utf-8")
+    (args.out / "body.md").write_text(
+        INTRO + section + f"\nRelease-Candidate: {git('rev-parse', 'HEAD').strip()}\n" + OUTRO,
+        encoding="utf-8",
+    )
     print("eligible=true")
     print(f"version={version}")
     print(f"head={PR_HEAD}")

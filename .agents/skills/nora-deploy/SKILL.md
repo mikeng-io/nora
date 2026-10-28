@@ -49,11 +49,11 @@ bootstrap prerequisite does not authorize checkout deployment in Komodo mode.
 
 ## 1. Release and deployment
 
-Production uses Stack `nora-releases`. Merge the fix PR, then have the maintainer
-prepare the version through `nora-release` with an explicit manual bump. After
-reviewing and merging the metadata PR, separately dispatch publication with
-operator deployment admission or the daily automation's standing authorization
-when every release criterion passes. Ordinary master merges never publish a release.
+Production uses Stack `nora-releases`. Ordinary master pushes automatically
+prepare patch/minor metadata and merge it only after required checks, then
+release-please publishes the stable Release. Breaking ranges stop for an
+owner-only exact-candidate major dispatch (`nora-release`). Standing authority
+includes this existing release/deployment path; no daily evaluator is involved.
 The tag and GitHub Release trigger `release-images.yml`; all images must finish
 before it commits `compose.json` and `release.json` to `deployments`.
 

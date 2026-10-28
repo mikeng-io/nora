@@ -1,25 +1,27 @@
-# Manual preparation and publication; ordinary master pushes never release.
-# Publication still triggers release-images and the installed Komodo poller.
+# Ordinary master changes prepare patch/minor metadata; release-please alone publishes.
+# Publication feeds the existing release-images -> deployments -> Komodo lane.
 name: release-please
 
 on:
+  push:
+    branches: [master]
   workflow_dispatch:
     inputs:
       action:
-        description: Prepare a release PR, or publish the manually merged release PR
+        description: Owner recovery or explicit major preparation/publication
         required: true
         type: choice
         options: [prepare, publish]
         default: prepare
       bump:
-        description: Manual version bump for prepare (ignored by publish)
+        description: Owner-selected bump for prepare (ignored by publish)
         required: true
         type: choice
         options: [patch, minor, major]
         default: patch
       candidate:
-        description: Full assessed source SHA (required for prepare, ignored by publish)
-        required: false
+        description: Exact full current master SHA (required for owner dispatch)
+        required: true
         type: string
 
 permissions:
@@ -31,13 +33,22 @@ concurrency:
 
 jobs:
   release-please:
-    if: github.ref == 'refs/heads/master'
+    if: github.repository == 'mikeng-io/nora' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
       pull-requests: write
     steps:
+      - name: Admit only owner dispatches and reruns
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          OWNER: ${{ github.event.repository.owner.login }}
+          ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+        run: |
+          set -euo pipefail
+          test "$ACTOR" = "$OWNER" && test "$TRIGGERING_ACTOR" = "$OWNER"
       - name: Require the repository release App
         if: vars.RELEASE_APP_ID == ''
         run: |
@@ -45,6 +56,7 @@ jobs:
           exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: master
           fetch-depth: 0
           persist-credentials: false
       - name: Create a repository-scoped release token
@@ -56,18 +68,36 @@ jobs:
           repositories: ${{ github.event.repository.name }}
           permission-contents: write
           permission-pull-requests: write
-      # Only an explicit publish dispatch tags the merged release PR.
+      - name: Pin current master and refuse stale owner candidates
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          EVENT: ${{ github.event_name }}
+          RELEASE_CANDIDATE: ${{ inputs.candidate }}
+        run: |
+          set -euo pipefail
+          gh auth setup-git
+          git fetch --tags --force origin
+          git checkout --detach origin/master
+          if [ "$EVENT" = workflow_dispatch ]; then
+            [[ "$RELEASE_CANDIDATE" =~ ^[0-9a-f]{40}$ ]]
+            test "$(git rev-parse HEAD)" = "$RELEASE_CANDIDATE" || {
+              echo '::error::master advanced; select its exact full SHA again.'
+              exit 1
+            }
+          fi
+      # Publish BEFORE planning: retry a merged-but-unpublished PR before considering
+      # another version, and fetch its new tag before computing the remaining range.
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
-        if: inputs.action == 'publish'
+        if: github.event_name == 'push' || inputs.action == 'publish'
         id: release
         with:
           token: ${{ steps.app.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           skip-github-pull-request: true
-      - name: Open or update the release PR from unreleased runtime changes
+      - name: Open or update the release PR from the complete unreleased range
         id: plan
-        if: inputs.action == 'prepare'
+        if: github.event_name == 'push' || inputs.action == 'prepare'
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           GH_REPO: ${{ github.repository }}
@@ -75,32 +105,36 @@ jobs:
           PR_HEAD: release-please--branches--master--components--nora
           APP_SLUG: ${{ steps.app.outputs.app-slug }}
           APP_BOT_ID: ${{ vars.RELEASE_APP_BOT_USER_ID }}
+          EVENT: ${{ github.event_name }}
           RELEASE_BUMP: ${{ inputs.bump }}
           RELEASE_CANDIDATE: ${{ inputs.candidate }}
         run: |
           set -euo pipefail
-          : "${RELEASE_CANDIDATE:?prepare requires the full assessed source SHA}"
-          # checkout dropped its credentials (persist-credentials: false) and the repo is
-          # private, so every git remote operation below needs the helper first.
           gh auth setup-git
           git fetch --tags --force origin
-          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/master)" || {
-            echo '::error::master advanced after dispatch; reassess and prepare again.'
-            exit 1
-          }
-          python3 -m scripts.release_plan --bump "$RELEASE_BUMP" --candidate "$RELEASE_CANDIDATE" --out "$RUNNER_TEMP/release" > "$RUNNER_TEMP/plan.txt"
+          git checkout --detach origin/master
+          source=$(git rev-parse HEAD)
+          args=(--candidate "$source")
+          if [ "$EVENT" = workflow_dispatch ]; then
+            # Keep the owner's selection exact across publication/fetch races.
+            test "$source" = "$RELEASE_CANDIDATE"
+            args+=(--bump "$RELEASE_BUMP")
+          fi
+          python3 -m scripts.release_plan "${args[@]}" --out "$RUNNER_TEMP/release" > "$RUNNER_TEMP/plan.txt"
           cat "$RUNNER_TEMP/plan.txt" >> "$GITHUB_OUTPUT"
           grep -qx 'eligible=true' "$RUNNER_TEMP/plan.txt" || exit 0
           version=$(sed -n 's/^version=//p' "$RUNNER_TEMP/plan.txt")
-          # The App's own bot identity, so GitHub links the commit to it. A generic
-          # noreply address resolves to an unrelated account that owns that login.
           test -n "$APP_SLUG" && test -n "$APP_BOT_ID"
           git config user.name "${APP_SLUG}[bot]"
           git config user.email "${APP_BOT_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
           git switch -C "$PR_HEAD"
           git add -- .release-please-manifest.json CHANGELOG.md nora/__init__.py pyproject.toml uv.lock
           git commit -m "chore(master): release $version"
-          git push --force origin "HEAD:$PR_HEAD"
+          head=$(git rev-parse HEAD)
+          # One generated branch, protected from other writers. A moving master
+          # is re-prepared by its push run; strict branch rules prevent stale merges.
+          lease=$(git ls-remote origin "refs/heads/$PR_HEAD" | cut -f1)
+          git push --force-with-lease="refs/heads/$PR_HEAD:$lease" origin "HEAD:$PR_HEAD"
           number=$(gh pr list --head "$PR_HEAD" --base master --state open --json number --jq '.[0].number // empty')
           if [ -n "$number" ]; then
             gh pr edit "$number" --title "$(cat "$RUNNER_TEMP/release/title.txt")" --body-file "$RUNNER_TEMP/release/body.md"
@@ -108,7 +142,15 @@ jobs:
             number=$(gh pr create --base master --head "$PR_HEAD" --label 'autorelease: pending' \
               --title "$(cat "$RUNNER_TEMP/release/title.txt")" --body-file "$RUNNER_TEMP/release/body.md" | grep -oE '[0-9]+$')
           fi
+          git fetch origin master
+          test "$source" = "$(git rev-parse origin/master)" || {
+            echo '::notice::master advanced; its push will re-prepare the pending release.'
+            exit 0
+          }
+          test "$(gh pr view "$number" --json headRefOid --jq .headRefOid)" = "$head"
+          # GitHub waits for required checks and an up-to-date branch. No bypass,
+          # admin mode or fallback token; this authority is metadata-only.
+          gh pr merge "$number" --auto --merge --match-head-commit "$head" \
+            --subject "merge: prepare release v$version (#$number)" \
+            --body "Generated release metadata from $source; required checks govern this merge."
           echo "pr=$number" >> "$GITHUB_OUTPUT"
-      - name: Report manual publication
-        run: |
-          echo 'Preparation never merges. After reviewing and manually merging the release PR, dispatch action=publish to tag and publish it.'

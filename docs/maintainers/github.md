@@ -45,12 +45,12 @@ to Actions. Keep outside PRs on hosted runners, with no deployment credentials o
 host access. In Actions settings, require approval for **all outside collaborators**
 before their workflows run; never give fork PR workflows write tokens or secrets.
 
-## Manual releases
+## Automatic releases
 
 Install a **free GitHub App**, restricted to this repository. Give it repository
 Contents: read/write and Pull requests: read/write.
-Administration is no longer requested by the workflow: release PRs are merged
-manually through the existing branch rules. Store its App ID as Actions variable
+Administration is not requested: generated release metadata uses native GitHub
+auto-merge under the existing required checks and strict branch rules. Store its App ID as Actions variable
 `RELEASE_APP_ID` and its PEM private key as Actions secret `RELEASE_APP_PRIVATE_KEY`.
 Use GitHub Settings or `gh secret set` interactively; never paste the key into an
 issue, chat, tracked file or workflow log. No personal token is needed.
@@ -62,82 +62,56 @@ This is a separate identifier from the App ID. The metadata job checks the live
 PR author's user ID; it receives no App key or installation token. Private Apps
 cannot be discovered through `/apps/{slug}` using that job's repository token.
 
-The `release-please` workflow is manual-only (`workflow_dispatch` on master):
+The `release-please` workflow runs on every master push. It first lets
+release-please publish merged pending metadata, then fetches the new tags and
+plans the complete reachable range on latest master. Every ordinary change
+qualifies, including docs, config, CI and maintenance; generated metadata is
+excluded to avoid loops. Internal types can stay hidden in the changelog.
+Existing tags and version history remain unchanged.
+
+Compatible maintenance and small additions within an existing capability default
+to PATCH, including `feat`. Authors mark a complete new product capability or a
+new/deprecated documented supported integration API/CLI with the commit footer
+`Release-Bump: minor`. The planner consumes that decision without another approval
+or classifier. `!` / `BREAKING CHANGE:` markers across the range stop automatic
+processing before version writes; no automatic major or downgrade is allowed.
+
+The repository has native auto-merge enabled. Only the generated release PR on
+`release-please--branches--master--components--nora` gets `gh pr merge --auto
+--merge --match-head-commit`, with an authored `merge:` subject. GitHub waits for
+required checks and an up-to-date base. The contribution check binds one metadata
+commit to its recorded full `Release-Candidate` and current base. Never use Update
+branch: another master push re-prepares the range in the same PR. Actions
+concurrency serializes work; a coalesced run reads latest master, so concurrent
+merges may collect but cannot disappear. A merged-but-unpublished PR is resumed
+before another version can be planned; a remaining manifest/tag mismatch fails
+closed. Never merge application/implementation PRs through this authority.
+
+Only owner dispatches/reruns can explicitly select major or recover publication;
+both actor identities and the exact full current master candidate are checked:
 
 ```bash
-gh workflow run release-please.yml --ref master -f action=prepare -f bump=minor -f candidate=<assessed-full-sha>
-# Review the generated PR and its checks, then manually merge it.
-gh workflow run release-please.yml --ref master -f action=publish
+gh workflow run release-please.yml --ref master -f action=prepare -f bump=major -f candidate=<full-master-sha>
+# For a merged but unpublished release; does not prepare another version:
+gh workflow run release-please.yml --ref master -f action=publish -f candidate=<full-current-master-sha>
 ```
 
-Choose patch/minor/major explicitly. `scripts/release_plan.py --bump <level>`
-collects all eligible commits reachable since the last tag. Compatible changes
-within an existing product capability default to patch, including feat-labelled
-improvements. Minor needs a complete new product capability or a new/deprecated
-documented supported integration API/CLI. Breaking markers still require major
-and cannot be overridden down. Preparation never merges, tags or
-publishes; normal master pushes do none of these. Merging the metadata PR also
-does not publish. The separate publish dispatch lets release-please tag and
-publish that merged PR, without preparing another version.
+The App is mandatory, scoped to this repository, with no branch bypass or token
+fallback. Its PR writes trigger checks and its published Release triggers the
+complete release-image bundle → `deployments` → Komodo path, under the existing
+release-image control. This is standing release/deployment authority for automatic
+patch/minor and explicitly owner-prepared majors. Read actual publication, image
+and deployed state separately; a tag alone proves no deployment.
 
-The release App is required for these dispatches so its PR changes trigger checks
-and its Release triggers image publication. There is no GITHUB_TOKEN fallback
-that appears successful but suppresses downstream events. `Release-As:` footers
-remain unsupported. The specifically admitted daily Devin automation evaluates
-`.agents/skills/nora-release/assessment.md` and, when all criteria pass, executes
-prepare/checks/merge/publish through `.agents/skills/nora-release/SKILL.md`.
-Its standing authority is patch/minor only. A major release requires explicit
-owner approval for the assessed candidate and version; the agent stops before
-release mutations while that approval is absent.
-Normal master pushes still have no release authority.
+Devin release automation is stopped (operator, 2026-10-28; issue #316 closed not
+planned). Do not invoke/re-enable it. The daily assessment procedure and its
+seven-day criteria are removed; there is no AI release evaluator or paid agent.
 
-Publishing still triggers the complete release image bundle and Komodo poller;
-use operator deployment admission or the qualified daily automation's standing
-authorization. The additional owner-only [Deploy master entry](../../deploy/komodo/README.md#manual-deploy-master)
-uses the same complete-bundle publisher and installed Komodo route without a formal
-release. It stays default-off behind `MASTER_DEPLOY_ENABLED` until the reviewed
-installed wrapper supports and verifies snapshot stamps. The daily agent has no
-admission to that entry; master pushes do not build or deploy. No RC/nightly channel
-or second deployment mechanism is introduced.
-
-### Daily Devin release automation
-
-Use one native Devin Automation with a daily Schedule trigger, Asia/Hong_Kong
-timezone, one concurrent run and bounded ACU/invocation limits. It follows current
-master `.agents/skills/nora-release/assessment.md`: actual unreleased range,
-exact-head checks, completed prerequisites and migration readiness are hard gates.
-Urgent fixes, a complete useful capability, or routine fixes held for seven days
-can qualify. Missing evidence is blocked; no changes means wait.
-
-Once the gates pass, it explicitly selects the bump, dispatches prepare with the
-full assessed candidate, verifies the generated metadata PR and its required
-checks, merges that PR only, dispatches publish and follows the existing pipeline.
-This includes the normal image/Komodo path under the operator's standing daily
-authorization. It never merges implementation PRs or bypasses the #250/#317 hold.
-
-Bind a dedicated mandatory release-operator profile that permits the necessary
-GitHub release operations and GitHub CLI token, read-only Devin MCP, no extra MCP
-servers, no messaging access and only required GitHub destinations. Do not change
-organization defaults or enable the generic CI repair dispatcher. While #250/#317
-are unresolved, keep this executing automation disabled with its future task saved.
-Read back the bound profile, task, schedule, enabled state and limits before activation;
-configuration alone does not prove the task or a deployment ran.
-
-Preflight scripts are account-dependent. If available they may skip unchanged
-input; keep that check in the task because Run now bypasses Preflight. Budget or
-API failure preserves existing workflow progress and stops, rather than starting
-a second release or claiming success. RC/nightly publishing remains separate work.
-
-Only `feat`, `fix`, `security`, `perf`, `change`, `doctrine` and `revert` commits
-with changes to runtime inputs qualify for creating/updating a release PR.
-Documentation, design, tests, CI and housekeeping alone do not. Runtime doctrine
-and runtime skills count because they change Nora's behavior. The release scope
-check reads actual changed paths since the preceding release, not just the most
-recent push; a qualifying pending change can therefore still release alongside a
-later documentation commit. Conventional Commit subjects determine semantic
-version bumps. Documentation/design directories are also excluded from release
-notes, even if a commit was accidentally given a visible type. Use `docs`/`design`
-for all such commits, including root Markdown files.
+The additional owner-only [Deploy master entry](../../deploy/komodo/README.md#manual-deploy-master)
+stays default-off behind `MASTER_DEPLOY_ENABLED` until installed-wrapper readiness
+is verified. This ruling enables no flags, adds no selective builds and introduces
+no new deployment mechanism or RC/nightly channel. See
+[nora-release](../../.agents/skills/nora-release/SKILL.md) for authoring and recovery.
 
 The App is required for unattended PR checks: PRs created with `GITHUB_TOKEN`
 can await workflow approval, and its pushes normally do not trigger another
@@ -404,7 +378,7 @@ lower-severity advisory has been resolved.
 
 Run the activation command immediately after the owner changes visibility, then
 read back the settings and run the Security workflow. Complete the release App
-setup above before manually preparing or publishing a release. The activation script refuses
+setup above before automatic or owner-dispatched releases. The activation script refuses
 private repositories and does not create an App or its private key. While private
 on GitHub Free, branch protection cannot be enforced; publication or an eligible
 paid plan is an owner decision.

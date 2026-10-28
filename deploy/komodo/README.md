@@ -8,15 +8,15 @@ the first-install bootstrap below is not the normal production deploy procedure.
 
 ## Ownership and flow
 
-1. A fix PR merges to master. Follow `nora-release`: explicitly dispatch prepare
-   with the assessed source and chosen bump, review and merge the metadata PR,
-   then dispatch publish separately. Merging alone creates no tag or Release.
-   The release App publishes the stable `vX.Y.Z` tag and GitHub Release, which
-   triggers `Release images`; missing App setup fails closed. Manual image
-   dispatch accepts an already-published stable tag from master. The additional
-   **Deploy master** dispatch below selects current master without a release.
-   Ordinary master pushes trigger neither image builds nor deployment. Both
-   entries use the same publisher and installed route.
+1. Every ordinary master push automatically prepares patch/minor release metadata.
+   GitHub auto-merges only the generated metadata PR after required checks and
+   exact-source guards; release-please then publishes the stable `vX.Y.Z` tag and
+   GitHub Release. Breaking ranges stop for owner-only exact-candidate major
+   preparation (`nora-release`). Published Releases trigger `Release images`
+   under its existing control; missing App setup fails closed. Manual image
+   dispatch can rebuild an already-published stable tag. The separate default-off
+   **Deploy master** entry selects current master without a formal release. Both
+   entries share the existing complete-bundle publisher and installed route.
 2. Hosted AMD64 runners build all ten images named by the root Compose file:
    Nora, app, site, STT, voice sidecar/wake, Signal/WhatsApp/Instagram bridges,
    and the alert bridge. Signal's signed tarball preparation is retained. The
@@ -66,8 +66,8 @@ that prerequisite is verified. `RELEASE_IMAGES_ENABLED` retains its existing
 independent control over formal release publication. No flag is enabled by merging.
 
 Only the repository owner may dispatch or rerun this entry on default branch master;
-both the original and triggering actor are checked. Daily release automation is
-not authorized to use this entry; its standing formal-release authority is unchanged.
+both the original and triggering actor are checked. Automatic release handling
+does not invoke this entry.
 This is an automation-policy restriction: actor checks cannot distinguish a human
 owner from automation using that owner's credentials.
 

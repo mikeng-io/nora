@@ -94,6 +94,8 @@ def release_pr():
     item["user"] = {"login": "github-actions[bot]", "type": "Bot"}
     item["head"]["ref"] = "release-please--branches--master--components--nora"
     item["labels"] = [{"name": "autorelease: pending"}]
+    item["base"] = {"sha": "a" * 40, "ref": "master"}
+    item["body"] += "\nRelease-Candidate: " + "a" * 40 + "\n"
     return item
 
 
@@ -371,6 +373,13 @@ def test_private_release_bot_uses_the_pinned_user_identity(monkeypatch, case):
     elif case == "body":
         item["body"] = "TBD"
     github = GitHub(item)
+    github.commits = [
+        {
+            "sha": item["head"]["sha"],
+            "parents": [{"sha": "a" * 40}],
+            "commit": {"message": item["title"]},
+        }
+    ]
     valid = case in {"valid", "renamed"}
     assert content.check_pr(github, "owner/repo", 104) == (0 if valid else 1)
     assert github.calls[-1][2]["conclusion"] == ("success" if valid else "failure")
@@ -505,3 +514,60 @@ def test_a_human_cannot_claim_the_release_shape_with_the_tagged_label():
     item["labels"] = [{"name": "autorelease: tagged"}]
     item["user"] = {"login": "contributor", "type": "User"}
     assert content.pr_problems(item, "owner/repo")
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        "none",
+        "base-moved",
+        "parent-moved",
+        "update-branch",
+        "head-moved",
+        "source-missing",
+        "source-duplicate",
+        "subject",
+    ],
+)
+def test_generated_metadata_requires_single_commit_on_recorded_current_source(damage):
+    item = release_pr()
+    commits = [
+        {
+            "sha": item["head"]["sha"],
+            "parents": [{"sha": "a" * 40}],
+            "commit": {"message": item["title"]},
+        }
+    ]
+    if damage == "base-moved":
+        item["base"]["sha"] = "b" * 40
+    elif damage == "parent-moved":
+        commits[0]["parents"] = [{"sha": "b" * 40}]
+    elif damage == "update-branch":
+        commits.append(
+            {
+                "sha": "updated",
+                "parents": [{"sha": "a" * 40}, {"sha": "b" * 40}],
+                "commit": {"message": "Merge branch 'master' into release"},
+            }
+        )
+    elif damage == "head-moved":
+        item["head"]["sha"] = "changed"
+    elif damage == "source-missing":
+        item["body"] = item["body"].split("Release-Candidate:")[0]
+    elif damage == "source-duplicate":
+        item["body"] += "Release-Candidate: " + "a" * 40 + "\n"
+    elif damage == "subject":
+        commits[0]["commit"]["message"] = "chore: unrelated metadata"
+    errors = content.pr_problems(item, "owner/repo", commits=commits)
+    assert bool(errors) is (damage != "none")
+    if errors:
+        assert "Re-prepare" in errors[0]
+
+
+def test_tagged_label_cannot_disable_source_guard_on_an_open_release_pr():
+    item = release_pr()
+    item["state"] = "open"
+    item["labels"] = [{"name": "autorelease: tagged"}]
+    assert content.pr_problems(item, "owner/repo", commits=[])
+    item["state"] = "closed"  # Historical publication label updates remain supported.
+    assert content.pr_problems(item, "owner/repo", commits=[]) == []
