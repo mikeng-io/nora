@@ -36,8 +36,12 @@ branch's worktree.
    Check: any hit in a bundle's sequence, an ADR or an open issue means you edit
    that and file nothing. (2026-09-16: #272 duplicated a sequence
    `design/culture-tier/` already held; closed the same day.)
-3. **Write the body to a file.** Title `<Area>: <the gap>`, stated as a fact.
-   Body in one of the two shapes in `docs/maintainers/conventions.md` «Issues».
+3. **Select and read the existing form** in `.github/ISSUE_TEMPLATE/`, following
+   `docs/maintainers/conventions.md` «Issues». Bug report: its five fields;
+   Feature request: Problem and Proposed solution. Both use descriptive titles.
+   For internal work, keep design-anchored (building a specified design) or
+   freeform (proposing a decision), with title `<Area>: <the gap>`.
+   **Write the body to a file**, using the selected form's fields.
 4. **Scrub the draft.** Issues, comments and PR bodies are outside the history
    scrub, which rewrites git objects only. Describe what a room did; never quote
    a message or name a member; cite `file:line`, row ids, tag ids, metric names.
@@ -45,11 +49,12 @@ branch's worktree.
    a platform id before sending. (2026-09-13: three issues rewritten for this.)
 5. **File and read back.**
    ```bash
-   gh issue create --title "<Area>: <the gap>" --body-file <draft file>
-   gh issue view <N> --json title,body
+   gh issue create --title "<selected form title>" --body-file <draft file>
+   gh issue view <N> --json title,body,labels
    ```
-   Pass `--label design-anchored` or `--label freeform` for the shape you used
-   (`docs/maintainers/conventions.md` «Issues»); both labels exist since 2026-09-24.
+   Apply the selected form's shape label: `bug`, `enhancement`, `design-anchored`
+   or `freeform`. When reformatting, remove conflicting shape labels and preserve
+   every other label. Check the read-back body and labels match the selected form.
 
 ## 2. Writing an ADR
 

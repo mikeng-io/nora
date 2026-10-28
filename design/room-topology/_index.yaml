@@ -1,10 +1,10 @@
 kind: design_index
 title: "Room topology: a unit holds as many rooms as its people use, addressed by room, chosen from context"
 description: >
-  DEC-105 limits a unit to at most one room per platform, and DEC-214 made
-  startup refuse a second. The reason was addressing, not storage: `send_to`
-  names its destination by network ("tell Signal"), so a second Signal room
-  would make that a guess. Every per-room store already keys on
+  Historically DEC-105 limited a unit to one room per platform, and DEC-214
+  made startup refuse a second. Step 3 removes that refusal in favour of
+  unique room labels. The reason was addressing, not storage: `send_to`
+  formerly named its destination by network, making a second room a guess. Every per-room store already keys on
   (platform, conversation_id), and every unit-level store on the unit. This
   bundle lifts the limit by changing the address: `send_to` names a ROOM, the
   model chooses it from the rooms of the unit using what each room is for
@@ -12,7 +12,8 @@ description: >
   being passed on, and asks when two rooms fit. Room names become unique
   within a unit in place of the one-per-platform refusal. Cross-room shared
   state is the unit scope of design/standing-ledger/, not a transcript feed.
-  Proposal, not built.
+  Steps 1 and 2 are merged; step 3 removes the refusal and amends the decisions.
+  Live policy admission remains the operator's config change.
 status: proposal
 governance: operator-directed
 timestamp: '2026-10-25'

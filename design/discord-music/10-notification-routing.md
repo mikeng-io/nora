@@ -75,7 +75,8 @@ two below.
 as load-bearing and each is thinner than it reads (architecture review + audit,
 2026-09-21):
 
-1. *DEC-105.* A unit holds at most one room per platform, and `friends` and
+1. *Historical DEC-105 rationale, superseded by room-topology migration step 3:
+   unique room labels now replace the platform-count limit.* A unit held at most one room per platform, and `friends` and
    `ridgeline` each already hold their Discord room — but `unit` is free-form with
    a `"nora"` default and **nothing in code enforces DEC-105**, so a second
    entry could have carried its own unit and breached nothing. The real cost is

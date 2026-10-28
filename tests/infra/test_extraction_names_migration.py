@@ -59,7 +59,8 @@ def test_extraction_rename_round_trip_preserves_rows_history_and_sql_names(pg_ur
                         {**{("extraction_id" if k == "reading_id" else k): v
                             for k, v in row.items()},
                          **({"historical": False} if suffix == "_queue" else {}),
-                         **({"failure_stage": None} if suffix == "_attempt" else {})}
+                         **({"failure_stage": None, "dropped_claims": {}}
+                            if suffix == "_attempt" else {})}
                         for row in rows
                     ]
                 names = (
