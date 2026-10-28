@@ -1,5 +1,17 @@
 # Changelog
 
+## [7.11.16](https://github.com/mikeng-io/nora/compare/v7.11.15...v7.11.16) (2026-10-28)
+
+
+### Features
+
+* **discord:** admit a whole server by guild id, with threads as tags in their channel's room ([87ce614](https://github.com/mikeng-io/nora/commit/87ce6142d19e4b6da93a0bba40d2ad33c374d3c1))
+
+
+### Bug Fixes
+
+* **discord:** enumerate rooms() in every room consumer, fail the absorb read closed on a mid-turn vanish ([50b9cf6](https://github.com/mikeng-io/nora/commit/50b9cf6de6e75e2539e492d9868f1d375ec853e6))
+
 ## [7.11.15](https://github.com/mikeng-io/nora/compare/v7.11.14...v7.11.15) (2026-10-28)
 
 
