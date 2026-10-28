@@ -2643,6 +2643,14 @@ IDX_NOTE_REVISION_BODY_TRGM = sa.Index(
 TAG_TRACE = sa.Table(
     "tag_trace",
     METADATA,
+    sa.Column("turn_id", sa.BigInteger, sa.Identity(), nullable=False, unique=True),
+    sa.Column("started_at", sa.BigInteger),
+    sa.Column("occasion", sa.Text, nullable=False, server_default="tag"),
+    sa.Column("platform", sa.Text, nullable=False, server_default=""),
+    sa.Column("unit", sa.Text),
+    sa.Column("bound_rooms", pg.JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")),
+    sa.Column("requirements", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+    sa.Column("sent_message_ids", pg.JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")),
     sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
               server_default=sa.text("gen_random_uuid()")),
     sa.Column("tag_id", sa.Text, nullable=False),
@@ -2665,6 +2673,9 @@ TAG_TRACE = sa.Table(
 IDX_TAG_TRACE_CONVERSATION_CREATED = sa.Index(
     "idx_tag_trace_conversation_created",
     TAG_TRACE.c.conversation_id, TAG_TRACE.c.created_at,
+)
+IDX_TAG_TRACE_SENT_MESSAGES = sa.Index(
+    "idx_tag_trace_sent_messages", TAG_TRACE.c.sent_message_ids, postgresql_using="gin",
 )
 
 # ── music_queue ────────────────────────────────────────────────────────────
@@ -3910,8 +3921,8 @@ IDX_DOCTRINE_REVISION_CORPUS_LOADED = sa.Index(
 )
 
 #: One row per config file per process start: `config.toml`, `policy.toml`,
-#: `identity.toml`. All three live only on the deploy host and are read once
-#: at startup, so the content each process ran on is recorded here, keyed to
+#: `identity.toml`. All three live only on the deploy host. This records their
+#: startup content; identity/policy may subsequently hot-reload. Keyed to
 #: `revision_blob` by content hash.
 CONFIG_REVISION = sa.Table(
     "config_revision",
@@ -5058,9 +5069,9 @@ IDX_PROFILE_DISPUTE_KEY = sa.Index(
 )
 
 
-# Record message readings. Deliberately absent from memory_node and every read surface.
-MESSAGE_READING = sa.Table(
-    "message_reading", METADATA,
+# Record extraction. Deliberately absent from memory_node and every read surface.
+EXTRACTION = sa.Table(
+    "extraction", METADATA,
     sa.Column("id", sa.BigInteger, sa.Identity(), primary_key=True),
     sa.Column("unit", sa.Text, nullable=False),
     sa.Column("platform", sa.Text, nullable=False),
@@ -5077,11 +5088,13 @@ MESSAGE_READING = sa.Table(
               server_default=sa.func.now()),
     sa.Column("built_at", sa.DateTime(timezone=True)),
     sa.Column("retired_at", sa.DateTime(timezone=True)),
-    sa.CheckConstraint("state IN ('pending', 'done', 'retired')", name="ck_message_reading_state"),
+    sa.CheckConstraint(
+        "state IN ('pending', 'done', 'retired', 'failed')", name="ck_extraction_state",
+    ),
 )
 
-MESSAGE_READING_QUEUE = sa.Table(
-    "message_reading_queue", METADATA,
+EXTRACTION_QUEUE = sa.Table(
+    "extraction_queue", METADATA,
     sa.Column("id", sa.BigInteger, sa.Identity(), primary_key=True),
     sa.Column("message_id", sa.Integer, sa.ForeignKey("messages.id", ondelete="SET NULL")),
     sa.Column("unit", sa.Text, nullable=False),
@@ -5089,17 +5102,18 @@ MESSAGE_READING_QUEUE = sa.Table(
     sa.Column("origin_room", sa.Text, nullable=False),
     sa.Column("source_key", sa.Text, nullable=False),
     sa.Column("is_source", sa.Boolean, nullable=False, server_default=sa.true()),
-    sa.Column("reading_id", sa.BigInteger, sa.ForeignKey("message_reading.id")),
+    sa.Column("extraction_id", sa.BigInteger, sa.ForeignKey("extraction.id")),
     sa.Column("queued_at", sa.DateTime(timezone=True), nullable=False,
               server_default=sa.func.now()),
-    sa.UniqueConstraint("platform", "origin_room", "source_key", name="uq_message_reading_arrival"),
-    sa.UniqueConstraint("message_id", name="uq_message_reading_queue_message"),
+    sa.Column("historical", sa.Boolean, nullable=False, server_default=sa.false()),
+    sa.UniqueConstraint("platform", "origin_room", "source_key", name="uq_extraction_arrival"),
+    sa.UniqueConstraint("message_id", name="uq_extraction_queue_message"),
 )
 
-MESSAGE_READING_CLAIM = sa.Table(
-    "message_reading_claim", METADATA,
+EXTRACTION_CLAIM = sa.Table(
+    "extraction_claim", METADATA,
     sa.Column("id", sa.BigInteger, sa.Identity(), primary_key=True),
-    sa.Column("reading_id", sa.BigInteger, sa.ForeignKey("message_reading.id"), nullable=False),
+    sa.Column("extraction_id", sa.BigInteger, sa.ForeignKey("extraction.id"), nullable=False),
     sa.Column("ordinal", sa.Integer, nullable=False),
     sa.Column("unit", sa.Text, nullable=False),
     sa.Column("platform", sa.Text, nullable=False),
@@ -5108,13 +5122,13 @@ MESSAGE_READING_CLAIM = sa.Table(
     sa.Column("content", pg.JSONB, nullable=False),
     sa.Column("built_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
     sa.Column("retired_at", sa.DateTime(timezone=True)),
-    sa.UniqueConstraint("reading_id", "ordinal", name="uq_message_reading_claim"),
+    sa.UniqueConstraint("extraction_id", "ordinal", name="uq_extraction_claim"),
 )
 
-MESSAGE_READING_ATTEMPT = sa.Table(
-    "message_reading_attempt", METADATA,
+EXTRACTION_ATTEMPT = sa.Table(
+    "extraction_attempt", METADATA,
     sa.Column("id", sa.BigInteger, sa.Identity(), primary_key=True),
-    sa.Column("reading_id", sa.BigInteger, sa.ForeignKey("message_reading.id"), nullable=False),
+    sa.Column("extraction_id", sa.BigInteger, sa.ForeignKey("extraction.id"), nullable=False),
     sa.Column("attempt", sa.Integer, nullable=False),
     sa.Column("model", sa.Text, nullable=False),
     sa.Column("provider_model", sa.Text),
@@ -5125,8 +5139,197 @@ MESSAGE_READING_ATTEMPT = sa.Table(
     sa.Column("input_tokens", sa.BigInteger),
     sa.Column("output_tokens", sa.BigInteger),
     sa.Column("outcome", sa.Text, nullable=False, server_default=sa.text("'started'")),
-    sa.UniqueConstraint("reading_id", "attempt", name="uq_message_reading_attempt"),
+    sa.Column("failure_stage", sa.Text),
+    sa.Column("dropped_claims", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+    sa.UniqueConstraint("extraction_id", "attempt", name="uq_extraction_attempt"),
 )
-sa.Index("idx_message_reading_due", MESSAGE_READING.c.state, MESSAGE_READING.c.due_at)
-sa.Index("idx_message_reading_queue_pending", MESSAGE_READING_QUEUE.c.reading_id,
-         MESSAGE_READING_QUEUE.c.queued_at)
+sa.Index("idx_extraction_due", EXTRACTION.c.state, EXTRACTION.c.due_at)
+sa.Index("idx_extraction_queue_pending", EXTRACTION_QUEUE.c.extraction_id,
+         EXTRACTION_QUEUE.c.queued_at)
+
+
+def _ledger_table(name: str, kind: str, *, history: bool = False) -> sa.Table:
+    columns: list[Any] = [
+        sa.Column("id", sa.Text, primary_key=True),
+        sa.Column("revision", sa.Integer, nullable=False, primary_key=history),
+        sa.Column("parent_revision", sa.Integer),
+        sa.Column("unit", sa.Text, nullable=False),
+        sa.Column("scope", sa.Text, nullable=False),
+        sa.Column("platform", sa.Text, nullable=False),
+        sa.Column("conversation_id", sa.Text, nullable=False),
+        sa.Column("status", sa.Text, nullable=False),
+        sa.Column("topic" if kind == "thread" else "subject", sa.Text, nullable=False),
+        sa.Column("made_at" if kind == "commitment" else "opened_at",
+                  sa.BigInteger, nullable=False),
+        sa.Column("last_revised_at", sa.BigInteger, nullable=False),
+        sa.Column("closed_at", sa.BigInteger),
+
+    ]
+    if history:
+        columns.append(sa.Column("recorded_at", sa.DateTime(timezone=True), nullable=False,
+                                 server_default=sa.text("clock_timestamp()")))
+    if kind != "thread":
+        columns.append(sa.Column("body", sa.Text, nullable=False))
+    if kind == "decision":
+        columns.append(sa.Column("note_id", sa.Text))
+    elif kind == "commitment":
+        columns.extend([
+            sa.Column("owed_to", pg.ARRAY(sa.Text), nullable=False),
+            sa.Column("due_at", sa.BigInteger),
+        ])
+    else:
+        columns.extend([
+            sa.Column("note_ids", pg.ARRAY(sa.Text), nullable=False),
+            sa.Column("decision_ids", pg.ARRAY(sa.Text), nullable=False),
+            sa.Column("message_ids", pg.ARRAY(sa.Integer), nullable=False),
+            sa.Column("spans", pg.JSONB, nullable=False),
+            sa.Column("last_moved_at", sa.BigInteger),
+        ])
+    statuses = {"decision": "'open', 'closed', 'dropped'",
+                "commitment": "'open', 'done', 'released'", "thread": "'open'"}[kind]
+    table = sa.Table(
+        name, METADATA, *columns, *_derived(name, per_row=True),
+        sa.CheckConstraint("scope in ('room', 'unit')", name=f"{name}_scope_check"),
+        sa.CheckConstraint(f"status in ({statuses})", name=f"{name}_status_check"),
+        sa.CheckConstraint("revision > 0", name=f"{name}_revision_check"),
+        sa.CheckConstraint(f"length(btrim({'topic' if kind == 'thread' else 'subject'})) > 0 AND "
+            f"position(chr(10) in {'topic' if kind == 'thread' else 'subject'}) = 0",
+                           name=f"{name}_subject_check"),
+        sa.CheckConstraint("length(btrim(unit)) > 0", name=f"{name}_unit_check"),
+        sa.CheckConstraint("(revision = 1 AND parent_revision IS NULL) OR "
+                           "(revision > 1 AND parent_revision = revision - 1)",
+                           name=f"{name}_parent_check"),
+    )
+    sa.Index(f"idx_{name}_scope", table.c.unit, table.c.scope,
+             table.c.platform, table.c.conversation_id)
+    return table
+
+
+LEDGER_DECISION = _ledger_table("standing_decision", "decision")
+LEDGER_COMMITMENT = _ledger_table("standing_commitment", "commitment")
+LEDGER_THREAD = _ledger_table("standing_thread", "thread")
+LEDGER_DECISION_REVISION = _ledger_table("standing_decision_revision", "decision", history=True)
+LEDGER_COMMITMENT_REVISION = _ledger_table(
+    "standing_commitment_revision", "commitment", history=True,
+)
+LEDGER_THREAD_REVISION = _ledger_table("standing_thread_revision", "thread", history=True)
+
+# Generic memory graph stores (design/unified-memory/27). Vocabularies live in code.
+ENTITY = sa.Table(
+    "entity",
+    METADATA,
+    sa.Column("id", sa.Text, primary_key=True),
+    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("name", sa.Text, nullable=False),
+    sa.Column("aliases", pg.ARRAY(sa.Text), nullable=False, server_default="{}"),
+    # ponytail: JSONB attributes; promote one to a column only when a query plan needs it
+    sa.Column("attributes", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+    sa.Column("state", sa.Text, nullable=False, server_default="live"),
+    sa.Column(
+        "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    ),
+    sa.Column("merged_into", sa.Text, sa.ForeignKey("entity.id")),
+)
+# pg_trgm is installed by 0026; array aliases need a separate search
+# representation for trigram indexing, deferred to the SQL candidate query.
+sa.Index("idx_entity_name_trgm", ENTITY.c.name,
+         postgresql_using="gin", postgresql_ops={"name": "gin_trgm_ops"})
+RELATION = sa.Table(
+    "relation",
+    METADATA,
+    sa.Column("id", sa.Text, primary_key=True),
+    sa.Column("src_kind", sa.Text, nullable=False),
+    sa.Column("src_id", sa.Text, nullable=False),
+    sa.Column("rel", sa.Text, nullable=False),
+    sa.Column("dst_kind", sa.Text, nullable=False),
+    sa.Column("dst_id", sa.Text, nullable=False),
+    sa.Column("layer", sa.Text, nullable=False),
+    sa.Column("valid_from", sa.DateTime(timezone=True)),
+    sa.Column("valid_to", sa.DateTime(timezone=True)),
+    sa.Column("asserted_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("status", sa.Text, nullable=False, server_default="current"),
+    sa.Column("written_by", sa.Text, nullable=False),
+    sa.Column("superseded_by", sa.Text, sa.ForeignKey("relation.id")),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("persons", pg.ARRAY(sa.Text), nullable=False, server_default="{}"),
+    sa.Column(
+        "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    ),
+    sa.CheckConstraint("layer IN ('record', 'rollup', 'notebook')", name="relation_layer_check"),
+    sa.CheckConstraint(
+        "status IN ('current', 'superseded', 'disputed', 'retired')", name="relation_status_check"
+    ),
+)
+sa.Index(
+    "idx_relation_src_walk",
+    RELATION.c.src_kind,
+    RELATION.c.src_id,
+    RELATION.c.rel,
+    postgresql_include=["unit"],
+)
+sa.Index(
+    "idx_relation_dst_walk",
+    RELATION.c.dst_kind,
+    RELATION.c.dst_id,
+    RELATION.c.rel,
+    postgresql_include=["unit"],
+)
+RELATION_EVIDENCE = sa.Table(
+    "relation_evidence",
+    METADATA,
+    sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
+    sa.Column("relation_id", sa.Text, sa.ForeignKey("relation.id")),
+    sa.Column("entity_id", sa.Text, sa.ForeignKey("entity.id")),
+    sa.Column("attribute", sa.Text),
+    sa.Column("source_kind", sa.Text, nullable=False),
+    sa.Column("source_id", sa.Text, nullable=False),
+    sa.Column("role", sa.Text, nullable=False),
+    sa.Column("span", sa.Text),
+    sa.CheckConstraint(
+        "(relation_id IS NOT NULL AND entity_id IS NULL AND attribute IS NULL) OR "
+        "(relation_id IS NULL AND entity_id IS NOT NULL AND attribute IS NOT NULL)",
+        name="relation_evidence_target_check",
+    ),
+    sa.CheckConstraint("role IN ('supports', 'contradicts')", name="relation_evidence_role_check"),
+)
+sa.Index("idx_relation_evidence_relation", RELATION_EVIDENCE.c.relation_id)
+sa.Index(
+    "idx_relation_evidence_entity", RELATION_EVIDENCE.c.entity_id, RELATION_EVIDENCE.c.attribute
+)
+MEMORY_WORK_ITEM = sa.Table(
+    "memory_work_item",
+    METADATA,
+    sa.Column("id", sa.Text, primary_key=True),
+    sa.Column("source_kind", sa.Text, nullable=False),
+    sa.Column("source_id", sa.Text, nullable=False),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("input_hash", sa.Text, nullable=False),
+    sa.Column("state", sa.Text, nullable=False, server_default="pending"),
+    sa.Column("attempts", sa.Integer, nullable=False, server_default="0"),
+    sa.Column("last_error", sa.Text),
+    sa.Column("historical", sa.Boolean, nullable=False, server_default=sa.false()),
+    sa.Column("as_of", sa.DateTime(timezone=True), nullable=False),
+    sa.Column(
+        "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    ),
+    sa.Column(
+        "updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    ),
+    sa.Column("due_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+    sa.Column("settled_at", sa.DateTime(timezone=True)),
+    sa.UniqueConstraint(
+        "source_kind", "source_id", "unit", "input_hash", name="memory_work_item_input_key"
+    ),
+    sa.CheckConstraint(
+        "state IN ('pending', 'running', 'settled', 'failed')", name="memory_work_item_state_check"
+    ),
+    sa.CheckConstraint("attempts BETWEEN 0 AND 5", name="memory_work_item_attempts_check"),
+)
+sa.Index(
+    "idx_memory_work_item_claim",
+    MEMORY_WORK_ITEM.c.historical,
+    MEMORY_WORK_ITEM.c.state,
+    MEMORY_WORK_ITEM.c.due_at,
+    MEMORY_WORK_ITEM.c.as_of,
+)

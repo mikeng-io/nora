@@ -6,3 +6,5 @@ dist
 public/vendor/
 test-results/
 playwright-report/
+dev/downloads/
+thumbnail:*

@@ -5,7 +5,7 @@ description: "Define recurring trait dimensions, structured hypothesis explanati
 timestamp: '2026-10-22'
 edges:
   - {dst: 45-persona-adaptor, rel: extends, provenance: asserted}
-  - {dst: 18-message-readings, rel: extends, provenance: asserted}
+  - {dst: 18-extraction, rel: extends, provenance: asserted}
   - {dst: 15-memory-map, rel: depends_on, provenance: asserted}
   - {dst: 25-memory-graph, rel: depends_on, provenance: asserted}
 ---
@@ -14,7 +14,7 @@ edges:
 
 Status: **design proposed; four positions DECIDED by the operator, docs only**, 2026-10-22. No schema, validator, renderer,
 objective or live state is changed. This is the content contract for phases
-2 and 4 of [18](18-message-readings.md), not an implementation receipt.
+2 and 4 of [18](18-extraction.md), not an implementation receipt.
 
 **Operator, 2026-10-22:** describe the whole Character from every eligible
 medium, using generic dimensions and abstracted patterns. Follow
@@ -299,8 +299,9 @@ Assent is not confirmation; confirmed explanations remain hypotheses.
 
 ### Reading claims
 
-Each claim in a batch reading carries `about` (resolved subject links, with
-unresolved references explicit), `what` (prose preserving the source's claim),
+Each claim in a batch reading carries `about` (person subjects, with unresolved
+references explicit; an empty list when no person is the subject, such as an
+event, place, group plan or thing; never the speaker merely for saying it), `what` (prose preserving the source's claim),
 `happened_at` (a date/interval or explicit unknown), `where` (optional named place or abstract
 setting, only when stated), `how` (the existing speech act), and the existing
 source message ids. Authors and assertion timestamps are obtained from those
@@ -356,7 +357,7 @@ not authorization or proof that every input path is built.
 
 | evidence medium and real store | dimensions it may support | abstraction and limits |
 |---|---|---|
-| Chat: `messages`, edits/reactions, and proposed Record message readings | all nine, when the content demonstrates the property | Atomic speech acts become patterns only over qualifying occasions; a self-description alone is not observed skill/value. Never copy messages, ids or one-off plans into traits. |
+| Chat: `messages`, edits/reactions, and proposed Record extraction | all nine, when the content demonstrates the property | Atomic speech acts become patterns only over qualifying occasions; a self-description alone is not observed skill/value. Never copy messages, ids or one-off plans into traits. |
 | Media: `media_objects` readings (`title`, `description`, `content`) through message attachments; `social_item` and `social_perception` through readable social items | topic, habit, skill, preference, disposition, style, value, social, goal, only where actually evidenced | Depiction/sharing alone does not establish ownership, residence, expertise or liking; evaluate the actual evidence and visible mode. Resolve author and attachment/item roots; copies of the same bytes or occasion add no support. Named social places may support location-bearing Character lines; the existing read setting still applies. |
 | Presence: Record fixes/polls through Rollup `presence_stays`, trips, outings and co-locations | habit and social; goal only with separate evidence of aim | Rollup episodes and patterns support named usual workplace, home area, regular places and commute route, plus time-of-week rhythm. Store supported lines with the code-set `location` flag; reads keep the existing room location setting / DisclosureGuard. The writer uses Rollup patterns, not raw coordinate traces. |
 | Notes/memos/events: Notebook Register head revisions | context for any dimension, not independent support | An open plan, cancellation or settled affair qualifies context. Resolve its citations to eligible Record/Rollup roots; do not count the summary as another witness or promote intention into achievement. |
@@ -582,10 +583,10 @@ structure, not semantic acceptance. The Q1 switch gate remains unchanged.
 
 ## 6. Where it lands in the phases
 
-[18's phases](18-message-readings.md#phases-in-order) remain in order:
+[18's phases](18-extraction.md#phases-in-order) remain in order:
 
 - **Phase 2:** structured reading claims, event/assertion time distinction,
-  relative-date handling and source-message visibility; new-message readings
+  relative-date handling and source-message visibility; new-extraction
   still have no consumer at this phase.
 - **Phase 4:** trait kinds, content slots, support computation, hypothesis
   explanation slots, caps/renderer and re-evidencing, together with the one

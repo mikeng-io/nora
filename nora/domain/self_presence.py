@@ -143,6 +143,7 @@ class KnownRoom:
     here: bool
     state: TransportState
     members: int | None = None
+    description: str | None = None
 
 
 @dataclass(frozen=True)

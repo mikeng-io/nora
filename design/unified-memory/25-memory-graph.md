@@ -18,6 +18,8 @@ second owner of truth ([conversational-recall/20](../conversational-recall/20-or
 
 ## 1. Nodes, edges and the two kinds of content
 
+> 2026-10-28 (ratified, [27](27-the-memory-is-a-graph.md)): the graph no longer only projects other stores. People, places, events and works become entities of their own, and meaning relations (attended, plans, likes, at …) join the structural edges, each backed by evidence rows. See [27](27-the-memory-is-a-graph.md#3-three-generic-stores) and [27](27-the-memory-is-a-graph.md#6-every-store-is-a-node).
+
 **A node** is one item in any store, addressed as `(kind, id)`: a message, a
 media attachment, a note, a memo, an event, a lesson, a Persona
 line ([35](35-persona.md)), a Standing section, a rollup episode (an outing,
@@ -62,6 +64,8 @@ projection is written is §7.
 
 ## 2. The relation vocabulary is closed
 
+> 2026-10-28 (ratified, [27](27-the-memory-is-a-graph.md)): the vocabulary stays closed, now as values in code rather than schema. The refusal of model-written triples is answered, not dropped: a model may propose a relation only with relation_evidence rows citing what it read, so no edge exists without its evidence. See [27](27-the-memory-is-a-graph.md#2-what-this-supersedes-and-why-the-old-reasons-are-answered).
+
 A new relation is a schema change, not something a model invents. The starting
 set, each with its writer:
 
@@ -70,7 +74,7 @@ set, each with its writer:
 | `authored_by` | message, social item, her artifact → person (Nora for her own) | ingestion |
 | `in_room` | message, link, entry → room | ingestion, write verb |
 | `shared_by` | link, media, a social item's medium → person | ingestion; the social stream's projection |
-| `attached_to` | message reading → message; media → message or link; link → message; a social item's medium, and its tagged place, → its social item | ingestion; the media lane for a reel read from a link (§6 step 3); the social stream's projection (§7a) |
+| `attached_to` | extraction → message; media → message or link; link → message; a social item's medium, and its tagged place, → its social item | ingestion; the media lane for a reel read from a link (§6 step 3); the social stream's projection (§7a) |
 | `during` | message, media → episode | Rollup builder |
 | `about` | entry → entity (person, room, unit, Nora, place) | write verb |
 | `cites` | an entry that stores citations (memo, event, lesson, Persona line, note; never Standing) → Record row, Rollup key or episode | write verb |
@@ -188,6 +192,8 @@ reaches them by key, as `rollup_read` does. Fetched file content stays out by
 design (external-files/00).
 
 ## 5. How a turn gets its context
+
+> 2026-10-28 (ratified, [27](27-the-memory-is-a-graph.md)): push, pre-fetch and pull stay, with code routing the default (context-plan/15's evidence holds). A query now returns a subgraph presented as a preview, with `memory_read` for depth. See [27](27-the-memory-is-a-graph.md#12-querying-the-answer-is-a-subgraph) to [27](27-the-memory-is-a-graph.md#14-presentation-a-preview-with-depth-behind-tools).
 
 Operator, 2026-10-14: tag and fire turns keep the same injection, and a
 decision model could choose between a context block and a graph query. The
@@ -319,7 +325,7 @@ The only other new moving part is the embedding worker.
 
 **What gets a node, and with what text:**
 
-> 2026-10-21 (18 / ADR 0026): each [message reading](18-message-readings.md) is projected as a Record node with the existing `attached_to` relation to each message it reads (§2); no new relation. Its searchable text states about whom, the claim and how it was said; the source messages remain citable. Its visibility is scoped to all its source messages. When any source is hidden (forget/delete) or edited, the reading’s live projection is invalidated: its node is retired and it is re-read from eligible sources on the next build. A reading never outlives the eligibility of what it reads. Retained versions carry supersession provenance; the index remains derived and rebuildable. This is the design, not an implementation receipt.
+> 2026-10-21 (18 / ADR 0026): each [memory.extraction](18-extraction.md) is projected as a Record node with the existing `attached_to` relation to each message it reads (§2); no new relation. Its searchable text states about whom, the claim and how it was said; the source messages remain citable. Its visibility is scoped to all its source messages. When any source is hidden (forget/delete) or edited, the reading’s live projection is invalidated: its node is retired and it is re-read from eligible sources on the next build. A reading never outlives the eligibility of what it reads. Retained versions carry supersession provenance; the index remains derived and rebuildable. This is the design, not an implementation receipt.
 
 | layer | item | searchable text | vector |
 |---|---|---|---|

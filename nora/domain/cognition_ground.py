@@ -91,6 +91,11 @@ class RecordItem:
     #: Nora's OWN send in the item's window (D1, DEC-245): context the room is
     #: answering, marked as hers, never a stimulus and never something to cite.
     own: bool = False
+    turn_id: int | None = None
+
+    @property
+    def turn_handle(self) -> str | None:
+        return f"t{self.turn_id}" if self.own and self.turn_id is not None else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -275,7 +280,7 @@ class Grounding:
     #: failed.
     self_account: CultureRevision | None = None
     #: THE SWITCH (45 §5): her Profile account for the unit, rendered as
-    #: `<profile of="nora">` INSTEAD of `self_account` when `[profile] render`
+    #: `<profile of="nora">` INSTEAD of `self_account` when `[memory.profile] read`
     #: is on. `profile_names` resolves a line's `told_by` to the
     #: identity-canonical name (never an id, R-18), built by the grounder,
     #: which holds `Persons`; the renderer does not.

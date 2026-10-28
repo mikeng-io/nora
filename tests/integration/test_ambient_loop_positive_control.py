@@ -76,8 +76,7 @@ agree with their doubles) for a Postgres container. The precedent for the shape
 is `tests/unit/test_offline_pipeline_assembler.py`, which sits in `unit/`
 because it asserts about a call, not about a run; this asserts about a run.
 
-The home room is on another platform (Telegram here; a unit holds at most one
-room per platform, DEC-105), served by its own `FakeAdapter` passed as
+The home room is on another platform (Telegram here), served by its own `FakeAdapter` passed as
 `extra_adapters`. With no adapter for its platform a send there would raise
 instead of being recorded, and assertion 5 would pass vacuously. Because the
 home room has its own adapter, "zero sends into the home room" is a measurement
@@ -347,9 +346,8 @@ async def _drive(tmp_path: Path) -> _Journey:
         f'[[conversations]]\nplatform = "signal"\nid = "{THREAD_ROOM}"\n'
         f'label = "{THREAD_ROOM}"\npersons = "*"\nrelevance_gate = true\n'
         f'unit = "{UNIT}"\n'
-        # The home room is on ANOTHER platform: a unit holds at most one
-        # room per platform (DEC-105, enforced by `load_policy`), and a thread
-        # plus a home room are two rooms of one unit.
+        # The home room is on ANOTHER platform, served by its own adapter;
+        # a thread plus a home room are two rooms of one unit.
         f'[[conversations]]\nplatform = "telegram"\nid = "{HOME_ROOM}"\n'
         f'label = "{HOME_ROOM}"\npersons = "*"\n'
         f'unit = "{UNIT}"\nhome_room = true\n'

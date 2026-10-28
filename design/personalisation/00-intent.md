@@ -63,7 +63,7 @@ the older, well-studied family:
 
 | signal | what it says | store | exists |
 |---|---|---|---|
-| what people say | likes, dislikes, plans, constraints | messages; write-only message readings; profiles for likes | messages and reading writer exist; the destination-scoped constraint and likes readers are step 1 ([10](10-likes.md) §1); the deleted fact tier is not a source |
+| what people say | likes, dislikes, plans, constraints | messages; write-only extraction; profiles for likes | messages and reading writer exist; the destination-scoped constraint and likes readers are step 1 ([10](10-likes.md) §1); the deleted fact tier is not a source |
 | **social engagement** | what members post (places they went, food, game clips), what they send each other (reels, links), what they react to | the social stream's `social_item`, perceptions and counts, read through `social_read` ([22](../cognition-loop/22-social-stream.md) §8, built S0 to S8); reactions; links in rooms | yes (the poller ships off by default) |
 | where people are, and usually are | origin at a given hour; usual routes and their speeds | the hour-of-week forecaster `nora/domain/mobility_forecast.py` over historical stays; separate `presence_occupancy` bins; `presence_place_rhythm` (person/place circular means, no bins); `presence_trips`, `presence_corridors`, `presence_derived_places` | yes |
 | where the group has been together | revealed venue preference | `rollup_outing`, `rollup_colocation` | yes |
@@ -113,8 +113,8 @@ frame someone else set, never a list Nora proposes.
 
 **Inventory evidence.** Retained fact validity columns are
 `nora/infra/sql/schema.py:2015`; deletion of their writers is
-`design/09-decision-index.md:268`. Message readings are write-only today
-(`docs/maintainers/message-readings.md:9`), so their consumer is named build
+`design/09-decision-index.md:268`. Extraction are write-only today
+(`docs/maintainers/extraction.md:9`), so their consumer is named build
 work. Occupancy bins and person/place rhythm differ at
 `nora/infra/sql/schema.py:517` and `nora/infra/sql/schema.py:543`; the forecast
 reads stays at `nora/domain/mobility_forecast.py:235`. The built social

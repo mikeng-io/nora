@@ -58,14 +58,16 @@ BLOB_KEY_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("reminders", "payload"),
 })
 
-_LINEAGE = "a presence lineage: which presence rows a derivation rests on"
+_LINEAGE = "source lineage and disclosure predicates, never blob custody"
 _TRACE = "a log of what a turn or session was shown; nothing reads bytes through it"
 
 #: Columns that look like a key, or are JSON that could hold one under
 #: another name, and name no blob that must stay, and why.
 NOT_BLOB_KEYS: Mapping[tuple[str, str], str] = {
-    ("message_reading", "snapshot"): "frozen source text; message rows own blob custody",
-    ("message_reading_claim", "content"): "statement slots and source ids, never blob custody",
+    ("entity", "attributes"): "semantic attributes; evidence source stores own blob custody",
+    ("extraction", "snapshot"): "frozen source text; message rows own blob custody",
+    ("extraction_claim", "content"): "statement slots and source ids, never blob custody",
+    ("extraction_attempt", "dropped_claims"): "reason/count JSON only; record_drops rejects text",
     ("profile_line", "content"): "prose Character slots, never blob custody",
     ("profile_line", "strength"): "code-computed occasion roots and timestamps, never blob custody",
     ("profile_line", "fact_value"): (
@@ -92,6 +94,9 @@ NOT_BLOB_KEYS: Mapping[tuple[str, str], str] = {
     ("tool_call_log", "tool_result"): _TRACE,
     ("tag_trace", "messages"): _TRACE,
     ("tag_trace", "transcript"): _TRACE,
+    ("tag_trace", "bound_rooms"): "room origins, never blob custody",
+    ("tag_trace", "requirements"): "lineage, exclusions and location subjects, never blob custody",
+    ("tag_trace", "sent_message_ids"): "Record row ids, never blob custody",
     ("cognition_session", "situation"): _TRACE,
     ("cognition_session", "agenda"): _TRACE,
     ("cognition_session", "skill_versions"): "the versions of the skills a session loaded",
@@ -114,6 +119,8 @@ NOT_BLOB_KEYS: Mapping[tuple[str, str], str] = {
     ("room_lexeme", "examples"): "quoted usages, text only",
     ("standing", "working_set"): "a position's working notes, text only",
     ("standing_revision", "working_set"): "a position's working notes, text only",
+    ("standing_thread", "spans"): "room, message ids and timestamps, never blob custody",
+    ("standing_thread_revision", "spans"): "room, message ids and timestamps, never blob custody",
     **{
         (table, "lineage"): _LINEAGE
         for table in (
@@ -122,6 +129,9 @@ NOT_BLOB_KEYS: Mapping[tuple[str, str], str] = {
             "presence_place_rhythm", "presence_stays", "presence_trips",
             "rollup_colocation", "rollup_daybook", "rollup_outing", "rollup_response",
             "rollup_tie", "standing", "standing_revision",
+            "standing_decision", "standing_decision_revision",
+            "standing_commitment", "standing_commitment_revision",
+            "standing_thread", "standing_thread_revision",
         )
     },
 }

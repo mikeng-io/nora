@@ -1,7 +1,7 @@
 """One memory surface per deployment (DEC-316).
 
-Honcho and the memory graph never sit on one tool surface. `[memory_index]
-enabled` (the registry holding a `MemorySearch`) selects the graph's,
+Honcho and the memory graph never sit on one tool surface. `[memory.index]
+read` (the registry holding a `MemorySearch`) selects the graph's,
 `memory_search`; off (the shipped default, and the rollback) it is the
 Honcho surface: `ask_memory`, `search_memory`,
 `search_memory_workspace`, `who_said`, `about` and `remember`. The graph
@@ -105,7 +105,7 @@ def persons(tmp_path: Any) -> Any:
 
 def _registry(graph: bool) -> ToolRegistry:
     """The registry as `build_dependencies` builds it: a `MemorySearch`
-    exactly when `[memory_index] enabled`."""
+    exactly when `[memory.index] read`."""
     return ToolRegistry(
         memory_search=MemorySearch(FakeMemoryIndex([]), Metrics()) if graph else None,
     )
@@ -183,7 +183,7 @@ def _built(where: str, graph: bool, persons: Any) -> set[str]:
 def test_the_honcho_surface_is_origin_masters_with_no_memory_search(
     persons: Any, where: str,
 ) -> None:
-    """`[memory_index]` off: the memory verbs each place held on origin/master,
+    """`[memory.index]` off: the memory verbs each place held on origin/master,
     and never the graph's."""
     offered = _built(where, False, persons) & MEMORY_VERBS
     assert offered == EXPECTED[where][False]
@@ -194,7 +194,7 @@ def test_the_honcho_surface_is_origin_masters_with_no_memory_search(
 def test_the_graph_surface_offers_memory_search_and_no_honcho_memory_verb(
     persons: Any, where: str,
 ) -> None:
-    """`[memory_index]` on: `memory_search`, and none of `ask_memory`,
+    """`[memory.index]` on: `memory_search`, and none of `ask_memory`,
     `search_memory`, `search_memory_workspace`, `who_said` or `about`: no
     Honcho tool at all (`remember` there is the Profile write, below)."""
     offered = _built(where, True, persons) & MEMORY_VERBS

@@ -46,6 +46,7 @@ from nora.domain.gatherings import (
     GatheringStore,
     event_in_scope,
 )
+from nora.domain.live import LiveMapping
 from nora.domain.note_body import NORA_NAMES
 from nora.domain.ports import CognitionStore, StimulusStore
 from nora.domain.reminders import ReminderCaps
@@ -72,7 +73,7 @@ COGNITION_READ_CATALOGUE: frozenset[str] = frozenset({
     # memory
     "about", "ask_memory", "search_memory", "search_memory_workspace",
     # the graph surface's (DEC-316): built instead of the Honcho memory verbs
-    # above while `[memory_index] enabled`, never beside them
+    # above while `[memory.index] read`, never beside them
     "memory_search",
 })
 
@@ -468,6 +469,7 @@ def upcoming_reader(
 def build_cognition_runner(
     *,
     cfg: Any,
+    tag_trace_store: Any = None,
     models: Any,
     retry: Any,
     metrics: Any,
@@ -545,7 +547,7 @@ def build_cognition_runner(
     # `StartupError`).
     text, sha = doctrine()
     skills.resolved_for(sorted(skills.by_kind))
-    home_rooms = _by_home_room(homes)
+    home_rooms = LiveMapping(lambda: _by_home_room(homes))
 
     async def open_events(
         unit: str, platform: str, conversation_id: str,
@@ -556,6 +558,7 @@ def build_cognition_runner(
         return await standing_of(platform, conversation_id)
 
     return CognitionSessionRunner(
+        tag_trace_store=tag_trace_store,
         store=store, stimulus_store=stimulus_store,
         notes=notes, events=events, standing=standing, reminders=reminders,
         ai_peer=ai_peer, memos=memos,

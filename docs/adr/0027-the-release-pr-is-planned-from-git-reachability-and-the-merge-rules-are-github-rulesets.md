@@ -1,12 +1,30 @@
 # 0027 · The release PR is planned from git reachability, and the merge rules are GitHub rulesets
 
-- **Status:** proposed (2026-10-22), on operator direction: "if file changes are detected within
-  the path, it will trigger the pipeline for a completely automatic release", and pull request
-  conventions "have to match; if not, the PR should be blocked and unable to merge"
+- **Status:** cadence superseded by [0031](0031-master-pushes-automatically-release-patch-and-minor.md) on 2026-10-28; the reachability planner and merge-rule decision remain in force.
 - **Date:** 2026-10-22
 - **Extends:** ADR 0024 (release-please cuts releases), which keeps tagging and publishing.
   Replaces its release-PR step.
 - **Index:** DEC-314
+
+## Manual release amendment (operator, 2026-10-28)
+
+Issue #316 replaces the automatic cadence described below: master pushes no
+longer run release planning or publication. A manual prepare dispatch selects
+patch/minor/major, keeping git-reachability scope and a breaking-change minimum.
+The operator selected product versioning: compatible work within an existing
+capability defaults to patch; minor needs a complete new capability or a new/
+deprecated documented supported integration API/CLI. A feat label alone does not
+force minor; breaking markers still require major. Existing tags are not reset.
+The maintainer reviews and merges the metadata PR; a separate manual publish
+dispatch lets release-please tag/publish it. Release-PR auto-merge is removed.
+Publication still triggers the image/Komodo path, requiring deployment admission.
+The operator clarified that daily Devin must measure versioned release criteria
+and execute the full pipeline when they pass, including the normal image/Komodo
+path; unresolved #250/#317 holds block activation. Daily standing authority covers
+patch/minor only; a major requires explicit owner approval for its candidate and
+version before any release mutation. RC/nightly publication remains separate
+unbuilt work. The historical automatic-release consequences below describe the
+pre-amendment behavior. Branch rules and immutable published tags are unchanged.
 
 ## Context
 

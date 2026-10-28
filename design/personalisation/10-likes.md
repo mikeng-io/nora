@@ -13,6 +13,8 @@ edges:
 
 ## 1. Likes come from profiles
 
+> 2026-10-28 ([unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md#6a-what-this-meets-in-the-other-bundles-2026-10-28) §6a): likes now read the memory graph's `likes` / `dislikes` relations (with evidence and speech act) and step 2's traits and guesses; constraints and dated plans read `plans`, `at` and relation validity. The separate constraint reader and its interval extraction below are superseded by step 1 of the Cognition loop; the scoring and decay are unchanged.
+
 **Likes are a read view, not another store or writer.** Personalisation reads
 per-person profiles: **facts**, **traits**, **guesses (unconfirmed)**, under
 [ADR 0029](../../docs/adr/0029-a-prompt-block-names-its-subject-and-author-by-id.md).
@@ -45,9 +47,9 @@ liking something. Revisions and source observations, not the rendered prose
 block, make the calculation replayable.
 
 **Hard constraints are separate from likes scores.** Step 1 also builds a
-frame constraint reader over eligible original messages and message readings
-for explicit restrictions and dated plans. The message-reading writer exists,
-but has no retrieval consumer yet (`docs/maintainers/message-readings.md:9`);
+frame constraint reader over eligible original messages and extraction
+for explicit restrictions and dated plans. The extraction writer exists,
+but has no retrieval consumer yet (`docs/maintainers/extraction.md:9`);
 this reader and its interval extraction are new build work. It preserves the
 subject, source, assertion time, event interval, place and speech act. Only an
 explicit applicable restriction removes a candidate; a question, guess or
@@ -65,7 +67,7 @@ facets and polarity with citations and cannot choose its own weight.
 
 | kind | example | starting weight | source |
 |---|---|---|---|
-| **stated** | explicit liking or disliking of a facet | 3 | cited messages or message readings |
+| **stated** | explicit liking or disliking of a facet | 3 | cited messages or extraction |
 | **revealed: went** | repeated voluntary visits supporting a profile trait | 3 | `rollup_outing`; attendance alone does not establish liking |
 | **revealed: played** | voluntary repeated play supporting a profile trait | 3, scaled by hours and capped | play sessions |
 | **social: posted** | own post supporting an interest | 2 | `social_item` |

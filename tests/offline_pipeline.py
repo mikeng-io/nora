@@ -37,6 +37,7 @@ from nora.domain.ports import (
     StandingStore,
 )
 from nora.domain.quote_window import QuoteWindow
+from nora.domain.standing_ledger import StandingLedger
 from nora.engagement.context import StandingNotesReader
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.self_presence import PresenceReader
@@ -69,6 +70,7 @@ def build_offline_pipeline(
     # caller keeps working unchanged.
     notes: StandingNotesReader | None = None,
     standing: StandingStore | None = None,
+    ledger: StandingLedger | None = None,
     media_join: MediaJoin | None = None,
     quote_window: QuoteWindow | None = None,
     participation: ParticipationTrigger | None = None,
@@ -139,7 +141,7 @@ def build_offline_pipeline(
     assembler = build_assembler(
         cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
         policy=permissive_policy(),
-        notes=notes, standing=standing,
+        notes=notes, standing=standing, ledger=ledger,
         # The media join. `None` renders the bare handles a row actually carries; an eval
         # that wants `[image a3f2c1: …]` in its prompt builds a `MediaJoin` over
         # `nora.testing.FakeMediaObjectStore`, exactly as it passes its own doubles for
@@ -222,7 +224,7 @@ def build_offline_pipeline(
         # to exercise MCP scoping supplies its own `EngagementPipeline`.
         policy=permissive_policy(),
         debounce=debounce, canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
-        ai_peer=cfg.memory.ai_peer,
+        ai_peer=cfg.honcho.ai_peer,
         context_window=cfg.store.context_window, timeout_seconds=tier.timeout_seconds,
         limits=limits, defer_tools=cfg.llm.defer_tools,
         metrics=metrics, spawn=background.spawn, llm_state=None,
@@ -256,6 +258,7 @@ def build_offline_pipeline(
         # so a collaborator added on one side and forgotten here fails a test
         # instead of letting the eval prompt drift from production's.
         fire_path = FirePath(
+            tag_trace_store=None,
             persons=persons, records=audit, memory=memory,
             # The SAME join the tag assembler above is given, so an eval's fire
             # prompt shows what an eval's tag prompt shows (the parity gate
@@ -273,7 +276,7 @@ def build_offline_pipeline(
             runner=runner, adapters=adapters,
             registry=tool_registry,
             canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
-            ai_peer=cfg.memory.ai_peer,
+            ai_peer=cfg.honcho.ai_peer,
             context_window=cfg.store.context_window,
             limits=limits, defer_tools=cfg.llm.defer_tools,
             # `[heartbeat]`, not `[llm]` — the same choice production makes;
@@ -300,7 +303,7 @@ def build_offline_pipeline(
                 # The proactive act turn, registered as production registers it.
                 "proactive": proactive_occasion,
             },
-            standing=standing,
+            standing=standing, ledger=ledger,
             standing_store_timeout_seconds=cfg.standing.store_timeout_seconds,
             # The participation turn's memory reads. ONE knob set, read at the composition
             # root exactly as the tag assembler reads `tagger_card_conclusions`: two
@@ -310,9 +313,9 @@ def build_offline_pipeline(
             # `occasion.kind == "participation"` in `_read_memory`, which is a condition
             # no other occasion can meet, and a second gate here would be a place for the
             # two to disagree.
-            people_in_window_conclusions=cfg.memory.people_in_window_conclusions,
-            people_in_window_speakers=cfg.memory.people_in_window_speakers,
-            memory_read_timeout_seconds=cfg.memory.read_timeout_seconds,
+            people_in_window_conclusions=cfg.honcho.people_in_window_conclusions,
+            people_in_window_speakers=cfg.honcho.people_in_window_speakers,
+            memory_read_timeout_seconds=cfg.honcho.read_timeout_seconds,
             # The shared decision log. `None` on purpose, and the keyword is written out
             # rather than defaulted so the parity gate can see the choice: an eval drives
             # ONE turn against a scripted world, so there is no prior loop to have decided

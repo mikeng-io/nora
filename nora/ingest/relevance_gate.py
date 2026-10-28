@@ -443,6 +443,7 @@ def render_context(
         now=clock,
         edited=lambda r: r.edit.ts if r.edit else None,
         was=lambda r: r.edit.was if r.edit else None,
+        turn=lambda r: r.turn_handle,
     ) if rows else "(no messages)"
     # Standing is Nora's own folded text rather than a member's, but it is
     # rendered in the same document and a fold summarises what people said —

@@ -50,8 +50,9 @@ accounts, and a room whose live roster could not be read or holds one of them.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import Protocol, TypeVar
 
 from ..domain.culture import CultureRevision
 from ..domain.lineage import (
@@ -72,12 +73,26 @@ from ..domain.lineage import (
     RoomFacts,
     room_key,
 )
+from ..domain.live import LiveMapping, LiveSequence
+from ..domain.memo import MemoRevision
 from ..domain.notes import Note
-from ..domain.profile import ProfileLine
 from ..domain.standing import Standing
+from ..domain.turn_record import turn_handles_in
 from ..policy import Policy
 from .room import Room
 from .whereis import Circle, DisclosureGuard
+
+
+class _ProfileDisclosure(Protocol):
+    @property
+    def exclude_persons(self) -> tuple[str, ...]: ...
+    @property
+    def location(self) -> bool: ...
+    @property
+    def location_subjects(self) -> tuple[str, ...]: ...
+
+
+_ProfileItem = TypeVar("_ProfileItem", bound=_ProfileDisclosure)
 
 __all__ = [
     "PREDICATES",
@@ -180,6 +195,8 @@ PREDICATES: Mapping[str, Callable[[LineageEntry, RenderRoom], bool]] = {
 def entry_permits(entry: LineageEntry, target: RenderRoom, *, origin: str | None) -> bool:
     """May B be shown something resting on `entry`? `origin` is the room the
     row carrying it was written in: the only room an unknown kind is shown in."""
+    if excluded(entry.exclude_persons, target):
+        return False
     predicate = PREDICATES.get(entry.kind)
     if predicate is None:
         return target.room is not None and target.room.is_room(origin)
@@ -195,6 +212,14 @@ def section_permits(
     if not listed:
         return target.room is not None and target.room.is_room(origin)
     return all(entry_permits(e, target, origin=origin) for e in listed)
+
+
+def memo_permits(revision: MemoRevision, target: RenderRoom | None) -> bool:
+    """Legacy memos remain unit-wide; a turn citation carries its requirements."""
+    if not turn_handles_in(revision.body):
+        return True
+    entries = revision.lineage.section(ROW)
+    return bool(target is not None and entries and section_permits(entries, target, origin=None))
 
 
 def excluded(exclude_persons: Iterable[str], target: RenderRoom) -> bool:
@@ -230,35 +255,36 @@ def visible_sections(
 @dataclass(frozen=True)
 class LineagePolicy:
     """The per-process half of an `RenderRoom`: every room of the policy and the
-    location-sharing circles, fixed at startup (`policy.toml` and
-    `identity.toml` are read once). `render_room` adds room B, per turn."""
+    location-sharing circles, read through the current identity/policy holders.
+    `render_room` adds room B, per turn."""
 
-    rooms: tuple[RoomFacts, ...] = ()
-    circles: tuple[frozenset[str], ...] = ()
+    rooms: Sequence[RoomFacts] = ()
+    circles: Sequence[frozenset[str]] = ()
     mode: LineageMode = "off"
     content_checks: bool = True
-    _by_id: dict[tuple[str, str], RoomFacts] = field(
+    _by_id: Mapping[tuple[str, str], RoomFacts] = field(
         default_factory=dict, repr=False, compare=False,
     )
 
     @classmethod
     def from_policy(
-        cls, policy: Policy, *, circles: tuple[Circle, ...] = (),
+        cls, policy: Policy, *, circles: Sequence[Circle] = (),
         mode: LineageMode = "off",
         content_checks: bool = True,
     ) -> LineagePolicy:
-        rooms = tuple(
+        rooms = LiveSequence(lambda: tuple(
             RoomFacts(
                 platform=c.platform, ids=c.ids, unit=c.unit,
                 persons=c.persons, location=c.location, label=c.label,
                 primary_id=c.primary_id,
             )
             for c in policy.conversations
-        )
+        ))
         return cls(
-            rooms=rooms, circles=tuple(c.person_ids for c in circles), mode=mode,
+            rooms=rooms, circles=LiveSequence(lambda: tuple(c.person_ids for c in circles)),
+            mode=mode,
             content_checks=content_checks,
-            _by_id={(r.platform, cid): r for r in rooms for cid in r.ids},
+            _by_id=LiveMapping(lambda: {(r.platform, cid): r for r in rooms for cid in r.ids}),
         )
 
     def render_room(
@@ -266,8 +292,8 @@ class LineagePolicy:
     ) -> RenderRoom:
         return RenderRoom(
             room=self._by_id.get((platform, conversation_id)),
-            rooms=self.rooms,
-            circles=self.circles,
+            rooms=tuple(self.rooms),
+            circles=tuple(self.circles),
             live=live,
             mode=self.mode,
             content_checks=self.content_checks,
@@ -335,8 +361,8 @@ def derived_view(
 
 
 async def profile_lines_for(
-    lines: tuple[ProfileLine, ...], target: RenderRoom, room: Room,
-) -> tuple[ProfileLine, ...]:
+    lines: tuple[_ProfileItem, ...], target: RenderRoom, room: Room,
+) -> tuple[_ProfileItem, ...]:
     """Apply the existing exclusion boundary, reading the roster only if needed."""
     if any(line.exclude_persons or line.location for line in lines):
         view = await room.scope()
@@ -344,7 +370,7 @@ async def profile_lines_for(
             person_ids=frozenset(p.person_id for p in view.people),
             unnamed=view.unnamed, available=view.available, degraded=view.degraded,
         ))
-    def permitted(line: ProfileLine) -> bool:
+    def permitted(line: _ProfileItem) -> bool:
         if excluded(line.exclude_persons, target):
             return False
         if not line.location:

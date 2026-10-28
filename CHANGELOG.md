@@ -1,5 +1,315 @@
 # Changelog
 
+## [7.11.12](https://github.com/mikeng-io/nora/compare/v7.11.11...v7.11.12) (2026-10-28)
+
+
+### Features
+
+* **policy:** hot-reload validated identity and room policy ([61459ac](https://github.com/mikeng-io/nora/commit/61459aca908103620dbbe32571b7b479efc2fcc1))
+
+
+### Bug Fixes
+
+* **culture:** resolve room policy lookups live, not at boot ([d3040ee](https://github.com/mikeng-io/nora/commit/d3040ee75eca3bcafaec3145a1c763ae6c811d66))
+* **policy:** retain declared workspace routes when the last room leaves ([d360cfb](https://github.com/mikeng-io/nora/commit/d360cfb32697f53e17b6f98fc62e4ef00ad2a638))
+
+## [7.11.11](https://github.com/mikeng-io/nora/compare/v7.11.10...v7.11.11) (2026-10-28)
+
+
+### Maintenance
+
+* **memory:** let curation read the private scope and keep ledger links in the notebook layer ([4b6078c](https://github.com/mikeng-io/nora/commit/4b6078c79f9f9b8d4f07276df64e67d37ef847bf))
+* **memory:** settle where the graph meets the DM, ledger and personalisation bundles ([2d2958b](https://github.com/mikeng-io/nora/commit/2d2958be81a179893647da194d00867e2c821e20))
+
+## [7.11.10](https://github.com/mikeng-io/nora/compare/v7.11.9...v7.11.10) (2026-10-28)
+
+
+### Maintenance
+
+* **mcp:** add project Sentry OAuth connection ([32c4323](https://github.com/mikeng-io/nora/commit/32c4323db0391301d2fcd8b1f5ddfe09ec38655a))
+* Merge branch 'master' into config/sentry-project-mcp ([3fd0172](https://github.com/mikeng-io/nora/commit/3fd0172c55fa5334c7b82b5387a9876bddb0263d))
+* Merge pull request #332 from mikeng-io/config/sentry-project-mcp ([e60d2a6](https://github.com/mikeng-io/nora/commit/e60d2a6222f43c7badb3f86970a363cef8deb869))
+
+## [7.11.9](https://github.com/mikeng-io/nora/compare/v7.11.8...v7.11.9) (2026-10-28)
+
+
+### Bug Fixes
+
+* **memory:** key identity pointers per unit and fix an entity's unit ([069b986](https://github.com/mikeng-io/nora/commit/069b986fff693247233f3e049a57f6a73c497fcf))
+* **memory:** make pointer ids unique across kinds and pin cross-unit same_as ([8b85661](https://github.com/mikeng-io/nora/commit/8b856617e2bf8ab204623d99b1c1991753dd938d))
+
+## [7.11.8](https://github.com/mikeng-io/nora/compare/v7.11.7...v7.11.8) (2026-10-28)
+
+
+### Features
+
+* **memory:** define the shared graph storage and admission contract ([c962d5c](https://github.com/mikeng-io/nora/commit/c962d5c95d695ca9a8707947f44692d2337eab95))
+
+
+### Bug Fixes
+
+* **memory:** add relation corrections and entity lookup to the graph contract ([1695dd1](https://github.com/mikeng-io/nora/commit/1695dd1466fe1d8616804020fe0e2ecdaa59196c))
+* **memory:** require asserted_at, accumulate attributes, name the batch arguments ([61a6434](https://github.com/mikeng-io/nora/commit/61a64348bfeead0766df568ea20e3992bd57c737))
+
+## [7.11.7](https://github.com/mikeng-io/nora/compare/v7.11.6...v7.11.7) (2026-10-28)
+
+
+### Maintenance
+
+* **cognition:** describe the one loop in the cognition bundle itself ([f9550ea](https://github.com/mikeng-io/nora/commit/f9550ea52a24b2c5a33b8d0af6845fd818f1620b))
+* **cognition:** fix the frontmatter and point every old-topology section at the one loop ([e027329](https://github.com/mikeng-io/nora/commit/e0273299a3533595d05ec73018f3b943744740b3))
+
+## [7.11.6](https://github.com/mikeng-io/nora/compare/v7.11.5...v7.11.6) (2026-10-28)
+
+
+### Maintenance
+
+* **memory:** push the graph preview into comprehension ([8de3ec5](https://github.com/mikeng-io/nora/commit/8de3ec598608fe6bb8c1d3eadf9ecc43e1ac8675))
+
+## [7.11.5](https://github.com/mikeng-io/nora/compare/v7.11.4...v7.11.5) (2026-10-28)
+
+
+### Maintenance
+
+* **memory:** comprehend on arrival and fold culture and lessons into Cognition ([54aecaf](https://github.com/mikeng-io/nora/commit/54aecaf7a57de00e75711e73851cd6a6fb9377b3))
+* **memory:** correct the culture readers and wake reasons in node 27 ([518b412](https://github.com/mikeng-io/nora/commit/518b412e9bcf56894110826b379d4516da292583))
+
+## [7.11.4](https://github.com/mikeng-io/nora/compare/v7.11.3...v7.11.4) (2026-10-28)
+
+
+### Maintenance
+
+* **memory:** apply review fixes to the memory graph node ([3d13a0f](https://github.com/mikeng-io/nora/commit/3d13a0fe4191711c4a0f2f837d5b1d6b3562305c))
+* **memory:** make Cognition the one loop that comprehends, reshapes and acts ([e98298c](https://github.com/mikeng-io/nora/commit/e98298c543349dc0fedda83af9010adf0099ab90))
+* **memory:** make the memory a graph with a research loop ([e67e9d5](https://github.com/mikeng-io/nora/commit/e67e9d5db4bc5bfa5b112b7eac4f3083f85777bf))
+* **memory:** place the memory loop before Cognition and give each item one writer ([92b517b](https://github.com/mikeng-io/nora/commit/92b517bc9afc0a9f5a26072db2b5a88bf80276d8))
+* **memory:** ratify the memory graph and name who writes each relation ([5cdf6c1](https://github.com/mikeng-io/nora/commit/5cdf6c19f96877fd07bd1c4175fb7807299f4452))
+* **memory:** ship step 2 before the backfill and measure its cost ([c998b86](https://github.com/mikeng-io/nora/commit/c998b86a126a04569c536d817f1a2629e53b529d))
+
+## [7.11.3](https://github.com/mikeng-io/nora/compare/v7.11.2...v7.11.3) (2026-10-28)
+
+
+### Bug Fixes
+
+* **profile:** keep register relevance reads selective ([2ae6032](https://github.com/mikeng-io/nora/commit/2ae603257dae3ed0d7943e21e0969958fd36926c))
+* **profile:** reuse scoped projections in source checks ([8d99c5c](https://github.com/mikeng-io/nora/commit/8d99c5cb022a3b2ad1cc26e8d3208bfd814d22ad))
+
+## [7.11.2](https://github.com/mikeng-io/nora/compare/v7.11.1...v7.11.2) (2026-10-28)
+
+
+### Bug Fixes
+
+* **deploy:** preserve unchanged release artifacts and containers ([71b0a59](https://github.com/mikeng-io/nora/commit/71b0a5949f713257a8201162a4338802f196a135))
+* **deploy:** verify retained containers against their restart baseline ([f0bd019](https://github.com/mikeng-io/nora/commit/f0bd01961c75f6eb7b19aa53d18ae0f9c63145d7))
+
+## [7.11.1](https://github.com/mikeng-io/nora/compare/v7.11.0...v7.11.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* **record:** align extraction schema checks with drop counts ([08eb580](https://github.com/mikeng-io/nora/commit/08eb580cfaf57250b97aa2062a6d34427dc58bbd))
+* **record:** publish valid extraction claims and record provenance drops ([5e5cb5c](https://github.com/mikeng-io/nora/commit/5e5cb5c12de49c2884b7958090d12b9ddc2b0516))
+* **release:** describe internal-only releases in their notes ([9a1c646](https://github.com/mikeng-io/nora/commit/9a1c64686fd7056b06695b619b7a6bf22abd696a))
+
+
+### Changes
+
+* **policy:** a unit may hold two rooms on one platform ([02a0148](https://github.com/mikeng-io/nora/commit/02a014801e7a28e96532e9d50ebe00b15fec9587))
+
+## [7.11.0](https://github.com/mikeng-io/nora/compare/v7.10.0...v7.11.0) (2026-10-27)
+
+
+### Features
+
+* **record:** backfill historical extraction without delaying live messages ([e3c54f2](https://github.com/mikeng-io/nora/commit/e3c54f2af10e800f9327ec3731347b7e5127c704))
+
+
+### Bug Fixes
+
+* **record:** retain historical Nora context and commit backfill in chunks ([2662a5d](https://github.com/mikeng-io/nora/commit/2662a5d1a05acc6d39e701b29817f1604488b3d1))
+
+## [7.10.0](https://github.com/mikeng-io/nora/compare/v7.9.0...v7.10.0) (2026-10-27)
+
+
+### Features
+
+* **app:** archive the downloads library as one zip ([a16f734](https://github.com/mikeng-io/nora/commit/a16f734cdcafb851434dcddb29deaf4dff874bce))
+
+
+### Bug Fixes
+
+* **app:** name downloads after the media, not download.<ext> ([9a78514](https://github.com/mikeng-io/nora/commit/9a78514375e13bacc8d3adc1d93a972134c1159f))
+
+## [7.9.0](https://github.com/mikeng-io/nora/compare/v7.8.1...v7.9.0) (2026-10-27)
+
+
+### Features
+
+* **portal:** a More sheet on the phone's bottom bar reaches every rail destination ([1b1c287](https://github.com/mikeng-io/nora/commit/1b1c2872a30b059ad0e778b30857a1c81f2d12ba))
+
+
+### Bug Fixes
+
+* **portal:** reserve the scrollbar gutter so scroll-lock no longer pops the page ([2086a1d](https://github.com/mikeng-io/nora/commit/2086a1df53e69b5082a9ae3f05cae012a97864c1))
+
+## [7.8.1](https://github.com/mikeng-io/nora/compare/v7.8.0...v7.8.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* **app:** name a converted download after its own file ([61d108a](https://github.com/mikeng-io/nora/commit/61d108a64937d01a78d6f5b43dfe19555b025f4a))
+
+## [7.8.0](https://github.com/mikeng-io/nora/compare/v7.7.0...v7.8.0) (2026-10-27)
+
+
+### Features
+
+* **app:** let a downloaded video convert to an audio format ([34ef871](https://github.com/mikeng-io/nora/commit/34ef87180bb16f52b13902dbf1f620f6175bcf4b))
+
+## [7.7.0](https://github.com/mikeng-io/nora/compare/v7.6.0...v7.7.0) (2026-10-27)
+
+
+### Features
+
+* **relay:** address send_to by room within the unit ([09bf838](https://github.com/mikeng-io/nora/commit/09bf838b2ec291848926e28bdbc25c5a15df9fc6))
+
+## [7.6.0](https://github.com/mikeng-io/nora/compare/v7.5.0...v7.6.0) (2026-10-27)
+
+
+### Features
+
+* **record:** ground reply claims and bound extraction retries ([d39ce44](https://github.com/mikeng-io/nora/commit/d39ce4434409b51fc0b3702cb77dd70d6db3d508))
+
+
+### Bug Fixes
+
+* **record:** accept extraction spans verbatim or decoded ([4c42314](https://github.com/mikeng-io/nora/commit/4c4231432c701441446ab56c05737715a344e2d6))
+* **record:** align extraction references and escaped source spans ([8df302c](https://github.com/mikeng-io/nora/commit/8df302ce03b5995a88b4d14f370ffa1b5e4e8722))
+
+## [7.5.0](https://github.com/mikeng-io/nora/compare/v7.4.0...v7.5.0) (2026-10-27)
+
+
+### Features
+
+* **standing:** retain decisions and topic threads beside the paragraph ([ad4c86b](https://github.com/mikeng-io/nora/commit/ad4c86bae9425d1d2530fc8d9672892aff316c82))
+
+
+### Bug Fixes
+
+* **standing:** report uncheckable threads and preserve timestamp groups ([8e613d0](https://github.com/mikeng-io/nora/commit/8e613d0ee6f4f7b66444522d9052766de1ce3d9f))
+* **standing:** retain ledger read provenance in turn records ([1061d4e](https://github.com/mikeng-io/nora/commit/1061d4e0c29d58647313276a16f98a23c32fb6d1))
+
+## [7.4.0](https://github.com/mikeng-io/nora/compare/v7.3.1...v7.4.0) (2026-10-27)
+
+
+### Features
+
+* **app:** downloads conversion, thumbnails, and 24h retention ([20c7c85](https://github.com/mikeng-io/nora/commit/20c7c856e4ccc2d1519cb546d43cff06d4e8b9d5))
+
+
+### Bug Fixes
+
+* **app:** conversion round 3 — muxer-safe staging, job-dir thumbs, owned publish ([4d5d8c0](https://github.com/mikeng-io/nora/commit/4d5d8c05bc156165ec8f465d4a6c690d51a478bc))
+* **app:** downloads round-2 review — thumb collisions, atomic convert, sweep ([7956a11](https://github.com/mikeng-io/nora/commit/7956a1117e2ae1cb692c1530f585fd9a45cad6d2))
+* **app:** single-entry conversion finish, delete-safe publish ([ef45bc0](https://github.com/mikeng-io/nora/commit/ef45bc0a465f4f05a97b2a6d7a6110eda6d9699a))
+
+## [7.3.1](https://github.com/mikeng-io/nora/compare/v7.3.0...v7.3.1) (2026-10-27)
+
+
+### Security
+
+* **portal:** show presence only to people who share a circle ([6d8ce7c](https://github.com/mikeng-io/nora/commit/6d8ce7c691f37fb3e10e8334edad67c67dc9d0a5))
+
+## [7.3.0](https://github.com/mikeng-io/nora/compare/v7.2.0...v7.3.0) (2026-10-27)
+
+
+### Features
+
+* **app:** /downloads, a yt-dlp batch downloader for the circle ([6f06f73](https://github.com/mikeng-io/nora/commit/6f06f73e5514a25dd3ba753f17af38fc5737fd93))
+
+
+### Bug Fixes
+
+* **app:** close downloads SSRF and lifecycle holes found in review ([5c7ad51](https://github.com/mikeng-io/nora/commit/5c7ad51a5e979982c490ed32ffa7699093d96643))
+* **app:** downloads round 2 — cancel during DNS, write-storm guard, named volume ([6cdc2ea](https://github.com/mikeng-io/nora/commit/6cdc2ea4dc0850dab879a038fa1a1a76e8bbe781))
+
+## [7.2.0](https://github.com/mikeng-io/nora/compare/v7.1.2...v7.2.0) (2026-10-27)
+
+
+### Features
+
+* **standing:** retain each turn's exchange with its disclosure requirements ([68d5101](https://github.com/mikeng-io/nora/commit/68d5101e4bc8f240058e45e7edc4be29530813ee))
+
+
+### Bug Fixes
+
+* **profile:** bound collective source inputs and allow refusal repair ([2fe0e69](https://github.com/mikeng-io/nora/commit/2fe0e699c852912fa2265a196d006ceda49b6d25))
+* **profile:** leave the collective repair call room for non-source context ([cc1fe22](https://github.com/mikeng-io/nora/commit/cc1fe2271f9421ae57a0600b3e5852bd07b34b62))
+* **standing:** preserve turn citation restrictions and revision evidence ([5372baf](https://github.com/mikeng-io/nora/commit/5372baf5e8c38027ae7ae5012386bfbb9ebefc19))
+
+## [7.1.2](https://github.com/mikeng-io/nora/compare/v7.1.1...v7.1.2) (2026-10-27)
+
+
+### Bug Fixes
+
+* **record:** clarify extraction time objects and label failure stages ([b298c51](https://github.com/mikeng-io/nora/commit/b298c51dc16535e5662ada11284ff70d03f5ce8a))
+
+## [7.1.1](https://github.com/mikeng-io/nora/compare/v7.1.0...v7.1.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* **openwiki:** normalize gateway completion IDs and retain safe failure diagnostics ([f2b5746](https://github.com/mikeng-io/nora/commit/f2b57465e5e41f3389fc6dad43da66ba786cdc2b))
+
+## [7.1.0](https://github.com/mikeng-io/nora/compare/v7.0.0...v7.1.0) (2026-10-27)
+
+
+### Features
+
+* **topology:** give rooms unique names and richer directory entries ([18d0915](https://github.com/mikeng-io/nora/commit/18d0915f897ef5713d0ae1c3d13a2b8cf0f2ab80))
+
+
+### Bug Fixes
+
+* **topology:** keep the room list when a culture read fails ([26e146f](https://github.com/mikeng-io/nora/commit/26e146f14be34eb08199e79e8357c5fc51caa133))
+
+## [7.0.0](https://github.com/mikeng-io/nora/compare/v6.8.7...v7.0.0) (2026-10-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* **config:** name memory configuration by its role ([ea36e50](https://github.com/mikeng-io/nora/commit/ea36e5087bf3a36ee4259cc53f4c4305f968deda))
+
+
+### Bug Fixes
+
+* **record:** preserve upgrade constraint names while restoring downgrade names ([404eb79](https://github.com/mikeng-io/nora/commit/404eb79c18fc04afecc00e17819eb4e54a69b905))
+* **record:** restore original constraint names on extraction downgrade ([c7bc886](https://github.com/mikeng-io/nora/commit/c7bc8863eee2931dfe881f5b954ed4c8e055c79e))
+
+
+### Changes
+
+* **config:** name memory configuration by its role ([ea36e50](https://github.com/mikeng-io/nora/commit/ea36e5087bf3a36ee4259cc53f4c4305f968deda))
+
+## [6.8.7](https://github.com/mikeng-io/nora/compare/v6.8.6...v6.8.7) (2026-10-27)
+
+
+### Bug Fixes
+
+* **profile:** guide collective writers to repair refusals and settle ([7974a3d](https://github.com/mikeng-io/nora/commit/7974a3d4dcb03269d33f49748654ff03da02bb4c))
+
+## [6.8.6](https://github.com/mikeng-io/nora/compare/v6.8.5...v6.8.6) (2026-10-26)
+
+
+### Bug Fixes
+
+* **profile:** wake when new messages reach the batch threshold ([5c4d9e6](https://github.com/mikeng-io/nora/commit/5c4d9e6ed90918b5a3a2ac0fba6e3631cb16723e))
+
+
+### Security
+
+* **deps:** bump opentelemetry-api ([2f693dd](https://github.com/mikeng-io/nora/commit/2f693dd1fc93329bd3fae5e3b6d77ce206a7229a))
+
 ## [6.8.5](https://github.com/mikeng-io/nora/compare/v6.8.4...v6.8.5) (2026-10-26)
 
 

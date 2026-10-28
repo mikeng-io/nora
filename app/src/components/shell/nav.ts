@@ -1,6 +1,7 @@
 import {
   BookOpenText,
   CalendarDays,
+  Download,
   FileText,
   FolderOpen,
   Gamepad2,
@@ -12,11 +13,12 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-// The portal's map of itself. Seven places for the circle, four for Nora.
-// On a phone the bottom bar holds five (DESIGN.md §7: no raised centre button);
-// People is one tap from Today and the map, and Nora is her own mark in the
-// top bar. Five is the most it fits (MOBILE_NAV_MAX): a sixth would crowd the
-// labels on a 320px phone, so a new place goes to the rail or replaces one.
+// The portal's map of itself. Eight places for the circle, four for Nora.
+// On a phone the bottom bar holds five cells (DESIGN.md §7: no raised centre
+// button): four places plus More, which opens a sheet listing everything else
+// — the rest of the circle and the four pages about her. Five cells is the
+// most it fits (MOBILE_NAV_MAX): a sixth would crowd the labels on a 320px
+// phone, so a new place joins the sheet until it earns a bar slot.
 export interface NavItem {
   key:
     | "today"
@@ -25,6 +27,7 @@ export interface NavItem {
     | "plans"
     | "documents"
     | "artifacts"
+    | "downloads"
     | "games"
     | "nora"
     | "memory"
@@ -37,7 +40,9 @@ export interface NavItem {
   mobile?: boolean;
 }
 
-/** The most destinations the phone's bottom bar holds (its grid has this many columns). */
+/** The most cells the phone's bottom bar holds (its grid has this many columns).
+ * The last cell is always More, so at most MOBILE_NAV_MAX - 1 places carry the
+ * mobile flag. */
 export const MOBILE_NAV_MAX = 5;
 
 /** The bar's grid columns by item count: literal class names, so Tailwind sees them.
@@ -56,9 +61,11 @@ export const MAIN_NAV: NavItem[] = [
   { key: "people", href: "/people", icon: UsersRound },
   { key: "plans", href: "/plans", icon: CalendarDays, mobile: true },
   { key: "documents", href: "/documents", icon: FileText, mobile: true },
-  // The files Nora sent in your rooms (ADR 0023). Not on the phone's bar, which is full.
+  // The files Nora sent in your rooms (ADR 0023). On the phone it sits in the More sheet.
   { key: "artifacts", href: "/artifacts", icon: FolderOpen },
-  { key: "games", href: "/games", icon: Gamepad2, mobile: true },
+  // Media the circle asked yt-dlp to fetch. Rail, palette and the More sheet.
+  { key: "downloads", href: "/downloads", icon: Download },
+  { key: "games", href: "/games", icon: Gamepad2 },
 ];
 
 export const NORA_NAV: NavItem[] = [

@@ -43,6 +43,7 @@ from nora.infra.sql.schema import (
     MESSAGE_EDIT,
     MESSAGE_REACTION,
     MESSAGES,
+    TAG_TRACE,
 )
 
 DEFAULT_MAX_PER_CONVERSATION = 500
@@ -73,6 +74,20 @@ def _latest_edit(*, edits_before: int | None = None) -> Any:
     )
 
 
+def turn_id_for_message(messages: Any = MESSAGES) -> Any:
+    """Resolve a sent row through the indexed ids its trace actually recorded."""
+    return (
+        sa.select(TAG_TRACE.c.turn_id)
+        .where(
+            messages.c.is_nora == 1,
+            TAG_TRACE.c.sent_message_ids.op("@>")(sa.func.jsonb_build_array(messages.c.id)),
+            TAG_TRACE.c.conversation_id == messages.c.conversation_id,
+            TAG_TRACE.c.platform == messages.c.platform,
+        )
+        .order_by(TAG_TRACE.c.turn_id.desc()).limit(1).correlate(messages).scalar_subquery()
+    )
+
+
 def transcript_select(*, edits_before: int | None = None) -> Any:
     """The columns every transcript read returns, with the newest edit
     folded in. ONE select for `recent`, `since`, `since_including_nora`,
@@ -86,12 +101,14 @@ def transcript_select(*, edits_before: int | None = None) -> Any:
     as it stood at T) into the sandbox and then reads it through this same
     select, so a snapshot before a forget correctly shows the row unhidden."""
     latest = _latest_edit(edits_before=edits_before)
+    turn_id = turn_id_for_message()
     return sa.select(
         MESSAGES.c.id, MESSAGES.c.sender_id, MESSAGES.c.sender_name,
         MESSAGES.c.ts, MESSAGES.c.body, MESSAGES.c.is_nora,
         MESSAGES.c.delivery_status, MESSAGES.c.raw_json,
         MESSAGES.c.quoted_ts, MESSAGES.c.media_json, MESSAGES.c.person_id,
         MESSAGES.c.external_files_json,
+        turn_id.label("turn_id"),
         latest.c.ts.label("edit_ts"), latest.c.body.label("edit_body"),
         latest.c.raw_json.label("edit_raw_json"),
     ).select_from(MESSAGES.outerjoin(latest, sa.true())).where(
@@ -127,6 +144,7 @@ def transcript_row(r: Any) -> TranscriptRow:
         media_json=r.media_json,
         external_files_json=r.external_files_json,
         person_id=r.person_id,
+        turn_id=r.turn_id,
         edit=(
             RowEdit(ts=r.edit_ts, was=r.body, raw_json=r.edit_raw_json)
             if edited else None
@@ -144,7 +162,7 @@ class SqlRecordStore:
         max_per_conversation: int = DEFAULT_MAX_PER_CONVERSATION,
         metrics: Any = None,
         mention_persons: Any = None,
-        message_reading_unit: Any = None,
+        extraction_unit: Any = None,
     ) -> None:
         """`metrics` is INJECTED, never imported.
 
@@ -167,7 +185,7 @@ class SqlRecordStore:
         self._max_per_conversation = max_per_conversation
         self._metrics = metrics
         self._mention_persons = mention_persons
-        self._message_reading_unit = message_reading_unit
+        self._extraction_unit = extraction_unit
 
     def _resolved_mentions_json(self, message: NormalizedMessage) -> str | None:
         """`mention_persons_json` for one message or edit: the sorted person
@@ -227,14 +245,20 @@ class SqlRecordStore:
         # one row came back, which a bare INSERT always produces.
         async with self._engine.begin() as conn:
             row_id = int((await conn.execute(stmt)).scalar_one())
-            if self._message_reading_unit is not None:
-                from nora.infra.sql.message_readings import enqueue
+            if self._extraction_unit is not None:
+                from nora.infra.sql.extraction import admission, enqueue
 
-                unit = self._message_reading_unit(message.platform, message.conversation_id)
-                if unit is None:
-                    raise ValueError("message reading owner unavailable")
-                await enqueue(conn, message_id=row_id, message=message, unit=unit,
-                              is_source=not is_nora)
+                row = {
+                    "id": row_id, "platform": message.platform,
+                    "conversation_id": message.conversation_id,
+                    "sender_id": message.sender_id, "ts": message.timestamp,
+                    "platform_message_id": message.message_id, "is_nora": is_nora,
+                }
+                unit, reason = admission(row, self._extraction_unit)
+                if reason == "unmapped":
+                    raise ValueError("extraction owner unavailable")
+                if unit is not None:
+                    await enqueue(conn, row=row, unit=unit)
             # Its node, attachments and edges in the same transaction; a failure
             # queues the projection and never costs the message.
             await memory_index.project(conn, "message", row_id, metrics=self._metrics)

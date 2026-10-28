@@ -1,0 +1,114 @@
+[
+  {
+    "name": "claims may have no person subject",
+    "file": "nora/app/extraction.py",
+    "old": "about: list[ExtractionSubject]",
+    "new": "about: Annotated[list[ExtractionSubject], Field(min_length=1)]",
+    "target": "tests/contract/test_extraction_contract.py::test_claim_without_person_subject_validates_and_publishes"
+  },
+  {
+    "name": "system states empty about rule",
+    "file": "nora/app/extraction.py",
+    "old": "about lists the persons the claim is about; it is an EMPTY list when no person is\nthe subject (an event, place, group plan or thing). Never put the speaker in about\njust because they said it.\n",
+    "new": "",
+    "target": "tests/unit/test_extraction.py::test_system_defines_empty_person_subjects_and_reply_citation_boundary"
+  },
+  {
+    "name": "system interprets reply from context",
+    "file": "nora/app/extraction.py",
+    "old": "A reply target is shown as context: use it to interpret the reply, cite only the new message.\n",
+    "new": "",
+    "target": "tests/unit/test_extraction.py::test_system_defines_empty_person_subjects_and_reply_citation_boundary"
+  },
+  {
+    "name": "reply marker remains visible",
+    "file": "nora/infra/sql/extraction.py",
+    "old": "\"quoted_ts\": row[\"quoted_ts\"]",
+    "new": "\"quoted_ts\": None",
+    "target": "tests/contract/test_extraction_contract.py::test_direct_reply_parent_has_priority_is_linked_and_uncitable[1]"
+  },
+  {
+    "name": "parents resolve beyond nearby window",
+    "file": "nora/infra/sql/extraction.py",
+    "old": "MESSAGES.c.ts.in_(quoted),",
+    "new": "MESSAGES.c.ts.in_(quoted),\n                        MESSAGES.c.id >= min(ids),",
+    "target": "tests/contract/test_extraction_contract.py::test_direct_reply_parent_has_priority_is_linked_and_uncitable[1]"
+  },
+  {
+    "name": "parents have priority within context allowance",
+    "file": "nora/infra/sql/extraction.py",
+    "old": "if len(matches) == 1 and len(context) < context_messages:",
+    "new": "if False:",
+    "target": "tests/contract/test_extraction_contract.py::test_direct_reply_parent_has_priority_is_linked_and_uncitable[1]"
+  },
+  {
+    "name": "parents remain eligible",
+    "file": "nora/infra/sql/extraction.py",
+    "old": "MESSAGES.c.hidden_at.is_(None),",
+    "new": "sa.true(),",
+    "target": "tests/contract/test_extraction_contract.py::test_ineligible_reply_parent_stays_unresolved[hidden]"
+  },
+  {
+    "name": "reply parent unit boundary",
+    "file": "nora/infra/sql/extraction.py",
+    "old": "                        QUEUE.c.unit == first[\"unit\"],\n                        QUEUE.c.platform == first[\"platform\"],\n                        QUEUE.c.origin_room == first[\"origin_room\"],\n                        MESSAGES.c.ts.in_(quoted),",
+    "new": "                        sa.true(),\n                        QUEUE.c.platform == first[\"platform\"],\n                        QUEUE.c.origin_room == first[\"origin_room\"],\n                        MESSAGES.c.ts.in_(quoted),",
+    "target": "tests/contract/test_extraction_contract.py::test_ineligible_reply_parent_stays_unresolved[unit]"
+  },
+  {
+    "name": "reply parent platform boundary",
+    "file": "nora/infra/sql/extraction.py",
+    "old": "                        QUEUE.c.unit == first[\"unit\"],\n                        QUEUE.c.platform == first[\"platform\"],\n                        QUEUE.c.origin_room == first[\"origin_room\"],\n                        MESSAGES.c.ts.in_(quoted),",
+    "new": "                        QUEUE.c.unit == first[\"unit\"],\n                        sa.true(),\n                        QUEUE.c.origin_room == first[\"origin_room\"],\n                        MESSAGES.c.ts.in_(quoted),",
+    "target": "tests/contract/test_extraction_contract.py::test_ineligible_reply_parent_stays_unresolved[platform]"
+  },
+  {
+    "name": "reply parent room boundary",
+    "file": "nora/infra/sql/extraction.py",
+    "old": "                        QUEUE.c.unit == first[\"unit\"],\n                        QUEUE.c.platform == first[\"platform\"],\n                        QUEUE.c.origin_room == first[\"origin_room\"],\n                        MESSAGES.c.ts.in_(quoted),",
+    "new": "                        QUEUE.c.unit == first[\"unit\"],\n                        QUEUE.c.platform == first[\"platform\"],\n                        sa.true(),\n                        MESSAGES.c.ts.in_(quoted),",
+    "target": "tests/contract/test_extraction_contract.py::test_ineligible_reply_parent_stays_unresolved[room]"
+  },
+  {
+    "name": "context parents are deduplicated",
+    "file": "nora/infra/sql/extraction.py",
+    "old": "if parent[\"id\"] not in selected:",
+    "new": "if True:",
+    "target": "tests/contract/test_extraction_contract.py::test_reply_parents_dedupe_and_overflow_stays_explicit[2]"
+  },
+  {
+    "name": "legacy snapshots retain publishable shape",
+    "file": "nora/infra/sql/extraction.py",
+    "old": "messages = await source_rows(conn, job[\"source_ids\"], include_reply=with_reply)",
+    "new": "messages = await source_rows(conn, job[\"source_ids\"], include_reply=True)",
+    "target": "tests/contract/test_extraction_contract.py::test_old_pending_snapshot_keeps_its_shape_and_can_publish"
+  },
+  {
+    "name": "fifth failed attempt is terminal",
+    "file": "nora/infra/sql/extraction.py",
+    "old": "terminal = job[\"attempts\"] >= MAX_ATTEMPTS",
+    "new": "terminal = False",
+    "target": "tests/contract/test_extraction_contract.py::test_fifth_failure_is_terminal_counted_once_and_requeueable"
+  },
+  {
+    "name": "terminal transition is counted",
+    "file": "nora/app/extraction.py",
+    "old": "if await self.store.fail(job, stage=stage):",
+    "new": "if await self.store.fail(job, stage=stage) and False:",
+    "target": "tests/contract/test_extraction_contract.py::test_fifth_failure_is_terminal_counted_once_and_requeueable"
+  },
+  {
+    "name": "exhausted leases buy no further call",
+    "file": "nora/infra/sql/extraction.py",
+    "old": "if extraction[\"attempts\"] >= MAX_ATTEMPTS:",
+    "new": "if False:",
+    "target": "tests/contract/test_extraction_contract.py::test_exhausted_lease_or_legacy_batch_fails_without_another_call"
+  },
+  {
+    "name": "requeue releases source rows",
+    "file": "nora/infra/sql/extraction.py",
+    "old": "                .where(QUEUE.c.extraction_id == extraction_id)\n                .values(extraction_id=None)",
+    "new": "                .where(QUEUE.c.extraction_id == extraction_id)\n                .values(extraction_id=extraction_id)",
+    "target": "tests/contract/test_extraction_contract.py::test_fifth_failure_is_terminal_counted_once_and_requeueable"
+  }
+]

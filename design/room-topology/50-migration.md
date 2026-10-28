@@ -16,6 +16,11 @@ edges:
 | **2. `send_to` by room** | the `room` argument and resolver, `ambiguous`, same room by identity, the new docstring, the rewritten comments | routing corpus and `tool_selection` against master (§1, §2) |
 | **3. The rule goes** | `_refuse_two_rooms_on_one_platform` deleted; DEC-105 and DEC-214 amended by a decision row at merge time naming the unique-name rule as the invariant; R-49 amended for the `room` address | the loader accepts two labelled Signal rooms in one unit ([40](40-verification.md) §3); the step-2 numbers hold on that test unit |
 
+Step 3 implementation: the loader accepts two labelled Signal rooms in both
+policy forms. Unique-name, reserved-network-name and missing-label refusals
+remain. Steps 1 and 2 above describe the earlier migration states; their
+platform-count refusal is no longer live after step 3.
+
 Adding the second Signal room to the live `policy.toml` is a config change on
 the deploy host after step 3, made by the operator; it never goes to GitHub.
 

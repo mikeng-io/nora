@@ -67,5 +67,7 @@ def test_the_helper_excludes_every_id_of_an_opted_out_person():
     (built,) = _calls_to(helper, "SqlSocialStreamStore")
     value = {kw.arg: kw.value for kw in built.keywords}.get("opted_out")
     assert isinstance(value, ast.Call), "the helper builds the store without opted_out"
-    assert isinstance(value.func, ast.Attribute)
-    assert value.func.attr == "social_off_ids"
+    assert isinstance(value.func, ast.Name) and value.func.id == "LiveSet"
+    assert len(value.args) == 1
+    assert isinstance(value.args[0], ast.Attribute)
+    assert value.args[0].attr == "social_off_ids"

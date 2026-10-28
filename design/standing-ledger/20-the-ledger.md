@@ -136,6 +136,8 @@ th3 · 6d · co-op games for the weekend · discord-general
 
 ## 6. Scopes
 
+> 2026-10-28 ([unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md#6a-what-this-meets-in-the-other-bundles-2026-10-28) §6a): decisions, commitments and threads are nodes of the memory graph; their `about`, `fulfils` and `concerns` links are built by code from `owed_to`, the cited `Done as` line, `note_ids`, `decision_ids` and the spans, in the notebook layer with the cited rows as evidence, so the tag-path op tool never calls the graph itself.
+
 | scope | keyed on | holds | rendered in |
 |---|---|---|---|
 | **room** | `(platform, conversation_id)`, as Standing is today | decisions, commitments and threads of one room | that room's tag, fire and participation turns |
@@ -148,8 +150,9 @@ two room paragraphs that each know half. It replaces the unit sections
 following`, `What I am watching for`, `I owe`), which map onto threads,
 decisions and commitments.
 
-An entry moves from room to unit scope when a second room touches it; the move
-is a revision, so its history shows when and why.
+An entry moves from room to unit scope only when the writer explicitly sets
+`scope` in a revision. A second room touching it never promotes it. The move
+is recorded in its revision history (step-2 operator ruling).
 
 ## 7. The operations
 

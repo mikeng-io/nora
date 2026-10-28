@@ -11,7 +11,7 @@ directly against the contract.
 from __future__ import annotations
 
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Set
 
 from ...domain.models import ConversationTarget, NormalizedMessage
 from ...domain.ports import (
@@ -35,7 +35,7 @@ from .send import WhatsAppSender
 class WhatsAppAdapter:
     platform = "whatsapp"
 
-    def __init__(self, base_url: str, *, dm_recipients: frozenset[str] = frozenset()) -> None:
+    def __init__(self, base_url: str, *, dm_recipients: Set[str] = frozenset()) -> None:
         """`dm_recipients` is every direct address in `identity.toml`; the
         sender refuses a 1:1 message to any other JID."""
         self._base_url = base_url

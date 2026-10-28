@@ -201,6 +201,7 @@ from nora.infra.sql.schema import (
     SOCIAL_ITEM,
     SOCIAL_ITEM_STATE,
 )
+from nora.infra.sql.tag_traces import body_turn_lineage
 
 __all__ = [
     "EMBED_MAX_ATTEMPTS",
@@ -233,6 +234,7 @@ __all__ = [
     "social_source_id",
     "story_frame_embedded",
 ]
+
 
 log = logging.getLogger("nora.infra.sql.memory_index")
 
@@ -268,7 +270,7 @@ INDEXED_WRITES: dict[str, str] = {
     "social_item_state": "social",
     "social_perception": "social",
     # A Profile line (45 §1) — projected by the store's write paths only while
-    # `[profile] render` is on; the shadow's lines join at the switch through
+    # `[memory.profile] read` is on; the shadow's lines join at the switch through
     # the flip's rebuild (45 §8), never the queue, whose drain runs either way.
     "profile_line": "profile_line",
 }
@@ -819,6 +821,7 @@ async def _project_note(conn: AsyncConnection, source_id: str) -> None:
         conn, kind="note", source_id=source_id, unit=row.unit,
         exclude_persons=row.exclude_persons, text=_text(row.title, row.body),
         at_ms=row.written_at, state=state,
+        lineage=(await body_turn_lineage(conn, body=row.body, unit=row.unit)).to_json(),
     )
     # `anchor_entity_ids` is the writer's free text, «named the way this group
     # names them», never a resolved `person_id`: an `about` edge from it would
@@ -859,6 +862,7 @@ async def _project_memo(conn: AsyncConnection, source_id: str) -> None:
         conn, kind="memo", source_id=source_id, unit=row.unit,
         text=_text(row.title, row.body), at_ms=row.written_at,
         state="live" if row.state == "kept" else "retired",
+        lineage=(await body_turn_lineage(conn, body=row.body, unit=row.unit)).to_json(),
     )
     room = room_key(row.platform, row.conversation_id)
     edges = [("memo", source_id, "in_room", "room", room, "memo.conversation_id")]

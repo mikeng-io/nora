@@ -13,7 +13,7 @@ read). A missing or unrecognized person_id returns an empty list — fail-closed
 UI copy built on top of this must never say "Honcho"; this module
 doesn't render copy, so that rule lives in the frontend, not here.
 
-**Profile (design/unified-memory/45, the switch).** While `[profile] render`
+**Profile (design/unified-memory/45, the switch).** While `[memory.profile] read`
 is on, each entry also carries `profile`: the caller's own Profile account
 per unit that lists them — every chain head with its state, the evidence
 behind each line, and the account's open disputes (cognition-loop/50 §4: an
@@ -186,7 +186,7 @@ async def _attach_profile(
     # The rooms the viewer is listed in TODAY, for the evidence-text rule in
     # `_evidence`. Compared on the bare conversation id: the Record's read
     # (`rows_by_id`) does not carry the platform, and two platforms never
-    # share one in practice (DEC-105's one-room-per-platform per unit).
+    # share one in practice; this is an assumption, not a policy invariant.
     # ponytail: if they ever do, a cited message of one platform could show
     # its text to a viewer of the other's; the fix is `RoomMessage` carrying
     # the platform.

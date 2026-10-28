@@ -1,0 +1,128 @@
+# One Discord message per published release: a notice line, then the release notes
+# in a fixed embed. Deliberately not folded into release-images.yml — a notification
+# that shares a failure domain with the build is silent exactly when the build breaks
+# (the rule deploy/alert-bridge/bridge.py states for alerts).
+#
+# No third-party action: gh and python3 only. scripts/configure_public_github.py
+# allows GitHub-owned actions plus astral-sh/setup-uv and googleapis/release-please-action,
+# so a marketplace Discord action would be refused at run time.
+name: release-notify
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published release tag to re-send
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-notify-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    # Opt-in: without the variable the job is skipped, so this can merge before the
+    # webhook exists. Enabled and the secret missing is a hard failure below, never a
+    # quiet success for a message nobody sent.
+    if: vars.RELEASE_NOTIFY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Post the release message
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          WEBHOOK: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, subprocess, urllib.error, urllib.request
+
+          tag, repo = os.environ["TAG"], os.environ["GH_REPO"]
+          hook = os.environ.get("WEBHOOK", "")
+          if not hook:
+              raise SystemExit("DISCORD_RELEASE_WEBHOOK is unset; nothing was sent")
+
+          # Read the release itself, not the event snapshot: a manual re-send takes the
+          # same path, and the body is the published one rather than a payload copy.
+          raw = subprocess.run(
+              ["gh", "release", "view", tag, "--repo", repo, "--json",
+               "tagName,name,url,body,isPrerelease,publishedAt"],
+              check=True, capture_output=True, text=True).stdout
+          release = json.loads(raw)
+
+          def plain(text):
+              """Discord renders no `#` headings; a release-please body is full of them."""
+              text = re.sub(r"^#{1,6}\s+(.+)$", r"**\1**", text, flags=re.M)
+              return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+          def units(text):
+              """Discord's limits count UTF-16 units, so an emoji costs two."""
+              return len(text.encode("utf-16-le")) // 2
+
+          def clip(text, room):
+              """The longest prefix of `text` that fits in `room` UTF-16 units."""
+              used = 0
+              for index, char in enumerate(text):
+                  used += 2 if ord(char) > 0xFFFF else 1
+                  if used > room:
+                      return text[:index]
+              return text
+
+          # The embed description caps at 4096 units. The link to the full notes is part
+          # of that budget, so a truncated message still says where the rest is.
+          body = plain(release["body"] or "")
+          suffix = f"\n\n[Read the full notes]({release['url']})"
+          if units(body) + units(suffix) > 4080:
+              cut = clip(body, 4080 - units(suffix))
+              # Prefer a line boundary so a link or a bullet is not half-rendered — but
+              # not when the tail is one enormous line, which would throw the message
+              # away to save a line break.
+              if "\n" in cut and len(cut) - cut.rfind("\n") < 500:
+                  cut = cut[: cut.rfind("\n")]
+              body = cut.rstrip() + suffix
+
+          name = (release["name"] or "").strip()
+          title = release["tagName"] if name in ("", release["tagName"]) else f"{release['tagName']} — {name}"
+
+          payload = {
+              "username": "Nora releases",
+              "content": f"**{release['tagName']}** published · {release['url']}",
+              # A changelog can contain @everyone; nothing here should ping.
+              "allowed_mentions": {"parse": []},
+              "embeds": [{
+                  "title": title[:256],
+                  "url": release["url"],
+                  "description": body,
+                  "color": 0xF59E0B if release["isPrerelease"] else 0x22C55E,
+                  "fields": [
+                      {"name": "Tag", "value": f"`{release['tagName']}`", "inline": True},
+                      {"name": "Type",
+                       "value": "pre-release" if release["isPrerelease"] else "stable",
+                       "inline": True},
+                  ],
+                  "footer": {"text": repo},
+                  "timestamp": release["publishedAt"],
+              }],
+          }
+
+          # `?wait=true` is load-bearing: without it Discord answers 204 and a 400
+          # looks like a successful send.
+          request = urllib.request.Request(
+              hook + "?wait=true",
+              data=json.dumps(payload).encode(),
+              headers={"Content-Type": "application/json",
+                       "User-Agent": f"{repo} release-notify"},
+              method="POST")
+          try:
+              with urllib.request.urlopen(request, timeout=15) as response:
+                  print("sent", response.status, json.loads(response.read())["id"])
+          except urllib.error.HTTPError as exc:
+              raise SystemExit(f"discord refused: {exc.code} {exc.read().decode()[:500]}")
+          PY

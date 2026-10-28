@@ -68,23 +68,59 @@ def _UNIT_ROLLUP(i: int) -> dict[str, Any]:
     }
 
 
+def _ledger_row(kind: str, i: int) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "id": f"{kind}-{i}", "revision": 1, "parent_revision": None,
+        "unit": "u", "scope": "unit", "platform": "signal", "conversation_id": "g1",
+        "status": "open", "last_revised_at": MS0 + i,
+        "made_at" if kind == "commitment" else "opened_at": MS0 + i,
+        "topic" if kind == "thread" else "subject": f"Generated work {i}",
+    }
+    if kind == "thread":
+        row.update(note_ids=[], decision_ids=[], message_ids=[], spans=[], last_moved_at=MS0 + i)
+    else:
+        row["body"] = f"Generated evidence {i}"
+    if kind == "commitment":
+        row["owed_to"] = ["room"]
+    return row
+
+
 #: A valid row per in-place table, for key `i`.
 ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
-    "message_reading": lambda i: {
+    "entity": lambda i: {
+        "id": f"graph-entity-{i}", "kind": "event", "unit": "u", "name": f"Generated event {i}",
+    },
+    "relation": lambda i: {
+        "id": f"graph-relation-{i}", "src_kind": "person", "src_id": "generated-person",
+        "rel": "attended", "dst_kind": "event", "dst_id": "graph-entity-0",
+        "layer": "notebook", "unit": "u", "asserted_at": T0, "written_by": "generated",
+    },
+    "relation_evidence": lambda i: {
+        "id": 85000 + i, "relation_id": "graph-relation-0", "source_kind": "message",
+        "source_id": "1000", "role": "supports", "span": f"Generated span {i}",
+    },
+    "memory_work_item": lambda i: {
+        "id": f"graph-work-{i}", "source_kind": "message", "source_id": f"generated-{i}",
+        "unit": "u", "input_hash": f"generated-hash-{i}", "as_of": T0,
+    },
+    "standing_decision": lambda i: _ledger_row("decision", i),
+    "standing_commitment": lambda i: _ledger_row("commitment", i),
+    "standing_thread": lambda i: _ledger_row("thread", i),
+    "extraction": lambda i: {
         "id": 81000 + i, "unit": "u", "platform": "signal", "origin_room": "g1",
         "source_ids": [], "context_ids": [], "snapshot": {}, "version": 1, "model": "m",
     },
-    "message_reading_queue": lambda i: {
+    "extraction_queue": lambda i: {
         "id": 84000 + i,
         "message_id": 1000 + i, "unit": "u", "platform": "signal", "origin_room": "g1",
-        "source_key": f"s{i}", "reading_id": 81000,
+        "source_key": f"s{i}", "extraction_id": 81000,
     },
-    "message_reading_claim": lambda i: {
-        "id": 82000 + i, "reading_id": 81000, "ordinal": i, "unit": "u",
+    "extraction_claim": lambda i: {
+        "id": 82000 + i, "extraction_id": 81000, "ordinal": i, "unit": "u",
         "platform": "signal", "origin_room": "g1", "source_ids": [], "content": {},
     },
-    "message_reading_attempt": lambda i: {
-        "id": 83000 + i, "reading_id": 81000, "attempt": i, "model": "m",
+    "extraction_attempt": lambda i: {
+        "id": 83000 + i, "extraction_id": 81000, "attempt": i, "model": "m",
     },
     "messages": lambda i: {
         "id": 1000 + i, "platform": "signal", "conversation_id": "g1",
@@ -263,10 +299,17 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
 
 #: The column each revision moves, and to what.
 REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
-    "message_reading": ("attempts", lambda i: i + 10),
-    "message_reading_queue": ("source_key", lambda i: f"revised-{i}"),
-    "message_reading_claim": ("content", lambda i: {"what": f"revised {i}"}),
-    "message_reading_attempt": ("input_tokens", lambda i: i + 10),
+    "entity": ("name", lambda i: f"Revised generated event {i}"),
+    "relation": ("status", lambda i: "superseded"),
+    "relation_evidence": ("span", lambda i: f"Revised generated span {i}"),
+    "memory_work_item": ("attempts", lambda i: 1),
+    "standing_decision": ("subject", lambda i: f"Revised choice {i}"),
+    "standing_commitment": ("subject", lambda i: f"Revised promise {i}"),
+    "standing_thread": ("topic", lambda i: f"Revised topic {i}"),
+    "extraction": ("attempts", lambda i: i + 10),
+    "extraction_queue": ("source_key", lambda i: f"revised-{i}"),
+    "extraction_claim": ("content", lambda i: {"what": f"revised {i}"}),
+    "extraction_attempt": ("input_tokens", lambda i: i + 10),
     "messages": ("delivery_status", lambda i: f"delivered-{i}"),
     "message_edit": ("body", lambda i: f"re-edited {i}"),
     "message_reaction": ("removed", lambda i: 1),
@@ -312,6 +355,9 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
 
 #: One append-only row, number `n`, citing the stable key-0 parents.
 APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
+    "standing_decision_revision": lambda n: _ledger_row("decision", n),
+    "standing_commitment_revision": lambda n: _ledger_row("commitment", n),
+    "standing_thread_revision": lambda n: _ledger_row("thread", n),
     "note_revision": lambda n: {
         "id": _uuid("nr", n), "note_id": _uuid("note", 0), "body": f"body {n}",
         "written_at": MS0 + n, "established_by": "test", "citations": [],

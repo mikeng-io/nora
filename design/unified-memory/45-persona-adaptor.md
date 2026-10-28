@@ -1,5 +1,7 @@
 # The Persona adaptor: schema, reasoning modes, writes and curation
 
+> 2026-10-28 (operator, ruled; [unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md#7-one-cognition-loop-comprehend-measure-serialize)): the separate Character/profile adaptors retire. Traits and guesses are reshaped by step 2 of the one Cognition loop whenever a stimulus changed the entity's graph; facts are rendered by code from the graph. Grading a guess by a judge other than its writer stays.
+
 > 2026-10-21 (ADR 0026): "Persona" is retired. The Character tier has person, room, unit and Nora kinds; one row is an entry with profile, traits and hypotheses parts. The target is one typed-line `character-*` adaptor family, retiring the prose adaptors at the switch. Code renaming is deferred to one migration PR before step 8; the body below preserves the earlier vocabulary. See [ADR 0026](../../docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md).
 
 Status: **built in shadow**, amended 2026-10-19 by [75](75-typed-identity.md).
@@ -49,7 +51,7 @@ of the three learned:
 
 > 2026-10-22 (operator brief; proposed): [47](47-character-dimensions.md) defines the phase-4 trait kinds and JSONB prose slots, hypothesis explanation slots and citation-computed support. It amends the `kind` and free-prose contract below together with the ADR 0026 rename; existing storage is unchanged.
 
-> 2026-10-21 (message readings; ADR 0026): statements now live in the Record as [message readings](18-message-readings.md). Character entries are the bounded card Nora sees in every prompt, with profile, traits and hypotheses; they are judgements, not the whole memory. Answers come from Views over readings, Rollup and entries. The historical body and existing code names below are preserved; new text follows [ADR 0026](../../docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md).
+> 2026-10-21 (extraction; ADR 0026): statements now live in the Record as [memory.extraction](18-extraction.md). Character entries are the bounded card Nora sees in every prompt, with profile, traits and hypotheses; they are judgements, not the whole memory. Answers come from Views over readings, Rollup and entries. The historical body and existing code names below are preserved; new text follows [ADR 0026](../../docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md).
 
 Keys are today's culture keys: `{unit}#character:{person}`, `{unit}#unit`,
 `{unit}#nora`, and a room's `primary_id` (GLOSSARY).
@@ -196,13 +198,13 @@ room (Culture) and Nora accounts follow the same shape with their own inputs.
 4. **The stimulus wake is new.** The dream loop wakes on evidence counts and
    staleness only; a wake on a named stimulus is built here.
 
-**Wakes:** today's rule (`person_wake_batch` = 100 messages, or 7 days stale),
+**Wakes:** today's rule (`memory.profile.person.update_every_messages` = 100 messages, or 7 days stale),
 **plus** at once on a stimulus that names this entity: a `remember`, a
 dispute, or a told line about them by someone else.
 
 **Reads:**
 
-> 2026-10-21 (message readings): the person session reads the [readings](18-message-readings.md) of the person's new messages and eligible mentions; the original messages stay citable. Readings retain who said what, how and when, with their source message ids. This amends the message inputs below; Q2 in 18 decides the session is pushed readings since its last session, has read tools over older readings and messages with bounded iterations, and ends in one settle write (today `persona_write`); still one writer per tier, no new writer.
+> 2026-10-21 (extraction): the person session reads the [readings](18-extraction.md) of the person's new messages and eligible mentions; the original messages stay citable. Readings retain who said what, how and when, with their source message ids. This amends the message inputs below; Q2 in 18 decides the session is pushed readings since its last session, has read tools over older readings and messages with bounded iterations, and ends in one settle write (today `persona_write`); still one writer per tier, no new writer.
 
 | input | today | after |
 |---|---|---|
@@ -551,7 +553,7 @@ every room of the unit for the unit's account.
 
 ## 6. What Honcho knew is re-derived, and that is measured
 
-> 2026-10-21 (switch gate, superseded-in-part): §6 items 4–5 no longer require Character lines to cover Honcho's facts. The gate is **Nora can answer what Honcho could**: a frozen question set answered by the new Views over readings, Rollup and entries and by Honcho's dialectic, judged blind. Q1 in [18](18-message-readings.md) decides the set is built and frozen before any run, with no editing after the first answer is seen; pass requires blind judgement that the new Views are at least as good as Honcho’s dialectic on ≥80% of questions AND an error rate <5% (answers asserting something their sources do not support). Both must hold. Item 6, the ≥80-pair reply replay and its ≥55% preference bar, stays. The earlier coverage text and implementation clarifier below are retained as history, not the new switch criterion.
+> 2026-10-21 (switch gate, superseded-in-part): §6 items 4–5 no longer require Character lines to cover Honcho's facts. The gate is **Nora can answer what Honcho could**: a frozen question set answered by the new Views over readings, Rollup and entries and by Honcho's dialectic, judged blind. Q1 in [18](18-extraction.md) decides the set is built and frozen before any run, with no editing after the first answer is seen; pass requires blind judgement that the new Views are at least as good as Honcho’s dialectic on ≥80% of questions AND an error rate <5% (answers asserting something their sources do not support). Both must hold. Item 6, the ≥80-pair reply replay and its ≥55% preference bar, stays. The earlier coverage text and implementation clarifier below are retained as history, not the new switch criterion.
 
 1. **Shadow first, and shadow changes no prompt** (amended 2026-10-15). The
    adaptor writes Persona under a **shadow key**; the live Character head

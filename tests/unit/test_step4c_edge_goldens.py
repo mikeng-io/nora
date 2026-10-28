@@ -4,6 +4,8 @@ input.
 **The goldens in `tests/fixtures/context_assembly_step4c_goldens.json` are
 master's output from before any of the three edges was changed**, over
 synthetic fixtures. What is compared is what the model is sent, in full.
+The reaction captures include the shared turn-record gloss from Standing
+Ledger step 1; its before/after live evals are pending.
 They split, per case, into two kinds and a case is never both:
 
 * **UNCHANGED** (`test_an_input_the_step_does_not_touch_is_byte_identical`):

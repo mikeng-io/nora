@@ -1,4 +1,10 @@
 ---
+
+> Operational amendment, 2026-10-28: the recreate advice below records the old
+> implementation. Valid identity/policy edits now hot-reload within three seconds
+> when copied in place; workspace-binding edits still require recreation.
+> See [the reload design](../policy-reload/00-design.md).
+
 type: review
 title: "WhatsApp Adoption Bundle — Delegate Review"
 description: "Adversarial review of design/whatsapp-adoption/ against the live repo. Grounded in file:line evidence verified 2026-09-04."
@@ -185,6 +191,9 @@ every WhatsApp voice note is either dropped or an undefined interaction.
 **Resolution:** Add a media section to the v1 scope or explicitly defer it
 with the engagement consequence stated ("voice-note engagement does not work
 until media ingestion lands").
+
+Historical review: room-topology migration step 3 supersedes the room-count
+convention discussed below; unique labels within a unit are now the invariant.
 
 ### M3. DEC-105 is misquoted — the bundle's "one-room-per-platform-per-unit" rule is not what DEC-105 says
 

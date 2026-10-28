@@ -145,6 +145,12 @@ class _Pin(NamedTuple):
 # the artifact that gets re-derived from scratch by the next session that
 # notices one of them.
 _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
+    ("extraction.py", "requeue"): _Pin(
+        "operator_script",
+        "The operator repairs terminal extraction failures with scripts/extraction_requeue.py. "
+        "It deliberately stays outside the daemon, retaining failed history and releasing sources "
+        "for a fresh batch only after an explicit operator invocation.",
+    ),
     ("culture.py", "chain"): _Pin(
         "deferred_consumer",
         "The revision chain, newest first, walked through parent links. The "
@@ -273,7 +279,7 @@ _STORE_MODULES: frozenset[str] = frozenset(
         "gatherings.py", "geocode_cache.py", "language.py",
         "media_descriptions.py", "media_objects.py", "memo.py", "memory_embed.py",
         "memory_read.py", "mobility.py",
-        "message_readings.py",
+        "extraction.py",
         "music_queue.py", "music_session.py", "notes.py", "otp.py",
         "participation_state.py", "profile.py", "profile_inputs.py", "presence.py",
         "reasoning_strip.py", "record_query.py",
@@ -281,7 +287,7 @@ _STORE_MODULES: frozenset[str] = frozenset(
         "snapshot_at.py", "social_stream.py",
         "stimuli.py",
         "source_health.py", "tag_debounce.py",
-        "standing.py", "summons.py", "tag_traces.py", "tool_call_log.py",
+        "standing_ledger.py", "standing.py", "summons.py", "tag_traces.py", "tool_call_log.py",
         "video_readings.py",
     }
 )

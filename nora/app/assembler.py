@@ -21,6 +21,7 @@ from nora.agent.lineage import LineagePolicy
 from nora.agent.memory_search import MemorySearch
 from nora.agent.whereis import circles_from_persons
 from nora.config import Config
+from nora.domain.live import LiveSequence
 from nora.domain.media_join import MediaJoin
 from nora.domain.memo import MemoStore
 from nora.domain.ports import (
@@ -31,6 +32,7 @@ from nora.domain.ports import (
     StandingStore,
 )
 from nora.domain.quote_window import QuoteWindow
+from nora.domain.standing_ledger import StandingLedger
 from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.context import (
     StandingNotesReader,
@@ -53,7 +55,7 @@ def lineage_policy(cfg: Config, *, policy: Policy, persons: Persons) -> LineageP
     and the tool registry (`record_query`) each hold one built here, so the
     three cannot disagree about who a room is."""
     return LineagePolicy.from_policy(
-        policy, circles=circles_from_persons(persons), mode=cfg.lineage.mode,
+        policy, circles=LiveSequence(lambda: circles_from_persons(persons)), mode=cfg.lineage.mode,
         content_checks=cfg.content_checks.enabled,
     )
 
@@ -68,6 +70,7 @@ def build_assembler(
     policy: Policy,
     notes: StandingNotesReader | None = None,
     standing: StandingStore | None = None,
+    ledger: StandingLedger | None = None,
     media_join: MediaJoin | None = None,
     quote_window: QuoteWindow | None = None,
     presence: PresenceReader | None = None,
@@ -94,11 +97,11 @@ def build_assembler(
         # not opted in) is the plain `context_window` fetch, no quote-aware
         # growth.
         quote_window=quote_window,
-        ai_peer=cfg.memory.ai_peer,
-        tagger_card_conclusions=cfg.memory.tagger_card_conclusions,
+        ai_peer=cfg.honcho.ai_peer,
+        tagger_card_conclusions=cfg.honcho.tagger_card_conclusions,
         notes=notes, policy=policy,
         memos=memos,
-        standing=standing,
+        standing=standing, ledger=ledger,
         # The media join: the transcript's `[image a3f2c1]`
         # placeholders gain their stored comprehension here, in the assembler,
         # so `nora/agent/prefill.py` stays a pure renderer over `TagContext`.
@@ -134,15 +137,15 @@ def build_assembler(
         subagents=subagents,
         # `<recalled>`, the pre-fetch (design/unified-memory/00 step 3b): the
         # SAME `MemorySearch` the tool registry's `memory_search` holds.
-        # `None` on the Honcho surface (`[memory_index] enabled = false`),
+        # `None` on the Honcho surface (`[memory.index] read = false`),
         # which renders no block.
         memory_search=memory_search,
         # The graph's one clock, so the pre-fetch dates and ranks its items
         # at the instant every other component reads.
         clock=clock,
         # THE SWITCH (design/unified-memory/45 §5): the Profile accounts'
-        # reader. `None` until `[profile] render` is on beside `[profile]
-        # enabled`, and in every harness that wires none — the turn then
+        # reader. `None` until `[memory.profile] read` is on beside `[memory.profile]
+        # write`, and in every harness that wires none — the turn then
         # renders the Honcho and prose-culture blocks it always has.
         profile=profile, rosters=rosters, self_ids=self_ids,
     )

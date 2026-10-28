@@ -251,7 +251,7 @@ class _PersonsFile(BaseModel):
     persons: dict[str, _PersonEntry] = Field(default_factory=dict)
     # Nora workspace -> its Honcho binding (DEC-214). Empty is the shipped
     # state and the back-compat one: every workspace is then bound by name,
-    # and the implicit one to `memory.workspace_id`.
+    # and the implicit one to `honcho.workspace_id`.
     workspaces: dict[str, _WorkspaceBinding] = Field(default_factory=dict)
 
     @field_validator("persons")

@@ -527,6 +527,7 @@ def create_dream_agent(
     retry: RetryPolicy,
     agent_name: str = DEFAULT_DREAM_AGENT_NAME,
     tool_executor: ToolExecutor | None = None,
+    tool_hooks: tuple[HookProvider, ...] = (),
 ) -> Agent:
     """The Dreamer's agent: a loop that may LOOK and may not ACT.
 
@@ -563,6 +564,10 @@ def create_dream_agent(
     default), and a fresh `ModelRetryStrategy` per agent (see `RetryPolicy`; dream
     runs overlap the way tags do).
     """
+    hooks: list[HookProvider | HookCallback] = [guard]
+    if reasoning_watch is not None:
+        hooks.extend((reasoning_watch,))
+    hooks.extend(tool_hooks)
     return Agent(
         model=model,
         # Identity, so a background run is findable in Langfuse apart from her
@@ -578,7 +583,7 @@ def create_dream_agent(
         tools=tools,
         # After the guard, for `create_agent`'s reason (see the comment on its
         # `hooks` list). `None` is the inert default.
-        hooks=[guard] if reasoning_watch is None else [guard, reasoning_watch],
+        hooks=hooks,
         tool_executor=_background_executor_or_shared(tool_executor),
         conversation_manager=NullConversationManager(),
         session_manager=None,

@@ -28,6 +28,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from nora.domain.self_presence import PLATFORM_NAMES
+
 # Not a person_id: the wildcard admitting anyone in a conversation.
 EVERYONE = "*"
 
@@ -35,7 +37,7 @@ EVERYONE = "*"
 #: table at all (DEC-214). A workspace holds units,
 #: a unit holds rooms; a policy written before the hierarchy existed names no
 #: workspace, so all of its units share this implicit one, and that one is
-#: bound to `config.toml`'s `memory.workspace_id` rather than to its own name
+#: bound to `config.toml`'s `honcho.workspace_id` rather than to its own name
 #: (`nora.app.memory_routing`). Not a Honcho workspace id: a Nora workspace
 #: and a Honcho workspace are separate names for separate things.
 DEFAULT_WORKSPACE = "default"
@@ -116,7 +118,7 @@ class Conversation:
     # groups and may never be relayed between, however trusted each is on its
     # own.
     #
-    # Defaults to `memory.workspace_id`'s shipped value rather than being
+    # Defaults to `honcho.workspace_id`'s shipped value rather than being
     # required, so an existing policy.toml keeps working — but the default is
     # the LOOSE direction, so an operator who runs two real social units must
     # say so. That is why `send_to` also requires the requester to be allowed
@@ -172,9 +174,8 @@ class Conversation:
     # Voice is not a room. It is a SURFACE of a room: `voice = true` on a
     # guild's text room means "every voice channel in this guild speaks into
     # HERE". Per-channel allowlisting would be unmaintainable (a server has
-    # many voice channels) AND would put N Discord rooms in one unit, which
-    # DEC-105 forbids: a unit holds at most one room per platform. With one
-    # room there is one notebook, one culture, one unit, one `persons` list —
+    # many voice channels). One designated text room gives spoken and typed
+    # plans the same notebook, culture and `persons` list —
     # a plan spoken aloud and the same plan typed land in the same place.
     # The GUILD is what is checked; the channel is provenance only.
     #
@@ -200,9 +201,8 @@ class Conversation:
     # `persons`, `unit`, `location`, `relevance_gate`, `proactive`,
     # `home_room` — and every one of them is meaningless for a channel that is
     # written to and never read. Listing one means inventing trust answers
-    # about a non-conversation; it also puts a second room in the guild's
-    # unit, which DEC-105 says holds at most one room per platform, and makes
-    # Nora RECORD whatever else is said there — her OWN posts are dropped
+    # about a non-conversation and makes Nora RECORD whatever else is said
+    # there — her OWN posts are dropped
     # before ingest (`parser.py`), but nobody else's are, and `persons` gates
     # ANSWERING rather than recording. That is why the loader REFUSES a
     # `music_channel` that is itself a listed conversation, rather than merely
@@ -742,7 +742,7 @@ def load_policy(path: Path) -> Policy:
             )
         music_by_guild[key] = convo
 
-    _refuse_two_rooms_on_one_platform(conversations)
+    _refuse_ambiguous_room_names(conversations)
     unit_workspace = _unit_workspaces(parsed.units, conversations, path)
 
     if not conversations:
@@ -764,30 +764,42 @@ def load_policy(path: Path) -> Policy:
     )
 
 
-def _refuse_two_rooms_on_one_platform(conversations: list[Conversation]) -> None:
-    """A unit holds AT MOST ONE room per platform (DEC-105, DEC-214).
-
-    Breaching it is costly to undo by hand (messages, notes and a culture
-    table end up split across rooms). Everything that addresses a
-    unit's room by PLATFORM leans on it — `send_to`'s «tell the Signal lot»
-    names one room only because there is one — and so does every unit-keyed
-    read that picks "the unit's room on X". Refused in every form of the
-    file, `[units]` or not: the invariant is the unit's, not the workspace's.
-    """
+def _refuse_ambiguous_room_names(conversations: list[Conversation]) -> None:
+    """Room labels and network addresses must name one thing within a unit."""
     seen: dict[tuple[str, str], Conversation] = {}
+    networks = {name.casefold(): key for key, name in PLATFORM_NAMES.items()}
+    networks.update((c.platform.casefold(), c.platform) for c in conversations)
     for convo in conversations:
-        key = (convo.unit, convo.platform)
+        # Same case and spacing fold as the room tools' resolver.
+        name = " ".join(convo.label.split()).casefold()
+        key = (convo.unit, name)
         other = seen.get(key)
         if other is not None:
             raise PolicyError(
-                f"unit {convo.unit!r} has two {convo.platform} rooms "
-                f"({other.label or other.primary_id!r} and "
-                f"{convo.label or convo.primary_id!r}). A unit holds at most "
-                "one room per platform (DEC-105): anything that addresses the "
-                "unit's room on a platform would otherwise be guessing. Give "
-                "one of them its own unit."
+                f"unit {convo.unit!r} has duplicate room names "
+                f"({other.label!r} on {other.platform}:{other.primary_id!r} and "
+                f"{convo.label!r} on {convo.platform}:{convo.primary_id!r}). "
+                "Room names must be unique after case and spacing are folded."
             )
         seen[key] = convo
+
+    for convo in conversations:
+        network = networks.get(" ".join(convo.label.split()).casefold())
+        if network is None:
+            continue
+        other = next((c for c in conversations if c.unit == convo.unit
+                      and c.platform == network and c is not convo), None)
+        if convo.platform == network and other is None:
+            continue
+        conflict = (
+            f"; it conflicts with {other.label!r} on "
+            f"{other.platform}:{other.primary_id!r}" if other is not None else ""
+        )
+        raise PolicyError(
+            f"unit {convo.unit!r} uses reserved network name {convo.label!r} "
+            f"for {convo.platform}:{convo.primary_id!r}{conflict}. A network "
+            "name may label only its own network's sole room in the unit."
+        )
 
 
 def _unit_workspaces(
@@ -799,12 +811,12 @@ def _unit_workspaces(
 
     ABSENT table: `{}`, and `Policy.workspace_of` answers `DEFAULT_WORKSPACE`
     for every unit — the policy that existed before the hierarchy keeps
-    loading unchanged. PRESENT: it must be COMPLETE and EXACT. A room whose
+    loading unchanged. PRESENT: it must cover every room's unit. A room whose
     unit has no entry would belong to no workspace, which means no Honcho
     workspace could be named for it, so it is a startup error rather than a
-    guess (R-5's refuse-to-start shape). A unit entry that no room uses is
-    refused too: a unit holds one or more rooms, so an entry with none is a
-    typo or a stale line, and either way it is an answer nobody reads."""
+    guess (R-5's refuse-to-start shape). A declared unit may temporarily hold
+    no rooms: its workspace is admitted at boot so removing its last room and
+    adding a room back can both reload without changing workspace bindings."""
     if units is None:
         return {}
     used = {convo.unit for convo in conversations}
@@ -815,12 +827,5 @@ def _unit_workspaces(
             "every unit a room uses must name its workspace — add "
             f'[units.{missing[0]}] workspace = "..." — or delete [units] '
             "entirely to put every unit in the one implicit workspace."
-        )
-    unused = sorted(set(units) - used)
-    if unused:
-        raise PolicyError(
-            f"{path} declares [units.{unused[0]}] but no conversation has "
-            f"unit = {unused[0]!r}. A unit holds at least one room; remove the "
-            "entry or fix the unit name it was meant to match."
         )
     return {unit: entry.workspace for unit, entry in units.items()}

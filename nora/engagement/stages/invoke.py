@@ -64,6 +64,7 @@ from nora.domain.errors import PartialReplyError
 from nora.domain.models import TagContext
 from nora.domain.tag_trace import TagTrace
 from nora.domain.turn_deadline import turn_deadline
+from nora.domain.turn_record import TurnCapture, capture_turn
 from nora.obs.tracing import trace_attributes as build_trace_attributes
 
 log = logging.getLogger("nora.engagement.invoke")
@@ -160,11 +161,12 @@ async def run(
     # said what it had to say through the tool. See `pipeline`'s recovery.
     final_text = ""
     trace: TagTrace
+    captured = TurnCapture()
     try:
         # The SAME number the `wait_for` enforces, published to every tool
         # the turn runs, so a tool that spends wall clock on its own model
         # call (the vision describer) can see how much of it is left.
-        with turn_deadline(timeout_seconds):
+        with turn_deadline(timeout_seconds), capture_turn() as captured:
             stop_reason, final_text, trace = await asyncio.wait_for(
                 runner.invoke(
                     doctrine=doctrine, tools=tools, pre_fill=pre_fill, guard=guard,
@@ -241,4 +243,8 @@ async def run(
         # fraction of turns are being cut off, and `end_turn` being the
         # overwhelming majority is the thing that makes a `limit_*` legible.
         metrics.inc("nora_llm_stop_reason_total", reason=stop_reason, audience=audience)
+    if captured.trace is not None:
+        trace = dataclasses.replace(
+            captured.trace, outcome=trace.outcome, transcript=ctx.transcript,
+        )
     return ok, elapsed, stop_reason, final_text, trace

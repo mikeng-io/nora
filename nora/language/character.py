@@ -127,7 +127,7 @@ CHARACTER_PERSON_ADAPTOR_NAME = "character-person"
 #: so they were the least that was not needed (DEC-290).
 #:
 #: `memory_search` is the same reach on the graph surface (DEC-316): built
-#: instead of `ask_memory` and `search_memory` while `[memory_index] enabled`.
+#: instead of `ask_memory` and `search_memory` while `[memory.index] read`.
 CHARACTER_PERSON_TOOLS: frozenset[str] = frozenset({
     "ask_memory", "search_memory", "about", "lookup_person", "group_members",
     "memory_search",
@@ -302,7 +302,6 @@ class PersonEvidence:
         # message side's `_rejections` makes the same trade.
         #: `key -> the position its batch was last abandoned from`.
         self._abandoned: dict[str, int] = {}
-        self._population = tuple(sorted(keys))
         self._held: dict[str, int] = {}
         #: `key -> (after, head)`: a count over `(after, head]` found nothing
         #: of theirs, so the next one starts at `head`.
@@ -725,7 +724,6 @@ class CharacterPersonAdaptor(EntitySessions):
         #: Read by the dream loop, never awaited here.
         self.evidence = evidence
         self._keys = keys
-        self._population = tuple(sorted(keys))
         self._screen = screen
         self._render_chars = render_chars
         self._handle_owners = handle_owners
@@ -734,7 +732,7 @@ class CharacterPersonAdaptor(EntitySessions):
         self._sessions_init()
 
     def keys(self) -> Sequence[str]:
-        return self._population
+        return tuple(sorted(self._keys.keys()))
 
     def tool_room(self, key: str) -> str | None:
         pk = self._keys.get(key)
@@ -914,13 +912,12 @@ class CharacterUnitAdaptor(EntitySessions):
         #: Read by the dream loop, never awaited here.
         self.evidence = evidence
         self._keys = keys
-        self._population = tuple(sorted(keys))
         self._metrics = metrics
         self._clock = clock or (lambda: datetime.now().astimezone())
         self._sessions_init()
 
     def keys(self) -> Sequence[str]:
-        return self._population
+        return tuple(sorted(self._keys.keys()))
 
     def _count(self, outcome: str) -> None:
         _inc_session(self._metrics, "unit", outcome)
@@ -1055,7 +1052,6 @@ class CharacterNoraAdaptor(EntitySessions):
         #: Read by the dream loop, never awaited here.
         self.evidence = evidence
         self._keys = keys
-        self._population = tuple(sorted(keys))
         #: A reply's author by `person_id` (the roster's name, never a
         #: platform id or a self-set profile name).
         self._name_of = name_of
@@ -1064,7 +1060,7 @@ class CharacterNoraAdaptor(EntitySessions):
         self._sessions_init()
 
     def keys(self) -> Sequence[str]:
-        return self._population
+        return tuple(sorted(self._keys.keys()))
 
     def _count(self, outcome: str) -> None:
         _inc_session(self._metrics, "nora", outcome)
@@ -1078,6 +1074,7 @@ class CharacterNoraAdaptor(EntitySessions):
                 (r.id, self._name_of(r.person_id), r.body or "") for r in e.replies
             )],
             row_id=lambda m: m[0],
+            turn=lambda m: e.turn_handle if m[0] == e.send_id else None,
             attrs=lambda m: (("from", m[1]),),
             body=lambda m: m[2],
         )

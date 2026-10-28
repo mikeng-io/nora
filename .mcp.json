@@ -1,10 +1,28 @@
 {
 	"mcpServers": {
-    "blender": {
-      "command": "uvx",
-      "args": ["mcp-for-blender==2.2.4"],
-      "env": {"BLENDER_HOST": "127.0.0.1", "BLENDER_PORT": "9876", "DISABLE_TELEMETRY": "true"}
-    },
+		"blender": {
+			"command": "uvx",
+			"args": [
+				"mcp-for-blender==2.2.4"
+			],
+			"env": {
+				"BLENDER_HOST": "127.0.0.1",
+				"BLENDER_PORT": "9876",
+				"DISABLE_TELEMETRY": "true"
+			}
+		},
+		"sentry": {
+			"type": "http",
+			"url": "https://mcp.sentry.dev/mcp"
+		},
+		"devin": {
+			"type": "http",
+			"url": "https://mcp.devin.ai/mcp",
+			"headers": {
+				"Authorization": "Bearer ${DEVIN_API_KEY}",
+				"X-Org-Id": "${DEVIN_ORG_ID}"
+			}
+		},
     "meshy": {"command": "npx", "args": ["-y", "@meshy-ai/meshy-mcp-server@0.6.6"]},
 		"strands": {
 			"type": "stdio",

@@ -44,18 +44,18 @@ def commit(repo, path, subject):
 @pytest.mark.parametrize(
     "path,subject,expected",
     [
-        ("design/new-capability.md", "feat: propose a capability", False),
-        ("docs/setup.md", "fix: clarify setup", False),
-        ("README.md", "feat: decorate README", False),
-        ("site/README.md", "fix: clarify site setup", False),
-        ("docs-site/README.md", "fix: clarify wiki setup", False),
-        ("docs-site/astro.config.mjs", "docs: describe the renderer", False),
+        ("design/new-capability.md", "feat: propose a capability", True),
+        ("docs/setup.md", "fix: clarify setup", True),
+        ("README.md", "feat: decorate README", True),
+        ("site/README.md", "fix: clarify site setup", True),
+        ("docs-site/README.md", "fix: clarify wiki setup", True),
+        ("docs-site/astro.config.mjs", "docs: describe the renderer", True),
         ("site/src/styles/global.css", "fix(site): restore readable text", True),
         ("docs-site/astro.config.mjs", "fix(wiki): render diagrams", True),
         ("docs-site/package-lock.json", "security(wiki): patch a renderer dependency", True),
-        ("tests/test_new.py", "fix: improve test", False),
-        (".github/workflows/ci.yml", "feat: add a check", False),
-        ("nora/feature.py", "docs: describe a feature", False),
+        ("tests/test_new.py", "fix: improve test", True),
+        (".github/workflows/ci.yml", "feat: add a check", True),
+        ("nora/feature.py", "docs: describe a feature", True),
         ("nora/feature.py", "feat: implement a feature", True),
         ("nora/feature.py", "fix(feature)!: change runtime behavior", True),
         ("nora/doctrine/voice.md", "doctrine: change runtime voice", True),
@@ -63,18 +63,18 @@ def commit(repo, path, subject):
         ("uv.lock", "security: update a vulnerable dependency", True),
     ],
 )
-def test_release_requires_user_facing_runtime_change(repo, path, subject, expected):
+def test_every_ordinary_change_qualifies_including_internal_only(repo, path, subject, expected):
     commit(repo, path, subject)
     assert scope.eligible("v1.0.0") is expected
 
 
-def test_pending_code_releases_with_later_docs_but_docs_after_release_do_not(repo):
+def test_later_docs_also_release_after_the_previous_range_is_published(repo):
     commit(repo, "nora/feature.py", "feat: implement a feature")
     commit(repo, "docs/feature.md", "docs: describe the feature")
     assert scope.eligible("v1.0.0")
     run("tag", "v1.1.0")
     commit(repo, "design/future.md", "feat: describe future work")
-    assert not scope.eligible("v1.1.0")
+    assert scope.eligible("v1.1.0")
 
 
 def test_failed_history_read_never_grants_release(repo):
@@ -119,4 +119,16 @@ def test_shipped_and_build_inputs_qualify(repo, path):
 )
 def test_model_prompt_inputs_are_runtime_code(repo, path):
     commit(repo, path, "fix: correct a runtime prompt")
+    assert scope.eligible("v1.0.0")
+
+
+def test_generated_metadata_is_excluded_but_a_release_subject_on_other_work_is_not(repo):
+    for path in scope.METADATA_FILES:
+        target = repo / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("version metadata")
+    run("add", ".")
+    run("commit", "-qm", "chore(master): release 1.0.1")
+    assert not scope.eligible("v1.0.0")
+    commit(repo, "docs/ordinary.md", "chore(master): release 1.0.2")
     assert scope.eligible("v1.0.0")

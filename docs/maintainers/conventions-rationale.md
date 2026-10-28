@@ -385,15 +385,17 @@ procedure: `extra = "forbid"` catches a broken file only by crash-looping.
 `config.toml` is ALSO bind-mounted read-only into the two voice sidecars
 (`stt`, `voice-wake`): they read `[speech.stt]` / `[speech.wake]` with stdlib
 tomllib at boot (2026-09-17 — before that, the same knobs were env vars in
-compose and disagreed with this file). The last two are bind-mounted read-only and **loaded once at
-startup** — editing either without a recreate changes nothing and warns you about
-nothing (`nora_unmapped_senders_total` is the tell). `identity.toml` takes one
+compose and disagreed with this file). Identity and policy are bind-mounted read-only and **hot-reloaded after
+validation every three seconds**. Invalid edits retain the last good version;
+workspace-binding edits refuse the whole reload until recreation. The
+`nora_config_reloads_total` outcomes and `/health` staleness expose pending or
+refused changes (see `design/policy-reload/00-design.md`). `identity.toml` takes one
 `[[persons.<id>.<platform>]]` block **per account**, all resolving to one
 `person_id` (their Honcho peer, A2/DEC-14). `policy.toml` is deny-by-default and
 Nora **refuses to start** if it is missing or allows nothing (R-5). Memory's
 hierarchy is split across them on the same lines (DEC-214): `policy.toml`
 `[units]` says which workspace each unit is in, `identity.toml` `[workspaces]`
-binds each workspace to its Honcho workspace, and `memory.workspace_id` is only
+binds each workspace to its Honcho workspace, and `honcho.workspace_id` is only
 the binding used when there is no `[units]`.
 
 ## Design discipline — incidents

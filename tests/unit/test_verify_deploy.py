@@ -50,7 +50,7 @@ def test_digest_readback_keeps_missing_and_stale_services_in_denominator(monkeyp
             dict(_row(name='presence', image_id='old'), service='presence')]
     # The old image reference MUST NOT exclude presence from the reading.
     monkeypatch.setattr(vd, '_docker', lambda *a: __import__('json').dumps([
-        {'Name': '/' + r['name'], 'Image': r['image_id'], 'RestartCount': 0,
+        {'Id': r['name'], 'Name': '/' + r['name'], 'Image': r['image_id'], 'RestartCount': 0,
          'Config': {'Image': 'old', 'Labels': {'com.docker.compose.project': 'nora',
                     'com.docker.compose.service': r['service']}},
          'State': {'Running': True, 'Health': {'Status': 'healthy'}}} for r in rows
@@ -60,3 +60,24 @@ def test_digest_readback_keeps_missing_and_stale_services_in_denominator(monkeyp
     assert vd.service_errors(actual, expected) == [
         'analytics: expected exactly one container, found 0',
         'presence: image differs from release']
+
+
+@pytest.mark.parametrize(('container_id', 'restarts', 'accepted'), [
+    ('retained', 2, True),   # recovered before deployment: no new crash
+    ('retained', 3, False),  # a fresh crash on a retained container
+    ('recreated', 0, True),
+    ('recreated', 1, False), # an old container's allowance cannot cover a new one
+])
+def test_selective_readback_binds_restart_allowance_to_container_identity(
+        monkeypatch, container_id, restarts, accepted):
+    vd = _load()
+    monkeypatch.setattr(vd, 'image_id', lambda image: 'sha256:new')
+    monkeypatch.setattr(vd, 'containers_for_services', lambda project, services: [
+        dict(_row(restarts=restarts), service='nora', container_id=container_id)])
+    if accepted:
+        vd.verify_services('nora', {'nora': 'synthetic-image'}, settle=0, timeout=0,
+                           baseline={'retained': 2})
+    else:
+        with pytest.raises(RuntimeError, match='new restarts'):
+            vd.verify_services('nora', {'nora': 'synthetic-image'}, settle=0, timeout=0,
+                               baseline={'retained': 2})

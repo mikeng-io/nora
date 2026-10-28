@@ -380,15 +380,14 @@ _LOOP_ONLY = ("rollup_read", "standing_read", "character_read", "social_read")
 
 
 def test_the_dreamer_loop_reads_are_never_a_tag_turns_tools():
-    """`standing_read` is the session's own position, `character_read` waits
-    on a `tool_selection` run, and `social_read` is the recorded stream the
+    """`character_read` waits on a routing measurement, and `social_read` is the recorded stream the
     tag path's live social reads stand in for: a reply neither pays their
     prompt nor can route to them, in a Discord room or a Signal one."""
     from nora.agent.surface import DREAMER_LOOP_TOOLS, TAG_READABLE_LOOP_TOOLS
 
-    assert set(_LOOP_ONLY) == DREAMER_LOOP_TOOLS
+    assert set(_LOOP_ONLY) - {"standing_read"} == DREAMER_LOOP_TOOLS
     loop_only = DREAMER_LOOP_TOOLS - TAG_READABLE_LOOP_TOOLS
-    assert loop_only == {"standing_read", "character_read", "social_read"}
+    assert loop_only == {"character_read", "social_read"}
     assert loop_only <= DREAMER_ONLY_TOOLS
     for platform in ("signal", "discord"):        # `None` is the DECLARED table: everything
         tag = ToolScope(platform=platform, dreamer=False)
@@ -418,8 +417,9 @@ def test_the_relevance_gates_capability_digest_does_not_offer_what_a_reply_canno
     wired = ToolRegistry(rollup=object(), standing_head=object(), culture=object(),
                          social_items=object())
     digest = wired.capability_digest()
-    assert not any(n in digest for n in ("standing_read", "character_read", "social_read"))
+    assert not any(n in digest for n in ("character_read", "social_read"))
     assert "rollup_read" in digest, "a tag turn can call it, so the gate may count on it"
+    assert "standing_read" in digest, "ledger render budgets have a reachable full read"
     assert "where_been" in digest, "positive control: the digest lists the tag path's reads"
 
 
@@ -556,3 +556,8 @@ def test_a_relayed_turn_is_offered_no_send_to():
     assert "send_to" in _surface(fire_turn=True).admitted
     assert "send_to" not in _surface(fire_turn=True, relay_turn=True).admitted
     assert not ToolScope(platform="signal", relay=True).admits("send_to")
+
+
+def test_every_room_occasion_can_open_the_full_standing_ledger():
+    for tag_turn in (True, False):
+        assert ToolScope(platform="signal", tag_turn=tag_turn).admits("standing_read")

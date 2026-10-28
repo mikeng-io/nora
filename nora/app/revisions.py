@@ -97,8 +97,8 @@ class RevisionRecorder:
     the deploy and config rows describe this process's start, which does not
     change, so a database that was briefly down at start costs a late row,
     never a missing one. The config files are read ONCE, at `record_start`
-    (they are loaded once at start and an edit without a restart changes
-    nothing that runs), and a retry writes what was read then.
+    (this table records the startup snapshot; identity/policy can subsequently
+    hot-reload), and a retry writes what was read then.
     """
 
     def __init__(

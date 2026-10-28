@@ -1,8 +1,7 @@
 """`policy.toml`'s `[units]` — workspace > unit > room (DEC-214).
 
 The structure half of the hierarchy: which Nora workspace each unit belongs
-to, and DEC-105's one-room-per-platform-per-unit rule, which the loader
-enforces. Every id below is a placeholder.
+to, and unique room names within a unit. Every id below is a placeholder.
 """
 
 from __future__ import annotations
@@ -88,9 +87,10 @@ def test_a_unit_with_no_workspace_refuses_to_start_once_units_exist(tmp_path):
         _load(tmp_path, _ROOMS + partial)
 
 
-def test_a_unit_entry_no_room_uses_refuses_to_start(tmp_path):
-    with pytest.raises(PolicyError, match=r"\[units\.delta\] but no conversation"):
-        _load(tmp_path, _ROOMS + _UNITS + '\n[units.delta]\nworkspace = "two"\n')
+def test_a_declared_unit_can_keep_its_workspace_while_it_has_no_rooms(tmp_path):
+    policy = _load(tmp_path, _ROOMS + _UNITS + '\n[units.delta]\nworkspace = "two"\n')
+    assert policy.workspace_of("delta") == "two"
+    assert not any(c.unit == "delta" for c in policy.conversations)
 
 
 def test_a_unit_entry_without_a_workspace_is_refused(tmp_path):
@@ -104,9 +104,8 @@ def test_a_workspace_name_honcho_would_refuse_is_refused_at_startup(tmp_path):
 
 
 @pytest.mark.parametrize("units", ["", _UNITS], ids=["no-units", "with-units"])
-def test_two_rooms_on_one_platform_in_one_unit_refuse_to_start(tmp_path, units):
-    """DEC-105's invariant, enforced in both forms of the file: the rule is
-    the unit's, not the workspace's."""
+def test_two_labelled_signal_rooms_in_one_unit_load(tmp_path, units):
+    """Distinct room names address two Signal rooms in either policy form."""
     second = """
 [[conversations]]
 platform = "signal"
@@ -115,13 +114,66 @@ label = "Alpha's second Signal room"
 persons = "*"
 unit = "alpha"
 """
-    with pytest.raises(PolicyError, match=r"unit 'alpha' has two signal rooms"):
-        _load(tmp_path, _ROOMS + second + units)
+    policy = _load(tmp_path, _ROOMS + second + units)
+    rooms = [c for c in policy.conversations if c.unit == "alpha" and c.platform == "signal"]
+    assert [(c.primary_id, c.label) for c in rooms] == [
+        ("sig-alpha", "Alpha on Signal"),
+        ("sig-alpha-2", "Alpha's second Signal room"),
+    ]
+    assert all(policy.conversation("signal", c.primary_id) is c for c in rooms)
+    assert policy.workspace_of("alpha") == ("one" if units else DEFAULT_WORKSPACE)
 
 
-def test_one_room_per_platform_across_units_is_allowed(tmp_path):
-    """The positive control: two Signal rooms are fine in two units — the
-    refusal above is about the unit, not the platform."""
+def test_rooms_on_one_platform_across_units_are_allowed(tmp_path):
+    """Rooms on one network may also belong to different units."""
     policy = _load(tmp_path, _ROOMS + _UNITS)
     signal_units = sorted(c.unit for c in policy.conversations if c.platform == "signal")
     assert signal_units == ["alpha", "beta", "gamma"]
+
+
+@pytest.mark.parametrize("units", ["", _UNITS], ids=["no-units", "with-units"])
+def test_duplicate_room_names_are_refused_after_case_and_spacing_fold(tmp_path, units):
+    body = _ROOMS.replace('label = "Alpha on Discord"', 'label = " alpha  ON Signal "')
+    with pytest.raises(PolicyError, match="duplicate room names") as exc:
+        _load(tmp_path, body + units)
+    assert "Alpha on Signal" in str(exc.value)
+    assert " alpha  ON Signal " in str(exc.value)
+    assert "signal:" in str(exc.value) and "discord:" in str(exc.value)
+
+
+@pytest.mark.parametrize("units", ["", _UNITS], ids=["no-units", "with-units"])
+def test_a_network_name_cannot_label_another_networks_room(tmp_path, units):
+    body = _ROOMS.replace('label = "Alpha on Discord"', 'label = " sIgNaL "')
+    with pytest.raises(PolicyError, match="reserved network name") as exc:
+        _load(tmp_path, body + units)
+    assert " sIgNaL " in str(exc.value)
+    assert "Alpha on Signal" in str(exc.value)
+
+
+@pytest.mark.parametrize("units", ["", _UNITS], ids=["no-units", "with-units"])
+def test_a_network_name_cannot_hide_a_second_room_on_that_network(tmp_path, units):
+    body = _ROOMS.replace('label = "Alpha on Signal"', 'label = "Signal"')
+    body = body.replace('platform = "discord"', 'platform = "signal"')
+    with pytest.raises(PolicyError, match="reserved network name") as exc:
+        _load(tmp_path, body + units)
+    assert "Signal" in str(exc.value)
+    assert "Alpha on Discord" in str(exc.value)
+
+
+@pytest.mark.parametrize("units", ["", _UNITS], ids=["no-units", "with-units"])
+def test_a_network_name_can_label_its_own_networks_only_room(tmp_path, units):
+    body = _ROOMS.replace('label = "Alpha on Signal"', 'label = "Signal"')
+    assert len(_load(tmp_path, body + units).conversations) == 4
+
+
+@pytest.mark.parametrize("units", ["", _UNITS], ids=["no-units", "with-units"])
+def test_room_names_may_repeat_in_different_units(tmp_path, units):
+    body = _ROOMS.replace('label = "Beta on Signal"', 'label = "Alpha on Signal"')
+    assert len(_load(tmp_path, body + units).conversations) == 4
+
+
+@pytest.mark.parametrize("units", ["", _UNITS], ids=["no-units", "with-units"])
+def test_a_missing_room_label_still_refuses_to_start(tmp_path, units):
+    body = _ROOMS.replace('label = "Alpha on Signal"\n', "")
+    with pytest.raises(PolicyError, match="has no label"):
+        _load(tmp_path, body + units)

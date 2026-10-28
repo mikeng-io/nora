@@ -101,15 +101,15 @@ git log -1 --format='%h %s'
 
 ## 5. The subject is the release note
 
-There is no release fragment (DEC-314). release-please turns the `feat`, `fix`,
-`security`, `perf`, `change` and `doctrine` subjects merged since the last tag
-into the CHANGELOG and the GitHub Release (`nora-release`). Other types never
-show up there.
+Every ordinary master push prepares patch/minor from complete reachability.
+Only generated metadata auto-merges after required checks on its exact head;
+release-please publishes to image/Komodo. Application PRs retain explicit merges.
 
-- Write a user-visible subject as a changelog line: `fix(music): resume after a
-  voice reconnect`. A breaking change gets `!` or a `BREAKING CHANGE:` footer.
-- Internal work takes a hidden type (`refactor`, `test`, `docs`, `chore`, …),
-  not a `fix` that no user will see.
+- Subjects are changelog lines; hidden internal types still trigger PATCH.
+- PATCH includes existing-capability additions, even `feat`. A complete new product
+  capability or new/deprecated supported API/CLI gets footer `Release-Bump: minor`.
+- `!` / `BREAKING CHANGE:` stops automatic version writes. Major requires owner
+  dispatch at an exact full current SHA; no daily evaluator or release fragments.
 
 ## 6. Merged tree, push, PR
 
@@ -140,14 +140,14 @@ gh pr view <N> --json baseRefName,headRefOid       # master, and == git rev-pars
 
 ## 7. Review, when the change earns one
 
-- Whether and at which level: `AGENTS.md` «Review is adaptive». Level
+- Whether and at which level: `ORCHESTRATION.md` «Capability and review requirements». Level
   none: go straight to step 8. The PR's Gate section names the row.
-- Otherwise, a fresh agent from a vendor that did not build the change:
-  DeepSeek for light, and Kimi or `gpt-6.1-sol` (whichever did not build it)
-  for full, launched through T3 (lane and effort: `AGENTS.md`).
+- Otherwise follow `ORCHESTRATION.md` «Resolve a worker at launch» to select
+  a fresh reviewer and actual advertised options. Verify it is neither builder
+  nor brief-author and uses a different model vendor from the builder.
   Give it the diff (`gh pr diff <N>`) and the PR's claims.
-- Triage every finding (`AGENTS.md` «Triage decides what blocks»). Only a
-  BLOCKER buys another round, and that round reviews the fix diff only.
+- Triage every finding (`ORCHESTRATION.md` «Bounded independent review»). Only a
+  BLOCKER buys another round; at most two, with the second checking the fix diff only.
 - Verify each finding before acting on or dismissing it: open the line, run the
   test, revert the fix and watch the named test fail.
 - A clean review is not a pass: one plus a green gate missed an empty-body read

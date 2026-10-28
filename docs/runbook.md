@@ -222,8 +222,8 @@ To tell "quiet" from "broken":
    A rising count means senders are resolving to no person in `identity.toml`. This one
    is deceptive: Nora still replies and still addresses them by their Signal profile
    name, so she looks completely normal while writing nothing to Honcho. If you have
-   edited `identity.toml`, **restart her** — mapping is startup-only, so an edit alone
-   changes nothing.
+   edited `identity.toml`, check `nora_config_reloads_total{file="identity.toml"}`.
+   A valid edit applies within three seconds; `refused` keeps the last good version.
 
 5. Check whether she still knows **who she is**. This one does not make her silent — it
    makes her answer *herself*, which is worse:
@@ -293,8 +293,10 @@ frontmatter, missing required key, unparseable YAML) fails to parse.
 ## 3. "Rollback"
 
 The normal path is the installed Komodo Stack `nora-releases`. A fix merges to
-master, then the maintainer manually merges release-please's release PR while
-the repo is private. The tag and GitHub Release trigger `release-images.yml`;
+master; ordinary pushes automatically prepare patch/minor metadata and enable
+exact-head auto-merge after required checks. Release-please publishes the merged
+metadata; breaking ranges stop for an owner-only exact-candidate major dispatch
+(`nora-release`). Publication triggers `release-images.yml`;
 a complete image build commits `compose.json` and `release.json` to `deployments`.
 The enabled `nora-release-poll` Procedure calls `DeployStackIfChanged` every ten
 minutes. The installed wrapper deploys and writes `release-deploy.json`.
@@ -348,7 +350,12 @@ Compare `deployments`' `release.json` (version, source SHA and image digests),
 and Nora's `/app/nora/version.json` stamp. Confirm service health and zero
 restarts after recreation. The wrapper performs these checks under the shared
 lock; a publication workflow or a prior receipt alone is not live proof.
-See [the installed deploy procedure](../.agents/skills/nora-deploy/SKILL.md).
+Unchanged image/effective service config preserves container IDs; a host bind-file
+content change alone does not recreate a process. After validated config/identity/
+policy edits, write the scoped `config-reload.json` request under the shared lock,
+then release it before native `DeployStack`. See
+[the installed deploy procedure](../.agents/skills/nora-deploy/SKILL.md) and
+[the file reload contract](../deploy/komodo/README.md#loaded-once-host-file-reload).
 
 ### Legacy checkout mode: `scripts/verify-deploy.py`
 
@@ -908,7 +915,7 @@ human messages into that unit's own Honcho workspace — for a unit that has jus
 moved to a Nora workspace of its own, whose Honcho workspace starts empty. It is
 a DRY RUN unless `--apply`; it refuses a session that already holds messages
 unless `--resume` (which skips what it holds), refuses a policy with no
-`[units]`, and refuses the unit's workspace when that is `memory.workspace_id`
+`[units]`, and refuses the unit's workspace when that is `honcho.workspace_id`
 (the history is already there), and refuses a Honcho workspace another
 application uses. It reads the record store read-only, writes only Honcho,
 and deletes nothing. It replays PEOPLE's messages only — Nora's own replies are
@@ -1019,7 +1026,7 @@ real dates.
 **Nora refuses to start on a Honcho workspace that is not hers**: a bound
 `honcho_workspace` that holds sessions and lacks her `nora_owner` metadata
 marker belongs to another application on the same Honcho. Bind the workspace
-to another id in identity.toml. `memory.workspace_id` is exempt (it predates
+to another id in identity.toml. `honcho.workspace_id` is exempt (it predates
 the marker).
 
 **`nora groups`** answers "I cannot tell which group id is which". It prints
@@ -1037,7 +1044,8 @@ this deployment only **3 of 83** contacts carry both a number and a uuid, while
 every group member does.
 
 **Adopting somebody is just editing the file.** Paste the stanza into
-`identity.toml` and restart. Lazy adoption (DEC-16) then backfills everything
+`identity.toml`; new messages resolve after hot reload. Historical lazy adoption
+(DEC-16) still runs at the next startup and backfills everything
 they said *before* you mapped them into their Honcho peer — Nora never writes
 `identity.toml` herself (D6).
 
@@ -1149,9 +1157,15 @@ changes. Keeping them apart is what stops an allowlist from being buried among p
 numbers where nobody reviews it. Both `identity.toml` and `policy.toml` are
 gitignored and bind-mounted read-only into the container.
 
-**Editing either one requires a restart.** Mapping and policy are both loaded once at
-startup (Q4). An edit alone changes nothing, and nothing warns you — this is the single
-most likely way to lose an hour. `nora_unmapped_senders_total` is the tell.
+**Valid identity and policy edits hot-reload within three seconds.** Each reader
+validates with its startup loaders and cross-checks, then swaps one holder. Invalid,
+missing or allow-nothing policy edits keep the last good version and log WARNING.
+`nora_config_reloads_total{file,outcome}` distinguishes `applied`, `refused` and
+`restart_required`; `/health` reports a file stale while disk differs from the
+last applied content. Changes to policy unit/workspace declarations or identity
+Honcho workspace bindings refuse the whole reload and require recreation.
+Always validate a candidate copy, then copy it in place to preserve the mounted
+inode. See [the capture audit and limitations](../design/policy-reload/00-design.md).
 
 **Storage and credentials.** Compose mounts `./data` at `/app/data` and the
 whole `./state` directory at `/app/state` in Nora. Signal session material is
@@ -1431,12 +1445,12 @@ docker network inspect honcho_memory >/dev/null 2>&1 || docker network create --
 cd ~/workspace/honcho && docker compose up -d api </dev/null
 docker exec nora curl -fsS -m 5 http://honcho:8000/health </dev/null   # {"status":"ok"}
 
-# 3. nora's live config: [memory] base_url = "http://honcho:8000". This is a
+# 3. nora's live config: [honcho] base_url = "http://honcho:8000". This is a
 #    config-only edit: follow the validated-copy procedure under the lock in
 #    nora-deploy step 3 (linked below), then release the lock before running
 #    native DeployStack on nora-releases. Read it back from the container:
 docker exec nora /app/.venv/bin/python -c \
-  'from pathlib import Path; from nora.config import load; print(load(Path("config.toml"), require_secrets=False).memory.base_url)' </dev/null
+  'from pathlib import Path; from nora.config import load; print(load(Path("config.toml"), require_secrets=False).honcho.base_url)' </dev/null
 
 # 4. Only now close the door. In the honcho compose, service `api`:
 #        ports: ["127.0.0.1:8000:8000"]        # was "8000:8000"
@@ -1484,7 +1498,7 @@ docker logs --since 1h honcho-api-1 </dev/null 2>&1 \
 
 **Rollback**, in this order (the order is the whole point):
 
-1. Put `[memory] base_url` back to `"http://host.docker.internal:8000"` in nora's
+1. Put `[honcho] base_url` back to `"http://host.docker.internal:8000"` in nora's
    live `config.toml` (the config-only edit, `nora-deploy` step 3) and recreate
    nora on it. Do this FIRST.
 2. Only then publish `8000:8000` again in the honcho compose and `up -d api`.
@@ -1501,14 +1515,14 @@ is the minimal rollback if the problem is a caller of the old port.
 
 ## Typed Profile historical recovery
 
-Keep `[profile] render = false` until source coverage and the reply gates are
+Keep `[memory.profile] read = false` until source coverage and the reply gates are
 accepted. The typed migration is nullable and retains every legacy row; a
 successful old shadow session is not historical coverage. The person adaptor
 now walks bounded oldest-first pages through a frozen Record boundary using
 its existing schedule and budget, independently of recent-message updates.
 
 The Character-card spike is an explicit operator command; it never runs on
-startup or changes `[profile] render`. Dates are inclusive HKT dates, and keys
+startup or changes `[memory.profile] read`. Dates are inclusive HKT dates, and keys
 may be repeated. Dry-run constructs no runtime and writes no rows or cursors:
 
 ```bash
@@ -1575,3 +1589,77 @@ request proves only that an attempt began. Read the normal Dreamer trace and
 `profile-history` cached-media receipts afterwards; `unavailable` is not success,
 and no-change can settle rendered inputs without adding any identity fact.
 Stop after the first account to assess progress before requesting another.
+
+## Extraction history backfill
+
+`scripts/extraction_backfill.py` queues human messages from the last 61 days
+(default; override with `--days N`). It never calls a model itself. The existing
+worker drains them when `[memory.extraction] enabled = true`; processing incurs
+that worker's ordinary model usage. Use the current deployed policy file: room
+ownership, including aliases, is resolved exactly as live enqueue resolves it
+**today**. Unmapped rooms/platforms, hidden and deleted messages are skipped.
+Nora replies are queued as context only: never extracted or citable. Unattributed
+humans and media-only messages remain eligible.
+Already queued rows and replay tombstones are preserved, never reassigned.
+
+From a checkout with `DATABASE_URL` already set, first inspect counts:
+
+```bash
+uv run python scripts/extraction_backfill.py --policy policy.toml --days 61 --dry-run
+```
+
+Output is JSON containing only window timestamps, eligible/already queued/would
+enqueue/enqueued source counts, separate `context_*` counts and skips by reason;
+no message text. Dry-run uses PostgreSQL read-only transactions. Copy its `before_ms` value to freeze the same
+half-open timestamp window for execution and later completion checks:
+
+```bash
+uv run python scripts/extraction_backfill.py --policy policy.toml --days 61 --before-ms <before_ms>
+uv run python scripts/extraction_backfill.py --status
+```
+
+The enqueue is idempotent, oldest message timestamp first (id breaks ties),
+committing every 500 candidates without a run-wide source lock. Visibility is
+rechecked at batch formation and publication.
+Live sources have priority over historical sources, including **due historical
+retries**; a live message arriving during a historical call is eligible at the
+next worker take after its normal minimum age. Calls already in flight finish
+normally. History remains oldest-first, uses the existing snapshot/context
+builder and retry allowance, and may wait during sustained live traffic. No
+second worker or new configuration is required.
+
+Status covers **all rows marked historical**, regardless of the command's time
+window or current policy, and counts queue rows by `unbatched`, `pending`, `done`,
+`failed` and `retired` under `rows` (sources) and `context_rows` (Nora). Context
+rows remain unbatched because they are never extracted; they do not prevent
+completion. `claims_written` counts their currently active claims.
+Each failed batch is listed by id with failure-stage attempt counts; old attempts
+and expired leases without a recorded stage are `unknown`, never inferred.
+`dropped_claims` reports reason counts across attempts of the historical batches
+currently linked to the queue (including failed batches); live batches are
+excluded. A mixed batch publishes its valid claims and records each rejected
+claim's first provenance failure. All-invalid output still fails at `claims`;
+unparseable or schema-invalid output still fails as a whole at `schema`.
+These drops are not silent skips: counts persist in
+`extraction_attempt.dropped_claims` with no dropped content or message text.
+Retries can count the same rejected claim again. Requeue detaches the old batch
+from its queue rows, so status then follows the replacement batch; old attempt
+counts remain queryable by `extraction_id` in the attempt table. Attempts made
+before this instrumentation have empty counts, not measured zero drops.
+Pruned source tombstones without a batch count as retired. A batch may contain
+many source rows, so these row counts are not batch counts.
+
+**Done:** the same frozen-window dry-run reports both `would_enqueue = 0` and
+`context_would_enqueue = 0`, and status reports zero `unbatched`, `pending` **and** `failed` rows. Review any retired rows:
+withdrawal/edit/pruning can invalidate a reading, so zero claims is not proof of
+success. Claims can legitimately be empty when a completed batch asserted
+nothing; check `done` as well. A failed batch is not done. After repairing its
+cause, retain the failed attempt history and release its sources with:
+
+```bash
+uv run python scripts/extraction_requeue.py <failed_batch_id>
+uv run python scripts/extraction_backfill.py --status
+```
+
+Requeue keeps historical priority on those sources. Repeat status after the
+worker has processed them; do not mark a failed or unavailable read as complete.

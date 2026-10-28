@@ -124,7 +124,7 @@ is also a background job: nobody tagged her when it runs.
 
 ## 5. Refused
 
-> 2026-10-21 (18 / ADR 0026): source-tied [message readings](../unified-memory/18-message-readings.md) are not the model-extracted triples refused here.
+> 2026-10-21 (18 / ADR 0026): source-tied [memory.extraction](../unified-memory/18-extraction.md) are not the model-extracted triples refused here.
 
 - **Model-extracted triples or an entity graph** (Graphiti, Mem0's graph,
   Cognee): the knowledge tier, #115 — 5 rows in 11 days, predicates that held
@@ -153,7 +153,7 @@ card from her own messages, which rule 4 of [10](10-tiers.md) §2 forbids as
 evidence. And Honcho cannot read presence, social items or perceptions, or
 model a room.
 
-> 2026-10-21 (18 / ADR 0026): the ownership table below is historical. [18](../unified-memory/18-message-readings.md) decomposes Honcho into the layers: what people said lives in source-tied Record message readings, Character entries are bounded Notebook judgements, and Views retrieve from readings, Rollup and entries.
+> 2026-10-21 (18 / ADR 0026): the ownership table below is historical. [18](../unified-memory/18-extraction.md) decomposes Honcho into the layers: what people said lives in source-tied Record extraction, Character entries are bounded Notebook judgements, and Views retrieve from readings, Rollup and entries.
 
 | owner | holds |
 |---|---|

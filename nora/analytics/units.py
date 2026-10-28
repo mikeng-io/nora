@@ -150,8 +150,8 @@ class UnitRollups:
         #: Without it no daybook reads social items: `items_posted` stays None.
         self._social = social
         self._cfg = config
-        self._units = tuple(units)
-        self._people = dict(people)
+        self._units = units
+        self._people = people
         self._stimuli = stimuli
         self._events = events or NoEventPlaces()
         self._metrics = metrics
@@ -159,11 +159,11 @@ class UnitRollups:
         # input to what is computed.
         self._clock = clock
         #: every observed person id (current and retired) -> its subject.
-        self._subject_of: dict[str, str] = {}
-        for subject, scope in self._people.items():
-            self._subject_of[subject] = subject
-            for former in scope.former_ids:
-                self._subject_of[former] = subject
+
+    @property
+    def _subject_of(self) -> dict[str, str]:
+        return {pid: subject for subject, scope in self._people.items()
+                for pid in (subject, *scope.former_ids)}
 
     async def run(
         self, *, build_id: int, mark: RecordMark, logical_now: Mapping[str, int],

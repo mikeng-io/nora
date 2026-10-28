@@ -318,9 +318,11 @@ async def test_a_fallback_channel_in_another_guild_is_refused_too():
     """The fallback comes from a persisted row that outlived whatever wrote
     it, so it gets the same check as the routed channel rather than being
     trusted for being older."""
-    client = _Client(_Channel(STARTED_IN, guild_id="999999999999999999"))
+    started = _Channel(STARTED_IN, guild_id="999999999999999999")
+    client = _Client(started)
 
     await _notify(client)("Now playing: x — u")  # nothing posted, nothing raised
+    assert started.sent == []
 
 
 # --- the closed-client check -------------------------------------------------

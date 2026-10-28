@@ -191,7 +191,7 @@ async def test_restored_out_of_order_rows_do_not_enter_recent_writer_batch(
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     subject = await obtain(SubjectSpec(
         database_url=pg_url, workdir=tmp_path,
-        overrides={"dreamer.enabled": True, "profile.enabled": True},
+        overrides={"dreamer.enabled": True, "memory.profile.write": True},
         policy=('default = "deny"\n[[conversations]]\nplatform = "signal"\n'
                 'id = "g1"\nlabel = "g1"\npersons = ["miles_novak"]\nunit = "nora"\n'),
     ))
@@ -253,7 +253,7 @@ async def test_source_lane_composed_input_and_storage(
     subject = await obtain(SubjectSpec(
         database_url=pg_url, workdir=tmp_path,
         now=datetime.fromtimestamp(private["clock_ms"] / 1000, UTC),
-        overrides={"dreamer.enabled": True, "profile.enabled": True},
+        overrides={"dreamer.enabled": True, "memory.profile.write": True},
         policy=('default = "deny"\n[[conversations]]\nplatform = "signal"\n'
                 'id = "g1"\nlabel = "g1"\npersons = ["miles_novak"]\nunit = "nora"\n'),
     ))
@@ -353,7 +353,7 @@ async def test_v2_missing_reading_cannot_pass_with_missing_fixture_root(
     private = case_file(source_lanes_v2=True)["profile_media_only_missing"]
     subject = await obtain(SubjectSpec(
         database_url=pg_url, workdir=tmp_path,
-        overrides={"dreamer.enabled": True, "profile.enabled": True},
+        overrides={"dreamer.enabled": True, "memory.profile.write": True},
         policy=('default = "deny"\n[[conversations]]\nplatform = "signal"\n'
                 'id = "g1"\nlabel = "g1"\npersons = ["miles_novak"]\nunit = "nora"\n'),
     ))
@@ -382,7 +382,7 @@ async def test_representation_sources_use_composed_writer_and_store(
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     policy = ('default = "deny"\n[[conversations]]\nplatform = "signal"\n'
               'id = "g1"\nlabel = "Common room"\npersons = ["miles_novak"]\nunit = "nora"\n'
-              '[[conversations]]\nplatform = "discord"\nid = "d1"\nlabel = "Common room"\n'
+              '[[conversations]]\nplatform = "discord"\nid = "d1"\nlabel = "Games room"\n'
               'persons = ["miles_novak"]\nunit = "nora"\n')
     identity = _DEFAULT_IDENTITY + '[[persons.miles_novak.discord]]\nuser_id = "12345"\n'
     source = await seed_source(pg_url, tmp_path, Knowledge(transcript=("background",)),

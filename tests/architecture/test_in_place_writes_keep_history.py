@@ -50,6 +50,9 @@ _RAW = re.compile(
 #: `mobility.py`'s place deletion clears the Tier 3 tables in a loop, and
 #: `rollups.py` diffs each unit rollup table through one helper.
 _VARIABLE_TARGETS: dict[str, frozenset[str]] = {
+    "nora/infra/sql/standing_ledger.py": frozenset({
+        "standing_decision", "standing_commitment", "standing_thread",
+    }),
     "nora/infra/sql/mobility.py": frozenset({"presence_occupancy", "presence_place_rhythm"}),
     # The unit rollups' diffed write (`_diff_apply`), one table at a time.
     "nora/infra/sql/rollups.py": frozenset({

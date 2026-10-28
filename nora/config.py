@@ -183,7 +183,7 @@ class PlatformsConfig(BaseModel):
     instagram: InstagramPlatformConfig = Field(default_factory=InstagramPlatformConfig)
 
 
-class MemoryConfig(BaseModel):
+class HonchoConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     base_url: str
@@ -1107,33 +1107,33 @@ class OnlineConfig(BaseModel):
     timeout_seconds: float = Field(default=8.0, gt=0)
 
 
-class MessageReadingsConfig(BaseModel):
+class ExtractionConfig(BaseModel):
     """Write-only Record perception; independent of the memory index read flag."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     enabled: bool = False
     # Same gateway and credentials as [llm]; never inherit its tag/reasoning lane.
     model: str = "ollamacloud/deepseek-v4.1-flash"
-    batch_size: int = Field(default=20, ge=1, le=100)
-    context_size: int = Field(default=20, ge=1, le=100)
-    settle_seconds: float = Field(default=2, ge=0, le=60)
+    messages_per_call: int = Field(default=20, ge=1, le=100)
+    context_messages: int = Field(default=20, ge=1, le=100)
+    min_message_age_seconds: float = Field(default=2, ge=0, le=60)
     timeout_seconds: float = Field(default=90, gt=0, le=300)
     max_tokens: int = Field(default=6000, ge=256, le=32000)
 
     @model_validator(mode="after")
-    def _reading_model_is_flash(self) -> MessageReadingsConfig:
+    def _extraction_model_is_flash(self) -> ExtractionConfig:
         if self.enabled and not re.fullmatch(r"[^/]+/deepseek-v4\.1-flash", self.model):
-            raise ValueError("message_readings requires a configured DeepSeek V4.1 Flash route")
+            raise ValueError("extraction requires a configured DeepSeek V4.1 Flash route")
         return self
 
 
 class MemoryIndexConfig(BaseModel):
     """The memory index. The index is written by every store's own write whatever this
-    says; `drain_seconds` is how often the nora process re-projects what those writes
+    says; `refresh_seconds` is how often the nora process re-projects what those writes
     queued (`nora.app.runtime.memory_drain_loop`). Optional and defaulted, so a
     `config.toml` without the section loads.
 
-    `enabled` (DEC-316) is the READ, and it selects ONE memory tool surface wherever
+    `read` (DEC-316) is the READ, and it selects ONE memory tool surface wherever
     tools are built: on, the memory graph's, `memory_search` over the index through
     `nora.agent.memory_search`, with no Honcho behind it and none of `ask_memory`,
     `search_memory`, `search_memory_workspace` or `who_said` offered; off (the default),
@@ -1153,13 +1153,13 @@ class MemoryIndexConfig(BaseModel):
     While both are on, `memory_search` seeds from the question's vector (embedded by
     the same server, with the query instruction) and pins exact references ahead of it;
     the lexical seed runs only when the embedder fails or no node holds a current vector
-    yet, and that answer is `partial`. With `enabled` on and `embed` off, every answer
+    yet, and that answer is `partial`. With `read` on and `embed` off, every answer
     is that fallback's `partial`."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    drain_seconds: float = Field(default=60.0, gt=0)
-    enabled: bool = False
+    refresh_seconds: float = Field(default=60.0, gt=0)
+    read: bool = False
     embed: bool = False
     embedder_url: str = "http://embedder:8080"
     embedder_model: str = "Qwen3-VL-Embedding-2B.Q4_K_M.gguf@7812c91cd1e0"
@@ -2564,23 +2564,6 @@ class CultureConfig(BaseModel):
     #: accurate, not stale).
     stale_seconds: int = Field(default=604_800, ge=3600)
 
-    #: A PERSON's new messages, across their unit's rooms, that wake their own
-    #: Character session at once. **100**: only the busiest poster reaches it often;
-    #: everyone else is woken by `stale_seconds` (with any new message). At 200 the
-    #: count would wake nobody but the top poster.
-    person_wake_batch: int = Field(default=100, ge=1)
-
-    #: New ROOM-culture revisions in a unit that wake the unit's own Character session
-    #: at once. **5**: about weekly in the busiest unit; every other unit is woken by
-    #: `stale_seconds` with any new room revision.
-    unit_wake_batch: int = Field(default=5, ge=1)
-
-    #: CLOSED Rollup `response` episodes in a unit (her sends, each paired with what
-    #: followed) that wake her own Character session there at once. **100**; quieter
-    #: units are woken by `stale_seconds`. Also the most episodes one session is
-    #: handed.
-    nora_wake_batch: int = Field(default=100, ge=1)
-
     #: Messages read per fold. **THE BATCH IS THE CORPUS** (the account is written
     #: from it), so this is not a throttle, it is how much of the room the model gets
     #: to see; a limit of 1 would starve the fold (DEC-182): one message a day is not
@@ -2594,11 +2577,26 @@ class CultureConfig(BaseModel):
     batch_limit: int = Field(default=300, ge=1)
 
 
+class PersonProfileConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    update_every_messages: int = Field(default=100, ge=1)
+
+
+class UnitProfileConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    update_every_room_profile_changes: int = Field(default=5, ge=1)
+
+
+class NoraProfileConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    update_every_replies: int = Field(default=100, ge=1)
+
+
 class ProfileConfig(BaseModel):
-    """`[profile]`: the Profile sessions, in shadow (design/unified-memory/45 §4,
+    """`[memory.profile]`: the Profile sessions, in shadow (design/unified-memory/45 §4,
     00 «Sequence» step 6). One Dreamer session per (unit, listed person), woken
-    like the person's Character session (`[culture] person_wake_batch` and
-    `stale_seconds`) and at once by a `told` line a turn wrote about them,
+    like the person's Character session (`[memory.profile.person] update_every_messages` and
+    `[memory.profile] update_every_seconds`) and at once by a `told` line a turn wrote about them,
     writing typed lines through `profile_write`.
 
     **Off by default.** On, the sessions write `profile_line` and nothing reads
@@ -2609,7 +2607,7 @@ class ProfileConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    enabled: bool = False
+    write: bool = False
 
     #: THE SWITCH (45 §5, 00 «Sequence» step 8). On, prompts read the Profile
     #: accounts through `read_profile` and render `<profile>` blocks INSTEAD of
@@ -2617,8 +2615,23 @@ class ProfileConfig(BaseModel):
     #: `<unit_culture>`, `<character>` and `<self>`. Off — the default — is the
     #: shadow: the sessions keep writing and every prompt renders the Honcho and
     #: prose-culture blocks it always has, so the flag is the whole rollback.
-    #: Ignored unless `enabled` is also on (no store is wired without it).
-    render: bool = False
+    #: Ignored unless `write` is also on (no store is wired without it).
+    read: bool = False
+
+    # Separate from the room culture fold's stale_seconds; same seven-day default.
+    update_every_seconds: int = Field(default=604_800, ge=3600)
+    person: PersonProfileConfig = PersonProfileConfig()
+    unit: UnitProfileConfig = UnitProfileConfig()
+    nora: NoraProfileConfig = NoraProfileConfig()
+
+
+class MemoryConfig(BaseModel):
+    """Nora's extraction, memory index and Profile settings."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    extraction: ExtractionConfig = ExtractionConfig()
+    index: MemoryIndexConfig = MemoryIndexConfig()
+    profile: ProfileConfig = ProfileConfig()
 
 
 class LessonsConfig(BaseModel):
@@ -3104,6 +3117,8 @@ class DreamerConfig(BaseModel):
     `budgets` maps an ADAPTOR NAME to its `DreamBudgetConfig`. An adaptor with
     no block of its own gets `DreamBudgetConfig`'s own field defaults through
     `budget_for` — never a `KeyError` at tick time, and never an unbounded run.
+    Collective Profile defaults are materialized in this map before composition
+    and timeout derivation; explicit blocks still win.
     A PARTIAL block fills its missing fields from those same defaults rather
     than zeroing them, which matters because `output_tokens = 0` is not "no
     limit", it is a subsystem that silently never produces anything.
@@ -3278,6 +3293,15 @@ class DreamerConfig(BaseModel):
     # need to update a literal by hand, not the proof itself.
     max_unit_hold_seconds: float | None = Field(default=None, gt=0)
 
+    @model_validator(mode="after")
+    def _collective_profile_defaults(self) -> DreamerConfig:
+        # Composition passes this map to the runtime before Culture inheritance;
+        # the outer unit timeout also reads it. Materialize the code defaults so
+        # neither consumer silently falls back to the generic 40k/120s budget.
+        for name in ("profile-unit", "profile-room", "profile-nora"):
+            self.budgets.setdefault(name, self.budget_for(name))
+        return self
+
     def budget_for(self, adaptor: str) -> DreamBudgetConfig:
         """The budget one adaptor runs under, ALWAYS bounded.
 
@@ -3311,6 +3335,20 @@ class DreamerConfig(BaseModel):
                 turns=COGNITION_TURNS, total_tokens=COGNITION_TOTAL_TOKENS,
                 output_tokens=COGNITION_OUTPUT_TOKENS,
                 timeout_seconds=COGNITION_TIMEOUT_SECONDS,
+            )
+        if (adaptor in ("profile-unit", "profile-room", "profile-nora")
+                and adaptor not in self.budgets):
+            # ponytail: allow 60k source tokens for the 60k-char ceiling, plus
+            # 25k non-source tokens (instructions, room-culture heads read every
+            # unit session, held profile lines, first-session prose backfill).
+            # Two 85k-input calls + 8k repair history + 16k output = 194k,
+            # below 240k; revisit if the source ceiling or outside context grows.
+            # Six turns leave room to finish after repair; 360s allows two
+            # 120s calls plus tool time.
+            # Starting allowances, not measured provider latency/token ratios.
+            return DreamBudgetConfig(
+                turns=6, total_tokens=240_000, output_tokens=16_000,
+                timeout_seconds=360.0,
             )
         return self.budgets.get(adaptor, DreamBudgetConfig())
 
@@ -3883,9 +3921,54 @@ class Config(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def reject_retired_profile_section(cls, data: object) -> object:
-        if isinstance(data, dict) and "persona" in data:
-            raise ValueError("[persona] has been renamed to [profile]; rename the section")
+    def reject_retired_memory_names(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        renamed_keys = {
+            "extraction": {"batch_size": "messages_per_call",
+                           "context_size": "context_messages",
+                           "settle_seconds": "min_message_age_seconds"},
+            "index": {"enabled": "read", "drain_seconds": "refresh_seconds"},
+            "profile": {"enabled": "write", "render": "read"},
+        }
+        for old, new in (
+            ("persona", "memory.profile"),
+            ("profile", "memory.profile"),
+            ("message_readings", "memory.extraction"),
+            ("memory_index", "memory.index"),
+        ):
+            if old in data:
+                values = data[old]
+                if isinstance(values, dict):
+                    for key, replacement in renamed_keys[new.split(".")[-1]].items():
+                        if key in values:
+                            raise ValueError(
+                                f"[{old}] {key} has been renamed to [{new}] {replacement}"
+                            )
+                raise ValueError(f"[{old}] has been renamed to [{new}]; rename the section")
+        memory = data.get("memory", {})
+        if isinstance(memory, dict):
+            for key in HonchoConfig.model_fields:
+                if key in memory:
+                    raise ValueError(f"[memory] {key} has been renamed to [honcho] {key}")
+            for section, renames in renamed_keys.items():
+                values = memory.get(section, {})
+                if isinstance(values, dict):
+                    for old, new in renames.items():
+                        if old in values:
+                            raise ValueError(
+                                f"[memory.{section}] {old} has been renamed to "
+                                f"[memory.{section}] {new}"
+                            )
+        culture = data.get("culture", {})
+        if isinstance(culture, dict):
+            for old, new in (
+                ("person_wake_batch", "[memory.profile.person] update_every_messages"),
+                ("unit_wake_batch", "[memory.profile.unit] update_every_room_profile_changes"),
+                ("nora_wake_batch", "[memory.profile.nora] update_every_replies"),
+            ):
+                if old in culture:
+                    raise ValueError(f"[culture] {old} has been renamed to {new}")
         return data
 
     # Optional and defaulted — see `AgentConfig`; the default is today's identity.
@@ -3893,7 +3976,8 @@ class Config(BaseModel):
     content_checks: ContentChecksConfig = ContentChecksConfig()
     platforms: PlatformsConfig
     llm: LLMConfig
-    memory: MemoryConfig
+    honcho: HonchoConfig
+    memory: MemoryConfig = MemoryConfig()
     store: StoreConfig
     # Optional, and defaulted — see `MediaConfig`.
     media: MediaConfig = MediaConfig()
@@ -3912,8 +3996,6 @@ class Config(BaseModel):
     # (`enabled = false`); off, `nora.analytics` builds and writes nothing.
     analytics: AnalyticsConfig = AnalyticsConfig()
     # Optional and defaulted — see `MemoryIndexConfig`.
-    memory_index: MemoryIndexConfig = MemoryIndexConfig()
-    message_readings: MessageReadingsConfig = MessageReadingsConfig()
     # Optional and defaulted — see `SearchConfig`. Off (inert) unless an operator
     # turns it on AND a Tavily key is present (`api_key_env`, DEC-8/DEC-73); a
     # config.toml without a `[search]` section keeps loading.
@@ -3953,7 +4035,6 @@ class Config(BaseModel):
     culture: CultureConfig = CultureConfig()
     lessons: LessonsConfig = LessonsConfig()
     # Ships INERT (`enabled = false`): off, composition builds no adaptor.
-    profile: ProfileConfig = ProfileConfig()
     # Optional and defaulted — see `StandingConfig`. Ships INERT
     # (`enabled = false`); off, composition builds no `debrief.Wiring`, the
     # debrief stage returns without awaiting anything, and `<standing>` never

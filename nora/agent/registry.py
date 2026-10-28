@@ -31,6 +31,8 @@ from strands.tools.decorator import FunctionToolMetadata
 from strands.types._events import ToolResultEvent
 from strands.types.tools import AgentTool
 
+from nora.domain.standing_ledger import StandingLedger
+
 from ..domain.computer import ComputerToolSettings
 from ..domain.computer_events import ComputerEventStore
 from ..domain.computer_exports import ComputerExportStore
@@ -245,7 +247,7 @@ class ToolRegistry:
         linkedin: SocialProvider | None = None,
         weather: WeatherProvider | None = None,
         presence: PresenceReader | None = None,
-        circles: tuple[Circle, ...] = (),
+        circles: Sequence[Circle] = (),
         # DEC-105. `None` is the honest not-configured state every offline and
         # eval composition ships in — `send_to` then answers `unavailable`,
         # never a silent no-op.
@@ -323,6 +325,7 @@ class ToolRegistry:
         # withheld from every surface while its read is not wired.
         rollup: RollupReadSource | None = None,
         standing_head: StandingHeadSource | None = None,
+        ledger: StandingLedger | None = None,
         # `character_read`'s culture store (`[culture] enabled`): `None` withholds it.
         culture: CultureReader | None = None,
         # `social_read`'s read of the social stream's Record: `None` withholds it.
@@ -339,7 +342,7 @@ class ToolRegistry:
         # link is opened through, held for the life of the process like
         # `route`. `None` answers the open `unavailable`.
         external_files: ExternalFilesSource | None = None,
-        # `[memory_index] enabled` (ships off): the retrieval service
+        # `[memory.index] read` (ships off): the retrieval service
         # `memory_search` answers from, and the switch between the two memory
         # surfaces (DEC-316): wired, every build offers `memory_search` and no
         # Honcho tool (`about` included; `remember` is on both surfaces, a
@@ -351,7 +354,7 @@ class ToolRegistry:
         # line, design/unified-memory/45). Wired with `memory_search`.
         profile: ProfileWriter | None = None,
         # THE SWITCH (45 §5): `character_read`'s Profile source while
-        # `[profile] render` is on beside `[profile] enabled`. Wired, it
+        # `[memory.profile] read` is on beside `[memory.profile] write`. Wired, it
         # answers where `culture` would, so the tool reads the accounts the
         # prompt's `<profile>` blocks render; both `None` withholds the tool.
         profile_read: ProfileHeads | None = None,
@@ -368,6 +371,7 @@ class ToolRegistry:
         self._lineage = lineage
         self._rollup = rollup
         self._standing_head = standing_head
+        self._ledger = ledger
         self._culture = culture
         self._social_items = social_items
         # Tools no turn is offered in this process: `record_query` without its
@@ -504,7 +508,7 @@ class ToolRegistry:
         # `unavailable`, honest and inert (R-5). The per-call R-31 subset guard
         # lives in `nora.agent.whereis`, not here.
         self._presence = presence
-        self._circles = tuple(circles)
+        self._circles = circles
         self._relay = relay
         self._rooms = rooms
         # The LIVE-refresh client (DEC-67): None leaves `where_is` reading the
@@ -518,7 +522,7 @@ class ToolRegistry:
         # offline/eval compositions, where the tool answers `unavailable`
         # rather than a guessed empty (R-5).
         self._mobility = mobility
-        # The OBSERVER peer: Nora's Honcho peer id (cfg.memory.ai_peer). The
+        # The OBSERVER peer: Nora's Honcho peer id (cfg.honcho.ai_peer). The
         # `about`/`ask_memory` tools read her model of a person as
         # (observer=ai_peer, observed=person), so the registry threads it like
         # any other long-lived collaborator.
@@ -1144,7 +1148,7 @@ class ToolRegistry:
             profile=self._profile,
             lineage=self._lineage,
             rollup=self._rollup,
-            standing_head=self._standing_head,
+            standing_head=self._standing_head, ledger=self._ledger,
             culture=self._culture,
             profile_read=self._profile_read,
             social_items=self._social_items,

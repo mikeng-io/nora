@@ -14,9 +14,11 @@ from __future__ import annotations
 from typing import NamedTuple
 
 from nora.domain.assess import DQ_CHECKS
+from nora.domain.config_reload import RELOAD_OUTCOMES
 from nora.domain.cues import CUES
 from nora.domain.culture import CHARACTER_KINDS, CHARACTER_OUTCOMES, CULTURE_OUTCOMES
 from nora.domain.doctrine_check import CHECK_OUTCOMES
+from nora.domain.extraction import CLAIM_DROP_REASONS, EXTRACTION_FAILURE_STAGES
 from nora.domain.lessons import LESSONS_OUTCOMES
 from nora.domain.media import MEDIA_FETCH_CALLERS
 from nora.domain.media_join import JOIN_PATHS
@@ -175,7 +177,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "stage=\"fire_people_in_window\" "
         "(one speaker's <people_in_window> read did, counted once per failed "
         "speaker), stage=\"fire_memory\" (the whole concurrent batch hit "
-        "[memory] read_timeout_seconds — a port that never answers, which is "
+        "[honcho] read_timeout_seconds — a port that never answers, which is "
         "not the same failure as one that raises). Both are issue #210 "
         "and both are "
         "fail-soft: the block is lost, never the turn, so absence is the only "
@@ -315,8 +317,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # its symptom set is empty: the message is still audited, the gate still runs,
     # the prefill still shows the sender's platform display name, and nothing
     # reaches Honcho. Counting it separates "nobody talked to her" from "her
-    # identity file is wrong, or was edited without a restart" (mapping is
-    # startup-only, Q4).
+    # identity file is wrong, or its reload was refused".
     _CounterSpec(
         "nora_unmapped_senders_total",
         "Ambient messages whose sender resolved to no person.",
@@ -498,9 +499,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # uninformative, and this counter is the ONLY place the loss is visible. It is
     # `nora_unmapped_senders_total`'s other half: that one says "somebody talked to
     # her and she does not know who", this one "somebody was TALKED ABOUT and she
-    # does not know who". Both have the same fix and the same trap: `identity.toml`
-    # is loaded once at startup, so editing it without a restart moves neither
-    # number.
+    # does not know who". Both read the live identity holder; a refused edit retains the last good
+    # mapping and is counted by nora_config_reloads_total.
     _CounterSpec(
         "nora_unmapped_mentions_total",
         "@-mentions rendered as an anonymous handle because the mentioned "
@@ -970,7 +970,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # The four failures need four different fixes and look identical in the group
     # (an ordinary untagged message): `unresolved` = the name is not in
     # identity.toml, or its only id form is one signal-cli's RECIPIENT grammar would
-    # not take (edit identity.toml AND RESTART; it is read once at startup, as for
+    # not take (edit identity.toml and verify its reload applied, as for
     # `nora_unmapped_senders_total`); `not_in_room` = she named somebody who is not a
     # member of this conversation, usually correct behaviour and not a fault;
     # `roster_unavailable` = signal-cli could not be asked who is here, so nothing
@@ -2120,28 +2120,70 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("source", "outcome"),
     ),
     _CounterSpec(
+        "nora_extraction_calls_total",
+        "Transport attempts for extraction, including retries.",
+    ),
+    _CounterSpec(
+        "nora_extraction_input_tokens_total",
+        "Reported input tokens for every extraction response, including rejected output.",
+    ),
+    _CounterSpec(
+        "nora_extraction_output_tokens_total",
+        "Reported output tokens for every extraction response, including rejected output.",
+    ),
+    _CounterSpec(
+        "nora_extraction_failures_total",
+        "Failed extraction attempts or storage operations; durable work is retained. "
+        "stage: " + " / ".join(EXTRACTION_FAILURE_STAGES) + ".",
+        ("stage",),
+    ),
+    _CounterSpec(
+        "nora_extraction_terminal_batches_total",
+        "Extraction batches transitioned to failed after exhausting their attempt allowance.",
+    ),
+    _CounterSpec(
+        "nora_extraction_dropped_claims_total",
+        "Provenance-invalid claims dropped, durably counted per attempt. reason: "
+        + " / ".join(CLAIM_DROP_REASONS) + ".",
+        ("reason",),
+    ),
+    _CounterSpec(
+        "nora_extraction_claims_written_total",
+        "New claims committed by the extraction writer.",
+    ),
+    _CounterSpec(
+        "nora_extraction_usage_missing_total",
+        "Extraction requests whose usage is unavailable; measured cost is incomplete.",
+    ),
+    # Retired message-reading counters stay declared at zero (append-only contract).
+    _CounterSpec(
         "nora_message_reading_calls_total",
-        "Transport attempts for message readings, including retries.",
+        "Retired message-reading counter; frozen at zero. Use nora_extraction_*.",
     ),
     _CounterSpec(
         "nora_message_reading_input_tokens_total",
-        "Reported input tokens for every reading response, including rejected output.",
+        "Retired message-reading counter; frozen at zero. Use nora_extraction_*.",
     ),
     _CounterSpec(
         "nora_message_reading_output_tokens_total",
-        "Reported output tokens for every reading response, including rejected output.",
+        "Retired message-reading counter; frozen at zero. Use nora_extraction_*.",
     ),
     _CounterSpec(
         "nora_message_reading_failures_total",
-        "Failed message reading attempts or storage operations; durable work is retained.",
+        "Retired message-reading counter; frozen at zero. Use nora_extraction_*.",
     ),
     _CounterSpec(
         "nora_message_reading_claims_written_total",
-        "New claims committed by the message reading writer.",
+        "Retired message-reading counter; frozen at zero. Use nora_extraction_*.",
     ),
     _CounterSpec(
         "nora_message_reading_usage_missing_total",
-        "Reading requests whose usage is unavailable; measured cost is incomplete.",
+        "Retired message-reading counter; frozen at zero. Use nora_extraction_*.",
+    ),
+    _CounterSpec(
+        "nora_config_reloads_total",
+        "Identity/policy reloads by outcome: " + ", ".join(RELOAD_OUTCOMES),
+        ("file", "outcome"),
     ),
 )
 

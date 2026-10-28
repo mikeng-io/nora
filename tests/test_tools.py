@@ -290,7 +290,7 @@ def test_no_tool_asks_the_model_which_conversation_it_is_in(wiring):
     # can read, or a time after now, reads the newest rows exactly as before.
     assert set(
         wiring["tools"]["load_transcript"].tool_spec["inputSchema"]["json"]["properties"]
-    ) == {"limit", "before"}
+    ) == {"limit", "before", "thread"}
     # `reply_to` is the one thing DEC-24 permits that looks like what it
     # forbids. The rule is against a parameter the model must INVENT — a
     # conversation id it cannot know, a limit nothing downstream honours
@@ -382,7 +382,7 @@ def test_strands_drops_an_out_of_schema_argument_instead_of_rejecting_the_call(w
                         "text": "hi"}, {"text": "hi", "reply_to": None, "more": False,
                                        "heads_up": False}),
         ("load_transcript", {"conversation_id": "gEVIL", "limit": 5},
-         {"limit": 5, "before": None}),
+         {"limit": 5, "before": None, "thread": None}),
     ):
         assert wiring["tools"][name]._metadata.validate_input(supplied) == expected
 
@@ -1918,7 +1918,7 @@ async def test_send_to_with_no_relay_wired_carries_a_note(wiring):
     """`send_to`'s own unwired path; every relay outcome is pinned in
     `tests/test_relay.py`."""
     out = await _call(_tools_over(wiring, wiring["deliverer"])["send_to"],
-                      platform="signal", text="we're starting")
+                      room="signal", text="we're starting")
     _assert_noted("send_to/unwired", out, "unavailable")
 
 
@@ -1946,7 +1946,7 @@ async def test_send_to_on_a_relayed_turn_is_refused_and_relays_nothing(wiring):
     a refusal, and nothing reaches the relay."""
     relay = _RecordingRelay()
     tools = _tools_over(wiring, wiring["deliverer"], relay=relay, relay_turn=True)
-    out = await _call(tools["send_to"], platform="signal", text="pass this on")
+    out = await _call(tools["send_to"], room="signal", text="pass this on")
     assert out["status"] == "refused"
     assert relay.calls == []
 
@@ -1955,6 +1955,12 @@ async def test_send_to_on_an_ordinary_turn_still_reaches_the_relay(wiring):
     """The positive control: the same call off a relayed turn is handed to the relay."""
     relay = _RecordingRelay()
     tools = _tools_over(wiring, wiring["deliverer"], relay=relay, relay_turn=False)
-    out = await _call(tools["send_to"], platform="signal", text="pass this on")
+    out = await _call(tools["send_to"], room="signal", text="pass this on")
     assert out["status"] == "ok"
     assert len(relay.calls) == 1
+    assert relay.calls[0]["room"] == "signal"
+    assert "platform" not in relay.calls[0]
+    schema = tools["send_to"].tool_spec["inputSchema"]["json"]
+    assert schema["properties"]["room"]["type"] == "string"
+    assert "enum" not in schema["properties"]["room"]
+    assert "platform" not in schema["properties"]

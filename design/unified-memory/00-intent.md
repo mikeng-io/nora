@@ -65,7 +65,7 @@ retrieval layer exists means they are searchable from their first row.
 | node | adds |
 |---|---|
 | [10](10-honcho-audit.md) | the measured inventory of what Honcho does for Nora today, every call site, how often each read runs live, and what replaces each |
-| [18](18-message-readings.md) | 2026-10-21: every message batch is read once on arrival into the Record; Honcho maps onto the existing layers, Character is the bounded card, and answerability gates the switch |
+| [18](18-extraction.md) | 2026-10-21: every message batch is read once on arrival into the Record; Honcho maps onto the existing layers, Character is the bounded card, and answerability gates the switch |
 | [15](15-memory-map.md) | every store as part of the one memory: notes, memos, media, presence episodes, social items, with what each remembers and how it is indexed and corrected |
 | [20](20-embedding-bakeoff.md) | the retrieval-stack bake-off: trigram vs BM25, bge-m3 vs EmbeddingGemma 2 (released 2026-10-06) vs WeMM-Embedding, fused, then reranked, on Nora's own mixed Cantonese and English corpus |
 | [25](25-memory-graph.md) | the memory graph (one node per item in any store, a closed set of edge relations, citations written with their entries) and the one retrieval service over it: scope, seed, expand, rerank, with push / pre-fetch / pull injection |
@@ -78,12 +78,12 @@ retrieval layer exists means they are searchable from their first row.
 
 ## The shape after Honcho (as ruled 2026-10-15)
 
-> 2026-10-21 (message readings; ADR 0026): the diagram now places message readings in the Record and uses Character entry parts profile, traits and hypotheses. [18](18-message-readings.md) decomposes Honcho into these existing layers.
+> 2026-10-21 (extraction; ADR 0026): the diagram now places extraction in the Record and uses Character entry parts profile, traits and hypotheses. [18](18-extraction.md) decomposes Honcho into these existing layers.
 
 ```
  AUTHORED   doctrine, policy, identity.toml            (not indexed)
     │
- RECORD     messages · message readings · media readings · links · social items · disputes ·
+ RECORD     messages · extraction · media readings · links · social items · disputes ·
     │       feedback      ingestion writes the row and project()s its node + edges
     ▼
  ROLLUP     outings · stays · trips · response episodes   rhythm · ties (by key only)
@@ -263,8 +263,10 @@ index and Honcho's exit are now listed in their order.
 
 ### Forward phases — 2026-10-21
 
-1. **This design revision** ([18](18-message-readings.md)).
-2. **Message readings on new messages.** Record items, run on every batch;
+> 2026-10-28 (ratified): phases 2–6 below are re-sequenced by [27](27-the-memory-is-a-graph.md#15-order-of-work): stores and the Cognition loop's comprehension step as one change, a spike against fixed gates (with the Apache AGE comparison), one backfill with acting off, then queries, profiles reshaped inside the loop, the answerability and reply gates, and the switch.
+
+1. **This design revision** ([18](18-extraction.md)).
+2. **Extraction on new messages.** Record items, run on every batch;
    nothing reads them yet.
 3. **History readings** (about two months), plus the Honcho seed check
    (18 Q3, decided: measurement reference only for the first measure, nothing
@@ -276,7 +278,7 @@ index and Honcho's exit are now listed in their order.
 5. **Answering.** `memory_search` + pre-fetch over readings + Rollup + entries;
    Nora’s own turn does the reasoning Honcho’s dialectic agent does. The
    answerability and reply gates follow (45 §6, amended 2026-10-21).
-6. **The switch** (`[memory_index] enabled`), the operator's call. Honcho's
+6. **The switch** (`[memory.index] read`), the operator's call. Honcho's
    feed stops later; the later hold/removal procedure remains in
    [70](70-honcho-cutover.md).
 

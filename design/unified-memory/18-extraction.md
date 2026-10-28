@@ -1,6 +1,6 @@
 ---
 type: design
-title: "Message readings — every Record item is perceived once on arrival"
+title: "Extraction — every Record item is perceived once on arrival"
 description: "Read every message batch into the Record, decompose Honcho into the existing layers, restore Character as the bounded card, and gate the switch on answerability; record the operator’s decisions on Q1–Q5."
 timestamp: '2026-10-21'
 edges:
@@ -11,7 +11,9 @@ edges:
   - {dst: ../cognition-loop/25-rollup, rel: extends, provenance: asserted}
 ---
 
-# Message readings
+# Extraction
+
+> 2026-10-28 (ratified): superseded by [27](27-the-memory-is-a-graph.md). A single text-only pass per batch is replaced by step 1 of one Cognition loop per stimulus, which also reads images, video, links and social items, writes entities and evidence-backed relations, and enriches from the web; one time-ordered backfill replaces the readings below. The Q1 switch gate and the source-tied lifecycle carry over.
 
 > 2026-10-21 (operator): the decisions below are settled design, not an implementation or switch receipt. Q1–Q5 are decided below. New text follows [ADR 0026](../../docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md): Notebook rows are judgements, Character is the tier, one row is an entry, and its parts are profile, traits and hypotheses. “Persona” is retired as vocabulary; existing code names stay in backticks.
 
@@ -51,14 +53,16 @@ statements a Record home and leaves the Notebook to judge.
 
 **"Every Record item is perceived once on arrival; text is a medium like any other."**
 
-## What a message reading holds
+## What a extraction holds
 
 > 2026-10-22 (operator brief; proposed): [47 §2](47-character-dimensions.md#2-slot-templates-and-storage) makes each claim structured: about whom, what, event date/interval resolved against message time (unknown stays unknown), optional stated named place or abstract setting, speech act and source message ids. Assertion time and build time stay distinct from event time. This lands in phase 2; the source-tied lifecycle below stays.
 
-A message reading is a **Record item**, kind **message reading**, next to
+A extraction is a **Record item**, kind **extraction**, next to
 the messages it reads. It states what was said:
 
-- **About whom** the statement is made.
+- **About whom** the statement is made: `about` lists only person subjects.
+  Use `about: []` for an event, place, group plan or thing with no person
+  subject; never add the speaker merely because they said it.
 - **The claim**, preserving what the source actually says.
 - **How** it was said: stated by the person / said by another / planned /
   asked / reported.
@@ -73,7 +77,7 @@ is versioned like a Rollup build, rebuildable from the Record, and superseded
 rather than deleted. Its projection is a node with an `attached_to` edge to
 each message it reads ([25](25-memory-graph.md)); the index remains derived.
 
-A message reading’s visibility is scoped to its source messages: a reader must be eligible to read every source message. When any source message is hidden (forget/delete) or edited, the reading’s live projection is invalidated: its node is retired, and the reading is re-read from eligible sources on the next build. A reading never outlives the eligibility of what it reads; retained versions are provenance, not live retrieval results.
+A extraction’s visibility is scoped to its source messages: a reader must be eligible to read every source message. When any source message is hidden (forget/delete) or edited, the reading’s live projection is invalidated: its node is retired, and the reading is re-read from eligible sources on the next build. A reading never outlives the eligibility of what it reads; retained versions are provenance, not live retrieval results.
 
 ## When it runs, and why this is not #115
 
@@ -95,7 +99,7 @@ Memory no longer sits beside the flow. See also
 
 | Honcho | ours | layer |
 |---|---|---|
-| deriver (explicit facts) | message readings | Record |
+| deriver (explicit facts) | extraction | Record |
 | (none) | Rollup | Rollup |
 | dreamer deduction / induction (+ our abduction) | Character entries: traits, hypotheses | Notebook |
 | peer card | Character entry profile | Notebook |
@@ -129,7 +133,7 @@ The built history remains in [00 · Sequence](00-intent.md#sequence). The
 forward work is:
 
 1. **This design revision.**
-2. **Message readings on new messages**, in the Record; nothing reads them
+2. **Extraction on new messages**, in the Record; nothing reads them
    yet. Claim slots and event-time resolution follow [47](47-character-dimensions.md) in this phase.
 3. **History readings**, about two months; Honcho observations are measurement
    reference only for the first measure, with nothing imported. Decide any
@@ -140,7 +144,7 @@ forward work is:
    adaptors retire at the switch. Trait dimensions, slots, support checks and hypothesis explanation slots from [47](47-character-dimensions.md) land in this phase.
 5. **Answering**: `memory_search` + pre-fetch over readings + Rollup + entries,
    then the gates below.
-6. **The switch** (`[memory_index] enabled`), the operator's call. Honcho's
+6. **The switch** (`[memory.index] read`), the operator's call. Honcho's
    feed stops later ([70](70-honcho-cutover.md)).
 
 Readings and backfill **do not wait for the rename**. New code uses ADR 0026

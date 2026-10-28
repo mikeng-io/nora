@@ -30,7 +30,7 @@ prose, fully deterministic. This node generalises it to every stream.
 
 ## 2. The rule: a pure projection
 
-> 2026-10-21 (message readings): a Rollup may compute over [readings](../unified-memory/18-message-readings.md), which are Record items; the Rollup itself remains code only.
+> 2026-10-21 (extraction): a Rollup may compute over [readings](../unified-memory/18-extraction.md), which are Record items; the Rollup itself remains code only.
 
 - **No model writes a Rollup row.** A model-extracted claim is how the
   knowledge tier died (#115: 5 rows in 11 days,
@@ -117,6 +117,8 @@ open, as the build fixed them:
   store the same triples, a Rollup row's array read as the row's one set.
 
 ## 3. The rollups
+
+> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): the Character and Lessons adaptors named in this section retire into step ② of the one Cognition loop, which writes Character (traits and guesses; facts are rendered by code), culture and Lessons right after step ① changes an entity's relations; it has no wake rule of its own. Read "the Character adaptor" / "the Lessons adaptor" below as step ②.
 
 **Episodes** — one bounded happening, with a start, an end, participants.
 
@@ -256,6 +258,8 @@ unit's rooms was `up` throughout. Withheld deviations are counted
 (`nora_rollup_stimuli_total{outcome="unhealthy"}`).
 
 ## 5. How it is read
+
+> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): the Character and Lessons adaptors named in this section retire into step ② of the one Cognition loop, which writes Character (traits and guesses; facts are rendered by code), culture and Lessons right after step ① changes an entity's relations; it has no wake rule of its own. Read "the Character adaptor" / "the Lessons adaptor" below as step ②.
 
 - Never pushed whole into a prompt. Read with `rollup_read(kind, subject,
   interval)` ([30](30-cognition.md) §2), under lineage ([10](10-tiers.md) §3).

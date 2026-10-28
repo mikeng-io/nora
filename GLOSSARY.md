@@ -85,7 +85,7 @@ until `design/cognition-loop` step 0: both call `HonchoClient.search`
 tool by name they are memory, not Record, and belong in the row above.
 
 **One memory surface at a time** (DEC-316). The table above is the Honcho
-surface, what `[memory_index] enabled = false` offers (the default, and
+surface, what `[memory.index] read = false` offers (the default, and
 production). With it on, the memory graph's surface replaces it: one search
 verb, `memory_search` (search every room of the unit by question, person,
 dates and kinds; the index, no Honcho behind it), and none of `ask_memory`,
@@ -236,8 +236,9 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   people reachable in more than one place (a Signal group and its Discord
   channel). Rooms sharing one share notes, memory and relays (`send_to`);
   rooms in different ones never do, however trusted each is. Set per room in
-  `policy.toml` (`unit = "friends"`); defaults to one unit. A unit holds AT
-  MOST ONE room per platform — refused at startup since DEC-214.
+  `policy.toml` (`unit = "friends"`); defaults to one unit. A unit may hold
+  several rooms per platform; labels must be unique after case and spacing
+  are folded (room-topology migration step 3, amending DEC-105 and DEC-214).
 
   The hierarchy is **workspace > unit > room** (DEC-214): every unit belongs
   to one **workspace**, and — once `policy.toml` declares `[units]` — inside
@@ -261,7 +262,7 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   sessions and conclusions live. Each workspace is bound to exactly one, in
   `identity.toml` (`[workspaces.67] honcho_workspace = "nora"`); unbound, it
   uses the workspace's own name; the implicit workspace uses `config.toml`'s
-  `memory.workspace_id`. The phrase is always «Honcho workspace» — a bare
+  `honcho.workspace_id`. The phrase is always «Honcho workspace» — a bare
   «workspace» in this codebase means the grouping of units above. Honcho
   workspaces are shared by every application on the server, so a bound one
   must be Nora's: marked `nora_owner` in its metadata, or absent or empty
@@ -355,7 +356,7 @@ no entry.
   items (`10-tiers.md` §1's words). Written by code. This is what "the
   record store" / "the RECORD" above already names — never "a database row"
   in general.
-> 2026-10-21 (message readings): **reading** — a perception of a Record item: a media reading says what was shown; a message reading says what was said, about whom and how, tied to source message ids. Every Record item is perceived once on arrival; text is a medium like any other. Code runs message readings on every batch; they record statements, not truth, and are versioned, rebuildable and superseded rather than deleted. See [18 · Message readings](design/unified-memory/18-message-readings.md).
+> 2026-10-21 (extraction): **reading** — a perception of a Record item: a media reading says what was shown; a extraction says what was said, about whom and how, tied to source message ids. Every Record item is perceived once on arrival; text is a medium like any other. Code runs extraction on every batch; they record statements, not truth, and are versioned, rebuildable and superseded rather than deleted. See [18 · Extraction](design/unified-memory/18-extraction.md).
 
 - **Rollup** — the computed layer: **episodes** (a Rollup row for one bounded
   happening, with a start, an end and participants — a stay, a co-location,
@@ -415,17 +416,17 @@ no entry.
   a room's `primary_id`, `{unit}#character:{person_id}`, `{unit}#unit` and
   `{unit}#nora`.
   - **person session** (`character-person`) — one person's entry in one
-    unit, woken by `[culture] person_wake_batch` (100) of their messages across
+    unit, woken by `[memory.profile.person] update_every_messages` (100) of their messages across
     the unit's rooms or the stale rule. Handed their newest messages, the
     unit's CITED room cultures and its previous entry; memory is a tool
     (`ask_memory`, `search_memory`), never a pre-fetch and never a citation.
     Renders as `<character>` in the rooms of the unit that list the person.
   - **unit session** (`character-unit`) — what the unit is across its rooms,
-    woken by `unit_wake_batch` (5) new room revisions; reads only cited room
+    woken by `memory.profile.unit.update_every_room_profile_changes` (5) new room revisions; reads only cited room
     cultures and holds no read tool. Renders as **`<unit_culture>`** after
     `<culture>` on tag and fire turns in the unit's rooms.
   - **Nora session** (`character-nora`) — what she is like in the unit, woken
-    by `nora_wake_batch` (100) closed response episodes that are evidence
+    by `memory.profile.nora.update_every_replies` (100) closed response episodes that are evidence
     (`Episode.is_evidence`), citing at least three of them; the echo rule
     refuses a revision resting on her own sends. Renders as **`<self>`**, first
     in the tag, fire and Cognition prompts.
@@ -736,3 +737,19 @@ both keyings and so nothing compares them.**
 R-19 is **reserved but never assigned** (design/11). Never take the next free
 number from memory or from chat: re-read the index at merge time
 (`docs/maintainers/conventions.md` «Numbering discipline»).
+
+### Memory configuration
+
+`[honcho]` configures the Honcho client. `[memory.extraction]` configures the
+Record extraction writer: `messages_per_call`, `context_messages` and
+`min_message_age_seconds` name its source count, context count and minimum
+queued-message age. `[memory.index] read` selects the index read surface;
+`refresh_seconds` controls projection refreshes. `[memory.profile] write` and
+`read` control Profile writers and prompt reads; `update_every_seconds` is their
+shared age threshold, separate from `[culture] stale_seconds` for the room fold.
+The `[memory.profile.person] update_every_messages`,
+`[memory.profile.unit] update_every_room_profile_changes` and
+`[memory.profile.nora] update_every_replies` keys name each evidence threshold. These neutral names follow the operator's 2026-10-27 blind-reader
+ruling. Retired sections and keys are refused at load with their new home;
+there are no aliases. This vocabulary holds unless a new names-only reading
+shows a concrete wrong meaning.

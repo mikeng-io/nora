@@ -64,10 +64,15 @@ CAPTURE_SETTING = "nora.row_history"
 #: trigger's arguments). Includes `sticker_index` (an in-place cache) and
 #: `message_edit` (deleted by cascade when a message is pruned).
 HISTORY_TABLES: dict[str, tuple[str, ...]] = {
-    "message_reading": ("id",),
-    "message_reading_queue": ("id",),
-    "message_reading_claim": ("id",),
-    "message_reading_attempt": ("id",),
+    # Graph truth and retained work participate in the existing as-of history.
+    "entity": ("id",),
+    "relation": ("id",),
+    "relation_evidence": ("id",),
+    "memory_work_item": ("id",),
+    "extraction": ("id",),
+    "extraction_queue": ("id",),
+    "extraction_claim": ("id",),
+    "extraction_attempt": ("id",),
     "messages": ("id",),
     # Written append-only, but `message_edit.message_id` is ON DELETE CASCADE:
     # a prune deletes a message's edits with no store asking, and only a row
@@ -79,6 +84,9 @@ HISTORY_TABLES: dict[str, tuple[str, ...]] = {
     "note": ("id",),
     "culture": ("key",),
     "standing": ("platform", "conversation_id"),
+    "standing_decision": ("id",),
+    "standing_commitment": ("id",),
+    "standing_thread": ("id",),
     "reminders": ("id",),
     "compute_jobs": ("id",),
     "instagram_summons": ("id",),
@@ -148,6 +156,9 @@ APPEND_ONLY: dict[str, str] = {
     "otp_challenge": "recorded_at",
     "otp_attempt": "recorded_at",
     "standing_revision": "recorded_at",
+    "standing_decision_revision": "recorded_at",
+    "standing_commitment_revision": "recorded_at",
+    "standing_thread_revision": "recorded_at",
     "culture_revision": "recorded_at",
     # 0100_lessons: a lesson is an identity, and every change to it a revision.
     "lesson": "recorded_at",

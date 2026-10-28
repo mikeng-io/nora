@@ -1,13 +1,53 @@
-"""Record message readings: structured statements, never assertions of truth."""
+"""Record extraction: structured statements, never assertions of truth."""
 
 from __future__ import annotations
 
 import re
 from datetime import UTC, date, datetime, timedelta
-from typing import Any
+from html import unescape
+from typing import Any, Literal, get_args
 from zoneinfo import ZoneInfo
 
 VERSION = 1
+
+ExtractionFailureStage = Literal[
+    "input", "request", "usage", "provider_model", "incomplete", "schema",
+    "claims", "publish", "cancelled", "storage",
+]
+EXTRACTION_FAILURE_STAGES: tuple[str, ...] = get_args(ExtractionFailureStage)
+
+ClaimDropReason = Literal[
+    "citation_outside_batch", "duplicate_citation", "evidence_not_covering_citations",
+    "evidence_absent", "unknown_subject", "event_reference_outside_citations",
+    "event_expression_absent", "place_absent",
+]
+CLAIM_DROP_REASONS: tuple[str, ...] = get_args(ClaimDropReason)
+
+
+class ClaimProvenanceError(ValueError):
+    def __init__(self, reason: ClaimDropReason, message: str) -> None:
+        if reason not in CLAIM_DROP_REASONS:
+            raise ValueError("unknown claim drop reason")
+        self.reason = reason
+        super().__init__(message)
+
+
+def partition_claims(
+    output: dict[str, Any], snapshot: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[ClaimDropReason]]:
+    """Keep provenance-valid claims; report one fixed reason per rejected claim.
+
+    Only parsed output belongs here. Schema and unexpected programming errors
+    still fail the batch, rather than being disguised as provenance drops.
+    """
+    valid = []
+    dropped = []
+    for claim in output["claims"]:
+        try:
+            valid.extend(validate_claims({"claims": [claim]}, snapshot))
+        except ClaimProvenanceError as exc:
+            dropped.append(exc.reason)
+    return valid, dropped
 
 
 def event_time(expression: str | None, assertion_ms: int) -> dict[str, str | None]:
@@ -51,6 +91,11 @@ def event_time(expression: str | None, assertion_ms: int) -> dict[str, str | Non
     }
 
 
+def _exact_span(span: str, body: str) -> bool:
+    """Accept a verbatim source span or its HTML-decoded form."""
+    return span in body or unescape(span) in body
+
+
 def validate_claims(output: dict[str, Any], snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     """Bind every claim to batch members and exact supporting source spans.
 
@@ -68,24 +113,30 @@ def validate_claims(output: dict[str, Any], snapshot: dict[str, Any]) -> list[di
     for claim in output["claims"]:
         ids = set(claim["source_ids"])
         if not ids <= sources.keys():
-            raise ValueError("citation outside batch")
+            raise ClaimProvenanceError("citation_outside_batch", "citation outside batch")
         if len(ids) != len(claim["source_ids"]):
-            raise ValueError("duplicate citation")
+            raise ClaimProvenanceError("duplicate_citation", "duplicate citation")
         if {e["source_id"] for e in claim["evidence"]} != ids:
-            raise ValueError("evidence does not cover citations")
+            raise ClaimProvenanceError(
+                "evidence_not_covering_citations", "evidence does not cover citations",
+            )
         for evidence in claim["evidence"]:
-            if evidence["quote"] not in sources[evidence["source_id"]]["body"]:
-                raise ValueError("evidence absent from source")
+            if not _exact_span(evidence["quote"], sources[evidence["source_id"]]["body"]):
+                raise ClaimProvenanceError("evidence_absent", "evidence absent from source")
         if any(s["person_id"] is not None and s["person_id"] not in known for s in claim["about"]):
-            raise ValueError("unknown resolved subject")
+            raise ClaimProvenanceError("unknown_subject", "unknown resolved subject")
         time_source = sources.get(claim["happened_at"]["source_id"])
         if claim["happened_at"]["source_id"] not in ids or time_source is None:
-            raise ValueError("event reference outside citations")
+            raise ClaimProvenanceError(
+                "event_reference_outside_citations", "event reference outside citations",
+            )
         expression = claim["happened_at"]["expression"]
-        if expression and expression not in time_source["body"]:
-            raise ValueError("event expression absent from source")
-        if claim["where"] and not any(claim["where"] in sources[i]["body"] for i in ids):
-            raise ValueError("place absent from source")
+        if expression and not _exact_span(expression, time_source["body"]):
+            raise ClaimProvenanceError(
+                "event_expression_absent", "event expression absent from source",
+            )
+        if claim["where"] and not any(_exact_span(claim["where"], sources[i]["body"]) for i in ids):
+            raise ClaimProvenanceError("place_absent", "place absent from source")
         content = dict(claim)
         content["happened_at"] = {
             **event_time(expression, time_source["ts"]),

@@ -6,10 +6,20 @@ import { randomUUID } from 'node:crypto';
 // ponytail: CI uses JSON responses. Remove this shim when the provider supplies
 // unique IDs; streaming needs its own adapter if it is enabled later.
 const fetch = globalThis.fetch;
+let configuredEndpoint;
+try {
+  const base = new URL(process.env.OPENAI_COMPATIBLE_BASE_URL);
+  if (['https:', 'http:'].includes(base.protocol) && !base.search && !base.hash) {
+    base.pathname = `${base.pathname.replace(/\/+$/, '')}/chat/completions`;
+    configuredEndpoint = base;
+  }
+} catch { /* Missing or invalid configuration adds no endpoint match. */ }
 globalThis.fetch = async (input, init) => {
   const response = await fetch(input, init);
   const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
-  if (url.hostname !== 'ollama.com' || url.pathname !== '/v1/chat/completions'
+  const matchesEndpoint = (url.origin === 'https://ollama.com' && url.pathname === '/v1/chat/completions')
+    || (configuredEndpoint && url.origin === configuredEndpoint.origin && url.pathname === configuredEndpoint.pathname);
+  if (!matchesEndpoint
       || !response.ok || !response.headers.get('content-type')?.includes('application/json')) return response;
   let body;
   try { body = await response.clone().json(); } catch { return response; }

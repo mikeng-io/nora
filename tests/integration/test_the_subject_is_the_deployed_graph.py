@@ -32,8 +32,9 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
     """Same type, same builder, same field count as `nora/__main__.py` gets."""
     subject = await obtain(spec)
     assert isinstance(subject.deps, Dependencies)
-    assert len(dataclasses.fields(Dependencies)) == 74, (
-        "73 -> 74: the optional message_readings Record writer. "
+    assert len(dataclasses.fields(Dependencies)) == 75, (
+        "74 -> 75: the identity/policy reload lifecycle and loaded snapshot health. "
+        "73 -> 74: the optional extraction Record writer. "
         "Dependencies changed shape; the subject follows it automatically, but "
         "this number is here so a change is noticed rather than absorbed. "
         "38 -> 40 on 2026-09-17: `relevance_gate` and `fire_path`, the two "
@@ -95,7 +96,7 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
         "63 -> 64 on 2026-10-09: `oauth_keepalive`, the image OAuth lanes' keeper "
         "(DEC-308), which `nora/__main__.py` starts and the subject never does. "
         "64 -> 65 on 2026-10-16: `memory_embed`, the memory index's embedding worker "
-        "the drain loop runs (None unless `[memory_index] embed`; "
+        "the drain loop runs (None unless `[memory.index] embed`; "
         "design/unified-memory/65-build-step-3-vectors.md V1). "
         "65 -> 66: `social_poller`, the social stream's poller, which "
         "`nora/__main__.py` starts and the subject never does (None unless "
@@ -113,7 +114,7 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
         "plus `profile_scopes_of` and `profile_cited` (the portal /memory "
         "account block: the caller's Profile heads, open disputes and the "
         "evidence behind each line), and `index_state` (/health's "
-        "memory-index block) — all unwired until `[profile] render` is on."
+        "memory-index block) — all unwired until `[memory.profile] read` is on."
     )
 
 
@@ -218,17 +219,17 @@ async def test_a_subjects_signal_send_lands_as_production_s_does(spec) -> None:
 
 @pytest.mark.asyncio
 async def test_a_subject_never_holds_the_embedding_worker(spec) -> None:
-    """`[memory_index] embed` stays as deployed, because it also switches the
+    """`[memory.index] embed` stays as deployed, because it also switches the
     graph surface's query embedding on; the worker, its write half, is never
     the subject's, so no sandbox writes a vector through the live embedder."""
     from nora.app.composition import build_dependencies
     from nora.subject.obtain import build_config
 
     on = dataclasses.replace(
-        spec, overrides={"memory_index.enabled": True, "memory_index.embed": True},
+        spec, overrides={"memory.index.read": True, "memory.index.embed": True},
     )
     subject = await obtain(on)
-    assert subject.cfg.memory_index.embed is True
+    assert subject.cfg.memory.index.embed is True
     assert subject.deps.memory_embed is None
     # Positive control: the same config composed as production does holds one.
     cfg = build_config(dataclasses.replace(on, workdir=on.workdir / "control"))

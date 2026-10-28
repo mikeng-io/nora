@@ -115,6 +115,9 @@ _UNJOINED_BY_OWN_SQL = {
 #: reader added later and never listed here passes both gates silently — the
 #: exact failure this file exists to catch, one AST shape further down.
 _NOT_A_RAW_READER = {
+    "nora/infra/sql/standing_ledger.py": (
+        "a store span read; load_transcript and room_read join the returned rows through MediaJoin"
+    ),
     "nora/app/profile_spike.py": (
         "operator window pages feed ProfilePersonAdaptor's existing MediaJoin; "
         "the read-only report resolves cached attachment fields as cited evidence, not a transcript"

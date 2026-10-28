@@ -10,7 +10,10 @@ edges:
 
 # 00 · Intent
 
-## 1. The rule and its reason
+## 1. The former rule and its reason
+
+Historical rationale: migration step 3 removes the refusal described below;
+unique room labels within a unit are now the invariant.
 
 DEC-105 (2026-08-14) introduced the unit so a person in Discord could ask Nora
 to tell the Signal group something. Its address was the network: `send_to`

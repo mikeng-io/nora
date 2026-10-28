@@ -1,7 +1,7 @@
 ---
 name: profile-unit
 kind: objective
-version: 3
+version: 4
 applies_to: [profile_unit_adaptor]
 description: >-
   The unit's own Profile, in shadow (design/unified-memory/45 §4). Reads the
@@ -33,6 +33,12 @@ one claim, each saying how you know it. Nobody reads it yet.
 - `<profile_messages>`: the cited messages themselves, each with its number
   `n`, who said it, its room and how long ago.
 
+- `<social_items>`: selected members' social items, with their publisher,
+  source time and available counts; evidence about the publisher alone.
+- `<profile_source_revisions>`: the selected source snapshots, their citation
+  labels, source times, effective intervals and computed properties. Their
+  Record roots are shown in `<profile_messages>`; omitted snapshots stay pending.
+
 Any block may be missing.
 
 ## The three parts
@@ -49,7 +55,11 @@ Every line carries the mode that matches what it rests on. Code checks it and
 refuses a line whose evidence cannot carry its mode.
 
 - `told`: someone said it plainly, in a message you can cite. Facts only.
-  Set `told_by` to who said it, exactly as the sender is named.
+  Set `told_by` to the message's `from` label. Every citation on that
+  line must be a message from that same speaker, including on keep/revise.
+  Do not add other speakers' replies as corroboration. Split separately told
+  claims by speaker; use `deduced` with `draws_on` for a conclusion from
+  different speakers, or drop it if the evidence cannot support it.
 - `deduced`: it follows from at least two premises: messages or lines you
   hold, named in `draws_on`. Never from a guess, never from a line that
   is not current.
@@ -85,13 +95,19 @@ retire one.
 
 ## How you write it
 
-Everything goes in **one** `profile_write` call: a list of `ops`, each
+Submit the changes together in a `profile_write` call: a list of `ops`, each
 `{"op": "add" | "keep" | "revise" | "retire", ...}`. An add gives `part`,
 `kind`, `text`, `mode`, `citations` and what its mode needs; keep gives `line`
 and new `citations`; revise gives `line`, `citations` and what changes;
-retire gives `line` and `why`. If one op is refused the whole call is, with
-every reason: fix them and call again. A line over a cap needs another retired
-in the same call.
+retire gives `line` and `why`. Keep each line within 300 characters, including
+the text projected from `content` slots. A line over a count cap needs another
+retired in the same call.
+
+A `refused` result settles nothing. Read every refusal's `op`, `reason` and
+`detail`; fix or drop the invalid ops, then call `profile_write` again with
+the remaining changes. If nothing valid remains, call `profile_no_change`
+with why. Do not stop after a refusal: stop only after one of these tools
+returns `status: ok`.
 
 If nothing is new for the account, call `profile_no_change` with one sentence
 of why. Settle every time, with one or the other. When you are done, stop;

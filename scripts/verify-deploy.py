@@ -185,14 +185,15 @@ def containers_for_services(project: str, services: set[str]) -> list[dict]:
         if labels.get("com.docker.compose.project") != project or service not in services:
             continue
         rows.append({
-            "service": service, "image_id": c["Image"],
+            "service": service, "container_id": c["Id"], "image_id": c["Image"],
             "running": c["State"]["Running"], "restarts": c["RestartCount"],
             "health": (c["State"].get("Health") or {}).get("Status", "none"),
         })
     return rows
 
 
-def service_errors(rows: list[dict], expected: dict[str, str]) -> list[str]:
+def service_errors(rows: list[dict], expected: dict[str, str],
+                   baseline: dict[str, int] | None = None) -> list[str]:
     errors = []
     for service, want in sorted(expected.items()):
         found = [r for r in rows if r["service"] == service]
@@ -202,24 +203,26 @@ def service_errors(rows: list[dict], expected: dict[str, str]) -> list[str]:
         row = found[0]
         if row["image_id"] != want:
             errors.append(f"{service}: image differs from release")
-        elif not row["running"] or row["restarts"] or row["health"] not in ("healthy", "none"):
-            errors.append(f"{service}: not healthy without restarts")
+        elif (not row["running"] or row["restarts"] > (baseline or {}).get(
+                row.get("container_id", ""), 0) or row["health"] not in ("healthy", "none")):
+            errors.append(f"{service}: not healthy without new restarts")
     return errors
 
 
 def verify_services(project: str, images: dict[str, str], *, settle: int = 20,
-                    timeout: int = 300) -> None:
+                    timeout: int = 300, baseline: dict[str, int] | None = None) -> None:
     """Read every named service, including missing or previous-release containers."""
     expected = {service: image_id(image) for service, image in images.items()}
     time.sleep(settle)
     deadline = time.monotonic() + timeout
     while True:
         rows = containers_for_services(project, set(images))
-        errors = service_errors(rows, expected)
+        errors = service_errors(rows, expected, baseline)
         if not errors:
             print(f"VERIFIED: all {len(images)} release services on expected images and healthy")
             return
-        if any(row["restarts"] for row in rows) or time.monotonic() >= deadline:
+        if any(row["restarts"] > (baseline or {}).get(row.get("container_id", ""), 0)
+               for row in rows) or time.monotonic() >= deadline:
             raise RuntimeError("; ".join(errors))
         time.sleep(3)
 

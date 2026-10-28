@@ -59,6 +59,7 @@ import contextvars
 import functools
 import logging
 import re
+import sys
 import time
 import uuid
 from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
@@ -156,6 +157,7 @@ from nora.domain.stimuli import (
     prove_overflow_is_the_agenda,
     restart_detail,
 )
+from nora.domain.turn_record import cited_turn_lineage, turn_handles_in
 from nora.infra.sql.standing_revise import standing_revise as live_standing_revise
 from nora.language.cognition_render import (
     RenderBudget,
@@ -280,6 +282,8 @@ class CognitionRunResult:
     #: Tokens the whole loop spent (every cycle, the model's own reading of its
     #: usage); `None` when the runner could not read it, never a zero.
     total_tokens: int | None = None
+    messages: tuple[dict[str, Any], ...] = ()
+    requirements: dict[str, Any] = field(default_factory=dict)
 
 
 class CognitionAgentRunner(Protocol):
@@ -364,6 +368,8 @@ class TokenSpend:
     not in a result that never came). `None`: unread, never a zero."""
 
     total: int | None = None
+    messages: tuple[dict[str, Any], ...] = ()
+    requirements: dict[str, Any] = field(default_factory=dict)
 
 
 #: The session's `TokenSpend`, set around the model loop. A context variable and
@@ -603,6 +609,7 @@ class CognitionSessionRunner:
         notes: Any = None, events: Any = None, standing: Any = None,
         reminders: Any = None, ai_peer: str = "nora", memos: Any = None,
         content_checks: bool = True,
+        tag_trace_store: Any = None,
     ) -> None:
         """`doctrine_source`, when given, is read at the start of EVERY session
         and replaces `doctrine_text`/`doctrine_sha256` (which then serve only
@@ -654,6 +661,7 @@ class CognitionSessionRunner:
         known window no overflow is ever the agenda's, and every one is
         `infra`."""
         self._content_checks = content_checks
+        self._tag_trace_store = tag_trace_store
         check_home_rooms(units, home_rooms)
         check_session_timeouts(budget.timeout_seconds, session_timeout_seconds)
         self._store = store
@@ -1072,6 +1080,7 @@ class CognitionSessionRunner:
         )
         token = SESSION_TOKENS.set(spend)
         result: CognitionRunResult | None = None
+        trace_outcome = "llm_error"
         try:
             result = await asyncio.wait_for(
                 self._run_agent(
@@ -1086,12 +1095,25 @@ class CognitionSessionRunner:
                 ),
                 timeout=self._budget.timeout_seconds,
             )
+            trace_outcome = "llm_error" if result.stop_reason in LIMIT_STOP_REASONS else "silent"
         except TimeoutError as exc:
             raise SessionTimeoutError(
                 f"the session ran past its {self._budget.timeout_seconds:g}s wall clock",
             ) from exc
         finally:
             SESSION_TOKENS.reset(token)
+            if self._tag_trace_store is not None:
+                from nora.domain.tag_trace import TagTrace
+                await asyncio.wait_for(self._tag_trace_store.save(TagTrace(
+                    tag_id=f"cognition:{session_id}", conversation_id="",
+                    messages=result.messages if result is not None else spend.messages,
+                    requirements=result.requirements if result is not None else spend.requirements,
+                    transcript=(), outcome=("timeout" if isinstance(
+                        sys.exception(), SessionTimeoutError) else trace_outcome),
+                    created_at=int(self._clock() * 1000), started_at=now_ms,
+                    occasion="cognition", unit=unit,
+                    bound_rooms=tuple(sorted(state.rooms)),
+                )), timeout=5.0)
             # What the loop spent counts whether it returned, failed, timed out or was
             # cut off: a session that raised is the costliest kind, and its usage is
             # in the agent (`spend`, left by the runner), not in a result that never
@@ -1360,6 +1382,7 @@ class CognitionSessionRunner:
                 r.message_id: ShownMessage(
                     id=r.message_id, sender=speaker_of(r.author), person_id=r.person_id,
                     is_nora=r.own or r.author in self._nora_names,
+                    turn_handle=r.turn_handle,
                 )
                 for r in state.records
                 if r.room == here and r.kind in ("message", "edit") and r.text is not None
@@ -1383,6 +1406,7 @@ class CognitionSessionRunner:
                 carried=frozenset(fetched.carried_ids),
                 roster=roster, nora_names=self._nora_names,
                 rollup_keys=frozenset(fetched.rollup_keys),
+                turn_handles=frozenset(fetched.turn_handles),
             )
 
         def wrote(
@@ -1677,6 +1701,8 @@ class CognitionSessionRunner:
                 parsed = parse_note_body(body, shown=replace(
                     shown, carried=shown.carried | cited_ids_in(survivor[1].body)
                     | cited_ids_in(duplicate[1].body),
+                    turn_handles=shown.turn_handles | turn_handles_in(survivor[1].body)
+                    | turn_handles_in(duplicate[1].body),
                 ), require_open=True)
             except NoteBodyError as exc:
                 return _refused(exc.rule, str(exc))
@@ -1722,6 +1748,7 @@ class CognitionSessionRunner:
         async def _memo_body(
             verb: str, title: str, body: str, platform: str, conversation_id: str,
             carried: frozenset[int] = frozenset(),
+            carried_turns: frozenset[str] = frozenset(),
         ) -> tuple[Any, tuple[str, ...]] | dict[str, object]:
             """`(parsed body, citations)` of a memo write, or its refusal: the
             title and body caps, the note-body grammar over what this session
@@ -1739,8 +1766,14 @@ class CognitionSessionRunner:
                 return shown
             try:
                 parsed = parse_memo_body(
-                    body, shown=replace(shown, carried=shown.carried | carried),
+                    body, shown=replace(shown, carried=shown.carried | carried,
+                                        turn_handles=shown.turn_handles | carried_turns),
                 )
+                for handle in turn_handles_in(parsed.text):
+                    trace = await self._tag_trace_store.get(
+                        turn_id=int(handle[1:]), unit=unit,
+                    ) if self._tag_trace_store is not None else None
+                    cited_turn_lineage(trace, unit=unit)
             except NoteBodyError as exc:
                 return _refused(exc.rule, str(exc))
             value = title_carries_value(title, parsed)
@@ -1872,6 +1905,7 @@ class CognitionSessionRunner:
             checked = await _memo_body(
                 "memo_revise", new_title, body, platform, conversation_id,
                 carried=cited_ids_in(head.head.body),
+                carried_turns=turn_handles_in(head.head.body),
             )
             if isinstance(checked, dict):
                 return checked

@@ -1,0 +1,100 @@
+[
+  {
+    "name": "live queue precedes historical backlog",
+    "file": "nora/infra/sql/extraction.py",
+    "old": ".order_by(QUEUE.c.historical, QUEUE.c.queued_at, QUEUE.c.id)",
+    "new": ".order_by(QUEUE.c.queued_at, QUEUE.c.id)",
+    "target": "tests/integration/test_extraction_backfill.py::test_live_arrival_precedes_history_even_in_the_same_room"
+  },
+  {
+    "name": "live batches cannot absorb older historical members",
+    "file": "nora/infra/sql/extraction.py",
+    "old": "QUEUE.c.historical == first[\"historical\"],",
+    "new": "sa.true(),",
+    "target": "tests/integration/test_extraction_backfill.py::test_live_arrival_precedes_history_even_in_the_same_room"
+  },
+  {
+    "name": "due history retries yield to live arrivals",
+    "file": "nora/infra/sql/extraction.py",
+    "old": "sa.or_(~historical_batch, ~live_waiting),",
+    "new": "sa.true(),",
+    "target": "tests/integration/test_extraction_backfill.py::test_live_arrival_precedes_a_due_historical_retry"
+  },
+  {
+    "name": "hidden history is not enqueued",
+    "file": "nora/infra/sql/extraction.py",
+    "old": "if row.get(\"hidden_at\") is not None:",
+    "new": "if False:",
+    "target": "tests/integration/test_extraction_backfill.py::test_history_and_live_share_admission_and_current_ownership"
+  },
+  {
+    "name": "deleted history is not enqueued",
+    "file": "nora/infra/sql/extraction.py",
+    "old": "if row.get(\"deleted\", False):",
+    "new": "if False:",
+    "target": "tests/integration/test_extraction_backfill.py::test_history_and_live_share_admission_and_current_ownership"
+  },
+  {
+    "name": "Nora history is never a source",
+    "file": "nora/infra/sql/extraction.py",
+    "old": "is_source=not row[\"is_nora\"],",
+    "new": "is_source=True,",
+    "target": "tests/integration/test_extraction_backfill.py::test_historical_nora_reply_is_idempotent_uncitable_context"
+  },
+  {
+    "name": "failure stages remain on the durable attempt",
+    "file": "nora/infra/sql/extraction.py",
+    "old": "failure_stage=stage,",
+    "new": "failure_stage=None,",
+    "target": "tests/integration/test_extraction_backfill.py::test_status_lists_failed_stages_and_requeue_to_checkable_done"
+  },
+  {
+    "name": "dry-run never invokes the shared writer",
+    "file": "scripts/extraction_backfill.py",
+    "old": "                if not dry_run:\n                    counts[prefix + \"enqueued\"] += int(\n                        await enqueue(conn, row=row, unit=unit, historical=True)\n                    )",
+    "new": "                if True:\n                    counts[prefix + \"enqueued\"] += int(\n                        await enqueue(conn, row=row, unit=unit, historical=True)\n                    )",
+    "target": "tests/integration/test_extraction_backfill.py::test_dry_run_is_read_only_then_enqueue_is_idempotent"
+  },
+  {
+    "name": "history admission uses the current live owner",
+    "file": "scripts/extraction_backfill.py",
+    "old": "unit, reason = admission(row, unit_of, sources_only=False)",
+    "new": "unit, reason = admission(row, lambda platform, room: \"unit-other\", sources_only=False)",
+    "target": "tests/integration/test_extraction_backfill.py::test_history_and_live_share_admission_and_current_ownership"
+  },
+  {
+    "name": "status counts historical rows only",
+    "file": "scripts/extraction_backfill.py",
+    "old": ".where(QUEUE.c.historical.is_(True))\n                .group_by(state, QUEUE.c.is_source)",
+    "new": ".where(sa.true())\n                .group_by(state, QUEUE.c.is_source)",
+    "target": "tests/integration/test_extraction_backfill.py::test_status_lists_failed_stages_and_requeue_to_checkable_done"
+  },
+  {
+    "name": "worker forwards the measured failure stage",
+    "file": "nora/app/extraction.py",
+    "old": "if await self.store.fail(job, stage=stage):",
+    "new": "if await self.store.fail(job):",
+    "target": "tests/contract/test_extraction_contract.py::test_worker_counts_usage_for_whole_output_and_all_invalid_failures[length-True-False-False]"
+  },
+  {
+    "name": "historical Nora replies enter the context queue",
+    "file": "scripts/extraction_backfill.py",
+    "old": "unit, reason = admission(row, unit_of, sources_only=False)",
+    "new": "unit, reason = admission(row, unit_of, sources_only=True)",
+    "target": "tests/integration/test_extraction_backfill.py::test_historical_nora_reply_is_idempotent_uncitable_context"
+  },
+  {
+    "name": "enqueue commits each chunk",
+    "file": "scripts/extraction_backfill.py",
+    "old": "    for offset in range(0, len(candidates), CHUNK_SIZE):\n        async with engine.begin() as conn:",
+    "new": "    async with engine.begin() as conn:\n        for offset in range(0, len(candidates), CHUNK_SIZE):",
+    "target": "tests/integration/test_extraction_backfill.py::test_enqueue_commits_each_chunk_without_candidate_share_locks"
+  },
+  {
+    "name": "candidate scan does not lock the whole window",
+    "file": "scripts/extraction_backfill.py",
+    "old": "candidates = (await conn.execute(stmt)).mappings().all()",
+    "new": "candidates = (await conn.execute(stmt.with_for_update(read=True, of=MESSAGES))).mappings().all()",
+    "target": "tests/integration/test_extraction_backfill.py::test_enqueue_commits_each_chunk_without_candidate_share_locks"
+  }
+]

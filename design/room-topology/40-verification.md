@@ -14,7 +14,7 @@ edges:
 
 Cases set in a unit with a general Signal room, a dinner Signal room and a
 Discord channel, each with a description. Run on master (where the unit holds
-one Signal room, as the old rule requires) and on the branch, with enough
+one Signal room, as the former rule required) and on the branch, with enough
 cases that a difference is not noise (`docs/eval-sop.md`).
 
 | kind | example | pass |

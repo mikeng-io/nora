@@ -11,7 +11,8 @@
 //   - `scope: "self"` routes get `personId` from the SESSION, and a
 //     `personId` the browser sends is ignored: memory is the viewer's own,
 //     and events are the ones the viewer created or answered
-//     (nora/web/memory.py, nora/web/gatherings.py).
+//     (nora/web/memory.py, nora/web/gatherings.py); presence is only the
+//     circles the viewer is in (nora/web/api.py _viewer_circles).
 //   - A path parameter must look like an id (no slashes, no dots-only, a
 //     bounded charset) and is re-encoded before it reaches the upstream URL.
 
@@ -72,12 +73,14 @@ export const ROUTES: RouteSpec[] = [
   // The download is its own route (src/server/artifact-download.ts): this proxy is JSON only.
   { pattern: ["artifacts"], scope: "self", query: ["page", "pageSize"], freeText: ["q"] },
   { pattern: ["artifacts", ":id"], scope: "self", params: { id: ARTIFACT_REF } },
-  { pattern: ["presence"] },
-  { pattern: ["presence", "places"] },
-  { pattern: ["presence", "analytics", "places"] },
-  { pattern: ["presence", "analytics", "rhythm"], query: ["subjectId", "days"] },
-  { pattern: ["presence", "analytics", "routes"], query: ["subjectId", "days"] },
-  { pattern: ["presence", ":personId", "history"], query: ["hours"] },
+  // Presence: only the people who share a circle with the viewer. Nora reads the
+  // viewer from `personId`, so it must be the session's, never the browser's.
+  { pattern: ["presence"], scope: "self" },
+  { pattern: ["presence", "places"], scope: "self" },
+  { pattern: ["presence", "analytics", "places"], scope: "self" },
+  { pattern: ["presence", "analytics", "rhythm"], scope: "self", query: ["subjectId", "days"] },
+  { pattern: ["presence", "analytics", "routes"], scope: "self", query: ["subjectId", "days"] },
+  { pattern: ["presence", ":personId", "history"], scope: "self", query: ["hours"] },
   { pattern: ["games", "servers"] },
   { pattern: ["games", "servers", ":id", "status"] },
   { pattern: ["games", "servers", ":id", "graph"], query: ["hours"] },

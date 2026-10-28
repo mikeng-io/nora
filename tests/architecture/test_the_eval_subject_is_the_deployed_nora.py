@@ -22,7 +22,6 @@ from pathlib import Path
 import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_EVAL_CONFIG = _REPO_ROOT / "config.evaluation.toml"
 
 #: The exemption list lives in `evals.subject_config.ALLOWED_TO_DIFFER`, beside
 #: the check that reads it — NOT copied here. A second copy is two lists that
@@ -146,14 +145,20 @@ def test_the_subject_composes_the_evaluation_config_not_the_example():
     `config.example.toml` is a template for a fresh deployment and is CORRECT
     to ship with features off. It is simply not what Nora runs as.
     """
-    # `importlib`, because `from nora.subject import obtain` resolves to the
-    # FUNCTION the package re-exports, not the module that holds `_TEMPLATE`.
+    import ast
     import importlib
 
+    # Ordinary pytest redirects the template to worker-owned generated input.
+    # Read the live CLI's default from source, unaffected by that fixture.
     module = importlib.import_module("nora.subject.obtain")
-
-    assert module._TEMPLATE == _EVAL_CONFIG, (
-        f"the eval subject composes {module._TEMPLATE.name}. It must compose "
+    tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
+    templates = [
+        node.value for node in tree.body if isinstance(node, ast.Assign)
+        and any(isinstance(t, ast.Name) and t.id == "_TEMPLATE" for t in node.targets)
+    ]
+    expected = ast.parse('_REPO_ROOT / "config.evaluation.toml"', mode="eval").body
+    assert len(templates) == 1 and ast.dump(templates[0]) == ast.dump(expected), (
+        "the eval subject must compose "
         "config.evaluation.toml — an example file is by definition not the "
         "deployment and drifts from it by design."
     )

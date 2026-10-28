@@ -101,7 +101,7 @@ class PresenceCollector:
         # signal. `None` records nothing.
         self._health_log = health_log
         self._store = store
-        self._circles = tuple(circles)
+        self._circles = circles
         self._cadence_seconds = cadence_seconds
         # Adaptive band. Default to the fixed cadence at both ends when a
         # caller omits them, giving a constant interval.
@@ -444,12 +444,33 @@ class PresenceCollector:
     async def run(self) -> None:
         """One independent loop per circle, plus the periodic prune. Runs until
         cancelled."""
-        loops = [self._run_circle(c) for c in self._circles]
-        loops.append(self._prune_loop())
-        await asyncio.gather(*loops)
+        # Reconcile subscriptions so adding/removing a circle also takes effect.
+        tasks: dict[str, asyncio.Task[None]] = {}
+        prune = asyncio.create_task(self._prune_loop())
+        try:
+            while True:
+                current = {c.circle_id: c for c in self._circles}
+                removed = [tasks.pop(cid) for cid in tuple(tasks) if cid not in current]
+                for task in removed:
+                    task.cancel()
+                await asyncio.gather(*removed, return_exceptions=True)
+                for cid, circle in current.items():
+                    if cid not in tasks:
+                        tasks[cid] = asyncio.create_task(self._run_circle(circle))
+                # ponytail: one reconciliation per 3s for local identity edits;
+                # use an event only if this small scan becomes material.
+                await asyncio.sleep(3.0)
+        finally:
+            for task in (*tasks.values(), prune):
+                task.cancel()
+            await asyncio.gather(*tasks.values(), prune, return_exceptions=True)
 
     async def _run_circle(self, circle: CircleSpec) -> None:
         while True:
+            current = next((c for c in self._circles if c.circle_id == circle.circle_id), None)
+            if current is None:
+                return
+            circle = current
             now_ms = int(time.time() * 1000)
             try:
                 await self.collect_once(circle, now_ms=now_ms)

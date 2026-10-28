@@ -91,7 +91,7 @@ async def read_profile(
     fail-soft, each occasion naming its `stage`.
 
     `heads` is the caller's own `reader.account_heads(key=…)` call, or `None`
-    when there is no reader or no key (`[profile] render` off, a room outside
+    when there is no reader or no key (`[memory.profile] read` off, a room outside
     the policy). The CALLER makes the call rather than handing the reader
     over, for `read_culture`'s reason: a store call stays on
     `self.<collaborator>` where

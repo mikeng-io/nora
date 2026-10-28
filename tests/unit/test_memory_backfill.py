@@ -185,7 +185,7 @@ async def test_resume_skips_what_the_session_holds_and_feeds_the_rest(world, hon
 
 
 async def test_it_refuses_the_workspace_that_already_holds_this_history(world, honcho):
-    """`friends` is bound to `nora`, `memory.workspace_id` — replaying there
+    """`friends` is bound to `nora`, `honcho.workspace_id` — replaying there
     would feed every message a second time."""
     with pytest.raises(BackfillRefusedError, match="twice"):
         await _run(world, honcho, await _records(), unit="friends")

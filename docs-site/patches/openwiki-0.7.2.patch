@@ -250,3 +250,43 @@ index dd2566d784abbb7366520595ff245213ee4350e7d34f0bccfb86aa277cd2811f..5e0673c8
              current = await recordRepositoryPageCompletion(root, page.path, source, page.completedBy ?? legacyCompletedBy, state.runId);
          }
          if (page.status === "complete" &&
+diff --git a/dist/cli/runners.js b/dist/cli/runners.js
+index 9a0997091be4e56f3ef1d87aa2704d6032f78bab09ed4bc5c4cb446865e1ef9c..a9dcae2a67a0d64cf52c24712443833d7873ff112de4eb0fefb37b25b2d48710
+--- a/dist/cli/runners.js
++++ b/dist/cli/runners.js
+@@ -1,4 +1,5 @@
+ import path from "node:path";
++import { createNativeDiagnostics } from "../../../../scripts/native-diagnostics.mjs";
+ import { configureAuthProvider, listAuthProviderTools, shouldDiscoverToolsAfterAuth, } from "../auth/configure.js";
+ import { startNgrokTunnel } from "../auth/ngrok.js";
+ import { formatAuthProviderList, runOAuthAuth } from "../auth/oauth.js";
+@@ -188,11 +189,13 @@
+  * only, never argument values.
+  */
+ export async function runPrintCommand(command) {
++    const diagnostics = createNativeDiagnostics();
+     try {
+         const output = [];
+         const runtimeCwd = getRunModeCwd(command.mode);
+         const runtimeOutputMode = getRunModeOutputMode(command.mode);
+         const handlePrintEvent = (event) => {
++            diagnostics.onEvent(event);
+             if (event.type === "text") {
+                 output.push(event.text);
+             }
+@@ -228,6 +231,7 @@
+                 : command.userMessage;
+             await runOpenWikiAgent(command.command, runtimeCwd, { ...runOptions, userMessage }, telemetryContext);
+         });
++        diagnostics.finish();
+         const text = output.join("").trim();
+         if (text.length > 0) {
+             process.stdout.write(`${text}\n`);
+@@ -235,6 +239,7 @@
+         process.exitCode = 0;
+     }
+     catch (error) {
++        diagnostics.finish(true);
+         const message = getErrorMessage(error);
+         process.stderr.write(`${message}\n`);
+         writePrintAuthFix(error, message);

@@ -58,6 +58,7 @@ from nora.agent.lineage import (
     LineagePolicy,
     derived_view,
     excluded,
+    memo_permits,
     profile_lines_for,
     visible_sections,
 )
@@ -346,6 +347,7 @@ async def _own_sends(
                 ref=f"messages:{h.row.id}", kind="message", message_id=h.row.id,
                 room=Room(h.platform, h.conversation_id), author=ai_name, at_ms=h.row.ts,
                 text=None if h.deleted else (h.row.body or ""), own=True,
+                turn_id=h.row.turn_id,
             )
             for h in mine
         )
@@ -381,7 +383,7 @@ def unit_self_profile_reader(
 ) -> Callable[[str], Awaitable[tuple[ProfileLine, ...]] | None] | None:
     """`build_grounder`'s `self_profile`: her Profile account of the unit, or
     none — `unit_self_reader`'s gate (R-31: the session can reach any room of
-    the unit) on the switch's account (45 §5). `None` while `[profile] render`
+    the unit) on the switch's account (45 §5). `None` while `[memory.profile] read`
     is off.
 
     The session can reach every room of the unit but has no live roster to
@@ -565,9 +567,10 @@ def build_grounder(
                 reminds="; ".join(held[n.id]) if n.id in held else None,
             ))
         notes = tuple(notes_out)
-        # The unit's kept memos (DEC-306): unit-wide, no lineage (the unit is the
-        # read boundary, DEC-231). A failed read raises like the note index's.
-        memos = tuple(await memo_index(unit)) if memo_index is not None else ()
+        # Turn citations carry their recorded requirements into the index too.
+        # A failed read raises like the note index's.
+        memos = tuple(m for m in await memo_index(unit)
+                      if all(memo_permits(m.head, t) for t in targets)) if memo_index else ()
         events: list[EventLine] = []
         for room in agenda_rooms:
             if (room.platform, room.conversation_id) not in allowed:
@@ -615,7 +618,7 @@ def build_grounder(
         # Bounded and counted like the tag and fire reads (`read_culture`,
         # `stage="cognition_self"`).
         #
-        # THE SWITCH (45 §5): with the profile reader wired (`[profile]
+        # THE SWITCH (45 §5): with the profile reader wired (`[memory.profile]
         # render`), her Profile account is read instead — the prose read is
         # not made — and renders as `<profile of="nora">`. A failed profile
         # read is counted (`stage="cognition_self_profile"`, R-27) and drops

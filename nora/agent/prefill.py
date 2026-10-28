@@ -55,7 +55,8 @@ from ..language.standing_render import render_standing, render_standing_working_
 from ..language.subagents_render import render_subagents
 from ..obs.tracing import annotate, span
 from .clock import local_now, state_time
-from .lineage import DerivedView, derived_view
+from .lineage import DerivedView, derived_view, memo_permits
+from .standing_ledger import render_ledger
 
 # `TAG_HEADER`, `CLOSING_LINE` and the text of the clock line and of the
 # `<context_header>` message live in `nora.domain.framing` with every other
@@ -198,6 +199,7 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     # a job in the window.
     ("subagents", 59, "turn"),
     ("standing", 60, "room"),
+    ("standing_ledger", 62, "room"),
     # The Standing working set. Immediately after `standing` and before the
     # transcript, on purpose: the read order stays "here is my position, here
     # is what I have not told you, here is what has been said since". `room`,
@@ -304,7 +306,7 @@ def _declared(rendered: Sequence[ContextBlock | None]) -> list[ContextBlock]:
 
 
 #: The block names `<profile>` replaces when the assembler fills
-#: `TagContext.profiles` (`[profile] render`, 45 §5). Their rows stay in
+#: `TagContext.profiles` (`[memory.profile] read`, 45 §5). Their rows stay in
 #: `_BLOCKS` — the Honcho surface is the default and the flag is the whole
 #: rollback — but on a switched turn their stubs leave the declared list, so
 #: the span's `blocks_declared`/`blocks_empty` describe the prompt she got.
@@ -470,6 +472,7 @@ def render_transcript(
         now=now,
         edited=lambda row: row.edit.ts if row.edit else None,
         was=lambda row: row.edit.was if row.edit else None,
+        turn=lambda row: row.turn_handle,
     )
 
 
@@ -1037,7 +1040,9 @@ def build_prefill(
             None if switched else _peer_history_block(ctx),
             None if switched else _people_in_window_block(ctx),
             _restamp(_notes_block(ctx, now=clock, view=view)),
-            _restamp(render_memos(ctx.memos, tz=clock.tzinfo or UTC)),
+            _restamp(render_memos(tuple(m for m in ctx.memos
+                                       if memo_permits(m.head, ctx.lineage_room)),
+                                  tz=clock.tzinfo or UTC)),
             _restamp(_decisions_block(ctx, now=clock)),
             None if switched else _restamp(_culture_block(ctx, now=clock, view=view)),
             None if switched else _restamp(render_unit_culture(ctx.unit_culture, now=clock)),
@@ -1045,6 +1050,8 @@ def build_prefill(
             _restamp(render_computer(ctx.computer)),
             _restamp(render_documents(ctx.documents)),
             _restamp(render_subagents(ctx.subagents)),
+            _restamp(render_ledger(ctx.ledger, now=clock,
+                                   rooms=ctx.lineage_room.rooms if ctx.lineage_room else ())),
             _restamp(_standing_block(ctx, view)),
             _restamp(_standing_working_set_block(ctx, now=clock, view=view)),
             _transcript_block(ctx, display_name, clock, context_window),

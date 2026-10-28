@@ -43,6 +43,53 @@ else Nora does — sequencing ingest stages, writing a row, resolving an identit
 counting a refusal — is plumbing, and plumbing's questions are Prometheus'.
 That is R-76; `docs/maintainers/conventions-rationale.md` has the argument and the numbers.
 
+Metric names are append-only. Extraction records through `nora_extraction_*`;
+the six retired `nora_message_reading_*` counters stay declared at zero so saved
+queries remain valid. Their new names start fresh series; historical samples
+are not moved. `nora_extraction_failures_total{stage}` identifies the failing
+boundary: input, request, usage, provider_model, incomplete, schema, claims,
+publish, cancelled or storage. The vocabulary and metric help derive from
+`ExtractionFailureStage`; no exception text or private content is recorded.
+Failure counts retain their existing semantics, including one failure when
+recording a failed attempt also encounters a storage outage.
+
+`nora_extraction_dropped_claims_total{reason}` counts individual claims that fail
+a provenance check. Valid claims still publish; a nonempty output with no valid
+claims fails at `claims`, while zero claims still completes. Schema-invalid
+output fails as a whole at `schema`, with no salvage. The reason vocabulary and
+help derive from `ClaimDropReason` and are runtime-checked. Each rejected claim
+gets its first failing reason, not one count per failed check.
+`extraction_attempt.dropped_claims` durably holds only reason-to-count JSON,
+never dropped claim content or message text. Counts are saved before publication
+and retained if publication or the all-invalid check fails. A failed count write
+prevents publication (`storage`). Counters count attempts, including retries;
+they are process-local and are not a precision measurement. A drop is a recorded
+rejection, never a silent skip or proof that every assertion was extracted.
+
+Extraction allows five attempts per batch: transient failures can recover, while
+identical invalid output cannot consume calls forever. A failed fifth attempt
+sets `extraction.state = 'failed'`, never `done`; it is no longer automatically
+selected. `nora_extraction_terminal_batches_total` counts successful transitions
+to this terminal state (a repeated/stale failure report does not count again).
+Counters are process-local; `SELECT id, attempts, due_at FROM extraction WHERE
+state = 'failed' ORDER BY id` is the durable reconciliation view. After repairing
+the cause, run `uv run python scripts/extraction_requeue.py ID` with the
+existing `DATABASE_URL` environment set. The script calls `SqlExtraction.requeue`. It retires the failed batch, retains snapshots and attempt
+history, and releases its queue rows to form a fresh batch with a new allowance.
+Re-queueing an already reconciled batch returns false. No claims are published
+by failure or re-queueing. Cancellation leaves the lease for recovery. An expired
+fifth lease or a legacy over-ceiling pending batch transitions to failed on selection, counted without
+a further model call.
+
+New snapshots show each new message's `quoted_ts` and resolved `reply_to` ID
+(or null when missing, hidden, ambiguous or outside the context allowance).
+Eligible direct reply parents from the same queued unit/platform/room take
+priority within `context_messages`; nearby conversation fills the remainder.
+There is no age cutoff or recursive parent walk, and sender-supplied quoted text
+is never used. Context stays uncitable. Existing pending snapshots remain
+frozen without reply fields and can still publish against their original shape;
+`VERSION = 1` remains replay-compatible.
+
 **Three states on every instrument, never two** — `ok` / `nothing_found` /
 `unavailable`. A wiring gap is `unavailable` ("I could not check"), never
 `nothing_found` ("there is nothing"). This is R-27, and it applies to a span

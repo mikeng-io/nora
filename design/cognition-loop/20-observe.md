@@ -101,6 +101,8 @@ its outcomes counted (§4).
 
 ## 3. Stimuli
 
+> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): beside the stimuli below, every recorded item (message batch, social item, late media reading, closed Rollup episode, Register write) is also a **work item** that drives steps ① and ② on arrival, never waits for a wake and is never struck. The wake rules below now start step ③ only.
+
 Every ingested item, every Rollup change of [25](25-rollup.md) §4's kinds,
 and every `time` trigger raises a **stimulus**: `(unit, kind, ref, cues, at)`.
 
@@ -344,6 +346,8 @@ next.
 
 ### The slow adaptors and Assess
 
+> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): the Character and Lessons adaptors named in this section retire into step ② of the one Cognition loop, which writes Character (traits and guesses; facts are rendered by code), culture and Lessons right after step ① changes an entity's relations; it has no wake rule of its own. Read "the Character adaptor" / "the Lessons adaptor" below as step ②.
+
 Each has its own per-key watermark and its own wake rule; none runs on a
 fixed schedule, and none is woken by a single message, except a
 `character_dispute`.
@@ -356,9 +360,9 @@ fixed schedule, and none is woken by a single message, except a
 
 **As built (DEC-290, 2026-10-07), the wake batch is per kind**, in `[culture]`:
 room `wake_batch` 200 (new human messages in the room), person
-`person_wake_batch` 100 (their messages across the unit's rooms), unit
-`unit_wake_batch` 5 (new revisions of its rooms' cultures) and Nora
-`nora_wake_batch` 100 (closed episodes that are evidence,
+`memory.profile.person.update_every_messages` 100 (their messages across the unit's rooms), unit
+`memory.profile.unit.update_every_room_profile_changes` 5 (new revisions of its rooms' cultures) and Nora
+`memory.profile.nora.update_every_replies` 100 (closed episodes that are evidence,
 `Episode.is_evidence`); `stale_seconds` (7 days) is shared. A person's session
 reads at most its wake batch of their newest messages, and Nora's at most hers.
 

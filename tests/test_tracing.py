@@ -45,12 +45,33 @@ def test_trace_attributes_never_carry_message_content(tmp_path):
 # build-failure test asserts the RAISE this module's caller depends on catching.
 
 
-def test_file_exporter_writes_to_a_path(tmp_path):
+def test_file_exporter_writes_to_a_path(tmp_path, monkeypatch):
+    from opentelemetry.sdk.trace import TracerProvider
+
+    import nora.agent.telemetry as telemetry
+
+    # Like the registration test below, leave OTel's one-shot global untouched.
+    registered = []
+    monkeypatch.setattr(telemetry.trace, "set_tracer_provider", registered.append)
     cfg = make_tracing_config(enabled=True, endpoint=str(tmp_path / "traces.jsonl"))
     setup_agent_tracing(
         sampler=build_sampler(), service_name="nora",
         exporter=cfg.exporter, endpoint=cfg.endpoint, headers_env=cfg.headers_env,
     )
+    assert len(registered) == 1
+    provider = registered[0]
+    assert isinstance(provider, TracerProvider)
+    try:
+        with provider.get_tracer("file-export-test").start_as_current_span("file-export-probe"):
+            pass
+        assert provider.force_flush()
+        serialized = (tmp_path / "traces.jsonl").read_text(encoding="utf-8")
+        assert serialized.strip(), "the file exporter emitted no span"
+        exported = json.loads(serialized)
+        assert exported["name"] == "file-export-probe"
+        assert exported["resource"]["attributes"]["service.name"] == "nora"
+    finally:
+        provider.shutdown()
 
 
 def test_otlp_http_setup_does_not_crash_on_an_unreachable_endpoint():
@@ -110,9 +131,8 @@ def test_setup_agent_tracing_registers_the_provider_globally(monkeypatch):
     `nora.obs.tracing.span(...)` then records nothing and exports nothing, while raising
     nothing, logging nothing and failing no test.
 
-    **Every other test in this file calls `setup_agent_tracing` and asserts nothing**, so
-    none of them would notice: "it did not crash" is true of a no-op. This one asserts the
-    effect.
+    File export is checked separately above. This test pins the registration
+    itself: a locally usable provider is not necessarily the process global.
 
     `set_tracer_provider` is patched rather than called for real because it is ONE-SHOT
     per process (a second call is ignored with a warning) — see

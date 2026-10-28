@@ -1,10 +1,10 @@
-"""Plan the next release from the commits reachable from HEAD and not from the last tag.
+"""Prepare an automatic patch/minor or owner-selected major release.
 
 release-please walks history in committer-date order and stops at the last release
 commit, so a branch whose commits were written before that release and merged after
 it is invisible to it: its `security` commits never reach a release PR.
 `git log base..HEAD` is topological and has no such blind spot, and
-`release_scope.releasable` already uses it to decide whether a release is due. This
+`release_scope.releasable` supplies the complete unreleased range. This
 script uses the same commits to write the release PR release-please would have
 written, byte for byte in its format, so the release-please action can still tag
 and publish it when it merges. No tag, a version that disagrees with the manifest,
@@ -30,7 +30,8 @@ CONFIG = ROOT / "release-please-config.json"
 MANIFEST = ".release-please-manifest.json"
 PR_HEAD = "release-please--branches--master--components--nora"
 CONVENTIONAL = re.compile(r"^(?P<type>[a-z]+)(?:\((?P<scope>[^)]*)\))?(?P<bang>!)?: (?P<text>.+)$")
-BREAKING_FOOTER = re.compile(r"^BREAKING[ -]CHANGE: ", re.M)
+BREAKING_FOOTER = re.compile(r"^BREAKING[ -]CHANGE:", re.M)
+MINOR_FOOTER = re.compile(r"^Release-Bump: minor[ \t]*$", re.M)
 SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 INTRO = ":robot: I have created a release *beep* *boop*\n---\n\n\n"
 OUTRO = (
@@ -47,6 +48,7 @@ class Entry:
     scope: str
     text: str
     breaking: bool
+    minor: bool = False
 
 
 def entries(base: str, head: str = "HEAD") -> list[Entry]:
@@ -57,20 +59,36 @@ def entries(base: str, head: str = "HEAD") -> list[Entry]:
         if match:
             kind, scope, text = match["type"], match["scope"] or "", match["text"]
             breaking = bool(match["bang"]) or bool(BREAKING_FOOTER.search(message))
-        else:  # git's own `Revert "<subject>"`
-            kind, scope, text, breaking = "revert", "", subject, False
-        result.append(Entry(sha, kind, scope, text, breaking))
+        else:
+            kind = "revert" if subject.startswith('Revert "') else "chore"
+            scope, text, breaking = "", subject, bool(BREAKING_FOOTER.search(message))
+        result.append(Entry(sha, kind, scope, text, breaking, bool(MINOR_FOOTER.search(message))))
     return result
 
 
-def bump(current: str, found: list[Entry]) -> str:
+def bump(current: str, found: list[Entry], requested: str | None = None) -> str:
     match = SEMVER.match(current)
     if not match:
         raise ValueError(f"manifest version {current!r} is not X.Y.Z")
     major, minor, patch = (int(part) for part in match.groups())
-    if any(e.breaking for e in found):
+    # Product policy: a feat may improve an existing capability. Its label alone
+    # cannot require minor; the assessed explicit bump selects that milestone.
+    minimum = (
+        "major"
+        if any(e.breaking for e in found)
+        else "minor"
+        if any(e.minor for e in found)
+        else "patch"
+    )
+    levels = ("patch", "minor", "major")
+    if requested is None and minimum == "major":
+        raise ValueError("breaking changes require an owner-selected major at an exact candidate")
+    selected = requested or minimum
+    if levels.index(selected) < levels.index(minimum):
+        raise ValueError(f"{selected} bump is below the {minimum} required by unreleased commits")
+    if selected == "major":
         return f"{major + 1}.0.0"
-    if any(e.type == "feat" for e in found):
+    if selected == "minor":
         return f"{major}.{minor + 1}.0"
     return f"{major}.{minor}.{patch + 1}"
 
@@ -92,6 +110,8 @@ def render(previous: str, version: str, found: list[Entry], repo: str, today: st
     out = f"## [{version}]({compare}) ({today})\n"
     groups = [("⚠ BREAKING CHANGES", [e for e in found if e.breaking])]
     groups += [(title, [e for e in found if e.type == kind]) for kind, title in sections()]
+    if not any(group for _, group in groups):
+        groups = [("Maintenance", [e for e in found if e.type != "merge"] or found)]
     for title, group in groups:
         if group:
             ordered = sorted(group, key=lambda e: (not e.scope, e.scope, e.text))
@@ -149,23 +169,39 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", ""))
     parser.add_argument(
+        "--bump",
+        choices=("patch", "minor", "major"),
+        help="owner-selected override; automatic processing defaults to patch/minor",
+    )
+    parser.add_argument("--candidate", help="full commit SHA already assessed for this preparation")
+    parser.add_argument(
         "--out", type=Path, required=True, help="directory for title.txt and body.md"
     )
     parser.add_argument("--today", default=datetime.now(UTC).strftime("%Y-%m-%d"))
     args = parser.parse_args(argv)
     if not args.repo:
         raise SystemExit("release_plan: --repo or GITHUB_REPOSITORY is required")
+    if args.bump is not None and not args.candidate:
+        raise ValueError("an owner-selected bump requires an exact full candidate SHA")
+    if args.candidate and (
+        not re.fullmatch(r"[0-9a-f]{40}", args.candidate)
+        or git("rev-parse", "HEAD").strip() != args.candidate
+    ):
+        raise ValueError("release candidate changed or is not a full commit SHA; reassess first")
     previous = previous_release(ROOT)
     found = entries(f"v{previous}")
     if not found:
         print("eligible=false")
         return 0
-    version = bump(previous, found)
+    version = bump(previous, found, args.bump)
     section = render(previous, version, found, args.repo, args.today)
     apply(ROOT, previous, version, section)
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "title.txt").write_text(f"chore(master): release {version}\n", encoding="utf-8")
-    (args.out / "body.md").write_text(INTRO + section + OUTRO, encoding="utf-8")
+    (args.out / "body.md").write_text(
+        INTRO + section + f"\nRelease-Candidate: {git('rev-parse', 'HEAD').strip()}\n" + OUTRO,
+        encoding="utf-8",
+    )
     print("eligible=true")
     print(f"version={version}")
     print(f"head={PR_HEAD}")

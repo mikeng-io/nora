@@ -234,6 +234,7 @@ class ProfileVerdictAdaptor:
             )
             body = render_row_window(
                 rows, row_id=lambda m: m.row.id,
+                turn=lambda m: m.row.turn_handle,
                 attrs=lambda m: (("age", age(m.row.ts, now)),
                                  # Her own rows are "you", as the episode
                                  # blocks mark her — never `name_of(None)`.

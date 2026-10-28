@@ -118,17 +118,24 @@ CONFIDENCES: tuple[str, ...] = ("low", "medium", "high")
 
 @dataclass(frozen=True, slots=True)
 class LineageEntry:
-    """One `(kind, subject, origin room)`; see the module docstring."""
+    """One source, its nested reads, and any recorded audience exclusions.
+
+    A fifth JSON element keeps exclusions on a cited turn item; legacy triples
+    and four-element entries retain their original shape.
+    """
 
     kind: str
     subject: str | None = None
     origin: str | None = None
     reads: tuple[LineageEntry, ...] = ()
+    exclude_persons: tuple[str, ...] = ()
 
     def to_json(self) -> list[Any]:
         out: list[Any] = [self.kind, self.subject, self.origin]
-        if self.reads:
+        if self.reads or self.exclude_persons:
             out.append([r.to_json() for r in self.reads])
+        if self.exclude_persons:
+            out.append(list(self.exclude_persons))
         return out
 
     @classmethod
@@ -138,25 +145,29 @@ class LineageEntry:
         exception and never a permissive value. A reader that raised here
         would take a whole block down over one bad row; one that skipped the
         entry would widen the row (fewer entries, fewer predicates to fail)."""
-        if not isinstance(raw, list | tuple) or len(raw) not in (3, 4):
+        if not isinstance(raw, list | tuple) or len(raw) not in (3, 4, 5):
             return cls(kind=UNRESOLVED, origin=origin)
         kind, subject, entry_origin = raw[0], raw[1], raw[2]
-        reads_raw = raw[3] if len(raw) == 4 else []
+        reads_raw = raw[3] if len(raw) >= 4 else []
+        exclusions = raw[4] if len(raw) == 5 else []
         if (
             not isinstance(kind, str) or not kind
             or (subject is not None and not isinstance(subject, str))
             or (entry_origin is not None and not isinstance(entry_origin, str))
             or not isinstance(reads_raw, list | tuple)
+            or not isinstance(exclusions, list | tuple)
+            or not all(isinstance(p, str) for p in exclusions)
         ):
             return cls(kind=UNRESOLVED, origin=origin)
         return cls(
             kind=kind, subject=subject, origin=entry_origin,
             reads=tuple(cls.from_json(r, origin=entry_origin) for r in reads_raw),
+            exclude_persons=tuple(exclusions),
         )
 
     def _key(self) -> tuple[Any, ...]:
         return (self.kind, self.subject or "", self.origin or "",
-                tuple(r._key() for r in self.reads))
+                tuple(r._key() for r in self.reads), self.exclude_persons)
 
 
 def _canonical(entries: Iterable[LineageEntry]) -> tuple[LineageEntry, ...]:

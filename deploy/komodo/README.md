@@ -8,21 +8,27 @@ the first-install bootstrap below is not the normal production deploy procedure.
 
 ## Ownership and flow
 
-1. A fix PR merges to master. Release Please opens a release PR; while the
-   repository is private, the maintainer merges it manually, creating the stable
-   `vX.Y.Z` tag and GitHub Release. Its GitHub App token
-   triggers `Release images`; the `GITHUB_TOKEN` fallback cannot trigger that
-   follow-on workflow. Manual dispatch accepts an already-published stable tag
-   from master. The release must contain this publisher implementation.
-2. Hosted AMD64 runners build all ten images named by the root Compose file:
+1. Every ordinary master push automatically prepares patch/minor release metadata.
+   GitHub auto-merges only the generated metadata PR after required checks and
+   exact-source guards; release-please then publishes the stable `vX.Y.Z` tag and
+   GitHub Release. Breaking ranges stop for owner-only exact-candidate major
+   preparation (`nora-release`). Published Releases trigger `Release images`
+   under its existing control; missing App setup fails closed. Manual image
+   dispatch can rebuild an already-published stable tag. The separate default-off
+   **Deploy master** entry selects current master without a formal release. Both
+   entries share the existing complete-bundle publisher and installed route.
+2. Hosted AMD64 runners account for all ten artifacts named by the root Compose file:
    Nora, app, site, STT, voice sidecar/wake, Signal/WhatsApp/Instagram bridges,
    and the alert bridge. Signal's signed tarball preparation is retained. The
-   Nora manifest must name the exact release commit and version. CI gets registry
+   Nora manifest must name the exact selected source and truthful version. CI gets registry
    publication permission, never deployment-host credentials.
-3. Only after every build succeeds, the publisher writes `compose.json` and
-   `release.json` to the `deployments` branch in one Git commit. All owned images
-   are selected by digest. A delayed older release cannot replace a newer one;
-   concurrent branch updates must fast-forward. Partial image builds cannot
+3. Only after every artifact is built or proven reusable, the publisher writes
+   `compose.json` and `release.json` to the `deployments` branch in one Git commit. All owned images
+   are selected by digest. Releases and snapshots share one publication lane.
+   Source ancestry prevents a delayed older/divergent build in either channel
+   replacing a newer selection; stable duplicate/older-version protection remains.
+   An identical source is refused, including on a rerun; this is no deployment receipt.
+   Concurrent branch updates must fast-forward. Partial image builds cannot
    promote partial state. Version tags are convenient labels, not deployment
    references. Failed/partial publication may leave unused registry images.
 4. A native Git-backed Komodo Stack owns fetching and Compose. A scheduled Procedure
@@ -39,11 +45,149 @@ the first-install bootstrap below is not the normal production deploy procedure.
    a failed check must prevent Komodo recording deployment success.
 
 The owned cohort is every repository-built service, plus `presence` and
-`analytics` sharing Nora's image. Core and voice services always move together.
+`analytics` sharing Nora's image. Those three share one artifact; other services
+change independently.
 The public `site` remains opt-in (`--site` in the installed wrapper command).
 Third-party database, object storage, embedder and monitoring images are excluded
 from automatic recreation; `--no-deps` prevents implicit upgrades. The separately
 managed computer service is outside this root Compose project.
+
+## Manual Deploy master
+
+This entry is **default-off**. Before enabling repository Actions variable
+`MASTER_DEPLOY_ENABLED=true`, the operator must update the reviewed installed
+`/etc/komodo/nora-deploy/komodo_deploy.py` under the existing shared deploy lock,
+preserving the receipt, outstanding attempt and private diagnostics. That script
+is outside the fetched Stack clone: merging or publishing does not update it.
+The old wrapper refuses snapshot versions. Read back the installed script against
+the reviewed bytes and, in a disposable project, verify snapshot acceptance,
+source/stamp mismatch refusal, candidate config validation and final receipt/stamp
+readback through the actual installed command. Keep the flag absent/false until
+that prerequisite is verified. `RELEASE_IMAGES_ENABLED` retains its existing
+independent control over formal release publication. No flag is enabled by merging.
+
+Only the repository owner may dispatch or rerun this entry on default branch master;
+both the original and triggering actor are checked. Automatic release handling
+does not invoke this entry.
+This is an automation-policy restriction: actor checks cannot distinguish a human
+owner from automation using that owner's credentials.
+
+```bash
+gh workflow run release-images.yml --ref master -f target=master
+# Optionally bind a previously assessed current source; stale selection is refused:
+gh workflow run release-images.yml --ref master -f target=master -f candidate=<full-master-sha>
+# Existing published-tag rebuild (also the default target):
+gh workflow run release-images.yml --ref master -f target=release -f tag=v7.11.0
+```
+
+Preparation resolves the current full master SHA once and refuses a moved dispatch
+or mismatched assessed SHA. Successful repository `CI` from a master push on that
+exact SHA is required before builds, and checked again before building/promoting.
+Missing, pending, failed or unavailable CI stops publication. Every job uses that
+pinned source even if master advances later. Publisher tooling stays pinned to
+the workflow revision, so rebuilding an older source cannot restore old guards.
+
+The workflow summary records channel, source and `git describe` version, for example
+`v7.11.0-3-gabc1234`. Master images use `sha-<full-source-sha>` labels and immutable
+digests, leaving stable version image labels untouched. A source exactly at a tag
+retains that truthful version but still records `channel: master` and uses the SHA
+image label. This creates no tag, GitHub Release or version bump. Every image receipt
+must agree on the selected source, version and channel; each artifact separately
+retains its original build identity and input evidence.
+
+Successful publication means `deployments` selects the bundle, verified by API
+readback. It does not mean the host deployed it. The installed ten-minute poller
+or an operator's native `DeployStack` applies it under the same wrapper/lock.
+Compare the selected bundle with the host receipt, every owned image and Nora's
+running version/source stamp before reporting deployment. Rollback uses the
+existing complete-bundle selection procedure below; a selection revert does not
+roll back database schema or host config.
+
+## Incremental artifacts and native recreation
+
+This source requires a one-time reviewed update of `komodo_deploy.py` and
+`verify-deploy.py` together under the shared lock; merging does not update
+`/etc/komodo/nora-deploy`. Preserve receipts, failed
+attempts and private diagnostics. Parent/operator installation and live acceptance
+remain separate from local disposable proof. No master-deploy flag change is needed.
+
+The complete manifest still contains twelve services and ten artifacts. Its top-level
+version/source/channel describes the **selected release**; `artifacts` records each
+immutable image's **original** version/source/channel and build inputs. Reuse copies
+that artifact record verbatim, without a build, new tag or rewritten OCI labels.
+The registry digest must still be accessible. A legacy manifest with no artifact
+fingerprints causes an honest one-time full rebuild; malformed/unavailable prior
+state refuses publication. Preparation pins the previous `deployments` Git commit
+once and all jobs use that immutable baseline, even if the branch later moves.
+
+The fingerprint covers the complete Git context tree (including lockfiles, shared
+COPY inputs, ignore files, Dockerfile, file modes and symlinks), the actual retained
+publisher bytes, workflow blob, fixed platform and verified Signal download bytes.
+Builds use a clean Git tree archive, plus only the generated Nora stamp or verified
+Signal downloads. An untracked checkout file cannot silently enter the artifact.
+Compose build contexts/arguments/options must match the small publisher contract;
+unknown options refuse publication. A changed Dockerfile builds until its exact
+recipe hash is reviewed in `REUSE_RECIPES`; the current recipes pin external base
+images and lock language dependencies. This is recipe equivalence, not reproducible
+rebuilding against mutable apt repositories: remote package-index freshness is not
+an implicit upgrade trigger. Change the dependency/base/recipe input to request one.
+
+Changed images also import/export a persistent BuildKit registry layer cache at
+`ghcr.io/mikeng-io/nora-<image>:buildcache-linux-amd64`. The pinned Buildx setup uses
+the `docker-container` driver and permits the required host build network. Separate
+cache manifests use `mode=max` to retain intermediate multi-stage layers; an absent
+cache allows the first build. Cache tags never enter deployment receipts or image
+selection. See Docker's [Actions cache](https://docs.docker.com/build/ci/github-actions/cache/)
+and [registry cache](https://docs.docker.com/build/cache/backends/registry/) documentation.
+Publisher/workflow changes invalidate prior artifact reuse proof once.
+
+WhatsApp installs curl and locked npm dependencies before copying bridge source.
+Signal verifies/extracts its signed archive in a build stage; runtime retains curl,
+Java 25 and the verified distribution, without the archive or build GPG. Nora's root
+recipe still installs after copying source/stamp, and formal releases change both
+Python dependency manifests too. Layer caching does not promise dependency-install
+hits for Nora; no manifest normalization or new staging environment is introduced.
+
+The context hash deliberately overcounts ignored files. In particular Nora and the
+site have repository-root contexts, so an unrelated root change can rebuild the site.
+There is no Dockerfile/ignore parser or list of selected COPY paths. This conservative
+ceiling holds unless measured unnecessary site builds justify a narrower native context.
+Nora always rebuilds, because its global version/source/build-time stamp is baked in;
+formal app-only releases therefore also update Nora, presence and analytics.
+
+Normal `up` has no `--force-recreate`: native Compose compares the image and effective
+service configuration, retaining unchanged container IDs. All candidate images are
+pulled and host config validated first. The existing lock, failed-attempt marker,
+private diagnostics and whole-cohort image/health/stamp verification still apply.
+Restart counts are captured before reconciliation and bound to each container ID:
+retained containers must have no increase; recreated containers must have zero.
+
+### Loaded-once host file reload
+
+Bind file **contents** do not change Compose's configuration hash. Manual `DeployStack`
+alone therefore does not apply loaded-once edits. After backup, candidate validation
+and in-place copy, while still holding the shared lock, write a mode-0600 one-shot
+request beside the installed wrapper. It carries file names only, never file contents,
+values or private hashes. For example, for a validated `config.toml` edit:
+
+```bash
+# INSIDE the existing shared lock, after the validated in-place copy:
+(umask 077; printf '%s\n' '{"files":["config.toml"]}' > /etc/komodo/nora-deploy/config-reload.json)
+```
+
+Release the lock, then run native `DeployStack` on `nora-releases`. Supported names
+are `config.toml`, `identity.toml`, `policy.toml`; combine them in `files` when needed.
+The wrapper derives readers from the resolved owned-service mounts, reconciles the
+normal cohort, then force-recreates only those readers. Infrastructure stays excluded.
+With the current Compose file, config selects Nora/presence/analytics/STT/voice-wake/voice-sidecar;
+identity selects Nora/app/presence/analytics; policy selects Nora. Read back the
+process-loaded value and start time, not just the mounted file.
+
+The request is consumed only after the entire transaction is verified. Failed or
+interrupted application retains it and the outstanding attempt; native failure
+recovery below still applies. Restore the backup in place under the lock on failure,
+inspect the attempt privately, then release the lock before native Stack recovery.
+Do not remove a pending request merely to evade the loaded-once requirement.
 
 ## Runtime state and secret handling
 
@@ -158,8 +302,9 @@ They are not performed by the publisher or by merging its PR.
 Once cut over, use the Komodo Stack for release deployment. Do not concurrently
 run the legacy checkout-based rebuild procedure: it would restore local tags and
 live instruction mounts. Config/identity/policy edits remain operator-controlled;
-validate a candidate first and run the native Stack deployment to recreate the
-owned cohort under the same lock. A host config edit does not create a new release.
+validate a candidate first, request the scoped file reload above, and run the
+native Stack deployment under the same lock. A host config edit does not create
+a new release.
 
 ## Failure and recovery
 
@@ -191,7 +336,8 @@ Existing markers, including those written before preflight by an older wrapper,
 are never automatically cleared by installing the new wrapper: first establish
 whether recreation occurred and review running state. Never clear a marker
 concurrently with an attempt. The publisher refuses old
-versions; rollback is a separate operator-controlled promotion. When schemas are
+versions and non-forward source selections; rollback is a separate operator-controlled
+promotion. When schemas are
 incompatible, roll forward or use the tested database restore procedure. A failed
 rollback stays failed and must alert. Preserve the last successful receipt for
 comparison; it is not proof the previous version is still running after failure.

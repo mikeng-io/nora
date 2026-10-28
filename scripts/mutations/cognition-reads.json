@@ -135,7 +135,7 @@
  {
   "name": "surface: a tag turn is offered the Dreamer loop's reads",
   "file": "nora/agent/surface.py",
-  "old": "DREAMER_LOOP_TOOLS: frozenset[str] = frozenset(\n    {\"rollup_read\", \"standing_read\", \"character_read\", \"social_read\"})",
+  "old": "DREAMER_LOOP_TOOLS: frozenset[str] = frozenset(\n    {\"rollup_read\", \"character_read\", \"social_read\"})",
   "new": "DREAMER_LOOP_TOOLS: frozenset[str] = frozenset()",
   "target": "tests/unit/test_tool_surface.py::test_the_dreamer_loop_reads_are_never_a_tag_turns_tools"
  },
@@ -179,7 +179,7 @@
   "file": "nora/agent/dreamer.py",
   "old": "    loop_only = declared & DREAMER_LOOP_TOOLS\n",
   "new": "    loop_only = frozenset()\n",
-  "target": "tests/unit/test_dreamer_runtime.py::test_no_adaptor_may_hold_the_cognition_sessions_two_reads_however_it_derived_them"
+  "target": "tests/unit/test_dreamer_runtime.py::test_no_adaptor_may_hold_reads_reserved_for_cognition"
  },
  {
   "name": "rollup_read tool: everyone in a room with nobody resolved reads every row (M2, tool layer)",

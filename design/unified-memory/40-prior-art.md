@@ -63,7 +63,7 @@ Re-pointed 2026-10-15: node 30's proposals were superseded by
 [35](35-persona.md) and [45](45-persona-adaptor.md), which are where each
 taken idea now lives.
 
-> 2026-10-21 (18 / ADR 0026): the identity/behaviour vocabulary below is historical; [ADR 0026](../../docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md) names Character entries’ parts profile, traits and hypotheses. [18](18-message-readings.md) places source statements in Record readings and keeps the entry as the bounded card.
+> 2026-10-21 (18 / ADR 0026): the identity/behaviour vocabulary below is historical; [ADR 0026](../../docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md) names Character entries’ parts profile, traits and hypotheses. [18](18-extraction.md) places source statements in Record readings and keeps the entry as the bounded card.
 
 | taken | from | where |
 |---|---|---|
@@ -78,6 +78,8 @@ taken idea now lives.
 | media is text plus a pointer back to the original | every system checked | [15](15-memory-map.md) |
 
 ## 5. What this bundle refuses
+
+> 2026-10-28 (ratified, [27](27-the-memory-is-a-graph.md)): the first refusal is answered rather than reversed. Relations may be model-proposed, but each must carry relation_evidence rows citing what the session fetched; an edge with no evidence is not written. See [27](27-the-memory-is-a-graph.md#2-what-this-supersedes-and-why-the-old-reasons-are-answered).
 
 - **Model-extracted triples as graph edges** (Graphiti, Cognee, MemOS). The
   edge says nothing about its evidence. cognition-loop/80 refused this already;

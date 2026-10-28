@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Nora engineering orchestration contract",
+  "description": "Interchange shapes only; references and live acceptance require read-back. Vocabularies are canonical here; tier capabilities/evidence belong to ORCHESTRATION.md frontmatter.",
+  "oneOf": [
+    {"$ref": "#/$defs/policy"},
+    {"$ref": "#/$defs/task"},
+    {"$ref": "#/$defs/run"}
+  ],
+  "$defs": {
+    "text": {"type": "string", "pattern": "\\S"},
+    "reference": {"type": "string", "pattern": "^[a-z][a-z0-9+.-]*://[^\\s]+$"},
+    "references": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {"$ref": "#/$defs/reference"}
+    },
+    "execution_tier": {"enum": ["routine", "scoped", "complex", "critical"]},
+    "review_tier": {"enum": ["none", "light", "full"]},
+    "status": {"enum": ["Inbox", "Ready", "Running", "Review", "Blocked", "Done"]},
+    "priority": {"enum": ["P0", "P1", "P2"]},
+    "requirements": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "capabilities", "required_evidence"],
+      "properties": {
+        "id": {"$ref": "#/$defs/text"},
+        "capabilities": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"$ref": "#/$defs/text"}
+        },
+        "required_evidence": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"$ref": "#/$defs/text"}
+        }
+      }
+    },
+    "policy": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "version", "execution_tiers", "review_tiers"],
+      "properties": {
+        "kind": {"const": "policy"},
+        "version": {"const": 1},
+        "execution_tiers": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "allOf": [
+              {"$ref": "#/$defs/requirements"},
+              {"properties": {"id": {"$ref": "#/$defs/execution_tier"}}}
+            ]
+          }
+        },
+        "review_tiers": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "allOf": [
+              {"$ref": "#/$defs/requirements"},
+              {"properties": {"id": {"$ref": "#/$defs/review_tier"}}}
+            ]
+          }
+        }
+      }
+    },
+    "task": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "status"],
+      "properties": {
+        "kind": {"const": "task"},
+        "issue_ref": {"$ref": "#/$defs/reference"},
+        "status": {"$ref": "#/$defs/status"},
+        "priority": {"$ref": "#/$defs/priority"},
+        "execution_tier": {"$ref": "#/$defs/execution_tier"},
+        "review_tier": {"$ref": "#/$defs/review_tier"},
+        "acceptance_ref": {"$ref": "#/$defs/reference"},
+        "run_ref": {"$ref": "#/$defs/reference"},
+        "evidence_refs": {"$ref": "#/$defs/references"},
+        "blocked_ref": {"$ref": "#/$defs/reference"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"enum": ["Ready", "Running", "Review", "Done"]}}},
+          "then": {"required": ["issue_ref", "priority", "execution_tier", "review_tier", "acceptance_ref"]}
+        },
+        {
+          "if": {"properties": {"status": {"enum": ["Running", "Review"]}}},
+          "then": {"required": ["run_ref"]}
+        },
+        {
+          "if": {"properties": {"status": {"enum": ["Review", "Done"]}}},
+          "then": {"required": ["evidence_refs"]}
+        },
+        {
+          "if": {"properties": {"status": {"const": "Blocked"}}},
+          "then": {"required": ["issue_ref", "blocked_ref"]}
+        }
+      ]
+    },
+    "selection": {
+      "type": "object", "additionalProperties": false,
+      "required": ["provider", "model", "toolset", "options"],
+      "properties": {
+        "provider": {"$ref": "#/$defs/text"},
+        "model": {"$ref": "#/$defs/text"},
+        "toolset": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"$ref": "#/$defs/text"}
+        },
+        "options": {"type": "object"}
+      }
+    },
+    "run": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "issue_ref", "run_ref", "input_revision", "selection", "selection_reason", "evidence_refs"],
+      "properties": {
+        "kind": {"const": "run"},
+        "issue_ref": {"$ref": "#/$defs/reference"},
+        "run_ref": {"$ref": "#/$defs/reference"},
+        "input_revision": {"$ref": "#/$defs/text"},
+        "selection": {"$ref": "#/$defs/selection"},
+        "selection_reason": {"$ref": "#/$defs/text"},
+        "evidence_refs": {"$ref": "#/$defs/references"},
+        "review_of": {"$ref": "#/$defs/reference"}
+      }
+    }
+  }
+}

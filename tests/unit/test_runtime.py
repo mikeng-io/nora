@@ -267,7 +267,7 @@ async def test_memory_drain_loop_keeps_draining_after_a_failing_drain():
 
 
 async def test_memory_drain_loop_embeds_after_each_drain_and_survives_a_failure():
-    """`[memory_index] embed`: one embedding batch after every drain,
+    """`[memory.index] embed`: one embedding batch after every drain,
     a failing batch counted under its own stage, and a failing drain never
     skipping the batch."""
     order: list[str] = []

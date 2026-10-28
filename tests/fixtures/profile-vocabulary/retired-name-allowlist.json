@@ -29,7 +29,7 @@
       "_persona": 1,
       "_persona_settled_at": 1,
       "nora_persona_reload_failures_total": 1,
-      "persona": 16,
+      "persona": 15,
       "persona_dispute": 1,
       "persona_leak": 1,
       "persona_line": 2,
@@ -203,7 +203,7 @@
       "persona_dispute": 1
     }
   },
-  "design/unified-memory/18-message-readings.md": {
+  "design/unified-memory/18-extraction.md": {
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
       "Persona": 1,
@@ -217,6 +217,12 @@
       "Persona": 14,
       "persona": 7,
       "persona_dispute": 3
+    }
+  },
+  "design/unified-memory/27-the-memory-is-a-graph.md": {
+    "reason": "Links to existing node file names (35-persona, 45-persona-adaptor); no new identifier.",
+    "matches": {
+      "persona": 7
     }
   },
   "design/unified-memory/30-identity-and-character.md": {
@@ -327,7 +333,7 @@
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
       "Persona": 2,
-      "persona": 11,
+      "persona": 12,
       "persona_write": 1
     }
   },
@@ -359,7 +365,7 @@
   "nora/config.py": {
     "reason": "Explicit startup rejection names the retired section and its replacement.",
     "matches": {
-      "persona": 2
+      "persona": 1
     }
   },
   "nora/doctrine/classification.yaml": {
@@ -778,6 +784,12 @@
     "matches": {
       "_persona": 2,
       "_persona_dispute": 1
+    }
+  },
+  "tests/test_config.py": {
+    "reason": "Retired config spellings are tested only to prove startup refusal and the new destination.",
+    "matches": {
+      "persona": 3
     }
   },
   "tests/unit/test_profile_render.py": {

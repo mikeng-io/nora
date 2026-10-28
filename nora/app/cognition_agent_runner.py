@@ -35,6 +35,9 @@ from typing import Any
 from nora.agent import factory
 from nora.agent.dream_guard import DreamGuard
 from nora.agent.ports import ToolSpec, adapt
+from nora.agent.tag_trace_extract import extract_tag_trace
+from nora.agent.turn_recording import TurnRecording
+from nora.app.agent_runner import DEFAULT_MAX_TRACE_CHARS
 from nora.app.cognition_session import SESSION_TOKENS, AdaptorBudget, CognitionRunResult
 from nora.domain.turn_deadline import turn_deadline
 from nora.obs.metrics import Metrics
@@ -152,10 +155,7 @@ class LiveCognitionAgentRunner:
                 annotate(**{"nora.outcome": "failed"})
                 raise
             annotate(**{"nora.outcome": "ok"})
-        return CognitionRunResult(
-            stop_reason=getattr(result, "stop_reason", None),
-            total_tokens=_total_tokens(result),
-        )
+        return result
 
     def _guard(self, tool_names: list[str]) -> DreamGuard:
         """One `DreamGuard` for a session, with NO call ceiling of any kind
@@ -176,12 +176,15 @@ class LiveCognitionAgentRunner:
     async def _invoke(
         self, *, system_prompt: str, prompt: str, tools: list[Any], guard: DreamGuard,
         budget: AdaptorBudget, trace_attributes: Mapping[str, str],
-    ) -> Any:
+    ) -> CognitionRunResult:
+        recording = TurnRecording()
         agent = factory.create_dream_agent(
             model=self._models.create(), system_prompt=system_prompt, tools=tools,
             guard=guard, trace_attributes=dict(trace_attributes), retry=self._retry,
             agent_name=self._agent_name,
+            tool_hooks=(recording,),
         )
+        baseline = len(getattr(agent, "messages", ()))
         # A failure or a timeout is RAISED, never returned as a normal result:
         # `CognitionSessionRunner` records the session `failed`/`timeout`
         # (which leaves its stimuli pending), and only a loop that RETURNED
@@ -190,7 +193,7 @@ class LiveCognitionAgentRunner:
         # moved past stimuli nobody looked at.
         try:
             with turn_deadline(budget.timeout_seconds):
-                return await asyncio.wait_for(
+                result = await asyncio.wait_for(
                     factory.invoke(
                         agent, prompt, invocation_state={},
                         limits=factory.build_limits(
@@ -210,3 +213,17 @@ class LiveCognitionAgentRunner:
             raise
         finally:
             _leave_spend(agent)
+            trace = extract_tag_trace(
+                agent, baseline=baseline, tag_id=trace_attributes.get("cognition.session_id", ""),
+                conversation_id="", transcript=(), outcome="silent",
+                max_chars=DEFAULT_MAX_TRACE_CHARS, metrics=self._metrics,
+            )
+            spend = SESSION_TOKENS.get()
+            if spend is not None:
+                spend.messages = trace.messages
+                spend.requirements = recording.to_json()
+        return CognitionRunResult(
+            stop_reason=getattr(result, "stop_reason", None),
+            total_tokens=_total_tokens(result),
+            messages=trace.messages, requirements=recording.to_json(),
+        )

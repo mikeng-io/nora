@@ -229,9 +229,9 @@ Live on 2026-09-09 (read back on `norty`; `policy.toml` is not in the tree):
 three units — `ridgeline` (2 rooms), `friends` (3 rooms), `wedding` (1
 room).
 
-**Reopens if:** a unit needs two home rooms (then the home room is per
-platform, and `send_to`'s «one room per platform per unit» rule already
-constrains it that way). **Superseded in part by 40 (issue #248, 2026-09-15):**
+**Reopens if:** a unit needs two home rooms. The old platform-count premise
+is superseded by room-topology migration step 3: unique labels permit several
+rooms per platform; the one-home-room rule remains independent. **Superseded in part by 40 (issue #248, 2026-09-15):**
 a proactive row LINKED to a note fires into the note's `established_in` room,
 not the home room — the home room stays where she stands, and the write verb
 routes by the note's own «routing key, never a filter» (`notes.py:277`).
@@ -354,7 +354,7 @@ composes a draft.
 
 The operator, on why she is not in `identity.toml`: «identity.toml 嘅存在意義，
 就係俾 Nora 去 identify 返有乜嘢 identity。佢自身已經有一個 identity.» She has
-one: `[memory].ai_peer` and `[agent].name`, which DEC-66 (5) calls «the
+one: `[honcho].ai_peer` and `[agent].name`, which DEC-66 (5) calls «the
 agent's machine identity», reserved by the composition root so no human may
 hold it. `identity.toml` is the book of the people she identifies, and she is
 not one of them.
@@ -596,7 +596,7 @@ values are what the host held that day.
 [dreamer]   enabled=true  model=nora-dreamer  reasoning_effort=none
 [notes]     enabled=true  curator_enabled=false  candidates_enabled=true
 [standing]  enabled=true  max_chars=1200  event_enabled=true
-[memory]    workspace_id=nora  self_card_conclusions=8
+[honcho]    workspace_id=nora  self_card_conclusions=8
 [presence]  enabled=true
 ```
 

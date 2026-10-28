@@ -1,7 +1,10 @@
 # nora-deploy: reference host notes
 
 Checkout build/recreate notes below are legacy only. Production uses the
-installed Komodo Stack; do not apply checkout commands there.
+installed Komodo Stack; do not apply checkout commands there. In Komodo mode,
+loaded-once host edits require the file-name-only `config-reload.json` request
+from SKILL step 3 before manual `DeployStack`; native Compose preserves unchanged
+containers otherwise. The checkout force-recreate examples below remain legacy.
 
 - A host login shell may be zsh, where an unquoted `$VAR` holding several args
   reaches the program as one. Use `bash -s` with a heredoc or `bash -c` to make
@@ -99,8 +102,8 @@ Only after SKILL step 0 confirms checkout mode; Komodo installations use the nat
 | `nora/` (except doctrine, dreamer), `nora/skills`, `evals/`, `pyproject.toml`, `uv.lock` | `COPY` in the `Dockerfile` | rebuild `nora:latest`, recreate `nora presence analytics` (step 3) |
 | `nora/doctrine`, `nora/dreamer` | directory bind-mount, `reload = "mtime"` in the live config | pull only (step 4), for an edit. Never for deleting or renaming a dreamer file the code maps (a skill in `AGENDA_SKILLS`, `cognition-prelude`): the running image fails at its next start or session; image and pull together |
 | `config.toml` | file mount in `nora presence analytics stt voice-wake` | host edit, recreate (step 5) |
-| `identity.toml` | file mount in `nora app presence analytics`, loaded once | host edit, recreate those |
-| `policy.toml` | file mount in `nora`, loaded once | host edit, recreate `nora` |
+| `identity.toml` | read-only mount in `nora presence analytics` | validate copy, copy in place; hot reload, except workspace bindings |
+| `policy.toml` | read-only mount in `nora analytics` | validate copy, copy in place; hot reload, except unit/workspace bindings |
 | `deploy/<svc>/`, `app/` | that service's own `build:` image | `docker compose build <svc>`, recreate it |
 
 - Pull plus `restart` deploys no code: the old image keeps running (2026-09-11).
@@ -233,9 +236,13 @@ voice-wake` to both recreates for a `[speech.*]` key. Backups go to `~/nora-back
 - `</dev/null` on each `docker compose exec` in a heredoc (reference.md).
 - Never `sed -i` the live file: it writes a new inode, a running container
   keeps reading the old one, and `/health`'s `stale` flag cannot see it.
-- `policy.toml` / `identity.toml`: same steps, recreate the services in the
-  change-selection table above, then `curl -s localhost:9100/health | jq .config` must show
-  `"stale": false` for the file (stale means edited after the process started).
+- `policy.toml` / `identity.toml`: validate the candidate, then copy it in place.
+  Valid edits hot-reload within three seconds. Read each consumer's
+  `nora_config_reloads_total{file,outcome}` and `/health` config `stale`: false
+  means disk content matches the applied snapshot, true means pending or refused.
+  `refused` keeps the last good file; fix or restore the copy. `restart_required`
+  refuses the whole file; recreate the services in the change-selection table
+  for policy `[units]` or identity `[workspaces]` binding edits.
 - Never bind-mount from the deploy checkout to validate anything: Docker
   creates a missing source directory as root and the next pull fails.
 

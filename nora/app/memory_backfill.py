@@ -48,7 +48,7 @@ REFUSED OUTRIGHT: a Honcho workspace that belongs to another application
 (it holds sessions and lacks Nora's owner marker, `HonchoClient._owned`), a
 policy with no `[units]` (every unit is then in the one
 implicit workspace, so there is nowhere new to write), a unit the policy does
-not route, and a unit whose Honcho workspace is `memory.workspace_id` — the
+not route, and a unit whose Honcho workspace is `honcho.workspace_id` — the
 implicit default's, which already holds this history, so a replay there
 would feed every message a second time.
 
@@ -209,7 +209,7 @@ async def backfill_unit(
     if not policy.units_declared:
         raise BackfillRefusedError(
             "policy.toml declares no [units], so every unit is in the one implicit "
-            "workspace, bound to memory.workspace_id — there is no workspace of "
+            "workspace, bound to honcho.workspace_id — there is no workspace of "
             f"{unit!r}'s own to replay into"
         )
     route = router.for_unit(unit)
@@ -218,7 +218,7 @@ async def backfill_unit(
     if route.workspace == default_workspace:
         raise BackfillRefusedError(
             f"unit {unit!r} is bound to Honcho workspace {route.workspace!r}, which is "
-            "memory.workspace_id — the workspace that already holds this history. "
+            "honcho.workspace_id — the workspace that already holds this history. "
             "Replaying there would feed every message twice."
         )
     # OURS, or nothing. A Honcho workspace another application uses can carry

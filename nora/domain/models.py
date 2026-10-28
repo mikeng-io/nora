@@ -19,6 +19,7 @@ from .notes import Note
 from .profile import ProfileView
 from .self_presence import Presence
 from .standing import Standing
+from .standing_ledger import LedgerEntry
 from .subagents_context import SubagentsView
 
 
@@ -306,6 +307,11 @@ class TranscriptRow:
     # platform handle from. What it first said and the latest envelope ride
     # here.
     edit: RowEdit | None = None
+    turn_id: int | None = None
+
+    @property
+    def turn_handle(self) -> str | None:
+        return f"t{self.turn_id}" if self.is_nora and self.turn_id is not None else None
 
 
 @dataclass(frozen=True)
@@ -517,6 +523,7 @@ class TagContext:
     # `render_standing(None)` emits no block for exactly that reason. With
     # `[standing] enabled = false` it stays `None` on every turn.
     standing: Standing | None = None
+    ledger: tuple[LedgerEntry, ...] = ()
     # The room's CULTURE head — an account of what this room is and why it
     # became so. Beside `standing` because both are
     # room-scoped and both are her own output, and apart from it on the one
@@ -542,7 +549,7 @@ class TagContext:
     # `read_culture` keyed `nora_character_key(unit)` on the tag and fire turns.
     # `None` until the unit has one.
     self_account: CultureRevision | None = None
-    # THE SWITCH (design/unified-memory/45 §5, `[profile] render`): each entity
+    # THE SWITCH (design/unified-memory/45 §5, `[memory.profile] read`): each entity
     # of this turn's Profile account — self, room, unit, then the persons — read
     # through `read_profile` and rendered as `<profile>` blocks INSTEAD of
     # `self_account`, `culture`, `unit_culture`, `character`, `peer_card`,
@@ -648,7 +655,7 @@ class TagContext:
     # the memory index searched from this message's own seeds before the
     # turn, as `nora.agent.memory_search.render_packet`'s items (the same
     # shape `memory_search` answers with), cut at `PREFETCH_TOKENS`. Tag turn
-    # on the graph memory surface only (`[memory_index] enabled`); `()` on the
+    # on the graph memory surface only (`[memory.index] read`); `()` on the
     # Honcho surface, on a failed or empty search, and in every harness that
     # wires no search: the block then renders nothing. `recalled_partial` is
     # the search's `partial`: the index was still being built.

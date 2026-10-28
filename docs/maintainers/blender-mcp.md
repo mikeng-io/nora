@@ -70,34 +70,14 @@ References: [upstream setup and telemetry](https://github.com/ahujasid/mcp-for-b
 [pinned package](https://pypi.org/project/mcp-for-blender/2.2.4/),
 [DSH bridge documentation](https://github.com/sixtysevenlf/dsh-blender-plugin).
 
-## Mini Nora working sequence
+## Working sequence
 
-1. Preserve the original GLB outside Git and save a separate `.blend` working
-   copy outside the repo. Set a local artifact path, for example
-   `MINI_NORA_ASSET_DIR="$HOME/nora-artifacts/mini-nora"`, containing
-   `mini-nora.glb`; save the working file as `mini-nora-work.blend` there.
-   The inspection brief records about 49 MiB, one mesh, a 2K base-color texture
-   and no shape keys. MCP import confirmed 888,105 vertices, 1,646,720 triangles
-   and no armatures.
-2. Clean the unintended thin surface strand between chin and collar, raised
-   hair geometry, hair texture color contamination, and excessive stiff sleeve
-   and trouser folds. Inspect from multiple angles; retain intended details.
-3. Establish deformable topology, usable UVs and sensible mesh density before
-   binding. Simplification reduces polygon count; it does not create the joint
-   edge flow that retopology provides. Retopologize deforming areas as needed,
-   preserving or transferring textures and baking detail from the source.
-4. Build the skeleton/armature and place joints anatomically, with useful axes,
-   hierarchy and rest pose: head/neck, shoulders/elbows/wrists, hips/knees/ankles.
-   Joint placement defines the skeleton; it does not assign mesh influence.
-5. Skin/bind the mesh to deform bones, then correct weights around joints.
-   Automatic weights are a starting point; inspect unweighted vertices,
-   unwanted cross-body influence and collapsing shoulders or knees.
-6. Test head turns, shoulder lifts and knee bends through their intended range;
-   establish and test facial controls/shape keys as required. Correct topology,
-   joints or weights where the deformation reveals a defect.
-7. Export GLB for the intended renderer; use a suitable VRM exporter and humanoid
-   mapping/expressions if VRM is required. Reimport into a fresh scene or the
-   target viewer and check scale, textures, skeleton and animation. Export is
-   not acceptance until this readback passes.
+For work the operator has authorized, preserve the original asset and save a
+separate working copy outside the repository. Inspect the specific requested
+changes from multiple angles and preserve accepted character details. Where
+rigging or deformation is in scope, assess topology, UVs, joints and weights,
+then test the intended range of motion. Reimport exports into a fresh scene or
+the target viewer to check the result before acceptance.
 
-This procedure authorizes no source edits or further paid generation by itself.
+This general process does not authorize edits or paid generation, and does not
+claim that facial controls, rigging or model work is complete.

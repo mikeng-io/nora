@@ -8,7 +8,7 @@ Two properties:
   scope would key under some other room's identifiers, and ingest would
   refuse every message with nothing raising;
 - the room's `unit` is whatever the policy says. It is NOT required to equal
-  `memory.workspace_id`: that is Honcho's per-deployment workspace, and the
+  `honcho.workspace_id`: that is Honcho's per-deployment workspace, and the
   deployment's own `policy.toml` fails that equality on every room it has.
 """
 
@@ -53,6 +53,52 @@ def test_the_generated_policy_still_parses() -> None:
     assert parsed["conversations"][0]["unit"] == "friends"
 
 
+def test_subject_consumers_read_the_pytest_owned_config(
+    evaluation_config, tmp_path_factory, tmp_path, monkeypatch,
+) -> None:
+    import importlib
+
+    module = importlib.import_module("nora.subject.obtain")
+    assert evaluation_config.is_relative_to(tmp_path_factory.getbasetemp())
+    assert evaluation_config == module._TEMPLATE
+    stated = tomllib.loads(evaluation_config.read_text(encoding="utf-8"))
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    cfg = build_config(_spec(tmp_path))
+    copied = tomllib.loads((tmp_path / "config.toml").read_text(encoding="utf-8"))
+    assert copied == stated
+    assert cfg.llm.model == stated["llm"]["model"] == "nora"
+    assert cfg.relevance_gate.enabled is True
+    assert module.memory_endpoint()[1] == stated["honcho"]["workspace_id"]
+
+
+@pytest.mark.parametrize("ambient", ["absent", "home", "deployment_env"])
+def test_evaluation_config_ignores_ambient_deployments(
+    ambient, evaluation_config, tmp_path_factory, tmp_path, monkeypatch,
+) -> None:
+    from tests.conftest import evaluation_config as fixture
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("NORA_DEPLOYMENT_DIR", raising=False)
+    if ambient != "absent":
+        deployment = home / "workspace" / "nora"
+        deployment.mkdir(parents=True)
+        (deployment / "config.toml").write_text("[synthetic broken\n", encoding="utf-8")
+        if ambient == "deployment_env":
+            monkeypatch.setenv("NORA_DEPLOYMENT_DIR", str(deployment))
+    # Exercise the real fixture again after setting the synthetic ambient input;
+    # the outer session fixture necessarily ran before this test's monkeypatch.
+    generated = fixture.__wrapped__(tmp_path_factory)
+    try:
+        target = next(generated)
+        assert target != evaluation_config
+        assert target.is_relative_to(tmp_path_factory.getbasetemp())
+        assert target.read_bytes() == evaluation_config.read_bytes()
+    finally:
+        generated.close()
+
+
 def test_build_config_writes_a_policy_naming_the_room(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     build_config(_spec(tmp_path))
@@ -69,7 +115,7 @@ def test_an_explicit_policy_is_used_verbatim(tmp_path, monkeypatch) -> None:
 def test_a_deployment_shaped_policy_whose_unit_is_not_the_workspace_is_accepted(
     tmp_path, monkeypatch,
 ) -> None:
-    """Production's own shape: `memory.workspace_id = "nora"` and rooms in
+    """Production's own shape: `honcho.workspace_id = "nora"` and rooms in
     units `friends`/`ridgeline`. Refusing it would refuse the deployment."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     spec = _spec(tmp_path, room=("signal", "friends-sig"), policy=_DEPLOYMENT_SHAPED)
@@ -77,7 +123,7 @@ def test_a_deployment_shaped_policy_whose_unit_is_not_the_workspace_is_accepted(
     convo = _conversation_for(spec)
     assert convo.unit == "friends"
     assert convo.primary_id == "friends-sig"
-    assert cfg.memory.workspace_id != "friends", "the unit is the room's, not Honcho's"
+    assert cfg.honcho.workspace_id != "friends", "the unit is the room's, not Honcho's"
 
 
 def test_conversation_for_resolves_the_rooms_own_entry_among_several(tmp_path, monkeypatch) -> None:
@@ -94,17 +140,17 @@ def test_the_honcho_workspace_is_a_fixed_sibling_of_the_deployments(tmp_path, mo
     replay into it can be shared; never per case, never the real one."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     cfg = build_config(_spec(tmp_path))
-    assert cfg.memory.workspace_id.endswith("-eval")
-    assert cfg.memory.workspace_id != "-eval"
+    assert cfg.honcho.workspace_id.endswith("-eval")
+    assert cfg.honcho.workspace_id != "-eval"
 
 
 def test_a_draw_names_its_own_workspace(tmp_path, monkeypatch) -> None:
     """An eval draw composes against a workspace of its own."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     cfg = build_config(_spec(
-        tmp_path, overrides={"memory.workspace_id": "nora-eval-run-case-1-abc123"},
+        tmp_path, overrides={"honcho.workspace_id": "nora-eval-run-case-1-abc123"},
     ))
-    assert cfg.memory.workspace_id == "nora-eval-run-case-1-abc123"
+    assert cfg.honcho.workspace_id == "nora-eval-run-case-1-abc123"
 
 
 @pytest.mark.parametrize("workspace", ["nora", "probe", "nora-eval-", "nora-48b00d52c0ff"])
@@ -116,7 +162,7 @@ def test_no_spelling_of_the_workspace_reaches_outside_the_eval_namespace(
     that would write eval speech into real peer cards with nothing raising."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     with pytest.raises(ValueError, match="draw workspace"):
-        build_config(_spec(tmp_path, overrides={"memory.workspace_id": workspace}))
+        build_config(_spec(tmp_path, overrides={"honcho.workspace_id": workspace}))
 
 
 def test_a_policy_naming_the_rooms_id_on_a_different_entry_is_refused(

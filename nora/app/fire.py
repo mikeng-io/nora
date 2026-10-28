@@ -80,6 +80,7 @@ from nora.agent.prefill import (
 )
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
+from nora.agent.standing_ledger import read_ledger
 from nora.agent.tools import turn_occasion
 from nora.doctrine.loader import DoctrineStore
 from nora.domain import audience as audience_names
@@ -147,9 +148,11 @@ from nora.domain.standing import (
     DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
     Standing,
 )
+from nora.domain.standing_ledger import LedgerEntry, StandingLedger
 from nora.domain.subagent import written_title
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.domain.turn_deadline import turn_deadline
+from nora.domain.turn_record import TurnCapture, capture_turn
 from nora.engagement.character_who import fire_character_people
 from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.context import StandingNotesReader
@@ -577,6 +580,7 @@ class FirePath:
         reasoning_strip_store: Any = None,
         event_registry: Mapping[str, EventFactory] | None = None,
         standing: StandingStore | None = None,
+        ledger: StandingLedger | None = None,
         culture: CultureReader | None = None,
         lessons: ActiveLessons | None = None,
         standing_store_timeout_seconds: float = DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
@@ -606,11 +610,12 @@ class FirePath:
         # keyed on the unit like `notes`. `None` renders no block.
         memos: MemoStore | None = None,
         # THE SWITCH (45 §5): the Profile accounts' reader, wired only when
-        # `[profile] render` is on. Not `None` means a fire turn renders
+        # `[memory.profile] read` is on. Not `None` means a fire turn renders
         # `<profile>` blocks and none of the reads they replace — the peer
         # card, `people_in_window`, the culture/unit/self heads and the
         # character heads — is made at all.
         profile: ProfileHeads | None = None,
+        tag_trace_store: Any = None,
     ) -> None:
         # `<standing>` renders on the fire path too. `build_prefill` is shared
         # and parameterised only by `header=`, so SUPPRESSING the block here
@@ -626,6 +631,8 @@ class FirePath:
         # the `TagTrace` that `AgentRunner.invoke` hands back, so there is
         # nothing to fold.
         self._standing = standing
+        self._ledger_store = ledger
+        self._tag_trace_store = tag_trace_store
         # THE CULTURE HEAD, read on EVERY fire occasion (DEC-207) — see
         # `_read_culture`.
         #
@@ -656,7 +663,7 @@ class FirePath:
         # BOUNDED for `standing_store_timeout_seconds`' reason, and it is its
         # OWN knob rather than a reuse of that one: an operator tuning how long
         # a single-row Postgres read may take must not silently retune how long
-        # an HTTP call to Honcho may take. See `MemoryConfig.read_timeout_seconds`.
+        # an HTTP call to Honcho may take. See `HonchoConfig.read_timeout_seconds`.
         self._memory_read_timeout_seconds = memory_read_timeout_seconds
         # The note tier on the fire path. A participation determination
         # grounds on «transcript + standing/notes», so `build_context` passes
@@ -671,7 +678,7 @@ class FirePath:
         self._notes = notes
         self._memos = memos
         self._policy = policy
-        # THE SWITCH (45 §5): `None` until `[profile] render` is on — see the
+        # THE SWITCH (45 §5): `None` until `[memory.profile] read` is on — see the
         # parameter. The reads it replaces check it and are not made.
         self._profile_reader = profile
         # Lineage: the SAME value the
@@ -879,7 +886,7 @@ class FirePath:
 
         card: tuple[str, ...] = ()
         if ref is not None and self._profile_reader is None:
-            # (The switch: with `[profile] render` the occasion person's
+            # (The switch: with `[memory.profile] read` the occasion person's
             # `<profile>` replaces the card and this read is not made.)
             try:
                 card = tuple(await self._memory.peer_card(
@@ -912,7 +919,7 @@ class FirePath:
 
         # Read AFTER the transcript, because both reads are
         # curated to the window's own text and keyed on the people in it.
-        # The switch: with `[profile] render` the persons' `<profile>` blocks
+        # The switch: with `[memory.profile] read` the persons' `<profile>` blocks
         # replace `<people_in_window>` and the Honcho recall is not made.
         people = (
             () if self._profile_reader is not None
@@ -937,7 +944,7 @@ class FirePath:
             character,
             unit_culture,
             self_account,
-            (lessons, memos),
+            (lessons, memos, ledger),
         ) = await asyncio.gather(
             asyncio.gather(
                 self._read_standing(occasion),
@@ -951,7 +958,8 @@ class FirePath:
             self._read_character(occasion, ref, transcript),
             self._read_unit_culture(occasion),
             self._read_self_account(occasion),
-            asyncio.gather(self._read_lessons(occasion), self._read_memos(occasion, unit)),
+            asyncio.gather(self._read_lessons(occasion), self._read_memos(occasion, unit),
+                           self._read_ledger(occasion, ref)),
         )
         return TagContext(
             tag_id=uuid.uuid4().hex,
@@ -962,7 +970,7 @@ class FirePath:
             started_at=time.perf_counter(),
             people_in_window=people,
             profiles=profiles,
-            standing=standing,
+            standing=standing, ledger=ledger,
             culture=culture,
             character=character,
             unit_culture=unit_culture,
@@ -1088,7 +1096,7 @@ class FirePath:
         self, occasion: Event, transcript: Sequence[TranscriptRow],
     ) -> tuple[PersonRef, ...]:
         """The distinct people who SPOKE in this window, most recent first,
-        bounded by `[memory] people_in_window_speakers`.
+        bounded by `[honcho] people_in_window_speakers`.
 
         **Most recent first, and the bound is what makes the order matter.** A
         window of twelve rows can hold more speakers than the bound admits, and
@@ -1556,6 +1564,23 @@ class FirePath:
             if view is not None:
                 views.append(view)
         return tuple(views)
+
+    async def _read_ledger(self, occasion: Event, ref: PersonRef | None) -> tuple[LedgerEntry, ...]:
+        if self._ledger_store is None or self._lineage is None:
+            return ()
+        room = Room(platform=occasion.platform, conversation_id=occasion.conversation_id,
+                    roster_source=self._rosters.get(occasion.platform), persons=self._persons,
+                    tagger=ref, self_ids=self._profile_self_ids)
+        target = self._lineage.render_room(platform=occasion.platform,
+                                           conversation_id=occasion.conversation_id)
+        try:
+            return await asyncio.wait_for(read_ledger(self._ledger_store, target, room),
+                                          timeout=self._standing_store_timeout_seconds)
+        except Exception:
+            log.exception("fire ledger context read failed")
+            self._metrics.inc(
+                "nora_errors_total", stage="standing_ledger", platform=occasion.platform)
+            return ()
 
     async def _read_standing(self, occasion: Event) -> Standing | None:
         """This conversation's position, or `None`.
@@ -2216,14 +2241,14 @@ class FirePath:
                     "composition root to build one"
                 )
             runner = self._proactive_runner
+        trace = None
+        captured = TurnCapture()
         try:
-            # `AgentRunner.invoke` also hands back a `TagTrace`, which this path
-            # discards: it builds no debrief record of its own.
             # `[heartbeat].timeout_seconds`, published to the turn's tools:
             # the vision describer was built from the `[llm]` loop and would
             # otherwise spend a heartbeat's whole budget on one read.
-            with turn_deadline(self._timeout_seconds):
-                stop_reason, final_text, _trace = await asyncio.wait_for(
+            with turn_deadline(self._timeout_seconds), capture_turn() as captured:
+                stop_reason, final_text, trace = await asyncio.wait_for(
                     runner.invoke(
                         doctrine=doctrine, tools=tools, pre_fill=pre_fill, guard=guard,
                         tool_call_log=tool_call_log, reasoning_watch=reasoning_watch,
@@ -2344,6 +2369,31 @@ class FirePath:
                     "nora_silent_failures_total", reason=reason,
                     platform=platform, audience=audience,
                 )
+        if self._tag_trace_store is not None:
+            from nora.domain.tag_trace import TagTrace
+            convo = (self._policy.conversation(platform, ctx.message.conversation_id)
+                     if self._policy else None)
+            outcome = ("timeout" if failure == FAILED_TIMEOUT else "llm_error") if failure else (
+                "send_reply" if deliverer.delivered else "silent"
+            )
+            trace = trace or captured.trace or TagTrace(
+                tag_id=ctx.tag_id, conversation_id=ctx.message.conversation_id,
+                messages=(), transcript=ctx.transcript, outcome=outcome,
+                created_at=int(self._clock().timestamp() * 1000),
+            )
+            trace = replace(
+                trace, outcome=outcome, transcript=ctx.transcript, platform=platform,
+                occasion="participation" if participation else "fire",
+                unit=convo.unit if convo else None,
+                bound_rooms=(platform + ":" + ctx.message.conversation_id,),
+                sent_message_ids=deliverer.sent_message_ids,
+            )
+            try:
+                await asyncio.wait_for(
+                    self._tag_trace_store.save(trace), self._standing_store_timeout_seconds,
+                )
+            except Exception:
+                log.exception("fire turn trace could not be retained")
         return failure, stop_reason, final_text
 
     async def _determined(

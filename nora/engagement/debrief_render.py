@@ -318,6 +318,7 @@ def _transcript(
         return (
             ("at", _clock(row.ts, tz) if row.ts else None),
             ("from", _speaker(row, display_name)),
+            ("turn", row.turn_handle),
             # An out-of-window or self-referential pointer renders NOTHING
             # (`prefill._parent_of`'s rule: a symbol that can mean "unknown"
             # invites the model to emit one).
