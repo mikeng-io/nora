@@ -136,7 +136,7 @@ th3 · 6d · co-op games for the weekend · discord-general
 
 ## 6. Scopes
 
-> 2026-10-28 ([unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md#6a-what-this-meets-in-the-other-bundles-2026-10-28) §6a): decisions, commitments and threads are nodes of the memory graph; their `about`, `fulfils` and `concerns` links are projected by code from `owed_to`, the cited `Done as` line, `note_ids`, `decision_ids` and the spans, so the tag-path op tool never writes the graph.
+> 2026-10-28 ([unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md#6a-what-this-meets-in-the-other-bundles-2026-10-28) §6a): decisions, commitments and threads are nodes of the memory graph; their `about`, `fulfils` and `concerns` links are built by code from `owed_to`, the cited `Done as` line, `note_ids`, `decision_ids` and the spans, in the notebook layer with the cited rows as evidence, so the tag-path op tool never calls the graph itself.
 
 | scope | keyed on | holds | rendered in |
 |---|---|---|---|

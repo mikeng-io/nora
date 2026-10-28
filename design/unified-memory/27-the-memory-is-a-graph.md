@@ -255,11 +255,9 @@ graph that means:
   (`pointer_entity`, §3), the shape 00 §1 rules. A DM's view of its owner is
   **composed at read time**, one walk per unit that lists them, each through
   06 §3's per-room predicate. No cross-unit profile or relation is ever
-  written: a stored one would be read back inside some unit, which is the
-  carrying the laundering rule forbids.
+  written: a stored one would be read back inside some unit, carrying one unit's understanding into another, which the laundering rule forbids.
 - **A private scope is needed, and is missing.** Step 1 comprehends DM items
-  like any item, but what it derives only from private DM evidence must be
-  readable only by a conversation with the owner alone. `persons` cannot carry
+  like any item, but what it derives only from private DM evidence must be readable only by the owner's own DM and by the bound curation session that 02 §4 allows to read the private scope (an explicit internal unit-curation capability), under 03 §3's limits on what that session may write. `persons` cannot carry
   that: it admits a relation wherever every person it names is listed, so a
   fact about Rin from her DM would surface in any group room that lists her.
   The DM build adds an explicit private scope to `relation` and `entity`
@@ -277,11 +275,7 @@ Decisions, commitments and threads are already §6's nodes. Two points meet:
 - **Ledger links are code, not a writer's judgement.** Ledger entries carry
   typed references: a commitment's `owed_to` and the citation its `Done as`
   line must carry (20 §3, under 12-schemas' cited-line grammar), a thread's
-  `note_ids`, `decision_ids` and code-computed spans (20 §4). Their `about`,
-  `fulfils` and `concerns` links are projected by code from those fields, as a
-  Register row's link columns are (§7a). This keeps the tag-path op tool (its step 3) out of the graph writer
-  set; §7a's "the writer writes its own links" applies to links only a
-  judgement can choose.
+  `note_ids`, `decision_ids` and code-computed spans (20 §4). Their `about`, `fulfils` and `concerns` links are built by code from those fields and staged through `stage_and_admit` in the **notebook** layer, as §5 requires, with the rows the entry cites as their evidence: the judgement is the ledger writer's, already made when it cited them, and code only converts it. This keeps the tag-path op tool (the ledger's migration step 3, a reply-turn tool) from calling the graph itself.
 - **A turn record is a Record item** ([30](../standing-ledger/30-turn-records.md)):
   `turn` joins the Record node kinds with the ledger's build, so a ledger line
   citing `turn(...)` is walkable and a turn can be step 1 evidence like any
@@ -295,7 +289,7 @@ now read the graph:
 - **Likes** read the `likes` / `dislikes` relations step 1 writes, with their
   evidence and speech act (stated / said by another / shown), and step 2's
   traits and guesses; revealed preference reads `stayed_at`, `attended` and
-  play. The decay and α/β scoring of 10 §1 apply to those rows unchanged.
+  play. The α/β scoring of 10 §1 and the decay of 10 §3 apply to those rows unchanged.
 - **Constraints and dated plans** read `plans`, `at`, and relations with
   validity intervals. The separate constraint reader and its interval
   extraction (10 §1, 60) are superseded by step 1: building them would read
@@ -307,8 +301,7 @@ now read the graph:
 reads a room's culture; culture is now written by step 2 (§9) into the same
 store, so the reader is unchanged. No conflict.
 
-**Agent worker and computer unit scope:** no contact with the graph or the
-loop. No change.
+**Agent worker and computer unit scope:** no conflict. An agent-worker session becomes a turn-record occasion (its 50, step 6), so it reaches the graph as a `turn` node like any turn; computer-unit-scope already scopes the `session` nodes of §6 to the unit. No change to either.
 
 ## 7. One Cognition loop: comprehend, measure, serialize
 
