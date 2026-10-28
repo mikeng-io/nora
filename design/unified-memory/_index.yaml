@@ -110,6 +110,8 @@ edges:
   - {src: 27-the-memory-is-a-graph, dst: 47-character-dimensions, rel: depends_on, provenance: asserted}
   - {src: 27-the-memory-is-a-graph, dst: ../cognition-loop/30-cognition, rel: extends, provenance: asserted}
   - {src: 27-the-memory-is-a-graph, dst: ../cognition-loop/10-tiers, rel: extends, provenance: asserted}
+  - {src: 27-the-memory-is-a-graph, dst: ../culture-tier/00-overview, rel: extends, provenance: asserted}
+  - {src: 27-the-memory-is-a-graph, dst: ../self-growth/40-lessons, rel: extends, provenance: asserted}
   - {src: 25-memory-graph, dst: 15-memory-map, rel: depends_on, provenance: asserted}
   - {src: 25-memory-graph, dst: 20-embedding-bakeoff, rel: depends_on, provenance: asserted}
   - {src: 25-memory-graph, dst: ../context-plan/15-what-the-composer-decides, rel: follows, provenance: asserted}
