@@ -24,9 +24,9 @@ An outstanding attempt requires native failure recovery, even without a success 
 **Receipt exists: Komodo owns deployment.** Use the existing production Stack and
 runtime root, following [the procedure](../../../deploy/komodo/README.md). Checkout steps do not apply:
 
-- Code, doctrine, Dreamer and runtime skills ship through a complete published
-  release bundle and native Stack deployment. A master pull alone changes none
-  of those image-owned files; never rebuild local tags or restore source mounts.
+- Code, doctrine, Dreamer and runtime skills ship through a complete release or
+  manually selected master bundle and native Stack deployment. A master pull alone
+  changes none of those image-owned files; never rebuild local tags or restore source mounts.
 - Config/identity/policy edits retain backups, candidate validation and in-place
   copying. Hold the shared lock for file edits, then **release it before calling
   the native Stack**: its wrapper acquires the same lock and validates again.
@@ -56,6 +56,21 @@ operator deployment admission or the daily automation's standing authorization
 when every release criterion passes. Ordinary master merges never publish a release.
 The tag and GitHub Release trigger `release-images.yml`; all images must finish
 before it commits `compose.json` and `release.json` to `deployments`.
+
+For a master fix before a formal release, the owner may instead dispatch
+`gh workflow run release-images.yml --ref master -f target=master`, optionally
+adding `-f candidate=<full-master-sha>`. This resolves current master once,
+requires successful trusted CI on that SHA, stamps its actual `git describe`
+version and publishes the complete SHA-labelled image cohort without a tag or
+version bump. Master pushes do not build or deploy. Daily release automation
+has no admission to this entry. Releases and snapshots share publication ordering.
+
+Keep `MASTER_DEPLOY_ENABLED` absent/false until the operator updates and verifies
+the reviewed **installed** wrapper outside the fetched clone: the old wrapper
+refuses snapshot stamps. Follow the [one-time prerequisite](../../../deploy/komodo/README.md#manual-deploy-master);
+merging the source does not install it. Preserve formal releases' existing
+`RELEASE_IMAGES_ENABLED` control. Publication/readback of desired state is not
+proof of deployment; an identical-source rerun is refused without claiming success.
 
 The enabled `nora-release-poll` Procedure calls `DeployStackIfChanged` every ten
 minutes. Wait for it, or run native `DeployStack` on `nora-releases` manually.
