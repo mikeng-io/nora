@@ -98,6 +98,8 @@ and configuration to the runtime.
 | `config.py` | Validated deployment configuration |
 | `persons.py`, `persons_file.py` | Identity resolution and identity-file loading |
 | `policy.py` | Room membership and grants |
+| `config_reload.py` | Validated identity/policy holders and per-process reload polling |
+| `memory_routing.py` | Shared workspace validation and live conversation routing |
 | `tag.py` | Trigger matching and debounce helpers |
 
 The portal frontend is in `app/`; the public site is in `site/`. Service

@@ -357,7 +357,7 @@ def test_a_client_that_stalls_mid_body_is_disconnected(bridge, monkeypatch):
     assert sent == []
 
 
-def test_a_burst_past_the_concurrency_bound_is_refused_not_queued(bridge, monkeypatch):
+def test_a_burst_past_the_concurrency_bound_is_refused_not_queued(bridge, monkeypatch, caplog):
     """Each connection is a thread. With one slot held by a stalled client, the
     next well-formed POST must be turned away at once, not admitted to grow the
     thread count."""
@@ -384,12 +384,17 @@ def test_a_burst_past_the_concurrency_bound_is_refused_not_queued(bridge, monkey
                     },
                 )
                 assert conn.getresponse().status == 503
-            except (ConnectionResetError, http.client.RemoteDisconnected):
+            except (BrokenPipeError, ConnectionResetError, http.client.RemoteDisconnected):
                 pass
             finally:
                 conn.close()
         finally:
             stalled.close()
+    assert any(
+        record.name == "alert-bridge"
+        and record.getMessage() == "connection refused: 1 already in flight"
+        for record in caplog.records
+    ), "a socket error alone does not prove the server refused the excess request"
     assert sent == []
 
 
