@@ -64,6 +64,7 @@ _TRACE = "a log of what a turn or session was shown; nothing reads bytes through
 #: Columns that look like a key, or are JSON that could hold one under
 #: another name, and name no blob that must stay, and why.
 NOT_BLOB_KEYS: Mapping[tuple[str, str], str] = {
+    ("entity", "attributes"): "semantic attributes; evidence source stores own blob custody",
     ("extraction", "snapshot"): "frozen source text; message rows own blob custody",
     ("extraction_claim", "content"): "statement slots and source ids, never blob custody",
     ("extraction_attempt", "dropped_claims"): "reason/count JSON only; record_drops rejects text",

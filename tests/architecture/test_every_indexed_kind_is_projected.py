@@ -307,7 +307,9 @@ def test_every_not_projected_entry_is_still_a_write() -> None:
 
 
 def test_only_the_projector_writes_the_index() -> None:
-    index_tables = {name for name in schema.METADATA.tables if name.startswith("memory_")}
+    # The comprehension queue owns work, not a derived search index.
+    index_tables = {name for name in schema.METADATA.tables
+                    if name.startswith("memory_") and name != "memory_work_item"}
     assert index_tables == {
         "memory_node", "memory_edge", "memory_projection_queue", "memory_index_state",
     }
