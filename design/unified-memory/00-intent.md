@@ -263,6 +263,8 @@ index and Honcho's exit are now listed in their order.
 
 ### Forward phases — 2026-10-21
 
+> 2026-10-28 (proposed): phases 2–3 below are replaced by [27](27-the-memory-is-a-graph.md#15-order-of-work): stores and research loop as one change, a spike against fixed gates, one backfill, then queries, Character writers on the graph, the answerability and reply gates, and the switch.
+
 1. **This design revision** ([18](18-extraction.md)).
 2. **Extraction on new messages.** Record items, run on every batch;
    nothing reads them yet.

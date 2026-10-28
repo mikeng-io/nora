@@ -219,6 +219,12 @@
       "persona_dispute": 3
     }
   },
+  "design/unified-memory/27-the-memory-is-a-graph.md": {
+    "reason": "Links to existing node file names (35-persona, 45-persona-adaptor); no new identifier.",
+    "matches": {
+      "persona": 5
+    }
+  },
   "design/unified-memory/30-identity-and-character.md": {
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
@@ -327,7 +333,7 @@
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
       "Persona": 2,
-      "persona": 11,
+      "persona": 12,
       "persona_write": 1
     }
   },
