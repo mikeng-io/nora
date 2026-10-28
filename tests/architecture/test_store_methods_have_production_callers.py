@@ -145,6 +145,42 @@ class _Pin(NamedTuple):
 # the artifact that gets re-derived from scratch by the next session that
 # notices one of them.
 _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
+    ("memory_graph.py", "aliases"): _Pin(
+        "deferred_consumer",
+        "Phase 1 implements the fixed graph port; Phase 2 owns the Cognition consumer. "
+        "Code projection uses connection-scoped helpers in the source transaction. "
+        "No prompt reads the graph in this PR.",
+    ),
+    ("memory_graph.py", "candidates"): _Pin(
+        "deferred_consumer",
+        "Phase 1 implements the fixed graph port; Phase 2 owns the Cognition consumer. "
+        "Code projection uses connection-scoped helpers in the source transaction. "
+        "No prompt reads the graph in this PR.",
+    ),
+    ("memory_graph.py", "walk"): _Pin(
+        "deferred_consumer",
+        "Phase 1 implements the fixed graph port; Phase 2 owns the Cognition consumer. "
+        "Code projection uses connection-scoped helpers in the source transaction. "
+        "No prompt reads the graph in this PR.",
+    ),
+    ("memory_graph.py", "stage_and_admit"): _Pin(
+        "deferred_consumer",
+        "Phase 1 implements the fixed graph port; Phase 2 owns the Cognition consumer. "
+        "Code projection uses connection-scoped helpers in the source transaction. "
+        "No prompt reads the graph in this PR.",
+    ),
+    ("memory_graph.py", "upsert_entity"): _Pin(
+        "deferred_consumer",
+        "Phase 1 implements the fixed graph port; Phase 2 owns the Cognition consumer. "
+        "Code projection uses connection-scoped helpers in the source transaction. "
+        "No prompt reads the graph in this PR.",
+    ),
+    ("memory_graph.py", "requeue_failed"): _Pin(
+        "deferred_consumer",
+        "Phase 1 implements the fixed graph port; Phase 2 owns the Cognition consumer. "
+        "Code projection uses connection-scoped helpers in the source transaction. "
+        "No prompt reads the graph in this PR.",
+    ),
     ("extraction.py", "requeue"): _Pin(
         "operator_script",
         "The operator repairs terminal extraction failures with scripts/extraction_requeue.py. "
@@ -231,7 +267,7 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
 # `tests/unit/test_media_join.py` and by the store's own contract suite.
 _AMBIGUOUS: frozenset[str] = frozenset(
     {
-        "aclose", "append", "claim", "create", "delete",
+        "aclose", "append", "claim", "create", "delete", "fail",
         "describe", "enqueue", "get", "history", "lookup", "mark", "put", "read",
         "recent", "record", "resolve", "rsvps_for", "save", "search",
         "sweep_firing", "apply",
@@ -279,7 +315,7 @@ _STORE_MODULES: frozenset[str] = frozenset(
         "gatherings.py", "geocode_cache.py", "language.py",
         "media_descriptions.py", "media_objects.py", "memo.py", "memory_embed.py",
         "memory_read.py", "mobility.py",
-        "extraction.py",
+        "extraction.py", "memory_graph.py",
         "music_queue.py", "music_session.py", "notes.py", "otp.py",
         "participation_state.py", "profile.py", "profile_inputs.py", "presence.py",
         "reasoning_strip.py", "record_query.py",

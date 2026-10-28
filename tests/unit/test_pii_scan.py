@@ -334,6 +334,19 @@ def test_coords_int_microdegrees_fail():
     assert P.scan_coords(rows).over
 
 
+def test_explicit_microdegree_csv_header_covers_subdegree_values():
+    synth = Synth(1)
+    raw = synth.base_point()
+    base = (raw[0]/1000, raw[1]/1000)
+    rows = ["lat_e6,lng_e6,ts"] + [
+        f"{int(la*1e6)},{int(ln*1e6)},{i}"
+        for i, (la,ln) in enumerate(synth.near(base) for _ in range(5))
+    ]
+    assert P.scan_coords(rows).over
+    assert not P.scan_coords(rows[1:]).over
+    assert not P.scan_coords([rows[0], "code = [1, 2, 3]"]).points
+
+
 def test_coords_int_microdegrees_need_a_geo_word():
     """The declared gap: a headerless integer table reads as ids."""
     base = SY.base_point()

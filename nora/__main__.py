@@ -224,6 +224,8 @@ class App:
             ))
         else:
             log.info("retention sweep disabled (store.prune_enabled = false)")
+        if deps.graph_batches is not None:
+            deps.background.spawn(deps.graph_batches.run())
         if deps.extraction is not None:
             deps.background.spawn(deps.extraction.run())
         # Unconditional: every store write projects into the memory index,

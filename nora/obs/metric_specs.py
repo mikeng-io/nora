@@ -21,6 +21,7 @@ from nora.domain.extraction import CLAIM_DROP_REASONS, EXTRACTION_FAILURE_STAGES
 from nora.domain.lessons import LESSONS_OUTCOMES
 from nora.domain.media import MEDIA_FETCH_CALLERS
 from nora.domain.media_join import JOIN_PATHS
+from nora.domain.memory_admission import GRAPH_BATCH_OUTCOMES
 from nora.domain.memory_index import (
     EMBED_OUTCOMES,
     EMBEDDED_KINDS,
@@ -107,6 +108,11 @@ class _HistogramSpec(NamedTuple):
 # nora_silent_failures_total and nora_errors_total, so a stuck or failing
 # platform is visible per series.
 _COUNTERS: tuple[_CounterSpec, ...] = (
+    _CounterSpec(
+        "nora_memory_graph_batches_total",
+        "Graph batch outcomes: " + "/".join(GRAPH_BATCH_OUTCOMES),
+        ("outcome",),
+    ),
     # The OAuth keepalive (DEC-308, `nora.app.oauth_keepalive`). The alert reads
     # the timestamp gauges below, never these: a rare counter reads empty after a
     # restart.
@@ -2392,6 +2398,11 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
 )
 
 _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
+    _HistogramSpec("nora_memory_graph_walk_seconds", "Graph walk duration including failed reads."),
+    _HistogramSpec("nora_memory_graph_walk_nodes", "Nodes returned by a graph walk.",
+                   (0, 1, 5, 10, 20, 50, 100, 200)),
+    _HistogramSpec("nora_memory_graph_walk_depth", "Depth reached by a graph walk.",
+                   (0, 1, 2, 3, 4)),
     _HistogramSpec(
         "nora_tag_latency_seconds", "End-to-end tag latency, including the model call.",
     ),

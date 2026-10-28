@@ -581,7 +581,9 @@ class SqlRecordStore:
         ).returning(MESSAGE_REACTION.c.id)
         async with self._engine.begin() as conn:
             result = await conn.execute(stmt)
-        return int(result.scalar_one())
+            row_id = int(result.scalar_one())
+            await memory_index.project(conn, "message", message_id, metrics=self._metrics)
+        return row_id
 
     async def append_delete(
         self, *, message_id: int, message: NormalizedMessage, person_id: str | None,

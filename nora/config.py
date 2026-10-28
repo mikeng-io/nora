@@ -2625,10 +2625,17 @@ class ProfileConfig(BaseModel):
     nora: NoraProfileConfig = NoraProfileConfig()
 
 
+class GraphConfig(BaseModel):
+    """Code graph projections and work-item producers; no graph readers."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    enabled: bool = False
+
+
 class MemoryConfig(BaseModel):
     """Nora's extraction, memory index and Profile settings."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+    graph: GraphConfig = GraphConfig()
     extraction: ExtractionConfig = ExtractionConfig()
     index: MemoryIndexConfig = MemoryIndexConfig()
     profile: ProfileConfig = ProfileConfig()

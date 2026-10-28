@@ -317,10 +317,19 @@ async def _guarded(
     in it, carry on. A projection that lands clears any queue row its source
     left behind, in the same savepoint, so the queue holds only what is still
     unprojected (its length is the index's health)."""
+    from nora.infra.sql.graph_projection import context
+    graph_context = context(conn)
+    if metrics is None and graph_context is not None:
+        metrics = graph_context.metrics
     outcome: ProjectionOutcome = "ok"
     try:
         async with conn.begin_nested():
             await work()
+            from nora.infra.sql.graph_projection import project_rollups, project_source
+            for source_id in source_ids:
+                await project_source(conn, kind, source_id)
+            if kind in ("outing", "stay", "trip"):
+                await project_rollups(conn)
             await conn.execute(sa.delete(MEMORY_PROJECTION_QUEUE).where(
                 MEMORY_PROJECTION_QUEUE.c.kind == kind,
                 _among(MEMORY_PROJECTION_QUEUE.c.source_id, source_ids),
@@ -1319,6 +1328,8 @@ async def project_episodes(
     its nodes, never after."""
     wanted = list(dict.fromkeys(keys))
     if not wanted:
+        from nora.infra.sql.graph_projection import project_rollups
+        await _guarded(conn, kind, ["graph-rollups"], lambda: project_rollups(conn), metrics)
         return
     status = (await conn.execute(
         sa.select(ROLLUP_BUILD.c.status).where(ROLLUP_BUILD.c.id == build_id)
@@ -1629,7 +1640,12 @@ async def drain_queue(conn: AsyncConnection, *, limit: int = 500, metrics: Any =
     return len(rows)
 
 
+async def _register_index(conn: AsyncConnection, sid: str) -> None:
+    """No index node: _guarded produces graph work from the Register head."""
+
+
 _PROJECTORS: dict[str, Callable[[AsyncConnection, str], Awaitable[None]]] = {
+    **dict.fromkeys(('reminder', 'decision', 'commitment', 'thread'), _register_index),
     "message": _project_message,
     "note": _project_note,
     "memo": _project_memo,
