@@ -71,3 +71,25 @@ file, exactly as the rule it replaces did.
   amendment; the topology only says a DM is never a candidate for `send_to`
   unless that amendment says so.
 - **A voice channel is a surface of a room, not a room** (DEC-191); unchanged.
+
+## 5. Discord: a server entry, and where threads sit
+
+A `[[conversations]]` entry may name a whole Discord server by `guild = "<id>"`
+instead of one entry per channel. The entry itself is not a room: at runtime
+every text/announcement/forum channel of the guild becomes an ordinary room of
+the entry's `unit`, with conversation id `"<guild_id>/<channel_id>"` exactly as
+an explicit entry's — so a per-channel entry written beside it covers the same
+id and wins it. The room's label is the channel's own name, which is why the
+unique-label invariant of §3 applies to it the same way: a channel name
+colliding inside the unit fails closed for that channel rather than crashing
+or merging, and a rename moves the label while the conversation id — and
+everything bound to it — stays. `ignore`/`ambient` name channels by name:
+ignored channels are never admitted; the rest are mention-only unless named
+ambient, an operator opt-in like any other room's.
+
+A Discord thread — including a forum post — is never a room and never an
+entry. A message inside one belongs to its PARENT channel's room, tagged with
+the thread's own channel id, which is what routes a reply back into it. A
+voice channel stays a surface of a room (§4), set on a per-channel entry;
+a server entry cannot carry `voice`, `music_channel`, `home_room` or
+`proactive`, because each names one room's job.

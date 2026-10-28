@@ -1,3 +1,5 @@
+import dataclasses
+
 import pytest
 from aiohttp import web
 
@@ -24,6 +26,7 @@ async def rest_server(aiohttp_server):
 
     app = web.Application()
     app.router.add_post("/channels/2/messages", handler)
+    app.router.add_post("/channels/17/messages", handler)
     server = await aiohttp_server(app)
     server.calls = calls
     server.headers = headers
@@ -458,3 +461,24 @@ async def test_a_well_formed_target_still_reaches_the_wire(rest_server_405):
     await sender.send(TARGET, "hello")
 
     assert rest_server_405.attempts == ["/channels/2/messages"]
+
+
+async def test_send_to_a_thread_posts_to_the_threads_channel_id(aiohttp_server):
+    """A reply inside a thread posts to the THREAD's channel id — the room
+    stays `guild/parent`, `target.thread` is what routes the POST."""
+    posted: dict[str, dict] = {}
+
+    async def handler(request: web.Request) -> web.Response:
+        posted[request.match_info["channel_id"]] = await request.json()
+        return web.json_response({"id": "999999999999999999"}, status=200)
+
+    app = web.Application()
+    app.router.add_post("/channels/{channel_id}/messages", handler)
+    server = await aiohttp_server(app)
+    sender = DiscordSender("tok", base_url=str(server.make_url("")).rstrip("/"))
+    target = dataclasses.replace(TARGET, thread="17")
+
+    result = await sender.send(target, "back in the thread")
+
+    assert result.ok is True
+    assert posted["17"]["content"] == "back in the thread"

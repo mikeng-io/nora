@@ -1,0 +1,86 @@
+[
+  {
+    "name": "thread messages land in the parent's room",
+    "file": "nora/platform/discord/parser.py",
+    "old": "        room_id = parent_id if parent_id is not None else message.channel.id",
+    "new": "        room_id = message.channel.id",
+    "target": "tests/test_discord_parser.py::test_a_message_in_a_thread_belongs_to_its_parent_channels_room"
+  },
+  {
+    "name": "thread messages carry the thread tag",
+    "file": "nora/platform/discord/parser.py",
+    "old": "            thread=\"\" if parent_id is None else str(message.channel.id),",
+    "new": "            thread=\"\",",
+    "target": "tests/test_discord_parser.py::test_a_message_in_a_thread_belongs_to_its_parent_channels_room"
+  },
+  {
+    "name": "a thread reaction tags the thread",
+    "file": "nora/platform/discord/parser.py",
+    "old": "            thread=\"\" if room_channel_id is None else str(channel_id),\n            sender_id=user_id,",
+    "new": "            sender_id=user_id,",
+    "target": "tests/test_discord_parser.py::test_a_reaction_in_a_thread_targets_the_parents_room"
+  },
+  {
+    "name": "a guild entry admits a discovered channel",
+    "file": "nora/policy.py",
+    "old": "        entry = self._by_guild.get((platform, guild_id))\n        if entry is None:\n            return None\n        return self._admit_channel(entry, channel_id)",
+    "new": "        entry = self._by_guild.get((platform, guild_id))\n        if entry is None:\n            return None\n        return None",
+    "target": "tests/unit/test_discord_guild_entry.py::test_a_server_entry_admits_a_discovered_channel_by_guild_id"
+  },
+  {
+    "name": "ignored channel names are never admitted",
+    "file": "nora/policy.py",
+    "old": "        if _fold(name) in {_fold(n) for n in entry.ignore}:\n            return None                     # the operator named it `ignore`\n        if self._collides(entry, channel_id, name, channels):",
+    "new": "        if self._collides(entry, channel_id, name, channels):",
+    "target": "tests/unit/test_discord_guild_entry.py::test_an_ignored_named_channel_is_never_admitted"
+  },
+  {
+    "name": "ambient names opt the channel into relevance",
+    "file": "nora/policy.py",
+    "old": "        ambient = entry.relevance_gate or _fold(name) in {_fold(n) for n in entry.ambient}",
+    "new": "        ambient = entry.relevance_gate",
+    "target": "tests/unit/test_discord_guild_entry.py::test_an_ambient_named_channel_is_a_full_ambient_room"
+  },
+  {
+    "name": "colliding channel names fail closed",
+    "file": "nora/policy.py",
+    "old": "        if self._collides(entry, channel_id, name, channels):\n            self._log_once(entry, channel_id, \"label-collision\")\n            return None",
+    "new": "        if False:  # collision check removed\n            self._log_once(entry, channel_id, \"label-collision\")\n            return None",
+    "target": "tests/unit/test_discord_guild_entry.py::test_two_channels_with_the_same_name_fail_closed"
+  },
+  {
+    "name": "mention-only rooms are not absorbed",
+    "file": "nora/policy.py",
+    "old": "        return not (self.discovered and not self.relevance_gate)",
+    "new": "        return True",
+    "target": "tests/unit/test_discord_guild_entry.py::test_a_discovered_channel_is_mention_only_by_default"
+  },
+  {
+    "name": "the memory feed honours absorbed",
+    "file": "nora/ingest/stages/memory_feed.py",
+    "old": "    if not absorbed:\n        # A mention-only room (a server-entry channel `ambient` does not\n        # name): recorded and answered when tagged, never absorbed into\n        # memory. `Conversation.absorbed` is the flag's one definition.\n        return",
+    "new": "    if False:\n        # A mention-only room (a server-entry channel `ambient` does not\n        # name): recorded and answered when tagged, never absorbed into\n        # memory. `Conversation.absorbed` is the flag's one definition.\n        return",
+    "target": "tests/unit/test_discord_guild_entry.py::test_a_mention_only_channel_records_but_is_never_absorbed"
+  },
+  {
+    "name": "stimulus skips non-absorbed rooms",
+    "file": "nora/ingest/pipeline.py",
+    "old": "        if self._stimulus_wiring is not None and absorbed:\n            with span(\"ingest.stimulus\"):\n                await stimulus_stage.run(\n                    message=message, item=\"message\", row_id=row_id,",
+    "new": "        if self._stimulus_wiring is not None:\n            with span(\"ingest.stimulus\"):\n                await stimulus_stage.run(\n                    message=message, item=\"message\", row_id=row_id,",
+    "target": "tests/unit/test_discord_guild_entry.py::test_a_mention_only_channel_records_but_is_never_absorbed"
+  },
+  {
+    "name": "a reply inside a thread posts to the thread's channel",
+    "file": "nora/platform/discord/send.py",
+    "old": "        post_channel = target.thread or channel_id",
+    "new": "        post_channel = channel_id",
+    "target": "tests/test_discord_send.py::test_send_to_a_thread_posts_to_the_threads_channel_id"
+  },
+  {
+    "name": "rooms() yields the discovered channels",
+    "file": "nora/policy.py",
+    "old": "                convo = self._admit_channel(entry, channel_id, channels=channels)\n                if convo is not None:\n                    out.append(convo)",
+    "new": "                convo = self._admit_channel(entry, channel_id, channels=channels)\n                if False:\n                    out.append(convo)",
+    "target": "tests/unit/test_discord_guild_entry.py::test_an_ambient_named_channel_is_a_full_ambient_room"
+  }
+]

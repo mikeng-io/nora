@@ -127,7 +127,7 @@ def build_workspace_router(
             ).items()
         }),
         conversation_units=LiveMapping(lambda: {
-            cid: convo.unit for convo in policy.conversations for cid in convo.ids
+            cid: convo.unit for convo in policy.rooms() for cid in convo.ids
         }),
         workspace_routes=by_workspace,
         strict=policy.units_declared,

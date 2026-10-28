@@ -16,15 +16,16 @@ hand-edits into a file Nora never writes.
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, timedelta, timezone
 
 from nora.app.pending import PendingAccount, id_kind
 from nora.domain.identity import id_kinds
 from nora.domain.reminders import Reminder
 from nora.infra.life360 import DiscoveredCircle
+from nora.platform.discord.directory import DiscordChannel, DiscordGuild
 from nora.platform.signal.directory import SignalGroup
-from nora.policy import Policy
+from nora.policy import Conversation, Policy, _fold
 
 # The zone the operator reads in, and the one Nora's own prefill states
 # (`nora.agent.tools._HKT`). A UTC stamp in a 3am terminal is one silent
@@ -134,6 +135,71 @@ def render_groups(
             "/api/v1/rpc asks the primary to re-send it."
         )
     return lines
+
+
+def render_discord_guilds(
+    *,
+    guilds: list[DiscordGuild],
+    channels: Mapping[str, list[DiscordChannel]],
+    policy: Policy,
+    error: str = "",
+) -> list[str]:
+    """Every guild the bot is in, and — for guilds a server entry covers —
+    the channels the entry currently expands into, each with its mode.
+
+    The mode answers the operator's only question here: `ambient`,
+    `mention-only`, `ignored`, `listed` (an explicit per-channel entry wins
+    over the server's), or `not admitted`. The same `Policy.conversation`
+    the room gate runs decides it, so the report and admission cannot drift
+    — `policy` must be loaded with the channel directory these REST reads
+    filled (`StaticChannelDirectory`), which is exactly what `cmd_groups`
+    does before calling this.
+    """
+    entries = {
+        convo.guild: convo for convo in policy.conversations if convo.guild
+    }
+    lines: list[str] = ["", "discord guilds from the bot account", ""]
+    if error:
+        lines.append(f"WARNING: discord could not be read ({error}).")
+        lines.append("")
+    covered = 0
+    for guild in sorted(guilds, key=lambda g: (g.name.lower(), g.id)):
+        entry = entries.get(guild.id)
+        verdict = "COVERED" if entry is not None else "not listed"
+        covered += entry is not None
+        label = f' "{entry.label}"' if entry and entry.label else ""
+        lines.append(f"{verdict}  {guild.name or '(no name)'}  guild={guild.id}{label}")
+        if entry is not None:
+            for ch in sorted(
+                channels.get(guild.id) or [], key=lambda c: (c.name.lower(), c.id)
+            ):
+                lines.append(f"         {_channel_mode(policy, entry, ch)}")
+        lines.append("")
+    listed = sorted(set(entries) - {g.id for g in guilds})
+    for guild_id in listed:
+        lines.append(f"COVERED  (not a guild this bot is in)  guild={guild_id}")
+    lines.append(
+        f"{len(guilds)} guild(s): {covered} covered by a server entry."
+    )
+    return lines
+
+
+def _channel_mode(policy: Policy, entry: Conversation, ch: DiscordChannel) -> str:
+    """`mode  #name  id` — the same verdict `conversation()` gives the gate."""
+    folded = _fold(ch.name)
+    if folded in {_fold(n) for n in entry.ignore}:
+        mode = "ignored"
+    else:
+        room = policy.conversation("discord", f"{entry.guild}/{ch.id}")
+        if room is None:
+            mode = "not admitted (collision or unknown)"
+        elif not room.discovered:
+            mode = "listed"
+        elif room.relevance_gate:
+            mode = "ambient"
+        else:
+            mode = "mention-only"
+    return f"{mode:<28} #{ch.name}  {ch.id}"
 
 
 def render_reminders(

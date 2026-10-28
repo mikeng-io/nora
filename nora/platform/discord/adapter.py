@@ -31,6 +31,7 @@ from ...domain.ports import (
     speakable,
 )
 from ...infra.voice.hub import VoiceControllerHub
+from .channels import ClientChannelDirectory
 from .listener import DiscordListener
 from .music_commands import register as register_music_commands
 from .music_commands import resume_persisted_sessions as resume_persisted_music_sessions
@@ -105,6 +106,11 @@ class DiscordAdapter:
         # permanently down. A per-attempt client is what makes the
         # supervisor's restart real.
         self._listener: DiscordListener | None = None
+        # What the gateway cache knows about guild channels, shared with the
+        # policy's server-entry expansion (composition hands the same kind to
+        # `load_policy`). Reads `current_client()` per call, so between
+        # attempts it answers unknown rather than stale.
+        self._channels = ClientChannelDirectory(self.current_client)
         # The ONE thing an agent
         # tool needs that `NormalizedMessage`/`TagContext` never carry: a
         # live client to resolve a guild member's current voice channel.
@@ -231,10 +237,21 @@ class DiscordAdapter:
         # `NormalizedMessage` with `touch` set,
         # under the channel's lock so it cannot race the message it touches.
         async def _on_discord_touch(kind: str, payload: Any) -> None:
+            # A raw payload names only the channel it fired in — a thread's
+            # own id. Resolve its parent through the same cache the room gate
+            # expands on, so the touch lands in the room the message was
+            # recorded under, tagged with the thread like a message would be.
+            channel_id = getattr(payload, "channel_id", None)
+            parent = (
+                self._channels.parent_channel(channel_id=str(channel_id))
+                if channel_id is not None else None
+            )
             message = (
-                parse_discord_delete(payload) if kind == "delete"
+                parse_discord_delete(payload, room_channel_id=parent)
+                if kind == "delete"
                 else parse_discord_reaction(
                     payload, own_id=self._own_id, removed=kind == "reaction_remove",
+                    room_channel_id=parent,
                 )
             )
             if message is not None:

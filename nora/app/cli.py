@@ -81,6 +81,7 @@ from nora.domain.lessons import Lesson
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import UnattributedRow
 from nora.domain.participation_measures import Refusal
+from nora.domain.ports import ChannelDirectory
 from nora.infra.embedder import fingerprint
 from nora.infra.honcho import HonchoClient, WorkspaceRouter
 from nora.infra.life360 import Life360Client, Life360DiscoveryError
@@ -99,6 +100,11 @@ from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.tension import SqlTensionStore
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, PersonsError, load_persons
+from nora.platform.discord import directory as discord_directory
+from nora.platform.discord.channels import (
+    _ROOM_CHANNEL_TYPES,
+    StaticChannelDirectory,
+)
 from nora.platform.signal import directory
 from nora.policy import Policy, PolicyError, load_policy
 
@@ -661,7 +667,57 @@ async def cmd_groups(args: argparse.Namespace) -> int:
         policy_path=str(cfg.policy_file), base_url=signal.base_url,
     ):
         print(line)
+
+    # Discord: the guilds the bot is in, and the channels each server entry
+    # expands into. The policy is RELOADED against a `StaticChannelDirectory`
+    # filled from these same REST reads, so `conversation()` — and therefore
+    # the mode column — is the live verdict, not a copy of it.
+    discord_cfg = cfg.platforms.discord
+    if discord_cfg.enabled:
+        token = os.environ.get(discord_cfg.token_env, "")
+        guild_entries = [c for c in policy.conversations if c.guild]
+        error = ""
+        guilds: list[discord_directory.DiscordGuild] = []
+        by_guild: dict[str, list[discord_directory.DiscordChannel]] = {}
+        if not token:
+            error = f"{discord_cfg.token_env} is unset"
+        else:
+            try:
+                guilds = await discord_directory.list_guilds(token=token)
+                for entry in guild_entries:
+                    raw = await discord_directory.list_channels(
+                        token=token, guild_id=entry.guild,
+                    )
+                    by_guild[entry.guild] = raw
+            except discord_directory.DirectoryError as exc:
+                error = str(exc)
+            channels_dir = StaticChannelDirectory(
+                {
+                    entry.guild: {
+                        ch.id: ch.name for ch in by_guild.get(entry.guild, [])
+                        if ch.type in _ROOM_CHANNEL_TYPES and not ch.parent_id
+                    }
+                    for entry in guild_entries
+                },
+                threads={
+                    ch.id: ch.parent_id
+                    for raw in by_guild.values() for ch in raw
+                    if ch.parent_id
+                },
+            )
+            policy = _policy_with(cfg, channels_dir)
+        for line in report.render_discord_guilds(
+            guilds=guilds, channels=by_guild, policy=policy, error=error,
+        ):
+            print(line)
     return 0
+
+
+def _policy_with(cfg: Config, channels: ChannelDirectory) -> Policy:
+    try:
+        return load_policy(cfg.policy_file, channels=channels)
+    except PolicyError as exc:
+        raise CliError(f"policy error: {exc}") from exc
 
 
 async def cmd_presence_members(args: argparse.Namespace) -> int:
