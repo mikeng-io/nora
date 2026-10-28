@@ -184,6 +184,8 @@ class SqlProfileInputs:
             sa.or_(*(sa.func.coalesce(MEDIA_OBJECTS.c[f], '') != ''
                      for f in ('title', 'description', 'content'))),
         )
+        # ponytail: two media scans per distinct attachment ref; use a relational
+        # message-to-media index if distinct refs make this read exceed its budget.
         # Reuse each attachment lookup across messages, revision comparisons,
         # ordering and recovery counts instead of flattening correlated scans.
         cache = sa.select(refs.c.ref, _media_revision(refs.c.ref).label('media'),
