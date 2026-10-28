@@ -116,6 +116,8 @@ Tension is outside the tiers ([10](10-tiers.md) §1; [15](15-map.md) §1 and
 
 ## 6. The conscious and the subconscious, like a person
 
+> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): the Character and Lessons adaptors named in this section retire into step ② of the one Cognition loop, which writes Character (traits and guesses; facts are rendered by code), culture and Lessons right after step ① changes an entity's relations; it has no wake rule of its own. Read "the Character adaptor" / "the Lessons adaptor" below as step ②.
+
 The operator's model (2026-09-28), not a code name:
 
 - **The subconscious** (潛意識): the Dreamer's adaptors — Cognition, the slow

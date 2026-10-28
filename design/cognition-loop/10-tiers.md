@@ -36,6 +36,8 @@ that the operator changed on 2026-10-01 are marked «Amended by DEC-249».
 
 ## 1. The rule the layers and tiers are cut by
 
+> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): the Character and Lessons adaptors named in this section retire into step ② of the one Cognition loop, which writes Character (traits and guesses; facts are rendered by code), culture and Lessons right after step ① changes an entity's relations; it has no wake rule of its own. Read "the Character adaptor" / "the Lessons adaptor" below as step ②.
+
 **Each of these answers one question, and no question is answered by two.**
 The first two rows are layers; the other four are the Notebook's tiers.
 
@@ -288,6 +290,8 @@ In the data model it is a Character entry like any person's, on the same
 machinery ([05](05-data-model.md) §4).
 
 ## 6. The words
+
+> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): the Character and Lessons adaptors named in this section retire into step ② of the one Cognition loop, which writes Character (traits and guesses; facts are rendered by code), culture and Lessons right after step ① changes an entity's relations; it has no wake rule of its own. Read "the Character adaptor" / "the Lessons adaptor" below as step ②.
 
 > 2026-10-21 (18 / ADR 0026): [18](../unified-memory/18-extraction.md) amends the **layer**, **Memory** and lowercase **memory** definitions in the historical table below: Honcho no longer sits beside the layers or owns what people said. Source statements live in Record extraction, bounded Character entries are Notebook judgements, and Views retrieve over readings, Rollup and entries.
 

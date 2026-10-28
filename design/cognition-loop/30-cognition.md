@@ -7,7 +7,7 @@ timestamp: '2026-09-28'
 edges:
   - {dst: 40-register, rel: depends_on, provenance: asserted}
   - {dst: 50-character-and-standing, rel: depends_on, provenance: asserted}
-    - {dst: ../dreamer-agent-loop/39-proactive-ooda-loop.md, rel: supersedes, provenance: asserted}
+  - {dst: ../dreamer-agent-loop/39-proactive-ooda-loop.md, rel: supersedes, provenance: asserted}
   - {dst: ../unified-memory/27-the-memory-is-a-graph.md, rel: depends_on, provenance: asserted}
 ---
 

@@ -17,6 +17,8 @@ edges:
 
 ## 1. Every store, by layer
 
+> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): the Character and Lessons adaptors named in this section retire into step ② of the one Cognition loop, which writes Character (traits and guesses; facts are rendered by code), culture and Lessons right after step ① changes an entity's relations; it has no wake rule of its own. Read "the Character adaptor" / "the Lessons adaptor" below as step ②.
+
 The layers are [05](05-data-model.md) §1's (DEC-249); "Live" is part of what a View assembles per turn, and Memory and the operator-only rows sit outside the flow.
 
 | layer | what makes it this layer | stores | written by |
@@ -144,6 +146,8 @@ to. Cognition has no room of its own: each agenda item binds one, and that
 item's room-scoped reads resolve through it ([30](30-cognition.md) §1).
 
 ## 5. The flow, drawn as a graph
+
+> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): the Character and Lessons adaptors named in this section retire into step ② of the one Cognition loop, which writes Character (traits and guesses; facts are rendered by code), culture and Lessons right after step ① changes an entity's relations; it has no wake rule of its own. Read "the Character adaptor" / "the Lessons adaptor" below as step ②.
 
 A graph here is a way of reading the typed references between rows (cites,
 about, links), not a store: nothing is a knowledge graph, and the storage is
