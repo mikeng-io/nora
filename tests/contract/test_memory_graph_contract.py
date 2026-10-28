@@ -8,10 +8,13 @@ import pytest
 from nora.domain.memory_graph import (
     ENTITY_KINDS,
     GRAPH_RELATIONS,
+    LOCATION_BEARING,
     RELATION_RULES,
+    Correction,
     Entity,
     Evidence,
     MemoryGraph,
+    Refusal,
     Relation,
     Source,
     Walk,
@@ -88,9 +91,10 @@ async def test_partial_commit(graph: MemoryGraph) -> None:
     result = await graph.stage_and_admit(
         entities=(PERSON, EVENT),
         relations=(REL, replace(REL, id="bad", rel="invented")),
-        evidence=(EV,),
+        evidence=(EV, replace(EV, relation_id="bad")),
         sources={SOURCE.key: SOURCE},
     )
+    assert Refusal("evidence", "bad", "orphan_evidence") in result.refused
     assert result.relations == (REL,)
     assert result.evidence == (EV,)
     assert result.refused[0].reason == "vocabulary"
@@ -231,7 +235,9 @@ async def test_attributes_accumulate_across_batches(graph: MemoryGraph) -> None:
         evidence=(EV, first_ev),
         sources={public.key: public},
     )
-    second = replace(EVENT, attributes={"venue": "generated venue"})
+    second = replace(
+        EVENT, attributes={"venue": "generated venue", "category": "unsupported overwrite"}
+    )
     second_ev = Evidence(SOURCE.key, entity_id=EVENT.id, attribute="venue", span="event")
     r2 = replace(REL, id="r2")
     result = await graph.stage_and_admit(
@@ -242,8 +248,316 @@ async def test_attributes_accumulate_across_batches(graph: MemoryGraph) -> None:
     )
     event = next(e for e in result.entities if e.id == EVENT.id)
     assert event.attributes == {"category": "generated", "venue": "generated venue"}
+    assert Refusal("entity", EVENT.id, "missing_evidence") in result.refused
 
 
 def test_a_relation_without_asserted_at_is_refused() -> None:
     with pytest.raises(ValueError, match="asserted_at"):
         replace(REL, asserted_at=None)
+
+
+def test_keyword_only_contract() -> None:
+    import inspect
+
+    for name in ("stage_and_admit", "aliases", "candidates", "claim", "requeue_failed"):
+        params = inspect.signature(getattr(MemoryGraph, name)).parameters
+        assert all(
+            p.kind == inspect.Parameter.KEYWORD_ONLY for n, p in params.items() if n != "self"
+        )
+    for name in ("settle", "fail"):
+        params = inspect.signature(getattr(MemoryGraph, name)).parameters
+        assert all(
+            params[n].kind == inspect.Parameter.KEYWORD_ONLY
+            for n in params
+            if n not in ("self", "item")
+        )
+
+
+def test_asserted_at_is_required_keyword_only() -> None:
+    import inspect
+
+    p = inspect.signature(Relation).parameters["asserted_at"]
+    assert p.default is inspect.Parameter.empty
+    assert p.kind == inspect.Parameter.KEYWORD_ONLY
+    assert Relation.__annotations__["asserted_at"] == "datetime"
+
+
+async def test_duplicate_relation_never_overwrites(graph: MemoryGraph) -> None:
+    await load(graph)
+    result = await graph.stage_and_admit(
+        entities=(),
+        relations=(replace(REL, valid_to=NOW),),
+        evidence=(EV,),
+        sources={SOURCE.key: SOURCE},
+    )
+    assert not result.relations
+    assert Refusal("relation", REL.id, "duplicate_relation") in result.refused
+    walk = await graph.walk((PERSON.key,), Walk("u1", frozenset({"p1"})))
+    assert walk.relations[0].relation == REL
+
+
+async def test_duplicate_entity(graph: MemoryGraph) -> None:
+    await load(graph)
+    duplicate = replace(EVENT, id="duplicate")
+    result = await graph.stage_and_admit(
+        entities=(duplicate,),
+        relations=(replace(REL, id="r2", dst=duplicate.key),),
+        evidence=(replace(EV, relation_id="r2"),),
+        sources={SOURCE.key: SOURCE},
+    )
+    assert Refusal("entity", duplicate.id, "duplicate_entity") in result.refused
+    assert not result.entities and not result.relations
+
+
+@pytest.mark.parametrize("kind", ["close", "supersede", "dispute", "retire"])
+async def test_corrections_keep_history(graph: MemoryGraph, kind: str) -> None:
+    await load(graph)
+    replacement = replace(REL, id="r2")
+    correction = Correction(REL.id, kind, NOW, by="r2", evidence=(SOURCE.key,))
+    result = await graph.stage_and_admit(
+        entities=(),
+        relations=(replacement,),
+        evidence=(replace(EV, relation_id="r2"),),
+        sources={SOURCE.key: SOURCE},
+        corrections=(correction,),
+    )
+    assert result.corrections == (correction,) and not result.refused
+    assert Evidence(SOURCE.key, relation_id=REL.id) in result.evidence
+    # Closing retains a current historical relation; status changes refuse another correction.
+    again = await graph.stage_and_admit(
+        entities=(),
+        relations=(),
+        evidence=(),
+        sources={SOURCE.key: SOURCE},
+        corrections=(correction,),
+    )
+    if kind == "close":
+        assert again.corrections == (correction,)
+    else:
+        assert Refusal("correction", REL.id, "not_current") in again.refused
+    retained = await graph.walk((PERSON.key,), Walk("u1", frozenset({"p1"})))
+    if kind == "close":
+        old = next(e.relation for e in retained.relations if e.relation.id == REL.id)
+        assert old.valid_to == NOW and old.status == "current"
+    else:
+        assert {e.relation.id for e in retained.relations} == {"r2"}
+    if isinstance(graph, FakeMemoryGraph):
+        old = graph.relations[REL.id]
+        assert (
+            old.status
+            == {
+                "close": "current",
+                "supersede": "superseded",
+                "dispute": "disputed",
+                "retire": "retired",
+            }[kind]
+        )
+        assert old.superseded_by == ("r2" if kind == "supersede" else None)
+        assert EV in graph.evidence
+
+
+@pytest.mark.parametrize(
+    ("change", "source", "reason"),
+    [
+        ({"relation_id": "unknown"}, SOURCE, "unknown_relation"),
+        ({"evidence": ()}, SOURCE, "missing_evidence"),
+        ({"evidence": (("message", "unseen"),)}, SOURCE, "unseen_source"),
+        ({}, replace(SOURCE, unit="u2"), "scope_wider_than_evidence"),
+        ({}, replace(SOURCE, persons=("p2",)), "scope_wider_than_evidence"),
+        ({}, replace(SOURCE, layer="notebook"), "notebook_evidence"),
+        ({"kind": "supersede", "by": "absent"}, SOURCE, "missing_replacement"),
+        ({"kind": "supersede", "by": REL.id}, SOURCE, "missing_replacement"),
+    ],
+)
+async def test_correction_refusals(
+    graph: MemoryGraph, change: dict, source: Source, reason: str
+) -> None:
+    await load(graph)
+    correction = replace(Correction(REL.id, "retire", NOW, evidence=(SOURCE.key,)), **change)
+    result = await graph.stage_and_admit(
+        entities=(),
+        relations=(),
+        evidence=(),
+        sources={source.key: source},
+        corrections=(correction,),
+    )
+    assert not result.corrections
+    assert Refusal("correction", correction.relation_id, reason) in result.refused
+    assert (await graph.walk((PERSON.key,), Walk("u1", frozenset({"p1"})))).relations[
+        0
+    ].relation == REL
+
+
+async def test_supersede_requires_admitted_replacement(graph: MemoryGraph) -> None:
+    await load(graph)
+    result = await graph.stage_and_admit(
+        entities=(),
+        relations=(replace(REL, id="bad", rel="invented"),),
+        evidence=(),
+        sources={SOURCE.key: SOURCE},
+        corrections=(Correction(REL.id, "supersede", NOW, by="bad", evidence=(SOURCE.key,)),),
+    )
+    assert not result.corrections
+    assert Refusal("correction", REL.id, "missing_replacement") in result.refused
+
+
+@pytest.mark.parametrize("destination", ["rhythm", "ties", "daybook"])
+async def test_during_excludes_key_only_stores(graph: MemoryGraph, destination: str) -> None:
+    result = await graph.stage_and_admit(
+        entities=(),
+        relations=(
+            replace(REL, src=SOURCE.key, rel="during", dst=(destination, "x"), layer="rollup"),
+        ),
+        evidence=(EV,),
+        sources={SOURCE.key: SOURCE},
+    )
+    assert Refusal("relation", REL.id, "wrong_ends") in result.refused
+    good = replace(REL, src=SOURCE.key, rel="during", dst=("outing", "x"), layer="rollup")
+    assert (
+        await graph.stage_and_admit(
+            entities=(), relations=(good,), evidence=(EV,), sources={SOURCE.key: SOURCE}
+        )
+    ).relations == (good,)
+
+
+def test_location_flag() -> None:
+    assert frozenset({"works_at", "studies_at", "lives_in", "member_of"}) == LOCATION_BEARING
+    for rel in GRAPH_RELATIONS:
+        assert replace(REL, rel=rel).location == (
+            rel in {"works_at", "studies_at", "lives_in", "member_of"}
+        )
+
+
+async def test_entity_lookup(graph: MemoryGraph) -> None:
+    entities = (
+        Entity("z", "place", "u1", "Exact", ("HALL",), {"location": (0, 0)}),
+        Entity("a", "place", "u1", "Hall annex", attributes={"location": (2, 0)}),
+        Entity("b", "place", "u1", "Far hall", attributes={"location": (9, 0)}),
+        Entity("hidden", "place", "u2", "Hall"),
+        Entity("merged", "place", "u1", "Hall", merged_into="z"),
+        Entity("retired", "place", "u1", "Hall", state="retired"),
+        Entity("event", "event", "u1", "Event hall"),
+    )
+    for entity in entities:
+        await graph.upsert_entity(entity)
+    aliases = await graph.aliases(unit="u1")
+    assert aliases["hall"] == ("place", "z")
+    assert aliases["exact"] == ("place", "z")
+    assert "exact" not in await graph.aliases(unit="u2")
+    candidates = await graph.candidates(unit="u1", kind="place", name="hAll", near=("place", "z"))
+    assert candidates == entities[:3]
+    assert await graph.candidates(unit="u1", kind="place", name="hAll", limit=1) == entities[:1]
+    assert not await graph.candidates(unit="u1", kind="place", name="absent")
+    assert not await graph.candidates(unit="u1", kind="place", name="hall", limit=0)
+
+
+async def test_candidates_proximity_window_and_cap(graph: MemoryGraph) -> None:
+    anchor = Entity("anchor", "place", "u1", "Anchor", attributes={"location": (0, 0)})
+    await graph.upsert_entity(anchor)
+    for i in range(7):
+        await graph.upsert_entity(
+            Entity(str(i), "place", "u1", "Hall", attributes={"location": (7 - i, 0)})
+        )
+    places = await graph.candidates(unit="u1", kind="place", name="hall", near=anchor.key, limit=99)
+    assert [e.id for e in places] == ["6", "5", "4", "3", "2"]
+    for id, start in (("a-old", NOW - timedelta(days=5)), ("z-current", NOW)):
+        await graph.upsert_entity(
+            Entity(
+                id,
+                "event",
+                "u1",
+                "Show",
+                attributes={"start": start, "end": start + timedelta(hours=1)},
+            )
+        )
+    events = await graph.candidates(
+        unit="u1", kind="event", name="show", window=(NOW, NOW + timedelta(hours=2))
+    )
+    assert [e.id for e in events] == ["z-current", "a-old"]
+
+
+async def test_operator_requeue_failed(graph: MemoryGraph) -> None:
+    items = [
+        WorkItem(str(i), ("message", str(i)), unit, str(i), NOW)
+        for i, unit in enumerate(("u1", "u2"))
+    ]
+    for item in items:
+        await graph.enqueue(item)
+    for i in range(1, 6):
+        for _ in items:
+            claimed = await graph.claim(
+                historical=False, now=NOW + timedelta(days=i), lease_seconds=10
+            )
+            assert claimed
+            await graph.fail(claimed, error="generated", now=NOW + timedelta(days=i))
+    later = NOW + timedelta(days=8)
+    assert await graph.requeue_failed(unit="u1", now=later) == 1
+    retained = await graph.enqueue(items[0])
+    assert retained.state == "pending" and retained.attempts == 0 and retained.last_error is None
+    assert retained.due_at == later and retained.updated_at == later
+    assert (await graph.enqueue(items[1])).state == "failed"
+    assert await graph.requeue_failed(now=later) == 1
+    assert await graph.requeue_failed(now=later) == 0
+    claimed = await graph.claim(historical=False, now=later, lease_seconds=10)
+    assert claimed and claimed.attempts == 1
+
+
+async def test_correction_cannot_cross_write_unit(graph: MemoryGraph) -> None:
+    await load(graph)
+    foreign = Entity("foreign", "work", "u2", "Generated foreign work")
+    result = await graph.stage_and_admit(
+        entities=(foreign,),
+        relations=(),
+        evidence=(),
+        sources={SOURCE.key: SOURCE},
+        corrections=(Correction(REL.id, "retire", NOW, evidence=(SOURCE.key,)),),
+    )
+    assert Refusal("correction", REL.id, "scope_wider_than_evidence") in result.refused
+
+
+def test_entity_name_has_trigram_index() -> None:
+    import importlib
+
+    from sqlalchemy.dialects import postgresql
+    from sqlalchemy.schema import CreateIndex
+
+    for module in ("nora.infra.sql.schema", "nora.infra.sql.migrations.versions.0137_memory_graph"):
+        entity = importlib.import_module(module).ENTITY
+        ddl = [
+            str(CreateIndex(index).compile(dialect=postgresql.dialect()))
+            for index in entity.indexes
+        ]
+        assert any("USING gin (name gin_trgm_ops)" in sql for sql in ddl)
+
+
+def test_projection_ownership_is_documented() -> None:
+    from nora.domain import memory_graph
+
+    assert memory_graph.__doc__
+    for rel in ("cites", "supersedes", "draws_on", "disputes", "feedback_on"):
+        assert f"`{rel}`" in memory_graph.__doc__
+    assert "projector" in memory_graph.__doc__
+
+
+async def test_record_correction_requires_evidence(graph: MemoryGraph) -> None:
+    await graph.upsert_entity(PERSON)
+    pointer = Relation(
+        "pointer", SOURCE.key, "authored_by", PERSON.key, "record", "u1", ("p1",), asserted_at=NOW
+    )
+    assert (
+        await graph.stage_and_admit(entities=(), relations=(pointer,), evidence=(), sources={})
+    ).relations
+    correction = Correction(pointer.id, "retire", NOW)
+    result = await graph.stage_and_admit(
+        entities=(), relations=(), evidence=(), sources={}, corrections=(correction,)
+    )
+    assert Refusal("correction", pointer.id, "missing_evidence") in result.refused
+    corrected = replace(correction, evidence=(SOURCE.key,))
+    result = await graph.stage_and_admit(
+        entities=(),
+        relations=(),
+        evidence=(),
+        sources={SOURCE.key: SOURCE},
+        corrections=(corrected,),
+    )
+    assert result.corrections == (corrected,) and not result.refused

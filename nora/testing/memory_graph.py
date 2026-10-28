@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from nora.domain.memory_graph import (
     ENTITY_KINDS,
     Admission,
+    Correction,
     Entity,
     Evidence,
     GraphEdge,
@@ -44,9 +45,11 @@ class FakeMemoryGraph:
         relations: tuple[Relation, ...],
         evidence: tuple[Evidence, ...],
         sources: Mapping[Key, Source],
+        corrections: tuple[Correction, ...] = (),
     ) -> Admission:
         refused: list[Refusal] = []
         before = dict(self.entities)
+        existing_relations = set(self.relations)
         candidates = dict(self.entities)
         for entity in entities:
             if entity.kind not in ENTITY_KINDS:
@@ -65,6 +68,8 @@ class FakeMemoryGraph:
         for relation in relations:
             ev = tuple(e for e in evidence if e.relation_id == relation.id)
             reason = validate_relation(relation, ev, sources)
+            if relation.id in self.relations or any(r.id == relation.id for r in accepted):
+                reason = "duplicate_relation"
             if reason is None:
                 for key in (relation.src, relation.dst):
                     if key[0] in ENTITY_KINDS and (
@@ -89,6 +94,8 @@ class FakeMemoryGraph:
         for e in evidence:
             if e.relation_id in ids:
                 admitted_evidence.append(e)
+            elif e.relation_id is not None:
+                refused.append(Refusal("evidence", e.relation_id, "orphan_evidence"))
             elif e.entity_id is not None:
                 target_entity = next((v for v in committed if v.id == e.entity_id), None)
                 source = sources.get(e.source)
@@ -128,12 +135,139 @@ class FakeMemoryGraph:
         committed = clean_entities
         for r in accepted:
             self.relations[r.id] = r
+        admitted_corrections = []
+        for correction in corrections:
+            target = (
+                self.relations.get(correction.relation_id)
+                if correction.relation_id in existing_relations
+                else None
+            )
+            reason = None
+            ev = tuple(
+                Evidence(key, relation_id=correction.relation_id) for key in correction.evidence
+            )
+            if target is None:
+                reason = "unknown_relation"
+            elif target.status != "current":
+                reason = "not_current"
+            elif any(
+                unit != target.unit
+                for unit in [e.unit for e in entities] + [r.unit for r in relations]
+            ):
+                reason = "scope_wider_than_evidence"
+            elif not ev:
+                reason = "missing_evidence"
+            elif correction.kind == "supersede" and correction.by not in ids:
+                reason = "missing_replacement"
+            elif (
+                correction.kind == "supersede"
+                and self.relations[correction.by or ""].unit != target.unit
+            ):
+                reason = "scope_wider_than_evidence"
+            else:
+                reason = validate_relation(target, ev, sources)
+            if reason:
+                refused.append(Refusal("correction", correction.relation_id, reason))
+                continue
+            if target is None:
+                raise RuntimeError("admitted correction has no target")
+            if correction.kind == "close":
+                updated = replace(target, valid_to=correction.at)
+            elif correction.kind == "supersede":
+                updated = replace(target, status="superseded", superseded_by=correction.by)
+            elif correction.kind == "dispute":
+                updated = replace(target, status="disputed")
+            else:
+                updated = replace(target, status="retired")
+            self.relations[target.id] = updated
+            admitted_corrections.append(correction)
+            admitted_evidence.extend(ev)
         for e in admitted_evidence:
             if e not in self.evidence:
                 self.evidence.append(e)
         return Admission(
-            tuple(committed), tuple(accepted), tuple(admitted_evidence), tuple(refused)
+            tuple(committed),
+            tuple(accepted),
+            tuple(admitted_evidence),
+            tuple(refused),
+            tuple(admitted_corrections),
         )
+
+    async def aliases(self, *, unit: str) -> Mapping[str, Key]:
+        return {
+            name.casefold(): e.key
+            for e in self.entities.values()
+            if e.unit == unit and e.state == "live" and e.merged_into is None
+            for name in (e.name, *e.aliases)
+        }
+
+    async def candidates(
+        self,
+        *,
+        unit: str,
+        kind: str,
+        name: str,
+        near: Key | None = None,
+        window: tuple[datetime, datetime] | None = None,
+        limit: int = 5,
+    ) -> tuple[Entity, ...]:
+        """Substring stands in for SQL pg_trgm similarity on names and aliases.
+
+        Place attributes use location=(latitude, longitude); event start/end
+        are datetimes. Proximity and window overlap break lexical ties.
+        """
+        anchor = self.entities.get(near) if near else None
+        location = anchor.attributes.get("location") if anchor and anchor.unit == unit else None
+
+        def rank(e: Entity) -> tuple:
+            names = tuple(n.casefold() for n in (e.name, *e.aliases))
+            exact = name.casefold() in names
+            fuzzy = any(name.casefold() in n for n in names)
+            distance = float("inf")
+            point = e.attributes.get("location")
+            if (
+                kind == "place"
+                and isinstance(location, (tuple, list))
+                and isinstance(point, (tuple, list))
+            ):
+                distance = sum(
+                    (float(a) - float(b)) ** 2 for a, b in zip(location, point, strict=True)
+                )
+            overlap = False
+            start, end = e.attributes.get("start"), e.attributes.get("end")
+            if (
+                kind == "event"
+                and window
+                and isinstance(start, datetime)
+                and isinstance(end, datetime)
+            ):
+                overlap = start <= window[1] and end >= window[0]
+            return (not exact, not fuzzy, distance, not overlap, e.id)
+
+        matches = [
+            e
+            for e in self.entities.values()
+            if e.unit == unit
+            and e.kind == kind
+            and e.state == "live"
+            and e.merged_into is None
+            and (
+                any(name.casefold() in n.casefold() for n in (e.name, *e.aliases))
+                or (kind == "place" and location is not None)
+                or (kind == "event" and window is not None)
+            )
+        ]
+        return tuple(sorted(matches, key=rank)[: max(0, min(limit, 5))])
+
+    async def requeue_failed(self, *, unit: str | None = None, now: datetime) -> int:
+        count = 0
+        for key, item in self.work.items():
+            if item.state == "failed" and (unit is None or item.unit == unit):
+                self.work[key] = replace(
+                    item, state="pending", attempts=0, last_error=None, due_at=now, updated_at=now
+                )
+                count += 1
+        return count
 
     async def walk(self, seeds: tuple[Key, ...], query: Walk) -> Subgraph:
         if not self.available:

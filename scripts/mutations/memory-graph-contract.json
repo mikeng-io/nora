@@ -1,0 +1,142 @@
+[
+  {
+    "name": "corrections retained and applied",
+    "file": "nora/testing/memory_graph.py",
+    "old": "            self.relations[target.id] = updated",
+    "new": "            self.relations[target.id] = target",
+    "target": "tests/contract/test_memory_graph_contract.py::test_corrections_keep_history"
+  },
+  {
+    "name": "supersede requires batch admission",
+    "file": "nora/testing/memory_graph.py",
+    "old": "correction.kind == \"supersede\" and correction.by not in ids",
+    "new": "correction.kind == \"supersede\" and correction.by not in self.relations",
+    "target": "tests/contract/test_memory_graph_contract.py::test_correction_refusals"
+  },
+  {
+    "name": "correction evidence required",
+    "file": "nora/testing/memory_graph.py",
+    "old": "elif not ev:",
+    "new": "elif False:",
+    "target": "tests/contract/test_memory_graph_contract.py::test_record_correction_requires_evidence"
+  },
+  {
+    "name": "corrections share write unit",
+    "file": "nora/testing/memory_graph.py",
+    "old": "elif any(\n                unit != target.unit\n                for unit in [e.unit for e in entities] + [r.unit for r in relations]\n            ):",
+    "new": "elif False:",
+    "target": "tests/contract/test_memory_graph_contract.py::test_correction_cannot_cross_write_unit"
+  },
+  {
+    "name": "existing relation never overwritten",
+    "file": "nora/testing/memory_graph.py",
+    "old": "if relation.id in self.relations or any(r.id == relation.id for r in accepted):",
+    "new": "if False:",
+    "target": "tests/contract/test_memory_graph_contract.py::test_duplicate_relation_never_overwrites"
+  },
+  {
+    "name": "aliases are live and scoped",
+    "file": "nora/testing/memory_graph.py",
+    "old": "if e.unit == unit and e.state == \"live\" and e.merged_into is None",
+    "new": "if True",
+    "target": "tests/contract/test_memory_graph_contract.py::test_entity_lookup"
+  },
+  {
+    "name": "candidate cap",
+    "file": "nora/testing/memory_graph.py",
+    "old": "[: max(0, min(limit, 5))]",
+    "new": "[: max(0, limit)]",
+    "target": "tests/contract/test_memory_graph_contract.py::test_candidates_proximity_window_and_cap"
+  },
+  {
+    "name": "place proximity",
+    "file": "nora/testing/memory_graph.py",
+    "old": "distance = sum(",
+    "new": "distance = 0 * sum(",
+    "target": "tests/contract/test_memory_graph_contract.py::test_candidates_proximity_window_and_cap"
+  },
+  {
+    "name": "event window ordering",
+    "file": "nora/testing/memory_graph.py",
+    "old": "overlap = start <= window[1] and end >= window[0]",
+    "new": "overlap = False",
+    "target": "tests/contract/test_memory_graph_contract.py::test_candidates_proximity_window_and_cap"
+  },
+  {
+    "name": "during excludes key-only stores",
+    "file": "nora/domain/memory_graph.py",
+    "old": "    \"during\": _rule(\n        (\"message\", \"media\"), (\"stay\", \"trip\", \"outing\", \"episode\", \"co_location\"), \"rollup\"\n    ),\n",
+    "new": "    \"during\": _rule((\"message\", \"media\"), ROLLUP, \"rollup\"),\n",
+    "target": "tests/contract/test_memory_graph_contract.py::test_during_excludes_key_only_stores"
+  },
+  {
+    "name": "refused relation evidence is recorded",
+    "file": "nora/testing/memory_graph.py",
+    "old": "refused.append(Refusal(\"evidence\", e.relation_id, \"orphan_evidence\"))",
+    "new": "pass",
+    "target": "tests/contract/test_memory_graph_contract.py::test_partial_commit"
+  },
+  {
+    "name": "keyword-only batch contract",
+    "file": "nora/domain/memory_graph.py",
+    "old": "        *,\n        entities: tuple[Entity, ...],",
+    "new": "        entities: tuple[Entity, ...],",
+    "target": "tests/contract/test_memory_graph_contract.py::test_keyword_only_contract"
+  },
+  {
+    "name": "duplicate entity refusal",
+    "file": "nora/testing/memory_graph.py",
+    "old": "            elif any(\n                e.key != entity.key",
+    "new": "            elif False and any(\n                e.key != entity.key",
+    "target": "tests/contract/test_memory_graph_contract.py::test_duplicate_entity"
+  },
+  {
+    "name": "location flag derives from vocabulary",
+    "file": "nora/domain/memory_graph.py",
+    "old": "return self.rel in LOCATION_BEARING",
+    "new": "return False",
+    "target": "tests/contract/test_memory_graph_contract.py::test_location_flag"
+  },
+  {
+    "name": "failed work can be requeued",
+    "file": "nora/testing/memory_graph.py",
+    "old": "if item.state == \"failed\" and (unit is None or item.unit == unit):",
+    "new": "if False:",
+    "target": "tests/contract/test_memory_graph_contract.py::test_operator_requeue_failed"
+  },
+  {
+    "name": "unevidenced attributes keep old value",
+    "file": "nora/testing/memory_graph.py",
+    "old": "                    refused.append(Refusal(\"entity\", entity.id, \"missing_evidence\"))",
+    "new": "                    attrs[attribute] = value",
+    "target": "tests/contract/test_memory_graph_contract.py::test_attributes_accumulate_across_batches"
+  },
+  {
+    "name": "asserted time required at type boundary",
+    "file": "nora/domain/memory_graph.py",
+    "old": "asserted_at: datetime = field(kw_only=True)",
+    "new": "asserted_at: datetime | None = None",
+    "target": "tests/contract/test_memory_graph_contract.py::test_asserted_at_is_required_keyword_only"
+  },
+  {
+    "name": "trigram name index nora/infra/sql/migrations/versions/0137_memory_graph.py",
+    "file": "nora/infra/sql/migrations/versions/0137_memory_graph.py",
+    "old": "postgresql_ops={\"name\": \"gin_trgm_ops\"}",
+    "new": "postgresql_ops={}",
+    "target": "tests/contract/test_memory_graph_contract.py::test_entity_name_has_trigram_index"
+  },
+  {
+    "name": "trigram name index nora/infra/sql/schema.py",
+    "file": "nora/infra/sql/schema.py",
+    "old": "postgresql_ops={\"name\": \"gin_trgm_ops\"}",
+    "new": "postgresql_ops={}",
+    "target": "tests/contract/test_memory_graph_contract.py::test_entity_name_has_trigram_index"
+  },
+  {
+    "name": "projection relations documented",
+    "file": "nora/domain/memory_graph.py",
+    "old": "`cites`, `supersedes`, `draws_on`, `disputes` and `feedback_on` stay",
+    "new": "Existing relations stay",
+    "target": "tests/contract/test_memory_graph_contract.py::test_projection_ownership_is_documented"
+  }
+]

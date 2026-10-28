@@ -9,7 +9,7 @@ enforceable.
 
 What «standing in for a port» means here, read off the source, not guessed:
 
-- The ports are the `Protocol` classes in `nora/domain/ports.py`.
+- The ports are the `Protocol` classes in `nora/domain/ports.py` and `memory_graph.py`.
 - A class in `tests/` stands in for a port when it defines EVERY public method
   the port declares, each with EXACTLY the port's parameter names (or a
   `*args`/`**kwargs` wildcard). Exact names, not a superset: `describe(data,
@@ -150,7 +150,7 @@ def _is_protocol(cls: ast.ClassDef) -> bool:
 
 
 def port_methods() -> dict[str, dict[str, _Method]]:
-    """Port name -> its public methods, read off `nora/domain/ports.py`."""
+    """Port name -> its public methods, read from `nora/domain/ports.py` and `memory_graph.py`."""
     tree = ast.parse(PORTS.read_text(encoding="utf-8") + "\n" +
                      (ROOT / "nora/domain/memory_graph.py").read_text(encoding="utf-8"))
     ports: dict[str, dict[str, _Method]] = {}

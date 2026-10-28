@@ -28,6 +28,10 @@ ENTITY = sa.Table(
     ),
     sa.Column("merged_into", sa.Text, sa.ForeignKey("entity.id")),
 )
+# pg_trgm is installed by 0026; array aliases need a separate search
+# representation for trigram indexing, deferred to the SQL candidate query.
+sa.Index("idx_entity_name_trgm", ENTITY.c.name,
+         postgresql_using="gin", postgresql_ops={"name": "gin_trgm_ops"})
 RELATION = sa.Table(
     "relation",
     METADATA,

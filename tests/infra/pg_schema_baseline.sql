@@ -934,6 +934,7 @@ CREATE INDEX idx_doctrine_revision_corpus_loaded ON public.doctrine_revision USI
 CREATE INDEX idx_document_state_latest ON public.document_state USING btree (document_id, id);
 CREATE INDEX idx_documents_creator ON public.documents USING btree (created_by);
 CREATE INDEX idx_documents_room ON public.documents USING btree (platform, conversation_id);
+CREATE INDEX idx_entity_name_trgm ON public.entity USING gin (name public.gin_trgm_ops);
 CREATE INDEX idx_event_revision_event ON public.event_revision USING btree (event_id, recorded_at);
 CREATE INDEX idx_event_rsvps_event_person ON public.event_rsvps USING btree (event_id, person_id, recorded_at);
 CREATE INDEX idx_events_conversation ON public.events USING btree (conversation_id, status);

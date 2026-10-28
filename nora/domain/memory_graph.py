@@ -3,6 +3,9 @@
 Entity ids are store-owned strings; event_entry is a Register row, event an
 entity. Evidence snapshots are hydrated by the caller from sources actually
 shown to the session, never accepted from model output.
+`cites`, `supersedes`, `draws_on`, `disputes` and `feedback_on` stay
+`memory_edge` projections, written by code from the row's own citation columns
+(25 §2); each item writer writes them through the existing projector in its own write.
 """
 
 from __future__ import annotations
@@ -60,6 +63,11 @@ RefusalReason = Literal[
     "scope_wider_than_evidence",
     "orphan_entity",
     "duplicate_entity",
+    "duplicate_relation",
+    "unknown_relation",
+    "not_current",
+    "orphan_evidence",
+    "missing_replacement",
 ]
 Key = tuple[str, str]
 ENTRY = (
@@ -125,7 +133,9 @@ RELATION_RULES: Mapping[str, RelationRule] = {
     "reacted_to": _rule(("reaction",), ("message", "social"), "record"),
     "mentions": _rule(("message", "social"), ("person", "place"), "record"),
     "located_in": _rule(("place", "outing"), ("place",), "rollup"),
-    "during": _rule(("message", "media"), ROLLUP, "rollup"),
+    "during": _rule(
+        ("message", "media"), ("stay", "trip", "outing", "episode", "co_location"), "rollup"
+    ),
     "outcome_of": _rule(("episode",), ("send", "comment_reply", "summons_answer"), "rollup"),
     "stayed_at": _rule(("person",), ("place",), "rollup"),
     "co_located_with": _rule(("person",), ("person",), "rollup"),
@@ -140,7 +150,8 @@ RELATION_RULES: Mapping[str, RelationRule] = {
 }
 for _rel in ("likes", "dislikes"):
     RELATION_RULES = {**RELATION_RULES, _rel: _rule(("person",), ("work", "place", "event"))}
-for _rel in ("works_at", "studies_at", "lives_in", "member_of"):
+LOCATION_BEARING: frozenset[str] = frozenset({"works_at", "studies_at", "lives_in", "member_of"})
+for _rel in LOCATION_BEARING:
     RELATION_RULES = {**RELATION_RULES, _rel: _rule(("person",), ("organisation", "place"))}
 for _rel in ("concerns", "settles", "serves", "fulfils", "cancels"):
     RELATION_RULES = {**RELATION_RULES, _rel: _rule(ENTRY, (*ENTITY_KINDS, *ENTRY))}
@@ -174,16 +185,29 @@ class Relation:
     persons: tuple[str, ...] = ()
     valid_from: datetime | None = None
     valid_to: datetime | None = None
-    asserted_at: datetime | None = None
+    asserted_at: datetime = field(kw_only=True)
     status: Literal["current", "superseded", "disputed", "retired"] = "current"
     written_by: str = "code"
     superseded_by: str | None = None
     created_at: datetime | None = None
 
+    @property
+    def location(self) -> bool:
+        return self.rel in LOCATION_BEARING
+
     def __post_init__(self) -> None:
         # The table's asserted_at is NOT NULL: the evidence's time is always known.
         if self.asserted_at is None:
             raise ValueError("a relation needs asserted_at, the time of its evidence")
+
+
+@dataclass(frozen=True)
+class Correction:
+    relation_id: str
+    kind: Literal["close", "supersede", "dispute", "retire"]
+    at: datetime
+    by: str | None = None
+    evidence: tuple[Key, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -244,7 +268,7 @@ def validate_relation(
 
 @dataclass(frozen=True)
 class Refusal:
-    kind: Literal["entity", "relation", "evidence"]
+    kind: Literal["entity", "relation", "evidence", "correction"]
     id: str
     reason: RefusalReason
 
@@ -255,6 +279,7 @@ class Admission:
     relations: tuple[Relation, ...] = ()
     evidence: tuple[Evidence, ...] = ()
     refused: tuple[Refusal, ...] = ()
+    corrections: tuple[Correction, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -327,7 +352,20 @@ class MemoryGraph(Protocol):
         relations: tuple[Relation, ...],
         evidence: tuple[Evidence, ...],
         sources: Mapping[Key, Source],
+        corrections: tuple[Correction, ...] = (),
     ) -> Admission: ...
+    async def aliases(self, *, unit: str) -> Mapping[str, Key]: ...
+    async def candidates(
+        self,
+        *,
+        unit: str,
+        kind: str,
+        name: str,
+        near: Key | None = None,
+        window: tuple[datetime, datetime] | None = None,
+        limit: int = 5,
+    ) -> tuple[Entity, ...]: ...
+    async def requeue_failed(self, *, unit: str | None = None, now: datetime) -> int: ...
     async def walk(self, seeds: tuple[Key, ...], query: Walk) -> Subgraph: ...
     async def enqueue(self, item: WorkItem) -> WorkItem: ...
     async def claim(
