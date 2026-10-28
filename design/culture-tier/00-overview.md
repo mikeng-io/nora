@@ -1,5 +1,7 @@
 # The Culture Tier — overview
 
+> 2026-10-28 (operator, ruled; [unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md#9-profiles-are-reshaped-in-the-loop-from-the-graph)): the `culture` adaptor retires. A room's or unit's culture is reshaped by step 2 of the one Cognition loop whenever a member's or the room's relations change; its readers keep reading the same store.
+
 ## 0. What this bundle became
 
 The first version of this bundle proposed a new tier with its own store, its

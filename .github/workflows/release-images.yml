@@ -96,17 +96,27 @@ jobs:
           python-version: '3.12'
           enable-cache: false
       - run: uv sync --frozen
+      - name: Set up registry-cache capable builder
+        id: buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+        with:
+          driver: docker-container
+          driver-opts: network=host
+          buildkitd-flags: --allow-insecure-entitlement network.host
       - name: Publish exact selected image
         env:
+          BUILDX_BUILDER: ${{ steps.buildx.outputs.name }}
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ fromJSON(needs.prepare.outputs.selection).version }}
           SOURCE: ${{ fromJSON(needs.prepare.outputs.selection).commit }}
           CHANNEL: ${{ fromJSON(needs.prepare.outputs.selection).channel }}
+          PREVIOUS: ${{ fromJSON(needs.prepare.outputs.selection).previous }}
           IMAGE: ${{ matrix.image }}
         run: |
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           uv run --frozen python "$RUNNER_TEMP/release_bundle.py" build \
-            --channel "$CHANNEL" --version "$VERSION" --source "$SOURCE" --image "$IMAGE"
+            --channel "$CHANNEL" --version "$VERSION" --source "$SOURCE" --image "$IMAGE" \
+            --previous-ref "$PREVIOUS"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: image-${{ matrix.image }}
@@ -147,8 +157,9 @@ jobs:
           VERSION: ${{ fromJSON(needs.prepare.outputs.selection).version }}
           SOURCE: ${{ fromJSON(needs.prepare.outputs.selection).commit }}
           CHANNEL: ${{ fromJSON(needs.prepare.outputs.selection).channel }}
+          PREVIOUS: ${{ fromJSON(needs.prepare.outputs.selection).previous }}
         run: |
           uv run --frozen python "$RUNNER_TEMP/release_bundle.py" bundle \
-            --channel "$CHANNEL" --version "$VERSION" --source "$SOURCE"
+            --channel "$CHANNEL" --version "$VERSION" --source "$SOURCE" --previous-ref "$PREVIOUS"
           uv run --frozen python "$RUNNER_TEMP/release_bundle.py" promote \
-            --channel "$CHANNEL" --version "$VERSION" --source "$SOURCE"
+            --channel "$CHANNEL" --version "$VERSION" --source "$SOURCE" --previous-ref "$PREVIOUS"

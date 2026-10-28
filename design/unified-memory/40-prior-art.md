@@ -79,6 +79,8 @@ taken idea now lives.
 
 ## 5. What this bundle refuses
 
+> 2026-10-28 (ratified, [27](27-the-memory-is-a-graph.md)): the first refusal is answered rather than reversed. Relations may be model-proposed, but each must carry relation_evidence rows citing what the session fetched; an edge with no evidence is not written. See [27](27-the-memory-is-a-graph.md#2-what-this-supersedes-and-why-the-old-reasons-are-answered).
+
 - **Model-extracted triples as graph edges** (Graphiti, Cognee, MemOS). The
   edge says nothing about its evidence. cognition-loop/80 refused this already;
   Mem0's removal of its graph is corroboration.

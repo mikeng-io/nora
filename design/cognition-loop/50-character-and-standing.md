@@ -99,6 +99,8 @@ said (`I owe`, `I hold open`), never what is so.
 
 ## 4. Correction
 
+> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): the Character and Lessons adaptors named in this section retire into step ② of the one Cognition loop, which writes Character (traits and guesses; facts are rendered by code), culture and Lessons right after step ① changes an entity's relations; it has no wake rule of its own. Read "the Character adaptor" / "the Lessons adaptor" below as step ②.
+
 An account nobody sees cannot be corrected, so:
 
 - **The portal shows each person the account about them**, plus the culture of the
@@ -137,6 +139,8 @@ A lesson carries its lineage per row and renders only where it passes.
 An account is an input to her judgement, never text she recites.
 
 ## 6. The two slow adaptors
+
+> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): both adaptors retire into step ② of the Cognition loop, which runs right after step ① changes an entity's relations. Every rule below on lessons (the size cap, doctrine wins through a separate instrument, the echo rule, no approval step, the operator's rollback sticks) carries over to step ② unchanged.
 
 Reflection is its own job on its own timescale ([00](00-intent.md) §3). Two
 Dreamer adaptors do it, each the sole writer of its tier; neither acts, and

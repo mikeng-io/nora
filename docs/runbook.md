@@ -350,7 +350,12 @@ Compare `deployments`' `release.json` (version, source SHA and image digests),
 and Nora's `/app/nora/version.json` stamp. Confirm service health and zero
 restarts after recreation. The wrapper performs these checks under the shared
 lock; a publication workflow or a prior receipt alone is not live proof.
-See [the installed deploy procedure](../.agents/skills/nora-deploy/SKILL.md).
+Unchanged image/effective service config preserves container IDs; a host bind-file
+content change alone does not recreate a process. After validated config/identity/
+policy edits, write the scoped `config-reload.json` request under the shared lock,
+then release it before native `DeployStack`. See
+[the installed deploy procedure](../.agents/skills/nora-deploy/SKILL.md) and
+[the file reload contract](../deploy/komodo/README.md#loaded-once-host-file-reload).
 
 ### Legacy checkout mode: `scripts/verify-deploy.py`
 

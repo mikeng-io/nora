@@ -32,6 +32,12 @@ description: >
   room location reads; minimal public outbound payload accepted; no special
   handling for sensitive categories; dedicated-key deduction and told-only
   fallback rules stand. Implementation and an enforcing DEC row land in phase 4.
+  Ratified by the operator 2026-10-28 (27): the memory is a graph — generic entity, relation
+  and evidence stores with closed vocabularies in code, a layer column, a
+  Cognition loop per stimulus that comprehends every signal, enriches from
+  the web, reshapes profiles and decides (separate profile adaptors retire),
+  one time-ordered backfill with acting off, an Apache AGE spike, and
+  graph-shaped queries; supersedes 18.
 status: proposed
 governance: operator-directed
 timestamp: '2026-10-14'
@@ -47,6 +53,7 @@ members:
   - 18-extraction.md
   - 20-embedding-bakeoff.md
   - 25-memory-graph.md
+  - 27-the-memory-is-a-graph.md
   - 30-identity-and-character.md
   - 35-persona.md
   - 45-persona-adaptor.md
@@ -94,6 +101,17 @@ edges:
   - {src: 18-extraction, dst: 45-persona-adaptor, rel: extends, provenance: asserted}
   - {src: 18-extraction, dst: ../cognition-loop/05-data-model, rel: extends, provenance: asserted}
   - {src: 18-extraction, dst: ../cognition-loop/25-rollup, rel: extends, provenance: asserted}
+  - {src: 27-the-memory-is-a-graph, dst: 00-intent, rel: extends, provenance: asserted}
+  - {src: 27-the-memory-is-a-graph, dst: 15-memory-map, rel: extends, provenance: asserted}
+  - {src: 27-the-memory-is-a-graph, dst: 25-memory-graph, rel: extends, provenance: asserted}
+  - {src: 27-the-memory-is-a-graph, dst: 45-persona-adaptor, rel: extends, provenance: asserted}
+  - {src: 27-the-memory-is-a-graph, dst: 18-extraction, rel: supersedes, provenance: asserted}
+  - {src: 27-the-memory-is-a-graph, dst: 40-prior-art, rel: depends_on, provenance: asserted}
+  - {src: 27-the-memory-is-a-graph, dst: 47-character-dimensions, rel: depends_on, provenance: asserted}
+  - {src: 27-the-memory-is-a-graph, dst: ../cognition-loop/30-cognition, rel: extends, provenance: asserted}
+  - {src: 27-the-memory-is-a-graph, dst: ../cognition-loop/10-tiers, rel: extends, provenance: asserted}
+  - {src: 27-the-memory-is-a-graph, dst: ../culture-tier/00-overview, rel: extends, provenance: asserted}
+  - {src: 27-the-memory-is-a-graph, dst: ../self-growth/40-lessons, rel: extends, provenance: asserted}
   - {src: 25-memory-graph, dst: 15-memory-map, rel: depends_on, provenance: asserted}
   - {src: 25-memory-graph, dst: 20-embedding-bakeoff, rel: depends_on, provenance: asserted}
   - {src: 25-memory-graph, dst: ../context-plan/15-what-the-composer-decides, rel: follows, provenance: asserted}

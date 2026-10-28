@@ -1,5 +1,77 @@
 # Changelog
 
+## [7.11.9](https://github.com/mikeng-io/nora/compare/v7.11.8...v7.11.9) (2026-10-28)
+
+
+### Bug Fixes
+
+* **memory:** key identity pointers per unit and fix an entity's unit ([069b986](https://github.com/mikeng-io/nora/commit/069b986fff693247233f3e049a57f6a73c497fcf))
+* **memory:** make pointer ids unique across kinds and pin cross-unit same_as ([8b85661](https://github.com/mikeng-io/nora/commit/8b856617e2bf8ab204623d99b1c1991753dd938d))
+
+## [7.11.8](https://github.com/mikeng-io/nora/compare/v7.11.7...v7.11.8) (2026-10-28)
+
+
+### Features
+
+* **memory:** define the shared graph storage and admission contract ([c962d5c](https://github.com/mikeng-io/nora/commit/c962d5c95d695ca9a8707947f44692d2337eab95))
+
+
+### Bug Fixes
+
+* **memory:** add relation corrections and entity lookup to the graph contract ([1695dd1](https://github.com/mikeng-io/nora/commit/1695dd1466fe1d8616804020fe0e2ecdaa59196c))
+* **memory:** require asserted_at, accumulate attributes, name the batch arguments ([61a6434](https://github.com/mikeng-io/nora/commit/61a64348bfeead0766df568ea20e3992bd57c737))
+
+## [7.11.7](https://github.com/mikeng-io/nora/compare/v7.11.6...v7.11.7) (2026-10-28)
+
+
+### Maintenance
+
+* **cognition:** describe the one loop in the cognition bundle itself ([f9550ea](https://github.com/mikeng-io/nora/commit/f9550ea52a24b2c5a33b8d0af6845fd818f1620b))
+* **cognition:** fix the frontmatter and point every old-topology section at the one loop ([e027329](https://github.com/mikeng-io/nora/commit/e0273299a3533595d05ec73018f3b943744740b3))
+
+## [7.11.6](https://github.com/mikeng-io/nora/compare/v7.11.5...v7.11.6) (2026-10-28)
+
+
+### Maintenance
+
+* **memory:** push the graph preview into comprehension ([8de3ec5](https://github.com/mikeng-io/nora/commit/8de3ec598608fe6bb8c1d3eadf9ecc43e1ac8675))
+
+## [7.11.5](https://github.com/mikeng-io/nora/compare/v7.11.4...v7.11.5) (2026-10-28)
+
+
+### Maintenance
+
+* **memory:** comprehend on arrival and fold culture and lessons into Cognition ([54aecaf](https://github.com/mikeng-io/nora/commit/54aecaf7a57de00e75711e73851cd6a6fb9377b3))
+* **memory:** correct the culture readers and wake reasons in node 27 ([518b412](https://github.com/mikeng-io/nora/commit/518b412e9bcf56894110826b379d4516da292583))
+
+## [7.11.4](https://github.com/mikeng-io/nora/compare/v7.11.3...v7.11.4) (2026-10-28)
+
+
+### Maintenance
+
+* **memory:** apply review fixes to the memory graph node ([3d13a0f](https://github.com/mikeng-io/nora/commit/3d13a0fe4191711c4a0f2f837d5b1d6b3562305c))
+* **memory:** make Cognition the one loop that comprehends, reshapes and acts ([e98298c](https://github.com/mikeng-io/nora/commit/e98298c543349dc0fedda83af9010adf0099ab90))
+* **memory:** make the memory a graph with a research loop ([e67e9d5](https://github.com/mikeng-io/nora/commit/e67e9d5db4bc5bfa5b112b7eac4f3083f85777bf))
+* **memory:** place the memory loop before Cognition and give each item one writer ([92b517b](https://github.com/mikeng-io/nora/commit/92b517bc9afc0a9f5a26072db2b5a88bf80276d8))
+* **memory:** ratify the memory graph and name who writes each relation ([5cdf6c1](https://github.com/mikeng-io/nora/commit/5cdf6c19f96877fd07bd1c4175fb7807299f4452))
+* **memory:** ship step 2 before the backfill and measure its cost ([c998b86](https://github.com/mikeng-io/nora/commit/c998b86a126a04569c536d817f1a2629e53b529d))
+
+## [7.11.3](https://github.com/mikeng-io/nora/compare/v7.11.2...v7.11.3) (2026-10-28)
+
+
+### Bug Fixes
+
+* **profile:** keep register relevance reads selective ([2ae6032](https://github.com/mikeng-io/nora/commit/2ae603257dae3ed0d7943e21e0969958fd36926c))
+* **profile:** reuse scoped projections in source checks ([8d99c5c](https://github.com/mikeng-io/nora/commit/8d99c5cb022a3b2ad1cc26e8d3208bfd814d22ad))
+
+## [7.11.2](https://github.com/mikeng-io/nora/compare/v7.11.1...v7.11.2) (2026-10-28)
+
+
+### Bug Fixes
+
+* **deploy:** preserve unchanged release artifacts and containers ([71b0a59](https://github.com/mikeng-io/nora/commit/71b0a5949f713257a8201162a4338802f196a135))
+* **deploy:** verify retained containers against their restart baseline ([f0bd019](https://github.com/mikeng-io/nora/commit/f0bd01961c75f6eb7b19aa53d18ae0f9c63145d7))
+
 ## [7.11.1](https://github.com/mikeng-io/nora/compare/v7.11.0...v7.11.1) (2026-10-28)
 
 

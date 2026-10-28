@@ -9,7 +9,7 @@ enforceable.
 
 What «standing in for a port» means here, read off the source, not guessed:
 
-- The ports are the `Protocol` classes in `nora/domain/ports.py`.
+- The ports are the `Protocol` classes in `nora/domain/ports.py` and `memory_graph.py`.
 - A class in `tests/` stands in for a port when it defines EVERY public method
   the port declares, each with EXACTLY the port's parameter names (or a
   `*args`/`**kwargs` wildcard). Exact names, not a superset: `describe(data,
@@ -150,8 +150,9 @@ def _is_protocol(cls: ast.ClassDef) -> bool:
 
 
 def port_methods() -> dict[str, dict[str, _Method]]:
-    """Port name -> its public methods, read off `nora/domain/ports.py`."""
-    tree = ast.parse(PORTS.read_text(encoding="utf-8"), filename=str(PORTS))
+    """Port name -> its public methods, read from `nora/domain/ports.py` and `memory_graph.py`."""
+    tree = ast.parse(PORTS.read_text(encoding="utf-8") + "\n" +
+                     (ROOT / "nora/domain/memory_graph.py").read_text(encoding="utf-8"))
     ports: dict[str, dict[str, _Method]] = {}
     for node in tree.body:
         if isinstance(node, ast.ClassDef) and _is_protocol(node):
@@ -258,3 +259,11 @@ def test_a_port_stand_in_outside_nora_testing_is_pinned_with_a_reason() -> None:
         "pinned in _ALLOWED but no longer standing in for any port — drop the "
         f"pin (a stale exemption is a claim): {stale}"
     )
+
+
+def test_memory_graph_fake_is_bound_to_the_port_and_contract() -> None:
+    path = ROOT / "nora/testing/memory_graph.py"
+    seen = {(h.key.split("::")[1], h.port) for h in stand_ins(path, port_methods())}
+    assert ("FakeMemoryGraph", "MemoryGraph") in seen
+    contract = (ROOT / "tests/contract/test_memory_graph_contract.py").read_text()
+    assert "return FakeMemoryGraph()" in contract

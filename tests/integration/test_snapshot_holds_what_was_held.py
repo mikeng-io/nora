@@ -87,6 +87,22 @@ def _ledger_row(kind: str, i: int) -> dict[str, Any]:
 
 #: A valid row per in-place table, for key `i`.
 ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
+    "entity": lambda i: {
+        "id": f"graph-entity-{i}", "kind": "event", "unit": "u", "name": f"Generated event {i}",
+    },
+    "relation": lambda i: {
+        "id": f"graph-relation-{i}", "src_kind": "person", "src_id": "generated-person",
+        "rel": "attended", "dst_kind": "event", "dst_id": "graph-entity-0",
+        "layer": "notebook", "unit": "u", "asserted_at": T0, "written_by": "generated",
+    },
+    "relation_evidence": lambda i: {
+        "id": 85000 + i, "relation_id": "graph-relation-0", "source_kind": "message",
+        "source_id": "1000", "role": "supports", "span": f"Generated span {i}",
+    },
+    "memory_work_item": lambda i: {
+        "id": f"graph-work-{i}", "source_kind": "message", "source_id": f"generated-{i}",
+        "unit": "u", "input_hash": f"generated-hash-{i}", "as_of": T0,
+    },
     "standing_decision": lambda i: _ledger_row("decision", i),
     "standing_commitment": lambda i: _ledger_row("commitment", i),
     "standing_thread": lambda i: _ledger_row("thread", i),
@@ -283,6 +299,10 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
 
 #: The column each revision moves, and to what.
 REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
+    "entity": ("name", lambda i: f"Revised generated event {i}"),
+    "relation": ("status", lambda i: "superseded"),
+    "relation_evidence": ("span", lambda i: f"Revised generated span {i}"),
+    "memory_work_item": ("attempts", lambda i: 1),
     "standing_decision": ("subject", lambda i: f"Revised choice {i}"),
     "standing_commitment": ("subject", lambda i: f"Revised promise {i}"),
     "standing_thread": ("topic", lambda i: f"Revised topic {i}"),

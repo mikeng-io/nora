@@ -13,13 +13,13 @@
 #
 # Java 25 is REQUIRED: signal-cli 0.14.7 ships class file version 69. Temurin 21
 # fails at class load with UnsupportedClassVersionError.
-FROM eclipse-temurin:25-jre-noble@sha256:3f2223fe04b750aa5a8179e29b5c9a1ddf7665fc9bb08bfe11ad01d143bc13a5
+FROM eclipse-temurin:25-jre-noble@sha256:3f2223fe04b750aa5a8179e29b5c9a1ddf7665fc9bb08bfe11ad01d143bc13a5 AS verified
 
 ARG SIGNAL_CLI_VERSION=0.14.7
 ARG SIGNAL_CLI_KEY=FA10826A74907F9EC6BBB7FC2BA2CD21B5B09570
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends curl gnupg \
+ && apt-get install -y --no-install-recommends gnupg \
  && rm -rf /var/lib/apt/lists/*
 
 COPY signal-cli-${SIGNAL_CLI_VERSION}.tar.gz     /tmp/
@@ -27,9 +27,17 @@ COPY signal-cli-${SIGNAL_CLI_VERSION}.tar.gz.asc /tmp/
 RUN gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys "${SIGNAL_CLI_KEY}" \
  && gpg --batch --verify /tmp/signal-cli-${SIGNAL_CLI_VERSION}.tar.gz.asc \
                          /tmp/signal-cli-${SIGNAL_CLI_VERSION}.tar.gz \
- && tar xzf /tmp/signal-cli-${SIGNAL_CLI_VERSION}.tar.gz -C /opt \
- && ln -s /opt/signal-cli-${SIGNAL_CLI_VERSION}/bin/signal-cli /usr/local/bin/signal-cli \
- && rm /tmp/signal-cli-${SIGNAL_CLI_VERSION}.tar.gz*
+ && tar xzf /tmp/signal-cli-${SIGNAL_CLI_VERSION}.tar.gz -C /opt
+
+# Only the verified distribution crosses into runtime: no archive or build GPG.
+FROM eclipse-temurin:25-jre-noble@sha256:3f2223fe04b750aa5a8179e29b5c9a1ddf7665fc9bb08bfe11ad01d143bc13a5
+ARG SIGNAL_CLI_VERSION=0.14.7
+# The Compose healthcheck probes the running daemon with curl.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl \
+ && rm -rf /var/lib/apt/lists/*
+COPY --from=verified /opt/signal-cli-${SIGNAL_CLI_VERSION} /opt/signal-cli-${SIGNAL_CLI_VERSION}
+RUN ln -s /opt/signal-cli-${SIGNAL_CLI_VERSION}/bin/signal-cli /usr/local/bin/signal-cli
 
 # uid 1000 in eclipse-temurin:25-jre-noble is the base image's own `ubuntu`
 # account — we do NOT create a user here, and an earlier version of this file
