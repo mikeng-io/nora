@@ -2625,10 +2625,26 @@ class ProfileConfig(BaseModel):
     nora: NoraProfileConfig = NoraProfileConfig()
 
 
-class GraphConfig(BaseModel):
-    """Code graph projections and work-item producers; no graph readers."""
+class ComprehendConfig(BaseModel):
+    """Shadow Cognition steps one and two; enabled only with the graph switch."""
     model_config = ConfigDict(extra="forbid", frozen=True)
     enabled: bool = False
+    turns: int = Field(default=8, ge=1)
+    total_tokens: int = Field(default=120_000, ge=1)
+    output_tokens: int = Field(default=12_000, ge=1)
+    timeout_seconds: float = Field(default=240, gt=0)
+    live_concurrency: int = Field(default=1, ge=1)
+    historical_concurrency: int = Field(default=1, ge=1)
+    preview_tokens: int = Field(default=1500, ge=32)
+    web_searches: int = Field(default=3, ge=0, le=3)
+    page_fetches: int = Field(default=3, ge=0, le=3)
+
+
+class GraphConfig(BaseModel):
+    """Graph admission switch; storage and arrival producers are phase one's."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    enabled: bool = False
+    comprehend: ComprehendConfig = ComprehendConfig()
 
 
 class MemoryConfig(BaseModel):

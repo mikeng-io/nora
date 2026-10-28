@@ -14,6 +14,14 @@ from __future__ import annotations
 from typing import NamedTuple
 
 from nora.domain.assess import DQ_CHECKS
+from nora.domain.comprehend import (
+    EGRESS_REASONS,
+    ITEM_OUTCOMES,
+    LANES,
+    LOOKUPS,
+    PARTS,
+    REFUSAL_REASONS,
+)
 from nora.domain.config_reload import RELOAD_OUTCOMES
 from nora.domain.cues import CUES
 from nora.domain.culture import CHARACTER_KINDS, CHARACTER_OUTCOMES, CULTURE_OUTCOMES
@@ -119,6 +127,18 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Graph batch outcomes: " + "/".join(GRAPH_BATCH_OUTCOMES),
         ("outcome",),
     ),
+    _CounterSpec("nora_comprehend_items_total",
+                 f"Graph work attempts: outcomes {ITEM_OUTCOMES}, lanes {LANES}.",
+                 ("outcome", "lane")),
+    _CounterSpec("nora_comprehend_refused_parts_total",
+                 f"Refused parts {PARTS}, reasons {REFUSAL_REASONS}.",
+                 ("part", "reason")),
+    _CounterSpec("nora_comprehend_egress_refusals_total",
+                 f"Web calls refused before egress: {EGRESS_REASONS}.",
+                 ("reason",)),
+    _CounterSpec("nora_comprehend_web_lookups_total", f"Outbound web lookups attempted: {LOOKUPS}.",
+                 ("tool",)),
+
     # The OAuth keepalive (DEC-308, `nora.app.oauth_keepalive`). The alert reads
     # the timestamp gauges below, never these: a rare counter reads empty after a
     # restart.

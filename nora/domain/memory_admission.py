@@ -30,7 +30,7 @@ GRAPH_PROJECTION_OUTCOMES: tuple[str, ...] = get_args(GraphProjectionOutcome)
 
 class AdmissionState:
     def __init__(self) -> None:
-        self.entities: dict[Key, Entity] = {}
+        self.entities: dict[str, Entity] = {}
         self.relations: dict[str, Relation] = {}
         self.evidence: list[Evidence] = []
         self.available = True
@@ -38,11 +38,11 @@ class AdmissionState:
     async def _upsert_entity(self, entity: Entity) -> Entity:
         if entity.kind not in ENTITY_KINDS:
             raise ValueError("unknown entity kind")
-        held = self.entities.get(entity.key)
-        if held is not None and held.unit != entity.unit:
+        held = next((e for e in self.entities.values() if e.id == entity.id), None)
+        if held is not None and (held.unit != entity.unit or held.kind != entity.kind):
             # An entity never changes unit; a second unit gets its own entity.
             raise ValueError("an entity's unit is fixed")
-        self.entities[entity.key] = entity
+        self.entities[entity.id] = entity
         return entity
 
     async def _admit(
@@ -70,7 +70,7 @@ class AdmissionState:
             ):
                 refused.append(Refusal("entity", entity.id, "duplicate_entity"))
             else:
-                candidates[entity.key] = entity
+                candidates[entity.id] = entity
         accepted: list[Relation] = []
         for relation in relations:
             ev = tuple(e for e in evidence if e.relation_id == relation.id)
@@ -80,7 +80,8 @@ class AdmissionState:
             if reason is None:
                 for key in (relation.src, relation.dst):
                     if key[0] in ENTITY_KINDS and (
-                        key not in candidates or candidates[key].unit != relation.unit
+                        key[1] not in candidates or candidates[key[1]].unit != relation.unit
+                        or candidates[key[1]].kind != key[0]
                     ):
                         reason = "wrong_ends"
             if reason:
@@ -90,7 +91,7 @@ class AdmissionState:
         endpoints = {k for r in accepted for k in (r.src, r.dst)}
         committed = []
         for entity in entities:
-            if candidates.get(entity.key) != entity:
+            if candidates.get(entity.id) != entity:
                 continue
             if entity.key not in endpoints:
                 refused.append(Refusal("entity", entity.id, "orphan_entity"))
@@ -127,7 +128,7 @@ class AdmissionState:
         for entity in committed:
             # Attributes accumulate: a later batch adds to what earlier
             # admitted evidence established, it never erases it.
-            held = before.get(entity.key)
+            held = before.get(entity.id)
             attrs = dict(held.attributes) if held is not None else {}
             for attribute, value in entity.attributes.items():
                 if any(
@@ -137,7 +138,7 @@ class AdmissionState:
                 else:
                     refused.append(Refusal("entity", entity.id, "missing_evidence"))
             cleaned = replace(entity, attributes=attrs)
-            self.entities[entity.key] = cleaned
+            self.entities[entity.id] = cleaned
             clean_entities.append(cleaned)
         committed = clean_entities
         for r in accepted:
@@ -232,7 +233,7 @@ class AdmissionState:
 
         def add(key: Key) -> bool:
             nonlocal partial
-            entity = self.entities.get(key)
+            entity = self.entities.get(key[1])
             if key in nodes:
                 return True
             if key not in reachable or (entity and entity.unit != query.unit):

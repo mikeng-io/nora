@@ -362,6 +362,15 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
     "graph_refusal": lambda n: {
         "id": 86000+n, "kind": "relation", "part_id": f"generated-{n}", "reason": "vocabulary",
     },
+    "comprehend_web_page": lambda n: {
+        "id": f"generated-page-{n}", "unit": "u", "session_id": n,
+        "url": f"https://example.invalid/page-{n}", "fetched_at": T0,
+        "content_hash": f"generated-hash-{n}", "text": f"generated text {n}", "tool_call": {},
+    },
+    "comprehend_result": lambda n: {
+        "work_id": f"generated-work-{n}", "input_hash": f"generated-hash-{n}",
+        "session_id": n, "part": "reshape", "payload": {"would_writes": [f"generated {n}"]},
+    },
     "standing_decision_revision": lambda n: _ledger_row("decision", n),
     "standing_commitment_revision": lambda n: _ledger_row("commitment", n),
     "standing_thread_revision": lambda n: _ledger_row("thread", n),
