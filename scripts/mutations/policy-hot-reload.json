@@ -12,5 +12,19 @@
     "old": "            self.holder.swap(candidate)",
     "new": "            pass  # mutation: suppress publication",
     "target": "tests/integration/test_policy_reload.py::test_invalid_policy_keeps_the_last_applied_policy_and_counts_refused"
+  },
+  {
+    "name": "removing the last room retains declared workspace admission",
+    "file": "nora/memory_routing.py",
+    "old": "    named = set(policy._unit_workspace.values())",
+    "new": "    named = set(policy.unit_workspaces().values())",
+    "target": "tests/integration/test_policy_reload.py::test_removing_the_last_room_keeps_its_declared_workspace_binding"
+  },
+  {
+    "name": "an empty declared unit remains loadable on room removal",
+    "file": "nora/policy.py",
+    "old": "    return {unit: entry.workspace for unit, entry in units.items()}",
+    "new": "    if set(units) - used:\n        raise PolicyError(\"unused unit\")\n    return {unit: entry.workspace for unit, entry in units.items()}",
+    "target": "tests/integration/test_policy_reload.py::test_removing_the_last_room_keeps_its_declared_workspace_binding"
   }
 ]

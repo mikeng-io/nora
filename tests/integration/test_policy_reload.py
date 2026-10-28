@@ -165,3 +165,29 @@ async def test_presence_and_analytics_recompute_their_identity_and_room_scopes(c
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         await presence.store.aclose()
+
+
+async def test_removing_the_last_room_keeps_its_declared_workspace_binding(cfg, monkeypatch):
+    monkeypatch.setattr("nora.config_reload.POLL_SECONDS", 0.01)
+    declarations = (
+        'default = "deny"\n[units.nora]\nworkspace = "home"\n'
+        '[units.work]\nworkspace = "work"\n'
+    )
+    second = room("g2", "Second") + 'unit = "work"\n'
+    cfg.policy_file.write_text(declarations + room("g1", "First") + second)
+    cfg.identity_file.write_text(
+        '[persons.miles]\nname = "Miles"\n'
+        '[workspaces.home]\nhoncho_workspace = "nora-home"\n'
+        '[workspaces.work]\nhoncho_workspace = "nora-work"\n'
+    )
+    deps = await build_dependencies(cfg)
+    try:
+        cfg.policy_file.write_text(declarations + second)
+        await reloaded(deps, "policy.toml", "applied")
+        assert not await admitted(deps, "g1")
+        assert await admitted(deps, "g2")
+        assert deps.memory._router.for_unit("nora").workspace == "nora-home"
+        assert deps.memory._router.workspaces() == ("nora-home", "nora-work")
+    finally:
+        await deps.background.cancel_all()
+        await deps.audit.aclose()

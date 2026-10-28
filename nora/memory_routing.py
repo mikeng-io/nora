@@ -67,7 +67,9 @@ def honcho_workspaces(
                 "or remove the binding."
             )
         return {DEFAULT_WORKSPACE: default_workspace}
-    named = set(policy.unit_workspaces().values())
+    # A declared unit still exists when its last room is removed. Admit every
+    # declared workspace at boot so later room additions need no new tenant.
+    named = set(policy._unit_workspace.values())
     stray = sorted(set(bindings) - named)
     if stray:
         raise MemoryRoutingError(
@@ -119,7 +121,10 @@ def build_workspace_router(
     return WorkspaceRouter(
         default_workspace,
         unit_workspaces=LiveMapping(lambda: {
-            unit: by_workspace[workspace] for unit, workspace in policy.unit_workspaces().items()
+            unit: by_workspace[workspace]
+            for unit, workspace in (
+                policy._unit_workspace if policy.units_declared else policy.unit_workspaces()
+            ).items()
         }),
         conversation_units=LiveMapping(lambda: {
             cid: convo.unit for convo in policy.conversations for cid in convo.ids

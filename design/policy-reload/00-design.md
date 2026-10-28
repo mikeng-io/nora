@@ -30,6 +30,11 @@ never logs, metrics labels, Git or artifacts.
 The candidate uses the same `load_policy` / `load_persons` loaders as startup.
 The shared `validate_pair` also checks the reserved aiPeer and the existing
 workspace-router invariants: stray/duplicate bindings and ambiguous room IDs.
+Every declared workspace is admitted at boot, including units with no current
+room, so removing the last room does not turn its binding into a stray. This
+supersedes the old unused-unit rejection in both startup and reload: a unit
+declaration with no current rooms still carries a boot-admitted resource.
+Missing unit declarations and invalid/duplicate bindings are still refused.
 Workspace validation lives in `nora.memory_routing`, with the old app module
 retaining its public imports. Presence and analytics additionally reuse their
 startup Life360 membership/circle checks. Analytics now refuses a missing or
@@ -137,5 +142,6 @@ background pollers: next-message admission after adding a room with an unchanged
 mtime (hash positive control), malformed/missing/empty-policy last-good retention,
 whole-file restart refusal, a newly resolved identity, reserved-aiPeer rejection,
 identity binding refusal, and live presence/analytics subjects/circles/rooms with
-their startup cross-checks retained. Named room-admission and invalid-edit tests
+their startup cross-checks retained, and removal of the last room in a bound
+workspace without losing that declaration or its admitted route. Named room-admission and invalid-edit tests
 are falsified by suppressing the production swap, then restored and rerun green.

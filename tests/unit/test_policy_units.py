@@ -87,9 +87,10 @@ def test_a_unit_with_no_workspace_refuses_to_start_once_units_exist(tmp_path):
         _load(tmp_path, _ROOMS + partial)
 
 
-def test_a_unit_entry_no_room_uses_refuses_to_start(tmp_path):
-    with pytest.raises(PolicyError, match=r"\[units\.delta\] but no conversation"):
-        _load(tmp_path, _ROOMS + _UNITS + '\n[units.delta]\nworkspace = "two"\n')
+def test_a_declared_unit_can_keep_its_workspace_while_it_has_no_rooms(tmp_path):
+    policy = _load(tmp_path, _ROOMS + _UNITS + '\n[units.delta]\nworkspace = "two"\n')
+    assert policy.workspace_of("delta") == "two"
+    assert not any(c.unit == "delta" for c in policy.conversations)
 
 
 def test_a_unit_entry_without_a_workspace_is_refused(tmp_path):
