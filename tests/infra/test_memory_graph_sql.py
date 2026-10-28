@@ -567,6 +567,7 @@ async def test_sql_record_hub_stays_out_of_recursive_paths(sql):
 
 async def test_projected_pointers_use_authored_display_names(sql, tmp_path):
     from nora.app.graph_project import projection_context
+    from nora.config_reload import LivePersons, LivePolicy
     from nora.persons import load_persons
     from nora.policy import load_policy
 
@@ -581,9 +582,8 @@ async def test_projected_pointers_use_authored_display_names(sql, tmp_path):
         'id="generated-room"\nlabel="Generated Room"\n'
         'unit="generated-unit"\npersons=["generated_a","generated_b"]\n'
     )
-    scope = projection_context(
-        load_policy(policy), load_persons(identity), nora_name="Generated Nora"
-    )
+    people, rooms = LivePersons(load_persons(identity)), LivePolicy(load_policy(policy))
+    scope = projection_context(rooms, people, nora_name="Generated Nora")
     sql.engine.update_execution_options(memory_graph=scope)
     store = SqlRecordStore(sql.engine)
     for i, pid in enumerate(("generated_a", "generated_b")):
@@ -626,6 +626,40 @@ async def test_projected_pointers_use_authored_display_names(sql, tmp_path):
         assert matches and matches[0].key == expected.key
         assert matches[0].attributes["ref"] == ref
     assert not await sql.aliases(unit="other-unit")
+
+    # The composed identity/policy holders also change without a restart.
+    identity.write_text(identity.read_text().replace("Generated Alpha", "Generated Renamed"))
+    people.swap(load_persons(identity))
+    policy.write_text(
+        policy.read_text() + '\n[[conversations]]\nplatform="signal"\nid="generated-late-room"\n'
+        'label="Generated Late Room"\nunit="late-unit"\npersons=["generated_a"]\n'
+    )
+    rooms.swap(load_policy(policy))
+    await store.append(
+        message=NormalizedMessage(
+            "signal",
+            "generated-late-room",
+            "group",
+            "generated-late-account",
+            "Platform Alias",
+            BASE_MS + 3,
+            "Generated late arrival",
+            {},
+        ),
+        person_id="generated_a",
+    )
+    late_aliases = await sql.aliases(unit="late-unit")
+    assert (
+        late_aliases["generated renamed"]
+        == pointer_entity("person", "late-unit", "generated_a", "Generated Renamed").key
+    )
+    assert (
+        late_aliases["generated late room"]
+        == pointer_entity(
+            "room", "late-unit", "signal:generated-late-room", "Generated Late Room"
+        ).key
+    )
+    assert scope.members["late-unit"] == frozenset({"generated_a"})
 
 
 async def test_graph_batch_tick_records_nothing_found(sql, monkeypatch):

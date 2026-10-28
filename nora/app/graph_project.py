@@ -9,6 +9,7 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nora.domain.live import LiveMapping
 from nora.domain.memory_graph import Key
 from nora.infra.sql import memory_index
 from nora.infra.sql.graph_projection import CODE_RELATIONS, ProjectionContext, project_rollups
@@ -35,21 +36,33 @@ def projection_context(
     produce: bool = True,
 ) -> ProjectionContext:
     """One authored identity/room-name mapping for live writes and backfill."""
-    members: dict[str, frozenset[str] | None] = {}
-    names: dict[Key, str] = {("person", pid): ref.name for pid, ref in persons.by_person.items()}
-    names["nora", "nora"] = nora_name
-    for conversation in policy.conversations:
-        old = members.get(conversation.unit, frozenset())
-        members[conversation.unit] = (
-            None if old is None or conversation.persons is None else old | conversation.persons
-        )
-        names["unit", conversation.unit] = conversation.unit
-        for cid in conversation.ids:
-            names["room", f"{conversation.platform}:{cid}"] = conversation.label or cid
+
+    def members() -> dict[str, frozenset[str] | None]:
+        result: dict[str, frozenset[str] | None] = {}
+        for conversation in policy.conversations:
+            old = result.get(conversation.unit, frozenset())
+            result[conversation.unit] = (
+                None if old is None or conversation.persons is None else old | conversation.persons
+            )
+        return result
+
+    def names() -> dict[Key, str]:
+        result: dict[Key, str] = {
+            ("person", pid): ref.name for pid, ref in persons.by_person.items()
+        }
+        result["nora", "nora"] = nora_name
+        for conversation in policy.conversations:
+            result["unit", conversation.unit] = conversation.unit
+            for cid in conversation.ids:
+                result["room", f"{conversation.platform}:{cid}"] = conversation.label or cid
+        return result
+
     return ProjectionContext(
-        rooms={f"{c.platform}:{cid}": c.unit for c in policy.conversations for cid in c.ids},
-        members=members,
-        names=names,
+        rooms=LiveMapping(
+            lambda: {f"{c.platform}:{cid}": c.unit for c in policy.conversations for cid in c.ids}
+        ),
+        members=LiveMapping(members),
+        names=LiveMapping(names),
         produce=produce,
         metrics=metrics,
     )
