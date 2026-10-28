@@ -18,8 +18,10 @@ dispatch lets release-please tag/publish it. Release-PR auto-merge is removed.
 Publication still triggers the image/Komodo path, requiring deployment admission.
 The operator clarified that daily Devin must measure versioned release criteria
 and execute the full pipeline when they pass, including the normal image/Komodo
-path; unresolved #250/#317 holds block activation. RC/nightly publication remains
-separate unbuilt work. The historical automatic-release consequences below describe the
+path; unresolved #250/#317 holds block activation. Daily standing authority covers
+patch/minor only; a major requires explicit owner approval for its candidate and
+version before any release mutation. RC/nightly publication remains separate
+unbuilt work. The historical automatic-release consequences below describe the
 pre-amendment behavior. Branch rules and immutable published tags are unchanged.
 
 ## Context

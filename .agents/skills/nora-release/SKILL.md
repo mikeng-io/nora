@@ -16,6 +16,8 @@ bundle to `deployments` for Komodo's enabled poller. A publish therefore reaches
 the existing automatic deployment path. The admitted daily automation has standing
 release/deployment authorization only when every criterion in assessment.md passes;
 other publication needs operator admission. Preparing or merging metadata deploys nothing.
+The daily agent may execute patch/minor releases. Every major release needs
+explicit owner approval bound to the candidate and version before preparation.
 Read publication and deployment back separately through `nora-deploy`.
 
 ## 1. Assess the unreleased range and choose the bump
@@ -37,6 +39,8 @@ Choose `patch`, `minor` or `major` explicitly. Compatible fixes are patch,
 compatible new functionality is minor, and removing supported config/CLI/API
 behavior is major. Assess whether an incompatible change is necessary before
 shipping it. Never hide a real breaking change to keep the number small.
+Repairs to existing behavior and internal refactors are not new capabilities
+merely because a commit says `feat`; flag incorrect classification for correction.
 
 `scripts/release_plan.py` uses reachable user-visible runtime commits for the
 notes and minimum bump: `feat` minor; `fix`, `security`, `perf`, `change`,

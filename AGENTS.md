@@ -480,8 +480,10 @@ reachable-history notes and enforces the declared minimum bump; release-please
 still owns tagging/publication. Subjects remain the changelog source.
 Publishing triggers `release-images.yml` and the existing Komodo poller, so obtain
 deployment admission before publishing, or use the daily automation's standing
-authorization only after all `nora-release/assessment.md` criteria pass. Publication
-and verified deployment remain separate states. The daily agent evaluates and
+authorization only after all `nora-release/assessment.md` criteria pass. That
+authority covers patch/minor only; major needs explicit owner approval for the
+candidate and version. Publication and verified deployment remain separate states.
+The daily agent evaluates and
 executes the release pipeline; it is not advisory-only.
 
 ## Adding or changing a tool

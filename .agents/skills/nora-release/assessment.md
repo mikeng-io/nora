@@ -3,6 +3,9 @@
 The operator authorizes this automation to evaluate the criteria below and, when
 all pass, execute the formal release pipeline through `SKILL.md`. Ordinary master
 pushes never release. This is conditional daily automation, not advisory-only.
+Standing execution authority covers patch and minor releases only. A major bump
+requires the owner's explicit approval for the assessed candidate and version;
+without it, report needs owner approval and perform no release mutations.
 
 ## Evidence and hard gates
 
@@ -20,7 +23,8 @@ pushes never release. This is conditional daily automation, not advisory-only.
 4. Identify actual compatibility impact from diffs and contract evidence, not
    only commit markers. Patch = compatible fixes; minor = compatible capability;
    major = an evidenced incompatible supported interface. Respect the planner's
-   declared minimum. A disagreement between the diff and markers is blocked for
+   declared minimum. If major is required, stop for owner approval; never select
+   patch/minor to avoid that boundary. A disagreement between the diff and markers is blocked for
    correction, not permission to hide the break. Required migrations, rollback
    limits and live config prerequisites must be documented and ready before
    publication; unfinished manual work is blocked.

@@ -65,7 +65,7 @@ cannot be discovered through `/apps/{slug}` using that job's repository token.
 The `release-please` workflow is manual-only (`workflow_dispatch` on master):
 
 ```bash
-gh workflow run release-please.yml --ref master -f action=prepare -f bump=minor
+gh workflow run release-please.yml --ref master -f action=prepare -f bump=minor -f candidate=<assessed-full-sha>
 # Review the generated PR and its checks, then manually merge it.
 gh workflow run release-please.yml --ref master -f action=publish
 ```
@@ -83,6 +83,9 @@ that appears successful but suppresses downstream events. `Release-As:` footers
 remain unsupported. The specifically admitted daily Devin automation evaluates
 `.agents/skills/nora-release/assessment.md` and, when all criteria pass, executes
 prepare/checks/merge/publish through `.agents/skills/nora-release/SKILL.md`.
+Its standing authority is patch/minor only. A major release requires explicit
+owner approval for the assessed candidate and version; the agent stops before
+release mutations while that approval is absent.
 Normal master pushes still have no release authority.
 
 Publishing still triggers the complete release image bundle and Komodo poller;
