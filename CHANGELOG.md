@@ -1,5 +1,17 @@
 # Changelog
 
+## [7.11.4](https://github.com/mikeng-io/nora/compare/v7.11.3...v7.11.4) (2026-10-28)
+
+
+### Maintenance
+
+* **memory:** apply review fixes to the memory graph node ([3d13a0f](https://github.com/mikeng-io/nora/commit/3d13a0fe4191711c4a0f2f837d5b1d6b3562305c))
+* **memory:** make Cognition the one loop that comprehends, reshapes and acts ([e98298c](https://github.com/mikeng-io/nora/commit/e98298c543349dc0fedda83af9010adf0099ab90))
+* **memory:** make the memory a graph with a research loop ([e67e9d5](https://github.com/mikeng-io/nora/commit/e67e9d5db4bc5bfa5b112b7eac4f3083f85777bf))
+* **memory:** place the memory loop before Cognition and give each item one writer ([92b517b](https://github.com/mikeng-io/nora/commit/92b517bc9afc0a9f5a26072db2b5a88bf80276d8))
+* **memory:** ratify the memory graph and name who writes each relation ([5cdf6c1](https://github.com/mikeng-io/nora/commit/5cdf6c19f96877fd07bd1c4175fb7807299f4452))
+* **memory:** ship step 2 before the backfill and measure its cost ([c998b86](https://github.com/mikeng-io/nora/commit/c998b86a126a04569c536d817f1a2629e53b529d))
+
 ## [7.11.3](https://github.com/mikeng-io/nora/compare/v7.11.2...v7.11.3) (2026-10-28)
 
 
