@@ -13,11 +13,13 @@ edges:
   - {dst: 47-character-dimensions, rel: depends_on, provenance: asserted}
   - {dst: ../cognition-loop/30-cognition, rel: extends, provenance: asserted}
   - {dst: ../cognition-loop/10-tiers, rel: extends, provenance: asserted}
+  - {dst: ../culture-tier/00-overview, rel: extends, provenance: asserted}
+  - {dst: ../self-growth/40-lessons, rel: extends, provenance: asserted}
 ---
 
 # The memory is a graph
 
-Status: **ratified** by the operator, 2026-10-28 (all six decisions in §16). Docs only: no schema, verb, tool or
+Status: **ratified** by the operator, 2026-10-28 (all seven decisions in §16). Docs only: no schema, verb, tool or
 migration lands with this node. It supersedes [18](18-extraction.md)'s
 single-pass text reading, and amends [25](25-memory-graph.md) §1, §2 and §5,
 [15](15-memory-map.md) and [40](40-prior-art.md) §5, which carry dated
@@ -240,24 +242,29 @@ episodes), and external file content (only the link,
 ## 7. One Cognition loop: comprehend, measure, serialize
 
 **Operator, 2026-10-28:** everything said and everything done keeps shaping
-the memory and the profiles, so the Cognition loop is the one driver. On every
-stimulus (a message, a story, a stay, a state change) one wake runs three
-steps in order. Each step is a bounded model session of its own, with its own
+the memory and the profiles, so the Cognition loop is the one driver. Every stimulus (a message, a story, a stay, a state change) drives steps 1
+and 2 on arrival; step 3 follows on the wake rules. Each step is a bounded model session of its own, with its own
 focused input: one owner and one order, never one prompt asked to read,
 profile and plan at once. The steps are CMS one level up:
 
-| step | CMS | job | writes |
-|---|---|---|---|
-| 1. comprehend | comprehend | read every new item once, resolve, relate, enrich | readings, entities, notebook relations |
-| 2. reshape | measure | for each entity step 1 changed: what changed in what it is like | traits and guesses ([ADR 0029](../../docs/adr/0029-a-prompt-block-names-its-subject-and-author-by-id.md)'s parts); facts are code (§9) |
-| 3. decide and act | measure, serialize | what needs doing: notes, memos, events, reminders, Standing, or a re-read of a social item that looks wrong | Register items with their own links (§7a), Standing |
+| step | runs | CMS | job | writes |
+|---|---|---|---|---|
+| 1. comprehend | **on each arrival**, per work item | comprehend | read every new item once, resolve, relate, enrich | readings, entities, notebook relations |
+| 2. reshape | right after a step 1 that changed relations | measure | for each entity step 1 changed: what changed in what it is like, including a room's or unit's culture and Nora's lessons (§9) | traits and guesses ([ADR 0029](../../docs/adr/0029-a-prompt-block-names-its-subject-and-author-by-id.md)'s parts), culture baselines, lessons; facts are code (§9) |
+| 3. decide and act | on the existing wake reasons (`settled`, `strong_cue`, `batch`, `max_age`, `time`, and `self`, raised by `wake_at`) | measure, serialize | what needs doing: notes, memos, events, reminders, Standing, or a re-read of a social item that looks wrong | Register items with their own links (§7a), Standing |
 
 Every step ends in a staged write that code admits (serialize), and
 `serialize(N)` is `comprehend(N+1)`: the next wake reads the graph this one
 wrote. The three steps read one another only through committed state, never
 by waiting on each other.
 
-**Four rules the merge must keep:**
+**Operator, 2026-10-28: comprehend on arrival.** Steps 1 and 2 do not wait
+for a wake, so the graph and the profiles are current within one work item of
+an arrival, not after 30 minutes of quiet. Step 3 keeps the wake rules,
+because deciding whether to act benefits from a settled room; when it runs,
+the graph it reads is already up to date.
+
+**Seven rules the merge must keep:**
 
 1. **Step 1 is complete; step 3 is selective.** Every item is comprehended
    exactly once, never capped or deferred by surprise; a skipped item is a
@@ -269,9 +276,19 @@ by waiting on each other.
 2. **Acting is a switch.** The backfill (§10) runs steps 1 and 2 with step 3
    off: two months of history never creates a note or a reminder.
 3. **A profile moves when its graph moved.** Step 2 runs only for entities
-   whose relations step 1 changed in this wake; an "ok 👍" rewrites no card.
+   whose relations step 1 changed in this work item; an "ok 👍" rewrites no card.
 4. **No step grades itself.** A guess is graded by a judge other than its
    writer ([45](45-persona-adaptor.md)), outside the loop.
+5. **A step 1 work item is never dropped.** Each work item has its own state
+   and input hash (§10), independent of wakes: an agenda-failed wake's stimuli may be struck for step 3 after
+   `max_consecutive_failures` (infrastructure failures never strike, DEC-244), but a work item that
+   fails is retried and, past 5 attempts, parked `failed` for the operator's
+   re-queue, never discarded. A missed item is a hole in the graph.
+6. **Each step commits on its own.** A step 3 failure never rolls back step 1
+   or 2; step 3 re-reads committed state on its next wake.
+7. **The backfill has its own lane.** It runs steps 1 and 2 in a separate
+   worker with its own concurrency limit, so it never takes a slot from live
+   arrivals or live wakes (`max_concurrent_sessions`).
 
 A re-read in step 3 uses the existing read lanes and the story rule of §16.5:
 it re-reads what the social stream already perceived, never opens a story
@@ -287,7 +304,9 @@ a `_BLOCKS` table walked by `assemble` ([ADR 0021](../../docs/adr/0021-every-pro
 [context-assembly/04](../context-assembly/04-every-occasion.md) «How a new occasion joins»).
 
 **What step 1 works on:** a **work item** per arrival, keyed by its source:
-a message batch (as today's extraction queue, 20 messages), a social item, a
+a message batch (as today's extraction queue, 20 messages), a social item
+(every item the social poller records, as today's `social` stimulus: a
+member's post, story or reel; ingestion itself stays outside the loop), a
 media reading landing late on an old message, a Rollup episode closing (an
 outing, a co-location), a Register write. Each work item records the
 **input hash** of everything it rendered (§10).
@@ -426,14 +445,43 @@ The card stays the bounded synthesis in every prompt ([18](18-extraction.md)
 `character-*` and `profile-*` adaptors retire when step 2 is live; their
 write verbs move to the Cognition loop.
 
+**Culture and lessons are step 2 too** (operator, 2026-10-28). The graph is
+cross-connected: a person's change can change the room they talk in, and a
+change in how people answer Nora changes what she has learned. So one step 2
+pass reshapes, in this order, the **persons** step 1 changed, then the
+**rooms and units** they belong to (their culture: the room's baselines, what
+it normally picks up, [culture-tier](../culture-tier/00-overview.md)), then
+**Nora** (her lessons, from closed `response` episodes, which arrive as Rollup
+work items, [self-growth/40](../self-growth/40-lessons.md)). A room or unit
+is reshaped only when a member's or the room's relations changed in this pass;
+Nora only when a response episode closed. The `culture` and `lessons`
+adaptors retire when step 2 carries them; `lesson_write` / `lesson_retire`
+and the culture writes move to step 2, and their readers (the
+Character sessions' room-culture block, the tag path's `<culture>` and
+`<unit_culture>` prefill, the lessons block) read the same stores as now.
+
 ## 10. One backfill, built in time order
 
 **Order:** oldest first, by evidence time, across every kind (messages,
 social items, Rollup episodes, Register writes), so each session sees the
 graph as it stood at its moment, as a live arrival would. It runs steps 1
-and 2 with step 3 off (§7 rule 2). Record and Rollup
+and 2 with step 3 off (§7 rule 2), in its own lane (§7 rule 7). Record and Rollup
 relations are projected by code first, in full, because they are free and the
 loop reads them.
+
+**The clock is the item's.** Steps 1 and 2 use the same instructions live
+and in the backfill; what differs is the input: each work item renders "now"
+as its own evidence time, the graph as of that time, and enrichment as of
+that time. "Going to the concert on Saturday", read in the backfill, resolves
+against the week it was said, not against today. The model's input states
+its time; no instruction is rewritten for the backfill.
+
+**A catch-up wake closes it.** History that is still live (a future event, an
+unfulfilled commitment, an open plan) would never reach step 3 with acting
+off. When the backfill finishes, one step 3 wake per unit runs on the real
+clock over what code selects as still open in the graph: relations with no
+`valid_to` whose event or due time is in the future, and open commitments.
+Everything older stays memory only.
 
 **Incremental after it:** every work item stores the hash of its rendered
 input. A later change that alters an item's input (a media reading landing,
@@ -471,6 +519,7 @@ second judge from another vendor:
 | egress: a query naming a private person or carrying an identifier or coordinate | **0** (any is a FAIL) |
 | work items failed after retries | < 5% |
 | notes, reminders or sends created during the backfill | **0** (any is a FAIL) |
+| a work item lost (neither settled nor parked `failed`) | **0** (any is a FAIL) |
 | cost per work item, median and p95, step 1 and step 2 separately; step 2 sessions per work item | reported; the backfill budget is set from it |
 | query p95 at depth 3 on the built graph | < 200 ms |
 
@@ -627,6 +676,11 @@ measured between them.
    profiles and decisions are three ordered steps of one loop per stimulus
    (§7); the Character tier's separate writers retire, and its facts are
    rendered by code from the graph (§9).
+7. **Comprehend on arrival; culture and lessons in step 2** (operator,
+   2026-10-28, ruled): steps 1 and 2 run per arrival, step 3 on the wake
+   rules (§7); the `culture` and `lessons` adaptors retire into step 2 (§9);
+   social ingestion stays outside the loop and every recorded item is a step 1
+   work item (§7).
 
 ## The reading that would reopen it
 
@@ -636,9 +690,13 @@ measured between them.
 - Wrong merges above 2%: entity resolution moves out of the loop into a
   separate, judged pass.
 - Step 1 falls behind arrivals (a backlog that grows across a day): step 1
-  moves to its own worker queue, still owned and ordered by the loop.
+  gets more workers, still owned and ordered by the loop.
 - Query p95 over 200 ms at depth 3 with precomputed neighbourhoods: a graph
   engine (AGE first) is measured.
 - The answerability gate shows the subgraph preview answering no better than
   readings alone: the relations are not earning their cost, and the loop's
   enrichment and resolution steps are cut back to readings.
+
+Loose ends noted, not blocking: no `play` stimulus arrived in the 7 days to
+2026-10-28 (the producer may be idle), and `wake_at` was used once in those
+7 days (172 sessions).
