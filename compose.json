@@ -1,7 +1,7 @@
 {
   "services": {
     "signal-cli": {
-      "image": "ghcr.io/mikeng-io/nora-signal-cli@sha256:7d26fb3632f0c7b48531f07e2fd9b65d5d118cd2f11995cc1254feb68f63c5bd",
+      "image": "ghcr.io/mikeng-io/nora-signal-cli@sha256:0f3a93e225cccf08b9faef1722b03a9f21190cb9f4cd2710d404aaca4b555cb8",
       "container_name": "signal-cli",
       "restart": "unless-stopped",
       "networks": [
@@ -41,7 +41,7 @@
       }
     },
     "whatsapp-bridge": {
-      "image": "ghcr.io/mikeng-io/nora-whatsapp-bridge@sha256:65cf2c8e475dcee4c93154ab275ee929f6ab483904648ccbfef99b3c709db8fd",
+      "image": "ghcr.io/mikeng-io/nora-whatsapp-bridge@sha256:05dec2285210b491fe30735ecf2d97a52cc29afa26ec16aa5804e2f1e057d7b4",
       "container_name": "whatsapp-bridge",
       "restart": "unless-stopped",
       "networks": [
@@ -80,7 +80,7 @@
       }
     },
     "instagram-bridge": {
-      "image": "ghcr.io/mikeng-io/nora-instagram-bridge@sha256:b44cc4921a04850c606e536fe59c53ee818e109e301c7416dd8f3b1a29a10c33",
+      "image": "ghcr.io/mikeng-io/nora-instagram-bridge@sha256:cfd0d3b9df3cafc32ee780ac19297c1389bbe594a90a7444c1af413d5aef988a",
       "container_name": "instagram-bridge",
       "restart": "unless-stopped",
       "networks": [
@@ -135,7 +135,7 @@
           "max-file": "3"
         }
       },
-      "image": "ghcr.io/mikeng-io/nora-nora@sha256:1c61afb456d92e16c721316b8e504f71884a9121c8751929d3bca114eacb75c6",
+      "image": "ghcr.io/mikeng-io/nora-nora@sha256:8d1c60e40487835fa37581e9101bb1301afb15b862923765b737609465f0e334",
       "container_name": "nora",
       "restart": "unless-stopped",
       "stop_grace_period": "75s",
@@ -214,7 +214,7 @@
       }
     },
     "app": {
-      "image": "ghcr.io/mikeng-io/nora-app@sha256:58fe62dabc2846a10824833e4b7a75145a452091320ca62dd68198416a1401eb",
+      "image": "ghcr.io/mikeng-io/nora-app@sha256:8dfbae8b1ad8f3af97a595eeb9ba9cff1ccb71c2e7e9fa1d6413c8fb179a6846",
       "container_name": "nora-app",
       "restart": "unless-stopped",
       "networks": [
@@ -243,7 +243,7 @@
       ]
     },
     "site": {
-      "image": "ghcr.io/mikeng-io/nora-site@sha256:cb8e9890482eda80cb6215f9e4dc297da7d6b25162ed1ccd7e716a72bd09a13f",
+      "image": "ghcr.io/mikeng-io/nora-site@sha256:8ff463957c4a6466ac70513a10a737d2bcf9014b31c63e26f30582425882f601",
       "container_name": "nora-site",
       "profiles": [
         "site"
@@ -254,7 +254,7 @@
       ]
     },
     "presence": {
-      "image": "ghcr.io/mikeng-io/nora-nora@sha256:1c61afb456d92e16c721316b8e504f71884a9121c8751929d3bca114eacb75c6",
+      "image": "ghcr.io/mikeng-io/nora-nora@sha256:8d1c60e40487835fa37581e9101bb1301afb15b862923765b737609465f0e334",
       "container_name": "presence",
       "restart": "unless-stopped",
       "entrypoint": [
@@ -306,7 +306,7 @@
       }
     },
     "analytics": {
-      "image": "ghcr.io/mikeng-io/nora-nora@sha256:1c61afb456d92e16c721316b8e504f71884a9121c8751929d3bca114eacb75c6",
+      "image": "ghcr.io/mikeng-io/nora-nora@sha256:8d1c60e40487835fa37581e9101bb1301afb15b862923765b737609465f0e334",
       "container_name": "analytics",
       "restart": "unless-stopped",
       "entrypoint": [
@@ -482,7 +482,7 @@
           "max-file": "3"
         }
       },
-      "image": "ghcr.io/mikeng-io/nora-stt@sha256:e3ebb7c398d365fd4b1f6af764cfecd79e3e4d77d0201a56e81786105f891afa",
+      "image": "ghcr.io/mikeng-io/nora-stt@sha256:7aaedec5183061a19a8a72b0d462084612e7c24fbf48d18485f23173961f4fbf",
       "container_name": "stt",
       "restart": "unless-stopped",
       "networks": [
@@ -516,7 +516,7 @@
           "max-file": "3"
         }
       },
-      "image": "ghcr.io/mikeng-io/nora-voice-sidecar@sha256:5cfac30a0c20f607640c2a40bda5e9a7e89e390d6b2efa3a00a6ce2b98ece976",
+      "image": "ghcr.io/mikeng-io/nora-voice-sidecar@sha256:ddbc340d5952923e24d4e208af194f4212d719b1a06852cb3f5319a978a871f9",
       "container_name": "voice-sidecar",
       "restart": "unless-stopped",
       "networks": [
@@ -554,7 +554,7 @@
           "max-file": "3"
         }
       },
-      "image": "ghcr.io/mikeng-io/nora-voice-wake@sha256:4a882494168688ea29042bcc4e88d8f0d4af69493f5dc6a51468bfa50e0ee7dc",
+      "image": "ghcr.io/mikeng-io/nora-voice-wake@sha256:f3da83586cdc892294f0d1cc4036835e46cc352a48f2d0456e02d8d8eab5531a",
       "container_name": "voice-wake",
       "restart": "unless-stopped",
       "networks": [
@@ -658,7 +658,7 @@
       }
     },
     "alert-bridge": {
-      "image": "ghcr.io/mikeng-io/nora-alert-bridge@sha256:65e20c0ee0827dd96d0a402f35ad83a54fefd929551d752e8ff163c01d3d44a3",
+      "image": "ghcr.io/mikeng-io/nora-alert-bridge@sha256:6bd463f25a8afbecc613f7e2dabf9082c701c9242a9a5421e01b7f8a80b310fa",
       "container_name": "nora-alert-bridge",
       "restart": "unless-stopped",
       "environment": [
