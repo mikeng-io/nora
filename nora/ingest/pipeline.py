@@ -316,7 +316,7 @@ class IngestPipeline:
         # one definition — a mention-only server-entry channel answers tags
         # and keeps its transcript without either side effect.
         room = self._allowlist.conversation(message.platform, message.conversation_id)
-        absorbed = room is None or room.absorbed
+        absorbed = room is not None and room.absorbed
 
         # AN EDIT takes its own path from here: it is recorded beside the
         # message it changes, never as a message of its own — and an edit of
@@ -463,7 +463,7 @@ class IngestPipeline:
         own stanza id is not a message anyone can react to."""
         m = self._metrics
         room = self._allowlist.conversation(message.platform, message.conversation_id)
-        absorbed = room is None or room.absorbed
+        absorbed = room is not None and room.absorbed
         with span("ingest.identity"):
             person = await identity_stage.run(
                 message=message, persons=self._persons, metrics=m

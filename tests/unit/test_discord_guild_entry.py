@@ -27,11 +27,11 @@ def _write(tmp_path, body):
     return p
 
 
-def _entry(*, label="Zone 9", unit="", extra="", fields=""):
+def _entry(*, label="Zone 9", unit="", extra="", fields="", persons='"*"'):
     return (
         '[[conversations]]\nplatform = "discord"\n'
         f'guild = "{GUILD}"\nlabel = "{label}"\n'
-        f"{unit}{fields}persons = \"*\"\n{extra}"
+        f"{unit}{fields}persons = {persons}\n{extra}"
     )
 
 
@@ -304,7 +304,7 @@ def _persons():
     )
 
 
-def _pipeline(allowlist, memory, spawned, stimulus_calls, monkeypatch):
+def _pipeline(allowlist, memory, spawned, stimulus_calls, monkeypatch, audit=None):
     import nora.ingest.stages.stimulus as stimulus_stage
 
     async def _spy(**kwargs):
@@ -312,7 +312,7 @@ def _pipeline(allowlist, memory, spawned, stimulus_calls, monkeypatch):
 
     monkeypatch.setattr(stimulus_stage, "run", _spy)
     return IngestPipeline(
-        audit=FakeRecordStore(), memory=memory, persons=_persons(),
+        audit=audit or FakeRecordStore(), memory=memory, persons=_persons(),
         policy=TriggerTextPolicy("nora.000"), allowlist=allowlist,
         metrics=Metrics(), spawn=spawned.append,
         stimulus_wiring=object(),
@@ -352,6 +352,175 @@ async def test_an_ambient_channel_is_fed_and_stimulated(tmp_path, monkeypatch):
         await coro
     assert memory.fed != []
     assert len(stimuli) == 1
+
+
+# ── `rooms()` is the enumeration every room consumer reads ─────────────
+
+import dataclasses  # noqa: E402
+from types import SimpleNamespace  # noqa: E402
+
+import nora.ingest.stages.scope as scope_stage  # noqa: E402
+from nora.app.composition import (  # noqa: E402
+    _profile_room_keys,
+    character_person_keys,
+    scope_home_rooms,
+    social_unit_rooms,
+)
+from nora.app.documents_service import room_label, rooms_named  # noqa: E402
+from nora.config_reload import LivePolicy  # noqa: E402
+from nora.domain.models import EditTarget  # noqa: E402
+from nora.engagement.self_presence import PresenceReader  # noqa: E402
+
+
+def _friends_entry(persons='"*"'):
+    return _entry(unit='unit = "friends"\n', persons=persons)
+
+
+async def test_discovered_channels_are_unit_rooms_in_presence(tmp_path):
+    """`<presence>`/`room_list` enumerate `rooms()`: a channel the file never
+    names is still a sibling room of the unit, named by its channel name."""
+    policy = _policy(tmp_path, 'default = "deny"\n' + _friends_entry(), DISCOVERED)
+    unit_rooms = await PresenceReader(policy=policy, adapters={}).rooms(
+        platform="discord", conversation_id=f"{GUILD}/{CHANNEL_A}",
+    )
+    assert unit_rooms.rooms is not None
+    assert len(unit_rooms.rooms) == 3     # the room itself is not a sibling
+    assert {r.label for r in unit_rooms.rooms} == {
+        "general", "discussion", "admin-log",
+    }
+
+
+def test_rooms_named_and_room_label_reach_a_discovered_channel(tmp_path):
+    policy = _policy(
+        tmp_path, 'default = "deny"\n' + _friends_entry(persons='["miles"]'),
+        DISCOVERED,
+    )
+    assert ("discord", f"{GUILD}/{CHANNEL_B}") in rooms_named(policy, "miles")
+    assert room_label(policy, "discord", f"{GUILD}/{CHANNEL_B}") == "discussion"
+
+
+def test_character_person_keys_see_discovered_rooms(tmp_path):
+    policy = _policy(
+        tmp_path, 'default = "deny"\n' + _friends_entry(persons='["miles"]'),
+        DISCOVERED,
+    )
+    keys = character_person_keys(policy, _persons())
+    (key,) = [v for v in keys.values() if v.unit == "friends"]
+    assert {r.key for r in key.rooms} == {
+        f"{GUILD}/{CHANNEL_A}", f"{GUILD}/{CHANNEL_B}", f"{GUILD}/{CHANNEL_C}",
+    }
+    assert key.home == f"{GUILD}/{CHANNEL_A}"
+
+
+def test_profile_room_keys_cover_a_discovered_channel(tmp_path):
+    policy = _policy(tmp_path, 'default = "deny"\n' + _friends_entry(), DISCOVERED)
+    keys = _profile_room_keys(policy)
+    assert keys[f"{GUILD}/{CHANNEL_A}"].unit == "friends"
+
+
+def test_social_unit_rooms_include_discovered_channels(tmp_path):
+    policy = _policy(tmp_path, 'default = "deny"\n' + _friends_entry(), DISCOVERED)
+    assert ("discord", f"{GUILD}/{CHANNEL_B}") in social_unit_rooms(policy)["friends"]
+
+
+def test_scope_home_rooms_map_a_discovered_channel(tmp_path):
+    policy = _policy(tmp_path, 'default = "deny"\n' + _friends_entry(), DISCOVERED)
+    assert scope_home_rooms(policy)[f"{GUILD}/{CHANNEL_A}"].platform == "discord"
+
+
+async def test_the_self_profile_read_renders_discovered_rooms_as_targets(tmp_path):
+    """The grounder's self-profile read builds its lineage targets from
+    `rooms()`, so a discovered channel is one of the rooms an excluded or
+    located line is checked against."""
+    from nora.app.cognition_grounding import unit_self_profile_reader
+
+    policy = _policy(tmp_path, 'default = "deny"\n' + _friends_entry(), DISCOVERED)
+    seen = []
+    boundary = SimpleNamespace(
+        render_room=lambda platform, conversation_id: seen.append(
+            (platform, conversation_id)
+        ),
+    )
+
+    class _Heads:
+        async def account_heads(self, *, key):
+            return ()
+
+    gated = unit_self_profile_reader(_Heads(), policy, lineage=boundary)
+    assert gated is not None
+    await gated("friends")
+    assert ("discord", f"{GUILD}/{CHANNEL_A}") in seen
+
+
+# ── the absorb read fails closed on the hot-reload race ─────────────────
+
+
+def _denying_policy(tmp_path):
+    """A file that no longer lists the guild's channels — the post-swap
+    snapshot the race drops the room under."""
+    p = tmp_path / "later.toml"
+    p.write_text(
+        'default = "deny"\n[[conversations]]\nplatform = "signal"\n'
+        'id = "sig-room-1"\nlabel = "Elsewhere"\npersons = "*"\n'
+    )
+    return load_policy(p)
+
+
+async def _run_past_a_swap(tmp_path, monkeypatch, message, audit=None):
+    """The hot-reload race, faithfully: `LivePolicy.swap` between the scope
+    read (old snapshot admits) and the absorb read (current snapshot denies)."""
+    live = LivePolicy(
+        _pipeline_policy(tmp_path, extra='ambient = ["discussion"]\n')
+    )
+    later = _denying_policy(tmp_path)
+    real_run = scope_stage.run
+
+    async def _swap_after_scope(**kwargs):
+        admitted = await real_run(**kwargs)
+        live.swap(later)
+        return admitted
+
+    monkeypatch.setattr(scope_stage, "run", _swap_after_scope)
+    memory = FakeMemoryStore()
+    spawned, stimuli = [], []
+    pipeline = _pipeline(live, memory, spawned, stimuli, monkeypatch, audit=audit)
+    result = await pipeline.run(message=message)
+    for coro in spawned:
+        await coro
+    return result, memory, stimuli
+
+
+async def test_a_room_vanishing_between_scope_and_the_absorb_read_is_not_absorbed(
+    tmp_path, monkeypatch,
+):
+    """A message the CURRENT policy denies is never fed or stimulated — the
+    absorb read fails closed, never `or room.absorbed` on a missing room."""
+    result, memory, stimuli = await _run_past_a_swap(
+        tmp_path, monkeypatch, _discord_msg(CHANNEL_B),
+    )
+    assert result.message is not None          # recorded
+    assert memory.fed == []                    # but never absorbed
+    assert stimuli == []
+
+
+async def test_an_edit_whose_room_vanishes_mid_turn_is_not_absorbed(
+    tmp_path, monkeypatch,
+):
+    store = FakeRecordStore()
+    original = dataclasses.replace(
+        _discord_msg(CHANNEL_B, body="first"), message_id="edit-target-1",
+    )
+    await store.append(message=original, person_id="miles")
+    edit = dataclasses.replace(
+        _discord_msg(CHANNEL_B, body="second"),
+        timestamp=5, edit_of=EditTarget(message_id="edit-target-1"),
+    )
+    result, memory, stimuli = await _run_past_a_swap(
+        tmp_path, monkeypatch, edit, audit=store,
+    )
+    assert result.message is not None          # the edit itself is recorded
+    assert memory.fed == []                    # but never absorbed
+    assert stimuli == []
 
 
 # ── `nora groups` ────────────────────────────────────────────────────────

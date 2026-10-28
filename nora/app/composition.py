@@ -352,7 +352,7 @@ def _collective_members(
     policy: Policy, keys: Mapping[str, CollectiveKey],
 ) -> dict[str, tuple[str, ...]]:
     return {k: tuple(sorted({pid for r in ck.rooms
-            for convo in policy.conversations if convo.primary_id == r.key
+            for convo in policy.rooms() if convo.primary_id == r.key
             for pid in convo.persons or ()})) for k, ck in keys.items()}
 
 
@@ -986,7 +986,7 @@ def scope_home_rooms(allowlist: Any) -> dict[str, HomeRoom]:
     """
     out: dict[str, HomeRoom] = {}
     seen: dict[str, tuple[str, str, str]] = {}
-    for conv in allowlist.conversations:
+    for conv in allowlist.rooms():
         home = HomeRoom(
             unit=conv.unit, platform=conv.platform,
             conversation_id=conv.primary_id, conversation_type="group",
@@ -1012,6 +1012,10 @@ def social_person_units(allowlist: Any) -> dict[str, tuple[str, ...]]:
     announced in. A `*` room lists nobody, the rule `SocialSubjectIndex.members`
     applies to who is polled."""
     out: dict[str, list[str]] = {}
+    # ponytail: a person's units are a FILE fact — a guild entry's `persons`
+    # lists them for every channel it expands into — so `conversations` is the
+    # source here; `rooms()` would drop them whenever the directory cannot
+    # enumerate the guild.
     for conv in allowlist.conversations:
         if conv.persons is None or not conv.unit:
             continue
@@ -1040,6 +1044,18 @@ def social_person_rooms(allowlist: Any) -> dict[tuple[str, str], tuple[str, str]
     return out
 
 
+def social_unit_rooms(allowlist: Any) -> dict[str, tuple[tuple[str, str], ...]]:
+    """`unit -> every (platform, conversation_id)` of its rooms, sorted: the
+    rooms the social poller may read an item through. `rooms()`, not
+    `conversations`, so a channel discovered through a server entry counts."""
+    return {
+        unit: tuple((c.platform, rid)
+                    for c in allowlist.rooms()
+                    if c.unit == unit for rid in sorted(c.ids))
+        for unit in {c.unit for c in allowlist.rooms() if c.unit}
+    }
+
+
 def character_person_keys(allowlist: Any, persons: Any) -> dict[str, PersonKey]:
     """One key per (unit, person listed in any of that unit's rooms), from
     `policy.toml` and `identity.toml`. A
@@ -1049,7 +1065,7 @@ def character_person_keys(allowlist: Any, persons: Any) -> dict[str, PersonKey]:
     rooms_of: dict[str, list[CharacterRoom]] = {}
     listing: dict[tuple[str, str], list[str]] = {}
     refs: dict[str, Any] = {}
-    for conv in allowlist.conversations:
+    for conv in allowlist.rooms():
         if not conv.primary_id or not conv.unit:
             continue
         rooms_of.setdefault(conv.unit, []).append(CharacterRoom(
@@ -1064,6 +1080,21 @@ def character_person_keys(allowlist: Any, persons: Any) -> dict[str, PersonKey]:
             home=homes[0], listed=tuple(homes),
         )
         for (unit, person_id), homes in listing.items()
+    }
+
+
+def _profile_room_keys(allowlist: Any) -> dict[str, CollectiveKey]:
+    """Room `primary_id` -> the room's CollectiveKey, for every room policy
+    admits — `rooms()`, so a channel discovered through a server entry gets a
+    Profile account under its own key too."""
+    return {
+        conv.primary_id: CollectiveKey(
+            unit=conv.unit,
+            rooms=(CharacterRoom(key=conv.primary_id, platform=conv.platform,
+                                 label=conv.label),),
+            label=conv.label or "", description=conv.description or "",
+        )
+        for conv in allowlist.rooms() if conv.primary_id and conv.unit
     }
 
 
@@ -1848,7 +1879,7 @@ async def build_dependencies(
     # anywhere says why. The other three combinations are either a working
     # path or a loud 400 at the first wake.
     _joinable = voice_hub.guild_ids if voice_hub is not None else frozenset()
-    for _convo in allowlist.conversations:
+    for _convo in allowlist.rooms():
         if not _convo.voice:
             continue
         _guild = _convo.primary_id.partition("/")[0]
@@ -1940,7 +1971,7 @@ async def build_dependencies(
     # error: the two files legitimately change on different cadences, and an
     # operator who names the channel before wiring the sidecar has written
     # something correct-but-early, not something wrong.
-    for convo in allowlist.conversations:
+    for convo in allowlist.rooms():
         if convo.music_channel is None:
             continue
         music_guild, _, _ = convo.primary_id.partition("/")
@@ -2354,7 +2385,7 @@ async def build_dependencies(
     # between runs of the same build — which turns "did adaptor X run for
     # unit Y this tick" into a question you cannot answer from a log.
     unit_scopes: Callable[[], Sequence[str]] = lambda: tuple(sorted(  # noqa: E731
-        {conv.unit for conv in allowlist.conversations if conv.unit}
+        {conv.unit for conv in allowlist.rooms() if conv.unit}
     ))
     # One CLIENT (DEC-13), MANY MODELS — one per tag, built by this
     # source. The model carries `tool_choice`, which `ReplyGuard` flips
@@ -3725,10 +3756,7 @@ async def build_dependencies(
             roster=functools.partial(instagram_roster, social_subjects),
             settings=cfg.social.poll, metrics=metrics,
             units=LiveMapping(lambda: social_person_units(allowlist)),
-            rooms=LiveMapping(lambda: {unit: tuple((c.platform, rid)
-                               for c in allowlist.conversations
-                               if c.unit == unit for rid in sorted(c.ids))
-                   for unit in {c.unit for c in allowlist.conversations if c.unit}}),
+            rooms=LiveMapping(lambda: social_unit_rooms(allowlist)),
             timezone=cfg.cognition.timezone,
             # The same custody every room's media goes through; `None` while
             # media custody is off, and then items are recorded without bytes.
@@ -3917,18 +3945,20 @@ async def build_dependencies(
         from nora.app.comprehend_wiring import build_comprehend_runner
         from nora.infra.sql.comprehend import SqlComprehendRecords
 
-        rooms_by_unit = {
-            u: [(c.platform, c.primary_id) for c in allowlist.conversations
+        rooms_by_unit = LiveMapping(lambda: {
+            u: [(c.platform, c.primary_id) for c in allowlist.rooms()
                 if c.unit == u and c.primary_id] for u in unit_scopes()
-        }
+        })
         graph_records = SqlComprehendRecords(engine, media_join=media_join, model_id=tier.model,
             rooms_by_unit=rooms_by_unit,
-            persons_by_unit={u: {p for c in allowlist.conversations if c.unit == u
-                                for p in (c.persons or ())} for u in unit_scopes()},
+            persons_by_unit=LiveMapping(lambda: {
+                u: {p for c in allowlist.rooms() if c.unit == u
+                    for p in (c.persons or ())} for u in unit_scopes()
+            }),
             social_off_ids=persons.social_off_ids(),
             can_release_place=place_release(
                 rooms_of=lambda u: [(c.platform, c.primary_id, c.location)
-                    for c in allowlist.conversations if c.unit == u and c.primary_id],
+                    for c in allowlist.rooms() if c.unit == u and c.primary_id],
                 room_view=lambda platform, conversation_id: Room(
                     platform=platform, conversation_id=conversation_id,
                     roster_source=rosters.get(platform), persons=persons,
@@ -3936,7 +3966,7 @@ async def build_dependencies(
                 circles=presence_circles, content_checks=content_checks))
         graph_tools = RegistryToolSource(registry=tool_registry, store=audit,
             persons=persons, honcho=memory, metrics=metrics, ai_peer=cfg.honcho.ai_peer,
-            scope_rooms=scope_home_rooms(allowlist), rosters=rosters,
+            scope_rooms=LiveMapping(lambda: scope_home_rooms(allowlist)), rosters=rosters,
             self_ids=registry.self_aliases())
         private_names = tuple({name for p in persons.by_person.values()
             for name in (p.person_id, p.name, p.first_name, p.last_name, *p.aliases) if name}
@@ -3947,10 +3977,11 @@ async def build_dependencies(
             retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
             metrics=metrics, cfg=cfg, private_names=private_names, model_id=tier.model,
             model_route=cfg.llm.base_url, ai_peer=cfg.honcho.ai_peer, clock=clock,
-            rooms_by_person={(u, p): tuple(f"{c.platform}:{c.primary_id}"
-                for c in allowlist.conversations if c.unit == u and c.persons is not None
+            rooms_by_person=LiveMapping(lambda: {(u, p): tuple(
+                f"{c.platform}:{c.primary_id}"
+                for c in allowlist.rooms() if c.unit == u and c.persons is not None
                 and p in c.persons and c.primary_id)
-                for u in unit_scopes() for p in persons.by_person})
+                for u in unit_scopes() for p in persons.by_person}))
     #: The units a session can run for (a home room each); only they are woken.
     cognition_session_units: Collection[str] | None = None
     cognition_upcoming: Callable[[str, int], Awaitable[Sequence[tuple[str, str]]]] | None = None
@@ -4140,15 +4171,7 @@ async def build_dependencies(
             # account under its `primary_id`, the unit's and Nora's under the
             # culture keys — the same key the prose head they backfill from
             # is written under.
-            profile_room_keys = LiveMapping(lambda: {
-                conv.primary_id: CollectiveKey(
-                    unit=conv.unit,
-                    rooms=(CharacterRoom(key=conv.primary_id, platform=conv.platform,
-                                         label=conv.label),),
-                    label=conv.label or "", description=conv.description or "",
-                )
-                for conv in allowlist.conversations if conv.primary_id and conv.unit
-            })
+            profile_room_keys = LiveMapping(lambda: _profile_room_keys(allowlist))
             profile_unit_keys = LiveMapping(lambda: {
                 key: CollectiveKey(unit=uk.unit, rooms=uk.rooms, label=uk.unit)
                 for key, uk in unit_keys.items()
@@ -4682,7 +4705,7 @@ async def build_dependencies(
                 place_release=place_release(
                     rooms_of=lambda unit: [
                         (conv.platform, conv.primary_id, conv.location)
-                        for conv in allowlist.conversations
+                        for conv in allowlist.rooms()
                         if conv.unit == unit and conv.primary_id
                     ],
                     room_view=lambda platform, conversation_id: Room(
@@ -5026,7 +5049,7 @@ async def _presence_preflight(
     Never fatal, never raises: an unreadable roster leaves the invariant
     UNVERIFIED (warned, not alarmed), and the per-call guard refuses on exactly
     that unverifiability."""
-    for conv in allowlist.conversations:
+    for conv in allowlist.rooms():
         # Every platform that HAS a roster, not just Signal. Skipping a
         # platform here does not make it safe — the authoritative check is
         # per-call in `Whereis.locate` — but the gauge and the operator's

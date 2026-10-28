@@ -239,7 +239,7 @@ async def backfill_unit(
     report = BackfillReport(unit=unit, honcho_workspace=route.workspace, applied=apply)
     targets: list[tuple[str, str]] = sorted(
         (cid, convo.label or convo.primary_id)
-        for convo in policy.conversations if convo.unit == unit
+        for convo in policy.rooms() if convo.unit == unit
         for cid in convo.ids
     )
 

@@ -39,6 +39,10 @@ def projection_context(
 
     def members() -> dict[str, frozenset[str] | None]:
         result: dict[str, frozenset[str] | None] = {}
+        # ponytail: membership is a FILE fact — a guild entry's `persons`
+        # already names every channel it expands into — so `conversations` is
+        # the source; `rooms()` would drop members whenever the directory
+        # cannot enumerate the guild (the _NoChannels loaders).
         for conversation in policy.conversations:
             old = result.get(conversation.unit, frozenset())
             result[conversation.unit] = (
@@ -51,7 +55,7 @@ def projection_context(
             ("person", pid): ref.name for pid, ref in persons.by_person.items()
         }
         result["nora", "nora"] = nora_name
-        for conversation in policy.conversations:
+        for conversation in policy.rooms():
             result["unit", conversation.unit] = conversation.unit
             for cid in conversation.ids:
                 result["room", f"{conversation.platform}:{cid}"] = conversation.label or cid
@@ -59,7 +63,7 @@ def projection_context(
 
     return ProjectionContext(
         rooms=LiveMapping(
-            lambda: {f"{c.platform}:{cid}": c.unit for c in policy.conversations for cid in c.ids}
+            lambda: {f"{c.platform}:{cid}": c.unit for c in policy.rooms() for cid in c.ids}
         ),
         members=LiveMapping(members),
         names=LiveMapping(names),

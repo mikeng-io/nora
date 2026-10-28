@@ -102,15 +102,15 @@ class PresenceReader:
         rooms exist."""
         convo = None if direct else self._policy.conversation(platform, conversation_id)
         unit_convos: tuple[Conversation, ...] | None = None
-        other_groups = bool(self._policy.conversations) if direct else False
+        other_groups = bool(self._policy.rooms()) if direct else False
         if convo is not None:
             unit_convos = tuple(
-                c for c in self._policy.conversations
-                if c.unit == convo.unit and c is not convo
+                c for c in self._policy.rooms()
+                if c.unit == convo.unit and c != convo
             )
             # D1 = B: THAT other groups exist, never which. Nothing about them
             # leaves this line — not a label, not a count.
-            other_groups = any(c.unit != convo.unit for c in self._policy.conversations)
+            other_groups = any(c.unit != convo.unit for c in self._policy.rooms())
         return convo, unit_convos, other_groups
 
     async def read(

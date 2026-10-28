@@ -96,6 +96,12 @@ tools    = []                # MCP servers this room may use, e.g. ["pulse"].
 # `persons`/`tools`/`location`/`unit`/`relevance_gate`/`description` apply to
 # every channel it expands into. Adding, removing or editing this entry and
 # its name lists hot-reloads like any other room edit.
+#
+# Channel names are collision-checked within this entry's own guild and
+# against the unit's static room labels (a colliding channel is simply not
+# admitted). Two server entries in one unit can still hold same-named
+# channels — both are admitted, and addressing that name then asks which
+# room rather than guessing.
 [[conversations]]
 platform  = "discord"
 guild     = "100000000000000203"

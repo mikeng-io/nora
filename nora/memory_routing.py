@@ -107,6 +107,9 @@ def build_workspace_router(
         policy=policy, bindings=bindings, default_workspace=default_workspace,
     )
     conversation_units: dict[str, str] = {}
+    # ponytail: the collision check reads the FILE's ids — a discovered
+    # channel belongs to exactly one entry, so only authored ids can collide
+    # across units. The live map below already enumerates `rooms()`.
     for convo in policy.conversations:
         for cid in sorted(convo.ids):
             other = conversation_units.get(cid)

@@ -80,10 +80,14 @@ every text/announcement/forum channel of the guild becomes an ordinary room of
 the entry's `unit`, with conversation id `"<guild_id>/<channel_id>"` exactly as
 an explicit entry's — so a per-channel entry written beside it covers the same
 id and wins it. The room's label is the channel's own name, which is why the
-unique-label invariant of §3 applies to it the same way: a channel name
-colliding inside the unit fails closed for that channel rather than crashing
-or merging, and a rename moves the label while the conversation id — and
-everything bound to it — stays. `ignore`/`ambient` name channels by name:
+unique-label invariant of §3 applies to it the same way — within its scope:
+a channel name colliding with a sibling of the SAME server entry, or with the
+label of a static room of the unit, fails closed for that channel rather than
+crashing or merging. (Two server entries in one unit can still hold
+same-named channels; both are admitted and name resolution then refuses
+ambiguously — the safe direction.) A rename moves the label while the
+conversation id — and everything bound to it — stays. `ignore`/`ambient`
+name channels by name:
 ignored channels are never admitted; the rest are mention-only unless named
 ambient, an operator opt-in like any other room's.
 

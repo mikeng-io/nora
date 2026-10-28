@@ -412,6 +412,13 @@ class Policy:
         named would be unaddressable by name the moment the unit holds a
         second Discord room, so it is refused outright here)."""
         folded = _fold(name)
+        # ponytail: the check covers only ONE server entry — `channels` is this
+        # entry's guild and the label set is the file's — so two server entries
+        # in one unit holding same-named channels are BOTH admitted with an
+        # identical label. The failure mode is safe: room-name resolution
+        # refuses ambiguously rather than guessing (no memory crosses). The
+        # upgrade is `_collides` reading each sibling entry's live
+        # `guild_channels` too.
         if sum(1 for n in channels.values() if _fold(n) == folded) > 1:
             return True
         if folded in {_fold(c.label) for c in self.conversations

@@ -111,6 +111,10 @@ class PersonsSubjectIndex:
     def _listed(self) -> frozenset[str] | None:
         """Every person LISTED by id in the `persons` of at least one
         configured room, or `None` when the policy could not be read."""
+        # ponytail: the listing is a FILE fact — a guild entry's `persons`
+        # names them for every channel it expands into — so `conversations`
+        # is the source; `rooms()` would drop them whenever the directory
+        # cannot enumerate the guild.
         try:
             return frozenset(
                 person
