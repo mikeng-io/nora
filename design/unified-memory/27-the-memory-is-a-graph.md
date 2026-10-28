@@ -366,9 +366,12 @@ last time"), or one more hop. The same preview is carried to step 3's agenda
    than its evidence. Valid parts commit and refused parts are recorded with
    their reason (the drop rule of #318, kept).
 
-**Step 1's budgets** (starting values, fixed before the spike, measured in it): 8 turns,
-12 tool calls of which at most 3 web searches and 3 page fetches, 120,000
-total tokens, 240 s. A spent budget settles what is valid; nothing is retried
+**Step 1's budgets** (starting values, fixed before the spike, measured in it):
+rounds, tokens and time only, as every Cognition session (DEC-247): 8 turns,
+120,000 total tokens, 12,000 output tokens, 240 s. The one per-tool cap is on the paid, outbound
+lookups: at most 3 web searches and 3 page fetches per work item, held by the
+search tools themselves, because each is a third-party call that leaves the
+host (§8), a consequence DEC-247's reasoning did not cover. A spent budget settles what is valid; nothing is retried
 past 5 attempts (`failed`, re-queued by an operator command, as now).
 
 **Model:** the production runtime model (DeepSeek V4.1 Flash via OmniRoute).

@@ -12,6 +12,8 @@ edges:
 
 ## 1. The three kinds and how they meet
 
+> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): the Character and Lessons adaptors named in this section retire into step ② of the one Cognition loop, which writes Character (traits and guesses; facts are rendered by code), culture and Lessons right after step ① changes an entity's relations; it has no wake rule of its own. Read "the Character adaptor" / "the Lessons adaptor" below as step ②.
+
 | kind | settled? | closes? | example |
 |---|---|---|---|
 | **note** | no | yes, on its closing condition | venue still open; who has not paid |

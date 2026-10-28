@@ -1,35 +1,78 @@
 ---
 type: design
-title: "Cognition — the fast adaptor: one session per unit per wake, orient, decide, act in one context"
-description: "The Cognition adaptor, one of the four the Dreamer hosts. What the session is handed (the situation and an agenda whose items each bind a room), what it holds (every permitted read, write verbs per tier, one act verb whose rows the fire path composes in the target room, a closing verb), what code enforces on every write and act and what the Assess adaptor measures instead, skills injected by code, budgets, and what stays outside the loop."
+title: "Cognition — the one loop: comprehend on arrival, reshape what changed, decide and act on the wake"
+description: "The Cognition loop, the one background driver (operator, 2026-10-28): three ordered steps, each its own bounded session, handing off only through committed state. Sections 1-5 describe step 3, the decide-and-act session as built. What the session is handed (the situation and an agenda whose items each bind a room), what it holds (every permitted read, write verbs per tier, one act verb whose rows the fire path composes in the target room, a closing verb), what code enforces on every write and act and what the Assess adaptor measures instead, skills injected by code, budgets, and what stays outside the loop."
 tags: [nora, cognition, ooda, agent-loop, strands, write-verbs, proactive, skills]
 timestamp: '2026-09-28'
 edges:
   - {dst: 40-register, rel: depends_on, provenance: asserted}
   - {dst: 50-character-and-standing, rel: depends_on, provenance: asserted}
   - {dst: ../dreamer-agent-loop/39-proactive-ooda-loop.md, rel: supersedes, provenance: asserted}
+  - {dst: ../unified-memory/27-the-memory-is-a-graph.md, rel: depends_on, provenance: asserted}
 ---
 
 # 30 · Cognition
 
-> 2026-10-28 (operator, ruled; [unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md#7-one-cognition-loop-comprehend-measure-serialize)): Cognition becomes the one driver. Each stimulus drives three ordered steps: comprehend every new item into the memory graph on arrival, never capped; reshape the profiles, culture and lessons it changed; then decide and act on the existing wake rules. The agenda cap applies only to the third step, which reads the first step's readings instead of re-reading raw text.
-
 > 2026-10-03 (DEC-277): the shadow period is over. The Cognition session writes live (`[cognition] enabled`) and is the one background writer of notes, events, Standing and her reminders. The clocked note/proactive adaptors, the shadow machinery and `[cognition] mode` / `session_mode` / `shadow_session_seconds` named here are deleted; wording below that describes them is the plan as written, not current behaviour. See `70-migration.md`.
 
 
-The **Cognition adaptor**, the fast one of the four adaptors the Dreamer
-hosts ([00](00-intent.md) §3): one Strands agent session per unit per wake
-([20](20-observe.md) §3). It orients, decides and acts in one context, so no
-conclusion is lost between steps and no state is handed from one model to
-another. It writes the Register and Standing and acts only through
-`remind`. Character and Lessons are the slow adaptors' tiers
-([50](50-character-and-standing.md) §6): Cognition reads them and never
-writes them.
+## 0. The loop, as ruled 2026-10-28
+
+Cognition is the **one background driver** (operator, 2026-10-28,
+[unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md) §7, §9).
+Everything said and done keeps shaping memory, profiles and plans, so one loop
+owns all three, in three ordered steps. Each step is **its own bounded Strands
+session** with its own focused input and its own verbs; the steps hand off
+**only through committed state**, never by waiting on each other or passing
+prose into another prompt (§8).
+
+```
+ingestion (code) ─▶ RECORD / ROLLUP ─┬─▶ work item (every item) ─▶ ① COMPREHEND ─▶ graph
+                                     │                              (on arrival)
+                                     │                                   │
+                                     │                                   ▼
+                                     │                              ② RESHAPE ─▶ profiles, culture,
+                                     │                              (links changed)  lessons
+                                     └─▶ stimulus ─▶ wake rules ─▶ ③ DECIDE & ACT ─▶ Register, Standing,
+                                                                   (①'s readings     reminders, wake_at
+                                                                    + preview, §1)
+```
+
+| step | runs | input | holds | writes |
+|---|---|---|---|---|
+| ① comprehend | **on each arrival**, one work item (a message batch, a social item, a late media reading, a closed Rollup episode, a Register write) | the item fully read (media join, link, reply parent, a social item's caption and media) and the code-built **graph preview** of what the graph already knows (27 §7) | read tools, `memory_search` / `memory_read`, the read lanes (`media_fetch`, `instagram_read`, `instagram_search`, `x_read`, `x_search`), egress-screened web search and fetch (27 §8), one staged graph write | readings, entities, judgement relations with evidence (27 §5, §7a) |
+| ② reshape | right after a step ① that changed relations | the subgraph of each changed entity, in the order persons → their rooms and units → Nora | graph reads, `character_revise`, `lesson_write`, `lesson_retire` | traits and guesses (facts are rendered by code), a room's or unit's culture, Nora's lessons (27 §9) |
+| ③ decide and act | on the wake rules ([20](20-observe.md) §3: `settled`, `strong_cue`, `batch`, `max_age`, `time`, `self`) | the agenda, each item carrying step ①'s readings and preview (§1) | §2's verbs | Register items with their own links, Standing, reminders, `wake_at` (§2) |
+
+**Rules that hold across the steps** (27 §7):
+
+1. Step ① is complete; only step ③ is capped (`max_items`, §1).
+2. Acting is a switch: the backfill runs ① and ② in its own lane, each item
+   read as of its own time, and step ③ stays off until one catch-up wake at
+   the end (27 §10).
+3. Step ② runs only for entities whose relations changed.
+4. No step grades itself: guesses and lessons are checked by an instrument
+   other than their writer ([50](50-character-and-standing.md) §6; §6 below).
+5. A step ① work item is never dropped: retried, then parked `failed` for the
+   operator's re-queue; a wake failure only ever strikes step ③'s agenda.
+6. Each step commits on its own; a step ③ failure undoes nothing before it.
+7. The backfill has its own concurrency and never takes a live slot.
+
+**What retires into the loop:** the extraction pass (into ①); the Character,
+profile, culture and Lessons adaptors (into ②). Assess stays outside (§6).
+Sections 1-5 below are **step ③**, the session as built since DEC-277,
+amended in place where the ruling changed it.
 
 ## 1. What code hands it
 
 Built once per session, in code, before any model call:
 
+- **Step ①'s reading of each item** (2026-10-28, 27 §7 rule 1): every agenda
+  item carries the readings step ① wrote for its Record items and the item's
+  graph preview, so step ③ decides on one interpretation and never re-reads
+  the raw text as a second one. The Record rows below stay as the grounding
+  and are still readable through tools. An item whose work item has not
+  settled waits for it or is marked unread.
 - **The situation.** The Record items that raised the pending stimuli, each
   with its author, its room, **its age**, its cues and its perception (what a
   photo shows, whose faces, with confidence); the Rollup rows that raised
@@ -129,7 +172,7 @@ versions injected, the config revision in force, and the model id and route
 | class | verbs | leaves the session how |
 |---|---|---|
 | **read** | every read tool the registry admits (`read_only_tools()`) except the live social reads ([20](20-observe.md) §2), plus the Notebook and Rollup reads of [15](15-map.md) §4: `record_query`, `rollup_read`, `event_search`, `memo_read`, `character_read`, `standing_read`, `social_items` (built as `social_read`, [15](15-map.md) §4) | returns into context, filtered by the item's room |
-| **write** | one family per tier: Register (`note_create`, `note_update`, `memo_write`, `memo_withdraw`, `event_propose` (status `staged` or `proposed`), `event_revise`, `event_set_status`), Standing (`standing_revise`); each takes `base_revision_id`. Character's and Lessons' verbs belong to their own adaptors ([50](50-character-and-standing.md) §6) | code validates, then commits (§3) |
+| **write** | one family per tier: Register (`note_create`, `note_update`, `memo_write`, `memo_withdraw`, `event_propose` (status `staged` or `proposed`), `event_revise`, `event_set_status`), Standing (`standing_revise`); each takes `base_revision_id`, and each Register write carries its own graph links in the same write (27 §7a). Character's, culture's and Lessons' verbs belong to step ② and graph writes to step ① (§0) | code validates, then commits (§3) |
 | **act** | `remind(at, room, brief)`, the one act verb; `room` is the agenda item's bound room. `remind_move(reminder_id, at, why)` and `remind_cancel(reminder_id, why)` for reminders Cognition itself wrote, never a person's | a reminder row; the fire path composes it when due |
 | **pace** | `wake_at(at, subject_rows, why)`, `wake_move(wake_id, at, why)`, `wake_cancel(wake_id, why)` | write verbs on the unit's stimulus table, not a tier: a `self` stimulus due at `at` ([20](20-observe.md) §3); nothing leaves for a room |
 | **close** | `close(item, reason)` | ends one agenda item |
@@ -249,6 +292,12 @@ it can rewrite, and counted by rule; never silently dropped.
     (after E2, DEC-249) `remind_cancel` on a person's reminder whose event
     Cognition cancels in the same session on `told` evidence.
 
+13. **Graph writes** (step ① and every Register write's own links): a
+    relation outside the vocabulary or with ends of the wrong kinds, evidence
+    the session never saw, evidence in the notebook layer, a span not in its
+    source, or a scope wider than its evidence is refused; valid parts commit
+    and refused parts are recorded with their reason (27 §7 step 1.6).
+
 **The pace verbs** (`wake_at`, `wake_move`, `wake_cancel`) pass checks 1
 (their subject rows resolve to ids shown or fetched) and 10 (provenance and
 history), plus the self-wake guards of [20](20-observe.md) §3. They carry no
@@ -297,8 +346,7 @@ vary. `create_dream_agent` (`nora/agent/factory.py`) has no `skills_dir`, by
 design, and ADR 0016 (the skill policy) is still proposed:
 the injection is code, not SDK skill loading. The replaced adaptors'
 objectives (`note-candidates.md`, `note-curation.md`, `note-merge.md`,
-`proactive.md`) become Cognition's skills; `culture.md` becomes the Character
-adaptor's objective; `standing-debrief.md` stays the debrief's. As built
+`proactive.md`) become Cognition's skills; `culture.md` and the lessons objective become step ②'s skills, and step ① has its own objective (27 §7), each a declared occasion in context assembly (ADR 0021); `standing-debrief.md` stays the debrief's. As built
 (step 4 PR-1) the Register skill (about 130 lines) is the one skill, mapped to
 the `message`, `rollup` and `self` kinds, so every session with an agenda
 loads it, chatter included, and an agenda of any other kind loads none.
@@ -306,6 +354,11 @@ loads it, chatter included, and an agenda of any other kind loads none.
 model, at step 3 ([70](70-migration.md) §2).
 
 ## 5. Budgets
+
+Steps ① and ② have their own budgets, set in 27 §7 and measured in the spike;
+what follows is step ③'s, and the rule (rounds, tokens and time, never per
+tool, DEC-247) holds for all three. The one per-tool cap is step ①'s on paid
+outbound web lookups (27 §7).
 
 Per session, in code and never stated in the prompt (a model told of a cap
 declines work, measured on the proactive pass): `AdaptorBudget` holds turns,
@@ -386,9 +439,7 @@ cut-over ([70](70-migration.md)).
   doctrine, skills, config and model route in force then, memory excepted.
 - **Rebuild, not only fold.** Every Character account is periodically rebuilt
   from the Rollup and a cited window of the Record by the Assess adaptor,
-  and the rebuild is diffed against the chain and never written: the
-  difference is the drift metric, and the Character adaptor stays the only
-  writer. Folding alone
+  and the rebuild is diffed against the chain and never written: the difference is the drift metric, and step ② stays the only writer. Folding alone
   was measured to drop what it should keep: Standing folds dropped at least
   10 open dated plans in 206 revisions
   (design/group-situation/10-standing-drops-plans.md).
@@ -400,16 +451,18 @@ cut-over ([70](70-migration.md)).
   room's Standing inside the reply slot, through `standing_revise`. Both writes
   move behind Cognition at or after the cut-over (DEC-249,
   [05](05-data-model.md) §9 E2).
-- **The slow adaptors and Assess** — Character, Lessons and Assess are other
-  jobs on other timescales ([00](00-intent.md) §3,
-  [50](50-character-and-standing.md) §6). Cognition reads what they write.
+- **Assess** — judging a session belongs outside it (§6). (Character, culture
+  and Lessons were slow adaptors here; since 2026-10-28 they are step ②, §0.)
 - **Participation** — deciding within seconds whether a quiet window is hers
   is too fast for a unit session. It stays as it is (off by default); a later
   step may make it a small-agenda wake of the same loop once session latency
   is measured.
+- **Ingestion** — the chat transports, the social poller and presence
+  collection record items and raise stimuli; they never run inside the loop.
 - **Delegated long work** — a backfill of a year of photos, a face index
   rebuild. A later `delegate` verb hands those to the compute path; out of
-  scope here.
+  scope here. The memory graph's backfill is not this: it is steps ① and ② in
+  their own lane (§0 rule 7).
 
 ## 8. Why no Strands multi-agent primitive
 
@@ -420,3 +473,12 @@ and 1.57.1), which is the context boundary this design removes. Perception
 models (vision, faces) are called as tools that return typed results, not as
 agents. The SDK upgrade from 1.50.2 is independent of this bundle and ships
 on its own measurement.
+
+**Three sessions are not three agents talking** (2026-10-28). The steps of §0
+never pass one model's prose into another's prompt as an instruction or a
+plan. Step ① commits typed rows that code admitted (readings with exact spans,
+relations with evidence rows); step ③ reads them as it reads any tier, with
+their layer, age and evidence, which is [00](00-intent.md) §4's rule that
+adaptors never hand state to each other but each reads what the others wrote.
+What is split is comprehension from decision, because one is complete and the
+other selective (§0 rule 1); orient, decide and act stay one context in step ③.

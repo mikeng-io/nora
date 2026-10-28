@@ -138,6 +138,8 @@ the cited message when the View renders it, never stored.
 
 ## 3. The entry
 
+> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): the Character and Lessons adaptors named in this section retire into step ② of the one Cognition loop, which writes Character (traits and guesses; facts are rendered by code), culture and Lessons right after step ① changes an entity's relations; it has no wake rule of its own. Read "the Character adaptor" / "the Lessons adaptor" below as step ②.
+
 Every Notebook row is an **entry**: one shape, one machinery.
 
 | part | what it holds | set by |
@@ -272,6 +274,8 @@ from the tree on 2026-10-01; each departure is a migration item, §9):
 | portal pages | a person | `nora/web/gatherings.py` (events they created or answered), `nora/web/documents.py` | none: participation-scoped | none: events are outside the cascade | no page for notes, memos, Character, Standing or lessons yet |
 
 ## 7. The Notebook's writers, and how the speaking turns hand off
+
+> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): the writers below change. Step ① of the Cognition loop writes the memory graph's judgement relations; step ② writes Character (traits and guesses; facts are rendered by code), culture and Lessons; step ③ writes the Register and Standing. One writer per tier still holds; the Character and Lessons adaptors retire.
 
 The operator's model ([55](55-self.md) §6), the conscious and the
 subconscious (明意識 / 潛意識): **the subconscious thinks and writes the
