@@ -39,8 +39,8 @@ REUSE_RECIPES = {
     'stt': '0f909a02fd4c8d484501ecf6f5ce85dd2b5ffed5481065fcec75dbb638c53ad0',
     'voice-sidecar': '69f0ecc9a3efc00732f6c4c364c6441014dba5355667f8b57fe60f39a71f8ba5',
     'voice-wake': 'fd5ee73065eab7b09c4bf08805c21573bce5296cc1bbdf7b7bf5b1218fe9449b',
-    'signal-cli': '4116e2cf56e5ff63701ff3c357189c888c3daf845c47d84581c833b8cebab6a2',
-    'whatsapp-bridge': '72f1900b08711082985106dbd84684c5ec563732af033c9a6fbb7253053c97fd',
+    'signal-cli': 'cdaa57b8438964a2a72ea56187f3e72d81477655eec011ae959284de0226656c',
+    'whatsapp-bridge': '71ae929c8dab80bf43ac27df9e390d1770933a1028d2c592e3ff041c93d7cdab',
     'instagram-bridge': '92a0e637d9c9a699f903bb745fdc753d366badb9186ed19d41e5a312dcf923c7',
     'alert-bridge': '722d580bb9a573afcfefc3b86adee214d097fd481ae1e14d20dcc84f0517ad65',
 }
@@ -357,9 +357,13 @@ def publish_image(args, commit: str, previous: dict) -> None:
                 (root / context / filename).write_bytes((Path(context) / filename).read_bytes())
             metadata = args.directory.resolve() / f'{name}.metadata.json'
             identity = f'sha-{commit}' if args.channel == 'master' else args.version
+            # Separate mutable cache manifests from immutable deployment artifacts.
+            cache = f'{REGISTRY}{name}:buildcache-{inputs["platform"].replace("/", "-")}'
             subprocess.run(  # noqa: S603 -- clean Git export, validated identity, fixed CLI
                 ['docker', 'buildx', 'build', '--network=host', '--pull',  # noqa: S607
-                 '--platform', 'linux/amd64', '--push',
+                 '--allow', 'network.host', '--platform', inputs['platform'], '--push',
+                 '--cache-from', f'type=registry,ref={cache}',
+                 '--cache-to', f'type=registry,ref={cache},mode=max',
                  '--metadata-file', str(metadata),
                  '--label', f'org.opencontainers.image.revision={commit}',
                  '--label', f'org.opencontainers.image.version={args.version}',

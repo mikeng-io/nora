@@ -131,6 +131,22 @@ images and lock language dependencies. This is recipe equivalence, not reproduci
 rebuilding against mutable apt repositories: remote package-index freshness is not
 an implicit upgrade trigger. Change the dependency/base/recipe input to request one.
 
+Changed images also import/export a persistent BuildKit registry layer cache at
+`ghcr.io/mikeng-io/nora-<image>:buildcache-linux-amd64`. The pinned Buildx setup uses
+the `docker-container` driver and permits the required host build network. Separate
+cache manifests use `mode=max` to retain intermediate multi-stage layers; an absent
+cache allows the first build. Cache tags never enter deployment receipts or image
+selection. See Docker's [Actions cache](https://docs.docker.com/build/ci/github-actions/cache/)
+and [registry cache](https://docs.docker.com/build/cache/backends/registry/) documentation.
+Publisher/workflow changes invalidate prior artifact reuse proof once.
+
+WhatsApp installs curl and locked npm dependencies before copying bridge source.
+Signal verifies/extracts its signed archive in a build stage; runtime retains curl,
+Java 25 and the verified distribution, without the archive or build GPG. Nora's root
+recipe still installs after copying source/stamp, and formal releases change both
+Python dependency manifests too. Layer caching does not promise dependency-install
+hits for Nora; no manifest normalization or new staging environment is introduced.
+
 The context hash deliberately overcounts ignored files. In particular Nora and the
 site have repository-root contexts, so an unrelated root change can rebuild the site.
 There is no Dockerfile/ignore parser or list of selected COPY paths. This conservative

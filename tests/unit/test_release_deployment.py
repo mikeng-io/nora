@@ -971,17 +971,22 @@ def test_reuse_preserves_original_provenance_and_checks_current_inputs(
 
 
 @pytest.mark.parametrize('change', ['lockfile', 'dockerfile', 'basepin', 'ignore',
-                                   'specific-ignore', 'workflow', 'publisher', 'shared-copy'])
+                                   'specific-ignore', 'workflow', 'publisher', 'shared-copy',
+                                   'signal-recipe', 'whatsapp-recipe'])
 def test_reuse_invalidates_changed_effective_inputs(publisher_source, monkeypatch, change):
     bundle, state, git = publisher_source
     name = 'site' if change == 'shared-copy' else 'app'
+    if change in ('signal-recipe', 'whatsapp-recipe'):
+        name = 'signal-cli' if change == 'signal-recipe' else 'whatsapp-bridge'
     old = bundle.build_inputs(name, state['current'])
     assert old['reusable']  # positive control: actual reviewed recipe is admitted
     paths = {'lockfile': 'app/package-lock.json', 'dockerfile': 'app/Dockerfile',
              'basepin': 'app/Dockerfile', 'ignore': 'app/.dockerignore',
              'specific-ignore': 'app/Dockerfile.dockerignore',
              'workflow': '.github/workflows/release-images.yml',
-             'shared-copy': 'assets/generated.txt'}
+             'shared-copy': 'assets/generated.txt',
+             'signal-recipe': 'deploy/signal-cli/Dockerfile',
+             'whatsapp-recipe': 'deploy/whatsapp-bridge/Dockerfile'}
     if change == 'publisher':
         altered = Path('publisher.py')
         altered.write_bytes(Path(bundle.__file__).read_bytes() + b'\n# changed flags\n')

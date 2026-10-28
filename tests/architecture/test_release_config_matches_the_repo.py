@@ -124,6 +124,15 @@ def test_both_image_channels_share_pinned_tooling_source_and_publication_lane():
         '${{ fromJSON(needs.prepare.outputs.selection).matrix }}')
     assert jobs['promote']['needs'] == ['prepare', 'build']
     assert jobs['prepare']['permissions'].get('packages') is None
+    builder = next(step for step in jobs['build']['steps'] if step.get('id') == 'buildx')
+    assert builder['uses'] == (
+        'docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f')
+    assert builder['with'] == {'driver': 'docker-container',
+                               'driver-opts': 'network=host',
+                               'buildkitd-flags': '--allow-insecure-entitlement network.host'}
+    publisher = next(step for step in jobs['build']['steps']
+                     if step.get('name') == 'Publish exact selected image')
+    assert publisher['env']['BUILDX_BUILDER'] == '${{ steps.buildx.outputs.name }}'
     for name in ('build', 'promote'):
         steps = jobs[name]['steps']
         checkouts = [step for step in steps if step.get('uses', '').startswith('actions/checkout@')]
