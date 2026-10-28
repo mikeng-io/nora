@@ -597,6 +597,10 @@ refresh_timeout_seconds = 8
 # hkgov_lang_zh = "zh"
 # hkgov_lang_en = "en"
 
+[memory.graph]
+# Code projections and parallel work queue only; no model calls or prompt reads.
+enabled = false
+
 [memory.extraction]
 # Record writer only: no readers, index projection, history backfill or Character consumption.
 enabled = false
@@ -1462,3 +1466,17 @@ chunk_max = 10
 # and doctrine/canary/prompt-markup protection always remain enabled.
 [content_checks]
 enabled = false
+
+# Shadow graph comprehension. Both flags must be true to run either lane.
+
+[memory.graph.comprehend]
+enabled = false
+turns = 8
+total_tokens = 120000
+output_tokens = 12000
+timeout_seconds = 240
+live_concurrency = 1
+historical_concurrency = 1
+preview_tokens = 1500
+web_searches = 3
+page_fetches = 3

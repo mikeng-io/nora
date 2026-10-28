@@ -335,4 +335,6 @@ class SqlStandingLedger:
                 )
             else:
                 await conn.execute(sa.insert(table).values(**_values(revised, table)))
+            from nora.infra.sql.graph_projection import register_arrival
+            await register_arrival(conn,op.kind,revised.id, metrics=self._metrics)
         return LedgerResult(entry=revised)

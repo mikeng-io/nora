@@ -43,6 +43,7 @@ from typing import Any
 from strands.types.tools import AgentTool, ToolSpec, ToolUse
 
 from nora.agent.room_routing import ROOM_ARG
+from nora.domain.memory_graph import Key, Source
 from nora.domain.note_body import cited_ids_in, rollup_key
 from nora.domain.turn_record import turn_handles_in
 
@@ -190,3 +191,20 @@ def watch_reads(tools: list[Any], fetched: Fetched, rooms: Sequence[str]) -> lis
 
 
 __all__ = ["WATCHED_TOOLS", "Fetched", "RoomFetched", "WatchedTool", "watch_reads"]
+
+
+@dataclass
+class GraphFetched:
+    """Code-owned source snapshots for a graph session, never model arguments.
+
+    A tool result is citable only as the exact bounded result delivered to this
+    session. Merely naming an id in a search result does not grant its contents.
+    """
+
+    sources: dict[Key, Source] = field(default_factory=dict)
+
+    def show(self, source: Source) -> None:
+        self.sources[source.key] = source
+
+    def hydrate(self, keys: Sequence[Key]) -> dict[Key, Source]:
+        return {key: self.sources[key] for key in keys if key in self.sources}

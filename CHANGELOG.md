@@ -1,5 +1,38 @@
 # Changelog
 
+## [7.11.15](https://github.com/mikeng-io/nora/compare/v7.11.14...v7.11.15) (2026-10-28)
+
+
+### Features
+
+* **memory:** comprehend graph arrivals and reshape profiles in shadow ([903bee2](https://github.com/mikeng-io/nora/commit/903bee2424c48a2404c38b5c33e5a8bfaf576b55))
+
+
+### Bug Fixes
+
+* **memory:** consume graph arrivals and retry Register link projections ([7c553a0](https://github.com/mikeng-io/nora/commit/7c553a05a76e743598165930cef1511b57995354))
+* **memory:** reopen Register links and isolate shadow proposal refusals ([6123e4e](https://github.com/mikeng-io/nora/commit/6123e4eed24aaf8210685fdb648b7f5bc446807f))
+
+## [7.11.14](https://github.com/mikeng-io/nora/compare/v7.11.13...v7.11.14) (2026-10-28)
+
+
+### Maintenance
+
+* **tooling:** connect project agents to Blender MCP ([261bc0f](https://github.com/mikeng-io/nora/commit/261bc0fe9f0042bb5adb6ba9b4ebebbca27f708b))
+
+## [7.11.13](https://github.com/mikeng-io/nora/compare/v7.11.12...v7.11.13) (2026-10-28)
+
+
+### Features
+
+* **memory:** persist the scoped graph and queue cognition inputs ([1ba8d3e](https://github.com/mikeng-io/nora/commit/1ba8d3e25ffec0833fe353f65e2b47273bd6c1fe))
+
+
+### Bug Fixes
+
+* **memory:** follow live identity and room policy in graph projection ([c172209](https://github.com/mikeng-io/nora/commit/c17220947bce802c839c613f18c0dfdcd6d7edc4))
+* **memory:** preserve graph projection exclusions and prove hub bounds ([b6c122b](https://github.com/mikeng-io/nora/commit/b6c122ba5f0ea939a0064862c5680ece632da3f4))
+
 ## [7.11.12](https://github.com/mikeng-io/nora/compare/v7.11.11...v7.11.12) (2026-10-28)
 
 
