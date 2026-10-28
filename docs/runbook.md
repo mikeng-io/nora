@@ -222,8 +222,8 @@ To tell "quiet" from "broken":
    A rising count means senders are resolving to no person in `identity.toml`. This one
    is deceptive: Nora still replies and still addresses them by their Signal profile
    name, so she looks completely normal while writing nothing to Honcho. If you have
-   edited `identity.toml`, **restart her** — mapping is startup-only, so an edit alone
-   changes nothing.
+   edited `identity.toml`, check `nora_config_reloads_total{file="identity.toml"}`.
+   A valid edit applies within three seconds; `refused` keeps the last good version.
 
 5. Check whether she still knows **who she is**. This one does not make her silent — it
    makes her answer *herself*, which is worse:
@@ -1044,7 +1044,8 @@ this deployment only **3 of 83** contacts carry both a number and a uuid, while
 every group member does.
 
 **Adopting somebody is just editing the file.** Paste the stanza into
-`identity.toml` and restart. Lazy adoption (DEC-16) then backfills everything
+`identity.toml`; new messages resolve after hot reload. Historical lazy adoption
+(DEC-16) still runs at the next startup and backfills everything
 they said *before* you mapped them into their Honcho peer — Nora never writes
 `identity.toml` herself (D6).
 
@@ -1156,9 +1157,15 @@ changes. Keeping them apart is what stops an allowlist from being buried among p
 numbers where nobody reviews it. Both `identity.toml` and `policy.toml` are
 gitignored and bind-mounted read-only into the container.
 
-**Editing either one requires a restart.** Mapping and policy are both loaded once at
-startup (Q4). An edit alone changes nothing, and nothing warns you — this is the single
-most likely way to lose an hour. `nora_unmapped_senders_total` is the tell.
+**Valid identity and policy edits hot-reload within three seconds.** Each reader
+validates with its startup loaders and cross-checks, then swaps one holder. Invalid,
+missing or allow-nothing policy edits keep the last good version and log WARNING.
+`nora_config_reloads_total{file,outcome}` distinguishes `applied`, `refused` and
+`restart_required`; `/health` reports a file stale while disk differs from the
+last applied content. Changes to policy unit/workspace declarations or identity
+Honcho workspace bindings refuse the whole reload and require recreation.
+Always validate a candidate copy, then copy it in place to preserve the mounted
+inode. See [the capture audit and limitations](../design/policy-reload/00-design.md).
 
 **Storage and credentials.** Compose mounts `./data` at `/app/data` and the
 whole `./state` directory at `/app/state` in Nora. Signal session material is

@@ -21,6 +21,7 @@ from nora.agent.lineage import LineagePolicy
 from nora.agent.memory_search import MemorySearch
 from nora.agent.whereis import circles_from_persons
 from nora.config import Config
+from nora.domain.live import LiveSequence
 from nora.domain.media_join import MediaJoin
 from nora.domain.memo import MemoStore
 from nora.domain.ports import (
@@ -54,7 +55,7 @@ def lineage_policy(cfg: Config, *, policy: Policy, persons: Persons) -> LineageP
     and the tool registry (`record_query`) each hold one built here, so the
     three cannot disagree about who a room is."""
     return LineagePolicy.from_policy(
-        policy, circles=circles_from_persons(persons), mode=cfg.lineage.mode,
+        policy, circles=LiveSequence(lambda: circles_from_persons(persons)), mode=cfg.lineage.mode,
         content_checks=cfg.content_checks.enabled,
     )
 

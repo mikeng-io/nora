@@ -293,8 +293,8 @@ Each was open on 2026-09-30 and has since been settled, by the later section nam
 here is open except decision 9.
 
 1. **Who can see a document: settled (§25).** A document is visible to **its creator and to the persons a
-   room it was made in names**, computed at read time from the loaded policy (`policy.toml` is read once at
-   startup, so removing someone takes effect at the next restart). A `persons = "*"` room names nobody, so
+   room it was made in names**, computed at read time from the live policy holder (valid `policy.toml` edits
+   apply within three seconds without restarting). A `persons = "*"` room names nobody, so
    there only the creator reads it. Everyone else gets 404, never 403, the same answer as an unknown id.
    What the study recommended, restated: `identity.toml` maps persons to *accounts* only; room membership
    lives in `policy.toml`, `[[rooms]] persons = [...]`, and `nora/web/memory.py` already scopes a read by
@@ -910,8 +910,8 @@ append-only table, `document_state`, added later: §31.
 
 **Visibility is in the read.** A person reads what they created plus what was made in a room that names
 them; the rooms come from the current policy at the moment of each request (`rooms_named`), so removing a
-person from a room revokes access when the policy is reloaded (`policy.toml` is read once at startup, so in
-practice at the next restart, not at the next request), and a `persons = "*"` room names nobody. A document
+person from a room revokes access after the next valid policy reload (within three seconds, without
+a restart), and a `persons = "*"` room names nobody. A document
 you may not read is `404`, never `403`, and is indistinguishable from an unknown id. The room's chat id is
 never in the payload, only its platform.
 

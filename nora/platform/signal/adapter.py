@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Set
 
 from ...domain.models import ConversationTarget, NormalizedMessage
 from ...domain.ports import (
@@ -29,7 +29,7 @@ class SignalAdapter:
 
     def __init__(
         self, base_url: str, account: str, *, metrics: MetricsSink,
-        dm_recipients: frozenset[str] = frozenset(),
+        dm_recipients: Set[str] = frozenset(),
     ) -> None:
         """`metrics` is required, not optional with a null default: identity
         enrichment degrading uncounted is R-17's entire subject, and an optional

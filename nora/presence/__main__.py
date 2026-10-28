@@ -39,6 +39,7 @@ __all__ = ["build_parser", "main"]
 def _metrics_app(
     metrics: Metrics, collector: Any = None, refresh_timeout_seconds: float = 8.0,
     identity_file: str | None = None, started_at: float | None = None,
+    identity_status: Any = None,
 ) -> web.Application:
     """A minimal /metrics + /health app for the collector process — it has no
     adapter or record store to report on, only its own metrics registry (which
@@ -78,9 +79,12 @@ def _metrics_app(
         if collector is not None:
             body["circles"] = collector.circle_summary()
         if identity_file is not None:
-            body["config"] = config_staleness(
+            config_state = config_staleness(
                 {"identity": identity_file}, started_at or 0.0
             )
+            if identity_status is not None:
+                config_state["identity"].update(identity_status())
+            body["config"] = config_state
         return web.json_response(body)
 
     async def refresh(request: web.Request) -> web.Response:
@@ -135,15 +139,20 @@ async def _run(config_path: Path) -> None:
         _metrics_app(
             deps.metrics, deps.collector, cfg.presence.refresh_timeout_seconds,
             identity_file=str(cfg.identity_file), started_at=time.time(),
+            identity_status=deps.identity_reload.status if deps.identity_reload else None,
         ),
         deps.metrics_port,
     )
+    reload_task = asyncio.create_task(deps.identity_reload.run()) if deps.identity_reload else None
     try:
         if deps.collector is None:
             log.info("presence disabled — nothing to collect; exiting")
             return
         await deps.collector.run()
     finally:
+        if reload_task is not None:
+            reload_task.cancel()
+            await asyncio.gather(reload_task, return_exceptions=True)
         await runner.cleanup()
         if deps.store is not None:
             await deps.store.aclose()

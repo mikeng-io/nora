@@ -111,7 +111,8 @@ Propose optional `default_unit` per person in `identity.toml`. It must select a
 unit whose policy explicitly lists the person; wildcard membership is not
 sufficient. Infer only when exactly one unit is eligible. Zero/ambiguous
 eligibility refuses the DM before side effects; invalid explicit configuration
-fails startup. Identity and policy changes require validated copies/recreate.
+fails startup. Identity and policy changes require validated copies; valid edits hot-reload,
+while workspace-binding changes require recreation (see the policy-reload design).
 
 Conversational DMs also require `[dm] enabled = true` (new, default false) and
 the existing DM person allowlist. The switch prevents a previously inert

@@ -42,6 +42,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 # The named test that enforces each rule.
 RULE_TESTS = {
+    "DEC-323": "test_policy_reload_admits_the_next_message_from_a_new_room",
     # R-1: untagged ambient traffic reaches the agent ONLY under the participation
     # occasion's gating: an operator-opted-in room, one quiescence-closed window,
     # one evaluation through `FirePath.speak`. The named test pins that ordinary

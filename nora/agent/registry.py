@@ -247,7 +247,7 @@ class ToolRegistry:
         linkedin: SocialProvider | None = None,
         weather: WeatherProvider | None = None,
         presence: PresenceReader | None = None,
-        circles: tuple[Circle, ...] = (),
+        circles: Sequence[Circle] = (),
         # DEC-105. `None` is the honest not-configured state every offline and
         # eval composition ships in — `send_to` then answers `unavailable`,
         # never a silent no-op.
@@ -508,7 +508,7 @@ class ToolRegistry:
         # `unavailable`, honest and inert (R-5). The per-call R-31 subset guard
         # lives in `nora.agent.whereis`, not here.
         self._presence = presence
-        self._circles = tuple(circles)
+        self._circles = circles
         self._relay = relay
         self._rooms = rooms
         # The LIVE-refresh client (DEC-67): None leaves `where_is` reading the
