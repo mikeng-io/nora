@@ -16,6 +16,7 @@ from dataclasses import fields
 from pathlib import Path
 from typing import Any, Generic, TypeVar
 
+from nora.domain.ports import ChannelDirectory
 from nora.memory_routing import build_workspace_router
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, load_persons
@@ -130,9 +131,17 @@ class ReloadFiles:
         self, *, policy_path: Path, identity_path: Path, ai_peer: str,
         default_workspace: str, metrics: Metrics,
         validate_persons: Callable[[Persons], object] = lambda _: None,
+        policy_channels: ChannelDirectory | None = None,
     ) -> None:
         self.persons = LivePersons(load_persons(identity_path))
-        self.policy = LivePolicy(load_policy(policy_path))
+        # The ONE channel directory follows every swap: a server entry's rooms
+        # are runtime discovery, not file content, so each candidate — boot
+        # and every reload — expands through the same live source.
+        policy_loader = (
+            load_policy if policy_channels is None
+            else lambda p: load_policy(p, channels=policy_channels)
+        )
+        self.policy = LivePolicy(policy_loader(policy_path))
         validate_pair(self.policy, self.persons, ai_peer, default_workspace)
         validate_persons(self.persons)
         boot_policy, boot_persons = self.policy.current, self.persons.current
@@ -151,7 +160,7 @@ class ReloadFiles:
                 raise RestartRequiredError("identity.workspaces Honcho binding")
 
         self.files = (
-            FileReload(policy_path, self.policy, load_policy, check_policy, metrics),
+            FileReload(policy_path, self.policy, policy_loader, check_policy, metrics),
             FileReload(identity_path, self.persons, load_persons, check_persons, metrics),
         )
 

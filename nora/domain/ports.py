@@ -610,6 +610,47 @@ class MessageHits:
 
 
 @runtime_checkable
+class ChannelDirectory(Protocol):
+    """What a platform knows about a guild-space's channels, read live.
+
+    The one collaborator `Policy` needs to expand a whole-server entry into
+    rooms: `policy.toml` names the guild, never its channel ids, so admission
+    of `guild/channel` asks this directory which room-channels the guild
+    holds and what each is called — the facts `ignore`/`ambient` are written
+    against.
+
+    `None` is «I could not look», fail-closed and deliberate: a guild the
+    directory cannot enumerate cannot have its `ignore` list evaluated, so
+    `Policy.conversation` denies rather than guess. Synchronous by contract —
+    `Policy` is a value object and its grant predicate is sync — so the live
+    implementation reads a gateway-maintained cache (discord.py's own
+    `client.guilds`), never REST. Implementations:
+
+    - `nora.platform.discord.channels.ClientChannelDirectory` — the
+      connected client's cache (GUILD_CREATE + channel/thread events keep it
+      current; nothing extra is subscribed).
+    - `nora.platform.discord.channels.StaticChannelDirectory` — a fixed
+      snapshot, for `nora groups` (REST-filled) and tests.
+    """
+
+    def guild_channels(self, *, guild_id: str) -> Mapping[str, str] | None:
+        """`channel_id -> name` for every ROOM channel of the guild: text,
+        announcement and forum channels — the channels that can hold an
+        ordinary message, which is the set a server entry expands into.
+        Voice/stage channels are surfaces, not rooms; threads are never in
+        this map (a thread belongs to its parent channel's room). `None`
+        when the guild cannot be enumerated — fail closed, see the class
+        docstring."""
+        ...
+
+    def parent_channel(self, *, channel_id: str) -> str | None:
+        """The channel `channel_id` is a thread OF, or `None` when it is not
+        a thread (or is unknown). A forum post is a thread by this contract:
+        its parent is the forum channel."""
+        ...
+
+
+@runtime_checkable
 class RosterSource(Protocol):
     """Current membership of a conversation, read from the platform.
 

@@ -140,7 +140,10 @@ def test_an_event_with_a_computed_lineage_renders_where_its_evidence_may_and_not
         )
 
     policy = LineagePolicy.from_policy(
-        type("P", (), {"conversations": (room("ga", ("p_ada",)), room("gb", ("p_ben",)))})(),
+        type("P", (), {
+            "conversations": (room("ga", ("p_ada",)), room("gb", ("p_ben",))),
+            "rooms": lambda self: self.conversations,
+        })(),
         mode="on",
     )
     lineage = event_lineage(

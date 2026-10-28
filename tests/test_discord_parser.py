@@ -388,3 +388,68 @@ def test_a_raw_delete_is_a_delete_touch_naming_no_one():
     assert msg.touch is not None and msg.touch.kind == "delete"
     assert msg.touch.target == EditTarget(message_id="1497000000000000001")
     assert parse_discord_delete(_RawDelete(guild_id=None)) is None
+
+
+@dataclass
+class FakeThread(FakeChannel):
+    """A thread (or a forum post — Discord's own shape for both): a channel
+    whose `parent_id` names the channel it belongs to."""
+
+    parent_id: int = 2
+
+
+def test_a_message_in_a_thread_belongs_to_its_parent_channels_room():
+    """A thread is never a room. The message carries the THREAD's id as
+    `channel_id` and the parent inside the channel object — the real
+    gateway shape — and parses into the parent's room, tagged."""
+    msg = _message(channel=FakeThread(id=17, parent_id=2))
+
+    result = parse_discord_message(msg, own_id=OWN_ID)
+
+    assert result is not None
+    assert result.conversation_id == "1/2"       # the parent's room
+    assert result.thread == "17"                 # tagged with the thread
+    assert result.body == "hello"
+
+
+def test_a_forum_post_is_the_same_shape_as_a_thread():
+    """A forum channel's post is a Thread to discord.py — same `parent_id`
+    marker, same parse."""
+    msg = _message(channel=FakeThread(id=99, parent_id=2))
+
+    result = parse_discord_message(msg, own_id=OWN_ID)
+
+    assert result is not None
+    assert result.conversation_id == "1/2"
+    assert result.thread == "99"
+
+
+def test_an_ordinary_channel_message_has_no_thread_tag():
+    result = parse_discord_message(_message(), own_id=OWN_ID)
+
+    assert result is not None and result.thread == ""
+
+
+def test_a_reaction_in_a_thread_targets_the_parents_room():
+    """The raw payload's channel_id IS the thread; the adapter resolves the
+    parent and hands it as `room_channel_id`."""
+    from nora.platform.discord.parser import parse_discord_reaction
+
+    msg = parse_discord_reaction(
+        _RawReaction(channel_id=17), own_id="999", removed=False,
+        room_channel_id="22",
+    )
+
+    assert msg is not None
+    assert msg.conversation_id == "11/22"
+    assert msg.thread == "17"
+
+
+def test_a_delete_in_a_thread_targets_the_parents_room():
+    from nora.platform.discord.parser import parse_discord_delete
+
+    msg = parse_discord_delete(_RawDelete(channel_id=17), room_channel_id="22")
+
+    assert msg is not None
+    assert msg.conversation_id == "11/22"
+    assert msg.thread == "17"

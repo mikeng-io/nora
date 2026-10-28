@@ -129,7 +129,7 @@ def rooms_named(policy: Policy, person_id: str) -> frozenset[RoomKey]:
     room answers to included. A `"*"` room is left out: it names nobody."""
     return frozenset(
         (convo.platform, cid)
-        for convo in policy.conversations
+        for convo in policy.rooms()
         if convo.persons is not None and person_id in convo.persons
         for cid in convo.ids
     )
@@ -150,7 +150,7 @@ def room_label(policy: Policy, platform: str, conversation_id: str) -> str:
     allowed room answers to it. The portal shows it beside a document, but only to someone
     whose own rooms include it (`nora.web.documents`), so it never names a room to a person
     who is not in it."""
-    for convo in policy.conversations:
+    for convo in policy.rooms():
         if convo.platform == platform and conversation_id in convo.ids:
             return convo.label
     return ""

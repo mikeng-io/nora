@@ -135,7 +135,7 @@ class Relay:
         # Local import: tools declares Relay and owns the shared name resolver.
         from .tools import _find_room
 
-        candidates = tuple(c for c in self._policy.conversations if c.unit == unit)
+        candidates = tuple(c for c in self._policy.rooms() if c.unit == unit)
         known = tuple(KnownRoom(
             platform=c.platform, label=c.label, conversation_id=c.primary_id,
             here=False, state="unknown",

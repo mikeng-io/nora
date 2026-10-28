@@ -33,9 +33,10 @@ persons = ["miles"]        # person_ids. [] means no DMs.
 #      discord   "<guild_id>/<channel_id>"
 #      whatsapp  group JID, ...@g.us
 #
-#    `nora groups` prints each Signal group's name beside its id. It is
-#    Signal-only. For Discord, enable Developer Mode and use Copy Server ID /
-#    Copy Channel ID. An unmapped Discord sender appears in
+#    `nora groups` prints each Signal group's name beside its id, and each
+#    Discord guild the bot is in with the channels a server entry expands
+#    into. For a per-channel Discord entry, enable Developer Mode and use
+#    Copy Server ID / Copy Channel ID. An unmapped Discord sender appears in
 #    `nora persons pending` as a bare snowflake once they have spoken.
 #
 #    `unit` (default "nora") is the social unit a room belongs to: the same
@@ -86,8 +87,32 @@ tools    = []                # MCP servers this room may use, e.g. ["pulse"].
                              # true` in config.toml (off by default, and shadow
                              # mode even when on).
 
-# Discord: guild and channel flattened into one id. The guild is not
-# allowlistable on its own; list every channel explicitly.
+# Discord, whole server: `guild` names the ONE server id (Copy Server ID in
+# Developer Mode) and every text/announcement/forum channel of it becomes a
+# room of this entry's `unit`, labelled by the channel's own name — the file
+# never carries a channel id. Channels are MENTION-ONLY unless `ambient`
+# names them by name; `ignore` names channels never admitted. A thread or
+# forum post belongs to its parent channel's room, never a room of its own.
+# `persons`/`tools`/`location`/`unit`/`relevance_gate`/`description` apply to
+# every channel it expands into. Adding, removing or editing this entry and
+# its name lists hot-reloads like any other room edit.
+#
+# Channel names are collision-checked within this entry's own guild and
+# against the unit's static room labels (a colliding channel is simply not
+# admitted). Two server entries in one unit can still hold same-named
+# channels — both are admitted, and addressing that name then asks which
+# room rather than guessing.
+[[conversations]]
+platform  = "discord"
+guild     = "100000000000000203"
+unit      = "family"
+label     = "Zone 42"
+persons   = ["miles", "ada"]
+ignore    = ["admin-log"]       # never admitted
+ambient   = ["general"]         # fully ambient, like a `relevance_gate` room
+
+# Discord, one channel: guild and channel flattened into one id. A channel
+# covered by both an explicit entry and a server entry takes THIS one.
 [[conversations]]
 platform  = "discord"
 id        = "100000000000000203/100000000000000204"

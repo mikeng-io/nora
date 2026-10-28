@@ -39,6 +39,14 @@ class ConversationTarget:
     # persisted verbatim as `raw_json`, and a routing decision that changes
     # whether a reply is audible must not hang on an untyped dict lookup.
     voice: bool = False
+    # The THREAD inside `conversation_id`'s room this turn belongs to, as the
+    # platform's own channel id for it (a Discord thread or forum post —
+    # `""` on every other platform and outside one). A thread is never a
+    # room: `conversation_id` keeps naming the PARENT channel, so the room's
+    # transcript holds the thread's messages in place — the same thing the
+    # ledger's `thread` kind already means, a span inside one room — and the
+    # tag is what routes the reply back into it.
+    thread: str = ""
 
 
 @dataclass(frozen=True)
@@ -215,10 +223,15 @@ class NormalizedMessage:
     # `messages` row: ingest records it beside the message it touches. Every
     # parser leaves it None for an ordinary message or an edit.
     touch: Touch | None = None
+    # The platform channel id of the THREAD this was said in, or `""`. The
+    # room is still `conversation_id` (the parent channel); the tag lets a
+    # reply land back inside the same thread. See `ConversationTarget.thread`.
+    thread: str = ""
 
     def target(self) -> ConversationTarget:
         return ConversationTarget(
-            self.platform, self.conversation_id, self.conversation_type, voice=self.voice,
+            self.platform, self.conversation_id, self.conversation_type,
+            voice=self.voice, thread=self.thread,
         )
 
 

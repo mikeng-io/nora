@@ -53,6 +53,9 @@ def workspaces_of_person(policy: Policy, person_id: str) -> tuple[str, ...]:
     workspace and is shown nothing, rather than a guessed one."""
     if not policy.units_declared:
         return (DEFAULT_WORKSPACE,)
+    # ponytail: membership is a FILE fact — a guild entry's `persons` already
+    # lists them for every channel it expands into — so `conversations` is the
+    # source; `rooms()` would drop them under `_NoChannels` loaders.
     return tuple(sorted({
         policy.workspace_of(convo.unit) or ""
         for convo in policy.conversations
@@ -73,6 +76,8 @@ def profile_scopes_of_person(policy: Policy, person_id: str) -> tuple[tuple[str,
     (`character_person_keys`), so an unlisted person has no scope here, where
     the Honcho read above still has the one implicit workspace. Sorted by
     unit, so a page renders them in one order."""
+    # ponytail: same file-fact rule as `workspaces_of_person` — the guild
+    # entry carries the listing, so `rooms()` would only hide it.
     return tuple(
         (unit, workspace)
         for unit in sorted({

@@ -139,7 +139,9 @@ class ComprehendRunner:
         self.metrics, self.private_names = metrics, private_names
         self.model_id, self.model_route, self.ai_peer = model_id, model_route, ai_peer
         self.clock = clock
-        self.rooms_by_person = dict(rooms_by_person or {})
+        # A Mapping, kept live: composition passes a LiveMapping over the
+        # policy holder, so a channel a reload discovers is seen next read.
+        self.rooms_by_person = rooms_by_person or {}
         self.budget = AdaptorBudget(
             turns=config.turns,
             total_tokens=config.total_tokens,

@@ -278,7 +278,7 @@ class LineagePolicy:
                 persons=c.persons, location=c.location, label=c.label,
                 primary_id=c.primary_id,
             )
-            for c in policy.conversations
+            for c in policy.rooms()
         ))
         return cls(
             rooms=rooms, circles=LiveSequence(lambda: tuple(c.person_ids for c in circles)),

@@ -116,7 +116,9 @@ class DiscordSender:
         # conversation_id is "<guild_id>/<channel_id>" (policy.example.toml);
         # the REST endpoint below addresses the channel alone. The guild half
         # is only needed below, for the member lookup a '@Name' in the text
-        # requires.
+        # requires. `target.thread` overrides the POST's channel: a thread is
+        # a channel to Discord, and a reply inside one goes to its id while
+        # the ROOM (and every policy answer) stays the parent's.
         guild_id, _, channel_id = target.conversation_id.partition("/")
         if not channel_id:
             # A conversation_id with no `/` partitions to an EMPTY channel, and
@@ -206,6 +208,7 @@ class DiscordSender:
                 "message_id": quote.platform_message_id,
                 "fail_if_not_exists": False,
             }
+        post_channel = target.thread or channel_id
         try:
             async with aiohttp.ClientSession(timeout=self._timeout) as session:
                 if attachments:
@@ -222,13 +225,13 @@ class DiscordSender:
                             content_type=a.media_type,
                         )
                     resp = await session.post(
-                        f"{self._base_url}/channels/{channel_id}/messages",
+                        f"{self._base_url}/channels/{post_channel}/messages",
                         headers=headers,
                         data=form,
                     )
                 else:
                     resp = await session.post(
-                        f"{self._base_url}/channels/{channel_id}/messages",
+                        f"{self._base_url}/channels/{post_channel}/messages",
                         headers=headers,
                         json=message,
                     )
@@ -238,7 +241,7 @@ class DiscordSender:
                         retry_after = body.get("retry_after") if isinstance(body, dict) else None
                         log.error(
                             "send rate-limited: HTTP 429 (channel=%s, id=%s)",
-                            channel_id, request_id,
+                            post_channel, request_id,
                         )
                         return SendResult(
                             ok=False,
@@ -248,13 +251,13 @@ class DiscordSender:
                     if resp.status not in (200, 201):
                         log.error(
                             "send failed: HTTP %s (channel=%s, id=%s)",
-                            resp.status, channel_id, request_id,
+                            resp.status, post_channel, request_id,
                         )
                         return SendResult(ok=False)
                     body = await resp.json()
         except Exception as exc:  # noqa: BLE001 — a send failure is never fatal
             log.error(
-                "send failed: %s (channel=%s, id=%s)", type(exc).__name__, channel_id, request_id
+                "send failed: %s (channel=%s, id=%s)", type(exc).__name__, post_channel, request_id
             )
             return SendResult(ok=False)
         message_id = body.get("id") if isinstance(body, dict) else None

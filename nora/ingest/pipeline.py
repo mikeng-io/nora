@@ -311,6 +311,12 @@ class IngestPipeline:
             # room is a trace that simply stops, indistinguishable from a crash.
             _outcome(m, message, "scope_refused")
             return IngestResult(message=None, decision=None)
+        # Whether this room's traffic is absorbed into memory/ambient
+        # processing (Honcho feed, stimulus). `Conversation.absorbed` is the
+        # one definition — a mention-only server-entry channel answers tags
+        # and keeps its transcript without either side effect.
+        room = self._allowlist.conversation(message.platform, message.conversation_id)
+        absorbed = room is not None and room.absorbed
 
         # AN EDIT takes its own path from here: it is recorded beside the
         # message it changes, never as a message of its own — and an edit of
@@ -387,7 +393,7 @@ class IngestPipeline:
         # The STIMULUS, right behind the Record row it names. Inside the
         # guard: a span for a stage that cannot run would claim work that never
         # happened.
-        if self._stimulus_wiring is not None:
+        if self._stimulus_wiring is not None and absorbed:
             with span("ingest.stimulus"):
                 await stimulus_stage.run(
                     message=message, item="message", row_id=row_id,
@@ -397,7 +403,7 @@ class IngestPipeline:
         with span("ingest.memory_feed"):
             await memory_feed_stage.run(
                 message=message, person=person, memory=self._memory, metrics=m,
-                spawn=self._spawn,
+                spawn=self._spawn, absorbed=absorbed,
             )
 
         with span("ingest.gate"):
@@ -456,6 +462,8 @@ class IngestPipeline:
         the 👀 reaction and a threaded reply have to point at. A WhatsApp edit's
         own stanza id is not a message anyone can react to."""
         m = self._metrics
+        room = self._allowlist.conversation(message.platform, message.conversation_id)
+        absorbed = room is not None and room.absorbed
         with span("ingest.identity"):
             person = await identity_stage.run(
                 message=message, persons=self._persons, metrics=m
@@ -483,7 +491,7 @@ class IngestPipeline:
             return IngestResult(message=None, decision=None)
         # Only an edit that CHANGED what a reader sees is a stimulus: an
         # unchanged one stopped above, and would wake nothing new.
-        if self._stimulus_wiring is not None:
+        if self._stimulus_wiring is not None and absorbed:
             with span("ingest.stimulus"):
                 await stimulus_stage.run(
                     message=message, item="edit", row_id=original.id,
@@ -493,7 +501,7 @@ class IngestPipeline:
         with span("ingest.memory_feed"):
             await memory_feed_stage.run(
                 message=message, person=person, memory=self._memory, metrics=m,
-                spawn=self._spawn, edited=original,
+                spawn=self._spawn, edited=original, absorbed=absorbed,
             )
         with span("ingest.gate"):
             decision = await edit_gate_stage.run(

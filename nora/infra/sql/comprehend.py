@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from typing import Any
@@ -42,8 +43,8 @@ class SqlComprehendRecords:
         engine: AsyncEngine,
         *,
         media_join: Any,
-        rooms_by_unit: dict[str, list[tuple[str, str]]],
-        persons_by_unit: dict[str, set[str]],
+        rooms_by_unit: Mapping[str, list[tuple[str, str]]],
+        persons_by_unit: Mapping[str, set[str]],
         location_units: frozenset[str] = frozenset(),
         can_release_place: Any = None,
         social_off_ids: frozenset[str] = frozenset(),

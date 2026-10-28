@@ -117,6 +117,10 @@ def _units_from_policy(policy: Policy, persons: Persons) -> tuple[UnitRooms, ...
     and how a platform account resolves to a member for mentions."""
     rooms: dict[str, list[tuple[str, str]]] = {}
     members: dict[str, set[str]] = {}
+    # ponytail: this process runs no Discord client — the policy loads with
+    # `_NoChannels`, so `rooms()` could only ever return the static rooms and
+    # a guild entry's unit and `persons` would vanish; `conversations` is the
+    # source until a shared channel source exists.
     for convo in policy.conversations:
         rooms.setdefault(convo.unit, []).extend(
             (convo.platform, cid) for cid in sorted(convo.ids)

@@ -232,9 +232,16 @@ def parse_discord_message(
         if not parts:
             return None  # no usable body
 
+        # A THREAD is never a room: `conversation_id` keeps naming the PARENT
+        # channel — a forum post is a thread whose parent is the forum — and
+        # `thread` carries the thread's own channel id so the reply can land
+        # back inside it. `parent_id` is how discord.py marks a Thread (a
+        # `TextChannel` has none), which the same read serves for both.
+        parent_id = getattr(message.channel, "parent_id", None)
+        room_id = parent_id if parent_id is not None else message.channel.id
         return NormalizedMessage(
             platform="discord",
-            conversation_id=f"{message.guild.id}/{message.channel.id}",
+            conversation_id=f"{message.guild.id}/{room_id}",
             conversation_type="group",
             sender_id=str(message.author.id),
             sender_name=message.author.display_name or None,
@@ -259,6 +266,7 @@ def parse_discord_message(
             mentions=frozenset(str(u.id) for u in message.mentions),
             quote=_quoted(message.reference),
             media=refs,
+            thread="" if parent_id is None else str(message.channel.id),
             # The snowflake, which is the ONLY way Discord's reaction endpoint
             # will accept a target — `(author, timestamp)` cannot reconstruct
             # it, because `snowflake.timestamp_ms` throws the low 22 bits away.
@@ -305,7 +313,7 @@ def parse_discord_edit(
 
 
 def parse_discord_reaction(
-    payload: Any, *, own_id: str, removed: bool,
+    payload: Any, *, own_id: str, removed: bool, room_channel_id: str | None = None,
 ) -> NormalizedMessage | None:
     """`on_raw_reaction_add`/`on_raw_reaction_remove`'s
     `RawReactionActionEvent` → a `Touch` on the message it names.
@@ -327,10 +335,12 @@ def parse_discord_reaction(
         if not emoji or not message_id:
             return None
         channel_id = getattr(payload, "channel_id", None)
+        room_id = room_channel_id if room_channel_id is not None else channel_id
         return NormalizedMessage(
             platform="discord",
-            conversation_id=f"{guild_id}/{channel_id}",
+            conversation_id=f"{guild_id}/{room_id}",
             conversation_type="group",
+            thread="" if room_channel_id is None else str(channel_id),
             sender_id=user_id,
             sender_name=None,
             timestamp=0,
@@ -346,7 +356,9 @@ def parse_discord_reaction(
         return None
 
 
-def parse_discord_delete(payload: Any) -> NormalizedMessage | None:
+def parse_discord_delete(
+    payload: Any, *, room_channel_id: str | None = None,
+) -> NormalizedMessage | None:
     """`on_raw_message_delete`'s `RawMessageDeleteEvent` → a delete `Touch`.
 
     The event names the message and its channel and NOT who deleted it (an
@@ -363,10 +375,12 @@ def parse_discord_delete(payload: Any) -> NormalizedMessage | None:
         if not message_id:
             return None
         channel_id = getattr(payload, "channel_id", None)
+        room_id = room_channel_id if room_channel_id is not None else channel_id
         return NormalizedMessage(
             platform="discord",
-            conversation_id=f"{guild_id}/{channel_id}",
+            conversation_id=f"{guild_id}/{room_id}",
             conversation_type="group",
+            thread="" if room_channel_id is None else str(channel_id),
             sender_id="",
             sender_name=None,
             timestamp=0,
