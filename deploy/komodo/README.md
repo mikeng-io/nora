@@ -66,9 +66,10 @@ that prerequisite is verified. `RELEASE_IMAGES_ENABLED` retains its existing
 independent control over formal release publication. No flag is enabled by merging.
 
 Only the repository owner may dispatch or rerun this entry on default branch master;
-both the original and triggering actor are checked. Daily release automation has
-no admission to this entry, including when using owner credentials. Its standing
-formal-release authority is unchanged.
+both the original and triggering actor are checked. Daily release automation is
+not authorized to use this entry; its standing formal-release authority is unchanged.
+This is an automation-policy restriction: actor checks cannot distinguish a human
+owner from automation using that owner's credentials.
 
 ```bash
 gh workflow run release-images.yml --ref master -f target=master
