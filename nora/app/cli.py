@@ -315,6 +315,11 @@ def add_subcommands(
         help="Honcho memory and memory index maintenance (operator only)",
     )
     memory_sub = memory.add_subparsers(dest="memory_command", required=True)
+    graph = memory_sub.add_parser("graph-project", parents=[parent],
+                                  help="project Record/Rollup relations; dry run unless --apply")
+    graph.add_argument("--apply", action="store_true")
+    graph.add_argument("--rows-per-second", type=float, default=25)
+    graph.set_defaults(func=cmd_graph_project)
     history = memory_sub.add_parser(
         "profile-history", parents=[parent],
         help="historical Profile coverage receipts; optionally restart one account's pass",
@@ -1141,6 +1146,25 @@ async def cmd_profile_retry_media(args: argparse.Namespace) -> int:
     finally:
         await engine.dispose()
     return 0
+
+
+async def cmd_graph_project(args: argparse.Namespace) -> int:
+    import json
+
+    from nora.app.graph_project import graph_project, projection_context
+    cfg = _config(args)
+    if not cfg.memory.graph.enabled:
+        raise CliError("[memory.graph] enabled must be true")
+    scope = projection_context(_policy(cfg), _persons(cfg),
+                               nora_name=cfg.doctrine.display_name, produce=False)
+    engine = create_sql_engine(_database_url(cfg))
+    try:
+        result = await graph_project(engine,scope=scope,apply=args.apply,
+                                     rows_per_second=args.rows_per_second)
+    finally:
+        await engine.dispose()
+    print(json.dumps(result,sort_keys=True))
+    return 1 if args.apply and result["unprojected"] else 0
 
 
 async def cmd_memory_rebuild(args: argparse.Namespace) -> int:

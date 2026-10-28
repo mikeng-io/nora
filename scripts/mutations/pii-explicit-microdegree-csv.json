@@ -1,0 +1,16 @@
+[
+  {
+    "name": "explicit microdegree CSV keeps short integers",
+    "file": "scripts/pii_scan.py",
+    "old": "if (1 if micro_csv else 7) <= len(ip) <= 10:",
+    "new": "if 7 <= len(ip) <= 10:",
+    "target": "tests/unit/test_pii_scan.py::test_explicit_microdegree_csv_header_covers_subdegree_values"
+  },
+  {
+    "name": "explicit microdegree CSV keeps subdegree pairs",
+    "file": "scripts/pii_scan.py",
+    "old": "if not allow_subdegree and abs(a) < 1 and abs(b) < 1:",
+    "new": "if abs(a) < 1 and abs(b) < 1:",
+    "target": "tests/unit/test_pii_scan.py::test_explicit_microdegree_csv_header_covers_subdegree_values"
+  }
+]

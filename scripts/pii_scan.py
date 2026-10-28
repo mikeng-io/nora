@@ -1097,7 +1097,7 @@ def _plus_decode(code: str) -> tuple[float, float]:
     return lat + res * 10, lng + res * 10
 
 
-def _line_candidates(line: str, geo: bool) -> list[tuple[int, str, float]]:
+def _line_candidates(line: str, geo: bool, micro_csv: bool = False) -> list[tuple[int, str, float]]:
     """Number-like FIELDS that could be one coordinate: decimals, integers
     scaled by 1e6 or 1e7 (microdegrees), and an integer column followed by a
     fraction column (which is also how a comma-decimal reads)."""
@@ -1127,7 +1127,7 @@ def _line_candidates(line: str, geo: bool) -> list[tuple[int, str, float]]:
                 out.append((m.start(), "split", sign * float(f"{ip}.{nxt.group(2)}")))
                 skip.add(i + 1)
                 continue
-        if 7 <= len(ip) <= 10:
+        if (1 if micro_csv else 7) <= len(ip) <= 10:
             v = int(ip)
             # A scaled integer is a coordinate only in a file that says it
             # holds coordinates: otherwise every id, size and epoch second
@@ -1152,7 +1152,7 @@ def _in_lng(v: float) -> bool:
     return -180.0 <= v <= 180.0
 
 
-def _pair(cands: list) -> tuple[list, list]:
+def _pair(cands: list, allow_subdegree: bool = False) -> tuple[list, list]:
     """Greedy (lat, lng) pairing inside one line, same encoding family, within
     three fields (a JSON key or a timestamp may sit between them)."""
     points, used = [], set()
@@ -1163,7 +1163,7 @@ def _pair(cands: list) -> tuple[list, list]:
             if j in used or cands[j][1] != fam or cands[j][0] == cands[i][0]:
                 continue
             b = cands[j][2]
-            if abs(a) < 1 and abs(b) < 1:
+            if not allow_subdegree and abs(a) < 1 and abs(b) < 1:
                 continue
             if (_in_lat(a) and _in_lng(b)) or (_in_lng(a) and _in_lat(b)):
                 lat, lng = (a, b) if _in_lat(a) and _in_lng(b) else (b, a)
@@ -1206,6 +1206,12 @@ def coords_digest(points) -> str:
 def scan_coords(lines: list[str], geo: bool | None = None) -> CoordResult:
     if geo is None:
         geo = any(_GEO_WORDS.search(x) for x in lines)
+    # Only a bare CSV header declares integer units; a quoted header inside
+    # source code must not turn its unrelated integers into coordinates.
+    micro_header = any(re.fullmatch(
+        r"\s*lat(?:itude)?_e[67]\s*,\s*(?:lng|lon(?:gitude)?)_e[67](?:\s*,[^\n]*)?\s*",
+        line, re.I,
+    ) for line in lines)
     points: list[tuple[int, float, float]] = []
     pending: tuple[int, list] | None = None  # a lone field waiting for its partner on a later line
     for n, line in enumerate(lines, 1):
@@ -1222,8 +1228,10 @@ def scan_coords(lines: list[str], geo: bool | None = None) -> CoordResult:
         for m in _PLUS.finditer(line):
             la, ln = _plus_decode(m.group(1))
             points.append((n, la, ln))
-        cands = _line_candidates(_ISO6709.sub(" ", line), geo)
-        pts, left = _pair(cands)
+        micro_csv = bool(geo and micro_header and re.fullmatch(
+            r"\s*[+-]?\d+(?:\s*,\s*[+-]?\d+)+\s*", line))
+        cands = _line_candidates(_ISO6709.sub(" ", line), geo, micro_csv=micro_csv)
+        pts, left = _pair(cands, allow_subdegree=micro_csv)
         points.extend((n, la, ln) for la, ln in pts)
         if pending and left and n - pending[0] <= 2:
             pts2, _ = _pair(pending[1] + [(10**9 + c[0], c[1], c[2]) for c in left])

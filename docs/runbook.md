@@ -1663,3 +1663,35 @@ uv run python scripts/extraction_backfill.py --status
 
 Requeue keeps historical priority on those sources. Repeat status after the
 worker has processed them; do not mark a failed or unavailable read as complete.
+
+### Memory graph code projection
+
+`[memory.graph] enabled = false` is the default. Enabling it writes Record and
+Rollup relations beside the source projection, and produces pending work items;
+Phase 1 makes no model calls and adds no prompt reads or work-item consumer.
+Extraction continues independently. The message producer forms batches of at most
+20 in one unit and room once the oldest arrival is two seconds old. Its separate
+arrival outbox also records edits. Late media readings, social items, closed
+outings/co-locations/response episodes and Register revisions produce their own
+work. Source hashes identify source rows and revisions; they are not the rendered
+input hashes owned by the Cognition consumer.
+
+After enabling the graph, `nora memory graph-project` counts existing sources and
+prints current relation counts beside `memory_edge` counts without writing.
+`nora memory graph-project --apply --rows-per-second 25` projects them through the
+same source projectors, idempotently, with a delay between source rows. It does
+not enqueue historical model work. Nonzero `unprojected` after apply means queued
+sources still need repair; the command exits nonzero. Graph counts may exceed
+index counts because entities/relations are unit-scoped, and replies, reactions,
+stays and co-locations have column projections the older index did not hold.
+Run this maintenance command deliberately; it is not run on deployment.
+
+Work source keys are `message_batch` with a JSON array of message ids, `social`
+with `network:item_id`, `media` with the existing attachment id, Rollup episode
+kinds with their citation key (`episode` uses the response's message id), and
+Register kinds with their own row id. All are retained in `memory_work_item`.
+Identity pointers use `pointer_entity`; code-generated place ids use UUID5.
+New semantic entities should use globally unique UUIDs. Reusing an id across
+kinds or units is refused. Projection failures retain
+the source write, enqueue its source in the existing projection retry queue, and
+use the existing projection counter.
