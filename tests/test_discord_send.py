@@ -239,7 +239,7 @@ async def test_a_composed_mentions_chip_is_immune_to_the_name_fallback(
 ):
     """`<@100000000000000002>` — the chip the
     splice just wrote — starts with `@100000000000000002`, so a guild member
-    whose NICKNAME is a digit-prefix of that id (`3477`) would corrupt the
+    whose NICKNAME is a digit-prefix of that id (`1000`) would corrupt the
     chip if the name fallback ever saw the whole string. It must not: the
     fallback only ever sees the text BETWEEN chips.
 
@@ -247,8 +247,10 @@ async def test_a_composed_mentions_chip_is_immune_to_the_name_fallback(
     what makes this non-vacuous — the fallback genuinely runs and genuinely
     resolves something, rather than short-circuiting on an empty member list.
     """
+    prefix = "1000"
+    assert TYLER_SNOWFLAKE.startswith(prefix), "the synthetic nickname must attack this chip"
     rest_server_with_members.state["members"] = [
-        {"user": {"id": "40"}, "nick": "3477"},           # would corrupt the chip
+        {"user": {"id": "40"}, "nick": prefix},           # would corrupt the chip
         {"user": {"id": "22"}, "nick": "Someone Else"},    # a real, later handle
     ]
     sender = DiscordSender(
