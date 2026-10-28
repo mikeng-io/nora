@@ -1,5 +1,18 @@
 # Changelog
 
+## [7.11.8](https://github.com/mikeng-io/nora/compare/v7.11.7...v7.11.8) (2026-10-28)
+
+
+### Features
+
+* **memory:** define the shared graph storage and admission contract ([c962d5c](https://github.com/mikeng-io/nora/commit/c962d5c95d695ca9a8707947f44692d2337eab95))
+
+
+### Bug Fixes
+
+* **memory:** add relation corrections and entity lookup to the graph contract ([1695dd1](https://github.com/mikeng-io/nora/commit/1695dd1466fe1d8616804020fe0e2ecdaa59196c))
+* **memory:** require asserted_at, accumulate attributes, name the batch arguments ([61a6434](https://github.com/mikeng-io/nora/commit/61a64348bfeead0766df568ea20e3992bd57c737))
+
 ## [7.11.7](https://github.com/mikeng-io/nora/compare/v7.11.6...v7.11.7) (2026-10-28)
 
 
