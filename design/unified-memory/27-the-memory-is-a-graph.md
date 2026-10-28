@@ -125,7 +125,7 @@ The graph adds three tables and no per-kind table:
   architecture test holds every writer to the schema.
   `# ponytail: JSONB attributes; promote one to a column only when a query plan needs it`.
 - **Persons, rooms, units and Nora** keep their authored identity
-  (`identity.toml`, `policy.toml`); their `entity` rows are pointers keyed by `person_id` / room / unit, so the graph never owns who someone is. A pointer is **one entity per unit** (`<unit>:<id>`, 2026-10-28): an entity's unit never changes, so a person in two units is two entities and neither unit's graph reaches the other's (DEC-231).
+  (`identity.toml`, `policy.toml`); their `entity` rows are pointers keyed by `person_id` / room / unit, so the graph never owns who someone is. A pointer is **one entity per unit** (`<unit>:<kind>:<id>`, 2026-10-28): an entity's unit never changes, so a person in two units is two entities and neither unit's graph reaches the other's (DEC-231).
 - **Scope travels on the row.** `relation.unit` and `persons` are copied from
   the evidence (the strictest of it), so a scoped read filters inside the
   scan, exactly as `memory_node` does (25 §3). An entity with no unit-scoped

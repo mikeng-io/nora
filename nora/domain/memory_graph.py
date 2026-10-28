@@ -9,7 +9,8 @@ shown to the session, never accepted from model output.
 
 The unit is the read boundary (DEC-231), so an entity belongs to exactly one
 unit and never moves. A person, room, unit or Nora pointer is therefore one
-entity PER UNIT: `pointer_entity` keys it `<unit>:<authored id>` and keeps the
+entity PER UNIT: `pointer_entity` keys it `<unit>:<kind>:<authored id>` (unique
+across kinds, since the table's key is the id alone) and keeps the
 authored id in `attributes["ref"]`. One person in two units is two entities,
 and neither unit's graph can reach the other's.
 """
@@ -187,7 +188,7 @@ def pointer_entity(kind: str, unit: str, ref: str, name: str) -> Entity:
     """The unit's own pointer to an authored identity (identity.toml, policy.toml)."""
     if kind not in POINTER_KINDS:
         raise ValueError(f"{kind} is not a pointer kind")
-    return Entity(f"{unit}:{ref}", kind, unit, name, attributes={"ref": ref})
+    return Entity(f"{unit}:{kind}:{ref}", kind, unit, name, attributes={"ref": ref})
 
 
 @dataclass(frozen=True)
@@ -360,7 +361,10 @@ class MemoryGraph(Protocol):
     changed hashes create new retained work. Live and historical claims are separate.
     """
 
-    async def upsert_entity(self, entity: Entity) -> Entity: ...
+    async def upsert_entity(self, entity: Entity) -> Entity:
+        """Insert or update by key. Raises ValueError if the id is held in another unit."""
+        ...
+
     async def stage_and_admit(
         self,
         *,
