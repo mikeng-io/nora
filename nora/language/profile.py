@@ -690,7 +690,7 @@ class ProfilePersonAdaptor:
         self._runs: dict[str, _Run] = {}
 
     def keys(self) -> Sequence[str]:
-        return tuple(sorted(self._keys))
+        return tuple(sorted(self._keys.keys()))
 
     def tool_room(self, key: str) -> str | None:
         pk = self._keys.get(key)

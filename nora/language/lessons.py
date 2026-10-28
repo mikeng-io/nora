@@ -300,7 +300,7 @@ class LessonsAdaptor:
         self._rejections: dict[str, tuple[int | None, int]] = {}
 
     def keys(self) -> Sequence[str]:
-        return tuple(sorted(self._keys))
+        return tuple(sorted(self._keys.keys()))
 
     def _count(self, outcome: str, n: int = 1) -> None:
         if outcome not in LESSONS_OUTCOMES:

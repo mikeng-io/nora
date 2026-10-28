@@ -312,7 +312,7 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
         self.tools = CULTURE_TOOLS if kind == "room" else frozenset()
 
     def keys(self) -> Sequence[str]:
-        return tuple(sorted(self._collective_keys))
+        return tuple(sorted(self._collective_keys.keys()))
 
     def tool_room(self, key: str) -> str | None:
         return key if self._kind == "room" and key in self._collective_keys else None
