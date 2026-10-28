@@ -116,7 +116,9 @@ def test_failed_health_readback_preserves_the_previous_success_receipt(tmp_path,
     receipt = tmp_path / 'release-deploy.json'
     receipt.write_text('previous successful deployment')
     verifier = tmp_path / 'verify-deploy.py'
-    verifier.write_text('def verify_services(project, images):\n'
+    verifier.write_text('def containers_for_services(project, services):\n'
+                        '    return []\n'
+                        'def verify_services(project, images, *, baseline):\n'
                         '    assert project == "nora"\n'
                         '    assert "presence" in images and "analytics" in images\n'
                         '    raise RuntimeError("stale presence")\n')
@@ -275,14 +277,20 @@ def release_runtime(tmp_path, monkeypatch):
     bundle = load('release_bundle')
     compose, manifest = bundle.render(source(), images(bundle), 'v6.3.1', 'b' * 40)
     compose['name'] = 'nora'
+    for service in compose['services'].values():
+        service['volumes'] = [{'target': v.split(':')[1]}
+                              for v in service.get('volumes', [])]
     compose['services']['nora']['volumes'] = [
         {'target': '/app/config.toml', 'source': str(tmp_path / 'config.toml')}]
     (tmp_path / 'config.toml').write_text('[example]\nenabled=true\n')
     (tmp_path / 'verify-deploy.py').write_text(
         'def _docker(*args):\n'
         '    raise SystemExit("PRIVATE_STDERR")\n'
-        'def verify_services(project, images):\n'
+        'def containers_for_services(project, services):\n'
+        '    return [{"container_id": "retained", "restarts": 2}]\n'
+        'def verify_services(project, images, *, baseline):\n'
         '    assert project == "nora" and "presence" in images\n'
+        '    assert baseline == {"retained": 2}\n'
         '    _docker("ps")\n')
     monkeypatch.setattr(wrapper, '__file__', str(tmp_path / 'komodo_deploy.py'))
     calls = []
@@ -298,7 +306,8 @@ def release_runtime(tmp_path, monkeypatch):
         elif command[2] == 'exec':
             stage, stdout = 'stamp-readback', json.dumps(fault.get('stamp', manifest)).encode()
         else:
-            stage, stdout = {'pull': 'pull', 'up': 'recreate'}[command[2]], b''
+            stage, stdout = {'pull': 'pull', 'up': (
+                'config-reload' if '--force-recreate' in command else 'recreate')}[command[2]], b''
         calls.append(stage)
         if stage in ('recreate', 'readback', 'stamp-readback'):
             assert (tmp_path / 'release-attempt.json').exists()
@@ -467,10 +476,20 @@ def test_native_procedure_is_disabled_until_explicit_cutover():
 @pytest.fixture
 def publisher_source(tmp_path, monkeypatch):
     """Real source history/stamps; API responses distinguish trusted request shapes."""
+    # A runner's workflow revision belongs to the outer repository, not this fixture.
+    monkeypatch.delenv('GITHUB_WORKFLOW_SHA', raising=False)
     bundle = load('release_bundle')
     repo = tmp_path / 'source'
     (repo / 'scripts').mkdir(parents=True)
     (repo / 'nora').mkdir()
+    (repo / 'nora/generated.txt').write_text('generated tracked image input')
+    (repo / '.github/workflows').mkdir(parents=True)
+    shutil.copy(ROOT / '.github/workflows/release-images.yml', repo / '.github/workflows')
+    for _, dockerfile in bundle.BUILDS.values():
+        target = repo / dockerfile
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(ROOT / dockerfile, target)
+    (repo / 'app/package-lock.json').write_text('{"generated": true}')
     shutil.copy(ROOT / 'docker-compose.yml', repo)
     shutil.copy(ROOT / 'scripts/gen_version_manifest.py', repo / 'scripts')
 
@@ -498,6 +517,8 @@ def publisher_source(tmp_path, monkeypatch):
     def api(repository, path, body=None):
         assert repository == 'mikeng-io/nora' and body is None
         state['calls'].append(path)
+        if path == 'git/matching-refs/heads/deployments':
+            return []
         if path == '':
             return {'default_branch': state.get('default_branch', 'master')}
         if path == 'git/ref/heads/master':
@@ -528,7 +549,7 @@ def test_master_selection_pins_once_and_survives_later_master_advance(publisher_
     bundle, state, git = publisher_source
     selected = bundle.select('mikeng-io/nora', 'master', '', state['current'])
     assert selected == {'commit': state['current'], 'version': git('describe', '--tags'),
-                        'channel': 'master', 'matrix': list(bundle.BUILDS)}
+                        'channel': 'master', 'matrix': list(bundle.BUILDS), 'previous': ''}
     git('commit', '--allow-empty', '-qm', 'fix: later generated change')
     git('update-ref', 'refs/remotes/origin/master', git('rev-parse', 'HEAD'))
     git('checkout', '--detach', selected['commit'])
@@ -630,11 +651,14 @@ def test_complete_image_build_uses_selected_source_version_and_channel(
     selected = bundle.select('mikeng-io/nora', channel.split('-')[0],
                              'v7.11.0' if channel == 'release' else '', '')
     real_execute, real_run = subprocess.run, bundle.run
+    Path('app/untracked.generated').write_text('must never enter the image')
     built, prepared = [], []
 
     def run(*command):
         if command == ('bash', 'deploy/signal-cli/fetch.sh'):
             prepared.append('signal-cli')
+            for suffix in ('', '.asc'):
+                Path('deploy/signal-cli/signal-cli-0.0.0.tar.gz' + suffix).write_bytes(b'generated')
             return ''
         return real_run(*command)
 
@@ -642,6 +666,10 @@ def test_complete_image_build_uses_selected_source_version_and_channel(
         if command[:3] != ['docker', 'buildx', 'build']:
             return real_execute(command, **kwargs)
         built.append(command)
+        if Path(command[-1]).name == 'app':
+            assert not (Path(command[-1]) / 'untracked.generated').exists()
+            assert (Path(command[-1]) / 'Dockerfile').read_bytes() == (
+                ROOT / 'app/Dockerfile').read_bytes()
         metadata = Path(command[command.index('--metadata-file') + 1])
         metadata.write_text(json.dumps({'containerimage.digest': 'sha256:' + 'a' * 64}))
         return subprocess.CompletedProcess(command, 0)
@@ -653,7 +681,7 @@ def test_complete_image_build_uses_selected_source_version_and_channel(
     for name in bundle.BUILDS:
         monkeypatch.setattr(sys, 'argv', ['release_bundle.py', 'build', *args, '--image', name])
         bundle.main()
-        receipt = json.loads(Path(f'release-output/{name}.json').read_text())
+        receipt = json.loads(Path(f'release-output/{name}.json').read_text())['artifact']
         assert (receipt['name'], receipt['version'], receipt['commit'], receipt['channel']) == (
             name, selected['version'], selected['commit'], selected['channel'])
         identity = selected['version'] if channel == 'release' else f'sha-{selected["commit"]}'
@@ -670,19 +698,34 @@ def test_complete_image_build_uses_selected_source_version_and_channel(
     assert load('komodo_deploy').expected_images(manifest, site=True) == manifest['services']
 
 
-@pytest.mark.parametrize('fault', ['missing', 'name', 'commit', 'version', 'channel', 'image'])
-def test_bundle_refuses_receipts_outside_the_complete_selected_cohort(tmp_path, fault):
-    bundle = load('release_bundle')
+def write_image_receipts(bundle, directory, version, commit, channel):
+    directory.mkdir(exist_ok=True)
+    selected = {'commit': commit, 'version': version, 'channel': channel}
     for name, image in images(bundle).items():
-        receipt = {'name': name, 'image': image, 'commit': 'b' * 40,
-                   'version': 'v7.11.0-2-gbbbbbbb', 'channel': 'master'}
-        if name == 'app':
-            if fault == 'missing':
-                continue
-            receipt[fault] = 'wrong'
-        (tmp_path / f'{name}.json').write_text(json.dumps(receipt))
+        artifact = {**selected, 'name': name, 'image': image,
+                    'inputs': bundle.build_inputs(name, commit,
+                        {'signal-cli-0.0.0.tar.gz': 'a' * 64,
+                         'signal-cli-0.0.0.tar.gz.asc': 'b' * 64}
+                        if name == 'signal-cli' else None)}
+        (directory / f'{name}.json').write_text(json.dumps({
+            'selection': selected, 'artifact': artifact}))
+
+
+@pytest.mark.parametrize('fault', ['missing', 'name', 'commit', 'version', 'channel', 'image'])
+def test_bundle_refuses_receipts_outside_the_complete_selected_cohort(publisher_source, fault):
+    bundle, state, git = publisher_source
+    directory = Path('release-output')
+    version = git('describe', '--tags')
+    write_image_receipts(bundle, directory, version, state['current'], 'master')
+    path = directory / 'app.json'
+    record = json.loads(path.read_text())
+    if fault == 'missing':
+        path.unlink()
+    else:
+        record['artifact'][fault] = 'wrong'
+        path.write_text(json.dumps(record))
     with pytest.raises((ValueError, FileNotFoundError)):
-        bundle.bundle(tmp_path, 'v7.11.0-2-gbbbbbbb', 'b' * 40, 'master')
+        bundle.bundle(directory, version, state['current'], 'master')
 
 
 @pytest.mark.parametrize('filename', ['release.json', 'compose.json'])
@@ -692,10 +735,7 @@ def test_promotion_refuses_a_bundle_changed_after_receipt_validation(
     directory = Path('release-output')
     directory.mkdir()
     version = git('describe', '--tags')
-    for name, image in images(bundle).items():
-        (directory / f'{name}.json').write_text(json.dumps({
-            'name': name, 'image': image, 'commit': state['current'],
-            'version': version, 'channel': 'master'}))
+    write_image_receipts(bundle, directory, version, state['current'], 'master')
     args = ['--channel', 'master', '--source', state['current'], '--version', version]
     monkeypatch.setattr(sys, 'argv', ['release_bundle.py', 'bundle', *args])
     bundle.main()
@@ -892,3 +932,199 @@ def test_wrapper_refuses_forged_or_unsupported_snapshot_identity(version, channe
     manifest.update(version=version, channel=channel, commit=commit)
     with pytest.raises(ValueError):
         load('komodo_deploy').expected_images(manifest, site=False)
+
+
+def test_reuse_preserves_original_provenance_and_checks_current_inputs(
+        publisher_source, monkeypatch):
+    from types import SimpleNamespace
+
+    bundle, state, git = publisher_source
+    old_commit = state['current']
+    old_version = git('describe', '--tags')
+    directory = Path('release-output')
+    write_image_receipts(bundle, directory, old_version, old_commit, 'master')
+    _, previous = bundle.bundle(directory, old_version, old_commit, 'master')
+    old_app = copy.deepcopy(previous['artifacts']['app'])
+    Path('unrelated.txt').write_text('generated unrelated change')
+    git('add', '.')
+    git('commit', '-qm', 'fix: generated unrelated source change')
+    commit, version = git('rev-parse', 'HEAD'), git('describe', '--tags')
+    write_image_receipts(bundle, directory, version, commit, 'master')
+    commands = []
+    real_run = bundle.run
+
+    def run(*command):
+        if command[:4] == ('docker', 'buildx', 'imagetools', 'inspect'):
+            commands.append(command)
+            return 'verified immutable image available'
+        return real_run(*command)
+
+    monkeypatch.setattr(bundle, 'run', run)
+    bundle.publish_image(SimpleNamespace(image='app', directory=directory, version=version,
+                                        channel='master'), commit, previous)
+    generated, manifest = bundle.bundle(directory, version, commit, 'master', previous)
+    assert manifest['commit'] == commit and manifest['version'] == version
+    assert manifest['artifacts']['app'] == old_app  # no relabel/restamp of reused bytes
+    assert manifest['artifacts']['app']['commit'] == old_commit != commit
+    assert generated['services']['app']['image'] == old_app['image']
+    assert len(manifest['services']) == 12 and len(manifest['artifacts']) == 10
+    assert commands == [('docker', 'buildx', 'imagetools', 'inspect', old_app['image'])]
+    # Same context is insufficient without the exact previous provenance receipt.
+    forged = json.loads((directory / 'app.json').read_text())
+    forged['artifact']['version'] = 'v1.0.0'
+    (directory / 'app.json').write_text(json.dumps(forged))
+    with pytest.raises(ValueError, match='provenance'):
+        bundle.bundle(directory, version, commit, 'master', previous)
+
+
+@pytest.mark.parametrize('change', ['lockfile', 'dockerfile', 'basepin', 'ignore',
+                                   'specific-ignore', 'workflow', 'publisher', 'shared-copy',
+                                   'signal-recipe', 'whatsapp-recipe'])
+def test_reuse_invalidates_changed_effective_inputs(publisher_source, monkeypatch, change):
+    bundle, state, git = publisher_source
+    name = 'site' if change == 'shared-copy' else 'app'
+    if change in ('signal-recipe', 'whatsapp-recipe'):
+        name = 'signal-cli' if change == 'signal-recipe' else 'whatsapp-bridge'
+    old = bundle.build_inputs(name, state['current'])
+    assert old['reusable']  # positive control: actual reviewed recipe is admitted
+    paths = {'lockfile': 'app/package-lock.json', 'dockerfile': 'app/Dockerfile',
+             'basepin': 'app/Dockerfile', 'ignore': 'app/.dockerignore',
+             'specific-ignore': 'app/Dockerfile.dockerignore',
+             'workflow': '.github/workflows/release-images.yml',
+             'shared-copy': 'assets/generated.txt',
+             'signal-recipe': 'deploy/signal-cli/Dockerfile',
+             'whatsapp-recipe': 'deploy/whatsapp-bridge/Dockerfile'}
+    if change == 'publisher':
+        altered = Path('publisher.py')
+        altered.write_bytes(Path(bundle.__file__).read_bytes() + b'\n# changed flags\n')
+        monkeypatch.setattr(bundle, '__file__', str(altered.resolve()))
+    else:
+        path = Path(paths[change])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        old_bytes = path.read_text() if path.exists() else ''
+        path.write_text(old_bytes.replace('node:24-', 'node:25-') if change == 'basepin'
+                        else old_bytes + '\n# generated input change\n')
+        git('add', '.')
+        git('commit', '-qm', 'fix: generated effective input change')
+    current = bundle.build_inputs(name, git('rev-parse', 'HEAD'))
+    artifact = {'inputs': old, 'name': name, 'image': images(bundle)[name],
+                'commit': state['current'], 'version': 'v7.11.0', 'channel': 'master'}
+    previous = {'artifacts': {name: artifact}, 'services': {name: artifact['image']}}
+    real_run = bundle.run
+    monkeypatch.setattr(bundle, 'run', lambda *cmd: 'available' if cmd[0] == 'docker'
+                        else real_run(*cmd))
+    assert current != old
+    assert bundle.reusable_artifact(name, current, previous) is None
+
+
+def test_unknown_reuse_evidence_bootstraps_and_unavailable_registry_refuses(
+        publisher_source, monkeypatch):
+    bundle, state, _ = publisher_source
+    inputs = bundle.build_inputs('app', state['current'])
+    assert bundle.reusable_artifact('app', inputs, {}) is None
+    assert bundle.reusable_artifact('app', inputs, {'artifacts': {'app': {'name': 'app'}}}) is None
+    assert bundle.reusable_artifact('app', dict(inputs, reusable=False), {}) is None
+    artifact = {'name': 'app', 'image': images(bundle)['app'], 'commit': state['current'],
+                'version': 'v7.11.0', 'channel': 'master', 'inputs': inputs}
+    previous = {'services': {'app': artifact['image']}, 'artifacts': {'app': artifact}}
+
+    def unavailable(*command):
+        assert command[:4] == ('docker', 'buildx', 'imagetools', 'inspect')
+        raise RuntimeError('registry unavailable')
+
+    monkeypatch.setattr(bundle, 'run', unavailable)
+    with pytest.raises(RuntimeError, match='registry unavailable'):
+        bundle.reusable_artifact('app', inputs, previous)
+
+
+def test_nora_stamp_is_never_reused_and_signal_fetched_bytes_invalidate(publisher_source):
+    bundle, state, _ = publisher_source
+    assert not bundle.build_inputs('nora', state['current'])['reusable']
+    one = bundle.build_inputs('signal-cli', state['current'], {'signed-archive': 'a' * 64})
+    two = bundle.build_inputs('signal-cli', state['current'], {'signed-archive': 'b' * 64})
+    assert one['reusable'] and one != two
+    assert bundle.reusable_artifact('signal-cli', two, {
+        'artifacts': {'signal-cli': {'inputs': one}}}) is None
+
+
+def test_native_reconcile_forces_only_explicit_file_readers(tmp_path, monkeypatch):
+    wrapper = load('komodo_deploy')
+    request = tmp_path / 'config-reload.json'
+    resolved = {'services': {
+        'nora': {'volumes': [{'target': '/app/policy.toml'}, {'target': '/app/config.toml'}]},
+        'presence': {'volumes': [{'target': '/app/config.toml'}]},
+        'app': {'volumes': [{'target': '/app/identity.toml'}]},
+        'signal-cli': {}}}
+    pins = dict.fromkeys(resolved['services'], 'synthetic-image')
+    commands = []
+    monkeypatch.setattr(wrapper, 'run', lambda cmd, **kw: commands.append(cmd))
+    wrapper.reconcile_services(['docker', 'compose'], pins,
+                               wrapper.reload_services(resolved, pins, request))
+    assert len(commands) == 1 and '--force-recreate' not in commands[0]
+    assert commands[0][-4:] == ['nora', 'presence', 'app', 'signal-cli']
+    request.write_text(json.dumps({'files': ['policy.toml']}))
+    readers = wrapper.reload_services(resolved, pins, request)
+    wrapper.reconcile_services(['docker', 'compose'], pins, readers)
+    assert readers == ['nora']
+    assert commands[-1][-2:] == ['--force-recreate', 'nora']
+    assert '--force-recreate' not in commands[-2]
+    for files in ([], ['.env'], ['config.toml', '.env']):
+        request.write_text(json.dumps({'files': files}))
+        with pytest.raises(ValueError, match='reload'):
+            wrapper.reload_services(resolved, pins, request)
+    for value in ([1, 2, 3], None, 'x', []):
+        request.write_text(json.dumps(value))
+        with pytest.raises(ValueError, match='reload'):
+            wrapper.reload_services(resolved, pins, request)
+
+
+@pytest.mark.parametrize('failure_stage', ['config-reload', 'readback'])
+def test_scoped_reload_consumed_only_after_verified_transaction(
+        release_runtime, tmp_path, failure_stage):
+    wrapper, manifest, calls, fault = release_runtime
+    request = tmp_path / 'config-reload.json'
+    request.write_text(json.dumps({'files': ['config.toml']}))
+    fault['stage'] = failure_stage
+    with pytest.raises(wrapper.CommandError):
+        wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
+    assert request.exists() and (tmp_path / 'release-attempt.json').exists()
+    fault.clear()
+    (tmp_path / 'release-attempt.json').unlink()  # explicit recovery, same native transaction
+    wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
+    assert calls.count('config-reload') == 2
+    assert not request.exists() and not (tmp_path / 'release-attempt.json').exists()
+
+
+@pytest.mark.parametrize('change', ['args', 'context', 'dockerfile', 'secret', 'platforms'])
+def test_unknown_compose_build_contract_refuses_publication(change):
+    bundle = load('release_bundle')
+    compose = source()
+    compose['services']['app']['build'][change] = (
+        {'GENERATED_ARG': 'different'} if change == 'args' else 'unknown')
+    with pytest.raises(ValueError, match='build inputs'):
+        bundle.render(compose, images(bundle), 'v7.11.1', 'b' * 40)
+
+
+def test_selection_pins_previous_manifest_by_immutable_commit(publisher_source, monkeypatch):
+    import base64
+
+    bundle, state, _ = publisher_source
+    _, previous = bundle.render(source(), images(bundle), 'v7.11.0', state['released'])
+    real_api = bundle.api
+    reads = []
+    deployment_commit = 'd' * 40
+
+    def api(repo, path, body=None):
+        if path == 'git/matching-refs/heads/deployments':
+            return [{'ref': 'refs/heads/deployments', 'object': {'sha': deployment_commit}}]
+        if path.startswith('contents/release.json?ref='):
+            reads.append(path)
+            assert path == 'contents/release.json?ref=' + deployment_commit
+            return {'content': base64.b64encode(json.dumps(previous).encode()).decode()}
+        return real_api(repo, path, body)
+
+    monkeypatch.setattr(bundle, 'api', api)
+    selected = bundle.select('mikeng-io/nora', 'master', '', '')
+    assert selected['previous'] == deployment_commit
+    assert reads == ['contents/release.json?ref=' + deployment_commit]
+    assert bundle.previous_manifest('mikeng-io/nora', selected['previous']) == previous

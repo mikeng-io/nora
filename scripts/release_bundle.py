@@ -7,10 +7,14 @@ from __future__ import annotations
 import argparse
 import base64
 import copy
+import hashlib
+import io
 import json
 import os
 import re
 import subprocess
+import tarfile
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -27,6 +31,20 @@ BUILDS = {
     'instagram-bridge': ('deploy/instagram-bridge', 'deploy/instagram-bridge/Dockerfile'),
     'alert-bridge': ('deploy/alert-bridge', 'deploy/alert-bridge/Dockerfile'),
 }
+# Reviewed recipes: pinned external images, locked language dependencies, no
+# inputs outside their context. A changed recipe builds until reviewed here.
+REUSE_RECIPES = {
+    'app': '3bf5dc79009ee6f79dacd671b1c6e91ab00022efeb07df1fe8874f83326b8019',
+    'site': '3a8f159aaaf3b076a9e3c742480b39c236d81a7698886865081a1fb02bddd80d',
+    'stt': '0f909a02fd4c8d484501ecf6f5ce85dd2b5ffed5481065fcec75dbb638c53ad0',
+    'voice-sidecar': '69f0ecc9a3efc00732f6c4c364c6441014dba5355667f8b57fe60f39a71f8ba5',
+    'voice-wake': 'fd5ee73065eab7b09c4bf08805c21573bce5296cc1bbdf7b7bf5b1218fe9449b',
+    'signal-cli': 'cdaa57b8438964a2a72ea56187f3e72d81477655eec011ae959284de0226656c',
+    'whatsapp-bridge': '71ae929c8dab80bf43ac27df9e390d1770933a1028d2c592e3ff041c93d7cdab',
+    'instagram-bridge': '92a0e637d9c9a699f903bb745fdc753d366badb9186ed19d41e5a312dcf923c7',
+    'alert-bridge': '722d580bb9a573afcfefc3b86adee214d097fd481ae1e14d20dcc84f0517ad65',
+}
+
 REGISTRY = 'ghcr.io/mikeng-io/nora-'
 TAG = re.compile(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)')
 VERSION = re.compile(TAG.pattern + r'(?:-([1-9][0-9]*)-g([0-9a-f]{7,40}))?')
@@ -59,11 +77,39 @@ def validate_manifest(manifest: dict) -> None:
             raise ValueError(f'invalid image digest for {name}')
     if len({services[s] for s in ('nora', 'presence', 'analytics')}) != 1:
         raise ValueError('shared Nora services must use one image')
+    if 'artifacts' in manifest:
+        if set(manifest['artifacts']) != set(BUILDS):
+            raise ValueError('incomplete artifact provenance')
+        for name, artifact in manifest['artifacts'].items():
+            validate_artifact(name, artifact, services[name])
+        if any(manifest['artifacts']['nora'][k] != manifest[k]
+               for k in ('version', 'commit', 'channel')):
+            raise ValueError('Nora artifact stamp must match selected release')
+
+
+def validate_builds(compose: dict) -> None:
+    built = {name: svc['build'] for name, svc in compose['services'].items() if 'build' in svc}
+    if set(built) != set(BUILDS):
+        raise ValueError('release images must cover every build service exactly')
+    for name, definition in built.items():
+        value = {'context': definition} if isinstance(definition, str) else definition
+        context, dockerfile = BUILDS[name]
+        actual_context = Path(value['context']).as_posix()
+        actual_dockerfile = (
+            Path(actual_context) / value.get('dockerfile', 'Dockerfile')).as_posix()
+        args = ({'NORA_VERSION': '${NORA_VERSION:-}', 'NORA_GIT_SHA': '${NORA_GIT_SHA:-}',
+                 'NORA_BUILT_AT': '${NORA_BUILT_AT:-}'} if name == 'nora' else {})
+        if (actual_context != context or actual_dockerfile != dockerfile
+                or value.get('args', {}) != args
+                or value.get('network', 'host') != 'host'
+                or set(value) - {'context', 'dockerfile', 'network', 'args'}):
+            raise ValueError('review changed Compose build inputs before publishing')
 
 
 def render(compose: dict, images: dict, tag: str, commit: str,
            channel: str = 'release') -> tuple[dict, dict]:
     validate_identity(tag, commit, channel)
+    validate_builds(compose)
     built = {name for name, svc in compose['services'].items() if 'build' in svc}
     if built != set(BUILDS) or set(images) != built:
         raise ValueError('release images must cover every build service exactly')
@@ -156,9 +202,15 @@ def select(repo: str, channel: str, tag: str, candidate: str) -> dict:
         commit = validate_release(tag, repo, checkout=False)
     validate_identity(tag, commit, channel)
     compose = yaml.safe_load(run('git', 'show', f'{commit}:docker-compose.yml'))
-    if {name for name, svc in compose['services'].items() if 'build' in svc} != set(BUILDS):
-        raise ValueError('selected source differs from the owned image cohort')
-    return {'commit': commit, 'version': tag, 'channel': channel, 'matrix': list(BUILDS)}
+    validate_builds(compose)
+    refs = api(repo, 'git/matching-refs/heads/deployments')
+    heads = [r['object']['sha'] for r in refs if r['ref'] == 'refs/heads/deployments']
+    if len(heads) > 1:
+        raise ValueError('ambiguous previous deployment state')
+    previous = heads[0] if heads else ''
+    previous_manifest(repo, previous)  # unavailable/malformed state refuses selection
+    return {'commit': commit, 'version': tag, 'channel': channel,
+            'matrix': list(BUILDS), 'previous': previous}
 
 
 def validate_source(repo: str, channel: str, version: str, commit: str) -> str:
@@ -177,13 +229,156 @@ def validate_source(repo: str, channel: str, version: str, commit: str) -> str:
     return commit
 
 
-def bundle(directory: Path, version: str, commit: str, channel: str) -> tuple[dict, dict]:
-    records = [json.loads((directory / f'{name}.json').read_text()) for name in BUILDS]
-    if any(r['name'] != name or r['commit'] != commit or r['version'] != version
-           or r['channel'] != channel for name, r in zip(BUILDS, records, strict=True)):
-        raise ValueError('image receipts describe different sources, versions or channels')
-    return render(yaml.safe_load(Path('docker-compose.yml').read_text()),
-                  {r['name']: r['image'] for r in records}, version, commit, channel)
+def previous_manifest(repo: str, ref: str) -> dict:
+    if not ref:
+        return {}
+    if not SHA.fullmatch(ref):
+        raise ValueError('previous deployment must be an immutable Git commit')
+    value = api(repo, f'contents/release.json?ref={ref}')
+    manifest = json.loads(base64.b64decode(value['content']))
+    validate_manifest(manifest)
+    return manifest
+
+
+def build_inputs(name: str, commit: str, external: dict | None = None) -> dict:
+    """Conservative complete Git context, never a hand-maintained COPY path filter.
+
+    Builds consume an archive of this tree, not the dependency-populated checkout.
+    Ignored files count too: false rebuilds are preferable to false reuse. Remote
+    apt indexes are not a freshness trigger; reuse selects the previously built
+    output of the same reviewed recipe, not a claim of bit-reproducible rebuilding.
+    """
+    context, dockerfile = BUILDS[name]
+    # Hash exact bytes (run strips trailing whitespace, unsuitable for this proof).
+    recipe_bytes = subprocess.check_output(['git', 'show', f'{commit}:{dockerfile}'])  # noqa: S603,S607 -- fixed Git command
+    workflow_ref = os.environ.get('GITHUB_WORKFLOW_SHA', commit)
+    if not SHA.fullmatch(workflow_ref):
+        raise ValueError('invalid publisher workflow revision')
+    workflow = run('git', 'rev-parse', f'{workflow_ref}:.github/workflows/release-images.yml')
+    tree = run('git', 'rev-parse', f'{commit}:' + ('' if context == '.' else context))
+    return {'context': tree, 'dockerfile': hashlib.sha256(recipe_bytes).hexdigest(),
+            'publisher': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+            'workflow': workflow, 'platform': 'linux/amd64',
+            'external': external or {},
+            'reusable': name != 'nora' and REUSE_RECIPES.get(name) == (
+                hashlib.sha256(recipe_bytes).hexdigest())}
+
+
+def validate_artifact(name: str, artifact: dict, image: str) -> None:
+    validate_identity(artifact['version'], artifact['commit'], artifact['channel'])
+    if artifact['name'] != name or artifact['image'] != image:
+        raise ValueError('artifact provenance differs from selected image')
+    inputs = artifact['inputs']
+    if not isinstance(inputs, dict):
+        raise ValueError('artifact has no build input evidence')
+    external = inputs['external']
+    if not isinstance(external, dict) or (external and name != 'signal-cli'):
+        raise ValueError('unexpected external build inputs')
+    archives = [f for f in external if f.endswith('.tar.gz')]
+    if name == 'signal-cli' and (len(archives) != 1 or set(external) != {
+            archives[0], archives[0] + '.asc'} or not all(
+            re.fullmatch(r'signal-cli-[0-9.]+\.tar\.gz(?:\.asc)?', f)
+            and re.fullmatch(r'[0-9a-f]{64}', digest) for f, digest in external.items())):
+        raise ValueError('missing verified Signal input evidence')
+
+
+def reusable_artifact(name: str, inputs: dict, previous: dict) -> dict | None:
+    artifact = previous.get('artifacts', {}).get(name)
+    if not artifact or not inputs['reusable'] or artifact.get('inputs') != inputs:
+        return None
+    validate_artifact(name, artifact, previous['services'][name])
+    # Registry availability is checked before choosing reuse. Failure refuses the
+    # job, never turns unknown evidence into a successful skip.
+    run('docker', 'buildx', 'imagetools', 'inspect', artifact['image'])
+    return artifact
+
+
+def bundle(directory: Path, version: str, commit: str, channel: str,
+           previous: dict | None = None) -> tuple[dict, dict]:
+    selected = {'version': version, 'commit': commit, 'channel': channel}
+    artifacts = {}
+    for name in BUILDS:
+        record = json.loads((directory / f'{name}.json').read_text())
+        if record['selection'] != selected:
+            raise ValueError('image receipts describe different selections')
+        artifact = record['artifact']
+        validate_artifact(name, artifact, artifact['image'])
+        inputs = artifact['inputs']
+        if inputs != build_inputs(name, commit, inputs.get('external')):
+            raise ValueError('artifact build inputs differ from selected source/recipe')
+        fresh = all(artifact[key] == value for key, value in selected.items())
+        if not fresh and (not inputs['reusable'] or artifact != (
+                (previous or {}).get('artifacts', {}).get(name))):
+            raise ValueError('reused artifact lacks exact previous provenance/input proof')
+        artifacts[name] = artifact
+    compose, manifest = render(yaml.safe_load(Path('docker-compose.yml').read_text()),
+                               {n: a['image'] for n, a in artifacts.items()},
+                               version, commit, channel)
+    manifest['artifacts'] = artifacts
+    validate_manifest(manifest)
+    return compose, manifest
+
+
+def publish_image(args, commit: str, previous: dict) -> None:
+    name = args.image
+    validate_builds(yaml.safe_load(run('git', 'show', f'{commit}:docker-compose.yml')))
+    external = {}
+    if name == 'signal-cli':
+        run('bash', 'deploy/signal-cli/fetch.sh')
+        # The fetch script and Dockerfile both verify the signature. Include the
+        # fetched bytes as well, so a replaced signed upstream asset invalidates reuse.
+        files = sorted(Path('deploy/signal-cli').glob('signal-cli-*.tar.gz*'))
+        if len(files) != 2 or not any(f.name.endswith('.asc') for f in files):
+            raise ValueError('expected exactly the verified Signal archive/signature')
+        external = {f.name: hashlib.sha256(f.read_bytes()).hexdigest() for f in files}
+    inputs = build_inputs(name, commit, external)
+    artifact = reusable_artifact(name, inputs, previous)
+    if artifact is None:
+        context, dockerfile = BUILDS[name]
+        with tempfile.TemporaryDirectory(prefix='nora-release-build-') as temporary:
+            root = Path(temporary)
+            tree = run('git', 'rev-parse', f'{commit}:' + ('' if context == '.' else context))
+            archive = subprocess.check_output(['git', 'archive', tree])  # noqa: S603,S607
+            destination = root / context
+            destination.mkdir(parents=True, exist_ok=True)
+            with tarfile.open(fileobj=io.BytesIO(archive)) as exported:
+                exported.extractall(destination, filter='data')
+            extra = []
+            if name == 'nora':
+                run('python3', 'scripts/gen_version_manifest.py')
+                stamp = json.loads(Path('nora/version.json').read_text())
+                if (stamp['version'], stamp['commit']) != (args.version, commit):
+                    raise ValueError('build stamp does not describe the exact release')
+                (root / 'nora/version.json').write_text(json.dumps(stamp))
+                extra = ['--build-arg', f'NORA_VERSION={args.version}',
+                         '--build-arg', f'NORA_GIT_SHA={commit}',
+                         '--build-arg', f'NORA_BUILT_AT={stamp["built_at"]}']
+            for filename in external:
+                (root / context / filename).write_bytes((Path(context) / filename).read_bytes())
+            metadata = args.directory.resolve() / f'{name}.metadata.json'
+            identity = f'sha-{commit}' if args.channel == 'master' else args.version
+            # Separate mutable cache manifests from immutable deployment artifacts.
+            cache = f'{REGISTRY}{name}:buildcache-{inputs["platform"].replace("/", "-")}'
+            subprocess.run(  # noqa: S603 -- clean Git export, validated identity, fixed CLI
+                ['docker', 'buildx', 'build', '--network=host', '--pull',  # noqa: S607
+                 '--allow', 'network.host', '--platform', inputs['platform'], '--push',
+                 '--cache-from', f'type=registry,ref={cache}',
+                 '--cache-to', f'type=registry,ref={cache},mode=max',
+                 '--metadata-file', str(metadata),
+                 '--label', f'org.opencontainers.image.revision={commit}',
+                 '--label', f'org.opencontainers.image.version={args.version}',
+                 '--label', 'org.opencontainers.image.source=https://github.com/mikeng-io/nora',
+                 *extra, '-f', str(root / dockerfile), '-t', f'{REGISTRY}{name}:{identity}',
+                 str(root / context)], check=True)
+            digest = json.loads(metadata.read_text())['containerimage.digest']
+            if not DIGEST.fullmatch(digest):
+                raise ValueError('build returned no immutable digest')
+            artifact = {'name': name, 'image': f'{REGISTRY}{name}@{digest}',
+                        'commit': commit, 'version': args.version, 'channel': args.channel,
+                        'inputs': inputs}
+    (args.directory / f'{name}.json').write_text(json.dumps({
+        'selection': {'commit': commit, 'version': args.version, 'channel': args.channel},
+        'artifact': artifact}))
 
 
 def promote(repo: str, directory: Path) -> None:
@@ -245,6 +440,7 @@ def main() -> None:
     parser.add_argument('--tag', '--version', dest='version', default='')
     parser.add_argument('--channel', choices=['release', 'master'], default='release')
     parser.add_argument('--source', default='', help='full pinned source SHA')
+    parser.add_argument('--previous-ref', default='', help='pinned previous deployments commit')
     parser.add_argument('--candidate', default='', help='optional assessed current master SHA')
     parser.add_argument('--repo', default='mikeng-io/nora')
     parser.add_argument('--image', choices=BUILDS)
@@ -261,38 +457,10 @@ def main() -> None:
     if args.operation == 'build':
         if args.image is None:
             parser.error('--image is required for build')
-        name = args.image
-        if name == 'signal-cli':
-            run('bash', 'deploy/signal-cli/fetch.sh')
-        extra = []
-        if name == 'nora':
-            run('python3', 'scripts/gen_version_manifest.py')
-            stamp = json.loads(Path('nora/version.json').read_text())
-            if (stamp['version'], stamp['commit']) != (args.version, commit):
-                raise ValueError('build stamp does not describe the exact release')
-            extra = ['--build-arg', f'NORA_VERSION={args.version}',
-                     '--build-arg', f'NORA_GIT_SHA={commit}',
-                     '--build-arg', f'NORA_BUILT_AT={stamp["built_at"]}']
-        context, dockerfile = BUILDS[name]
-        metadata = args.directory / f'{name}.metadata.json'
-        identity = f'sha-{commit}' if args.channel == 'master' else args.version
-        image = f'{REGISTRY}{name}:{identity}'
-        subprocess.run(  # noqa: S603 -- Docker CLI, fixed inputs, validated tag
-            ['docker', 'buildx', 'build', '--pull', '--platform', 'linux/amd64', '--push',  # noqa: S607 -- Docker CLI
-             '--metadata-file', str(metadata),
-             '--label', f'org.opencontainers.image.revision={commit}',
-             '--label', f'org.opencontainers.image.version={args.version}',
-             '--label', 'org.opencontainers.image.source=https://github.com/mikeng-io/nora',
-             *extra, '-f', dockerfile, '-t', image, context], check=True)
-        digest = json.loads(metadata.read_text())['containerimage.digest']
-        if not DIGEST.fullmatch(digest):
-            raise ValueError('build returned no immutable digest')
-        (args.directory / f'{name}.json').write_text(json.dumps({
-            'name': name, 'image': f'{REGISTRY}{name}@{digest}', 'commit': commit,
-            'version': args.version, 'channel': args.channel,
-        }))
+        publish_image(args, commit, previous_manifest(args.repo, args.previous_ref))
     else:
-        compose, manifest = bundle(args.directory, args.version, commit, args.channel)
+        compose, manifest = bundle(args.directory, args.version, commit, args.channel,
+                                   previous_manifest(args.repo, args.previous_ref))
         for name, value in [('compose.json', compose), ('release.json', manifest)]:
             if args.operation == 'bundle':
                 (args.directory / name).write_text(json.dumps(value, indent=2) + '\n')

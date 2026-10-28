@@ -1,7 +1,10 @@
 # nora-deploy: reference host notes
 
 Checkout build/recreate notes below are legacy only. Production uses the
-installed Komodo Stack; do not apply checkout commands there.
+installed Komodo Stack; do not apply checkout commands there. In Komodo mode,
+loaded-once host edits require the file-name-only `config-reload.json` request
+from SKILL step 3 before manual `DeployStack`; native Compose preserves unchanged
+containers otherwise. The checkout force-recreate examples below remain legacy.
 
 - A host login shell may be zsh, where an unquoted `$VAR` holding several args
   reaches the program as one. Use `bash -s` with a heredoc or `bash -c` to make
