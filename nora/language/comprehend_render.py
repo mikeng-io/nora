@@ -61,7 +61,8 @@ def preview_text(preview: Preview, *, tokens: int = 1500) -> str:
                     f"created={entity.created_at} · "
                     f"{json.dumps(dict(entity.attributes), ensure_ascii=False, default=str)}"
                     if entity
-                    else "label=unavailable · time=unavailable · state=unavailable"
+                    else ("found · " if node.key[0] == "web_page" else "")
+                    + "label=unavailable · time=unavailable · state=unavailable"
                 )
             )
         for edge in graph.relations:

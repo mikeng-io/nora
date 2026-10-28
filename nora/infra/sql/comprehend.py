@@ -63,6 +63,23 @@ class SqlComprehendRecords:
         truncated snippet. Query by exact source key AND unit before expanding.
         """
         kind, ref = work.source
+        if kind == "message_batch":
+            ids = json.loads(ref)
+            if not isinstance(ids, list) or not ids or len(ids) > 20 or any(
+                type(i) is not int for i in ids
+            ):
+                raise ValueError("invalid message batch")
+            items = [await self.load(replace(work, source=("message", str(i)))) for i in ids]
+            batch_sources = {s.key: s for item in items for s in item.sources}
+            snapshot: dict[str, Any] = {
+                lane: list({r["id"]: r for item in items
+                            for r in item.snapshot[lane]}.values())
+                for lane in ("messages", "context")
+            }
+            snapshot["source_keys"] = {str(i): ["message", str(i)] for i in ids}
+            return replace(items[0], work=work, sources=tuple(batch_sources.values()),
+                           mentions=tuple(dict.fromkeys(p for item in items
+                               for p in (item.author, *item.mentions) if p)), snapshot=snapshot)
         if kind == "episode":
             return await self._response(work)
         # event is the old index spelling for a Register event entry.
@@ -199,6 +216,11 @@ class SqlComprehendRecords:
                     path="dreamer",
                 )
                 row["body"] = joined[0].body or ""
+                row["source_persons"] = tuple((await conn.execute(
+                    sa.select(MEMORY_NODE.c.persons).where(
+                        MEMORY_NODE.c.kind == "message", MEMORY_NODE.c.source_id == str(row["id"])
+                    )
+                )).scalar_one())
             link_replies(messages, context)
             others = []
             for key in keys:
@@ -238,7 +260,7 @@ class SqlComprehendRecords:
                     ("message", str(r["id"])),
                     "record",
                     work.unit,
-                    tuple(node["persons"]),
+                    r["source_persons"],
                     r["body"],
                 )
                 for r in messages + context
@@ -374,8 +396,8 @@ class SqlComprehendRecords:
         """The existing Lessons citation key is response:<send id>."""
         from nora.infra.sql.mobility import current_build_id
 
-        marker, sep, ref = work.source[1].partition(":")
-        if marker != "response" or not sep or not ref.isdigit():
+        ref = work.source[1].removeprefix("response:")
+        if not ref.isdigit():
             raise ValueError("unknown episode source key")
         async with self.engine.connect() as conn:
             row = (

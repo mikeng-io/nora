@@ -537,7 +537,7 @@ def test_preview_never_labels_a_notebook_item_as_record_evidence():
 
 @pytest.mark.parametrize("kind,verb", [("note", "concerns"), ("memo", "settles"),
                                        ("event_entry", "records")])
-async def test_register_worker_retries_links_and_carries_cited_scope(kind, verb):
+async def test_register_worker_retries_links_and_carries_cited_scope(kind, verb, monkeypatch):
     graph = FakeMemoryGraph()
     await graph.upsert_entity(PLACE)
     work = replace(WORK, source=(kind, "generated-register"))
@@ -547,11 +547,14 @@ async def test_register_worker_retries_links_and_carries_cited_scope(kind, verb)
     records = InMemoryComprehendRecords({work.source: item})
     model = ScriptedCognitionRunner([[('memory_stage', EMPTY)]])
     await graph.enqueue(work)  # phase one's row writer owns the sole queue item
-    records.fail_on.add("load")
+    original = graph.stage_and_admit
+    async def unavailable(**kwargs):
+        raise RuntimeError("generated graph outage during link admission")
+    monkeypatch.setattr(graph, "stage_and_admit", unavailable)
     r = runner(graph, records, model)
     await r.run_once()
     assert graph.work[work.id].state == "pending" and not graph.relations
-    records.fail_on.clear()
+    monkeypatch.setattr(graph, "stage_and_admit", original)
     r.clock = lambda: AT + timedelta(days=1)
     await r.run_once()
     assert graph.work[work.id].state == "settled"
@@ -582,9 +585,10 @@ async def test_bad_relation_timestamp_and_evidence_leave_valid_siblings_committe
 async def test_correction_outside_preview_reshapes_its_person():
     graph = FakeMemoryGraph()
     other = pointer_entity('person', UNIT, 'other-generated-person', 'Other Generated')
-    for e in (other, PLACE):
+    hidden = replace(PLACE, id="generated-hidden-place", name="Hidden Venue", aliases=())
+    for e in (other, hidden):
         await graph.upsert_entity(e)
-    rel = Relation('generated-hidden-relation', other.key, 'likes', PLACE.key,
+    rel = Relation('generated-hidden-relation', other.key, 'likes', hidden.key,
                    'notebook', UNIT, asserted_at=AT)
     await graph.stage_and_admit(entities=(), relations=(rel,),
         evidence=(Evidence(SOURCE.key, relation_id=rel.id),), sources={SOURCE.key: SOURCE})
@@ -596,4 +600,18 @@ async def test_correction_outside_preview_reshapes_its_person():
         *[[('profile_stage', {'proposals_in': []})] for _ in range(3)]])
     await runner(graph, records, model).run_once()
     assert graph.work[WORK.id].state == 'settled'
+    assert 'generated-hidden-relation' not in model.prompts[0]
     assert records.shadows[0]['entity'] == other.key
+
+
+async def test_fake_entities_share_sql_id_namespace_across_kinds():
+    graph = FakeMemoryGraph()
+    await graph.upsert_entity(PLACE)
+    assert graph.entities[PLACE.id] == PLACE
+    with pytest.raises(ValueError):
+        await graph.upsert_entity(replace(PLACE, kind="event"))
+
+
+def test_web_page_preview_uses_found_layer_word():
+    graph = Subgraph("ok", (GraphNode(("web_page", "generated-page")),))
+    assert "found" in preview_text(Preview((), graph, (), (AT, AT)))

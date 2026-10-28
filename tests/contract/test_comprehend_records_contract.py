@@ -192,6 +192,10 @@ async def test_sql_source_reader_joins_the_reply_parent_and_refuses_another_unit
     assert [s.text for s in item.sources] == ["Generated reply", "Generated parent"]
     assert "Untrusted fake parent" not in item.text
     assert item.snapshot["messages"][0]["reply_to"] == parent
+    import json
+    batch = await records.load(replace(work, source=("message_batch", json.dumps([parent, child]))))
+    assert {r["id"] for r in batch.snapshot["messages"]} == {parent, child}
+    assert {s.key for s in batch.sources} == {("message", str(parent)), ("message", str(child))}
     with pytest.raises(ValueError, match="unscoped source"):
         await records.load(replace(work, unit="another-unit"))
 
