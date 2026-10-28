@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.11.3](https://github.com/mikeng-io/nora/compare/v7.11.2...v7.11.3) (2026-10-28)
+
+
+### Bug Fixes
+
+* **profile:** keep register relevance reads selective ([2ae6032](https://github.com/mikeng-io/nora/commit/2ae603257dae3ed0d7943e21e0969958fd36926c))
+* **profile:** reuse scoped projections in source checks ([8d99c5c](https://github.com/mikeng-io/nora/commit/8d99c5cb022a3b2ad1cc26e8d3208bfd814d22ad))
+
 ## [7.11.2](https://github.com/mikeng-io/nora/compare/v7.11.1...v7.11.2) (2026-10-28)
 
 
