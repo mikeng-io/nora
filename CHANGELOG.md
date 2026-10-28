@@ -1,5 +1,14 @@
 # Changelog
 
+## [7.11.10](https://github.com/mikeng-io/nora/compare/v7.11.9...v7.11.10) (2026-10-28)
+
+
+### Maintenance
+
+* **mcp:** add project Sentry OAuth connection ([32c4323](https://github.com/mikeng-io/nora/commit/32c4323db0391301d2fcd8b1f5ddfe09ec38655a))
+* Merge branch 'master' into config/sentry-project-mcp ([3fd0172](https://github.com/mikeng-io/nora/commit/3fd0172c55fa5334c7b82b5387a9876bddb0263d))
+* Merge pull request #332 from mikeng-io/config/sentry-project-mcp ([e60d2a6](https://github.com/mikeng-io/nora/commit/e60d2a6222f43c7badb3f86970a363cef8deb869))
+
 ## [7.11.9](https://github.com/mikeng-io/nora/compare/v7.11.8...v7.11.9) (2026-10-28)
 
 
