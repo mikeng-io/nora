@@ -208,6 +208,9 @@ class SqlReminderStore:
         try:
             async with self._engine.begin() as conn:
                 result = await conn.execute(stmt)
+                if result.rowcount:
+                    from nora.infra.sql.graph_projection import register_arrival
+                    await register_arrival(conn,"reminder",row.id)
                 # Nothing landed. Postgres checks the ARBITER first, so a row
                 # whose id AND note both collide is skipped here rather than
                 # raising on the primary key; the id is the more basic fault
@@ -416,6 +419,8 @@ class SqlReminderStore:
                         **_insert_values(normalise_reminder(successor)),
                     )
                 )
+                from nora.infra.sql.graph_projection import register_arrival
+                await register_arrival(conn,"reminder",successor.id)
         return True
 
     async def mark(
@@ -436,6 +441,9 @@ class SqlReminderStore:
         stmt = sa.update(REMINDERS).where(REMINDERS.c.id == reminder_id).values(**values)
         async with self._engine.begin() as conn:
             result = await conn.execute(stmt)
+            if result.rowcount:
+                from nora.infra.sql.graph_projection import register_arrival
+                await register_arrival(conn,"reminder",reminder_id)
         return bool(result.rowcount)
 
     async def cancel(self, reminder_id: UUID, *, conversation_id: str) -> bool:
@@ -450,6 +458,9 @@ class SqlReminderStore:
         )
         async with self._engine.begin() as conn:
             result = await conn.execute(stmt)
+            if result.rowcount:
+                from nora.infra.sql.graph_projection import register_arrival
+                await register_arrival(conn,"reminder",reminder_id)
         return bool(result.rowcount)
 
     async def sweep_firing(self, *, now: datetime) -> int:

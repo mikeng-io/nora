@@ -93,6 +93,7 @@ from nora.app.computer_metrics import ComputerMetrics
 from nora.app.computer_sweeper import ComputerSessionSweeper, SweepRules
 from nora.app.documents_service import DocumentService, room_label, rooms_named
 from nora.app.extraction import ExtractionWorker
+from nora.app.graph_batches import GraphBatchProducer
 from nora.app.memory_routing import (
     MemoryRoutingError,
     build_workspace_router,
@@ -1328,6 +1329,7 @@ class Dependencies:
     # false`, the default. `__main__` hands it to the memory drain loop.
     memory_embed: MemoryEmbedWorker | None = None
     extraction: ExtractionWorker | None = None
+    graph_batches: GraphBatchProducer | None = None
     # The social stream's poller: `None` unless `[social.poll] enabled`.
     # `nora/__main__.py` starts it; the eval subject, which composes the same
     # graph, does not.
@@ -1508,6 +1510,17 @@ async def build_dependencies(
     # `nora.__main__.App.shutdown`) disposes it for both; `PresenceStore.aclose`
     # is deliberately NOT also called on this shared engine.
     engine = create_sql_engine(database_url)
+    if cfg.memory.graph.enabled:
+        from nora.infra.sql.graph_projection import ProjectionContext
+        members: dict[str, frozenset[str] | None] = {}
+        for conversation in allowlist.conversations:
+            old = members.get(conversation.unit, frozenset())
+            members[conversation.unit] = (
+                None if old is None or conversation.persons is None
+                else old | conversation.persons)
+        engine.update_execution_options(memory_graph=ProjectionContext(
+            rooms={f"{c.platform}:{cid}": c.unit for c in allowlist.conversations for cid in c.ids},
+            members=members, metrics=metrics))
     audit = SqlRecordStore(
         engine,
         max_per_conversation=cfg.store.max_per_conversation,
@@ -4809,6 +4822,8 @@ async def build_dependencies(
         social_poller=social_poller,
         social_perception=social_perception,
         story_expiry=story_expiry,
+        graph_batches=(GraphBatchProducer(engine, metrics=metrics)
+                       if cfg.memory.graph.enabled else None),
         extraction=(ExtractionWorker(
             store=SqlExtraction(engine), client=client,
             config=cfg.memory.extraction, metrics=metrics,
