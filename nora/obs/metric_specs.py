@@ -112,11 +112,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # the timestamp gauges below, never these: a rare counter reads empty after a
     # restart.
     _CounterSpec(
-        "nora_config_reloads_total",
-        "Identity/policy reloads by outcome: " + ", ".join(RELOAD_OUTCOMES),
-        ("file", "outcome"),
-    ),
-    _CounterSpec(
         "nora_oauth_refresh_failures_total",
         "OAuth refresh attempts that failed, by lane (xai / openai_codex) and "
         "reason (auth: the issuer refused the refresh token, a new login is "
@@ -2184,6 +2179,11 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_message_reading_usage_missing_total",
         "Retired message-reading counter; frozen at zero. Use nora_extraction_*.",
+    ),
+    _CounterSpec(
+        "nora_config_reloads_total",
+        "Identity/policy reloads by outcome: " + ", ".join(RELOAD_OUTCOMES),
+        ("file", "outcome"),
     ),
 )
 
