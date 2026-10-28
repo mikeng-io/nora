@@ -5357,3 +5357,31 @@ MEMORY_GRAPH_ARRIVAL = sa.Table(
 sa.Index("idx_graph_arrival_pending", MEMORY_GRAPH_ARRIVAL.c.unit,
          MEMORY_GRAPH_ARRIVAL.c.room, MEMORY_GRAPH_ARRIVAL.c.queued_at,
          postgresql_where=MEMORY_GRAPH_ARRIVAL.c.batched.is_(False))
+
+# Cognition step one Record pages and step two SHADOW would-writes.
+COMPREHEND_WEB_PAGE = sa.Table(
+    "comprehend_web_page", METADATA,
+    sa.Column("id", sa.Text, primary_key=True),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("session_id", sa.BigInteger, nullable=False),
+    sa.Column("url", sa.Text, nullable=False),
+    sa.Column("fetched_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("recorded_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.clock_timestamp()),
+    sa.Column("content_hash", sa.Text, nullable=False),
+    sa.Column("text", sa.Text, nullable=False),
+    sa.Column("tool_call", pg.JSONB, nullable=False),
+)
+COMPREHEND_RESULT = sa.Table(
+    "comprehend_result", METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(), primary_key=True),
+    sa.Column("work_id", sa.Text, nullable=False),
+    sa.Column("input_hash", sa.Text, nullable=False),
+    sa.Column("session_id", sa.BigInteger, nullable=False),
+    sa.Column("part", sa.Text, nullable=False),
+    sa.Column("payload", pg.JSONB, nullable=False),
+    sa.Column("recorded_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now()),
+)
+sa.Index("idx_comprehend_result_work", COMPREHEND_RESULT.c.work_id,
+         COMPREHEND_RESULT.c.input_hash)

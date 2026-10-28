@@ -248,7 +248,7 @@ class SqlMemoryGraph:
                 )
             ).mappings():
                 e = entity_row(row)
-                state.entities[e.key] = e
+                state.entities[e.id] = e
             state.relations = {r["id"]: relation_row(r) for r in old}
             admitted = await state._admit(
                 entities=entities,
@@ -444,7 +444,7 @@ class SqlMemoryGraph:
                     )
                 ).mappings():
                     entity = entity_row(row)
-                    state.entities[entity.key] = entity
+                    state.entities[entity.id] = entity
                 for row in (
                     await conn.execute(
                         sa.select(RELATION_EVIDENCE).where(

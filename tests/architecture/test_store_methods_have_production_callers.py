@@ -145,36 +145,6 @@ class _Pin(NamedTuple):
 # the artifact that gets re-derived from scratch by the next session that
 # notices one of them.
 _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
-    ("memory_graph.py", "aliases"): _Pin(
-        "deferred_consumer",
-        "Phase 1 implements the fixed graph port; Phase 2 owns the Cognition consumer. "
-        "Code projection uses connection-scoped helpers in the source transaction. "
-        "No prompt reads the graph in this PR.",
-    ),
-    ("memory_graph.py", "candidates"): _Pin(
-        "deferred_consumer",
-        "Phase 1 implements the fixed graph port; Phase 2 owns the Cognition consumer. "
-        "Code projection uses connection-scoped helpers in the source transaction. "
-        "No prompt reads the graph in this PR.",
-    ),
-    ("memory_graph.py", "walk"): _Pin(
-        "deferred_consumer",
-        "Phase 1 implements the fixed graph port; Phase 2 owns the Cognition consumer. "
-        "Code projection uses connection-scoped helpers in the source transaction. "
-        "No prompt reads the graph in this PR.",
-    ),
-    ("memory_graph.py", "stage_and_admit"): _Pin(
-        "deferred_consumer",
-        "Phase 1 implements the fixed graph port; Phase 2 owns the Cognition consumer. "
-        "Code projection uses connection-scoped helpers in the source transaction. "
-        "No prompt reads the graph in this PR.",
-    ),
-    ("memory_graph.py", "upsert_entity"): _Pin(
-        "deferred_consumer",
-        "Phase 1 implements the fixed graph port; Phase 2 owns the Cognition consumer. "
-        "Code projection uses connection-scoped helpers in the source transaction. "
-        "No prompt reads the graph in this PR.",
-    ),
     ("memory_graph.py", "requeue_failed"): _Pin(
         "deferred_consumer",
         "Phase 1 implements the fixed graph port; Phase 2 owns the Cognition consumer. "
@@ -307,7 +277,7 @@ _AMBIGUOUS: frozenset[str] = frozenset(
 # other files and define no public methods, so they are simply not here.
 _STORE_MODULES: frozenset[str] = frozenset(
     {
-        "assess.py", "audit.py", "cognition_store.py", "lessons.py",
+        "assess.py", "audit.py", "cognition_store.py", "comprehend.py", "lessons.py",
         "tension.py",
         "compute_jobs.py", "computer_events.py", "computer_exports.py",
         "computer_sessions.py",

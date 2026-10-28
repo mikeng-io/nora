@@ -21,7 +21,7 @@ from nora.domain.memory_graph import (
 
 class FakeMemoryGraph(AdmissionState):
     def __init__(self) -> None:
-        self.entities: dict[Key, Entity] = {}
+        self.entities: dict[str, Entity] = {}
         self.relations: dict[str, Relation] = {}
         self.evidence: list[Evidence] = []
         self.work: dict[str, WorkItem] = {}
@@ -73,7 +73,7 @@ class FakeMemoryGraph(AdmissionState):
         Place attributes use location=(latitude, longitude); event start/end
         are datetimes. Proximity and window overlap break lexical ties.
         """
-        anchor = self.entities.get(near) if near else None
+        anchor = self.entities.get(near[1]) if near else None
         location = anchor.attributes.get("location") if anchor and anchor.unit == unit else None
 
         def rank(e: Entity) -> tuple:
