@@ -1,5 +1,18 @@
 # Changelog
 
+## [7.11.15](https://github.com/mikeng-io/nora/compare/v7.11.14...v7.11.15) (2026-10-28)
+
+
+### Features
+
+* **memory:** comprehend graph arrivals and reshape profiles in shadow ([903bee2](https://github.com/mikeng-io/nora/commit/903bee2424c48a2404c38b5c33e5a8bfaf576b55))
+
+
+### Bug Fixes
+
+* **memory:** consume graph arrivals and retry Register link projections ([7c553a0](https://github.com/mikeng-io/nora/commit/7c553a05a76e743598165930cef1511b57995354))
+* **memory:** reopen Register links and isolate shadow proposal refusals ([6123e4e](https://github.com/mikeng-io/nora/commit/6123e4eed24aaf8210685fdb648b7f5bc446807f))
+
 ## [7.11.14](https://github.com/mikeng-io/nora/compare/v7.11.13...v7.11.14) (2026-10-28)
 
 
