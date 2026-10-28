@@ -97,7 +97,7 @@ async def test_late_cached_reading_after_cursor_and_restart_is_pending_once(env,
     assert edited.roots[0].row.ts == T0
 
 
-@pytest.mark.parametrize('reader', ['messages', 'media_recovery'])
+@pytest.mark.parametrize('reader', ['messages', 'media_recovery', 'register_relevance'])
 @pytest.mark.parametrize('settled', [False, True])
 async def test_message_checks_reuse_media_lookups_per_attachment_value(
     env, tmp_path, reader, settled,
@@ -148,6 +148,17 @@ async def test_message_checks_reuse_media_lookups_per_attachment_value(
         refs, [None, None, cached, both], strict=True))}
     assert {r.source: r.revision for r in first if r.source in expected} == expected
 
+    if reader == 'register_relevance':
+        memo, memo_head = str(uuid.uuid4()), str(uuid.uuid4())
+        async with env.begin() as conn:
+            await conn.execute(sa.insert(MEMO).values(
+                id=memo, unit='unit', platform='signal', conversation_id='room-a',
+                created_at=T0))
+            await conn.execute(sa.insert(MEMO_REVISION).values(
+                id=memo_head, memo_id=memo, seq=1, title='synthetic conclusion',
+                body='synthetic reasoning', mode='deduced', state='kept', citations=['3'],
+                written_at=T0, established_by='test'))
+
     queries = []
 
     def capture(conn, clauseelement, multiparams, params, execution_options):
@@ -164,6 +175,12 @@ async def test_message_checks_reuse_media_lookups_per_attachment_value(
             assert len(result) == (0 if settled else 1)
             if result:
                 assert result[0].source == 'message:1'
+        elif reader == 'register_relevance':
+            result = await source.register(key=KEY, unit='unit', rooms=ROOMS,
+                                           person=PERSON, limit=1)
+            assert len(result) == 1
+            assert result[0].state == 'kept'
+            assert [root.row.id for root in result[0].roots] == [3]
         else:
             result = await source.media_recovery(key=KEY, rooms=ROOMS, person=PERSON)
             assert result['eligible_cached'] == 48
@@ -202,6 +219,11 @@ async def test_message_checks_reuse_media_lookups_per_attachment_value(
     # clone those subplans: JIT compiles even branches with zero Actual Loops.
     assert 0 < len(edit_heads) <= 2
     assert any(n['Actual Loops'] > 0 for n in edit_heads)
+    if reader == 'register_relevance':
+        assert scans <= 2
+        assert revisions <= 1
+        assert sum(n['Actual Rows'] * n['Actual Loops'] for n in plan
+                   if n.get('Relation Name') == 'messages') <= 2
 
 
 @pytest.mark.parametrize('kind', ['post', 'reel', 'story_frame'])

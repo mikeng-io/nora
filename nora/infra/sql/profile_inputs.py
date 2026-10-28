@@ -171,10 +171,14 @@ class SqlProfileInputs:
                           'source_read_revision': r.revision, 'updated_at': sa.func.now()},
                 ))
 
-    def _messages(self, *, rooms: Sequence[tuple[str, str]], person: str) -> Any:
+    def _messages(self, *, rooms: Sequence[tuple[str, str]], person: str,
+                  message_ids: Sequence[int] | None = None) -> Any:
         m = MESSAGES.c
+        scope = [_in_rooms(rooms), m.is_nora == 0]
+        if message_ids is not None:
+            scope.append(m.id.in_(message_ids))
         refs = sa.select(sa.func.coalesce(m.media_json, '').label('ref')).where(
-            _in_rooms(rooms), m.is_nora == 0).distinct().subquery()
+            *scope).distinct().subquery()
         ready = sa.exists().where(
             sa.func.strpos(refs.c.ref, MEDIA_OBJECTS.c.sha256) > 0,
             sa.or_(*(sa.func.coalesce(MEDIA_OBJECTS.c[f], '') != ''
@@ -215,7 +219,7 @@ class SqlProfileInputs:
             sa.or_(m.person_id == person, sa.cast(m.mention_persons_json, JSONB)
                    .contains([person])).label('originally_eligible'),
         ).select_from(MESSAGES.join(cache, cache.c.ref == sa.func.coalesce(m.media_json, ''))
-                      .outerjoin(latest, sa.true())).where(_in_rooms(rooms), m.is_nora == 0)
+                      .outerjoin(latest, sa.true())).where(*scope)
         # Pending predicates and ordering must reuse the revision projection.
         # Keep provenance outside this fence: it is needed only for delivered rows.
         q = stmt.cte('profile_messages').prefix_with('MATERIALIZED')
@@ -521,7 +525,8 @@ class SqlProfileInputs:
                     linked.extend(await self.rollup(key=key, unit=unit, rooms=rooms,
                         person=person, limit=6, row_ids={kind: resolved.row_ids}))
             if r.source.startswith('memo:') and not linked:
-                q = self._messages(rooms=rooms, person=person).subquery()
+                q = self._messages(rooms=rooms, person=person,
+                    message_ids=[x.row.id for x in roots]).subquery()
                 async with self._engine.connect() as conn:
                     relevant = (await conn.execute(sa.select(q.c.id).where(q.c.eligible,
                         q.c.id.in_([x.row.id for x in roots])).limit(1))).first()
