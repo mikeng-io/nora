@@ -1,7 +1,7 @@
 ---
 type: design
 title: "The memory is a graph: entities, relations and evidence over every store"
-description: "Make the memory itself a graph: persistent entities, layered relations with evidence and validity, every store as a node, one research loop that perceives every signal and enriches from the web, a subgraph-returning query with code routing and a preview presentation, and one time-ordered backfill."
+description: "Make the memory itself a graph: persistent entities, layered relations with evidence and validity, every store as a node, one Cognition loop that comprehends every signal on each stimulus, enriches from the web, reshapes profiles and decides, a subgraph-returning query with code routing and a preview presentation, and one time-ordered backfill."
 timestamp: '2026-10-28'
 edges:
   - {dst: 00-intent, rel: extends, provenance: asserted}
@@ -11,6 +11,8 @@ edges:
   - {dst: 40-prior-art, rel: depends_on, provenance: asserted}
   - {dst: 45-persona-adaptor, rel: extends, provenance: asserted}
   - {dst: 47-character-dimensions, rel: depends_on, provenance: asserted}
+  - {dst: ../cognition-loop/30-cognition, rel: extends, provenance: asserted}
+  - {dst: ../cognition-loop/10-tiers, rel: extends, provenance: asserted}
 ---
 
 # The memory is a graph
@@ -89,7 +91,8 @@ The graph answers "what did Rin say", not "what happened".
 | the whole graph is a projection and never an owner of truth | 25 §1 | the **entity, relation and evidence** stores below own their rows; `memory_node`/`memory_edge` stay the derived search index over them | the reason was "no second owner of truth": each store still owns its own rows, and the new stores own only what no store held (entities and the relations between items) |
 | a new relation is a schema change | 25 §2 | a relation is a **value** in a closed list in code; no migration | a closed list kept in code, with a test on every write, is as closed as a schema, and costs a review instead of a migration |
 | model-extracted triples are refused as edges ("the edge says nothing about its evidence") | 25 §2, 40 §5, cognition-loop/80 | judgement relations exist, **each with evidence rows** and marked as judgement | the refused thing was a triple with nothing behind it. Here every judgement relation stores the Record/Rollup rows that support it, its writer and session, and its validity; it can be audited, disputed and superseded like a Character line. Mem0's removal and GroupMemBench's attribution loss are answered by the evidence rows keeping the speaker and the source |
-| extraction is one model call per batch over text | 18 | a **research loop** per arrival over every signal | measured above: 27% of messages carry content the single pass never saw |
+| extraction is one model call per batch over text | 18 | **step 1 of the Cognition loop** per stimulus, over every signal (§7) | measured above: 27% of messages carry content the single pass never saw |
+| the Character tier has its own writers (Character / profile adaptors), each on its own clock | [cognition-loop/10](../cognition-loop/10-tiers.md) §1, [45](45-persona-adaptor.md) | **step 2 of the Cognition loop** reshapes traits and guesses on every stimulus that changed the entity; facts are rendered by code from the graph; the separate adaptors retire | operator, 2026-10-28: a profile must move when the evidence moves, not on a nightly clock; three loops waking on one item read it three times, against *interpret once* |
 | a web result is "evidence a later note may cite, never a memory node by itself" | 25 §6, §6a | a fetched page is a **Record item** (`web_page`), a node, citable | the rule's point holds: a page is evidence, never a fact by itself. It becomes a node so a judgement can cite it and a later item can reach it |
 
 Kept unchanged: the unit is the read boundary; scope is checked on every node
@@ -143,7 +146,7 @@ by the rules the data model already has ([cognition-loop/05](../cognition-loop/0
 |---|---|---|---|
 | **record** | code, from the source's own columns | `authored_by`, `in_room`, `attached_to`, `reply_to`, `reacted_to`, `shared_by`, `mentions` | never edited; a hide drops its node |
 | **rollup** | code, computed from Record | `stayed_at` (person → place, interval), `co_located_with` (person → person, interval), `during` (item → outing) | rebuilt from Record, never by a model |
-| **notebook** | a model writer (the research loop §7, a Character writer), with evidence | `attended`, `went_with`, `at`, `features`, `likes`, `plans`, `works_at`, `lives_in`, `same_as` | superseded by a later revision; disputed by the subject; never deleted |
+| **notebook** | the Cognition loop (§7), with evidence | `attended`, `went_with`, `at`, `features`, `likes`, `plans`, `works_at`, `lives_in`, `same_as` | superseded by a later revision; disputed by the subject; never deleted |
 
 A fetched web page is a **record** item, and what is learned from it is a
 **notebook** relation or attribute citing it. Nothing in the notebook layer
@@ -195,7 +198,7 @@ with an identity: a game, a show, an artist, a product, a song),
 | `likes`, `dislikes` | person → work, place, event kind | notebook | a stated or repeatedly shown preference; the claim's speech act is kept (stated / said by another / shown) |
 | `works_at`, `studies_at`, `lives_in`, `member_of` | person → organisation, place | notebook | 47's location-bearing claims (workplace, residence, regular places) as relations; the code-set `location` flag carries over (47, decided 2026-10-22) |
 | `concerns`, `settles`, `serves`, `fulfils`, `cancels` | Notebook entry → entity, entry, ledger item | notebook | §6 |
-| `same_as` | entity → entity | notebook | the two are one; §7 step 4 |
+| `same_as` | entity → entity | notebook | the two are one; §7 step 1.4 |
 
 Adding a row here is a code change and a review; it is the only way the
 graph grows a new kind of meaning.
@@ -234,26 +237,62 @@ and config (Authored, served whole), raw presence fixes (read through their
 episodes), and external file content (only the link,
 [external-files/00](../external-files/00-design.md)).
 
-## 7. The research loop
+## 7. One Cognition loop: comprehend, measure, serialize
 
-One loop perceives every item on arrival and writes the graph. It replaces
-the single extraction call (18) and is built on the Cognition session's
-machinery, not a new runtime: a Dreamer adaptor (`adaptor = "research"`) with
-read-only tools from the catalogue (`RegistryToolSource.build`), the session
-row as provenance, `fetch_watch`'s rule that a write may cite only what the
-session was shown or fetched, a staged write validated by code, and one
-settle or an explicit no-change.
-Its rendered input is a declared occasion in context assembly, a `_BLOCKS`
-table walked by `assemble` ([ADR 0021](../../docs/adr/0021-every-prompt-is-assembled-and-the-enforcer-finds-it.md), joined as
+**Operator, 2026-10-28:** everything said and everything done keeps shaping
+the memory and the profiles, so the Cognition loop is the one driver. On every
+stimulus (a message, a story, a stay, a state change) one wake runs three
+steps in order. Each step is a bounded model session of its own, with its own
+focused input: one owner and one order, never one prompt asked to read,
+profile and plan at once. The steps are CMS one level up:
+
+| step | CMS | job | writes |
+|---|---|---|---|
+| 1. comprehend | comprehend | read every new item once, resolve, relate, enrich | readings, entities, notebook relations |
+| 2. reshape | measure | for each entity step 1 changed: what changed in what it is like | traits and guesses ([ADR 0029](../../docs/adr/0029-a-prompt-block-names-its-subject-and-author-by-id.md)'s parts); facts are code (§9) |
+| 3. decide and act | measure, serialize | what needs doing: notes, memos, events, reminders, Standing, or a re-read of a social item that looks wrong | Register items with their own links (§7a), Standing |
+
+Every step ends in a staged write that code admits (serialize), and
+`serialize(N)` is `comprehend(N+1)`: the next wake reads the graph this one
+wrote. The three steps read one another only through committed state, never
+by waiting on each other.
+
+**Four rules the merge must keep:**
+
+1. **Step 1 is complete; step 3 is selective.** Every item is comprehended
+   exactly once, never capped or deferred by surprise; a skipped item is a
+   hole in the graph. Only step 3 keeps Cognition's agenda cap
+   (`max_items`, ordered by surprise, the rest deferred,
+   `nora/domain/cognition_session.py`). Step 3's agenda carries each item's
+   readings and preview subgraph (§14), so it decides on step 1's reading,
+   never a second reading of the raw text.
+2. **Acting is a switch.** The backfill (§10) runs steps 1 and 2 with step 3
+   off: two months of history never creates a note or a reminder.
+3. **A profile moves when its graph moved.** Step 2 runs only for entities
+   whose relations step 1 changed in this wake; an "ok 👍" rewrites no card.
+4. **No step grades itself.** A guess is graded by a judge other than its
+   writer ([45](45-persona-adaptor.md)), outside the loop.
+
+A re-read in step 3 uses the existing read lanes and the story rule of §16.5:
+it re-reads what the social stream already perceived, never opens a story
+nobody asked for.
+
+It is built on the Cognition session's machinery, not a new runtime: the
+`cognition` adaptor with read-only tools from the catalogue
+(`RegistryToolSource.build`), the session row as provenance, `fetch_watch`'s
+rule that a write may cite only what the session was shown or fetched, a
+staged write validated by code, and one settle or an explicit no-change per
+step. Each step's rendered input is a declared occasion in context assembly,
+a `_BLOCKS` table walked by `assemble` ([ADR 0021](../../docs/adr/0021-every-prompt-is-assembled-and-the-enforcer-finds-it.md), joined as
 [context-assembly/04](../context-assembly/04-every-occasion.md) «How a new occasion joins»).
 
-**What triggers it:** a **work item** per arrival, keyed by its source:
+**What step 1 works on:** a **work item** per arrival, keyed by its source:
 a message batch (as today's extraction queue, 20 messages), a social item, a
 media reading landing late on an old message, a Rollup episode closing (an
 outing, a co-location), a Register write. Each work item records the
 **input hash** of everything it rendered (§10).
 
-**Steps of one session:**
+**Step 1, in order:**
 
 1. **Read every item fully.** The rendered input carries each message with
    its attachments' readings (the media join), its link with the page the
@@ -284,7 +323,7 @@ outing, a co-location), a Register write. Each work item records the
    than its evidence. Valid parts commit and refused parts are recorded with
    their reason (the drop rule of #318, kept).
 
-**Budgets** (starting values, fixed before the spike, measured in it): 8 turns,
+**Step 1's budgets** (starting values, fixed before the spike, measured in it): 8 turns,
 12 tool calls of which at most 3 web searches and 3 page fetches, 120,000
 total tokens, 240 s. A spent budget settles what is valid; nothing is retried
 past 5 attempts (`failed`, re-queued by an operator command, as now).
@@ -300,22 +339,22 @@ Three writers, one per layer, and no relation has two:
 |---|---|---|---|
 | record | code: the store's own `project(kind, id)` (25 §7) | in the same `begin()` as the row's write | columns: a message's room and author, a link's message, a reply's parent. No judgement. |
 | rollup | code: the Rollup's `apply` and the mobility writes | each Rollup tick, as an episode opens or closes | the episode row: a stay's place and interval, a co-location's two people |
-| notebook | the research loop (§7) for what it reads; the Cognition session for the Register items it writes | per work item, on arrival, and when a work item's input hash changes (§10); Cognition in the same write as its note, memo or event | the model proposes, code admits (§7 step 6) |
+| notebook | the Cognition loop: step 1 for what it reads, step 3 for the Register items it writes | step 1 per work item, on arrival and when a work item's input hash changes (§10); step 3 in the same write as its note, memo or event | the model proposes, code admits (§7 step 1.6) |
 
 Register rows with an explicit link column (a reminder's event entry, an
 RSVP's event) are record-layer and projected by code. **Whoever writes an
 item writes its own links, in the same write:** Cognition writes a note
 together with its `concerns`, a memo with its `settles`, an event entry with
 its `records`, each with evidence, admitted by the same code checks. No item
-is linked later by a second writer. Character writers read relations and
-write lines (§9); they never write a relation.
+is linked later by a second writer. Step 2 reads relations and writes
+profile lines (§9); it never writes a relation.
 
 **When an entity is created.** Only as the end of a relation the same write
 admits, with evidence. A name mentioned once with nothing said about it is a
 reading, not an entity. So the graph never holds an orphan entity, and "what
 to create" reduces to "what relation does this item support".
 
-**How an entity is resolved (§7 step 4).** Code proposes candidates and the
+**How an entity is resolved (§7 step 1.4).** Code proposes candidates and the
 model picks:
 
 1. **Candidates are code.** Same kind, same unit scope, matched by exact
@@ -337,33 +376,6 @@ past its window with only `plans` becomes `unconfirmed`. That is code, a sweep
 on the Rollup tick, not a model call.
 
 `# ponytail: candidate matching is alias + trigram + place/date; an embedding match joins only if the spike's wrong-merge rate (§11) misses its gate`
-
-## 7b. Three loops, one job each
-
-The research loop is the **memory loop**. It is not a new level: it takes
-extraction's place, on every arrival and before anything else reads the item
-(18's position, with a loop instead of one call).
-
-| loop | its one job | reads | writes |
-|---|---|---|---|
-| memory (this node) | comprehend every item once and connect it: readings, entities, relations, enrichment | the Record, the Rollup, the graph | readings, entities, notebook relations |
-| Cognition ([cognition-loop/30](../cognition-loop/30-cognition.md)) | decide what needs doing: notes, memos, events, reminders, Standing | its agenda, **with each item's readings and nearby subgraph** | Register items and their own links (§7a), Standing |
-| Character and profile adaptors (§9) | say what each person, room, unit and Nora is like | the entity's subgraph | Character lines |
-
-**Interpret once.** Cognition decides on the memory loop's reading of an item,
-not on its own second reading of the raw text: its agenda item carries the
-item's readings and the preview subgraph (§14), and its read tools stay for
-depth. An agenda item whose memory work item has not settled yet waits for it
-or is marked unread. Two models reading the same message independently is how
-two copies drift.
-
-**Why the memory loop is not folded into Cognition:** Cognition is selective
-(at most `max_items` per session, ordered by surprise, the rest deferred,
-`nora/domain/cognition_session.py`); memory must read every item exactly once.
-Cognition acts; the backfill must never create a note or a reminder. A memory
-failure must not stop Nora acting. **Why not into the profile adaptors:** one
-writer per tier; a loop that both records relations and summarises them grades
-its own work.
 
 ## 8. Enrichment and its limits
 
@@ -395,22 +407,31 @@ October" goes out; "where was Rin on 24 October" never does. The screen is
 code at the tool, refusing the call with a recorded reason, and the spike
 measures it (§11).
 
-## 9. Character cards read the graph
+## 9. Profiles are reshaped in the loop, from the graph
 
-Phase 4's `character-*` writers ([00](00-intent.md) «Forward phases») read
-the person's, room's or unit's **subgraph** instead of message pages: their
-relations with evidence counts, open Register state and recent readings. A
-profile line `draws_on` the relations it summarises and `cites` their
-evidence. The card stays the bounded synthesis in every prompt
-([18](18-extraction.md) «Character is the card»); the graph is the memory
-behind it. One writer per tier still holds: the research loop writes entities
-and relations, Character writers write lines, nobody writes both.
+A profile card keeps its three parts ([ADR 0029](../../docs/adr/0029-a-prompt-block-names-its-subject-and-author-by-id.md)):
+
+- **facts** are **rendered by code** from the entity's current relations
+  (works at, lives in, likes, upcoming plans), ranked by recency and evidence
+  count within the card's bound. No model writes them, so the card can never
+  disagree with the graph; a poor choice is fixed by the ranking rule, not
+  by a second copy.
+- **traits** and **guesses (unconfirmed)** are written by step 2 (§7) when
+  the entity's relations changed, each line `draws_on` the relations it
+  generalises and `cites` their evidence. A guess is graded by a judge other
+  than its writer.
+
+The card stays the bounded synthesis in every prompt ([18](18-extraction.md)
+«Character is the card»); the graph is the memory behind it. The separate
+`character-*` and `profile-*` adaptors retire when step 2 is live; their
+write verbs move to the Cognition loop.
 
 ## 10. One backfill, built in time order
 
 **Order:** oldest first, by evidence time, across every kind (messages,
 social items, Rollup episodes, Register writes), so each session sees the
-graph as it stood at its moment, as a live arrival would. Record and Rollup
+graph as it stood at its moment, as a live arrival would. It runs steps 1
+and 2 with step 3 off (§7 rule 2). Record and Rollup
 relations are projected by code first, in full, because they are free and the
 loop reads them.
 
@@ -447,8 +468,21 @@ second judge from another vendor:
 | enrichment: attribute supported by its page, and the page about the right entity | ≥ 95%, ≥ 90% |
 | egress: a query naming a private person or carrying an identifier or coordinate | **0** (any is a FAIL) |
 | work items failed after retries | < 5% |
+| notes, reminders or sends created during the backfill | **0** (any is a FAIL) |
 | cost per work item, median and p95 | reported; the backfill budget is set from it |
 | query p95 at depth 3 on the built graph | < 200 ms |
+
+**The AGE comparison (operator, 2026-10-28).** The spike also loads its built
+graph into Apache AGE (1.8.0 supports the production Postgres 18) and runs one
+frozen question set both ways: code-templated walks over `relation`, and
+Cypher. It measures p95 latency at depth 3, and how often the production model
+writes a correct query (right answer, unit filter held) in Cypher versus a
+structured path tool compiled to SQL. AGE is adopted before the backfill if it
+is within the latency gate and clearly more often correct; otherwise
+`relation` stays and AGE stays the option. Either way the unit filter is code,
+never the model's query. Cost recorded with the result: a custom database
+image, AGE's own schema for links (Cypher cannot read `relation`), and
+Postgres upgrades waiting on AGE.
 
 The switch gates are unchanged and come after: answerability and reply
 replay ([45](45-persona-adaptor.md) §6, amended 2026-10-21), now over the
@@ -550,14 +584,16 @@ gate scores whether an answer is grounded, not only whether it is right.
 2. **Stores and projections:** `entity`, `relation`, `relation_evidence`;
    the vocabularies with their tests; code projection of record and rollup
    relations; the Register mapping (§6).
-3. **The research loop and enrichment** (§7, §8), on new arrivals in shadow:
-   it writes, nothing reads. Cognition's links for its own Register writes
-   (§7a) land in the same change.
-4. **The spike** on a frozen snapshot, against §11.
+3. **The Cognition loop's steps 1 and 3** (§7, §8): step 1 on new arrivals
+   in shadow (it writes, nothing reads); step 3 writes its Register items'
+   own links (§7a) in the same change.
+4. **The spike** on a frozen snapshot, against §11, with the AGE comparison;
+   AGE is decided here, before the backfill.
 5. **One backfill** in time order (§10).
 6. **Query, presentation and tools** (§12–§14), with the routing measurement;
-   Cognition's agenda reads the memory loop's output (§7b).
-7. **Character writers read the graph** (§9; [00](00-intent.md) phase 4).
+   step 3's agenda reads step 1's output (§7 rule 1).
+7. **Step 2 and code-rendered facts** (§9; [00](00-intent.md) phase 4); the
+   separate profile adaptors retire.
 8. **Answerability and reply-replay gates**, then the switch, the operator's
    call ([70](70-honcho-cutover.md)).
 
@@ -584,6 +620,11 @@ measured between them.
 
 **Ratified (operator, 2026-10-28):** yes to all five, as recommended.
 
+6. **One Cognition loop** (operator, 2026-10-28, ruled): comprehension,
+   profiles and decisions are three ordered steps of one loop per stimulus
+   (§7); the Character tier's separate writers retire, and its facts are
+   rendered by code from the graph (§9).
+
 ## The reading that would reopen it
 
 - The spike's judgement relation precision under 90% after one fix round:
@@ -591,6 +632,8 @@ measured between them.
   keeps only record and rollup relations plus entities.
 - Wrong merges above 2%: entity resolution moves out of the loop into a
   separate, judged pass.
+- Step 1 falls behind arrivals (a backlog that grows across a day): step 1
+  moves to its own worker queue, still owned and ordered by the loop.
 - Query p95 over 200 ms at depth 3 with precomputed neighbourhoods: a graph
   engine (AGE first) is measured.
 - The answerability gate shows the subgraph preview answering no better than

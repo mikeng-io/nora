@@ -222,7 +222,7 @@
   "design/unified-memory/27-the-memory-is-a-graph.md": {
     "reason": "Links to existing node file names (35-persona, 45-persona-adaptor); no new identifier.",
     "matches": {
-      "persona": 5
+      "persona": 7
     }
   },
   "design/unified-memory/30-identity-and-character.md": {

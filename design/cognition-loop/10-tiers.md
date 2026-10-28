@@ -13,6 +13,8 @@ edges:
 
 # 10 · Tiers
 
+> 2026-10-28 (operator, ruled; [unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md#9-profiles-are-reshaped-in-the-loop-from-the-graph)): the Character row's writer changes. The Cognition loop's step 2 writes traits and guesses; facts are rendered by code from the memory graph; the Character adaptor retires.
+
 > 2026-10-03 (DEC-277): the shadow period is over. The Cognition session writes live (`[cognition] enabled`) and is the one background writer of notes, events, Standing and her reminders. The clocked note/proactive adaptors, the shadow machinery and `[cognition] mode` / `session_mode` / `shadow_session_seconds` named here are deleted; wording below that describes them is the plan as written, not current behaviour. See `70-migration.md`.
 
 
