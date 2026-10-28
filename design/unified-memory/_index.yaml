@@ -49,9 +49,9 @@ members:
   - 10-honcho-audit.md
   - 15-memory-map.md
   - 18-extraction.md
-  - 27-the-memory-is-a-graph.md
   - 20-embedding-bakeoff.md
   - 25-memory-graph.md
+  - 27-the-memory-is-a-graph.md
   - 30-identity-and-character.md
   - 35-persona.md
   - 45-persona-adaptor.md

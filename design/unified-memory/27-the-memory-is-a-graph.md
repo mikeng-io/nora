@@ -55,7 +55,7 @@ body (or latest edit), author, time, mentions and reply link
 (`nora/infra/sql/extraction.py`, the snapshot builder). The media join that
 every other transcript gets ([`nora/domain/media_join.py`](../../nora/domain/media_join.py):
 "for EVERY transcript a model is about to read") is not applied, so a photo
-reaches the model as `[image a3f2c1]`. Of the 5,527 extracted messages:
+reaches the model as `[image a3f2c1]`. Of the extracted messages:
 
 | carries | messages |
 |---|---|
@@ -107,7 +107,7 @@ The graph adds three tables and no per-kind table:
 | table | one row | columns |
 |---|---|---|
 | `entity` | a thing that persists across items: a person, place, event, work, organisation | `id`, `kind`, `unit`, `name`, `aliases`, `attributes` (JSONB), `state`, `created_at`, `merged_into` |
-| `relation` | one statement linking two nodes | `id`, `src_kind`, `src_id`, `rel`, `dst_kind`, `dst_id`, `layer`, `valid_from`, `valid_to`, `asserted_at`, `status` (current / superseded / disputed / retired), `written_by` (code projector, or adaptor + session id), `superseded_by`, `unit`, `persons` |
+| `relation` | one statement linking two nodes | `id`, `src_kind`, `src_id`, `rel`, `dst_kind`, `dst_id`, `layer`, `valid_from`, `valid_to`, `asserted_at`, `status` (current / superseded / disputed / retired), `written_by` (code projector, or adaptor + session id), `superseded_by`, `unit`, `persons`, `created_at` |
 | `relation_evidence` | one link from a relation, or from one attribute of an entity, to what supports it | `relation_id` or (`entity_id`, `attribute`), `source_kind`, `source_id`, `role` (supports / contradicts), `span` (the exact text for a quote, when there is one) |
 
 - **`kind` and `rel` are values.** A new entity kind, relation or attribute
@@ -193,7 +193,7 @@ with an identity: a game, a show, an artist, a product, a song),
 | `at` | event → place | notebook | where it happened |
 | `features` | event → work, person, organisation | notebook | who or what the event was of (the artist of a concert, the game of a tournament) |
 | `likes`, `dislikes` | person → work, place, event kind | notebook | a stated or repeatedly shown preference; the claim's speech act is kept (stated / said by another / shown) |
-| `works_at`, `studies_at`, `lives_in`, `member_of` | person → organisation, place | notebook | as 47's slots; location-bearing under the room's existing location flag (47) |
+| `works_at`, `studies_at`, `lives_in`, `member_of` | person → organisation, place | notebook | 47's location-bearing claims (workplace, residence, regular places) as relations; the code-set `location` flag carries over (47, decided 2026-10-22) |
 | `concerns`, `settles`, `serves`, `fulfils`, `cancels` | Notebook entry → entity, entry, ledger item | notebook | §6 |
 | `same_as` | entity → entity | notebook | the two are one; §7 step 4 |
 
@@ -243,6 +243,9 @@ read-only tools from the catalogue (`RegistryToolSource.build`), the session
 row as provenance, `fetch_watch`'s rule that a write may cite only what the
 session was shown or fetched, a staged write validated by code, and one
 settle or an explicit no-change.
+Its rendered input is a declared occasion in context assembly, a `_BLOCKS`
+table walked by `assemble` ([ADR 0021](../../docs/adr/0021-every-prompt-is-assembled-and-the-enforcer-finds-it.md), joined as
+[context-assembly/04](../context-assembly/04-every-occasion.md) «How a new occasion joins»).
 
 **What triggers it:** a **work item** per arrival, keyed by its source:
 a message batch (as today's extraction queue, 20 messages), a social item, a
@@ -257,8 +260,8 @@ outing, a co-location), a Register write. Each work item records the
    preview or a fetch holds, its reply parent, and for a social item its
    caption, media readings, tagged place (under its presence gate, 25 §7a)
    and counts at read time. A video or a reel is read through the existing
-   lanes (`media_fetch`, `instagram_read`, `x_fetch`, `social_fetch`, the
-   video desk), never a second describer.
+   lanes (`media_fetch`, `instagram_read`, `instagram_search`, `x_read`,
+   `x_search`, the video desk), never a second describer.
 2. **Say what was said.** Readings, as today's claims: about whom, what, when,
    where, how (stated / said by another / planned / asked / reported), with the
    exact span. The span checks stay code; a span may now come from an
