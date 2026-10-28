@@ -43,7 +43,10 @@ def graph(request: pytest.FixtureRequest) -> MemoryGraph:
 
 async def load(graph: MemoryGraph, relation: Relation = REL) -> None:
     result = await graph.stage_and_admit(
-        (PERSON, EVENT), (relation,), (replace(EV, relation_id=relation.id),), {SOURCE.key: SOURCE}
+        entities=(PERSON, EVENT),
+        relations=(relation,),
+        evidence=(replace(EV, relation_id=relation.id),),
+        sources={SOURCE.key: SOURCE},
     )
     assert result.relations == (relation,)
     assert not result.refused
@@ -71,7 +74,10 @@ async def test_refusals(
     graph: MemoryGraph, change: dict, source: Source, evidence: Evidence, reason: str
 ) -> None:
     result = await graph.stage_and_admit(
-        (PERSON, EVENT), (replace(REL, **change),), (evidence,), {source.key: source}
+        entities=(PERSON, EVENT),
+        relations=(replace(REL, **change),),
+        evidence=(evidence,),
+        sources={source.key: source},
     )
     assert not result.relations
     assert reason in [r.reason for r in result.refused]
@@ -80,7 +86,10 @@ async def test_refusals(
 
 async def test_partial_commit(graph: MemoryGraph) -> None:
     result = await graph.stage_and_admit(
-        (PERSON, EVENT), (REL, replace(REL, id="bad", rel="invented")), (EV,), {SOURCE.key: SOURCE}
+        entities=(PERSON, EVENT),
+        relations=(REL, replace(REL, id="bad", rel="invented")),
+        evidence=(EV,),
+        sources={SOURCE.key: SOURCE},
     )
     assert result.relations == (REL,)
     assert result.evidence == (EV,)
@@ -93,7 +102,9 @@ async def test_partial_commit(graph: MemoryGraph) -> None:
 
 
 async def test_missing_evidence_and_orphans(graph: MemoryGraph) -> None:
-    result = await graph.stage_and_admit((PERSON, EVENT), (REL,), (), {})
+    result = await graph.stage_and_admit(
+        entities=(PERSON, EVENT), relations=(REL,), evidence=(), sources={}
+    )
     assert {r.reason for r in result.refused} == {"missing_evidence", "orphan_entity"}
 
 
@@ -103,7 +114,10 @@ async def test_caps_are_partial(graph: MemoryGraph, caps: dict) -> None:
     other = replace(EVENT, id="e2", name="Another Generated Event")
     r2 = replace(REL, id="r2", dst=other.key)
     result = await graph.stage_and_admit(
-        (other,), (r2,), (replace(EV, relation_id="r2"),), {SOURCE.key: SOURCE}
+        entities=(other,),
+        relations=(r2,),
+        evidence=(replace(EV, relation_id="r2"),),
+        sources={SOURCE.key: SOURCE},
     )
     assert result.relations
     result_walk = await graph.walk((PERSON.key,), Walk("u1", frozenset({"p1"}), **caps))
@@ -113,8 +127,12 @@ async def test_caps_are_partial(graph: MemoryGraph, caps: dict) -> None:
 
 async def test_hub_rule_and_scope_and_filters(graph: MemoryGraph) -> None:
     await load(graph)
-    pointer = Relation("pointer", SOURCE.key, "authored_by", PERSON.key, "record", "u1", ("p1",))
-    assert (await graph.stage_and_admit((), (pointer,), (), {})).relations
+    pointer = Relation(
+        "pointer", SOURCE.key, "authored_by", PERSON.key, "record", "u1", ("p1",), asserted_at=NOW
+    )
+    assert (
+        await graph.stage_and_admit(entities=(), relations=(pointer,), evidence=(), sources={})
+    ).relations
     walk = await graph.walk(
         (PERSON.key,), Walk("u1", frozenset({"p1"}), layers=("record", "notebook"))
     )
@@ -170,7 +188,10 @@ async def test_attribute_evidence_is_admitted_independently(graph: MemoryGraph) 
     public = replace(SOURCE, persons=())
     attribute = Evidence(SOURCE.key, entity_id=EVENT.id, attribute="category", span="event")
     result = await graph.stage_and_admit(
-        (PERSON, event), (REL,), (EV, attribute), {public.key: public}
+        entities=(PERSON, event),
+        relations=(REL,),
+        evidence=(EV, attribute),
+        sources={public.key: public},
     )
     assert result.relations == (REL,)
     assert result.entities[1].attributes == {"category": "generated"}
@@ -198,3 +219,31 @@ async def test_unavailable_is_not_empty_success() -> None:
     result = await graph.walk((PERSON.key,), Walk("u1", frozenset({"p1"})))
     assert result.status == "unavailable"
     assert not result.nodes and not result.relations
+
+
+async def test_attributes_accumulate_across_batches(graph: MemoryGraph) -> None:
+    public = replace(SOURCE, persons=())
+    first = replace(EVENT, attributes={"category": "generated"})
+    first_ev = Evidence(SOURCE.key, entity_id=EVENT.id, attribute="category", span="event")
+    await graph.stage_and_admit(
+        entities=(PERSON, first),
+        relations=(REL,),
+        evidence=(EV, first_ev),
+        sources={public.key: public},
+    )
+    second = replace(EVENT, attributes={"venue": "generated venue"})
+    second_ev = Evidence(SOURCE.key, entity_id=EVENT.id, attribute="venue", span="event")
+    r2 = replace(REL, id="r2")
+    result = await graph.stage_and_admit(
+        entities=(PERSON, second),
+        relations=(r2,),
+        evidence=(replace(EV, relation_id="r2"), second_ev),
+        sources={public.key: public},
+    )
+    event = next(e for e in result.entities if e.id == EVENT.id)
+    assert event.attributes == {"category": "generated", "venue": "generated venue"}
+
+
+def test_a_relation_without_asserted_at_is_refused() -> None:
+    with pytest.raises(ValueError, match="asserted_at"):
+        replace(REL, asserted_at=None)

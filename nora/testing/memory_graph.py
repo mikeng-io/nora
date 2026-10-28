@@ -39,12 +39,14 @@ class FakeMemoryGraph:
 
     async def stage_and_admit(
         self,
+        *,
         entities: tuple[Entity, ...],
         relations: tuple[Relation, ...],
         evidence: tuple[Evidence, ...],
         sources: Mapping[Key, Source],
     ) -> Admission:
         refused: list[Refusal] = []
+        before = dict(self.entities)
         candidates = dict(self.entities)
         for entity in entities:
             if entity.kind not in ENTITY_KINDS:
@@ -109,7 +111,10 @@ class FakeMemoryGraph:
         # endpoint may survive a refused attribute, just as valid relations do.
         clean_entities = []
         for entity in committed:
-            attrs = {}
+            # Attributes accumulate: a later batch adds to what earlier
+            # admitted evidence established, it never erases it.
+            held = before.get(entity.key)
+            attrs = dict(held.attributes) if held is not None else {}
             for attribute, value in entity.attributes.items():
                 if any(
                     e.entity_id == entity.id and e.attribute == attribute for e in admitted_evidence

@@ -180,6 +180,11 @@ class Relation:
     superseded_by: str | None = None
     created_at: datetime | None = None
 
+    def __post_init__(self) -> None:
+        # The table's asserted_at is NOT NULL: the evidence's time is always known.
+        if self.asserted_at is None:
+            raise ValueError("a relation needs asserted_at, the time of its evidence")
+
 
 @dataclass(frozen=True)
 class Evidence:
@@ -317,6 +322,7 @@ class MemoryGraph(Protocol):
     async def upsert_entity(self, entity: Entity) -> Entity: ...
     async def stage_and_admit(
         self,
+        *,
         entities: tuple[Entity, ...],
         relations: tuple[Relation, ...],
         evidence: tuple[Evidence, ...],
