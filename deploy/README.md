@@ -22,8 +22,9 @@ configuration. The separate `honcho_memory` network must already exist.
 ## Release deployment with Komodo
 
 The installed [Komodo release deployment](komodo/README.md) is the normal path:
-merge a fix PR, manually merge release-please's release PR while the repository
-is private, then let `release-images.yml` publish all images and commit
+merge a fix PR, follow `nora-release` to prepare and review/merge its metadata PR,
+then dispatch publish separately. The resulting Release triggers
+`release-images.yml` to publish all images and commit
 `compose.json` and `release.json` to `deployments`. The enabled
 `nora-release-poll` Procedure checks every ten minutes and deploys `nora-releases`
 through the installed wrapper, which writes `release-deploy.json`.
