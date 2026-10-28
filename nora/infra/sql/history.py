@@ -64,6 +64,11 @@ CAPTURE_SETTING = "nora.row_history"
 #: trigger's arguments). Includes `sticker_index` (an in-place cache) and
 #: `message_edit` (deleted by cascade when a message is pruned).
 HISTORY_TABLES: dict[str, tuple[str, ...]] = {
+    # Graph truth and retained work participate in the existing as-of history.
+    "entity": ("id",),
+    "relation": ("id",),
+    "relation_evidence": ("id",),
+    "memory_work_item": ("id",),
     "extraction": ("id",),
     "extraction_queue": ("id",),
     "extraction_claim": ("id",),

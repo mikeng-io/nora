@@ -151,7 +151,8 @@ def _is_protocol(cls: ast.ClassDef) -> bool:
 
 def port_methods() -> dict[str, dict[str, _Method]]:
     """Port name -> its public methods, read off `nora/domain/ports.py`."""
-    tree = ast.parse(PORTS.read_text(encoding="utf-8"), filename=str(PORTS))
+    tree = ast.parse(PORTS.read_text(encoding="utf-8") + "\n" +
+                     (ROOT / "nora/domain/memory_graph.py").read_text(encoding="utf-8"))
     ports: dict[str, dict[str, _Method]] = {}
     for node in tree.body:
         if isinstance(node, ast.ClassDef) and _is_protocol(node):
@@ -258,3 +259,11 @@ def test_a_port_stand_in_outside_nora_testing_is_pinned_with_a_reason() -> None:
         "pinned in _ALLOWED but no longer standing in for any port — drop the "
         f"pin (a stale exemption is a claim): {stale}"
     )
+
+
+def test_memory_graph_fake_is_bound_to_the_port_and_contract() -> None:
+    path = ROOT / "nora/testing/memory_graph.py"
+    seen = {(h.key.split("::")[1], h.port) for h in stand_ins(path, port_methods())}
+    assert ("FakeMemoryGraph", "MemoryGraph") in seen
+    contract = (ROOT / "tests/contract/test_memory_graph_contract.py").read_text()
+    assert "return FakeMemoryGraph()" in contract
