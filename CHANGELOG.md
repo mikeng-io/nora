@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.11.2](https://github.com/mikeng-io/nora/compare/v7.11.1...v7.11.2) (2026-10-28)
+
+
+### Bug Fixes
+
+* **deploy:** preserve unchanged release artifacts and containers ([71b0a59](https://github.com/mikeng-io/nora/commit/71b0a5949f713257a8201162a4338802f196a135))
+* **deploy:** verify retained containers against their restart baseline ([f0bd019](https://github.com/mikeng-io/nora/commit/f0bd01961c75f6eb7b19aa53d18ae0f9c63145d7))
+
 ## [7.11.1](https://github.com/mikeng-io/nora/compare/v7.11.0...v7.11.1) (2026-10-28)
 
 
