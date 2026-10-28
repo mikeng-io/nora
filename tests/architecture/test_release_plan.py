@@ -236,10 +236,13 @@ def test_bot_commits_are_attributed_to_the_app_not_a_generic_noreply_account():
     "subject", ["docs: clarify setup", "ci: improve checks", "config: adjust defaults"]
 )
 def test_internal_only_changes_automatically_write_a_patch(repo, plan, subject):
-    commit(repo, "docs/note.md", subject)
+    sha = commit(repo, "docs/note.md", subject)
     assert plan.main(["--repo", REPO, "--out", str(repo / "out")]) == 0
     assert json.loads((repo / ".release-please-manifest.json").read_text()) == {".": "1.0.1"}
     assert (repo / "out/title.txt").exists()
+    body = (repo / "out/body.md").read_text()
+    assert "### Maintenance" in body
+    assert f"{subject.split(': ', 1)[1]} ([{sha[:7]}]" in body
 
 
 def test_explicit_milestone_footer_automatically_selects_minor(repo, plan):

@@ -28,7 +28,8 @@ Release-Bump: minor
 
 The planner consumes that decision automatically across the entire unreleased
 range. Commit subjects remain changelog lines; internal types may stay hidden
-in the notes while still triggering a patch. Old-dated commits merged later
+in mixed release notes while still triggering a patch. Internal-only releases
+list their actual subjects under Maintenance. Old-dated commits merged later
 remain included. `Release-As:` is unsupported. Existing versions/tags stay intact.
 
 `!` and `BREAKING CHANGE:` / `BREAKING-CHANGE:` anywhere in the unreleased range,

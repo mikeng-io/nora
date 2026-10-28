@@ -110,6 +110,8 @@ def render(previous: str, version: str, found: list[Entry], repo: str, today: st
     out = f"## [{version}]({compare}) ({today})\n"
     groups = [("⚠ BREAKING CHANGES", [e for e in found if e.breaking])]
     groups += [(title, [e for e in found if e.type == kind]) for kind, title in sections()]
+    if not any(group for _, group in groups):
+        groups = [("Maintenance", [e for e in found if e.type != "merge"] or found)]
     for title, group in groups:
         if group:
             ordered = sorted(group, key=lambda e: (not e.scope, e.scope, e.text))
