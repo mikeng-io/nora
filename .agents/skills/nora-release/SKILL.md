@@ -1,118 +1,108 @@
 ---
 name: nora-release
-description: Prepares and publishes a Nora release with an explicit manual version bump. Use for a release PR, version bump, tag, changelog, publication or release assessment; ordinary master merges never release. Not for an ordinary deploy (nora-deploy).
+description: Follows Nora's automatic patch/minor release pipeline or prepares an owner-selected major at an exact source SHA. Use for release PRs, version bumps, tags, changelogs or publication. Not for an ordinary deploy (nora-deploy).
 ---
 
-# Nora releases: manual bumping
+# Nora releases
 
-Formal releases have three explicit actions: prepare a version PR, review and
-merge it, then publish it. A maintainer or the specifically admitted daily
-automation may execute them. The `release-please` workflow is
-`workflow_dispatch` only. It never runs on a master push or auto-merges a PR.
-`release-please` remains the sole tag/GitHub Release publisher; no hand tags.
+Every ordinary master push starts `release-please.yml`. The workflow publishes
+merged pending metadata first through release-please, then plans the complete
+remaining git-reachable range. It maintains one generated release PR and enables
+GitHub auto-merge on its exact head, with an authored merge subject. Required
+checks and the strict up-to-date branch rule govern the merge; the App has no
+bypass. This standing authority covers generated metadata only, never application
+or implementation PRs. There is no daily wait, paid agent or release evaluator.
+Devin release automation is stopped (operator, 2026-10-28; issue #316 closed as
+not planned). Do not invoke or re-enable it.
 
-Publishing still triggers `release-images.yml`, which publishes a complete
-bundle to `deployments` for Komodo's enabled poller. A publish therefore reaches
-the existing automatic deployment path. The admitted daily automation has standing
-release/deployment authorization only when every criterion in assessment.md passes;
-other publication needs operator admission. Preparing or merging metadata deploys nothing.
-The daily agent may execute patch/minor releases. Every major release needs
-explicit owner approval bound to the candidate and version before preparation.
-Read publication and deployment back separately through `nora-deploy`.
+## 1. Author the product bump
 
-## 1. Assess the unreleased range and choose the bump
+Default PATCH includes routine maintenance, docs, tests, config, CI and small
+additions within an existing capability. `feat` alone never requires minor.
+For a complete new product capability or a new/deprecated documented supported
+integration API/CLI, put this explicit footer in the authored commit message:
 
-Read the latest stable tag, current master and any pending release PR:
+```text
+Release-Bump: minor
+```
+
+The planner consumes that decision automatically across the entire unreleased
+range. Commit subjects remain changelog lines; internal types may stay hidden
+in mixed release notes while still triggering a patch. Internal-only releases
+list their actual subjects under Maintenance. Old-dated commits merged later
+remain included. `Release-As:` is unsupported. Existing versions/tags stay intact.
+
+`!` and `BREAKING CHANGE:` / `BREAKING-CHANGE:` anywhere in the unreleased range,
+including internal commits and merges, stop automatic processing before version
+writes. Never hide a break under patch/minor or use a footer to request major.
+Document the incompatible supported interface/config and its migration; only the
+owner may explicitly select major at an exact full current master SHA.
+
+## 2. Follow automatic preparation and publication
 
 ```bash
-git fetch origin --tags
-git describe --tags --first-parent --abbrev=0 --match 'v[0-9]*' origin/master
+gh run list --workflow release-please.yml -L 5 --json databaseId,status,conclusion,headSha
 gh pr list --label 'autorelease: pending' --json number,title,headRefName,headRefOid
-git log --no-merges --format='%h %s' <last-tag>..origin/master
+gh pr view <N> --json headRefOid,mergeable,files,statusCheckRollup,autoMergeRequest
 ```
 
-Review the complete still-unreleased range, not only the last day's merges.
-Decide whether the changes are useful and complete enough to release now.
-Waiting is valid; daily assessment does not imply daily publication.
+The generated PR has `chore(master): release X.Y.Z`, its recorded
+`Release-Candidate` in the body, and exactly `CHANGELOG.md`,
+`.release-please-manifest.json`, `pyproject.toml`, `nora/__init__.py`, `uv.lock`.
+It must be one metadata commit directly on that source. The required contribution
+check refuses a changed base, a changed head or added Update branch commit.
+Never edit the generated branch or use Update branch. When master advances,
+its push run re-prepares the whole range; strict branch checks prevent stale
+metadata from merging. Actions serializes runs and each run reads latest master,
+so coalesced pushes do not omit changes. Concurrent changes may collect into one
+pending release.
 
-Choose `patch`, `minor` or `major` explicitly from the entire range. The operator's
-product policy defaults compatible maintenance, small features and improvements
-within an existing capability to patch. A complete new product capability or a
-new/deprecated documented supported integration API/CLI is minor. Internal UI
-controls and endpoints are not automatically public contracts. Removing supported
-config/CLI/API behavior is major and needs owner approval. Never hide a real break.
+Missing release App setup fails closed. Only its repository-scoped installation
+token is used; no personal token, admin bypass or fallback to `GITHUB_TOKEN`.
+See [App setup](../../../docs/maintainers/github.md#automatic-releases).
+A metadata merge triggers publication and no next bump by itself. If publication
+fails, rerun that workflow: publication comes first, and manifest/tag mismatch
+blocks planning a duplicate version until the existing release is published.
 
-`scripts/release_plan.py` uses reachable user-visible runtime commits for the
-notes. Non-breaking changes default to patch, including `feat`; the assessed
-explicit choice selects minor when the product/contract boundary requires it.
-`!` or a `BREAKING CHANGE:` footer requires major and cannot be overridden down.
-Commit types group release notes, not product milestones. Hidden
-commit types and docs/design-only changes do not qualify on their own.
-Read commit bodies and the actual diff; a marker is not proof of compatibility.
+## 3. Owner-only major and recovery dispatch
 
-The daily automation follows [assessment.md](assessment.md): it measures hard
-gates and release-worth criteria, then executes prepare/checks/merge/publish when
-all pass. It is blocked until the implementation prerequisites land. An API or
-check failure is not permission to proceed. RC/nightly deployment remains
-unsupported; the current publisher accepts stable `vX.Y.Z` only.
-
-## 2. Prepare the release PR manually
-
-Run from the trusted default branch via GitHub Actions, not a local deploy host:
+The original and rerun actor must both be the repository owner, on master.
+Select the exact full current master SHA; drift is refused, never silently
+reinterpreted as a new owner decision:
 
 ```bash
-gh workflow run release-please.yml --ref master -f action=prepare -f bump=minor -f candidate=<assessed-full-sha>
-gh run list --workflow release-please.yml -L 3 --json databaseId,status,conclusion,headSha
-gh pr list --label 'autorelease: pending' --json number,title,headRefName,headRefOid
+gh workflow run release-please.yml --ref master -f action=prepare -f bump=major -f candidate=<full-master-sha>
 ```
 
-Substitute the chosen bump and assessed source SHA. A changed candidate requires
-reassessment; the automation must always supply it. Check the dispatched run's own result, then read the
-PR: one `chore(master): release X.Y.Z`, with exactly `CHANGELOG.md`,
-`.release-please-manifest.json`, `pyproject.toml`, `nora/__init__.py` and `uv.lock`.
-The CHANGELOG must cover all eligible changes and identify any required migration.
-A successful prepare never merges, tags or publishes.
-
-The repository-scoped release App must be configured, including its bot user ID;
-see `docs/maintainers/github.md`. Missing setup is an error, never auto-release.
-No qualifying changes produces `eligible=false` and no new PR. A manifest/tag
-mismatch means a merged metadata PR may still need publication; do not overwrite
-or force a second version. `Release-As:` footers remain unsupported.
-
-## 3. Review and merge the metadata PR
+The generated major metadata follows the same required checks and exact-head
+auto-merge; its master push lets release-please publish the explicitly prepared
+major. Manual prepare can also select patch/minor for recovery, retaining marker
+minimums. A merged but unpublished PR can be resumed without preparing again:
 
 ```bash
-gh pr view <N> --json headRefOid,mergeable,files,statusCheckRollup
-gh pr diff <N>
-gh pr merge <N> --merge --match-head-commit <reviewed-head> \
-  --subject 'merge: prepare release vX.Y.Z (#N)' --body 'Manually selected release metadata; publication is a separate dispatch.'
-gh pr view <N> --json state,mergeCommit
+gh workflow run release-please.yml --ref master -f action=publish -f candidate=<full-current-master-sha>
 ```
 
-Require green checks on the reviewed head. Use a real merge, never squash,
-rebase or `--auto`. The release PR branch is generated; re-preparing may replace
-its contents, so re-read the head and checks before merging. Do not edit it by
-hand. A merged metadata PR is not yet a published release.
-If master moved since prepare, never use Update branch or merge master into this
-generated branch. Reassess the entire unreleased range and dispatch prepare again;
-review the regenerated changelog, source and checks before merging.
+Publish alone does not prepare another PR. No hand tags, release fragments,
+room announcements or publication from the deployment host.
 
-## 4. Publish explicitly, then read back
-
-Only after the daily criteria pass or separate operator release/deployment admission:
+## 4. Read publication and deployment separately
 
 ```bash
-gh workflow run release-please.yml --ref master -f action=publish
-gh run list --workflow release-please.yml -L 3 --json databaseId,status,conclusion,headSha
 gh release view vX.Y.Z --json tagName,isDraft,targetCommitish,body
 git fetch origin --tags
 git rev-list -n 1 vX.Y.Z
 ```
 
-PASS: the publish run succeeded, the Release is not a draft, and the tag resolves
-to the metadata PR's merge commit. The publish action does not prepare another
-version PR. Follow `nora-deploy` to verify the image bundle, production receipt,
-running images and live stamp. A tag or green build alone proves no deployment.
+Require a successful publisher run, a non-draft Release and a tag resolving to
+the generated metadata merge. A stable published Release automatically feeds
+`release-images.yml`, then the complete `deployments` bundle and installed Komodo
+poller under the existing release-image control. The operator's standing release
+and deployment authority includes this normal patch/minor path and explicitly
+owner-prepared majors. Follow `nora-deploy` for image/source/receipt/live-stamp
+readback; a tag or build alone proves no deployment.
 
-Never announce a release to rooms, add release fragments, move a published tag,
-or publish from `nora-host`. Commit subjects remain the release-note source.
+The separate owner-only Deploy master image entry stays default-off behind
+`MASTER_DEPLOY_ENABLED` until its installed-wrapper readiness is verified. This
+release policy enables no flag, adds no RC/nightly channel and changes no deploy
+mechanism or selective build policy.

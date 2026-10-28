@@ -101,15 +101,15 @@ git log -1 --format='%h %s'
 
 ## 5. The subject is the release note
 
-There is no release fragment (DEC-314). On manual preparation,
-`scripts/release_plan.py` turns the visible commit subjects since the last tag
-into the CHANGELOG. A separate manual publish dispatch lets release-please
-publish it (`nora-release`); ordinary master merges never release.
+Every ordinary master push prepares patch/minor from complete reachability.
+Only generated metadata auto-merges after required checks on its exact head;
+release-please publishes to image/Komodo. Application PRs retain explicit merges.
 
-- Write a user-visible subject as a changelog line: `fix(music): resume after a
-  voice reconnect`. A breaking change gets `!` or a `BREAKING CHANGE:` footer.
-- Internal work takes a hidden type (`refactor`, `test`, `docs`, `chore`, …),
-  not a `fix` that no user will see.
+- Subjects are changelog lines; hidden internal types still trigger PATCH.
+- PATCH includes existing-capability additions, even `feat`. A complete new product
+  capability or new/deprecated supported API/CLI gets footer `Release-Bump: minor`.
+- `!` / `BREAKING CHANGE:` stops automatic version writes. Major requires owner
+  dispatch at an exact full current SHA; no daily evaluator or release fragments.
 
 ## 6. Merged tree, push, PR
 

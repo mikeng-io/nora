@@ -470,32 +470,33 @@ when there is no `[units]`. History and drift-check limits: `docs/maintainers/co
 
 ## Releases
 
-Load **`nora-release`** for manual bumping (operator, 2026-10-28). Ordinary
-master merges do not release. Manually dispatch `release-please` with
-`action=prepare` and an explicit patch/minor/major bump, review and merge
-the metadata PR (maintainer or admitted daily agent), then separately dispatch
-`action=publish`. No per-push release, unconditional auto-merge, release fragments,
-hand tags or room announcements. `scripts/release_plan.py` keeps the
-reachable-history notes and enforces the declared minimum bump; release-please
-still owns tagging/publication. Subjects remain the changelog source.
-Product versioning defaults compatible work within an existing capability to
-patch. Minor needs a complete new product capability or a new/deprecated
-documented supported integration API/CLI; `feat` alone does not force it.
-Breaking markers still require major. Keep published version numbers and tags.
-Publishing triggers `release-images.yml` and the existing Komodo poller, so obtain
-deployment admission before publishing, or use the daily automation's standing
-authorization only after all `nora-release/assessment.md` criteria pass. That
-authority covers patch/minor only; major needs explicit owner approval for the
-candidate and version. Publication and verified deployment remain separate states.
-The daily agent evaluates and
-executes the release pipeline; it is not advisory-only.
+Load **`nora-release`**. The operator's latest 2026-10-28 ruling reverses the
+manual/daily cadence: every ordinary master push automatically handles patch/minor
+releases, including docs, CI, config and maintenance. Generated metadata is
+excluded to prevent loops. `scripts/release_plan.py` uses complete git reachability;
+release-please alone tags/publishes. One generated metadata PR may auto-merge
+with an authored subject and exact-head guard after required checks; strict branch
+rules prevent stale-source merges. This authority never merges application or
+implementation PRs. No bypass, alternate token, hand tag or release fragment.
 
-The owner may additionally dispatch **Deploy master** in `release-images.yml`
-without a formal release. It pins current master, requires trusted CI on that
-source and publishes the same complete bundle; master pushes never build or deploy.
+PATCH is the default for compatible work within an existing capability. A complete
+new product capability or a new/deprecated documented supported integration API/CLI
+uses the explicit commit footer `Release-Bump: minor`. `feat` alone does not force
+minor. Breaking markers anywhere in the unreleased range stop automatic version
+writes; owner-only dispatch can explicitly prepare/release major at an exact full
+current candidate SHA, with drift refusal. Existing versions/tags are preserved.
+
+A stable published Release automatically feeds the existing `release-images.yml`
+→ `deployments` → Komodo pipeline under its existing control. This standing
+release/deployment authority covers automatic patch/minor and explicitly
+owner-prepared major releases. Publication and verified deployment remain separate
+states. Devin release automation is stopped; no AI evaluator or daily/seven-day
+criteria remain. Do not invoke or re-enable it (issue #316 closed not planned).
+
+The owner may separately dispatch **Deploy master** in `release-images.yml`.
 Keep `MASTER_DEPLOY_ENABLED` default-off until the reviewed installed wrapper
-outside the fetched clone is updated and verified (`nora-deploy`). The daily
-agent has no admission to this entry. Formal release authority above is unchanged.
+outside the fetched clone is updated and verified (`nora-deploy`). This ruling
+enables no flags and introduces no selective builds or RC/nightly channel.
 
 ## Adding or changing a tool
 

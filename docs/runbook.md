@@ -293,9 +293,10 @@ frontmatter, missing required key, unparseable YAML) fails to parse.
 ## 3. "Rollback"
 
 The normal path is the installed Komodo Stack `nora-releases`. A fix merges to
-master, then `nora-release` prepares a metadata PR with an assessed source and
-explicit bump. Review and merge it, then dispatch publish separately; merging
-alone publishes nothing. The tag and GitHub Release trigger `release-images.yml`;
+master; ordinary pushes automatically prepare patch/minor metadata and enable
+exact-head auto-merge after required checks. Release-please publishes the merged
+metadata; breaking ranges stop for an owner-only exact-candidate major dispatch
+(`nora-release`). Publication triggers `release-images.yml`;
 a complete image build commits `compose.json` and `release.json` to `deployments`.
 The enabled `nora-release-poll` Procedure calls `DeployStackIfChanged` every ten
 minutes. The installed wrapper deploys and writes `release-deploy.json`.
