@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.11.5](https://github.com/mikeng-io/nora/compare/v7.11.4...v7.11.5) (2026-10-28)
+
+
+### Maintenance
+
+* **memory:** comprehend on arrival and fold culture and lessons into Cognition ([54aecaf](https://github.com/mikeng-io/nora/commit/54aecaf7a57de00e75711e73851cd6a6fb9377b3))
+* **memory:** correct the culture readers and wake reasons in node 27 ([518b412](https://github.com/mikeng-io/nora/commit/518b412e9bcf56894110826b379d4516da292583))
+
 ## [7.11.4](https://github.com/mikeng-io/nora/compare/v7.11.3...v7.11.4) (2026-10-28)
 
 
