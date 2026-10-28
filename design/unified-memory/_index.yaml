@@ -32,7 +32,7 @@ description: >
   room location reads; minimal public outbound payload accepted; no special
   handling for sensitive categories; dedicated-key deduction and told-only
   fallback rules stand. Implementation and an enforcing DEC row land in phase 4.
-  Proposed 2026-10-28 (27): the memory is a graph — generic entity, relation
+  Ratified by the operator 2026-10-28 (27): the memory is a graph — generic entity, relation
   and evidence stores with closed vocabularies in code, a layer column, a
   Cognition loop per stimulus that comprehends every signal, enriches from
   the web, reshapes profiles and decides (separate profile adaptors retire),

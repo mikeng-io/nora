@@ -17,7 +17,7 @@ edges:
 
 # The memory is a graph
 
-Status: **ratified** by the operator, 2026-10-28 (all five decisions in §16). Docs only: no schema, verb, tool or
+Status: **ratified** by the operator, 2026-10-28 (all six decisions in §16). Docs only: no schema, verb, tool or
 migration lands with this node. It supersedes [18](18-extraction.md)'s
 single-pass text reading, and amends [25](25-memory-graph.md) §1, §2 and §5,
 [15](15-memory-map.md) and [40](40-prior-art.md) §5, which carry dated
@@ -450,12 +450,14 @@ simpler than two. They stay as history; nothing reads them after the switch.
 **Size, estimated** (the spike measures it): about 280 message batches, 490
 social items, a few hundred Rollup episodes and Register writes; at the
 budget ceiling about 40M tokens, at the expected median a third of that; a
-few hundred searches and fetches.
+few hundred searches and fetches. That counts step 1 only: step 2's reshape
+sessions come on top, one per changed entity per wake, and the spike measures
+how many and at what cost before the backfill budget is set.
 
 ## 11. Gates, fixed before the spike
 
 A stratified sample (text-only, attachment-only, link, social item, and items
-where an event spans several signals), run through the loop on a frozen
+where an event spans several signals), run through steps 1 and 2 of the loop on a frozen
 snapshot, judged by the precision judge used in 2026-10-27's spike and a
 second judge from another vendor:
 
@@ -469,7 +471,7 @@ second judge from another vendor:
 | egress: a query naming a private person or carrying an identifier or coordinate | **0** (any is a FAIL) |
 | work items failed after retries | < 5% |
 | notes, reminders or sends created during the backfill | **0** (any is a FAIL) |
-| cost per work item, median and p95 | reported; the backfill budget is set from it |
+| cost per work item, median and p95, step 1 and step 2 separately; step 2 sessions per work item | reported; the backfill budget is set from it |
 | query p95 at depth 3 on the built graph | < 200 ms |
 
 **The AGE comparison (operator, 2026-10-28).** The spike also loads its built
@@ -584,20 +586,21 @@ gate scores whether an answer is grounded, not only whether it is right.
 2. **Stores and projections:** `entity`, `relation`, `relation_evidence`;
    the vocabularies with their tests; code projection of record and rollup
    relations; the Register mapping (§6).
-3. **The Cognition loop's steps 1 and 3** (§7, §8): step 1 on new arrivals
-   in shadow (it writes, nothing reads); step 3 writes its Register items'
-   own links (§7a) in the same change.
+3. **The Cognition loop's three steps** (§7, §8, §9): steps 1 and 2 on new
+   arrivals in shadow (they write, nothing reads), with code-rendered facts;
+   step 3 writes its Register items' own links (§7a). Steps 1 and 2 exist
+   before the spike because the backfill runs both (§10).
 4. **The spike** on a frozen snapshot, against §11, with the AGE comparison;
    AGE is decided here, before the backfill.
 5. **One backfill** in time order (§10).
 6. **Query, presentation and tools** (§12–§14), with the routing measurement;
    step 3's agenda reads step 1's output (§7 rule 1).
-7. **Step 2 and code-rendered facts** (§9; [00](00-intent.md) phase 4); the
-   separate profile adaptors retire.
+7. **Cards read from step 2 and the graph** (§9; [00](00-intent.md) phase 4);
+   the separate profile adaptors retire.
 8. **Answerability and reply-replay gates**, then the switch, the operator's
    call ([70](70-honcho-cutover.md)).
 
-Steps 2 and 3 are one integrated change measured once by the spike
+Work items 2 and 3 are one integrated change measured once by the spike
 (AGENTS.md «Build the least that works»), not piecewise PRs with nothing
 measured between them.
 
