@@ -1,6 +1,7 @@
 """Owning-store revision delivery with indexing off, through real Postgres."""
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from datetime import UTC, datetime
@@ -94,6 +95,135 @@ async def test_late_cached_reading_after_cursor_and_restart_is_pending_once(env,
     [edited] = await restarted.messages(key=KEY, rooms=ROOMS, person=PERSON, limit=10)
     assert edited.roots[0].row.body == 'revised intention'
     assert edited.roots[0].row.ts == T0
+
+
+@pytest.mark.parametrize('reader', ['messages', 'media_recovery', 'register_relevance'])
+@pytest.mark.parametrize('settled', [False, True])
+async def test_message_checks_reuse_media_lookups_per_attachment_value(
+    env, tmp_path, reader, settled,
+):
+    from sqlalchemy.ext.compiler import compiles
+    from sqlalchemy.sql.expression import ClauseElement, Executable
+
+    class Explain(Executable, ClauseElement):
+        inherit_cache = False
+
+        def __init__(self, query):
+            self.query = query
+
+    @compiles(Explain)
+    def explain_query(element, compiler, **kwargs):
+        return ('EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON) '
+                + compiler.process(element.query, **kwargs))
+
+    # Repeated attachments and consumed plaintext must not multiply media scans.
+    # Keep legacy non-JSON references: eligibility has always used substring matching.
+    sha = 'a' * 64
+    other = 'b' * 64
+    refs = [None, '', json.dumps([{'sha256': sha}]), f'legacy {other} {sha} {sha}']
+    async with env.begin() as conn:
+        await conn.execute(sa.insert(MEDIA_OBJECTS), [{
+            'sha256': handle, 'source': 'inbound', 'created_at_ms': T0,
+            'description': 'cached scene' if handle == sha else '',
+        } for handle in [sha, other, *(f'{i:064x}' for i in range(30))]])
+        await conn.execute(sa.insert(MESSAGES), [{
+            'id': i + 1, 'platform': 'signal', 'conversation_id': 'room-a',
+            'conversation_type': 'group',
+            'sender_id': 'synthetic-sender', 'person_id': PERSON, 'ts': T0 + i,
+            'body': 'synthetic caption', 'is_nora': 0, 'delivery_status': 'sent',
+            'media_json': refs[i % 4],
+        } for i in range(96)])
+    source = source_inputs(env)
+    first = await source.messages(key=KEY, rooms=ROOMS, person=PERSON, limit=100)
+    assert len(first) == 96
+    assert sum(r.cache_ready for r in first) == 48
+    assert {r.ready_handles for r in first if r.cache_ready} == {('aaaaaa',)}
+    # Independent pre-change snapshot bytes: coalescing the lookup key must not
+    # coalesce the original media_json in the source revision itself.
+    cached = [[sha, '', 'cached scene', '', None, {}]]
+    both = [*cached, [other, '', '', '', None, {}]]
+    expected = {f'message:{i + 1}': hashlib.sha256(json.dumps([
+        None, False, 'synthetic caption', ref, None, PERSON, None, media,
+    ]).encode()).hexdigest() for i, (ref, media) in enumerate(zip(
+        refs, [None, None, cached, both], strict=True))}
+    assert {r.source: r.revision for r in first if r.source in expected} == expected
+
+    if reader == 'register_relevance':
+        memo, memo_head = str(uuid.uuid4()), str(uuid.uuid4())
+        async with env.begin() as conn:
+            await conn.execute(sa.insert(MEMO).values(
+                id=memo, unit='unit', platform='signal', conversation_id='room-a',
+                created_at=T0))
+            await conn.execute(sa.insert(MEMO_REVISION).values(
+                id=memo_head, memo_id=memo, seq=1, title='synthetic conclusion',
+                body='synthetic reasoning', mode='deduced', state='kept', citations=['3'],
+                written_at=T0, established_by='test'))
+
+    queries = []
+
+    def capture(conn, clauseelement, multiparams, params, execution_options):
+        if 'cache_ready' in str(clauseelement):
+            queries.append(clauseelement)
+
+    if settled:
+        await source.settle(key=KEY, revisions=first)
+    sa.event.listen(env.sync_engine, 'before_execute', capture)
+    try:
+        if reader == 'messages':
+            result = await source.messages(key=KEY, rooms=ROOMS, person=PERSON,
+                                           after=96 if settled else 0, limit=1)
+            assert len(result) == (0 if settled else 1)
+            if result:
+                assert result[0].source == 'message:1'
+        elif reader == 'register_relevance':
+            result = await source.register(key=KEY, unit='unit', rooms=ROOMS,
+                                           person=PERSON, limit=1)
+            assert len(result) == 1
+            assert result[0].state == 'kept'
+            assert [root.row.id for root in result[0].roots] == [3]
+        else:
+            result = await source.media_recovery(key=KEY, rooms=ROOMS, person=PERSON)
+            assert result['eligible_cached'] == 48
+            assert result['pending_cached'] == (0 if settled else 48)
+            assert result['unattempted_cached'] == (0 if settled else 48)
+    finally:
+        sa.event.remove(env.sync_engine, 'before_execute', capture)
+    [query] = queries
+    async with env.connect() as conn:
+        [explain] = (await conn.execute(Explain(query))).scalar_one()
+    (tmp_path / f'{reader}-{settled}.json').write_text(json.dumps(explain, indent=2))
+
+    def nodes(node):
+        yield node
+        for child in node.get('Plans', ()):
+            yield from nodes(child)
+
+    plan = list(nodes(explain['Plan']))
+    scans = sum(n['Actual Loops'] for n in plan
+                if n.get('Relation Name') == 'media_objects')
+    revisions = sum(n['Actual Loops'] for n in plan if n['Node Type'] == 'Aggregate'
+                    and any('jsonb_agg(' in value for value in n.get('Output', ())))
+    edit_heads = [n for n in plan if n['Node Type'] == 'Aggregate' and any(
+        value.startswith('max(message_edit') and value.endswith('.id)')
+        for value in n.get('Output', ()))]
+    distinct_refs = 3  # NULL and empty string have the same old coalesce semantics.
+    print(reader, settled, 'media scans', scans, 'media revisions', revisions,
+          'edit head sites', len(edit_heads),
+          'JIT functions', explain.get('JIT', {}).get('Functions', 0),
+          'execution ms', explain['Execution Time'])
+    # Positive controls: the queries ran and actually computed media revisions.
+    # Count executed work, not SQL text, timing or a particular planner node tree.
+    assert 0 < scans <= 2 * distinct_refs
+    assert 0 < revisions <= distinct_refs
+    # The snapshot and changed flag each need an edit head. Consumers must not
+    # clone those subplans: JIT compiles even branches with zero Actual Loops.
+    assert 0 < len(edit_heads) <= 2
+    assert any(n['Actual Loops'] > 0 for n in edit_heads)
+    if reader == 'register_relevance':
+        assert scans <= 2
+        assert revisions <= 1
+        assert sum(n['Actual Rows'] * n['Actual Loops'] for n in plan
+                   if n.get('Relation Name') == 'messages') <= 2
 
 
 @pytest.mark.parametrize('kind', ['post', 'reel', 'story_frame'])
