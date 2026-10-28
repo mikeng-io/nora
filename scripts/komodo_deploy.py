@@ -92,6 +92,8 @@ def reload_services(resolved: dict, images: dict, request: Path) -> list[str]:
     if not request.exists():
         return []
     value = json.loads(request.read_text())
+    if not isinstance(value, dict):
+        raise ValueError('invalid scoped config reload request')
     files = value['files']
     if (set(value) != {'files'} or not isinstance(files, list) or not files
             or not all(isinstance(f, str) for f in files)
@@ -161,15 +163,6 @@ def apply_release(prefix: list[str], manifest: dict, runtime: Path, project: str
              '-v', f'{config}:/tmp/config.toml:ro', '--entrypoint', '/app/.venv/bin/nora',
              images['nora'], 'config', 'validate', '--config', '/tmp/config.toml'],  # noqa: S108 -- container path
             stage='config-validation')
-    # Only recreation can change the running cohort. Write BEFORE it so process
-    # death, partial recreation and verifier SystemExit all leave the candidate blocked.
-    temporary = marker.with_suffix('.tmp')
-    temporary.write_text(json.dumps({'manifest_sha256': fingerprint,
-                                     'version': manifest['version'], 'commit': manifest['commit']}))
-    temporary.chmod(0o600)
-    temporary.replace(marker)
-    print('RECONCILE: owned services; explicit config reload if requested', flush=True)
-    reconcile_services(prefix, images, reload)
     spec = importlib.util.spec_from_file_location('verify_deploy',
                                                  Path(__file__).with_name('verify-deploy.py'))
     if spec is None or spec.loader is None:
@@ -179,8 +172,19 @@ def apply_release(prefix: list[str], manifest: dict, runtime: Path, project: str
     # The standalone verifier includes raw Docker stderr in SystemExit. Keep its
     # subprocesses behind this wrapper's private diagnostic boundary as well.
     verifier._docker = lambda *args: run(['docker', *args], stage='readback', output=True)
+    baseline = {row['container_id']: row['restarts']
+                for row in verifier.containers_for_services(project, set(images))}
+    # Only recreation can change the running cohort. Write BEFORE it so process
+    # death, partial recreation and verifier SystemExit all leave the candidate blocked.
+    temporary = marker.with_suffix('.tmp')
+    temporary.write_text(json.dumps({'manifest_sha256': fingerprint,
+                                     'version': manifest['version'], 'commit': manifest['commit']}))
+    temporary.chmod(0o600)
+    temporary.replace(marker)
+    print('RECONCILE: owned services; explicit config reload if requested', flush=True)
+    reconcile_services(prefix, images, reload)
     print('READBACK: exact service membership, image IDs, health and version', flush=True)
-    verifier.verify_services(project, images)
+    verifier.verify_services(project, images, baseline=baseline)
     stamp = json.loads(run([*prefix, 'exec', '-T', 'nora', '/app/.venv/bin/python', '-c',
                             'import json; print(json.dumps(json.load(open('
                             '"/app/nora/version.json"))))'], stage='stamp-readback', output=True))

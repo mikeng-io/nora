@@ -105,8 +105,9 @@ roll back database schema or host config.
 
 ## Incremental artifacts and native recreation
 
-This source requires a one-time reviewed installed-wrapper update under the shared
-lock; merging does not update `/etc/komodo/nora-deploy`. Preserve receipts, failed
+This source requires a one-time reviewed update of `komodo_deploy.py` and
+`verify-deploy.py` together under the shared lock; merging does not update
+`/etc/komodo/nora-deploy`. Preserve receipts, failed
 attempts and private diagnostics. Parent/operator installation and live acceptance
 remain separate from local disposable proof. No master-deploy flag change is needed.
 
@@ -157,8 +158,9 @@ formal app-only releases therefore also update Nora, presence and analytics.
 Normal `up` has no `--force-recreate`: native Compose compares the image and effective
 service configuration, retaining unchanged container IDs. All candidate images are
 pulled and host config validated first. The existing lock, failed-attempt marker,
-private diagnostics and whole-cohort image/health/zero-restart/stamp verification
-still apply. Historical restart counts on retained containers are not reset or ignored.
+private diagnostics and whole-cohort image/health/stamp verification still apply.
+Restart counts are captured before reconciliation and bound to each container ID:
+retained containers must have no increase; recreated containers must have zero.
 
 ### Loaded-once host file reload
 
@@ -177,7 +179,7 @@ Release the lock, then run native `DeployStack` on `nora-releases`. Supported na
 are `config.toml`, `identity.toml`, `policy.toml`; combine them in `files` when needed.
 The wrapper derives readers from the resolved owned-service mounts, reconciles the
 normal cohort, then force-recreates only those readers. Infrastructure stays excluded.
-With the current Compose file, config selects Nora/presence/analytics/STT/voice-wake;
+With the current Compose file, config selects Nora/presence/analytics/STT/voice-wake/voice-sidecar;
 identity selects Nora/app/presence/analytics; policy selects Nora. Read back the
 process-loaded value and start time, not just the mounted file.
 

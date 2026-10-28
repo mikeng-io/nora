@@ -53,8 +53,9 @@ major approval, config custody and infrastructure ownership remain unchanged.
   changes explicitly request refresh; this is reuse proof, not reproducible builds.
 - New Dockerfile recipes build until reviewed for reuse. A missing registry object
   refuses publication instead of guessing that an old digest remains available.
-- Retained containers retain historical restart counts; existing verification
-  still rejects nonzero counts. Host-file edits need the explicit scoped request.
+- Retained containers retain historical restart counts; verification binds the
+  pre-deploy count to each container ID and rejects any increase. New containers
+  require zero restarts. Host-file edits need the explicit scoped request.
 - The first bundle lacks prior fingerprints and therefore rebuilds all artifacts.
 
 ## Rejected

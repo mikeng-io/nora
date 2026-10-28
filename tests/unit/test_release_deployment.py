@@ -116,7 +116,9 @@ def test_failed_health_readback_preserves_the_previous_success_receipt(tmp_path,
     receipt = tmp_path / 'release-deploy.json'
     receipt.write_text('previous successful deployment')
     verifier = tmp_path / 'verify-deploy.py'
-    verifier.write_text('def verify_services(project, images):\n'
+    verifier.write_text('def containers_for_services(project, services):\n'
+                        '    return []\n'
+                        'def verify_services(project, images, *, baseline):\n'
                         '    assert project == "nora"\n'
                         '    assert "presence" in images and "analytics" in images\n'
                         '    raise RuntimeError("stale presence")\n')
@@ -284,8 +286,11 @@ def release_runtime(tmp_path, monkeypatch):
     (tmp_path / 'verify-deploy.py').write_text(
         'def _docker(*args):\n'
         '    raise SystemExit("PRIVATE_STDERR")\n'
-        'def verify_services(project, images):\n'
+        'def containers_for_services(project, services):\n'
+        '    return [{"container_id": "retained", "restarts": 2}]\n'
+        'def verify_services(project, images, *, baseline):\n'
         '    assert project == "nora" and "presence" in images\n'
+        '    assert baseline == {"retained": 2}\n'
         '    _docker("ps")\n')
     monkeypatch.setattr(wrapper, '__file__', str(tmp_path / 'komodo_deploy.py'))
     calls = []
@@ -1063,6 +1068,10 @@ def test_native_reconcile_forces_only_explicit_file_readers(tmp_path, monkeypatc
     assert '--force-recreate' not in commands[-2]
     for files in ([], ['.env'], ['config.toml', '.env']):
         request.write_text(json.dumps({'files': files}))
+        with pytest.raises(ValueError, match='reload'):
+            wrapper.reload_services(resolved, pins, request)
+    for value in ([1, 2, 3], None, 'x', []):
+        request.write_text(json.dumps(value))
         with pytest.raises(ValueError, match='reload'):
             wrapper.reload_services(resolved, pins, request)
 
