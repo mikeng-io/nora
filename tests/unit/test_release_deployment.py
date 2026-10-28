@@ -476,6 +476,8 @@ def test_native_procedure_is_disabled_until_explicit_cutover():
 @pytest.fixture
 def publisher_source(tmp_path, monkeypatch):
     """Real source history/stamps; API responses distinguish trusted request shapes."""
+    # A runner's workflow revision belongs to the outer repository, not this fixture.
+    monkeypatch.delenv('GITHUB_WORKFLOW_SHA', raising=False)
     bundle = load('release_bundle')
     repo = tmp_path / 'source'
     (repo / 'scripts').mkdir(parents=True)
