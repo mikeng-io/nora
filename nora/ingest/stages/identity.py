@@ -14,7 +14,7 @@ worked.
 
 This runs BEFORE the audit write so the resolved `person_id` lands in that
 single INSERT. It is safe to put ahead of it: `Persons.resolve` is two dict
-lookups on a frozen mapping built at startup — no I/O, nothing to block on.
+lookups through the current identity holder — no I/O, nothing to block on.
 Auditing first and UPDATEing the row afterwards (what A9 does for outbound
 replies) would add a second unconditional write per ambient message, and
 `nora.infra.sql.audit` documents that WAL allows exactly one writer and that the
@@ -23,9 +23,8 @@ write path for the same reason.
 
 The counter is the live tripwire; the `person_id` column is the durable
 record. Both are needed: metrics here live only in the process's own registry
-and reset on restart, while mapping is startup-only (Q4) — so "I fixed
-identity.toml but never restarted" is a real state the file on disk cannot
-reveal.
+and reset on restart. Mapping hot-reloads; a refused edit keeps the old
+version and is separately counted by nora_config_reloads_total.
 """
 
 from __future__ import annotations
@@ -51,8 +50,7 @@ async def run(
         # Logs are a separate exposure surface and do not need it.
         log.warning(
             "unmapped sender (platform=%s sender=%s) — no Honcho memory is "
-            "being written for them; check identity.toml, and restart if you "
-            "have edited it (mapping is startup-only)",
+            "being written for them; check identity.toml and its reload outcome",
             message.platform,
             sanitize_unmapped(message.sender_id),
         )

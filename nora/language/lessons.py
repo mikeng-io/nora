@@ -286,7 +286,6 @@ class LessonsAdaptor:
         #: Read by the dream loop, never awaited here.
         self.evidence = evidence
         self._keys = keys
-        self._population = tuple(sorted(keys))
         #: A reply's author by `person_id` (the roster's name).
         self._name_of = name_of
         self._horizon_ms = horizon_seconds * 1000
@@ -301,7 +300,7 @@ class LessonsAdaptor:
         self._rejections: dict[str, tuple[int | None, int]] = {}
 
     def keys(self) -> Sequence[str]:
-        return self._population
+        return tuple(sorted(self._keys))
 
     def _count(self, outcome: str, n: int = 1) -> None:
         if outcome not in LESSONS_OUTCOMES:

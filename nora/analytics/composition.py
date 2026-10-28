@@ -13,12 +13,15 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from nora.analytics.rollup import RollupConfig
 from nora.analytics.runner import RollupRunner, Subject
 from nora.analytics.units import PersonScope, UnitConfig, UnitRollups
 from nora.config import Config
+from nora.config_reload import ReloadFiles
+from nora.domain.live import LiveMapping, LiveSequence
 from nora.infra.sql import create_sql_engine, run_migrations
 from nora.infra.sql.geocode_cache import SqlGeocodeCacheStore
 from nora.infra.sql.mobility import SqlMobilityStore
@@ -26,8 +29,8 @@ from nora.infra.sql.rollups import SqlRollupStore, UnitRooms
 from nora.infra.sql.social_stream import readable_social_store
 from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.obs.metrics import Metrics
-from nora.persons import Persons, PersonsError, load_persons
-from nora.policy import Policy, PolicyError, load_policy
+from nora.persons import Persons, PersonsError
+from nora.policy import Policy, PolicyError
 
 log = logging.getLogger("nora.analytics.composition")
 
@@ -41,14 +44,15 @@ class AnalyticsStartupError(Exception):
 class AnalyticsDependencies:
     runner: RollupRunner | None
     persons: Persons | None
-    subjects: tuple[Subject, ...]
+    subjects: Sequence[Subject]
     metrics: Metrics
     metrics_port: int
     tick_seconds: float
     #: How far behind the wall clock a run's watermark sits, so a row whose
     #: transaction committed a moment late is still inside it.
     grace_seconds: float = 60.0
-    units: tuple[UnitRooms, ...] = ()
+    units: Sequence[UnitRooms] = ()
+    reload_files: ReloadFiles | None = None
 
 
 def _subjects_from_identity(persons: Persons) -> tuple[Subject, ...]:
@@ -147,25 +151,21 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
             grace_seconds=analytics.grace_seconds,
         )
 
+    def validate_persons(persons: Persons) -> None:
+        if not _subjects_from_identity(persons):
+            raise AnalyticsStartupError("analytics enabled but identity has no Life360 subjects")
+
     try:
-        persons = load_persons(cfg.identity_file)
-    except PersonsError as exc:
-        raise AnalyticsStartupError(f"identity.toml error: {exc}") from exc
-    subjects = _subjects_from_identity(persons)
-    if not subjects:
-        raise AnalyticsStartupError(
-            "analytics.enabled is true but no [[persons.<id>.life360]] "
-            "block exists in identity.toml — there is nothing to derive; "
-            "refusing to start"
+        reload_files = ReloadFiles(
+            policy_path=cfg.policy_file, identity_path=cfg.identity_file,
+            ai_peer=cfg.honcho.ai_peer, default_workspace=cfg.honcho.workspace_id,
+            metrics=metrics, validate_persons=validate_persons,
         )
-    # The unit rollups need the rooms and their units (policy.toml). Without
-    # it the presence Rollup still runs and the unit rollups compute nothing:
-    # a unit's membership is never guessed.
-    try:
-        units = _units_from_policy(load_policy(cfg.policy_file), persons)
-    except PolicyError as exc:
-        log.warning("policy.toml unreadable (%s) — the unit rollups compute nothing", exc)
-        units = ()
+    except (PersonsError, PolicyError, ValueError) as exc:
+        raise AnalyticsStartupError(f"identity/policy error: {exc}") from exc
+    persons, policy = reload_files.persons, reload_files.policy
+    subjects = LiveSequence(lambda: _subjects_from_identity(persons))
+    units = LiveSequence(lambda: _units_from_policy(policy, persons))
 
     database_url = os.environ.get(cfg.store.database_url_env, "")
     if not database_url:
@@ -225,13 +225,13 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
         tz_name=analytics.tz_name,
     )
     rollups = SqlRollupStore(engine, metrics=metrics)
-    people = {
+    people = LiveMapping(lambda: {
         s.subject_id: PersonScope(
             subject=s.subject_id, circles=s.circle_ids,
             former_ids=tuple(p for p in s.person_ids if p != s.subject_id),
         )
         for s in subjects
-    }
+    })
     unit_rollups = UnitRollups(
         store=rollups, config=unit_config, units=units, people=people,
         stimuli=SqlStimulusStore(engine), metrics=metrics,
@@ -250,5 +250,5 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
     return AnalyticsDependencies(
         runner=runner, persons=persons, subjects=subjects, metrics=metrics,
         metrics_port=analytics.metrics_port, tick_seconds=analytics.tick_seconds,
-        grace_seconds=analytics.grace_seconds, units=units,
+        grace_seconds=analytics.grace_seconds, units=units, reload_files=reload_files,
     )

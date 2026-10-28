@@ -51,7 +51,7 @@ def build_health_app(
     llm_state: LLMState,
     adapters=None,
     identity_file: str | Path | None = None, policy_file: str | Path | None = None,
-    index_state=None,
+    index_state=None, config_reload=None,
 ) -> web.Application:
     app = web.Application()
     app["adapter"] = adapter
@@ -71,6 +71,7 @@ def build_health_app(
     app["honcho"] = honcho
     app["doctrine_store"] = doctrine_store
     app["metrics"] = metrics
+    app["config_reload"] = config_reload
     app["started_at"] = started_at
     app["llm_state"] = llm_state
     # A zero-arg callable answering the memory index's `IndexState`
@@ -189,6 +190,9 @@ def build_health_app(
         # `config.<file>.stale=true` says the operator's edit hasn't taken.
         if a["config_files"]:
             body["config"] = config_staleness(a["config_files"], a["started_at"])
+            if a["config_reload"] is not None:
+                for name, state in a["config_reload"]().items():
+                    body["config"].setdefault(name, {}).update(state)
         return web.json_response(body, status=200 if healthy else 503)
 
     async def metrics_endpoint(request: web.Request) -> web.Response:

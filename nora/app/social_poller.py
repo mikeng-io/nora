@@ -201,8 +201,8 @@ class SocialPoller:
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         rand: Callable[[], float] = random.random,
     ) -> None:
-        self._units = units or {}
-        self._rooms = rooms or {}
+        self._units = units if units is not None else {}
+        self._rooms = rooms if rooms is not None else {}
         self._timezone = ZoneInfo(timezone)
         self._source = source
         self._network = source.network

@@ -56,7 +56,7 @@ Postgres.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence, Set
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -67,6 +67,7 @@ from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nora.domain.live import LiveSet
 from nora.domain.rollup import SocialFact, SocialInput
 from nora.domain.social_stream import (
     HIDING_STATES,
@@ -246,7 +247,7 @@ class SqlSocialStreamStore:
     """The stream's six tables, as twenty-nine verbs."""
 
     def __init__(
-        self, engine: AsyncEngine, *, opted_out: frozenset[str] = frozenset(),
+        self, engine: AsyncEngine, *, opted_out: Set[str] = frozenset(),
         metrics: Any = None,
     ) -> None:
         self._engine = engine
@@ -1143,4 +1144,4 @@ def readable_social_store(
     `social = false`, under their current id and every retired one
     (`Persons.social_off_ids`). The one store built without it is the story
     expiry's, which deletes every person's frames' bytes at their bound."""
-    return SqlSocialStreamStore(engine, opted_out=persons.social_off_ids(), metrics=metrics)
+    return SqlSocialStreamStore(engine, opted_out=LiveSet(persons.social_off_ids), metrics=metrics)

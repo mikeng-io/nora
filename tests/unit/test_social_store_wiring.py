@@ -70,4 +70,6 @@ def test_perception_is_built_with_the_rooms():
     ]
     rooms = {k.arg: k.value for k in call.keywords}.get("rooms")
     assert isinstance(rooms, ast.Call), "SocialPerception is built without rooms"
-    assert ast.unparse(rooms.func) == "social_person_rooms"
+    assert ast.unparse(rooms.func) == "LiveMapping"
+    assert isinstance(rooms.args[0], ast.Lambda)
+    assert ast.unparse(rooms.args[0].body) == "social_person_rooms(allowlist)"

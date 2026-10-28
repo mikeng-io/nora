@@ -62,6 +62,7 @@ def _metrics_app(deps: AnalyticsDependencies) -> web.Application:
             "subjects": len(deps.subjects),
             "units": len(deps.units),
             "enabled": deps.runner is not None,
+            "config": deps.reload_files.status() if deps.reload_files else {},
         })
 
     app.router.add_get("/metrics", metrics_endpoint)
@@ -130,6 +131,7 @@ async def _run(config_path: Path, *, rebuild: bool = False) -> None:
         log.info("rebuilt the Rollup as build %d to %d and switched to it", build_id, through_ms)
         return
     runner = await serve(_metrics_app(deps), deps.metrics_port)
+    reload_task = asyncio.create_task(deps.reload_files.run()) if deps.reload_files else None
     try:
         if deps.runner is None:
             log.info("analytics disabled — nothing to derive; exiting")
@@ -140,6 +142,9 @@ async def _run(config_path: Path, *, rebuild: bool = False) -> None:
             await _tick(deps, last_success, first_seen)
             await asyncio.sleep(deps.tick_seconds)
     finally:
+        if reload_task is not None:
+            reload_task.cancel()
+            await asyncio.gather(reload_task, return_exceptions=True)
         await runner.cleanup()
 
 

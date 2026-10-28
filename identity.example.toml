@@ -1,5 +1,6 @@
 # Who people are: person_id -> the accounts they hold on each platform. Copy to
-# `identity.toml`. Read once at startup: adding a person needs a restart.
+# `identity.toml`. Valid edits hot-reload within three seconds. Invalid edits keep
+# the last good version. Changing [workspaces] requires process recreation.
 # policy.toml refers to people by the person_id defined here.
 #
 # person_id doubles as the Honcho peer id and must match ^[a-zA-Z0-9_-]+$.

@@ -3,9 +3,9 @@ when their messages arrived.
 
 A sender absent from `identity.toml` is audited with `person_id` NULL and
 NOTHING is fed to Honcho (`nora.ingest.stages.memory_feed` bare-returns on
-`person is None`). Mapping is startup-only, so when the operator adds that
-account and restarts, every earlier message stays unfed unless it is
-backfilled; the peer card would silently miss the person's history up to
+`person is None`). Mapping now hot-reloads for new messages, but every earlier message stays
+unfed unless the startup/explicit sweep backfills it; the peer card would silently
+miss the person's history up to
 their adoption.
 
 This module reconciles that at startup: find audited rows with no `person_id`

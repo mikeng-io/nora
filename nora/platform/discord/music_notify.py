@@ -14,10 +14,9 @@ by changing THIS file.
 channel when the session started would be stuck with it for the session's
 whole life. Resolving per-post means a boot resume honours a `music_channel`
 set while Nora was down (fresh policy, old session), and there is one code
-path for all three surfaces. It does NOT
-mean an operator edit lands mid-session — `load_policy` runs once per process
-and `Policy` is frozen, so within a process the resolver is a constant
-function. An edit needs a restart, exactly as `voice = true` does.
+path for all three surfaces. The resolver reads the live policy holder, so a
+valid `music_channel` edit
+also lands mid-session after the next validated reload, within three seconds.
 
 **Announcements only** (`MusicPlayerManager._notify_now_playing` and
 `_announce_teardown`). A slash command still replies where it was invoked —

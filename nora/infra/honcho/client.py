@@ -266,8 +266,8 @@ class WorkspaceRouter:
         strict: bool = False,
     ) -> None:
         self._default = default
-        self._unit_workspaces = dict(unit_workspaces or {})
-        self._conversation_units = dict(conversation_units or {})
+        self._unit_workspaces = unit_workspaces if unit_workspaces is not None else {}
+        self._conversation_units = conversation_units if conversation_units is not None else {}
         # Nora workspace name -> its Honcho workspace, for the one kind of
         # read keyed on a WORKSPACE rather than a room or unit: a person's own
         # model across that workspace, unscoped (the portal's memory page).

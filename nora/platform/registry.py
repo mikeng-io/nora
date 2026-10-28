@@ -39,7 +39,7 @@ Nora?" and "which person is this sender?" are answered by the same flattening.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Set
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -156,7 +156,7 @@ class AdapterRegistry:
         voice_guild_ids: frozenset[str] = frozenset(),
         resolve_music_channel: ResolveMusicChannel = no_music_channel,
         instagram_summons: SummonsSink | None = None,
-        dm_recipients: Mapping[str, frozenset[str]] | None = None,
+        dm_recipients: Mapping[str, Set[str]] | None = None,
     ) -> AdapterRegistry:
         """Build+resolve every enabled platform — Signal, Discord, WhatsApp,
         Instagram; each one more `if platforms.<x>.enabled:` block, not a

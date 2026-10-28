@@ -80,7 +80,7 @@ from __future__ import annotations
 import base64
 import logging
 import os
-from collections.abc import Mapping
+from collections.abc import Mapping, Set
 
 import aiohttp
 
@@ -252,7 +252,7 @@ ATTACHMENT_TIMEOUT_SECONDS = 60.0
 class SignalSender:
     def __init__(
         self, base_url: str, *, timeout: float = 10.0,
-        dm_recipients: frozenset[str] = frozenset(),
+        dm_recipients: Set[str] = frozenset(),
     ) -> None:
         # The direct-message addresses this sender may reach: every Signal id
         # in `identity.toml` (`Persons.direct_addresses`). Empty by default, so

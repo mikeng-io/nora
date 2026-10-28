@@ -83,8 +83,13 @@ Hold `flock -o -E 75 -w 900 /tmp/nora-deploy.lock` while editing files. Back up
 first, edit a candidate copy, validate it through the running container, then
 copy it into place in situ (preserving the mount inode).
 Secrets stay in `.env`; never print them. Release the lock before manual native
-`DeployStack`: the wrapper reacquires it and validates again. Use `DeployStack`
-even with unchanged Git files so loaded-once config reaches recreated processes.
+`DeployStack`: the wrapper reacquires it and validates again. For `config.toml` or `.env`, use `DeployStack` even with unchanged Git files so
+startup configuration reaches recreated processes. Valid identity/policy edits
+hot-reload within three seconds: read each consumer's `nora_config_reloads_total`
+`applied` outcome and `/health` config staleness. A `refused` outcome retains the
+last good file; restore/fix the copy. `restart_required` refuses the whole file: use
+native Stack recreation for policy `[units]` or identity `[workspaces] binding edits.
+See [the full capture audit](../../../design/policy-reload/00-design.md).
 On failure restore the backup under the lock, then use native Stack recovery
 and repeat receipt, image, health and process-config readback.
 

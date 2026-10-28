@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import base64
 import logging
+from collections.abc import Set
 
 import aiohttp
 
@@ -107,7 +108,7 @@ def _sent_timestamp(body: object) -> int | None:
 class WhatsAppSender:
     def __init__(
         self, base_url: str, *, timeout: float = 10.0,
-        dm_recipients: frozenset[str] = frozenset(),
+        dm_recipients: Set[str] = frozenset(),
     ) -> None:
         self._dm_recipients = dm_recipients
         self._base_url = base_url.rstrip("/")

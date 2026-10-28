@@ -30,8 +30,8 @@
  {
   "name": "2 composition: perception is not handed the rooms",
   "file": "nora/app/composition.py",
-  "old": "            units=social_person_units(allowlist), rooms=social_person_rooms(allowlist),\n",
-  "new": "            units=social_person_units(allowlist),\n",
+  "old": "            units=LiveMapping(lambda: social_person_units(allowlist)),\n            rooms=LiveMapping(lambda: social_person_rooms(allowlist)),",
+  "new": "            units=LiveMapping(lambda: social_person_units(allowlist)),",
   "target": "tests/unit/test_social_store_wiring.py::test_perception_is_built_with_the_rooms"
  },
  {
@@ -44,14 +44,14 @@
  {
   "name": "4 helper: the reader store drops opted_out",
   "file": "nora/infra/sql/social_stream.py",
-  "old": "    return SqlSocialStreamStore(engine, opted_out=persons.social_off_ids(), metrics=metrics)\n",
+  "old": "    return SqlSocialStreamStore(engine, opted_out=LiveSet(persons.social_off_ids), metrics=metrics)\n",
   "new": "    return SqlSocialStreamStore(engine, metrics=metrics)\n",
   "target": "tests/unit/test_social_store_wiring.py::test_a_reader_store_leaves_out_an_opted_out_person_under_every_id tests/infra/test_social_read.py::test_an_opted_out_person_stays_out_under_a_retired_id tests/architecture/test_social_reads_exclude_every_opted_out_id.py"
  },
  {
   "name": "4 helper: the opt-out leaves out the current id only",
   "file": "nora/infra/sql/social_stream.py",
-  "old": "    return SqlSocialStreamStore(engine, opted_out=persons.social_off_ids(), metrics=metrics)\n",
+  "old": "    return SqlSocialStreamStore(engine, opted_out=LiveSet(persons.social_off_ids), metrics=metrics)\n",
   "new": "    return SqlSocialStreamStore(engine, opted_out=frozenset(p for p in persons.by_person if persons.social_off(p)), metrics=metrics)\n",
   "target": "tests/unit/test_social_store_wiring.py::test_a_reader_store_leaves_out_an_opted_out_person_under_every_id tests/architecture/test_social_reads_exclude_every_opted_out_id.py"
  },

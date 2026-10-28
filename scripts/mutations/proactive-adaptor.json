@@ -154,10 +154,10 @@
   "target": "tests/unit/test_heartbeat_loop.py -k a_note_the_rows_unit_cannot_reach_fails_closed"
  },
  {
-  "name": "audit: the act runner is gated on the home room, not the adaptor",
+  "name": "audit: the act runner remains available with the Dreamer off",
   "file": "nora/app/composition.py",
-  "old": "    if proactive_homes:\n        proactive_runner = _auto_runner(",
-  "new": "    if proactive_homes and cfg.dreamer.enabled:\n        proactive_runner = _auto_runner(",
+  "old": "    proactive_runner = _auto_runner(\n        cfg.proactive.reasoning_effort, \"[proactive] reasoning_effort\",\n        max_tokens=cfg.proactive.max_tokens,\n    )",
+  "new": "    proactive_runner = _auto_runner(\n        cfg.proactive.reasoning_effort, \"[proactive] reasoning_effort\",\n        max_tokens=cfg.proactive.max_tokens,\n    ) if cfg.dreamer.enabled else None",
   "target": "tests/test_composition.py -k a_home_room_keeps_the_proactive_runner_even_with_the_dreamer_off"
  },
  {

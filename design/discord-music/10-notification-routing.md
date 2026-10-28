@@ -150,16 +150,12 @@ is now the only builder, and all three call it —
 `music_messages.py` for the WORDING, `music_notify.py` for the DESTINATION,
 each single-owner so a surface can only change either by changing one file.
 
-**Resolved on every post, not captured at session start.** Two things follow,
-and a third does not. It DOES mean a boot resume honours a `music_channel` set
+**Resolved on every post, not captured at session start.** The resolver reads the live policy holder. It DOES mean a boot resume honours a `music_channel` set
 while Nora was down (fresh policy, old session), and that there is one code path
-where there were three. It does **not** mean an operator edit lands mid-session:
-`load_policy` runs once per process and `Policy` is frozen, so within a process
-`resolve_music_channel` is a constant function and the per-post lookup is
-observationally identical to a capture-time one. An edit needs a restart,
-exactly as `voice = true` does. DEC-192 and the release fragment both claimed
-otherwise before review caught it (2026-09-21); `music_notify.py`'s own
-docstring said "plus a reload" and was right.
+where there were three. Valid edits to `music_channel` and `voice` now apply mid-session after the
+next validated policy reload, within three seconds. The original 2026-09-21
+implementation required recreation; the policy-reload design supersedes that
+limitation.
 
 The resolution order is: the guild's `music_channel`, else
 `MusicSession.notify_channel_id` (which keeps its meaning — "the channel where

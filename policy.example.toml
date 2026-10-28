@@ -1,8 +1,9 @@
 # All example names, account IDs, nicknames and room mappings in this file are
 # synthetic pseudonyms; replace them with your own installation values.
 
-# Who and where Nora answers. Copy to `policy.toml` (gitignored). Read once at
-# startup: a change needs a restart.
+# Who and where Nora answers. Copy to `policy.toml` (gitignored). Valid edits
+# hot-reload within three seconds; invalid edits keep the last good version.
+# Changes to [units] workspace bindings require process recreation.
 #
 # People are named by person_id from identity.toml, never by phone number. A
 # person_id covers EVERY account that person holds, so allowlisting `miles`

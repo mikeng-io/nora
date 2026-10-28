@@ -46,6 +46,7 @@ from nora.domain.gatherings import (
     GatheringStore,
     event_in_scope,
 )
+from nora.domain.live import LiveMapping
 from nora.domain.note_body import NORA_NAMES
 from nora.domain.ports import CognitionStore, StimulusStore
 from nora.domain.reminders import ReminderCaps
@@ -546,7 +547,7 @@ def build_cognition_runner(
     # `StartupError`).
     text, sha = doctrine()
     skills.resolved_for(sorted(skills.by_kind))
-    home_rooms = _by_home_room(homes)
+    home_rooms = LiveMapping(lambda: _by_home_room(homes))
 
     async def open_events(
         unit: str, platform: str, conversation_id: str,

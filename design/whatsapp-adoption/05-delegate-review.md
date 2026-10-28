@@ -1,4 +1,10 @@
 ---
+
+> Operational amendment, 2026-10-28: the recreate advice below records the old
+> implementation. Valid identity/policy edits now hot-reload within three seconds
+> when copied in place; workspace-binding edits still require recreation.
+> See [the reload design](../policy-reload/00-design.md).
+
 type: review
 title: "WhatsApp Adoption Bundle — Delegate Review"
 description: "Adversarial review of design/whatsapp-adoption/ against the live repo. Grounded in file:line evidence verified 2026-09-04."

@@ -1,0 +1,16 @@
+[
+  {
+    "name": "policy swap makes the next message admitted",
+    "file": "nora/config_reload.py",
+    "old": "            self.holder.swap(candidate)",
+    "new": "            pass  # mutation: suppress publication",
+    "target": "tests/integration/test_policy_reload.py::test_policy_reload_admits_the_next_message_from_a_new_room"
+  },
+  {
+    "name": "invalid edit retains the last applied policy",
+    "file": "nora/config_reload.py",
+    "old": "            self.holder.swap(candidate)",
+    "new": "            pass  # mutation: suppress publication",
+    "target": "tests/integration/test_policy_reload.py::test_invalid_policy_keeps_the_last_applied_policy_and_counts_refused"
+  }
+]

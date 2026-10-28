@@ -878,7 +878,7 @@ class RegistryToolSource:
         self._ai_peer = ai_peer
         # Unit -> home room, from `Policy.home_rooms()`. Empty for every
         # composition that names none.
-        self._home_rooms = dict(home_rooms or {})
+        self._home_rooms = home_rooms if home_rooms is not None else {}
         # Conversation id -> that room, for a SCOPE-keyed adaptor's home-room
         # grant. The same value type as `home_rooms` because it answers the same
         # question (which room do the room-scoped verbs resolve through), and a
@@ -888,7 +888,7 @@ class RegistryToolSource:
         # (`Conversation.ids`), so a room with an `also_ids` form still resolves;
         # empty for every composition that names none, which leaves the
         # scope-keyed build closed.
-        self._scope_rooms = dict(scope_rooms or {})
+        self._scope_rooms = scope_rooms if scope_rooms is not None else {}
         # Platform -> roster source, the same map `FirePath` holds: a home
         # room on a platform with no roster answers `available=False`, the
         # honest state, never an empty room.

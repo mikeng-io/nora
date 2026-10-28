@@ -459,8 +459,10 @@ All three are gitignored; `config.example.toml` records the config's shape.
 validated-copy procedure; secrets stay in `.env`, referenced by name.
 `config.toml` also mounts read-only into `stt`/`voice-wake`, which read
 `[speech.stt]`/`[speech.wake]` at boot. Identity and policy are read-only and
-**loaded once at startup**: recreate after edits; otherwise nothing changes
-(`nora_unmapped_senders_total` is the tell).
+**hot-reloaded after validation every three seconds** in each reader process.
+Invalid edits keep the last good file; workspace-binding edits require recreation
+and refuse the whole reload. Read `nora_config_reloads_total{outcome}` and
+`/health` config staleness. See `design/policy-reload/00-design.md`.
 Identity takes one `[[persons.<id>.<platform>]]` block **per account**, all
 resolving to one `person_id` (Honcho peer, A2/DEC-14). Policy is deny-by-default;
 Nora **refuses to start** if it is missing or allows nothing (R-5).

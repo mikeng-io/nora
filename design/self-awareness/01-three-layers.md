@@ -22,9 +22,9 @@ Nora account, `design/self-growth/20-self-block.md`) landed.
 
 Two sources, both already in the process:
 
-- **The room table**, loaded from `policy.toml` at startup: network, label,
-  unit, members, flags. It changes only on a restart (`policy.toml` is read
-  once), so within one process it is stable.
+- **The room table**, read through the live `policy.toml` holder: network, label,
+  unit, members, flags. Valid edits apply within three seconds; invalid edits
+  keep the last good version. Workspace bindings require recreation.
 - **Adapter health**, `AdapterHealth` in `nora/domain/ports.py`: every adapter
   implements `health()`, and the type already distinguishes three states
   (connected, disconnected and expected to heal, degraded and waiting for a

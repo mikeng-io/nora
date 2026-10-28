@@ -91,7 +91,7 @@ class RollupRunner:
         self._rollups = rollups
         self._cfg = config
         self._units = unit_rollups
-        self._subjects = tuple(subjects)
+        self._subjects = subjects
         self._params = params_sha256(config, unit_config)
         self._metrics = metrics
         self._geocode_cache = geocode_cache
