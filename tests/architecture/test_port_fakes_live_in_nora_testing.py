@@ -266,4 +266,5 @@ def test_memory_graph_fake_is_bound_to_the_port_and_contract() -> None:
     seen = {(h.key.split("::")[1], h.port) for h in stand_ins(path, port_methods())}
     assert ("FakeMemoryGraph", "MemoryGraph") in seen
     contract = (ROOT / "tests/contract/test_memory_graph_contract.py").read_text()
-    assert "return FakeMemoryGraph()" in contract
+    assert "yield FakeMemoryGraph()" in contract
+    assert "yield SqlMemoryGraph(engine)" in contract

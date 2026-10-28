@@ -1,35 +1,35 @@
 [
   {
     "name": "corrections retained and applied",
-    "file": "nora/testing/memory_graph.py",
+    "file": "nora/domain/memory_admission.py",
     "old": "            self.relations[target.id] = updated",
     "new": "            self.relations[target.id] = target",
     "target": "tests/contract/test_memory_graph_contract.py::test_corrections_keep_history"
   },
   {
     "name": "supersede requires batch admission",
-    "file": "nora/testing/memory_graph.py",
+    "file": "nora/domain/memory_admission.py",
     "old": "correction.kind == \"supersede\" and correction.by not in ids",
     "new": "correction.kind == \"supersede\" and correction.by not in self.relations",
     "target": "tests/contract/test_memory_graph_contract.py::test_correction_refusals"
   },
   {
     "name": "correction evidence required",
-    "file": "nora/testing/memory_graph.py",
+    "file": "nora/domain/memory_admission.py",
     "old": "elif not ev:",
     "new": "elif False:",
     "target": "tests/contract/test_memory_graph_contract.py::test_record_correction_requires_evidence"
   },
   {
     "name": "corrections share write unit",
-    "file": "nora/testing/memory_graph.py",
+    "file": "nora/domain/memory_admission.py",
     "old": "elif any(\n                unit != target.unit\n                for unit in [e.unit for e in entities] + [r.unit for r in relations]\n            ):",
     "new": "elif False:",
     "target": "tests/contract/test_memory_graph_contract.py::test_correction_cannot_cross_write_unit"
   },
   {
     "name": "existing relation never overwritten",
-    "file": "nora/testing/memory_graph.py",
+    "file": "nora/domain/memory_admission.py",
     "old": "if relation.id in self.relations or any(r.id == relation.id for r in accepted):",
     "new": "if False:",
     "target": "tests/contract/test_memory_graph_contract.py::test_duplicate_relation_never_overwrites"
@@ -71,7 +71,7 @@
   },
   {
     "name": "refused relation evidence is recorded",
-    "file": "nora/testing/memory_graph.py",
+    "file": "nora/domain/memory_admission.py",
     "old": "refused.append(Refusal(\"evidence\", e.relation_id, \"orphan_evidence\"))",
     "new": "pass",
     "target": "tests/contract/test_memory_graph_contract.py::test_partial_commit"
@@ -85,7 +85,7 @@
   },
   {
     "name": "duplicate entity refusal",
-    "file": "nora/testing/memory_graph.py",
+    "file": "nora/domain/memory_admission.py",
     "old": "            elif any(\n                e.key != entity.key",
     "new": "            elif False and any(\n                e.key != entity.key",
     "target": "tests/contract/test_memory_graph_contract.py::test_duplicate_entity"
@@ -106,7 +106,7 @@
   },
   {
     "name": "unevidenced attributes keep old value",
-    "file": "nora/testing/memory_graph.py",
+    "file": "nora/domain/memory_admission.py",
     "old": "                    refused.append(Refusal(\"entity\", entity.id, \"missing_evidence\"))",
     "new": "                    attrs[attribute] = value",
     "target": "tests/contract/test_memory_graph_contract.py::test_attributes_accumulate_across_batches"

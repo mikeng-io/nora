@@ -31,18 +31,54 @@ REL = Relation("r1", PERSON.key, "attended", EVENT.key, "notebook", "u1", ("p1",
 EV = Evidence(SOURCE.key, relation_id="r1", span="attended")
 
 
-@pytest.fixture(
-    params=[
-        "fake",
-        pytest.param(
-            "sql",
-            marks=pytest.mark.skip(reason="Phase 1: Postgres memory graph implementation pending"),
-        ),
-    ]
-)
-def graph(request: pytest.FixtureRequest) -> MemoryGraph:
-    assert request.param == "fake"
-    return FakeMemoryGraph()
+@pytest.fixture(scope="module")
+def _graph_db(pg_admin):
+    from uuid import uuid4
+
+    import psycopg
+
+    from nora.infra.sql.migrations_runner import run_migrations
+
+    dbname = "t_graph_" + uuid4().hex
+    with psycopg.connect(pg_admin.dsn(pg_admin.maintenance_db), autocommit=True) as conn:
+        conn.execute(f'CREATE DATABASE "{dbname}"')
+    url = (
+        f"postgresql+asyncpg://{pg_admin.user}:{pg_admin.password}"
+        f"@{pg_admin.host}:{pg_admin.port}/{dbname}"
+    )
+    run_migrations(url)
+    try:
+        yield url
+    finally:
+        with psycopg.connect(pg_admin.dsn(pg_admin.maintenance_db), autocommit=True) as conn:
+            conn.execute(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname=%s AND pid<>pg_backend_pid()",
+                (dbname,),
+            )
+            conn.execute(f'DROP DATABASE IF EXISTS "{dbname}"')
+
+
+@pytest.fixture(params=["fake", "sql"])
+async def graph(request):
+    if request.param == "fake":
+        yield FakeMemoryGraph()
+        return
+    import sqlalchemy as sa
+
+    from nora.infra.sql.engine import create_sql_engine
+    from nora.infra.sql.memory_graph import SqlMemoryGraph
+
+    engine = create_sql_engine(request.getfixturevalue("_graph_db"))
+    async with engine.begin() as conn:
+        await conn.execute(sa.text("SET LOCAL session_replication_role = replica"))
+        await conn.execute(
+            sa.text("TRUNCATE relation_evidence, relation, entity, memory_work_item CASCADE")
+        )
+    try:
+        yield SqlMemoryGraph(engine)
+    finally:
+        await engine.dispose()
 
 
 async def load(graph: MemoryGraph, relation: Relation = REL) -> None:
@@ -216,14 +252,28 @@ async def test_expired_attempts_park_without_deleting(graph: MemoryGraph) -> Non
     assert (await graph.enqueue(item)).state == "failed"
 
 
-async def test_unavailable_is_not_empty_success() -> None:
-    graph = FakeMemoryGraph()
+async def test_unavailable_is_not_empty_success(graph: MemoryGraph) -> None:
     await load(graph)
-    assert (await graph.walk((PERSON.key,), Walk("u1", frozenset({"p1"})))).nodes
-    graph.available = False
-    result = await graph.walk((PERSON.key,), Walk("u1", frozenset({"p1"})))
+    query = Walk("u1", frozenset({"p1"}))
+    assert (await graph.walk((PERSON.key,), query)).nodes
+    if isinstance(graph, FakeMemoryGraph):
+        graph.available = False
+        result = await graph.walk((PERSON.key,), query)
+        graph.available = True
+    else:
+        import sqlalchemy as sa
+
+        from nora.infra.sql.memory_graph import SqlMemoryGraph
+
+        assert isinstance(graph, SqlMemoryGraph)
+        # A real conflicting table lock forces the SQL read past its deadline.
+        slow = SqlMemoryGraph(graph.engine, statement_timeout_ms=1)
+        async with graph.engine.begin() as lock:
+            await lock.execute(sa.text("LOCK TABLE relation IN ACCESS EXCLUSIVE MODE"))
+            result = await slow.walk((PERSON.key,), query)
     assert result.status == "unavailable"
     assert not result.nodes and not result.relations
+    assert (await graph.walk((PERSON.key,), query)).nodes
 
 
 async def test_attributes_accumulate_across_batches(graph: MemoryGraph) -> None:

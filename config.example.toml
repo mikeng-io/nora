@@ -597,6 +597,10 @@ refresh_timeout_seconds = 8
 # hkgov_lang_zh = "zh"
 # hkgov_lang_en = "en"
 
+[memory.graph]
+# Code projections and parallel work queue only; no model calls or prompt reads.
+enabled = false
+
 [memory.extraction]
 # Record writer only: no readers, index projection, history backfill or Character consumption.
 enabled = false
