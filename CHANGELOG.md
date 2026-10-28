@@ -1,5 +1,18 @@
 # Changelog
 
+## [7.11.12](https://github.com/mikeng-io/nora/compare/v7.11.11...v7.11.12) (2026-10-28)
+
+
+### Features
+
+* **policy:** hot-reload validated identity and room policy ([61459ac](https://github.com/mikeng-io/nora/commit/61459aca908103620dbbe32571b7b479efc2fcc1))
+
+
+### Bug Fixes
+
+* **culture:** resolve room policy lookups live, not at boot ([d3040ee](https://github.com/mikeng-io/nora/commit/d3040ee75eca3bcafaec3145a1c763ae6c811d66))
+* **policy:** retain declared workspace routes when the last room leaves ([d360cfb](https://github.com/mikeng-io/nora/commit/d360cfb32697f53e17b6f98fc62e4ef00ad2a638))
+
 ## [7.11.11](https://github.com/mikeng-io/nora/compare/v7.11.10...v7.11.11) (2026-10-28)
 
 
