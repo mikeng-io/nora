@@ -7,6 +7,7 @@ import json
 import logging
 import re
 import time
+from collections import Counter
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Annotated, Any, Literal
@@ -25,7 +26,7 @@ from nora.domain.extraction import (
     EXTRACTION_FAILURE_STAGES,
     VERSION,
     ExtractionFailureStage,
-    validate_claims,
+    partition_claims,
 )
 from nora.domain.prompt import escape
 from nora.infra.sql.extraction import SqlExtraction
@@ -100,6 +101,9 @@ how (stated, said_by_another, planned, asked, reported), source_ids (nonempty
 new-message IDs only), evidence (a list of {source_id, quote}; exact supporting
 spans covering every cited source). No inferred place. Timestamps are assertion
 times, milliseconds since epoch; relative dates refer to that source in HKT.
+person_id must come only from the supplied persons; otherwise use null with reference.
+where and happened_at.expression must be copied verbatim from a NEW message the
+claim cites, never from context rows or a reply's parent. Cite only new messages.
 Return one JSON object with claims, an array (empty only if nothing is asserted).
 """
 
@@ -161,7 +165,18 @@ class ExtractionWorker:
                 with _at_stage("input"):
                     output = await self._complete(job)
                 with _at_stage("claims"):
-                    claims = validate_claims(output.model_dump(), job["snapshot"])
+                    claims, dropped = partition_claims(output.model_dump(), job["snapshot"])
+                if dropped:
+                    counts = dict(Counter(dropped))
+                    with _at_stage("storage"):
+                        await self.store.record_drops(job, counts=counts)
+                    for reason, count in counts.items():
+                        self.metrics.inc(
+                            "nora_extraction_dropped_claims_total", count, reason=reason,
+                        )
+                with _at_stage("claims"):
+                    if output.claims and not claims:
+                        raise _ExtractionError("claims")
                 with _at_stage("publish"):
                     written = await self.store.publish_extraction_batch(job, claims=claims)
                 self.metrics.inc("nora_extraction_claims_written_total", written)

@@ -186,7 +186,7 @@ async def _attach_profile(
     # The rooms the viewer is listed in TODAY, for the evidence-text rule in
     # `_evidence`. Compared on the bare conversation id: the Record's read
     # (`rows_by_id`) does not carry the platform, and two platforms never
-    # share one in practice (DEC-105's one-room-per-platform per unit).
+    # share one in practice; this is an assumption, not a policy invariant.
     # ponytail: if they ever do, a cited message of one platform could show
     # its text to a viewer of the other's; the fix is `RoomMessage` carrying
     # the platform.

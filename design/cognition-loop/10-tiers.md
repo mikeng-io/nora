@@ -123,8 +123,8 @@ And the words that name processes, never stores:
    Standing line about frequency, regularity or closeness ("usually",
    "often", "closest") cites a Rollup aggregate and never states a count or a time itself.
 6. **Keys are fixed.** The unit is the key of everything derived, inside
-   DEC-214's hierarchy (workspace > unit > room; one room per platform per
-   unit), with one exception: the person-scoped Rollup rows (stay, trip,
+   DEC-214's hierarchy (workspace > unit > room; unique room labels per
+   unit, amended by room-topology step 3), with one exception: the person-scoped Rollup rows (stay, trip,
    place, occupancy, rhythm, corridor) are keyed by person and shared
    across that person's units, because a person moves as one stream; lineage decides which rooms see
    them. Record: by room, by person, by platform account. Rollup: (kind,

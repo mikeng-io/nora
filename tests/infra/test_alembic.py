@@ -57,6 +57,42 @@ def test_upgrade_is_idempotent(pg_url):
     assert current_revision(pg_url) == head_revision()
 
 
+def test_extraction_drop_migration_round_trip_preserves_legacy_attempts(pg_url):
+    from nora.infra.sql.schema import EXTRACTION, EXTRACTION_ATTEMPT
+
+    cfg = alembic_config(pg_url)
+    command.downgrade(cfg, "0135_extraction_history")
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.begin() as conn:
+            batch_id = conn.execute(sa.insert(EXTRACTION).values(
+                unit="synthetic-unit", platform="signal", origin_room="synthetic-room",
+                source_ids=[], context_ids=[], snapshot={"messages": [], "context": []},
+                version=1, model="synthetic-model", state="done",
+            ).returning(EXTRACTION.c.id)).scalar_one()
+            # The old schema has no dropped_claims field yet.
+            conn.execute(sa.text(
+                "INSERT INTO extraction_attempt (extraction_id, attempt, model, outcome) "
+                "VALUES (:id, 1, 'synthetic-model', 'ok')"
+            ), {"id": batch_id})
+        command.upgrade(cfg, "head")
+        with engine.connect() as conn:
+            row = conn.execute(sa.select(EXTRACTION_ATTEMPT)).mappings().one()
+            assert row["dropped_claims"] == {}
+            assert row["extraction_id"] == batch_id and row["outcome"] == "ok"
+        command.downgrade(cfg, "0135_extraction_history")
+        with engine.connect() as conn:
+            assert "dropped_claims" not in {
+                c["name"] for c in sa.inspect(conn).get_columns("extraction_attempt")
+            }
+            outcome = conn.execute(sa.text("SELECT outcome FROM extraction_attempt")).scalar_one()
+            assert outcome == "ok"
+        command.upgrade(cfg, "head")
+        assert current_revision(pg_url) == head_revision()
+    finally:
+        engine.dispose()
+
+
 def test_a_migrated_database_passes_alembic_check(pg_url):
     """Also the proof that `include_object` suppresses the phantom index pair:
     without the hook this raises on every run because `idx_messages_conv_ts`'s

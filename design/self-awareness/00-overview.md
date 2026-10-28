@@ -19,8 +19,9 @@ to answer from, and a model with nothing to answer from answers anyway.
 - **The tools say so in their own descriptions.** `group_members` in
   `nora/agent/tools.py`: *"It only ever describes THIS conversation, and it
   cannot tell you about anyone outside it."* `load_transcript` reads *"this
-  conversation"*. `send_to` knows *"one group with one room on each network"*
-  and has her name the network. No tool answers "which rooms am I in".
+  conversation"*. This historical snapshot predates room-topology steps 1–3:
+  `send_to` now addresses a room by label or a unique network, and `room_list`
+  exposes the unit's rooms; several may share one network.
 - **`_where_line`'s own name table is incomplete.** `_PLATFORM_NAMES` maps
   `signal` and `discord` only, so on WhatsApp and Instagram she is told the
   wire key (`whatsapp`, `instagram`), not the name the room uses.

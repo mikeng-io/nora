@@ -256,6 +256,7 @@ class Gateway:
         finish_reason="stop",
         usage=True,
         invalid_citation=False,
+        claims_mode="normal",
         model="deepseek-v4.1-flash",
     ):
         self.chat = SimpleNamespace(completions=self)
@@ -263,6 +264,7 @@ class Gateway:
         self.finish_reason = finish_reason
         self.usage = usage
         self.invalid_citation = invalid_citation
+        self.claims_mode = claims_mode
         self.model = model
 
     def with_options(self, **kw):
@@ -281,6 +283,13 @@ class Gateway:
         payload = [claim(r["id"], body=r["body"]) for r in snapshot["messages"]]
         if self.invalid_citation:
             payload[0]["source_ids"] = [999]
+        if self.claims_mode == "empty":
+            payload = []
+        elif self.claims_mode in ("mixed", "all_invalid"):
+            for item in payload[-1:] if self.claims_mode == "mixed" else payload:
+                item["where"] = "Invented Venue"
+        elif self.claims_mode == "schema":
+            payload[-1]["happened_at"] = None
         return SimpleNamespace(
             model=self.model,
             choices=[
@@ -304,7 +313,7 @@ class Gateway:
         ("stop", True, True, False),
     ],
 )
-async def test_worker_counts_usage_for_rejected_results_and_never_publishes_partial_claims(
+async def test_worker_counts_usage_for_whole_output_and_all_invalid_failures(
     stores,
     example_config,
     finish_reason,
@@ -337,6 +346,90 @@ async def test_worker_counts_usage_for_rejected_results_and_never_publishes_part
     expected_stage = None if success else ("usage" if not usage else
                                             "incomplete" if finish_reason != "stop" else "claims")
     assert attempt["failure_stage"] == expected_stage
+
+
+@pytest.mark.parametrize("mode,written,stage,drops", [
+    ("mixed", 3, None, {"place_absent": 1}),
+    ("all_invalid", 0, "claims", {"place_absent": 4}),
+    ("empty", 0, None, {}),
+    ("schema", 0, "schema", {}),
+])
+async def test_worker_publishes_valid_claims_and_durably_counts_drops(
+    stores, example_config, mode, written, stage, drops,
+):
+    record, store, engine = stores
+    ids = [await record.append(message=message(n), person_id="subject-a") for n in range(1, 5)]
+    metrics = Metrics()
+    gateway = Gateway(claims_mode=mode)
+    worker = ExtractionWorker(
+        store=store, client=gateway, metrics=metrics,
+        config=override_config(example_config.memory.extraction, {
+            "enabled": True, "min_message_age_seconds": 0,
+        }),
+    )
+    assert await worker.run_once() == written
+    assert len(gateway.calls) == 1
+    batch = (await rows(engine, EXTRACTION))[0]
+    assert batch["state"] == ("done" if stage is None else "pending")
+    assert batch["source_ids"] == ids
+    stored = await rows(engine, CLAIM)
+    assert [c["source_ids"] for c in stored] == [[i] for i in ids[:written]]
+    attempt = (await rows(engine, ATTEMPT))[0]
+    assert attempt["outcome"] == ("ok" if stage is None else "error")
+    assert attempt["failure_stage"] == stage
+    # Exact equality checks both the count and absence of any rejected content.
+    assert attempt["dropped_claims"] == drops
+    assert metrics.get("nora_extraction_dropped_claims_total") == sum(drops.values())
+    assert metrics.get("nora_extraction_dropped_claims_total", reason="place_absent") == drops.get(
+        "place_absent", 0,
+    )
+    assert metrics.get("nora_extraction_claims_written_total") == written
+    assert metrics.get("nora_extraction_failures_total") == int(stage is not None)
+
+
+@pytest.mark.parametrize("outage", ["drops", "publish"])
+async def test_drop_recording_is_required_and_survives_publication_failure(
+    stores, example_config, monkeypatch, outage,
+):
+    record, store, engine = stores
+    for n in range(1, 5):
+        await record.append(message=message(n), person_id="subject-a")
+
+    async def unavailable(*args, **kwargs):
+        raise RuntimeError("synthetic storage outage")
+
+    monkeypatch.setattr(
+        store, "record_drops" if outage == "drops" else "publish_extraction_batch", unavailable,
+    )
+    metrics = Metrics()
+    worker = ExtractionWorker(
+        store=store, client=Gateway(claims_mode="mixed"), metrics=metrics,
+        config=override_config(example_config.memory.extraction, {
+            "enabled": True, "min_message_age_seconds": 0,
+        }),
+    )
+    assert await worker.run_once() == 0
+    attempt = (await rows(engine, ATTEMPT))[0]
+    assert attempt["outcome"] == "error"
+    assert attempt["failure_stage"] == ("storage" if outage == "drops" else "publish")
+    assert attempt["dropped_claims"] == ({} if outage == "drops" else {"place_absent": 1})
+    assert metrics.get("nora_extraction_calls_total") == 1
+    assert metrics.get("nora_extraction_dropped_claims_total") == int(outage == "publish")
+    assert await rows(engine, CLAIM) == []
+
+
+@pytest.mark.parametrize("counts", [
+    {"private text": 1}, {"place_absent": "private text"}, {"place_absent": -1},
+    {"place_absent": True}, {"place_absent": 0},
+])
+async def test_drop_record_rejects_content_and_invalid_counts(stores, counts):
+    record, store, engine = stores
+    await record.append(message=message(), person_id="subject-a")
+    job = await take(store)
+    with pytest.raises(ValueError, match="invalid claim drop counts"):
+        await store.record_drops(job, counts=counts)
+    await store.record_drops(job, counts={"place_absent": 2})
+    assert (await rows(engine, ATTEMPT))[0]["dropped_claims"] == {"place_absent": 2}
 
 
 async def test_claim_publication_and_source_hide_are_serialized(stores):

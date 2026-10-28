@@ -236,8 +236,9 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   people reachable in more than one place (a Signal group and its Discord
   channel). Rooms sharing one share notes, memory and relays (`send_to`);
   rooms in different ones never do, however trusted each is. Set per room in
-  `policy.toml` (`unit = "friends"`); defaults to one unit. A unit holds AT
-  MOST ONE room per platform — refused at startup since DEC-214.
+  `policy.toml` (`unit = "friends"`); defaults to one unit. A unit may hold
+  several rooms per platform; labels must be unique after case and spacing
+  are folded (room-topology migration step 3, amending DEC-105 and DEC-214).
 
   The hierarchy is **workspace > unit > room** (DEC-214): every unit belongs
   to one **workspace**, and — once `policy.toml` declares `[units]` — inside

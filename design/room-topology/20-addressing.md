@@ -75,7 +75,7 @@ the asker sees a wrong pick at once.
 
 ## 6. The docstring
 
-The current one says "the group has one room on each network". It is
+The former one said "the group has one room on each network". It is
 rewritten to ADR 0015 for the new argument: name the room as `room_list` gives
 it, or the network when the group has one room there; ask when two fit. The
 rewrite is measured with `tool_selection` before and after

@@ -39,18 +39,18 @@ persons = ["miles"]        # person_ids. [] means no DMs.
 #
 #    `unit` (default "nora") is the social unit a room belongs to: the same
 #    people reachable in more than one place (DEC-105). `send_to` never crosses
-#    a unit, so "tell the Signal lot" from Discord resolves to the Signal room
-#    of the same unit. A unit holds at most one room per platform; two refuse
-#    to start (DEC-214). A single-group deployment needs no `unit`. Units map
-#    to workspaces, see section 3.
+#    a unit. Address a room by its unique label; a network resolves only when
+#    the unit has one room on it, otherwise Nora asks which room. Several rooms
+#    on one platform are allowed. A single-group deployment needs no `unit`.
+#    Units map to workspaces, see section 3.
 
 [[conversations]]
 platform  = "signal"
 id        = "Q2hhdEdyb3VwSWRFeGFtcGxlQmFzZTY0PT0="
 unit = "family"         # shared with the Discord room below
-label     = "Family"          # For humans reading this file. Never matched on:
-                             # group names are not unique and anyone in the
-                             # group can change them.
+label     = "Family"          # Operator-written address; unique in this unit
+                             # after case and spacing are folded. Independent
+                             # of the platform's mutable group name.
 persons  = ["miles", "ada"]   # Only these may trigger Nora here. A new group
                              # member is ignored until added.
 tools    = []                # MCP servers this room may use, e.g. ["pulse"].

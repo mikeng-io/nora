@@ -229,9 +229,9 @@ Live on 2026-09-09 (read back on `norty`; `policy.toml` is not in the tree):
 three units — `ridgeline` (2 rooms), `friends` (3 rooms), `wedding` (1
 room).
 
-**Reopens if:** a unit needs two home rooms (then the home room is per
-platform, and `send_to`'s «one room per platform per unit» rule already
-constrains it that way). **Superseded in part by 40 (issue #248, 2026-09-15):**
+**Reopens if:** a unit needs two home rooms. The old platform-count premise
+is superseded by room-topology migration step 3: unique labels permit several
+rooms per platform; the one-home-room rule remains independent. **Superseded in part by 40 (issue #248, 2026-09-15):**
 a proactive row LINKED to a note fires into the note's `established_in` room,
 not the home room — the home room stays where she stands, and the write verb
 routes by the note's own «routing key, never a filter» (`notes.py:277`).

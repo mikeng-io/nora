@@ -46,7 +46,7 @@
     "file": "nora/app/extraction.py",
     "old": "if finish_reason != \"stop\" or choice is None:",
     "new": "if choice is None:",
-    "target": "tests/contract/test_extraction_contract.py::test_worker_counts_usage_for_rejected_results_and_never_publishes_partial_claims[length-True-False-False]"
+    "target": "tests/contract/test_extraction_contract.py::test_worker_counts_usage_for_whole_output_and_all_invalid_failures[length-True-False-False]"
   },
   {
     "name": "wrong provider model cannot publish",
