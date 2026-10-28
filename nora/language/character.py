@@ -732,7 +732,7 @@ class CharacterPersonAdaptor(EntitySessions):
         self._sessions_init()
 
     def keys(self) -> Sequence[str]:
-        return tuple(sorted(self._keys))
+        return tuple(sorted(self._keys.keys()))
 
     def tool_room(self, key: str) -> str | None:
         pk = self._keys.get(key)
@@ -917,7 +917,7 @@ class CharacterUnitAdaptor(EntitySessions):
         self._sessions_init()
 
     def keys(self) -> Sequence[str]:
-        return tuple(sorted(self._keys))
+        return tuple(sorted(self._keys.keys()))
 
     def _count(self, outcome: str) -> None:
         _inc_session(self._metrics, "unit", outcome)
@@ -1060,7 +1060,7 @@ class CharacterNoraAdaptor(EntitySessions):
         self._sessions_init()
 
     def keys(self) -> Sequence[str]:
-        return tuple(sorted(self._keys))
+        return tuple(sorted(self._keys.keys()))
 
     def _count(self, outcome: str) -> None:
         _inc_session(self._metrics, "nora", outcome)
