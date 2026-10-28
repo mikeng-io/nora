@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.11.7](https://github.com/mikeng-io/nora/compare/v7.11.6...v7.11.7) (2026-10-28)
+
+
+### Maintenance
+
+* **cognition:** describe the one loop in the cognition bundle itself ([f9550ea](https://github.com/mikeng-io/nora/commit/f9550ea52a24b2c5a33b8d0af6845fd818f1620b))
+* **cognition:** fix the frontmatter and point every old-topology section at the one loop ([e027329](https://github.com/mikeng-io/nora/commit/e0273299a3533595d05ec73018f3b943744740b3))
+
 ## [7.11.6](https://github.com/mikeng-io/nora/compare/v7.11.5...v7.11.6) (2026-10-28)
 
 
