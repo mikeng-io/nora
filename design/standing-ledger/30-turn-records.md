@@ -75,6 +75,8 @@ window is reached the way any row is, and carries its handle too.
 
 ## 4. Citing it, and who writes what
 
+> 2026-10-28 ([unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md#6a-what-this-meets-in-the-other-bundles-2026-10-28) §6a): a turn record is a Record node of the memory graph (`turn`, added with this bundle's build), so a ledger line citing `turn(...)` is walkable.
+
 A ledger line cites a turn record as `turn(<id>)`, beside the house grammar's
 `[ids]` and `rollup(...)` (`nora/domain/note_body.py`). The validator holds a
 `turn(...)` cite to the rule 12-schemas §2.3 holds every cite to: it must be a
