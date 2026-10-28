@@ -120,3 +120,4 @@ edges:
   - {src: 20-observe, dst: ../dreamer-agent-loop/06-trigger.md, rel: realizes, provenance: asserted}
   - {src: 30-cognition, dst: ../dreamer-agent-loop/43-note-dreamers-are-research-loops.md, rel: extends, provenance: asserted}
   - {src: 30-cognition, dst: ../dreamer-agent-loop/39-proactive-ooda-loop.md, rel: supersedes, provenance: asserted}
+  - {src: 30-cognition, dst: ../unified-memory/27-the-memory-is-a-graph.md, rel: depends_on, provenance: asserted}

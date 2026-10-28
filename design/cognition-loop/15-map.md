@@ -211,6 +211,8 @@ Record and as ordinary Register and Standing writes.
 
 ## 6. Who may write what
 
+> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): the Character adaptor's and Lessons adaptor's rows below move to the Cognition loop's step ②, and a new row, step ①, writes the memory graph ([unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md) §7a). Read the table with that substitution.
+
 | writer | Record | Rollup | Register | Character | Lessons | Standing | tension | memory | doctrine |
 |---|---|---|---|---|---|---|---|---|---|
 | ingestion (code) | **yes** | — | — | — | — | — | — | feed | — |

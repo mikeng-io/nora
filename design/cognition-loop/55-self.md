@@ -13,6 +13,8 @@ edges:
 
 ## 1. What her adaptors build
 
+> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): the Cognition loop now builds all of these: step ① the memory graph, step ② Character, culture and Lessons, step ③ the Register and Standing.
+
 **Cognition is not a tier**, and neither is reflection. The Dreamer's
 adaptors read the Record and the Rollup and build Register, Character,
 Lessons and Standing ([00](00-intent.md) §3): Cognition writes Register and

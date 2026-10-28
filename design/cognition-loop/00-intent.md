@@ -53,6 +53,8 @@ not what an agent is for.
 
 ## 3. The decision
 
+> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28), [unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md)): the four-adaptor topology below is history. Cognition is the one loop, in three steps: ① comprehends every item on arrival into a memory graph, ② reshapes profiles, culture and lessons, ③ decides and acts on the wake rules. The Character and Lessons adaptors retire into ②; Assess stays outside. "Nothing is a knowledge graph" is reversed by [unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md).
+
 **What Nora is, in one sentence** (operator 2026-09-28, in this bundle's
 words): *a member of the unit who keeps a working model of its people, places
 and plans, and acts on it unasked, within what each room may be told.* Not an
@@ -129,6 +131,8 @@ debrief's Standing write, described in this section and in D9 and D12, move
 behind Cognition at or after the cut-over ([05](05-data-model.md) §9, E2).
 
 ## 4. One agent, not a conductor over agents
+
+> 2026-10-28: still holds. The three steps of [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28) hand off only through committed, code-admitted rows, never prose into a prompt; orient, decide and act stay one context in step ③ ([30](30-cognition.md) §8).
 
 **The topology refines this, and does not reverse it.** Orient, decide and
 act stay one context: the Cognition adaptor. Reflection (what an entity is

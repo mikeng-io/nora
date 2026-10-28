@@ -273,6 +273,8 @@ from the tree on 2026-10-01; each departure is a migration item, §9):
 
 ## 7. The Notebook's writers, and how the speaking turns hand off
 
+> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): the writers below change. Step ① of the Cognition loop writes the memory graph's judgement relations; step ② writes Character (traits and guesses; facts are rendered by code), culture and Lessons; step ③ writes the Register and Standing. One writer per tier still holds; the Character and Lessons adaptors retire.
+
 The operator's model ([55](55-self.md) §6), the conscious and the
 subconscious (明意識 / 潛意識): **the subconscious thinks and writes the
 Notebook; the conscious speaks from it.** The subconscious writes it with

@@ -101,6 +101,8 @@ its outcomes counted (§4).
 
 ## 3. Stimuli
 
+> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): beside the stimuli below, every recorded item (message batch, social item, late media reading, closed Rollup episode, Register write) is also a **work item** that drives steps ① and ② on arrival, never waits for a wake and is never struck. The wake rules below now start step ③ only.
+
 Every ingested item, every Rollup change of [25](25-rollup.md) §4's kinds,
 and every `time` trigger raises a **stimulus**: `(unit, kind, ref, cues, at)`.
 
