@@ -470,14 +470,25 @@ when there is no `[units]`. History and drift-check limits: `docs/maintainers/co
 
 ## Releases
 
-Load **`nora-release`**: `scripts/release_plan.py` opens the release PR from the
-commits reachable since the last tag and release-please tags and publishes it once
-merged (ADR 0027); no release fragments, hand tags or room announcements. Subjects
-are changelog lines: `feat`/`fix`/`security`/`perf`/`change`/`doctrine`/`revert`.
-The release App queues the PR to merge once the `master` ruleset's checks pass;
-without the App the maintainer merges it. `release-images.yml` publishes the
-complete bundle to `deployments`, then the installed Komodo poller deploys it
-automatically. Publication and verified deployment remain separate states.
+Load **`nora-release`** for manual bumping (operator, 2026-10-28). Ordinary
+master merges do not release. Manually dispatch `release-please` with
+`action=prepare` and an explicit patch/minor/major bump, review and merge
+the metadata PR (maintainer or admitted daily agent), then separately dispatch
+`action=publish`. No per-push release, unconditional auto-merge, release fragments,
+hand tags or room announcements. `scripts/release_plan.py` keeps the
+reachable-history notes and enforces the declared minimum bump; release-please
+still owns tagging/publication. Subjects remain the changelog source.
+Product versioning defaults compatible work within an existing capability to
+patch. Minor needs a complete new product capability or a new/deprecated
+documented supported integration API/CLI; `feat` alone does not force it.
+Breaking markers still require major. Keep published version numbers and tags.
+Publishing triggers `release-images.yml` and the existing Komodo poller, so obtain
+deployment admission before publishing, or use the daily automation's standing
+authorization only after all `nora-release/assessment.md` criteria pass. That
+authority covers patch/minor only; major needs explicit owner approval for the
+candidate and version. Publication and verified deployment remain separate states.
+The daily agent evaluates and
+executes the release pipeline; it is not advisory-only.
 
 ## Adding or changing a tool
 

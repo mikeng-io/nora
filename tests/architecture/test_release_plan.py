@@ -19,6 +19,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 REPO = "owner/repo"
@@ -103,12 +104,12 @@ def test_nothing_unreleased_plans_nothing(repo, plan):
     [
         (["fix: a"], "1.0.1"),
         (["security(x): a"], "1.0.1"),
-        (["fix: a", "feat: b"], "1.1.0"),
+        (["fix: a", "feat: b"], "1.0.1"),
         (["feat: a", "fix(x)!: b"], "2.0.0"),
         (["perf: a", "doctrine: b"], "1.0.1"),
     ],
 )
-def test_the_bump_follows_conventional_commits(repo, plan, subjects, expected):
+def test_only_breaking_markers_raise_the_default_product_bump(repo, plan, subjects, expected):
     for index, subject in enumerate(subjects):
         commit(repo, f"nora/f{index}.py", subject)
     assert plan.bump("1.0.0", plan.entries("v1.0.0")) == expected
@@ -151,7 +152,9 @@ def test_rendered_section_matches_the_one_release_please_wrote(plan):
 def test_the_pr_body_is_what_the_release_action_parses(repo, plan, tmp_path):
     commit(repo, "nora/f.py", "fix(x): repair a thing")
     out = tmp_path / "out"
-    assert plan.main(["--repo", REPO, "--out", str(out), "--today", "2026-02-03"]) == 0
+    assert plan.main([
+        "--repo", REPO, "--bump", "patch", "--out", str(out), "--today", "2026-02-03",
+    ]) == 0
     body = (out / "body.md").read_text()
     assert body.startswith(":robot: I have created a release *beep* *boop*\n---\n\n\n## [1.0.1](")
     assert re.search(
@@ -165,7 +168,9 @@ def test_the_pr_body_is_what_the_release_action_parses(repo, plan, tmp_path):
 
 def test_apply_moves_every_versioned_file_together(repo, plan, tmp_path):
     commit(repo, "nora/f.py", "feat: add a thing")
-    assert plan.main(["--repo", REPO, "--out", str(tmp_path / "o"), "--today", "2026-02-03"]) == 0
+    assert plan.main([
+        "--repo", REPO, "--bump", "minor", "--out", str(tmp_path / "o"), "--today", "2026-02-03",
+    ]) == 0
     assert json.loads((repo / ".release-please-manifest.json").read_text()) == {".": "1.1.0"}
     assert (repo / "nora/__init__.py").read_text() == '__version__ = "1.1.0"\n'
     assert 'version = "1.1.0"' in (repo / "pyproject.toml").read_text()
@@ -192,7 +197,7 @@ def test_git_credentials_are_set_before_the_first_remote_operation_in_the_plan_s
     helper fails on every push to master and no release PR is ever planned."""
     workflow = (ROOT / ".github/workflows/release-please.yml").read_text(encoding="utf-8")
     step = workflow[workflow.index("Open or update the release PR") :]
-    step = step[: step.index("- name: Queue the generated release PR")]
+    step = step[: step.index("- name: Report manual publication")]
     remote = [step.index(op) for op in ("git fetch", "git push") if op in step]
     assert remote, "the plan step no longer talks to the remote"
     assert step.index("gh auth setup-git") < min(remote)
@@ -206,3 +211,79 @@ def test_bot_commits_are_attributed_to_the_app_not_a_generic_noreply_account():
         assert "user.email 'noreply@users.noreply.github.com'" not in text, name
         assert '+${APP_SLUG}[bot]@users.noreply.github.com"' in text, name
         assert "RELEASE_APP_BOT_USER_ID" in text, name
+
+
+def test_manual_bump_is_required_before_any_versioned_file_is_written(repo, plan):
+    commit(repo, "nora/f.py", "fix: repair a thing")
+    before = run("status", "--porcelain")
+    with pytest.raises(SystemExit) as error:
+        plan.main(["--repo", REPO, "--out", str(repo / "out")])
+    assert error.value.code == 2
+    assert run("status", "--porcelain") == before
+    assert not (repo / "out").exists()
+
+
+def test_manual_bump_can_collect_fixes_into_a_larger_release(repo, plan):
+    commit(repo, "nora/f.py", "fix: repair a thing")
+    assert plan.main(["--repo", REPO, "--bump", "minor", "--out", str(repo / "out")]) == 0
+    assert json.loads((repo / ".release-please-manifest.json").read_text()) == {".": "1.1.0"}
+    assert '## [1.1.0]' in (repo / "CHANGELOG.md").read_text()
+
+
+def test_assessed_candidate_must_still_be_the_prepared_head(repo, plan):
+    assessed = commit(repo, "nora/f.py", "fix: repair a thing")
+    commit(repo, "nora/g.py", "feat: add a later capability")
+    with pytest.raises(ValueError, match="candidate changed"):
+        plan.main([
+            "--repo", REPO, "--bump", "minor", "--candidate", assessed,
+            "--out", str(repo / "out"),
+        ])
+    assert json.loads((repo / ".release-please-manifest.json").read_text()) == {".": "1.0.0"}
+    assert not (repo / "out").exists()
+
+    current = run("rev-parse", "HEAD").strip()
+    assert plan.main([
+        "--repo", REPO, "--bump", "minor", "--candidate", current,
+        "--out", str(repo / "out"),
+    ]) == 0
+    assert json.loads((repo / ".release-please-manifest.json").read_text()) == {".": "1.1.0"}
+
+
+def test_a_compatible_feature_can_ship_as_an_assessed_product_patch(repo, plan):
+    commit(repo, "app/existing-feature.ts", "feat(app): improve an existing capability")
+    assert plan.main(["--repo", REPO, "--bump", "patch", "--out", str(repo / "out")]) == 0
+    assert json.loads((repo / ".release-please-manifest.json").read_text()) == {".": "1.0.1"}
+    assert '## [1.0.1]' in (repo / "CHANGELOG.md").read_text()
+
+
+@pytest.mark.parametrize("subject", ["change!: remove a verb",
+                                     "change: remove a verb\n\nBREAKING CHANGE: the verb is gone"])
+@pytest.mark.parametrize("selected", ["patch", "minor"])
+def test_manual_bump_cannot_hide_a_declared_compatibility_change(repo, plan, subject, selected):
+    commit(repo, "nora/f.py", subject)
+    with pytest.raises(ValueError, match="below the"):
+        plan.main(["--repo", REPO, "--bump", selected, "--out", str(repo / "out")])
+    assert json.loads((repo / ".release-please-manifest.json").read_text()) == {".": "1.0.0"}
+    assert not (repo / "out").exists()
+
+
+def test_release_requires_manual_prepare_and_publish_without_auto_merge():
+    workflow = yaml.safe_load((ROOT / ".github/workflows/release-please.yml").read_text())
+    # PyYAML's YAML 1.1 loader reads GitHub's unquoted `on` key as True.
+    assert set(workflow[True]) == {"workflow_dispatch"}
+    inputs = workflow[True]["workflow_dispatch"]["inputs"]
+    assert inputs["action"]["options"] == ["prepare", "publish"]
+    assert inputs["bump"]["options"] == ["patch", "minor", "major"]
+    job = workflow["jobs"]["release-please"]
+    assert job["if"] == "github.ref == 'refs/heads/master'"
+    publish = next(
+        s for s in job["steps"]
+        if s.get("uses", "").startswith("googleapis/release-please-action@")
+    )
+    assert publish["if"] == "inputs.action == 'publish'"
+    prepare = next(s for s in job["steps"] if s.get("id") == "plan")
+    assert prepare["if"] == "inputs.action == 'prepare'"
+    assert '--bump "$RELEASE_BUMP"' in prepare["run"]
+    assert '--candidate "$RELEASE_CANDIDATE"' in prepare["run"]
+    assert '${RELEASE_CANDIDATE:?' in prepare["run"]
+    assert all("gh pr merge" not in s.get("run", "") for s in job["steps"])

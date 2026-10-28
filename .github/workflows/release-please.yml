@@ -1,12 +1,26 @@
-# Release metadata; release-images publishes deployments for the installed Komodo poller.
-# scripts/release_plan.py opens the release PR from git reachability (ADR 0025);
-# the release-please action only tags and publishes it once that PR is merged.
+# Manual preparation and publication; ordinary master pushes never release.
+# Publication still triggers release-images and the installed Komodo poller.
 name: release-please
 
 on:
-  push:
-    branches: [master]
   workflow_dispatch:
+    inputs:
+      action:
+        description: Prepare a release PR, or publish the manually merged release PR
+        required: true
+        type: choice
+        options: [prepare, publish]
+        default: prepare
+      bump:
+        description: Manual version bump for prepare (ignored by publish)
+        required: true
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      candidate:
+        description: Full assessed source SHA (required for prepare, ignored by publish)
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -17,39 +31,43 @@ concurrency:
 
 jobs:
   release-please:
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
       pull-requests: write
     steps:
+      - name: Require the repository release App
+        if: vars.RELEASE_APP_ID == ''
+        run: |
+          echo '::error::Configure the release App before preparing or publishing. See docs/maintainers/github.md.'
+          exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
       - name: Create a repository-scoped release token
-        if: vars.RELEASE_APP_ID != ''
         id: app
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           app-id: ${{ vars.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
           repositories: ${{ github.event.repository.name }}
-          permission-administration: read
           permission-contents: write
           permission-pull-requests: write
-      # Tag first: the plan below measures from the newest tag, so a release PR that
-      # just merged must be tagged before it is measured, or it would be planned twice.
+      # Only an explicit publish dispatch tags the merged release PR.
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        if: inputs.action == 'publish'
         id: release
         with:
-          token: ${{ steps.app.outputs.token || secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           skip-github-pull-request: true
       - name: Open or update the release PR from unreleased runtime changes
         id: plan
-        if: steps.app.outputs.token != ''
+        if: inputs.action == 'prepare'
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           GH_REPO: ${{ github.repository }}
@@ -57,13 +75,21 @@ jobs:
           PR_HEAD: release-please--branches--master--components--nora
           APP_SLUG: ${{ steps.app.outputs.app-slug }}
           APP_BOT_ID: ${{ vars.RELEASE_APP_BOT_USER_ID }}
+          RELEASE_BUMP: ${{ inputs.bump }}
+          RELEASE_CANDIDATE: ${{ inputs.candidate }}
         run: |
           set -euo pipefail
+          : "${RELEASE_CANDIDATE:?prepare requires the full assessed source SHA}"
           # checkout dropped its credentials (persist-credentials: false) and the repo is
           # private, so every git remote operation below needs the helper first.
           gh auth setup-git
           git fetch --tags --force origin
-          python3 -m scripts.release_plan --out "$RUNNER_TEMP/release" | tee "$RUNNER_TEMP/plan.txt" >> "$GITHUB_OUTPUT"
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/master)" || {
+            echo '::error::master advanced after dispatch; reassess and prepare again.'
+            exit 1
+          }
+          python3 -m scripts.release_plan --bump "$RELEASE_BUMP" --candidate "$RELEASE_CANDIDATE" --out "$RUNNER_TEMP/release" > "$RUNNER_TEMP/plan.txt"
+          cat "$RUNNER_TEMP/plan.txt" >> "$GITHUB_OUTPUT"
           grep -qx 'eligible=true' "$RUNNER_TEMP/plan.txt" || exit 0
           version=$(sed -n 's/^version=//p' "$RUNNER_TEMP/plan.txt")
           # The App's own bot identity, so GitHub links the commit to it. A generic
@@ -83,20 +109,6 @@ jobs:
               --title "$(cat "$RUNNER_TEMP/release/title.txt")" --body-file "$RUNNER_TEMP/release/body.md" | grep -oE '[0-9]+$')
           fi
           echo "pr=$number" >> "$GITHUB_OUTPUT"
-      - name: Queue the generated release PR for merge after required checks
-        if: steps.plan.outputs.pr != ''
-        env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_PR: ${{ steps.plan.outputs.pr }}
+      - name: Report manual publication
         run: |
-          # Refuse to merge unattended until the required-check policy exists.
-          gh api repos/"$GH_REPO"/rules/branches/master \
-            --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | index("checks") != null' | grep -qx true
-          sha=$(gh pr view "$RELEASE_PR" --json headRefOid --jq .headRefOid)
-          gh pr merge "$RELEASE_PR" --auto --merge --match-head-commit "$sha" \
-            --subject "merge: publish release (#$RELEASE_PR)" \
-            --body "Release metadata; required checks gate automatic publication."
-      - name: Report manual bootstrap requirement
-        if: vars.RELEASE_APP_ID == ''
-        run: echo '::notice::Install the free release GitHub App and configure public branch protection to enable unattended releases. See docs/maintainers/github.md.'
+          echo 'Preparation never merges. After reviewing and manually merging the release PR, dispatch action=publish to tag and publish it.'

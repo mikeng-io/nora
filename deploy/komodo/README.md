@@ -8,11 +8,12 @@ the first-install bootstrap below is not the normal production deploy procedure.
 
 ## Ownership and flow
 
-1. A fix PR merges to master. Release Please opens a release PR; while the
-   repository is private, the maintainer merges it manually, creating the stable
-   `vX.Y.Z` tag and GitHub Release. Its GitHub App token
-   triggers `Release images`; the `GITHUB_TOKEN` fallback cannot trigger that
-   follow-on workflow. Manual dispatch accepts an already-published stable tag
+1. A fix PR merges to master. Follow `nora-release`: explicitly dispatch prepare
+   with the assessed source and chosen bump, review and merge the metadata PR,
+   then dispatch publish separately. Merging alone creates no tag or Release.
+   The release App publishes the stable `vX.Y.Z` tag and GitHub Release, which
+   triggers `Release images`; missing App setup fails closed. Manual image
+   dispatch accepts an already-published stable tag
    from master. The release must contain this publisher implementation.
 2. Hosted AMD64 runners build all ten images named by the root Compose file:
    Nora, app, site, STT, voice sidecar/wake, Signal/WhatsApp/Instagram bridges,

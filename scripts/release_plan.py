@@ -1,4 +1,4 @@
-"""Plan the next release from the commits reachable from HEAD and not from the last tag.
+"""Prepare a manually selected release from commits reachable since the last tag.
 
 release-please walks history in committer-date order and stops at the last release
 commit, so a branch whose commits were written before that release and merged after
@@ -63,14 +63,21 @@ def entries(base: str, head: str = "HEAD") -> list[Entry]:
     return result
 
 
-def bump(current: str, found: list[Entry]) -> str:
+def bump(current: str, found: list[Entry], requested: str | None = None) -> str:
     match = SEMVER.match(current)
     if not match:
         raise ValueError(f"manifest version {current!r} is not X.Y.Z")
     major, minor, patch = (int(part) for part in match.groups())
-    if any(e.breaking for e in found):
+    # Product policy: a feat may improve an existing capability. Its label alone
+    # cannot require minor; the assessed explicit bump selects that milestone.
+    minimum = "major" if any(e.breaking for e in found) else "patch"
+    levels = ("patch", "minor", "major")
+    selected = requested or minimum
+    if levels.index(selected) < levels.index(minimum):
+        raise ValueError(f"{selected} bump is below the {minimum} required by unreleased commits")
+    if selected == "major":
         return f"{major + 1}.0.0"
-    if any(e.type == "feat" for e in found):
+    if selected == "minor":
         return f"{major}.{minor + 1}.0"
     return f"{major}.{minor}.{patch + 1}"
 
@@ -149,18 +156,28 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", ""))
     parser.add_argument(
+        "--bump", choices=("patch", "minor", "major"), required=True,
+        help="assessed product bump; cannot hide a declared breaking change",
+    )
+    parser.add_argument("--candidate", help="full commit SHA already assessed for this preparation")
+    parser.add_argument(
         "--out", type=Path, required=True, help="directory for title.txt and body.md"
     )
     parser.add_argument("--today", default=datetime.now(UTC).strftime("%Y-%m-%d"))
     args = parser.parse_args(argv)
     if not args.repo:
         raise SystemExit("release_plan: --repo or GITHUB_REPOSITORY is required")
+    if args.candidate and (
+        not re.fullmatch(r"[0-9a-f]{40}", args.candidate)
+        or git("rev-parse", "HEAD").strip() != args.candidate
+    ):
+        raise ValueError("release candidate changed or is not a full commit SHA; reassess first")
     previous = previous_release(ROOT)
     found = entries(f"v{previous}")
     if not found:
         print("eligible=false")
         return 0
-    version = bump(previous, found)
+    version = bump(previous, found, args.bump)
     section = render(previous, version, found, args.repo, args.today)
     apply(ROOT, previous, version, section)
     args.out.mkdir(parents=True, exist_ok=True)

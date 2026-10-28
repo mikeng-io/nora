@@ -1,128 +1,118 @@
 ---
 name: nora-release
-description: Cuts a Nora release the DEC-314 way. scripts/release_plan.py keeps one release PR from the Conventional Commits since the last tag; merging it tags vX.Y.Z and publishes the GitHub Release. Then read back Komodo deploy. Load for release, cut a version, tag, changelog, release PR, release-please, what version is live. Not for an ordinary deploy (nora-deploy).
+description: Prepares and publishes a Nora release with an explicit manual version bump. Use for a release PR, version bump, tag, changelog, publication or release assessment; ordinary master merges never release. Not for an ordinary deploy (nora-deploy).
 ---
 
-# nora-release
+# Nora releases: manual bumping
 
-`scripts/release_plan.py` opens the release PR (ADR 0027); release-please tags it. **Unless the `master` ruleset and the release App are in place, the
-maintainer merges it manually; auto-merge is not active.** Merging publishes the
-tag and GitHub Release. `release-images.yml` then publishes the complete image
-bundle to `deployments`; the enabled Komodo poller deploys it automatically.
-Read back publication and deployment separately. A release posts nothing to rooms.
-The startup upgrade note was retired along with `release-fragments/` and
-scripts/release.py.
+Formal releases have three explicit actions: prepare a version PR, review and
+merge it, then publish it. A maintainer or the specifically admitted daily
+automation may execute them. The `release-please` workflow is
+`workflow_dispatch` only. It never runs on a master push or auto-merges a PR.
+`release-please` remains the sole tag/GitHub Release publisher; no hand tags.
 
-Public-repository App/auto-merge setup is future activation guidance in
-`docs/maintainers/github.md`, not the current private-repository procedure.
+Publishing still triggers `release-images.yml`, which publishes a complete
+bundle to `deployments` for Komodo's enabled poller. A publish therefore reaches
+the existing automatic deployment path. The admitted daily automation has standing
+release/deployment authorization only when every criterion in assessment.md passes;
+other publication needs operator admission. Preparing or merging metadata deploys nothing.
+The daily agent may execute patch/minor releases. Every major release needs
+explicit owner approval bound to the candidate and version before preparation.
+Read publication and deployment back separately through `nora-deploy`.
 
-## 0. Where the release notes come from
+## 1. Assess the unreleased range and choose the bump
 
-The notes are the Conventional Commit subjects merged since the last `v*` tag
-(`.github/workflows/release-please.yml`, `release-please-config.json`). They
-are written at commit time, in `nora-land` step 4, never at release time.
-
-- Visible types open a release PR and get a CHANGELOG line: `feat` (minor),
-  `fix`, `security`, `perf`, `change`, `doctrine`, `revert` (patch). A `!` or
-  a `BREAKING CHANGE:` footer is major.
-- Hidden types (`docs`, `refactor`, `test`, `chore`, `merge`, …) never release
-  on their own. `merge:` subjects are not conventional types, so the branch
-  commits inside a merge are what count.
-- A subject is a line in a public changelog, so write it for a reader:
-  `fix(music): resume after a voice reconnect`, not `fix: stuff`.
-
-## 1. Read the release PR
+Read the latest stable tag, current master and any pending release PR:
 
 ```bash
-gh pr list --label "autorelease: pending" --json number,title,headRefName
-gh pr diff <N> | sed -n '/CHANGELOG.md/,/^diff --git a\/[^C]/p' | head -80
-gh run list --workflow release-please -L 3      # the run after the last master push
+git fetch origin --tags
+git describe --tags --first-parent --abbrev=0 --match 'v[0-9]*' origin/master
+gh pr list --label 'autorelease: pending' --json number,title,headRefName,headRefOid
+git log --no-merges --format='%h %s' <last-tag>..origin/master
 ```
 
-Check: one PR titled `chore(master): release X.Y.Z`. The version is the bump
-the commits imply, and the CHANGELOG lines describe what users will see.
+Review the complete still-unreleased range, not only the last day's merges.
+Decide whether the changes are useful and complete enough to release now.
+Waiting is valid; daily assessment does not imply daily publication.
 
-- **No PR**: no visible commit since the last tag, so there is nothing to
-  release. If a `feat`/`fix` did land, read the newest run's log. If it failed
-  creating the PR, the repo setting *Actions → General → Allow GitHub Actions
-  to create and approve pull requests* is off.
-- **Wrong version**: `Release-As:` footers are no longer read (ADR 0027). Fix the
-  commit subjects that drove the bump; the PR is rewritten on the next push.
-- **Wrong wording**: never edit the PR branch, because the next push to master
-  overwrites it. Edit the GitHub Release body after step 3
-  (`gh release edit vX.Y.Z --notes-file …`), or fix it in the next release's
-  commits.
+Choose `patch`, `minor` or `major` explicitly from the entire range. The operator's
+product policy defaults compatible maintenance, small features and improvements
+within an existing capability to patch. A complete new product capability or a
+new/deprecated documented supported integration API/CLI is minor. Internal UI
+controls and endpoints are not automatically public contracts. Removing supported
+config/CLI/API behavior is major and needs owner approval. Never hide a real break.
 
-## 2. Maintainer merges the release PR
+`scripts/release_plan.py` uses reachable user-visible runtime commits for the
+notes. Non-breaking changes default to patch, including `feat`; the assessed
+explicit choice selects minor when the product/contract boundary requires it.
+`!` or a `BREAKING CHANGE:` footer requires major and cannot be overridden down.
+Commit types group release notes, not product milestones. Hidden
+commit types and docs/design-only changes do not qualify on their own.
+Read commit bodies and the actual diff; a marker is not proof of compatibility.
 
-While private, the maintainer uses the manual path below after checks pass.
-After publication and App setup, `docs/maintainers/github.md` describes future
-auto-merge activation. Docs/design-only commits do not qualify for release;
-`scripts/release_scope.py` checks runtime paths and visible commit types since
-the latest release. Runtime doctrine/skills count.
+The daily automation follows [assessment.md](assessment.md): it measures hard
+gates and release-worth criteria, then executes prepare/checks/merge/publish when
+all pass. It is blocked until the implementation prerequisites land. An API or
+check failure is not permission to proceed. RC/nightly deployment remains
+unsupported; the current publisher accepts stable `vX.Y.Z` only.
+
+## 2. Prepare the release PR manually
+
+Run from the trusted default branch via GitHub Actions, not a local deploy host:
 
 ```bash
-gh pr view <N> --json headRefOid,mergeable,files --jq '.headRefOid, .mergeable, [.files[].path]'
-gh pr merge <N> --merge --match-head-commit <headRefOid> \
-  --subject "merge: release vX.Y.Z (#N)" --body "release-please's release PR for vX.Y.Z."
+gh workflow run release-please.yml --ref master -f action=prepare -f bump=minor -f candidate=<assessed-full-sha>
+gh run list --workflow release-please.yml -L 3 --json databaseId,status,conclusion,headSha
+gh pr list --label 'autorelease: pending' --json number,title,headRefName,headRefOid
 ```
 
-Check: the files are `CHANGELOG.md`, `.release-please-manifest.json`,
-`pyproject.toml`, `nora/__init__.py` and `uv.lock`, and nothing else.
-`--merge` only, never squash. Never `git tag` or push a `v*` tag by hand.
-Release-please makes the tag, and a hand tag splits the history it reads.
+Substitute the chosen bump and assessed source SHA. A changed candidate requires
+reassessment; the automation must always supply it. Check the dispatched run's own result, then read the
+PR: one `chore(master): release X.Y.Z`, with exactly `CHANGELOG.md`,
+`.release-please-manifest.json`, `pyproject.toml`, `nora/__init__.py` and `uv.lock`.
+The CHANGELOG must cover all eligible changes and identify any required migration.
+A successful prepare never merges, tags or publishes.
 
-## 3. Read back the tag and the Release
+The repository-scoped release App must be configured, including its bot user ID;
+see `docs/maintainers/github.md`. Missing setup is an error, never auto-release.
+No qualifying changes produces `eligible=false` and no new PR. A manifest/tag
+mismatch means a merged metadata PR may still need publication; do not overwrite
+or force a second version. `Release-As:` footers remain unsupported.
+
+## 3. Review and merge the metadata PR
 
 ```bash
-gh run list --workflow release-please -L 1 --json conclusion,headSha   # success, on the merge commit
-gh release view vX.Y.Z --json tagName,isDraft,targetCommitish,body | head -40
-git fetch --tags origin && git rev-list -n 1 vX.Y.Z                    # == the merge commit
+gh pr view <N> --json headRefOid,mergeable,files,statusCheckRollup
+gh pr diff <N>
+gh pr merge <N> --merge --match-head-commit <reviewed-head> \
+  --subject 'merge: prepare release vX.Y.Z (#N)' --body 'Manually selected release metadata; publication is a separate dispatch.'
+gh pr view <N> --json state,mergeCommit
 ```
 
-PASS: the run succeeded, the Release exists and is not a draft, and the tag
-is on the merge commit. A `No entries modified` warning in the run log means
-the `uv.lock` updater missed. Then `test_release_config_matches_the_repo.py`
-fails on master, so fix the jsonpath in its own PR.
+Require green checks on the reviewed head. Use a real merge, never squash,
+rebase or `--auto`. The release PR branch is generated; re-preparing may replace
+its contents, so re-read the head and checks before merging. Do not edit it by
+hand. A merged metadata PR is not yet a published release.
+If master moved since prepare, never use Update branch or merge master into this
+generated branch. Reassess the entire unreleased range and dispatch prepare again;
+review the regenerated changelog, source and checks before merging.
 
-## 4. Read back automatic deployment
+## 4. Publish explicitly, then read back
 
-Wait for `release-images.yml` to finish all images and commit `compose.json` and
-`release.json` to `deployments`. Production's enabled `nora-release-poll` checks
-every ten minutes with `DeployStackIfChanged` on `nora-releases`; manual native
-`DeployStack` is available when needed. The installed wrapper writes
-`release-deploy.json` after verified deployment. v6.5.0 used this path without
-host commands on 2026-10-21.
-
-Follow `nora-deploy` step 0 and compare the selected `deployments` manifest,
-production receipt, every owned service's image/health and live Nora stamp.
-A published tag alone does not prove deployment. Never rebuild the checkout in
-Komodo mode; doctrine and Dreamer are baked into the image.
-
-## Archive: pre-v6.0.0 first-release prerequisites
-
-Historical one-time bootstrap only; not steps for an installed release stack.
+Only after the daily criteria pass or separate operator release/deployment admission:
 
 ```bash
-gh api repos/mikeng-io/nora/actions/permissions/workflow   # can_approve_pull_request_reviews: true
-ssh nora-host "grep -n '^\[version\]' ~/workspace/nora/config.toml"   # must print nothing
+gh workflow run release-please.yml --ref master -f action=publish
+gh run list --workflow release-please.yml -L 3 --json databaseId,status,conclusion,headSha
+gh release view vX.Y.Z --json tagName,isDraft,targetCommitish,body
+git fetch origin --tags
+git rev-list -n 1 vX.Y.Z
 ```
 
-- If the setting is false, release-please cannot open its PR. Fix it under
-  *Settings → Actions → General → Allow GitHub Actions to create and approve
-  pull requests*.
-- If the live `config.toml` still has `[version]`, DEC-314's image refuses to
-  start, because the config is `extra="forbid"`. Remove the section through
-  the legacy `nora-deploy` reference step 5 BEFORE the recreate. The old image is fine without it.
-- Until `v6.0.0` is tagged, every build is unstamped. Merge the first release
-  PR before the next deploy.
+PASS: the publish run succeeded, the Release is not a draft, and the tag resolves
+to the metadata PR's merge commit. The publish action does not prepare another
+version PR. Follow `nora-deploy` to verify the image bundle, production receipt,
+running images and live stamp. A tag or green build alone proves no deployment.
 
-After v6.0.0, the one-time cleanup was to delete `release-as` from
-`release-please-config.json` in a PR; the version-pin test guarded that cleanup.
-
-## Never
-
-- Tag, push a tag, or publish a Release by hand, or from `nora-host`.
-- Add release notes anywhere but commit subjects. `docs/releases/V*.md` is the
-  archive of the old manual scheme, not a template.
-- Announce a release to a room. That feature is retired (DEC-314).
+Never announce a release to rooms, add release fragments, move a published tag,
+or publish from `nora-host`. Commit subjects remain the release-note source.
