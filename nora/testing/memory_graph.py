@@ -35,6 +35,10 @@ class FakeMemoryGraph:
     async def upsert_entity(self, entity: Entity) -> Entity:
         if entity.kind not in ENTITY_KINDS:
             raise ValueError("unknown entity kind")
+        held = self.entities.get(entity.key)
+        if held is not None and held.unit != entity.unit:
+            # An entity never changes unit; a second unit gets its own entity.
+            raise ValueError("an entity's unit is fixed")
         self.entities[entity.key] = entity
         return entity
 

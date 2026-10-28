@@ -6,6 +6,12 @@ shown to the session, never accepted from model output.
 `cites`, `supersedes`, `draws_on`, `disputes` and `feedback_on` stay
 `memory_edge` projections, written by code from the row's own citation columns
 (25 §2); each item writer writes them through the existing projector in its own write.
+
+The unit is the read boundary (DEC-231), so an entity belongs to exactly one
+unit and never moves. A person, room, unit or Nora pointer is therefore one
+entity PER UNIT: `pointer_entity` keys it `<unit>:<authored id>` and keeps the
+authored id in `attributes["ref"]`. One person in two units is two entities,
+and neither unit's graph can reach the other's.
 """
 
 from __future__ import annotations
@@ -172,6 +178,16 @@ class Entity:
     @property
     def key(self) -> Key:
         return self.kind, self.id
+
+
+POINTER_KINDS: frozenset[str] = frozenset({"person", "room", "unit", "nora"})
+
+
+def pointer_entity(kind: str, unit: str, ref: str, name: str) -> Entity:
+    """The unit's own pointer to an authored identity (identity.toml, policy.toml)."""
+    if kind not in POINTER_KINDS:
+        raise ValueError(f"{kind} is not a pointer kind")
+    return Entity(f"{unit}:{ref}", kind, unit, name, attributes={"ref": ref})
 
 
 @dataclass(frozen=True)
