@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.11.14](https://github.com/mikeng-io/nora/compare/v7.11.13...v7.11.14) (2026-10-28)
+
+
+### Maintenance
+
+* **tooling:** connect project agents to Blender MCP ([261bc0f](https://github.com/mikeng-io/nora/commit/261bc0fe9f0042bb5adb6ba9b4ebebbca27f708b))
+
 ## [7.11.13](https://github.com/mikeng-io/nora/compare/v7.11.12...v7.11.13) (2026-10-28)
 
 
