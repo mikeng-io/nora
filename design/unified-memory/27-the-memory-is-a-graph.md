@@ -238,6 +238,71 @@ and config (Authored, served whole), raw presence fixes (read through their
 episodes), and external file content (only the link,
 [external-files/00](../external-files/00-design.md)).
 
+## 6a. What this meets in the other bundles (2026-10-28)
+
+Four bundles written in the last ten days meet this graph. None of them is
+built, so each conflict is settled here, in design, before any of them ships.
+
+**Private DM ([private-dm](../private-dm/00-contract.md), proposed, not built).**
+The operator's rulings stand unchanged: one profile per person per unit, with
+no private profile (00 §1, 2026-10-21); a DM's raw history is private Record
+anchored to the person and their default unit (02 §1); only *curated*
+understanding is published into the unit (00, 03 §5); a DM may read every unit
+that lists its owner, and the laundering rule holds (06, 2026-10-25). In the
+graph that means:
+
+- **Per-unit pointers already fit:** a person is one entity per unit
+  (`pointer_entity`, §3), the shape 00 §1 rules. A DM's view of its owner is
+  **composed at read time**, one walk per unit that lists them, each through
+  06 §3's per-room predicate. No cross-unit profile or relation is ever
+  written: a stored one would be read back inside some unit, carrying one unit's understanding into another, which the laundering rule forbids.
+- **A private scope is needed, and is missing.** Step 1 comprehends DM items
+  like any item, but what it derives only from private DM evidence must be readable only by the owner's own DM and by the bound curation session that 02 §4 allows to read the private scope (an explicit internal unit-curation capability), under 03 §3's limits on what that session may write. `persons` cannot carry
+  that: it admits a relation wherever every person it names is listed, so a
+  fact about Rin from her DM would surface in any group room that lists her.
+  The DM build adds an explicit private scope to `relation` and `entity`
+  attributes (owner and DM scope id), filtered inside the scan like `unit`, and
+  the strictest-evidence rule (§3) makes anything citing private evidence
+  private. No DM data exists yet, so nothing migrates.
+- **Curated publication is step 2 or step 3, with 03 §5's check.** Curating DM understanding into the unit's profile (00, 02 §2) is now step 2
+  (profile lines) or step 3 (Notebook) writing a unit-scoped item whose
+  evidence is the curation decision, never the private item itself; private
+  evidence cannot make a unit-scoped relation, by §3's rule.
+
+**Standing ledger ([standing-ledger](../standing-ledger/00-intent.md), proposal).**
+Decisions, commitments and threads are already §6's nodes. Two points meet:
+
+- **Ledger links are code, not a writer's judgement.** Ledger entries carry
+  typed references: a commitment's `owed_to` and the citation its `Done as`
+  line must carry (20 §3, under 12-schemas' cited-line grammar), a thread's
+  `note_ids`, `decision_ids` and code-computed spans (20 §4). Their `about`, `fulfils` and `concerns` links are built by code from those fields and staged through `stage_and_admit` in the **notebook** layer, as §5 requires, with the rows the entry cites as their evidence: the judgement is the ledger writer's, already made when it cited them, and code only converts it. This keeps the tag-path op tool (the ledger's migration step 3, a reply-turn tool) from calling the graph itself.
+- **A turn record is a Record item** ([30](../standing-ledger/30-turn-records.md)):
+  `turn` joins the Record node kinds with the ledger's build, so a ledger line
+  citing `turn(...)` is walkable and a turn can be step 1 evidence like any
+  tool result she cited.
+
+**Personalisation ([personalisation](../personalisation/00-intent.md), proposal).**
+Its likes are "a read view of profile facts, traits and guesses", plus a new
+constraint reader with its own interval extraction over messages (10 §1). Both
+now read the graph:
+
+- **Likes** read the `likes` / `dislikes` relations step 1 writes, with their
+  evidence and speech act (stated / said by another / shown), and step 2's
+  traits and guesses; revealed preference reads `stayed_at`, `attended` and
+  play. The α/β scoring of 10 §1 and the decay of 10 §3 apply to those rows unchanged.
+- **Constraints and dated plans** read `plans`, `at`, and relations with
+  validity intervals. The separate constraint reader and its interval
+  extraction (10 §1, 60) are superseded by step 1: building them would read
+  every message a second time, against *interpret once*.
+- **Lessons** (40) are step 2's now, not the Lessons adaptor's; the rule that
+  the engine neither writes nor reads them is unchanged.
+
+**Room topology ([room-topology](../room-topology/00-intent.md)).** Addressing
+reads a room's culture; culture is now written by step 2 (§9) into the same
+store, so the reader is unchanged. No conflict.
+
+**Agent worker and computer unit scope:** no conflict. An agent-worker session becomes a turn-record occasion (its 50, step 6), so it reaches the graph as a `turn` node like any turn; computer-unit-scope already scopes the `session` nodes of §6 to the unit. No change to either.
+
 ## 7. One Cognition loop: comprehend, measure, serialize
 
 **Operator, 2026-10-28:** everything said and everything done keeps shaping
