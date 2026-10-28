@@ -136,3 +136,7 @@ def test_both_image_channels_share_pinned_tooling_source_and_publication_lane():
         assert '--channel "$CHANNEL" --version "$VERSION" --source "$SOURCE"' in runs
         assert 'python scripts/release_bundle.py' not in runs  # never revive source's old guards
         assert jobs[name]['permissions']['actions'] == 'read'
+        assert '--previous-ref "$PREVIOUS"' in runs
+        publication = next(step for step in steps if 'PREVIOUS' in step.get('env', {}))
+        assert publication['env']['PREVIOUS'] == (
+            '${{ fromJSON(needs.prepare.outputs.selection).previous }}')

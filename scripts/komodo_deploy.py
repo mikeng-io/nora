@@ -87,6 +87,33 @@ def expected_images(manifest: dict, *, site: bool) -> dict[str, str]:
     return {s: image for s, image in images.items() if s != 'site' or site}
 
 
+def reload_services(resolved: dict, images: dict, request: Path) -> list[str]:
+    """Only an explicit host-local request forces loaded-once file readers."""
+    if not request.exists():
+        return []
+    value = json.loads(request.read_text())
+    files = value['files']
+    if (set(value) != {'files'} or not isinstance(files, list) or not files
+            or not all(isinstance(f, str) for f in files)
+            or not set(files) <= {'config.toml', 'identity.toml', 'policy.toml'}):
+        raise ValueError('invalid scoped config reload request')
+    targets = {'/app/' + f for f in files}
+    readers = [name for name in images if any(
+        v['target'] in targets for v in resolved['services'][name].get('volumes', []))]
+    if not readers:
+        raise ValueError('reload request has no owned file readers')
+    return readers
+
+
+def reconcile_services(prefix: list[str], images: dict, reload: list[str]) -> None:
+    options = ['up', '-d', '--no-deps', '--no-build', '--pull', 'never']
+    # Native Compose hashes image + effective service config. Never force the
+    # normal cohort: unchanged containers must retain their identity.
+    run([*prefix, *options, *images], stage='recreate')
+    if reload:
+        run([*prefix, *options, '--force-recreate', *reload], stage='config-reload')
+
+
 def apply_release(prefix: list[str], manifest: dict, runtime: Path, project: str,
                   *, site: bool) -> None:
     """Under the shared lock, allow preflight retries but never repeat a failed recreation."""
@@ -108,6 +135,8 @@ def apply_release(prefix: list[str], manifest: dict, runtime: Path, project: str
         definition = resolved['services'][service]
         if definition['image'] != image or 'build' in definition:
             raise ValueError(f'{service}: Compose differs from pinned manifest')
+    request = Path(__file__).with_name('config-reload.json')
+    reload = reload_services(resolved, images, request)
     nora = resolved['services']['nora']
     if any(v['target'] in ('/app/nora/doctrine', '/app/nora/dreamer')
            for v in nora.get('volumes', [])):
@@ -139,9 +168,8 @@ def apply_release(prefix: list[str], manifest: dict, runtime: Path, project: str
                                      'version': manifest['version'], 'commit': manifest['commit']}))
     temporary.chmod(0o600)
     temporary.replace(marker)
-    print('RECREATE: owned service cohort; infrastructure excluded', flush=True)
-    run([*prefix, 'up', '-d', '--no-deps', '--no-build', '--pull', 'never',
-         '--force-recreate', *images], stage='recreate')
+    print('RECONCILE: owned services; explicit config reload if requested', flush=True)
+    reconcile_services(prefix, images, reload)
     spec = importlib.util.spec_from_file_location('verify_deploy',
                                                  Path(__file__).with_name('verify-deploy.py'))
     if spec is None or spec.loader is None:
@@ -162,6 +190,8 @@ def apply_release(prefix: list[str], manifest: dict, runtime: Path, project: str
     candidate = receipt.with_suffix('.tmp')
     candidate.write_text(json.dumps(manifest, indent=2) + '\n')
     candidate.replace(receipt)
+    if reload:
+        request.unlink()  # consumed only after the whole cohort and stamp are verified
     marker.unlink()  # only a fully verified transaction clears the outstanding attempt
     print(f'VERIFIED: deployed {manifest["version"]}; receipt recorded on host')
 

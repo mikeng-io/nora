@@ -30,7 +30,8 @@ runtime root, following [the procedure](../../../deploy/komodo/README.md). Check
 - Config/identity/policy edits retain backups, candidate validation and in-place
   copying. Hold the shared lock for file edits, then **release it before calling
   the native Stack**: its wrapper acquires the same lock and validates again.
-  Use manual `DeployStack` for recreation even when Git files have not changed.
+  Write the scoped file reload request below, then use manual `DeployStack` even
+  when Git files have not changed.
 - Rollback reverts the selecting commit on `deployments`, then uses the native
   Stack. This does not roll back database schema or host config (step 4).
 
@@ -74,8 +75,10 @@ proof of deployment; an identical-source rerun is refused without claiming succe
 
 The enabled `nora-release-poll` Procedure calls `DeployStackIfChanged` every ten
 minutes. Wait for it, or run native `DeployStack` on `nora-releases` manually.
-The installed wrapper holds the shared deploy lock, validates config, recreates
-and verifies the owned services, then writes `release-deploy.json`.
+The installed wrapper holds the shared deploy lock, validates config, reconciles
+changed services through native Compose and verifies the whole owned cohort, then
+writes `release-deploy.json`. A complete bundle can reuse proven unchanged adapter
+artifacts with their original provenance; Nora always rebuilds for its baked stamp.
 v6.5.0 completed this path without host commands on 2026-10-21.
 
 ## 2. Read back the selected release
@@ -97,9 +100,14 @@ Komodo mode; a host `git pull` does not update them.
 Hold `flock -o -E 75 -w 900 /tmp/nora-deploy.lock` while editing files. Back up
 first, edit a candidate copy, validate it through the running container, then
 copy it into place in situ (preserving the mount inode).
+While still locked, write mode-0600 `/etc/komodo/nora-deploy/config-reload.json`
+with `{"files":["config.toml"]}` (or `identity.toml` / `policy.toml`, combined when
+needed). It contains names only; no values or private hashes. See the
+[scoped reload procedure](../../../deploy/komodo/README.md#loaded-once-host-file-reload).
 Secrets stay in `.env`; never print them. Release the lock before manual native
-`DeployStack`: the wrapper reacquires it and validates again. Use `DeployStack`
-even with unchanged Git files so loaded-once config reaches recreated processes.
+`DeployStack`: the wrapper reacquires it, validates again and force-recreates only
+owned readers of the requested files. Without the request unchanged containers
+retain their IDs and loaded-once state. The request clears only after verified success.
 On failure restore the backup under the lock, then use native Stack recovery
 and repeat receipt, image, health and process-config readback.
 
