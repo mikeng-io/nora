@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.11.6](https://github.com/mikeng-io/nora/compare/v7.11.5...v7.11.6) (2026-10-28)
+
+
+### Maintenance
+
+* **memory:** push the graph preview into comprehension ([8de3ec5](https://github.com/mikeng-io/nora/commit/8de3ec598608fe6bb8c1d3eadf9ecc43e1ac8675))
+
 ## [7.11.5](https://github.com/mikeng-io/nora/compare/v7.11.4...v7.11.5) (2026-10-28)
 
 
