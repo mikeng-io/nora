@@ -143,6 +143,8 @@ HISTORY_TABLES: dict[str, tuple[str, ...]] = {
 #: `tool_call_log.created_at` is `now()` at insert and is system time; the
 #: others gained `recorded_at` in `0068`.
 APPEND_ONLY: dict[str, str] = {
+    "comprehend_web_page": "recorded_at",
+    "comprehend_result": "recorded_at",
     "note_revision": "recorded_at",
     # ADR 0020 (0084_documents): a document's identity and one snapshot per revision,
     # neither ever updated; the current document is the highest revision.

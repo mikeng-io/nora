@@ -123,6 +123,7 @@ from nora.domain.culture import character_key, nora_character_key, unit_culture_
 from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.documents import DocumentStore, RoomKey
 from nora.domain.media_join import MediaJoin
+from nora.domain.memory_graph import MemoryGraph
 from nora.domain.memory_index import IndexState
 from nora.domain.ports import (
     BlobStore,
@@ -1285,6 +1286,7 @@ class Dependencies:
     # shutdown cancels the sessions in flight, once (`nora.app.cognition_wiring`).
     wake_evaluator: WakeEvaluator | None = None
     cognition_runner: CognitionSessionRunner | None = None
+    comprehend_runner: Any = None
     cognition_shutdown: CognitionShutdown | None = None
     # The sub-agent worker: `None` under `[subagent] enabled = false`, the
     # shipped default. The shutdown cancels the jobs in flight.
@@ -1444,6 +1446,7 @@ def _story_frames_embedded(
 
 async def build_dependencies(
     cfg: Config, *, clock: Callable[[], datetime] = wall_clock,
+    memory_graph: MemoryGraph | None = None,
 ) -> Dependencies:
     """Build the object graph from `cfg`.
 
@@ -3891,6 +3894,50 @@ async def build_dependencies(
     #: Skills injected per agenda kind (`AGENDA_SKILLS`: the Register skill).
     agenda_skills = cognition_agenda_skills(dreamer_instructions)
     cognition_runner: CognitionSessionRunner | None = None
+    comprehend_runner = None
+    graph_links = None
+    if cfg.memory.graph.enabled and cfg.memory.graph.comprehend.enabled:
+        if memory_graph is None:
+            raise StartupError("graph comprehension enabled without a MemoryGraph store")
+        from nora.app.comprehend_wiring import build_comprehend_runner
+        from nora.app.register_graph import RegisterGraphLinks
+        from nora.infra.sql.comprehend import SqlComprehendRecords
+
+        rooms_by_unit = {
+            u: [(c.platform, c.primary_id) for c in allowlist.conversations
+                if c.unit == u and c.primary_id] for u in unit_scopes()
+        }
+        graph_records = SqlComprehendRecords(engine, media_join=media_join, model_id=tier.model,
+            rooms_by_unit=rooms_by_unit,
+            persons_by_unit={u: {p for c in allowlist.conversations if c.unit == u
+                                for p in (c.persons or ())} for u in unit_scopes()},
+            social_off_ids=persons.social_off_ids(),
+            can_release_place=place_release(
+                rooms_of=lambda u: [(c.platform, c.primary_id, c.location)
+                    for c in allowlist.conversations if c.unit == u and c.primary_id],
+                room_view=lambda platform, conversation_id: Room(
+                    platform=platform, conversation_id=conversation_id,
+                    roster_source=rosters.get(platform), persons=persons,
+                    self_ids=registry.self_aliases()).members(),
+                circles=presence_circles, content_checks=content_checks))
+        graph_tools = RegistryToolSource(registry=tool_registry, store=audit,
+            persons=persons, honcho=memory, metrics=metrics, ai_peer=cfg.honcho.ai_peer,
+            scope_rooms=scope_home_rooms(allowlist), rosters=rosters,
+            self_ids=registry.self_aliases())
+        private_names = tuple({name for p in persons.by_person.values()
+            for name in (p.person_id, p.name, p.first_name, p.last_name, *p.aliases) if name}
+            | {value for (_, value) in persons.index}
+            | set(persons._instagram_handles.values()) | set(persons._instagram_usernames))
+        comprehend_runner = build_comprehend_runner(graph=memory_graph, records=graph_records,
+            sessions=SqlCognitionStore(engine), tools=graph_tools, models=models,
+            retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
+            metrics=metrics, cfg=cfg, private_names=private_names, model_id=tier.model,
+            model_route=cfg.llm.base_url, ai_peer=cfg.honcho.ai_peer, clock=clock,
+            rooms_by_person={(u, p): tuple(f"{c.platform}:{c.primary_id}"
+                for c in allowlist.conversations if c.unit == u and c.persons is not None
+                and p in c.persons and c.primary_id)
+                for u in unit_scopes() for p in persons.by_person})
+        graph_links = RegisterGraphLinks(graph=memory_graph, records=graph_records, metrics=metrics)
     #: The units a session can run for (a home room each); only they are woken.
     cognition_session_units: Collection[str] | None = None
     cognition_upcoming: Callable[[str, int], Awaitable[Sequence[tuple[str, str]]]] | None = None
@@ -4657,7 +4704,7 @@ async def build_dependencies(
                     store=SqlCognitionStore(engine), stimulus_store=stimulus_store,
                     note_titles=_note_titles, open_events_in=_open_events,
                     notes=note_store, events=events, standing=standing_store,
-                    memos=memo_store,
+                    memos=memo_store, graph_links=graph_links,
                     reminders=reminders, ai_peer=cfg.honcho.ai_peer,
                     reminder_caps=reminder_caps,
                     room_proactive=lambda platform, conversation_id: allowlist.proactive_allowed(
@@ -4783,7 +4830,7 @@ async def build_dependencies(
         voice_hub=voice_hub,
         voice_event_consumer=voice_event_consumer,
         wake_evaluator=wake_evaluator,
-        cognition_runner=cognition_runner,
+        cognition_runner=cognition_runner, comprehend_runner=comprehend_runner,
         cognition_shutdown=cognition_shutdown,
         subagent_backend=subagent_backend,
         wake_tick_seconds=cfg.cognition.tick_seconds,

@@ -85,6 +85,7 @@ async def enqueue(
 
 async def source_rows(
     conn: AsyncConnection, ids: list[int], *, include_reply: bool = False,
+    as_of_ms: int | None = None,
 ) -> list[dict[str, Any]]:
     if not ids:
         return []
@@ -115,6 +116,7 @@ async def source_rows(
                     sa.select(MESSAGE_EDIT)
                     .where(
                         MESSAGE_EDIT.c.message_id == row["id"],
+                        *([MESSAGE_EDIT.c.ts <= as_of_ms] if as_of_ms is not None else []),
                     )
                     .order_by(MESSAGE_EDIT.c.id.desc())
                     .limit(1)
@@ -127,7 +129,8 @@ async def source_rows(
             {
                 "id": row["id"],
                 "person_id": row["person_id"],
-                "ts": row["ts"],
+                "ts": edit["ts"] if edit is not None and as_of_ms is not None else row["ts"],
+                **({"quoted_origin_ts": row["ts"]} if as_of_ms is not None else {}),
                 "body": edit["body"] if edit else row["body"],
                 "mentions": json.loads(
                     (edit["mention_persons_json"] if edit else row["mention_persons_json"]) or "[]"
@@ -143,7 +146,7 @@ async def source_rows(
 def link_replies(messages: list[dict[str, Any]], context: list[dict[str, Any]]) -> None:
     targets: dict[int, list[int]] = {}
     for row in messages + context:
-        targets.setdefault(row["ts"], []).append(row["id"])
+        targets.setdefault(row.get("quoted_origin_ts", row["ts"]), []).append(row["id"])
     for row in messages:
         matches = targets.get(row["quoted_ts"], [])
         row["reply_to"] = matches[0] if len(matches) == 1 else None
@@ -452,18 +455,10 @@ class SqlExtraction:
                     .values(outcome="superseded", finished_at=sa.func.now())
                 )
                 return 0
-            for ordinal, content in enumerate(claims):
-                await conn.execute(
-                    sa.insert(CLAIM).values(
-                        extraction_id=job["id"],
-                        ordinal=ordinal,
-                        unit=job["unit"],
-                        platform=job["platform"],
-                        origin_room=job["origin_room"],
-                        source_ids=content["source_ids"],
-                        content=content,
-                    )
-                )
+            await write_claims(
+                conn, extraction_id=job["id"], unit=job["unit"],
+                platform=job["platform"], origin_room=job["origin_room"], claims=claims,
+            )
             await conn.execute(
                 sa.update(EXTRACTION)
                 .where(EXTRACTION.c.id == job["id"])
@@ -530,3 +525,22 @@ class SqlExtraction:
                 .values(extraction_id=None)
             )
             return True
+
+
+async def write_claims(
+    conn: AsyncConnection, *, extraction_id: int, unit: str,
+    platform: str, origin_room: str, claims: list[dict[str, Any]],
+) -> None:
+    """The shared Record claim writer, after the caller's span/admission checks."""
+    for ordinal, content in enumerate(claims):
+        message_ids = content["source_ids"]
+        if "source_keys" in content:
+            # Step one's numeric span-check slots can name attachments/social
+            # rows. Only real message ids enter the message invalidation column.
+            message_ids = [int(key[1]) for slot in content["source_ids"]
+                           if (key := content["source_keys"].get(str(slot)))
+                           and key[0] == "message"]
+        await conn.execute(sa.insert(CLAIM).values(
+            extraction_id=extraction_id, ordinal=ordinal, unit=unit, platform=platform,
+            origin_room=origin_room, source_ids=message_ids, content=content,
+        ))

@@ -90,6 +90,18 @@ _SHARED: dict[str, str] = {
 #: field's meaning («`n` is the message id to cite in `message_ids`») is an
 #: annotation, not part of the description.
 BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
+    _t("graph_preview", "Code-selected graph neighbours and resolution candidates. "
+       "Layers distinguish what was said, computed and judged; evidence counts are not proof. "
+       "created is the entity insertion time, not the event time; unavailable metadata "
+       "was not supplied by the graph. more=available means some rows were omitted."),
+    _t("comprehend_item", "The complete arrival and its shown source snapshots. "
+       "now is this item's evidence time, including during historical replay. Numeric reading "
+       "source slots map to source keys. Their ts is that version's assertion time; "
+       "quoted_origin_ts only identifies the original reply target. "
+       "Reply context is not a new claim."),
+    _t("reshape_graph", "One entity's committed graph at the item's evidence time. "
+       "Current relations ground shadow traits, guesses, culture or lessons; notebook "
+       "judgements are not raw evidence."),
     _t("trait_check", "a proposed trait being independently checked, not established truth. "
        "Its reasoning mode, evidence interval and qualifications are part of the claim.",
        of="the scoped subject whose recurring pattern is proposed"),

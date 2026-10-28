@@ -501,6 +501,7 @@ def build_cognition_runner(
     budget: Any,
     result_caps: Mapping[str, int],
     memos: Any = None,
+    graph_links: Any = None,
 ) -> Any:
     """The session runner. Imported lazily: `LiveCognitionAgentRunner` (and
     with it Strands) is loaded only when a session will actually run."""
@@ -560,7 +561,7 @@ def build_cognition_runner(
         tag_trace_store=tag_trace_store,
         store=store, stimulus_store=stimulus_store,
         notes=notes, events=events, standing=standing, reminders=reminders,
-        ai_peer=ai_peer, memos=memos,
+        ai_peer=ai_peer, memos=memos, graph_links=graph_links,
         agent_runner=agent_runner, home_rooms=home_rooms,
         read_tools_for=read_tools_for(tools, names=surface.wired),
         read_only_tools=surface.wired,

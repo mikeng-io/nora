@@ -69,7 +69,7 @@ from typing import Any, Literal, Protocol
 
 from nora.agent import cognition_pace as pace
 from nora.agent.dream_screen import offence
-from nora.agent.fetch_watch import Fetched, watch_reads
+from nora.agent.fetch_watch import Fetched, graph_sources_in_prompt, watch_reads
 from nora.app.proactive_screen import CANCELLED_NOTE_RETIRED
 from nora.domain.cognition_ground import Grounding, RecordItem, rollup_status
 from nora.domain.cognition_pace import (
@@ -116,6 +116,7 @@ from nora.domain.memo import (
     screened_parts,
     title_carries_value,
 )
+from nora.domain.memory_graph import Key, Source
 from nora.domain.note_body import (
     NORA_NAMES,
     NoteBodyError,
@@ -416,6 +417,7 @@ class _RunState:
     #: The line of the prompt that says which room(s) the read tools resolve
     #: through (`_build_tools`).
     reads_note: str = ""
+    graph_sources: dict[Key, Source] = field(default_factory=dict)
 
 
 _room_key = room_key
@@ -610,6 +612,7 @@ class CognitionSessionRunner:
         reminders: Any = None, ai_peer: str = "nora", memos: Any = None,
         content_checks: bool = True,
         tag_trace_store: Any = None,
+        graph_links: Any = None,
     ) -> None:
         """`doctrine_source`, when given, is read at the start of EVERY session
         and replaces `doctrine_text`/`doctrine_sha256` (which then serve only
@@ -660,6 +663,7 @@ class CognitionSessionRunner:
         are what a context overflow is PROVEN against (DEC-244): without a
         known window no overflow is ever the agenda's, and every one is
         `infra`."""
+        self._graph_links = graph_links
         self._content_checks = content_checks
         self._tag_trace_store = tag_trace_store
         check_home_rooms(units, home_rooms)
@@ -1078,6 +1082,8 @@ class CognitionSessionRunner:
             last_session_ms=situation.last_session_ms, tz=self._tz,
             budget=self._render_budget,
         )
+        if self._graph_links is not None:
+            state.graph_sources = graph_sources_in_prompt(prompt, unit=unit)
         token = SESSION_TOKENS.set(spend)
         result: CognitionRunResult | None = None
         trace_outcome = "llm_error"
@@ -1409,6 +1415,13 @@ class CognitionSessionRunner:
                 turn_handles=frozenset(fetched.turn_handles),
             )
 
+        def graph_sources(platform: str, conversation_id: str) -> dict[Key, Source]:
+            sources = dict(state.graph_sources)
+            for n, text in state.fetched.of(f"{platform}:{conversation_id}").message_texts.items():
+                source = Source(("message", str(n)), "record", unit, text=text)
+                sources[source.key] = source
+            return sources
+
         def wrote(
             platform: str, conversation_id: str, item: int | None, **ok: object,
         ) -> dict[str, object]:
@@ -1554,6 +1567,11 @@ class CognitionSessionRunner:
                     )
                 except ValueError as exc:
                     return _refused("invalid_note", str(exc))
+            if self._graph_links is not None:
+                await self._graph_links.follow(kind="note", ref=note.id, unit=unit,
+                    session_id=state.session_id, body=parsed.text, at=now_utc(self._now_ms()),
+                    shown_sources=graph_sources(platform, conversation_id),
+                    version=note.head_revision_id)
             return wrote(platform, conversation_id, item, note_id=note.id)
 
         async def note_update(
@@ -1606,6 +1624,10 @@ class CognitionSessionRunner:
                 return _STALE_NOTE
             except ValueError as exc:
                 return _refused("invalid_revision", str(exc))
+            if self._graph_links is not None:
+                await self._graph_links.follow(kind="note", ref=note_id, unit=unit,
+                    session_id=state.session_id, body=body, at=now_utc(self._now_ms()),
+                    shown_sources=graph_sources(platform, conversation_id), version=revision.id)
             return wrote(platform, conversation_id, item, revision_id=revision.id)
 
         async def note_retire(
@@ -1857,6 +1879,10 @@ class CognitionSessionRunner:
                     established_by=established_by, model=self._model_id,
                     now_ms=self._now_ms(),
                 )
+            if self._graph_links is not None:
+                await self._graph_links.follow(kind="memo", ref=str(memo.id), unit=unit,
+                    session_id=state.session_id, body=parsed.text, at=now_utc(self._now_ms()),
+                    shown_sources=graph_sources(platform, conversation_id), version=memo.head.id)
             return wrote(platform, conversation_id, item, memo_id=memo.id,
                          revision_id=memo.head.id)
 
@@ -1930,6 +1956,10 @@ class CognitionSessionRunner:
                     )
                 except MemoWithdrawnError:
                     return _refused("withdrawn", "that memo was withdrawn; nothing moves it now")
+            if self._graph_links is not None:
+                await self._graph_links.follow(kind="memo", ref=str(memo_id), unit=unit,
+                    session_id=state.session_id, body=body, at=now_utc(self._now_ms()),
+                    shown_sources=graph_sources(platform, conversation_id), version=revision.id)
             return wrote(platform, conversation_id, item, revision_id=revision.id)
 
         async def memo_withdraw(
@@ -2083,6 +2113,10 @@ class CognitionSessionRunner:
                 )
             except (InvalidEventFieldModeError, ValueError) as exc:
                 return _refused("invalid_event", str(exc))
+            if self._graph_links is not None:
+                await self._graph_links.follow(kind="event_entry", ref=str(event.id), unit=unit,
+                    session_id=state.session_id, body=title, at=now_utc(self._now_ms()),
+                    shown_sources=graph_sources(platform, conversation_id), version=repr(event))
             return wrote(platform, conversation_id, item, id=str(event.id))
 
         async def _event_write(
@@ -2104,6 +2138,10 @@ class CognitionSessionRunner:
                 )
             except (InvalidEventFieldModeError, ValueError) as exc:
                 return _refused("invalid_event", f"{verb}: {exc}")
+            if self._graph_links is not None:
+                await self._graph_links.follow(kind="event_entry", ref=str(event.id), unit=unit,
+                    session_id=state.session_id, body=event.title, at=now_utc(self._now_ms()),
+                    shown_sources=graph_sources(platform, conversation_id), version=repr(event))
             return wrote(
                 platform, conversation_id, item, id=str(event.id),
                 head_revision_id=str(event.head_revision_id),
