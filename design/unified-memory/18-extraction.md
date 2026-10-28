@@ -13,7 +13,7 @@ edges:
 
 # Extraction
 
-> 2026-10-28 (proposed): superseded by [27](27-the-memory-is-a-graph.md). A single text-only pass per batch is replaced by a bounded research loop that also reads images, video, links and social items, writes entities and evidence-backed relations, and enriches from the web; one time-ordered backfill replaces the readings below. The Q1 switch gate and the source-tied lifecycle carry over.
+> 2026-10-28 (ratified): superseded by [27](27-the-memory-is-a-graph.md). A single text-only pass per batch is replaced by a bounded research loop that also reads images, video, links and social items, writes entities and evidence-backed relations, and enriches from the web; one time-ordered backfill replaces the readings below. The Q1 switch gate and the source-tied lifecycle carry over.
 
 > 2026-10-21 (operator): the decisions below are settled design, not an implementation or switch receipt. Q1–Q5 are decided below. New text follows [ADR 0026](../../docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md): Notebook rows are judgements, Character is the tier, one row is an entry, and its parts are profile, traits and hypotheses. “Persona” is retired as vocabulary; existing code names stay in backticks.
 

@@ -15,7 +15,7 @@ edges:
 
 # The memory is a graph
 
-Status: **proposed**, 2026-10-28. Docs only: no schema, verb, tool or
+Status: **ratified** by the operator, 2026-10-28 (all five decisions in §16). Docs only: no schema, verb, tool or
 migration lands with this node. It supersedes [18](18-extraction.md)'s
 single-pass text reading, and amends [25](25-memory-graph.md) §1, §2 and §5,
 [15](15-memory-map.md) and [40](40-prior-art.md) §5, which carry dated
@@ -292,6 +292,49 @@ past 5 attempts (`failed`, re-queued by an operator command, as now).
 **Model:** the production runtime model (DeepSeek V4.1 Flash via OmniRoute).
 V4 Pro remains a judge only.
 
+## 7a. Who writes each relation, and when
+
+Three writers, one per layer, and no relation has two:
+
+| layer | writer | when | decides by |
+|---|---|---|---|
+| record | code: the store's own `project(kind, id)` (25 §7) | in the same `begin()` as the row's write | columns: a message's room and author, a link's message, a reply's parent. No judgement. |
+| rollup | code: the Rollup's `apply` and the mobility writes | each Rollup tick, as an episode opens or closes | the episode row: a stay's place and interval, a co-location's two people |
+| notebook | the research loop (§7) | per work item, on arrival; and when a work item's input hash changes (§10) | the model proposes, code admits (§7 step 6) |
+
+Register rows with an explicit link column (a reminder's event entry, an
+RSVP's event) are record-layer and projected by code. What a note or memo is
+*about* is a judgement and goes through the loop. Character writers read
+relations and write lines (§9); they never write a relation.
+
+**When an entity is created.** Only as the end of a relation the same write
+admits, with evidence. A name mentioned once with nothing said about it is a
+reading, not an entity. So the graph never holds an orphan entity, and "what
+to create" reduces to "what relation does this item support".
+
+**How an entity is resolved (§7 step 4).** Code proposes candidates and the
+model picks:
+
+1. **Candidates are code.** Same kind, same unit scope, matched by exact
+   alias, then trigram on name and aliases, then place proximity for places
+   (the existing place hubs), then an event's date window and venue for
+   events. At most 5 candidates are rendered, each with its attributes and its
+   three strongest relations.
+2. **The model returns** one of: a candidate's id, `new`, or `same_as` between
+   two candidates, with the evidence for the choice.
+3. **Code admits it:** a `new` whose name exactly matches a candidate's alias
+   is refused as a duplicate. A person is never `new`; a person entity is a
+   pointer to `identity.toml` (§3), and an unmapped name stays a reading.
+
+**When a relation changes.** A later item never edits an earlier relation.
+Its session sees the open relations in step 3, so a `plans` plus a later stay
+at the venue yields a new `attended` with both as evidence, and a contradiction
+closes `valid_to` or supersedes (§4). One change has no new item: an event
+past its window with only `plans` becomes `unconfirmed`. That is code, a sweep
+on the Rollup tick, not a model call.
+
+`# ponytail: candidate matching is alias + trigram + place/date; an embedding match joins only if the spike's wrong-merge rate (§11) misses its gate`
+
 ## 8. Enrichment and its limits
 
 **A fetched page is a Record item.** `web_page`: URL, fetch time, content
@@ -506,6 +549,8 @@ measured between them.
    The loop reads only what the social stream already polled and perceived;
    opening a story from a shared link in the loop is that rule's case and
    stays refused unless the operator changes it.
+
+**Ratified (operator, 2026-10-28):** yes to all five, as recommended.
 
 ## The reading that would reopen it
 

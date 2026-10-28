@@ -51,7 +51,7 @@ does not need a new topology. It needs three changes to that one:
 
 ## Three rules the index keeps
 
-> 2026-10-28 (proposed, [27](27-the-memory-is-a-graph.md)): three stores join the map — `entity` (people, places, events, works, organisations), `relation` (typed, bi-temporal, layered record / rollup / notebook) and `relation_evidence` — and a fetched web page becomes a Record item. Notebook relations are never evidence. See [27](27-the-memory-is-a-graph.md#6-every-store-is-a-node).
+> 2026-10-28 (ratified, [27](27-the-memory-is-a-graph.md)): three stores join the map — `entity` (people, places, events, works, organisations), `relation` (typed, bi-temporal, layered record / rollup / notebook) and `relation_evidence` — and a fetched web page becomes a Record item. Notebook relations are never evidence. See [27](27-the-memory-is-a-graph.md#6-every-store-is-a-node).
 
 - **Visibility is the source's, evaluated at read time.** An index row copies
   its source's unit, origin room and `exclude_persons` (cognition-loop/05
