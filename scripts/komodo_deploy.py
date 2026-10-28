@@ -65,10 +65,16 @@ def compose_prefix(command: list[str]) -> tuple[list[str], str]:
 
 
 def expected_images(manifest: dict, *, site: bool) -> dict[str, str]:
-    if not re.fullmatch(r'v\d+\.\d+\.\d+', manifest['version']):
-        raise ValueError('invalid stable release')
+    number = r'(?:0|[1-9][0-9]*)'
+    version = re.fullmatch(rf'v{number}\.{number}\.{number}(?:-[1-9][0-9]*-g([0-9a-f]{{7,40}}))?',
+                           manifest['version'])
+    channel = manifest.get('channel', 'release')  # existing stable manifests remain valid
+    if version is None or channel not in ('release', 'master'):
+        raise ValueError('invalid deployment version or channel')
     if not re.fullmatch(r'[0-9a-f]{40}', manifest['commit']):
         raise ValueError('invalid source commit')
+    if version[1] and (channel != 'master' or not manifest['commit'].startswith(version[1])):
+        raise ValueError('snapshot stamp differs from master source')
     images = manifest['services']
     if set(images) != set(COHORT):
         raise ValueError('release service set differs from installed ownership')

@@ -93,8 +93,12 @@ Normal master pushes still have no release authority.
 
 Publishing still triggers the complete release image bundle and Komodo poller;
 use operator deployment admission or the qualified daily automation's standing
-authorization. This change does not add RC/nightly support
-to the stable-only publisher or a second deployment mechanism.
+authorization. The additional owner-only [Deploy master entry](../../deploy/komodo/README.md#manual-deploy-master)
+uses the same complete-bundle publisher and installed Komodo route without a formal
+release. It stays default-off behind `MASTER_DEPLOY_ENABLED` until the reviewed
+installed wrapper supports and verifies snapshot stamps. The daily agent has no
+admission to that entry; master pushes do not build or deploy. No RC/nightly channel
+or second deployment mechanism is introduced.
 
 ### Daily Devin release automation
 

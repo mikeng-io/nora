@@ -490,6 +490,13 @@ candidate and version. Publication and verified deployment remain separate state
 The daily agent evaluates and
 executes the release pipeline; it is not advisory-only.
 
+The owner may additionally dispatch **Deploy master** in `release-images.yml`
+without a formal release. It pins current master, requires trusted CI on that
+source and publishes the same complete bundle; master pushes never build or deploy.
+Keep `MASTER_DEPLOY_ENABLED` default-off until the reviewed installed wrapper
+outside the fetched clone is updated and verified (`nora-deploy`). The daily
+agent has no admission to this entry. Formal release authority above is unchanged.
+
 ## Adding or changing a tool
 
 Load **`nora-tool`** before editing: ADR 0015, naming, result shape and before/after routing numbers in the PR.

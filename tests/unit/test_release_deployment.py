@@ -3,6 +3,10 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import json
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -145,7 +149,10 @@ def test_older_release_cannot_replace_newer_desired_state(tmp_path, monkeypatch)
     import json
 
     bundle = load('release_bundle')
-    (tmp_path / 'release.json').write_text(json.dumps({'version': 'v6.3.1', 'commit': 'b' * 40}))
+    _, manifest = bundle.render(source(), images(bundle), 'v6.3.1', 'b' * 40)
+    (tmp_path / 'release.json').write_text(json.dumps(manifest))
+    _, previous = bundle.render(source(), images(bundle), 'v6.4.0', 'c' * 40)
+    previous.pop('channel')  # manifests published by the installed stable publisher
     calls = []
 
     def api(repo, path, body=None):
@@ -153,7 +160,7 @@ def test_older_release_cannot_replace_newer_desired_state(tmp_path, monkeypatch)
         if path == 'git/matching-refs/heads/deployments':
             return [{'ref': 'refs/heads/deployments', 'object': {'sha': 'c' * 40}}]
         if path.startswith('contents/release.json?ref='):
-            return {'content': base64.b64encode(b'{"version":"v6.4.0"}').decode()}
+            return {'content': base64.b64encode(json.dumps(previous).encode()).decode()}
         raise AssertionError('must not create or promote older Git objects')
 
     monkeypatch.setattr(bundle, 'api', api)
@@ -289,7 +296,7 @@ def release_runtime(tmp_path, monkeypatch):
         elif command[2] == 'config':
             stage, stdout = 'compose-config', json.dumps(compose).encode()
         elif command[2] == 'exec':
-            stage, stdout = 'stamp-readback', json.dumps(manifest).encode()
+            stage, stdout = 'stamp-readback', json.dumps(fault.get('stamp', manifest)).encode()
         else:
             stage, stdout = {'pull': 'pull', 'up': 'recreate'}[command[2]], b''
         calls.append(stage)
@@ -455,3 +462,433 @@ def test_native_procedure_is_disabled_until_explicit_cutover():
     assert procedure['schedule_enabled'] is False
     assert procedure['stage'][0]['executions'] == [
         {'execution': {'type': 'DeployStackIfChanged', 'params': {'stack': 'nora-releases'}}}]
+
+
+@pytest.fixture
+def publisher_source(tmp_path, monkeypatch):
+    """Real source history/stamps; API responses distinguish trusted request shapes."""
+    bundle = load('release_bundle')
+    repo = tmp_path / 'source'
+    (repo / 'scripts').mkdir(parents=True)
+    (repo / 'nora').mkdir()
+    shutil.copy(ROOT / 'docker-compose.yml', repo)
+    shutil.copy(ROOT / 'scripts/gen_version_manifest.py', repo / 'scripts')
+
+    def git(*args):
+        return subprocess.check_output(['git', *args], cwd=repo, text=True).strip()  # noqa: S603
+
+    git('init', '-q', '-b', 'master')
+    for key, value in [('core.hooksPath', '/dev/null'), ('user.name', 'Test'),
+                       ('user.email', 'test@example.invalid'), ('commit.gpgsign', 'false'),
+                       ('tag.gpgsign', 'false')]:
+        git('config', key, value)
+    git('add', '.')
+    git('commit', '-qm', 'chore: generated release source')
+    git('tag', 'v7.11.0')
+    released = git('rev-parse', 'HEAD')
+    git('commit', '--allow-empty', '-qm', 'fix: generated master change')
+    current = git('rev-parse', 'HEAD')
+    git('update-ref', 'refs/remotes/origin/master', current)
+    state = {'current': current, 'released': released, 'calls': [], 'ci': {
+        'head_sha': current, 'head_branch': 'master', 'event': 'push',
+        'path': '.github/workflows/ci.yml', 'repository': {'full_name': 'mikeng-io/nora'},
+        'head_repository': {'full_name': 'mikeng-io/nora'},
+        'status': 'completed', 'conclusion': 'success'}}
+
+    def api(repository, path, body=None):
+        assert repository == 'mikeng-io/nora' and body is None
+        state['calls'].append(path)
+        if path == '':
+            return {'default_branch': state.get('default_branch', 'master')}
+        if path == 'git/ref/heads/master':
+            return {'object': {'sha': state['current']}}
+        if path == 'releases/tags/v7.11.0':
+            return {'draft': False, 'prerelease': False, 'tag_name': 'v7.11.0'}
+        if path.startswith('actions/workflows/ci.yml/runs?'):
+            assert path == ('actions/workflows/ci.yml/runs?branch=master&event=push'
+                            f'&head_sha={state["current"]}&per_page=1')
+            if state.get('ci_unavailable'):
+                raise RuntimeError('CI API unavailable')
+            runs = [] if state.get('ci_missing') else [state['ci']]
+            return {'total_count': len(runs), 'workflow_runs': runs}
+        raise AssertionError(f'unexpected API operation: {path}')
+
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(bundle, 'api', api)
+    for key, value in {'GITHUB_REPOSITORY': 'mikeng-io/nora',
+                       'GITHUB_EVENT_NAME': 'workflow_dispatch',
+                       'GITHUB_REF': 'refs/heads/master', 'GITHUB_SHA': current,
+                       'GITHUB_ACTOR': 'mikeng-io', 'GITHUB_TRIGGERING_ACTOR': 'mikeng-io',
+                       'MASTER_DEPLOY_ENABLED': 'true'}.items():
+        monkeypatch.setenv(key, value)
+    return bundle, state, git
+
+
+def test_master_selection_pins_once_and_survives_later_master_advance(publisher_source):
+    bundle, state, git = publisher_source
+    selected = bundle.select('mikeng-io/nora', 'master', '', state['current'])
+    assert selected == {'commit': state['current'], 'version': git('describe', '--tags'),
+                        'channel': 'master', 'matrix': list(bundle.BUILDS)}
+    git('commit', '--allow-empty', '-qm', 'fix: later generated change')
+    git('update-ref', 'refs/remotes/origin/master', git('rev-parse', 'HEAD'))
+    git('checkout', '--detach', selected['commit'])
+    assert bundle.validate_source('mikeng-io/nora', 'master', selected['version'],
+                                  selected['commit']) == selected['commit']
+    assert state['calls'].count('git/ref/heads/master') == 1
+    assert not any(path.startswith('releases/') for path in state['calls'])
+
+
+@pytest.mark.parametrize(('key', 'value'), [
+    ('MASTER_DEPLOY_ENABLED', ''), ('MASTER_DEPLOY_ENABLED', 'false'),
+    ('GITHUB_EVENT_NAME', 'push'), ('GITHUB_REF', 'refs/heads/other'),
+    ('GITHUB_REPOSITORY', 'example/fork'), ('GITHUB_ACTOR', 'release-app[bot]'),
+    ('GITHUB_TRIGGERING_ACTOR', 'daily-agent[bot]'), ('GITHUB_SHA', 'a' * 40),
+])
+def test_master_selection_requires_enabled_owner_default_branch_dispatch(
+        publisher_source, monkeypatch, key, value):
+    bundle, _, _ = publisher_source
+    monkeypatch.setenv(key, value)
+    with pytest.raises(ValueError, match=r'dispatch|source'):
+        bundle.select('mikeng-io/nora', 'master', '', '')
+
+
+@pytest.mark.parametrize('fault', ['candidate', 'checkout', 'default-branch'])
+def test_stale_or_non_master_selection_is_refused(publisher_source, fault):
+    bundle, state, git = publisher_source
+    candidate = state['released'] if fault == 'candidate' else ''
+    if fault == 'checkout':
+        git('checkout', '--detach', state['released'])
+    if fault == 'default-branch':
+        state['default_branch'] = 'other'
+    with pytest.raises(ValueError, match=r'source|default branch'):
+        bundle.select('mikeng-io/nora', 'master', '', candidate)
+
+
+@pytest.mark.parametrize('fault', ['checkout', 'stamp', 'ancestry'])
+def test_master_jobs_revalidate_the_pinned_checkout_stamp_and_ancestry(publisher_source, fault):
+    bundle, state, git = publisher_source
+    commit, version = state['current'], git('describe', '--tags')
+    if fault == 'checkout':
+        git('checkout', '--detach', state['released'])
+    elif fault == 'stamp':
+        version = 'v7.11.0'
+    else:
+        git('checkout', '-b', 'other', state['released'])
+        git('commit', '--allow-empty', '-qm', 'fix: generated other branch')
+        commit, version = git('rev-parse', 'HEAD'), git('describe', '--tags')
+    with pytest.raises((ValueError, subprocess.CalledProcessError)):
+        bundle.validate_source('mikeng-io/nora', 'master', version, commit)
+
+
+@pytest.mark.parametrize('fault', ['missing', 'pending', 'failed', 'unavailable',
+                                  'foreign', 'wrong-source', 'wrong-workflow', 'pr-event'])
+def test_master_build_requires_successful_trusted_exact_source_ci(
+        publisher_source, monkeypatch, fault):
+    bundle, state, git = publisher_source
+    if fault in ('missing', 'unavailable'):
+        state[f'ci_{fault}'] = True
+    else:
+        changes = {'pending': {'status': 'in_progress', 'conclusion': None},
+                   'failed': {'conclusion': 'failure'},
+                   'foreign': {'head_repository': {'full_name': 'example/fork'}},
+                   'wrong-source': {'head_sha': state['released']},
+                   'wrong-workflow': {'path': '.github/workflows/other.yml'},
+                   'pr-event': {'event': 'pull_request'}}
+        state['ci'].update(changes[fault])
+    built = []
+    real_execute = subprocess.run
+
+    def execute(command, **kwargs):
+        if command[:3] != ['docker', 'buildx', 'build']:
+            return real_execute(command, **kwargs)
+        # A falsified admission guard must never contact a registry during its proof.
+        built.append(command)
+        Path(command[command.index('--metadata-file') + 1]).write_text(
+            json.dumps({'containerimage.digest': 'sha256:' + 'a' * 64}))
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(subprocess, 'run', execute)
+    monkeypatch.setattr(sys, 'argv', ['release_bundle.py', 'build', '--channel', 'master',
+                                   '--version', git('describe', '--tags'),
+                                   '--source', state['current'], '--image', 'app'])
+    with pytest.raises((ValueError, RuntimeError), match='CI'):
+        bundle.main()
+    assert built == []
+    assert not Path('release-output').exists()  # validation precedes any build/receipt
+
+
+@pytest.mark.parametrize('channel', ['release', 'master', 'master-at-tag'])
+def test_complete_image_build_uses_selected_source_version_and_channel(
+        publisher_source, monkeypatch, channel):
+    bundle, state, git = publisher_source
+    if channel != 'master':
+        git('checkout', '--detach', state['released'])
+        state['current'] = state['released']
+        state['ci']['head_sha'] = state['released']
+        git('update-ref', 'refs/remotes/origin/master', state['released'])
+        monkeypatch.setenv('GITHUB_SHA', state['released'])
+    selected = bundle.select('mikeng-io/nora', channel.split('-')[0],
+                             'v7.11.0' if channel == 'release' else '', '')
+    real_execute, real_run = subprocess.run, bundle.run
+    built, prepared = [], []
+
+    def run(*command):
+        if command == ('bash', 'deploy/signal-cli/fetch.sh'):
+            prepared.append('signal-cli')
+            return ''
+        return real_run(*command)
+
+    def execute(command, **kwargs):
+        if command[:3] != ['docker', 'buildx', 'build']:
+            return real_execute(command, **kwargs)
+        built.append(command)
+        metadata = Path(command[command.index('--metadata-file') + 1])
+        metadata.write_text(json.dumps({'containerimage.digest': 'sha256:' + 'a' * 64}))
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(bundle, 'run', run)
+    monkeypatch.setattr(subprocess, 'run', execute)
+    args = ['--channel', selected['channel'], '--version', selected['version'],
+            '--source', selected['commit']]
+    for name in bundle.BUILDS:
+        monkeypatch.setattr(sys, 'argv', ['release_bundle.py', 'build', *args, '--image', name])
+        bundle.main()
+        receipt = json.loads(Path(f'release-output/{name}.json').read_text())
+        assert (receipt['name'], receipt['version'], receipt['commit'], receipt['channel']) == (
+            name, selected['version'], selected['commit'], selected['channel'])
+        identity = selected['version'] if channel == 'release' else f'sha-{selected["commit"]}'
+        assert built[-1][built[-1].index('-t') + 1] == f'{bundle.REGISTRY}{name}:{identity}'
+        assert f'org.opencontainers.image.revision={selected["commit"]}' in built[-1]
+        assert f'org.opencontainers.image.version={selected["version"]}' in built[-1]
+    assert prepared == ['signal-cli'] and len(built) == 10
+    stamp = json.loads(Path('nora/version.json').read_text())
+    assert (stamp['version'], stamp['commit']) == (selected['version'], selected['commit'])
+    monkeypatch.setattr(sys, 'argv', ['release_bundle.py', 'bundle', *args])
+    bundle.main()
+    manifest = json.loads(Path('release-output/release.json').read_text())
+    assert manifest['channel'] == selected['channel']
+    assert load('komodo_deploy').expected_images(manifest, site=True) == manifest['services']
+
+
+@pytest.mark.parametrize('fault', ['missing', 'name', 'commit', 'version', 'channel', 'image'])
+def test_bundle_refuses_receipts_outside_the_complete_selected_cohort(tmp_path, fault):
+    bundle = load('release_bundle')
+    for name, image in images(bundle).items():
+        receipt = {'name': name, 'image': image, 'commit': 'b' * 40,
+                   'version': 'v7.11.0-2-gbbbbbbb', 'channel': 'master'}
+        if name == 'app':
+            if fault == 'missing':
+                continue
+            receipt[fault] = 'wrong'
+        (tmp_path / f'{name}.json').write_text(json.dumps(receipt))
+    with pytest.raises((ValueError, FileNotFoundError)):
+        bundle.bundle(tmp_path, 'v7.11.0-2-gbbbbbbb', 'b' * 40, 'master')
+
+
+@pytest.mark.parametrize('filename', ['release.json', 'compose.json'])
+def test_promotion_refuses_a_bundle_changed_after_receipt_validation(
+        publisher_source, monkeypatch, filename):
+    bundle, state, git = publisher_source
+    directory = Path('release-output')
+    directory.mkdir()
+    version = git('describe', '--tags')
+    for name, image in images(bundle).items():
+        (directory / f'{name}.json').write_text(json.dumps({
+            'name': name, 'image': image, 'commit': state['current'],
+            'version': version, 'channel': 'master'}))
+    args = ['--channel', 'master', '--source', state['current'], '--version', version]
+    monkeypatch.setattr(sys, 'argv', ['release_bundle.py', 'bundle', *args])
+    bundle.main()
+    path = directory / filename
+    changed = json.loads(path.read_text())
+    changed['unexpected'] = 'altered bundle'
+    path.write_text(json.dumps(changed))
+    monkeypatch.setattr(sys, 'argv', ['release_bundle.py', 'promote', *args])
+    with pytest.raises(ValueError, match='promotion bundle'):
+        bundle.main()
+    assert 'git/matching-refs/heads/deployments' not in state['calls']
+
+
+@pytest.fixture
+def publication(tmp_path, monkeypatch):
+    """Git-data API fake with separate compare/create/CAS/readback operations."""
+    import base64
+
+    bundle = load('release_bundle')
+    compose, candidate = bundle.render(source(), images(bundle), 'v7.11.0', 'a' * 40)
+    _, previous = bundle.render(source(), images(bundle), 'v7.11.0-2-gbbbbbbb',
+                                 'b' * 40, 'master')
+    (tmp_path / 'compose.json').write_text(json.dumps(compose))
+    (tmp_path / 'release.json').write_text(json.dumps(candidate))
+    state = {'head': 'c' * 40, 'previous': previous, 'candidate': candidate,
+             'comparison': 'behind', 'calls': [], 'writes': []}
+
+    def api(repo, path, body=None):
+        assert repo == 'mikeng-io/nora'
+        state['calls'].append(path)
+        if path == 'git/matching-refs/heads/deployments':
+            return [{'ref': 'refs/heads/deployments', 'object': {'sha': state['head']}}]
+        if path.startswith('contents/release.json?ref='):
+            ref = path.split('ref=')[1]
+            assert ref in ('c' * 40, 'e' * 40)
+            manifest = state['previous'] if ref == 'c' * 40 else state['candidate']
+            if ref == 'e' * 40 and state.get('wrong_readback'):
+                manifest = dict(manifest, commit='f' * 40)
+            return {'content': base64.b64encode(json.dumps(manifest).encode()).decode()}
+        if path.startswith('compare/'):
+            assert path == f'compare/{state["previous"]["commit"]}...{candidate["commit"]}'
+            if state.get('unavailable'):
+                raise RuntimeError('comparison API unavailable')
+            status = ('identical' if state['previous']['commit'] == candidate['commit']
+                      else state['comparison'])
+            merge_base = (state['previous']['commit'] if status in ('ahead', 'identical')
+                          else candidate['commit'] if status == 'behind' else 'f' * 40)
+            return {'status': status,
+                    'base_commit': {'sha': state['previous']['commit']},
+                    'merge_base_commit': {'sha': merge_base}}
+        if path == 'git/trees' and body:
+            assert {item['path'] for item in body['tree']} == {'compose.json', 'release.json'}
+            state['writes'].append('tree')
+            return {'sha': 'd' * 40}
+        if path == 'git/commits' and body:
+            assert body['parents'] == ['c' * 40] and body['tree'] == 'd' * 40
+            state['writes'].append('commit')
+            return {'sha': 'e' * 40}
+        if path == 'git/ref/heads/deployments':
+            return {'object': {'sha': state['head']}}
+        raise AssertionError(f'unexpected Git API operation: {path}')
+
+    def execute(command, *, input, text, check, capture_output):
+        assert command == ['gh', 'api', 'repos/mikeng-io/nora/git/refs/heads/deployments',
+                           '--method', 'PATCH', '--input', '-']
+        assert json.loads(input) == {'sha': 'e' * 40, 'force': False}
+        if state.get('race'):
+            raise subprocess.CalledProcessError(1, command, stderr='not a fast forward')
+        state['head'] = 'e' * 40
+        state['previous'] = copy.deepcopy(candidate)
+        state['writes'].append('ref')
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(bundle, 'api', api)
+    monkeypatch.setattr(subprocess, 'run', execute)
+    return bundle, state, tmp_path
+
+
+@pytest.mark.parametrize('comparison', ['behind', 'diverged', 'identical'])
+def test_delayed_release_cannot_replace_selected_master_source(publication, comparison):
+    bundle, state, directory = publication
+    state['comparison'] = comparison
+    if comparison == 'identical':
+        state['candidate']['commit'] = state['previous']['commit']
+        (directory / 'release.json').write_text(json.dumps(state['candidate']))
+    with pytest.raises(ValueError, match='source'):
+        bundle.promote('mikeng-io/nora', directory)
+    assert state['writes'] == [] and state['head'] == 'c' * 40
+
+
+def test_delayed_master_cannot_replace_newer_selected_release(publication):
+    bundle, state, directory = publication
+    state['previous'] = dict(state['previous'], version='v7.11.0', channel='release')
+    state['candidate'].update(version='v7.11.0-1-gaaaaaaa', channel='master')
+    (directory / 'release.json').write_text(json.dumps(state['candidate']))
+    with pytest.raises(ValueError, match='source'):
+        bundle.promote('mikeng-io/nora', directory)
+    assert state['writes'] == []
+
+
+@pytest.mark.parametrize('direction', ['release-to-master', 'master-to-release'])
+def test_forward_publication_reads_back_complete_selection_without_claiming_deploy(
+        publication, capsys, direction):
+    bundle, state, directory = publication
+    if direction == 'release-to-master':
+        state['previous'] = dict(state['previous'], version='v7.11.0', channel='release')
+        state['candidate'].update(version='v7.11.0-3-gaaaaaaa', channel='master')
+    else:
+        state['candidate'].update(version='v7.12.0')
+    (directory / 'release.json').write_text(json.dumps(state['candidate']))
+    state['comparison'] = 'ahead'
+    bundle.promote('mikeng-io/nora', directory)
+    assert state['writes'] == ['tree', 'commit', 'ref']
+    assert state['head'] == 'e' * 40
+    assert state['calls'][-1] == f'contents/release.json?ref={"e" * 40}'
+    assert 'actual deployment is unverified' in capsys.readouterr().out
+
+
+def test_identical_snapshot_rerun_refuses_without_a_deployment_claim(publication, capsys):
+    bundle, state, directory = publication
+    state['candidate'].update(version='v7.11.0-3-gaaaaaaa', channel='master')
+    (directory / 'release.json').write_text(json.dumps(state['candidate']))
+    state['comparison'] = 'ahead'
+    bundle.promote('mikeng-io/nora', directory)
+    capsys.readouterr()
+    writes = list(state['writes'])
+    with pytest.raises(ValueError, match='source'):
+        bundle.promote('mikeng-io/nora', directory)
+    assert state['writes'] == writes
+    assert capsys.readouterr().out == ''
+
+
+def test_publication_readback_mismatch_never_reports_success(publication, capsys):
+    bundle, state, directory = publication
+    state.update(comparison='ahead', wrong_readback=True)
+    with pytest.raises(ValueError, match='readback'):
+        bundle.promote('mikeng-io/nora', directory)
+    assert state['writes'] == ['tree', 'commit', 'ref']  # selected, but not verified
+    assert capsys.readouterr().out == ''
+
+
+@pytest.mark.parametrize('fault', ['missing-source', 'invalid-version', 'partial-cohort',
+                                  'unavailable', 'race'])
+def test_invalid_or_unavailable_previous_state_cannot_be_overwritten(publication, fault):
+    bundle, state, directory = publication
+    if fault == 'missing-source':
+        del state['previous']['commit']
+    elif fault == 'invalid-version':
+        state['previous']['version'] = 'untrusted'
+    elif fault == 'partial-cohort':
+        del state['previous']['services']['voice-wake']
+    else:
+        state[fault] = True
+        state['comparison'] = 'ahead'
+    with pytest.raises((ValueError, KeyError, RuntimeError, subprocess.CalledProcessError)):
+        bundle.promote('mikeng-io/nora', directory)
+    assert 'ref' not in state['writes'] and state['head'] == 'c' * 40
+
+
+@pytest.mark.parametrize('failure', ['config', 'stamp'])
+def test_snapshot_wrapper_retains_validation_failure_and_final_stamp_boundary(
+        release_runtime, tmp_path, failure):
+    wrapper, manifest, calls, fault = release_runtime
+    manifest.update(version='v7.11.0-2-gbbbbbbb', channel='master')
+    if failure == 'config':
+        fault['stage'] = 'config-validation'
+    else:
+        fault['stamp'] = dict(manifest, commit='a' * 40)
+    with pytest.raises(wrapper.CommandError if failure == 'config' else ValueError):
+        wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
+    assert not (tmp_path / 'release-deploy.json').exists()
+    if failure == 'config':
+        assert 'recreate' not in calls
+    else:
+        with pytest.raises(RuntimeError, match='blocked'):
+            wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
+        (tmp_path / 'release-attempt.json').unlink()  # explicit operator recovery in the fake
+    fault.clear()
+    wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
+    assert calls[-3:] == ['recreate', 'readback', 'stamp-readback']
+    assert json.loads((tmp_path / 'release-deploy.json').read_text()) == manifest
+    assert not (tmp_path / 'release-attempt.json').exists()
+
+
+@pytest.mark.parametrize(('version', 'channel', 'commit'), [
+    ('v7.11.0-2-gaaaaaaa', 'master', 'b' * 40),
+    ('v7.11.0-2-gbbbbbbb', 'release', 'b' * 40),
+    ('v7.11.0-2-gbbbbbbb', 'nightly', 'b' * 40),
+    ('v7.11.0-0-gbbbbbbb', 'master', 'b' * 40),
+])
+def test_wrapper_refuses_forged_or_unsupported_snapshot_identity(version, channel, commit):
+    bundle = load('release_bundle')
+    _, manifest = bundle.render(source(), images(bundle), 'v7.11.0', 'b' * 40)
+    manifest.update(version=version, channel=channel, commit=commit)
+    with pytest.raises(ValueError):
+        load('komodo_deploy').expected_images(manifest, site=False)

@@ -8,21 +8,26 @@ the first-install bootstrap below is not the normal production deploy procedure.
 
 ## Ownership and flow
 
-1. A fix PR merges to master. Release Please opens a release PR; while the
-   repository is private, the maintainer merges it manually, creating the stable
+1. A fix PR merges to master. The manual release process prepares a version PR;
+   after its reviewed merge, separate publication creates the stable
    `vX.Y.Z` tag and GitHub Release. Its GitHub App token
    triggers `Release images`; the `GITHUB_TOKEN` fallback cannot trigger that
    follow-on workflow. Manual dispatch accepts an already-published stable tag
-   from master. The release must contain this publisher implementation.
+   from master. The additional **Deploy master** dispatch below selects current
+   master without a release. Ordinary master pushes trigger neither image builds
+   nor deployment. Both entries use the same publisher and installed route.
 2. Hosted AMD64 runners build all ten images named by the root Compose file:
    Nora, app, site, STT, voice sidecar/wake, Signal/WhatsApp/Instagram bridges,
    and the alert bridge. Signal's signed tarball preparation is retained. The
-   Nora manifest must name the exact release commit and version. CI gets registry
+   Nora manifest must name the exact selected source and truthful version. CI gets registry
    publication permission, never deployment-host credentials.
 3. Only after every build succeeds, the publisher writes `compose.json` and
    `release.json` to the `deployments` branch in one Git commit. All owned images
-   are selected by digest. A delayed older release cannot replace a newer one;
-   concurrent branch updates must fast-forward. Partial image builds cannot
+   are selected by digest. Releases and snapshots share one publication lane.
+   Source ancestry prevents a delayed older/divergent build in either channel
+   replacing a newer selection; stable duplicate/older-version protection remains.
+   An identical source is refused, including on a rerun; this is no deployment receipt.
+   Concurrent branch updates must fast-forward. Partial image builds cannot
    promote partial state. Version tags are convenient labels, not deployment
    references. Failed/partial publication may leave unused registry images.
 4. A native Git-backed Komodo Stack owns fetching and Compose. A scheduled Procedure
@@ -44,6 +49,55 @@ The public `site` remains opt-in (`--site` in the installed wrapper command).
 Third-party database, object storage, embedder and monitoring images are excluded
 from automatic recreation; `--no-deps` prevents implicit upgrades. The separately
 managed computer service is outside this root Compose project.
+
+## Manual Deploy master
+
+This entry is **default-off**. Before enabling repository Actions variable
+`MASTER_DEPLOY_ENABLED=true`, the operator must update the reviewed installed
+`/etc/komodo/nora-deploy/komodo_deploy.py` under the existing shared deploy lock,
+preserving the receipt, outstanding attempt and private diagnostics. That script
+is outside the fetched Stack clone: merging or publishing does not update it.
+The old wrapper refuses snapshot versions. Read back the installed script against
+the reviewed bytes and, in a disposable project, verify snapshot acceptance,
+source/stamp mismatch refusal, candidate config validation and final receipt/stamp
+readback through the actual installed command. Keep the flag absent/false until
+that prerequisite is verified. `RELEASE_IMAGES_ENABLED` retains its existing
+independent control over formal release publication. No flag is enabled by merging.
+
+Only the repository owner may dispatch or rerun this entry on default branch master;
+both the original and triggering actor are checked. Daily release automation has
+no admission to this entry, including when using owner credentials. Its standing
+formal-release authority is unchanged.
+
+```bash
+gh workflow run release-images.yml --ref master -f target=master
+# Optionally bind a previously assessed current source; stale selection is refused:
+gh workflow run release-images.yml --ref master -f target=master -f candidate=<full-master-sha>
+# Existing published-tag rebuild (also the default target):
+gh workflow run release-images.yml --ref master -f target=release -f tag=v7.11.0
+```
+
+Preparation resolves the current full master SHA once and refuses a moved dispatch
+or mismatched assessed SHA. Successful repository `CI` from a master push on that
+exact SHA is required before builds, and checked again before building/promoting.
+Missing, pending, failed or unavailable CI stops publication. Every job uses that
+pinned source even if master advances later. Publisher tooling stays pinned to
+the workflow revision, so rebuilding an older source cannot restore old guards.
+
+The workflow summary records channel, source and `git describe` version, for example
+`v7.11.0-3-gabc1234`. Master images use `sha-<full-source-sha>` labels and immutable
+digests, leaving stable version image labels untouched. A source exactly at a tag
+retains that truthful version but still records `channel: master` and uses the SHA
+image label. This creates no tag, GitHub Release or version bump. Every image receipt
+must agree on source, version and channel before the complete cohort is promoted.
+
+Successful publication means `deployments` selects the bundle, verified by API
+readback. It does not mean the host deployed it. The installed ten-minute poller
+or an operator's native `DeployStack` applies it under the same wrapper/lock.
+Compare the selected bundle with the host receipt, every owned image and Nora's
+running version/source stamp before reporting deployment. Rollback uses the
+existing complete-bundle selection procedure below; a selection revert does not
+roll back database schema or host config.
 
 ## Runtime state and secret handling
 
@@ -191,7 +245,8 @@ Existing markers, including those written before preflight by an older wrapper,
 are never automatically cleared by installing the new wrapper: first establish
 whether recreation occurred and review running state. Never clear a marker
 concurrently with an attempt. The publisher refuses old
-versions; rollback is a separate operator-controlled promotion. When schemas are
+versions and non-forward source selections; rollback is a separate operator-controlled
+promotion. When schemas are
 incompatible, roll forward or use the tested database restore procedure. A failed
 rollback stays failed and must alert. Preserve the last successful receipt for
 comparison; it is not proof the previous version is still running after failure.
