@@ -3942,26 +3942,27 @@ async def build_dependencies(
                     # which is this adaptor's own key, because a Dreamer
                     # adaptor is handed `scopes()` (GLOSSARY.md). Built here, in
                     # one place, so they cannot disagree about which room a key
-                    # names.
-                    unit_for={
+                    # names. LIVE reads (`LiveMapping`): a room a policy reload
+                    # admits after boot resolves here too.
+                    unit_for=LiveMapping(lambda: {
                         conv.primary_id: conv.unit
                         for conv in allowlist.conversations
                         if conv.primary_id and conv.unit
-                    }.get,
+                    }).get,
                     # What the room is CALLED and what the operator says it IS
                     # (`Conversation.label` / `.description`), for the `<room>`
                     # block. A room with neither is simply absent from the map
                     # and the block falls back without ever rendering an id.
-                    label_for={
+                    label_for=LiveMapping(lambda: {
                         conv.primary_id: conv.label
                         for conv in allowlist.conversations
                         if conv.primary_id and conv.label
-                    }.get,
-                    description_for={
+                    }).get,
+                    description_for=LiveMapping(lambda: {
                         conv.primary_id: conv.description
                         for conv in allowlist.conversations
                         if conv.primary_id and conv.description
-                    }.get,
+                    }).get,
                     metrics=metrics,
                     # THE ROOM'S PLATFORM and A NAME RESOLVER,
                     # off the SAME allowlist read `label_for`/`description_for`
@@ -3969,11 +3970,11 @@ async def build_dependencies(
                     # other write path in this file already holds. This is
                     # what lets `inputs()` fill a mapped sender's canonical
                     # name into `<room_messages>` before it renders.
-                    platform_for={
+                    platform_for=LiveMapping(lambda: {
                         conv.primary_id: conv.platform
                         for conv in allowlist.conversations
                         if conv.primary_id
-                    }.get,
+                    }).get,
                     resolve_names=(
                         lambda rows, platform:
                             persons.name_transcript(rows, platform=platform)
@@ -4515,6 +4516,9 @@ async def build_dependencies(
                 list(unit_scopes()), homes,
             )
             cognition_session_units = LiveSet(lambda: frozenset(allowlist.home_rooms()))
+            # ponytail: boot-time snapshot; a live home_room edit moves
+            # `cognition_session_units` but not this gauge until restart
+            # (the apply path has no consumer hook to re-set it through).
             metrics.gauge(
                 "nora_cognition_session_units", float(len(cognition_wakeable)),
                 state="runnable",

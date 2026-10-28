@@ -26,5 +26,33 @@
     "old": "    return {unit: entry.workspace for unit, entry in units.items()}",
     "new": "    if set(units) - used:\n        raise PolicyError(\"unused unit\")\n    return {unit: entry.workspace for unit, entry in units.items()}",
     "target": "tests/integration/test_policy_reload.py::test_removing_the_last_room_keeps_its_declared_workspace_binding"
+  },
+  {
+    "name": "culture unit_for reads the live policy holder",
+    "file": "nora/app/composition.py",
+    "old": "                    unit_for=LiveMapping(lambda: {\n                        conv.primary_id: conv.unit\n                        for conv in allowlist.conversations\n                        if conv.primary_id and conv.unit\n                    }).get,",
+    "new": "                    unit_for={\n                        conv.primary_id: conv.unit\n                        for conv in allowlist.conversations\n                        if conv.primary_id and conv.unit\n                    }.get,",
+    "target": "tests/integration/test_policy_reload.py::test_the_culture_adaptor_resolves_a_hot_added_room"
+  },
+  {
+    "name": "culture label_for reads the live policy holder",
+    "file": "nora/app/composition.py",
+    "old": "                    label_for=LiveMapping(lambda: {\n                        conv.primary_id: conv.label\n                        for conv in allowlist.conversations\n                        if conv.primary_id and conv.label\n                    }).get,",
+    "new": "                    label_for={\n                        conv.primary_id: conv.label\n                        for conv in allowlist.conversations\n                        if conv.primary_id and conv.label\n                    }.get,",
+    "target": "tests/integration/test_policy_reload.py::test_the_culture_adaptor_resolves_a_hot_added_room"
+  },
+  {
+    "name": "culture description_for reads the live policy holder",
+    "file": "nora/app/composition.py",
+    "old": "                    description_for=LiveMapping(lambda: {\n                        conv.primary_id: conv.description\n                        for conv in allowlist.conversations\n                        if conv.primary_id and conv.description\n                    }).get,",
+    "new": "                    description_for={\n                        conv.primary_id: conv.description\n                        for conv in allowlist.conversations\n                        if conv.primary_id and conv.description\n                    }.get,",
+    "target": "tests/integration/test_policy_reload.py::test_the_culture_adaptor_resolves_a_hot_added_room"
+  },
+  {
+    "name": "culture platform_for reads the live policy holder",
+    "file": "nora/app/composition.py",
+    "old": "                    platform_for=LiveMapping(lambda: {\n                        conv.primary_id: conv.platform\n                        for conv in allowlist.conversations\n                        if conv.primary_id\n                    }).get,",
+    "new": "                    platform_for={\n                        conv.primary_id: conv.platform\n                        for conv in allowlist.conversations\n                        if conv.primary_id\n                    }.get,",
+    "target": "tests/integration/test_policy_reload.py::test_the_culture_adaptor_resolves_a_hot_added_room"
   }
 ]

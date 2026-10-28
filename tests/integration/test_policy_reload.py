@@ -62,6 +62,34 @@ async def test_policy_reload_admits_the_next_message_from_a_new_room(running, cf
     assert not running.config_reload.status()["policy"]["stale"]
 
 
+async def test_the_culture_adaptor_resolves_a_hot_added_room(cfg, monkeypatch):
+    """A room admitted by a policy reload resolves through the Culture
+    adaptor's policy lookups (`unit_for`/`label_for`/`description_for`/
+    `platform_for`), which read the live holder — a boot-frozen map returns
+    None for it."""
+    monkeypatch.setattr("nora.config_reload.POLL_SECONDS", 0.01)
+    deps = await build_dependencies(override_config(
+        cfg, {"dreamer.enabled": True, "culture.enabled": True},
+    ))
+    try:
+        culture = next(a for a in deps.dream_adaptors if a.name == "culture")
+        assert culture._unit_for("g2") is None  # positive control: not yet admitted
+        cfg.policy_file.write_text(
+            'default = "deny"\n' + room("g1", "First")
+            + '[[conversations]]\nplatform = "signal"\nid = "g2"\n'
+            'label = "Second"\ndescription = "the second room"\n'
+            'persons = "*"\nunit = "friends"\n'
+        )
+        await reloaded(deps, "policy.toml", "applied")  # positive control: poller ran
+        assert culture._unit_for("g2") == "friends"
+        assert culture._label_for("g2") == "Second"
+        assert culture._description_for("g2") == "the second room"
+        assert culture._platform_for("g2") == "signal"
+    finally:
+        await deps.background.cancel_all()
+        await deps.audit.aclose()
+
+
 @pytest.mark.parametrize("edit", ["malformed", "missing", "empty"])
 async def test_invalid_policy_keeps_the_last_applied_policy_and_counts_refused(running, cfg, edit):
     cfg.policy_file.write_text('default = "deny"\n' + room("g2", "Second"))
