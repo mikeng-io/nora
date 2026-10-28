@@ -93,6 +93,9 @@ Require green checks on the reviewed head. Use a real merge, never squash,
 rebase or `--auto`. The release PR branch is generated; re-preparing may replace
 its contents, so re-read the head and checks before merging. Do not edit it by
 hand. A merged metadata PR is not yet a published release.
+If master moved since prepare, never use Update branch or merge master into this
+generated branch. Reassess the entire unreleased range and dispatch prepare again;
+review the regenerated changelog, source and checks before merging.
 
 ## 4. Publish explicitly, then read back
 

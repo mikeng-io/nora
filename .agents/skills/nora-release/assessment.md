@@ -62,8 +62,10 @@ is an operator decision, not a decision the scheduled agent rewrites for itself.
   generated release PR. Its diff must contain only the five release metadata
   files; read the changelog for range coverage and breaking/migration details.
 - Require the release PR's actual required checks/review state to pass on its
-  exact head. Confirm its base still matches the assessed source. Merge only
-  that release metadata PR, with `--match-head-commit`, a real merge commit and
+  exact head. Confirm its base still matches the assessed source. If master moved,
+  reassess and prepare again; never use Update branch or merge master into the
+  generated branch to satisfy the up-to-date rule. Merge only that release
+  metadata PR, with `--match-head-commit`, a real merge commit and
   the authored subject. Never bypass checks or merge application/implementation PRs.
 - Read back the merge and dispatch publish. Release-please alone creates the
   formal tag/Release. Publication starts the existing image bundle and Komodo
