@@ -15,6 +15,8 @@ edges:
 
 > 2026-10-28 ([unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md#6a-what-this-meets-in-the-other-bundles-2026-10-28) §6a): likes now read the memory graph's `likes` / `dislikes` relations (with evidence and speech act) and step 2's traits and guesses; constraints and dated plans read `plans`, `at` and relation validity. The separate constraint reader and its interval extraction below are superseded by step 1 of the Cognition loop; the scoring and decay are unchanged.
 
+> 2026-10-29 ([notebook-memory-types/10](../notebook-memory-types/10-relations.md) §3, [unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md) §6b): a person's **interest** in a subject is the graph's `interested_in` relation to a `topic` entity, weighted by its own evidence counted by code; `likes` / `dislikes` are a preference for one specific work, place or event. Personalisation reads both from the graph, never a profile line stating an interest; a profile line adds only *how* someone engages, citing what shows it.
+
 **Likes are a read view, not another store or writer.** Personalisation reads
 per-person profiles: **facts**, **traits**, **guesses (unconfirmed)**, under
 [ADR 0029](../../docs/adr/0029-a-prompt-block-names-its-subject-and-author-by-id.md).
