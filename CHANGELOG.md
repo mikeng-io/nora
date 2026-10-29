@@ -1,5 +1,14 @@
 # Changelog
 
+## [7.11.22](https://github.com/mikeng-io/nora/compare/v7.11.21...v7.11.22) (2026-10-29)
+
+
+### Maintenance
+
+* **notebook:** amend turn records for the decision split ([94811be](https://github.com/mikeng-io/nora/commit/94811bebc1173ecb4bd65d557b47872ccceaf3be))
+* **notebook:** organise the Notebook by memory type, not tiers ([3fcd9ee](https://github.com/mikeng-io/nora/commit/3fcd9ee8180c49993abea675a3f8f913246715de))
+* **notebook:** record how the memory types relate to the profile ([f8b9ebd](https://github.com/mikeng-io/nora/commit/f8b9ebddd1d604ef8410e25c3a492e6f01f55291))
+
 ## [7.11.21](https://github.com/mikeng-io/nora/compare/v7.11.20...v7.11.21) (2026-10-29)
 
 
