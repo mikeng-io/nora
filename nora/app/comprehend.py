@@ -100,6 +100,13 @@ class ProfileProposal(Shape):
     evidence: list[list[str]] = Field(min_length=1)
 
 
+def _shape_errors(error: ValidationError, limit: int = 20) -> list[str]:
+    return [
+        ".".join(str(part) for part in e["loc"]) + ": " + e["msg"]
+        for e in error.errors(include_input=False, include_url=False)[:limit]
+    ]
+
+
 def _key(value: list[str]) -> Key:
     if len(value) != 2:
         raise ValueError("source key requires kind and id")
@@ -376,9 +383,11 @@ class ComprehendRunner:
                         "readings": readings,
                     }
                 )
-            except ValidationError:
+            except ValidationError as error:
                 await self._refuse(session, "write", "schema")
-                return {"status": "refused", "reason": "schema"}
+                # Where the shape is wrong, so the retry can fix it. Never the
+                # input values: they hold source text.
+                return {"status": "refused", "reason": "schema", "errors": _shape_errors(error)}
             return {"status": "ok"}
 
         with span("comprehend:model"):
