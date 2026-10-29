@@ -65,7 +65,10 @@ exception. The release App identity is verified against `RELEASE_APP_ID`.
 
 Issues use the Bug report, Feature request, freeform or design-anchored fields.
 Public reports need a descriptive title and the fields shown in their form. Incomplete issues receive
-one advisory bot comment, updated as needed and removed when corrected. The title
+`needs-info` and one bot comment listing corrections, updated as needed and
+removed together when corrected. The same validator checks CLI/API submissions,
+including unfilled prompts in required sections. This records format completeness,
+not evidence quality or permission to dispatch work. The title
 already supplies Area, so CLI/API users need not duplicate that field. Explicit
 uncertainty such as `#TBD` in decisions/dependencies remains valid. Issues are never
 automatically closed or locked by this check.
