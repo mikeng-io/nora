@@ -259,6 +259,9 @@ class AdmissionState:
                         return False
                     continue
                 node = self.indexed.get(key)
+                # ponytail: no `linked` here, so a person-narrowed walk can drop a
+                # relation SQL's `_narrowed` admits through a person edge. It only
+                # under-returns; pass the node's person links if that is measured.
                 if node is None or not in_scope(node, scope) or not narrowed(node, scope):
                     return False
                 # Evidence about a person only counts in a room that lists them.

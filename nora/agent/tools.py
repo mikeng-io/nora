@@ -1021,11 +1021,11 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # `dreamer:proactive` pass made up to 8. At 4 about 1 in 4 memory-using tag
     # turns would be cut short. A cap is a ceiling, not a reservation.
     #
-    # `level=2` (ADR 0015 §3): L1 plus one SHOULD (write `query` yourself).
-    # `kinds` is a Literal; every status's reading is in its result's `note`.
     "memory_read": NativeTool(8, source_tier="remembered", read_only=True,
         side_effect_state="none", idempotency="idempotent", retry="safe",
         output_contract="three_state", level=3),
+    # `level=2` (ADR 0015 §3): L1 plus one SHOULD (write `query` yourself).
+    # `kinds` is a Literal; every status's reading is in its result's `note`.
     "memory_search": NativeTool(8,
                                 source_tier="remembered", read_only=True,
                                 side_effect_state="none", idempotency="idempotent",
@@ -6679,7 +6679,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         context; returns a labelled subgraph.
 
         SHOULD: write the topic you need in query.
-        Returns `status`: ok, partial, nothing_found or unavailable with a note.
+        Returns `status`: ok, partial, nothing_found or unavailable with a note;
+        naming a person can also return not_found, or ambiguous (ask which one).
 
         Args:
             query: The topic or phrase to find.
