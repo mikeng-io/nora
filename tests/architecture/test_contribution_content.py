@@ -407,6 +407,8 @@ def test_private_release_bot_uses_the_pinned_user_identity(monkeypatch, case):
 def test_issue_field_constants_follow_the_existing_form_contract():
     import yaml
 
+    from scripts.triage_issue import named_areas
+
     for filename, expected in [
         ("freeform-gap.yml", content.FREEFORM),
         ("design-anchored.yml", ["Design anchor", "What it covers", *content.DESIGN]),
@@ -418,6 +420,11 @@ def test_issue_field_constants_follow_the_existing_form_contract():
             if field["type"] in {"input", "textarea"}
         ]
         assert actual == expected
+        options = next(field for field in form["body"] if field.get("id") == "area")["attributes"][
+            "options"
+        ]
+        for option in options:
+            assert bool(named_areas(option)) == (not option.startswith("other ("))
 
 
 def test_privileged_metadata_jobs_use_only_default_branch_code():
@@ -447,6 +454,13 @@ def test_privileged_metadata_jobs_use_only_default_branch_code():
         "contents": "read",
         "issues": "write",
     }
+    area_steps = [
+        step
+        for step in workflow["jobs"]["issue-feedback"]["steps"]
+        if step.get("run") == "python3 -m scripts.triage_issue"
+    ]
+    assert len(area_steps) == 1
+    assert area_steps[0]["env"]["GH_TOKEN"] == "${{ github.token }}"  # noqa: S105 -- workflow expression
 
 
 def test_unclosed_html_comment_cannot_hide_required_sections():

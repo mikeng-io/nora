@@ -15,7 +15,7 @@ body:
     id: area
     attributes:
       label: Area
-      description: Which subsystem owns this gap? (Anchors the title prefix and grep — it is recorded in the body, it is not a label.)
+      description: Which subsystem owns this gap? Recorded in the body and mapped to existing area labels.
       options:
         - agent (tag turn / tools / agent loop)
         - participation (ambient / proactive / decision log)
