@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.11.37](https://github.com/mikeng-io/nora/compare/v7.11.36...v7.11.37) (2026-10-29)
+
+
+### Bug Fixes
+
+* **evals:** cover Cantonese anchor forms and carry each rule's strength ([f25a082](https://github.com/mikeng-io/nora/commit/f25a082e75f9fd6c65122031a00f4228ac70089b))
+* **evals:** select plausible cognition anchor candidates ([a65636d](https://github.com/mikeng-io/nora/commit/a65636de5c5e6e92b6f464249a6000f027db8470))
+
 ## [7.11.36](https://github.com/mikeng-io/nora/compare/v7.11.35...v7.11.36) (2026-10-29)
 
 
