@@ -188,7 +188,7 @@ authority test for a layer, and audience is a property.
 |---|---|
 | the topic entity's graph kind and the Rollup builder's topic-activity rows | the build PR, measured on a generated corpus |
 | how an event's graph entity and its posting relate once the event is Record | the build PR |
-| the model-facing verb names (one vocabulary over all kinds: write, revise, end, read, search) | ADR 0015's `tool_selection` before and after |
+| the model-facing verb names (one vocabulary over all kinds: write, revise, end, read, search). **Decided 2026-10-29** ([unified-memory/29](../unified-memory/29-one-cognition-session.md) §4): `create`, `revise`, `set_status`, `read`, `search` | ADR 0015's `tool_selection` before and after, per rename |
 | the migration order of the existing stores onto the entry | a migration node, under render parity, no table dropped |
 
 Amendment, 2026-10-29: the shared entry store, append-only revision chain and
