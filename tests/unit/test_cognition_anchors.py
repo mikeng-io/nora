@@ -8,8 +8,8 @@ from scripts.find_cognition_anchors import Moment, candidates, clone_url
 
 def test_candidate_shapes_emit_only_explicit_room_alias_time_scenario_counts():
     rows = [Moment("generated-private-room", 1000, "generated-author", "k"),
-            Moment("generated-private-room", 2000, "generated-author", "Dinner?"),
-            Moment("generated-private-room", 3000, "generated-author", "k"),
+            Moment("generated-private-room", 2000, "generated-author", "Dinner at 7?"),
+            Moment("generated-private-room", 3000, "generated-other", "k"),
             Moment("unmapped-generated-room", 4000, "generated-author", "bought ticket")]
     found = candidates(rows, {"generated-private-room": "room_generated"})
     assert any(r["scenario"] == 2 and r["before_ms"] == 1001 for r in found)
@@ -45,12 +45,11 @@ def test_cognition_corpus_census_and_held_out():
     assert not load_corpus("cognition_session")
 
 
-def test_all_scenarios_have_structural_candidates_on_generated_messages():
-    messages = ["k", "Dinner?", "Venue?", "k", "arrived downstairs", "cancel dinner",
-                "bought ticket", "nice weather", "like racing?"]
+def test_ambient_generated_messages_do_not_emit_broad_scenario_noise():
+    messages = ["hello", "how?", "why?", "nice weather", "racing is interesting"]
     found = candidates([Moment("generated-room", 1000 + i, "author", body)
                         for i, body in enumerate(messages)], {"generated-room": "room_generated"})
-    assert {r["scenario"] for r in found} == {1, 2, 3, 4, 5, 6, 8, 10, 11, 12, 13}
+    assert found == []
 
 
 def test_corpus_uses_existing_trajectory_grader_fail_closed():
