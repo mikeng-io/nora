@@ -36,7 +36,7 @@ def has_scenario(rows, scenario):
     (13, [(1, "a", "hello"), (2, "c", "welcome"),
           (3, "b", "what does Generated Guest like?")],
          [(1, "a", "hello"), (2, "c", "welcome"), (3, "b", "do you like rain?")]),
-    # Cantonese forms (Devin's review of #404): unpunctuated question, 禮拜X day, 到喇.
+    # Cantonese forms: an unpunctuated question, 禮拜X day, 到喇.
     (13, [(1, "a", "hello"), (2, "c", "welcome"), (3, "b", "阿B鍾意咩")],
          [(1, "a", "hello"), (2, "c", "welcome"), (3, "b", "阿B鍾意食飯")]),
     (3, [(1, "a", "禮拜六食飯?"), (2, "b", "好")],
