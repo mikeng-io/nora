@@ -1,5 +1,18 @@
 # Changelog
 
+## [7.11.18](https://github.com/mikeng-io/nora/compare/v7.11.17...v7.11.18) (2026-10-29)
+
+
+### Features
+
+* **memory:** add an operator snapshot graph spike ([ed80a47](https://github.com/mikeng-io/nora/commit/ed80a47bf633f4ec91c59c7d44ca8a88bc737175))
+
+
+### Bug Fixes
+
+* **memory:** count spike sessions per work item and report token cost ([d86907d](https://github.com/mikeng-io/nora/commit/d86907d7d2d6b4fcd5d4092bf17fbd59acf48278))
+* **memory:** refuse snapshot database routing overrides ([4d8374a](https://github.com/mikeng-io/nora/commit/4d8374a6f088a7c1ee8bce83af7bc091b6fba27d))
+
 ## [7.11.17](https://github.com/mikeng-io/nora/compare/v7.11.16...v7.11.17) (2026-10-29)
 
 
