@@ -16,14 +16,18 @@ from scripts import confirm_cognition_anchors as confirm
     ('{"match":true,"reason":"generated secret"}', "stop", "unavailable"),
     ('{"match":true}', "length", "unavailable"),
     ('[]', "stop", "unavailable"),
+    ('{"ok":true}', "stop", "unavailable"),
 ])
 async def test_boolean_model_contract(content, finish, expected, monkeypatch):
     monkeypatch.setenv("GENERATED_MODEL_KEY", "generated-key")
 
     def serve(request):
         payload = json.loads(request.content)
+        if "response_format" in payload:  # what the deployment's route answers
+            return httpx.Response(503, json={"error": {"code": "ALL_TARGETS_SKIPPED"}})
         assert payload["model"] == "generated-production-model"
-        assert payload["response_format"]["json_schema"]["strict"] is True
+        assert '{"match": true}' in payload["messages"][0]["content"]
+        assert '{"match": false}' in payload["messages"][0]["content"]
         assert "Must not:" in payload["messages"][0]["content"]
         moment = json.loads(payload["messages"][1]["content"])
         assert moment["messages"][0] == {"at_ms": 1000, "speaker": "speaker_1", "text": "k"}
