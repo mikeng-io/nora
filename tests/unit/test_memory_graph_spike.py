@@ -230,3 +230,60 @@ async def test_an_item_with_a_media_source_is_in_the_attachment_stratum(monkeypa
     records = SimpleNamespace(load=AsyncMock(return_value=item))
     [candidate] = await spike.candidates(None, records)
     assert "attachment" in candidate["strata"]
+
+
+
+def _graph(work_id, relations):
+    return {"work_id": work_id, "payload": {"relations": [{}] * relations, "entities": []}}
+
+
+ITEMS = [f"w{i}" for i in range(5)]
+SETTLED = ["settled"] * 5
+
+
+def _smoke(graphs, refusals=(), claims=None, states=SETTLED):
+    claims = dict.fromkeys(ITEMS, 4) if claims is None else claims
+    return spike.smoke_health(ITEMS, states, graphs, list(refusals), claims)
+
+
+def test_smoke_passes_a_healthy_sample():
+    healthy = _smoke([_graph(w, 2) for w in ITEMS], [{"part": "relation", "reason": "wrong_ends"}])
+    assert healthy["status"] == "PASS" and healthy["relations_admitted"] == 10
+
+
+def test_smoke_counts_only_productive_writes():
+    # Four empty writes and one relation is 20% productive, not 100%.
+    graphs = [_graph("w0", 1), *(_graph(w, 0) for w in ITEMS[1:])]
+    sick = _smoke(graphs, claims={})
+    assert sick["valid_writes"] == 5 and sick["productive_rate"] == 0.2
+    assert sick["status"] == "FAIL"
+    # At the mark (3 of 5 = 0.6) it passes; one fewer fails.
+    at_mark = _smoke([_graph(w, 1) for w in ITEMS[:3]], claims={})
+    assert at_mark["productive_rate"] == 0.6 and at_mark["status"] == "PASS"
+    below = _smoke([_graph(w, 1) for w in ITEMS[:2]], claims={})
+    assert below["status"] == "FAIL"
+
+
+def test_smoke_refused_relation_share_is_a_ceiling():
+    graphs = [_graph(w, 1) for w in ITEMS[:4]]  # 4 admitted relations
+    one = [{"part": "relation", "reason": "wrong_ends"}]
+    assert _smoke(graphs, one)["relation_refused_share"] == 0.2
+    assert _smoke(graphs, one)["status"] == "PASS"
+    assert _smoke(graphs, one * 2)["status"] == "FAIL"
+
+
+def test_smoke_refused_reading_share_is_a_ceiling():
+    graphs = [_graph(w, 1) for w in ITEMS]
+    claims = {"w0": 4}
+    one = [{"part": "reading", "reason": "event_expression_absent"}]
+    assert _smoke(graphs, one, claims)["reading_refused_share"] == 0.2
+    assert _smoke(graphs, one, claims)["status"] == "PASS"
+    assert _smoke(graphs, one * 2, claims)["status"] == "FAIL"
+
+
+def test_smoke_fails_a_failed_item_and_is_insufficient_when_small():
+    graphs = [_graph(w, 2) for w in ITEMS]
+    assert _smoke(graphs, states=["failed", *SETTLED[1:]])["status"] == "FAIL"
+    assert _smoke([])["status"] == "FAIL"
+    small = spike.smoke_health(ITEMS[:3], SETTLED[:3], graphs[:3], [], {})
+    assert small["status"] == "INSUFFICIENT"

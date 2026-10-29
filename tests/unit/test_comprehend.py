@@ -562,14 +562,14 @@ async def test_bad_relation_timestamp_and_evidence_leave_valid_siblings_committe
     records = InMemoryComprehendRecords()
     r = runner(graph, records, ScriptedCognitionRunner([]))
     bad = {**WRITE['relations'][0], 'id': 'bad', 'valid_from': 'not-a-time'}
-    output = GraphWrite.model_validate({**WRITE, 'relations': [bad, *WRITE['relations']],
-        'evidence': [*WRITE['evidence'], {'source': list(SOURCE.key)}]})
+    # Evidence naming no target is now refused by the shape itself, with the
+    # reason returned to the model (test_a_wrong_shape_is_refused_with_where...).
+    output = GraphWrite.model_validate({**WRITE, 'relations': [bad, *WRITE['relations']]})
     fetched = GraphFetched()
     fetched.show(SOURCE)
     admitted = await r._admit(WORK, output, fetched, 1)
     assert len(admitted.relations) == 1
     assert (1, 'relation', 'schema') in records.refusals
-    assert (1, 'evidence', 'schema') in records.refusals
 
 
 async def test_correction_outside_preview_reshapes_its_person():
@@ -754,7 +754,10 @@ async def test_a_wrong_shape_is_refused_with_where_and_the_retry_commits():
     }
     wrong = {
         **WRITE,
-        "evidence": [{**WRITE["evidence"][0], "target": "like", SOURCE.text: "x"}],
+        "evidence": [
+            {**WRITE["evidence"][0], "target": "like", SOURCE.text: "x"},
+            {"source": list(SOURCE.key), "span": "like Hall"},
+        ],
         "readings": [reading],
     }
     model = ScriptedCognitionRunner(
@@ -769,8 +772,31 @@ async def test_a_wrong_shape_is_refused_with_where_and_the_retry_commits():
     assert refused["reason"] == "schema"
     assert "evidence.0.target: extra_forbidden" in refused["errors"]
     assert "readings.0.source_ids.0: int_type" in refused["errors"]
+    assert "evidence.1: evidence_target_missing" in refused["errors"]
     # A key that is not shaped like a field (here a source sentence) is redacted.
     assert "evidence.0.<unknown field>: extra_forbidden" in refused["errors"]
     assert all(SOURCE.text not in e and "message:1" not in e for e in refused["errors"])
     assert model.answers[1] == {"status": "ok"}
     assert len(graph.relations) == 1
+
+
+async def test_a_person_end_named_by_its_authored_id_becomes_the_units_pointer():
+    graph = FakeMemoryGraph()
+    for entity in (PERSON, PLACE):
+        await graph.upsert_entity(entity)
+    await graph.enqueue(WORK)
+    records = InMemoryComprehendRecords({WORK.source: ITEM})
+    authored = {
+        **WRITE,
+        "relations": [{**WRITE["relations"][0], "src": ["person", "generated-person"]}],
+    }
+    model = ScriptedCognitionRunner(
+        [
+            [("memory_stage", authored)],
+            *[[("profile_stage", {"proposals_in": []})] for _ in range(3)],
+        ]
+    )
+    assert await runner(graph, records, model).run_once()
+    [relation] = graph.relations.values()
+    assert relation.src == PERSON.key
+    assert not any(reason == "wrong_ends" for _, _, reason in records.refusals)
