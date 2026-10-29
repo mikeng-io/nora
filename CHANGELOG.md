@@ -1,5 +1,15 @@
 # Changelog
 
+## [7.11.33](https://github.com/mikeng-io/nora/compare/v7.11.32...v7.11.33) (2026-10-29)
+
+
+### Maintenance
+
+* **portal:** await download persistence before cleanup ([452fccf](https://github.com/mikeng-io/nora/commit/452fccf6e76d4e2dd25bdbc31889e719ccc37270))
+* bind security findings to the analyzed merge and isolate baseline runs ([784944e](https://github.com/mikeng-io/nora/commit/784944e142c56ec1d7735f0a89f23641edcc84f2))
+* resolve query-pack rules in CodeQL SARIF ([33aa092](https://github.com/mikeng-io/nora/commit/33aa0922a2de39f7dd4d1e46f35b5a81a8c620c0))
+* select PR checks by changed inputs and consolidate workflows ([5e169a1](https://github.com/mikeng-io/nora/commit/5e169a16b07db4587dbbb663603c7cdbd4bfd0b8))
+
 ## [7.11.32](https://github.com/mikeng-io/nora/compare/v7.11.31...v7.11.32) (2026-10-29)
 
 
