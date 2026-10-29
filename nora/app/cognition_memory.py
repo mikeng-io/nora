@@ -15,6 +15,9 @@ from nora.domain.extraction import partition_claims
 from nora.domain.memory_graph import Source, Walk, WorkItem
 from nora.language.comprehend_render import preview_text
 
+#: Characters of each row's body kept in the reading slot map.
+READING_CLIP = 160
+
 
 class WakeMemory:
     def __init__(self, *, graph: Any, records: Any, metrics: Any,
@@ -69,7 +72,8 @@ class WakeMemory:
                                  "person_id": row.person_id, "mentions": []})
                 elif stimulus.kind in ("social", "play"):
                     kind, _, ref = stimulus.ref.partition(":")
-                    work = WorkItem(f"stimulus:{sid}", (kind, ref), state.unit, "", at)
+                    work = WorkItem(f"stimulus:{sid}", (kind, ref), state.unit, "", at,
+                                    historical=state.historical)
                     loaded = await self.records.load(work)
                     sources.extend(loaded.sources)
                     rows.extend(loaded.snapshot.get("messages", []))
@@ -116,13 +120,20 @@ class WakeMemory:
         if graph.status == "unavailable":
             raise RuntimeError("wake graph unavailable")
         state.graph_text = preview_text(Preview(seeds, graph, (), (at, at)))
+        # The slot map the model cites by row id. The agenda already renders the
+        # text, so each body is clipped to identify the row, never repeat it.
+        # ponytail: fixed clip; count it into RenderBudget if busy wakes overflow.
         state.graph_text += "\nreading_sources=" + json.dumps(
-            {i: v.snapshot for i, v in state.memory_items.items()}, default=str)
+            {i: {**v.snapshot, "messages": [
+                {**r, "body": str(r.get("body") or "")[:READING_CLIP]}
+                for r in v.snapshot["messages"]]}
+             for i, v in state.memory_items.items()}, default=str)
 
     async def propose(
         self, state: Any, *, items: list[int], payload: dict[str, Any],
     ) -> dict[str, Any]:
-        if not items or any(i not in state.items_by_index for i in items):
+        # `memory_items` is what `prepare` built; `probe` never prepares.
+        if not items or any(i not in state.memory_items for i in items):
             return {"status": "refused", "admitted": [], "refused": [{"reason": "no_such_item"}]}
         try:
             output = GraphWrite.model_validate(payload)
@@ -163,9 +174,17 @@ class WakeMemory:
         state.admitted_indices.update(admitted)
         state.admitted_relations.update({r.id: r for r in result.relations})
         state.admitted_evidence.extend(result.evidence)
+        # Admission commits the clean parts in the same call, so a refusal can
+        # still have saved relations: say so rather than read as nothing saved.
+        committed = [r.id for r in result.relations]
+        note = "Read the connected state before deciding whether to act."
+        if refused and committed:
+            note = ("Some relations were saved (see committed); the item is not "
+                    "admitted until a proposal has no refusals. " + note)
         return {"status": "ok" if admitted else "refused", "admitted": admitted,
-                "refused": refused, "connected": json.loads(json.dumps(asdict(graph), default=str)),
-                "note": "Read the connected state before deciding whether to act."}
+                "refused": refused, "committed": committed,
+                "connected": json.loads(json.dumps(asdict(graph), default=str)),
+                "note": note}
 
     async def profile(
         self, state: Any, entity: list[str], proposals: list[dict[str, Any]],

@@ -265,7 +265,7 @@ async def test_cognition_08_proposal_answer_lists_refusal_with_reason():
     await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
         last_activity_ms=None, last_wake=None), now_ms=NOW)
     assert not fake.results[0]["admitted"]
-    assert fake.results[0]["refused"]
+    assert any(row["reason"] == "vocabulary" for row in fake.results[0]["refused"])
     assert not store.paces
 
 

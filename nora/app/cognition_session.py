@@ -2631,6 +2631,9 @@ class CognitionSessionRunner:
                 finally:
                     unstop()
                 if key is not None and result.get("status") == "ok":
+                    # ponytail: a second transaction after the verb's commit; a crash
+                    # between them loses the key, so a retried event_propose could
+                    # write a second gathering. Write both in one transaction if seen.
                     await self._memory.records.act_result(key, state.session_id, result)
                     await self._memory.link_result(state,
                         {**result, **({"event_id": result["id"]}

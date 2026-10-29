@@ -1599,8 +1599,10 @@ async def build_dependencies(
     engine = create_sql_engine(database_url)
     if cfg.memory.graph.enabled:
         from nora.app.graph_project import projection_context
+        # produce=False: the session reads stimuli; nothing drains work items now.
         engine.update_execution_options(memory_graph=projection_context(
-            allowlist, persons, nora_name=cfg.doctrine.display_name, metrics=metrics))
+            allowlist, persons, nora_name=cfg.doctrine.display_name, metrics=metrics,
+            produce=False))
     audit = SqlRecordStore(
         engine,
         max_per_conversation=cfg.store.max_per_conversation,

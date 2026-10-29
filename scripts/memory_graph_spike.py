@@ -840,6 +840,8 @@ def main() -> int:
     args = parser.parse_args()
     if args.per_stratum <= 0 or args.minimum <= 0:
         parser.error("sample sizes must be positive")
+    if args.smoke:
+        parser.error("--smoke is not on the session yet; build step 6 re-scopes it")
     try:
         report = asyncio.run(run(args))
     except Exception:  # noqa: BLE001 - fail closed without private exception text
