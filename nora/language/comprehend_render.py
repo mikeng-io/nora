@@ -64,7 +64,7 @@ only. Web pages never establish anything about a private person.
 Call memory_stage once with entities, relations, evidence, corrections and readings,
 or with empty lists for an explicit no-change. All relations have layer notebook.
 Evidence names source keys you were shown. Never supply source snapshots.
-Readings cite a message by its integer `id` in reading_sources, never by a [kind,id] key:
+Readings cite a source row by its integer `id` in reading_sources, never by a [kind,id] key:
 about=[{person_id,reference}], what, happened_at={source_id,expression}, where,
 how (stated/said_by_another/planned/asked/reported), source_ids=[12],
 evidence=[{source_id:12,quote}].

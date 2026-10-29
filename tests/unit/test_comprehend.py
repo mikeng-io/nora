@@ -754,7 +754,7 @@ async def test_a_wrong_shape_is_refused_with_where_and_the_retry_commits():
     }
     wrong = {
         **WRITE,
-        "evidence": [{**WRITE["evidence"][0], "target": "like"}],
+        "evidence": [{**WRITE["evidence"][0], "target": "like", SOURCE.text: "x"}],
         "readings": [reading],
     }
     model = ScriptedCognitionRunner(
@@ -767,9 +767,10 @@ async def test_a_wrong_shape_is_refused_with_where_and_the_retry_commits():
     assert await r.run_once()
     refused = model.answers[0]
     assert refused["reason"] == "schema"
-    assert any(e.startswith("evidence.0.target: ") for e in refused["errors"])
-    assert any(e.startswith("readings.0.source_ids.0: ") for e in refused["errors"])
-    # Where it is wrong, never what was written there: no source text egresses.
+    assert "evidence.0.target: extra_forbidden" in refused["errors"]
+    assert "readings.0.source_ids.0: int_type" in refused["errors"]
+    # A key the model invented may be source text: it is never echoed.
+    assert "evidence.0.<unknown field>: extra_forbidden" in refused["errors"]
     assert all(SOURCE.text not in e and "message:1" not in e for e in refused["errors"])
     assert model.answers[1] == {"status": "ok"}
     assert len(graph.relations) == 1
