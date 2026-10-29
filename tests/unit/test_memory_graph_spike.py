@@ -201,3 +201,32 @@ def test_search_provider_builds_from_the_template(example_config, monkeypatch, p
     cfg = example_config.model_copy(update={"search": search})
     monkeypatch.setenv(cfg.search.api_key_env, "generated-key")
     assert spike.search_provider(cfg) is not None
+
+
+async def test_an_item_with_a_media_source_is_in_the_attachment_stratum(monkeypatch):
+    from dataclasses import dataclass
+
+    from nora.domain.memory_graph import WorkItem
+
+    @dataclass(frozen=True)
+    class Source:
+        key: tuple[str, str]
+        text: str
+
+    @dataclass(frozen=True)
+    class Item:
+        sources: tuple[Source, ...]
+        snapshot: dict
+
+    # Shaped like the snapshot's message rows: no media column on them.
+    item = Item(
+        (Source(("message", "generated-1"), "Generated text"),
+         Source(("media", "generated-2"), "Generated reading")),
+        {"messages": ({"id": "generated-1", "body": "Generated text"},)},
+    )
+    work = WorkItem("generated-work", ("message", "generated-1"), "generated-unit", "h", 0)
+    monkeypatch.setattr(spike, "rows", AsyncMock(return_value=[{}]))
+    monkeypatch.setattr(spike, "work_row", lambda row: work)
+    records = SimpleNamespace(load=AsyncMock(return_value=item))
+    [candidate] = await spike.candidates(None, records)
+    assert "attachment" in candidate["strata"]

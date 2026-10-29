@@ -267,10 +267,8 @@ async def candidates(engine: Any, records: Any) -> list[dict[str, Any]]:
         elif work.source[0] in {"message", "message_batch"}:
             if any(x in text for x in ("https://", "http://")):
                 strata.append("link")
-            if any(
-                r.get("media_json") not in (None, "", "[]", [])
-                for r in item.snapshot.get("messages", [])
-            ):
+            # The snapshot's message rows carry no media column; attachments are sources.
+            if any(s.key[0] == "media" for s in item.sources):
                 strata.append("attachment")
             if not strata:
                 strata.append("text")
