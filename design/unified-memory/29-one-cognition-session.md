@@ -43,10 +43,13 @@ split rested on an argument, never a measurement. Read back in the code on
    the stimulus messages' own words (`nora/language/cognition_render.py`), and
    step 1 read the same words separately. Step 3's input had no block for what
    step 1 understood.
-2. **Not every stimulus was comprehended.** Comprehend work items were created
-   only for message batches and Register writes
-   (`nora/infra/sql/graph_projection.py`). Social items, stays and plays raise
-   stimuli (`nora/domain/stimuli.py`) but no work item.
+2. **Two intakes for one arrival.** Projection queues comprehend work for
+   message batches, media, social items, Register entries, profile lines,
+   co-locations, closed outings, closed response episodes and reminders
+   (`nora/infra/sql/graph_projection.py`); ingest separately raises the
+   stimulus Cognition wakes on (`nora/domain/stimuli.py`). Nothing ties the
+   two, so step 3 can act on an item step 1 has not read. Individual stays and
+   plays raise stimuli but no work item.
 3. **Comprehension without a reason.** A lone "k" became work for a model on
    its own, out of the context that gives it meaning.
 
@@ -117,6 +120,16 @@ recorded in shadow until phase 7 switches the profile surface.
 
 ## 3. Completeness, latency and the backfill
 
+- **Retries move to the wake.** A session that fails, or whose
+  `memory_propose` is refused outright, leaves its stimuli unconsumed: the
+  wake's `failed` outcome already makes them pending again
+  (`nora/domain/stimuli.py`), so the next wake retries them. A Register row
+  commits in its own transaction before its links (27 §7a), so a failed link
+  write must not create the row twice: the retry re-links the existing row by
+  its id. A stimulus whose sessions fail five times is parked `failed`, with
+  the operator requeue that 25 §7 gives a failed projection. An edited item is
+  re-read because an edit raises its own stimulus; that replaces the work
+  item's input hash. The build PR names a test for each of these.
 - **Every stimulus is comprehended, never only decided on.** A wake's agenda
   cap may defer a stimulus to a later wake (carry); it may never skip its
   comprehension. A stimulus is consumed only by a session that admitted a
@@ -137,8 +150,8 @@ same five verbs, all already in ADR 0015's verb list:
 
 | verb | means | replaces |
 |---|---|---|
-| `<kind>_create` | a new entry | `note_create`, `memo_write`, `lesson_write` |
-| `<kind>_revise` | a new revision of the latest version (`stale_base`) | `note_update`, `memo_revise`, `event_revise`, `standing_revise` |
+| `<kind>_create` | a new entry | `note_create`, `memo_write`, `lesson_write` without a `lesson_id` |
+| `<kind>_revise` | a new revision of the latest version (`stale_base`) | `note_update`, `memo_revise`, `event_revise`, `standing_revise`, `lesson_write` with a `lesson_id` |
 | `<kind>_set_status` | any lifecycle move: end, keep, retire, withdraw, dormant | `note_retire`, `memo_withdraw`, `lesson_retire`, `event_set_status` |
 | `<kind>_read` | one entry by id | `note_read`, `memo_read`, `standing_read`; `profile_read` replaces `about` |
 | `<kind>_search` | find entries of that kind | `note_search`, `event_search` |
@@ -179,7 +192,7 @@ tool a session built for itself escaped it. That is how `stage`, `write`,
 | retired | why |
 |---|---|
 | the per-item comprehend runner as a driver | the wake is the driver (§2) |
-| `memory_work_item` as the intake of understanding | stimuli are the intake; a Register write links itself in its own session (27 §7a) |
+| `memory_work_item` as the intake of understanding | stimuli are the intake; a Register write links itself in its own session (27 §7a); retries and parking move to the wake (§3) |
 | the separate reshape session | profiles are proposed in the session (§2) |
 | "comprehend on arrival" (2026-10-28) | memory updates at wake time (§3) |
 
