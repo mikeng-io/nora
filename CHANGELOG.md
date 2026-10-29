@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.11.25](https://github.com/mikeng-io/nora/compare/v7.11.24...v7.11.25) (2026-10-29)
+
+
+### Features
+
+* **cognition:** measure topic activity and stage shadow accounts ([88c1cbf](https://github.com/mikeng-io/nora/commit/88c1cbf3bc7984e4517439eba93a6e4c450fd9d8))
+* **notebook:** add shared entry revisions with topic rules ([ebe17c9](https://github.com/mikeng-io/nora/commit/ebe17c9ae350b69217920ff4e9b24330ef9448bd))
+
 ## [7.11.24](https://github.com/mikeng-io/nora/compare/v7.11.23...v7.11.24) (2026-10-29)
 
 
