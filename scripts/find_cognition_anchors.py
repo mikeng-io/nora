@@ -52,7 +52,7 @@ WINDOW_MESSAGES, WINDOW_MS = 30, 86_400_000
 MAX_CANDIDATES = 20
 SHORT_SPAN_MS = 15 * 60_000
 ACK = re.compile(r"(?:k|ok|okay|好|得)[.!\uFF01。]*", re.I)
-ARRIVAL = re.compile(r"\b(?:downstairs|arrived|visiting)\b|樓下|到咗|上嚟", re.I)
+ARRIVAL = re.compile(r"\b(?:downstairs|arrived|visiting)\b|樓下|到咗|到喇|上嚟", re.I)
 CANCEL = re.compile(r"\bcancel(?:led|ed)?\b|called off|\boff\b|取消|唔去", re.I)
 PURCHASE = re.compile(r"\b(?:bought|booked|purchased)\b|買咗|訂咗", re.I)
 TICKET = re.compile(r"\b(?:ticket|tickets|concert)\b|門票|演唱會", re.I)
@@ -61,13 +61,14 @@ PLAN = re.compile(
     r"\b(?:dinner|lunch|meet|meeting|concert|party)\b|食飯|晚飯|午餐|見面|演唱會", re.I)
 DAY_TIME = re.compile(
     r"\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|today|tomorrow)\b|"
-    r"\b(?:at|around) \d{1,2}\b|星期[一二三四五六日天]|聽日|今日|\d{1,2}點", re.I)
+    r"\b(?:at|around) \d{1,2}\b|(?:星期|週|禮拜)[一二三四五六日天]|聽日|今日|\d{1,2}點", re.I)
 OPTION = re.compile(r"[?\uFF1F]|\bor\b|定係|不如", re.I)
 # ponytail: explicit topic vocabulary; extend with generated examples when recall is measured.
 TOPICS = re.compile(r"\b(?:racing|cooking|photography|chess)\b|賽車|烹飪|攝影|象棋", re.I)
 ITEM = re.compile(r'"[^"\n]{2,60}"|「[^」\n]{2,60}」|《[^》\n]{2,60}》')
 LIKES_QUESTION = re.compile(
-    r"\bwhat does .{1,40} like\b|.{1,20}(?:鍾意|喜歡)(?:啲?咩|什麼)", re.I)
+    # English needs its question mark; the Cantonese form is a question unpunctuated.
+    r"\bwhat does .{1,40} like\b[^\n]*[?\uFF1F]|.{1,20}(?:鍾意|喜歡)(?:啲?咩|什麼)", re.I)
 
 
 def _day(row: Moment) -> date:
@@ -115,8 +116,7 @@ def _scores(row: Moment, prior: list[Moment], history: list[Moment],
                                and len(discussion) >= 2
                                and len({m.sender for m in discussion}) >= 2) else 0,
         12: len(topic_days) if topics and ITEM.search(body) and len(topic_days) >= 2 else 0,
-        13: int(group and bool(LIKES_QUESTION.search(body))
-                and bool(re.search(r"[?\uFF1F]", body))),
+        13: int(group and bool(LIKES_QUESTION.search(body))),
     }
 
 
@@ -142,7 +142,10 @@ def candidates(rows: Iterable[Moment], aliases: Mapping[str, str]) -> list[dict[
                         "scenario": scenario, "counts": {
                             "prior": len(prior),
                             "questions": sum(bool(re.search(r"[?\uFF1F]", m.body)) for m in prior),
-                            "same_sender": sum(m.sender == row.sender for m in prior)}}))
+                            "same_sender": sum(m.sender == row.sender for m in prior),
+                            # The rule's own evidence: visit or topic days for 5/12,
+                            # which the confirmer's 24h window cannot show.
+                            "strength": strength}}))
         for scenario in sorted(ranked):
             output.extend(item for _, item in sorted(
                 ranked[scenario], key=lambda pair: (-pair[0], int(str(pair[1]["before_ms"]))))

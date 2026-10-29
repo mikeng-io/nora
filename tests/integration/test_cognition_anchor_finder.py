@@ -86,6 +86,7 @@ async def test_finder_keeps_nora_in_generated_window(pg_admin, monkeypatch, tmp_
                    f"@{pg_admin.host}:{pg_admin.port}/{name}")
             result = await scan(url)
             assert [r["scenario"] for r in result] == [3]
-            assert result[0]["counts"] == {"prior": 1, "questions": 1, "same_sender": 0}
+            assert result[0]["counts"] == {"prior": 1, "questions": 1, "same_sender": 0,
+                                              "strength": 1}
         finally:
             admin.execute(f'DROP DATABASE "{name}"')

@@ -36,6 +36,14 @@ def has_scenario(rows, scenario):
     (13, [(1, "a", "hello"), (2, "c", "welcome"),
           (3, "b", "what does Generated Guest like?")],
          [(1, "a", "hello"), (2, "c", "welcome"), (3, "b", "do you like rain?")]),
+    # Cantonese forms (Devin's review of #404): unpunctuated question, 禮拜X day, 到喇.
+    (13, [(1, "a", "hello"), (2, "c", "welcome"), (3, "b", "阿B鍾意咩")],
+         [(1, "a", "hello"), (2, "c", "welcome"), (3, "b", "阿B鍾意食飯")]),
+    (3, [(1, "a", "禮拜六食飯?"), (2, "b", "好")],
+        [(1, "a", "食飯?"), (2, "b", "好")]),
+    (4, [(1, "a", "週六食飯?"), (2, "b", "週六唔去")],
+        [(1, "a", "週日食飯?"), (2, "b", "週六唔去")]),
+    (1, [(1, "a", "到喇")], [(1, "a", "喇")]),
 ])
 def test_scenario_preconditions(scenario, positive, negative):
     assert has_scenario(moments(*positive), scenario)
@@ -61,6 +69,7 @@ def test_cap_prefers_strong_history_and_is_deterministic():
     assert len(visits) == 20
     assert visits[0]["before_ms"] == 29 * DAY + 2
     assert visits[-1]["before_ms"] == 10 * DAY + 2
+    assert visits[0]["counts"]["strength"] == 30
     assert candidates(reversed(rows), {"generated-room": "room_g"}) == result
     assert not {8, 10} & {r["scenario"] for r in result}
 
@@ -75,7 +84,8 @@ def test_window_includes_moment_and_nora_and_excludes_lower_boundary():
     assert not has_scenario(rows, 2)
     rows = moments((1, "a", "dinner at 7?"), (DAY + 1, "b", "k"))
     result = candidates(rows, {"generated-room": "room_g"})
-    assert result[-1]["counts"] == {"prior": 0, "questions": 0, "same_sender": 0}
+    assert result[-1]["counts"] == {"prior": 0, "questions": 0, "same_sender": 0,
+                                    "strength": 1}
 
 
 def test_alias_validation_and_timestamp_ties():

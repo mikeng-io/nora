@@ -76,10 +76,14 @@ The URL must name a `*_eval` clone; the transaction is read-only. The private
 pseudonym map must contain explicit `room_*==>real` aliases. Output contains
 only those room pseudonyms, `before_ms`, scenario numbers and counts.
 
-The finder uses short-message, question, repeated-author and lexical shapes;
-it does not establish meaning, an open note, an admission refusal, attendance
-or the absence of a private preference. In particular its scenario 8 candidates
-are only multi-message contexts. Save the finder JSONL privately on the host,
+The finder searches scenarios 1-6 and 11-13 with one message-shape rule each
+(arrival, acknowledgement, plan, cancellation, ticket, options, topic, "what
+does X like"), at most 20 per room and scenario, strongest first; `counts`
+carries the rule's `strength` (visit or topic days for 5 and 12). It does not
+emit 8 or 10: a refused proposal is session output and "nothing open" is
+memory state, so those anchors are authored privately and still judged by the
+confirmer. It does not establish meaning, an open note, attendance or a
+private preference. Save the finder JSONL privately on the host,
 then confirm with the production model configured by the deployment's `[llm]`:
 
 ```bash
