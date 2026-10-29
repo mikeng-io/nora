@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.11.17](https://github.com/mikeng-io/nora/compare/v7.11.16...v7.11.17) (2026-10-29)
+
+
+### Bug Fixes
+
+* **domain:** a set minus a LiveSet yields a working set, not a spent generator ([00bfc3a](https://github.com/mikeng-io/nora/commit/00bfc3abd7c3be281c5b65baf55823f0a7a61adc))
+* **domain:** type _from_iterable over its own TypeVar per the AbstractSet contract ([bbe6e2f](https://github.com/mikeng-io/nora/commit/bbe6e2f0f669ba51ada113a76fd5a1908b4981ff))
+
 ## [7.11.16](https://github.com/mikeng-io/nora/compare/v7.11.15...v7.11.16) (2026-10-28)
 
 
