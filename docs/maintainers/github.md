@@ -6,7 +6,8 @@ secret scanning/push protection, private vulnerability reports, branch protectio
 and tag rules. No paid Advanced Security subscription, larger runner, external
 scanner subscription or deployment runner is required. Standard public runner
 minutes are free; Actions artifacts/cache and larger runners have separate billing.
-These workflows upload no custom artifacts or caches. GitGuardian is an existing
+The site build retains its combined site/wiki artifact for seven days; no custom
+dependency caches are uploaded. GitGuardian is an existing
 optional integration, not a required paid dependency.
 
 References: [Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions),
@@ -32,12 +33,71 @@ work while private: see Merge rules below. The check names are bound to the GitH
 Actions App, rather than arbitrary status producers. The release App has no
 branch-rule bypass.
 
-Dependency review deliberately skips while private, avoiding paid
-private-repository security features. After publication, open a small PR to confirm
-it reports. There is no CodeQL job: it was skipped on every PR while private and
-Aikido scans the code. The existing
-fast CI still runs while private. It checks static contracts and selected tests;
-it does not run the complete suite. Run the local `make gate` once on the final head before landing code.
+CI always reports `checks` on a PR. One full git merge-base diff (including both
+sides of renames and deleted paths, without the API file cap) selects work once;
+the final join uses that same plan and rejects failed, cancelled, missing or
+unexpectedly skipped jobs. Unknown inputs select every component. Selection
+errors broaden work and fail the final result. CI and `pr-metadata` remain the
+required names; engineering dispatch still consumes the CI workflow.
+
+Ordinary docs use `scripts/affected_tests.py` to discover actual test readers,
+without Python static checks or CodeQL. Runtime Markdown under `nora/` selects
+Python checks; scanning runs when source or analysis inputs change. Executable
+MDX follows its component. Site/wiki share
+the existing combined artifact build. Portal runs npm check/build; the Go bridge
+runs vet/test with its module toolchain. Manifest changes also require dependency
+review, blocking high/critical vulnerable dependency introductions on PRs.
+
+Hosted Python coverage retains the existing architecture/documentation/deployment
+contract list and adds CI-selection guards and doc readers. This is **not**
+fine-grained backend selection: `nora/` selects ALL in the local selector. The
+full backend suite remains a local gate obligation. Its fixtures require Docker,
+pgvector Postgres 18, RustFS and the migration template; hosted duration and all
+service prerequisites have not been validated. If doc reader selection requires
+ALL because a shared helper reads the document, the contracts job runs the full
+pytest suite with the local gate's eight workers; testcontainers provision the
+services. Selection errors broaden component work and fail the final result.
+Dockerfile/unknown changes retain the
+existing deploy-asset/base-image contracts and conservative component checks;
+dependency review does not establish image vulnerability safety.
+
+CodeQL advanced setup runs full Python, JS/TS, Go and Actions language analysis
+for selected inputs, with no changed-line/path analysis filter. Default-branch
+pushes refresh the selected language baselines; manual runs and weekly schedules
+refresh all four. Docs-only pushes retain the same selective policy as PRs. GitHub-owned
+actions are SHA pinned and allowed by the existing GitHub-owned action policy;
+only scan jobs have security-events write permission. No PR administration token
+is passed to source-executing jobs.
+
+CodeQL scan jobs also read their SARIF output and fail on high/critical security
+findings (security severity at least 7) or error-level findings whose primary
+location overlaps an added PR line in the analyzed merge tree. The gate compares
+that merge to its first parent, preserving line numbers when master has moved.
+The full-language analysis and upload still
+run; baseline events report historical alerts without blocking on existing debt.
+Absent or malformed SARIF and unsuccessful analysis fail closed. This is a
+changed-line gate, not a promise that all pre-existing vulnerabilities are fixed.
+GitHub's separate code-scanning results remain visible; repository settings and
+the two required check names are unchanged. Dependency review enforces its high
+threshold inside the same required result.
+Accepted ADRs describing earlier private-repository behavior remain historical.
+
+The trusted-base contribution workflow now handles triage and metadata in one
+checkout. Label events validate metadata but do not rerun triage, preserving
+manual/release labels without a labeling feedback loop. It retains issue feedback,
+manual PR/issue dispatch and no cancellation group for required metadata results.
+Triage is advisory, so a label race or API error does not replace the required
+content verdict. It executes only `master` code, never a PR ref; permissions are
+job scoped. Only PR CI runs cancel earlier runs in their PR's group. Pushes use
+distinct commit groups, and schedules/manual runs use separate event groups, so
+unrelated events cannot cancel a language baseline.
+
+Official references verified for this implementation:
+[advanced setup](https://docs.github.com/en/code-security/how-tos/find-and-fix-code-vulnerabilities/configure-code-scanning/configuring-advanced-setup-for-code-scanning),
+[workflow languages, permissions and baseline configuration](https://docs.github.com/en/code-security/reference/code-scanning/workflow-configuration-options),
+[analysis versus vulnerability results](https://docs.github.com/en/code-security/how-tos/manage-security-alerts/manage-code-scanning-alerts/triage-alerts-in-pull-requests),
+[CodeQL Action v4](https://github.com/github/codeql-action).
+Run the local `make gate` once on the final head before landing code.
 
 Native scanning detects supported credential patterns. The completed private PII
 scrub and local identifier gate remain separate; never upload the private denylist
@@ -169,8 +229,9 @@ and the `checks` and `pr-metadata` jobs (the second runs the PR content check an
 title, body or branch); force-push and deletion are blocked, and `v*` tags
 cannot be moved or deleted. There are no bypass actors, so the owner cannot merge a failing PR
 either; the way out is editing the ruleset in the repository settings. Only checks that report
-on every pull request may be required: dependency review is skipped while private
-and the wiki build is path-filtered, so neither is. Add Aikido's PR check here only after
+on every pull request may be required: selective dependency, CodeQL and site jobs
+feed the unconditional `checks` result instead of being required individually.
+Add Aikido's PR check here only after
 a PR shows the name it reports under.
 
 ## Dependabot

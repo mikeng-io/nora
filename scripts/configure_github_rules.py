@@ -14,10 +14,9 @@ merge evaluation answered "Required status check 'PR content' is expected" for i
 was green, because it is created through the Checks API rather than by a job, and that blocked
 every merge.
 
-CodeQL, dependency review and the wiki build are deliberately not required. The first two
-are skipped while the repo is private (their matrix job never reports its real name) and
-Aikido covers them; the wiki build only runs on some paths, so requiring it would block
-every other PR forever. A required check must report on EVERY pull request.
+Selective CodeQL, dependency review and site jobs feed the unconditional `checks`
+result rather than being required individually. A required check must report on
+EVERY pull request; requiring a path-filtered workflow would block unrelated PRs.
 """
 
 from __future__ import annotations

@@ -1,19 +1,15 @@
 name: Wiki and public site
 
 on:
-  pull_request:
-    paths: ['openwiki/**', 'docs-site/**', 'site/**', 'assets/**', '.github/workflows/wiki.yml']
-  push:
-    branches: [master]
-    paths: ['openwiki/**', 'docs-site/**', 'site/**', 'assets/**', '.github/workflows/wiki.yml']
+  workflow_call:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: wiki-site-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: wiki-site-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -29,6 +25,7 @@ jobs:
       - run: npm ci --prefix docs-site
       - run: npm run build --prefix docs-site
       - run: npm ci --prefix site
+      - run: npm test --prefix site
       - run: npm run build --prefix site
       - run: cp -R docs-site/dist site/dist/wiki
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -4,19 +4,37 @@ on:
   pull_request:
   push:
     branches: [master]
+  schedule:
+    - cron: '23 4 * * 1'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  checks:
+  classify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    outputs:
+      plan: ${{ steps.plan.outputs.plan }}
+      readers: ${{ steps.plan.outputs.readers }}
+      docs_only: ${{ steps.plan.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: plan
+        run: python3 -m scripts.ci_plan
+
+  python:
+    needs: classify
+    if: ${{ always() && (needs.classify.result != 'success' || fromJSON(needs.classify.outputs.plan)['python']) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -27,8 +45,23 @@ jobs:
           python-version: '3.12'
           enable-cache: false
       - run: uv sync --frozen --extra evals
-      - name: Static checks
-        run: make lint typecheck imports
+      - run: make lint typecheck imports
+
+  contracts:
+    needs: classify
+    if: ${{ always() && (needs.classify.result != 'success' || fromJSON(needs.classify.outputs.plan)['contracts']) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: '0.13.4'
+          python-version: '3.12'
+          enable-cache: false
+      - run: uv sync --frozen --extra evals
       - name: Match the audited Periphery Compose CLI
         run: |
           mkdir -p "$HOME/.docker/cli-plugins"
@@ -39,6 +72,7 @@ jobs:
           install -m 755 "$RUNNER_TEMP/docker-compose" "$HOME/.docker/cli-plugins/docker-compose"
           docker compose version
       - name: Architecture and documentation contracts
+        if: needs.classify.outputs.docs_only != 'true' || needs.classify.result != 'success'
         run: >-
           uv run pytest -q
           tests/architecture/test_contribution_conventions.py
@@ -47,6 +81,8 @@ jobs:
           tests/architecture/test_release_scope.py
           tests/architecture/test_release_config_matches_the_repo.py
           tests/architecture/test_release_plan.py
+          tests/architecture/test_ci_plan.py
+          tests/architecture/test_ci_runs_the_plumbing_guards.py
           tests/architecture/test_pr_triage.py
           tests/architecture/test_commit_body_rule.py
           tests/architecture/test_dockerfile_bases_are_pinned.py
@@ -56,3 +92,196 @@ jobs:
           tests/test_architecture_doc.py tests/test_docs.py
           tests/test_boundaries.py tests/test_deploy_assets.py
           tests/unit/test_release_deployment.py tests/unit/test_verify_deploy.py
+      - name: Document readers selected by the existing selector
+        env:
+          READERS: ${{ needs.classify.outputs.readers }}
+        run: |
+          uv run python - <<'PYTEST'
+          import json, os, subprocess
+          targets = json.loads(os.environ['READERS'])
+          if targets == 'ALL':
+              subprocess.run(['pytest', '-q', '-n', '8'], check=True)
+          elif targets:
+              subprocess.run(['pytest', '-q', *targets], check=True)
+          PYTEST
+
+  portal:
+    needs: classify
+    if: ${{ always() && (needs.classify.result != 'success' || fromJSON(needs.classify.outputs.plan)['portal']) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.22.1'
+      - run: npm ci --prefix app
+      - run: npm run check --prefix app
+      - run: npm run build --prefix app
+
+  go:
+    needs: classify
+    if: ${{ always() && (needs.classify.result != 'success' || fromJSON(needs.classify.outputs.plan)['go']) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: deploy/instagram-bridge/go.mod
+          cache-dependency-path: deploy/instagram-bridge/go.sum
+      - run: go vet ./...
+        working-directory: deploy/instagram-bridge
+      - run: go test ./...
+        working-directory: deploy/instagram-bridge
+
+  site:
+    needs: classify
+    if: ${{ always() && (needs.classify.result != 'success' || fromJSON(needs.classify.outputs.plan).site) }}
+    uses: ./.github/workflows/wiki.yml
+
+  dependency-review:
+    needs: classify
+    if: ${{ always() && (needs.classify.result != 'success' || fromJSON(needs.classify.outputs.plan)['dependency-review']) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        if: github.event_name == 'pull_request'
+        with:
+          fail-on-severity: high
+      - name: No PR dependency delta on baseline events
+        if: github.event_name != 'pull_request'
+        run: echo 'Dependency review applies to pull requests only'
+
+  codeql-python:
+    needs: classify
+    if: ${{ always() && (needs.classify.result != 'success' || fromJSON(needs.classify.outputs.plan)['codeql-python']) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        with:
+          languages: python
+          build-mode: none
+          config-file: ./.github/codeql/config.yml
+      - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        with:
+          category: /language:python
+          output: .codeql-results
+      - name: Block high or critical findings on added PR lines
+        run: python3 -m scripts.ci_plan codeql
+
+  codeql-javascript:
+    needs: classify
+    if: ${{ always() && (needs.classify.result != 'success' || fromJSON(needs.classify.outputs.plan)['codeql-javascript']) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        with:
+          languages: javascript-typescript
+          build-mode: none
+          config-file: ./.github/codeql/config.yml
+      - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        with:
+          category: /language:javascript-typescript
+          output: .codeql-results
+      - name: Block high or critical findings on added PR lines
+        run: python3 -m scripts.ci_plan codeql
+
+  codeql-go:
+    needs: classify
+    if: ${{ always() && (needs.classify.result != 'success' || fromJSON(needs.classify.outputs.plan)['codeql-go']) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: deploy/instagram-bridge/go.mod
+          cache-dependency-path: deploy/instagram-bridge/go.sum
+      - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        with:
+          languages: go
+          build-mode: manual
+          config-file: ./.github/codeql/config.yml
+      - run: go build ./...
+        working-directory: deploy/instagram-bridge
+      - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        with:
+          category: /language:go
+          output: .codeql-results
+      - name: Block high or critical findings on added PR lines
+        run: python3 -m scripts.ci_plan codeql
+
+  codeql-actions:
+    needs: classify
+    if: ${{ always() && (needs.classify.result != 'success' || fromJSON(needs.classify.outputs.plan)['codeql-actions']) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        with:
+          languages: actions
+          build-mode: none
+          config-file: ./.github/codeql/config.yml
+      - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        with:
+          category: /language:actions
+          output: .codeql-results
+      - name: Block high or critical findings on added PR lines
+        run: python3 -m scripts.ci_plan codeql
+
+  checks:
+    if: always()
+    needs: [classify, python, contracts, portal, go, site, dependency-review, codeql-python, codeql-javascript, codeql-go, codeql-actions]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Reject failed, cancelled, missing or unexpectedly skipped selected jobs
+        env:
+          PLAN: ${{ needs.classify.outputs.plan }}
+          NEEDS: ${{ toJSON(needs) }}
+        run: python3 -m scripts.ci_plan verify

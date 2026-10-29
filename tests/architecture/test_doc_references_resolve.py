@@ -246,6 +246,13 @@ def _tracked_markdown_files() -> list[str]:
 # the operator; do not mass-rewrite the docs to clear it, and do not add to it
 # for a NEW reference (fix the doc, or the code, instead).
 _KNOWN_DANGLING: dict[tuple[str, str], str] = {
+    (
+        'docs/adr/0028-pull-requests-are-labelled-and-assigned-by-a-workflow-and-a-visible-commit-has-a-body.md',
+        '.github/workflows/pr-triage.yml',
+    ): (
+        "Issue #385 folds triage into contribution-content.yml. The historical ADR "
+        "records the earlier workflow and remains historical; resolves in git history."
+    ),
     ('design/evaluation/11-the-sandbox-rebuild.md', 'evals/PERSONA_IDENTITY.md'): (
         "ADR 0029 renamed this typed-tier file; this historical design or generated "
         "evidence citation resolves in git history. Current code uses profile names."
