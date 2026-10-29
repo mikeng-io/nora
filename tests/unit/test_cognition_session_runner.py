@@ -47,6 +47,7 @@ class FakeCognitionAgentRunner:
 
     script: list[tuple[str, dict[str, object]]] = field(default_factory=list)
     calls: int = 0
+    results: list[object] = field(default_factory=list)
     last_tool_names: list[str] = field(default_factory=list)
 
     async def run(
@@ -57,7 +58,7 @@ class FakeCognitionAgentRunner:
         by_name = {getattr(t, "__name__", None): t for t in tools}
         self.last_tool_names = sorted(n for n in by_name if n)
         for name, kwargs in self.script:
-            await by_name[name](**kwargs)
+            self.results.append(await by_name[name](**kwargs))
         return CognitionRunResult(stop_reason="end_turn")
 
 
@@ -223,3 +224,50 @@ async def test_a_wake_at_call_is_recorded_with_a_minted_ref():
     assert pace.wake_ref == "ref1"
 
 
+
+
+@pytest.mark.skip(reason="needs the one Cognition session (31 PR 3)")
+async def test_cognition_01_act_refused_before_admitted_proposal():
+    fake = FakeCognitionAgentRunner(script=[
+        ("wake_at", {"subject_rows": ["event:1"], "at": iso(NOW + 3_600_000), "why": "check it"}),
+        ("memory_propose", {"readings": [], "entities": [], "relations": [],
+                            "evidence": [], "corrections": []}),
+        ("wake_at", {"subject_rows": ["event:1"], "at": iso(NOW + 3_600_000), "why": "check it"}),
+    ])
+    runner, store, _ = _runner(agent_runner=fake)
+    await runner.probe(unit="unit-1", summary="room A has 1 new message", now_ms=NOW)
+    assert "propos" in str(fake.results[0]).lower()
+    assert len(store.paces) == 1  # only the post-admission act committed
+    assert "admitted" in str(fake.results[1]).lower()
+
+
+@pytest.mark.skip(reason="needs the one Cognition session (31 PR 3)")
+async def test_cognition_08_proposal_answer_lists_refusal_with_reason():
+    fake = FakeCognitionAgentRunner(script=[("memory_propose", {
+        "readings": [], "entities": [], "relations": [{
+            "id": "generated-wrong", "src": ["person", "generated-person"],
+            "rel": "invented", "dst": ["topic", "generated-topic"],
+            "layer": "notebook", "unit": "unit-1", "persons": [],
+        }], "evidence": [], "corrections": [],
+    })])
+    runner, store, _ = _runner(agent_runner=fake)
+    await runner.probe(unit="unit-1", summary="room A has 1 new message", now_ms=NOW)
+    answer = fake.results[0]
+    assert isinstance(answer, dict)
+    assert not answer["admitted"]
+    assert any(row["reason"] == "vocabulary" for row in answer["refused"])
+    assert not store.paces
+
+
+@pytest.mark.skip(reason="needs the one Cognition session (31 PR 3)")
+async def test_cognition_09_backfill_withholds_act_tools():
+    # The historical lane must use the SAME runner with a restricted catalogue.
+    fake = FakeCognitionAgentRunner(script=[])
+    runner, store, _ = _runner(agent_runner=fake)
+    await runner.probe(
+        unit="unit-1", summary="room A has 1 new message", now_ms=NOW, lane="backfill",
+    )
+    assert "memory_propose" in fake.last_tool_names  # positive control: session ran
+    forbidden = ("note_", "event_", "lesson_", "topic_", "wake_", "remind", "send_")
+    assert not any(name.startswith(forbidden) for name in fake.last_tool_names)
+    assert not store.paces

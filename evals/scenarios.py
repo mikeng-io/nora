@@ -47,7 +47,9 @@ CASE_KEYS = frozenset({
     "counterfactual",
 })
 PARKED_KEYS = frozenset({"reason", "why", "returns_when"})
-PARKING_REASONS = frozenset({"P-A"})
+PARKING_REASONS = frozenset({
+    "P-A", "anchor pending: chosen privately on the deploy host",
+})
 
 #: What a COUNTERFACTUAL case must state: which tier it varies, and why that
 #: variation cannot be reconstructed from any real moment.
@@ -384,6 +386,7 @@ CORPUS_ENTRY: dict[str, str] = {
     # composition builds under `[cognition] enabled = true`; with
     # sessions off in the eval config the case is an ERROR, never a pass.
     "tool_selection_cognition": "dreamer",
+    "cognition_session": "dreamer",
     # What she says about WHERE she is. A tag, and judged — "did she reply"
     # says nothing about whether the reply named the right networks, or recited
     # them unasked.
@@ -424,7 +427,9 @@ FULL_RESTORE_CORPORA: frozenset[str] = frozenset({"conversational_recall"})
 #: S2 — graded on WHICH TOOL ran, not on whether she replied. One grader only:
 #: `sample_read` groups every evaluator's labels under one case, so adding
 #: `MeetsGrader` here would let a reply verdict blur a routing one.
-ROUTED_CORPORA = frozenset({"tool_selection", "tool_selection_cognition"})
+ROUTED_CORPORA = frozenset({
+    "tool_selection", "tool_selection_cognition", "cognition_session",
+})
 
 #: S3 (grounding)/S9 (injection) — "did she reply" is structural; "was the
 #: reply right" needs a judge. Every case in these corpora expects `reply`, so
