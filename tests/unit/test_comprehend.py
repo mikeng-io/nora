@@ -685,3 +685,51 @@ def test_the_instruction_lists_the_vocabulary_admission_checks():
     assert validate_relation(interest, evidence, {SOURCE.key: SOURCE}) is None
     liked = replace(interest, rel="likes")
     assert validate_relation(liked, evidence, {SOURCE.key: SOURCE}) == "wrong_ends"
+
+
+async def test_changed_topic_reshapes_with_measured_activity_in_shadow():
+    from nora.domain.memory_graph import Admission
+
+    graph = FakeMemoryGraph()
+    topic = Entity("generated-topic", "topic", UNIT, "Generated racing")
+    relation = Relation(
+        "generated-interest",
+        PERSON.key,
+        "interested_in",
+        topic.key,
+        "notebook",
+        UNIT,
+        asserted_at=AT,
+    )
+    ev = Evidence(SOURCE.key, relation_id=relation.id)
+    admission = await graph.stage_and_admit(
+        entities=(PERSON, topic),
+        relations=(relation,),
+        evidence=(ev,),
+        sources={SOURCE.key: SOURCE},
+    )
+    valid = {
+        "part": "topic",
+        "text": "A recurring generated interest.",
+        "relation_ids": [relation.id],
+        "evidence": [list(SOURCE.key)],
+    }
+    records = InMemoryComprehendRecords()
+    # Persons and their rooms/unit precede topics in reshape.
+    model = ScriptedCognitionRunner(
+        [
+            *[[("profile_stage", {"proposals_in": []})] for _ in range(3)],
+            [("profile_stage", {"proposals_in": [valid]})],
+        ]
+    )
+    r = runner(graph, records, model)
+    await r._reshape(ITEM, admission, 7)
+    assert records.shadows[-1]["would_writes"] == [valid]
+    assert records.shadows[-1]["entity"] == topic.key
+    prompt = model.prompts[-1]
+    assert "topic_activity" in prompt and "evidence_count" in prompt
+    assert AT.isoformat() in prompt and "first_asserted_at" in prompt
+    assert "last_asserted_at" in prompt and "message" in prompt
+    graph.available = False
+    with pytest.raises(RuntimeError, match="topic activity unavailable"):
+        await r._reshape_entity(ITEM, topic.key, Subgraph("ok"), Admission(), 7)

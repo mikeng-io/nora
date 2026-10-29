@@ -11,9 +11,11 @@ from nora.domain.memory_graph import (
     Entity,
     Evidence,
     Key,
+    PersonTopicActivity,
     Relation,
     Source,
     Subgraph,
+    TopicActivity,
     Walk,
     WorkItem,
 )
@@ -49,6 +51,37 @@ class FakeMemoryGraph(AdmissionState):
 
     async def walk(self, seeds: tuple[Key, ...], query: Walk) -> Subgraph:
         return await self._walk(seeds, query)
+
+    async def topic_activity(self, *, unit: str, topic: Key, at: datetime) -> TopicActivity:
+        if not self.available:
+            return TopicActivity("unavailable")
+        if topic[0] != "topic":
+            raise ValueError("topic key required")
+        grouped: dict[Key, list[tuple[datetime, Key]]] = {}
+        for r in self.relations.values():
+            if (
+                r.unit == unit
+                and r.dst == topic
+                and r.src[0] == "person"
+                and r.rel == "interested_in"
+                and r.status == "current"
+                and (r.valid_from is None or r.valid_from <= at)
+                and (r.valid_to is None or at < r.valid_to)
+            ):
+                for e in self.evidence:
+                    if e.relation_id == r.id:
+                        grouped.setdefault(r.src, []).append((r.asserted_at, e.source))
+        persons = tuple(
+            PersonTopicActivity(
+                person,
+                len(rows),
+                min(t for t, _ in rows),
+                max(t for t, _ in rows),
+                tuple(sorted({k for _, k in rows})),
+            )
+            for person, rows in sorted(grouped.items())
+        )
+        return TopicActivity("ok" if persons else "nothing_found", persons)
 
     async def aliases(self, *, unit: str) -> Mapping[str, Key]:
         return {

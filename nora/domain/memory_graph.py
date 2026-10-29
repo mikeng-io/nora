@@ -344,6 +344,21 @@ class Subgraph:
 
 
 @dataclass(frozen=True)
+class PersonTopicActivity:
+    person: Key
+    evidence_count: int
+    first_asserted_at: datetime
+    last_asserted_at: datetime
+    sources: tuple[Key, ...]
+
+
+@dataclass(frozen=True)
+class TopicActivity:
+    status: Literal["ok", "nothing_found", "unavailable"]
+    persons: tuple[PersonTopicActivity, ...] = ()
+
+
+@dataclass(frozen=True)
 class WorkItem:
     id: str
     source: Key
@@ -382,6 +397,10 @@ class MemoryGraph(Protocol):
         sources: Mapping[Key, Source],
         corrections: tuple[Correction, ...] = (),
     ) -> Admission: ...
+    async def topic_activity(self, *, unit: str, topic: Key, at: datetime) -> TopicActivity:
+        """Unit-internal evidence counts of current interests, valid at the supplied clock."""
+        ...
+
     async def aliases(self, *, unit: str) -> Mapping[str, Key]: ...
     async def candidates(
         self,

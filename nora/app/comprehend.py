@@ -94,7 +94,7 @@ class GraphWrite(Shape):
 
 
 class ProfileProposal(Shape):
-    part: Literal["trait", "guess", "culture", "lesson"]
+    part: Literal["trait", "guess", "culture", "lesson", "topic"]
     text: str = Field(min_length=1)
     relation_ids: list[str] = Field(min_length=1)
     evidence: list[list[str]] = Field(min_length=1)
@@ -637,7 +637,8 @@ class ComprehendRunner:
             if item.response_closed
             else []
         )
-        for entity in [*persons, *rooms_units, *nora]:
+        topics = sorted(k for k in changed if k[0] == "topic")
+        for entity in [*persons, *rooms_units, *nora, *topics]:
             with span("comprehend:reshape", **{"nora.entity_kind": entity[0]}):
                 subgraph = await self.graph.walk(
                     (entity, work.source) if entity[0] == "nora" else (entity,), scope
@@ -657,12 +658,18 @@ class ComprehendRunner:
             and item.work.source in (e.relation.src, e.relation.dst)
         )
         admission = replace(admission, evidence=(*admission.evidence, *projected))
+        activity = None
+        if entity[0] == "topic":
+            activity = await self.graph.topic_activity(unit=work.unit, topic=entity, at=work.as_of)
+            if activity.status == "unavailable":
+                raise RuntimeError("reshape topic activity unavailable")
         prompt = render_reshape(
             entity,
             subgraph,
             work.as_of.isoformat(),
             evidence=admission.evidence,
             sources=item.sources,
+            activity=activity,
         )
         session = await self._session(work, "reshape", prompt, RESHAPE)
         proposals: list[dict[str, Any]] | None = None
@@ -684,6 +691,7 @@ class ComprehendRunner:
                 "room": {"culture"},
                 "unit": {"culture"},
                 "nora": {"lesson"},
+                "topic": {"topic"},
             }[entity[0]]
             relations = {
                 e.relation.id for e in subgraph.relations if e.relation.status == "current"
@@ -732,6 +740,6 @@ class ComprehendRunner:
         )
         if proposals is None:
             raise ValueError("no explicit reshape result")
-        # This service exposes no live profile/culture/lesson collaborator.
+        # This service exposes no live profile/culture/lesson/entry collaborator.
         await self.records.shadow(work, session, entity, proposals, parent)
         await self._close(session, bool(proposals))
