@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.11.27](https://github.com/mikeng-io/nora/compare/v7.11.26...v7.11.27) (2026-10-29)
+
+
+### Bug Fixes
+
+* **memory:** resolve step one's person ends and refuse untargeted evidence ([9be5d26](https://github.com/mikeng-io/nora/commit/9be5d26f40df9eed2268fcc78d548fa080d8681b))
+* **spike:** mark productive writes, each smoke mark on its own ([aa936d8](https://github.com/mikeng-io/nora/commit/aa936d8ac70b0cda4bd34af591b1f7bb7a5cea81))
+
 ## [7.11.26](https://github.com/mikeng-io/nora/compare/v7.11.25...v7.11.26) (2026-10-29)
 
 
