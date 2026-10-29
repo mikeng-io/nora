@@ -434,7 +434,7 @@ class SqlMemoryGraph:
                 for person, items in sorted(grouped.items())
             )
             return TopicActivity("ok" if persons else "nothing_found", persons)
-        except SQLAlchemyError:
+        except (SQLAlchemyError, OSError, TimeoutError):
             return TopicActivity("unavailable")
 
     async def walk(self, seeds: tuple[Key, ...], query: Walk) -> Subgraph:

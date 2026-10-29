@@ -728,7 +728,9 @@ async def test_changed_topic_reshapes_with_measured_activity_in_shadow():
     assert records.shadows[-1]["entity"] == topic.key
     prompt = model.prompts[-1]
     assert "topic_activity" in prompt and "evidence_count" in prompt
-    assert AT.isoformat() in prompt and "first_asserted_at" in prompt
+    # The activity's own times, not the payload's "now" (which is also AT).
+    assert f'"first_asserted_at": "{AT}"' in prompt
+    assert f'"last_asserted_at": "{AT}"' in prompt
     assert "last_asserted_at" in prompt and "message" in prompt
     graph.available = False
     with pytest.raises(RuntimeError, match="topic activity unavailable"):

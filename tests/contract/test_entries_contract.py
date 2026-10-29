@@ -116,6 +116,22 @@ async def test_topic_citations_record_rollup_only(store: EntryStore, kind: str) 
     assert entry.head.content.citations == (("episode", "generated"),)
 
 
+@pytest.mark.parametrize(
+    ("kind", "change", "reason"),
+    [
+        ("lesson", {}, "unknown_kind"),
+        ("topic", {"confidence": "certain"}, "confidence"),
+        ("topic", {"body": " "}, "empty"),
+        ("topic", {"instruction_hash": "not-a-hash"}, "instruction_hash"),
+    ],
+)
+async def test_entry_refuses_what_its_kind_does_not_admit(
+    store: EntryStore, kind: str, change: dict, reason: str
+) -> None:
+    with pytest.raises(ValueError, match=reason):
+        await store.create(kind=kind, unit="u", content=replace(CONTENT, **change))
+
+
 async def test_entry_stale_base(store: EntryStore) -> None:
     entry = await store.create(kind="topic", unit="u", content=CONTENT)
     first = await store.append(
