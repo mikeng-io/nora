@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.11.34](https://github.com/mikeng-io/nora/compare/v7.11.33...v7.11.34) (2026-10-29)
+
+
+### Bug Fixes
+
+* **issues:** recognize the documented Note tier area ([2920fd1](https://github.com/mikeng-io/nora/commit/2920fd1312e276d7d93bf4b8e1866643005f817c))
+
 ## [7.11.33](https://github.com/mikeng-io/nora/compare/v7.11.32...v7.11.33) (2026-10-29)
 
 
