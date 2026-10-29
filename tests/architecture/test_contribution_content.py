@@ -419,9 +419,10 @@ def test_privileged_metadata_jobs_use_only_default_branch_code():
     assert workflow["jobs"]["pr-metadata"]["permissions"] == {
         "contents": "read",
         "checks": "write",
-        "pull-requests": "read",
+        "pull-requests": "write",
+        "issues": "write",
     }
-    metadata = workflow["jobs"]["pr-metadata"]["steps"][1]
+    metadata = workflow["jobs"]["pr-metadata"]["steps"][2]
     assert metadata["env"]["RELEASE_APP_BOT_USER_ID"] == "${{ vars.RELEASE_APP_BOT_USER_ID }}"
     assert "RELEASE_APP_ID" not in metadata["env"]
     assert workflow["jobs"]["issue-feedback"]["permissions"] == {
