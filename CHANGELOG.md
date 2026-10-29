@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.11.26](https://github.com/mikeng-io/nora/compare/v7.11.25...v7.11.26) (2026-10-29)
+
+
+### Bug Fixes
+
+* **memory:** echo only schema field names and error types on a refusal ([f59f691](https://github.com/mikeng-io/nora/commit/f59f6917bb5548c79e15b3a373c3e1f3f92f72c1))
+* **memory:** tell step one where its write was the wrong shape ([50ce3f2](https://github.com/mikeng-io/nora/commit/50ce3f2d7bab6de5fb02aab11b9de42bae810d53))
+
 ## [7.11.25](https://github.com/mikeng-io/nora/compare/v7.11.24...v7.11.25) (2026-10-29)
 
 
