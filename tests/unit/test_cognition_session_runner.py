@@ -268,6 +268,11 @@ async def test_cognition_09_backfill_withholds_act_tools():
         unit="unit-1", summary="room A has 1 new message", now_ms=NOW, lane="backfill",
     )
     assert "memory_propose" in fake.last_tool_names  # positive control: session ran
-    forbidden = ("note_", "event_", "lesson_", "topic_", "wake_", "remind", "send_")
+    # Every act verb of 29 §4 and today's Cognition closures; PR 3 widens this
+    # to the catalogue it builds, never narrows it.
+    forbidden = (
+        "note_", "memo_", "event_", "lesson_", "topic_", "decision_", "commitment_",
+        "standing_", "wake_", "remind", "send_",
+    )
     assert not any(name.startswith(forbidden) for name in fake.last_tool_names)
     assert not store.paces

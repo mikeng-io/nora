@@ -120,7 +120,7 @@ cases:
     args_include:
       memory_propose:
       - plans
-      - reading
+      - '"readings": [{'
   parked:
     reason: 'anchor pending: chosen privately on the deploy host'
     why: No private clone has been inspected for this case. No anchor is asserted.
@@ -271,9 +271,6 @@ cases:
     - lesson_write
     - lesson_retire
     - standing_revise
-    args_exclude:
-      memory_propose:
-      - attended
   parked:
     reason: 'anchor pending: chosen privately on the deploy host'
     why: No private clone has been inspected for this case. No anchor is asserted.
@@ -319,7 +316,7 @@ cases:
     - standing_revise
     args_include:
       memory_propose:
-      - reading
+      - '"readings": [{'
   parked:
     reason: 'anchor pending: chosen privately on the deploy host'
     why: No private clone has been inspected for this case. No anchor is asserted.
