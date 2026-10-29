@@ -54,6 +54,7 @@ members:
   - 20-embedding-bakeoff.md
   - 25-memory-graph.md
   - 27-the-memory-is-a-graph.md
+  - 28-provenance.md
   - 30-identity-and-character.md
   - 35-persona.md
   - 45-persona-adaptor.md
@@ -101,6 +102,8 @@ edges:
   - {src: 18-extraction, dst: 45-persona-adaptor, rel: extends, provenance: asserted}
   - {src: 18-extraction, dst: ../cognition-loop/05-data-model, rel: extends, provenance: asserted}
   - {src: 18-extraction, dst: ../cognition-loop/25-rollup, rel: extends, provenance: asserted}
+  - {src: 28-provenance, dst: 27-the-memory-is-a-graph, rel: details, provenance: asserted}
+  - {src: 28-provenance, dst: 40-prior-art, rel: extends, provenance: asserted}
   - {src: 27-the-memory-is-a-graph, dst: 00-intent, rel: extends, provenance: asserted}
   - {src: 27-the-memory-is-a-graph, dst: 15-memory-map, rel: extends, provenance: asserted}
   - {src: 27-the-memory-is-a-graph, dst: 25-memory-graph, rel: extends, provenance: asserted}
