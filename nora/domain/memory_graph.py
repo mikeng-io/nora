@@ -22,7 +22,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal, Protocol, get_args
 
-EntityKind = Literal["person", "room", "unit", "nora", "place", "event", "work", "organisation"]
+EntityKind = Literal[
+    "person", "room", "unit", "nora", "place", "event", "work", "organisation", "topic"
+]
 ENTITY_KINDS: tuple[str, ...] = get_args(EntityKind)
 GraphRelation = Literal[
     "authored_by",
@@ -46,6 +48,7 @@ GraphRelation = Literal[
     "features",
     "likes",
     "dislikes",
+    "interested_in",
     "works_at",
     "studies_at",
     "lives_in",
@@ -155,8 +158,11 @@ RELATION_RULES: Mapping[str, RelationRule] = {
     "features": _rule(("event",), ("work", "person", "organisation")),
     "same_as": _rule(ENTITY_KINDS, ENTITY_KINDS),
 }
+# A subject someone keeps returning to is `interested_in` a topic; `likes` is a
+# preference for one specific thing (notebook-memory-types/10 §3).
 for _rel in ("likes", "dislikes"):
     RELATION_RULES = {**RELATION_RULES, _rel: _rule(("person",), ("work", "place", "event"))}
+RELATION_RULES = {**RELATION_RULES, "interested_in": _rule(("person",), ("topic",))}
 LOCATION_BEARING: frozenset[str] = frozenset({"works_at", "studies_at", "lives_in", "member_of"})
 for _rel in LOCATION_BEARING:
     RELATION_RULES = {**RELATION_RULES, _rel: _rule(("person",), ("organisation", "place"))}
@@ -182,6 +188,8 @@ class Entity:
 
 
 POINTER_KINDS: frozenset[str] = frozenset({"person", "room", "unit", "nora"})
+# The kinds a model may propose; pointers come from code (§3).
+PROPOSED_KINDS: tuple[str, ...] = tuple(k for k in ENTITY_KINDS if k not in POINTER_KINDS)
 
 
 def pointer_entity(kind: str, unit: str, ref: str, name: str) -> Entity:

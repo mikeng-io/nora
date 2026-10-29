@@ -180,7 +180,8 @@ human adds it to the list.
 (the existing place and area hubs become entities), `event` (something that
 happens at a time: a concert, a dinner, a trip, a launch), `work` (a thing
 with an identity: a game, a show, an artist, a product, a song),
-`organisation` (an employer, a school, a venue's operator, a team).
+`organisation` (an employer, a school, a venue's operator, a team). Amended 2026-10-29 (§6b): `topic` (a subject people keep returning to:
+racing, not one race).
 
 **The starting relations:**
 
@@ -196,7 +197,8 @@ with an identity: a game, a show, an artist, a product, a song),
 | `went_with` | person → person | notebook | took part in the same event together; cites the event and the co-presence evidence |
 | `at` | event → place | notebook | where it happened |
 | `features` | event → work, person, organisation | notebook | who or what the event was of (the artist of a concert, the game of a tournament) |
-| `likes`, `dislikes` | person → work, place, event kind | notebook | a stated or repeatedly shown preference; the claim's speech act is kept (stated / said by another / shown) |
+| `likes`, `dislikes` | person → work, place, event | notebook | a stated or repeatedly shown preference for one specific thing; the claim's speech act is kept (stated / said by another / shown). Amended 2026-10-29 (§6b): never a subject; that is `interested_in` |
+| `interested_in` | person → topic | notebook | added 2026-10-29 (§6b): the person keeps returning to the subject; its weight is its evidence, counted by code |
 | `works_at`, `studies_at`, `lives_in`, `member_of` | person → organisation, place | notebook | 47's location-bearing claims (workplace, residence, regular places) as relations; the code-set `location` flag carries over (47, decided 2026-10-22) |
 | `concerns`, `settles`, `serves`, `fulfils`, `cancels` | Notebook entry → entity, entry, ledger item | notebook | §6 |
 | `same_as` | entity → entity | notebook | the two are one; §7 step 1.4 |
@@ -302,6 +304,39 @@ reads a room's culture; culture is now written by step 2 (§9) into the same
 store, so the reader is unchanged. No conflict.
 
 **Agent worker and computer unit scope:** no conflict. An agent-worker session becomes a turn-record occasion (its 50, step 6), so it reaches the graph as a `turn` node like any turn; computer-unit-scope already scopes the `session` nodes of §6 to the unit. No change to either.
+
+## 6b. The Notebook by memory type (2026-10-29)
+
+[notebook-memory-types](../notebook-memory-types/00-design.md) (#371)
+reorganised the Notebook into five kinds and made a person's interest a graph
+edge. Three consequences for this graph, settled here:
+
+- **A topic is an entity, and an interest is one relation.** `topic` joins the
+  entity kinds and `interested_in` (person → topic) the relations (§5).
+  `likes`/`dislikes` narrow to one specific work, place or event, so "likes
+  racing" has one home and never two that drift
+  ([10](../notebook-memory-types/10-relations.md) §3). Operator, 2026-10-29.
+- **Topic activity is counted from judged relations, so it is not Rollup.**
+  Which messages are about racing is a step-1 judgement (`interested_in`, and
+  readings `about` the topic), and the Rollup is rebuilt from Record by code
+  with no model. The interest's weight is therefore its own evidence rows,
+  counted by code at read (the walk's evidence count and the asserted range:
+  who, how often, last moved). This amends the bundle's "activity is Rollup"
+  (00 §3, 10 §3) in where it lives, not in what it is; a separate topic-activity
+  builder is not needed until a read is measured needing more than the counts.
+- **The old Notebook kinds stay in the vocabulary until the migration node.**
+  `memo`, `standing`, `thread`, `commitment` and `event_entry` remain entry
+  kinds (§6) and keep their relations (`settles`, `fulfils`, `cancels`,
+  `records`) until each store moves onto the one entry. Step 1 writes no
+  entries, so the backfill is unaffected; it does need `topic`, which is why
+  that lands first.
+
+**Measured 2026-10-29, spike run 5:** step 1 admitted no notebook relation and
+no entity from 78 items: 231 relations were refused as outside the vocabulary
+(`shared`, `asked_about`, `bought`, …), and their entities and evidence fell
+with them as orphans. The instruction never named the vocabulary. It now lists
+the proposable kinds and relations, rendered from the same rules admission
+checks (`comprehend_render._VOCABULARY`), so the two cannot drift.
 
 ## 7. One Cognition loop: comprehend, measure, serialize
 

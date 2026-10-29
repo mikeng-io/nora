@@ -54,6 +54,11 @@ The profile may say *how* someone engages ("follows the qualifying sessions,
 tunes out the merchandise talk"), citing what shows it, and never states the
 interest alone. Two copies of "likes racing" would drift.
 
+Amended 2026-10-29 ([unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md)
+§6b): the edge is `interested_in`, and its weight is its own evidence counted
+by code, not a Rollup row, because which messages are about a topic is a
+judgement. `likes` narrows to one specific thing.
+
 This holds unless personalisation is measured needing an interest that has no
 topic activity behind it (one stated once and never discussed); then that
 statement is an extraction in the Record, still not a profile line.

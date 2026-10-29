@@ -656,3 +656,28 @@ async def test_register_partial_walk_raises_before_projecting_any_changes():
         await links.project(changed, 2)
     assert all(r.valid_to is None for r in graph.relations.values())
     assert len(records.graphs) == 1
+
+
+def test_the_instruction_lists_the_vocabulary_admission_checks():
+    from nora.domain.memory_graph import (
+        ENTITY_KINDS,
+        PROPOSED_KINDS,
+        RELATION_RULES,
+        validate_relation,
+    )
+    from nora.language.comprehend_render import COMPREHEND
+
+    kinds = next(line for line in COMPREHEND.splitlines() if line.startswith("Entity kinds"))
+    assert all(kind in kinds for kind in PROPOSED_KINDS) and "person" not in kinds
+    for rel, rule in RELATION_RULES.items():
+        if rule.layer == "notebook" and set(rule.sources) <= set(ENTITY_KINDS):
+            assert f"\n- {rel}: " in COMPREHEND
+    topic = Entity("generated-topic", "topic", UNIT, "Generated Sport")
+    evidence = (Evidence(SOURCE.key, relation_id="generated-interest", span="like Hall"),)
+    interest = Relation(
+        "generated-interest", PERSON.key, "interested_in", topic.key, "notebook", UNIT,
+        asserted_at=AT,
+    )
+    assert validate_relation(interest, evidence, {SOURCE.key: SOURCE}) is None
+    liked = replace(interest, rel="likes")
+    assert validate_relation(liked, evidence, {SOURCE.key: SOURCE}) == "wrong_ends"

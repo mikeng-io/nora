@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 from nora.domain.extraction import CLAIM_DROP_REASONS
 from nora.domain.memory_graph import (
+    PROPOSED_KINDS,
     Key,
     MemoryGraph,
     RefusalReason,
@@ -111,7 +112,7 @@ async def build_preview(graph: MemoryGraph, item: ComprehendItem) -> Preview:
     for name in dict.fromkeys(
         [a for a in aliases if a and a.casefold() in text] + [n for n in named if n]
     ):
-        for kind in ("place", "event", "work", "organisation"):
+        for kind in PROPOSED_KINDS:
             choices = await graph.candidates(
                 unit=work.unit, kind=kind, name=name, near=seeds[0], window=window, limit=5
             )

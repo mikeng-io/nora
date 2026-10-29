@@ -94,7 +94,7 @@ async def load(graph: MemoryGraph, relation: Relation = REL) -> None:
 
 def test_vocabulary_is_complete() -> None:
     assert set(GRAPH_RELATIONS) == set(RELATION_RULES)
-    assert len(ENTITY_KINDS) == 8
+    assert len(ENTITY_KINDS) == 9
 
 
 @pytest.mark.parametrize(

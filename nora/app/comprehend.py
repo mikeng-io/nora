@@ -21,6 +21,7 @@ from nora.app.extraction import ExtractionClaim
 from nora.domain.comprehend import PARTS, REFUSAL_REASONS, ComprehendItem, build_preview
 from nora.domain.extraction import partition_claims
 from nora.domain.memory_graph import (
+    PROPOSED_KINDS,
     Admission,
     Correction,
     Entity,
@@ -307,7 +308,7 @@ class ComprehendRunner:
                 for alias, key in aliases.items()
                 if alias and alias.casefold() in query.casefold()
             ]
-            for kind in ("place", "event", "work", "organisation"):
+            for kind in PROPOSED_KINDS:
                 seeds.extend(
                     e.key
                     for e in await self.graph.candidates(
