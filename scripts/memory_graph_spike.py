@@ -543,11 +543,11 @@ async def quality(
             "source_keys": snapshot.get("source_keys", {}),
             "rows": [
                 {"id": r["id"], "ts": r.get("ts")}
-                for r in snapshot.get("messages", []) + snapshot.get("context", [])
+                for r in [*snapshot.get("messages", ()), *snapshot.get("context", ())]
             ],
         }
-        source = candidate["input"]["sources"]
-        source = source + [
+        # asdict() keeps the item's tuples, so build a list rather than concatenate.
+        source = [*candidate["input"]["sources"]] + [
             s
             for r in receipts
             if r["work_id"] == wid and r["part"] == "shown_sources"

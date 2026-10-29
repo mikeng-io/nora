@@ -118,7 +118,9 @@ def test_age_scope_and_query_grammar_cannot_read_foreign_unit():
 async def test_relation_judge_sees_only_cited_sources(monkeypatch, tmp_path):
     source = {"key": ["message", "generated-one"], "text": "Generated cited evidence"}
     unrelated = {"key": ["message", "generated-two"], "text": "Generated uncited evidence"}
-    candidate = {"input": {"sources": [source, unrelated]}}
+    # Shaped like candidates(): asdict() of the item keeps its tuples.
+    candidate = {"input": {"sources": (source, unrelated), "snapshot": {"messages": ()}}}
+    shown = {"work_id": "generated-work", "part": "shown_sources", "payload": {"sources": []}}
     receipt = {
         "work_id": "generated-work",
         "part": "graph",
@@ -136,7 +138,8 @@ async def test_relation_judge_sees_only_cited_sources(monkeypatch, tmp_path):
 
     monkeypatch.setattr(spike, "rows", AsyncMock(return_value=[]))
     report = await spike.quality(
-        None, {"generated-work": candidate}, [receipt], SimpleNamespace(score=judge), tmp_path, 1
+        None, {"generated-work": candidate}, [shown, receipt], SimpleNamespace(score=judge),
+        tmp_path, 1,
     )
     assert report["relation_precision"]["status"] == "PASS"
 
