@@ -1,0 +1,23 @@
+[
+  {
+    "name": "acts are a hard failure",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "\"status\": \"FAIL\" if acts else \"PASS\"",
+    "new": "\"status\": \"PASS\" if acts else \"PASS\"",
+    "target": "tests/unit/test_memory_graph_spike.py::test_acts_fail"
+  },
+  {
+    "name": "judge error cannot pass",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "\"ERROR\"\n        if counts[\"ERROR\"]",
+    "new": "\"PASS\"\n        if counts[\"ERROR\"]",
+    "target": "tests/unit/test_memory_graph_spike.py::test_judge_error_never_passes"
+  },
+  {
+    "name": "routing query overrides cannot select production",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "if {\"host\", \"port\", \"database\"} & u.query.keys():",
+    "new": "if False:",
+    "target": "tests/unit/test_memory_graph_spike.py::test_refuses_unacknowledged_or_production_url"
+  }
+]

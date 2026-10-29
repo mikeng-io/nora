@@ -1,0 +1,29 @@
+name: nora-memory-graph-spike
+services:
+  snapshot:
+    image: pgvector/pgvector:pg18
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_DB: nora_snapshot
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d nora_snapshot"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    ports: ["127.0.0.1:55432:5432"]
+    volumes: ["snapshot:/var/lib/postgresql"]
+  age:
+    image: apache/age:release_PG18_1.8.0
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_DB: nora_age_spike
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d nora_age_spike"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    ports: ["127.0.0.1:55433:5432"]
+    volumes: ["age:/var/lib/postgresql"]
+volumes:
+  snapshot:
+  age:
