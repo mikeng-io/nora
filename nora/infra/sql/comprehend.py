@@ -91,6 +91,16 @@ class SqlComprehendRecords:
         truncated snippet. Query by exact source key AND unit before expanding.
         """
         kind, ref = work.source
+        if kind == "social_read":
+            async with self.engine.connect() as conn:
+                ids = (await conn.execute(sa.select(SOCIAL_ITEM.c.network, SOCIAL_ITEM.c.item_id)
+                    .where(SOCIAL_ITEM.c.read_id == ref))).all()
+            if not ids:
+                raise ValueError("social read has no recorded items")
+            items = [await self.load(replace(work, source=("social", f"{n}:{i}")))
+                     for n, i in ids]
+            return replace(items[0], work=work,
+                sources=tuple({s.key: s for item in items for s in item.sources}.values()))
         if kind == "message_batch":
             ids = json.loads(ref)
             if not isinstance(ids, list) or not ids or len(ids) > 20 or any(

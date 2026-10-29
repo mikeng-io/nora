@@ -184,7 +184,10 @@ def _check(name: str, row: dict[str, Any]) -> None:
         )
     snapshot = row.get("snapshot") or {}
     if snapshot:
-        missing = sorted(SNAPSHOT_KEYS - set(snapshot))
+        required = SNAPSHOT_KEYS
+        if name == "cognition_session" and (row.get("metadata") or {}).get("wake"):
+            required = SNAPSHOT_KEYS - {"before_ms"}
+        missing = sorted(required - set(snapshot))
         extra = sorted(set(snapshot) - SNAPSHOT_KEYS)
         if missing or extra:
             raise ValueError(

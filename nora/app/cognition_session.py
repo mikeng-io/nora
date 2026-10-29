@@ -2620,7 +2620,9 @@ class CognitionSessionRunner:
                         inspect.signature(verb).bind(*args, **kwargs).arguments)
                     existing = await self._memory.records.act_result(key, state.session_id)
                     if existing is not None:
-                        await self._memory.link_result(state, existing)
+                        await self._memory.link_result(state,
+                            {**existing, **({"event_id": existing["id"]}
+                                if verb.__name__ == "event_propose" else {})})
                         return dict(existing)
                 state.acted = True
                 unstop()
@@ -2630,7 +2632,9 @@ class CognitionSessionRunner:
                     unstop()
                 if key is not None and result.get("status") == "ok":
                     await self._memory.records.act_result(key, state.session_id, result)
-                    await self._memory.link_result(state, result)
+                    await self._memory.link_result(state,
+                        {**result, **({"event_id": result["id"]}
+                            if verb.__name__ == "event_propose" else {})})
                 return result
             return call
 

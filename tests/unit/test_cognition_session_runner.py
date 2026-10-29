@@ -368,3 +368,56 @@ async def test_schema_refusal_is_returned_and_never_unlocks_acts():
     assert any(r["reason"] == "schema" for r in fake.results[0]["refused"])
     assert fake.results[1]["reason"] == "proposal_required"
     assert not store.paces
+
+
+async def test_retried_link_write_relinks_existing_register_row_by_id(monkeypatch):
+    from tests.unit.cognition_rig import GOOD_BODY, NOTE, Stores, session
+    memory = wake_memory()
+    stores = Stores()
+    links = []
+
+    async def link(state, result):
+        links.append(result["note_id"])
+        if len(links) == 1:
+            raise RuntimeError("generated link outage after Register commit")
+        assert result["note_id"] in stores.notes.notes
+
+    monkeypatch.setattr(memory, "link_result", link)
+    answers = []
+
+    async def behave(by, tools):
+        await by["memory_propose"](**proposal())
+        answers.append(await by["note_create"](body=GOOD_BODY, **NOTE))
+        answers.append(await by["note_create"](body=GOOD_BODY, **NOTE))
+
+    await session(behave, stores=stores, runner_kwargs={"memory": memory})
+    assert [a["status"] for a in answers] == ["unavailable", "ok"]
+    assert links[0] == links[1] == answers[1]["note_id"]
+    assert len(stores.notes.notes) == 1
+
+
+async def test_stays_and_plays_join_the_same_proposal_coverage():
+    from dataclasses import replace
+    from types import SimpleNamespace
+
+    from nora.agent.fetch_watch import GraphFetched
+    from nora.domain.cognition_ground import Grounding
+    from nora.domain.comprehend import ComprehendItem
+    from nora.domain.memory_graph import Source, WorkItem
+    memory = wake_memory()
+    play = replace(_pending("unit-1")[0], kind="play", ref="play:generated-play")
+    stay = replace(play, id=2, kind="rollup", ref="arrival|generated-place|generated-person|1000")
+    source = Source(("play", "generated-play"), "record", "unit-1", (), "Generated track")
+    work = WorkItem("generated-play", source.key, "unit-1", "hash", datetime.now(UTC))
+    memory.records.items[source.key] = ComprehendItem(work, (source,), "signal", "home-room",
+        snapshot={"messages": [], "context": []})
+    state = SimpleNamespace(now_ms=NOW, unit="unit-1", session_id=1, historical=False,
+        items_by_index={0: SimpleNamespace(stimulus_ids=(1, 2), room=HOME)}, memory_items={},
+        graph_fetched=GraphFetched(), admitted_indices=set(), admitted_relations={},
+        admitted_evidence=[])
+    await memory.prepare(state, {1: play, 2: stay}, Grounding())
+    assert {s.key[0] for s in state.memory_items[0].sources} == {"play", "rollup"}
+    assert "Generated track" in state.graph_text
+    answer = await memory.propose(state, items=[0], payload={k: v for k, v in proposal().items()
+                                                            if k != "items"})
+    assert answer["admitted"] == [0]

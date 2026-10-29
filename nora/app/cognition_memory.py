@@ -73,6 +73,21 @@ class WakeMemory:
                     text = json.dumps(asdict(line), default=str) if line else stimulus.ref
                     sources.append(Source((stimulus.kind, str(sid)), "rollup", state.unit,
                         (stimulus.person_id,) if stimulus.person_id else (), text))
+            sources = list({s.key: s for s in sources}.values())
+            original_rows = {r["id"]: r for r in rows}
+            rows = []
+            source_keys = {}
+            next_id = max([int(s.key[1]) for s in sources if s.key[0] == "message"] + [0]) + 1
+            for source in sources:
+                if source.layer != "record":
+                    continue
+                row_id = int(source.key[1]) if source.key[0] == "message" else next_id
+                next_id += 1
+                rows.append({"id": row_id, "body": source.text,
+                    "ts": original_rows.get(row_id, {}).get("ts", state.now_ms),
+                    "person_id": source.persons[0] if len(source.persons) == 1 else "",
+                    "mentions": []})
+                source_keys[str(row_id)] = list(source.key)
             digest = hashlib.sha256(json.dumps([asdict(s) for s in sources],
                                               sort_keys=True).encode()).hexdigest()
             work = WorkItem(f"stimuli:{','.join(map(str, agenda.stimulus_ids))}",
@@ -81,8 +96,7 @@ class WakeMemory:
             item = ComprehendItem(work, tuple(sources), agenda.room.platform,
                                   agenda.room.conversation_id,
                                   snapshot={"messages": rows, "context": [],
-                                            "source_keys": {str(r["id"]): ["message", str(r["id"])]
-                                                            for r in rows}})
+                                            "source_keys": source_keys})
             state.memory_items[index] = item
             for source in sources:
                 state.graph_fetched.show(source)
