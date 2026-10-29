@@ -336,6 +336,48 @@ _REASONING_EFFORTS: frozenset[str] = frozenset(
 )
 
 
+def search_provider(cfg: Config) -> SearchProvider | None:
+    """The configured web search backend, or None when it is off or has no key."""
+    search_client: SearchProvider | None = None
+    if cfg.search.enabled:
+        search_key = os.environ.get(cfg.search.api_key_env, "")
+        if search_key and cfg.search.provider == "exa":
+            from nora.infra.search import ExaSearchProvider
+            search_client = ExaSearchProvider(
+                api_key=search_key,
+                url=cfg.search.exa.url,
+                contents_url=cfg.search.exa.contents_url,
+                search_type=cfg.search.exa.type,
+                max_results=cfg.search.max_results,
+                content_max_chars=cfg.search.content_max_chars,
+                extract_max_chars=cfg.search.extract_max_chars,
+                fetch_max_age_hours=cfg.search.exa.fetch_max_age_hours,
+                timeout_seconds=cfg.search.timeout_seconds,
+            )
+        elif search_key:
+            from nora.infra.search import TavilySearchProvider
+            search_client = TavilySearchProvider(
+                api_key=search_key,
+                url=cfg.search.tavily.url,
+                max_results=cfg.search.max_results,
+                search_depth=cfg.search.tavily.search_depth,
+                content_max_chars=cfg.search.content_max_chars,
+                timeout_seconds=cfg.search.timeout_seconds,
+                extract_url=cfg.search.tavily.extract_url,
+                extract_depth=cfg.search.tavily.extract_depth,
+                extract_max_chars=cfg.search.extract_max_chars,
+                min_score=cfg.search.tavily.min_score,
+            )
+        else:
+            log.warning(
+                "search enabled on provider %s but %s is unset — web_search "
+                "stays unavailable",
+                cfg.search.provider,
+                cfg.search.api_key_env,
+            )
+    return search_client
+
+
 def _room_claims(allowlist: Policy) -> dict[str, frozenset[tuple[str, str]]]:
     """Conversation id -> every `(unit, platform)` pair policy.toml assigns it,
     across every id form the room has had. Events store the conversation id
@@ -2712,43 +2754,7 @@ async def build_dependencies(
     # `SearchProvider` and cannot tell which vendor it got. Neither backend
     # needs an SSRF gate: each crawls from its OWN servers, never Nora's,
     # whether it is handed a query or a url.
-    search_client: SearchProvider | None = None
-    if cfg.search.enabled:
-        search_key = os.environ.get(cfg.search.api_key_env, "")
-        if search_key and cfg.search.provider == "exa":
-            from nora.infra.search import ExaSearchProvider
-            search_client = ExaSearchProvider(
-                api_key=search_key,
-                url=cfg.search.exa.url,
-                contents_url=cfg.search.exa.contents_url,
-                search_type=cfg.search.exa.type,
-                max_results=cfg.search.max_results,
-                content_max_chars=cfg.search.content_max_chars,
-                extract_max_chars=cfg.search.extract_max_chars,
-                fetch_max_age_hours=cfg.search.exa.fetch_max_age_hours,
-                timeout_seconds=cfg.search.timeout_seconds,
-            )
-        elif search_key:
-            from nora.infra.search import TavilySearchProvider
-            search_client = TavilySearchProvider(
-                api_key=search_key,
-                url=cfg.search.tavily.url,
-                max_results=cfg.search.max_results,
-                search_depth=cfg.search.tavily.search_depth,
-                content_max_chars=cfg.search.content_max_chars,
-                timeout_seconds=cfg.search.timeout_seconds,
-                extract_url=cfg.search.tavily.extract_url,
-                extract_depth=cfg.search.tavily.extract_depth,
-                extract_max_chars=cfg.search.extract_max_chars,
-                min_score=cfg.search.tavily.min_score,
-            )
-        else:
-            log.warning(
-                "search enabled on provider %s but %s is unset — web_search "
-                "stays unavailable",
-                cfg.search.provider,
-                cfg.search.api_key_env,
-            )
+    search_client = search_provider(cfg)
     # `x_read`, `x_search` (DEC-201), `instagram_read` and `instagram_search`
     # get ONE `SocialProvider` — `SocialRouter`
     # — and the registry stays unaware that there are two backends under it.
