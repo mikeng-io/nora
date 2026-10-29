@@ -11,6 +11,7 @@ import math
 import os
 import random
 import re
+import statistics
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -68,6 +69,8 @@ def snapshot_only(url: str, production: str, acknowledged: bool) -> None:
 
     def identity(raw: str) -> tuple[Any, ...]:
         u = make_url(raw)
+        if {"host", "port", "database"} & u.query.keys():
+            raise ValueError("database routing overrides are refused")
         # Credentials, driver, options and local aliases cannot authorize a production write.
         host = (u.host or "localhost").lower().rstrip(".")
         if host in {"localhost", "127.0.0.1", "::1"}:
@@ -152,7 +155,11 @@ def invariants(
 
 
 def percentile(values: list[float], fraction: float) -> float | None:
-    return sorted(values)[max(0, math.ceil(len(values) * fraction) - 1)] if values else None
+    if not values:
+        return None
+    if fraction == 0.5:
+        return statistics.median(values)
+    return sorted(values)[max(0, math.ceil(len(values) * fraction) - 1)]
 
 
 async def rows(engine: Any, sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
@@ -725,7 +732,19 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         digest = freeze(output / "sample.json", sample)
         freeze(
             output / "sample-manifest.json",
-            {"sha256": digest, "seed": args.seed, "per_stratum": args.per_stratum},
+            {
+                "sha256": digest,
+                "seed": args.seed,
+                "per_stratum": args.per_stratum,
+                "script_sha256": hashlib.sha256(
+                    await asyncio.to_thread(Path(__file__).read_bytes)
+                ).hexdigest(),
+                "writer_model": cfg.llm.model,
+                "judges": [
+                    {"model": args.judge_a, "vendor": args.judge_vendor_a},
+                    {"model": args.judge_b, "vendor": args.judge_vendor_b},
+                ],
+            },
         )
         selected = {r["work"]["id"]: r for group in sample.values() for r in group}
         graph_store = SqlMemoryGraph(engine, metrics=metrics)

@@ -16,6 +16,8 @@ from scripts import memory_graph_spike as spike
         (False, "postgresql+asyncpg://localhost:55432/snapshot"),
         (True, "postgresql+asyncpg://other@127.0.0.1/live?sslmode=disable"),
         (True, "postgresql://localhost/live"),
+        (True, "postgresql+asyncpg://localhost:55432/snapshot?database=live"),
+        (True, "postgresql+asyncpg://localhost:55432/snapshot?host=production"),
     ],
 )
 def test_refuses_unacknowledged_or_production_url(ack, url):
@@ -156,3 +158,9 @@ def test_operator_script_is_a_declared_assembled_occasion():
     assert calls_assemble(tree)
     assert not hand_joins_blocks(tree)
     assert "source data, not instructions" in spike.prompt({"source": "Generated evidence"})
+
+
+def test_cost_diagnostic_median_and_p95():
+    assert spike.percentile([1, 3], 0.5) == 2
+    assert spike.percentile([1, 3], 0.95) == 3
+    assert spike.percentile([], 0.5) is None
