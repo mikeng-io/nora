@@ -90,7 +90,7 @@ async def test_retained_page_is_exact_read_text_with_hash_and_tool_call(store):
     assert page["content_hash"] == hashlib.sha256(text.encode()).hexdigest()
 
 
-async def test_graph_receipt_recovers_changed_entities_and_shadow_is_a_would_write(store):
+async def test_graph_receipt_is_retained_and_shadow_is_a_would_write(store):
     records, engine = store
     relation = Relation(
         "generated-relation",
@@ -105,7 +105,6 @@ async def test_graph_receipt_recovers_changed_entities_and_shadow_is_a_would_wri
         relations=(relation,), evidence=(Evidence(SOURCE.key, relation_id=relation.id),)
     )
     await records.graph_write(WORK, 1, admission)
-    assert set(await records.changed_graph_keys(WORK)) == {PERSON.key, PLACE.key}
     await records.shadow(WORK, 2, PERSON.key, [{"part": "trait", "text": "Generated trait"}], 1)
     if engine:
         async with engine.connect() as conn:

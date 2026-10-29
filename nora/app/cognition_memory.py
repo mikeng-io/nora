@@ -181,4 +181,9 @@ class WakeMemory:
         item = next(iter(state.memory_items.values()))
         await self.records.shadow(item.work, state.session_id, tuple(entity),
                                   [p.model_dump() for p in parsed], state.session_id)
-        return {"status": "ok", "note": "Profile proposals recorded in shadow."}
+        result = {"status": "ok", "note": "Profile proposals recorded in shadow."}
+        if entity[0] == "topic":
+            activity = await self.graph.topic_activity(unit=state.unit, topic=tuple(entity),
+                                                       at=item.work.as_of)
+            result["topic_activity"] = json.loads(json.dumps(asdict(activity), default=str))
+        return result

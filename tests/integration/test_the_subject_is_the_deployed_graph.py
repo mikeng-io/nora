@@ -32,8 +32,8 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
     """Same type, same builder, same field count as `nora/__main__.py` gets."""
     subject = await obtain(spec)
     assert isinstance(subject.deps, Dependencies)
-    assert len(dataclasses.fields(Dependencies)) == 77, (
-        "76 -> 77: optional graph comprehension runner. "
+    assert len(dataclasses.fields(Dependencies)) == 76, (
+        "77 -> 76: per-item driver retired; the wake owns comprehension. "
         "75 -> 76: the optional graph arrival batch producer. "
         "74 -> 75: the identity/policy reload lifecycle and loaded snapshot health. "
         "73 -> 74: the optional extraction Record writer. "

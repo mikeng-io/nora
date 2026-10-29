@@ -15,7 +15,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.comprehend import ComprehendItem
-from nora.domain.memory_graph import Admission, Evidence, Key, Layer, Source, WorkItem
+from nora.domain.memory_graph import Admission, Key, Layer, Source, WorkItem
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.infra.sql.extraction import link_replies, source_rows
 from nora.infra.sql.schema import (
@@ -490,7 +490,7 @@ class SqlComprehendRecords:
             base, work=work, sources=tuple(sources), snapshot=snapshot, response_closed=closed
         )
 
-    async def receipt(
+    async def _receipt(
         self, work: WorkItem, session: int, part: str, payload: dict[str, Any]
     ) -> None:
         async with self.engine.begin() as conn:
@@ -611,30 +611,10 @@ class SqlComprehendRecords:
 
     async def graph_write(self, work: WorkItem, session: int, admission: Admission) -> None:
         # Retain changed endpoints for reshape if its model fails after admission.
-        await self.receipt(
+        await self._receipt(
             work, session, "graph", json.loads(json.dumps(asdict(admission), default=str))
         )
 
-    async def changed_graph_keys(self, work: WorkItem) -> list[Key]:
-        async with self.engine.connect() as conn:
-            rows = (
-                await conn.execute(
-                    sa.select(RESULT.c.part, RESULT.c.payload).where(
-                        RESULT.c.work_id == work.id,
-                        RESULT.c.input_hash == work.input_hash,
-                        RESULT.c.part.in_(["graph", "corrected_entities"]),
-                    )
-                )
-            ).all()
-        keys = {
-            tuple(r[end])
-            for part, p in rows
-            if part == "graph"
-            for r in p["relations"]
-            for end in ("src", "dst")
-        }
-        keys.update(tuple(k) for part, p in rows if part == "corrected_entities" for k in p["keys"])
-        return [(k[0], k[1]) for k in keys]
 
     async def shadow(
         self,
@@ -644,28 +624,10 @@ class SqlComprehendRecords:
         proposals: list[dict[str, Any]],
         parent: int,
     ) -> None:
-        await self.receipt(
+        await self._receipt(
             work,
             session,
             "reshape",
             {"entity": list(entity), "would_writes": proposals, "parent_session": parent},
         )
 
-    async def prior_evidence(self, work: WorkItem) -> tuple[Evidence, ...]:
-        async with self.engine.connect() as conn:
-            payloads = (
-                (
-                    await conn.execute(
-                        sa.select(RESULT.c.payload).where(
-                            RESULT.c.work_id == work.id,
-                            RESULT.c.input_hash == work.input_hash,
-                            RESULT.c.part == "graph",
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-        return tuple(
-            Evidence(**{**e, "source": tuple(e["source"])}) for p in payloads for e in p["evidence"]
-        )

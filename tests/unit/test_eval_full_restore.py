@@ -380,7 +380,9 @@ def test_recall_combined_with_another_facts_criterion_is_refused(other) -> None:
 def test_the_registry_names_the_recall_corpus_and_experiment_for_threads_it(monkeypatch) -> None:
     from evals import scenarios
 
-    assert frozenset({"conversational_recall"}) == scenarios.FULL_RESTORE_CORPORA
+    assert frozenset({
+        "conversational_recall", "cognition_session",
+    }) == scenarios.FULL_RESTORE_CORPORA
     assert set(scenarios.CORPUS_ENTRY) >= scenarios.FULL_RESTORE_CORPORA
     assert "conversational_recall" in scenarios.JUDGED_CORPORA
     captured: list[Spec] = []

@@ -569,10 +569,10 @@ def experiment_for(
         entry=CORPUS_ENTRY[name],
         judge=judge if name in JUDGED_CORPORA else None,
         full_restore=name in FULL_RESTORE_CORPORA,
-        overrides={**(dict(MEMORY_INDEX_OVERRIDES) if memory_index else {}),
+        overrides=({**(dict(MEMORY_INDEX_OVERRIDES) if memory_index else {}),
                    **({"cognition.enabled": True, "memory.graph.enabled": True,
                        "memory.graph.comprehend.enabled": True}
-                      if name == "cognition_session" else {})},
+                      if name == "cognition_session" else {})} or None),
         memory_surface="graph" if memory_index else "honcho",
     )
     grader = ToolRouteGrader() if name in ROUTED_CORPORA else MeetsGrader()
