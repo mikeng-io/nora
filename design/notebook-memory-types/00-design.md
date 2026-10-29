@@ -106,7 +106,11 @@ written once.
    ranges) is re-derivable from the Record, so it is **Rollup**. This is what
    the ledger's thread was ("a pointer to a topic the room keeps returning
    to", [standing-ledger 20](../standing-ledger/20-the-ledger.md) §4), and it is the
-   grounded signal personalisation weights by;
+   grounded signal personalisation weights by. Amended 2026-10-29
+   ([unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md) §6b): the
+   activity is counted by code from the judged `interested_in` relation's
+   evidence, not built in the Rollup, because which messages are about a topic
+   is a judgement.
 3. Nora's **account** of it is the Notebook entry.
 
 **A topic is internal.** Its activity is a statement about people's interests;
