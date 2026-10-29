@@ -20,15 +20,13 @@ import httpx
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from scripts.find_cognition_anchors import clone_url, room_aliases
+from scripts.find_cognition_anchors import WINDOW_MESSAGES, WINDOW_MS, clone_url, room_aliases
 
 ROOT = Path(__file__).resolve().parents[1]
 _SCHEMA = {"type": "object", "properties": {"match": {"type": "boolean"}},
            "required": ["match"], "additionalProperties": False}
 
 
-#: The finder's own context: the last 30 messages within a day of the moment.
-WINDOW_MESSAGES, WINDOW_MS = 30, 86_400_000
 #: The scenarios a model judges (7 and 9 are code tests, never anchored).
 JUDGED = frozenset({1, 2, 3, 4, 5, 6, 8, 10, 11, 12, 13})
 

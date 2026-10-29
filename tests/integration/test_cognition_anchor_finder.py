@@ -64,3 +64,28 @@ async def test_finder_reads_generated_eval_clone(pg_admin, monkeypatch, tmp_path
                 assert conn.execute("SELECT count(*) FROM messages").fetchone()[0] == 3
         finally:
             admin.execute(f'DROP DATABASE "{name}"')
+
+
+async def test_finder_keeps_nora_in_generated_window(pg_admin, monkeypatch, tmp_path):
+    """A Nora proposal must prevent a lone-ack candidate, just as in confirmation."""
+    name = "t_window_" + uuid4().hex + "_eval"
+    mapping = tmp_path / "pseudonyms.txt"
+    mapping.write_text("room_generated==>generated-room\n")
+    monkeypatch.setenv("NORA_EVAL_PSEUDONYM_MAP", str(mapping))
+    with psycopg.connect(pg_admin.dsn(pg_admin.maintenance_db), autocommit=True) as admin:
+        admin.execute(f'CREATE DATABASE "{name}"')
+        try:
+            with psycopg.connect(pg_admin.dsn(name)) as conn:
+                conn.execute("CREATE TABLE messages (id int, conversation_id text, ts bigint, "
+                             "sender_id text, body text, is_nora int)")
+                with conn.cursor() as cursor:
+                    cursor.executemany("INSERT INTO messages VALUES (%s, %s, %s, %s, %s, %s)", [
+                        (1, "generated-room", 1000, "nora", "dinner at 7?", 1),
+                        (2, "generated-room", 2000, "generated-author", "k", 0)])
+            url = (f"postgresql+asyncpg://{pg_admin.user}:{pg_admin.password}"
+                   f"@{pg_admin.host}:{pg_admin.port}/{name}")
+            result = await scan(url)
+            assert [r["scenario"] for r in result] == [3]
+            assert result[0]["counts"] == {"prior": 1, "questions": 1, "same_sender": 0}
+        finally:
+            admin.execute(f'DROP DATABASE "{name}"')
