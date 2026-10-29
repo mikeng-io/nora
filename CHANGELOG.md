@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.11.20](https://github.com/mikeng-io/nora/compare/v7.11.19...v7.11.20) (2026-10-29)
+
+
+### Bug Fixes
+
+* **memory:** build the spike's search backend the way production does ([3dd12d5](https://github.com/mikeng-io/nora/commit/3dd12d5cf53422d1e02917457b21474c7cc91f81))
+
 ## [7.11.19](https://github.com/mikeng-io/nora/compare/v7.11.18...v7.11.19) (2026-10-29)
 
 
