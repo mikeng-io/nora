@@ -17,3 +17,9 @@ design/
 config.toml
 identity.toml
 showreel/
+
+secret.toml
+.secret-delivery/
+secret-migration-*/
+state/
+policy.toml

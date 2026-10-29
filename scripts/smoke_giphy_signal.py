@@ -7,17 +7,17 @@ a disposable Signal group; this script intentionally cannot target a direct chat
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
 
 from nora.domain.models import ConversationTarget
 from nora.infra.giphy import GiphyClient
 from nora.platform.signal.send import SignalSender
+from nora.secret import credentials
 
 
 async def main() -> int:
-    api_key = os.environ.get("GIPHY_API_KEY", "")
-    group_id = os.environ.get("GIPHY_SMOKE_GROUP_ID", "")
+    api_key = credentials().get("GIPHY_API_KEY", "")
+    group_id = credentials().get("GIPHY_SMOKE_GROUP_ID", "")
     if not api_key or not group_id:
         print("GIPHY_API_KEY and GIPHY_SMOKE_GROUP_ID are required", file=sys.stderr)
         return 2

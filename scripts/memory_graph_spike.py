@@ -46,6 +46,7 @@ from nora.infra.sql.schema import MEMORY_WORK_ITEM, METADATA
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.policy import load_policy
+from nora.secret import credentials
 
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (("cited_sources", 10, "turn"),)
 _ROW = {n: (o, k) for n, o, k in _BLOCKS}
@@ -217,11 +218,11 @@ class Judges:
         self.cfg, self.models = cfg, models
 
     async def call(self, model_id: str, instruction: str, payload: Any) -> str:
-        cfg = self.cfg.llm
+        url, key, selected_model = self.cfg.endpoint("eval_judge", model_id)
         model = build_structured_model(
-            base_url=cfg.base_url,
-            api_key=os.environ[cfg.api_key_env],
-            model_id=model_id,
+            base_url=url,
+            api_key=key,
+            model_id=selected_model,
             max_tokens=4096,
             temperature=0,
         )
@@ -229,7 +230,7 @@ class Judges:
             model=model,
             prompt=prompt(payload),
             system_prompt=instruction,
-            timeout_seconds=cfg.timeout_seconds,
+            timeout_seconds=self.cfg.llm.timeout_seconds,
             agent_name="memory-graph-spike",
         )
         if result.finish_reason == "length":
@@ -746,7 +747,7 @@ async def project(engine: Any, scope: Any, rate: float) -> None:
 
 async def run(args: argparse.Namespace) -> dict[str, Any]:
     cfg = load(args.config)
-    production = os.environ[cfg.store.database_url_env]
+    production = credentials()[cfg.store.database_url_env]
     snapshot_only(args.database_url, production, args.snapshot)
     if args.age_url:
         snapshot_only(args.age_url, production, args.snapshot)
@@ -847,12 +848,12 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         )
         lookup_log: list[dict[str, Any]] = []
         client = factory.create_client(
-            base_url=cfg.llm.base_url, api_key=os.environ[cfg.llm.api_key_env]
+            base_url=cfg.endpoint("tag")[0], api_key=cfg.endpoint("tag")[1]
         )
         models = factory.ModelSource(
             client=client,
             spec=factory.ModelSpec(
-                model=cfg.llm.model,
+                model=cfg.endpoint("tag")[2],
                 max_tokens=cfg.llm.max_tokens,
                 temperature=cfg.llm.temperature,
                 reasoning_effort=cfg.llm.reasoning_effort,

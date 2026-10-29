@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
-import os
 import shutil
 import uuid
 from collections.abc import Callable
@@ -135,6 +134,18 @@ def _from_host(url: str) -> str:
             f"//{name}/", f"//{_LOOPBACK}/"
         )
     return url
+
+
+def resolve_credentials(path: Path) -> dict[str, str]:
+    """Resolve credentials for a measurement client without composing a subject."""
+    from nora.secret import resolve
+
+    return resolve(path)
+
+
+def model_endpoint(path: Path, purpose: str, model: str = "") -> tuple[str, str, str]:
+    """Resolve a measurement route through the application's configuration."""
+    return _load_config(path, require_secrets=False).endpoint(purpose, model)
 
 
 def config_default(key: str) -> object:
@@ -347,23 +358,11 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     # and Discord's lives in an env var rather than the config
     # (`nora/platform/registry.py` refuses to start without it), so the
     # variable is pointed at one this process owns.
-    os.environ.setdefault(_PLACEHOLDER_TOKEN_ENV, "eval-subject-not-a-real-token")
+    cfg._credentials = {**cfg.credentials, _PLACEHOLDER_TOKEN_ENV: "eval-subject-not-a-real-token"}
     cfg = _with(cfg, "platforms.discord.token_env", _PLACEHOLDER_TOKEN_ENV)
-    # Every credential an ENABLED feature demands at startup.
-    #
-    # `setdefault`, which is the whole point: run this ON the deploy host with
-    # its environment and the REAL keys win, so the tools are the tools
-    # production has. Run it anywhere else and composition still succeeds, with
-    # those tools degrading to unavailable — which `composition.py` already
-    # warns about per feature rather than failing.
-    #
-    # THAT DEGRADATION IS A DIVERGENCE, and the honest place to say so is here:
-    # production's Nora holds `web_search`, `route`, `online`, and
-    # `generate_image`; a subject composed without their keys does not, and a
-    # case whose turn would have reached one measures a Nora missing it. Full
-    # fidelity means running where the deployment runs.
+    # Synthetic fallbacks stay scoped to this subject; real configured credentials win.
     for name in _CREDENTIALS_ENABLED_FEATURES_DEMAND:
-        os.environ.setdefault(name, "eval-subject-placeholder")
+        cfg._credentials = {name: "eval-subject-placeholder", **cfg.credentials}
     # `honcho.workspace_id` — Honcho is the ONE store the sandbox database
     # does not isolate: it is an external service keyed by workspace, and the
     # deployment's workspace is where every real peer card lives. An eval
@@ -462,7 +461,8 @@ def build_config(spec: SubjectSpec) -> Config:
     # files happened to coincide — convention, not construction.
     cfg_path = spec.workdir / "config.toml"
     shutil.copy(_TEMPLATE, cfg_path)
-    loaded = _load_config(cfg_path)
+    loaded = _load_config(cfg_path, require_secrets=False)
+    loaded._secret_path = _TEMPLATE.parent / "secret.toml"
     deployment = loaded.honcho.workspace_id
     cfg = _baseline(loaded, spec.workdir)
     for path, value in (spec.overrides or {}).items():
@@ -568,66 +568,19 @@ def _conversation_for(spec: SubjectSpec) -> Conversation:
 
 
 async def obtain(spec: SubjectSpec) -> Subject:
-    """Compose Nora. One call, one graph, no collaborators passed.
-
-    Cheap against a template-cloned database, which is why this is per-case
-    rather than session-scoped: a case can be plain data and nothing has to be
-    reset between two of them.
-
-    **The database is handed over through the ENVIRONMENT**, because that is
-    production's own seam: `composition.py` reads
-    `os.environ[cfg.store.database_url_env]` and there is no parameter to pass
-    it by. So `spec.database_url` goes into a variable of this call's own, named
-    uniquely, and `cfg.store.database_url_env` is pointed at it — rather than
-    borrowing the deployment's variable and putting it back, which cannot be
-    made safe under concurrency.
-
-    **The clock is handed over as a parameter** that `build_dependencies`
-    takes. `spec.now` is frozen rather than offset, so
-    every component on the graph agrees about the instant.
-
-    `spec.database_url` is honoured: it is the URL the graph is composed
-    against, not the environment's.
-
-    Nothing of the deployment's is touched, so there is nothing to restore and
-    no window in which a concurrent caller can see the wrong value. A new
-    parameter on `build_dependencies` would change production surface for a
-    non-production caller.
-    """
+    """Compose an isolated subject with scoped credentials and database mapping."""
     cfg = build_config(spec)
     clock: Callable[[], datetime] = (
         wall_clock if spec.now is None else (lambda at=spec.now: at)
     )
-    # A VARIABLE OF THIS SUBJECT'S OWN, rather than borrowing the deployment's
-    # and putting it back.
-    #
-    # `build_dependencies` reads the URL from `os.environ[store.database_url_env]`
-    # — production's seam is the environment and there is no parameter to pass
-    # it by. Setting the DEPLOYMENT's variable and restoring it afterwards is
-    # safe to READ (nothing awaits between the set and the read) and unsafe to
-    # RESTORE: the restore runs after the whole of `build_dependencies`, which
-    # awaits extensively, so two interleaved callers leave the process pointing
-    # at a database that is gone.
-    #
-    # A unique name removes the race instead of serialising it: two subjects
-    # never touch one variable, nothing has to be put back, and the runner can
-    # be parallelised without this becoming a real bug. The name is per-call
-    # rather than per-case so two draws of the same case cannot collide either.
     var = f"NORA_SUBJECT_DATABASE_URL_{uuid.uuid4().hex}"
     cfg = _with(cfg, "store.database_url_env", var)
-    os.environ[var] = spec.database_url
-    try:
-        # Under `[subagent] enabled` the worker is a recorder: the tools are
-        # present, nothing runs (`recording_subagent`). A Signal send lands
-        # instead of bouncing off a daemon that is not there (`sandbox_signal`).
-        with (
-            recording_subagent_worker() if cfg.subagent.enabled
-            else contextlib.nullcontext(),
-            landed_signal_sends(),
-        ):
-            deps = await build_dependencies(cfg, clock=clock)
-    finally:
-        os.environ.pop(var, None)
+    cfg._credentials = {**cfg.credentials, var: spec.database_url}
+    with (
+        recording_subagent_worker() if cfg.subagent.enabled else contextlib.nullcontext(),
+        landed_signal_sends(),
+    ):
+        deps = await build_dependencies(cfg, clock=clock)
     # NO EMBEDDING WORKER, whatever `[memory.index] embed` says. The flag also
     # switches the graph surface's query embedding on (`composition.py`), so
     # it stays as deployed; the worker is the write half, which only

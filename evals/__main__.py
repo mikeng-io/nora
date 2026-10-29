@@ -720,6 +720,7 @@ def _main() -> int:
             if not args.judge:
                 raise ValueError("coverage requires --judge")
             judge = Judge(base_url=args.judge_base_url, model=args.judge,
+                          config_path=Path(args.config) if getattr(args, "config", None) else None,
                           samples=1, timeout_seconds=args.coverage_timeout)
             ok = _run_one(names[0], source_url="", judge=judge, sample=1,
                           only=only, all_reasons=args.reasons, positions=args.positions)
@@ -852,6 +853,7 @@ def _main() -> int:
 
             judge = None if not args.judge else Judge(
                 base_url=args.judge_base_url, model=args.judge, samples=args.judge_samples,
+                config_path=Path(args.config) if getattr(args, "config", None) else None,
                 timeout_seconds=args.judge_timeout,
             )
 

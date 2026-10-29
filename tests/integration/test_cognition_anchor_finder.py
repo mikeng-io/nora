@@ -1,15 +1,19 @@
 """Read-only finder against a generated local eval database."""
 import json
+import tomllib
 from uuid import uuid4
 
 import httpx
 import psycopg
+import tomlkit
 
 from scripts import confirm_cognition_anchors as confirmation
 from scripts.find_cognition_anchors import scan
 
 
-async def test_finder_reads_generated_eval_clone(pg_admin, monkeypatch, tmp_path):
+async def test_finder_reads_generated_eval_clone(
+    pg_admin, monkeypatch, tmp_path, example_config_path,
+):
     name = "t_finder_" + uuid4().hex + "_eval"
     mapping = tmp_path / "pseudonyms.txt"
     mapping.write_text("room_generated==>generated-room\n")
@@ -26,10 +30,13 @@ async def test_finder_reads_generated_eval_clone(pg_admin, monkeypatch, tmp_path
                    f"@{pg_admin.host}:{pg_admin.port}/{name}")
             result = await scan(url)
             assert any(r["scenario"] == 2 and r["room"] == "room_generated" for r in result)
-            config = tmp_path / "config.toml"
+            config = tmp_path / "confirmation.toml"
             config.write_text('[llm]\nbase_url="https://generated.invalid/v1"\n'
                               'api_key_env="GENERATED_CONFIRM_KEY"\nmodel="generated-model"\n'
                               'timeout_seconds=1\nmax_tokens=2000\ntemperature=0.7\n')
+            settings = tomllib.loads(example_config_path.read_text())
+            settings["llm"].update(tomllib.loads(config.read_text())["llm"])
+            config.write_text(tomlkit.dumps(settings))
             monkeypatch.setenv("GENERATED_CONFIRM_KEY", "generated-key")
             with psycopg.connect(pg_admin.dsn(name)) as conn:
                 conn.execute("INSERT INTO messages VALUES (2, %s, 2000, %s, %s, 0)",

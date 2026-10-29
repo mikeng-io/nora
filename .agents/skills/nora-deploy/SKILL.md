@@ -104,7 +104,7 @@ While still locked, write mode-0600 `/etc/komodo/nora-deploy/config-reload.json`
 with `{"files":["config.toml"]}` (or `identity.toml` / `policy.toml`, combined when
 needed). It contains names only; no values or private hashes. See the
 [scoped reload procedure](../../../deploy/komodo/README.md#loaded-once-host-file-reload).
-Secrets stay in `.env`; never print them. Release the lock before manual native
+Secrets use private `secret.toml` with explicit environment overrides; never print them. Release the lock before manual native
 `DeployStack`: the wrapper reacquires it, validates again and force-recreates only
 owned readers of the requested files. Without the request unchanged containers
 retain their IDs and loaded-once state. The request clears only after verified success.
@@ -132,3 +132,10 @@ A revert does **not** roll back database schema: migrations upgrade to head on
 startup. It also does not roll back host config. Check schema/config compatibility
 before selecting an older bundle; otherwise roll forward or use a coordinated,
 tested database restore. Never use legacy local retag/recreate commands here.
+
+## Credential-source amendment
+
+Use [the configuration migration procedure](../../../docs/configuration.md) for
+secret.toml, installed helper delivery and scoped recreation. Older .env-only
+examples above remain legacy compatibility instructions. Do not print values or
+copy rotating OAuth state into the bootstrap source.

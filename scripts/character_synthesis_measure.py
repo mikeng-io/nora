@@ -25,12 +25,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
 import sys
 from collections import defaultdict
 from pathlib import Path
 
 from openai import AsyncOpenAI
+
+from nora.secret import credentials
 
 RUBRIC = (
     "You read one account Nora wrote of a friend group, a person in it, or herself. "
@@ -72,13 +73,18 @@ async def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("accounts", type=Path)
     ap.add_argument("--model", default="nora")
+    ap.add_argument("--config", type=Path, help="use configured provider and purpose route")
     ap.add_argument("--base-url", default="http://127.0.0.1:20128/v1")
     ap.add_argument("--samples", type=int, default=3)
     ap.add_argument("--effort", default="low")
     args = ap.parse_args()
-    key = os.environ.get("OMNIROUTE_API_KEY", "")
+    key = credentials().get("OMNIROUTE_API_KEY", "")
+    if args.config is not None:
+        from nora.config import load
+        cfg = load(args.config, require_secrets=False)
+        args.base_url, key, args.model = cfg.endpoint("eval_judge", args.model)
     if not key:
-        print("OMNIROUTE_API_KEY is not set", file=sys.stderr)
+        print("selected model credential is missing or empty", file=sys.stderr)
         return 2
     client = AsyncOpenAI(base_url=args.base_url, api_key=key, max_retries=1, timeout=120)
     accounts = json.loads(args.accounts.read_text(encoding="utf-8"))
@@ -88,7 +94,8 @@ async def main() -> int:
 
     async def one(acc: dict) -> tuple[dict, list[tuple[float, int] | None]]:
         async with sem:
-            return acc, [await judge(client, args.model, acc["body"], args.effort) for _ in range(args.samples)]
+            return acc, [await judge(client, args.model, acc["body"], args.effort)
+                         for _ in range(args.samples)]
 
     by_kind: dict[str, list[float]] = defaultdict(list)
     for acc, draws in await asyncio.gather(*(one(a) for a in accounts)):

@@ -183,7 +183,7 @@ The tracked examples describe three separate inputs:
 | [identity.example.toml](identity.example.toml) | Platform accounts mapped to people |
 | [policy.example.toml](policy.example.toml) | Allowed rooms, social units and grants |
 
-Real `config.toml`, `identity.toml`, `policy.toml` and `.env` stay outside version
+Real `config.toml`, `identity.toml`, `policy.toml`, `secret.toml` and `.env` stay outside version
 control. Secrets such as `OMNIROUTE_API_KEY` are environment values, never
 values to paste into documentation. Example files are starting points, not a
 ready-to-run production deployment: platform accounts, memory and model
@@ -235,3 +235,5 @@ and merge rules are documented in [GitHub maintenance](docs/maintainers/github.m
 
 Nora is licensed under the [MIT License](LICENSE). Third-party components retain
 their respective licenses.
+
+Credential-source migration and named model endpoints: [configuration](docs/configuration.md).

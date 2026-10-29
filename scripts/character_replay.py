@@ -22,15 +22,16 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
 import sys
 from pathlib import Path
 
 from openai import AsyncOpenAI
 
+from nora.secret import credentials
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from tests.objectives import shipped_objectives  # noqa: E402
+from tests.objectives import shipped_objectives
 
 OBJECTIVE = {
     "dream:culture": "culture", "dream:character-person": "character-person",
@@ -42,8 +43,10 @@ KIND = {"dream:culture": "room", "dream:character-person": "person",
 TOOLS = [
     {"type": "function", "function": {
         "name": "character_revise",
-        "description": "Write the new account of an entity of this session. Give the WHOLE account.",
-        "parameters": {"type": "object", "required": ["entity", "body", "citations"], "properties": {
+        "description": ("Write the new account of an entity of this session. "
+                        "Give the WHOLE account."),
+        "parameters": {"type": "object", "required": ["entity", "body", "citations"],
+                       "properties": {
             "entity": {"type": "string"}, "body": {"type": "string"},
             "citations": {"type": "array", "items": {"type": "string"}}}}}},
     {"type": "function", "function": {
@@ -61,7 +64,9 @@ async def replay(client: AsyncOpenAI, model: str, effort: str, system: str, user
         "name": n, "description": "A read tool (not available in this replay).",
         "parameters": {"type": "object", "properties": {}, "additionalProperties": True}}}
         for n in READS] if person else [])
-    messages: list[dict] = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+    messages: list[dict] = [
+        {"role": "system", "content": system}, {"role": "user", "content": user},
+    ]
     body, outcome = "", "nothing"
     for _ in range(8):
         r = await client.chat.completions.create(
@@ -99,11 +104,16 @@ async def main() -> int:
     ap.add_argument("output", type=Path)
     ap.add_argument("--model", default="nora-dreamer")
     ap.add_argument("--effort", default="low")
+    ap.add_argument("--config", type=Path, help="use configured provider and purpose route")
     ap.add_argument("--base-url", default="http://127.0.0.1:20128/v1")
     args = ap.parse_args()
-    key = os.environ.get("OMNIROUTE_API_KEY", "")
+    key = credentials().get("OMNIROUTE_API_KEY", "")
+    if args.config is not None:
+        from nora.config import load
+        cfg = load(args.config, require_secrets=False)
+        args.base_url, key, args.model = cfg.endpoint("dreamer", args.model)
     if not key:
-        print("OMNIROUTE_API_KEY is not set", file=sys.stderr)
+        print("selected model credential is missing or empty", file=sys.stderr)
         return 2
     store = shipped_objectives()
     client = AsyncOpenAI(base_url=args.base_url, api_key=key, max_retries=1, timeout=300)

@@ -7,7 +7,6 @@ Retrieval, mandatory blocks, transcript handles and tool admission stay intact.
 from __future__ import annotations
 
 import json
-import os
 import re
 import time
 from collections.abc import Callable, Iterator, Sequence
@@ -160,12 +159,15 @@ def router_input(
 
 
 def flash(prompt: str, window: int, receipt: dict) -> ContextPlan:
+    from nora.config import load
+    cfg = load(Path("config.toml"), require_secrets=False)
+    url, key, model = cfg.endpoint("context_filter", "ollamacloud/deepseek-v4.1-flash")
     with httpx.Client(timeout=10) as client:
         response = client.post(
-            "http://127.0.0.1:20128/v1/chat/completions",
-            headers={"Authorization": "Bearer " + os.environ["OMNIROUTE_API_KEY"]},
+            url.rstrip("/") + "/chat/completions",
+            headers={"Authorization": "Bearer " + key},
             json={
-                "model": "ollamacloud/deepseek-v4.1-flash",
+                "model": model,
                 "messages": [
                     {"role": "system", "content": SYSTEM},
                     {"role": "user", "content": prompt},

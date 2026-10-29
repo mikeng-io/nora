@@ -35,7 +35,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
 import sys
 import time
 from collections import Counter
@@ -45,6 +44,7 @@ import sqlalchemy as sa
 
 from nora.agent.surface import DISCORD_ONLY_TOOLS
 from nora.infra.sql.engine import create_readonly_sql_engine
+from nora.secret import credentials
 
 #: Characters of the utterance that must appear in the turn's recorded model
 #: messages for the match to count. Short enough to survive the prompt's own
@@ -138,7 +138,7 @@ async def main() -> int:
     args = parser.parse_args()
     group = frozenset(n for n in args.group.split(",") if n)
 
-    url = os.environ.get("NORA_DATABASE_URL", os.environ.get("DATABASE_URL", ""))
+    url = credentials().get("NORA_DATABASE_URL", credentials().get("DATABASE_URL", ""))
     if not url:
         print("NORA_DATABASE_URL or DATABASE_URL must be set", file=sys.stderr)
         return 2

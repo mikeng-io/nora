@@ -100,8 +100,8 @@
   {
     "name": "part 2d: the Dreamer's per-completion ceiling drops under one realistic account",
     "file": "config.example.toml",
-    "old": "multiple of it.\nmax_tokens = 6000",
-    "new": "multiple of it.\nmax_tokens = 1000",
+    "old": "\nmax_tokens = 6000\n\n[dreamer.budgets.culture]",
+    "new": "\nmax_tokens = 1000\n\n[dreamer.budgets.culture]",
     "target": "tests/unit/test_culture_adaptor.py -k ONE_shipped_completion"
   },
   {

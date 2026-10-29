@@ -580,3 +580,21 @@ async def test_a_linked_state_directory_is_not_used(kind, tmp_path, issuer):
     assert (await _call(lane)()).status == "unavailable"
     assert srv["sent"] == []
 
+
+
+@pytest.mark.parametrize("kind", LANES)
+async def test_file_bootstrap_migration_keeps_the_rotated_chain(kind, tmp_path, issuer):
+    from nora.secret import resolve, write
+
+    base, state = issuer
+    first = _lane(kind, tmp_path, base, state['clock'])
+    assert await _call(first)()
+    assert state['sent'] == ['rt-boot']
+    bootstrap_file = tmp_path / 'secret.toml'
+    name = 'XAI_OAUTH_REFRESH_TOKEN' if kind == 'xai' else 'OPENAI_CODEX_REFRESH_TOKEN'
+    write(bootstrap_file, name, 'rt-boot')
+    state['clock'].now += 11 * DAY
+    restarted = _lane(kind, tmp_path, base, state['clock'],
+                      bootstrap=resolve(bootstrap_file, {})[name])
+    assert await _call(restarted)()
+    assert state['sent'] == ['rt-boot', 'rt-1']

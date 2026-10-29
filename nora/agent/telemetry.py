@@ -159,7 +159,7 @@ class TraceIdentityProcessor(SpanProcessor):
 
 def setup_agent_tracing(
     *, sampler: Sampler, service_name: str, exporter: str, endpoint: str,
-    headers_env: str,
+    headers_env: str, credentials: dict[str, str] | None = None,
 ) -> None:
     """Register the global `TracerProvider` through `StrandsTelemetry`,
     keeping Nora's own sampler.
@@ -221,7 +221,7 @@ def setup_agent_tracing(
         from ..obs.tracing import resolve_otlp_headers
 
         telemetry.setup_otlp_exporter(
-            endpoint=endpoint, headers=resolve_otlp_headers(headers_env),
+            endpoint=endpoint, headers=resolve_otlp_headers(headers_env, credentials),
         )
 
     # LAST, and unconditional: after whichever exporter was attached above, so
