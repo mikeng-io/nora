@@ -80,6 +80,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 -m scripts.check_contribution_content
+      - name: Classify current issue Area
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -m scripts.triage_issue
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         if: always()
         continue-on-error: true

@@ -176,7 +176,13 @@ the next reader will suggest folding in.
 | `enhancement` | the *Feature request* form | a proposed improvement |
 
 These labels distinguish the four issue forms. Area stays in the title prefix
-and the form's Area field. Additional PR labels should have a clear triage use;
+and the form's Area field; issue triage maps recognized values to the existing
+nine `area:` labels, using the same vocabulary as PR triage. The form field takes
+precedence when a recognized title agrees; an absent field uses the title prefix.
+Unknown or conflicting input withdraws only those nine managed area labels.
+Other labels are preserved; no classification grants dispatch or merge authority.
+Correct an automatic classification by editing Area/title, not by overriding its
+managed label. Additional PR labels should have a clear triage use;
 labels and milestones on GitHub are repository metadata, not created by these
 forms. Required form fields do not replace review of the issue's substance.
 

@@ -166,6 +166,14 @@ correctness or readiness for assignment. The forms marked **Maintainers** suppor
 planning and require no action from ordinary contributors. For a private channel,
 follow [Security](SECURITY.md#reporting-a-vulnerability).
 
+The same workflow classifies issues from their explicit Area field, falling back
+to a recognized title prefix when that field is absent. Exact aliases select the
+existing nine `area:` labels; narrative keywords do not. Conflicting or unknown
+metadata leaves the issue unclassified and withdraws those managed area labels.
+Area edits replace stale classifications; form, priority, dispatch and other
+labels are preserved. The Area field wins when a recognized title agrees or is
+less specific. Classification does not grant permission to start work.
+
 Maintainer procedures, including merge ownership, mutation proof, numbering and
 issue lifecycle, live in [maintainer conventions](docs/maintainers/conventions.md).
 Coding agents also follow [AGENTS.md](AGENTS.md).
