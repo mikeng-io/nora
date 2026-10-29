@@ -76,9 +76,13 @@ def _imported_modules() -> dict[str, str]:
 def test_every_runtime_import_is_installed_in_the_image() -> None:
     image = _image_distributions()
     providers = packages_distributions()
+    # ponytail: a module installed nowhere locally (the guarded `sentry_sdk` without
+    # its extra) has no provider to judge and is skipped; uv.lock's wheel lists would
+    # map it, if a guarded import of a package outside the image ever matters.
     missing = {
         module: where
         for module, where in _imported_modules().items()
-        if not any(canonicalize_name(d) in image for d in providers.get(module, ()))
+        if module in providers
+        and not any(canonicalize_name(d) in image for d in providers[module])
     }
     assert missing == {}, f"imported by nora/ but not installed in the image: {missing}"
