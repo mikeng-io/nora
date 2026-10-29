@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.11.32](https://github.com/mikeng-io/nora/compare/v7.11.31...v7.11.32) (2026-10-29)
+
+
+### Maintenance
+
+* **cognition:** add the parked one-session scenario suite ([ce23f74](https://github.com/mikeng-io/nora/commit/ce23f749f11836e008bc9f4c8908a3424e46aafb))
+* **cognition:** bind non-empty readings and widen the withheld acts ([595a6f7](https://github.com/mikeng-io/nora/commit/595a6f7554e4da78cad89eda017226e0f232a610))
+
 ## [7.11.31](https://github.com/mikeng-io/nora/compare/v7.11.30...v7.11.31) (2026-10-29)
 
 
