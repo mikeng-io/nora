@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.11.23](https://github.com/mikeng-io/nora/compare/v7.11.22...v7.11.23) (2026-10-29)
+
+
+### Bug Fixes
+
+* **memory:** offer step one the about relation from what it read ([3e02f32](https://github.com/mikeng-io/nora/commit/3e02f326172ed03a217fe19f204c7547f1b13cfb))
+* **memory:** show step one the graph vocabulary, and add topics ([d26d690](https://github.com/mikeng-io/nora/commit/d26d690836ab18bfaa7ba52008b6c9870676e84b))
+
 ## [7.11.22](https://github.com/mikeng-io/nora/compare/v7.11.21...v7.11.22) (2026-10-29)
 
 
