@@ -374,6 +374,14 @@ async def test_retried_link_write_relinks_existing_register_row_by_id(monkeypatc
     from tests.unit.cognition_rig import GOOD_BODY, NOTE, Stores, session
     memory = wake_memory()
     stores = Stores()
+    from nora.domain.comprehend import ComprehendItem
+    from nora.domain.memory_graph import Source, WorkItem
+    from tests.unit.cognition_rig import RECORDS
+    for row in RECORDS.values():
+        source = Source(("message", str(row.message_id)), "record", "u", (), row.text)
+        work = WorkItem("generated-record", source.key, "u", "hash", datetime.now(UTC))
+        memory.records.items[source.key] = ComprehendItem(work, (source,), "signal", "room-a",
+            snapshot={"messages": [], "context": []})
     links = []
 
     async def link(state, result):
