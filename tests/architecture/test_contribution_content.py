@@ -407,6 +407,8 @@ def test_private_release_bot_uses_the_pinned_user_identity(monkeypatch, case):
 def test_issue_field_constants_follow_the_existing_form_contract():
     import yaml
 
+    from scripts.triage_issue import named_areas
+
     for filename, expected in [
         ("freeform-gap.yml", content.FREEFORM),
         ("design-anchored.yml", ["Design anchor", "What it covers", *content.DESIGN]),
@@ -418,6 +420,11 @@ def test_issue_field_constants_follow_the_existing_form_contract():
             if field["type"] in {"input", "textarea"}
         ]
         assert actual == expected
+        options = next(field for field in form["body"] if field.get("id") == "area")["attributes"][
+            "options"
+        ]
+        for option in options:
+            assert bool(named_areas(option)) == (not option.startswith("other ("))
 
 
 def test_privileged_metadata_jobs_use_only_default_branch_code():
@@ -438,15 +445,23 @@ def test_privileged_metadata_jobs_use_only_default_branch_code():
     assert workflow["jobs"]["pr-metadata"]["permissions"] == {
         "contents": "read",
         "checks": "write",
-        "pull-requests": "read",
+        "pull-requests": "write",
+        "issues": "write",
     }
-    metadata = workflow["jobs"]["pr-metadata"]["steps"][1]
+    metadata = workflow["jobs"]["pr-metadata"]["steps"][2]
     assert metadata["env"]["RELEASE_APP_BOT_USER_ID"] == "${{ vars.RELEASE_APP_BOT_USER_ID }}"
     assert "RELEASE_APP_ID" not in metadata["env"]
     assert workflow["jobs"]["issue-feedback"]["permissions"] == {
         "contents": "read",
         "issues": "write",
     }
+    area_steps = [
+        step
+        for step in workflow["jobs"]["issue-feedback"]["steps"]
+        if step.get("run") == "python3 -m scripts.triage_issue"
+    ]
+    assert len(area_steps) == 1
+    assert area_steps[0]["env"]["GH_TOKEN"] == "${{ github.token }}"  # noqa: S105 -- workflow expression
 
 
 def test_unclosed_html_comment_cannot_hide_required_sections():

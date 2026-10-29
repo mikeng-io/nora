@@ -150,6 +150,22 @@ def changed_paths(github, repository: str, number: int) -> list[str]:
     return paths
 
 
+def sync_labels(
+    github, repository: str, number: int, have: set[str], want: dict, managed: set[str]
+) -> dict:
+    """Reconcile only the labels this classifier owns, preserving other metadata."""
+    removed = sorted((have & managed) - set(want))
+    for name in removed:
+        quoted = urllib.parse.quote(name, safe="")
+        github("DELETE", f"/repos/{repository}/issues/{number}/labels/{quoted}")
+    added = sorted(set(want) - have)
+    for name in added:
+        ensure_label(github, repository, name, *want[name])
+    if added:
+        github("POST", f"/repos/{repository}/issues/{number}/labels", {"labels": added})
+    return {"added": added, "removed": removed}
+
+
 def triage(github, repository: str, number: int) -> dict:
     item = github("GET", f"/repos/{repository}/pulls/{number}")
     login = item["user"]["login"]
@@ -161,14 +177,7 @@ def triage(github, repository: str, number: int) -> dict:
     want = wanted(item["title"], changed_paths(github, repository, number))
     have = {label["name"] for label in item["labels"]}
     managed_have = {n for n in have if n.startswith(MANAGED) or n == BREAKING}
-    for name in sorted(managed_have - set(want)):
-        quoted = urllib.parse.quote(name, safe="")
-        github("DELETE", f"/repos/{repository}/issues/{number}/labels/{quoted}")
-    add = sorted(set(want) - have)
-    for name in add:
-        ensure_label(github, repository, name, *want[name])
-    if add:
-        github("POST", f"/repos/{repository}/issues/{number}/labels", {"labels": add})
+    result = sync_labels(github, repository, number, have, want, managed_have)
     assigned = {a["login"] for a in item.get("assignees", [])}
     if is_person and login not in assigned:
         try:
@@ -176,11 +185,7 @@ def triage(github, repository: str, number: int) -> dict:
         except urllib.error.HTTPError as error:
             if error.code != 422:  # an author who cannot be assigned is not an error
                 raise
-    return {
-        "added": add,
-        "removed": sorted(managed_have - set(want)),
-        "assignee": login if is_person else None,
-    }
+    return {**result, "assignee": login if is_person else None}
 
 
 def main(argv: list[str] | None = None) -> int:

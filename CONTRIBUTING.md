@@ -146,7 +146,7 @@ During iteration, run the tests you touched. `make full-gate` is the uncondition
 full run. Name a pre-existing unrelated gate failure with its issue number;
 never absorb it into "tests pass".
 The contribution-content workflow checks populated headings and their order;
-it does not verify the truth of a claimed result. The PR triage workflow then sets
+it does not verify the truth of a claimed result. Its advisory triage step sets
 the `type:` label from the title, `area:` labels from the changed paths and
 `breaking` from `!`, and assigns the author. Nobody sets these by hand, and
 Dependabot PRs get theirs from `.github/dependabot.yml`.
@@ -165,6 +165,14 @@ never automatically closed or locked. The label measures format, not factual
 correctness or readiness for assignment. The forms marked **Maintainers** support internal
 planning and require no action from ordinary contributors. For a private channel,
 follow [Security](SECURITY.md#reporting-a-vulnerability).
+
+The same workflow classifies issues from their explicit Area field, falling back
+to a recognized title prefix when that field is absent. Exact aliases select the
+existing nine `area:` labels; narrative keywords do not. Conflicting or unknown
+metadata leaves the issue unclassified and withdraws those managed area labels.
+Area edits replace stale classifications; form, priority, dispatch and other
+labels are preserved. The Area field wins when a recognized title agrees or is
+less specific. Classification does not grant permission to start work.
 
 Maintainer procedures, including merge ownership, mutation proof, numbering and
 issue lifecycle, live in [maintainer conventions](docs/maintainers/conventions.md).

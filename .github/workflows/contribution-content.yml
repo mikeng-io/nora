@@ -18,8 +18,7 @@ on:
         type: string
         required: true
 
-permissions:
-  contents: read
+permissions: {}
 
 # No concurrency group: a run cancelled by a newer event leaves a cancelled `pr-metadata`
 # check on the same commit, and the merge rules treat that as unsatisfied even though a
@@ -33,7 +32,8 @@ jobs:
     permissions:
       contents: read
       checks: write
-      pull-requests: read
+      pull-requests: write
+      issues: write
     steps:
       # This privileged metadata job NEVER checks out or executes PR source.
       # All title/body data is read through JSON/API, never interpolated in shell.
@@ -41,7 +41,14 @@ jobs:
         with:
           ref: master
           persist-credentials: false
+      - name: Label and assign the pull request
+        if: github.event.action != 'labeled' && github.event.action != 'unlabeled'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -m scripts.triage_pr
       - name: Validate current metadata and publish PR content on its head SHA
+        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_APP_BOT_USER_ID: ${{ vars.RELEASE_APP_BOT_USER_ID }}
@@ -73,6 +80,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 -m scripts.check_contribution_content
+      - name: Classify current issue Area
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -m scripts.triage_issue
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         if: always()
         continue-on-error: true
