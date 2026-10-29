@@ -1,5 +1,20 @@
 # Changelog
 
+## [7.11.30](https://github.com/mikeng-io/nora/compare/v7.11.29...v7.11.30) (2026-10-29)
+
+
+### Maintenance
+
+* **cognition:** brief the one-session build, scenarios first ([cb4b99b](https://github.com/mikeng-io/nora/commit/cb4b99b5ed7bf4ffb37aa60ca7806fd1bace037c))
+* **cognition:** move the harness with the runner, require consumption tests ([762d3cd](https://github.com/mikeng-io/nora/commit/762d3cd07d4f30501645e77c3c3867cc84d8d69c))
+
+## [7.11.29](https://github.com/mikeng-io/nora/compare/v7.11.28...v7.11.29) (2026-10-29)
+
+
+### Security
+
+* **deps:** bump the npm-security group across 4 directories with 3 updates ([b03c4ae](https://github.com/mikeng-io/nora/commit/b03c4ae4232b42a69cb11a38889d3f44956b483c))
+
 ## [7.11.28](https://github.com/mikeng-io/nora/compare/v7.11.27...v7.11.28) (2026-10-29)
 
 
