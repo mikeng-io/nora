@@ -278,7 +278,7 @@ _AMBIGUOUS: frozenset[str] = frozenset(
 _STORE_MODULES: frozenset[str] = frozenset(
     {
         "assess.py", "audit.py", "cognition_store.py", "comprehend.py", "lessons.py",
-        "tension.py",
+        "tension.py", "entries.py",
         "compute_jobs.py", "computer_events.py", "computer_exports.py",
         "computer_sessions.py",
         "character.py", "culture.py", "decision_log.py", "documents.py", "dream_schedule.py",

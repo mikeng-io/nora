@@ -174,6 +174,8 @@ $$;
 );
 );
 );
+);
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -275,6 +277,10 @@ ADD CONSTRAINT note_pkey PRIMARY KEY (id);
 ADD CONSTRAINT note_replaced_by_fkey FOREIGN KEY (replaced_by) REFERENCES public.note(id);
 ADD CONSTRAINT note_revision_note_id_fkey FOREIGN KEY (note_id) REFERENCES public.note(id);
 ADD CONSTRAINT note_revision_pkey PRIMARY KEY (id);
+ADD CONSTRAINT notebook_entry_pkey PRIMARY KEY (id);
+ADD CONSTRAINT notebook_entry_revision_base_revision_id_fkey FOREIGN KEY (base_revision_id) REFERENCES public.notebook_entry_revision(id);
+ADD CONSTRAINT notebook_entry_revision_entry_id_fkey FOREIGN KEY (entry_id) REFERENCES public.notebook_entry(id);
+ADD CONSTRAINT notebook_entry_revision_pkey PRIMARY KEY (id);
 ADD CONSTRAINT otp_attempt_pkey PRIMARY KEY (id);
 ADD CONSTRAINT otp_challenge_pkey PRIMARY KEY (challenge_id);
 ADD CONSTRAINT participation_window_state_pkey PRIMARY KEY (platform, conversation_id);
@@ -454,6 +460,10 @@ ALTER TABLE ONLY public.note_merge_decision
 ALTER TABLE ONLY public.note_merge_decision
 ALTER TABLE ONLY public.note_revision
 ALTER TABLE ONLY public.note_revision
+ALTER TABLE ONLY public.notebook_entry
+ALTER TABLE ONLY public.notebook_entry_revision
+ALTER TABLE ONLY public.notebook_entry_revision
+ALTER TABLE ONLY public.notebook_entry_revision
 ALTER TABLE ONLY public.otp_attempt
 ALTER TABLE ONLY public.otp_challenge
 ALTER TABLE ONLY public.participation_window_state
@@ -654,6 +664,10 @@ CONSTRAINT ck_document_revision_sha256 CHECK ((sha256 ~ '^[0-9a-f]{64}$'::text))
 CONSTRAINT ck_document_revision_spec_size CHECK ((octet_length((spec)::text) <= 1048576))
 CONSTRAINT ck_document_state_set_by CHECK ((length(set_by) > 0)),
 CONSTRAINT ck_document_state_state CHECK ((state = ANY (ARRAY['active'::text, 'archived'::text, 'deleted'::text])))
+CONSTRAINT ck_entry_kind CHECK ((kind = 'topic'::text)),
+CONSTRAINT ck_entry_revision_base CHECK (((seq = 1) = (base_revision_id IS NULL))),
+CONSTRAINT ck_entry_revision_seq CHECK ((seq >= 1))
+CONSTRAINT ck_entry_unit CHECK ((length(btrim(unit)) > 0))
 CONSTRAINT ck_event_revision_confidence_is_a_level CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
 CONSTRAINT ck_event_revision_field_meta_shape CHECK ((jsonb_typeof(field_meta) = 'object'::text)),
 CONSTRAINT ck_event_revision_lineage_shape CHECK ((jsonb_typeof(lineage) = 'object'::text)),
@@ -990,6 +1004,7 @@ CREATE INDEX idx_note_merge_decision_unit_ts ON public.note_merge_decision USING
 CREATE INDEX idx_note_revision_body_trgm ON public.note_revision USING gin (body public.gin_trgm_ops);
 CREATE INDEX idx_note_revision_note_id ON public.note_revision USING btree (note_id);
 CREATE INDEX idx_note_standing ON public.note USING btree (unit) WHERE (retired_at IS NULL);
+CREATE INDEX idx_notebook_entry_unit ON public.notebook_entry USING btree (unit);
 CREATE INDEX idx_otp_challenge_person ON public.otp_challenge USING btree (person_id, purpose, issued_at);
 CREATE INDEX idx_presence_corridors_build_subject ON public.presence_corridors USING btree (build_id, subject_id);
 CREATE INDEX idx_presence_corridors_subject ON public.presence_corridors USING btree (subject_id);
@@ -1110,6 +1125,8 @@ CREATE TABLE public.note_candidate (
 CREATE TABLE public.note_entity (
 CREATE TABLE public.note_merge_decision (
 CREATE TABLE public.note_revision (
+CREATE TABLE public.notebook_entry (
+CREATE TABLE public.notebook_entry_revision (
 CREATE TABLE public.otp_attempt (
 CREATE TABLE public.otp_challenge (
 CREATE TABLE public.participation_window_state (
@@ -1282,6 +1299,7 @@ CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.video_reading
 CREATE UNIQUE INDEX note_candidate_create_anchor_key ON public.note_candidate USING btree (unit, anchor_date, anchor_entity_ids, lower(btrim(title))) WHERE (kind = 'create'::text);
 CREATE UNIQUE INDEX uq_cognition_wake_outcome_wake ON public.cognition_wake_outcome USING btree (wake_id);
 CREATE UNIQUE INDEX uq_computer_sessions_open_scope ON public.computer_sessions USING btree (scope) WHERE (status = 'open'::text);
+CREATE UNIQUE INDEX uq_entry_revision_seq ON public.notebook_entry_revision USING btree (entry_id, seq);
 CREATE UNIQUE INDEX uq_lesson_revision_seq ON public.lesson_revision USING btree (lesson_id, seq);
 CREATE UNIQUE INDEX uq_memo_revision_seq ON public.memo_revision USING btree (memo_id, seq);
 CREATE UNIQUE INDEX uq_otp_attempt_ok ON public.otp_attempt USING btree (challenge_id) WHERE ok;
@@ -1670,6 +1688,7 @@ attributes jsonb DEFAULT '{}'::jsonb NOT NULL,
 author_igid text NOT NULL,
 avg_speed_kmh double precision NOT NULL,
 backend_job_id text NOT NULL,
+base_revision_id text,
 batched boolean DEFAULT false NOT NULL
 battery double precision,
 blob_key text,
@@ -1767,6 +1786,7 @@ consolidator_name text NOT NULL,
 consumed_verdict_tag text,
 consumed_verdict_tag text,
 content jsonb DEFAULT '{}'::jsonb NOT NULL,
+content jsonb NOT NULL,
 content jsonb NOT NULL,
 content text DEFAULT ''::text NOT NULL
 content text NOT NULL,
@@ -1915,6 +1935,7 @@ ended_ts bigint NOT NULL,
 entity_id text,
 entity_id uuid NOT NULL
 entity_kind text NOT NULL,
+entry_id text NOT NULL,
 error text,
 established_by text NOT NULL,
 established_by text NOT NULL,
@@ -2067,6 +2088,8 @@ id text NOT NULL,
 id text NOT NULL,
 id text NOT NULL,
 id text NOT NULL,
+id text NOT NULL,
+id text NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -2136,6 +2159,7 @@ key text NOT NULL,
 kind text CONSTRAINT signal_kind_not_null NOT NULL,
 kind text DEFAULT 'miss'::text NOT NULL,
 kind text DEFAULT 'reminder'::text NOT NULL,
+kind text NOT NULL,
 kind text NOT NULL,
 kind text NOT NULL,
 kind text NOT NULL,
@@ -2590,6 +2614,8 @@ recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT now() NOT NULL
+recorded_at timestamp with time zone DEFAULT now() NOT NULL,
+recorded_at timestamp with time zone DEFAULT now() NOT NULL,
 recorded_at timestamp with time zone NOT NULL,
 recurrence text DEFAULT 'none'::text NOT NULL,
 recurrence_count integer,
@@ -2683,6 +2709,7 @@ sense text NOT NULL,
 sense text NOT NULL,
 sent_message_ids jsonb DEFAULT '[]'::jsonb NOT NULL,
 sent_ts bigint NOT NULL,
+seq integer NOT NULL,
 seq integer NOT NULL,
 seq integer NOT NULL,
 sequence jsonb NOT NULL,
@@ -2892,6 +2919,7 @@ turn_id bigint NOT NULL,
 uncertainty text NOT NULL,
 unit text CONSTRAINT signal_unit_not_null NOT NULL,
 unit text DEFAULT ''::text NOT NULL,
+unit text NOT NULL,
 unit text NOT NULL,
 unit text NOT NULL,
 unit text NOT NULL,
