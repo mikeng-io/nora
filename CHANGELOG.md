@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.11.31](https://github.com/mikeng-io/nora/compare/v7.11.30...v7.11.31) (2026-10-29)
+
+
+### Maintenance
+
+* **issues:** mark incomplete reports and clear feedback on correction ([a0850e0](https://github.com/mikeng-io/nora/commit/a0850e05b1c0c1735c2d30231ee739ee7c948d1c))
+
 ## [7.11.30](https://github.com/mikeng-io/nora/compare/v7.11.29...v7.11.30) (2026-10-29)
 
 
