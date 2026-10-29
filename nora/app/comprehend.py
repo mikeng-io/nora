@@ -118,9 +118,10 @@ def _shape_errors(error: ValidationError, limit: int = 20) -> list[str]:
     """Where the shape is wrong, in the schema's own words only.
 
     A path part the schema does not define is a key the model wrote. It is
-    echoed only when shaped like a field name (`target`), never when it could
-    be source text; the reason is pydantic's error type, never its message,
-    which a validator may build from the value.
+    echoed only when shaped like a field name (`target`); anything else is
+    redacted. A one-word key from the source still echoes, which reveals
+    nothing new: the same model wrote it in this call. The reason is pydantic's
+    error type, never its message, which a validator may build from the value.
     """
     known = _field_names(GraphWrite)
     return [

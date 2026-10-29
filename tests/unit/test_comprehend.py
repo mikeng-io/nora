@@ -769,7 +769,7 @@ async def test_a_wrong_shape_is_refused_with_where_and_the_retry_commits():
     assert refused["reason"] == "schema"
     assert "evidence.0.target: extra_forbidden" in refused["errors"]
     assert "readings.0.source_ids.0: int_type" in refused["errors"]
-    # A key the model invented may be source text: it is never echoed.
+    # A key that is not shaped like a field (here a source sentence) is redacted.
     assert "evidence.0.<unknown field>: extra_forbidden" in refused["errors"]
     assert all(SOURCE.text not in e and "message:1" not in e for e in refused["errors"])
     assert model.answers[1] == {"status": "ok"}
