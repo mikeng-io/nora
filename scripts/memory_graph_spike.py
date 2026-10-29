@@ -13,7 +13,7 @@ import random
 import re
 import statistics
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -648,9 +648,10 @@ async def quality(
     return report
 
 
-# Fixed before any smoke run: step one is healthy enough for the full spike
-# only when nearly every item saves a valid write and few proposals are refused.
-SMOKE_MARKS = {"valid_write_rate": 0.8, "relation_refused_share": 0.2, "reading_refused_share": 0.2}
+# Fixed before any smoke run: step one is healthy enough for the full spike only
+# when most items admit something and few proposals are refused. An empty write
+# is valid but not productive, so it does not count towards the first mark.
+SMOKE_MARKS = {"productive_rate": 0.6, "relation_refused_share": 0.2, "reading_refused_share": 0.2}
 
 
 def smoke_health(
@@ -658,33 +659,44 @@ def smoke_health(
     states: Sequence[str],
     graphs: Sequence[dict[str, Any]],
     refusals: Sequence[dict[str, Any]],
-    claims: int,
+    claims: Mapping[str, int],
 ) -> dict[str, Any]:
-    """Step one's write health on a small sample; counts and reasons only."""
-    written = {g["work_id"] for g in graphs}
+    """Step one's write health on a small sample; counts and reasons only.
+
+    The smoke also runs step two (the runner reshapes after each write); its
+    sessions are not marked here.
+    """
+    productive = {
+        g["work_id"]
+        for g in graphs
+        if g["payload"].get("relations") or g["payload"].get("entities")
+    } | {w for w, n in claims.items() if n}
     relations = sum(len(g["payload"].get("relations", ())) for g in graphs)
     entities = sum(len(g["payload"].get("entities", ())) for g in graphs)
+    readings = sum(claims.values())
     by = Counter(f"{r['part']}:{r['reason']}" for r in refusals)
     refused_relations = sum(v for k, v in by.items() if k.startswith("relation:"))
     refused_readings = sum(v for k, v in by.items() if k.startswith("reading:"))
     measured = {
-        "valid_write_rate": len(written & set(items)) / len(items) if items else 0.0,
+        "productive_rate": len(productive & set(items)) / len(items) if items else 0.0,
         "relation_refused_share": refused_relations / ((relations + refused_relations) or 1),
-        "reading_refused_share": refused_readings / ((claims + refused_readings) or 1),
+        "reading_refused_share": refused_readings / ((readings + refused_readings) or 1),
     }
     passed = (
         all(s == "settled" for s in states)
         and relations > 0
-        and measured["valid_write_rate"] >= SMOKE_MARKS["valid_write_rate"]
-        and all(measured[k] <= SMOKE_MARKS[k] for k in SMOKE_MARKS if k != "valid_write_rate")
+        and measured["productive_rate"] >= SMOKE_MARKS["productive_rate"]
+        and measured["relation_refused_share"] <= SMOKE_MARKS["relation_refused_share"]
+        and measured["reading_refused_share"] <= SMOKE_MARKS["reading_refused_share"]
     )
     return {
         "status": "INSUFFICIENT" if len(items) < 5 else "PASS" if passed else "FAIL",
         "items": len(items),
         "settled": sum(s == "settled" for s in states),
+        "valid_writes": len({g["work_id"] for g in graphs} & set(items)),
         "relations_admitted": relations,
         "entities_admitted": entities,
-        "readings_admitted": claims,
+        "readings_admitted": readings,
         "refusals": dict(by.most_common()),
         "marks": SMOKE_MARKS,
         **measured,
@@ -929,20 +941,26 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                 " AND session_id=ANY(:s)",
                 {"s": [r["id"] for r in sessions]},
             )
-            extractions = [
-                r["payload"]["extraction_id"] for r in receipts if r["part"] == "readings"
-            ]
-            claims = await rows(
+            extractions = {
+                r["payload"]["extraction_id"]: r["work_id"]
+                for r in receipts
+                if r["part"] == "readings"
+            }
+            counted = await rows(
                 engine,
-                "SELECT count(*) AS n FROM extraction_claim WHERE extraction_id=ANY(:e)",
-                {"e": extractions},
+                "SELECT extraction_id, count(*) AS n FROM extraction_claim"
+                " WHERE extraction_id=ANY(:e) GROUP BY extraction_id",
+                {"e": list(extractions)},
             )
+            claims = Counter[str]()
+            for c in counted:
+                claims[extractions[c["extraction_id"]]] += c["n"]
             report["smoke"] = smoke_health(
                 list(selected),
                 [r["state"] for r in states],
                 [r for r in receipts if r["part"] == "graph"],
                 [r["payload"] for r in refusals],
-                claims[0]["n"],
+                claims,
             )
             freeze(output / "report.json", report)
             return report

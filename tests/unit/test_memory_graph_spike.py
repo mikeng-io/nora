@@ -232,29 +232,58 @@ async def test_an_item_with_a_media_source_is_in_the_attachment_stratum(monkeypa
     assert "attachment" in candidate["strata"]
 
 
+
 def _graph(work_id, relations):
     return {"work_id": work_id, "payload": {"relations": [{}] * relations, "entities": []}}
 
 
-def test_smoke_passes_only_when_writes_are_valid_and_rarely_refused():
-    items = [f"w{i}" for i in range(5)]
-    settled = ["settled"] * 5
-    healthy = spike.smoke_health(
-        items, settled, [_graph(w, 2) for w in items],
-        [{"part": "relation", "reason": "wrong_ends"}], claims=8,
-    )
+ITEMS = [f"w{i}" for i in range(5)]
+SETTLED = ["settled"] * 5
+
+
+def _smoke(graphs, refusals=(), claims=None, states=SETTLED):
+    claims = dict.fromkeys(ITEMS, 4) if claims is None else claims
+    return spike.smoke_health(ITEMS, states, graphs, list(refusals), claims)
+
+
+def test_smoke_passes_a_healthy_sample():
+    healthy = _smoke([_graph(w, 2) for w in ITEMS], [{"part": "relation", "reason": "wrong_ends"}])
     assert healthy["status"] == "PASS" and healthy["relations_admitted"] == 10
-    # Run 6's shape: most writes never valid, every person end refused.
-    sick = spike.smoke_health(
-        items, settled, [_graph("w0", 1)],
-        [{"part": "write", "reason": "schema"}] * 12
-        + [{"part": "relation", "reason": "wrong_ends"}] * 4,
-        claims=1,
-    )
+
+
+def test_smoke_counts_only_productive_writes():
+    # Four empty writes and one relation is 20% productive, not 100%.
+    graphs = [_graph("w0", 1), *(_graph(w, 0) for w in ITEMS[1:])]
+    sick = _smoke(graphs, claims={})
+    assert sick["valid_writes"] == 5 and sick["productive_rate"] == 0.2
     assert sick["status"] == "FAIL"
-    assert sick["refusals"]["write:schema"] == 12
-    assert spike.smoke_health(items, settled, [], [], claims=0)["status"] == "FAIL"
-    assert spike.smoke_health(items[:3], settled[:3], [], [], 0)["status"] == "INSUFFICIENT"
-    graphs = [_graph(w, 2) for w in items]
-    failed = spike.smoke_health(items, ["failed", *settled[1:]], graphs, [], 8)
-    assert failed["status"] == "FAIL"
+    # At the mark (3 of 5 = 0.6) it passes; one fewer fails.
+    at_mark = _smoke([_graph(w, 1) for w in ITEMS[:3]], claims={})
+    assert at_mark["productive_rate"] == 0.6 and at_mark["status"] == "PASS"
+    below = _smoke([_graph(w, 1) for w in ITEMS[:2]], claims={})
+    assert below["status"] == "FAIL"
+
+
+def test_smoke_refused_relation_share_is_a_ceiling():
+    graphs = [_graph(w, 1) for w in ITEMS[:4]]  # 4 admitted relations
+    one = [{"part": "relation", "reason": "wrong_ends"}]
+    assert _smoke(graphs, one)["relation_refused_share"] == 0.2
+    assert _smoke(graphs, one)["status"] == "PASS"
+    assert _smoke(graphs, one * 2)["status"] == "FAIL"
+
+
+def test_smoke_refused_reading_share_is_a_ceiling():
+    graphs = [_graph(w, 1) for w in ITEMS]
+    claims = {"w0": 4}
+    one = [{"part": "reading", "reason": "event_expression_absent"}]
+    assert _smoke(graphs, one, claims)["reading_refused_share"] == 0.2
+    assert _smoke(graphs, one, claims)["status"] == "PASS"
+    assert _smoke(graphs, one * 2, claims)["status"] == "FAIL"
+
+
+def test_smoke_fails_a_failed_item_and_is_insufficient_when_small():
+    graphs = [_graph(w, 2) for w in ITEMS]
+    assert _smoke(graphs, states=["failed", *SETTLED[1:]])["status"] == "FAIL"
+    assert _smoke([])["status"] == "FAIL"
+    small = spike.smoke_health(ITEMS[:3], SETTLED[:3], graphs[:3], [], {})
+    assert small["status"] == "INSUFFICIENT"

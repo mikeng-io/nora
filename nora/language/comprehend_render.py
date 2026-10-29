@@ -68,8 +68,8 @@ Readings cite a source row by its integer `id` in reading_sources, never by a [k
 about=[{person_id,reference}], what, happened_at={source_id,expression}, where,
 how (stated/said_by_another/planned/asked/reported), source_ids=[12],
 evidence=[{source_id:12,quote}]. The expression is the source's exact words for the time
-("tomorrow night") or null, never a date you computed; evidence has one quote from each
-source in source_ids.
+("tomorrow night") or null, never a date you computed; evidence quotes only the sources in
+source_ids and covers every one of them.
 Every relation needs id, src=[kind,id], rel, dst=[kind,id], persons (authored person ids),
 and at least one evidence item naming its id. A person end is ["person", the person id shown
 in sources]; code turns it into the graph's pointer.
