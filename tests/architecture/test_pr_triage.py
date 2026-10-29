@@ -188,14 +188,15 @@ def test_the_workflow_runs_trusted_code_and_never_interpolates_pr_data():
     import yaml
 
     root = Path(__file__).resolve().parents[2]
-    workflow = yaml.safe_load((root / ".github/workflows/pr-triage.yml").read_text())
-    for step in workflow["jobs"]["triage"]["steps"]:
+    workflow = yaml.safe_load((root / ".github/workflows/contribution-content.yml").read_text())
+    for step in workflow["jobs"]["pr-metadata"]["steps"]:
         if step.get("uses", "").startswith("actions/checkout@"):
             assert step["with"]["ref"] == "master" and step["with"]["persist-credentials"] is False
         assert "${{" not in step.get("run", "")
-    assert workflow["jobs"]["triage"]["permissions"] == {
+    assert workflow["jobs"]["pr-metadata"]["permissions"] == {
         "contents": "read",
         "issues": "write",
+        "checks": "write",
         "pull-requests": "write",
     }
 
@@ -212,13 +213,3 @@ def test_dependabot_assigns_the_maintainer_and_uses_only_labels_the_repo_defines
         where = update["package-ecosystem"]
         assert update.get("assignees") == ["mikeng-io"], where
         assert set(update["labels"]) <= defined, (where, set(update["labels"]) - defined)
-
-
-def test_security_workflow_has_no_codeql_job():
-    """CodeQL was skipped on every PR while private and showed an unexpanded matrix name."""
-    import yaml
-
-    root = Path(__file__).resolve().parents[2]
-    text = (root / ".github/workflows/security.yml").read_text()
-    assert "codeql" not in text.lower()
-    assert set(yaml.safe_load(text)["jobs"]) == {"dependency-review"}

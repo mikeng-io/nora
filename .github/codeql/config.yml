@@ -1,0 +1,4 @@
+name: Full language security analysis
+# No path filters: selection controls jobs, analysis covers the entire language.
+queries:
+  - uses: security-extended

@@ -133,7 +133,7 @@ def test_workflow_installer_inputs_have_the_emsign_patch_floor():
                 version = Version(step["with"][key])
                 floor = Version("0.13.4" if key == "version" else "24.22.1")
                 assert version >= floor, f"{path.name}: {action} {version} predates {floor}"
-    assert seen == {"astral-sh/setup-uv": 6, "actions/setup-node": 2}
+    assert seen == {"astral-sh/setup-uv": 7, "actions/setup-node": 3}
 
 
 def test_periphery_upgrades_the_system_ca_used_by_git():

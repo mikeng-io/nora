@@ -12,13 +12,19 @@ import { convert, serveArchive, serveContent } from "./service";
 vi.mock("server-only", () => ({}));
 
 let dir: string;
+let stores: DownloadStore[];
+function loadStore(): DownloadStore {
+  const store = DownloadStore.load(dir);
+  stores.push(store);
+  return store;
+}
 beforeEach(() => {
+  stores = [];
   dir = mkdtempSync(path.join(tmpdir(), "nora-dl-"));
 });
 afterEach(async () => {
-  // Flush queue drains on a promise chain: give it a beat before removing the
-  // dir, or a scheduled write lands on a path that no longer exists.
-  await new Promise((r) => setTimeout(r, 30));
+  // Wait for actual persistence, including writes slower than one event-loop turn.
+  await Promise.all(stores.map((store) => store.flush()));
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -143,7 +149,7 @@ describe("validateBatch", () => {
 
 describe("DownloadStore", () => {
   it("creates, lists newest-first, dedupes live jobs, removes with files", async () => {
-    const store = DownloadStore.load(dir);
+    const store = loadStore();
     const a = store.create("https://a.example/1", "miles");
     await store.flush();
     const b = store.create("https://b.example/2", "miles");
@@ -161,14 +167,14 @@ describe("DownloadStore", () => {
   });
 
   it("persists across loads and re-queues jobs that were in flight", async () => {
-    const store = DownloadStore.load(dir);
+    const store = loadStore();
     const job = store.create("https://a.example/1", "miles");
     store.update(job.id, { status: "downloading", progress: { percent: 40, totalBytes: 100, speedBps: 10 } });
     const done = store.create("https://a.example/2", "miles");
     store.update(done.id, { status: "done", fileName: "download.mp4" });
     await store.flush();
 
-    const reloaded = DownloadStore.load(dir);
+    const reloaded = loadStore();
     expect(reloaded.get(job.id)?.status).toBe("queued");
     expect(reloaded.get(job.id)?.progress.percent).toBeNull();
     expect(reloaded.get(done.id)?.status).toBe("done");
@@ -180,12 +186,12 @@ describe("DownloadStore", () => {
 
   it("treats a torn registry as an empty library", () => {
     writeFileSync(path.join(dir, "jobs.json"), "{not json");
-    const store = DownloadStore.load(dir);
+    const store = loadStore();
     expect(store.list()).toEqual([]);
   });
 
   it("resolves the finished file, preferring the merged name over format parts", async () => {
-    const store = DownloadStore.load(dir);
+    const store = loadStore();
     const job = store.create("https://a.example/1", "miles");
     const jd = path.join(dir, "files", job.id);
     mkdirSync(jd, { recursive: true });
@@ -241,7 +247,7 @@ const goodYtdlp = (args: string[], proc: FakeProc) => {
 };
 
 function makeRunner(over: Partial<RunnerOptions> = {}) {
-  const store = DownloadStore.load(dir);
+  const store = loadStore();
   const runner = new DownloadRunner({
     store,
     ytdlpPath: "/bin/false",
@@ -261,7 +267,10 @@ function makeRunner(over: Partial<RunnerOptions> = {}) {
 async function settle(store: DownloadStore, id: string): Promise<void> {
   for (let i = 0; i < 200; i++) {
     const s = store.get(id)?.status;
-    if (s === "done" || s === "failed") return;
+    if (s === "done" || s === "failed") {
+      await store.flush();
+      return;
+    }
     await new Promise((r) => setTimeout(r, 5));
   }
   throw new Error("job never settled");
@@ -489,7 +498,7 @@ describe("DownloadRunner", () => {
 
   it("a failed registry write keeps the state and a later flush writes it", async () => {
     const { chmodSync, readFileSync } = await import("node:fs");
-    const store = DownloadStore.load(dir);
+    const store = loadStore();
     const job = store.create("https://media.example/fs-fail", "miles");
     chmodSync(dir, 0o555); // the disk is now broken for writes
     await expect(store.flush()).rejects.toThrow();
