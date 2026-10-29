@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.11.24](https://github.com/mikeng-io/nora/compare/v7.11.23...v7.11.24) (2026-10-29)
+
+
+### Maintenance
+
+* **memory:** correct the PROV mapping on entity, polarity and time ([2164741](https://github.com/mikeng-io/nora/commit/216474151f63c626c304b0999fe9973b5ddf8296))
+* **memory:** reference the graph's provenance to W3C PROV ([59c1ca6](https://github.com/mikeng-io/nora/commit/59c1ca603088e6d56ab635d56ac5f34acf5d49d4))
+
 ## [7.11.23](https://github.com/mikeng-io/nora/compare/v7.11.22...v7.11.23) (2026-10-29)
 
 
