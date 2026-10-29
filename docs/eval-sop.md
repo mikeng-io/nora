@@ -79,10 +79,38 @@ only those room pseudonyms, `before_ms`, scenario numbers and counts.
 The finder uses short-message, question, repeated-author and lexical shapes;
 it does not establish meaning, an open note, an admission refusal, attendance
 or the absence of a private preference. In particular its scenario 8 candidates
-are only multi-message contexts. Confirm each candidate privately on the host,
-including the open state and evidence that makes the scenario true. An empty
+are only multi-message contexts. Save the finder JSONL privately on the host,
+then confirm with the production model configured by the deployment's `[llm]`:
+
+```bash
+uv run python -m scripts.confirm_cognition_anchors \
+  --source-url "$EVAL_SOURCE_URL" --config /path/to/deployment/config.toml \
+  --candidates /private/path/to/candidates.jsonl
+```
+
+The API key is read from the environment variable named by `llm.api_key_env`;
+load that environment privately on the host. The same clone/routing refusals
+and read-only transaction apply. Each candidate reads only its mapped room's
+messages strictly before `before_ms`, ordered by time and id. Every message
+sent to the model has epoch-millisecond time and a stable local speaker label;
+the scenario description and must/must-not come from the build brief's table.
+The configured production model returns a strict boolean; errors, timeouts,
+refusals, truncated and wrong-shape answers become `unavailable`, never
+`no_match`. No retries are made. Output is only room pseudonym, `before_ms`,
+scenario and `match` / `no_match` / `unavailable`; diagnostics are generic.
+Claude and Codex must never read message content, raw model responses or private
+logs. Run this command on the host, not through an agent session capturing input.
+
+A `match` confirms the message situation, not the later tool trajectory.
+This step reads messages only: it cannot establish stored open notes, admission
+refusals or preferences shared elsewhere. Keep such cases parked until that
+state is grounded privately on the host; do not infer it from a match. An empty
 result means no heuristic candidate, not that no real instance exists.
 
+On the host, the private `NORA_EVAL_PSEUDONYM_MAP` maps the emitted room token
+back to the conversation for replay. Keep this map and candidate files off GitHub.
+Use only the confirmed room token and cutoff in the committed anchor; register
+any further evidence pseudonyms in that private map without exposing their values.
 After confirmation, replace `parked` with a pseudonymised `snapshot` (platform,
 conversation_id and before_ms), and specialise the existing ToolRouteGrader
 argument checks to that anchor's shown evidence, note references, options and
