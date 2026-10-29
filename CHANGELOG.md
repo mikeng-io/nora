@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.11.28](https://github.com/mikeng-io/nora/compare/v7.11.27...v7.11.28) (2026-10-29)
+
+
+### Maintenance
+
+* **cognition:** correct the work-item coverage and carry retries to the wake ([a229097](https://github.com/mikeng-io/nora/commit/a229097a1e8a445878287eff7f689090b5d8efd1))
+* **cognition:** one session comprehends, connects and decides ([c2315c2](https://github.com/mikeng-io/nora/commit/c2315c2587a8d7958c2eaa8e6abac66565c2eccd))
+
 ## [7.11.27](https://github.com/mikeng-io/nora/compare/v7.11.26...v7.11.27) (2026-10-29)
 
 
