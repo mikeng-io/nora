@@ -157,7 +157,12 @@ Use **Bug report** for a reproducible problem: include expected and actual
 behaviour, revision, environment and a minimal synthetic reproduction.
 Use **Feature request** for an improvement: explain the problem and proposed
 solution. Both are available in the [issue chooser](https://github.com/mikeng-io/nora/issues/new/choose).
-Blank issues are disabled. The forms marked **Maintainers** support internal
+Blank issues are disabled. On creation or editing (including CLI/API submissions),
+the contribution checker validates the title, exactly one form label and populated
+required sections without unfilled prompts. Incomplete issues get `needs-info`
+and one bot comment listing corrections. Both clear when corrected; issues are
+never automatically closed or locked. The label measures format, not factual
+correctness or readiness for assignment. The forms marked **Maintainers** support internal
 planning and require no action from ordinary contributors. For a private channel,
 follow [Security](SECURITY.md#reporting-a-vulnerability).
 
