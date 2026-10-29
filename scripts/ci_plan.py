@@ -149,7 +149,8 @@ def codeql_findings(event: dict, repo: Path, directory: Path) -> int:
         for run in runs:
             if any(i.get("executionSuccessful") is False for i in run.get("invocations", [])):
                 raise ValueError("CodeQL reported an unsuccessful analysis")
-            rules = {r["id"]: r for r in run["tool"]["driver"]["rules"]}
+            components = [run["tool"]["driver"], *run["tool"].get("extensions", [])]
+            rules = {r["id"]: r for component in components for r in component.get("rules", [])}
             for result in run["results"]:
                 rule = rules[result["ruleId"]]
                 severity = float(rule.get("properties", {}).get("security-severity", 0))

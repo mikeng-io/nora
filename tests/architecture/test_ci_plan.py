@@ -174,7 +174,10 @@ def test_shared_document_reader_keeps_full_suite_fallback(tmp_path, monkeypatch)
     [("7.0", 2, "warning", 1), ("9.9", 1, "warning", 0),
      ("6.9", 2, "warning", 0), ("0", 2, "error", 1)],
 )
-def test_codeql_gates_added_high_severity_locations(tmp_path, severity, line, level, expected):
+@pytest.mark.parametrize("component", ["driver", "extension"])
+def test_codeql_gates_added_high_severity_locations(
+    tmp_path, severity, line, level, expected, component,
+):
     def git(*args):
         return subprocess.check_output(["git", *args], cwd=tmp_path, text=True).strip()  # noqa: S603
 
@@ -201,6 +204,11 @@ def test_codeql_gates_added_high_severity_locations(tmp_path, severity, line, le
             },
         }]}],
     }]}
+    if component == "extension":
+        tool = report["runs"][0]["tool"]
+        # Current CodeQL puts query-pack rule descriptors in tool.extensions.
+        tool["extensions"] = [{"name": "synthetic-query-pack", "rules": tool["driver"]["rules"]}]
+        tool["driver"]["rules"] = []
     (directory / "python.sarif").write_text(json.dumps(report))
     assert ci_plan.codeql_findings(event, tmp_path, directory) == expected
     # The same historical findings are uploaded by baseline events without blocking.
