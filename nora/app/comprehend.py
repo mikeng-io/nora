@@ -166,7 +166,14 @@ class MemoryProposalAdmission:
 
     async def _admit(
         self, work: WorkItem, output: GraphWrite, fetched: GraphFetched, session: int
-    ) -> Admission:
+    ) -> tuple[Admission, list[dict[str, str]]]:
+        local_refusals: list[dict[str, str]] = []
+
+        async def refuse(part: Literal["entity", "relation", "evidence", "correction"],
+                         reason: str) -> None:
+            local_refusals.append({"kind": part, "reason": reason})
+            await self._refuse(session, part, reason)
+
         def stable(label: str) -> str:
             return str(uuid5(NAMESPACE_URL, f"{work.id}:{work.input_hash}:{label}"))
 
@@ -174,7 +181,7 @@ class MemoryProposalAdmission:
         entities = []
         for e in output.entities:
             if e.kind in ("person", "room", "unit", "nora"):
-                await self._refuse(session, "entity", "identity_pointer")
+                await refuse("entity", "identity_pointer")
             else:
                 entities.append(
                     Entity(e.id, e.kind, work.unit, e.name, tuple(e.aliases), e.attributes)
@@ -192,7 +199,7 @@ class MemoryProposalAdmission:
                 proposed.span,
             ))
             except ValueError:
-                await self._refuse(session, "evidence", "schema")
+                await refuse("evidence", "schema")
         evidence = tuple(evidence_parts)
         sources = fetched.hydrate(
             [e.source for e in evidence]
@@ -208,7 +215,7 @@ class MemoryProposalAdmission:
             if any(s.key[0] == "web_page" for s in cited) and (
                 "person" in (src[0], dst[0]) or r.persons
             ):
-                await self._refuse(session, "relation", "private_web_evidence")
+                await refuse("relation", "private_web_evidence")
                 continue
             try:
                 relations.append(
@@ -227,7 +234,7 @@ class MemoryProposalAdmission:
                     )
                 )
             except ValueError:
-                await self._refuse(session, "relation", "schema")
+                await refuse("relation", "schema")
         correction_parts = []
         for c in output.corrections:
             try:
@@ -237,7 +244,7 @@ class MemoryProposalAdmission:
                     tuple(_key(k) for k in c.evidence),
                 ))
             except ValueError:
-                await self._refuse(session, "correction", "schema")
+                await refuse("correction", "schema")
         corrections = tuple(correction_parts)
         sources.update(fetched.hydrate([key for c in corrections for key in c.evidence]))
         admission = await self.graph.stage_and_admit(
@@ -281,5 +288,5 @@ class MemoryProposalAdmission:
         for refusal in admission.refused:
             await self._refuse(session, refusal.kind, refusal.reason)
         await self.records.graph_write(work, session, admission)
-        return admission
+        return admission, local_refusals
 

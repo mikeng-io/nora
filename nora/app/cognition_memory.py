@@ -129,17 +129,19 @@ class WakeMemory:
         if drops:
             return {"status": "refused", "admitted": [],
                     "refused": [{"reason": r} for r in drops]}
-        result = await self.admission._admit(combined.work, output, state.graph_fetched,
+        result, local_refusals = await self.admission._admit(combined.work, output, state.graph_fetched,
                                               state.session_id)
-        refused = [asdict(r) for r in result.refused]
+        refused = [*[asdict(r) for r in result.refused], *local_refusals]
         if not refused:
             await self.records.readings(combined.work, state.session_id, combined, claims)
-            state.admitted_indices.update(items)
             admitted = items
         seeds = tuple(dict.fromkeys(k for r in result.relations for k in (r.src, r.dst)))
         graph = await self.graph.walk(seeds, Walk(unit=state.unit, depth=1,
             persons=frozenset(p for s in combined.sources for p in s.persons),
             valid_at=combined.work.as_of))
+        if graph.status == "unavailable":
+            raise RuntimeError("connected graph unavailable")
+        state.admitted_indices.update(admitted)
         state.admitted_relations.update({r.id: r for r in result.relations})
         state.admitted_evidence.extend(result.evidence)
         return {"status": "ok" if admitted else "refused", "admitted": admitted,

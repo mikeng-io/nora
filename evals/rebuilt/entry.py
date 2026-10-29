@@ -232,16 +232,14 @@ async def tag(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
 
 
 async def _cognition_replay(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
-    from sqlalchemy.ext.asyncio import create_async_engine
-
-    from nora.infra.sql.cognition_replay import recorded_wake
+    from nora.subject.cognition import wake_from_snapshot
 
     wake = case.metadata.get("wake")
     if type(wake) is not int or wake <= 0:
         return Outcome(admitted=None, source="fail_closed", error="recorded wake id required")
-    engine = create_async_engine(case.moment.source_url if case.moment else subject.database_url)
     try:
-        at, view = await recorded_wake(engine, wake)
+        at, view = await wake_from_snapshot(
+            case.moment.source_url if case.moment else subject.database_url, wake)
         if at != now_ms or view.unit != subject.unit:
             raise ValueError("wake clock or unit differs from restored snapshot")
         runner = subject.deps.cognition_runner
@@ -251,8 +249,6 @@ async def _cognition_replay(subject: Subject, case: Case, *, now_ms: int) -> Out
     except Exception:  # noqa: BLE001 -- private source details stay local
         return Outcome(admitted=None, source="fail_closed",
                        error="recorded wake replay unavailable")
-    finally:
-        await engine.dispose()
     return Outcome(admitted=None)
 
 

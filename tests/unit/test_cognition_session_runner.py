@@ -354,3 +354,17 @@ async def test_failed_session_keeps_stimuli_pending_and_counts_failure():
     assert stimuli.outcomes[1].outcome == "failed"
     assert not stimuli.carries
     assert await memory.records.failures("unit-1", 1) == 1
+
+
+async def test_schema_refusal_is_returned_and_never_unlocks_acts():
+    payload = proposal()
+    payload["relations"] = [{"id": "generated-relation", "src": ["person", "generated"],
+        "rel": "likes", "dst": ["place", "generated-place"], "valid_from": "bad-time"}]
+    fake = FakeCognitionAgentRunner(script=[("memory_propose", payload),
+        ("wake_at", {"subject_rows": ["event:1"], "at": iso(NOW + 3600000), "why": "check"})])
+    runner, store, _ = _runner(agent_runner=fake, memory=wake_memory())
+    await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
+        last_activity_ms=None, last_wake=None), now_ms=NOW)
+    assert any(r["reason"] == "schema" for r in fake.results[0]["refused"])
+    assert fake.results[1]["reason"] == "proposal_required"
+    assert not store.paces
