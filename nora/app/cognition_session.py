@@ -1100,7 +1100,9 @@ class CognitionSessionRunner:
         )
         kinds = sorted({item.kind for item in items})
         from nora.language.comprehend_render import SESSION_INSTRUCTION
-        system_prompt = doctrine_text + skill_text + SESSION_INSTRUCTION
+        system_prompt = doctrine_text + skill_text
+        if self._memory is not None:
+            system_prompt += SESSION_INSTRUCTION
         prompt = render_agenda(
             items, stimuli={s.id: s for s in view.pending}, grounding=grounding,
             reads_note=state.reads_note, now_ms=now_ms,
@@ -2672,13 +2674,15 @@ class CognitionSessionRunner:
             return result
 
         verbs = (
-            memory_propose, profile_revise, close, *(acting(v) for v in (
+            close, *(acting(v) for v in (
                 note_create, note_update, note_retire, note_merge, memo_write,
                 memo_revise, memo_withdraw, event_propose, event_revise, event_set_status,
                 standing_revise, wake_at, wake_move, wake_cancel, remind, remind_move,
                 remind_cancel,
             )),
         )
+        if self._memory is not None:
+            verbs = (memory_propose, profile_revise, *verbs)
         if state.historical:
             verbs = (memory_propose, profile_revise, close)
         if self._memory is not None:

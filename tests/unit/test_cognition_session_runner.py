@@ -340,3 +340,17 @@ async def test_refused_session_leaves_stimuli_pending():
         last_activity_ms=None, last_wake=None), now_ms=NOW, wake_id=1)
     assert not fake.results[0]["admitted"]
     assert [c.stimulus_id for _, _, c in stimuli.carries if c.state == "carried"] == [1]
+
+
+async def test_failed_session_keeps_stimuli_pending_and_counts_failure():
+    memory = wake_memory()
+    stimuli = _seeded()
+    fake = FakeCognitionAgentRunner(script=[("nonexistent_generated_tool", {})])
+    runner, _, _ = _runner(agent_runner=fake, stimuli=stimuli, memory=memory)
+    with pytest.raises(KeyError):
+        await runner.on_wake(unit="unit-1", view=UnitView(unit="unit-1",
+            pending=_pending("unit-1"), last_activity_ms=None, last_wake=None),
+            now_ms=NOW, wake_id=1)
+    assert stimuli.outcomes[1].outcome == "failed"
+    assert not stimuli.carries
+    assert await memory.records.failures("unit-1", 1) == 1
