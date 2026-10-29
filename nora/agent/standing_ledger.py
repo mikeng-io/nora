@@ -11,6 +11,7 @@ from nora.domain.lineage import ROW, LiveRoom, RenderRoom, RoomFacts, room_key
 from nora.domain.prompt import age, escape
 from nora.domain.standing_ledger import LedgerEntry, StandingLedger
 from nora.domain.turn_record import DisclosureRequirement
+from nora.language.computer_render import estimate_tokens
 
 
 def ledger_permits(entry: LedgerEntry, target: RenderRoom) -> bool:
@@ -57,10 +58,6 @@ def render_ledger(
     # ponytail: provisional budgets and seven-day closed horizon; size from the first month.
     if not entries:
         return None
-    import tiktoken
-
-    encoding = tiktoken.get_encoding("cl100k_base")
-
     now_ms = int(now.timestamp() * 1000)
     sections = []
     for kind, title in (("decision", "Decisions"), ("commitment", "I owe"), ("thread", "Threads")):
@@ -97,7 +94,7 @@ def render_ledger(
                 if labels:
                     line += " · " + ", ".join(dict.fromkeys(labels))
                 line += " · " + ", ".join(e.decision_ids + tuple(f"note {n}" for n in e.note_ids))
-            count = len(encoding.encode(line))
+            count = estimate_tokens(line)
             if tokens + count > section_tokens:
                 omitted += 1
                 continue
