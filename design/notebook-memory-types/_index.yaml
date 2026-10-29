@@ -1,0 +1,31 @@
+kind: design_index
+title: "The Notebook by memory type"
+description: >
+  The Notebook's kinds named for the kind of memory each one is, instead of
+  tiers named after the items they held. Five Notebook kinds on one entry and
+  one machinery: note (prospective; memo becomes its kept phase), topic
+  (interests), lesson (procedural), profile (semantic) and decision (working).
+  Episodic memory stays in the Record and Rollup. Layers stay defined by
+  authority; audience (internal or external) is a property of a kind, and
+  events and documents are postings, Nora's published acts. Standing splits
+  across the types and retires as a word; threads become topic activity in
+  the Rollup; the conscious records a decision in its turn record and the
+  subconscious writes the decision. Design only, not built.
+status: proposal
+governance: operator-directed
+timestamp: '2026-10-29'
+origin: >
+  Operator, 2026-10-29: «convert the notebook layer into a proper abstract that
+  becomes a typed kind of value, instead of setting up a separate note module,
+  a separate memo module»; «a memo is something that has ended, but still
+  needs to be remembered»; «Event and document are obviously the only things
+  that are external-facing»; the six memory types «extremely important for
+  anchoring the entire direction»; `Between us` dropped (option A); decisions
+  recorded by the conscious and written by the subconscious (option A).
+members:
+  - 00-design.md
+edges:
+  - {src: 00-design, dst: ../cognition-loop/05-data-model.md, rel: amends, provenance: asserted}
+  - {src: 00-design, dst: ../cognition-loop/40-register.md, rel: supersedes, provenance: asserted}
+  - {src: 00-design, dst: ../standing-ledger/20-the-ledger.md, rel: amends, provenance: asserted}
+  - {src: 00-design, dst: ../standing-ledger/50-migration.md, rel: amends, provenance: asserted}
