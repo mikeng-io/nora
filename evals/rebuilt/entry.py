@@ -231,6 +231,31 @@ async def tag(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     )
 
 
+async def _cognition_replay(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from nora.infra.sql.cognition_replay import recorded_wake
+
+    wake = case.metadata.get("wake")
+    if type(wake) is not int or wake <= 0:
+        return Outcome(admitted=None, source="fail_closed", error="recorded wake id required")
+    engine = create_async_engine(case.moment.source_url if case.moment else subject.database_url)
+    try:
+        at, view = await recorded_wake(engine, wake)
+        if at != now_ms or view.unit != subject.unit:
+            raise ValueError("wake clock or unit differs from restored snapshot")
+        runner = subject.deps.cognition_runner
+        if runner is None:
+            raise ValueError("Cognition session unavailable")
+        await runner.replay(view=view, now_ms=at)
+    except Exception:  # noqa: BLE001 -- private source details stay local
+        return Outcome(admitted=None, source="fail_closed",
+                       error="recorded wake replay unavailable")
+    finally:
+        await engine.dispose()
+    return Outcome(admitted=None)
+
+
 async def _cognition_probe(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     """One Cognition session over the case's agenda-item sentence, graded on
     the tools it CALLED (`ToolRouteGrader`, from the tool spans).
@@ -289,6 +314,8 @@ async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
         )
     adaptor = case.category or "culture"
     if adaptor == "cognition":
+        if case.metadata.get("corpus") == "cognition_session":
+            return await _cognition_replay(subject, case, now_ms=now_ms)
         return await _cognition_probe(subject, case, now_ms=now_ms)
     try:
         after = case.metadata.get("batch_after_ms")

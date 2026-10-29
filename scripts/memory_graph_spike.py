@@ -24,25 +24,16 @@ import sqlalchemy as sa
 from sqlalchemy.engine import make_url
 
 from evals.rebuilt.judge import criterion_verdict, parse_json_response
-from nora.agent import factory
-from nora.agent.comprehend_tools import egress_reason
-from nora.agent.egress import scan_identifiers
 from nora.agent.ports import ToolSpec, adapt
 from nora.agent.structured import ask_text, build_structured_model
-from nora.app.composition import search_provider
-from nora.app.comprehend_wiring import build_comprehend_runner
 from nora.app.graph_project import graph_project, projection_context
 from nora.config import load
 from nora.domain.blocks import BlockKey, ContextBlock, assemble, restamp
-from nora.domain.media_join import MediaJoin
 from nora.domain.memory_graph import Walk
 from nora.domain.prompt import escape
-from nora.infra.sql.cognition_store import SqlCognitionStore
-from nora.infra.sql.comprehend import SqlComprehendRecords
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.media_objects import SqlMediaObjectStore
-from nora.infra.sql.memory_graph import WALK_SQL, SqlMemoryGraph, walk_parameters, work_row
-from nora.infra.sql.schema import MEMORY_WORK_ITEM, METADATA
+from nora.infra.sql.memory_graph import WALK_SQL, walk_parameters, work_row
+from nora.infra.sql.schema import METADATA
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.policy import load_policy
@@ -772,221 +763,54 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             await project(engine, scope, args.projection_rate)
         if args.project_only:
             return {"status": "REPORTED", "projected": True}
-        units = {c.unit for c in policy.rooms()}
-        media = MediaJoin(
-            store=SqlMediaObjectStore(engine, metrics=metrics),
-            screen=scan_identifiers,
-            metrics=metrics,
-            render_chars=cfg.media.comprehension_render_chars,
-        )
-        records = SqlComprehendRecords(
-            engine,
-            media_join=media,
-            rooms_by_unit={
-                u: [(c.platform, c.primary_id) for c in policy.rooms() if c.unit == u]
-                for u in units
-            },
-            persons_by_unit={
-                u: {p for c in policy.rooms() if c.unit == u for p in (c.persons or ())}
-                for u in units
-            },
-            social_off_ids=persons.social_off_ids(),
-            model_id=cfg.llm.model,
-        )
-        sample = stratify(await candidates(engine, records), args.per_stratum, args.seed)
-        digest = freeze(output / "sample.json", sample)
-        freeze(
-            output / "sample-manifest.json",
-            {
-                "sha256": digest,
-                "seed": args.seed,
-                "per_stratum": args.per_stratum,
-                "script_sha256": hashlib.sha256(
-                    await asyncio.to_thread(Path(__file__).read_bytes)
-                ).hexdigest(),
-                "writer_model": cfg.llm.model,
-                "judges": [
-                    {"model": args.judge_a, "vendor": args.judge_vendor_a},
-                    {"model": args.judge_b, "vendor": args.judge_vendor_b},
-                ],
-            },
-        )
-        selected = {r["work"]["id"]: r for group in sample.values() for r in group}
-        graph_store = SqlMemoryGraph(engine, metrics=metrics)
-        from nora.domain.memory_graph import WorkItem
+        # PR 3 moves the driver; PR 6 adds the integrated precision/cost comparison.
+        from tempfile import TemporaryDirectory
 
-        replay = {}
-        for candidate in selected.values():
-            w = candidate["work"]
-            run_hash = hashlib.sha256((digest + w["input_hash"]).encode()).hexdigest()
-            wid = "spike:" + hashlib.sha256((str(output) + w["id"]).encode()).hexdigest()
-            work = WorkItem(
-                wid, tuple(w["source"]), w["unit"], run_hash, w["as_of"], historical=True
-            )
-            await graph_store.enqueue(work)
-            replay[wid] = candidate
-        selected = replay
-        # Dedicated snapshot lane: no live workers, no step three, no send collaborator.
-        async with engine.begin() as conn:
-            await conn.execute(sa.update(MEMORY_WORK_ITEM).values(historical=False))
-            await conn.execute(
-                sa.update(MEMORY_WORK_ITEM)
-                .where(MEMORY_WORK_ITEM.c.id.in_(selected))
-                .values(historical=True, state="pending", attempts=0, due_at=datetime.now(UTC))
-            )
-        private = tuple(
-            {
-                n
-                for p in persons.by_person.values()
-                for n in (p.person_id, p.name, p.first_name, p.last_name, *p.aliases)
-                if n
-            }
-            | {v for _, v in persons.index}
-            | set(persons._instagram_handles.values())
-            | set(persons._instagram_usernames)
-        )
-        lookup_log: list[dict[str, Any]] = []
-        client = factory.create_client(
-            base_url=cfg.llm.base_url, api_key=os.environ[cfg.llm.api_key_env]
-        )
-        models = factory.ModelSource(
-            client=client,
-            spec=factory.ModelSpec(
-                model=cfg.llm.model,
-                max_tokens=cfg.llm.max_tokens,
-                temperature=cfg.llm.temperature,
-                reasoning_effort=cfg.llm.reasoning_effort,
-            ),
-        )
-        enabled = cfg.model_copy(
-            update={
-                "memory": cfg.memory.model_copy(
-                    update={
-                        "graph": cfg.memory.graph.model_copy(
-                            update={
-                                "enabled": True,
-                                "comprehend": cfg.memory.graph.comprehend.model_copy(
-                                    update={"enabled": True}
-                                ),
-                            }
-                        )
-                    }
-                )
-            }
-        )
-        runner = build_comprehend_runner(
-            graph=SqlMemoryGraph(engine, metrics=metrics),
-            records=records,
-            sessions=SqlCognitionStore(engine),
-            tools=SpikeReads(search_provider(cfg), lookup_log),
-            models=models,
-            retry=factory.build_retry_policy(timeout_seconds=cfg.llm.timeout_seconds),
-            metrics=metrics,
-            cfg=enabled,
-            private_names=private,
-            model_id=cfg.llm.model,
-            model_route=cfg.llm.base_url,
-            ai_peer=cfg.honcho.ai_peer,
-            clock=lambda: datetime.now(UTC),
-        )
-        while True:
-            pending = await rows(
-                engine,
-                "SELECT state,due_at FROM memory_work_item WHERE historical AND state IN"
-                " ('pending','running')",
-            )
-            if not pending:
-                break
-            if not await runner.run_once(historical=True):
-                await asyncio.sleep(
-                    min(
-                        1,
-                        max(
-                            0,
-                            (min(r["due_at"] for r in pending) - datetime.now(UTC)).total_seconds(),
-                        ),
-                    )
-                )
-        freeze(output / "web-lookups.json", lookup_log)
-        receipts = await rows(
-            engine,
-            "SELECT * FROM comprehend_result WHERE work_id=ANY(:ids)",
-            {"ids": list(selected)},
-        )
-        freeze(output / "receipts.json", receipts)
-        states = await rows(
-            engine, "SELECT state FROM memory_work_item WHERE id=ANY(:ids)", {"ids": list(selected)}
-        )
-        report = invariants(
-            before,
-            await acts(engine),
-            [r["state"] for r in states],
-            len(selected),
-            sum(egress_reason(r["query"], private) is not None for r in lookup_log),
-        )
-        report["sample_sha256"] = digest
-        report["strata"] = {s: len(v) for s, v in sample.items()}
-        if args.smoke:
-            # Refusal rows carry only their session, so join them through it;
-            # the work-keyed receipts above never include them.
-            sessions = await rows(
-                engine,
-                "SELECT id FROM cognition_session WHERE situation->>'step'='comprehend'"
-                " AND situation->>'work_item'=ANY(:ids)",
-                {"ids": list(selected)},
-            )
-            refusals = await rows(
-                engine,
-                "SELECT payload FROM comprehend_result WHERE part='refusal'"
-                " AND session_id=ANY(:s)",
-                {"s": [r["id"] for r in sessions]},
-            )
-            extractions = {
-                r["payload"]["extraction_id"]: r["work_id"]
-                for r in receipts
-                if r["part"] == "readings"
-            }
-            counted = await rows(
-                engine,
-                "SELECT extraction_id, count(*) AS n FROM extraction_claim"
-                " WHERE extraction_id=ANY(:e) GROUP BY extraction_id",
-                {"e": list(extractions)},
-            )
-            claims = Counter[str]()
-            for c in counted:
-                claims[extractions[c["extraction_id"]]] += c["n"]
-            report["smoke"] = smoke_health(
-                list(selected),
-                [r["state"] for r in states],
-                [r for r in receipts if r["part"] == "graph"],
-                [r["payload"] for r in refusals],
-                claims,
-            )
-            freeze(output / "report.json", report)
-            return report
-        judges = Judges(cfg, [args.judge_a, args.judge_b])
-        report["age"] = await age_comparison(engine, args.age_url, judges, output, args.minimum)
-        report.update(await quality(engine, selected, receipts, judges, output, args.minimum))
-        if any(len(v) < args.per_stratum for v in sample.values()):
-            for key in ("reading_precision", "reading_recall", "relation_precision"):
-                if report[key]["status"] == "PASS":
-                    report[key]["status"] = "INSUFFICIENT"
-        sessions = await rows(
-            engine,
-            "SELECT id,situation FROM cognition_session WHERE situation->>'work_item'=ANY(:ids)",
-            {"ids": list(selected)},
-        )
-        for step in ("comprehend", "reshape"):
-            report["cost_" + step] = cost_row(step, selected, receipts, sessions)
-        p95 = report["age"].get("sql_p95_ms")
-        report["query_depth_three"] = {
-            "status": "INSUFFICIENT"
-            if p95 is None or report["age"]["questions"] < args.minimum
-            else "PASS"
-            if p95 < 200
-            else "FAIL",
-            "p95_ms": p95,
-        }
+        from nora.infra.sql.cognition_replay import recorded_wake
+        from nora.subject import SubjectSpec, obtain, sandbox_as_of
+
+        wakes = await rows(engine, "SELECT id,at_ms FROM cognition_wake ORDER BY at_ms,id")
+        if not wakes:
+            raise ValueError("snapshot contains no recorded wakes")
+        results = []
+        for wake in wakes[:args.per_stratum]:
+            at = datetime.fromtimestamp(wake["at_ms"] / 1000, UTC)
+            _, view = await recorded_wake(engine, wake["id"])
+            room = next((c for c in policy.rooms() if c.unit == view.unit), None)
+            if room is None:
+                raise ValueError("wake has no policy room")
+            async with sandbox_as_of(args.database_url, at) as (url, _):
+                with TemporaryDirectory(prefix="nora-spike-") as workdir:
+                    subject = await obtain(SubjectSpec(database_url=url, workdir=Path(workdir),
+                        room=(room.platform, room.primary_id), now=at,
+                        identity=args.identity.read_text(), policy=args.policy.read_text(),
+                        overrides={"cognition.enabled": True, "memory.graph.enabled": True,
+                            "memory.graph.comprehend.enabled": True,
+                            "llm.base_url": cfg.llm.base_url, "llm.model": cfg.llm.model}))
+                    try:
+                        runner = subject.deps.cognition_runner
+                        if runner is None:
+                            raise ValueError("snapshot session unavailable")
+                        sandbox_engine = create_sql_engine(url)
+                        before_sandbox = await acts(sandbox_engine)
+                        outcome = await runner.replay(
+                            view=view, now_ms=wake["at_ms"], historical=True)
+                        after_sandbox = await acts(sandbox_engine)
+                        await sandbox_engine.dispose()
+                        if before_sandbox != after_sandbox:
+                            raise ValueError("backfill wrote an act")
+                        results.append({"wake": wake["id"], "session": outcome.session_id,
+                                        "stimuli": [s.id for s in view.pending]})
+                    finally:
+                        from evals.backbone import _close
+                        await _close(subject)
+        freeze(output / "sessions.json", results)
+        report = {"driver": "cognition_session", "replayed_wakes": len(results),
+                  "acts": {"status": "PASS", "count": 0},
+                  "measurement": {"status": "REPORTED",
+                      "note": "Integrated driver only; precision and cost spike follows in PR 6."}}
+        if await acts(engine) != before:
+            raise ValueError("source snapshot acts changed")
         freeze(output / "report.json", report)
         return report
     finally:

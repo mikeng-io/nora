@@ -1371,7 +1371,6 @@ class Dependencies:
     # shutdown cancels the sessions in flight, once (`nora.app.cognition_wiring`).
     wake_evaluator: WakeEvaluator | None = None
     cognition_runner: CognitionSessionRunner | None = None
-    comprehend_runner: Any = None
     cognition_shutdown: CognitionShutdown | None = None
     # The sub-agent worker: `None` under `[subagent] enabled = false`, the
     # shipped default. The shutdown cancels the jobs in flight.
@@ -3946,11 +3945,11 @@ async def build_dependencies(
     #: Skills injected per agenda kind (`AGENDA_SKILLS`: the Register skill).
     agenda_skills = cognition_agenda_skills(dreamer_instructions)
     cognition_runner: CognitionSessionRunner | None = None
-    comprehend_runner = None
+    cognition_memory = None
     if cfg.memory.graph.enabled and cfg.memory.graph.comprehend.enabled:
         from nora.infra.sql.memory_graph import SqlMemoryGraph
         memory_graph = SqlMemoryGraph(engine, metrics=metrics)
-        from nora.app.comprehend_wiring import build_comprehend_runner
+        from nora.app.cognition_memory import WakeMemory
         from nora.infra.sql.comprehend import SqlComprehendRecords
 
         rooms_by_unit = LiveMapping(lambda: {
@@ -3972,27 +3971,10 @@ async def build_dependencies(
                     roster_source=rosters.get(platform), persons=persons,
                     self_ids=registry.self_aliases()).members(),
                 circles=presence_circles, content_checks=content_checks))
-        graph_reader = memory_search or MemorySearch(memory_index_reader, metrics,
-            graph=memory_graph)
-        graph_tools = RegistryToolSource(
-            registry=tool_registry.with_memory_search(graph_reader), store=audit,
-            persons=persons, honcho=memory, metrics=metrics, ai_peer=cfg.honcho.ai_peer,
-            scope_rooms=LiveMapping(lambda: scope_home_rooms(allowlist)), rosters=rosters,
-            self_ids=registry.self_aliases())
-        private_names = tuple({name for p in persons.by_person.values()
-            for name in (p.person_id, p.name, p.first_name, p.last_name, *p.aliases) if name}
-            | {value for (_, value) in persons.index}
-            | set(persons._instagram_handles.values()) | set(persons._instagram_usernames))
-        comprehend_runner = build_comprehend_runner(graph=memory_graph, records=graph_records,
-            sessions=SqlCognitionStore(engine), tools=graph_tools, models=models,
-            retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
-            metrics=metrics, cfg=cfg, private_names=private_names, model_id=tier.model,
-            model_route=cfg.llm.base_url, ai_peer=cfg.honcho.ai_peer, clock=clock,
-            rooms_by_person=LiveMapping(lambda: {(u, p): tuple(
-                f"{c.platform}:{c.primary_id}"
-                for c in allowlist.rooms() if c.unit == u and c.persons is not None
-                and p in c.persons and c.primary_id)
-                for u in unit_scopes() for p in persons.by_person}))
+        cognition_memory = WakeMemory(graph=memory_graph, records=graph_records, metrics=metrics,
+            private_names=tuple({name for p in persons.by_person.values()
+                for name in (p.person_id, p.name, p.first_name, p.last_name, *p.aliases) if name}
+                | {value for (_, value) in persons.index}))
     #: The units a session can run for (a home room each); only they are woken.
     cognition_session_units: Collection[str] | None = None
     cognition_upcoming: Callable[[str, int], Awaitable[Sequence[tuple[str, str]]]] | None = None
@@ -4748,6 +4730,7 @@ async def build_dependencies(
 
             try:
                 cognition_runner = build_cognition_runner(
+                    memory=cognition_memory,
                     tag_trace_store=tag_trace_store,
                     cfg=cfg, models=dream_models,
                     retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
@@ -4882,7 +4865,7 @@ async def build_dependencies(
         voice_hub=voice_hub,
         voice_event_consumer=voice_event_consumer,
         wake_evaluator=wake_evaluator,
-        cognition_runner=cognition_runner, comprehend_runner=comprehend_runner,
+        cognition_runner=cognition_runner,
         cognition_shutdown=cognition_shutdown,
         subagent_backend=subagent_backend,
         wake_tick_seconds=cfg.cognition.tick_seconds,

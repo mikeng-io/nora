@@ -57,6 +57,33 @@ class SqlComprehendRecords:
         self.social_off_ids = social_off_ids
         self.model_id = model_id
 
+    async def act_result(self, key: str, session: int, result: Any = None) -> Any:
+        async with self.engine.begin() as conn:
+            if result is not None:
+                await conn.execute(sa.insert(RESULT).values(work_id=key, input_hash="",
+                    session_id=session, part="act_result", payload=result))
+            return (await conn.execute(sa.select(RESULT.c.payload).where(
+                RESULT.c.work_id == key, RESULT.c.part == "act_result")
+                .order_by(RESULT.c.id).limit(1))).scalar_one_or_none()
+
+    async def failures(self, unit: str, sid: int, *, reset: bool = False) -> int:
+        key = f"stimulus:{unit}:{sid}"
+        async with self.engine.begin() as conn:
+            if reset:
+                await conn.execute(sa.insert(RESULT).values(work_id=key, input_hash="",
+                    session_id=0, part="stimulus_requeue", payload={}))
+            reset_id = sa.select(sa.func.coalesce(sa.func.max(RESULT.c.id), 0)).where(
+                RESULT.c.work_id == key, RESULT.c.part == "stimulus_requeue").scalar_subquery()
+            return int((await conn.execute(sa.select(sa.func.count()).select_from(RESULT)
+                .where(RESULT.c.work_id == key, RESULT.c.part == "stimulus_failure",
+                       RESULT.c.id > reset_id))).scalar_one())
+
+    async def fail_stimulus(self, unit: str, sid: int, session: int | None) -> None:
+        async with self.engine.begin() as conn:
+            await conn.execute(sa.insert(RESULT).values(work_id=f"stimulus:{unit}:{sid}",
+                input_hash="", session_id=session or 0, part="stimulus_failure",
+                payload={"state": "failed"}))
+
     async def load(self, work: WorkItem) -> ComprehendItem:
         """A full source with its owned media, reply and cited Record rows.
 

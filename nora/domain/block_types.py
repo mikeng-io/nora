@@ -94,6 +94,9 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
        "said, computed, judgement and found; evidence counts are not proof. "
        "Validity and state determine whether a relation is current. more=available "
        "means the result is partial; node identifiers are handles for memory_read."),
+    _t("graph", "The graph around this wake and its shown reading sources. "
+       "Layers distinguish said, computed, judgement and found. Counts are evidence, "
+       "not certainty; times and state determine what remains open."),
     _t("graph_preview", "Code-selected graph neighbours and resolution candidates. "
        "Layers distinguish what was said, computed and judged; evidence counts are not proof. "
        "created is the entity insertion time, not the event time; unavailable metadata "

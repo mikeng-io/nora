@@ -1494,6 +1494,20 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             "the active set"
         )
     shot = dict(md.get("snapshot") or {})
+    if md.get("corpus") == "cognition_session":
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        from nora.infra.sql.cognition_replay import recorded_wake
+        wake_id = md.get("wake")
+        if type(wake_id) is not int or wake_id <= 0:
+            raise ValueError("cognition_session requires metadata.wake")
+        engine = create_async_engine(spec.source_url)
+        try:
+            wake_at, _ = await recorded_wake(engine, wake_id)
+        finally:
+            await engine.dispose()
+        shot["before_ms"] = wake_at
+
     if not shot:
         raise ValueError(
             f"case {case.name!r} is UNANCHORED: it names no `snapshot:` "

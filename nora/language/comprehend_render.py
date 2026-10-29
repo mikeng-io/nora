@@ -252,3 +252,13 @@ def render_reshape(
             )
         ]
     )
+
+
+SESSION_INSTRUCTION = (COMPREHEND.replace(
+    "Call memory_stage once", "Call memory_propose with the agenda indices in items"
+).replace("this entire item", "this entire agenda batch")) + """
+Read the admission answer before deciding. A refusal is not committed understanding.
+Re-propose corrected parts or leave the item pending. Act tools require an admitted
+proposal covering their item. An explicit empty proposal means nothing to understand.
+Profiles are proposed with profile_revise in this session, in shadow.
+"""

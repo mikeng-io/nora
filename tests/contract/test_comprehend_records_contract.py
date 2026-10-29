@@ -237,3 +237,21 @@ async def test_historical_source_rows_do_not_read_a_future_edit(store):
     reply = {"id": 999, "ts": 3500, "quoted_ts": 1000}
     link_replies([reply], new)
     assert reply["reply_to"] == mid
+
+
+async def test_stimulus_failures_park_at_five_and_operator_requeue_resets(store):
+    records, _ = store
+    for n in range(5):
+        assert await records.failures(UNIT, 17) == n
+        await records.fail_stimulus(UNIT, 17, 0)
+    assert await records.failures(UNIT, 17) == 5
+    assert await records.failures(UNIT, 18) == 0
+    assert await records.failures(UNIT, 17, reset=True) == 0
+
+
+async def test_register_retry_retains_existing_row_id(store):
+    records, _ = store
+    assert await records.act_result("act:generated", 0) is None
+    result = {"status": "ok", "note_id": "generated-existing-note"}
+    await records.act_result("act:generated", 0, result)
+    assert await records.act_result("act:generated", 1) == result
