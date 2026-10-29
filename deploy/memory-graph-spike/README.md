@@ -98,3 +98,9 @@ to the host's private-data retention policy.
   the operator decides whether that difference is clear enough.
 - Nothing in a local test proves the host spike passed. Production data has not
   been read or run by this change.
+- Cost rows read `REPORTED`: total tokens and sessions per work item, per step.
+  Money is tokens times the route's price; receipts carry no input/output split
+  or failed-call usage. A missing usage figure turns the row `ERROR`.
+- The egress row can only fire on a screen bypass: step one's own screen refuses
+  a flagged query before it is logged, with a superset of the names this check
+  uses. Zero here means the screen held, not that the check was exercised.

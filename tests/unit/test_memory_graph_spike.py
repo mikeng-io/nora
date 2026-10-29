@@ -164,3 +164,28 @@ def test_cost_diagnostic_median_and_p95():
     assert spike.percentile([1, 3], 0.5) == 2
     assert spike.percentile([1, 3], 0.95) == 3
     assert spike.percentile([], 0.5) is None
+
+
+def test_cost_row_counts_sessions_and_tokens_per_step():
+    sessions = [
+        {"id": "s1", "situation": {"step": "comprehend", "work_item": "w1"}},
+        {"id": "s2", "situation": {"step": "reshape", "work_item": "w1"}},
+        {"id": "s3", "situation": {"step": "reshape", "work_item": "w1"}},
+        {"id": "s4", "situation": {"step": "comprehend", "work_item": "w2"}},
+    ]
+    receipts = [
+        {"part": "model", "session_id": "s1", "work_id": "w1", "payload": {"total_tokens": 100}},
+        {"part": "model", "session_id": "s2", "work_id": "w1", "payload": {"total_tokens": 40}},
+        {"part": "model", "session_id": "s4", "work_id": "w2", "payload": {"total_tokens": 300}},
+    ]
+    reshape = spike.cost_row("reshape", ["w1", "w2"], receipts, sessions)
+    assert reshape["sessions_per_item"] == 1.0
+    assert reshape["status"] == "REPORTED"
+    comprehend = spike.cost_row("comprehend", ["w1", "w2"], receipts, sessions)
+    assert comprehend["token_median"] == 200
+
+
+def test_cost_row_without_usage_is_error():
+    sessions = [{"id": "s1", "situation": {"step": "comprehend", "work_item": "w1"}}]
+    receipts = [{"part": "model", "session_id": "s1", "work_id": "w1", "payload": {}}]
+    assert spike.cost_row("comprehend", ["w1"], receipts, sessions)["status"] == "ERROR"
