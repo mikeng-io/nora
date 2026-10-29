@@ -235,3 +235,5 @@ and merge rules are documented in [GitHub maintenance](docs/maintainers/github.m
 
 Nora is licensed under the [MIT License](LICENSE). Third-party components retain
 their respective licenses.
+
+<!-- Temporary documentation-only CI selection smoke test. -->
