@@ -359,6 +359,19 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
 
 #: One append-only row, number `n`, citing the stable key-0 parents.
 APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
+    "notebook_entry": lambda i: {
+        "id": f"generated-entry-{i}", "kind": "topic", "unit": "u",
+    },
+    "notebook_entry_revision": lambda i: {
+        "id": f"generated-entry-revision-{i}", "entry_id": f"generated-entry-{i}",
+        "base_revision_id": None, "seq": 1,
+        "content": {
+            "about": [["topic", f"generated-topic-{i}"]], "body": f"Generated account {i}",
+            "citations": [["message", "1000"]], "confidence": "medium", "state": "active",
+            "writer": "cognition", "session_id": "generated-session", "model": "generated-model",
+            "instruction_hash": "a" * 64, "links": [],
+        },
+    },
     "graph_refusal": lambda n: {
         "id": 86000+n, "kind": "relation", "part_id": f"generated-{n}", "reason": "vocabulary",
     },

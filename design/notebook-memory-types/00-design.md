@@ -191,7 +191,16 @@ authority test for a layer, and audience is a property.
 | the model-facing verb names (one vocabulary over all kinds: write, revise, end, read, search) | ADR 0015's `tool_selection` before and after |
 | the migration order of the existing stores onto the entry | a migration node, under render parity, no table dropped |
 
-Not built. Each kind's rules get their named tests when that kind is built on
+Amendment, 2026-10-29: the shared entry store, append-only revision chain and
+`base_revision_id` compare-and-swap are built with topic as the only kind. A topic
+is internal, about exactly one topic entity, cites Record/Rollup keys and has no
+links. Existing stores stay on their own machinery. Topic activity reads current
+`interested_in` evidence directly, grouped by person with asserted times and
+source keys. Step 2 can record topic-account would-writes in its existing shadow
+receipts; it does not write the entry store. No live topic writer, withdrawal
+cascade, lineage rendering, search, or migration of other kinds is built.
+
+Each kind's rules get their named tests when that kind is built on
 the entry, as [05](../cognition-loop/05-data-model.md) §3 already requires.
 
 **This holds unless** a kind converged onto the entry is measured losing a row,

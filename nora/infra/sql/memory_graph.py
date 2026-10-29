@@ -27,9 +27,11 @@ from nora.domain.memory_graph import (
     Entity,
     Evidence,
     Key,
+    PersonTopicActivity,
     Relation,
     Source,
     Subgraph,
+    TopicActivity,
     Walk,
     WorkItem,
 )
@@ -393,6 +395,47 @@ class SqlMemoryGraph:
                 entity_row({column.name: r[column.name] for column in ENTITY.c})
                 for r in sorted(rows, key=rank)[: max(0, min(limit, 5))]
             )
+
+    async def topic_activity(self, *, unit: str, topic: Key, at: datetime) -> TopicActivity:
+        if topic[0] != "topic":
+            raise ValueError("topic key required")
+        r, e = RELATION.c, RELATION_EVIDENCE.c
+        stmt = (
+            sa.select(r.src_kind, r.src_id, r.asserted_at, e.source_kind, e.source_id)
+            .select_from(RELATION.join(RELATION_EVIDENCE, e.relation_id == r.id))
+            .where(
+                r.unit == unit,
+                r.dst_kind == "topic",
+                r.dst_id == topic[1],
+                r.src_kind == "person",
+                r.rel == "interested_in",
+                r.status == "current",
+                sa.or_(r.valid_from.is_(None), r.valid_from <= at),
+                sa.or_(r.valid_to.is_(None), at < r.valid_to),
+            )
+        )
+        try:
+            async with self.engine.begin() as conn:
+                await conn.execute(
+                    sa.text(f"SET LOCAL statement_timeout = {int(self.statement_timeout_ms)}")
+                )
+                rows = (await conn.execute(stmt)).all()
+            grouped: dict[Key, list[Any]] = {}
+            for row in rows:
+                grouped.setdefault((row.src_kind, row.src_id), []).append(row)
+            persons = tuple(
+                PersonTopicActivity(
+                    person,
+                    len(items),
+                    min(r.asserted_at for r in items),
+                    max(r.asserted_at for r in items),
+                    tuple(sorted({(r.source_kind, r.source_id) for r in items})),
+                )
+                for person, items in sorted(grouped.items())
+            )
+            return TopicActivity("ok" if persons else "nothing_found", persons)
+        except (SQLAlchemyError, OSError, TimeoutError):
+            return TopicActivity("unavailable")
 
     async def walk(self, seeds: tuple[Key, ...], query: Walk) -> Subgraph:
         started = monotonic()

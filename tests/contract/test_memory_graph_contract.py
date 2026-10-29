@@ -675,3 +675,58 @@ async def test_same_as_never_joins_two_units(graph: MemoryGraph) -> None:
 
 def test_pointer_ids_are_unique_across_kinds() -> None:
     assert pointer_entity("person", "u", "x", "X").id != pointer_entity("room", "u", "x", "X").id
+
+
+async def test_topic_activity_direct_evidence_counts_times_and_failure(graph: MemoryGraph) -> None:
+    topic = Entity("generated-topic", "topic", "u1", "Generated racing")
+    early = NOW - timedelta(days=2)
+    sources = (SOURCE, replace(SOURCE, key=("message", "m2")))
+    rels = tuple(
+        replace(REL, id=f"interest-{i}", rel="interested_in", dst=topic.key, asserted_at=t)
+        for i, t in enumerate((early, NOW))
+    )
+    for r, source in zip(rels, sources, strict=True):
+        admitted = await graph.stage_and_admit(
+            entities=(PERSON, topic) if r == rels[0] else (),
+            relations=(r,),
+            evidence=(Evidence(source.key, relation_id=r.id),),
+            sources={source.key: source},
+        )
+        assert admitted.relations
+    result = await graph.topic_activity(unit="u1", topic=topic.key, at=NOW)
+    assert result.status == "ok"
+    assert len(result.persons) == 1
+    activity = result.persons[0]
+    assert activity.person == PERSON.key and activity.evidence_count == 2
+    assert (activity.first_asserted_at, activity.last_asserted_at) == (early, NOW)
+    assert activity.sources == (SOURCE.key, ("message", "m2"))
+    assert (
+        await graph.topic_activity(unit="other", topic=topic.key, at=NOW)
+    ).status == "nothing_found"
+    if isinstance(graph, FakeMemoryGraph):
+        graph.available = False
+        failed = await graph.topic_activity(unit="u1", topic=topic.key, at=NOW)
+        graph.available = True
+    else:
+        import sqlalchemy as sa
+
+        from nora.infra.sql.memory_graph import SqlMemoryGraph
+
+        slow = SqlMemoryGraph(graph.engine, statement_timeout_ms=1)
+        async with graph.engine.begin() as lock:
+            await lock.execute(sa.text("LOCK TABLE relation IN ACCESS EXCLUSIVE MODE"))
+            failed = await slow.topic_activity(unit="u1", topic=topic.key, at=NOW)
+    assert failed.status == "unavailable" and not failed.persons
+    await graph.stage_and_admit(
+        entities=(),
+        relations=(),
+        evidence=(),
+        sources={SOURCE.key: SOURCE},
+        corrections=(
+            Correction(rels[0].id, "retire", NOW, evidence=(SOURCE.key,)),
+            Correction(rels[1].id, "close", NOW, evidence=(SOURCE.key,)),
+        ),
+    )
+    assert (
+        await graph.topic_activity(unit="u1", topic=topic.key, at=NOW)
+    ).status == "nothing_found"
