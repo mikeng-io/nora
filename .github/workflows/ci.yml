@@ -50,6 +50,7 @@ jobs:
           tests/architecture/test_pr_triage.py
           tests/architecture/test_commit_body_rule.py
           tests/architecture/test_dockerfile_bases_are_pinned.py
+          tests/architecture/test_runtime_imports_are_runtime_dependencies.py
           tests/architecture/test_site_csp_allows_the_graph_and_pagefind.py
           tests/architecture/test_doc_references_resolve.py
           tests/test_architecture_doc.py tests/test_docs.py

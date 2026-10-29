@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import json
 
-import tiktoken
-
 from nora.domain.blocks import BlockKey, ContextBlock, assemble, restamp
 from nora.domain.comprehend import ComprehendItem, Preview
 from nora.domain.memory_graph import Evidence, Source, Subgraph
 from nora.domain.prompt import escape, one_line
+from nora.language.computer_render import estimate_tokens
 
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("graph_preview", 10, "turn"),
@@ -47,7 +46,6 @@ no live Character, culture or Lessons store changes. Empty proposals means no ch
 
 def preview_text(preview: Preview, *, tokens: int = 1500) -> str:
     """Whole labelled rows within the budget; an omitted row always says more."""
-    enc = tiktoken.get_encoding("cl100k_base")
     graphs = (preview.graph, *preview.candidates)
     rows: list[str] = []
     seen: set[str] = set()
@@ -82,7 +80,7 @@ def preview_text(preview: Preview, *, tokens: int = 1500) -> str:
             continue
         seen.add(row)
         candidate = "\n".join([*kept, row])
-        if len(enc.encode(escape(candidate))) > max(0, tokens - 100):
+        if estimate_tokens(escape(candidate)) > max(0, tokens - 100):
             partial = True
             continue
         kept.append(row)
