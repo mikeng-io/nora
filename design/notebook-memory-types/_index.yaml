@@ -29,3 +29,4 @@ edges:
   - {src: 00-design, dst: ../cognition-loop/40-register.md, rel: supersedes, provenance: asserted}
   - {src: 00-design, dst: ../standing-ledger/20-the-ledger.md, rel: amends, provenance: asserted}
   - {src: 00-design, dst: ../standing-ledger/50-migration.md, rel: amends, provenance: asserted}
+  - {src: 00-design, dst: ../standing-ledger/30-turn-records.md, rel: amends, provenance: asserted}

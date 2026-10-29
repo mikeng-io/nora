@@ -9,6 +9,7 @@ edges:
   - {dst: ../cognition-loop/40-register.md, rel: supersedes, provenance: asserted}
   - {dst: ../standing-ledger/20-the-ledger.md, rel: amends, provenance: asserted}
   - {dst: ../standing-ledger/50-migration.md, rel: amends, provenance: asserted}
+  - {dst: ../standing-ledger/30-turn-records.md, rel: amends, provenance: asserted}
   - {dst: ../personalisation/00-intent.md, rel: informs, provenance: asserted}
 ---
 
@@ -103,8 +104,8 @@ written once.
    notes, postings and people relate to;
 2. the **activity** (who talks about it, how often, last moved, which message
    ranges) is re-derivable from the Record, so it is **Rollup**. This is what
-   the ledger's thread was ("a pointer per topic",
-   [standing-ledger 20](../standing-ledger/20-the-ledger.md) §4), and it is the
+   the ledger's thread was ("a pointer to a topic the room keeps returning
+   to", [standing-ledger 20](../standing-ledger/20-the-ledger.md) §4), and it is the
    grounded signal personalisation weights by;
 3. Nora's **account** of it is the Notebook entry.
 
@@ -138,17 +139,25 @@ Operator, option A. The conscious (明意識: the tag and fire turns) and the
 subconscious (潛意識: Cognition) both write a decision, each into the layer it
 owns:
 
-- **The turn** writes what it decided, as part of its **turn record**: the
-  options weighed and the leaning. That is Record, her own act
-  ([standing-ledger 30](../standing-ledger/30-turn-records.md)), and the next
-  turn reads it at once.
+- **The turn** writes what it decided into its **turn record**: the options
+  it weighed, their scores and its leaning, in her own words, through a
+  tag-path tool, at the moment she decides. That is Record, her own act, and
+  the next turn reads it at once.
 - **Cognition** writes and revises the **decision** entry, citing the turn
-  records, consolidating across turns.
+  records (`turn(...)`), consolidating across turns.
 
-DEC-249's "the conscious never writes the Notebook" holds. This **supersedes
-the tag-path op tool** in standing-ledger step 3, which would have had the turn
-write the ledger directly. The debrief's place is then a check: a turn whose
-record shows a decision that no entry reflects.
+DEC-249's "the conscious never writes the Notebook" holds. This **amends
+[standing-ledger 30](../standing-ledger/30-turn-records.md)** in two places:
+
+- §2: the turn record is no longer code-built only. It gains one
+  model-written part, **what this turn decided**. "No reasoning" still holds
+  for everything else: an abandoned path is not kept, only the conclusion.
+- §4: route 1 (the ledger ops as a tag-path tool) becomes that tag-path tool
+  writing the turn record's decided part, never the ledger; route 2 (the
+  debrief emitting ops) becomes a **check** for a turn whose trace shows it
+  decided something it did not record. Cognition is the decision entry's one
+  writer. The same change supersedes the tag-path op tool in
+  [standing-ledger 50](../standing-ledger/50-migration.md) step 3.
 
 This holds unless the next turn is measured needing the consolidated decision
 faster than Cognition's wake (about two minutes) delivers it; then the turn
