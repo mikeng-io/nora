@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.11.36](https://github.com/mikeng-io/nora/compare/v7.11.35...v7.11.36) (2026-10-29)
+
+
+### Bug Fixes
+
+* **evals:** name the confirmer's answer form instead of a response format ([377206c](https://github.com/mikeng-io/nora/commit/377206ce709cbcc48bf937ece1e894fad9b4b39c))
+
 ## [7.11.35](https://github.com/mikeng-io/nora/compare/v7.11.34...v7.11.35) (2026-10-29)
 
 
