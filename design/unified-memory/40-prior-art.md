@@ -76,6 +76,7 @@ taken idea now lives.
 | semantic + lexical + graph, fused by RRF, then an optional reranker, all in Postgres | Hindsight, Graphiti | [25](25-memory-graph.md) §4 |
 | scope before ranking, and test every read path under every scope | Honcho scopes; governed-memory reviews | 25 §4 |
 | media is text plus a pointer back to the original | every system checked | [15](15-memory-map.md) |
+| one provenance model with separate encodings and separate validity rules; entity, activity, agent; a binary edge qualified by a side record; plan, revision, quotation (added 2026-10-29) | W3C PROV (PROV-DM, PROV-O, PROV-CONSTRAINTS) | [28](28-provenance.md) |
 
 ## 5. What this bundle refuses
 
