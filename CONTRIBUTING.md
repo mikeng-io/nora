@@ -146,7 +146,7 @@ During iteration, run the tests you touched. `make full-gate` is the uncondition
 full run. Name a pre-existing unrelated gate failure with its issue number;
 never absorb it into "tests pass".
 The contribution-content workflow checks populated headings and their order;
-it does not verify the truth of a claimed result. The PR triage workflow then sets
+it does not verify the truth of a claimed result. Its advisory triage step sets
 the `type:` label from the title, `area:` labels from the changed paths and
 `breaking` from `!`, and assigns the author. Nobody sets these by hand, and
 Dependabot PRs get theirs from `.github/dependabot.yml`.

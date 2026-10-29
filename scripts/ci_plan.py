@@ -130,11 +130,24 @@ def codeql_findings(event: dict, repo: Path, directory: Path) -> int:
         raise ValueError("CodeQL produced no SARIF")
     changed: dict[str, set[int]] = {}
     if "pull_request" in event:
-        for path in changed_paths(event, repo):
-            base = event["pull_request"]["base"]["sha"]
-            head = event["pull_request"]["head"]["sha"]
-            diff = subprocess.check_output(  # noqa: S603 -- fixed argv, validated SHAs
-                ["git", "diff", "--no-ext-diff", "--unified=0", f"{base}...{head}", "--", path],  # noqa: S607
+        # CodeQL analyzes the event's merge checkout, so its locations must
+        # match that tree rather than the PR head's pre-merge line numbers.
+        parents = subprocess.check_output(
+            ["git", "rev-list", "--parents", "-n", "1", "HEAD"],  # noqa: S607
+            cwd=repo, text=True,
+        ).split()
+        if len(parents) != 3 or parents[2] != event["pull_request"].get("head", {}).get("sha"):
+            raise ValueError("Expected the analyzed PR merge checkout")
+        paths = subprocess.check_output(
+            ["git", "diff", "--name-only", "--no-renames", "-z", "HEAD^1", "HEAD"],  # noqa: S607
+            cwd=repo,
+        )
+        for raw_path in paths.split(b"\0"):
+            if not raw_path:
+                continue
+            path = raw_path.decode("utf-8")
+            diff = subprocess.check_output(  # noqa: S603 -- fixed refs, paths after --
+                ["git", "diff", "--no-ext-diff", "--unified=0", "HEAD^1", "HEAD", "--", path],  # noqa: S607
                 cwd=repo, text=True,
             )
             lines: set[int] = set()

@@ -71,7 +71,9 @@ is passed to source-executing jobs.
 
 CodeQL scan jobs also read their SARIF output and fail on high/critical security
 findings (security severity at least 7) or error-level findings whose primary
-location overlaps an added PR line. The full-language analysis and upload still
+location overlaps an added PR line in the analyzed merge tree. The gate compares
+that merge to its first parent, preserving line numbers when master has moved.
+The full-language analysis and upload still
 run; baseline events report historical alerts without blocking on existing debt.
 Absent or malformed SARIF and unsuccessful analysis fail closed. This is a
 changed-line gate, not a promise that all pre-existing vulnerabilities are fixed.
@@ -84,7 +86,11 @@ The trusted-base contribution workflow now handles triage and metadata in one
 checkout. Label events validate metadata but do not rerun triage, preserving
 manual/release labels without a labeling feedback loop. It retains issue feedback,
 manual PR/issue dispatch and no cancellation group for required metadata results.
-It executes only `master` code, never a PR ref; permissions are job scoped.
+Triage is advisory, so a label race or API error does not replace the required
+content verdict. It executes only `master` code, never a PR ref; permissions are
+job scoped. Only PR CI runs cancel earlier runs in their PR's group. Pushes use
+distinct commit groups, and schedules/manual runs use separate event groups, so
+unrelated events cannot cancel a language baseline.
 
 Official references verified for this implementation:
 [advanced setup](https://docs.github.com/en/code-security/how-tos/find-and-fix-code-vulnerabilities/configure-code-scanning/configuring-advanced-setup-for-code-scanning),

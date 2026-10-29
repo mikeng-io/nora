@@ -76,8 +76,9 @@ checks recovery and submission behavior, not model acceptance or wiki accuracy.
 
 ## GitHub Actions
 
-`wiki.yml` builds the wiki and public homepage on relevant PRs and master
-pushes, then uploads the combined static site. No model credentials or inference
+`ci.yml` selects relevant PR and master-push changes and calls the reusable
+`wiki.yml` to build the wiki and public homepage and upload the combined static
+site. `wiki.yml` also supports manual dispatch. No model credentials or inference
 are used by that workflow. Image deployment stays the existing operator process.
 
 `openwiki-update.yml` generates from reviewed `master`, builds the result and opens
