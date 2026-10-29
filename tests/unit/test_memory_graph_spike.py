@@ -118,7 +118,9 @@ def test_age_scope_and_query_grammar_cannot_read_foreign_unit():
 async def test_relation_judge_sees_only_cited_sources(monkeypatch, tmp_path):
     source = {"key": ["message", "generated-one"], "text": "Generated cited evidence"}
     unrelated = {"key": ["message", "generated-two"], "text": "Generated uncited evidence"}
-    candidate = {"input": {"sources": [source, unrelated]}}
+    # Shaped like candidates(): asdict() of the item keeps its tuples.
+    candidate = {"input": {"sources": (source, unrelated), "snapshot": {"messages": ()}}}
+    shown = {"work_id": "generated-work", "part": "shown_sources", "payload": {"sources": []}}
     receipt = {
         "work_id": "generated-work",
         "part": "graph",
@@ -136,7 +138,8 @@ async def test_relation_judge_sees_only_cited_sources(monkeypatch, tmp_path):
 
     monkeypatch.setattr(spike, "rows", AsyncMock(return_value=[]))
     report = await spike.quality(
-        None, {"generated-work": candidate}, [receipt], SimpleNamespace(score=judge), tmp_path, 1
+        None, {"generated-work": candidate}, [shown, receipt], SimpleNamespace(score=judge),
+        tmp_path, 1,
     )
     assert report["relation_precision"]["status"] == "PASS"
 
@@ -198,3 +201,32 @@ def test_search_provider_builds_from_the_template(example_config, monkeypatch, p
     cfg = example_config.model_copy(update={"search": search})
     monkeypatch.setenv(cfg.search.api_key_env, "generated-key")
     assert spike.search_provider(cfg) is not None
+
+
+async def test_an_item_with_a_media_source_is_in_the_attachment_stratum(monkeypatch):
+    from dataclasses import dataclass
+
+    from nora.domain.memory_graph import WorkItem
+
+    @dataclass(frozen=True)
+    class Source:
+        key: tuple[str, str]
+        text: str
+
+    @dataclass(frozen=True)
+    class Item:
+        sources: tuple[Source, ...]
+        snapshot: dict
+
+    # Shaped like the snapshot's message rows: no media column on them.
+    item = Item(
+        (Source(("message", "generated-1"), "Generated text"),
+         Source(("media", "generated-2"), "Generated reading")),
+        {"messages": ({"id": "generated-1", "body": "Generated text"},)},
+    )
+    work = WorkItem("generated-work", ("message", "generated-1"), "generated-unit", "h", 0)
+    monkeypatch.setattr(spike, "rows", AsyncMock(return_value=[{}]))
+    monkeypatch.setattr(spike, "work_row", lambda row: work)
+    records = SimpleNamespace(load=AsyncMock(return_value=item))
+    [candidate] = await spike.candidates(None, records)
+    assert "attachment" in candidate["strata"]
