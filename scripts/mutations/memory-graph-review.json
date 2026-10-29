@@ -9,7 +9,7 @@
   {
     "name": "record hubs never become recursive paths",
     "file": "nora/infra/sql/memory_graph.py",
-    "old": " AND layer!='record'",
+    "old": " AND (layer!='record' OR (p.depth=0 AND src_kind=p.kind AND src_id=p.id))",
     "new": "",
     "target": "tests/infra/test_memory_graph_sql.py::test_sql_record_hub_stays_out_of_recursive_paths"
   }

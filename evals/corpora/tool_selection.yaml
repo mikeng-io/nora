@@ -1315,6 +1315,22 @@ cases:
   # On a master checkout, which predates the key, the graph cases run and FAIL
   # by construction (no `memory_search` there). Synthetic inputs; `Miles` is
   # the corpus's one member name.
+  - name: route_memory_read_known_graph_node
+    entry: tag
+    expect: reply
+    mention: true
+    input: Read memory node event:generated-event and show the evidence behind its connections.
+    metadata: {tools: [memory_read], not_tools: [memory_search], memory_surface: graph}
+    snapshot: *room_a
+
+  - name: route_memory_search_discovery_not_node_read
+    entry: tag
+    expect: reply
+    mention: true
+    input: What did we discuss about dinner last month?
+    metadata: {tools: [memory_search], not_tools: [memory_read], memory_surface: graph}
+    snapshot: *room_a
+
   - name: route_memory_search_what_a_person_said_long_ago
     entry: tag
     expect: reply

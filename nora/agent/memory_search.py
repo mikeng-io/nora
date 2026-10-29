@@ -134,11 +134,15 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any
 
+from pydantic_core import to_jsonable_python
+
 from nora.agent.egress import scan_identifiers
 from nora.agent.lineage import section_permits
+from nora.domain.comprehend import Preview
 from nora.domain.external_files import render_file_links
 from nora.domain.lineage import PRESENCE, ROW, Lineage, LineageEntry, RenderRoom, RoomFacts
 from nora.domain.media import HANDLE_CHARS
+from nora.domain.memory_graph import MemoryGraph, Walk
 from nora.domain.memory_index import (
     EPISODE_KINDS,
     SOCIAL_KINDS,
@@ -157,6 +161,7 @@ from nora.domain.models import PersonRef
 from nora.domain.prompt import stamp
 from nora.domain.rollup import room_key
 from nora.domain.self_presence import platform_name
+from nora.language.comprehend_render import memory_result_text, preview_text
 from nora.language.computer_render import estimate_tokens
 
 __all__ = [
@@ -810,15 +815,175 @@ class MemorySearch:
         self, index: MemoryIndexRead, metrics: Any, *,
         embedder: QueryEmbedder | None = None, model: str | None = None,
         drain_seconds: float | None = None, profile_render: bool = False,
+        graph: MemoryGraph | None = None,
     ) -> None:
         if (embedder is None) != (model is None):
             raise ValueError("an embedder and its model fingerprint come together")
+        self._graph = graph
         self._profile_render = profile_render
         self._index = index
         self._metrics = metrics
         self._embedder = embedder
         self._model = model
         self._fresh_seconds = BACKLOG_TICKS * drain_seconds if drain_seconds else 0.0
+
+    async def read(
+        self,
+        *,
+        query: str = "",
+        seed: tuple[str, str] | None = None,
+        depth: int = 2,
+        target: RenderRoom,
+        now_ms: int,
+        people: Sequence[PersonRef] = (),
+        social_off: Collection[str],
+        media: Sequence[str] = (), about: Sequence[str] = (),
+        person_id: str | None = None,
+        kinds: Sequence[str] = (),
+        since_ms: int | None = None,
+        until_ms: int | None = None,
+        own_room: bool = False, cache: dict[str, Any] | None = None,
+        content_checks: bool = True,
+    ) -> dict[str, Any]:
+        """One graph surface; the index finds seeds, never supplies adjacency."""
+        from dataclasses import asdict
+        from datetime import UTC
+
+        if self._graph is None or not 0 <= depth <= 4:
+            return {"status": "unavailable", "note": "The graph could not be read."}
+        try:
+            scope = scope_for(target, own_room=own_room, social_off=social_off)
+            if scope is None or target.room is None or not target.room.unit:
+                return {"status": "unavailable", "note": "The read scope is unavailable."}
+            scope = replace(
+                scope,
+                profile_render=self._profile_render,
+                only=MemoryFilter(since_ms=since_ms, until_ms=until_ms, person=person_id),
+            )
+            unit = target.room.unit
+            cache_key = repr((query, seed, depth, scope, tuple(kinds), tuple(people),
+                              tuple(media), tuple(about), content_checks))
+            if cache is not None and cache_key in cache:
+                return cache[cache_key]
+            partial = False
+            if seed is None:
+                found = await self.search(
+                    query=query,
+                    person_id=person_id,
+                    target=target,
+                    now_ms=now_ms,
+                    people=people,
+                    kinds=kinds,
+                    since_ms=since_ms,
+                    until_ms=until_ms,
+                    own_room=own_room,
+                    social_off=social_off,
+                    seeds_only=True, media=media, about=about,
+                )
+                if found.status == "unavailable":
+                    return {"status": "unavailable", "note": "The index could not be read."}
+                partial = found.status == "partial"
+                seeds = tuple(("event_entry", h.node.source_id) if h.node.kind == "event"
+                              else h.node.key for h in found.hits)
+                # Exact entity references include entities not present in the old index.
+                aliases = await self._graph.aliases(unit=unit)
+                seeds += tuple(
+                    k
+                    for a, k in aliases.items()
+                    if a
+                    and exact_holds(a, query)
+                    and (
+                        k[0] != "person"
+                        or k[1].removeprefix(f"{unit}:person:") in scope.listed_here
+                    )
+                )
+            else:
+                seeds = (seed,)
+            seeds = tuple(dict.fromkeys(seeds))
+            walk_query = Walk(
+                unit, scope.listed_here, depth=depth, scope=scope,
+                layers=("record", "rollup", "notebook"),
+            )
+            if cache is None or "_subgraph" not in cache:
+                if cache is not None:
+                    # Reserve before awaiting: parallel tools share this turn's one walk.
+                    cache["_subgraph"] = (scope, None)
+                graph = await self._graph.walk(seeds, walk_query)
+                if cache is not None:
+                    cache["_subgraph"] = (scope, graph)
+            else:
+                held_scope, held = cache["_subgraph"]
+                if (held_scope != scope or held is None or held.status == "unavailable"
+                        or not set(seeds) <= {n.key for n in held.nodes}):
+                    return {"status": "unavailable",
+                            "note": "This turn's graph does not cover this read."}
+                from nora.domain.memory_admission import AdmissionState
+
+                state = AdmissionState()
+                state.entities = {n.entity.id: n.entity for n in held.nodes if n.entity}
+                state.relations = {e.relation.id: e.relation for e in held.relations}
+                state.evidence = [ev for e in held.relations for ev in e.evidence]
+                state.indexed = {n.key: n.indexed for n in held.nodes if n.indexed}
+                state.indexed.update({n.key: n for e in held.relations for n in e.sources})
+                state.fields = {n.key: n.fields for n in held.nodes}
+                graph = await state._walk(seeds, walk_query)
+                held_nodes = {n.key: n for n in held.nodes}
+                held_edges = {e.relation.id: e for e in held.relations}
+                # The captured frontier is bounded; a re-read cannot claim completeness
+                # beyond it. Preserve full fields/evidence from the original snapshot.
+                graph = replace(graph, status="partial",
+                    nodes=tuple(held_nodes[n.key] for n in graph.nodes if n.key in held_nodes),
+                    relations=tuple(held_edges[e.relation.id] for e in graph.relations))
+            if graph.status == "unavailable":
+                return {"status": "unavailable", "note": "The graph could not be read."}
+            if seed is None and found.hits and not graph.nodes:
+                return {"status": "unavailable",
+                        "note": "Matching memory has no readable graph projection."}
+            if kinds:
+                # Kind narrowing is an answer/seed filter; bridges retain every kind.
+                wanted = set(kinds) | ({"event_entry"} if "event" in kinds else set())
+                nodes = tuple(n for n in graph.nodes if n.key[0] in wanted)
+                keys = {n.key for n in nodes}
+                edges = tuple(e for e in graph.relations
+                              if e.relation.src in keys and e.relation.dst in keys)
+                graph = replace(graph, nodes=nodes, relations=edges)
+            now = datetime.fromtimestamp(now_ms / 1000, UTC)
+            overhead = estimate_tokens(memory_result_text("more=none\n", query=query, depth=depth))
+            text = preview_text(Preview(seeds, graph, (), (now, now)),
+                                tokens=max(0, PREFETCH_TOKENS - overhead + 100))
+            partial = partial or graph.status == "partial" or text.startswith("more=available")
+            if partial:
+                text = text.replace("more=none", "more=available", 1)
+            status = "partial" if partial else "ok" if graph.nodes else "nothing_found"
+            text = memory_result_text(text, query=query, depth=depth)
+            result: dict[str, Any] = {
+                "status": status,
+                "preview": text,
+                "note": "More memory is available."
+                if partial
+                else "Scoped graph with labelled evidence."
+                if graph.nodes
+                else "No memory matched in this scope.",
+            }
+            if partial:
+                result = {"status": "partial", "preview": text,
+                          "note": "More memory is available."}
+            if seed is not None and depth == 0:
+                result["nodes"] = [asdict(n) for n in graph.nodes]
+                result["evidence"] = [asdict(e) for e in graph.relations]
+            result = to_jsonable_python(result)
+            # Screen full text before preview truncation, and the complete emitted fields.
+            bodies = [n.indexed.text for n in graph.nodes if n.indexed is not None]
+            bodies.append(json.dumps(result, ensure_ascii=False))
+            if any(scan_identifiers(body, content_checks=content_checks) for body in bodies):
+                return {"status": "unavailable",
+                        "note": "This memory cannot be safely returned."}
+            if cache is not None:
+                cache[cache_key] = result
+            return result
+        except Exception as exc:  # noqa: BLE001
+            log.warning("memory graph read failed (%s)", type(exc).__name__)
+            return {"status": "unavailable", "note": "The graph could not be read."}
 
     def _count(self, status: SearchStatus) -> MemorySearchResult:
         self._metrics.inc(_METRIC, status=status)
@@ -830,7 +995,7 @@ class MemorySearch:
         kinds: Sequence[str] = (), since_ms: int | None = None,
         until_ms: int | None = None, own_room: bool = False,
         social_off: Collection[str], about: Sequence[str] = (),
-        media: Sequence[str] = (),
+        media: Sequence[str] = (), seeds_only: bool = False,
     ) -> MemorySearchResult:
         """`people` are the persons the caller can name here (the room's
         resolved roster); the names of those this room lists are the exact
@@ -886,7 +1051,8 @@ class MemorySearch:
             )
             hits = await walk(
                 self._index, scope, terms=terms,
-                person_id=person_id, hops=HOPS_BY_DEPTH.get(depth, 2), admits=admits,
+                person_id=person_id, hops=0 if seeds_only else HOPS_BY_DEPTH.get(depth, 2),
+                admits=admits,
                 exact=exact_terms_of(query, names), vector=vector, model=self._model,
                 unembedded=seeding.unembedded + seeding.given_up > 0, embedded=state.embedded,
                 metrics=self._metrics,

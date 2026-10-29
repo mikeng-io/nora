@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 
 from nora.domain.blocks import BlockKey, ContextBlock, assemble, restamp
 from nora.domain.comprehend import ComprehendItem, Preview
@@ -23,6 +24,7 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("graph_preview", 10, "turn"),
     ("comprehend_item", 20, "turn"),
     ("reshape_graph", 30, "turn"),
+    ("memory", 40, "turn"),
 )
 _ROW = {name: (order, key) for name, order, key in _BLOCKS}
 
@@ -103,26 +105,45 @@ def preview_text(preview: Preview, *, tokens: int = 1500) -> str:
     for graph in graphs:
         for node in graph.nodes:
             entity = node.entity
-            rows.append(
-                f"{node.key[0]}:{node.key[1]} "
-                + (
-                    f"{one_line(entity.name)} · state={entity.state} · "
-                    f"created={entity.created_at} · "
-                    f"{json.dumps(dict(entity.attributes), ensure_ascii=False, default=str)}"
-                    if entity
-                    else ("found · " if node.key[0] == "web_page" else "")
-                    + "label=unavailable · time=unavailable · state=unavailable"
-                )
+            fields = node.fields
+            revision = fields.get("revision")
+            revision = revision if isinstance(revision, dict) else {}
+            state = (
+                fields.get("status")
+                or revision.get("state")
+                or ("retired" if fields.get("retired_at") else "open")
+                if fields
+                else node.indexed.state
+                if node.indexed
+                else "unavailable"
             )
+            if entity:
+                label = (
+                    f"{one_line(entity.name)} · state={entity.state} · "
+                    f"created={entity.created_at or 'unavailable'} · "
+                    f"{json.dumps(dict(entity.attributes), ensure_ascii=False, default=str)}"
+                )
+            elif node.indexed:
+                label = (
+                    f"{one_line(node.indexed.text[:200])} · time={node.indexed.at_ms} · "
+                    f"state={state}"
+                )
+            else:
+                label = "label=unavailable · time=unavailable · state=unavailable"
+            if node.key[0] == "web_page":
+                label = "found · " + label
+            rows.append(f"{node.key[0]}:{node.key[1]} {label}")
         for edge in graph.relations:
             r = edge.relation
             layer = {"record": "said", "rollup": "computed", "notebook": "judgement"}[r.layer]
             if "web_page" in (r.src[0], r.dst[0]):
                 layer = "found"
+            counts = Counter(e.source[0] for e in edge.evidence)
+            counted = ", ".join(f"{n} {kind}" for kind, n in sorted(counts.items()))
             rows.append(
                 f"{r.id}: {r.src[0]}:{r.src[1]} ─{r.rel}─▶ {r.dst[0]}:{r.dst[1]} "
                 f"{layer} · {r.status} · valid={r.valid_from}/{r.valid_to} · "
-                f"asserted={r.asserted_at.isoformat()} · evidence={edge.evidence_count}"
+                f"asserted={r.asserted_at.isoformat()} · evidence={edge.evidence_count} {counted}"
             )
     kept: list[str] = []
     partial = any(g.status == "partial" for g in graphs)
@@ -136,6 +157,28 @@ def preview_text(preview: Preview, *, tokens: int = 1500) -> str:
             continue
         kept.append(row)
     return "more=" + ("available" if partial else "none") + "\n" + "\n".join(kept)
+
+
+def memory_result_text(text: str, *, query: str, depth: int) -> str:
+    """The graph tool's labelled data uses the canonical block serializer too."""
+    more, _, rows = text.partition("\n")
+    return assemble(
+        [
+            restamp(
+                ContextBlock(
+                    name="memory",
+                    body=escape(rows),
+                    when_empty="render",
+                    attrs=(
+                        ("query", query),
+                        ("depth", str(depth)),
+                        ("more", more.removeprefix("more=")),
+                    ),
+                ),
+                _ROW,
+            )
+        ]
+    )
 
 
 def render_comprehend(item: ComprehendItem, preview: Preview, *, tokens: int = 1500) -> str:

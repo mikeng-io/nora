@@ -54,6 +54,7 @@ from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.media_objects import SqlMediaObjectStore
 from nora.infra.sql.memo import SqlMemoStore
+from nora.infra.sql.memory_graph import SqlMemoryGraph
 from nora.infra.sql.memory_read import SqlMemoryIndex
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.notes import SqlNoteStore
@@ -201,6 +202,7 @@ class World:
             people=tuple(self.persons.by_person[p] for p in ("p1", "p2")),
         )
         registry = ToolRegistry(
+            content_checks=not graph,
             record=SqlRecordQuery(engine),
             # The two Dreamer-only reads: a `rollup_read` that started a build or a
             # `standing_read` that folded would be a write this test must see.
@@ -213,7 +215,8 @@ class World:
             # The memory graph's surface (DEC-316): `memory_search` over the
             # real index read, and no Honcho memory verb.
             memory_search=(
-                MemorySearch(SqlMemoryIndex(engine), self.metrics) if graph else None
+                MemorySearch(SqlMemoryIndex(engine), self.metrics, graph=SqlMemoryGraph(engine))
+                if graph else None
             ),
             note_unit=lambda platform, cid: "u1", unit_for=lambda platform, cid: "u1",
             events=events, mobility=SqlMobilityStore(engine), circles=(circle,),
@@ -285,6 +288,7 @@ CALLS: dict[str, list[dict[str, Any]]] = {
     "search_memory_workspace": [{"query": "dinner"}],
     # The graph surface's (DEC-316): a plain search, and one narrowed every
     # way it can be, so each filter's SQL runs.
+    "memory_read": [{"kind": "message", "id": "MEMORY", "depth": 0}],
     "memory_search": [
         {"query": "dinner"},
         {"query": "dinner", "person": "Ada", "since": "2026-09-01", "until": "2026-10-30",
@@ -326,9 +330,29 @@ async def world(request, engine, tmp_path):
     for i, (room, who, sender) in enumerate((
         (A, "p1", ADA), (A, "p2", BEN), (B, "p1", ADA),
     )):
-        await _say(engine, platform=room.platform, room=room.conversation_id, person=who,
+        mid = await _say(engine, platform=room.platform, room=room.conversation_id, person=who,
                    sender=sender, ts=NOW_MS - 3 * 86_400_000 + i * 60_000,
                    body=f"dinner plans number {i}")
+        if i == 0:
+            w.memory_id = str(mid)
+        if request.param:
+            from nora.domain.memory_graph import Relation, pointer_entity
+            from nora.infra.sql.schema import MEMORY_NODE
+            async with engine.begin() as conn:
+                await conn.execute(sa.insert(MEMORY_NODE).values(
+                    kind="message", source_id=str(mid), text=f"dinner plans number {i}",
+                    at_ms=NOW_MS - 3 * 86_400_000 + i * 60_000, unit="u1",
+                    origin_room=f"{room.platform}:{room.conversation_id}", persons=[who],
+                    exclude_persons=[], lineage=[]))
+            pointer = pointer_entity("room", "u1", f"{room.platform}:{room.conversation_id}",
+                                     room.conversation_id)
+            graph = SqlMemoryGraph(engine)
+            admitted = await graph.stage_and_admit(entities=(pointer,), relations=(Relation(
+                f"generated-read-{mid}", ("message", str(mid)), "in_room", pointer.key,
+                "record", "u1", (who,), asserted_at=datetime.fromtimestamp(
+                    (NOW_MS - 3 * 86_400_000 + i * 60_000) / 1000, UTC)),),
+                evidence=(), sources={})
+            assert admitted.relations
     return w
 
 
@@ -349,8 +373,11 @@ async def test_every_read_tool_the_session_holds_writes_nothing_live(engine, wor
     results: dict[str, list[str]] = {}
     for name in sorted(world.surface.wired):
         for arguments in CALLS[name]:
+            # Independent coverage probes, each with its own turn's read budget/cache.
+            tools = world.tools([A])
             answer = await _call(tools[name], **{
-                k: world.memo_id if v == "MEMO" else v for k, v in arguments.items()
+                k: world.memo_id if v == "MEMO" else world.memory_id if v == "MEMORY" else v
+                for k, v in arguments.items()
             })
             results.setdefault(name, []).append(str(answer.get("status")))
     after = await _counts(engine)
@@ -376,6 +403,7 @@ async def test_every_read_tool_the_session_holds_writes_nothing_live(engine, wor
         # all: no Honcho tool sits on it, `about` included (DEC-316).
         assert not HONCHO_MEMORY_TOOLS & set(world.surface.wired)
         assert "unavailable" not in results["memory_search"], results["memory_search"]
+        assert results["memory_read"] == ["ok"]
         assert world.memory.chats == [] and world.memory.searches == []
         assert world.memory.queries == []
     else:

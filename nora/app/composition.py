@@ -2326,10 +2326,12 @@ async def build_dependencies(
     # surface and no pre-fetch. The same SqlMemoryIndex answers /health's
     # `index` block either way (the projection runs whether or not the search
     # surface is on).
+    from nora.infra.sql.memory_graph import SqlMemoryGraph
     memory_index_reader = SqlMemoryIndex(engine)
     memory_search = (
         MemorySearch(
             memory_index_reader, metrics,
+            graph=SqlMemoryGraph(engine, metrics=metrics),
             profile_render=cfg.memory.profile.write and cfg.memory.profile.read,
             # `[memory.index] embed`: dense and exact seeds, the
             # lexical seed only as the fallback; off, every answer is
@@ -3970,7 +3972,10 @@ async def build_dependencies(
                     roster_source=rosters.get(platform), persons=persons,
                     self_ids=registry.self_aliases()).members(),
                 circles=presence_circles, content_checks=content_checks))
-        graph_tools = RegistryToolSource(registry=tool_registry, store=audit,
+        graph_reader = memory_search or MemorySearch(memory_index_reader, metrics,
+            graph=memory_graph)
+        graph_tools = RegistryToolSource(
+            registry=tool_registry.with_memory_search(graph_reader), store=audit,
             persons=persons, honcho=memory, metrics=metrics, ai_peer=cfg.honcho.ai_peer,
             scope_rooms=LiveMapping(lambda: scope_home_rooms(allowlist)), rosters=rosters,
             self_ids=registry.self_aliases())

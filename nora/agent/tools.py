@@ -309,7 +309,7 @@ from .link_owners import LinkClaim, LinkInput, LinkOwner
 from .link_owners import owner_of as _owner_of
 from .link_owners import redirect as _link_redirect
 from .links import LinkCarry
-from .memory_search import MemorySearch, render_packet, room_label
+from .memory_search import MemorySearch, room_label
 from .ports import ToolSpec, adapt
 from .relay import Relay
 from .rollup_read import iso as rollup_iso
@@ -1023,6 +1023,9 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     #
     # `level=2` (ADR 0015 §3): L1 plus one SHOULD (write `query` yourself).
     # `kinds` is a Literal; every status's reading is in its result's `note`.
+    "memory_read": NativeTool(8, source_tier="remembered", read_only=True,
+        side_effect_state="none", idempotency="idempotent", retry="safe",
+        output_contract="three_state", level=3),
     "memory_search": NativeTool(8,
                                 source_tier="remembered", read_only=True,
                                 side_effect_state="none", idempotency="idempotent",
@@ -3707,6 +3710,14 @@ def _without_map_coordinates(spec: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+_GRAPH_READ_NOTES: Mapping[str, str] = {
+    "ok": "Scoped node and its evidence.",
+    "partial": "More memory is available.",
+    "nothing_found": "No node matched in this scope.",
+    "unavailable": "The graph could not be read.",
+}
+
+
 def _with_note(out: Mapping[str, object], notes: Mapping[str, str]) -> dict:
     """`out` with the note for its status, placed right after `status` so the
     reading rule comes before the page-written text it is about. An existing
@@ -4733,7 +4744,7 @@ _MEMORY_UNLISTED: Mapping[str, str] = MappingProxyType({
 HONCHO_MEMORY_TOOLS: frozenset[str] = frozenset({
     "ask_memory", "search_memory", "search_memory_workspace", "who_said", "about",
 })
-GRAPH_MEMORY_TOOLS: frozenset[str] = frozenset({"memory_search", "profile_dispute"})
+GRAPH_MEMORY_TOOLS: frozenset[str] = frozenset({"memory_search", "memory_read", "profile_dispute"})
 #: The Dreamer adaptors whose `memory_search` reads their OWN room alone
 #: (`nora.agent.memory_search.scope_for`'s `own_room`; DEC-316). The culture fold writes one room's
 #: culture, which must
@@ -6558,9 +6569,12 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         """A room key as she reads it: its policy label, else its network."""
         return room_label(lineage.rooms if lineage is not None else (), key)
 
+    graph_reads: dict[str, Any] = {}
+
     async def _memory_search_index(
         search: MemorySearch, text: str, ref: PersonRef | None, view: RoomView,
         kinds: tuple[str, ...], since_ms: int | None, until_ms: int | None,
+        depth: int = 2, seed: tuple[str, str] | None = None,
     ) -> dict:
         """`memory_search` while `[memory.index] read`: the one retrieval
         service, scoped to this room's unit from the live policy and this
@@ -6595,49 +6609,63 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 _record_room(metrics, "memory_search", "unavailable", reason="unlisted")
                 return {**_MEMORY_UNLISTED, **asked}
             now = now_fn()
-            found = await search.search(
-                query=text[:500], person_id=ref.person_id if ref is not None else None,
-                target=target, now_ms=int(now.timestamp() * 1000), people=view.people,
+            result = await search.read(
+                query=text[:500], seed=seed, depth=depth,
+                person_id=ref.person_id if ref else None, target=target,
+                now_ms=int(now.timestamp() * 1000), people=view.people,
                 kinds=kinds, since_ms=since_ms, until_ms=until_ms,
                 own_room=dream_adaptor in ROOM_ONLY_MEMORY_ADAPTORS,
-                # `social = false` (identity.toml): their social items are
-                # out of every read, whenever recorded (22 §2). Only a listed
-                # person's can be in scope at all.
                 social_off=persons.social_off_ids(listed or ()),
+                cache=graph_reads, content_checks=content_checks,
             )
-            if found.status == "unavailable":
-                _record_room(metrics, "memory_search", "unavailable", reason="index")
-                return {"status": "unavailable", **asked, "note": _INDEX_UNAVAILABLE}
-            items, withheld = render_packet(
-                found.hits, name_of=_rollup_name, room_label=_index_room_label, now=now,
-                content_checks=content_checks,
-            )
-        except Exception as exc:  # noqa: BLE001 — «I couldn't check», counted
-            log.warning("memory_search index path failed (%s)", type(exc).__name__)
-            _record_room(metrics, "memory_search", "unavailable", reason="error")
-            return {"status": "unavailable", **asked, "note": _INDEX_UNAVAILABLE}
-        if found.status == "partial":
-            # An unfinished index is never «nothing found», items or none.
-            _record_room(metrics, "memory_search", "partial", items=len(items),
-                         withheld=withheld)
-            return _memory_result({
-                "status": "partial", **asked, "results": items, "withheld": withheld,
-                "partial_view": view.degraded, "note": _INDEX_PARTIAL,
-            })
-        if not items:
-            if withheld:
-                _record_room(metrics, "memory_search", "withheld", withheld=withheld)
-                return {
-                    "status": "withheld", **asked, "found_but_unquotable": withheld,
-                    "note": _INDEX_WITHHELD,
-                }
-            _record_room(metrics, "memory_search", "nothing_found")
-            return {"status": "nothing_found", **asked, "note": _INDEX_NOTHING}
-        _record_room(metrics, "memory_search", "ok", items=len(items), withheld=withheld)
-        return _memory_result({
-            "status": "ok", **asked, "results": items, "withheld": withheld,
-            "partial_view": view.degraded, "note": _INDEX_OK,
-        })
+        except Exception as exc:  # noqa: BLE001
+            log.warning("memory graph tool failed (%s)", type(exc).__name__)
+            result = {"status": "unavailable", "note": _INDEX_UNAVAILABLE}
+        _record_room(metrics, "memory_read" if seed else "memory_search", result["status"])
+        return _memory_result(result) if result["status"] in {"ok", "partial"} else result
+
+    async def memory_read(kind: str, id: str, depth: int = 1) -> dict:
+        """Read one memory node and its connections. Call this when a graph node
+        needs closer inspection.
+
+        Returns `status` with a note:
+        `ok`: scoped node and evidence.
+        `partial`: more memory is available.
+        `nothing_found`: no node matched in scope.
+        `unavailable`: the read could not finish.
+        Depth zero returns full fields and relation evidence.
+
+        Args:
+            kind: The node kind shown in the graph.
+            id: The node id shown in the graph.
+            depth: Hops from this node, zero to four.
+        """
+        if memory_retrieval is None:
+            _record_room(metrics, "memory_read", "unavailable", reason="unwired")
+            return {"status": "unavailable", "note": "The graph could not be read."}
+        if lineage is None:
+            _record_room(metrics, "memory_read", "unavailable", reason="unwired")
+            return {"status": "unavailable", "note": "The read scope is unavailable."}
+        try:
+            view = await room.scope()
+            target = lineage.render_room(
+                platform=room.platform, conversation_id=bound_conversation_id,
+                live=LiveRoom(person_ids=frozenset(p.person_id for p in view.people),
+                    unnamed=view.unnamed, available=view.available, degraded=view.degraded))
+            listed = target.room.persons if target.room else ()
+            result = await memory_retrieval.read(seed=(kind, id), depth=depth, target=target,
+                now_ms=int(now_fn().timestamp() * 1000),
+                own_room=dream_adaptor in ROOM_ONLY_MEMORY_ADAPTORS,
+                social_off=persons.social_off_ids(listed or ()),
+                cache=graph_reads, content_checks=content_checks)
+            _record_room(metrics, "memory_read", result["status"])
+            if result["status"] in {"ok", "partial"}:
+                result.update(_memory_result(result))
+            return _with_note(result, _GRAPH_READ_NOTES)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("memory_read failed (%s)", type(exc).__name__)
+            _record_room(metrics, "memory_read", "unavailable", reason="error")
+            return {"status": "unavailable", "note": "The graph could not be read."}
 
     async def memory_search(
         query: str,
@@ -6645,31 +6673,21 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         since: str | None = None,
         until: str | None = None,
         kinds: list[MemoryKind] | None = None,
+        depth: int = 2,
     ) -> dict:
-        """Search what this group said, shared, kept, planned and where people
-        went. Call this when an answer needs something older than what you see.
+        """Search memory and its connections. Call this when an answer needs older
+        context; returns a labelled subgraph.
 
-        It returns what matches, with each item's age and how it was found. The
-        other arguments narrow it to one person, a span of dates or some kinds
-        of memory. Asked what you know about someone, set `person` to them.
-        Reading everything said on a day or span, with no topic to look for,
-        is `record_query`.
-
-        SHOULD: write `query` yourself, as what you are looking for, not the raw
-        tag message.
-
-        Returns `status`: ok (`results`), partial, nothing_found, withheld,
-        unavailable, not_found or ambiguous, with a `note` on how to report it.
+        SHOULD: write the topic you need in query.
+        Returns `status`: ok, partial, nothing_found or unavailable with a note.
 
         Args:
-            query: What you are looking for: a topic, a phrase or a question.
-            person: Only what is about this person or said by them: the name
-                or nickname the message used. Leave it out for everyone.
-            since: The first day to include, as YYYY-MM-DD.
-            until: The last day to include, as YYYY-MM-DD.
-            kinds: Only these kinds of memory. `media` is pictures and videos
-                sent in a chat; a shared link is a message. Leave it out to
-                search them all.
+            query: The topic or phrase to find.
+            person: Narrow to this person's name.
+            since: First day, YYYY-MM-DD.
+            until: Last day, YYYY-MM-DD.
+            kinds: Memory categories to return.
+            depth: Hops from seeds, zero to four; default two.
         """
         # The model writes the dates, so a bad one is an ordinary event, never
         # an exception (R-5) and never silently dropped: `unavailable` with
@@ -6730,6 +6748,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             node_kinds,
             int(since_at.timestamp() * 1000) if since_at is not None else None,
             int(until_at.timestamp() * 1000) if until_at is not None else None,
+            depth,
         )
 
     async def ask_memory(
@@ -16972,6 +16991,7 @@ Args:
         _spec("ask_memory", ask_memory),
         _spec("search_memory", search_memory),
         _spec("memory_search", memory_search),
+        _spec("memory_read", memory_read),
         _spec("recall_lookups", recall_lookups),
         _spec("media_fetch", media_fetch),
         _spec("file_fetch", file_fetch),

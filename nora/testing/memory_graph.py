@@ -28,6 +28,8 @@ class FakeMemoryGraph(AdmissionState):
         self.evidence: list[Evidence] = []
         self.work: dict[str, WorkItem] = {}
         self.available = True
+        self.indexed = {}
+        self.fields = {}
 
     async def upsert_entity(self, entity: Entity) -> Entity:
         return await self._upsert_entity(entity)
