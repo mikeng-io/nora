@@ -4049,7 +4049,7 @@ class Config(BaseModel):
     # (`enabled = false`); off, composition wires `notes=None` into
     # `TranscriptInjection` and the `<notes>` block never renders. On, the
     # index is read from `SqlNoteStore` on every tag — the Cognition session
-    # writes notes (`note_create`/`note_update`/`note_retire`/`note_merge`), so it
+    # writes notes (`note_create`/`note_revise`/`note_set_status`/`note_merge`), so it
     # is empty until it has.
     notes: NotesConfig = NotesConfig()
     # Optional and defaulted — see `CultureConfig`. Ships INERT

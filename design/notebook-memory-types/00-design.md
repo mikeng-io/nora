@@ -22,8 +22,8 @@ domain module, a SQL store, a renderer, five tables and a test fake; a memo is
 the same again (DEC-306 chose "memo-specific tables in the lesson's shape, not a
 generic entry store"); an event is a third copy under a third name
 (`gatherings` in code, `events` in SQL, `event_entry` in the graph). Their verbs
-do not line up either: `note_create` / `memo_write` / `event_propose`,
-`note_retire` / `memo_withdraw` / `event_set_status`. Adding a thread and a
+do not line up either: `note_create` / `memo_create` / `event_propose`,
+`note_set_status` / `memo_set_status` / `event_set_status`. Adding a thread and a
 topic the same way would make five copies.
 
 The data model already said the Notebook is **one entry, one machinery, with a

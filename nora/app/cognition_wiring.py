@@ -300,7 +300,7 @@ REGISTER_SKILL = "cognition-register"
 #: every session that has an agenda reads the same system prompt and its prefix
 #: stays cached whichever kinds its agenda holds
 #: (`tests/unit/test_cognition_agenda_skills.py`). `time` is mapped: the daily
-#: floors wake a session that reviews the notebook (`note_retire`, `note_merge`)
+#: floors wake a session that reviews the notebook (`note_set_status`, `note_merge`)
 #: and decides what to raise. `social` and `play` have no producer.
 AGENDA_SKILLS: Mapping[str, str] = MappingProxyType({
     "message": REGISTER_SKILL, "rollup": REGISTER_SKILL, "self": REGISTER_SKILL,
@@ -512,7 +512,7 @@ def build_cognition_runner(
     agent_runner = LiveCognitionAgentRunner(
         models=models, retry=retry, metrics=metrics,
         # The READ tools' argument names only. The registry's table also holds
-        # the tag path's `note_create`, `note_update` and `remind`, whose
+        # the tag path's `note_create`, `note_revise` and `remind`, whose
         # arguments differ from the session's own verbs of the same names
         # (`room`, `at`, ...), and R-99 would veto every call to them.
         # Plus `room`: the routed tools of an agenda spanning several rooms

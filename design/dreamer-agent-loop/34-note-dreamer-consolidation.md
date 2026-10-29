@@ -272,14 +272,14 @@ note; the runtime sees one adaptor.
 | `nora_note_curator_total{action=...}` (actual vocabulary: `merge`, `closed`, `moot`, `merge_refused`, `merge_failed`, `retire_failed`, `retire_stale` — `note_curator.py:79-90`; there is NO literal `action="retire"`, retirement counts as `closed`/`moot`) | kept — the merged adaptor keeps this name and vocabulary |
 | `nora_note_curator_groups_refused_total` | kept |
 | `nora_note_revisit_*` (standing, candidates, verdicts, refused, deferred) | renamed/merged under `nora_note_curator_*` — the series is the adaptor, and the adaptor is now one. A stale `nora_note_revisit_*` series left publishing would double-count the retirement readings the merge is meant to unify |
-| `nora_note_retirements_total{because,result}` | **kept under the same name** — this is the actual retirement series, emitted by the revisitor (`note_revisitor.py:932/950`); the consolidation must carry it into the curator unchanged, not fold it into a renamed series. Kimi review finding: 34's earlier table missed it entirely |
+| `nora_note_set_statusments_total{because,result}` | **kept under the same name** — this is the actual retirement series, emitted by the revisitor (`note_revisitor.py:932/950`); the consolidation must carry it into the curator unchanged, not fold it into a renamed series. Kimi review finding: 34's earlier table missed it entirely |
 
 Exact series names, verified (`nora/obs/metric_specs.py:1591-1659`; the
 `nora_note_revisit_standing` gauge lives at `:1998`, outside the count range):
 the revisitor emits `nora_note_revisit_candidates_total`, `…_verdicts_total`,
 `…_refused_total`, `…_deferred_total`, `nora_note_revisit_standing`, and —
 the retirement reading the merge cares about most —
-`nora_note_retirements_total`. The `strikes_total`/`revisit_total` names
+`nora_note_set_statusments_total`. The `strikes_total`/`revisit_total` names
 from the note-tier spec §6 remain unbuilt — metric_specs.py mentions them
 in a comment as measuring adaptors that do not exist (cosmetic: not declared
 specs).
@@ -346,7 +346,7 @@ addressed in place:
   tick, `runtime.py:470`); 33's "inherits the shared 30-minute quiet" was a
   factual error. Fixed in 33.
 - **M4 (§5.5)** — the revisitor's metric series are `nora_note_revisit_*`
-  plus `nora_note_retirements_total` (the table missed the retirement series
+  plus `nora_note_set_statusments_total` (the table missed the retirement series
   entirely, and `strikes`/`wakes` series do not exist). Fixed.
 - **M5 (33 §4/C3)** — `note_candidate` migration: `probe`/`first_seen_at`/
   `last_seen_at` are `nullable=False` with no defaults; the create-key

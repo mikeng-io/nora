@@ -2,7 +2,7 @@
 (DEC-306: titles pushed, body pulled).
 
 One `memo` element per kept memo: its id (what `memo_read`, `memo_revise` and
-`memo_withdraw` take), the day it last changed, and its title as the content.
+`memo_set_status` take), the day it last changed, and its title as the content.
 Never a `## Kept` line: what a memo keeps is read on demand, so a value kept
 verbatim (a password) is never pushed into every turn of every room. Unit-
 wide like `<notes>`: a memo kept in one room renders in every room of its unit.

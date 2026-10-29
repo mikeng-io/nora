@@ -72,7 +72,7 @@ NOT_LOOKUPS: frozenset[str] = frozenset({
 NEVER: frozenset[str] = frozenset({
     "send_reply", "send_to", "send_gif", "media_send", "generate_image", "video_create",
     "remind", "cancel_reminder",
-    "note_create", "note_update",
+    "note_create", "note_revise",
     "event_propose", "event_revise", "event_rsvp", "event_set_status",
     "remember", "document_set_status",
     "play_music", "skip_music", "stop_music", "top_music", "set_music_volume",

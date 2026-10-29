@@ -512,7 +512,7 @@ class TagContext:
     # Deliberately the whole standing set and never a top-N: a note absent from
     # the index is invisible to her, and invisible is indistinguishable from
     # absent. The prompt budget is paid by the per-entry caps in
-    # `nora.domain.notes` and by `note_retire`, not here.
+    # `nora.domain.notes` and by `note_set_status`, not here.
     notes: tuple[Note, ...] = ()
     # The unit's kept memos (DEC-306), the `<memos>` index: unit-wide like
     # `notes`, filled by the tag and fire assemblers; `()` renders no block.

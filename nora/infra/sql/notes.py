@@ -472,7 +472,7 @@ class SqlNoteStore:
 
         **Uncapped on purpose**: there is no `limit`. A note silently
         missing from the index is invisible to her, and invisible is
-        indistinguishable from absent. The pressure valve is `note_retire`
+        indistinguishable from absent. The pressure valve is `note_set_status`
         retiring closed notes, not a top-N here.
 
         Ordered oldest-first, and deterministic (`created_at`, then `id` to

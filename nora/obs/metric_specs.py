@@ -1465,8 +1465,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "truncation, no consolidate retry (unlike the body's own overflow).",
     ),
     _CounterSpec(
-        "nora_note_update_refused_total",
-        "note_update calls refused, by reason: not_read (the R-55 latch — the "
+        "nora_note_revise_refused_total",
+        "note_revise calls refused, by reason: not_read (the R-55 latch — the "
         "model had not read a note by that title this turn), title_moved (the "
         "title resolved to a different note than the one read), or stale_head "
         "(the compare-and-set lost; the note moved under the call).",

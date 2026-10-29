@@ -57,7 +57,7 @@ note is for.
 | reader | how it gets the body | what it needs from it | what it gets today |
 |---|---|---|---|
 | **Nora in a live turn** | `<notes>` shows title + description only (`nora/language/note_render.py`, `render_note_rows`); the body comes back from `note_read` (`nora/agent/tools.py:9764`) and `note_search` (`:9821`) as one string | what is settled, what is not, who owes what by when, so she can answer or raise it from the note alone; a clear line between the note and the transcript (the `notes` type says the transcript wins, `nora/domain/block_types.py:353`) | a ~200-character paragraph; on a note-candidates update, two or more paragraphs concatenated, the older one first and possibly contradicted by the newer (`_appended`, `nora/language/note_candidates.py:878`) |
-| **Nora writing on the tag path** | `note_update(title, body)` after a `note_read` (`nora/agent/tools.py:10150`) | the whole current state, because «`body` replaces the current contents» (the tool's own docstring) | **restate** semantics, while note-candidates writes the same bodies with **append** semantics: two writers, two meanings of a revision, on one field |
+| **Nora writing on the tag path** | `note_revise(title, body)` after a `note_read` (`nora/agent/tools.py:10150`) | the whole current state, because «`body` replaces the current contents» (the tool's own docstring) | **restate** semantics, while note-candidates writes the same bodies with **append** semantics: two writers, two meanings of a revision, on one field |
 | **the curator** | `_note_block` renders the body whole, beside `uncertainty`, `closing condition` and the evidence (`nora/language/note_curator.py:1982`) | what was still open, to judge from the evidence whether it has closed | the whole body, whatever its shape; «bodies are rendered whole, the body IS the question» |
 | **note-merge** | `open_note` blocks, the body clipped at `DEFAULT_BODY_EXCERPT_CHARS = 600` (`nora/language/note_merge.py:127`, `:644`) | enough of each note to tell whether two ask the same open question | the FIRST 600 characters, which under append are the OLDEST text; its fold appends the duplicate under `MERGE_MARKER` with `title:`/`uncertainty:`/`closing condition:` lines (`nora/domain/notes.py:960`) |
 | **the proactive pass** | `note_read`, rationed to 3 reads per pass (`nora/dreamer/objectives/proactive.md` (deleted 2026-10-03, DEC-277), «Before you set any reminder») | «Read the note body to know who that is»: whose plan it is, who has to answer, and by when | whatever the body happens to say, in whatever names the writer used. The pass carries a `people` block that joins «whatever the group calls each other» to roster names (`_people_block`, `nora/language/proactive.py:737`), built because nothing joined the two before it; a body already in roster names needs no join |
@@ -315,7 +315,7 @@ has two tiers, because a restatement cites messages this write never saw:
 
 Author, owner and Nora checks run on rendered ids; a carried id is accepted
 because the head carried it. It is called by each WRITER
-(note-candidates' commit, the tag path's `note_create`/`note_update`, the merge
+(note-candidates' commit, the tag path's `note_create`/`note_revise`, the merge
 fold), **not** by `NoteRevision.__post_init__`, because rows written before the
 schema must still read back (§9).
 
@@ -494,7 +494,7 @@ against it:
 | reader | restate | append-only log |
 |---|---|---|
 | Nora, live | reads one current state; nothing in it is contradicted by a later line | must reconcile old lines against newer ones, which is #226's failure: a stale line read aloud as current |
-| Nora, writing | already restates (`note_update`); unchanged | would change the tag tool's contract to a second verb |
+| Nora, writing | already restates (`note_revise`); unchanged | would change the tag tool's contract to a second verb |
 | curator | reads `## Open` as what was open | must work out which log lines still stand |
 | note-merge | the first 600 characters are `## Decided` and `## Open`, current | the first 600 characters are the oldest entries |
 | proactive, 3 reads | `## Owed` answers «who, what, by when» in one read | the answer is spread across a log |
@@ -515,7 +515,7 @@ argue that append made the gate non-destructive, so the model could be
 trusted to name the note.
 
 1. **Nothing is erased from the store.** Every earlier head is a revision row;
-   an undo is a new revision, as `note_update`'s own docstring already promises
+   an undo is a new revision, as `note_revise`'s own docstring already promises
    the tag path.
 2. **A carry-forward check, in code, per line.** For every line of the head
    being revised, some line of the new body cites all of that line's ids. A
@@ -531,7 +531,7 @@ trusted to name the note.
 source the note ever rested on stays cited in its current body. It does not
 protect meaning. A line rewritten to say the opposite keeps its ids and
 passes; that is what the eval's placed-fact checks measure (§10), not this.
-And it binds note-candidates only: the tag path's `note_update` keeps
+And it binds note-candidates only: the tag path's `note_revise` keeps
 replacing freely, as its contract already says, because that is where a
 conflated line gets taken back out (#228's remedy) with a person in the turn.
 
@@ -554,7 +554,7 @@ paragraphs.
   per note per day is the reading that says whether it matters. The candidate's
   `description` and `closing_condition` are still discarded until G2 is
   decided; that is stated in the objective, not left for the model to find out.
-- **The tag path's `note_update` and `note_create`.** Already restate. They
+- **The tag path's `note_revise` and `note_create`.** Already restate. They
   gain the validator, run against her turn's shown messages, and the refusal
   names the broken rule. She cites positions as `[#n]`, which the tool maps to
   row ids from the rows her prefill rendered (§4.3, G4); a bare id in her body
@@ -817,7 +817,7 @@ author's reading of a first author's summary, two hops from what was said.
 - note-merge falls back to its current append when either body is legacy.
 - **No writer may append onto a schema body.** Between the schema's first
   write and restatement's first write, today's appenders (note-candidates'
-  `_appended`, a free-text `note_update`, note-merge's `MERGE_MARKER` fold)
+  `_appended`, a free-text `note_revise`, note-merge's `MERGE_MARKER` fold)
   would each produce a body that is neither the schema nor legacy. §10.3
   therefore deploys the schema and restatement together, and note-merge stays
   out of `on` until its fold is section-wise.
@@ -894,7 +894,7 @@ of open notes by form.
 | **S2** | the schema on **creates**: objective «The body» section, worked-example bodies removed, the validator in `accept()` | conformance, completeness, invented rate, create rate. **Eval arm** |
 | **S3** | the input's notebook becomes `today` + `open_note` with bodies, replacing the index. Two edits, one change: the objective's update rule must also say «only what this batch changes», or the arm appends a restated body onto the head (#513's «Also»). **Eval arm** | update pass rate and wrong-note count with bodies visible, against S2 |
 | **S4a** | restatement on note-candidates' update arm, with the carry-forward check; the objective's update rule says restate | update pass rate against S3, `dropped_citation`, `full`. **Eval arm** |
-| **S4b** | the tag path: `note_update`/`note_create` validate, cite `[#n]`, and their `body` argument names the grammar (§7) | a `tool_selection` read and the tag-path suites (the nora-tool skill). **Eval arm** |
+| **S4b** | the tag path: `note_revise`/`note_create` validate, cite `[#n]`, and their `body` argument names the grammar (§7) | a `tool_selection` read and the tag-path suites (the nora-tool skill). **Eval arm** |
 | **deploy** | S2, S3, S4a and S4b together, once each arm has passed | the live read-back: body refusals by rule, `dropped_citation`, open notes by form |
 | **S5a** | `lead_in`, with `reply_to` as an index where the target is shown | recall on exchanges the watermark cut; invented rate. Deploys alone |
 | **S5b** | `standing` | invented rate and the Standing-laundering case. Deploys alone |

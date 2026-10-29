@@ -449,7 +449,7 @@ model-judged merge returns in a separate `note-merge` adaptor (DEC-202, design
 removed, first run in `shadow`, which wrote no note); the curator
 stayed retire-only.
 **2026-10-03 (DEC-277): `note_candidates`, the curator and `note-merge` are
-deleted; the Cognition session writes, retires (`note_retire`) and merges
+deleted; the Cognition session writes, retires (`note_set_status`) and merges
 (`note_merge`) notes, and `[notes] enabled` is the only notes key left. The
 paragraph above is the history.**
 The create gate in `note_candidates` matched on anchor date alone from that

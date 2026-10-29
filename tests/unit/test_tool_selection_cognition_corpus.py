@@ -17,14 +17,14 @@ NAME = "tool_selection_cognition"
 #: two confusable reads this corpus's last case checks — the vocabulary a
 #: `metadata.tools`/`not_tools` entry may name.
 _COGNITION_CATALOGUE = frozenset({
-    "note_create", "note_update", "event_propose", "event_revise",
+    "note_create", "note_revise", "event_propose", "event_revise",
     "event_set_status", "standing_revise", "wake_at", "wake_move", "wake_cancel",
     "remind", "remind_move", "remind_cancel", "close", "record_query", "rollup_read",
     # The rollup and standing reads and the siblings they are measured against.
     "standing_read", "where_been", "note_read", "note_search",
     # DEC-306: the memo verbs, the memo read, and the retire a settled note's
     # memo is followed by.
-    "memo_write", "memo_revise", "memo_withdraw", "memo_read", "note_retire",
+    "memo_create", "memo_revise", "memo_set_status", "memo_read", "note_set_status",
     # `social_read`, measured against `record_query` and `rollup_read` above.
     "social_read",
 })

@@ -245,7 +245,7 @@ def test_the_registry_exposes_every_declared_tool():
         # DEC-97: what she is running, and what was in an earlier version.
         "version_list", "version_read",
         # The note tier's four verbs.
-        "note_read", "note_search", "note_create", "note_update",
+        "note_read", "note_search", "note_create", "note_revise",
         # DEC-306: one kept memo of the unit.
         "memo_read",
         # The remember verb — the conclusion write lane.
@@ -484,9 +484,9 @@ def test_budgets_match_todays_table():
         "version_list": 1, "version_read": 2,
         # The four note verbs. The RATIO is the
         # decision, not the absolute numbers: a revision costs two calls —
-        # `note_read` then `note_update` — which is what makes the read
+        # `note_read` then `note_revise` — which is what makes the read
         # mandatory rather than advisory (R-55 enforces it). `note_read` is
-        # one higher than `note_update` because comparing two notes before
+        # one higher than `note_revise` because comparing two notes before
         # revising one is an ordinary turn and a read writes nothing.
         # `note_search` is 2 like `web_fetch`: one query, one refinement —
         # every title is already in `<notes>`, so a second phrasing is all a
@@ -494,7 +494,7 @@ def test_budgets_match_todays_table():
         # spam, and a cap the create/update split is what makes
         # meaningful: under one `note_write` an accidental create would spend
         # the revision budget instead.
-        "note_read": 3, "note_search": 2, "note_create": 1, "note_update": 2,
+        "note_read": 3, "note_search": 2, "note_create": 1, "note_revise": 2,
         # `memo_read` is 3 like `note_read` (DEC-306): a couple of memos and a re-read.
         "memo_read": 3,
         # 1, like `note_create`: one write answers the ask; a second call is the
@@ -951,7 +951,7 @@ ACT_VERBS = frozenset({
     # The note tier's two write verbs. A read
     # verb that forgets the flag fails the classification test by name; these
     # two are acts and belong here.
-    "note_create", "note_update",
+    "note_create", "note_revise",
     # The remember verb: writing a Honcho conclusion is a write —
     # the Dreamer may never be granted it, same as the note verbs.
     # `profile_dispute` (the graph surface's dispute door, 35 §2) writes and

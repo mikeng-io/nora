@@ -44,7 +44,7 @@ Three complaints, all confirmed against the design corpus and the live system:
 
 2. **The tier has no create path that can fire.** The cold start (§5.4 of
    [27](27-note-dreamer.md)) measured **one** note-tool call in the tier's
-   life — a `note_search` miss. Zero `note_create`, zero `note_update`, ever.
+   life — a `note_search` miss. Zero `note_create`, zero `note_revise`, ever.
    The tag path has the tools but no recognition: with an empty index the
    `<notes>` block is absent from every prompt, and doctrine carries no note
    recognition at all. The curator is housekeeping-only ("You are NOT writing
@@ -72,7 +72,7 @@ Three complaints, all confirmed against the design corpus and the live system:
 |---|---|---|
 | Per-adaptor schedule is designed AND wired | [32](32-fact-dreamer-schedule.md) §3.1 — `AdaptorSchedule(min_interval_seconds, batch_limit, max_items)`, name-keyed mapping, no Protocol change. Merged into master (`3ca43b83`); composition wires `dream_schedules` (`composition.py:2415`) for `fact-candidates` ONLY — see §5 N1 for why the note curator cannot use it as-is | ✅ designed + wired (fact only) |
 | The note tier has two adaptors, neither creates | `NoteRevisitor` (`nora/language/note_revisitor.py:485`, `name="note-revisit"`, unit-keyed, watermark-free) and `NoteCuratorAdaptor` (`nora/language/note_curator.py:227`, `name="note-curation"`, unit-keyed, watermark-free) | ✅ both built, both read-only |
-| The tag path has create/update tools | `note_create`/`note_update` (`nora/agent/tools.py`), gated by R-55 read-before-write latch | ✅ exists, never fired |
+| The tag path has create/update tools | `note_create`/`note_revise` (`nora/agent/tools.py`), gated by R-55 read-before-write latch | ✅ exists, never fired |
 | `note_candidate` is a MISS CACHE, not a create queue | `nora/infra/sql/schema.py:1821` — `(unit, probe)` unique key, `occurrence_count`, `observed_in`; written by `record_miss` (`nora/agent/tools.py:2000`) | ✅ the only candidate table, wrong shape for create |
 | The fact tier's Phase A/B split is the pattern to copy | `FactCandidateAdaptor` (`nora/language/fact_adaptor.py:201`, scope-keyed, watermarked, tool-free) → `fact_candidate` table → `FactAdaptor` (Phase B adjudication) | ✅ proven |
 | The Dreamer has no write tools | `UNIT_SAFE_TOOLS` + `read_only_tools()` ceiling | ✅ structural |

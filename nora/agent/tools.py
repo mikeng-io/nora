@@ -472,7 +472,7 @@ class NativeTool:
     #     answer.
     #   * `confirmed` — writes through an OBSERVABLE boundary: a store whose
     #     acknowledgement the harness actually reads back, so «did it apply» has
-    #     an answer (`note_create`, `note_update`, `remember`).
+    #     an answer (`note_create`, `note_revise`, `remember`).
     #   * `unknown` — writes through a boundary whose outcome the runtime cannot
     #     observe. After a timeout the harness MUST assume the write may have
     #     applied (`nora.engagement.pipeline` — "Messages may ALREADY have gone
@@ -1498,7 +1498,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # `source_tier` — `note_read`/`note_search` are "remembered": this
     # household's own notebook, the same rank as `saved_places` and `about`, and
     # closer than the open web for anything the room has already been chewing
-    # on. `note_create`/`note_update` are `None`: they are writes, not sources,
+    # on. `note_create`/`note_revise` are `None`: they are writes, not sources,
     # exactly as `remind` is.
     #
     # `cacheable=False` on all four, by default and on purpose: a note is
@@ -1509,7 +1509,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     #
     # `level=2` on all four (ADR 0015 §3): each carries one pre-call constraint.
     # note_read: the exact title. note_search: a plain substring match.
-    # note_create: a closing condition and an anchor. note_update: read first.
+    # note_create: a closing condition and an anchor. note_revise: read first.
     "note_read": NativeTool(3,
                             source_tier="remembered", read_only=True,
                             side_effect_state="none", idempotency="idempotent", retry="safe",
@@ -1549,7 +1549,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                               side_effect_state="confirmed", idempotency="non_idempotent",
                               retry="never",
                               output_contract="three_state", level=2),
-    "note_update": NativeTool(2,
+    "note_revise": NativeTool(2,
                               side_effect_state="confirmed", idempotency="non_idempotent",
                               retry="never",
                               output_contract="three_state", level=2),
@@ -2091,7 +2091,7 @@ RECALL_LOOKUPS_MAX_CHARS = 8000
 # How many notes one `note_search` hands back, and it is NOT a model-supplied
 # parameter on purpose (DEC-24's rule: a parameter is a value the model must
 # invent on every call, so each one buys a way to get the call wrong). A
-# unit holds tens of notes and the Cognition session's `note_retire` is what keeps
+# unit holds tens of notes and the Cognition session's `note_set_status` is what keeps
 # it that way, so a query matching more than five bodies is a query too vague
 # to act on — the answer to that is a better query, not a longer list. Each hit
 # carries a whole head body, and a tool result is re-sent on every subsequent
@@ -4358,7 +4358,7 @@ class NoteCollaborator(Protocol):
     async def successor(self, *, unit: str, note_id: str) -> Note | None: ...
 
 
-#: NOT DEFINED HERE — an ordinary import, used by `note_read`/`note_update`
+#: NOT DEFINED HERE — an ordinary import, used by `note_read`/`note_revise`
 #: below. `note_handle` lives in `nora.domain.notes` so layers below
 #: `nora.agent` can use the same spelling; the whole argument for one spelling
 #: is in that function's own docstring. It stays importable FROM here because
@@ -13546,7 +13546,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
     #
     # PER-TURN state, and it must stay per-turn: the head revision each note
     # was last SEEN at by this turn. The compare-and-swap needs a value both
-    # sides can name, and `note_update(title, body)` deliberately does not ask
+    # sides can name, and `note_revise(title, body)` deliberately does not ask
     # the model for one — an id it can only have by copying a tool result back
     # is a value it can copy WRONG, and a mistyped `revision_id` would refuse a
     # write that should have gone through. So the read records the head here
@@ -13662,7 +13662,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
 
     async def note_read(title: str) -> dict:
         """Read what a note in <notes> actually says, the only way to reach the
-        note itself. Call this before note_update, always.
+        note itself. Call this before note_revise, always.
 
         <notes> shows each note's title and one line: enough to know a note
         exists, not what is in it. Pass the title exactly as <notes> shows it.
@@ -13696,7 +13696,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             return dict(notes_off)
         if found is None:
             # The note was standing a moment ago and is not readable now — a
-            # note_retire (or note_merge) took it out from under this call, or the unit
+            # note_set_status (or note_merge) took it out from under this call, or the unit
             # moved. «I could not read it», never «there is no such note»: the
             # index she is looking at still says there is.
             _record(metrics, "note_read", "unavailable", reason="vanished")
@@ -14266,7 +14266,7 @@ Args:
         against those rows, the roster and the ids the note already cites.
         Returns the normalised body, or the refusal she reads, naming the
         rule so she can correct the call. There is no carry-forward check:
-        `note_update` replaces freely, with a person in the turn, which is
+        `note_revise` replaces freely, with a person in the turn, which is
         where a conflated line comes out."""
         rows = [r.id for r in bound_window]
         try:
@@ -14402,7 +14402,7 @@ Args:
         _record(metrics, "note_create", "ok")
         return {"status": "ok", "title": note.title}
 
-    async def note_update(title: str, body: str) -> dict:
+    async def note_revise(title: str, body: str) -> dict:
         """Revise a note you have JUST read this turn. Call this when a
 note's content changes: a detail settles, a plan moves.
 
@@ -14420,11 +14420,11 @@ Args:
         every line ending in [#n] or in the ids it already cites."""
         book = _notebook()
         if book is None:
-            _record(metrics, "note_update", "unavailable")
+            _record(metrics, "note_revise", "unavailable")
             return dict(notes_off)
         tagger = room.tagger
         if tagger is None:
-            _record(metrics, "note_update", "refused", reason="no_tagger")
+            _record(metrics, "note_revise", "refused", reason="no_tagger")
             return {
                 "status": "refused",
                 "note": "I don't know who you are well enough to write this down "
@@ -14433,13 +14433,13 @@ Args:
         try:
             candidates = await _resolve(book, title)
         except Exception:
-            log.exception("note_update could not resolve the title")
-            _record(metrics, "note_update", "unavailable")
+            log.exception("note_revise could not resolve the title")
+            _record(metrics, "note_revise", "unavailable")
             return dict(notes_off)
         if len(candidates) > 1:
             return _ambiguous(candidates)
         if not candidates:
-            _record(metrics, "note_update", "nothing_found")
+            _record(metrics, "note_revise", "nothing_found")
             return {
                 "status": "nothing_found",
                 "note": "There's no note by that title to revise. Check <notes>.",
@@ -14452,17 +14452,17 @@ Args:
             # model-facing argument can carry; this keys on the resolved note
             # ID. They differ in exactly one case, and it is the one that
             # matters: the title resolved to a DIFFERENT note between the read
-            # and the write (a note_retire left one and another now answers to
+            # and the write (a note_set_status left one and another now answers to
             # the name). The guard would wave that through on a title it has
             # seen; there is no head recorded for the note it actually reached,
             # so this refuses.
-            _record(metrics, "note_update", "refused", reason="not_read")
+            _record(metrics, "note_revise", "refused", reason="not_read")
             # `title_moved`, not `not_read`: reaching this line means the guard
             # ALREADY passed the call on a title it had seen read, so what the
             # backstop caught is the title resolving to a different note. The
             # tool-facing `reason` above stays `not_read` because that is the
             # remedy the model is given; the metric records what happened.
-            metrics.inc("nora_note_update_refused_total", reason="title_moved")
+            metrics.inc("nora_note_revise_refused_total", reason="title_moved")
             return {
                 "status": "refused",
                 "note": "You haven't read that note this turn. Call note_read on "
@@ -14475,11 +14475,11 @@ Args:
         try:
             current = await book.read(unit=_unit() or "", note_id=note.id)
         except Exception:
-            log.exception("note_update could not read the head it revises")
-            _record(metrics, "note_update", "unavailable")
+            log.exception("note_revise could not read the head it revises")
+            _record(metrics, "note_revise", "unavailable")
             return dict(notes_off)
         held = _held_to_schema(
-            "note_update", body,
+            "note_revise", body,
             carried=cited_ids_in(current[1].body) if current is not None else frozenset(),
             carried_turns=turn_handles_in(current[1].body) if current is not None else frozenset(),
         )
@@ -14503,8 +14503,8 @@ Args:
             # recorded head is dropped so a retry in this same turn cannot
             # write against the value that just lost.
             note_heads.pop(note.id, None)
-            _record(metrics, "note_update", "unavailable", reason="stale_head")
-            metrics.inc("nora_note_update_refused_total", reason="stale_head")
+            _record(metrics, "note_revise", "unavailable", reason="stale_head")
+            metrics.inc("nora_note_revise_refused_total", reason="stale_head")
             return {
                 "status": "unavailable",
                 "note": "This note changed under you, so read it again and redo "
@@ -14512,16 +14512,16 @@ Args:
                         "written anything.",
             }
         except ValueError as exc:
-            _record(metrics, "note_update", "refused", reason="domain")
+            _record(metrics, "note_revise", "refused", reason="domain")
             return {"status": "refused", "note": str(exc)}
         except Exception:
-            log.exception("note_update failed")
-            _record(metrics, "note_update", "unavailable")
+            log.exception("note_revise failed")
+            _record(metrics, "note_revise", "unavailable")
             return dict(notes_off)
         # A second revision this turn CASes against what the first one wrote,
         # not against the body she read — which is no longer the head.
         note_heads[note.id] = revision.id
-        _record(metrics, "note_update", "ok", chars=len(body))
+        _record(metrics, "note_revise", "ok", chars=len(body))
         return {"status": "ok", "title": note.title}
 
     async def version_list() -> dict:
@@ -17034,7 +17034,7 @@ Args:
         _spec("note_search", note_search),
         _spec("memo_read", memo_read),
         _spec("note_create", note_create),
-        _spec("note_update", note_update),
+        _spec("note_revise", note_revise),
         *((_spec("remember", remember_told),) if memory_retrieval is not None
           else (_spec("remember", remember),)),
         # Built on both surfaces (no `remember`-style name collision);

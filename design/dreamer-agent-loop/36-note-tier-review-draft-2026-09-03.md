@@ -19,7 +19,7 @@ Design detail lives in `design/dreamer-agent-loop/33-note-dreamer-schedule.md` (
 | Layer | State |
 |---|---|
 | **Spec** | `2026-08-21-note-tier-design.md` (accepted) — a note is `(anchor, uncertainty, closing condition, body)`, unit-scoped, index injected on every tag |
-| **Tools** | `note_create` / `note_update` / `note_read` / `note_search` exist on the tag path, gated by R-55 (read-before-write latch) |
+| **Tools** | `note_create` / `note_revise` / `note_read` / `note_search` exist on the tag path, gated by R-55 (read-before-write latch) |
 | **Cold start** | Measured 2026-08-27: **one** note-tool call in the tier's life (a `note_search` miss). Zero creates, zero updates, ever. The create path is not broken — it has never been called |
 | **Curator** | Built 2026-08-28 — merge + retire only. "You are NOT writing anything." |
 | **Revisitor** | Built 2026-08-28 — retirement half only. Reaches a person only via `schedule_reminder` |
@@ -102,7 +102,7 @@ enlarged pattern (more turns, more tokens, longer timeout).
 - **Merge**: one `note-curation` adaptor carries merge + retire, with three SQL-only selections (`merge_groups`, `anchored_before`, `due`) → one model judgement per selected note (`closed` / `expired` / `moot` / `open`) → code disposes.
 - **Two non-negotiables** (full detail in 34): cheap selection must stay SQL-only or a daily sweep becomes a full-notebook model call (5.1); the `_covers` evidence ground must not degrade — silence is not an answer (5.2).
 - `revisit_at` gets its writer: `record_wake` converts the dead branches into live dateless-aging modes (5.3) — **with the policy it never had** (who calls it, which notes, what next_revisit_at; gate-created notes get an explicit `revisit_at` at creation — resolution (c), after (a) was rejected as a no-op in audit #2). Metrics consolidate under `nora_note_curator_*` (5.5). `note-candidates` and the proactive adapter stay separate (5.6).
-- **Kimi external audit (2026-09-03): REQUEST CHANGES, no BLOCKING.** Merge direction confirmed sound; evidence-grounding and cheap-selection invariants hold. MAJOR fixes folded in: tool grant constrained by `tool_subset_faults` (C2.1), wake policy + gate-created notes (C8), metric names `nora_note_revisit_*` + `nora_note_retirements_total` (not `nora_note_revisitor_*`), phase-offset corrected, `note_candidate` migration nullable constraints. Full record in 34 Status.
+- **Kimi external audit (2026-09-03): REQUEST CHANGES, no BLOCKING.** Merge direction confirmed sound; evidence-grounding and cheap-selection invariants hold. MAJOR fixes folded in: tool grant constrained by `tool_subset_faults` (C2.1), wake policy + gate-created notes (C8), metric names `nora_note_revisit_*` + `nora_note_set_statusments_total` (not `nora_note_revisitor_*`), phase-offset corrected, `note_candidate` migration nullable constraints. Full record in 34 Status.
 
 ## 4. What gets built (implementation order)
 
