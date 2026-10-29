@@ -8,6 +8,7 @@ from nora.domain.blocks import BlockKey, ContextBlock, assemble, restamp
 from nora.domain.comprehend import ComprehendItem, Preview
 from nora.domain.memory_graph import (
     ENTITY_KINDS,
+    ENTRY,
     PROPOSED_KINDS,
     RELATION_RULES,
     Evidence,
@@ -25,6 +26,11 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
 _ROW = {name: (order, key) for name, order, key in _BLOCKS}
 
 
+def _step_one(sources: tuple[str, ...]) -> tuple[str, ...]:
+    """Sources step one may write from; an entry writes its own links (27 §7a)."""
+    return tuple(k for k in sources if k not in ENTRY)
+
+
 def _ends(kinds: tuple[str, ...]) -> str:
     return "any kind" if set(kinds) == set(ENTITY_KINDS) else "|".join(kinds)
 
@@ -37,9 +43,9 @@ _VOCABULARY = "\n".join(
         " people keep returning to (racing); a work is one thing with an identity (a game).",
         "Relations, the only names admitted (source kinds -> target kinds):",
         *(
-            f"- {rel}: {_ends(rule.sources)} -> {_ends(rule.targets)}"
+            f"- {rel}: {_ends(_step_one(rule.sources))} -> {_ends(rule.targets)}"
             for rel, rule in sorted(RELATION_RULES.items())
-            if rule.layer == "notebook" and set(rule.sources) <= set(ENTITY_KINDS)
+            if rule.layer == "notebook" and _step_one(rule.sources)
         ),
         "likes/dislikes is a preference for one specific thing; interested_in is a subject.",
         "Who said, shared, asked or replied is already recorded by code; propose only what"

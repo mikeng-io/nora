@@ -672,6 +672,10 @@ def test_the_instruction_lists_the_vocabulary_admission_checks():
     for rel, rule in RELATION_RULES.items():
         if rule.layer == "notebook" and set(rule.sources) <= set(ENTITY_KINDS):
             assert f"\n- {rel}: " in COMPREHEND
+    # A fetched page step one read may say what it is about; an entry's links are
+    # written by the entry's own writer and are never offered here.
+    assert "\n- about: reading|web_page|session|play -> any kind" in COMPREHEND
+    assert all(f"\n- {rel}: " not in COMPREHEND for rel in ("records", "concerns", "settles"))
     topic = Entity("generated-topic", "topic", UNIT, "Generated Sport")
     evidence = (Evidence(SOURCE.key, relation_id="generated-interest", span="like Hall"),)
     interest = Relation(
