@@ -27,14 +27,28 @@ _SCHEMA = {"type": "object", "properties": {"match": {"type": "boolean"}},
            "required": ["match"], "additionalProperties": False}
 
 
+#: The finder's own context: the last 30 messages within a day of the moment.
+WINDOW_MESSAGES, WINDOW_MS = 30, 86_400_000
+#: The scenarios a model judges (7 and 9 are code tests, never anchored).
+JUDGED = frozenset({1, 2, 3, 4, 5, 6, 8, 10, 11, 12, 13})
+
+
 def scenarios() -> dict[int, str]:
-    """Use the scenario spec itself, including both must and must-not columns."""
+    """Use the scenario spec itself, including both must and must-not columns.
+
+    Only §2's table is read, and its scenario set must be exactly JUDGED plus
+    the code-test rows, so a stray table elsewhere can never rewrite a spec.
+    """
     result = {}
-    for line in (ROOT / "design/unified-memory/31-build-one-session.md").read_text().splitlines():
+    doc = (ROOT / "design/unified-memory/31-build-one-session.md").read_text()
+    section = doc.split("## 2.", 1)[1].split("\n## ", 1)[0]
+    for line in section.splitlines():
         columns = [c.strip() for c in line.split("|")]
         if len(columns) == 7 and columns[1].isdigit():
             result[int(columns[1])] = (f"Scenario: {columns[2]}\nMust: {columns[3]}\n"
                                        f"Must not: {columns[4]}")
+    if set(result) != JUDGED | {7, 9}:
+        raise ValueError("scenario table changed")
     return result
 
 
@@ -44,17 +58,21 @@ def candidate(value: object, aliases: dict[str, str]) -> dict[str, object]:
     room, before, scenario = (value.get(k) for k in ("room", "before_ms", "scenario"))
     if (not isinstance(room, str) or not re.fullmatch(r"room_[a-z][a-z0-9_]*", room)
             or room not in aliases.values() or type(before) is not int or before <= 0
-            or type(scenario) is not int or scenario not in {1, 2, 3, 4, 5, 6, 8, 10, 11, 12, 13}):
+            or type(scenario) is not int or scenario not in JUDGED):
         raise ValueError("invalid candidate")
     return {"room": room, "before_ms": before, "scenario": scenario}
 
 
 async def judge(client: httpx.AsyncClient, llm: dict, scenario: str, moment: dict) -> str:
+    # One plain POST, not the SDK: the SDK retries by default, and a retried
+    # verdict is a second, different judgement of the same moment.
     response = await client.post(
         str(llm["base_url"]).rstrip("/") + "/chat/completions",
         headers={"Authorization": "Bearer " + os.environ[llm["api_key_env"]]},
         json={"model": llm["model"], "max_tokens": llm["max_tokens"],
-              "temperature": llm["temperature"],
+              # The production model, at temperature 0: a yes/no verdict
+              # with no retry must not flip between runs.
+              "temperature": 0,
               "reasoning_effort": llm.get("reasoning_effort", "low"),
               "messages": [
                   {"role": "system", "content": (
@@ -98,10 +116,15 @@ async def confirm(source_url: str, config: Path, inputs: list[dict[str, object]]
                 for item in inputs:
                     status = "unavailable"
                     try:
-                        rows = await conn.execute(text(
+                        # The finder's bounded window; Nora's own replies stay in,
+                        # as the room saw them.
+                        rows = list(await conn.execute(text(
                             "SELECT ts, sender_id, coalesce(body, '') FROM messages "
-                            "WHERE conversation_id = :room AND ts < :before ORDER BY ts, id"
-                        ), {"room": rooms[str(item["room"])], "before": item["before_ms"]})
+                            "WHERE conversation_id = :room AND ts < :before AND ts >= :since "
+                            "ORDER BY ts DESC, id DESC LIMIT :n"
+                        ), {"room": rooms[str(item["room"])], "before": item["before_ms"],
+                            "since": int(item["before_ms"]) - WINDOW_MS, "n": WINDOW_MESSAGES}))
+                        rows.reverse()
                         speakers: dict[str, str] = {}
                         messages = []
                         for ts, sender, body in rows:
