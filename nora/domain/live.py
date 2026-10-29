@@ -1,6 +1,15 @@
 """Read-only projections of a live source, evaluated at use time."""
 
-from collections.abc import Callable, Iterable, ItemsView, Iterator, Mapping, Sequence, Set, ValuesView
+from collections.abc import (
+    Callable,
+    ItemsView,
+    Iterable,
+    Iterator,
+    Mapping,
+    Sequence,
+    Set,
+    ValuesView,
+)
 from typing import TypeVar, overload
 
 K = TypeVar("K")
