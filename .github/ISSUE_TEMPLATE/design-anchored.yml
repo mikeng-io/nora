@@ -1,5 +1,6 @@
 name: Maintainers — Gap (design-anchored — a design document already specified this)
 description: "Maintainers only: The bundle and section exist; this issue tracks building to that spec."
+title: "Area: "
 labels: ["design-anchored"]
 body:
   - type: markdown
