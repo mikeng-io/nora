@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.11.19](https://github.com/mikeng-io/nora/compare/v7.11.18...v7.11.19) (2026-10-29)
+
+
+### Bug Fixes
+
+* **memory:** count render budgets without the dev-only tiktoken ([83fb83e](https://github.com/mikeng-io/nora/commit/83fb83e8abead652ecf355e2f28c14f07f73e4c1))
+* **test:** judge only runtime imports with a local provider ([5478426](https://github.com/mikeng-io/nora/commit/5478426c17a04add01afffa488711a83fba76950))
+
 ## [7.11.18](https://github.com/mikeng-io/nora/compare/v7.11.17...v7.11.18) (2026-10-29)
 
 
