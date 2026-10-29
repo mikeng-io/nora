@@ -2,6 +2,8 @@
 
 This operator script is outside the declared-occasion enforcer's nora/ scope.
 It judges candidate message context, not the future session's tool trajectory.
+Run it on the host with a copy of config.toml whose [llm].base_url the host can
+reach: the deployment's names host.docker.internal, which only containers resolve.
 """
 from __future__ import annotations
 
@@ -23,8 +25,6 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from scripts.find_cognition_anchors import WINDOW_MESSAGES, WINDOW_MS, clone_url, room_aliases
 
 ROOT = Path(__file__).resolve().parents[1]
-_SCHEMA = {"type": "object", "properties": {"match": {"type": "boolean"}},
-           "required": ["match"], "additionalProperties": False}
 
 
 #: The scenarios a model judges (7 and 9 are code tests, never anchored).
@@ -80,10 +80,13 @@ async def judge(client: httpx.AsyncClient, llm: dict, scenario: str, moment: dic
                       "Must/must-not describe the target session behavior; judge whether the input "
                       "sets up that situation, not whether a session has already performed it. "
                       "Never infer missing notes, visits, refusals or other-room preferences. "
-                      "Return only the strict JSON boolean object, no explanation.\n" + scenario)},
+                      'Answer with exactly {"match": true} or {"match": false} and nothing '
+                      "else.\n" + scenario)},
                   {"role": "user", "content": json.dumps(moment, ensure_ascii=False)}],
-              "response_format": {"type": "json_schema", "json_schema": {
-                  "name": "anchor_match", "strict": True, "schema": _SCHEMA}}},
+              # No response_format: the deployment's route answers 503 to any
+              # (json_schema or json_object), so the answer's form is named in
+              # the prompt and checked strictly below.
+              },
     )
     response.raise_for_status()
     choice = response.json()["choices"][0]
