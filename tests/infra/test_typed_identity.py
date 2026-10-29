@@ -458,7 +458,8 @@ async def test_history_cli_receipts_and_explicit_rerun_preserve_claims(
     )
     monkeypatch.setattr(cli, "_config", lambda _: SimpleNamespace())
     monkeypatch.setattr(cli, "_database_url", lambda _: pg_url)
-    monkeypatch.setattr(cli, "_policy", lambda _: SimpleNamespace(conversations=()))
+    monkeypatch.setattr(cli, "_policy", lambda _: SimpleNamespace(
+        conversations=(), rooms=lambda: ()))
     monkeypatch.setattr(cli, "_persons", lambda _: Persons(by_person={}, index={}))
     args = Namespace(key=ACCOUNT.key, restart=True, apply=False)
     assert await cli.cmd_profile_history(args) == 0

@@ -50,7 +50,7 @@ accounts, and a room whose live roster could not be read or holds one of them.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol, TypeVar
 
@@ -73,6 +73,7 @@ from ..domain.lineage import (
     RoomFacts,
     room_key,
 )
+from ..domain.live import LiveMapping, LiveSequence
 from ..domain.memo import MemoRevision
 from ..domain.notes import Note
 from ..domain.standing import Standing
@@ -254,35 +255,36 @@ def visible_sections(
 @dataclass(frozen=True)
 class LineagePolicy:
     """The per-process half of an `RenderRoom`: every room of the policy and the
-    location-sharing circles, fixed at startup (`policy.toml` and
-    `identity.toml` are read once). `render_room` adds room B, per turn."""
+    location-sharing circles, read through the current identity/policy holders.
+    `render_room` adds room B, per turn."""
 
-    rooms: tuple[RoomFacts, ...] = ()
-    circles: tuple[frozenset[str], ...] = ()
+    rooms: Sequence[RoomFacts] = ()
+    circles: Sequence[frozenset[str]] = ()
     mode: LineageMode = "off"
     content_checks: bool = True
-    _by_id: dict[tuple[str, str], RoomFacts] = field(
+    _by_id: Mapping[tuple[str, str], RoomFacts] = field(
         default_factory=dict, repr=False, compare=False,
     )
 
     @classmethod
     def from_policy(
-        cls, policy: Policy, *, circles: tuple[Circle, ...] = (),
+        cls, policy: Policy, *, circles: Sequence[Circle] = (),
         mode: LineageMode = "off",
         content_checks: bool = True,
     ) -> LineagePolicy:
-        rooms = tuple(
+        rooms = LiveSequence(lambda: tuple(
             RoomFacts(
                 platform=c.platform, ids=c.ids, unit=c.unit,
                 persons=c.persons, location=c.location, label=c.label,
                 primary_id=c.primary_id,
             )
-            for c in policy.conversations
-        )
+            for c in policy.rooms()
+        ))
         return cls(
-            rooms=rooms, circles=tuple(c.person_ids for c in circles), mode=mode,
+            rooms=rooms, circles=LiveSequence(lambda: tuple(c.person_ids for c in circles)),
+            mode=mode,
             content_checks=content_checks,
-            _by_id={(r.platform, cid): r for r in rooms for cid in r.ids},
+            _by_id=LiveMapping(lambda: {(r.platform, cid): r for r in rooms for cid in r.ids}),
         )
 
     def render_room(
@@ -290,8 +292,8 @@ class LineagePolicy:
     ) -> RenderRoom:
         return RenderRoom(
             room=self._by_id.get((platform, conversation_id)),
-            rooms=self.rooms,
-            circles=self.circles,
+            rooms=tuple(self.rooms),
+            circles=tuple(self.circles),
             live=live,
             mode=self.mode,
             content_checks=self.content_checks,

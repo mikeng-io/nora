@@ -18,6 +18,8 @@ second owner of truth ([conversational-recall/20](../conversational-recall/20-or
 
 ## 1. Nodes, edges and the two kinds of content
 
+> 2026-10-28 (ratified, [27](27-the-memory-is-a-graph.md)): the graph no longer only projects other stores. People, places, events and works become entities of their own, and meaning relations (attended, plans, likes, at …) join the structural edges, each backed by evidence rows. See [27](27-the-memory-is-a-graph.md#3-three-generic-stores) and [27](27-the-memory-is-a-graph.md#6-every-store-is-a-node).
+
 **A node** is one item in any store, addressed as `(kind, id)`: a message, a
 media attachment, a note, a memo, an event, a lesson, a Persona
 line ([35](35-persona.md)), a Standing section, a rollup episode (an outing,
@@ -61,6 +63,8 @@ deleted"; nothing is purged and nothing is re-derived ([35](35-persona.md)
 projection is written is §7.
 
 ## 2. The relation vocabulary is closed
+
+> 2026-10-28 (ratified, [27](27-the-memory-is-a-graph.md)): the vocabulary stays closed, now as values in code rather than schema. The refusal of model-written triples is answered, not dropped: a model may propose a relation only with relation_evidence rows citing what it read, so no edge exists without its evidence. See [27](27-the-memory-is-a-graph.md#2-what-this-supersedes-and-why-the-old-reasons-are-answered).
 
 A new relation is a schema change, not something a model invents. The starting
 set, each with its writer:
@@ -188,6 +192,8 @@ reaches them by key, as `rollup_read` does. Fetched file content stays out by
 design (external-files/00).
 
 ## 5. How a turn gets its context
+
+> 2026-10-28 (ratified, [27](27-the-memory-is-a-graph.md)): push, pre-fetch and pull stay, with code routing the default (context-plan/15's evidence holds). A query now returns a subgraph presented as a preview, with `memory_read` for depth. See [27](27-the-memory-is-a-graph.md#12-querying-the-answer-is-a-subgraph) to [27](27-the-memory-is-a-graph.md#14-presentation-a-preview-with-depth-behind-tools).
 
 Operator, 2026-10-14: tag and fire turns keep the same injection, and a
 decision model could choose between a context block and a graph query. The

@@ -3921,8 +3921,8 @@ IDX_DOCTRINE_REVISION_CORPUS_LOADED = sa.Index(
 )
 
 #: One row per config file per process start: `config.toml`, `policy.toml`,
-#: `identity.toml`. All three live only on the deploy host and are read once
-#: at startup, so the content each process ran on is recorded here, keyed to
+#: `identity.toml`. All three live only on the deploy host. This records their
+#: startup content; identity/policy may subsequently hot-reload. Keyed to
 #: `revision_blob` by content hash.
 CONFIG_REVISION = sa.Table(
     "config_revision",
@@ -5213,3 +5213,209 @@ LEDGER_COMMITMENT_REVISION = _ledger_table(
     "standing_commitment_revision", "commitment", history=True,
 )
 LEDGER_THREAD_REVISION = _ledger_table("standing_thread_revision", "thread", history=True)
+
+# Generic memory graph stores (design/unified-memory/27). Vocabularies live in code.
+ENTITY = sa.Table(
+    "entity",
+    METADATA,
+    sa.Column("id", sa.Text, primary_key=True),
+    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("name", sa.Text, nullable=False),
+    sa.Column("aliases", pg.ARRAY(sa.Text), nullable=False, server_default="{}"),
+    # ponytail: JSONB attributes; promote one to a column only when a query plan needs it
+    sa.Column("attributes", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+    sa.Column("state", sa.Text, nullable=False, server_default="live"),
+    sa.Column(
+        "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    ),
+    sa.Column("merged_into", sa.Text, sa.ForeignKey("entity.id")),
+)
+# pg_trgm is installed by 0026; array aliases need a separate search
+# representation for trigram indexing, deferred to the SQL candidate query.
+sa.Index("idx_entity_name_trgm", ENTITY.c.name,
+         postgresql_using="gin", postgresql_ops={"name": "gin_trgm_ops"})
+RELATION = sa.Table(
+    "relation",
+    METADATA,
+    sa.Column("id", sa.Text, primary_key=True),
+    sa.Column("src_kind", sa.Text, nullable=False),
+    sa.Column("src_id", sa.Text, nullable=False),
+    sa.Column("rel", sa.Text, nullable=False),
+    sa.Column("dst_kind", sa.Text, nullable=False),
+    sa.Column("dst_id", sa.Text, nullable=False),
+    sa.Column("layer", sa.Text, nullable=False),
+    sa.Column("valid_from", sa.DateTime(timezone=True)),
+    sa.Column("valid_to", sa.DateTime(timezone=True)),
+    sa.Column("asserted_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("status", sa.Text, nullable=False, server_default="current"),
+    sa.Column("written_by", sa.Text, nullable=False),
+    sa.Column("superseded_by", sa.Text, sa.ForeignKey("relation.id")),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("persons", pg.ARRAY(sa.Text), nullable=False, server_default="{}"),
+    sa.Column(
+        "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    ),
+    sa.CheckConstraint("layer IN ('record', 'rollup', 'notebook')", name="relation_layer_check"),
+    sa.CheckConstraint(
+        "status IN ('current', 'superseded', 'disputed', 'retired')", name="relation_status_check"
+    ),
+)
+sa.Index(
+    "idx_relation_src_walk",
+    RELATION.c.src_kind,
+    RELATION.c.src_id,
+    RELATION.c.rel,
+    postgresql_include=["unit"],
+)
+sa.Index(
+    "idx_relation_dst_walk",
+    RELATION.c.dst_kind,
+    RELATION.c.dst_id,
+    RELATION.c.rel,
+    postgresql_include=["unit"],
+)
+RELATION_EVIDENCE = sa.Table(
+    "relation_evidence",
+    METADATA,
+    sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
+    sa.Column("relation_id", sa.Text, sa.ForeignKey("relation.id")),
+    sa.Column("entity_id", sa.Text, sa.ForeignKey("entity.id")),
+    sa.Column("attribute", sa.Text),
+    sa.Column("source_kind", sa.Text, nullable=False),
+    sa.Column("source_id", sa.Text, nullable=False),
+    sa.Column("role", sa.Text, nullable=False),
+    sa.Column("span", sa.Text),
+    sa.CheckConstraint(
+        "(relation_id IS NOT NULL AND entity_id IS NULL AND attribute IS NULL) OR "
+        "(relation_id IS NULL AND entity_id IS NOT NULL AND attribute IS NOT NULL)",
+        name="relation_evidence_target_check",
+    ),
+    sa.CheckConstraint("role IN ('supports', 'contradicts')", name="relation_evidence_role_check"),
+)
+sa.Index("idx_relation_evidence_relation", RELATION_EVIDENCE.c.relation_id)
+sa.Index(
+    "idx_relation_evidence_entity", RELATION_EVIDENCE.c.entity_id, RELATION_EVIDENCE.c.attribute
+)
+MEMORY_WORK_ITEM = sa.Table(
+    "memory_work_item",
+    METADATA,
+    sa.Column("id", sa.Text, primary_key=True),
+    sa.Column("source_kind", sa.Text, nullable=False),
+    sa.Column("source_id", sa.Text, nullable=False),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("input_hash", sa.Text, nullable=False),
+    sa.Column("state", sa.Text, nullable=False, server_default="pending"),
+    sa.Column("attempts", sa.Integer, nullable=False, server_default="0"),
+    sa.Column("last_error", sa.Text),
+    sa.Column("historical", sa.Boolean, nullable=False, server_default=sa.false()),
+    sa.Column("as_of", sa.DateTime(timezone=True), nullable=False),
+    sa.Column(
+        "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    ),
+    sa.Column(
+        "updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    ),
+    sa.Column("due_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+    sa.Column("settled_at", sa.DateTime(timezone=True)),
+    sa.UniqueConstraint(
+        "source_kind", "source_id", "unit", "input_hash", name="memory_work_item_input_key"
+    ),
+    sa.CheckConstraint(
+        "state IN ('pending', 'running', 'settled', 'failed')", name="memory_work_item_state_check"
+    ),
+    sa.CheckConstraint("attempts BETWEEN 0 AND 5", name="memory_work_item_attempts_check"),
+)
+sa.Index(
+    "idx_memory_work_item_claim",
+    MEMORY_WORK_ITEM.c.historical,
+    MEMORY_WORK_ITEM.c.state,
+    MEMORY_WORK_ITEM.c.due_at,
+    MEMORY_WORK_ITEM.c.as_of,
+)
+
+MEMORY_GRAPH_REFUSAL = sa.Table(
+    "graph_refusal", METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("part_id", sa.Text, nullable=False),
+    sa.Column("reason", sa.Text, nullable=False),
+    sa.Column("created_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now()),
+)
+
+MEMORY_GRAPH_ARRIVAL = sa.Table(
+    "graph_arrival", METADATA,
+    sa.Column("unit", sa.Text, primary_key=True),
+    sa.Column("message_id", sa.BigInteger, primary_key=True),
+    sa.Column("revision", sa.Text, primary_key=True),
+    sa.Column("room", sa.Text, nullable=False),
+    sa.Column("queued_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now()),
+    sa.Column("batched", sa.Boolean, nullable=False, server_default=sa.false()),
+)
+sa.Index("idx_graph_arrival_pending", MEMORY_GRAPH_ARRIVAL.c.unit,
+         MEMORY_GRAPH_ARRIVAL.c.room, MEMORY_GRAPH_ARRIVAL.c.queued_at,
+         postgresql_where=MEMORY_GRAPH_ARRIVAL.c.batched.is_(False))
+
+# Cognition step one Record pages and step two SHADOW would-writes.
+COMPREHEND_WEB_PAGE = sa.Table(
+    "comprehend_web_page", METADATA,
+    sa.Column("id", sa.Text, primary_key=True),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("session_id", sa.BigInteger, nullable=False),
+    sa.Column("url", sa.Text, nullable=False),
+    sa.Column("fetched_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("recorded_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.clock_timestamp()),
+    sa.Column("content_hash", sa.Text, nullable=False),
+    sa.Column("text", sa.Text, nullable=False),
+    sa.Column("tool_call", pg.JSONB, nullable=False),
+)
+COMPREHEND_RESULT = sa.Table(
+    "comprehend_result", METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(), primary_key=True),
+    sa.Column("work_id", sa.Text, nullable=False),
+    sa.Column("input_hash", sa.Text, nullable=False),
+    sa.Column("session_id", sa.BigInteger, nullable=False),
+    sa.Column("part", sa.Text, nullable=False),
+    sa.Column("payload", pg.JSONB, nullable=False),
+    sa.Column("recorded_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now()),
+)
+sa.Index("idx_comprehend_result_work", COMPREHEND_RESULT.c.work_id,
+         COMPREHEND_RESULT.c.input_hash)
+
+NOTEBOOK_ENTRY = sa.Table(
+    "notebook_entry",
+    METADATA,
+    sa.Column("id", sa.Text, primary_key=True),
+    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column(
+        "recorded_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    ),
+    sa.CheckConstraint("kind = 'topic'", name="ck_entry_kind"),
+    sa.CheckConstraint("length(btrim(unit)) > 0", name="ck_entry_unit"),
+)
+sa.Index("idx_notebook_entry_unit", NOTEBOOK_ENTRY.c.unit)
+NOTEBOOK_ENTRY_REVISION = sa.Table(
+    "notebook_entry_revision",
+    METADATA,
+    sa.Column("id", sa.Text, primary_key=True),
+    sa.Column("entry_id", sa.Text, sa.ForeignKey("notebook_entry.id"), nullable=False),
+    sa.Column("base_revision_id", sa.Text, sa.ForeignKey("notebook_entry_revision.id")),
+    sa.Column("seq", sa.Integer, nullable=False),
+    sa.Column("content", pg.JSONB, nullable=False),
+    sa.Column(
+        "recorded_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    ),
+    sa.CheckConstraint("seq >= 1", name="ck_entry_revision_seq"),
+    sa.CheckConstraint("(seq = 1) = (base_revision_id IS NULL)", name="ck_entry_revision_base"),
+)
+sa.Index(
+    "uq_entry_revision_seq",
+    NOTEBOOK_ENTRY_REVISION.c.entry_id,
+    NOTEBOOK_ENTRY_REVISION.c.seq,
+    unique=True,
+)

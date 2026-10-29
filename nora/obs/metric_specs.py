@@ -14,6 +14,15 @@ from __future__ import annotations
 from typing import NamedTuple
 
 from nora.domain.assess import DQ_CHECKS
+from nora.domain.comprehend import (
+    EGRESS_REASONS,
+    ITEM_OUTCOMES,
+    LANES,
+    LOOKUPS,
+    PARTS,
+    REFUSAL_REASONS,
+)
+from nora.domain.config_reload import RELOAD_OUTCOMES
 from nora.domain.cues import CUES
 from nora.domain.culture import CHARACTER_KINDS, CHARACTER_OUTCOMES, CULTURE_OUTCOMES
 from nora.domain.doctrine_check import CHECK_OUTCOMES
@@ -21,6 +30,7 @@ from nora.domain.extraction import CLAIM_DROP_REASONS, EXTRACTION_FAILURE_STAGES
 from nora.domain.lessons import LESSONS_OUTCOMES
 from nora.domain.media import MEDIA_FETCH_CALLERS
 from nora.domain.media_join import JOIN_PATHS
+from nora.domain.memory_admission import GRAPH_BATCH_OUTCOMES, GRAPH_PROJECTION_OUTCOMES
 from nora.domain.memory_index import (
     EMBED_OUTCOMES,
     EMBEDDED_KINDS,
@@ -107,6 +117,28 @@ class _HistogramSpec(NamedTuple):
 # nora_silent_failures_total and nora_errors_total, so a stuck or failing
 # platform is visible per series.
 _COUNTERS: tuple[_CounterSpec, ...] = (
+    _CounterSpec(
+        "nora_memory_graph_projection_total",
+        "Graph projection skips: " + "/".join(GRAPH_PROJECTION_OUTCOMES),
+        ("outcome",),
+    ),
+    _CounterSpec(
+        "nora_memory_graph_batches_total",
+        "Graph batch outcomes: " + "/".join(GRAPH_BATCH_OUTCOMES),
+        ("outcome",),
+    ),
+    _CounterSpec("nora_comprehend_items_total",
+                 f"Graph work attempts: outcomes {ITEM_OUTCOMES}, lanes {LANES}.",
+                 ("outcome", "lane")),
+    _CounterSpec("nora_comprehend_refused_parts_total",
+                 f"Refused parts {PARTS}, reasons {REFUSAL_REASONS}.",
+                 ("part", "reason")),
+    _CounterSpec("nora_comprehend_egress_refusals_total",
+                 f"Web calls refused before egress: {EGRESS_REASONS}.",
+                 ("reason",)),
+    _CounterSpec("nora_comprehend_web_lookups_total", f"Outbound web lookups attempted: {LOOKUPS}.",
+                 ("tool",)),
+
     # The OAuth keepalive (DEC-308, `nora.app.oauth_keepalive`). The alert reads
     # the timestamp gauges below, never these: a rare counter reads empty after a
     # restart.
@@ -316,8 +348,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # its symptom set is empty: the message is still audited, the gate still runs,
     # the prefill still shows the sender's platform display name, and nothing
     # reaches Honcho. Counting it separates "nobody talked to her" from "her
-    # identity file is wrong, or was edited without a restart" (mapping is
-    # startup-only, Q4).
+    # identity file is wrong, or its reload was refused".
     _CounterSpec(
         "nora_unmapped_senders_total",
         "Ambient messages whose sender resolved to no person.",
@@ -499,9 +530,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # uninformative, and this counter is the ONLY place the loss is visible. It is
     # `nora_unmapped_senders_total`'s other half: that one says "somebody talked to
     # her and she does not know who", this one "somebody was TALKED ABOUT and she
-    # does not know who". Both have the same fix and the same trap: `identity.toml`
-    # is loaded once at startup, so editing it without a restart moves neither
-    # number.
+    # does not know who". Both read the live identity holder; a refused edit retains the last good
+    # mapping and is counted by nora_config_reloads_total.
     _CounterSpec(
         "nora_unmapped_mentions_total",
         "@-mentions rendered as an anonymous handle because the mentioned "
@@ -971,7 +1001,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # The four failures need four different fixes and look identical in the group
     # (an ordinary untagged message): `unresolved` = the name is not in
     # identity.toml, or its only id form is one signal-cli's RECIPIENT grammar would
-    # not take (edit identity.toml AND RESTART; it is read once at startup, as for
+    # not take (edit identity.toml and verify its reload applied, as for
     # `nora_unmapped_senders_total`); `not_in_room` = she named somebody who is not a
     # member of this conversation, usually correct behaviour and not a fault;
     # `roster_unavailable` = signal-cli could not be asked who is here, so nothing
@@ -2181,6 +2211,11 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "nora_message_reading_usage_missing_total",
         "Retired message-reading counter; frozen at zero. Use nora_extraction_*.",
     ),
+    _CounterSpec(
+        "nora_config_reloads_total",
+        "Identity/policy reloads by outcome: " + ", ".join(RELOAD_OUTCOMES),
+        ("file", "outcome"),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
@@ -2392,6 +2427,11 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
 )
 
 _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
+    _HistogramSpec("nora_memory_graph_walk_seconds", "Graph walk duration including failed reads."),
+    _HistogramSpec("nora_memory_graph_walk_nodes", "Nodes returned by a graph walk.",
+                   (0, 1, 5, 10, 20, 50, 100, 200)),
+    _HistogramSpec("nora_memory_graph_walk_depth", "Depth reached by a graph walk.",
+                   (0, 1, 2, 3, 4)),
     _HistogramSpec(
         "nora_tag_latency_seconds", "End-to-end tag latency, including the model call.",
     ),

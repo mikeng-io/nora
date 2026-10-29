@@ -164,6 +164,18 @@ $$;
 );
 );
 );
+);
+);
+);
+);
+);
+);
+);
+);
+);
+);
+);
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -177,6 +189,8 @@ ADD CONSTRAINT cognition_session_close_pkey PRIMARY KEY (id);
 ADD CONSTRAINT cognition_session_pkey PRIMARY KEY (id);
 ADD CONSTRAINT cognition_wake_outcome_pkey PRIMARY KEY (id);
 ADD CONSTRAINT cognition_wake_pkey PRIMARY KEY (id);
+ADD CONSTRAINT comprehend_result_pkey PRIMARY KEY (id);
+ADD CONSTRAINT comprehend_web_page_pkey PRIMARY KEY (id);
 ADD CONSTRAINT compute_jobs_pkey PRIMARY KEY (id);
 ADD CONSTRAINT computer_events_pkey PRIMARY KEY (id);
 ADD CONSTRAINT computer_exports_pkey PRIMARY KEY (id);
@@ -192,6 +206,8 @@ ADD CONSTRAINT doctrine_revision_pkey PRIMARY KEY (id);
 ADD CONSTRAINT document_state_pkey PRIMARY KEY (id);
 ADD CONSTRAINT documents_pkey PRIMARY KEY (id);
 ADD CONSTRAINT dream_schedule_state_pkey PRIMARY KEY (adaptor_name, scope_id);
+ADD CONSTRAINT entity_merged_into_fkey FOREIGN KEY (merged_into) REFERENCES public.entity(id);
+ADD CONSTRAINT entity_pkey PRIMARY KEY (id);
 ADD CONSTRAINT event_revision_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.events(id);
 ADD CONSTRAINT event_revision_parent_revision_id_fkey FOREIGN KEY (parent_revision_id) REFERENCES public.event_revision(id);
 ADD CONSTRAINT event_revision_pkey PRIMARY KEY (id);
@@ -222,6 +238,8 @@ ADD CONSTRAINT fact_premise_premise_fact_id_fkey FOREIGN KEY (premise_fact_id) R
 ADD CONSTRAINT fact_superseded_by_fkey FOREIGN KEY (superseded_by) REFERENCES public.fact(id);
 ADD CONSTRAINT fk_cognition_session_close_session_id FOREIGN KEY (session_id) REFERENCES public.cognition_session(id);
 ADD CONSTRAINT geocode_cache_pkey PRIMARY KEY (lat_rounded, lng_rounded);
+ADD CONSTRAINT graph_arrival_pkey PRIMARY KEY (unit, message_id, revision);
+ADD CONSTRAINT graph_refusal_pkey PRIMARY KEY (id);
 ADD CONSTRAINT instagram_summons_comment_id_key UNIQUE (comment_id);
 ADD CONSTRAINT instagram_summons_message_id_key UNIQUE (message_id);
 ADD CONSTRAINT instagram_summons_pkey PRIMARY KEY (id);
@@ -236,6 +254,8 @@ ADD CONSTRAINT memory_edge_pkey PRIMARY KEY (src_kind, src_id, rel, dst_kind, ds
 ADD CONSTRAINT memory_index_state_pkey PRIMARY KEY (id);
 ADD CONSTRAINT memory_node_pkey PRIMARY KEY (id);
 ADD CONSTRAINT memory_projection_queue_pkey PRIMARY KEY (kind, source_id);
+ADD CONSTRAINT memory_work_item_input_key UNIQUE (source_kind, source_id, unit, input_hash);
+ADD CONSTRAINT memory_work_item_pkey PRIMARY KEY (id);
 ADD CONSTRAINT message_delete_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.messages(id) ON DELETE CASCADE;
 ADD CONSTRAINT message_delete_pkey PRIMARY KEY (id);
 ADD CONSTRAINT message_edit_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.messages(id) ON DELETE CASCADE;
@@ -257,6 +277,10 @@ ADD CONSTRAINT note_pkey PRIMARY KEY (id);
 ADD CONSTRAINT note_replaced_by_fkey FOREIGN KEY (replaced_by) REFERENCES public.note(id);
 ADD CONSTRAINT note_revision_note_id_fkey FOREIGN KEY (note_id) REFERENCES public.note(id);
 ADD CONSTRAINT note_revision_pkey PRIMARY KEY (id);
+ADD CONSTRAINT notebook_entry_pkey PRIMARY KEY (id);
+ADD CONSTRAINT notebook_entry_revision_base_revision_id_fkey FOREIGN KEY (base_revision_id) REFERENCES public.notebook_entry_revision(id);
+ADD CONSTRAINT notebook_entry_revision_entry_id_fkey FOREIGN KEY (entry_id) REFERENCES public.notebook_entry(id);
+ADD CONSTRAINT notebook_entry_revision_pkey PRIMARY KEY (id);
 ADD CONSTRAINT otp_attempt_pkey PRIMARY KEY (id);
 ADD CONSTRAINT otp_challenge_pkey PRIMARY KEY (challenge_id);
 ADD CONSTRAINT participation_window_state_pkey PRIMARY KEY (platform, conversation_id);
@@ -274,6 +298,11 @@ ADD CONSTRAINT profile_dispute_pkey PRIMARY KEY (id);
 ADD CONSTRAINT profile_line_pkey PRIMARY KEY (id);
 ADD CONSTRAINT profile_pkey PRIMARY KEY (key);
 ADD CONSTRAINT reasoning_strip_log_pkey PRIMARY KEY (id);
+ADD CONSTRAINT relation_evidence_entity_id_fkey FOREIGN KEY (entity_id) REFERENCES public.entity(id);
+ADD CONSTRAINT relation_evidence_pkey PRIMARY KEY (id);
+ADD CONSTRAINT relation_evidence_relation_id_fkey FOREIGN KEY (relation_id) REFERENCES public.relation(id);
+ADD CONSTRAINT relation_pkey PRIMARY KEY (id);
+ADD CONSTRAINT relation_superseded_by_fkey FOREIGN KEY (superseded_by) REFERENCES public.relation(id);
 ADD CONSTRAINT reminders_pkey PRIMARY KEY (id);
 ADD CONSTRAINT rendered_claim_pkey PRIMARY KEY (conversation_id, kind, row_key);
 ADD CONSTRAINT revision_blob_pkey PRIMARY KEY (sha256);
@@ -321,6 +350,7 @@ ADD CONSTRAINT uq_occupancy_bin UNIQUE (subject_id, place_id, hour_of_week);
 ADD CONSTRAINT uq_tag_trace_turn_id UNIQUE (turn_id);
 ADD CONSTRAINT version_announcements_pkey PRIMARY KEY (version, platform, conversation_id);
 ADD CONSTRAINT video_readings_pkey PRIMARY KEY (sha256, provider, model, chunk_seconds, chunk_max, reading_digest);
+ALTER SEQUENCE public.relation_evidence_id_seq OWNED BY public.relation_evidence.id;
 ALTER TABLE ONLY public.alembic_version
 ALTER TABLE ONLY public.analytics_watermark
 ALTER TABLE ONLY public.artifacts
@@ -335,6 +365,8 @@ ALTER TABLE ONLY public.cognition_session_close
 ALTER TABLE ONLY public.cognition_session_close
 ALTER TABLE ONLY public.cognition_wake
 ALTER TABLE ONLY public.cognition_wake_outcome
+ALTER TABLE ONLY public.comprehend_result
+ALTER TABLE ONLY public.comprehend_web_page
 ALTER TABLE ONLY public.compute_jobs
 ALTER TABLE ONLY public.computer_events
 ALTER TABLE ONLY public.computer_events
@@ -352,6 +384,8 @@ ALTER TABLE ONLY public.document_revision
 ALTER TABLE ONLY public.document_state
 ALTER TABLE ONLY public.documents
 ALTER TABLE ONLY public.dream_schedule_state
+ALTER TABLE ONLY public.entity
+ALTER TABLE ONLY public.entity
 ALTER TABLE ONLY public.event_revision
 ALTER TABLE ONLY public.event_revision
 ALTER TABLE ONLY public.event_revision
@@ -385,6 +419,8 @@ ALTER TABLE ONLY public.fact_premise
 ALTER TABLE ONLY public.fact_premise
 ALTER TABLE ONLY public.fact_premise
 ALTER TABLE ONLY public.geocode_cache
+ALTER TABLE ONLY public.graph_arrival
+ALTER TABLE ONLY public.graph_refusal
 ALTER TABLE ONLY public.instagram_summons
 ALTER TABLE ONLY public.instagram_summons
 ALTER TABLE ONLY public.instagram_summons
@@ -400,6 +436,8 @@ ALTER TABLE ONLY public.memory_index_state
 ALTER TABLE ONLY public.memory_node
 ALTER TABLE ONLY public.memory_node
 ALTER TABLE ONLY public.memory_projection_queue
+ALTER TABLE ONLY public.memory_work_item
+ALTER TABLE ONLY public.memory_work_item
 ALTER TABLE ONLY public.message_delete
 ALTER TABLE ONLY public.message_delete
 ALTER TABLE ONLY public.message_edit
@@ -422,6 +460,10 @@ ALTER TABLE ONLY public.note_merge_decision
 ALTER TABLE ONLY public.note_merge_decision
 ALTER TABLE ONLY public.note_revision
 ALTER TABLE ONLY public.note_revision
+ALTER TABLE ONLY public.notebook_entry
+ALTER TABLE ONLY public.notebook_entry_revision
+ALTER TABLE ONLY public.notebook_entry_revision
+ALTER TABLE ONLY public.notebook_entry_revision
 ALTER TABLE ONLY public.otp_attempt
 ALTER TABLE ONLY public.otp_challenge
 ALTER TABLE ONLY public.participation_window_state
@@ -439,6 +481,12 @@ ALTER TABLE ONLY public.profile
 ALTER TABLE ONLY public.profile_dispute
 ALTER TABLE ONLY public.profile_line
 ALTER TABLE ONLY public.reasoning_strip_log
+ALTER TABLE ONLY public.relation
+ALTER TABLE ONLY public.relation
+ALTER TABLE ONLY public.relation_evidence
+ALTER TABLE ONLY public.relation_evidence
+ALTER TABLE ONLY public.relation_evidence
+ALTER TABLE ONLY public.relation_evidence ALTER COLUMN id SET DEFAULT nextval('public.relation_evidence_id_seq'::regclass);
 ALTER TABLE ONLY public.reminders
 ALTER TABLE ONLY public.rendered_claim
 ALTER TABLE ONLY public.revision_blob
@@ -485,6 +533,7 @@ ALTER TABLE public.cognition_session ALTER COLUMN id ADD GENERATED BY DEFAULT AS
 ALTER TABLE public.cognition_session_close ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.cognition_wake ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.cognition_wake_outcome ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+ALTER TABLE public.comprehend_result ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.config_revision ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.deploy_revision ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.doctrine_revision ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
@@ -494,6 +543,7 @@ ALTER TABLE public.extraction ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTI
 ALTER TABLE public.extraction_attempt ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.extraction_claim ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.extraction_queue ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+ALTER TABLE public.graph_refusal ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.language_observation ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.memory_node ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.message_delete ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
@@ -573,6 +623,9 @@ CACHE 1
 CACHE 1
 CACHE 1
 CACHE 1
+CACHE 1
+CACHE 1
+CACHE 1;
 CASE
 COMMENT ON EXTENSION pg_trgm IS 'text similarity measurement and index searching based on trigrams';
 COMMENT ON EXTENSION vector IS 'vector data type and ivfflat and hnsw access methods';
@@ -611,6 +664,10 @@ CONSTRAINT ck_document_revision_sha256 CHECK ((sha256 ~ '^[0-9a-f]{64}$'::text))
 CONSTRAINT ck_document_revision_spec_size CHECK ((octet_length((spec)::text) <= 1048576))
 CONSTRAINT ck_document_state_set_by CHECK ((length(set_by) > 0)),
 CONSTRAINT ck_document_state_state CHECK ((state = ANY (ARRAY['active'::text, 'archived'::text, 'deleted'::text])))
+CONSTRAINT ck_entry_kind CHECK ((kind = 'topic'::text)),
+CONSTRAINT ck_entry_revision_base CHECK (((seq = 1) = (base_revision_id IS NULL))),
+CONSTRAINT ck_entry_revision_seq CHECK ((seq >= 1))
+CONSTRAINT ck_entry_unit CHECK ((length(btrim(unit)) > 0))
 CONSTRAINT ck_event_revision_confidence_is_a_level CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
 CONSTRAINT ck_event_revision_field_meta_shape CHECK ((jsonb_typeof(field_meta) = 'object'::text)),
 CONSTRAINT ck_event_revision_lineage_shape CHECK ((jsonb_typeof(lineage) = 'object'::text)),
@@ -758,6 +815,8 @@ CONSTRAINT fact_term_fits_the_ceiling_check CHECK (((length(subject_id) <= 800) 
 CONSTRAINT fact_warrant_kind_check CHECK ((warrant_kind = ANY (ARRAY['source'::text, 'premises'::text, 'observation'::text, 'stated'::text])))
 CONSTRAINT language_observation_instruction_sha256_check CHECK (((instruction_sha256 IS NULL) OR (instruction_sha256 ~ '^[0-9a-f]{64}$'::text))),
 CONSTRAINT language_observation_model_check CHECK (((model IS NULL) OR (length(btrim(model)) > 0)))
+CONSTRAINT memory_work_item_attempts_check CHECK (((attempts >= 0) AND (attempts <= 5))),
+CONSTRAINT memory_work_item_state_check CHECK ((state = ANY (ARRAY['pending'::text, 'running'::text, 'settled'::text, 'failed'::text])))
 CONSTRAINT messages_conversation_type_check CHECK ((conversation_type = ANY (ARRAY['group'::text, 'dm'::text])))
 CONSTRAINT note_candidate_body_fits_the_ceiling_check CHECK (((body IS NULL) OR (length(body) <= 32000))),
 CONSTRAINT note_candidate_body_has_content_check CHECK (((body IS NULL) OR (length(btrim(body)) > 0))),
@@ -788,6 +847,10 @@ CONSTRAINT note_revision_names_its_writer_check CHECK ((length(btrim(established
 CONSTRAINT note_revision_reasoning_is_a_mode_check CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['computed'::text, 'told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text, 'said'::text]))))
 CONSTRAINT note_strikes_are_not_negative_check CHECK ((strikes >= 0)),
 CONSTRAINT note_title_fits_the_index_check CHECK (((length(btrim(title)) > 0) AND (length(title) <= 60)))
+CONSTRAINT relation_evidence_role_check CHECK ((role = ANY (ARRAY['supports'::text, 'contradicts'::text]))),
+CONSTRAINT relation_evidence_target_check CHECK ((((relation_id IS NOT NULL) AND (entity_id IS NULL) AND (attribute IS NULL)) OR ((relation_id IS NULL) AND (entity_id IS NOT NULL) AND (attribute IS NOT NULL))))
+CONSTRAINT relation_layer_check CHECK ((layer = ANY (ARRAY['record'::text, 'rollup'::text, 'notebook'::text]))),
+CONSTRAINT relation_status_check CHECK ((status = ANY (ARRAY['current'::text, 'superseded'::text, 'disputed'::text, 'retired'::text])))
 CONSTRAINT rendered_claim_kind_check CHECK ((kind = ANY (ARRAY['fact'::text, 'lexeme'::text]))),
 CONSTRAINT rendered_claim_surface_is_named_check CHECK ((length(btrim(surface)) > 0))
 CONSTRAINT revision_blob_sha256_check CHECK ((sha256 ~ '^[0-9a-f]{64}$'::text))
@@ -889,6 +952,7 @@ CREATE INDEX idx_cognition_self_wake_unit_ref ON public.cognition_self_wake USIN
 CREATE INDEX idx_cognition_session_close_session ON public.cognition_session_close USING btree (session_id);
 CREATE INDEX idx_cognition_session_unit_id ON public.cognition_session USING btree (unit, id);
 CREATE INDEX idx_cognition_wake_unit_mode_id ON public.cognition_wake USING btree (unit, mode, id);
+CREATE INDEX idx_comprehend_result_work ON public.comprehend_result USING btree (work_id, input_hash);
 CREATE INDEX idx_compute_jobs_state ON public.compute_jobs USING btree (state);
 CREATE INDEX idx_computer_events_conv_ts ON public.computer_events USING btree (conversation_id, created_at);
 CREATE INDEX idx_computer_events_session_ts ON public.computer_events USING btree (session_id, created_at);
@@ -903,6 +967,7 @@ CREATE INDEX idx_doctrine_revision_corpus_loaded ON public.doctrine_revision USI
 CREATE INDEX idx_document_state_latest ON public.document_state USING btree (document_id, id);
 CREATE INDEX idx_documents_creator ON public.documents USING btree (created_by);
 CREATE INDEX idx_documents_room ON public.documents USING btree (platform, conversation_id);
+CREATE INDEX idx_entity_name_trgm ON public.entity USING gin (name public.gin_trgm_ops);
 CREATE INDEX idx_event_revision_event ON public.event_revision USING btree (event_id, recorded_at);
 CREATE INDEX idx_event_rsvps_event_person ON public.event_rsvps USING btree (event_id, person_id, recorded_at);
 CREATE INDEX idx_events_conversation ON public.events USING btree (conversation_id, status);
@@ -913,6 +978,7 @@ CREATE INDEX idx_extraction_queue_pending ON public.extraction_queue USING btree
 CREATE INDEX idx_fact_disputed ON public.fact USING btree (unit) WHERE (disputed_at IS NOT NULL);
 CREATE INDEX idx_fact_premise_premise_fact_id ON public.fact_premise USING btree (premise_fact_id);
 CREATE INDEX idx_fact_standing ON public.fact USING btree (unit, subject_id) WHERE (superseded_at IS NULL);
+CREATE INDEX idx_graph_arrival_pending ON public.graph_arrival USING btree (unit, room, queued_at) WHERE (batched IS FALSE);
 CREATE INDEX idx_instagram_summons_state ON public.instagram_summons USING btree (state, mode);
 CREATE INDEX idx_language_observation_scope ON public.language_observation USING btree (scope_id);
 CREATE INDEX idx_lesson_unit ON public.lesson USING btree (unit);
@@ -924,6 +990,7 @@ CREATE INDEX idx_memory_node_sha256 ON public.memory_node USING btree (sha256);
 CREATE INDEX idx_memory_node_text_trgm ON public.memory_node USING gin (text public.gin_trgm_ops);
 CREATE INDEX idx_memory_node_unembedded ON public.memory_node USING btree (embed_attempts, id DESC) WHERE ((embedding IS NULL) AND (state = 'live'::text) AND (kind = ANY (ARRAY['message'::text, 'media'::text, 'note'::text, 'memo'::text, 'event'::text, 'lesson'::text, 'character'::text, 'social'::text, 'social_media'::text, 'social_location'::text, 'profile_line'::text])));
 CREATE INDEX idx_memory_node_unit ON public.memory_node USING btree (unit);
+CREATE INDEX idx_memory_work_item_claim ON public.memory_work_item USING btree (historical, state, due_at, as_of);
 CREATE INDEX idx_message_delete_message ON public.message_delete USING btree (message_id);
 CREATE INDEX idx_message_edit_message_ts ON public.message_edit USING btree (message_id, ts);
 CREATE INDEX idx_message_reaction_message ON public.message_reaction USING btree (message_id);
@@ -937,6 +1004,7 @@ CREATE INDEX idx_note_merge_decision_unit_ts ON public.note_merge_decision USING
 CREATE INDEX idx_note_revision_body_trgm ON public.note_revision USING gin (body public.gin_trgm_ops);
 CREATE INDEX idx_note_revision_note_id ON public.note_revision USING btree (note_id);
 CREATE INDEX idx_note_standing ON public.note USING btree (unit) WHERE (retired_at IS NULL);
+CREATE INDEX idx_notebook_entry_unit ON public.notebook_entry USING btree (unit);
 CREATE INDEX idx_otp_challenge_person ON public.otp_challenge USING btree (person_id, purpose, issued_at);
 CREATE INDEX idx_presence_corridors_build_subject ON public.presence_corridors USING btree (build_id, subject_id);
 CREATE INDEX idx_presence_corridors_subject ON public.presence_corridors USING btree (subject_id);
@@ -950,6 +1018,10 @@ CREATE INDEX idx_presence_trips_subject_started ON public.presence_trips USING b
 CREATE INDEX idx_profile_dispute_key ON public.profile_dispute USING btree (profile_key, written_at);
 CREATE INDEX idx_profile_line_key ON public.profile_line USING btree (profile_key, written_at);
 CREATE INDEX idx_reasoning_strip_log_path_ts ON public.reasoning_strip_log USING btree (path, created_at);
+CREATE INDEX idx_relation_dst_walk ON public.relation USING btree (dst_kind, dst_id, rel) INCLUDE (unit);
+CREATE INDEX idx_relation_evidence_entity ON public.relation_evidence USING btree (entity_id, attribute);
+CREATE INDEX idx_relation_evidence_relation ON public.relation_evidence USING btree (relation_id);
+CREATE INDEX idx_relation_src_walk ON public.relation USING btree (src_kind, src_id, rel) INCLUDE (unit);
 CREATE INDEX idx_reminders_due ON public.reminders USING btree (state, due_at);
 CREATE INDEX idx_rendered_claim_window ON public.rendered_claim USING btree (conversation_id, last_rendered_at DESC);
 CREATE INDEX idx_rollup_colocation_key ON public.rollup_colocation USING btree (build_id, unit, valid_from_ms);
@@ -984,6 +1056,7 @@ CREATE INDEX idx_tag_trace_conversation_created ON public.tag_trace USING btree 
 CREATE INDEX idx_tag_trace_sent_messages ON public.tag_trace USING gin (sent_message_ids);
 CREATE INDEX idx_tool_call_log_conv_ts ON public.tool_call_log USING btree (conversation_id, created_at DESC);
 CREATE INDEX idx_turn_verdict_ungrounded ON public.turn_verdict USING btree (conversation_id, created_at) WHERE (grounded = false);
+CREATE SEQUENCE public.relation_evidence_id_seq
 CREATE TABLE public.alembic_version (
 CREATE TABLE public.analytics_watermark (
 CREATE TABLE public.artifacts (
@@ -995,6 +1068,8 @@ CREATE TABLE public.cognition_session (
 CREATE TABLE public.cognition_session_close (
 CREATE TABLE public.cognition_wake (
 CREATE TABLE public.cognition_wake_outcome (
+CREATE TABLE public.comprehend_result (
+CREATE TABLE public.comprehend_web_page (
 CREATE TABLE public.compute_jobs (
 CREATE TABLE public.computer_events (
 CREATE TABLE public.computer_exports (
@@ -1010,6 +1085,7 @@ CREATE TABLE public.document_revision (
 CREATE TABLE public.document_state (
 CREATE TABLE public.documents (
 CREATE TABLE public.dream_schedule_state (
+CREATE TABLE public.entity (
 CREATE TABLE public.event_revision (
 CREATE TABLE public.event_rsvps (
 CREATE TABLE public.events (
@@ -1024,6 +1100,8 @@ CREATE TABLE public.fact_candidate (
 CREATE TABLE public.fact_entity (
 CREATE TABLE public.fact_premise (
 CREATE TABLE public.geocode_cache (
+CREATE TABLE public.graph_arrival (
+CREATE TABLE public.graph_refusal (
 CREATE TABLE public.instagram_summons (
 CREATE TABLE public.language_observation (
 CREATE TABLE public.lesson (
@@ -1035,6 +1113,7 @@ CREATE TABLE public.memory_edge (
 CREATE TABLE public.memory_index_state (
 CREATE TABLE public.memory_node (
 CREATE TABLE public.memory_projection_queue (
+CREATE TABLE public.memory_work_item (
 CREATE TABLE public.message_delete (
 CREATE TABLE public.message_edit (
 CREATE TABLE public.message_reaction (
@@ -1046,6 +1125,8 @@ CREATE TABLE public.note_candidate (
 CREATE TABLE public.note_entity (
 CREATE TABLE public.note_merge_decision (
 CREATE TABLE public.note_revision (
+CREATE TABLE public.notebook_entry (
+CREATE TABLE public.notebook_entry_revision (
 CREATE TABLE public.otp_attempt (
 CREATE TABLE public.otp_challenge (
 CREATE TABLE public.participation_window_state (
@@ -1062,6 +1143,8 @@ CREATE TABLE public.profile (
 CREATE TABLE public.profile_dispute (
 CREATE TABLE public.profile_line (
 CREATE TABLE public.reasoning_strip_log (
+CREATE TABLE public.relation (
+CREATE TABLE public.relation_evidence (
 CREATE TABLE public.reminders (
 CREATE TABLE public.rendered_claim (
 CREATE TABLE public.revision_blob (
@@ -1113,14 +1196,17 @@ CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.compu
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.consolidation_watermark FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('consolidator_name', 'scope_id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.culture FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('key');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.dream_schedule_state FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('adaptor_name', 'scope_id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.entity FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.events FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.extraction FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.extraction_attempt FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.extraction_claim FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.extraction_queue FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.geocode_cache FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('lat_rounded', 'lng_rounded');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.graph_arrival FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('unit', 'message_id', 'revision');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.instagram_summons FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.media_objects FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('sha256');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.memory_work_item FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.message_delete FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.message_edit FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.message_reaction FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
@@ -1139,6 +1225,8 @@ CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.prese
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.presence_stays FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.presence_trips FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.profile FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('key');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.relation FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.relation_evidence FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.reminders FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.rollup_build FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.rollup_colocation FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
@@ -1161,14 +1249,17 @@ CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.computer_sess
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.consolidation_watermark FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.culture FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.dream_schedule_state FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.entity FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.events FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.extraction FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.extraction_attempt FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.extraction_claim FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.extraction_queue FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.geocode_cache FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.graph_arrival FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.instagram_summons FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.media_objects FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.memory_work_item FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.message_delete FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.message_edit FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.message_reaction FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
@@ -1187,6 +1278,8 @@ CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.presence_plac
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.presence_stays FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.presence_trips FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.profile FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.relation FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.relation_evidence FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.reminders FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.rollup_build FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.rollup_colocation FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
@@ -1206,6 +1299,7 @@ CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.video_reading
 CREATE UNIQUE INDEX note_candidate_create_anchor_key ON public.note_candidate USING btree (unit, anchor_date, anchor_entity_ids, lower(btrim(title))) WHERE (kind = 'create'::text);
 CREATE UNIQUE INDEX uq_cognition_wake_outcome_wake ON public.cognition_wake_outcome USING btree (wake_id);
 CREATE UNIQUE INDEX uq_computer_sessions_open_scope ON public.computer_sessions USING btree (scope) WHERE (status = 'open'::text);
+CREATE UNIQUE INDEX uq_entry_revision_seq ON public.notebook_entry_revision USING btree (entry_id, seq);
 CREATE UNIQUE INDEX uq_lesson_revision_seq ON public.lesson_revision USING btree (lesson_id, seq);
 CREATE UNIQUE INDEX uq_memo_revision_seq ON public.memo_revision USING btree (memo_id, seq);
 CREATE UNIQUE INDEX uq_otp_attempt_ok ON public.otp_attempt USING btree (challenge_id) WHERE ok;
@@ -1301,6 +1395,9 @@ INCREMENT BY 1
 INCREMENT BY 1
 INCREMENT BY 1
 INCREMENT BY 1
+INCREMENT BY 1
+INCREMENT BY 1
+INCREMENT BY 1
 INSERT INTO row_history (id, table_name, row_key, op, image, recorded_at)
 INSERT INTO row_history (id, table_name, row_key, op, image, recorded_at)
 LANGUAGE plpgsql
@@ -1351,6 +1448,12 @@ NO MAXVALUE
 NO MAXVALUE
 NO MAXVALUE
 NO MAXVALUE
+NO MAXVALUE
+NO MAXVALUE
+NO MAXVALUE
+NO MINVALUE
+NO MINVALUE
+NO MINVALUE
 NO MINVALUE
 NO MINVALUE
 NO MINVALUE
@@ -1419,6 +1522,7 @@ SEQUENCE NAME public.cognition_session_close_id_seq
 SEQUENCE NAME public.cognition_session_id_seq
 SEQUENCE NAME public.cognition_wake_id_seq
 SEQUENCE NAME public.cognition_wake_outcome_id_seq
+SEQUENCE NAME public.comprehend_result_id_seq
 SEQUENCE NAME public.config_revision_id_seq
 SEQUENCE NAME public.deploy_revision_id_seq
 SEQUENCE NAME public.doctrine_revision_id_seq
@@ -1428,6 +1532,7 @@ SEQUENCE NAME public.extraction_attempt_id_seq
 SEQUENCE NAME public.extraction_claim_id_seq
 SEQUENCE NAME public.extraction_id_seq
 SEQUENCE NAME public.extraction_queue_id_seq
+SEQUENCE NAME public.graph_refusal_id_seq
 SEQUENCE NAME public.language_observation_id_seq
 SEQUENCE NAME public.memory_node_id_seq
 SEQUENCE NAME public.message_delete_id_seq
@@ -1452,6 +1557,9 @@ SEQUENCE NAME public.source_health_id_seq
 SEQUENCE NAME public.stimulus_id_seq
 SEQUENCE NAME public.stimulus_retraction_id_seq
 SEQUENCE NAME public.tag_trace_turn_id_seq
+START WITH 1
+START WITH 1
+START WITH 1
 START WITH 1
 START WITH 1
 START WITH 1
@@ -1523,6 +1631,7 @@ advanced_counts boolean DEFAULT false NOT NULL,
 advanced_marker boolean DEFAULT false NOT NULL,
 agenda jsonb NOT NULL,
 aliases text[] DEFAULT '{}'::text[] NOT NULL,
+aliases text[] DEFAULT '{}'::text[] NOT NULL,
 alt_text text,
 anchor_date integer,
 anchor_date integer,
@@ -1545,6 +1654,7 @@ as_of bigint,
 as_of bigint,
 as_of bigint,
 as_of bigint,
+as_of timestamp with time zone NOT NULL,
 as_of_ms bigint NOT NULL,
 as_of_ms bigint NOT NULL,
 as_of_ms bigint NOT NULL,
@@ -1554,6 +1664,7 @@ assembled_sha256 text,
 asserted_at bigint NOT NULL,
 asserted_at bigint,
 asserted_at bigint,
+asserted_at timestamp with time zone NOT NULL,
 asserted_by text,
 asserted_by text,
 at timestamp with time zone NOT NULL,
@@ -1570,10 +1681,15 @@ attempted_at timestamp with time zone NOT NULL,
 attempts integer DEFAULT 0 NOT NULL,
 attempts integer DEFAULT 0 NOT NULL,
 attempts integer DEFAULT 0 NOT NULL,
+attempts integer DEFAULT 0 NOT NULL,
 attempts integer DEFAULT 1 NOT NULL,
+attribute text,
+attributes jsonb DEFAULT '{}'::jsonb NOT NULL,
 author_igid text NOT NULL,
 avg_speed_kmh double precision NOT NULL,
 backend_job_id text NOT NULL,
+base_revision_id text,
+batched boolean DEFAULT false NOT NULL
 battery double precision,
 blob_key text,
 body text NOT NULL,
@@ -1671,8 +1787,10 @@ consumed_verdict_tag text,
 consumed_verdict_tag text,
 content jsonb DEFAULT '{}'::jsonb NOT NULL,
 content jsonb NOT NULL,
+content jsonb NOT NULL,
 content text DEFAULT ''::text NOT NULL
 content text NOT NULL,
+content_hash text NOT NULL,
 content_sha256 text NOT NULL,
 content_sha256 text NOT NULL,
 context text NOT NULL,
@@ -1731,6 +1849,10 @@ created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL
 created_at timestamp with time zone DEFAULT now() NOT NULL
+created_at timestamp with time zone DEFAULT now() NOT NULL
+created_at timestamp with time zone DEFAULT now() NOT NULL,
+created_at timestamp with time zone DEFAULT now() NOT NULL,
+created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -1784,9 +1906,12 @@ document_id uuid NOT NULL,
 draws_on uuid[] DEFAULT '{}'::uuid[] NOT NULL,
 dropped_claims jsonb DEFAULT '{}'::jsonb NOT NULL
 dst_id text NOT NULL,
+dst_id text NOT NULL,
+dst_kind text NOT NULL,
 dst_kind text NOT NULL,
 due_at bigint,
 due_at bigint,
+due_at timestamp with time zone DEFAULT now() NOT NULL,
 due_at timestamp with time zone DEFAULT now() NOT NULL,
 due_at timestamp with time zone NOT NULL,
 due_ms bigint,
@@ -1807,8 +1932,10 @@ emoji text NOT NULL,
 end_reason text,
 ended_ts bigint NOT NULL,
 ended_ts bigint NOT NULL,
+entity_id text,
 entity_id uuid NOT NULL
 entity_kind text NOT NULL,
+entry_id text NOT NULL,
 error text,
 established_by text NOT NULL,
 established_by text NOT NULL,
@@ -1858,6 +1985,7 @@ fact_value jsonb,
 failure_reason text,
 failure_stage text,
 fetch_token text NOT NULL,
+fetched_at timestamp with time zone NOT NULL,
 fidelity text DEFAULT 'tentative'::text NOT NULL,
 field_meta jsonb DEFAULT '{}'::jsonb NOT NULL,
 field_meta jsonb DEFAULT '{}'::jsonb NOT NULL,
@@ -1892,6 +2020,7 @@ head_revision_id uuid NOT NULL,
 head_revision_id uuid,
 hidden_at bigint,
 historical boolean DEFAULT false NOT NULL
+historical boolean DEFAULT false NOT NULL,
 hits integer DEFAULT 0 NOT NULL
 hold_open text,
 hold_open text,
@@ -1905,6 +2034,9 @@ hour_of_week integer NOT NULL,
 i_owe text,
 i_owe text,
 id bigint CONSTRAINT signal_id_not_null NOT NULL,
+id bigint NOT NULL,
+id bigint NOT NULL,
+id bigint NOT NULL,
 id bigint NOT NULL,
 id bigint NOT NULL,
 id bigint NOT NULL,
@@ -1952,6 +2084,12 @@ id text NOT NULL,
 id text NOT NULL,
 id text NOT NULL,
 id text NOT NULL,
+id text NOT NULL,
+id text NOT NULL,
+id text NOT NULL,
+id text NOT NULL,
+id text NOT NULL,
+id text NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -1990,6 +2128,8 @@ id uuid NOT NULL,
 id uuid NOT NULL,
 image jsonb NOT NULL,
 image_id text,
+input_hash text NOT NULL,
+input_hash text NOT NULL,
 input_tokens bigint,
 instruction_sha256 text NOT NULL,
 instruction_sha256 text NOT NULL,
@@ -2030,12 +2170,16 @@ kind text NOT NULL,
 kind text NOT NULL,
 kind text NOT NULL,
 kind text NOT NULL,
+kind text NOT NULL,
+kind text NOT NULL,
+kind text NOT NULL,
 label text,
 last_activity_at timestamp with time zone NOT NULL,
 last_adjudicated_at bigint,
 last_allowed_at bigint NOT NULL,
 last_cluster_id integer DEFAULT 0 NOT NULL,
 last_error text NOT NULL
+last_error text,
 last_fired_at bigint NOT NULL,
 last_fix_id integer DEFAULT 0 NOT NULL,
 last_folded_row_id bigint,
@@ -2075,6 +2219,7 @@ lat_rounded double precision NOT NULL,
 late_fixes integer DEFAULT 0 NOT NULL,
 latency_ms integer,
 latest_reel_media bigint,
+layer text NOT NULL,
 lesson_id uuid NOT NULL,
 lexeme_basis text[] DEFAULT '{}'::text[] NOT NULL,
 likes bigint,
@@ -2141,6 +2286,8 @@ mentions_ab integer NOT NULL,
 mentions_ba integer NOT NULL,
 mentions_json text,
 mentions_json text,
+merged_into text
+message_id bigint NOT NULL,
 message_id bigint NOT NULL,
 message_id integer NOT NULL,
 message_id integer NOT NULL,
@@ -2180,6 +2327,7 @@ model text,
 model_calls integer NOT NULL,
 model_id text,
 model_route text,
+name text NOT NULL,
 name text NOT NULL,
 named_persons text[] DEFAULT '{}'::text[] NOT NULL,
 narrative text NOT NULL,
@@ -2271,6 +2419,8 @@ parent_revision_id uuid,
 parent_revision_id uuid,
 parent_revision_id uuid,
 part text NOT NULL,
+part text NOT NULL,
+part_id text NOT NULL,
 part_of_speech text,
 participants text[] NOT NULL,
 participants text[] NOT NULL,
@@ -2279,6 +2429,7 @@ path text NOT NULL,
 path text NOT NULL,
 path text NOT NULL,
 paused boolean NOT NULL,
+payload jsonb NOT NULL,
 payload jsonb NOT NULL,
 payload jsonb,
 people text[] DEFAULT '{}'::text[] NOT NULL,
@@ -2301,6 +2452,7 @@ person_id text,
 person_id text,
 person_id text,
 person_id text,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
 persons text[] DEFAULT '{}'::text[] NOT NULL,
 persons text[] NOT NULL,
 persons text[] NOT NULL,
@@ -2361,6 +2513,7 @@ provider text NOT NULL,
 provider_model text,
 purpose text NOT NULL,
 queued_at timestamp with time zone DEFAULT now() NOT NULL,
+queued_at timestamp with time zone DEFAULT now() NOT NULL,
 quoted_ts bigint,
 radius_m double precision NOT NULL,
 radius_m double precision NOT NULL,
@@ -2380,6 +2533,7 @@ reading text NOT NULL,
 reading_digest text NOT NULL,
 reason text DEFAULT ''::text NOT NULL,
 reason text DEFAULT ''::text NOT NULL,
+reason text NOT NULL,
 reason text NOT NULL,
 reason text NOT NULL,
 reason text NOT NULL,
@@ -2458,6 +2612,10 @@ recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+recorded_at timestamp with time zone DEFAULT now() NOT NULL
+recorded_at timestamp with time zone DEFAULT now() NOT NULL,
+recorded_at timestamp with time zone DEFAULT now() NOT NULL,
 recorded_at timestamp with time zone NOT NULL,
 recurrence text DEFAULT 'none'::text NOT NULL,
 recurrence_count integer,
@@ -2468,6 +2626,8 @@ ref text CONSTRAINT signal_ref_not_null NOT NULL,
 refusal_detail text,
 refusal_reason text,
 rel text NOT NULL,
+rel text NOT NULL,
+relation_id text,
 relearn_after bigint,
 reminder_id uuid,
 reminder_id uuid,
@@ -2508,7 +2668,10 @@ revision integer NOT NULL,
 revision integer NOT NULL,
 revision integer NOT NULL,
 revision integer NOT NULL,
+revision text NOT NULL,
 revisit_at bigint,
+role text NOT NULL,
+room text NOT NULL,
 rooms jsonb NOT NULL,
 row_key jsonb NOT NULL,
 row_key text NOT NULL,
@@ -2548,10 +2711,13 @@ sent_message_ids jsonb DEFAULT '[]'::jsonb NOT NULL,
 sent_ts bigint NOT NULL,
 seq integer NOT NULL,
 seq integer NOT NULL,
+seq integer NOT NULL,
 sequence jsonb NOT NULL,
 sequence jsonb,
 series_anchor_at timestamp with time zone,
 series_id uuid,
+session_id bigint NOT NULL,
+session_id bigint NOT NULL,
 session_id bigint,
 session_id bigint,
 session_id bigint,
@@ -2560,6 +2726,7 @@ session_id uuid,
 session_id uuid,
 set_by text NOT NULL,
 settled_at bigint,
+settled_at timestamp with time zone,
 sha256 text NOT NULL,
 sha256 text NOT NULL,
 sha256 text NOT NULL,
@@ -2585,19 +2752,26 @@ source text NOT NULL,
 source_excerpt text,
 source_id text NOT NULL,
 source_id text NOT NULL,
+source_id text NOT NULL,
+source_id text NOT NULL,
 source_ids integer[] NOT NULL,
 source_ids integer[] NOT NULL,
 source_key text NOT NULL,
+source_kind text NOT NULL,
+source_kind text NOT NULL,
 source_medium text[] DEFAULT '{}'::text[] NOT NULL,
 source_read_revision text
 source_revision text,
 source_url text,
+span text,
 span_id text NOT NULL,
 spans jsonb NOT NULL,
 spans jsonb NOT NULL,
 spec jsonb NOT NULL,
 speed_kmh double precision
 src_id text NOT NULL,
+src_id text NOT NULL,
+src_kind text NOT NULL,
 src_kind text NOT NULL,
 stage text NOT NULL,
 started_at bigint,
@@ -2611,8 +2785,10 @@ started_ts bigint NOT NULL,
 state text DEFAULT 'live'::text NOT NULL,
 state text DEFAULT 'live'::text NOT NULL,
 state text DEFAULT 'live'::text NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
 state text DEFAULT 'pending'::text NOT NULL,
 state text DEFAULT 'pending'::text NOT NULL,
+state text DEFAULT 'pending'::text NOT NULL,
 state text NOT NULL,
 state text NOT NULL,
 state text NOT NULL,
@@ -2622,6 +2798,7 @@ state text NOT NULL,
 state text NOT NULL,
 state text NOT NULL,
 state text NOT NULL,
+status text DEFAULT 'current'::text NOT NULL,
 status text NOT NULL,
 status text NOT NULL,
 status text NOT NULL,
@@ -2673,6 +2850,7 @@ superseded_at timestamp with time zone,
 superseded_at timestamp with time zone,
 superseded_by bigint,
 superseded_by bigint,
+superseded_by text,
 superseded_by uuid,
 supersedes text,
 supersedes uuid,
@@ -2700,6 +2878,7 @@ text text DEFAULT ''::text NOT NULL,
 text text NOT NULL,
 text text NOT NULL,
 text text NOT NULL,
+text text NOT NULL,
 through_ms bigint DEFAULT 0 NOT NULL,
 through_stimulus_id bigint CONSTRAINT cognition_wake_through_signal_id_not_null NOT NULL,
 through_stimulus_id bigint NOT NULL,
@@ -2715,6 +2894,7 @@ title text NOT NULL,
 title text,
 told_by text,
 tool text NOT NULL,
+tool_call jsonb NOT NULL
 tool_input jsonb NOT NULL,
 tool_name text NOT NULL,
 tool_result jsonb NOT NULL,
@@ -2771,6 +2951,12 @@ unit text NOT NULL,
 unit text NOT NULL,
 unit text NOT NULL,
 unit text NOT NULL,
+unit text NOT NULL,
+unit text NOT NULL,
+unit text NOT NULL,
+unit text NOT NULL,
+unit text NOT NULL,
+unit text NOT NULL,
 unit text,
 unit text,
 unit text,
@@ -2788,6 +2974,7 @@ updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_at timestamp with time zone DEFAULT now() NOT NULL,
 updated_at timestamp with time zone DEFAULT now() NOT NULL,
+updated_at timestamp with time zone DEFAULT now() NOT NULL,
 updated_at timestamp with time zone NOT NULL,
 updated_at timestamp with time zone NOT NULL,
 updated_ms bigint NOT NULL,
@@ -2795,15 +2982,18 @@ updated_ts bigint NOT NULL,
 updated_ts bigint NOT NULL,
 updated_ts bigint NOT NULL,
 url text NOT NULL,
+url text NOT NULL,
 url text,
 valid_from bigint NOT NULL,
 valid_from bigint,
+valid_from timestamp with time zone,
 valid_from_ms bigint NOT NULL,
 valid_from_ms bigint NOT NULL,
 valid_from_ms bigint NOT NULL,
 valid_from_ms bigint NOT NULL,
 valid_from_ms bigint NOT NULL,
 valid_to bigint,
+valid_to timestamp with time zone,
 valid_to_ms bigint NOT NULL,
 valid_to_ms bigint NOT NULL,
 valid_to_ms bigint NOT NULL,
@@ -2855,6 +3045,7 @@ why text NOT NULL,
 window_fix_ids integer[] DEFAULT '{}'::integer[] NOT NULL,
 wire_state text NOT NULL,
 with_persons text[] DEFAULT '{}'::text[] NOT NULL,
+work_id text NOT NULL,
 working_set jsonb DEFAULT '[]'::jsonb NOT NULL,
 working_set jsonb DEFAULT '[]'::jsonb NOT NULL,
 would_have_said text NOT NULL,
@@ -2868,6 +3059,7 @@ written_at bigint NOT NULL,
 written_at bigint NOT NULL,
 written_at timestamp with time zone NOT NULL,
 written_by text DEFAULT 'tag'::text NOT NULL,
+written_by text NOT NULL,
 written_by text NOT NULL,
 written_by_session text NOT NULL,
 || ' would bypass row_history; delete the rows (they are kept as history) '

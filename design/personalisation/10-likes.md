@@ -13,6 +13,8 @@ edges:
 
 ## 1. Likes come from profiles
 
+> 2026-10-28 ([unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md#6a-what-this-meets-in-the-other-bundles-2026-10-28) §6a): likes now read the memory graph's `likes` / `dislikes` relations (with evidence and speech act) and step 2's traits and guesses; constraints and dated plans read `plans`, `at` and relation validity. The separate constraint reader and its interval extraction below are superseded by step 1 of the Cognition loop; the scoring and decay are unchanged.
+
 **Likes are a read view, not another store or writer.** Personalisation reads
 per-person profiles: **facts**, **traits**, **guesses (unconfirmed)**, under
 [ADR 0029](../../docs/adr/0029-a-prompt-block-names-its-subject-and-author-by-id.md).

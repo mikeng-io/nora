@@ -21,6 +21,9 @@ import re
 import tomllib
 from pathlib import Path
 
+import pytest
+import yaml
+
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = json.loads((ROOT / "release-please-config.json").read_text(encoding="utf-8"))
 MANIFEST = json.loads((ROOT / ".release-please-manifest.json").read_text(encoding="utf-8"))
@@ -78,3 +81,71 @@ def test_the_uv_lock_updater_names_the_nora_package():
     extra = CONFIG["packages"]["."]["extra-files"]
     assert {"type": "toml", "path": "uv.lock",
             "jsonpath": "$.package[?(@.name.value=='nora')].version"} in extra
+
+
+@pytest.mark.parametrize(
+    ('event', 'target', 'release_enabled', 'master_enabled', 'ref', 'allowed'), [
+    ('release', '', 'true', '', 'refs/tags/v7.11.0', True),
+    ('release', '', '', 'true', 'refs/tags/v7.11.0', False),
+    ('workflow_dispatch', 'release', 'true', '', 'refs/heads/master', True),
+    ('workflow_dispatch', 'master', 'true', '', 'refs/heads/master', False),
+    ('workflow_dispatch', 'master', '', 'true', 'refs/heads/master', True),
+    ('workflow_dispatch', 'master', 'true', 'true', 'refs/heads/other', False),
+    ('push', '', 'true', 'true', 'refs/heads/master', False),
+    ('push', 'master', 'true', 'true', 'refs/heads/master', False),
+])
+def test_image_publication_has_explicit_separate_master_admission(
+        event, target, release_enabled, master_enabled, ref, allowed):
+    workflow = yaml.load((ROOT / '.github/workflows/release-images.yml').read_text(),
+                         Loader=yaml.BaseLoader)  # noqa: S506 -- scalars only; preserve the YAML `on` key
+    assert set(workflow['on']) == {'release', 'workflow_dispatch'}
+    inputs = workflow['on']['workflow_dispatch']['inputs']
+    assert inputs['target']['default'] == 'release'
+    assert inputs['target']['options'] == ['release', 'master']
+    assert inputs['tag']['required'] == 'false'
+    expression = workflow['jobs']['prepare']['if']
+    context = {'github.repository': 'mikeng-io/nora', 'github.event_name': event,
+               'github.ref': ref, 'inputs.target': target,
+               'vars.RELEASE_IMAGES_ENABLED': release_enabled,
+               'vars.MASTER_DEPLOY_ENABLED': master_enabled}
+    for key, value in context.items():
+        expression = expression.replace(key, repr(value))
+    expression = expression.replace('&&', ' and ').replace('||', ' or ')
+    assert eval(expression, {'__builtins__': {}}) is allowed  # noqa: S307 -- repo-owned expression
+
+
+def test_both_image_channels_share_pinned_tooling_source_and_publication_lane():
+    workflow = yaml.load((ROOT / '.github/workflows/release-images.yml').read_text(),
+                         Loader=yaml.BaseLoader)  # noqa: S506 -- scalars only; preserve the YAML `on` key
+    assert workflow['concurrency'] == {'group': 'release-images', 'cancel-in-progress': 'false'}
+    jobs = workflow['jobs']
+    assert jobs['prepare']['outputs'] == {'selection': '${{ steps.select.outputs.selection }}'}
+    assert jobs['build']['strategy']['matrix']['image'] == (
+        '${{ fromJSON(needs.prepare.outputs.selection).matrix }}')
+    assert jobs['promote']['needs'] == ['prepare', 'build']
+    assert jobs['prepare']['permissions'].get('packages') is None
+    builder = next(step for step in jobs['build']['steps'] if step.get('id') == 'buildx')
+    assert builder['uses'] == (
+        'docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f')
+    assert builder['with'] == {'driver': 'docker-container',
+                               'driver-opts': 'network=host',
+                               'buildkitd-flags': '--allow-insecure-entitlement network.host'}
+    publisher = next(step for step in jobs['build']['steps']
+                     if step.get('name') == 'Publish exact selected image')
+    assert publisher['env']['BUILDX_BUILDER'] == '${{ steps.buildx.outputs.name }}'
+    for name in ('build', 'promote'):
+        steps = jobs[name]['steps']
+        checkouts = [step for step in steps if step.get('uses', '').startswith('actions/checkout@')]
+        assert checkouts[0]['with']['ref'] == '${{ github.workflow_sha }}'
+        assert checkouts[1]['with']['ref'] == (
+            '${{ fromJSON(needs.prepare.outputs.selection).commit }}')
+        assert all(step['with']['persist-credentials'] == 'false' for step in checkouts)
+        runs = '\n'.join(step.get('run', '') for step in steps)
+        assert 'cp scripts/release_bundle.py "$RUNNER_TEMP/release_bundle.py"' in runs
+        assert '--channel "$CHANNEL" --version "$VERSION" --source "$SOURCE"' in runs
+        assert 'python scripts/release_bundle.py' not in runs  # never revive source's old guards
+        assert jobs[name]['permissions']['actions'] == 'read'
+        assert '--previous-ref "$PREVIOUS"' in runs
+        publication = next(step for step in steps if 'PREVIOUS' in step.get('env', {}))
+        assert publication['env']['PREVIOUS'] == (
+            '${{ fromJSON(needs.prepare.outputs.selection).previous }}')

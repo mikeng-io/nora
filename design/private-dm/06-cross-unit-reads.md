@@ -26,6 +26,8 @@ stays bound to it:
 
 ## 3. What a DM may read
 
+> 2026-10-28 ([unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md#6a-what-this-meets-in-the-other-bundles-2026-10-28) §6a): in the memory graph this is one walk per unit that lists the owner, each through this section's per-room predicate, composed at read time; no cross-unit entity or relation is written.
+
 A DM turn may read the group context of **every unit whose policy explicitly
 lists the person**, not only the default unit. Wildcard membership still grants
 nothing, as in [00-contract](00-contract.md) §4.

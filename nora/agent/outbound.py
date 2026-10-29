@@ -88,8 +88,8 @@ is what makes the open half safe.
 
 **The roster gate.** A handle resolving through `identity.toml` is not enough to
 tag someone: `identity.toml` is Nora's address book across every room she is in,
-loaded once at startup, so it can be stale and it is wider than this
-conversation. The id that goes on the wire has to be one the PLATFORM itself just
+read through a live holder, but still wider than this conversation. The id that
+goes on the wire has to be one the PLATFORM itself just
 listed as a member of THIS group (`RosterSource.roster`, intersected
 per-account):
 

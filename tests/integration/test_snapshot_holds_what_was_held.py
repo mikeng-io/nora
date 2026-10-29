@@ -87,6 +87,25 @@ def _ledger_row(kind: str, i: int) -> dict[str, Any]:
 
 #: A valid row per in-place table, for key `i`.
 ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
+    "graph_arrival": lambda i: {
+        "unit": "u", "message_id": 1000+i, "revision": f"generated-{i}", "room": "signal:g1",
+    },
+    "entity": lambda i: {
+        "id": f"graph-entity-{i}", "kind": "event", "unit": "u", "name": f"Generated event {i}",
+    },
+    "relation": lambda i: {
+        "id": f"graph-relation-{i}", "src_kind": "person", "src_id": "generated-person",
+        "rel": "attended", "dst_kind": "event", "dst_id": "graph-entity-0",
+        "layer": "notebook", "unit": "u", "asserted_at": T0, "written_by": "generated",
+    },
+    "relation_evidence": lambda i: {
+        "id": 85000 + i, "relation_id": "graph-relation-0", "source_kind": "message",
+        "source_id": "1000", "role": "supports", "span": f"Generated span {i}",
+    },
+    "memory_work_item": lambda i: {
+        "id": f"graph-work-{i}", "source_kind": "message", "source_id": f"generated-{i}",
+        "unit": "u", "input_hash": f"generated-hash-{i}", "as_of": T0,
+    },
     "standing_decision": lambda i: _ledger_row("decision", i),
     "standing_commitment": lambda i: _ledger_row("commitment", i),
     "standing_thread": lambda i: _ledger_row("thread", i),
@@ -283,6 +302,11 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
 
 #: The column each revision moves, and to what.
 REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
+    "graph_arrival": ("batched", lambda i: True),
+    "entity": ("name", lambda i: f"Revised generated event {i}"),
+    "relation": ("status", lambda i: "superseded"),
+    "relation_evidence": ("span", lambda i: f"Revised generated span {i}"),
+    "memory_work_item": ("attempts", lambda i: 1),
     "standing_decision": ("subject", lambda i: f"Revised choice {i}"),
     "standing_commitment": ("subject", lambda i: f"Revised promise {i}"),
     "standing_thread": ("topic", lambda i: f"Revised topic {i}"),
@@ -335,6 +359,31 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
 
 #: One append-only row, number `n`, citing the stable key-0 parents.
 APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
+    "notebook_entry": lambda i: {
+        "id": f"generated-entry-{i}", "kind": "topic", "unit": "u",
+    },
+    "notebook_entry_revision": lambda i: {
+        "id": f"generated-entry-revision-{i}", "entry_id": f"generated-entry-{i}",
+        "base_revision_id": None, "seq": 1,
+        "content": {
+            "about": [["topic", f"generated-topic-{i}"]], "body": f"Generated account {i}",
+            "citations": [["message", "1000"]], "confidence": "medium", "state": "active",
+            "writer": "cognition", "session_id": "generated-session", "model": "generated-model",
+            "instruction_hash": "a" * 64, "links": [],
+        },
+    },
+    "graph_refusal": lambda n: {
+        "id": 86000+n, "kind": "relation", "part_id": f"generated-{n}", "reason": "vocabulary",
+    },
+    "comprehend_web_page": lambda n: {
+        "id": f"generated-page-{n}", "unit": "u", "session_id": n,
+        "url": f"https://example.invalid/page-{n}", "fetched_at": T0,
+        "content_hash": f"generated-hash-{n}", "text": f"generated text {n}", "tool_call": {},
+    },
+    "comprehend_result": lambda n: {
+        "work_id": f"generated-work-{n}", "input_hash": f"generated-hash-{n}",
+        "session_id": n, "part": "reshape", "payload": {"would_writes": [f"generated {n}"]},
+    },
     "standing_decision_revision": lambda n: _ledger_row("decision", n),
     "standing_commitment_revision": lambda n: _ledger_row("commitment", n),
     "standing_thread_revision": lambda n: _ledger_row("thread", n),

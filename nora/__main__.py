@@ -148,7 +148,7 @@ class App:
             doctrine_store=deps.doctrine_store, metrics=deps.metrics,
             started_at=started_at, llm_state=deps.llm_state,
             identity_file=self.cfg.identity_file, policy_file=self.cfg.policy_file,
-            index_state=deps.index_state,
+            index_state=deps.index_state, config_reload=deps.config_reload.status,
         )
         register_web_routes(
             health_app, store=deps.audit, honcho=deps.memory, reminders=deps.reminders,
@@ -224,6 +224,10 @@ class App:
             ))
         else:
             log.info("retention sweep disabled (store.prune_enabled = false)")
+        if deps.graph_batches is not None:
+            deps.background.spawn(deps.graph_batches.run())
+        if deps.comprehend_runner is not None:
+            deps.background.spawn(deps.comprehend_runner.run())
         if deps.extraction is not None:
             deps.background.spawn(deps.extraction.run())
         # Unconditional: every store write projects into the memory index,

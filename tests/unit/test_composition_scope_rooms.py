@@ -16,8 +16,15 @@ def _conv(unit: str, platform: str, primary: str, *ids: str, location: bool = Fa
     )
 
 
+class _Allowlist(SimpleNamespace):
+    """`conversations` plus the `rooms()` the map actually reads."""
+
+    def rooms(self):
+        return self.conversations
+
+
 def test_an_id_shared_by_two_units_is_refused_at_startup() -> None:
-    allowlist = SimpleNamespace(conversations=[
+    allowlist = _Allowlist(conversations=[
         _conv("friends", "signal", "same-id"),
         _conv("work", "discord", "same-id"),
     ])
@@ -26,7 +33,7 @@ def test_an_id_shared_by_two_units_is_refused_at_startup() -> None:
 
 
 def test_two_id_forms_of_the_same_room_are_not_a_collision() -> None:
-    allowlist = SimpleNamespace(conversations=[
+    allowlist = _Allowlist(conversations=[
         _conv("friends", "signal", "new-id", "old-id"),
     ])
     rooms = scope_home_rooms(allowlist)

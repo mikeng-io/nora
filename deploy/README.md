@@ -22,12 +22,16 @@ configuration. The separate `honcho_memory` network must already exist.
 ## Release deployment with Komodo
 
 The installed [Komodo release deployment](komodo/README.md) is the normal path:
-merge a fix PR, follow `nora-release` to prepare and review/merge its metadata PR,
-then dispatch publish separately. The resulting Release triggers
-`release-images.yml` to publish all images and commit
+ordinary master pushes prepare patch/minor metadata, auto-merge it after required
+checks on its exact head and let release-please publish. Breaking ranges stop for
+an owner-only exact-candidate major dispatch (`nora-release`). The resulting Release triggers
+`release-images.yml` to build or prove reuse of every artifact and commit
 `compose.json` and `release.json` to `deployments`. The enabled
 `nora-release-poll` Procedure checks every ten minutes and deploys `nora-releases`
-through the installed wrapper, which writes `release-deploy.json`.
+through the installed wrapper, which writes `release-deploy.json`. The complete
+bundle retains reused artifacts' original source/version provenance. Native Compose
+preserves unchanged containers; loaded-once host edits require the explicit scoped
+file reload request in the [Komodo procedure](komodo/README.md#loaded-once-host-file-reload).
 Rollback selects a previous bundle by reverting the selecting commit on
 `deployments`; it does not revert schema migrations or host config.
 

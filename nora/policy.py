@@ -20,6 +20,7 @@ silent mute."
 
 from __future__ import annotations
 
+import logging
 import re
 import tomllib
 from collections.abc import Mapping
@@ -28,10 +29,13 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from nora.domain.ports import ChannelDirectory
 from nora.domain.self_presence import PLATFORM_NAMES
 
 # Not a person_id: the wildcard admitting anyone in a conversation.
 EVERYONE = "*"
+
+log = logging.getLogger("nora.policy")
 
 #: The Nora WORKSPACE every unit belongs to when `policy.toml` has no `[units]`
 #: table at all (DEC-214). A workspace holds units,
@@ -218,6 +222,62 @@ class Conversation:
     # conversational reply on the tag path still lands in the room she was
     # tagged in.
     music_channel: str | None = None
+    # WHOLE-SERVER ENTRY. Non-empty marks this Conversation as a
+    # `guild = "<id>"` `[[conversations]]` entry rather than a room: the
+    # `[[conversations]]` entry names the GUILD, and every room-channel the
+    # platform knows becomes a room of the entry's `unit`, discovered at
+    # runtime through `Policy._channels` — never written into the file.
+    # `persons`/`tools`/`location`/`unit`/`relevance_gate`/`description`
+    # apply to every channel it expands into; `ignore`/`ambient` name
+    # channels by NAME. The entry itself is never a room (`ids` and
+    # `primary_id` stay empty); the synthesized rooms carry `discovered`.
+    guild: str = ""
+    # Channel NAMES (as the operator wrote them, folded at match) that this
+    # server entry never admits — Discord's own names, so the operator never
+    # copies a channel id into policy.toml. Only meaningful on a guild entry.
+    ignore: frozenset[str] = frozenset()
+    # Channel NAMES admitted AMBIENT: `relevance_gate` is set on their
+    # synthesized rooms exactly as a static room's `relevance_gate = true`
+    # opted it in. Every other channel of the entry is MENTION-ONLY.
+    ambient: frozenset[str] = frozenset()
+    # This room was EXPANDED from a server entry at runtime rather than
+    # listed in the file. Paired with `relevance_gate` it decides `absorbed`
+    # — a static room is always absorbed; a discovered one only when it is
+    # ambient.
+    discovered: bool = False
+
+    @property
+    def absorbed(self) -> bool:
+        """Whether this room's traffic enters memory/ambient processing.
+
+        A listed room is always absorbed (fed to Honcho, stimulated, folded):
+        listing it was the opt-in. A discovered channel is absorbed only when
+        the entry's `ambient` names it — mention-only is the server-entry
+        default, so an undiscovered-by-name channel records and answers tags
+        but is never absorbed into memory or background passes."""
+        return not (self.discovered and not self.relevance_gate)
+
+
+class _NoChannels:
+    """The empty `ChannelDirectory`: every guild unknown, every read `None`.
+
+    The default `Policy._channels` — loaders outside the live composition
+    (the CLI, harnesses, the presence and analytics processes) enumerate no
+    guild, and a guild entry then expands to no rooms rather than guessing.
+    """
+
+    def guild_channels(self, *, guild_id: str) -> Mapping[str, str] | None:
+        return None
+
+    def parent_channel(self, *, channel_id: str) -> str | None:
+        return None
+
+
+def _fold(name: str) -> str:
+    """The case-and-spacing fold `_refuse_ambiguous_room_names` and the room
+    tools' resolver share — a room name and a channel name compare only
+    through it, never byte-for-byte."""
+    return " ".join(name.split()).casefold()
 
 
 @dataclass(frozen=True)
@@ -239,9 +299,141 @@ class Policy:
     # unit belongs to `DEFAULT_WORKSPACE`.
     _unit_workspace: dict[str, str] = field(repr=False, default_factory=dict)
     units_declared: bool = False
+    # `(platform, guild_id)` -> the whole-server `[[conversations]]` entry that
+    # covers it (a `Conversation` with `guild` set, never a room).
+    _by_guild: dict[tuple[str, str], Conversation] = field(
+        repr=False, compare=False, default_factory=dict,
+    )
+    # The live channel directory a server entry expands through — `_NoChannels`
+    # outside the main process, so a guild entry in any other loader expands
+    # to nothing. Not part of the file's truth: `compare=False`, and
+    # `load_policy` re-injects the process's one instance on every reload so a
+    # swap carries the SAME discovery state forward.
+    _channels: ChannelDirectory = field(
+        repr=False, compare=False, default_factory=_NoChannels,
+    )
+    # Channel ids whose refusal class was already logged under THIS snapshot —
+    # `conversation` runs per message, and a denied active channel must not log
+    # per message. A fresh set per loaded policy: a new file may have resolved
+    # the collision, so it is worth one line again.
+    _refusal_log: set[tuple[str, str]] = field(
+        repr=False, compare=False, default_factory=set,
+    )
 
     def conversation(self, platform: str, conversation_id: str) -> Conversation | None:
-        return self._by_id.get((platform, conversation_id))
+        convo = self._by_id.get((platform, conversation_id))
+        if convo is not None:
+            return convo          # the explicit per-channel entry always wins
+        guild_id, sep, channel_id = conversation_id.partition("/")
+        if not sep or not channel_id:
+            return None
+        entry = self._by_guild.get((platform, guild_id))
+        if entry is None:
+            return None
+        return self._admit_channel(entry, channel_id)
+
+    def rooms(self) -> tuple[Conversation, ...]:
+        """Every room this policy currently admits, static AND discovered.
+
+        `conversations` is the FILE: its `guild` entries name servers, not
+        rooms. `rooms()` adds the channels the directory knows, each as the
+        `Conversation` `conversation()` would synthesize — so a consumer that
+        enumerates rooms (the Honcho router, lineage, the fold scopes) sees
+        the same set the grant predicate admits, and reloads see new entries.
+        """
+        out = [c for c in self.conversations if not c.guild]
+        covered = set(self._by_id)
+        for key, entry in self._by_guild.items():
+            channels = self._channels.guild_channels(guild_id=key[1])
+            if channels is None:
+                continue
+            for channel_id in sorted(channels):
+                if (entry.platform, f"{entry.guild}/{channel_id}") in covered:
+                    continue     # the explicit per-channel entry already owns it
+                convo = self._admit_channel(entry, channel_id, channels=channels)
+                if convo is not None:
+                    out.append(convo)
+        return tuple(out)
+
+    def _admit_channel(
+        self,
+        entry: Conversation,
+        channel_id: str,
+        *,
+        channels: Mapping[str, str] | None = None,
+    ) -> Conversation | None:
+        """The room `channel_id` of `entry`'s guild becomes, or `None`.
+
+        Fail-closed, every branch: the guild cannot be enumerated, the channel
+        is not a room-channel there, its name is in `ignore`, or its name
+        collides inside the unit — each denies, and the denied-counter in the
+        scope stage counts it. Collision and unavailability log once per
+        snapshot, naming the CLASS and never the channel name.
+        """
+        if channels is None:
+            channels = self._channels.guild_channels(guild_id=entry.guild)
+        if channels is None:
+            self._log_once(entry, channel_id, "guild-unavailable")
+            return None
+        name = channels.get(channel_id)
+        if name is None:
+            # Not a room-channel of this guild — a voice channel, a thread id,
+            # or an id the directory does not know. Silent deny: the platform
+            # simply delivered traffic to a non-room id.
+            return None
+        if _fold(name) in {_fold(n) for n in entry.ignore}:
+            return None                     # the operator named it `ignore`
+        if self._collides(entry, channel_id, name, channels):
+            self._log_once(entry, channel_id, "label-collision")
+            return None
+        ambient = entry.relevance_gate or _fold(name) in {_fold(n) for n in entry.ambient}
+        cid = f"{entry.guild}/{channel_id}"
+        return Conversation(
+            platform=entry.platform, ids=frozenset({cid}),
+            persons=entry.persons, label=name, tools=entry.tools,
+            location=entry.location, primary_id=cid, unit=entry.unit,
+            relevance_gate=ambient, description=entry.description,
+            discovered=True,
+        )
+
+    def _collides(
+        self,
+        entry: Conversation,
+        channel_id: str,
+        name: str,
+        channels: Mapping[str, str],
+    ) -> bool:
+        """Whether `name` fails the unit's unique-names rule for this channel.
+
+        Three ways to collide, all fail-closed rather than merged: a second
+        channel of the same guild folding to the same name; a label already
+        taken by another room or server entry of the unit; and a reserved
+        network name (Discord channels CAN be named "discord" — a room so
+        named would be unaddressable by name the moment the unit holds a
+        second Discord room, so it is refused outright here)."""
+        folded = _fold(name)
+        # ponytail: the check covers only ONE server entry — `channels` is this
+        # entry's guild and the label set is the file's — so two server entries
+        # in one unit holding same-named channels are BOTH admitted with an
+        # identical label. The failure mode is safe: room-name resolution
+        # refuses ambiguously rather than guessing (no memory crosses). The
+        # upgrade is `_collides` reading each sibling entry's live
+        # `guild_channels` too.
+        if sum(1 for n in channels.values() if _fold(n) == folded) > 1:
+            return True
+        if folded in {_fold(c.label) for c in self.conversations
+                      if c.unit == entry.unit and c.label}:
+            return True
+        return folded in {n.casefold() for n in PLATFORM_NAMES.values()}
+
+    def _log_once(self, entry: Conversation, channel_id: str, kind: str) -> None:
+        key = (kind, channel_id)
+        if key not in self._refusal_log:
+            self._refusal_log.add(key)
+            log.warning(
+                "discord server-entry admission refused: %s (guild %s, unit %s)",
+                kind, entry.guild, entry.unit,
+            )
 
     def _location_flags(self, unit: str) -> set[bool]:
         return {c.location for c in self.conversations if c.unit == unit}
@@ -434,7 +626,17 @@ class _ConversationEntry(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     platform: str
-    id: str
+    # `None` only on a `guild` entry, which names the whole server instead
+    # (see `Conversation.guild`); every other entry still requires it.
+    id: str | None = None
+    # A WHOLE DISCORD SERVER, by its one guild id. Every room-channel of the
+    # guild becomes a room of this entry's `unit` at runtime — the file never
+    # names a channel id. `ignore`/`ambient` then name channels by NAME:
+    # ignored channels are never admitted; ambient ones get the entry's own
+    # `relevance_gate` opt-in regardless of it. Discord only; a snowflake.
+    guild: str | None = None
+    ignore: list[str] = Field(default_factory=list)
+    ambient: list[str] = Field(default_factory=list)
     # Telegram CHANGES chat.id when a group is upgraded to a supergroup,
     # reporting the old id once via migrate_to_chat_id. Without this the
     # allowlist silently stops matching and Nora goes quiet — invisible under
@@ -552,7 +754,7 @@ class _PolicyFile(BaseModel):
         return value
 
 
-def load_policy(path: Path) -> Policy:
+def load_policy(path: Path, *, channels: ChannelDirectory | None = None) -> Policy:
     path = Path(path).expanduser()
     if not path.exists():
         raise PolicyError(
@@ -572,9 +774,73 @@ def load_policy(path: Path) -> Policy:
 
     conversations: list[Conversation] = []
     by_id: dict[tuple[str, str], Conversation] = {}
+    by_guild: dict[tuple[str, str], Conversation] = {}
     for entry in parsed.conversations:
-        ids = frozenset([entry.id, *entry.also_ids])
         persons = None if entry.persons == EVERYONE else frozenset(entry.persons)
+        if entry.guild is not None:
+            # A server entry expands at RUNTIME, so it cannot carry any key
+            # that answers per-room: an `id`/`also_ids` is a room's, `voice`/
+            # `music_channel`/`home_room`/`proactive` each name ONE room's
+            # job a whole server cannot take. Refused, never silently
+            # half-applied — the operator adds a per-channel entry for those.
+            if entry.id is not None or entry.also_ids:
+                raise PolicyError(
+                    f"{entry.label or entry.guild!r} sets both guild and "
+                    "id/also_ids. A server entry names the guild only; list "
+                    "the channel as its own [[conversations]] entry instead."
+                )
+            if entry.platform != "discord":
+                raise PolicyError(
+                    f"{entry.label or entry.guild!r} sets guild on platform "
+                    f"{entry.platform!r} — only Discord rooms are named by "
+                    '"<guild_id>/<channel_id>", so only Discord has a guild '
+                    "to expand."
+                )
+            if not _is_snowflake(entry.guild):
+                raise PolicyError(
+                    f"{entry.label or 'a server entry'} has guild = "
+                    f"{entry.guild!r}, which is not a Discord guild id — "
+                    "ASCII digits, 17-20 of them."
+                )
+            for flag in ("voice", "music_channel", "home_room", "proactive"):
+                if getattr(entry, flag) not in (False, None):
+                    raise PolicyError(
+                        f"{entry.label or entry.guild!r} sets {flag} on a "
+                        "server entry — that flag names ONE room's job and a "
+                        "whole server cannot take it. Add a per-channel "
+                        "[[conversations]] entry for it."
+                    )
+            convo = Conversation(
+                platform=entry.platform, ids=frozenset(), persons=persons,
+                label=entry.label, tools=frozenset(entry.tools),
+                location=entry.location, primary_id="", unit=entry.unit,
+                relevance_gate=entry.relevance_gate,
+                description=entry.description, guild=entry.guild,
+                ignore=frozenset(entry.ignore), ambient=frozenset(entry.ambient),
+            )
+            key = (entry.platform, entry.guild)
+            if key in by_guild:
+                raise PolicyError(
+                    f"guild {entry.guild} is covered by two server entries — "
+                    "the second would be unreachable, so one of the two "
+                    "allowlists you think you wrote is doing nothing"
+                )
+            by_guild[key] = convo
+            conversations.append(convo)
+            continue
+        if entry.ignore or entry.ambient:
+            raise PolicyError(
+                f"{entry.label or entry.id!r} sets ignore/ambient on a "
+                "per-channel entry — those name channels of a server entry. "
+                "Remove them, or admit the whole server with guild instead."
+            )
+        if entry.id is None:
+            raise PolicyError(
+                "a [[conversations]] entry needs id or guild — a room is "
+                "named by its platform id, a whole Discord server by its "
+                "guild id"
+            )
+        ids = frozenset([entry.id, *entry.also_ids])
         convo = Conversation(
             platform=entry.platform, ids=ids, persons=persons, label=entry.label,
             tools=frozenset(entry.tools), location=entry.location,
@@ -761,6 +1027,8 @@ def load_policy(path: Path) -> Policy:
         _music_by_guild=music_by_guild,
         _unit_workspace=unit_workspace,
         units_declared=parsed.units is not None,
+        _by_guild=by_guild,
+        _channels=channels if channels is not None else _NoChannels(),
     )
 
 
@@ -811,12 +1079,12 @@ def _unit_workspaces(
 
     ABSENT table: `{}`, and `Policy.workspace_of` answers `DEFAULT_WORKSPACE`
     for every unit — the policy that existed before the hierarchy keeps
-    loading unchanged. PRESENT: it must be COMPLETE and EXACT. A room whose
+    loading unchanged. PRESENT: it must cover every room's unit. A room whose
     unit has no entry would belong to no workspace, which means no Honcho
     workspace could be named for it, so it is a startup error rather than a
-    guess (R-5's refuse-to-start shape). A unit entry that no room uses is
-    refused too: a unit holds one or more rooms, so an entry with none is a
-    typo or a stale line, and either way it is an answer nobody reads."""
+    guess (R-5's refuse-to-start shape). A declared unit may temporarily hold
+    no rooms: its workspace is admitted at boot so removing its last room and
+    adding a room back can both reload without changing workspace bindings."""
     if units is None:
         return {}
     used = {convo.unit for convo in conversations}
@@ -827,12 +1095,5 @@ def _unit_workspaces(
             "every unit a room uses must name its workspace — add "
             f'[units.{missing[0]}] workspace = "..." — or delete [units] '
             "entirely to put every unit in the one implicit workspace."
-        )
-    unused = sorted(set(units) - used)
-    if unused:
-        raise PolicyError(
-            f"{path} declares [units.{unused[0]}] but no conversation has "
-            f"unit = {unused[0]!r}. A unit holds at least one room; remove the "
-            "entry or fix the unit name it was meant to match."
         )
     return {unit: entry.workspace for unit, entry in units.items()}

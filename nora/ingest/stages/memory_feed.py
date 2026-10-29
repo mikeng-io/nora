@@ -41,6 +41,7 @@ async def run(
     metrics: Any,
     spawn: Callable[[Coroutine[Any, Any, None]], None],
     edited: EditedMessage | None = None,
+    absorbed: bool = True,
 ) -> None:
     """Schedule the feed; never await it here. `person is None` means the
     sender is unmapped (D6) — the message is never fed to the semantic store.
@@ -49,6 +50,11 @@ async def run(
     then framed as a correction and the metadata points at the original's
     `ts`."""
     if person is None:
+        return
+    if not absorbed:
+        # A mention-only room (a server-entry channel `ambient` does not
+        # name): recorded and answered when tagged, never absorbed into
+        # memory. `Conversation.absorbed` is the flag's one definition.
         return
     # Honcho's deriver is a model and recall hands its text back to her, so a
     # shared file link is fed as its handle, never the URL (R-18).

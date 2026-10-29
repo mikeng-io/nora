@@ -160,6 +160,21 @@ def pr_problems(
             errors.append(
                 "The release PR must contain Release Please's generated title and changelog."
             )
+        # Generated metadata must remain a single commit on its recorded source.
+        # Strict branch rules then stop a master push racing the auto-merge.
+        if commits is not None and item.get("state") != "closed":
+            source = (item.get("base") or {}).get("sha", "")
+            if not (
+                len(commits) == 1
+                and re.fullmatch(r"[0-9a-f]{40}", source)
+                and commits[0]["sha"] == item["head"]["sha"]
+                and [p["sha"] for p in commits[0].get("parents", [])] == [source]
+                and commits[0]["commit"]["message"].splitlines()[0] == title
+                and re.findall(r"^Release-Candidate: ([0-9a-f]{40})$", body, re.M) == [source]
+            ):
+                errors.append(
+                    "Re-prepare release metadata from current master; never update its branch."
+                )
         return errors
     if owned_bot and login == "dependabot[bot]" and item["head"]["ref"].startswith("dependabot/"):
         if not re.search(r"\b(?:Bumps|Updates)\s", body):

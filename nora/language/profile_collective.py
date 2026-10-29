@@ -178,7 +178,7 @@ class CollectiveEvidence:
         members: Mapping[str, tuple[str, ...]] | None = None,
     ) -> None:
         self._source_inputs = source_inputs
-        self._members = members or {}
+        self._members = members if members is not None else {}
         self._store = store
         self._keys = keys
         self._kind = kind
@@ -305,12 +305,14 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
         self._culture = culture
         self._reads = reads
         self._collective_keys = keys
-        self._population = tuple(sorted(keys))
         self._kind = kind
         self.name = self.objective = f"profile-{kind}"
         #: A room's session keeps Culture's read tools, scoped to its room;
         #: the unit's and Nora's reason over what they are handed.
         self.tools = CULTURE_TOOLS if kind == "room" else frozenset()
+
+    def keys(self) -> Sequence[str]:
+        return tuple(sorted(self._collective_keys.keys()))
 
     def tool_room(self, key: str) -> str | None:
         return key if self._kind == "room" and key in self._collective_keys else None

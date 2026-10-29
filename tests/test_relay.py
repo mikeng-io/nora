@@ -23,6 +23,7 @@ from nora.agent.relay import Relay
 from nora.domain.models import PersonRef
 from nora.domain.ports import AdapterHealth
 from nora.engagement.self_presence import PresenceReader
+from nora.platform.discord.channels import StaticChannelDirectory
 from nora.policy import Conversation, Policy
 
 MILES = PersonRef(person_id="miles_novak", name="Miles", honcho_peer_id="miles_novak")
@@ -164,6 +165,50 @@ async def _send(relay, **kw):
 # ---------------------------------------------------------------------------
 # the two that go through
 # ---------------------------------------------------------------------------
+
+
+GUILD = "100000000000000042"
+DISCOVERED_CHANNEL = "100000000000000101"
+
+
+def _guild_entry_policy() -> Policy:
+    """The Signal room plus a server entry in the same unit; the directory
+    knows the guild's channels, so `rooms()` discovers them while
+    `conversations` alone never would."""
+    signal = Conversation(
+        platform="signal", ids=frozenset({SIGNAL_ROOM}),
+        persons=frozenset({"miles_novak"}), label="Friends",
+        primary_id=SIGNAL_ROOM, unit="friends",
+    )
+    entry = Conversation(
+        platform="discord", ids=frozenset(),
+        persons=frozenset({"miles_novak"}), label="Zone 9",
+        primary_id="", unit="friends", guild=GUILD,
+    )
+    return Policy(
+        conversations=(signal, entry),
+        _by_id={(signal.platform, cid): signal for cid in signal.ids},
+        _by_guild={("discord", GUILD): entry},
+        _channels=StaticChannelDirectory(
+            {GUILD: {DISCOVERED_CHANNEL: "general"}}, threads={},
+        ),
+    )
+
+
+async def test_a_relay_reaches_a_channel_discovered_through_a_server_entry():
+    """A channel the file never names is a room all the same — the relay's
+    candidates are `rooms()`, not the file's `conversations`."""
+    relay, fire, _ = _relay(_guild_entry_policy())
+
+    out = await _send(
+        relay, room="general",
+        from_platform="signal", from_conversation_id=SIGNAL_ROOM,
+    )
+
+    assert out["status"] == "ok"
+    assert fire.spoken == [
+        ("discord", f"{GUILD}/{DISCOVERED_CHANNEL}", "Miles: we're starting")
+    ]
 
 
 async def test_a_relay_reaches_the_named_room_and_only_that_room():

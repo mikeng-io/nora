@@ -1,4 +1,10 @@
 ---
+
+> Operational amendment, 2026-10-28: the recreate advice below records the old
+> implementation. Valid identity/policy edits now hot-reload within three seconds
+> when copied in place; workspace-binding edits still require recreation.
+> See [the reload design](../policy-reload/00-design.md).
+
 type: review
 title: "WhatsApp Transport Implementation — Independent Audit"
 description: "Security/correctness audit of commit cb4f38ae against design/whatsapp-adoption/ (bundle 1febd507..1841f87d) and against the prior delegate review's claimed-fixed findings."

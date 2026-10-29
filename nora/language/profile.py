@@ -679,7 +679,6 @@ class ProfilePersonAdaptor:
         self.evidence = evidence
         self._reads = reads
         self._keys = keys
-        self._population = tuple(sorted(keys))
         self._name_of = name_of
         self._clock_ms = clock_ms
         self._metrics = metrics
@@ -691,7 +690,7 @@ class ProfilePersonAdaptor:
         self._runs: dict[str, _Run] = {}
 
     def keys(self) -> Sequence[str]:
-        return self._population
+        return tuple(sorted(self._keys.keys()))
 
     def tool_room(self, key: str) -> str | None:
         pk = self._keys.get(key)

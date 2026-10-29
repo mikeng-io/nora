@@ -171,9 +171,26 @@ class SqlProfileInputs:
                           'source_read_revision': r.revision, 'updated_at': sa.func.now()},
                 ))
 
-    def _messages(self, *, rooms: Sequence[tuple[str, str]], person: str) -> Any:
+    def _messages(self, *, rooms: Sequence[tuple[str, str]], person: str,
+                  message_ids: Sequence[int] | None = None) -> Any:
         m = MESSAGES.c
-        media = _media_revision(m.media_json)
+        scope = [_in_rooms(rooms), m.is_nora == 0]
+        if message_ids is not None:
+            scope.append(m.id.in_(message_ids))
+        refs = sa.select(sa.func.coalesce(m.media_json, '').label('ref')).where(
+            *scope).distinct().subquery()
+        ready = sa.exists().where(
+            sa.func.strpos(refs.c.ref, MEDIA_OBJECTS.c.sha256) > 0,
+            sa.or_(*(sa.func.coalesce(MEDIA_OBJECTS.c[f], '') != ''
+                     for f in ('title', 'description', 'content'))),
+        )
+        # ponytail: two media scans per distinct attachment ref; use a relational
+        # message-to-media index if distinct refs make this read exceed its budget.
+        # Reuse each attachment lookup across messages, revision comparisons,
+        # ordering and recovery counts instead of flattening correlated scans.
+        cache = sa.select(refs.c.ref, _media_revision(refs.c.ref).label('media'),
+            ready.label('ready')).cte('profile_message_media').prefix_with('MATERIALIZED')
+        media = cache.c.media
         edits = sa.select(sa.func.max(MESSAGE_EDIT.c.id)).where(
             MESSAGE_EDIT.c.message_id == m.id).scalar_subquery()
         deleted = sa.exists().where(MESSAGE_DELETE.c.message_id == m.id)
@@ -189,23 +206,7 @@ class SqlProfileInputs:
         # transcript_select excludes hidden rows. Select its named columns
         # explicitly here so a withdrawal yields metadata without content.
         latest = _latest_edit()
-        ready = sa.exists().where(
-            sa.func.strpos(sa.func.coalesce(m.media_json, ''), MEDIA_OBJECTS.c.sha256) > 0,
-            sa.or_(*(sa.func.coalesce(MEDIA_OBJECTS.c[f], '') != ''
-                     for f in ('title', 'description', 'content'))),
-        )
-        message_at = sa.select(sa.func.max(ROW_HISTORY.c.recorded_at)).where(
-            ROW_HISTORY.c.table_name == 'messages',
-            ROW_HISTORY.c.row_key == sa.func.jsonb_build_object('id', m.id),
-        ).scalar_subquery()
-        reading_at = sa.select(sa.func.max(ROW_HISTORY.c.recorded_at)).where(
-            ROW_HISTORY.c.table_name == 'media_objects',
-            sa.func.strpos(sa.func.coalesce(m.media_json, ''),
-                           ROW_HISTORY.c.row_key['sha256'].astext) > 0,
-        ).scalar_subquery()
-        edit_at = sa.select(sa.func.max(MESSAGE_EDIT.c.recorded_at)).where(
-            MESSAGE_EDIT.c.message_id == m.id).scalar_subquery()
-        return sa.select(
+        stmt = sa.select(
             m.id, m.sender_id, m.sender_name, m.ts, m.body, m.is_nora,
             m.delivery_status, m.raw_json, m.quoted_ts, m.media_json, m.person_id,
             turn_id_for_message().label("turn_id"),
@@ -214,14 +215,29 @@ class SqlProfileInputs:
 
             m.conversation_id, (sa.literal('message:') + sa.cast(m.id, sa.Text)).label('source'),
             _revision(snapshot).label('revision'), m.hidden_at, deleted.label('deleted'),
-            ready.label('cache_ready'), media.label('cached_media'),
+            cache.c.ready.label('cache_ready'), media.label('cached_media'),
             sa.or_(edits.is_not(None), deleted, m.hidden_at.is_not(None)).label('changed'),
             sa.func.coalesce(eligible, False).label('eligible'),
             sa.or_(m.person_id == person, sa.cast(m.mention_persons_json, JSONB)
                    .contains([person])).label('originally_eligible'),
-            sa.func.greatest(message_at, reading_at, edit_at).label('recorded_at'),
-        ).select_from(MESSAGES.outerjoin(latest, sa.true())).where(
-            _in_rooms(rooms), m.is_nora == 0)
+        ).select_from(MESSAGES.join(cache, cache.c.ref == sa.func.coalesce(m.media_json, ''))
+                      .outerjoin(latest, sa.true())).where(*scope)
+        # Pending predicates and ordering must reuse the revision projection.
+        # Keep provenance outside this fence: it is needed only for delivered rows.
+        q = stmt.cte('profile_messages').prefix_with('MATERIALIZED')
+        message_at = sa.select(sa.func.max(ROW_HISTORY.c.recorded_at)).where(
+            ROW_HISTORY.c.table_name == 'messages',
+            ROW_HISTORY.c.row_key == sa.func.jsonb_build_object('id', q.c.id),
+        ).scalar_subquery()
+        reading_at = sa.select(sa.func.max(ROW_HISTORY.c.recorded_at)).where(
+            ROW_HISTORY.c.table_name == 'media_objects',
+            sa.func.strpos(sa.func.coalesce(q.c.media_json, ''),
+                           ROW_HISTORY.c.row_key['sha256'].astext) > 0,
+        ).scalar_subquery()
+        edit_at = sa.select(sa.func.max(MESSAGE_EDIT.c.recorded_at)).where(
+            MESSAGE_EDIT.c.message_id == q.c.id).scalar_subquery()
+        return sa.select(q, sa.func.greatest(message_at, reading_at, edit_at)
+                         .label('recorded_at'))
 
     async def messages(
         self, *, key: str, rooms: Sequence[tuple[str, str]], person: str, limit: int,
@@ -511,7 +527,8 @@ class SqlProfileInputs:
                     linked.extend(await self.rollup(key=key, unit=unit, rooms=rooms,
                         person=person, limit=6, row_ids={kind: resolved.row_ids}))
             if r.source.startswith('memo:') and not linked:
-                q = self._messages(rooms=rooms, person=person).subquery()
+                q = self._messages(rooms=rooms, person=person,
+                    message_ids=[x.row.id for x in roots]).subquery()
                 async with self._engine.connect() as conn:
                     relevant = (await conn.execute(sa.select(q.c.id).where(q.c.eligible,
                         q.c.id.in_([x.row.id for x in roots])).limit(1))).first()

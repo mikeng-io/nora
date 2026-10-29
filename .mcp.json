@@ -1,5 +1,20 @@
 {
 	"mcpServers": {
+		"blender": {
+			"command": "uvx",
+			"args": [
+				"mcp-for-blender==2.2.4"
+			],
+			"env": {
+				"BLENDER_HOST": "127.0.0.1",
+				"BLENDER_PORT": "9876",
+				"DISABLE_TELEMETRY": "true"
+			}
+		},
+		"sentry": {
+			"type": "http",
+			"url": "https://mcp.sentry.dev/mcp"
+		},
 		"devin": {
 			"type": "http",
 			"url": "https://mcp.devin.ai/mcp",

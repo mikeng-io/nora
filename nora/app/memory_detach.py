@@ -168,7 +168,7 @@ async def detach_unit(
             f"Honcho workspace {from_honcho_workspace!r} is not this Nora's; nothing "
             "was deleted"
         )
-    rooms = [c for c in policy.conversations if c.unit == unit]
+    rooms = [c for c in policy.rooms() if c.unit == unit]
     for convo in rooms:
         landed = [
             await memory.session_holds_messages_in(

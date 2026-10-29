@@ -26,7 +26,6 @@
     {"type": "merge", "section": "Merges", "hidden": true}
   ],
   "always-update": true,
-  "exclude-paths": ["docs", "design", "assets", ".agents", ".claude", ".github"],
   "packages": {
     ".": {
       "package-name": "nora",

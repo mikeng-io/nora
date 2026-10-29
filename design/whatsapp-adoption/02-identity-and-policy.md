@@ -55,10 +55,9 @@ mechanism as every Nora room, per `design/10-identity-and-policy-schema.md`:
 - New WhatsApp chat → not in policy → **fail closed** (R-31 spirit): Nora
   logs, does not reply, does not feed Honcho.
 - Operator adds a room entry (`platform = "whatsapp"`, `conversation_id` =
-  the normalized WhatsApp JID — see JID contract below) → **recreate** →
-  admitted. Recreate, not restart: the single-file bind-mount inode gotcha
-  silently served a stale policy.toml twice on 2026-08-08
-  (`nora/obs/health.py:14-21` — "a recreate is needed, not a restart").
+  the normalized WhatsApp JID — see JID contract below) → **validated hot reload**
+  within three seconds → admitted. Copy in place to preserve the mounted inode;
+  a host-side rename still needs recreation to replace a pinned file mount.
 - `tools` / `location` stay omitted (deny-by-default). Room labels are unique
   within the unit; several rooms per platform are allowed (room-topology
   migration step 3 supersedes the old one-room-per-platform convention).
@@ -78,10 +77,9 @@ silently inert). The adapter must define, and contract-test:
 - which Baileys field feeds `conversation_id`, and how LID/phone forms
   normalize before matching
 
-Verification path: `load_policy` in the repo host venv (never
-`docker exec nora python` — container lacks pydantic), then
-`docker compose up -d --force-recreate nora`, then confirm `/health`
-`config.policy.disk_mtime` matches the edited file's mtime.
+Verification path: validate the candidate with `load_policy`, copy it in place,
+then confirm each reader counts `nora_config_reloads_total{outcome="applied"}`
+and `/health` reports `config.policy.stale = false`.
 
 ## Engagement: what triggers Nora on WhatsApp
 

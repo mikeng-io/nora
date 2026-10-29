@@ -33,12 +33,17 @@ def _conv(id, unit, persons, *, home=False):
     return SimpleNamespace(
         platform="signal", primary_id=id, unit=unit, home_room=home,
         persons=None if persons is None else frozenset(persons),
+        # A listed room is always absorbed; a discovered one only when ambient.
+        absorbed=True,
     )
 
 
 class _Policy:
     def __init__(self, *convs):
         self.conversations = convs
+
+    def rooms(self):
+        return self.conversations
 
     def home_rooms(self):
         return {c.unit: c for c in self.conversations if c.home_room}
@@ -70,4 +75,6 @@ def test_perception_is_built_with_the_rooms():
     ]
     rooms = {k.arg: k.value for k in call.keywords}.get("rooms")
     assert isinstance(rooms, ast.Call), "SocialPerception is built without rooms"
-    assert ast.unparse(rooms.func) == "social_person_rooms"
+    assert ast.unparse(rooms.func) == "LiveMapping"
+    assert isinstance(rooms.args[0], ast.Lambda)
+    assert ast.unparse(rooms.args[0].body) == "social_person_rooms(allowlist)"

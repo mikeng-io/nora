@@ -24,13 +24,14 @@ An outstanding attempt requires native failure recovery, even without a success 
 **Receipt exists: Komodo owns deployment.** Use the existing production Stack and
 runtime root, following [the procedure](../../../deploy/komodo/README.md). Checkout steps do not apply:
 
-- Code, doctrine, Dreamer and runtime skills ship through a complete published
-  release bundle and native Stack deployment. A master pull alone changes none
-  of those image-owned files; never rebuild local tags or restore source mounts.
+- Code, doctrine, Dreamer and runtime skills ship through a complete release or
+  manually selected master bundle and native Stack deployment. A master pull alone
+  changes none of those image-owned files; never rebuild local tags or restore source mounts.
 - Config/identity/policy edits retain backups, candidate validation and in-place
   copying. Hold the shared lock for file edits, then **release it before calling
   the native Stack**: its wrapper acquires the same lock and validates again.
-  Use manual `DeployStack` for recreation even when Git files have not changed.
+  Write the scoped file reload request below, then use manual `DeployStack` even
+  when Git files have not changed.
 - Rollback reverts the selecting commit on `deployments`, then uses the native
   Stack. This does not roll back database schema or host config (step 4).
 
@@ -49,18 +50,35 @@ bootstrap prerequisite does not authorize checkout deployment in Komodo mode.
 
 ## 1. Release and deployment
 
-Production uses Stack `nora-releases`. Merge the fix PR, then have the maintainer
-prepare the version through `nora-release` with an explicit manual bump. After
-reviewing and merging the metadata PR, separately dispatch publication with
-operator deployment admission or the daily automation's standing authorization
-when every release criterion passes. Ordinary master merges never publish a release.
+Production uses Stack `nora-releases`. Ordinary master pushes automatically
+prepare patch/minor metadata and merge it only after required checks, then
+release-please publishes the stable Release. Breaking ranges stop for an
+owner-only exact-candidate major dispatch (`nora-release`). Standing authority
+includes this existing release/deployment path; no daily evaluator is involved.
 The tag and GitHub Release trigger `release-images.yml`; all images must finish
 before it commits `compose.json` and `release.json` to `deployments`.
 
+For a master fix before a formal release, the owner may instead dispatch
+`gh workflow run release-images.yml --ref master -f target=master`, optionally
+adding `-f candidate=<full-master-sha>`. This resolves current master once,
+requires successful trusted CI on that SHA, stamps its actual `git describe`
+version and publishes the complete SHA-labelled image cohort without a tag or
+version bump. Master pushes do not build or deploy. Daily release automation
+has no admission to this entry. Releases and snapshots share publication ordering.
+
+Keep `MASTER_DEPLOY_ENABLED` absent/false until the operator updates and verifies
+the reviewed **installed** wrapper outside the fetched clone: the old wrapper
+refuses snapshot stamps. Follow the [one-time prerequisite](../../../deploy/komodo/README.md#manual-deploy-master);
+merging the source does not install it. Preserve formal releases' existing
+`RELEASE_IMAGES_ENABLED` control. Publication/readback of desired state is not
+proof of deployment; an identical-source rerun is refused without claiming success.
+
 The enabled `nora-release-poll` Procedure calls `DeployStackIfChanged` every ten
 minutes. Wait for it, or run native `DeployStack` on `nora-releases` manually.
-The installed wrapper holds the shared deploy lock, validates config, recreates
-and verifies the owned services, then writes `release-deploy.json`.
+The installed wrapper holds the shared deploy lock, validates config, reconciles
+changed services through native Compose and verifies the whole owned cohort, then
+writes `release-deploy.json`. A complete bundle can reuse proven unchanged adapter
+artifacts with their original provenance; Nora always rebuilds for its baked stamp.
 v6.5.0 completed this path without host commands on 2026-10-21.
 
 ## 2. Read back the selected release
@@ -82,9 +100,21 @@ Komodo mode; a host `git pull` does not update them.
 Hold `flock -o -E 75 -w 900 /tmp/nora-deploy.lock` while editing files. Back up
 first, edit a candidate copy, validate it through the running container, then
 copy it into place in situ (preserving the mount inode).
+While still locked, write mode-0600 `/etc/komodo/nora-deploy/config-reload.json`
+with `{"files":["config.toml"]}` (or `identity.toml` / `policy.toml`, combined when
+needed). It contains names only; no values or private hashes. See the
+[scoped reload procedure](../../../deploy/komodo/README.md#loaded-once-host-file-reload).
 Secrets stay in `.env`; never print them. Release the lock before manual native
-`DeployStack`: the wrapper reacquires it and validates again. Use `DeployStack`
-even with unchanged Git files so loaded-once config reaches recreated processes.
+`DeployStack`: the wrapper reacquires it, validates again and force-recreates only
+owned readers of the requested files. Without the request unchanged containers
+retain their IDs and loaded-once state. The request clears only after verified success.
+Ordinary identity and policy edits need no request: a valid file hot-reloads
+in-process within three seconds — read each consumer's `nora_config_reloads_total`
+`applied` outcome and `/health` config staleness. A `refused` outcome retains the
+last good file; restore/fix the copy. `restart_required` refuses the whole file:
+write the scoped reload request and use native Stack recreation for policy
+`[units]` or identity `[workspaces]` binding edits.
+See [the full capture audit](../../../design/policy-reload/00-design.md).
 On failure restore the backup under the lock, then use native Stack recovery
 and repeat receipt, image, health and process-config readback.
 

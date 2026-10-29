@@ -30,8 +30,8 @@
   {
     "name": "the resolver never considers another unit",
     "file": "nora/agent/relay.py",
-    "old": "c for c in self._policy.conversations if c.unit == unit",
-    "new": "c for c in self._policy.conversations",
+    "old": "c for c in self._policy.rooms() if c.unit == unit",
+    "new": "c for c in self._policy.rooms()",
     "target": "tests/test_relay.py::test_a_room_in_another_unit_is_refused"
   },
   {

@@ -1,0 +1,16 @@
+[
+  {
+    "name": "excluded sources never widen their audience",
+    "file": "nora/infra/sql/graph_projection.py",
+    "old": "    if row[\"exclude_persons\"]:",
+    "new": "    if False:",
+    "target": "tests/infra/test_memory_graph_sql.py::test_excluded_node_retires_projection_and_counts_skip"
+  },
+  {
+    "name": "record hubs never become recursive paths",
+    "file": "nora/infra/sql/memory_graph.py",
+    "old": " AND layer!='record'",
+    "new": "",
+    "target": "tests/infra/test_memory_graph_sql.py::test_sql_record_hub_stays_out_of_recursive_paths"
+  }
+]

@@ -222,8 +222,8 @@ To tell "quiet" from "broken":
    A rising count means senders are resolving to no person in `identity.toml`. This one
    is deceptive: Nora still replies and still addresses them by their Signal profile
    name, so she looks completely normal while writing nothing to Honcho. If you have
-   edited `identity.toml`, **restart her** — mapping is startup-only, so an edit alone
-   changes nothing.
+   edited `identity.toml`, check `nora_config_reloads_total{file="identity.toml"}`.
+   A valid edit applies within three seconds; `refused` keeps the last good version.
 
 5. Check whether she still knows **who she is**. This one does not make her silent — it
    makes her answer *herself*, which is worse:
@@ -293,9 +293,10 @@ frontmatter, missing required key, unparseable YAML) fails to parse.
 ## 3. "Rollback"
 
 The normal path is the installed Komodo Stack `nora-releases`. A fix merges to
-master, then `nora-release` prepares a metadata PR with an assessed source and
-explicit bump. Review and merge it, then dispatch publish separately; merging
-alone publishes nothing. The tag and GitHub Release trigger `release-images.yml`;
+master; ordinary pushes automatically prepare patch/minor metadata and enable
+exact-head auto-merge after required checks. Release-please publishes the merged
+metadata; breaking ranges stop for an owner-only exact-candidate major dispatch
+(`nora-release`). Publication triggers `release-images.yml`;
 a complete image build commits `compose.json` and `release.json` to `deployments`.
 The enabled `nora-release-poll` Procedure calls `DeployStackIfChanged` every ten
 minutes. The installed wrapper deploys and writes `release-deploy.json`.
@@ -349,7 +350,12 @@ Compare `deployments`' `release.json` (version, source SHA and image digests),
 and Nora's `/app/nora/version.json` stamp. Confirm service health and zero
 restarts after recreation. The wrapper performs these checks under the shared
 lock; a publication workflow or a prior receipt alone is not live proof.
-See [the installed deploy procedure](../.agents/skills/nora-deploy/SKILL.md).
+Unchanged image/effective service config preserves container IDs; a host bind-file
+content change alone does not recreate a process. After validated config/identity/
+policy edits, write the scoped `config-reload.json` request under the shared lock,
+then release it before native `DeployStack`. See
+[the installed deploy procedure](../.agents/skills/nora-deploy/SKILL.md) and
+[the file reload contract](../deploy/komodo/README.md#loaded-once-host-file-reload).
 
 ### Legacy checkout mode: `scripts/verify-deploy.py`
 
@@ -1038,7 +1044,8 @@ this deployment only **3 of 83** contacts carry both a number and a uuid, while
 every group member does.
 
 **Adopting somebody is just editing the file.** Paste the stanza into
-`identity.toml` and restart. Lazy adoption (DEC-16) then backfills everything
+`identity.toml`; new messages resolve after hot reload. Historical lazy adoption
+(DEC-16) still runs at the next startup and backfills everything
 they said *before* you mapped them into their Honcho peer — Nora never writes
 `identity.toml` herself (D6).
 
@@ -1150,9 +1157,15 @@ changes. Keeping them apart is what stops an allowlist from being buried among p
 numbers where nobody reviews it. Both `identity.toml` and `policy.toml` are
 gitignored and bind-mounted read-only into the container.
 
-**Editing either one requires a restart.** Mapping and policy are both loaded once at
-startup (Q4). An edit alone changes nothing, and nothing warns you — this is the single
-most likely way to lose an hour. `nora_unmapped_senders_total` is the tell.
+**Valid identity and policy edits hot-reload within three seconds.** Each reader
+validates with its startup loaders and cross-checks, then swaps one holder. Invalid,
+missing or allow-nothing policy edits keep the last good version and log WARNING.
+`nora_config_reloads_total{file,outcome}` distinguishes `applied`, `refused` and
+`restart_required`; `/health` reports a file stale while disk differs from the
+last applied content. Changes to policy unit/workspace declarations or identity
+Honcho workspace bindings refuse the whole reload and require recreation.
+Always validate a candidate copy, then copy it in place to preserve the mounted
+inode. See [the capture audit and limitations](../design/policy-reload/00-design.md).
 
 **Storage and credentials.** Compose mounts `./data` at `/app/data` and the
 whole `./state` directory at `/app/state` in Nora. Signal session material is
@@ -1650,3 +1663,35 @@ uv run python scripts/extraction_backfill.py --status
 
 Requeue keeps historical priority on those sources. Repeat status after the
 worker has processed them; do not mark a failed or unavailable read as complete.
+
+### Memory graph code projection
+
+`[memory.graph] enabled = false` is the default. Enabling it writes Record and
+Rollup relations beside the source projection, and produces pending work items;
+Phase 1 makes no model calls and adds no prompt reads or work-item consumer.
+Extraction continues independently. The message producer forms batches of at most
+20 in one unit and room once the oldest arrival is two seconds old. Its separate
+arrival outbox also records edits. Late media readings, social items, closed
+outings/co-locations/response episodes and Register revisions produce their own
+work. Source hashes identify source rows and revisions; they are not the rendered
+input hashes owned by the Cognition consumer.
+
+After enabling the graph, `nora memory graph-project` counts existing sources and
+prints current relation counts beside `memory_edge` counts without writing.
+`nora memory graph-project --apply --rows-per-second 25` projects them through the
+same source projectors, idempotently, with a delay between source rows. It does
+not enqueue historical model work. Nonzero `unprojected` after apply means queued
+sources still need repair; the command exits nonzero. Graph counts may exceed
+index counts because entities/relations are unit-scoped, and replies, reactions,
+stays and co-locations have column projections the older index did not hold.
+Run this maintenance command deliberately; it is not run on deployment.
+
+Work source keys are `message_batch` with a JSON array of message ids, `social`
+with `network:item_id`, `media` with the existing attachment id, Rollup episode
+kinds with their citation key (`episode` uses the response's message id), and
+Register kinds with their own row id. All are retained in `memory_work_item`.
+Identity pointers use `pointer_entity`; code-generated place ids use UUID5.
+New semantic entities should use globally unique UUIDs. Reusing an id across
+kinds or units is refused. Projection failures retain
+the source write, enqueue its source in the existing projection retry queue, and
+use the existing projection counter.
