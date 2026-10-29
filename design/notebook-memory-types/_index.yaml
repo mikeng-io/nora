@@ -21,10 +21,14 @@ origin: >
   needs to be remembered»; «Event and document are obviously the only things
   that are external-facing»; the six memory types «extremely important for
   anchoring the entire direction»; `Between us` dropped (option A); decisions
-  recorded by the conscious and written by the subconscious (option A).
+  recorded by the conscious and written by the subconscious (option A); a
+  person's interest is a graph edge, not a profile line (option A).
 members:
   - 00-design.md
+  - 10-relations.md
 edges:
+  - {src: 10-relations, dst: 00-design, rel: details, provenance: asserted}
+  - {src: 10-relations, dst: ../cognition-loop/05-data-model.md, rel: amends, provenance: asserted}
   - {src: 00-design, dst: ../cognition-loop/05-data-model.md, rel: amends, provenance: asserted}
   - {src: 00-design, dst: ../cognition-loop/40-register.md, rel: supersedes, provenance: asserted}
   - {src: 00-design, dst: ../standing-ledger/20-the-ledger.md, rel: amends, provenance: asserted}

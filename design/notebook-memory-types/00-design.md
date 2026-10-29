@@ -114,6 +114,9 @@ showing it is a disclosure, not a feature. This holds unless people ask to
 follow a topic, and then the subscription is an external posting and the
 topic behind it stays internal.
 
+How these kinds connect to each other and to the profile (cite, about,
+link; the entity as the hub): [10](10-relations.md).
+
 ## 4. Standing splits and retires
 
 Standing held what the Record cannot give back
