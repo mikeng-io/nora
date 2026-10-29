@@ -1,6 +1,6 @@
 """Read-only projections of a live source, evaluated at use time."""
 
-from collections.abc import Callable, ItemsView, Iterator, Mapping, Sequence, Set, ValuesView
+from collections.abc import Callable, Iterable, ItemsView, Iterator, Mapping, Sequence, Set, ValuesView
 from typing import TypeVar, overload
 
 K = TypeVar("K")
@@ -49,6 +49,16 @@ class LiveSequence(Sequence[T]):
 class LiveSet(Set[T]):
     def __init__(self, read: Callable[[], Set[T]]) -> None:
         self._read = read
+
+    @classmethod
+    def _from_iterable(cls, iterable: Iterable[T]) -> "LiveSet[T]":
+        """`Set`'s algebra (`-`, `&`, `|`, `^`) builds its result as
+        `cls(iterable)` — `cls` takes a READER, not an iterable, so the
+        materialized set is wrapped in one. Without this the result's `_read`
+        is the generator itself and its first use raises 'generator' object is
+        not callable."""
+        data = frozenset(iterable)
+        return cls(lambda: data)
 
     def __contains__(self, value: object) -> bool:
         return value in self._read()
