@@ -1,5 +1,17 @@
 # Changelog
 
+## [7.11.35](https://github.com/mikeng-io/nora/compare/v7.11.34...v7.11.35) (2026-10-29)
+
+
+### Features
+
+* **evals:** confirm cognition anchors with the deployment model ([f294210](https://github.com/mikeng-io/nora/commit/f294210a42ca9c33f5e167e743205ffacb75d71d))
+
+
+### Bug Fixes
+
+* **evals:** bound the confirmer's window and pin its scenario table ([3d133be](https://github.com/mikeng-io/nora/commit/3d133bef7c38f1a9a4d834e9259145a880221e1c))
+
 ## [7.11.34](https://github.com/mikeng-io/nora/compare/v7.11.33...v7.11.34) (2026-10-29)
 
 
