@@ -43,6 +43,7 @@ PUBLIC_ISSUES = {
 }
 BRANCH_RE = re.compile(rf"(?:{TYPES_RE})/[a-z0-9]+(?:-[a-z0-9]+)*")
 MARKER = "<!-- nora-contribution-feedback -->"
+NEEDS_INFO = "needs-info"
 PLACEHOLDER = re.compile(
     r"^(?:TODO|TBD|PENDING(?:_[A-Z]+)*|\.{3}|"
     r"<(?:what|why|how|describe|insert|fill|gate result|test result)\b[^>]*>)$",
@@ -219,6 +220,10 @@ def issue_problems(item: dict) -> list[str]:
             errors.append("Use a descriptive issue title.")
     elif not re.fullmatch(r"[^:\n]+: \S[^\n]*", item["title"].strip()):
         errors.append("Use an issue title shaped `<Area>: <the gap>`.")
+    if has_placeholders(item["title"]) or PLACEHOLDER.fullmatch(
+        item["title"].partition(":")[2].strip()
+    ):
+        errors.append("Replace unfilled prompts in the issue title.")
     if len(labels) != 1:
         errors.append(
             "Choose exactly one issue form: bug, enhancement, freeform or design-anchored."
@@ -229,18 +234,19 @@ def issue_problems(item: dict) -> list[str]:
     required = PUBLIC_ISSUES[sorted(public)[0]] if public else (DESIGN if design else FREEFORM)
     if design:
         anchor = re.search(r"^\*\*Design:\*\* (.+)$", body, re.M)
-        if not anchor or not substantive(anchor[1]):
+        if not anchor or not substantive(anchor[1]) or has_placeholders(anchor[1]):
             required = ["Design anchor", "What it covers", *required]
     # Area is already supplied by the title; CLI/API users need not duplicate it.
     for name in required:
         text = mapping.get(name, "").strip()
         uncertain = name in {
+            "Shape",
             "Decisions to record",
             "Not built",
             "Depends on / feeds",
             "Not in this issue",
         } and text.lower() in {"#tbd", "tbd", "none", "nothing", "undecided", "n/a"}
-        if not uncertain and not substantive(text):
+        if not uncertain and (not substantive(text) or has_placeholders(text)):
             errors.append(f"Complete the `{name}` section using the matching issue form.")
     return errors
 
@@ -369,6 +375,12 @@ def check_issue(github, repository: str, number: int) -> int:
         raise ValueError("Issue feedback cannot be used for pull requests")
     save_text(item)
     errors = issue_problems(item)
+    label_path = f"/repos/{repository}/issues/{number}/labels"
+    labelled = any(label["name"] == NEEDS_INFO for label in item["labels"])
+    if errors and not labelled:
+        github("POST", label_path, {"labels": [NEEDS_INFO]})
+    elif not errors and labelled:
+        github("DELETE", f"{label_path}/{NEEDS_INFO}")
     comments, page = [], 1
     while True:
         batch = github(
@@ -393,7 +405,9 @@ def check_issue(github, repository: str, number: int) -> int:
             + "\n".join(f"- {x}" for x in errors)
         )
         body += (
-            "\n\nThis is advisory; the issue remains open. See CONTRIBUTING.md and the issue forms."
+            "\n\nThis issue is labelled `needs-info` and remains open. "
+            "Complete the matching issue form; the label and this comment clear automatically. "
+            "See CONTRIBUTING.md."
         )
         if own and own["body"] != body:
             github("PATCH", f"/repos/{repository}/issues/comments/{own['id']}", {"body": body})

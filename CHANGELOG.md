@@ -1,5 +1,43 @@
 # Changelog
 
+## [7.11.32](https://github.com/mikeng-io/nora/compare/v7.11.31...v7.11.32) (2026-10-29)
+
+
+### Maintenance
+
+* **cognition:** add the parked one-session scenario suite ([ce23f74](https://github.com/mikeng-io/nora/commit/ce23f749f11836e008bc9f4c8908a3424e46aafb))
+* **cognition:** bind non-empty readings and widen the withheld acts ([595a6f7](https://github.com/mikeng-io/nora/commit/595a6f7554e4da78cad89eda017226e0f232a610))
+
+## [7.11.31](https://github.com/mikeng-io/nora/compare/v7.11.30...v7.11.31) (2026-10-29)
+
+
+### Maintenance
+
+* **issues:** mark incomplete reports and clear feedback on correction ([a0850e0](https://github.com/mikeng-io/nora/commit/a0850e05b1c0c1735c2d30231ee739ee7c948d1c))
+
+## [7.11.30](https://github.com/mikeng-io/nora/compare/v7.11.29...v7.11.30) (2026-10-29)
+
+
+### Maintenance
+
+* **cognition:** brief the one-session build, scenarios first ([cb4b99b](https://github.com/mikeng-io/nora/commit/cb4b99b5ed7bf4ffb37aa60ca7806fd1bace037c))
+* **cognition:** move the harness with the runner, require consumption tests ([762d3cd](https://github.com/mikeng-io/nora/commit/762d3cd07d4f30501645e77c3c3867cc84d8d69c))
+
+## [7.11.29](https://github.com/mikeng-io/nora/compare/v7.11.28...v7.11.29) (2026-10-29)
+
+
+### Security
+
+* **deps:** bump the npm-security group across 4 directories with 3 updates ([b03c4ae](https://github.com/mikeng-io/nora/commit/b03c4ae4232b42a69cb11a38889d3f44956b483c))
+
+## [7.11.28](https://github.com/mikeng-io/nora/compare/v7.11.27...v7.11.28) (2026-10-29)
+
+
+### Maintenance
+
+* **cognition:** correct the work-item coverage and carry retries to the wake ([a229097](https://github.com/mikeng-io/nora/commit/a229097a1e8a445878287eff7f689090b5d8efd1))
+* **cognition:** one session comprehends, connects and decides ([c2315c2](https://github.com/mikeng-io/nora/commit/c2315c2587a8d7958c2eaa8e6abac66565c2eccd))
+
 ## [7.11.27](https://github.com/mikeng-io/nora/compare/v7.11.26...v7.11.27) (2026-10-29)
 
 

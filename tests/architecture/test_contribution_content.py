@@ -298,6 +298,16 @@ class IssueGitHub:
 
     def __call__(self, method, path, body=None):
         self.calls.append((method, path, body))
+        if (method, path) == ("POST", "/repos/owner/repo/issues/103/labels"):
+            assert body == {"labels": [content.NEEDS_INFO]}
+            self.item["labels"].append({"name": content.NEEDS_INFO})
+            return copy.deepcopy(self.item["labels"])
+        if (method, path) == ("DELETE", "/repos/owner/repo/issues/103/labels/needs-info"):
+            assert any(label["name"] == content.NEEDS_INFO for label in self.item["labels"])
+            self.item["labels"] = [
+                label for label in self.item["labels"] if label["name"] != content.NEEDS_INFO
+            ]
+            return None
         if (method, path) == ("GET", "/repos/owner/repo/issues/103"):
             return self.item
         if method == "GET" and path.endswith("/comments?per_page=100&page=1"):
@@ -322,16 +332,25 @@ class IssueGitHub:
 
 def test_issue_feedback_updates_once_and_clears_only_its_own_comment_after_correction():
     github = IssueGitHub()
+    github.item["labels"].append({"name": "unrelated"})
     assert content.check_issue(github, "owner/repo", 103) == 0
     assert len(github.comments) == 2
+    assert {label["name"] for label in github.item["labels"]} == {
+        "freeform",
+        "unrelated",
+        "needs-info",
+    }
     assert content.check_issue(github, "owner/repo", 103) == 0
     assert len(github.comments) == 2
     github.item["body"] = "## What\nAn actual problem.\n"
     content.check_issue(github, "owner/repo", 103)
     assert sum(call[0] == "PATCH" for call in github.calls) == 1
-    github.item = issue()
+    github.item["body"] = issue()["body"]
     assert content.check_issue(github, "owner/repo", 103) == 0
     assert [x["id"] for x in github.comments] == [1]
+    assert {label["name"] for label in github.item["labels"]} == {"freeform", "unrelated"}
+    label_calls = [call for call in github.calls if "/labels" in call[1]]
+    assert [call[0] for call in label_calls] == ["POST", "DELETE"]
 
 
 @pytest.mark.parametrize(
@@ -572,3 +591,25 @@ def test_tagged_label_cannot_disable_source_guard_on_an_open_release_pr():
     assert content.pr_problems(item, "owner/repo", commits=[])
     item["state"] = "closed"  # Historical publication label updates remain supported.
     assert content.pr_problems(item, "owner/repo", commits=[]) == []
+
+
+@pytest.mark.parametrize("label", ["freeform", "design-anchored", "bug", "enhancement"])
+def test_issue_required_sections_reject_embedded_unfilled_prompts(label):
+    item = issue()
+    item["labels"] = [{"name": label}]
+    headings = content.PUBLIC_ISSUES.get(
+        label, content.DESIGN if label == "design-anchored" else content.FREEFORM
+    )
+    item["body"] = "\n".join(f"## {name}\nConcrete evidence.\n" for name in headings)
+    if label == "design-anchored":
+        item["body"] = "**Design:** design/recall.md §2\n" + item["body"]
+    assert content.issue_problems(item) == []
+    item["body"] += "\n- **TODO**\n"
+    assert content.issue_problems(item)
+
+
+@pytest.mark.parametrize("title", ["Memory: TBD", "Memory: <describe the gap>", "Memory: "])
+def test_internal_issue_title_requires_a_populated_area_and_gap(title):
+    item = issue()
+    item["title"] = title
+    assert content.issue_problems(item)

@@ -730,3 +730,72 @@ async def test_topic_activity_direct_evidence_counts_times_and_failure(graph: Me
     assert (
         await graph.topic_activity(unit="u1", topic=topic.key, at=NOW)
     ).status == "nothing_found"
+
+
+# design/unified-memory/31 §2: guarantees independent of the future session.
+@pytest.mark.parametrize("fault", ["missing", "unshown", "unquoted"])
+async def test_cognition_06_evidence_is_present_shown_and_quoted(graph: MemoryGraph, fault: str):
+    evidence = () if fault == "missing" else (EV,)
+    sources = {} if fault == "unshown" else {SOURCE.key: SOURCE}
+    if fault == "unquoted":
+        evidence = (replace(EV, span="invented quotation"),)
+    refused = await graph.stage_and_admit(
+        entities=(PERSON, EVENT), relations=(REL,), evidence=evidence, sources=sources,
+    )
+    reason = {"missing": "missing_evidence", "unshown": "unseen_source",
+              "unquoted": "span_not_in_source"}[fault]
+    assert Refusal("relation", REL.id, reason) in refused.refused
+    assert not refused.relations
+    await load(graph)  # positive control: the same shape with shown evidence admits
+
+
+async def test_cognition_04_correction_closes_without_deleting(graph: MemoryGraph):
+    await load(graph)
+    correction = Correction(REL.id, "close", NOW, evidence=(SOURCE.key,))
+    admitted = await graph.stage_and_admit(
+        entities=(), relations=(), evidence=(), sources={SOURCE.key: SOURCE},
+        corrections=(correction,),
+    )
+    assert admitted.corrections == (correction,)
+    old = await graph.walk(
+        (PERSON.key,), Walk("u1", frozenset({"p1"}), valid_at=NOW - timedelta(seconds=1))
+    )
+    assert [e.relation.id for e in old.relations] == [REL.id]
+    current = await graph.walk((PERSON.key,), Walk("u1", frozenset({"p1"}), valid_at=NOW))
+    assert not current.relations
+
+
+@pytest.mark.parametrize("scenario", [7, 13], ids=["07-unlisted-person", "13-private-like"])
+async def test_cognition_scope_inside_walk(graph: MemoryGraph, scenario: int):
+    # A hidden intermediate must not become a bridge to an otherwise public node.
+    topic = Entity("scope-topic", "topic", "u1", "Generated topic")
+    hidden = replace(REL, id="hidden", rel="interested_in", dst=topic.key, persons=("p1", "p2"))
+    source = replace(SOURCE, persons=("p1", "p2"))
+    admitted = await graph.stage_and_admit(
+        entities=(PERSON, topic), relations=(hidden,),
+        evidence=(replace(EV, relation_id=hidden.id),), sources={SOURCE.key: source},
+    )
+    assert admitted.relations == (hidden,)
+    for query in (Walk("u1", frozenset({"p1"})), Walk("other-unit", frozenset({"p1", "p2"}))):
+        result = await graph.walk((PERSON.key,), query)
+        assert not result.nodes and not result.relations, scenario
+    allowed = await graph.walk((PERSON.key,), Walk("u1", frozenset({"p1", "p2"})))
+    assert [edge.relation.id for edge in allowed.relations] == [hidden.id]
+
+
+async def test_cognition_12_interest_weight_counts_distinct_evidence(graph: MemoryGraph):
+    topic = Entity("count-topic", "topic", "u1", "Generated racing")
+    relation = replace(REL, rel="interested_in", dst=topic.key)
+    sources = tuple(replace(SOURCE, key=("message", f"count-{i}")) for i in range(3))
+    admitted = await graph.stage_and_admit(
+        entities=(PERSON, topic), relations=(relation,),
+        evidence=tuple(Evidence(s.key, relation_id=relation.id) for s in sources),
+        sources={s.key: s for s in sources},
+    )
+    assert admitted.relations == (relation,)
+    activity = await graph.topic_activity(unit="u1", topic=topic.key, at=NOW)
+    assert activity.status == "ok"
+    assert activity.persons[0].evidence_count == 3
+    assert set(activity.persons[0].sources) == {s.key for s in sources}
+    outside = await graph.topic_activity(unit="other-unit", topic=topic.key, at=NOW)
+    assert outside.status == "nothing_found"

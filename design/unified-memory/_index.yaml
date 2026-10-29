@@ -55,6 +55,8 @@ members:
   - 25-memory-graph.md
   - 27-the-memory-is-a-graph.md
   - 28-provenance.md
+  - 29-one-cognition-session.md
+  - 31-build-one-session.md
   - 30-identity-and-character.md
   - 35-persona.md
   - 45-persona-adaptor.md
@@ -102,6 +104,9 @@ edges:
   - {src: 18-extraction, dst: 45-persona-adaptor, rel: extends, provenance: asserted}
   - {src: 18-extraction, dst: ../cognition-loop/05-data-model, rel: extends, provenance: asserted}
   - {src: 18-extraction, dst: ../cognition-loop/25-rollup, rel: extends, provenance: asserted}
+  - {src: 31-build-one-session, dst: 29-one-cognition-session, rel: details, provenance: asserted}
+  - {src: 29-one-cognition-session, dst: 27-the-memory-is-a-graph, rel: supersedes, provenance: asserted}
+  - {src: 29-one-cognition-session, dst: 28-provenance, rel: depends_on, provenance: asserted}
   - {src: 28-provenance, dst: 27-the-memory-is-a-graph, rel: details, provenance: asserted}
   - {src: 28-provenance, dst: 40-prior-art, rel: extends, provenance: asserted}
   - {src: 27-the-memory-is-a-graph, dst: 00-intent, rel: extends, provenance: asserted}

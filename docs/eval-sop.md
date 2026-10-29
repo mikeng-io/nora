@@ -67,6 +67,40 @@ uv run python -m evals injections identity_grounding --judge
   population error rate.
 - Every run prints its own spend; put it in the PR with the command.
 
+## Anchoring the Cognition session corpus
+
+`cognition_session` starts with 11 parked cases, including three held-out cases.
+No baseline is claimed before anchoring. On the deploy host's eval checkout,
+run `uv run python -m scripts.find_cognition_anchors --source-url "$EVAL_SOURCE_URL"`.
+The URL must name a `*_eval` clone; the transaction is read-only. The private
+pseudonym map must contain explicit `room_*==>real` aliases. Output contains
+only those room pseudonyms, `before_ms`, scenario numbers and counts.
+
+The finder uses short-message, question, repeated-author and lexical shapes;
+it does not establish meaning, an open note, an admission refusal, attendance
+or the absence of a private preference. In particular its scenario 8 candidates
+are only multi-message contexts. Confirm each candidate privately on the host,
+including the open state and evidence that makes the scenario true. An empty
+result means no heuristic candidate, not that no real instance exists.
+
+After confirmation, replace `parked` with a pseudonymised `snapshot` (platform,
+conversation_id and before_ms), and specialise the existing ToolRouteGrader
+argument checks to that anchor's shown evidence, note references, options and
+local/private preferences. The prose expectation explains the target; scoring
+uses `tools`, `required_tools`, `not_tools`, `before`, `args_include` and
+`args_exclude`, never that prose alone. Empty proposals must name empty readings,
+entities, relations, evidence and corrections. Bind all three visit references
+for the profile case and the local answer/excluded private preference for the
+scope case. Keep cases parked until those checks are grounded. Do not copy
+real message text or identifiers into the corpus. Use existing pseudonyms.
+
+Then run the baseline against today's system with
+`uv run python -m evals cognition_session --sample 3`, reporting the census,
+PASS/FAIL/ERROR/UNSTABLE and draw counts. Missing session tools fail routing;
+a disabled session or timeout is ERROR. Record the baseline before changing
+the session. Cases with `metadata.held_out: true` must never be quoted in an
+instruction or used as worked examples; retain them for before/after scoring.
+
 ## Cloud development and private evaluation
 
 The proposed GitOps path would handle deployment; it would not give a cloud

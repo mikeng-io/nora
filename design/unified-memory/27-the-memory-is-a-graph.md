@@ -340,6 +340,12 @@ checks (`comprehend_render._VOCABULARY`), so the two cannot drift.
 
 ## 7. One Cognition loop: comprehend, measure, serialize
 
+> **Superseded 2026-10-29 by [29](29-one-cognition-session.md)** (operator):
+> one Cognition session per wake comprehends, connects and decides as one act;
+> the three separate step sessions below, the per-item runner and "comprehend
+> on arrival" are retired. §14's tool names are superseded by 29 §4. The
+> stores, layers, vocabulary and admission of this node stand.
+
 **Operator, 2026-10-28:** everything said and everything done keeps shaping
 the memory and the profiles, so the Cognition loop is the one driver. Every stimulus (a message, a story, a stay, a state change) drives steps 1
 and 2 on arrival; step 3 follows on the wake rules. Each step is a bounded model session of its own, with its own

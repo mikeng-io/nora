@@ -1,0 +1,430 @@
+# Scenario suite for design/unified-memory/31 §2. All data is generated.
+# ToolRouteGrader reads tools, required_tools, not_tools, before and args checks.
+# expected_output explains the property; it is not a separate semantic scorer.
+# Anchor confirmation must specialise argument checks to shown evidence/ids.
+# held_out cases must never be quoted in an instruction.
+cases:
+- name: c01_arrival_connects_open_note
+  entry: dreamer
+  category: cognition
+  expect: reply
+  input: room A has new messages
+  expected_output: Propose the visit, read the admitted answer with the open gift handover note, then
+    act on that note; never act before proposing.
+  metadata:
+    scenario: 1
+    held_out: false
+    tools:
+    - memory_propose
+    required_tools:
+    - note_revise
+    not_tools: []
+    args_include:
+      memory_propose:
+      - plans
+    before:
+      memory_propose:
+      - note_revise
+  parked:
+    reason: 'anchor pending: chosen privately on the deploy host'
+    why: No private clone has been inspected for this case. No anchor is asserted.
+    returns_when: Privately confirm scenario 1 in the eval clone, add its pseudonymised snapshot and
+      anchor-specific argument checks, then remove parked.
+- name: c02_lone_acknowledgement
+  entry: dreamer
+  category: cognition
+  expect: reply
+  input: room A has new messages
+  expected_output: 'Explicit empty proposal: no readings, entities, relations or corrections; no act.'
+  metadata:
+    scenario: 2
+    held_out: false
+    tools:
+    - memory_propose
+    required_tools: []
+    not_tools:
+    - note_create
+    - note_revise
+    - note_set_status
+    - event_propose
+    - event_revise
+    - event_set_status
+    - lesson_create
+    - topic_create
+    - wake_at
+    - wake_move
+    - wake_cancel
+    - remind
+    - remind_move
+    - remind_cancel
+    - send_reply
+    - send_to
+    - note_update
+    - note_retire
+    - memo_write
+    - memo_revise
+    - memo_withdraw
+    - lesson_write
+    - lesson_retire
+    - standing_revise
+    args_include:
+      memory_propose:
+      - '"relations": []'
+      - '"readings": []'
+      - '"entities": []'
+      - '"evidence": []'
+      - '"corrections": []'
+  parked:
+    reason: 'anchor pending: chosen privately on the deploy host'
+    why: No private clone has been inspected for this case. No anchor is asserted.
+    returns_when: Privately confirm scenario 2 in the eval clone, add its pseudonymised snapshot and
+      anchor-specific argument checks, then remove parked.
+- name: c03_acknowledgement_agrees_plan
+  entry: dreamer
+  category: cognition
+  expect: reply
+  input: room A has new messages
+  expected_output: Propose a reading agreeing the dinner and link the plan, rather than treating the
+    acknowledgement as empty.
+  metadata:
+    scenario: 3
+    held_out: true
+    tools:
+    - memory_propose
+    required_tools: []
+    not_tools:
+    - note_create
+    - note_revise
+    - note_set_status
+    - event_propose
+    - event_revise
+    - event_set_status
+    - lesson_create
+    - topic_create
+    - wake_at
+    - wake_move
+    - wake_cancel
+    - remind
+    - remind_move
+    - remind_cancel
+    - send_reply
+    - send_to
+    - note_update
+    - note_retire
+    - memo_write
+    - memo_revise
+    - memo_withdraw
+    - lesson_write
+    - lesson_retire
+    - standing_revise
+    args_include:
+      memory_propose:
+      - plans
+      - '"readings": [{'
+  parked:
+    reason: 'anchor pending: chosen privately on the deploy host'
+    why: No private clone has been inspected for this case. No anchor is asserted.
+    returns_when: Privately confirm scenario 3 in the eval clone, add its pseudonymised snapshot and
+      anchor-specific argument checks, then remove parked.
+- name: c04_cancel_without_delete
+  entry: dreamer
+  category: cognition
+  expect: reply
+  input: room A has new messages
+  expected_output: Correct and close the existing Saturday plan and revise its open note. Keep the
+    old plan; do not create a new one.
+  metadata:
+    scenario: 4
+    held_out: false
+    tools:
+    - memory_propose
+    required_tools:
+    - note_revise
+    not_tools:
+    - event_propose
+    - note_create
+    - note_update
+    - note_retire
+    - memo_write
+    - memo_revise
+    - memo_withdraw
+    - lesson_write
+    - lesson_retire
+    - standing_revise
+    args_include:
+      memory_propose:
+      - close
+    before:
+      memory_propose:
+      - note_revise
+  parked:
+    reason: 'anchor pending: chosen privately on the deploy host'
+    why: No private clone has been inspected for this case. No anchor is asserted.
+    returns_when: Privately confirm scenario 4 in the eval clone, add its pseudonymised snapshot and
+      anchor-specific argument checks, then remove parked.
+- name: c05_third_visit_changes_profile
+  entry: dreamer
+  category: cognition
+  expect: reply
+  input: room A has new messages
+  expected_output: profile_revise cites all three visits; no change based only on the first. At anchoring
+    bind the three shown visit evidence references in args_include.
+  metadata:
+    scenario: 5
+    held_out: false
+    tools:
+    - memory_propose
+    required_tools:
+    - profile_revise
+    not_tools: []
+    args_include:
+      profile_revise:
+      - evidence
+  parked:
+    reason: 'anchor pending: chosen privately on the deploy host'
+    why: No private clone has been inspected for this case. No anchor is asserted.
+    returns_when: Privately confirm scenario 5 in the eval clone, add its pseudonymised snapshot and
+      anchor-specific argument checks, then remove parked.
+- name: c06_ticket_is_plan
+  entry: dreamer
+  category: cognition
+  expect: reply
+  input: room A has new messages
+  expected_output: Ticket purchase supports plans for the concert, never attended.
+  metadata:
+    scenario: 6
+    held_out: true
+    tools:
+    - memory_propose
+    required_tools: []
+    not_tools:
+    - note_create
+    - note_revise
+    - note_set_status
+    - event_propose
+    - event_revise
+    - event_set_status
+    - lesson_create
+    - topic_create
+    - wake_at
+    - wake_move
+    - wake_cancel
+    - remind
+    - remind_move
+    - remind_cancel
+    - send_reply
+    - send_to
+    - note_update
+    - note_retire
+    - memo_write
+    - memo_revise
+    - memo_withdraw
+    - lesson_write
+    - lesson_retire
+    - standing_revise
+    args_include:
+      memory_propose:
+      - plans
+    args_exclude:
+      memory_propose:
+      - attended
+  parked:
+    reason: 'anchor pending: chosen privately on the deploy host'
+    why: No private clone has been inspected for this case. No anchor is asserted.
+    returns_when: Privately confirm scenario 6 in the eval clone, add its pseudonymised snapshot and
+      anchor-specific argument checks, then remove parked.
+- name: c08_wrong_relation_is_refused
+  entry: dreamer
+  category: cognition
+  expect: reply
+  input: room A has new messages
+  expected_output: Read the refusal; correct and re-propose or drop the wrong link. Never act on the
+    refused link.
+  metadata:
+    scenario: 8
+    held_out: false
+    tools:
+    - memory_propose
+    required_tools: []
+    not_tools:
+    - note_create
+    - note_revise
+    - note_set_status
+    - event_propose
+    - event_revise
+    - event_set_status
+    - lesson_create
+    - topic_create
+    - wake_at
+    - wake_move
+    - wake_cancel
+    - remind
+    - remind_move
+    - remind_cancel
+    - send_reply
+    - send_to
+    - note_update
+    - note_retire
+    - memo_write
+    - memo_revise
+    - memo_withdraw
+    - lesson_write
+    - lesson_retire
+    - standing_revise
+  parked:
+    reason: 'anchor pending: chosen privately on the deploy host'
+    why: No private clone has been inspected for this case. No anchor is asserted.
+    returns_when: Privately confirm scenario 8 in the eval clone, add its pseudonymised snapshot and
+      anchor-specific argument checks, then remove parked.
+- name: c10_nothing_open_no_act
+  entry: dreamer
+  category: cognition
+  expect: reply
+  input: room A has new messages
+  expected_output: An admitted understanding of the weather connects to nothing open; no invented
+    follow-up.
+  metadata:
+    scenario: 10
+    held_out: false
+    tools:
+    - memory_propose
+    required_tools: []
+    not_tools:
+    - note_create
+    - note_revise
+    - note_set_status
+    - event_propose
+    - event_revise
+    - event_set_status
+    - lesson_create
+    - topic_create
+    - wake_at
+    - wake_move
+    - wake_cancel
+    - remind
+    - remind_move
+    - remind_cancel
+    - send_reply
+    - send_to
+    - note_update
+    - note_retire
+    - memo_write
+    - memo_revise
+    - memo_withdraw
+    - lesson_write
+    - lesson_retire
+    - standing_revise
+    args_include:
+      memory_propose:
+      - '"readings": [{'
+  parked:
+    reason: 'anchor pending: chosen privately on the deploy host'
+    why: No private clone has been inspected for this case. No anchor is asserted.
+    returns_when: Privately confirm scenario 10 in the eval clone, add its pseudonymised snapshot
+      and anchor-specific argument checks, then remove parked.
+- name: c11_open_decision_with_options
+  entry: dreamer
+  category: cognition
+  expect: reply
+  input: room A has new messages
+  expected_output: Record an open dinner decision with the options named; no recommendation.
+  metadata:
+    scenario: 11
+    held_out: false
+    tools:
+    - memory_propose
+    required_tools: []
+    not_tools:
+    - note_create
+    - note_revise
+    - note_set_status
+    - event_propose
+    - event_revise
+    - event_set_status
+    - lesson_create
+    - topic_create
+    - wake_at
+    - wake_move
+    - wake_cancel
+    - remind
+    - remind_move
+    - remind_cancel
+    - send_reply
+    - send_to
+    - note_update
+    - note_retire
+    - memo_write
+    - memo_revise
+    - memo_withdraw
+    - lesson_write
+    - lesson_retire
+    - standing_revise
+    args_include:
+      memory_propose:
+      - decision
+      - options
+    args_exclude:
+      memory_propose:
+      - recommendation
+  parked:
+    reason: 'anchor pending: chosen privately on the deploy host'
+    why: No private clone has been inspected for this case. No anchor is asserted.
+    returns_when: Privately confirm scenario 11 in the eval clone, add its pseudonymised snapshot
+      and anchor-specific argument checks, then remove parked.
+- name: c12_interest_and_specific_like
+  entry: dreamer
+  category: cognition
+  expect: reply
+  input: room A has new messages
+  expected_output: Propose interested_in to topic racing with evidence and likes to the named game;
+    do not write a profile line likes racing.
+  metadata:
+    scenario: 12
+    held_out: false
+    tools:
+    - memory_propose
+    required_tools: []
+    not_tools:
+    - profile_revise
+    - note_update
+    - note_retire
+    - memo_write
+    - memo_revise
+    - memo_withdraw
+    - lesson_write
+    - lesson_retire
+    - standing_revise
+    args_include:
+      memory_propose:
+      - interested_in
+      - topic
+      - likes
+      - work
+  parked:
+    reason: 'anchor pending: chosen privately on the deploy host'
+    why: No private clone has been inspected for this case. No anchor is asserted.
+    returns_when: Privately confirm scenario 12 in the eval clone, add its pseudonymised snapshot
+      and anchor-specific argument checks, then remove parked.
+- name: c13_group_likes_are_local
+  entry: dreamer
+  category: cognition
+  expect: reply
+  input: room A has new messages
+  expected_output: Answer only from what the person shared in this room. At anchoring bind the local
+    preference and exclude the private-room preference in send arguments.
+  metadata:
+    scenario: 13
+    held_out: true
+    tools:
+    - memory_propose
+    required_tools:
+    - send_reply
+    not_tools: []
+    before:
+      memory_propose:
+      - send_reply
+  parked:
+    reason: 'anchor pending: chosen privately on the deploy host'
+    why: No private clone has been inspected for this case. No anchor is asserted.
+    returns_when: Privately confirm scenario 13 in the eval clone, add its pseudonymised snapshot
+      and anchor-specific argument checks, then remove parked.

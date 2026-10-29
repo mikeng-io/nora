@@ -93,14 +93,38 @@ def test_workflow_join_and_trust_boundary():
     jobs = ci["jobs"]
     assert ci["name"] == "CI"
     assert ci[True]["pull_request"] is None
+    wiki = yaml.safe_load((root / ".github/workflows/wiki.yml").read_text())
+    for workflow in (ci, wiki):
+        assert workflow["concurrency"]["cancel-in-progress"] == (
+            "${{ github.event_name == 'pull_request' }}"
+        )
+        for key in ("github.workflow", "github.event_name", "github.sha"):
+            assert key in workflow["concurrency"]["group"]
     assert jobs["checks"]["if"] == "always()"
     assert set(jobs["checks"]["needs"]) == {"classify", *ci_plan.JOBS}
     assert jobs["checks"]["steps"][-1]["run"] == "python3 -m scripts.ci_plan verify"
     for name in ci_plan.JOBS:
         assert "needs.classify.outputs.plan" in jobs[name]["if"]
+    scans = {"codeql-python", "codeql-javascript", "codeql-go", "codeql-actions"}
+    assert {name for name, job in jobs.items()
+            if job.get("permissions", {}).get("security-events") == "write"} == scans
+    for name in scans:
+        steps = jobs[name]["steps"]
+        checkout = next(s for s in steps if s.get("uses", "").startswith("actions/checkout@"))
+        assert checkout["with"]["fetch-depth"] == 0
+        assert "ref" not in checkout["with"]  # analyze the event's merge checkout
+        analysis = next(i for i, s in enumerate(steps)
+                        if s.get("uses", "").startswith("github/codeql-action/analyze@"))
+        assert steps[analysis]["with"]["output"] == ".codeql-results"
+        gates = [i for i, s in enumerate(steps)
+                 if s.get("run") == "python3 -m scripts.ci_plan codeql"]
+        assert len(gates) == 1 and gates[0] > analysis
     admin = yaml.safe_load((root / ".github/workflows/contribution-content.yml").read_text())
     assert admin["permissions"] == {} and "concurrency" not in admin
     assert "pull_request_target" in admin[True]
+    triage = next(s for s in admin["jobs"]["pr-metadata"]["steps"]
+                  if s.get("run") == "python3 -m scripts.triage_pr")
+    assert triage["continue-on-error"] is True
     for job in admin["jobs"].values():
         for step in job["steps"]:
             assert "${{" not in step.get("run", "")
@@ -174,7 +198,11 @@ def test_shared_document_reader_keeps_full_suite_fallback(tmp_path, monkeypatch)
     [("7.0", 2, "warning", 1), ("9.9", 1, "warning", 0),
      ("6.9", 2, "warning", 0), ("0", 2, "error", 1)],
 )
-def test_codeql_gates_added_high_severity_locations(tmp_path, severity, line, level, expected):
+@pytest.mark.parametrize("component", ["driver", "extension"])
+@pytest.mark.parametrize("drift", [False, True])
+def test_codeql_gates_added_high_severity_locations(
+    tmp_path, severity, line, level, expected, component, drift,
+):
     def git(*args):
         return subprocess.check_output(["git", *args], cwd=tmp_path, text=True).strip()  # noqa: S603
 
@@ -188,7 +216,16 @@ def test_codeql_gates_added_high_severity_locations(tmp_path, severity, line, le
     (tmp_path / "sample.py").write_text("existing\nadded\n")
     git("add", ".")
     git("commit", "-qm", "head")
-    event = {"pull_request": {"base": {"sha": base}, "head": {"sha": git("rev-parse", "HEAD")}}}
+    head = git("rev-parse", "HEAD")
+    git("switch", "-qc", "tested-base", base)
+    if drift:
+        (tmp_path / "sample.py").write_text("prefix\n" * 6 + "existing\n")
+        git("add", ".")
+        git("commit", "-qm", "master advances above the PR change")
+        line += 6  # SARIF uses the analyzed merge tree's line numbers.
+    base = git("rev-parse", "HEAD")
+    git("merge", "--no-ff", head, "-qm", "tested merge")
+    event = {"pull_request": {"base": {"sha": base}, "head": {"sha": head}}}
     directory = tmp_path / "sarif"
     directory.mkdir()
     report = {"runs": [{
@@ -201,6 +238,11 @@ def test_codeql_gates_added_high_severity_locations(tmp_path, severity, line, le
             },
         }]}],
     }]}
+    if component == "extension":
+        tool = report["runs"][0]["tool"]
+        # Current CodeQL puts query-pack rule descriptors in tool.extensions.
+        tool["extensions"] = [{"name": "synthetic-query-pack", "rules": tool["driver"]["rules"]}]
+        tool["driver"]["rules"] = []
     (directory / "python.sarif").write_text(json.dumps(report))
     assert ci_plan.codeql_findings(event, tmp_path, directory) == expected
     # The same historical findings are uploaded by baseline events without blocking.
@@ -213,3 +255,17 @@ def test_codeql_gates_added_high_severity_locations(tmp_path, severity, line, le
 def test_absent_codeql_output_is_not_a_clean_scan(tmp_path):
     with pytest.raises(ValueError, match="no SARIF"):
         ci_plan.codeql_findings({}, tmp_path, tmp_path)
+
+
+def test_codeql_rejects_a_pr_checkout_that_is_not_the_analyzed_merge(tmp_path):
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "-c", "user.name=Synthetic", "-c", "user.email=synthetic@example.invalid",
+         "commit", "--allow-empty", "-qm", "base"], cwd=tmp_path, check=True,
+    )
+    (tmp_path / "empty.sarif").write_text(json.dumps({"runs": [{
+        "tool": {"driver": {"rules": []}}, "results": [],
+    }]}))
+    assert ci_plan.codeql_findings({}, tmp_path, tmp_path) == 0
+    with pytest.raises(ValueError, match="analyzed PR merge"):
+        ci_plan.codeql_findings({"pull_request": {}}, tmp_path, tmp_path)
