@@ -27,6 +27,7 @@ async def test_boolean_model_contract(content, finish, expected, monkeypatch):
             return httpx.Response(503, json={"error": {"code": "ALL_TARGETS_SKIPPED"}})
         assert payload["model"] == "generated-production-model"
         assert '{"match": true}' in payload["messages"][0]["content"]
+        assert '{"match": false}' in payload["messages"][0]["content"]
         assert "Must not:" in payload["messages"][0]["content"]
         moment = json.loads(payload["messages"][1]["content"])
         assert moment["messages"][0] == {"at_ms": 1000, "speaker": "speaker_1", "text": "k"}
