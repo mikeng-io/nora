@@ -12,6 +12,7 @@ import os
 import random
 import re
 import statistics
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
@@ -647,6 +648,49 @@ async def quality(
     return report
 
 
+# Fixed before any smoke run: step one is healthy enough for the full spike
+# only when nearly every item saves a valid write and few proposals are refused.
+SMOKE_MARKS = {"valid_write_rate": 0.8, "relation_refused_share": 0.2, "reading_refused_share": 0.2}
+
+
+def smoke_health(
+    items: Sequence[str],
+    states: Sequence[str],
+    graphs: Sequence[dict[str, Any]],
+    refusals: Sequence[dict[str, Any]],
+    claims: int,
+) -> dict[str, Any]:
+    """Step one's write health on a small sample; counts and reasons only."""
+    written = {g["work_id"] for g in graphs}
+    relations = sum(len(g["payload"].get("relations", ())) for g in graphs)
+    entities = sum(len(g["payload"].get("entities", ())) for g in graphs)
+    by = Counter(f"{r['part']}:{r['reason']}" for r in refusals)
+    refused_relations = sum(v for k, v in by.items() if k.startswith("relation:"))
+    refused_readings = sum(v for k, v in by.items() if k.startswith("reading:"))
+    measured = {
+        "valid_write_rate": len(written & set(items)) / len(items) if items else 0.0,
+        "relation_refused_share": refused_relations / ((relations + refused_relations) or 1),
+        "reading_refused_share": refused_readings / ((claims + refused_readings) or 1),
+    }
+    passed = (
+        all(s == "settled" for s in states)
+        and relations > 0
+        and measured["valid_write_rate"] >= SMOKE_MARKS["valid_write_rate"]
+        and all(measured[k] <= SMOKE_MARKS[k] for k in SMOKE_MARKS if k != "valid_write_rate")
+    )
+    return {
+        "status": "INSUFFICIENT" if len(items) < 5 else "PASS" if passed else "FAIL",
+        "items": len(items),
+        "settled": sum(s == "settled" for s in states),
+        "relations_admitted": relations,
+        "entities_admitted": entities,
+        "readings_admitted": claims,
+        "refusals": dict(by.most_common()),
+        "marks": SMOKE_MARKS,
+        **measured,
+    }
+
+
 def cost_row(step: str, selected: Sequence[str], receipts: Sequence[dict[str, Any]],
              sessions: Sequence[dict[str, Any]]) -> dict[str, Any]:
     """Tokens and sessions per work item for one step; money is tokens times the route's price."""
@@ -672,6 +716,22 @@ def cost_row(step: str, selected: Sequence[str], receipts: Sequence[dict[str, An
     }
 
 
+async def project(engine: Any, scope: Any, rate: float) -> None:
+    await graph_project(engine, scope=scope, apply=True, rows_per_second=rate)
+    from nora.infra.sql.graph_projection import form_batch, project_source
+
+    # Projection backfill deliberately disables work production; replay its existing
+    # source projector with production enabled in this isolated snapshot only.
+    projected = engine.execution_options(memory_graph=scope)
+    nodes = await rows(engine, "SELECT kind,source_id FROM memory_node ORDER BY at_ms,id")
+    for node in nodes:
+        async with projected.begin() as conn:
+            await project_source(conn, node["kind"], node["source_id"])
+    async with projected.begin() as conn:
+        while await form_batch(conn, now=datetime.now(UTC)):
+            pass
+
+
 async def run(args: argparse.Namespace) -> dict[str, Any]:
     cfg = load(args.config)
     production = os.environ[cfg.store.database_url_env]
@@ -693,21 +753,13 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         metrics = Metrics()
         scope = projection_context(policy, persons, nora_name="Nora", metrics=metrics)
         before = await acts(engine)
-        await graph_project(engine, scope=scope, apply=True, rows_per_second=args.projection_rate)
-        from nora.infra.sql.graph_projection import project_source
-
-        # Projection backfill deliberately disables work production; replay its existing
-        # source projector with production enabled in this isolated snapshot only.
-        projected = engine.execution_options(memory_graph=scope)
-        nodes = await rows(engine, "SELECT kind,source_id FROM memory_node ORDER BY at_ms,id")
-        for node in nodes:
-            async with projected.begin() as conn:
-                await project_source(conn, node["kind"], node["source_id"])
-        from nora.infra.sql.graph_projection import form_batch
-
-        async with projected.begin() as conn:
-            while await form_batch(conn, now=datetime.now(UTC)):
-                pass
+        # ponytail: projection is the slow part (about 75 minutes on the October
+        # snapshot); --project-only runs it once and is dumped, and later runs
+        # restore that dump with --skip-projection.
+        if not args.skip_projection:
+            await project(engine, scope, args.projection_rate)
+        if args.project_only:
+            return {"status": "REPORTED", "projected": True}
         units = {c.unit for c in policy.rooms()}
         media = MediaJoin(
             store=SqlMediaObjectStore(engine, metrics=metrics),
@@ -862,6 +914,38 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         )
         report["sample_sha256"] = digest
         report["strata"] = {s: len(v) for s, v in sample.items()}
+        if args.smoke:
+            # Refusal rows carry only their session, so join them through it;
+            # the work-keyed receipts above never include them.
+            sessions = await rows(
+                engine,
+                "SELECT id FROM cognition_session WHERE situation->>'step'='comprehend'"
+                " AND situation->>'work_item'=ANY(:ids)",
+                {"ids": list(selected)},
+            )
+            refusals = await rows(
+                engine,
+                "SELECT payload FROM comprehend_result WHERE part='refusal'"
+                " AND session_id=ANY(:s)",
+                {"s": [r["id"] for r in sessions]},
+            )
+            extractions = [
+                r["payload"]["extraction_id"] for r in receipts if r["part"] == "readings"
+            ]
+            claims = await rows(
+                engine,
+                "SELECT count(*) AS n FROM extraction_claim WHERE extraction_id=ANY(:e)",
+                {"e": extractions},
+            )
+            report["smoke"] = smoke_health(
+                list(selected),
+                [r["state"] for r in states],
+                [r for r in receipts if r["part"] == "graph"],
+                [r["payload"] for r in refusals],
+                claims[0]["n"],
+            )
+            freeze(output / "report.json", report)
+            return report
         judges = Judges(cfg, [args.judge_a, args.judge_b])
         report["age"] = await age_comparison(engine, args.age_url, judges, output, args.minimum)
         report.update(await quality(engine, selected, receipts, judges, output, args.minimum))
@@ -908,6 +992,9 @@ def main() -> int:
     parser.add_argument("--judge-vendor-b", required=True)
     parser.add_argument("--age-url")
     parser.add_argument("--projection-rate", type=float, default=100)
+    parser.add_argument("--project-only", action="store_true")
+    parser.add_argument("--skip-projection", action="store_true")
+    parser.add_argument("--smoke", action="store_true")
     args = parser.parse_args()
     if args.per_stratum <= 0 or args.minimum <= 0:
         parser.error("sample sizes must be positive")

@@ -13,7 +13,8 @@ from datetime import UTC, datetime
 from typing import Any, Literal, get_args
 from uuid import NAMESPACE_URL, uuid5
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic_core import PydanticCustomError
 
 from nora.agent.comprehend_tools import READ_NAMES, ComprehendRead, LookupState
 from nora.agent.fetch_watch import GraphFetched
@@ -22,6 +23,7 @@ from nora.app.extraction import ExtractionClaim
 from nora.domain.comprehend import PARTS, REFUSAL_REASONS, ComprehendItem, build_preview
 from nora.domain.extraction import partition_claims
 from nora.domain.memory_graph import (
+    POINTER_KINDS,
     PROPOSED_KINDS,
     Admission,
     Correction,
@@ -76,6 +78,14 @@ class ProposedEvidence(Shape):
     attribute: str | None = None
     role: Literal["supports", "contradicts"] = "supports"
     span: str | None = None
+
+    @model_validator(mode="after")
+    def _targets_something(self) -> ProposedEvidence:
+        # Evidence that names neither a relation nor an attribute supports
+        # nothing; refused here so the model is told, not silently orphaned.
+        if self.relation_id is None and (self.entity_id is None or self.attribute is None):
+            raise PydanticCustomError("evidence_target_missing", "evidence names no target")
+        return self
 
 
 class ProposedCorrection(Shape):
@@ -133,6 +143,15 @@ def _shape_errors(error: ValidationError, limit: int = 20) -> list[str]:
         + e["type"]
         for e in error.errors(include_input=False, include_url=False)[:limit]
     ]
+
+
+def _endpoint(value: list[str], unit: str) -> Key:
+    """A relation end; a person, room, unit or Nora named by its authored id
+    becomes the unit's pointer (27 §3), which code supplies, not the model."""
+    kind, ref = _key(value)
+    if kind in POINTER_KINDS and not ref.startswith(f"{unit}:{kind}:"):
+        return kind, f"{unit}:{kind}:{ref}"
+    return kind, ref
 
 
 def _key(value: list[str]) -> Key:
@@ -520,7 +539,7 @@ class ComprehendRunner:
         )
         relations = []
         for r in output.relations:
-            src, dst = _key(r.src), _key(r.dst)
+            src, dst = _endpoint(r.src, work.unit), _endpoint(r.dst, work.unit)
             cited = [
                 sources[e.source]
                 for e in evidence

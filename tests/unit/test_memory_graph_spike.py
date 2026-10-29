@@ -230,3 +230,31 @@ async def test_an_item_with_a_media_source_is_in_the_attachment_stratum(monkeypa
     records = SimpleNamespace(load=AsyncMock(return_value=item))
     [candidate] = await spike.candidates(None, records)
     assert "attachment" in candidate["strata"]
+
+
+def _graph(work_id, relations):
+    return {"work_id": work_id, "payload": {"relations": [{}] * relations, "entities": []}}
+
+
+def test_smoke_passes_only_when_writes_are_valid_and_rarely_refused():
+    items = [f"w{i}" for i in range(5)]
+    settled = ["settled"] * 5
+    healthy = spike.smoke_health(
+        items, settled, [_graph(w, 2) for w in items],
+        [{"part": "relation", "reason": "wrong_ends"}], claims=8,
+    )
+    assert healthy["status"] == "PASS" and healthy["relations_admitted"] == 10
+    # Run 6's shape: most writes never valid, every person end refused.
+    sick = spike.smoke_health(
+        items, settled, [_graph("w0", 1)],
+        [{"part": "write", "reason": "schema"}] * 12
+        + [{"part": "relation", "reason": "wrong_ends"}] * 4,
+        claims=1,
+    )
+    assert sick["status"] == "FAIL"
+    assert sick["refusals"]["write:schema"] == 12
+    assert spike.smoke_health(items, settled, [], [], claims=0)["status"] == "FAIL"
+    assert spike.smoke_health(items[:3], settled[:3], [], [], 0)["status"] == "INSUFFICIENT"
+    graphs = [_graph(w, 2) for w in items]
+    failed = spike.smoke_health(items, ["failed", *settled[1:]], graphs, [], 8)
+    assert failed["status"] == "FAIL"

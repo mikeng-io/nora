@@ -67,8 +67,12 @@ Evidence names source keys you were shown. Never supply source snapshots.
 Readings cite a source row by its integer `id` in reading_sources, never by a [kind,id] key:
 about=[{person_id,reference}], what, happened_at={source_id,expression}, where,
 how (stated/said_by_another/planned/asked/reported), source_ids=[12],
-evidence=[{source_id:12,quote}].
+evidence=[{source_id:12,quote}]. The expression is the source's exact words for the time
+("tomorrow night") or null, never a date you computed; evidence has one quote from each
+source in source_ids.
 Every relation needs id, src=[kind,id], rel, dst=[kind,id], persons (authored person ids),
+and at least one evidence item naming its id. A person end is ["person", the person id shown
+in sources]; code turns it into the graph's pointer.
 valid_from and valid_to (ISO time or null). Entity fields: id, kind, name, aliases, attributes.
 Graph evidence is the separate top-level evidence list, never inside a relation. Each item
 is {source:[kind,id], relation_id, span} or {source:[kind,id], entity_id, attribute, span},
