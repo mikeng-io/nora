@@ -129,8 +129,8 @@ class WakeMemory:
         if drops:
             return {"status": "refused", "admitted": [],
                     "refused": [{"reason": r} for r in drops]}
-        result, local_refusals = await self.admission._admit(combined.work, output, state.graph_fetched,
-                                              state.session_id)
+        result, local_refusals = await self.admission._admit(
+            combined.work, output, state.graph_fetched, state.session_id)
         refused = [*[asdict(r) for r in result.refused], *local_refusals]
         if not refused:
             await self.records.readings(combined.work, state.session_id, combined, claims)
