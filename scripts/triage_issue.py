@@ -21,6 +21,7 @@ ALIASES = {
         "agent",
         "participation",
         "notes",
+        "note tier",
         "cognition",
         "relevance-gate",
         "discord",

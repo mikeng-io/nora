@@ -15,6 +15,7 @@ from scripts import triage_issue as triage
     [
         ("Deployment: missing onboarding", "", {"deploy"}),
         ("Dependencies: blocked upgrade", "", {"deps"}),
+        ("Note tier: discharge pipeline", "", {"runtime"}),
         ("Tests: an unstable assertion", "", {"tests"}),
         ("A descriptive public report", "### Area\nportal (nora-app web)\n", {"portal"}),
         ("Deployment: stale image", "## Area\nrelease-and-version (build / deploy)\n", {"deploy"}),
