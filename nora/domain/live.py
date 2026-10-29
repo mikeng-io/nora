@@ -15,6 +15,7 @@ from typing import TypeVar, overload
 K = TypeVar("K")
 V = TypeVar("V")
 T = TypeVar("T")
+_S = TypeVar("_S")
 
 
 class LiveMapping(Mapping[K, V]):
@@ -60,14 +61,14 @@ class LiveSet(Set[T]):
         self._read = read
 
     @classmethod
-    def _from_iterable(cls, iterable: Iterable[T]) -> "LiveSet[T]":
+    def _from_iterable(cls, iterable: Iterable[_S]) -> "LiveSet[_S]":
         """`Set`'s algebra (`-`, `&`, `|`, `^`) builds its result as
         `cls(iterable)` — `cls` takes a READER, not an iterable, so the
         materialized set is wrapped in one. Without this the result's `_read`
         is the generator itself and its first use raises 'generator' object is
         not callable."""
         data = frozenset(iterable)
-        return cls(lambda: data)
+        return LiveSet(lambda: data)
 
     def __contains__(self, value: object) -> bool:
         return value in self._read()
