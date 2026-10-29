@@ -28,6 +28,7 @@ from nora.agent.comprehend_tools import egress_reason
 from nora.agent.egress import scan_identifiers
 from nora.agent.ports import ToolSpec, adapt
 from nora.agent.structured import ask_text, build_structured_model
+from nora.app.composition import search_provider
 from nora.app.comprehend_wiring import build_comprehend_runner
 from nora.app.graph_project import graph_project, projection_context
 from nora.config import load
@@ -208,30 +209,6 @@ class SpikeReads:
             adapt(ToolSpec(name=f.__name__, description="", schema={}, call=f, budget=3))
             for f in (web_search, web_fetch)
         ]
-
-
-def search_provider(cfg: Any) -> Any:
-    if not cfg.search.enabled:
-        return None
-    backend = getattr(cfg.search, cfg.search.provider)
-    key = os.environ.get(backend.api_key_env)
-    if not key:
-        return None
-    options = backend.model_dump(exclude={"api_key_env"})
-    options.update(
-        api_key=key,
-        max_results=cfg.search.max_results,
-        content_max_chars=cfg.search.content_max_chars,
-        extract_max_chars=cfg.search.extract_max_chars,
-        timeout_seconds=cfg.search.timeout_seconds,
-    )
-    if cfg.search.provider == "exa":
-        from nora.infra.search.exa import ExaSearchProvider
-
-        return ExaSearchProvider(**options)
-    from nora.infra.search.tavily import TavilySearchProvider
-
-    return TavilySearchProvider(**options)
 
 
 class Judges:

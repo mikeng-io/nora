@@ -189,3 +189,12 @@ def test_cost_row_without_usage_is_error():
     sessions = [{"id": "s1", "situation": {"step": "comprehend", "work_item": "w1"}}]
     receipts = [{"part": "model", "session_id": "s1", "work_id": "w1", "payload": {}}]
     assert spike.cost_row("comprehend", ["w1"], receipts, sessions)["status"] == "ERROR"
+
+
+@pytest.mark.parametrize("provider", ["exa", "tavily"])
+def test_search_provider_builds_from_the_template(example_config, monkeypatch, provider):
+    """The spike's step one gets the production search backend, not a hand-built one."""
+    search = example_config.search.model_copy(update={"enabled": True, "provider": provider})
+    cfg = example_config.model_copy(update={"search": search})
+    monkeypatch.setenv(cfg.search.api_key_env, "generated-key")
+    assert spike.search_provider(cfg) is not None
