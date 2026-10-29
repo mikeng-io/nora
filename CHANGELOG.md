@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.11.21](https://github.com/mikeng-io/nora/compare/v7.11.20...v7.11.21) (2026-10-29)
+
+
+### Bug Fixes
+
+* **memory:** put items with a media source in the spike's attachment stratum ([4457126](https://github.com/mikeng-io/nora/commit/44571262a9eb25e9f10627512e84587a90337c28))
+* **memory:** score spike readings from the item's tuple-shaped sources ([b9cf618](https://github.com/mikeng-io/nora/commit/b9cf6181d8e0c33c57dba8168022e311e9cd6250))
+
 ## [7.11.20](https://github.com/mikeng-io/nora/compare/v7.11.19...v7.11.20) (2026-10-29)
 
 
