@@ -60,10 +60,11 @@ associated with an **agent**, to which the entity is attributed.
 | wasAttributedTo | entity → agent | `authored_by`; a reading's speech act (stated / said by another) |
 | actedOnBehalfOf | agent → agent | the model acts for Nora; an `operator` revision source acts for the operator |
 
-**Name clash, on purpose kept.** Our `entity` table holds the things the
-world is made of (a person, a place, a topic), which is what PROV entities
-are *about*, not PROV entities. Read "entity" in this repo as the graph's
-`entity` unless a sentence says PROV.
+**Name clash, on purpose kept.** A PROV entity is any physical, digital or
+conceptual thing with some fixed aspects, so it covers both a message and a
+person. Our `entity` table is narrower: only the persistent things the world
+is made of (a person, a place, a topic), never a message or a relation. Read
+"entity" in this repo as the graph's `entity` unless a sentence says PROV.
 
 ## 3. Qualification: a binary edge, and a side record when it needs more
 
@@ -72,14 +73,18 @@ needs a role, a time, a plan or attributes, as an n-ary record of the
 influence (PROV-O's `qualifiedDerivation`, `qualifiedUsage`). The binary
 form stays walkable; the qualified form carries the detail.
 
-The graph does the same and should keep doing it:
+The graph borrows the pattern, with one difference in what is qualified:
 
-- `relation` is the binary edge every walk follows (WALK_SQL).
-- `relation_evidence` is its qualified derivation: the source, the `role`
-  (supports / contradicts), and the `span`. A span is PROV's
+- `relation` is the binary edge every walk follows (WALK_SQL), and it
+  carries the edge's own metadata (times, writer, status; 27 §3).
+- `relation_evidence` is a **second** connection, from the relation (or one
+  attribute of an entity) to a source: the analogue of a qualified
+  derivation of the statement from what it rests on, with the `role`
+  (supports / contradicts) and the `span`. It qualifies how the statement
+  was derived, not the `src` → `dst` edge itself. A span is PROV's
   **Quotation**: the part repeated verbatim, checked against its source.
-- A new detail about an edge goes into a side record, never into a wider
-  edge row a walk must read past.
+- Detail a walk does not need goes into a side record like this one, so the
+  edge row stays narrow.
 
 ## 4. Plan, delegation, revision, invalidation
 
@@ -103,8 +108,10 @@ cannot be replayed.
    the world** (`valid_from` / `valid_to`), Graphiti's second timeline
    ([40](40-prior-art.md)). PROV has no place for it and needs none: it
    describes the record, not the world.
-2. **Contradiction.** PROV derivation is support only. `relation_evidence.role`
-   also carries `contradicts`, so a dispute is a qualified influence against.
+2. **Polarity.** PROV derivation records that one thing was built from
+   another, with no built-in polarity: a rebuttal may be derived from the
+   claim it contradicts. `relation_evidence.role` records the polarity
+   explicitly (supports / contradicts).
 3. **No conclusion as evidence.** PROV allows any derivation chain. The
    graph refuses Notebook items as evidence (27 §4): a judgement may be
    derived *alongside* another (a link) but never *from* it (a citation), so
@@ -115,14 +122,16 @@ cannot be replayed.
 
 ## 6. Validity rules we already hold, in PROV's terms
 
-PROV-CONSTRAINTS orders events: an entity is generated before it is used,
-and generated before it is invalidated; an activity starts before it ends.
-The graph's matching rules:
+PROV-CONSTRAINTS orders provenance events: an entity is generated before it
+is used, and generated before it is invalidated; an activity starts before
+it ends. The graph's rules below are **analogies on world time**, not
+enforcement of those constraints: `valid_from` / `valid_to` say when a
+statement is true in the world, not when its row was created or retired.
 
-| PROV-CONSTRAINTS | ours | enforced by |
+| PROV-CONSTRAINTS | our analogue, on world time | enforced by |
 |---|---|---|
-| generation precedes usage | a backfill item may read only what existed at its own time | the walk's `valid_at`; `test_backfill_walk_excludes_relations_after_items_time` |
-| generation precedes invalidation | a correction closes a relation no earlier than it began | **not checked**: `memory_admission` admits a `close` whose `at` precedes the relation's `valid_from`, which would hide it at every time (below) |
+| generation precedes usage | a backfill walk at an item's time excludes statements not yet valid then | the walk's `valid_at` filter; `test_backfill_walk_excludes_relations_after_items_time`. It filters world validity, not creation time: a statement asserted later about an earlier time is still read |
+| generation precedes invalidation | a close is dated no earlier than the relation's start | **not checked**: `memory_admission` admits a `close` whose `at` precedes the relation's `valid_from`, which would hide it at every time (below) |
 | usage only of what was shown | evidence must name a source the session was shown | `unseen_source` refusal |
 
 **The one gap: `used` is a receipt, not a link.** What a session was shown
