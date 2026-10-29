@@ -6,10 +6,11 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -98,6 +99,40 @@ class ProfileProposal(Shape):
     text: str = Field(min_length=1)
     relation_ids: list[str] = Field(min_length=1)
     evidence: list[list[str]] = Field(min_length=1)
+
+
+_FIELD = re.compile(r"[a-z][a-z0-9_]{0,39}")
+
+
+def _field_names(model: type[BaseModel]) -> set[str]:
+    names = set(model.model_fields)
+    for field in model.model_fields.values():
+        for arg in (field.annotation, *get_args(field.annotation)):
+            for inner in (arg, *get_args(arg)):
+                if isinstance(inner, type) and issubclass(inner, BaseModel):
+                    names |= _field_names(inner)
+    return names
+
+
+def _shape_errors(error: ValidationError, limit: int = 20) -> list[str]:
+    """Where the shape is wrong, in the schema's own words only.
+
+    A path part the schema does not define is a key the model wrote. It is
+    echoed only when shaped like a field name (`target`); anything else is
+    redacted. A one-word key from the source still echoes, which reveals
+    nothing new: the same model wrote it in this call. The reason is pydantic's
+    error type, never its message, which a validator may build from the value.
+    """
+    known = _field_names(GraphWrite)
+    return [
+        ".".join(
+            str(p) if isinstance(p, int) or p in known or _FIELD.fullmatch(p) else "<unknown field>"
+            for p in e["loc"]
+        )
+        + ": "
+        + e["type"]
+        for e in error.errors(include_input=False, include_url=False)[:limit]
+    ]
 
 
 def _key(value: list[str]) -> Key:
@@ -376,9 +411,11 @@ class ComprehendRunner:
                         "readings": readings,
                     }
                 )
-            except ValidationError:
+            except ValidationError as error:
                 await self._refuse(session, "write", "schema")
-                return {"status": "refused", "reason": "schema"}
+                # Where the shape is wrong, so the retry can fix it. Never the
+                # input values: they hold source text.
+                return {"status": "refused", "reason": "schema", "errors": _shape_errors(error)}
             return {"status": "ok"}
 
         with span("comprehend:model"):

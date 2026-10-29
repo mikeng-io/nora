@@ -735,3 +735,42 @@ async def test_changed_topic_reshapes_with_measured_activity_in_shadow():
     graph.available = False
     with pytest.raises(RuntimeError, match="topic activity unavailable"):
         await r._reshape_entity(ITEM, topic.key, Subgraph("ok"), Admission(), 7)
+
+
+async def test_a_wrong_shape_is_refused_with_where_and_the_retry_commits():
+    graph = FakeMemoryGraph()
+    for entity in (PERSON, PLACE):
+        await graph.upsert_entity(entity)
+    await graph.enqueue(WORK)
+    records = InMemoryComprehendRecords({WORK.source: ITEM})
+    reading = {
+        "about": [{"person_id": "generated-person", "reference": "I"}],
+        "what": "likes Hall",
+        "happened_at": {"source_id": 1, "expression": None},
+        "where": None,
+        "how": "stated",
+        "source_ids": ["message:1"],
+        "evidence": [{"source_id": 1, "quote": SOURCE.text}],
+    }
+    wrong = {
+        **WRITE,
+        "evidence": [{**WRITE["evidence"][0], "target": "like", SOURCE.text: "x"}],
+        "readings": [reading],
+    }
+    model = ScriptedCognitionRunner(
+        [
+            [("memory_stage", wrong), ("memory_stage", WRITE)],
+            *[[("profile_stage", {"proposals_in": []})] for _ in range(3)],
+        ]
+    )
+    r = runner(graph, records, model)
+    assert await r.run_once()
+    refused = model.answers[0]
+    assert refused["reason"] == "schema"
+    assert "evidence.0.target: extra_forbidden" in refused["errors"]
+    assert "readings.0.source_ids.0: int_type" in refused["errors"]
+    # A key that is not shaped like a field (here a source sentence) is redacted.
+    assert "evidence.0.<unknown field>: extra_forbidden" in refused["errors"]
+    assert all(SOURCE.text not in e and "message:1" not in e for e in refused["errors"])
+    assert model.answers[1] == {"status": "ok"}
+    assert len(graph.relations) == 1

@@ -64,12 +64,15 @@ only. Web pages never establish anything about a private person.
 Call memory_stage once with entities, relations, evidence, corrections and readings,
 or with empty lists for an explicit no-change. All relations have layer notebook.
 Evidence names source keys you were shown. Never supply source snapshots.
-Readings use the supplied numeric source slots, in the extraction claim shape:
+Readings cite a source row by its integer `id` in reading_sources, never by a [kind,id] key:
 about=[{person_id,reference}], what, happened_at={source_id,expression}, where,
-how (stated/said_by_another/planned/asked/reported), source_ids, evidence=[{source_id,quote}].
+how (stated/said_by_another/planned/asked/reported), source_ids=[12],
+evidence=[{source_id:12,quote}].
 Every relation needs id, src=[kind,id], rel, dst=[kind,id], persons (authored person ids),
 valid_from and valid_to (ISO time or null). Entity fields: id, kind, name, aliases, attributes.
-Graph evidence targets relation_id or entity_id+attribute, with source=[kind,id] and span.
+Graph evidence is the separate top-level evidence list, never inside a relation. Each item
+is {source:[kind,id], relation_id, span} or {source:[kind,id], entity_id, attribute, span},
+with optional role (supports/contradicts); no other fields.
 Corrections: relation_id, kind (close/supersede/dispute/retire), at, by, evidence (source keys).
 """
     + _VOCABULARY
