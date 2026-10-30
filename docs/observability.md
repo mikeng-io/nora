@@ -289,8 +289,10 @@ backend must never block an app release — so the SigNoz wiring is an OVERLAY,
    password: rotate that role privately before changing the configured value.
    This creates the external `signoz-network` and the collector that reads the
    journal as uid 10001 inside the host's journal group.
-2. Install the merged `scripts/secret_delivery.py` in both installed helper
-   locations described in [configuration](configuration.md#host-migration-and-installed-files),
+2. Before the first automatic release with the retired alert bridge, update
+   the installed `komodo_deploy.py` ownership cohort together with
+   `secret_delivery.py` under the deployment lock. Install the merged
+   `scripts/secret_delivery.py` in both helper locations described in [configuration](configuration.md#host-migration-and-installed-files),
    and copy `deploy/signoz/docker-compose.signoz.yaml` into that same path
    under the runtime root. The helper includes this overlay on every Compose
    operation (including Komodo releases) whenever tracing is enabled and its

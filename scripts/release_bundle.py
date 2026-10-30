@@ -63,10 +63,13 @@ def validate_identity(version: str, commit: str, channel: str) -> tuple[int, ...
     return tuple(map(int, match.groups()[:3]))
 
 
-def validate_manifest(manifest: dict) -> None:
+def validate_manifest(manifest: dict, *, previous: bool = False) -> None:
     validate_identity(manifest['version'], manifest['commit'], manifest.get('channel', 'release'))
     services = manifest['services']
-    if set(services) != set(BUILDS) | {'presence', 'analytics'}:
+    builds = set(BUILDS)
+    if previous and 'alert-bridge' in services:
+        builds.add('alert-bridge')
+    if set(services) != builds | {'presence', 'analytics'}:
         raise ValueError('deployment service set differs from owned cohort')
     for name, image in services.items():
         owner = 'nora' if name in ('presence', 'analytics') else name
@@ -76,7 +79,7 @@ def validate_manifest(manifest: dict) -> None:
     if len({services[s] for s in ('nora', 'presence', 'analytics')}) != 1:
         raise ValueError('shared Nora services must use one image')
     if 'artifacts' in manifest:
-        if set(manifest['artifacts']) != set(BUILDS):
+        if set(manifest['artifacts']) != builds:
             raise ValueError('incomplete artifact provenance')
         for name, artifact in manifest['artifacts'].items():
             validate_artifact(name, artifact, services[name])
@@ -234,7 +237,7 @@ def previous_manifest(repo: str, ref: str) -> dict:
         raise ValueError('previous deployment must be an immutable Git commit')
     value = api(repo, f'contents/release.json?ref={ref}')
     manifest = json.loads(base64.b64decode(value['content']))
-    validate_manifest(manifest)
+    validate_manifest(manifest, previous=True)
     return manifest
 
 
@@ -394,7 +397,7 @@ def promote(repo: str, directory: Path) -> None:
     if heads:
         previous = api(repo, f'contents/release.json?ref={parent}')
         old = json.loads(base64.b64decode(previous['content']))
-        validate_manifest(old)
+        validate_manifest(old, previous=True)
         old_version = validate_identity(old['version'], old['commit'],
                                         old.get('channel', 'release'))
         new_version = validate_identity(manifest['version'], manifest['commit'],
