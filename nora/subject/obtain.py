@@ -144,8 +144,10 @@ def resolve_credentials(path: Path) -> dict[str, str]:
 
 
 def model_endpoint(path: Path, purpose: str, model: str = "") -> tuple[str, str, str]:
-    """Resolve a measurement route through the application's configuration."""
-    return _load_config(path, require_secrets=False).endpoint(purpose, model)
+    """Resolve a measurement route through the application's configuration,
+    reachable from where the measurer runs (the subject's own rewrite)."""
+    url, key, name = _load_config(path, require_secrets=False).endpoint(purpose, model)
+    return (url if _resolves(_DOCKER_HOST) else _from_host(url)), key, name
 
 
 def config_default(key: str) -> object:

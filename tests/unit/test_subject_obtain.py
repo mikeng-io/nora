@@ -219,3 +219,19 @@ def test_a_named_provider_is_dialled_on_loopback_from_the_host(
     built = obtain._baseline(cfg, tmp_path)
     assert built.providers["primary"].base_url == "http://127.0.0.1:20128/v1"
     assert built.providers["primary"].api_key_env == "OMNIROUTE_API_KEY"
+
+
+def test_the_judge_endpoint_is_dialled_on_loopback_from_the_host(
+    tmp_path, monkeypatch, example_config,
+) -> None:
+    """The measurer resolves its route outside the subject; it gets the same
+    host rewrite, or a judged run on the host never reaches its model."""
+    import importlib
+
+    obtain = importlib.import_module("nora.subject.obtain")
+    cfg = example_config.model_copy(update={"llm": example_config.llm.model_copy(
+        update={"base_url": "http://host.docker.internal:20128/v1"})})
+    monkeypatch.setattr(obtain, "_load_config", lambda path, require_secrets: cfg)
+    monkeypatch.setattr(obtain, "_resolves", lambda host: False)
+    url, _key, _model = obtain.model_endpoint(tmp_path / "config.toml", "tag")
+    assert url == "http://127.0.0.1:20128/v1"
