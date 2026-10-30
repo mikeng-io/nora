@@ -1026,3 +1026,37 @@ async def test_0141_index_downgrade_and_upgrade_preserve_populated_rows(pg_url):
             _subject(subject_id="dec-9", action="ask-time",
                      conversation_id="conv-mig"))
     await engine.dispose()
+
+
+async def test_delivered_subject_finds_the_closed_sent_act(store):
+    """The keyed delivered read finds a DONE+sent row for the exact
+    (subject,action) — older-created rows, other rooms of the same scope —
+    while open, unsent, and different-key rows are not returned."""
+    from nora.domain.reminders import ReminderState
+    t = datetime(2026, 1, 1, tzinfo=UTC)
+    old = _subject(
+        subject_id="dec-1", action="ask",
+        platform="signal", conversation_id="room-b",
+        state=ReminderState.DONE, outcome="sent",
+        created_at=t, due_at=t, fired_at=t)
+    await store.create(old)
+    await store.create(_subject(
+        subject_id="dec-1", action="ask",
+        platform="signal", conversation_id="room-b",
+        state=ReminderState.DONE, outcome=None))
+    await store.create(_subject(
+        subject_id="dec-9", action="ask",
+        platform="signal", conversation_id="room-b",
+        state=ReminderState.DONE, outcome="sent",
+        created_at=t, due_at=t, fired_at=t))
+
+    hits = await store.delivered_subject(
+        (("signal", "room-a"), ("signal", "room-b")),
+        requester_person_id="nora",
+        subject_kind="decision", subject_id="dec-1", action="ask",
+    )
+    assert [r.id for r in hits] == [old.id]
+    out = await store.delivered_subject(
+        (("signal", "room-a"),), requester_person_id="nora",
+        subject_kind="decision", subject_id="dec-1", action="ask")
+    assert not out

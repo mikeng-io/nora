@@ -6956,7 +6956,12 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             options: Optional. The options you weighed.
             leaning: Optional. Which way you lean, and why.
             conditions: Optional. What would settle or close this.
-            sources: Optional. The row/entry ids this rests on.
+            sources: Required. The transcript row id(s) this conclusion
+                rests on — each is resolved against the Record: a missing,
+                hidden or foreign row is `unresolved`, never accepted.
+                With no resolvable source the record stays `unresolved`
+                (`source_required`), visible to the next session to
+                address — cite real evidence or don't call this.
             standing_room: Optional. `platform:conversation_id`, set it
                 with `standing_body` when the conclusion is a position
                 update for that room.

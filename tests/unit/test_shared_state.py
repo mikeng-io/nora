@@ -544,3 +544,55 @@ async def test_an_expired_finding_and_an_excluded_position_stay_out():
     bodies = [e.subject for e in view2.entries]
     assert "EXCLUDED POSITION" not in bodies
     assert "EXCLUDED FINDING" not in bodies
+
+
+async def test_decision_conclude_resolves_real_rows_and_refuses_the_rest():
+    """R2-6: the native producer's `sources` RESOLVE against the Record —
+    a missing or foreign row is `unresolved`, a storeless turn is
+    `unavailable`, an empty list is `source_required`; a resolved row's
+    room gate lands in the call's recorded requirements."""
+    from nora.agent.tools import build_tool_specs
+    from nora.agent.turn_recording import TurnRecording
+    from nora.testing.fakes import FakeRecordStore
+    from tests.unit.test_clock_agreement import Metrics
+
+    class _NS:
+        def __init__(self, **kw):
+            self.__dict__.update(kw)
+
+    def _specs(store):
+        return build_tool_specs(
+            store=store, conversation_id="room-a", conversation_type="group",
+            persons=None, honcho=None, deliverer=None, metrics=Metrics(),
+            room=_NS(platform="signal", tagger=None), transit_source=None)
+
+    # store=None -> unavailable (can't check)
+    tool = next(s for s in _specs(None) if s.name == "decision_conclude")
+    out = await tool.call(subject="d", decision="x", sources=["42"])
+    assert out["status"] == "unavailable"
+
+    # no sources -> source_required
+    tool = next(
+        s for s in _specs(FakeRecordStore()) if s.name == "decision_conclude")
+    out = await tool.call(subject="d", decision="x", sources=[])
+    assert out["status"] == "unresolved" and out["reason"] == "source_required"
+
+    # missing row -> unresolved (the tool closes over THIS store)
+    store = FakeRecordStore()
+    tool = next(s for s in _specs(store) if s.name == "decision_conclude")
+    out = await tool.call(subject="d", decision="x", sources=["999999"])
+    assert out["status"] == "unresolved" and out["reason"] == "source_unresolved"
+
+    # real row -> ok, and the resolved room's gate is recorded on the call
+    from nora.domain.models import NormalizedMessage
+    await store.append(message=NormalizedMessage(
+        "signal", "room-a", "group", "+10000000001", "Someone", 1,
+        "hi", {}))
+    rec = TurnRecording()
+    rec.before(_NS(tool_use={"toolUseId": "c1"}))
+    out = await tool.call(subject="d", decision="x", sources=["1"])
+    rec.after(_NS())
+    assert out["status"] == "ok"
+    reqs = rec.requirements["c1"]
+    # the spec's own in-room gate + the resolved row's gate, both resolved
+    assert len(reqs) == 2 and all(r.known for r in reqs)
