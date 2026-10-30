@@ -245,17 +245,23 @@ def scoped_cypher(query: str) -> str:
     return "MATCH " + query + " WHERE a.key=$seed RETURN DISTINCT b.key"
 
 
-def literal(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
+def dollar_quoted(value: str) -> str:
+    # ag_catalog.cypher() takes its arguments as dollar-quoted constants; choose
+    # a tag the value cannot close. sa.text still scans inside $tag$: ':' reads
+    # as a bind, so it is masked as '\:', which compiles back to ':'.
+    tag = "$$"
+    while tag in value:
+        tag = f"${'a' * len(tag)}$"
+    return tag + value.replace(":", "\\:") + tag
 
 
 async def cypher(conn: Any, graph: str, query: str) -> list[Any]:
     result = await conn.execute(
         sa.text(
-            "SELECT value::text FROM ag_catalog.cypher("  # noqa: S608 - quoted literals below
-            + literal(graph)
+            "SELECT value FROM ag_catalog.cypher("  # noqa: S608 - quoted literals below
+            + dollar_quoted(graph)
             + ", "
-            + literal(query)
+            + dollar_quoted(query)
             + ") AS (value ag_catalog.agtype)"
         )
     )
