@@ -1,7 +1,11 @@
-"""`python -m evals` — corpus selection, no DB/network.
+"""`python -m evals` — corpus selection and the default source URL, no DB/network.
 
 A one-line change must not cost a full run, so `--corpus`/`--class`/`--all` must actually narrow
 what runs, and picking nothing must refuse rather than silently running everything.
+The source URL section pins `source_url_for` against generated credentials:
+the default resolves the deployment's credential source the way the host
+tooling does (process env > `.env` > `secret.toml`), an explicit URL reads
+none of them, and the clone-name guard never relaxes.
 """
 
 from __future__ import annotations
@@ -144,3 +148,96 @@ def test_a_case_the_run_cannot_draw_is_refused_before_the_estimate():
 
     with pytest.raises(ValueError, match="no active case named"):
         selected_cases("tool_selection", only=frozenset({"no-such-case"}))
+
+
+# --------------------------------------------------------------------------
+# source_url_for: generated credentials only; every value is synthetic.
+# --------------------------------------------------------------------------
+
+
+def _deployment(tmp_path, *, secret=None, env=None):
+    if secret is not None:
+        (tmp_path / "secret.toml").write_text(
+            f'[credentials]\nPOSTGRES_PASSWORD="{secret}"\n'
+        )
+    if env is not None:
+        (tmp_path / ".env").write_text(f"POSTGRES_PASSWORD={env}\n")
+    return tmp_path
+
+
+def test_source_url_default_accepts_secret_only(tmp_path, monkeypatch):
+    """A deployment whose credential lives ONLY in secret.toml still gives
+    the eval its clone URL — the .env-only default refused exactly this."""
+    from sqlalchemy.engine import make_url
+
+    from evals.__main__ import EVAL_CLONE, source_url_for
+
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    parsed = make_url(
+        source_url_for("", _deployment(tmp_path, secret="synthetic-secret"))  # noqa: S106 -- synthetic fixture
+    )
+    assert (parsed.drivername, parsed.username, parsed.host, parsed.port,
+            parsed.database, parsed.password) == (
+        "postgresql+asyncpg", "nora", "127.0.0.1", 5435,
+        EVAL_CLONE, "synthetic-secret")
+
+
+def test_source_url_host_precedence_and_empty_override(tmp_path, monkeypatch):
+    """Process env > .env > secret.toml; a PRESENT empty value wins the layers
+    below it, so an operator override is a refusal, never the file's value."""
+    from sqlalchemy.engine import make_url
+
+    from evals.__main__ import source_url_for
+
+    deployment = _deployment(
+        tmp_path, secret="synthetic-secret", env="synthetic-legacy"  # noqa: S106 -- synthetic fixture
+    )
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    assert make_url(source_url_for("", deployment)).password == "synthetic-legacy"  # noqa: S105 -- synthetic fixture
+    monkeypatch.setenv("POSTGRES_PASSWORD", "synthetic-process")
+    assert make_url(source_url_for("", deployment)).password == "synthetic-process"  # noqa: S105 -- synthetic fixture
+    monkeypatch.setenv("POSTGRES_PASSWORD", "")
+    with pytest.raises(ValueError, match="no POSTGRES_PASSWORD") as error:
+        source_url_for("", deployment)
+    assert "synthetic-legacy" not in str(error.value)
+
+
+def test_source_url_explicit_skips_credentials_and_refuses_live_name(tmp_path):
+    """A stated URL reads no credential file at all — this deployment dir is
+    broken on purpose and would raise if read — and the clone-name guard is
+    unchanged."""
+    from evals.__main__ import source_url_for
+
+    (tmp_path / "secret.toml").write_text("malformed = [")
+    stated = "postgresql+asyncpg://u:p@h/generated_eval"
+    assert source_url_for(stated, tmp_path) == stated
+    with pytest.raises(ValueError, match="not a clone"):
+        source_url_for("postgresql+asyncpg://u:p@h/nora", tmp_path)
+
+
+def test_source_url_password_reserved_characters_roundtrip(tmp_path, monkeypatch):
+    """The URL is built with `URL.create`, not string interpolation, so a
+    password full of reserved characters parses back to itself."""
+    from sqlalchemy.engine import make_url
+
+    from evals.__main__ import source_url_for
+
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    password = "syn:thetic/p@ss?w#rd%&="  # noqa: S105 -- synthetic fixture
+    url = source_url_for("", _deployment(tmp_path, env=password))
+    parsed = make_url(url)
+    assert parsed.password == password
+    assert parsed.host == "127.0.0.1" and parsed.database == "nora_eval"
+
+
+def test_source_url_default_refuses_missing_and_broken_credentials(
+    tmp_path, monkeypatch,
+):
+    from evals.__main__ import source_url_for
+
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    with pytest.raises(ValueError, match="no POSTGRES_PASSWORD"):
+        source_url_for("", tmp_path)
+    (tmp_path / "secret.toml").write_text("malformed = [")
+    with pytest.raises(ValueError, match="unreadable"):
+        source_url_for("", tmp_path)
