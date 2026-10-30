@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.11.56](https://github.com/mikeng-io/nora/compare/v7.11.55...v7.11.56) (2026-10-30)
+
+
+### Bug Fixes
+
+* **spike:** quote AGE cypher arguments so sa.text can execute them ([9dcae2e](https://github.com/mikeng-io/nora/commit/9dcae2e78b2d58333c765521788969ffc2c5653f))
+
 ## [7.11.55](https://github.com/mikeng-io/nora/compare/v7.11.54...v7.11.55) (2026-10-30)
 
 
