@@ -31,12 +31,12 @@ def spans(monkeypatch):
     lookup `instrument_aiohttp_app` makes, so the test is hermetic even when
     another test already ran the one-time `instrument()` in this process."""
     import opentelemetry.trace as trace_api
+    from opentelemetry.instrumentation.aiohttp_server import AioHttpServerInstrumentor
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import SimpleSpanProcessor
     from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
         InMemorySpanExporter,
     )
-    from opentelemetry.instrumentation.aiohttp_server import AioHttpServerInstrumentor
 
     instrumentor = AioHttpServerInstrumentor()
     if instrumentor.is_instrumented_by_opentelemetry:
