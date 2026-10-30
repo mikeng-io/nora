@@ -385,6 +385,7 @@ dev = [
     "pytest-cov>=5.0",
     "pytest-xdist>=3.8.0",
     "ruff>=0.6",
+    "sentry-sdk==2.44.0",
     "testcontainers[postgres]>=4.15.0",
     "tiktoken>=0.14.0",
     "tomli-w>=1.0",
