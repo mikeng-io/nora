@@ -1625,17 +1625,25 @@ class FirePath:
             try:
                 narrowed = await ledger_target(target, room)
             except Exception:
+                # Fail closed: the unfiltered unit read into this room is the
+                # disclosure failure, so the view is `unavailable` — which on
+                # a proactive occasion withholds the act in `speak`.
                 log.exception(
                     "fire shared-state permit build failed for %s",
                     occasion.conversation_id,
                 )
-                narrowed = None
+                return SharedView(
+                    unit=unit, status="unavailable",
+                    as_of_ms=int(time.time() * 1000),
+                )
             if narrowed is not None:
                 def permit(entry: LedgerEntry) -> bool:
                     return ledger_permits(entry, narrowed)
         try:
             return await self._shared_reader(
-                unit=unit, permit=permit, now_ms=int(time.time() * 1000),
+                unit=unit,
+                room=(occasion.platform, occasion.conversation_id),
+                permit=permit, now_ms=int(time.time() * 1000),
             )
         except Exception:
             log.exception("fire shared-state read failed")
@@ -1759,7 +1767,7 @@ class FirePath:
         # turn that never ran; the heartbeat resolves the row on it and the
         # crash-sweep does not mistake it for a delivery.
         if (occasion.kind == "proactive" and ctx.shared is not None
-                and ctx.shared.status == "unavailable"):
+                and ctx.shared.status in ("unavailable", "partial")):
             log.warning(
                 "proactive turn withheld: shared-state read unavailable in %s",
                 occasion.conversation_id,

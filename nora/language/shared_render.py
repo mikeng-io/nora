@@ -41,6 +41,8 @@ def render_shared_state(
         if e.kind == "act" and e.status != "pending"
     ]
     said = [e for e in view.entries if e.kind == "send"]
+    findings = [e for e in view.entries if e.kind == "finding"]
+    concluded = [e for e in view.entries if e.kind == "conclusion"]
     lines = [
         f"the unit's shared state as of {now.isoformat(timespec='seconds')} "
         f"— status={view.status}",
@@ -50,11 +52,11 @@ def render_shared_state(
         lines.append("## Open")
         for e in open_entries:
             if not e.permitted:
-                lines.append(f"- {e.kind} {e.id} · withheld from this room")
+                lines.append(f"- {e.kind} · open in another room · withheld")
                 continue
             rev = f" rev{e.revision}" if e.revision else ""
-            lines.append(
-                f"- {e.kind} {e.id}{rev} · {e.scope} · {e.subject}")
+            head = f"- {e.kind} {e.id}{rev} · {e.scope} · {e.subject}"
+            lines.append(f"{head}\n    {e.detail}" if e.detail else head)
     if waiting:
         lines.append("## Waiting")
         for e in waiting:
@@ -65,6 +67,10 @@ def render_shared_state(
                 else:
                     due_at = datetime.fromtimestamp(e.at_ms / 1000, tz=tz)
                     when = f"due {due_at.strftime('%m-%d %H:%M')}"
+            if not e.permitted:
+                lines.append(
+                    f"- {e.kind} · waiting in another room · withheld")
+                continue
             head = f"- {e.kind} {e.id}"
             if e.kind == "act":
                 head += f" · {e.destination} · {e.action or 'remind'}"
@@ -88,10 +94,24 @@ def render_shared_state(
     if said:
         lines.append("## Said lately")
         for e in said[:8]:
+            if not e.permitted:
+                lines.append("- said something in another room · withheld")
+                continue
             ago = f" · {age(e.at_ms, now)} ago" if e.at_ms else ""
             lines.append(f"- {e.scope}{ago} · {e.subject}")
+    if concluded:
+        lines.append("## Concluded lately")
+        for e in concluded[:8]:
+            ago = f" · {age(e.at_ms, now)} ago" if e.at_ms else ""
+            lines.append(f"-{ago} · {e.subject}")
     for item in view.unresolved:
         lines.append(f"- unresolved · {item}")
+    for e in findings[:8]:
+        if not e.permitted:
+            lines.append("- a finding in another room · withheld")
+            continue
+        ago = f" · {age(e.at_ms, now)} ago" if e.at_ms else ""
+        lines.append(f"- found{ago} · {e.subject}")
     return ContextBlock(
         name="shared_cognitive_state", body=escape("\n".join(lines)),
     )

@@ -59,7 +59,12 @@ from datetime import datetime
 from typing import Protocol
 
 from nora.app.proactive_screen import PROACTIVE_KIND, ProactiveScreen
-from nora.domain.reminders import Reminder, ReminderState, ReminderStore
+from nora.domain.reminders import (
+    Reminder,
+    ReminderState,
+    ReminderStore,
+    open_proactive_subject,
+)
 from nora.engagement.slots import ConversationSlots, Key
 from nora.obs.metrics import Metrics
 
@@ -376,6 +381,8 @@ class HeartbeatLoop:
                     )
                     refusal = (ReminderState.FAILED, "failed_error")
                 if refusal is None:
+                    refusal = await self._superseded(row)
+                if refusal is None:
                     still.append(row)
                     continue
                 state, outcome = refusal
@@ -398,6 +405,38 @@ class HeartbeatLoop:
         # timed out or reported its own error answers without raising, and
         # writing those `done` records a delivery that never happened.
         await self._resolve_all(firing, _state_for(outcome), outcome=outcome, now=now)
+
+    async def _superseded(
+        self, row: Reminder,
+    ) -> tuple[ReminderState, str] | None:
+        """The delivered-fact recheck the screen cannot make: a claimed act
+        whose (subject, action, destination) already shows a DELIVERED row
+        does not fire — the code-level duplicate refusal the check-seconds-ago
+        screen has no eyes for. `None` when nothing delivered it yet; a read
+        that fails refuses — firing on an unchecked premise is the failure
+        mode this boundary exists for."""
+        subject = open_proactive_subject(row)
+        if subject is None:
+            return None
+        try:
+            delivered = [
+                r for r in await self._store.recent_in(
+                    [(row.platform, row.conversation_id)],
+                    requester_person_id=row.requester_person_id,
+                    since=row.created_at, limit=50,
+                )
+                if r.id != row.id
+                and open_proactive_subject(r) == subject
+                and r.outcome == "sent"
+            ]
+        except Exception:
+            log.exception(
+                "delivered-act recheck failed for %s", row.id,
+            )
+            return ReminderState.FAILED, "failed_error"
+        if delivered:
+            return ReminderState.FAILED, "failed_superseded"
+        return None
 
     async def _resolve_all(
         self, rows: Sequence[Reminder], state: ReminderState, *,

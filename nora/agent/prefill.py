@@ -1045,7 +1045,8 @@ def build_prefill(
             None if switched else _peer_card_block(ctx),
             None if switched else _peer_history_block(ctx),
             None if switched else _people_in_window_block(ctx),
-            _restamp(_notes_block(ctx, now=clock, view=view)),
+            _restamp(_notes_block(ctx, now=clock, view=view))
+            if ctx.shared is None else None,
             _restamp(render_memos(tuple(m for m in ctx.memos
                                        if memo_permits(m.head, ctx.lineage_room)),
                                   tz=clock.tzinfo or UTC)),
@@ -1057,9 +1058,12 @@ def build_prefill(
             _restamp(render_documents(ctx.documents)),
             _restamp(render_subagents(ctx.subagents)),
             _restamp(render_ledger(ctx.ledger, now=clock,
-                                   rooms=ctx.lineage_room.rooms if ctx.lineage_room else ())),
-            _restamp(_standing_block(ctx, view)),
-            _restamp(_standing_working_set_block(ctx, now=clock, view=view)),
+                                   rooms=ctx.lineage_room.rooms if ctx.lineage_room else ()))
+            if ctx.shared is None else None,
+            _restamp(_standing_block(ctx, view))
+            if ctx.shared is None else None,
+            _restamp(_standing_working_set_block(ctx, now=clock, view=view))
+            if ctx.shared is None else None,
             _restamp(render_shared_state(ctx.shared, now_ms=int(clock.timestamp() * 1000))),
             _transcript_block(ctx, display_name, clock, context_window),
             _spoken_turn_block(ctx),

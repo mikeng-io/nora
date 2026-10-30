@@ -688,6 +688,23 @@ class ReminderStore(Protocol):
         ones are stored normalised to UTC."""
         ...
 
+    async def create_many(
+        self, reminders: Sequence[Reminder], *, arbitration_key: str | None = None,
+    ) -> None:
+        """The batch variant of `create`, ATOMIC: every row lands or none
+        does — a conflicting row refuses the whole insert, so a caller
+        scheduling one act into several rooms can never leave an orphan row
+        behind a refusal.
+
+        `arbitration_key`, when given, is hashed into a transaction-scoped
+        advisory lock that serialises the check-and-insert across processes
+        for that key — the caller passes its unit so two writers on different
+        processes cannot interleave a pending read between each other's
+        creates. `None` skips the lock: the in-memory double accepts and
+        ignores it. Duplicate errors are `create`'s own.
+        """
+        ...
+
     async def get(self, reminder_id: UUID) -> Reminder | None:
         """Read one row by id. Exists so the contract suite can assert the
         TERMINAL STATE of a swept or cancelled row — without it no test can
@@ -757,6 +774,18 @@ class ReminderStore(Protocol):
         `since` must be timezone-aware; `limit` obeys `check_limit`, for the
         reason `due()` does.
         """
+        ...
+
+    async def recent_in(
+        self, rooms: Sequence[tuple[str, str]], *, requester_person_id: str,
+        since: datetime, limit: int,
+    ) -> Sequence[Reminder]:
+        """`history`, scoped to `rooms` IN THE QUERY: one requester's rows in
+        these `(platform, conversation_id)`s created at or after `since`,
+        oldest first, at most `limit`. The unit-scoped read `history` cannot
+        stand in for — `history`'s global `limit` runs BEFORE a caller's room
+        filter, so a unit whose rows sit beyond the cut is silently complete.
+        `since` timezone-aware; `limit` obeys `check_limit`."""
         ...
 
     async def claim(self, reminder_id: UUID, *, now: datetime) -> bool:

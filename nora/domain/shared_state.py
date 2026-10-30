@@ -60,6 +60,11 @@ class SharedEntry:
     provenance: str = ""
     delivery: str = ""      # "" | "sent" | "none" | "unknown"
     permitted: bool = True  # False = withheld from THIS destination
+    #: The kind's own structured content — a decision's options and leaning,
+    #: a note's closing condition, a finding's `bears_on`. What the legacy
+    #: renderers carried that a one-line subject drops; empty means the kind
+    #: has none, not that the store declined. Withheld entries carry none.
+    detail: str = ""
 
 
 @dataclass(frozen=True, slots=True)

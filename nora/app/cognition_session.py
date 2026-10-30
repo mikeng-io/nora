@@ -145,8 +145,10 @@ from nora.domain.ports import (
 from nora.domain.reminders import (
     DuplicateProactiveNoteError,
     DuplicateProactiveSubjectError,
+    DuplicateReminderError,
     Reminder,
     ReminderState,
+    open_proactive_subject,
 )
 from nora.domain.shared_state import SharedView
 from nora.domain.standing import StandingHead
@@ -688,6 +690,10 @@ class CognitionSessionRunner:
         self._reminders = reminders
         self._ledger = ledger
         self._shared = shared
+        #: Unresolved act candidates per unit, carried for the next session
+        #: to see (`SharedView.unresolved`) — the turn-evidence retention for
+        #: an act that could not be grounded. Bounded per unit.
+        self._unresolved: dict[str, list[str]] = {}
         self._ai_peer = ai_peer
         self._stimuli = stimulus_store
         self._agent_runner = agent_runner
@@ -1142,6 +1148,7 @@ class CognitionSessionRunner:
                 shared_view = await self._shared(
                     unit=unit, now_ms=now_ms,
                     wakes=await self._pending(unit, now_ms),
+                    unresolved=self._unresolved.get(unit, ()),
                 )
             except Exception:
                 # A shared read that fails must not take the session down —
@@ -2518,7 +2525,8 @@ class CognitionSessionRunner:
             return _answer(answer)
 
         async def remind(
-            intent: Literal["tell", "ask"], text: str, subject_rows: list[str], at: str,
+            intent: Literal["tell", "ask"], text: str, subject: str, action: str,
+            subject_rows: list[str], at: str,
             room: str = "", also_rooms: list[str] | None = None,
         ) -> dict[str, object]:
             """Reach a room at a time: when the moment comes you get a turn in
@@ -2526,25 +2534,30 @@ class CognitionSessionRunner:
             still stay silent then. Call this when a room should hear from you
             and not before.
 
-            The rows you cite must resolve to the open entry the act is about:
-            an open note, decision, commitment, thread or event. That resolved
-            entry plus the intent IS the act's identity: the same act already
-            pending for a room you did not name is refused
-            `conflict_other_room`, and `also_rooms` is how you mean the same
-            act in several rooms at once. Unresolvable rows come back
-            `unresolved`, not scheduled.
+            `subject` names the open entry the act is about, as `kind:id`
+            (`note:`, `decision:`, `commitment:`, `thread:` or `event:` plus the
+            id the note index and ledger read show). It must resolve to an
+            open entry or the call is `unresolved`, never scheduled on a
+            citation alone. `action` is YOUR short key for the act
+            (`confirm-dinner-date`, `ask-vote-deadline`): two questions about
+            the same subject are different actions, and the same
+            subject+action already pending somewhere you did not name is
+            refused `conflict_other_room`. `also_rooms` is how you mean the
+            same act in several rooms at once.
 
             Returns `status`: ok (with `reminder_ids`), refused or
-            unavailable, plus `unresolved` when no cited row resolves to the
-            open entry the act is about, each with a `reason` and `detail`
+            unavailable, plus `unresolved` when `subject` does not resolve to
+            the open entry the act is about, each with a `reason` and `detail`
             when it is not ok.
 
             Args:
                 intent: `tell` to say something, `ask` to ask something.
                 text: What to raise, in a sentence, as you will read it when it
                     comes due.
-                subject_rows: The rows it rests on, at least one; one must
-                    resolve to the open entry the act is about.
+                subject: The open entry the act is about, as `kind:id`.
+                action: Your key for this act on this subject: same act again
+                    is the same key, a different question is a different one.
+                subject_rows: The evidence rows it rests on, at least one.
                 at: When to reach the room, ISO 8601 with an offset.
                 room: Optional when the agenda is one room, required when it
                     spans several. The room to reach, as
@@ -2564,6 +2577,11 @@ class CognitionSessionRunner:
                 return _bad_time("at")
             if not text.strip():
                 return _refused("no_text", "say what to raise when it comes due")
+            action_key = action.strip().lower()
+            if not action_key:
+                return _refused(
+                    "no_action", "name this act: same act again is the same key",
+                )
             destinations = [(platform, conversation_id)]
             for extra in also_rooms or []:
                 r = _room_of(extra, state)
@@ -2572,71 +2590,128 @@ class CognitionSessionRunner:
                 if r not in destinations:
                     destinations.append(r)
             async with self._lock(unit):
-                subject = await self._resolve_subject(
-                    unit, state, subject_rows,
+                resolved_subject = await self._resolve_named_subject(
+                    unit, state, subject,
                 )
-                if subject is None:
+                if resolved_subject is None:
+                    line = (
+                        f"remind {text[:80]!r} for "
+                        f"{platform}:{conversation_id}: {subject!r} unresolved"
+                    )
+                    carried = self._unresolved.setdefault(unit, [])
+                    if line not in carried:
+                        carried.append(line)
+                        del carried[:-8]
                     return {
                         "status": "unresolved",
                         "reason": "subject_unresolved",
                         "detail": (
-                            "the rows you cite do not resolve to an open note, "
+                            f"{subject!r} does not resolve to an open note, "
                             "decision, commitment, thread or event this act is "
-                            "about: cite the open entry it is about, or do not "
+                            "about: name the open entry's `kind:id`, or do not "
                             "schedule it"
                         ),
                     }
+                subject_id, subject_kind = resolved_subject[1], resolved_subject[0]
                 pending = await self._pending_reminds()
                 context = await self._remind_context(
                     unit, platform, conversation_id, subject_rows, at_ms,
                 )
                 refusal = check_remind(
-                    subject_rows=subject_rows, intent=intent, platform=platform,
-                    conversation_id=conversation_id, pending=pending, context=context,
-                    subject=subject, extra_destinations=destinations[1:],
+                    subject_rows=subject_rows, intent=intent,
+                    platform=platform,
+                    conversation_id=conversation_id, pending=pending,
+                    context=context,
+                    subject=resolved_subject, action=action_key,
+                    extra_destinations=destinations[1:],
                 )
                 if refusal is not None:
                     return _refused(refusal.reason, refusal.detail)
+                # Every destination validated BEFORE a row exists: proactive
+                # policy and the requester cap apply per room, so a batch
+                # refused late is refused whole.
+                for dest_platform, dest_cid in destinations[1:]:
+                    if self._room_proactive is not None and not self._room_proactive(
+                        dest_platform, dest_cid,
+                    ):
+                        return _refused(
+                            "room_not_proactive",
+                            f"you may not reach {dest_platform}:{dest_cid} "
+                            "unasked",
+                        )
                 link: dict[str, str] = {}
-                if subject[0] == "note":
-                    shown_note = await self._notes.read(unit=unit, note_id=subject[1])
+                if subject_kind == "note":
+                    shown_note = await self._notes.read(
+                        unit=unit, note_id=subject_id)
                     if shown_note is None:
-                        return _refused("not_found", f"no open note {subject[1]!r}")
+                        return _refused(
+                            "not_found", f"no open note {subject_id!r}")
+                    # The note link machinery (merge repoint, retire-cancel,
+                    # the moved-note screen and its global one-open-row-per-
+                    # note arbiter) all key on these payload fields — the
+                    # deliberate stronger invariant: a note-subject act is
+                    # single-destination, while `also_rooms` covers acts on
+                    # decisions, commitments, threads and events.
                     link = {
-                        "note_id": shown_note[0].id, "revision_id": shown_note[1].id,
+                        "note_id": shown_note[0].id,
+                        "revision_id": shown_note[1].id,
                         "note_title": shown_note[0].title,
                     }
                 pending_dests = {
                     (p.platform, p.conversation_id) for p in pending
-                    if p.subject == subject and p.action == intent
+                    if p.subject == resolved_subject and p.action == action_key
                 }
-                reminder_ids: list[str] = []
-                for dest_platform, dest_cid in destinations:
-                    if (dest_platform, dest_cid) in pending_dests:
-                        continue
-                    row = self._reminder_row(
-                        platform=dest_platform, conversation_id=dest_cid, text=text,
-                        intent=intent, subject_rows=subject_rows, at_ms=at_ms,
-                        unit=unit,
+                since = datetime.fromtimestamp(
+                    (self._now_ms() - 7 * 24 * 3600_000) / 1000, UTC)
+                delivered = [
+                    r for r in await self._reminders.recent_in(
+                        destinations, requester_person_id=self._ai_peer,
+                        since=since, limit=50,
+                    )
+                    if open_proactive_subject(r) == (
+                        subject_kind, subject_id, action_key,
+                    ) and r.outcome == "sent"
+                ]
+                if delivered:
+                    return _refused(
+                        "duplicate_pending",
+                        "that act was already delivered for the room(s) named",
+                    )
+                rows = [
+                    self._reminder_row(
+                        platform=dest_platform, conversation_id=dest_cid,
+                        text=text, intent=intent, subject_rows=subject_rows,
+                        at_ms=at_ms, unit=unit,
                         link={
                             **link,
-                            "subject_kind": subject[0], "subject_id": subject[1],
-                            "action": intent,
+                            "subject_kind": subject_kind,
+                            "subject_id": subject_id,
+                            "action": action_key,
                         },
                     )
-                    try:
-                        await self._reminders.create(row)
-                    except DuplicateProactiveNoteError:
-                        return _refused(
-                            "duplicate_pending",
-                            "a reminder is already waiting on that note",
-                        )
-                    except DuplicateProactiveSubjectError:
-                        return _refused(
-                            "duplicate_pending",
-                            "the same act is already pending for that room",
-                        )
-                    reminder_ids.append(str(row.id))
+                    for dest_platform, dest_cid in destinations
+                    if (dest_platform, dest_cid) not in pending_dests
+                ]
+                if not rows:
+                    return _refused(
+                        "duplicate_pending",
+                        "the same act is already pending for the room(s) named",
+                    )
+                try:
+                    # ONE transaction, advisory-locked on the unit: every
+                    # destination lands or none does, against any writer in
+                    # any process — a refused batch leaves no orphan act.
+                    await self._reminders.create_many(
+                        rows, arbitration_key=f"proactive:{unit}",
+                    )
+                except (DuplicateProactiveNoteError,
+                        DuplicateProactiveSubjectError,
+                        DuplicateReminderError):
+                    return _refused(
+                        "duplicate_pending",
+                        "the same act is already pending for the room(s) named",
+                    )
+                reminder_ids = [str(r.id) for r in rows]
             return {"status": "ok", "reminder_id": reminder_ids[0],
                     "reminder_ids": reminder_ids}
 
@@ -2854,36 +2929,45 @@ class CognitionSessionRunner:
             ))
         return out
 
-    async def _resolve_subject(
-        self, unit: str, state: Any, subject_rows: Sequence[str],
-    ) -> tuple[str, str] | None:
-        """The shared-object key the act is about, resolved from the rows the
-        model cited — never from their prose.
+    _SUBJECT_KINDS = frozenset({"note", "decision", "commitment", "thread", "event"})
 
-        Order: an open note (a `note:` row or the bare id the agenda shows),
-        then an open ledger entry id in this unit's scope (a decision,
-        commitment or thread), then an open event. Each is checked against the
-        canonical store's open set, not pattern-matched: a `d`-shaped string
-        that is not an open entry is not a subject. `None` means the act is
-        `unresolved` — it is returned to the session, never scheduled on a
-        guess."""
-        bare = {_bare_row(r).strip().strip("[]") for r in subject_rows}
-        open_notes = {n.id for n in await self._notes.standing(unit=unit)}
-        hit = next((b for b in bare if b in open_notes), None)
-        if hit is not None:
-            return ("note", hit)
+    async def _resolve_named_subject(
+        self, unit: str, state: Any, subject: str,
+    ) -> tuple[str, str] | None:
+        """The shared-object key the act is about, resolved from the EXPLICIT
+        `kind:id` the producer named — never from cited evidence rows, whose
+        set can match several open entries and silently choose wrong (the
+        reviewer's finding: citation-set matching is ambiguity selection, not
+        resolution).
+
+        The named kind+id must be an OPEN entry in this unit's canonical
+        stores: an open note id, an open ledger entry (decision, commitment
+        or thread), or an open event id — each checked against its store's
+        open set, not pattern-matched. `None` means `unresolved`: the act is
+        carried in session evidence for the next session to address, never
+        scheduled on a guess."""
+        kind, _, wanted = (subject or "").strip().partition(":")
+        if kind not in self._SUBJECT_KINDS or not wanted.strip():
+            return None
+        wanted = wanted.strip()
+        if kind == "note":
+            open_notes = {n.id for n in await self._notes.standing(unit=unit)}
+            return ("note", wanted) if wanted in open_notes else None
         rooms = [tuple(k.split(":", 1)) for k in state.rooms]
-        if self._ledger is not None:
+        if kind in {"decision", "commitment", "thread"} and self._ledger is not None:
             for platform, conversation_id in rooms:
                 for entry in await self._ledger.read(
                     unit=unit, platform=platform, conversation_id=conversation_id,
                 ):
-                    if entry.id in bare and entry.status == "open":
+                    if entry.id == wanted and entry.kind == kind \
+                            and entry.status == "open":
                         return (entry.kind, entry.id)
-        for platform, conversation_id in rooms:
-            for event in await self._open_events(unit, platform, conversation_id):
-                if str(event.id) in bare:
-                    return ("event", str(event.id))
+            return None
+        if kind == "event":
+            for platform, conversation_id in rooms:
+                for event in await self._open_events(unit, platform, conversation_id):
+                    if str(event.id) == wanted:
+                        return ("event", str(event.id))
         return None
 
     async def _remind_context(

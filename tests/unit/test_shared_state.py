@@ -118,7 +118,8 @@ def _reminder(**kw) -> Reminder:
     base = {
         "id": uuid.uuid4(), "requester_person_id": "nora", "platform": "signal",
         "conversation_id": "room-a", "conversation_type": "group",
-        "text": "the thing to raise", "created_at": T0,
+        "text": "the thing to raise",
+        "created_at": T0 - timedelta(minutes=10),
         "due_at": T0 - timedelta(minutes=5), "state": ReminderState.FAILED,
         "fired_at": T0 - timedelta(minutes=5), "outcome": "failed_error",
         "kind": "proactive",
@@ -129,8 +130,17 @@ def _reminder(**kw) -> Reminder:
 
 
 def _send(message_id: int, at_ms: int, text: str = "already said it"):
-    return SimpleNamespace(message_id=message_id, at_ms=at_ms, text=text,
-                           person_id="nora")
+    """The real `RecordHit` shape `own_sends` returns — the delivered fact
+    lives under `row`, exactly as `SqlRecordQuery` rows it."""
+    from nora.domain.models import TranscriptRow
+    from nora.domain.record_query import RecordHit
+    return RecordHit(
+        platform="signal", conversation_id="room-a",
+        row=TranscriptRow(
+            id=message_id, sender_id="nora", sender_name="Nora", ts=at_ms,
+            body=text, is_nora=True, delivery_status="sent", raw_json=None,
+        ),
+    )
 
 
 class _Sends:
@@ -138,7 +148,12 @@ class _Sends:
         self._hits = list(hits)
 
     async def own_sends(self, rooms, *, start_ms, end_ms, limit):
-        return tuple(self._hits)
+        room_set = set(rooms)
+        return tuple(
+            h for h in self._hits
+            if (h.platform, h.conversation_id) in room_set
+            and start_ms <= h.row.ts < end_ms
+        )[:limit]
 
 
 class _Broken:
@@ -217,7 +232,10 @@ def test_the_renderer_names_withheld_entries_and_coverage():
     )
     block = render_shared_state(view, now_ms=T0_MS)
     assert block is not None and block.name == "shared_cognitive_state"
-    assert "withheld from this room" in block.body
+    # Withheld entries name the room only as «another» — the raw
+    # platform/conversation_id of a room this read cannot see never renders.
+    assert "open in another room · withheld" in block.body
+    assert "room-b" not in block.body
     assert "ledger partial" in block.body
 
 
@@ -225,3 +243,36 @@ def test_nothing_found_renders_no_block():
     from nora.domain.shared_state import SharedView
     view = SharedView(unit="u1", status="nothing_found", as_of_ms=T0_MS)
     assert render_shared_state(view, now_ms=T0_MS) is None
+
+
+async def test_a_destination_read_withholds_other_rooms_content():
+    """The disclosure boundary a destination read must hold: this room's
+    sends stay readable, another room's are entries that exist but carry no
+    content — existence visible, words withheld."""
+    room_b_send = _send(11, T0_MS - 60_000)
+    room_b_send = SimpleNamespace(
+        platform="signal", conversation_id="room-b", row=room_b_send.row,
+    )
+    own_send = _send(10, T0_MS - 30_000)
+    view = await read_shared(
+        unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=T0_MS,
+        room=ROOM_A,
+        record_query=_Sends([own_send, room_b_send]),
+    )
+    by_room = {e.scope: e for e in view.entries if e.kind == "send"}
+    assert by_room["signal:room-a"].permitted is True
+    assert by_room["signal:room-b"].permitted is False
+
+
+async def test_a_unit_read_sees_every_room():
+    """The session's read is the unit itself (DEC-231): nothing is
+    withheld — the same stores, one boundary wider."""
+    room_b_send = _send(11, T0_MS - 60_000)
+    room_b_send = SimpleNamespace(
+        platform="signal", conversation_id="room-b", row=room_b_send.row,
+    )
+    view = await read_shared(
+        unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=T0_MS,
+        record_query=_Sends([_send(10, T0_MS - 30_000), room_b_send]),
+    )
+    assert all(e.permitted for e in view.entries)

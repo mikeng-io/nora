@@ -199,57 +199,90 @@ class SqlReminderStore:
         row out — the id first (the more basic fault, and the one the in-memory
         store names), then the note, then the subject."""
         row = normalise_reminder(reminder)
+        try:
+            async with self._engine.begin() as conn:
+                await self._insert_one(conn, row)
+        except IntegrityError as exc:
+            if getattr(exc.orig, "sqlstate", None) != _PG_UNIQUE_VIOLATION:
+                raise
+            raise DuplicateReminderError(row.id) from exc
+
+    async def create_many(
+        self, reminders: Sequence[Reminder], *, arbitration_key: str | None = None,
+    ) -> None:
+        """`create` for a batch, in ONE transaction: the advisory lock (when
+        `arbitration_key` names a unit) serialises check-and-insert against
+        every other writer keyed the same — across processes, which the
+        per-destination unique index cannot cover — and any raised duplicate
+        aborts the transaction, so no partial batch can persist."""
+        rows = [normalise_reminder(r) for r in reminders]
+        if not rows:
+            return
+        try:
+            async with self._engine.begin() as conn:
+                if arbitration_key is not None:
+                    await conn.execute(
+                        sa.text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
+                        {"k": arbitration_key},
+                    )
+                for row in rows:
+                    await self._insert_one(conn, row)
+        except IntegrityError as exc:
+            if getattr(exc.orig, "sqlstate", None) != _PG_UNIQUE_VIOLATION:
+                raise
+            raise DuplicateReminderError(rows[0].id) from exc
+
+    async def _insert_one(self, conn: Any, row: Reminder) -> None:
+        """One INSERT of `create`'s contract, against an open connection:
+        untargeted `ON CONFLICT DO NOTHING` for a keyed proactive row, then
+        the blocker-naming post-checks in `create`'s order — id, note,
+        subject. Shared by `create` and `create_many` so the batch cannot
+        arbitrate less than the single write."""
         note_id = open_proactive_note(row)
         subject = open_proactive_subject(row)
         stmt = pg_insert(REMINDERS).values(**_insert_values(row))
         if note_id is not None or subject is not None:
             stmt = stmt.on_conflict_do_nothing()
-        try:
-            async with self._engine.begin() as conn:
-                result = await conn.execute(stmt)
-                if result.rowcount:
-                    from nora.infra.sql.graph_projection import register_arrival
-                    await register_arrival(conn,"reminder",row.id)
-                    return
-                if (
-                    await conn.execute(
-                        sa.select(REMINDERS.c.id).where(REMINDERS.c.id == row.id),
-                    )
-                ).first() is not None:
-                    raise DuplicateReminderError(row.id)
-                if note_id is not None and (
-                    await conn.execute(
-                        sa.select(REMINDERS.c.id).where(
-                            REMINDERS.c.kind == PROACTIVE_KIND,
-                            REMINDERS.c.state.in_(OPEN_STATES),
-                            REMINDERS.c.payload["note_id"].astext == note_id,
-                        )
-                    )
-                ).first() is not None:
-                    raise DuplicateProactiveNoteError(note_id)
-                if subject is not None and (
-                    await conn.execute(
-                        sa.select(REMINDERS.c.id).where(
-                            REMINDERS.c.kind == PROACTIVE_KIND,
-                            REMINDERS.c.state.in_(OPEN_STATES),
-                            REMINDERS.c.payload["subject_kind"].astext == subject[0],
-                            REMINDERS.c.payload["subject_id"].astext == subject[1],
-                            sa.func.coalesce(
-                                REMINDERS.c.payload["action"].astext, ""
-                            ) == subject[2],
-                            REMINDERS.c.platform == row.platform,
-                            REMINDERS.c.conversation_id == row.conversation_id,
-                        )
-                    )
-                ).first() is not None:
-                    raise DuplicateProactiveSubjectError(
-                        subject, row.platform, row.conversation_id,
-                    )
-                raise DuplicateReminderError(row.id)
-        except IntegrityError as exc:
-            if getattr(exc.orig, "sqlstate", None) != _PG_UNIQUE_VIOLATION:
-                raise
-            raise DuplicateReminderError(row.id) from exc
+        result = await conn.execute(stmt)
+        if result.rowcount:
+            from nora.infra.sql.graph_projection import register_arrival
+            await register_arrival(conn,"reminder",row.id)
+            return
+        if (
+            await conn.execute(
+                sa.select(REMINDERS.c.id).where(REMINDERS.c.id == row.id),
+            )
+        ).first() is not None:
+            raise DuplicateReminderError(row.id)
+        if note_id is not None and (
+            await conn.execute(
+                sa.select(REMINDERS.c.id).where(
+                    REMINDERS.c.kind == PROACTIVE_KIND,
+                    REMINDERS.c.state.in_(OPEN_STATES),
+                    REMINDERS.c.payload["note_id"].astext == note_id,
+                )
+            )
+        ).first() is not None:
+            raise DuplicateProactiveNoteError(note_id)
+        if subject is not None and (
+            await conn.execute(
+                sa.select(REMINDERS.c.id).where(
+                    REMINDERS.c.kind == PROACTIVE_KIND,
+                    REMINDERS.c.state.in_(OPEN_STATES),
+                    REMINDERS.c.payload["subject_kind"].astext == subject[0],
+                    REMINDERS.c.payload["subject_id"].astext == subject[1],
+                    sa.func.coalesce(
+                        REMINDERS.c.payload["action"].astext, ""
+                    ) == subject[2],
+                    REMINDERS.c.platform == row.platform,
+                    REMINDERS.c.conversation_id == row.conversation_id,
+                )
+            )
+        ).first() is not None:
+            raise DuplicateProactiveSubjectError(
+                subject, row.platform, row.conversation_id,
+            )
+        raise DuplicateReminderError(row.id)
 
     async def get(self, reminder_id: UUID) -> Reminder | None:
         stmt = sa.select(REMINDERS).where(REMINDERS.c.id == reminder_id)
@@ -382,6 +415,32 @@ class SqlReminderStore:
             .where(
                 REMINDERS.c.requester_person_id == requester_person_id,
                 REMINDERS.c.created_at >= ensure_utc(since, field="since"),
+            )
+            .order_by(REMINDERS.c.created_at.asc(), REMINDERS.c.id.asc())
+            .limit(check_limit(limit))
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return self._decode_due(rows)
+
+    async def recent_in(
+        self, rooms: Sequence[tuple[str, str]], *, requester_person_id: str,
+        since: datetime, limit: int,
+    ) -> Sequence[Reminder]:
+        """`history` with the room predicate INSIDE the query — a unit's rows
+        can no longer be cut by a global limit before its filter runs."""
+        if not rooms:
+            return ()
+        in_rooms = sa.or_(*(
+            sa.and_(REMINDERS.c.platform == p, REMINDERS.c.conversation_id == c)
+            for p, c in rooms
+        ))
+        stmt = (
+            sa.select(REMINDERS)
+            .where(
+                REMINDERS.c.requester_person_id == requester_person_id,
+                REMINDERS.c.created_at >= ensure_utc(since, field="since"),
+                in_rooms,
             )
             .order_by(REMINDERS.c.created_at.asc(), REMINDERS.c.id.asc())
             .limit(check_limit(limit))

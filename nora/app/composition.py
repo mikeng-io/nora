@@ -2383,7 +2383,9 @@ async def build_dependencies(
     })
     shared = shared_reader(
         notes=note_store, ledger=ledger_store, reminders=reminders,
-        record_query=SqlRecordQuery(engine), ai_peer=cfg.honcho.ai_peer,
+        record_query=SqlRecordQuery(engine),
+        standing=standing_store if cfg.standing.enabled else None,
+        ai_peer=cfg.honcho.ai_peer,
         rooms_of_unit=lambda unit: unit_rooms.get(unit, ()),
     )
     assembler = build_assembler(

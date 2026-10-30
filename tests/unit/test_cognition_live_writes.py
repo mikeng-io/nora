@@ -197,12 +197,14 @@ async def test_remind_writes_the_proactive_row_the_fire_path_fires_and_can_move_
         note = await by["note_create"](body=GOOD_BODY, **NOTE)
         answers.append(await by["remind"](
             intent="ask", text="ask where dinner is",
-            subject_rows=[f"note:{note['note_id']}"],
+            subject=f"note:{note['note_id']}", action="ask-dinner-place",
+            subject_rows=["101"],
             at=iso(NOW + 3_600_000),
         ))
         answers.append(await by["remind"](
-            intent="ask", text="again", subject_rows=[f"note:{note['note_id']}"],
-            at=iso(NOW + 3_600_000),
+            intent="ask", text="again",
+            subject=f"note:{note['note_id']}", action="ask-dinner-place",
+            subject_rows=["101"], at=iso(NOW + 3_600_000),
         ))
         answers.append(await by["remind_move"](
             reminder_id=answers[0]["reminder_id"], at=iso(NOW + 7_200_000), why="later",
@@ -233,6 +235,7 @@ async def test_a_note_linked_remind_carries_the_note_and_follows_a_merge_and_a_r
     async def behave(by: dict[str, Any], tools: list[Any]) -> None:
         answers.append(await by["remind"](
             intent="ask", text="ask where dinner is",
+            subject=f"note:{duplicate.id}", action="ask-dinner-place",
             subject_rows=[f"note:{duplicate.id}", "101"], at=iso(NOW + 3_600_000),
         ))
         row = next(iter(stores.reminders._rows.values()))
@@ -264,10 +267,12 @@ async def test_a_remind_citing_a_note_by_its_bare_shown_id_links_it_and_dies_wit
     async def behave(by: dict[str, Any], tools: list[Any]) -> None:
         answers.append(await by["remind"](
             intent="ask", text="ask how many are coming",
+            subject=f"note:{note.id}", action="ask-headcount",
             subject_rows=["101", note.id], at=iso(NOW + 3_600_000),
         ))
         answers.append(await by["remind"](
             intent="ask", text="ask the headcount again",
+            subject=f"note:{note.id}", action="ask-headcount",
             subject_rows=[note.id, "102"], at=iso(NOW + 7_200_000),
         ))
         answers.append(await by["note_set_status"](note_id=note.id, reason="settled"))
@@ -289,6 +294,7 @@ async def test_a_bracketed_note_id_links_too():
     async def behave(by: dict[str, Any], tools: list[Any]) -> None:
         answers.append(await by["remind"](
             intent="ask", text="ask how many are coming",
+            subject=f"note:{note.id}", action="ask-headcount",
             subject_rows=["101", f" [{note.id}]"], at=iso(NOW + 3_600_000),
         ))
 
@@ -315,6 +321,7 @@ async def test_a_move_that_loses_the_race_to_the_heartbeat_is_refused_and_writes
     async def behave(by: dict[str, Any], tools: list[Any]) -> None:
         answers.append(await by["remind"](
             intent="ask", text="ask how many are coming",
+            subject=f"note:{note.id}", action="ask-headcount",
             subject_rows=[note.id], at=iso(NOW + 3_600_000),
         ))
         stores.reminders.cancel = claimed_first  # type: ignore[method-assign]

@@ -1000,20 +1000,26 @@ class TranscriptInjection:
             try:
                 narrowed = await ledger_target(target, room)
             except Exception:
-                # A permit that cannot be built must not filter: withholding
-                # nothing is the legible failure for a READ, and the view's
-                # coverage still says what the stores answered.
+                # A permit that cannot be built withholds EVERYTHING: an
+                # unfiltered unit read into one room is the disclosure
+                # failure, so the read itself is reported unavailable —
+                # the failure the renderer can show.
                 log.exception(
                     "shared-state permit build failed for %s:%s",
                     msg.platform, msg.conversation_id,
                 )
-                narrowed = None
+                return SharedView(
+                    unit=convo.unit, status="unavailable",
+                    as_of_ms=int(self._clock().timestamp() * 1000),
+                )
             if narrowed is not None:
                 def permit(entry: LedgerEntry) -> bool:
                     return ledger_permits(entry, narrowed)
         try:
             return await self._shared_reader(
-                unit=convo.unit, permit=permit,
+                unit=convo.unit,
+                room=(msg.platform, msg.conversation_id),
+                permit=permit,
                 now_ms=int(self._clock().timestamp() * 1000),
             )
         except Exception:

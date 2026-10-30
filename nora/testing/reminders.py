@@ -90,6 +90,53 @@ class FakeReminderStore:
             )
         self._put(reminder)
 
+    async def create_many(
+        self, reminders: Sequence[Reminder], *, arbitration_key: str | None = None,
+    ) -> None:
+        """`create`'s contract for a batch, ATOMIC the way the SQL tx is:
+        every check first, no `_put` until each row clears — a refusal leaves
+        the store untouched, matching the rolled-back transaction. The
+        advisory lock has no analogue in-process (each check+put pair is
+        already `await`-free), so `arbitration_key` is accepted and unused."""
+        pending: list[Reminder] = []
+        for reminder in reminders:
+            if reminder.id in self._rows:
+                raise DuplicateReminderError(reminder.id)
+            note_id = open_proactive_note(reminder)
+            if note_id is not None and any(
+                open_proactive_note(r) == note_id
+                for r in (*self._rows.values(), *pending)
+            ):
+                raise DuplicateProactiveNoteError(note_id)
+            subject = open_proactive_subject(reminder)
+            if subject is not None and any(
+                open_proactive_subject(r) == subject
+                and r.platform == reminder.platform
+                and r.conversation_id == reminder.conversation_id
+                for r in (*self._rows.values(), *pending)
+            ):
+                raise DuplicateProactiveSubjectError(
+                    subject, reminder.platform, reminder.conversation_id,
+                )
+            pending.append(reminder)
+        for reminder in pending:
+            self._put(reminder)
+
+    async def recent_in(
+        self, rooms: Sequence[tuple[str, str]], *, requester_person_id: str,
+        since: datetime, limit: int,
+    ) -> Sequence[Reminder]:
+        cutoff = ensure_utc(since, field="since")
+        size = check_limit(limit)
+        room_set = set(rooms)
+        rows = [
+            r for r in self._rows.values()
+            if r.requester_person_id == requester_person_id
+            and r.created_at >= cutoff
+            and (r.platform, r.conversation_id) in room_set
+        ]
+        return sorted(rows, key=lambda r: (r.created_at, r.id))[:size]
+
     async def get(self, reminder_id: UUID) -> Reminder | None:
         return self._rows.get(reminder_id)
 

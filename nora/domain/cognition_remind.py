@@ -98,6 +98,7 @@ def check_remind(
     *, subject_rows: Sequence[str], intent: str, platform: str, conversation_id: str,
     pending: Sequence[PendingRemind], context: RemindContext | None = None,
     subject: tuple[str, str] | None = None,
+    action: str = "",
     extra_destinations: Sequence[tuple[str, str]] = (),
 ) -> RemindRefusal | None:
     """`remind(at, room, brief)`. `brief` is `(intent, subject_rows)` — never
@@ -138,7 +139,7 @@ def check_remind(
     if subject is not None:
         conflicts = [
             p for p in pending
-            if p.subject == subject and p.action == intent
+            if p.subject == subject and p.action == (action or intent)
         ]
         pending_dests = {(p.platform, p.conversation_id) for p in conflicts}
         uncovered = pending_dests - covered
