@@ -1228,7 +1228,7 @@ class WorkRunner:
         """The claimed window turn: persisted admission first, then the same
         slot/lock/cooldown/speak sequence the live trigger runs — owned by the
         work's generation so a kill can never orphan it."""
-        from nora.app.fire import participation_occasion
+        from nora.app.fire import SENT, SILENT, participation_occasion
 
         if self._participation is None or self._fire_speak is None:
             await self._finish(work, "failed_retained",
@@ -1312,7 +1312,7 @@ class WorkRunner:
                 send_permitted=send_permitted,
                 gate_verdict=verdict, gate_score=score,
                 adapter=bound)
-            if outcome == "sent":
+            if outcome == SENT:
                 # The send and the cooldown cursor retire together; the in-
                 # memory mirror follows the committed write.
                 async with self._store._engine.begin() as conn:
@@ -1329,9 +1329,13 @@ class WorkRunner:
                     self._emit_terminal(work, "done")
                     await self._ack(work)
             else:
-                # Held, silent or failed: the room heard nothing, no cooldown
-                # is spent — the same reading the live trigger makes.
-                if await self._finish(work, "done", {"outcome": outcome}):
+                # Healthy silence completes; a failed turn stays retained
+                # without blindly repeating model work or spending cooldown.
+                state = "done" if outcome == SILENT else "failed_retained"
+                result = {"outcome": outcome}
+                if state == "failed_retained":
+                    result["reason"] = outcome
+                if await self._finish(work, state, result):
                     await self._ack(work)
         finally:
             await self._db_locks.release(key)

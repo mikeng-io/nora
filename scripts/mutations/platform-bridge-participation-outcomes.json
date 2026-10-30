@@ -1,0 +1,9 @@
+[
+  {
+    "name": "participation failure remains retained instead of completed",
+    "file": "nora/app/bridge_queue.py",
+    "old": "                state = \"done\" if outcome == SILENT else \"failed_retained\"",
+    "new": "                state = \"done\"",
+    "target": "tests/integration/test_bridge_deferred.py::test_participation_fire_runs_admitted_turn_once"
+  }
+]

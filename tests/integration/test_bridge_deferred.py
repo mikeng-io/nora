@@ -867,8 +867,15 @@ async def test_ambient_message_does_not_invent_membership(
     assert len(rows) == 1  # exactly the noted candidate — never invented
 
 
+@pytest.mark.parametrize(("outcome", "expected_state"), [
+    ("sent", "done"),
+    ("silent", "done"),
+    ("failed_error", "failed_retained"),
+    ("failed_timeout", "failed_retained"),
+    ("failed_policy", "failed_retained"),
+])
 async def test_participation_fire_runs_admitted_turn_once(
-        bridge, redis_client, harness):
+        bridge, redis_client, harness, outcome, expected_state):
     """The claimed fire work: gate admits (once, persisted), slot and DB
     lock taken, the canonical participation occasion speaks, the send and
     the cooldown cursor commit together."""
@@ -879,7 +886,7 @@ async def test_participation_fire_runs_admitted_turn_once(
 
     async def speak(occasion, **kw):
         speaks.append(kw)
-        return "sent"
+        return outcome
 
     class Gate:
         async def decide(self, *, platform, conversation_id):
@@ -898,11 +905,17 @@ async def test_participation_fire_runs_admitted_turn_once(
     assert fire.kind == "participation_fire"
     await runner._execute(fire)
     row = await _finish_state(store, fire.id)
-    assert row["state"] == "done" and row["result"]["outcome"] == "sent"
+    assert row["state"] == expected_state
+    assert row["result"]["outcome"] == outcome
+    assert row["result"]["telemetry_last_attempt"]["outcome"] == expected_state
+    if expected_state == "failed_retained":
+        assert row["result"]["reason"] == outcome
     assert gate_calls["n"] == 1
     assert len(speaks) == 1 and speaks[0]["send_permitted"] is True
-    assert await _state(store).last_send_at(
-        platform=PLATFORM, conversation_id=ROOM) is not None
+    last_send = await _state(store).last_send_at(
+        platform=PLATFORM, conversation_id=ROOM)
+    assert (last_send is not None) == (outcome == "sent")
+    assert await store.claim_next(owner="replacement", lease_seconds=60) is None
 
 
 async def test_fire_reclaim_uses_persisted_admission_no_second_gate(
