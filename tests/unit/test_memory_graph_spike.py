@@ -275,30 +275,80 @@ def test_tool_exchanges_pairs_admission_and_refusal():
 
 
 async def test_session_quality_uses_shown_input_and_only_committed_relations():
-    judge = SimpleNamespace(score=AsyncMock(return_value=["supported", "unsupported"]))
+    """Score the serialized Relation nested in each committed GraphEdge."""
+    from dataclasses import asdict
+    from datetime import UTC, datetime
+
+    from nora.domain.memory_graph import GraphEdge, Relation, Subgraph
+
+    def relation(relation_id: str, rel: str) -> Relation:
+        return Relation(
+            id=relation_id,
+            src=("event", "generated-source"),
+            rel=rel,
+            dst=("topic", "generated-topic"),
+            layer="notebook",
+            unit="generated-unit",
+            asserted_at=datetime(2026, 10, 1, tzinfo=UTC),
+        )
+
+    def serialized(value):
+        # The exact expression memory_propose returns as `connected`.
+        return json.loads(json.dumps(asdict(value), default=str))
+
+    committed, merge, existing = (
+        relation("generated-committed", "concerns"),
+        relation("generated-merge", "same_as"),
+        relation("generated-existing", "concerns"),
+    )
+    connected = serialized(
+        Subgraph(
+            status="ok",
+            relations=tuple(
+                GraphEdge(relation=r, evidence_count=1) for r in (committed, merge, existing)
+            ),
+        )
+    )
+    seen = []
+
+    async def judge(payload):
+        proposition = payload["proposition"]
+        seen.append((proposition, payload["evidence"]))
+        verdict = "supported" if proposition.get("rel") == "concerns" else "unsupported"
+        return [verdict, verdict]
+
+    read = {"name": "memory_read", "input": {"key": "generated"}, "result": {"status": "ok"}}
     result = await spike.session_quality(
-        judge,
+        SimpleNamespace(score=judge),
         {"prompt": "Generated source"},
         [
+            read,
+            {"name": "profile_revise", "input": {}, "result": {"status": "ok"}},
             {
                 "name": "memory_propose",
                 "input": {"readings": [{"text": "Generated claim"}]},
                 "result": {
                     "admitted": [0],
-                    "committed": ["generated-committed"],
-                    "connected": {
-                        "relations": [
-                            {"id": "generated-committed", "rel": "concerns"},
-                            {"id": "generated-existing", "rel": "concerns"},
-                        ]
-                    },
+                    "committed": ["generated-committed", "generated-merge"],
+                    "connected": connected,
                 },
-            }
+            },
         ],
     )
-    assert result["relation_precision"] == [["supported"], ["unsupported"]]
-    assert result["reading_precision"] == [["supported"], ["unsupported"]]
-    assert judge.score.call_args.args[0]["evidence"]["input"] == {"prompt": "Generated source"}
+    # The judge scored the nested serialized Relations, never the GraphEdge
+    # wrappers, and only committed ids — `generated-existing` stays unscored.
+    relations = [
+        p for p, _ in seen if isinstance(p, dict) and str(p.get("id", "")).startswith("generated-")
+    ]
+    assert relations == [serialized(committed), serialized(merge)]
+    assert result["relation_precision"] == [["supported", "unsupported"]] * 2
+    assert [p for p, _ in seen if "different_entities" in p] == [
+        {"different_entities": serialized(merge)}
+    ]
+    assert result["wrong_merges"] == [["unsupported"]] * 2
+    assert result["reading_precision"] == [["unsupported"]] * 2
+    expected_evidence = {"input": {"prompt": "Generated source"}, "reads": [read]}
+    assert seen and all(e == expected_evidence for _, e in seen)
 
 
 def test_report_error_exit_is_distinct_from_fail():

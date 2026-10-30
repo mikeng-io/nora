@@ -578,7 +578,8 @@ async def session_quality(
             for reading in proposal.get("readings", []):
                 await score("reading_precision", reading)
         committed = set(result.get("committed", []))
-        for relation in result.get("connected", {}).get("relations", []):
+        for edge in result.get("connected", {}).get("relations", []):
+            relation = edge["relation"]
             if relation["id"] in committed:
                 await score("relation_precision", relation)
                 if relation["rel"] == "same_as":
