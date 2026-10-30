@@ -1,5 +1,21 @@
 # Changelog
 
+## [7.11.47](https://github.com/mikeng-io/nora/compare/v7.11.46...v7.11.47) (2026-10-30)
+
+
+### Features
+
+* **evals:** anchor cognition scenarios on recorded wakes ([fe4c7c7](https://github.com/mikeng-io/nora/commit/fe4c7c7507436fec49d1fd14d7946af1fd711b22))
+* **evals:** anchor scenarios on recorded wakes, in progress ([5efb8d8](https://github.com/mikeng-io/nora/commit/5efb8d89b2f771fa6d730565dc1b9c99731c20f2))
+
+
+### Bug Fixes
+
+* **evals:** an inspection returns the render before any session row is written ([7504b9e](https://github.com/mikeng-io/nora/commit/7504b9eeebc6cb66e8a708a17f8f8e0ce66cbd09))
+* **evals:** the anchor confirmation's prompt is a declared context-assembly occasion ([5f77b91](https://github.com/mikeng-io/nora/commit/5f77b911c7646e879b202d75148b4c8f71e53984))
+* **evals:** the confirmation's memory read reduces profile lines to chain heads first ([06afdb0](https://github.com/mikeng-io/nora/commit/06afdb0cfba23aab8d07bdfb4c5ac7e1be624aac))
+* **evals:** the context selector's prompt is a declared context-assembly occasion ([bfbdf03](https://github.com/mikeng-io/nora/commit/bfbdf030355c12a2cb7ff990d4bd2397ed5d5208))
+
 ## [7.11.46](https://github.com/mikeng-io/nora/compare/v7.11.45...v7.11.46) (2026-10-30)
 
 
