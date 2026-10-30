@@ -114,7 +114,15 @@ def prepare(runtime: Path, environ: dict[str, str] | None = None,
             *, output_directory: Path | None = None) -> list[str]:
     config_path = runtime / "config.toml"
     config = tomllib.loads(config_path.read_text()) if config_path.exists() else {}
-    if not (runtime / "secret.toml").exists() and not references(config):
+    from urllib.parse import urlsplit
+
+    tracing = config.get("obs", {}).get("tracing", {})
+    signoz = tracing.get("enabled", False) and urlsplit(
+        tracing.get("endpoint", "")).hostname == "signoz-ingester"
+    signoz_overlay = runtime / "deploy/signoz/docker-compose.signoz.yaml"
+    if signoz and not signoz_overlay.is_file():
+        raise FileNotFoundError("install the SigNoz Compose overlay before enabling its endpoint")
+    if not (runtime / "secret.toml").exists() and not references(config) and not signoz:
         return []
     values = source(runtime, environ)
     config = tomllib.loads((runtime / "config.toml").read_text())
@@ -136,7 +144,10 @@ def prepare(runtime: Path, environ: dict[str, str] | None = None,
     projected = projection(config, values)
     # Compose performs interpolation in YAML/JSON values as well.
     private_write(overlay, json.dumps(projected).replace("$", "$$"))
-    return ["--env-file", str(envfile), "-f", str(overlay)]
+    arguments = ["--env-file", str(envfile), "-f", str(overlay)]
+    if signoz:
+        arguments.extend(["-f", str(signoz_overlay)])
+    return arguments
 
 
 def migrate(runtime: Path, *, apply: bool) -> None:

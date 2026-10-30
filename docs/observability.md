@@ -278,7 +278,14 @@ backend must never block an app release — so the SigNoz wiring is an OVERLAY,
    `docker compose -f deploy/signoz/deployment/compose.yaml up -d --build`.
    This creates the external `signoz-network` and the collector that reads the
    journal as uid 10001 inside the host's journal group.
-2. Point the app's `[obs.tracing]` at the in-network endpoint
+2. Install the merged `scripts/secret_delivery.py` in both installed helper
+   locations described in [configuration](configuration.md#host-migration-and-installed-files),
+   and copy `deploy/signoz/docker-compose.signoz.yaml` into that same path
+   under the runtime root. The helper includes this overlay on every Compose
+   operation (including Komodo releases) whenever tracing is enabled and its
+   endpoint names `signoz-ingester`; a missing overlay fails before recreation.
+   This keeps the network and journal driver through later automatic releases.
+   Point the app's `[obs.tracing]` at the in-network endpoint
    `http://signoz-ingester:4318/v1/traces` (the loopback publishes
    `127.0.0.1:14317/14318` are for the operator's own OTLP reads over
    Tailscale, matching every other loopback admin surface — nothing binds a
