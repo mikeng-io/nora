@@ -135,7 +135,7 @@
           "max-file": "3"
         }
       },
-      "image": "ghcr.io/mikeng-io/nora-nora@sha256:9f6585371202b8e2684060ed428c4526b7b938090353fc2e24762144e7cf2ee6",
+      "image": "ghcr.io/mikeng-io/nora-nora@sha256:c5d203a171e7bbb54fa548dff5ea9cb25a83af1a5eeb814dae3e1fd33f5fc6b1",
       "container_name": "nora",
       "restart": "unless-stopped",
       "stop_grace_period": "75s",
@@ -159,7 +159,7 @@
         }
       },
       "environment": [
-        "OMNIROUTE_API_KEY=${OMNIROUTE_API_KEY:?set OMNIROUTE_API_KEY in the host environment first}",
+        "OMNIROUTE_API_KEY=${OMNIROUTE_API_KEY:-}",
         "NORA_BRIDGE_TOKEN=${NORA_BRIDGE_TOKEN:?set NORA_BRIDGE_TOKEN in the host environment first}",
         "DATABASE_URL=postgresql+asyncpg://nora:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db/nora",
         "LANGFUSE_OTLP_HEADERS=${LANGFUSE_OTLP_HEADERS:-}",
@@ -243,7 +243,7 @@
       ]
     },
     "site": {
-      "image": "ghcr.io/mikeng-io/nora-site@sha256:b21862a3ad2ee372c347e8f488792e49da79f4bb65ffc3ce43b0b991263f4b8d",
+      "image": "ghcr.io/mikeng-io/nora-site@sha256:ef63df359a59186e9c2d23033804830e25a9550062c44899e9dd6f2f83b47fc6",
       "container_name": "nora-site",
       "profiles": [
         "site"
@@ -254,7 +254,7 @@
       ]
     },
     "presence": {
-      "image": "ghcr.io/mikeng-io/nora-nora@sha256:9f6585371202b8e2684060ed428c4526b7b938090353fc2e24762144e7cf2ee6",
+      "image": "ghcr.io/mikeng-io/nora-nora@sha256:c5d203a171e7bbb54fa548dff5ea9cb25a83af1a5eeb814dae3e1fd33f5fc6b1",
       "container_name": "presence",
       "restart": "unless-stopped",
       "entrypoint": [
@@ -306,7 +306,7 @@
       }
     },
     "analytics": {
-      "image": "ghcr.io/mikeng-io/nora-nora@sha256:9f6585371202b8e2684060ed428c4526b7b938090353fc2e24762144e7cf2ee6",
+      "image": "ghcr.io/mikeng-io/nora-nora@sha256:c5d203a171e7bbb54fa548dff5ea9cb25a83af1a5eeb814dae3e1fd33f5fc6b1",
       "container_name": "analytics",
       "restart": "unless-stopped",
       "entrypoint": [
