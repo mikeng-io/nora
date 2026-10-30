@@ -80,17 +80,28 @@ def test_host_validation_failure_never_recreates_services_or_records_success(tmp
     wrapper = load('komodo_deploy')
     bundle = load('release_bundle')
     compose, manifest = bundle.render(source(), images(bundle), 'v6.3.1', 'b' * 40)
-    (tmp_path / 'config.toml').write_text('[example]\nenabled=true\n')
+    runtime = tmp_path / 'runtime'
+    runtime.mkdir()
+    (runtime / 'config.toml').write_text('[example]\nenabled=true\n')
+    (runtime / 'secret.toml').write_text('[credentials]\nAUTH_SECRET="synthetic-portal"\n')
+    control = tmp_path / 'control'
+    control.mkdir()
     commands = []
 
     def execute(command, *, stage, output=False):
         import json
         commands.append(command)
+        if command[:2] == ['docker', 'compose']:
+            assert command[2:6] == [
+                '--env-file', str(control / '.secret-delivery/compose.env'),
+                '-f', str(control / '.secret-delivery/compose.json')]
+            assert (control / '.secret-delivery/compose.env').read_text() == (
+                "AUTH_SECRET='synthetic-portal'\n")
         if command[0:2] == ['docker', 'compose'] and 'config' in command:
             resolved = copy.deepcopy(compose)
             resolved['name'] = 'nora'
             resolved['services']['nora']['volumes'] = [
-                {'target': '/app/config.toml', 'source': str(tmp_path / 'config.toml')}]
+                {'target': '/app/config.toml', 'source': str(runtime / 'config.toml')}]
             return json.dumps(resolved)
         if 'pull' in command:
             return ''
@@ -98,12 +109,13 @@ def test_host_validation_failure_never_recreates_services_or_records_success(tmp
             raise RuntimeError('invalid candidate config')
         raise AssertionError(f'unexpected operation: {command}')
 
-    monkeypatch.setattr(wrapper, '__file__', str(tmp_path / 'komodo_deploy.py'))
+    monkeypatch.setattr(wrapper, '__file__', str(control / 'komodo_deploy.py'))
     monkeypatch.setattr(wrapper, 'run', execute)
     with pytest.raises(RuntimeError, match='invalid candidate config'):
-        wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
+        wrapper.apply_release(['docker', 'compose'], manifest, runtime, 'nora', site=False)
     assert not any('up' in command for command in commands)
-    assert not (tmp_path / 'release-deploy.json').exists()
+    assert not (control / 'release-deploy.json').exists()
+    assert not (runtime / '.secret-delivery').exists()
 
 
 def test_failed_health_readback_preserves_the_previous_success_receipt(tmp_path, monkeypatch):

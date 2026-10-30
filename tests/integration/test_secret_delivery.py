@@ -8,7 +8,8 @@ import pytest
 from scripts.secret_delivery import prepare
 
 
-def test_native_compose_consumes_projection_without_shared_secret_mount(tmp_path):
+@pytest.mark.parametrize("external_output", [False, True])
+def test_native_compose_consumes_projection_without_shared_secret_mount(tmp_path, external_output):
     import os
     import shutil
     import subprocess
@@ -31,7 +32,10 @@ def test_native_compose_consumes_projection_without_shared_secret_mount(tmp_path
     synthetic["CUSTOM_ENDPOINT_KEY"] = "synthetic-dollar$literal"
     (tmp_path / "secret.toml").write_text(
         '[credentials]\n' + ''.join(f'{k}={json.dumps(v)}\n' for k, v in synthetic.items()))
-    arguments = prepare(tmp_path, {})
+    control = tmp_path / "control"
+    control.mkdir()
+    options = {"output_directory": control / ".secret-delivery"} if external_output else {}
+    arguments = prepare(tmp_path, {}, **options)
     result = subprocess.run(  # noqa: S603 -- fixed synthetic local Compose validation
         ["docker", "compose", "-f", str(root / "docker-compose.yml"), *arguments,
          "config", "--format", "json"], capture_output=True, check=True,

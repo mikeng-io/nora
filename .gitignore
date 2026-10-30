@@ -118,5 +118,5 @@ docs-site/dist/
 docs-site/.astro/
 
 /secret.toml
-/.secret-delivery/
+.secret-delivery/
 /secret-migration-*/

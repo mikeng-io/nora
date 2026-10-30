@@ -86,8 +86,14 @@ legacy endpoint flags remain available without that option.
 | operational script credential reads | common resolver | host-local Python process | synthetic/offline input tests; never print resolved mappings |
 
 Existing Compose owns native image mappings; `scripts/secret_delivery.py` adds
-configured aliases only to Nora, presence and analytics. It writes private
-`.secret-delivery/compose.env` and `compose.json`; do not publish Compose config,
+configured aliases only to Nora, presence and analytics. The installed Komodo
+wrapper writes private `compose.env` and `compose.json` into `.secret-delivery/`
+beside itself (normally `/etc/komodo/nora-deploy/.secret-delivery/`). Its control
+directory must be writable and shared at the same path on the host and in
+Periphery; the credential source runtime can remain read-only. Direct helper
+calls default to `<runtime>/.secret-delivery/` and may select an explicit
+`output_directory` instead. The generated directory is mode 0700 and its files
+mode 0600. Do not publish Compose config,
 Docker inspect environments, generated files or diagnostics. Native infra remains
 outside the release-owned image cohort. No shared secret-file mounts are added.
 

@@ -133,7 +133,8 @@ def apply_release(prefix: list[str], manifest: dict, runtime: Path, project: str
         from secret_delivery import prepare
     except ModuleNotFoundError:
         from scripts.secret_delivery import prepare
-    prefix = [*prefix, *prepare(runtime)]
+    prefix = [*prefix, *prepare(
+        runtime, output_directory=Path(__file__).parent / '.secret-delivery')]
     if site:
         prefix = [*prefix, '--profile', 'site']
     # Resolve only in this captured host process; never return this config to Komodo.
