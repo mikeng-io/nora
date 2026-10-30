@@ -93,6 +93,25 @@ def test_invalid_routes_refused(example_config_path, change):
         Config.model_validate(data, context={"base": example_config_path.parent})
 
 
+def test_named_media_missing_key_degrades_without_losing_other_clients(
+    example_config_path, monkeypatch, caplog,
+):
+    from nora.app.composition import _direct_describer_clients
+
+    data = routed(example_config_path)
+    data["media"]["describe"] = {
+        "image": {"enabled": True, "provider": "alpha", "model": "image-model"},
+        "video": {"enabled": True, "provider": "beta", "model": "video-model"},
+    }
+    monkeypatch.setenv("ALPHA", "synthetic-alpha")
+    monkeypatch.setenv("BETA", "")
+    cfg = Config.model_validate(data, context={"base": example_config_path.parent})
+    clients = _direct_describer_clients(cfg)
+    assert set(clients) == {"alpha"}
+    assert str(clients["alpha"].base_url) == "https://alpha.invalid/v1/"
+    assert "BETA is unset" in caplog.text
+
+
 def test_schema_validation_does_not_read_secret(example_config_path, tmp_path):
     config = tmp_path / "config.toml"
     config.write_bytes(example_config_path.read_bytes())

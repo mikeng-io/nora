@@ -581,6 +581,8 @@ def _main() -> int:
     ap.add_argument("--coverage-timeout", type=float, default=90.0,
                     help="coverage wall-clock seconds per batch; plan must fit 55 minutes")
     ap.add_argument("--judge-base-url", default="http://127.0.0.1:20128/v1")
+    ap.add_argument("--config", type=Path,
+                    help="config.toml selecting the eval_judge provider and credentials")
     ap.add_argument("--judge-timeout", type=judge_timeout, default=300.0,
                     help="wall-clock seconds per non-coverage judge draw (>0 and <=300)")
     ap.add_argument(
@@ -720,7 +722,7 @@ def _main() -> int:
             if not args.judge:
                 raise ValueError("coverage requires --judge")
             judge = Judge(base_url=args.judge_base_url, model=args.judge,
-                          config_path=Path(args.config) if getattr(args, "config", None) else None,
+                          config_path=args.config,
                           samples=1, timeout_seconds=args.coverage_timeout)
             ok = _run_one(names[0], source_url="", judge=judge, sample=1,
                           only=only, all_reasons=args.reasons, positions=args.positions)
@@ -853,7 +855,7 @@ def _main() -> int:
 
             judge = None if not args.judge else Judge(
                 base_url=args.judge_base_url, model=args.judge, samples=args.judge_samples,
-                config_path=Path(args.config) if getattr(args, "config", None) else None,
+                config_path=args.config,
                 timeout_seconds=args.judge_timeout,
             )
 

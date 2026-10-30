@@ -273,8 +273,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      # Never hardcoded — must already be exported in the shell that runs `docker
-      # compose up` (see .env.example). Compose fails fast if it's unset.
+      # Legacy endpoint key; config.load validates the selected credential.
       - OMNIROUTE_API_KEY=${OMNIROUTE_API_KEY:-}
       # Shared bearer for the WhatsApp and Instagram bridges. Required, and the
       # same value in all three services: the bridges refuse to start without

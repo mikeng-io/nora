@@ -894,8 +894,15 @@ def _direct_describer_clients(cfg: Config) -> dict[str, AsyncOpenAI]:
         )
     for name in sorted(set(_describe_providers(cfg).values()) & set(cfg.providers)):
         endpoint = cfg.providers[name]
+        api_key = cfg.credentials.get(endpoint.api_key_env, "")
+        if not api_key:
+            log.warning(
+                "media describer provider %r selected but %s is unset — "
+                "its modalities answer unavailable", name, endpoint.api_key_env,
+            )
+            continue
         clients[name] = create_client(
-            base_url=endpoint.base_url, api_key=cfg.credentials.get(endpoint.api_key_env, ""),
+            base_url=endpoint.base_url, api_key=api_key,
             http_client=(opencode_go_http_client() if name == "opencode-go" else None),
         )
     return clients

@@ -95,7 +95,8 @@ async def start_job(runtime: SandboxRuntime, scope: str, name: str, *, running: 
     if isinstance(runtime, FakeSandboxRuntime):
         runtime.start_tmux(scope, name, running=running)
         return
-    command = f"tmux new-session -d -s {name}" + (" 'sleep 60'" if running else "")
+    job = "sleep 60" if running else "exec /bin/bash --noprofile --norc"
+    command = f"tmux new-session -d -s {name} '{job}'"
     ran = await runtime.run(scope=scope, command=command, timeout_s=10)
     assert ran.status is SandboxStatus.OK and ran.exit_code == 0, ran
     await asyncio.sleep(0.3)  # the shell reaches its prompt

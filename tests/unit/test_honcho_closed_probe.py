@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -83,6 +84,10 @@ class _World:
         self.bin = root / "bin"
         self.dir.mkdir()
         self.bin.mkdir()
+        for name in ("cat", "tr", "grep", "sort", "awk", "head"):
+            binary = shutil.which(name)
+            assert binary is not None
+            (self.bin / name).symlink_to(binary)
         for name, body in (("docker", _DOCKER), ("curl", _CURL), ("hostname", _HOSTNAME),
                            ("ss", _SS), ("tailscale", _TAILSCALE)):
             path = self.bin / name
@@ -119,7 +124,7 @@ class _World:
 
     def run(self) -> subprocess.CompletedProcess[str]:
         env = {
-            "PATH": f"{self.bin}:/usr/bin:/bin",
+            "PATH": str(self.bin),
             "STUB_DIR": str(self.dir), "STUB_GATEWAY": GATEWAY,
             "STUB_ADDRS": " ".join(self.addrs), "STUB_DOCKER_VERSION": self.version,
             "STUB_TAILNET_IP": self.tailnet or "", "HOME": str(self.dir),
