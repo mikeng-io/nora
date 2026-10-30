@@ -79,7 +79,7 @@ Use **SigNoz Community** for application APM, LLM/agent traces and centralized
 logs. Retain Sentry for grouped error reporting, linked to the same OTel trace.
 The standalone Prometheus, Alertmanager and alert-bridge services are RETIRED in
 this change — `deploy/signoz/alerts/rules.yaml` ports the 19 metric rules 1:1
-(verified against `deploy/prometheus/rules/nora.yml` in git history) plus the
+(verified against `deploy/signoz/alerts/rules.yaml` in git history) plus the
 probe's `SessionProbeAlert`, and the SigNoz channel delivers to Discord in the
 Slack message format Discord natively accepts (see Alerting below);
 `prometheus-client` and each service's
@@ -807,7 +807,7 @@ telegram/email — provisioning `discord_configs` answers
 receiver is the native path, not a stand-in for one.
 
 **The rule semantics ported intact** — every expression, `for` window, severity
-and annotation of the old `deploy/prometheus/rules/nora.yml` (in git history)
+and annotation of the old `deploy/signoz/alerts/rules.yaml` (in git history)
 carries across. Two changes the port required, both recorded at the top of
 `rules.yaml`: scrape `job`/`instance` labels do not survive the OTel prometheus
 receiver — queries and annotations use `service.name`/`service.instance.id`
@@ -932,7 +932,7 @@ Recorded here so they are findings rather than surprises.
   must carry. The transport and the field set are conventioned now; the
   editorial judgement is not.
 - **A vision read now exports real usage** through an injected
-  `VisionSpanRecorder` (`nora/agent/telemetry.RawSpanRecorder` in deployment)
+  `VisionSpanRecorder` (`nora/agent/telemetry.py` in deployment)
   — the layer-boundary problem resolved by a constructor seam, not an import.
   Verified in the local acceptance record above: the fake-provider call's span
   carries `gen_ai.usage.{input,output,total}_tokens` and provider/model

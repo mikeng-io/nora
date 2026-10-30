@@ -434,7 +434,7 @@ container that exits on startup reports `DOWN`, each exit 1.
 delivered it to Discord — the chain worked perfectly. It was not ACTED on,
 because `PlatformSilent` trips on 900 seconds of ordinary quiet and flaps all
 day, so the channel delivers every ~25 minutes and a four-day outage is
-invisible inside it. `deploy/alertmanager/alertmanager.yml` predicts exactly
+invisible inside it. The retired Alertmanager configuration predicted exactly
 this in its own comment: *"a repeat every few minutes is how an alert channel
 becomes a muted one."* A new alert would have joined the noise; a check that
 fails the deploy does not compete for attention that is already spent.

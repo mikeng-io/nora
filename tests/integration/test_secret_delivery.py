@@ -46,8 +46,7 @@ def test_native_compose_consumes_projection_without_shared_secret_mount(tmp_path
     assert services["app"]["environment"]["NORA_OTP_API_TOKEN"] == synthetic["CUSTOM_OTP"]
     assert (services["voice-sidecar"]["environment"]["DISCORD_BOT_TOKEN"]
             == synthetic["CUSTOM_DISCORD"])
-    assert (services["alert-bridge"]["environment"]["DISCORD_BOT_TOKEN"]
-            == synthetic["CUSTOM_DISCORD"])
+    assert "alert-bridge" not in services
     assert "CUSTOM_LIFE360" not in services["nora"]["environment"]
     assert services["presence"]["environment"]["CUSTOM_LIFE360"] == synthetic["CUSTOM_LIFE360"]
     assert "CUSTOM_MAPS" not in services["presence"]["environment"]

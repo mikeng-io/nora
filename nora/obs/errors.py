@@ -41,7 +41,7 @@ if TYPE_CHECKING:
 log = logging.getLogger("nora.errors")
 
 
-def otel_span_processor() -> "SpanProcessor | None":
+def otel_span_processor() -> SpanProcessor | None:
     """The OTel↔Sentry bridge, for the process's `TracerProvider` to attach.
 
     `instrumenter="otel"` alone does NOT correlate: without the SDK's span

@@ -253,10 +253,10 @@ receivers:
     - type: trace_parser
       trace_id:
         parse_from: attributes.trace_id
-        span_id:
-          parse_from: attributes.span_id
-        trace_flags:
-          parse_from: attributes.trace_flags
+      span_id:
+        parse_from: attributes.span_id
+      trace_flags:
+        parse_from: attributes.trace_flags
 service:
   extensions:
   - signoz_health_check

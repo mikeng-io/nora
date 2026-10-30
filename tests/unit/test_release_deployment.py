@@ -700,7 +700,7 @@ def test_complete_image_build_uses_selected_source_version_and_channel(
         assert built[-1][built[-1].index('-t') + 1] == f'{bundle.REGISTRY}{name}:{identity}'
         assert f'org.opencontainers.image.revision={selected["commit"]}' in built[-1]
         assert f'org.opencontainers.image.version={selected["version"]}' in built[-1]
-    assert prepared == ['signal-cli'] and len(built) == 10
+    assert prepared == ['signal-cli'] and len(built) == 9
     stamp = json.loads(Path('nora/version.json').read_text())
     assert (stamp['version'], stamp['commit']) == (selected['version'], selected['commit'])
     monkeypatch.setattr(sys, 'argv', ['release_bundle.py', 'bundle', *args])
@@ -979,7 +979,7 @@ def test_reuse_preserves_original_provenance_and_checks_current_inputs(
     assert manifest['artifacts']['app'] == old_app  # no relabel/restamp of reused bytes
     assert manifest['artifacts']['app']['commit'] == old_commit != commit
     assert generated['services']['app']['image'] == old_app['image']
-    assert len(manifest['services']) == 12 and len(manifest['artifacts']) == 10
+    assert len(manifest['services']) == 11 and len(manifest['artifacts']) == 9
     assert commands == [('docker', 'buildx', 'imagetools', 'inspect', old_app['image'])]
     # Same context is insufficient without the exact previous provenance receipt.
     forged = json.loads((directory / 'app.json').read_text())

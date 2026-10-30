@@ -5,7 +5,7 @@
 # the cursor survives restart via the file_storage extension.
 # Local Docker Desktop has no journald — the filelog receiver path in
 # ingester.yaml is the local proof; this image is the Linux-host input.
-FROM signoz/signoz-otel-collector:v0.144.15
+FROM signoz/signoz-otel-collector:v0.144.15@sha256:3996e0ffc58bc86d433062a45ef7ff960a4768da0619944f651a17254d634daf
 USER root
 RUN if command -v microdnf >/dev/null 2>&1; then microdnf install -y systemd-libs systemd-udev && microdnf clean all; \
     elif command -v apt-get >/dev/null 2>&1; then apt-get update && apt-get install -y --no-install-recommends systemd && rm -rf /var/lib/apt/lists/*; \
