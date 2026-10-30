@@ -143,6 +143,37 @@ def test_bounded_delivery_aliases_legacy_and_empty(tmp_path):
     assert source(tmp_path, {})["DISCORD_CLIENT_SECRET"] == "legacy"  # noqa: S105 -- synthetic fixture
 
 
+def test_delivery_external_output_leaves_runtime_untouched(tmp_path, monkeypatch, capsys):
+    import errno
+
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    (runtime / "config.toml").write_text('[providers.custom]\napi_key_env="CUSTOM"\n')
+    (runtime / "secret.toml").write_text('[credentials]\nCUSTOM="synthetic-key"\n')
+    before = {p.name: p.read_bytes() for p in runtime.iterdir()}
+    output = tmp_path / "control" / ".secret-delivery"
+    output.parent.mkdir()
+    mkdir = Path.mkdir
+
+    def refuse_runtime_directory(path, *args, **kwargs):
+        if path.is_relative_to(runtime):
+            raise OSError(errno.EROFS, "Read-only file system")
+        return mkdir(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", refuse_runtime_directory)
+    args = prepare(runtime, {}, output_directory=output)
+    assert args == ["--env-file", str(output / "compose.env"),
+                    "-f", str(output / "compose.json")]
+    assert {p.name: p.read_bytes() for p in runtime.iterdir()} == before
+    assert {p.name for p in output.iterdir()} == {"compose.env", "compose.json"}
+    assert stat.S_IMODE(output.stat().st_mode) == 0o700
+    assert all(stat.S_IMODE(p.stat().st_mode) == 0o600 for p in output.iterdir())
+    assert (output / "compose.env").read_text() == "CUSTOM='synthetic-key'\n"
+    assert json.loads((output / "compose.json").read_text())["services"]["nora"][
+        "environment"] == {"CUSTOM": "synthetic-key"}
+    assert capsys.readouterr().out == ""
+
+
 def test_migration_keeps_oauth_chain_and_bootstrap(tmp_path, capsys):
     (tmp_path / ".env").write_text("OPENAI_CODEX_REFRESH_TOKEN=synthetic-bootstrap\n")
     state = tmp_path / "state"

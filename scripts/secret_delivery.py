@@ -112,7 +112,8 @@ def private_write(path: Path, body: str) -> None:
         Path(temporary).unlink(missing_ok=True)
 
 
-def prepare(runtime: Path, environ: dict[str, str] | None = None) -> list[str]:
+def prepare(runtime: Path, environ: dict[str, str] | None = None,
+            *, output_directory: Path | None = None) -> list[str]:
     config_path = runtime / "config.toml"
     config = tomllib.loads(config_path.read_text()) if config_path.exists() else {}
     if not (runtime / "secret.toml").exists() and not references(config):
@@ -125,7 +126,7 @@ def prepare(runtime: Path, environ: dict[str, str] | None = None) -> list[str]:
         file_keys.update(tomllib.loads(secret_path.read_text()).get("credentials", {}))
     file_keys.update(references(config))
     values = {k: v for k, v in values.items() if k in file_keys}
-    directory = runtime / ".secret-delivery"
+    directory = output_directory if output_directory is not None else runtime / ".secret-delivery"
     directory.mkdir(mode=0o700, exist_ok=True)
     directory.chmod(0o700)
     envfile = directory / "compose.env"
