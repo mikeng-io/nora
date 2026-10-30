@@ -6687,8 +6687,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         SHOULD: write `query` yourself, as what you are looking for, not the raw
         tag message.
 
-        Returns `status`: ok, partial, nothing_found or unavailable with a note;
-        naming a person can also return not_found, or ambiguous (ask which one).
+        Returns `status`: ok, partial, nothing_found, unavailable, not_found or
+        ambiguous, with a `note` on how to report it.
 
         Args:
             query: What you are looking for: a topic, a phrase or a question.
