@@ -792,10 +792,10 @@ class CognitionSessionRunner:
     async def on_wake(
         self, *, unit: str, view: UnitView, now_ms: int, wake_id: int,
         replay: bool = False, historical: bool = False, inspect_only: bool = False,
-    ) -> CognitionSessionOutcome | str | None:
+    ) -> CognitionSessionOutcome | dict[str, str] | None:
         """Called by the wake evaluator's hook on every wake it
-        records (`WakeHook`). `inspect_only` returns the assembled agenda before
-        the model call; use it only in a disposable replay sandbox.
+        records (`WakeHook`). `inspect_only` returns the assembled model input
+        before the model call; use it only in a disposable replay sandbox.
         Returns `None` on every ordinary path that makes no model
         call; RAISES, after recording the wake's outcome, on every path that
         did not close. Every path writes the wake's outcome (or, if that write
@@ -954,6 +954,13 @@ class CognitionSessionRunner:
         return await self.on_wake(unit=view.unit, view=view, now_ms=now_ms,
                                   wake_id=0, replay=True, historical=historical)
 
+    async def inspect(self, *, view: UnitView, now_ms: int) -> dict[str, str] | None:
+        """The model input a session over `view` would be run on, through the same
+        assembly, stopping before the model call. For a disposable replay sandbox."""
+        result = await self.on_wake(unit=view.unit, view=view, now_ms=now_ms,
+                                    wake_id=0, replay=True, inspect_only=True)
+        return result if isinstance(result, dict) else None
+
     async def probe(
         self, *, unit: str, summary: str, now_ms: int, room: Room | None = None,
     ) -> CognitionRunResult:
@@ -1082,7 +1089,7 @@ class CognitionSessionRunner:
         wake_id: int, now_ms: int, doctrine_text: str, skill_text: str,
         grounding: Grounding, spend: TokenSpend, retained: Sequence[int] = (),
         replay: bool = False, historical: bool = False, inspect_only: bool = False,
-    ) -> CognitionSessionOutcome | str:
+    ) -> CognitionSessionOutcome | dict[str, str]:
         items = situation.agenda.items
         state = _RunState(
             session_id=session_id, wake_id=wake_id, unit=unit, now_ms=now_ms,
@@ -1112,7 +1119,7 @@ class CognitionSessionRunner:
             budget=self._render_budget, graph=state.graph_text,
         )
         if inspect_only:
-            return prompt
+            return {"system": system_prompt, "agenda": prompt}
         token = SESSION_TOKENS.set(spend)
         result: CognitionRunResult | None = None
         trace_outcome = "llm_error"

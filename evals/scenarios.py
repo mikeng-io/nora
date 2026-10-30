@@ -498,6 +498,17 @@ MEMORY_INDEX_OVERRIDES: dict[str, object] = {
     "memory.index.embedder_url": EMBEDDER_FROM_HOST,
 }
 
+#: The subject overrides every `cognition_session` draw composes with: the
+#: session and its graph surface forced on, whatever the deployment's flags —
+#: the corpus measures the session, and a subject without one is an ERROR.
+#: The anchor confirmer composes the SAME subject (`scripts.confirm_cognition_
+#: anchors`), so it reads this constant rather than carrying a second copy.
+COGNITION_SESSION_OVERRIDES: dict[str, object] = {
+    "cognition.enabled": True,
+    "memory.graph.enabled": True,
+    "memory.graph.comprehend.enabled": True,
+}
+
 
 def selected_cases(
     name: str, *, only: frozenset[str] | None = None, memory_index: bool = False,
@@ -570,8 +581,7 @@ def experiment_for(
         judge=judge if name in JUDGED_CORPORA else None,
         full_restore=name in FULL_RESTORE_CORPORA,
         overrides=({**(dict(MEMORY_INDEX_OVERRIDES) if memory_index else {}),
-                   **({"cognition.enabled": True, "memory.graph.enabled": True,
-                       "memory.graph.comprehend.enabled": True}
+                   **(dict(COGNITION_SESSION_OVERRIDES)
                       if name == "cognition_session" else {})} or None),
         memory_surface="graph" if memory_index else "honcho",
     )

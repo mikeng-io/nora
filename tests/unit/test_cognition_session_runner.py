@@ -460,11 +460,20 @@ async def test_inspection_renders_real_wake_clock_room_and_open_items_without_mo
                          when_ms=NOW, venue="Generated venue", status="proposed"),),
         room_labels={"signal:home-room": "Generated room"})
     runner, _, agent = _runner(grounder=StaticGrounder(grounding))
-    prompt = await runner.on_wake(unit="unit-1", view=UnitView(
+    inspection = await runner.inspect(view=UnitView(
         unit="unit-1", pending=_pending("unit-1"), last_activity_ms=None, last_wake=None),
-        now_ms=NOW, wake_id=0, replay=True, inspect_only=True)
-    assert isinstance(prompt, str)
+        now_ms=NOW)
+    assert set(inspection) == {"system", "agenda"}
+    assert "DOCTRINE" in inspection["system"]
     for value in ("Generated room", "I arrived", "Hand over generated gifts", "Generated dinner"):
-        assert value in prompt
-    assert "clock" in prompt and "2027" in prompt
+        assert value in inspection["agenda"]
+    assert "clock" in inspection["agenda"] and "2027" in inspection["agenda"]
+    assert agent.calls == 0
+
+
+async def test_inspection_of_an_empty_agenda_is_none_and_calls_no_model():
+    runner, _, agent = _runner()
+    assert await runner.inspect(view=UnitView(
+        unit="unit-1", pending=(), last_activity_ms=None, last_wake=None),
+        now_ms=NOW) is None
     assert agent.calls == 0

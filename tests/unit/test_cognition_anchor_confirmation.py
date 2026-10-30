@@ -86,55 +86,105 @@ def test_output_projection_refuses_unmapped_or_invalid_candidates(value):
         confirm.candidate(value, {"generated-real": "room_generated"})
 
 
-async def test_wake_input_restores_clock_and_carries_open_state_and_room(tmp_path, monkeypatch):
+async def test_wake_input_composes_the_corpus_subject_and_carries_open_state_and_room(
+        tmp_path, monkeypatch):
     from contextlib import asynccontextmanager, nullcontext
-    from datetime import UTC, datetime
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
     import evals.backbone
-    import evals.subject_config
     import nora.subject
-    import nora.subject.cognition
-    import nora.subject.sandbox
     import nora.subject.sandbox_roster
     from nora.domain.stimuli import Stimulus, UnitView
 
-    at = 5000
     view = UnitView(unit="generated-unit", pending=(Stimulus(
         id=1, unit="generated-unit", kind="message", item="message", ref="messages:1",
         at_ms=4000, recorded_at_ms=4000, platform="signal",
         conversation_id="generated-room"),), last_activity_ms=None, last_wake=None)
-    monkeypatch.setattr(nora.subject.cognition, "wake_from_snapshot",
-                        AsyncMock(return_value=(at, view)))
-    @asynccontextmanager
-    async def restored(url, now):
-        assert url == "generated-source" and now == datetime.fromtimestamp(5, UTC)
-        yield "generated-sandbox", None
-    monkeypatch.setattr(nora.subject.sandbox, "sandbox_as_of", restored)
     monkeypatch.setattr(nora.subject.sandbox_roster, "recorded_rosters", lambda **kw: nullcontext())
-    monkeypatch.setattr(evals.subject_config, "adopted", lambda text: {})
     for name in ("config.toml", "identity.toml", "policy.toml"):
         (tmp_path / name).write_text("generated")
-    runner = SimpleNamespace(on_wake=AsyncMock(return_value="generated assembled agenda"))
+    inspection = {"system": "generated doctrine", "agenda": "generated assembled agenda"}
+    runner = SimpleNamespace(inspect=AsyncMock(return_value=inspection))
     subject = SimpleNamespace(deps=SimpleNamespace(cognition_runner=runner), unit=view.unit)
-    monkeypatch.setattr(nora.subject, "obtain", AsyncMock(return_value=subject))
+    obtained = AsyncMock(return_value=subject)
+    monkeypatch.setattr(nora.subject, "obtain", obtained)
     monkeypatch.setattr(evals.backbone, "_close", AsyncMock())
     @asynccontextmanager
     async def connection():
         yield object()
-    engine = SimpleNamespace(connect=connection, dispose=AsyncMock())
+    engine = SimpleNamespace(connect=lambda *a, **k: connection(), dispose=AsyncMock())
     monkeypatch.setattr(confirm, "create_async_engine", lambda url: engine)
     memory = {"open_notes": [{"body": "generated open gift handover"}],
               "open_events": [{"title": "generated dinner", "status": "proposed"}],
               "profile_lines": [{"text": "generated prior visit"}]}
     monkeypatch.setattr(confirm, "memory_state", AsyncMock(return_value=memory))
-    result = await confirm.wake_input("generated-source", 9, "generated-room",
-                                      tmp_path / "config.toml")
+    result = await confirm.wake_input("generated-sandbox", 5000, view, "generated-room",
+                                      tmp_path / "config.toml", "generated-eval", False)
     assert result == {"at_ms": 5000, "room": "generated-room", "platform": "signal",
+                      "system": "generated doctrine",
                       "agenda": "generated assembled agenda", "memory": memory}
-    runner.on_wake.assert_awaited_once_with(unit=view.unit, view=view, now_ms=5000,
-                                          wake_id=0, replay=True, inspect_only=True)
+    spec = obtained.await_args.args[0]
+    assert spec.database_url == "generated-sandbox"
+    assert spec.room == ("signal", "generated-room")
+    assert spec.overrides["cognition.enabled"] is True
+    assert spec.overrides["honcho.workspace_id"] == "generated-eval"
+    runner.inspect.assert_awaited_once_with(view=view, now_ms=5000)
+
+
+async def test_confirm_restores_once_per_wake(tmp_path, monkeypatch):
+    import sys
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    import evals.subject_config
+    import nora.config
+    import nora.subject.cognition
+    import nora.subject.memory_workspace
+    import nora.subject.obtain
+    import nora.subject.sandbox
+
+    (tmp_path / "config.toml").write_text("generated")
+    monkeypatch.setattr(evals.subject_config, "materialise", lambda **kw: None)
+    cfg = SimpleNamespace(
+        llm=SimpleNamespace(model_dump=lambda: {"timeout_seconds": 5, "max_tokens": 10}),
+        honcho=SimpleNamespace(workspace_id="generated"),
+        memory=SimpleNamespace(index=SimpleNamespace(read=False)))
+    monkeypatch.setattr(nora.config, "load", lambda *a, **k: cfg)
+    monkeypatch.setattr(sys.modules["nora.subject.obtain"], "model_endpoint",
+                        lambda *a, **k: ("https://generated.invalid", "k", "m"))
+    monkeypatch.setattr(nora.subject.memory_workspace, "shared_eval_workspace",
+                        lambda ws: f"{ws}-eval")
+    wakes = {9: (5000, "view-nine"), 10: (6000, "view-ten")}
+    monkeypatch.setattr(nora.subject.cognition, "wake_from_snapshot",
+                        AsyncMock(side_effect=lambda url, wake: wakes[wake]))
+    restored = []
+    @asynccontextmanager
+    async def sandbox(url, now):
+        restored.append(now)
+        yield "generated-sandbox", None
+    monkeypatch.setattr(nora.subject.sandbox, "sandbox_as_of", sandbox)
+    conn = SimpleNamespace(begin=lambda: connection(),
+                           execute=AsyncMock(),
+                           scalar=AsyncMock(return_value="generated_eval"))
+    @asynccontextmanager
+    async def connection():
+        yield conn
+    engine = SimpleNamespace(connect=lambda *a, **k: connection(), dispose=AsyncMock())
+    monkeypatch.setattr(confirm, "create_async_engine", lambda url: engine)
+    monkeypatch.setattr(confirm, "wake_input",
+                        AsyncMock(return_value={"agenda": "generated"}))
+    judged = AsyncMock(return_value="match")
+    monkeypatch.setattr(confirm, "judge", judged)
+    inputs = [{"room": "room_generated", "wake": 9, "scenario": 2},
+              {"room": "room_generated", "wake": 9, "scenario": 3},
+              {"room": "room_generated", "wake": 10, "scenario": 6}]
+    out = await confirm.confirm("postgresql://localhost/generated_eval",
+                                tmp_path / "config.toml", inputs,
+                                {"generated-real": "room_generated"})
+    assert len(restored) == 2 and judged.await_count == 3
+    assert [r["result"] for r in out] == ["match", "match", "match"]
 
 
 async def test_memory_state_reads_open_plans_and_current_note_body_in_unit():

@@ -82,7 +82,9 @@ this sequence; do not refresh the snapshot between finding and replaying.
 exec 9>/tmp/nora-eval.lock
 flock -w 900 9 || exit 75
 umask 077
+set -a; source ~/workspace/nora/.env; set +a
 export NORA_EVAL_PSEUDONYM_MAP=~/.config/nora/eval-pseudonyms.txt
+EVAL_SOURCE_URL="postgresql+asyncpg://nora:${POSTGRES_PASSWORD}@127.0.0.1:5435/nora_eval"
 uv run python -m scripts.find_cognition_anchors \
   --source-url "$EVAL_SOURCE_URL" > /tmp/cognition-candidates.jsonl
 uv run python -m scripts.confirm_cognition_anchors \
@@ -95,10 +97,14 @@ uv run python -m evals cognition_session --sample 3 \
 echo "RC=$?" > /tmp/cognition-eval.rc
 ```
 
-Use the host-reachable model endpoints and the existing generated eval config
-setup above. The production route gets one plain POST at temperature zero,
-without `response_format` and without retries. Never show agents the model
-inputs, raw responses or private logs.
+`--config` is the deployment's own `config.toml`, verbatim: the confirmer
+rebuilds `config.evaluation.toml` against it (the same drift-checked
+`materialise` `python -m evals` runs) and resolves the `eval_judge` route
+through `nora.subject.obtain.model_endpoint`, so a `host.docker.internal` or
+`honcho` name is rewritten to loopback exactly as a subject's own endpoints
+are. The production route gets one plain POST at temperature zero, without
+`response_format` and without retries. Never show agents the model inputs,
+raw responses or private logs.
 
 The finder joins message-shape matches to `recorded_wake` stimulus batches,
 skipping incomplete batches. It emits only wake ids, explicit `room_*` aliases,
@@ -107,10 +113,14 @@ It has no heuristic for scenarios 8 and 10; those stay parked unless the
 operator supplies a real wake candidate privately in the same JSONL shape.
 An empty result means no heuristic candidate, never proof of no instance.
 
-The confirmer restores every store at the wake's `at_ms`, composes the real
-session, and stops after its normal context assembly, before its model call.
-It judges that rendered agenda/grounding plus open notes (including their
-then-current bodies), open events/plans (staged, proposed and confirmed) and current/disputed profile lines
+The confirmer restores every store at the wake's `at_ms` — once per wake, with
+every candidate on the same wake sharing the restore — composes the same
+subject a `cognition_session` draw runs (the corpus's own overrides, the
+full-restore set and the eval workspace), and stops after its normal context
+assembly, before its model call (`CognitionSessionRunner.inspect`).
+It judges the system prompt and rendered agenda/grounding the session would
+see, plus open notes (including their then-current bodies), open events/plans
+(staged, proposed and confirmed) and current/disputed profile lines
 from the restored unit, with the wake time and room explicit. Today's state
 is never substituted. `match` confirms the input situation, not a successful
 session trajectory. Errors, missing state, refusals and truncated/wrong-shape

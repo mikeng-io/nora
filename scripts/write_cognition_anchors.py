@@ -14,8 +14,9 @@ from scripts.find_cognition_anchors import room_aliases
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def anchored(corpus: dict, confirmations: list[dict], platforms: dict[str, str]) -> int:
-    count = 0
+def anchored(corpus: dict, confirmations: list[dict], platforms: dict[str, str]
+             ) -> tuple[int, list[int]]:
+    done = []
     for case in corpus["cases"]:
         scenario = case["metadata"]["scenario"]
         match = next((r for r in confirmations if r["scenario"] == scenario
@@ -26,11 +27,11 @@ def anchored(corpus: dict, confirmations: list[dict], platforms: dict[str, str])
                             "conversation_id": match["room"]}
         case["metadata"]["wake"] = match["wake"]
         del case["parked"]
-        count += 1
-    return count
+        done.append(scenario)
+    return len(done), sorted(done)
 
 
-async def write(source_url: str, confirmations: Path) -> int:
+async def write(source_url: str, confirmations: Path) -> tuple[int, list[int]]:
     import asyncio
 
     from sqlalchemy.ext.asyncio import create_async_engine
@@ -59,9 +60,10 @@ async def write(source_url: str, confirmations: Path) -> int:
         await engine.dispose()
     path = ROOT / "evals/corpora/cognition_session.yaml"
     corpus = yaml.safe_load(path.read_text())
-    count = anchored(corpus, rows, platforms)
-    path.write_text(yaml.safe_dump(corpus, allow_unicode=True, sort_keys=False))
-    return count
+    count, scenarios = anchored(corpus, rows, platforms)
+    if count:
+        path.write_text(yaml.safe_dump(corpus, allow_unicode=True, sort_keys=False))
+    return count, scenarios
 
 
 def main() -> int:
@@ -83,13 +85,13 @@ def main() -> int:
         with open(os.devnull, "w") as sink, contextlib.redirect_stdout(sink), \
                 contextlib.redirect_stderr(sink):
             logging.disable(sys.maxsize)
-            count = asyncio.run(write(args.source_url, args.confirmed))
+            count, scenarios = asyncio.run(write(args.source_url, args.confirmed))
     except Exception:  # noqa: BLE001 -- no private errors leave the host process
         print("anchor writing unavailable; run privately on the deploy host", file=sys.stderr)
         return 2
     finally:
         logging.disable(previous)
-    print(json.dumps({"anchored": count}))
+    print(json.dumps({"anchored": count, "scenarios": scenarios}))
     return 0
 
 

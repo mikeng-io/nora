@@ -158,6 +158,9 @@ def wake_candidates(matches: list[dict[str, object]], wakes: Mapping[int, object
                     aliases: Mapping[str, str]) -> list[dict[str, object]]:
     """Join heuristic moments to the recorded batch, never a timestamp proxy."""
     from nora.domain.cognition_ground import record_ref
+    by_message: dict[tuple[str, int], list[dict[str, object]]] = defaultdict(list)
+    for match in matches:
+        by_message[(str(match["room"]), int(str(match["message_id"])))].append(match)
     ranked: dict[tuple[str, int], dict[int, int]] = defaultdict(dict)
     for wake_id, view in wakes.items():
         for stimulus in view.pending:
@@ -165,11 +168,10 @@ def wake_candidates(matches: list[dict[str, object]], wakes: Mapping[int, object
             alias = aliases.get(stimulus.conversation_id)
             if ref is None or ref[0] != "messages" or alias is None:
                 continue
-            for match in matches:
-                if match["room"] == alias and match["message_id"] == ref[1]:
-                    key = (alias, int(match["scenario"]))
-                    strength = int(match["counts"]["strength"])
-                    ranked[key][wake_id] = max(ranked[key].get(wake_id, 0), strength)
+            for match in by_message.get((alias, ref[1]), ()):
+                key = (alias, int(match["scenario"]))
+                strength = int(match["counts"]["strength"])
+                ranked[key][wake_id] = max(ranked[key].get(wake_id, 0), strength)
     return [{"room": room, "scenario": scenario, "wake": wake, "strength": strength}
             for (room, scenario), scores in sorted(ranked.items())
             for wake, strength in sorted(

@@ -91,7 +91,7 @@ def test_writer_unparks_only_confirmed_wakes():
                         for n in (1, 2)]}
     assert anchored(corpus, [{"room": "room_generated", "scenario": 1,
                               "wake": 9, "result": "match"}],
-                    {"room_generated": "signal"}) == 1
+                    {"room_generated": "signal"}) == (1, [1])
     assert corpus["cases"][0] == {"metadata": {"scenario": 1, "wake": 9},
                                   "snapshot": {"platform": "signal",
                                                "conversation_id": "room_generated"}}

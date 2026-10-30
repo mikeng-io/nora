@@ -1,9 +1,10 @@
 """Host-only confirmation. Private inputs and model output never leave this process.
 
-It obtains the agenda through the real session context assembly.
+It obtains the model input through the real session context assembly, on the
+same subject an eval draw composes, restored at the wake's own instant.
 It confirms the input situation, not the later tool trajectory.
-Run it on the host with a copy of config.toml whose [llm].base_url the host can
-reach: the deployment's names host.docker.internal, which only containers resolve.
+Run it on the host with the deployment's own config.toml: endpoint rewrites for
+the host's reachability are the subject layer's own (`nora.subject.obtain`).
 """
 from __future__ import annotations
 
@@ -100,50 +101,60 @@ async def judge(
     return "match" if answer["match"] else "no_match"
 
 
-async def wake_input(url: str, wake_id: int, room: str, config: Path) -> dict:
-    """Restore at the wake clock, then use the real session's input assembly."""
+def _overrides(workspace: str, memory_index: bool) -> dict[str, object]:
+    """The corpus's own subject overrides, as `evals.scenarios.experiment_for`
+    composes them for `cognition_session`, plus the eval workspace."""
+    from evals.scenarios import COGNITION_SESSION_OVERRIDES, MEMORY_INDEX_OVERRIDES
+    from evals.subject_config import FULL_RESTORE_OVERRIDES
+
+    return {
+        **COGNITION_SESSION_OVERRIDES,
+        **FULL_RESTORE_OVERRIDES,
+        **(dict(MEMORY_INDEX_OVERRIDES) if memory_index else {}),
+        "honcho.workspace_id": workspace,
+    }
+
+
+async def wake_input(sandbox_url: str, at_ms: int, view, room: str, config: Path,
+                     workspace: str, memory_index: bool) -> dict:
+    """The session's model input for this room inside the restored sandbox."""
     import tempfile
     from datetime import UTC, datetime
 
     from evals.backbone import _close
-    from evals.subject_config import adopted
     from nora.subject import SubjectSpec, obtain
-    from nora.subject.cognition import wake_from_snapshot
-    from nora.subject.sandbox import sandbox_as_of
     from nora.subject.sandbox_roster import recorded_rosters
 
-    at_ms, view = await wake_from_snapshot(url, wake_id)
     platforms = {s.platform for s in view.pending if s.conversation_id == room and s.platform}
     if len(platforms) != 1:
         raise ValueError("wake does not identify this room")
     platform = platforms.pop()
     now = datetime.fromtimestamp(at_ms / 1000, UTC)
-    async with sandbox_as_of(url, now) as (sandbox_url, _):
-        with tempfile.TemporaryDirectory() as directory, recorded_rosters(
-                database_url=sandbox_url, now=now):
-            subject = await obtain(SubjectSpec(
-                database_url=sandbox_url, workdir=Path(directory), room=(platform, room),
-                overrides=adopted(await asyncio.to_thread(config.read_text)), now=now,
-                identity=(config.parent / "identity.toml").read_text(),
-                policy=(config.parent / "policy.toml").read_text()))
+    with tempfile.TemporaryDirectory() as directory, recorded_rosters(
+            database_url=sandbox_url, now=now):
+        subject = await obtain(SubjectSpec(
+            database_url=sandbox_url, workdir=Path(directory), room=(platform, room),
+            overrides=_overrides(workspace, memory_index), now=now,
+            identity=(config.parent / "identity.toml").read_text(),
+            policy=(config.parent / "policy.toml").read_text()))
+        try:
+            runner = subject.deps.cognition_runner
+            if runner is None or subject.unit != view.unit:
+                raise ValueError("session unavailable")
+            inspection = await runner.inspect(view=view, now_ms=at_ms)
+            if not inspection:
+                raise ValueError("empty session")
+            engine = create_async_engine(sandbox_url)
             try:
-                runner = subject.deps.cognition_runner
-                if runner is None or subject.unit != view.unit:
-                    raise ValueError("session unavailable")
-                agenda = await runner.on_wake(unit=view.unit, view=view, now_ms=at_ms,
-                                              wake_id=0, replay=True, inspect_only=True)
-                if not isinstance(agenda, str):
-                    raise ValueError("empty session")
-                engine = create_async_engine(sandbox_url)
-                try:
-                    async with engine.connect() as conn:
-                        memory = await memory_state(conn, view.unit)
-                finally:
-                    await engine.dispose()
-                return {"at_ms": at_ms, "room": room, "platform": platform,
-                        "agenda": agenda, "memory": memory}
+                async with engine.connect() as conn:
+                    memory = await memory_state(conn, view.unit)
             finally:
-                await _close(subject)
+                await engine.dispose()
+            return {"at_ms": at_ms, "room": room, "platform": platform,
+                    "system": inspection["system"], "agenda": inspection["agenda"],
+                    "memory": memory}
+        finally:
+            await _close(subject)
 
 
 async def memory_state(conn, unit: str) -> dict:
@@ -169,13 +180,32 @@ async def memory_state(conn, unit: str) -> dict:
 async def confirm(source_url: str, config: Path, inputs: list[dict[str, object]],
                   aliases: dict[str, str]) -> list[dict[str, object]]:
     url = clone_url(source_url)  # same refusal as finder, before connecting
+    from datetime import UTC, datetime
+
+    from evals.subject_config import materialise
     from nora.config import load
+    from nora.subject.cognition import wake_from_snapshot
+    from nora.subject.memory_workspace import shared_eval_workspace
+    from nora.subject.obtain import model_endpoint
+    from nora.subject.sandbox import sandbox_as_of
+
+    # The file every subject composes, rebuilt and drift-checked against the
+    # deployment first — as `python -m evals` does before any case.
+    await asyncio.to_thread(materialise, example=ROOT / "config.example.toml",
+                            deployment=config, target=ROOT / "config.evaluation.toml")
     cfg = await asyncio.to_thread(load, config, require_secrets=False)
-    url_llm, api_key, selected_model = cfg.endpoint("eval_judge")
+    url_llm, api_key, selected_model = await asyncio.to_thread(
+        model_endpoint, config, "eval_judge")
     llm = cfg.llm.model_dump()
     llm.update(base_url=url_llm, model=selected_model)
+    workspace = shared_eval_workspace(cfg.honcho.workspace_id)
+    memory_index = bool(cfg.memory.index.read)
     descriptions = scenarios()
     rooms = {alias: real for real, alias in aliases.items()}
+    # One restore per wake: every candidate on the same wake shares its sandbox.
+    by_wake: dict[int, list[dict[str, object]]] = {}
+    for item in inputs:
+        by_wake.setdefault(int(item["wake"]), []).append(item)
     output = []
     engine = create_async_engine(url)
     try:
@@ -184,18 +214,29 @@ async def confirm(source_url: str, config: Path, inputs: list[dict[str, object]]
             actual = await conn.scalar(text("SELECT current_database()"))
             if not str(actual).endswith("_eval"):
                 raise ValueError("not an eval clone")
-            async with httpx.AsyncClient(timeout=llm["timeout_seconds"]) as client:
-                for item in inputs:
-                    status = "unavailable"
-                    try:
-                        moment = await wake_input(url, int(item["wake"]),
-                                                  rooms[str(item["room"])], config)
-                        async with asyncio.timeout(llm["timeout_seconds"]):
-                            status = await judge(client, llm,
-                                descriptions[int(str(item["scenario"]))], moment, api_key)
-                    except Exception:  # noqa: BLE001 -- private errors must not escape
-                        status = "unavailable"
-                    output.append({**item, "result": status})
+        async with httpx.AsyncClient(timeout=llm["timeout_seconds"]) as client:
+            for wake_id, items in by_wake.items():
+                try:
+                    at_ms, view = await wake_from_snapshot(url, wake_id)
+                    now = datetime.fromtimestamp(at_ms / 1000, UTC)
+                    async with sandbox_as_of(url, now) as (sandbox_url, _):
+                        for item in items:
+                            status = "unavailable"
+                            try:
+                                moment = await wake_input(
+                                    sandbox_url, at_ms, view,
+                                    rooms[str(item["room"])], config,
+                                    workspace, memory_index)
+                                async with asyncio.timeout(llm["timeout_seconds"]):
+                                    status = await judge(
+                                        client, llm,
+                                        descriptions[int(str(item["scenario"]))],
+                                        moment, api_key)
+                            except Exception:  # noqa: BLE001 -- private errors stay local
+                                status = "unavailable"
+                            output.append({**item, "result": status})
+                except Exception:  # noqa: BLE001 -- an unrestorable wake is unavailable
+                    output.extend({**item, "result": "unavailable"} for item in items)
     finally:
         await engine.dispose()
     return output
