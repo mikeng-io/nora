@@ -1,0 +1,16 @@
+[
+  {
+    "name": "wake retains structural seeds before the model",
+    "file": "nora/app/cognition_memory.py",
+    "old": "        seeds = tuple(dict.fromkeys(anchors))",
+    "new": "        seeds = tuple(state.graph_fetched.sources)",
+    "target": "tests/unit/test_cognition_session_runner.py::test_inspected_wake_injects_implicit_senders_plan"
+  },
+  {
+    "name": "prefetch expands new graph relations",
+    "file": "nora/engagement/context.py",
+    "old": "                    query=query, depth=2, person_id=None, target=target,",
+    "new": "                    query=query, depth=0, person_id=None, target=target,",
+    "target": "tests/unit/test_memory_prefetch.py::test_prefetch_injects_new_graph_about_without_shared_words"
+  }
+]

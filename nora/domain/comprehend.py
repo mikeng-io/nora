@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Any, Literal, get_args
@@ -73,11 +74,11 @@ def item_window(text: str, at: datetime) -> tuple[datetime, datetime]:
     return day, day + timedelta(days=1)
 
 
-async def build_preview(graph: MemoryGraph, item: ComprehendItem) -> Preview:
+def preview_seeds(item: ComprehendItem, aliases: Mapping[str, Key]) -> tuple[Key, ...]:
+    """Structural and explicit anchors shared by automatic graph readers."""
     work = item.work
-    aliases = await graph.aliases(unit=work.unit)
     text = item.text.casefold()
-    seeds = [work.source]
+    seeds = [work.source, *(s.key for s in item.sources)]
     for kind, refs in (
         ("person", (item.author, *item.mentions, *item.faces)),
         ("room", (f"{item.platform}:{item.room}",)),
@@ -92,7 +93,13 @@ async def build_preview(graph: MemoryGraph, item: ComprehendItem) -> Preview:
         for alias, key in aliases.items()
         if alias and (alias.casefold() in text or alias in named)
     )
-    seeds = list(dict.fromkeys(seeds))
+    return tuple(dict.fromkeys(seeds))
+
+
+async def build_preview(graph: MemoryGraph, item: ComprehendItem) -> Preview:
+    work = item.work
+    aliases = await graph.aliases(unit=work.unit)
+    seeds = preview_seeds(item, aliases)
     window = item_window(item.text, work.as_of)
     scope = Walk(
         unit=work.unit,
@@ -106,6 +113,8 @@ async def build_preview(graph: MemoryGraph, item: ComprehendItem) -> Preview:
     nearby = await graph.walk(tuple(seeds), scope)
     if nearby.status == "unavailable":
         raise RuntimeError("graph preview unavailable")
+    text = item.text.casefold()
+    named = (*item.urls, *item.accounts, item.place)
     resolved = []
     # ponytail: known aliases and explicit item labels seed resolution; novel names
     # remain the model's memory tools' job until the recall spike measures a gap.

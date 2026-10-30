@@ -493,3 +493,44 @@ async def test_inspection_of_an_empty_agenda_is_none_and_calls_no_model():
         unit="unit-1", pending=(), last_activity_ms=None, last_wake=None),
         now_ms=NOW) is None
     assert agent.calls == 0
+
+
+async def test_inspected_wake_injects_implicit_senders_plan():
+    from nora.domain.cognition_ground import Grounding, RecordItem
+    from nora.domain.comprehend import ComprehendItem
+    from nora.domain.memory_graph import Entity, Relation, Source, WorkItem, pointer_entity
+    from nora.testing.cognition_grounding import StaticGrounder
+
+    memory = wake_memory()
+    at = datetime.fromtimestamp(NOW / 1000, UTC)
+    actor = pointer_entity("person", "unit-1", "generated-actor", "Generated actor")
+    event = Entity("generated-event", "event", "unit-1", "Generated lunar outing")
+    other = Entity("other-event", "event", "other-unit", "Forbidden outing")
+    for e in (actor, event, other):
+        await memory.graph.upsert_entity(e)
+    memory.graph.relations["plan"] = Relation("plan", actor.key, "plans", event.key,
+        "notebook", "unit-1", ("generated-actor",), asserted_at=at)
+    memory.graph.relations["foreign"] = Relation("foreign", actor.key, "plans", other.key,
+        "notebook", "other-unit", ("generated-actor",), asserted_at=at)
+    # Structural Record edges must not turn an actor into all their messages.
+    memory.graph.relations["hub"] = Relation("hub", ("message", "99"), "authored_by",
+        actor.key, "record", "unit-1", ("generated-actor",), asserted_at=at)
+    source = Source(("message", "1"), "record", "unit-1", ("generated-actor",), "Yes, count me in")
+    memory.records.items[source.key] = ComprehendItem(
+        WorkItem("generated", source.key, "unit-1", "", at), (source,),
+        "signal", "home-room", author="generated-actor", reply_parent=("message", "2"),
+        mentions=("generated-mention",), urls=("https://generated.example/event",),
+        snapshot={"messages": [{"id": 1, "body": source.text, "ts": NOW,
+                    "person_id": "generated-actor", "mentions": ["generated-mention"]}]})
+    grounding = Grounding(records={"messages:1": RecordItem(ref="messages:1", kind="message",
+        message_id=1, room=HOME, author="Generated actor", person_id="generated-actor",
+        at_ms=NOW, text=source.text)})
+    runner, _, agent = _runner(memory=memory, grounder=StaticGrounder(grounding))
+    inspection = await runner.inspect(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
+        last_activity_ms=None, last_wake=None), now_ms=NOW)
+    assert "Generated lunar outing" in inspection["agenda"]
+    assert "plans" in inspection["agenda"]
+    assert "Forbidden outing" not in inspection["agenda"]
+    assert "message:99" not in inspection["agenda"]
+    assert "generated-mention" in inspection["agenda"]
+    assert agent.calls == 0
