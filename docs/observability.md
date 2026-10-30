@@ -64,10 +64,12 @@ Verified on that stack:
   Discord `/slack` webhook URL: `discord_configs` does NOT exist in the
   pinned community API (verified `channel_unsupported_kind`), and Discord
   natively consumes Slack-format posts — the recorded payloads are
-  Slack `attachments` with `[FIRING:n]` titles. Slack-format resolved
-  delivery remains unverified: the synthetic condition returned inactive,
-  but no resolved attachment was recorded. Earlier generic-webhook recovery
-  does not prove this channel's recovery path.
+  Slack `attachments`: a generated OTLP gauge transition produced both
+  `[FIRING:1]` and `[RESOLVED]` posts in the local receiver. The receiver must
+  acknowledge with Slack's plaintext `ok` response: the earlier fixture's
+  empty HTTP 200 was rejected by the pinned notifier and did not establish
+  successful firing delivery or recovery. This is local protocol proof;
+  delivery to the real Discord endpoint remains a cutover check.
 
 What local proof does not cover: the host's own journald group/permissions
 (the `SIGNOZ_JOURNAL_GID` mechanism is documented, not exercised), a real
@@ -296,7 +298,7 @@ backend must never block an app release — so the SigNoz wiring is an OVERLAY,
 3. Recreate the instrumented services WITH the overlay:
    `docker compose -f docker-compose.yml -f
    deploy/signoz/docker-compose.signoz.yaml up -d nora presence analytics
-   instagram-bridge` — journald logging with the service `tag`, the `signoz`
+   signal-cli whatsapp-bridge instagram-bridge` — journald logging with the service `tag`, the `signoz`
    network join, and the bridge's OTLP endpoint move off the host-gateway
    (which otherwise still reaches the LEGACY collector's port).
 4. Only after acceptance below: retire the old collector/alert stack and
