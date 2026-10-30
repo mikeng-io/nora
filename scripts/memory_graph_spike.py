@@ -612,6 +612,9 @@ async def index_replay_sandbox(subject: Any, *, source_url: str) -> SandboxIndex
     rows, the source's vectors adopted where the input is identical, and the
     coverage read back fail-closed — never an empty index, never a model
     call to fill it."""
+    index = subject.cfg.memory.index
+    if index.read and index.embed:
+        await check_served_model(index.embedder_url, index.embedder_model)
     return await index_sandbox(
         subject.database_url,
         source_url=source_url,
@@ -714,13 +717,6 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         scores: dict[str, list[list[str]]] = {}
         age_results = []
         judges = Judges(cfg, [args.judge_a, args.judge_b])
-        if cfg.memory.index.read and cfg.memory.index.embed:
-            # The subject's query embedder is the host-published one. Refuse
-            # before the first wake rather than let every dense search answer
-            # a partial that measured a name that cannot resolve.
-            await check_served_model(
-                EMBEDDER_FROM_HOST, cfg.memory.index.embedder_model
-            )
         for wake in selected.values():
             replay_ms, view = await recorded_wake(engine, wake["id"])
             at = datetime.fromtimestamp(replay_ms / 1000, UTC)

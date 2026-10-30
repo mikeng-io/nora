@@ -179,7 +179,8 @@ async def test_the_replay_preparation_indexes_the_restored_sandbox(pg_url, pg_te
                     database_url=url,
                     cfg=SimpleNamespace(
                         memory=SimpleNamespace(
-                            index=SimpleNamespace(embedder_model=MODEL_ID))),
+                            index=SimpleNamespace(
+                                read=False, embed=False, embedder_model=MODEL_ID))),
                 )
                 built = await spike.index_replay_sandbox(subject, source_url=pg_url)
                 async with sandbox.connect() as conn:

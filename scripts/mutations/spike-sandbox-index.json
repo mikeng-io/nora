@@ -5,5 +5,12 @@
     "old": "    return await index_sandbox(\n        subject.database_url,\n        source_url=source_url,\n        model_id=subject.cfg.memory.index.embedder_model,\n    )",
     "new": "    return None",
     "target": "tests/integration/test_spike_sandbox_index.py::test_the_replay_preparation_indexes_the_restored_sandbox"
+  },
+  {
+    "name": "effective subject config decides the embedder preflight",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "    if index.read and index.embed:\n        await check_served_model(index.embedder_url, index.embedder_model)",
+    "new": "    if False:\n        await check_served_model(index.embedder_url, index.embedder_model)",
+    "target": "tests/unit/test_memory_graph_spike.py::test_replay_embedder_check_uses_effective_subject_config tests/unit/test_memory_graph_spike.py::test_effective_embedder_refusal_prevents_index_preparation"
   }
 ]
