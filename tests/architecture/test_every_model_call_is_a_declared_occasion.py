@@ -15,8 +15,9 @@ of occasions:
 
   1. every module that calls a model: `create_agent`, `create_dream_agent`,
      `ask_text`, `ask_structured`, `invoke_async`, `.invoke` on a runner or
-     factory, `invoke.run`, a raw `completions.create`, or a
-     `.complete(system=, prompt=)`, under the name it was imported by;
+     factory, `invoke.run`, a raw `completions.create`, a `.post(...)` whose
+     call spells `chat/completions`, or a `.complete(system=, prompt=)`,
+     under the name it was imported by;
   2. every class that defines `inputs`, which is how a Dreamer adaptor hands
      its prompt to a runtime that calls the model for it.
 
@@ -60,6 +61,16 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 PKG = ROOT / "nora"
+
+#: Model doors outside `nora/` the net has been extended to cover, one file
+#: each. A file joins when its prompt is declared, and from then on the SAME
+#: rule holds — a `_BLOCKS` walked by `assemble`, or a MECHANISM, RUNNER or
+#: EXEMPT entry — because a door left unscanned is the failure this file
+#: exists to end. It is a list of what IS held to the rule, never of what
+#: may ignore it.
+_EXTRA_DOORS = (
+    ROOT / "scripts" / "confirm_cognition_anchors.py",
+)
 
 #: Calls that send a prompt to a model, matched on the callee's trailing name
 #: and on the name it was imported under.
@@ -135,6 +146,18 @@ RUNNER: dict[str, tuple[tuple[str, ...], str]] = {
     # formatter that walks the declared `subagent_*` blocks through
     # `ContextBlock`.
     "nora/app/subagent_runner.py": (("nora/language/subagent_render.py",), "imports"),
+    # The eval arm's context selector: the candidate blocks it assembles are
+    # built by prefill's declared table, which it imports; the prompt it runs
+    # is that table's output, plus its authored SYSTEM instruction — the
+    # residual text a RUNNER entry cannot see, named here rather than
+    # declared over blocks whose orders are not this module's to state.
+    "nora/subject/context_filter.py": (("nora/agent/prefill.py",), "imports"),
+    # The host-only confirmation judge: it POSTs to the deployment's
+    # chat-completions endpoint, and the system and user messages it sends
+    # are built by ONE declared occasion it imports.
+    "scripts/confirm_cognition_anchors.py": (
+        ("nora/language/confirmation_render.py",), "imports",
+    ),
 }
 
 
@@ -147,7 +170,9 @@ def _parse(path: Path) -> ast.Module:
 
 
 def _modules() -> dict[str, ast.Module]:
-    return {_rel(p): _parse(p) for p in sorted(PKG.rglob("*.py"))}
+    modules = {_rel(p): _parse(p) for p in sorted(PKG.rglob("*.py"))}
+    modules.update({_rel(p): _parse(p) for p in _EXTRA_DOORS})
+    return modules
 
 
 def _chain(func: ast.expr) -> list[str]:
@@ -186,6 +211,16 @@ def calls_a_model(tree: ast.Module) -> bool:
         if tail in _MODEL_CALLS or tail in aliases or tail in _MODEL_METHODS:
             return True
         if tail == "create" and set(chain) & set(_SDK_ENDPOINTS):
+            return True
+        # A bare HTTP `post` to a chat-completions endpoint: matched on the
+        # `chat/completions` literal inside the call, so the door is found
+        # however the caller spells its url (the host-only confirmation
+        # judge's door — a plain POST, no SDK).
+        if tail == "post" and any(
+            isinstance(n, ast.Constant) and isinstance(n.value, str)
+            and "chat/completions" in n.value
+            for n in ast.walk(node)
+        ):
             return True
         if tail == "complete" and keywords & {"system", "prompt"}:
             return True
@@ -416,6 +451,8 @@ def test_discovery_sees_the_known_call_sites_and_occasions(modules):
         "nora/agent/factory.py", "nora/app/composition.py",
         "nora/ingest/relevance_gate.py", "nora/app/cognition_agent_runner.py",
         "nora/agent/reaction.py", "nora/engagement/stages/debrief.py",
+        # The scanned door outside `nora/`: found first, classified second.
+        "scripts/confirm_cognition_anchors.py",
     ):
         assert known in callers, f"discovery missed {known}"
     declared = {rel for rel, tree in modules.items() if declares_blocks(tree)}
@@ -442,6 +479,24 @@ def test_the_net_catches_a_hand_built_occasion():
     )
     assert calls_a_model(tree)
     assert not declares_blocks(tree)
+
+
+def test_the_net_catches_a_plain_post_to_a_completions_endpoint():
+    """The door `scripts/confirm_cognition_anchors.py` uses: a bare
+    `client.post` to `chat/completions` IS a model call, matched on the
+    endpoint literal inside the call so the caller's spelling cannot hide
+    it. A `post` carrying no such literal is not one."""
+    hand_built = _tree(
+        "async def judge(client, base_url, messages):\n"
+        "    return await client.post(base_url + '/chat/completions',\n"
+        "        json={'messages': messages})\n"
+    )
+    assert calls_a_model(hand_built)
+    assert not declares_blocks(hand_built)
+    quiet = _tree(
+        "async def fetch(client, url):\n    return await client.post(url)\n"
+    )
+    assert not calls_a_model(quiet)
 
 
 def test_the_rule_fails_on_a_hand_built_occasion_added_to_the_tree(modules):

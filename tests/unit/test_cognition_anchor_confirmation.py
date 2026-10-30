@@ -26,10 +26,16 @@ async def test_boolean_model_contract(content, finish, expected, monkeypatch):
         if "response_format" in payload:  # what the deployment's route answers
             return httpx.Response(503, json={"error": {"code": "ALL_TARGETS_SKIPPED"}})
         assert payload["model"] == "generated-production-model"
-        assert '{"match": true}' in payload["messages"][0]["content"]
-        assert '{"match": false}' in payload["messages"][0]["content"]
-        assert "Must not:" in payload["messages"][0]["content"]
-        moment = json.loads(payload["messages"][1]["content"])
+        system = payload["messages"][0]["content"]
+        assert '{"match": true}' in system and '{"match": false}' in system
+        assert "Must not:" in system
+        assert payload["temperature"] == 0
+        # The moment reaches the model as ONE typed evidence block: read it
+        # back through the tag boundary and the escapes it was wrapped in.
+        user = payload["messages"][1]["content"]
+        assert user.startswith("<wake_moment") and user.endswith("</wake_moment>")
+        from xml.sax.saxutils import unescape
+        moment = json.loads(unescape(user.split(">\n", 1)[1].rsplit("\n</wake_moment>", 1)[0]))
         assert moment["messages"][0] == {"at_ms": 1000, "speaker": "speaker_1", "text": "k"}
         return httpx.Response(200, json={"choices": [{"finish_reason": finish,
                                                     "message": {"content": content}}]})
