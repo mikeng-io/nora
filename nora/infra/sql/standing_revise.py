@@ -157,11 +157,15 @@ async def standing_revise(
             refusal=Refusal(reason="invalid_standing", detail=str(exc)),
         )
     # NO-CHANGE IS IDEMPOTENT (design/notebook-memory-types/20 §6): a revise
-    # whose produced row IS the head — content AND fold bookkeeping alike —
-    # writes nothing. Comparing the constructed row rather than the inputs is
-    # what makes a `fold_count`/`last_folded_row_id` advance still a real
-    # revision while a verbatim re-assert is not.
-    if prior is not None and revised == replace(prior, updated_at=revised.updated_at):
+    # whose produced CONTENT is the head writes nothing — content is body,
+    # hold_open, i_owe, working_set and the fold watermark, so fold
+    # bookkeeping (`fold_count`, `updated_at`) is compared OUT of the check:
+    # a `source="cognition"` verbatim re-assert does not count as a fold
+    # either, while an actual content change or a watermark advance still
+    # does.
+    if prior is not None and replace(
+        revised, fold_count=prior.fold_count, updated_at=prior.updated_at,
+    ) == prior:
         return Revision(committed=True, standing=prior, refusal=None)
     # `source` stays each store's own default (`SqlStandingStore.write`'s
     # `"fold"`) unless the caller passes one. Calling through the protocol type

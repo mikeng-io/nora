@@ -1061,10 +1061,17 @@ class TranscriptInjection:
                 now_ms=int(self._clock().timestamp() * 1000),
             )
         except Exception:
+            # A wired reader that fails is NOT an unwired one: `None` would
+            # re-enable the legacy fold in `_debrief` — the independent
+            # thinker the wired route retired. `unavailable` keeps the
+            # record-only route and says why.
             log.exception("shared-state read failed; continuing without it")
             self._metrics.inc(
                 "nora_errors_total", stage="shared_state", platform=msg.platform)
-            return None
+            return SharedView(
+                unit=convo.unit, status="unavailable",
+                as_of_ms=int(self._clock().timestamp() * 1000),
+            )
 
     async def _standing(self, msg: NormalizedMessage) -> Standing | None:
         """Her own position in THIS conversation, or `None`
