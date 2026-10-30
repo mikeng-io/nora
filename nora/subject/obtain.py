@@ -392,6 +392,11 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     if not _resolves(_DOCKER_HOST):
         cfg = _with(cfg, "llm.base_url", _from_host(cfg.llm.base_url))
         cfg = _with(cfg, "honcho.base_url", _from_host(cfg.honcho.base_url))
+        # Named model endpoints carry their own URL; a route through one would
+        # otherwise still dial the container-only name.
+        cfg = cfg.model_copy(update={"providers": {
+            name: p.model_copy(update={"base_url": _from_host(p.base_url)})
+            for name, p in cfg.providers.items()}})
     # `doctrine.dir` and `dreamer.dir` resolve RELATIVE TO THE CONFIG FILE, and
     # the copy lives in the caller's workdir, which has no such subdirectories.
     # The Dreamer's corpus is validated at startup — deliberately, so a

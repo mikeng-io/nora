@@ -200,3 +200,22 @@ def test_a_policy_naming_the_id_on_the_wrong_platform_is_refused(
     )
     with pytest.raises(ValueError, match="names no conversation"):
         build_config(_spec(tmp_path, room=("signal", "g-case4"), policy=stated))
+
+
+def test_a_named_provider_is_dialled_on_loopback_from_the_host(
+    tmp_path, monkeypatch, example_config,
+) -> None:
+    """On the host, `host.docker.internal` does not resolve; every endpoint a
+    model call can take, the named providers too, is rewritten to loopback."""
+    import importlib
+
+    from nora.config import ProviderConfig
+
+    obtain = importlib.import_module("nora.subject.obtain")
+
+    monkeypatch.setattr(obtain, "_resolves", lambda host: False)
+    cfg = example_config.model_copy(update={"providers": {"primary": ProviderConfig(
+        base_url="http://host.docker.internal:20128/v1", api_key_env="OMNIROUTE_API_KEY")}})
+    built = obtain._baseline(cfg, tmp_path)
+    assert built.providers["primary"].base_url == "http://127.0.0.1:20128/v1"
+    assert built.providers["primary"].api_key_env == "OMNIROUTE_API_KEY"
