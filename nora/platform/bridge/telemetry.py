@@ -218,6 +218,17 @@ def _links(*ctxs: SpanContext | None) -> list[Link]:
     return [Link(c) for c in ctxs if c is not None]
 
 
+def carrier_links(carrier: Mapping[str, str] | None) -> list[Link]:
+    """An envelope `trace` dict (the `producer_span` carrier) → the OTel
+    links a bounded operation/replay span holds to that producer. `{}` or a
+    carrier that fails W3C validation means no link — never a fabricated
+    context and never an ambient parent."""
+    if not carrier:
+        return []
+    return _links(remote_context(
+        carrier.get("traceparent"), carrier.get("tracestate")))
+
+
 # ---------------------------------------------------------------------------
 # Spans
 # ---------------------------------------------------------------------------
@@ -287,6 +298,7 @@ def record_safe_error(span: Span | None, exc: BaseException) -> None:
 
 @contextmanager
 def producer_span(platform: str, *, name: str = "queue.enqueue",
+                  links: list[Link] | None = None,
                   **fields: object) -> Iterator[dict[str, str]]:
     """The one short capture/publication span a bridge emits per enqueue.
 
@@ -294,10 +306,12 @@ def producer_span(platform: str, *, name: str = "queue.enqueue",
     stamps onto the envelope's `trace` dict — `{}` when untraced, which is a
     valid input downstream (`remote_context` maps it to no link).
 
-    `fields` become `nora.bridge.*` attributes through the lifecycle
-    allowlist — an unsafe name is dropped, never exported.
+    `links` are the validated remote contexts a replay-bound publication
+    span holds to the ORIGINAL capture producer — never a parent. `fields`
+    become `nora.bridge.*` attributes through the lifecycle allowlist — an
+    unsafe name is dropped, never exported.
     """
-    span = _start(name, kind=SpanKind.PRODUCER, links=[],
+    span = _start(name, kind=SpanKind.PRODUCER, links=list(links or []),
                   attributes={"nora.bridge.platform": platform,
                               **_bridge_attrs(fields)})
     try:

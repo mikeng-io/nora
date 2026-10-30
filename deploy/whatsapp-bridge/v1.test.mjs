@@ -1170,3 +1170,44 @@ test('metrics accumulate low-cardinality counters and render text', () => {
   assert.match(text, /bridge_capture_total\{[^}]*outcome="enqueued"[^}]*\} 2/);
   assert.match(text, /bridge_journal_pending\{[^}]*platform="whatsapp"[^}]*\} 3/);
 });
+
+// -- action trace links -------------------------------------------------------------
+
+test('POST /v1/actions links the caller traceparent; invalid context carries none', async () => {
+  const { InMemorySpanExporter } = await import('@opentelemetry/sdk-trace-node');
+  const { initTracing } = await import('./tracing.js');
+  const exporter = new InMemorySpanExporter();
+  const tracer = initTracing({ exporter, serviceName: 'wa-test' });
+  try {
+    const pg = fakePg();
+    const store = new ActionStore(pg, { platform: 'whatsapp', accountKey: 'acct-1' });
+    pg.works.set('1', workRow(3, { accountKey: 'acct-1' }));
+    const ctx = fakeCtx();
+    const v1 = createV1({ store, ctx, attachments: null, self: () => null,
+      health: () => ({}), metrics: null, tracer });
+
+    const tp = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
+    const body = { action_id: 'tl-1', owner: { kind: 'work', id: '1', generation: 3 },
+      op: 'send', request: REQ };
+    const req = fakeReq('POST', '/v1/actions', body);
+    req.headers = { traceparent: tp };
+    const res = fakeRes();
+    await v1(req, res, new URL('http://b/v1/actions'));
+    assert.equal(res.json.state, 'confirmed');
+
+    const bad = fakeReq('POST', '/v1/actions', { ...body, action_id: 'tl-2' });
+    bad.headers = { traceparent: 'not-a-traceparent' };
+    const res2 = fakeRes();
+    await v1(bad, res2, new URL('http://b/v1/actions'));
+    assert.equal(res2.json.state, 'confirmed');   // invalid context never blocks
+
+    await tracer.flush();
+    const spans = exporter.getFinishedSpans().filter((s) => s.name === 'bridge.action.attempt');
+    assert.equal(spans.length, 2);
+    assert.equal(spans[0].links.length, 1);
+    assert.equal(spans[0].links[0].context.traceId, '4bf92f3577b34da6a3ce929d0e0e4736');
+    assert.equal(spans[0].links[0].context.spanId, '00f067aa0ba902b7');
+    assert.equal(spans[0].attributes['nora.trace_kind'], 'queue');
+    assert.equal(spans[1].links.length, 0);
+  } finally { await tracer.shutdown().catch(() => {}); }
+});

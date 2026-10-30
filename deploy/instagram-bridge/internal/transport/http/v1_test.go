@@ -22,6 +22,8 @@ import (
 	"instagram-bridge/internal/bridge"
 	"instagram-bridge/internal/domain"
 	"instagram-bridge/internal/stream"
+
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
 // --- fakes -------------------------------------------------------------------
@@ -457,3 +459,81 @@ func TestV1ActionReadback(t *testing.T) {
 }
 
 var _ = fmt.Sprint // keep fmt for later additions
+
+// A valid caller traceparent becomes a span LINK on the action's bounded
+// deliver root — never a parent — and an absent or invalid header simply
+// carries no link (design 04 §delivery).
+func TestV1ActionDeliverSpanLinksCallerContext(t *testing.T) {
+	rec := recordServerSpans(t)
+	store := newFakeActionStore()
+	store.gens["w-1"] = 7
+	ts := v1Server(t, store, &fakeMessaging{}, nil)
+	gen := 7
+	tp := "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+
+	raw, _ := json.Marshal(sendAction("w-1:send:0", &gen))
+	req, _ := http.NewRequest("POST", ts.URL+"/v1/actions", bytes.NewReader(raw))
+	req.Header.Set("Authorization", "Bearer tok")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("traceparent", tp)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("send = %d", resp.StatusCode)
+	}
+
+	var deliver sdktrace.ReadOnlySpan
+	for _, s := range rec.Ended() {
+		if s.Name() == "queue.deliver" {
+			deliver = s
+		}
+	}
+	if deliver == nil {
+		t.Fatal("no queue.deliver span recorded")
+	}
+	if deliver.Parent().IsValid() {
+		t.Fatal("deliver span must be a root — a parent reopens the caller's tree")
+	}
+	links := deliver.Links()
+	if len(links) != 1 {
+		t.Fatalf("deliver span links = %d, want 1", len(links))
+	}
+	if got := links[0].SpanContext.TraceID().String(); got != "4bf92f3577b34da6a3ce929d0e0e4736" {
+		t.Fatalf("link trace id = %s", got)
+	}
+	if got := links[0].SpanContext.SpanID().String(); got != "00f067aa0ba902b7" {
+		t.Fatalf("link span id = %s", got)
+	}
+}
+
+func TestV1ActionInvalidTraceparentIsNoLinkNotAFailure(t *testing.T) {
+	rec := recordServerSpans(t)
+	store := newFakeActionStore()
+	store.gens["w-1"] = 7
+	ts := v1Server(t, store, &fakeMessaging{}, nil)
+	gen := 7
+
+	for i, tp := range []string{"", "garbage", "00-zz-00-01",
+		"00-00000000000000000000000000000000-0000000000000000-01"} {
+		raw, _ := json.Marshal(sendAction(fmt.Sprintf("w-1:send:x%d", i), &gen))
+		req, _ := http.NewRequest("POST", ts.URL+"/v1/actions", bytes.NewReader(raw))
+		req.Header.Set("Authorization", "Bearer tok")
+		req.Header.Set("Content-Type", "application/json")
+		if tp != "" {
+			req.Header.Set("traceparent", tp)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+	}
+	for _, s := range rec.Ended() {
+		if s.Name() == "queue.deliver" && len(s.Links()) != 0 {
+			t.Fatalf("invalid/absent traceparent must carry no link, got %v", s.Links())
+		}
+	}
+}

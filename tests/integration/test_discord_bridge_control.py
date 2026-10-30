@@ -52,6 +52,7 @@ from nora.infra.sql.schema import MESSAGES
 from nora.infra.voice.http_controller import VoiceControllerClient
 from nora.infra.voice.hub import VoiceControllerHub
 from nora.platform.bridge.client import BridgeAdapter, BridgeEndpoint
+from nora.platform.bridge.envelope import Envelope
 from nora.platform.bridge.journal import Journal
 from nora.platform.bridge.service import (
     DurableActionService,
@@ -441,6 +442,7 @@ async def bridge(world, pg_url):
         projection=lambda: projection,
         capture=JournalCaptureSink(journal=journal, publisher=publisher),
         publisher=publisher,
+        journal=journal,
         manager=manager, hub=hub,
         voice_guild_ids=frozenset({GUILD}),
         roster=DiscordRoster("it-bot-token", base_url=rest_url),
@@ -975,3 +977,102 @@ async def test_actions_and_capture_fail_closed_without_collaborators(bridge):
                 if "envelope" in r] == []
     finally:
         b._actions, b._capture_sink = actions, capture
+
+
+class _Emoji:
+    """`PartialEmoji`'s two str() shapes — `name` for unicode, `name:id`
+    for custom — the value `Touch.emoji` and the frame fingerprint share."""
+    def __init__(self, name: str, eid: int | None = None) -> None:
+        self.name = name
+        self.id = eid
+
+    def __str__(self) -> str:
+        return f"{self.name}:{self.id}" if self.id else self.name
+
+
+async def test_clockless_transitions_get_distinct_durable_identities(bridge):
+    """Finding 2 at the real capture seam: generated Gateway reaction
+    dispatches flow `_record_wire_frame` (the socket boundary, where `s`
+    still rides) then `_capture_touch` (the parsed surface the listener
+    calls) — the same order discord.py dispatches them. Wire-identified
+    transitions stay distinct across add/remove/add, an at-least-once
+    redelivery of the SAME frame keeps ONE identity, and a frame-less
+    event resolves through the journal's own durable ledger."""
+    world = bridge
+    await world["bridge"].start()
+    b = world["bridge"]
+    journal = world["journal"]
+    # The wire boundary needs the session the gateway established — the
+    # fake client gains the `ws` attribute the real discord.py client has.
+    world["client"].ws = SimpleNamespace(session_id="it-sess-1")
+
+    target = 10**17 + 9
+    d = {"channel_id": TEXT_CHANNEL, "message_id": target,
+         "user_id": MEMBER, "emoji": {"name": "\U0001F44D", "id": None},
+         "type": 0}
+
+    def reaction() -> SimpleNamespace:
+        return SimpleNamespace(
+            guild_id=int(GUILD), user_id=int(MEMBER), message_id=target,
+            channel_id=int(TEXT_CHANNEL), emoji=_Emoji("\U0001F44D"),
+            type=SimpleNamespace(value=0))
+
+    # add → remove → add on the wire: three real dispatches (s 21/22/23).
+    for t, s, kind in (("MESSAGE_REACTION_ADD", 21, "reaction_add"),
+                       ("MESSAGE_REACTION_REMOVE", 22, "reaction_remove"),
+                       ("MESSAGE_REACTION_ADD", 23, "reaction_add")):
+        await b._record_wire_frame({"t": t, "s": s, "d": dict(d)})
+        await b._capture_touch(kind, reaction())
+    envs = [Envelope.from_fields(r["envelope"])
+            for r in journal.recover() if "envelope" in r]
+    assert len(envs) == 3
+    assert len({e.event_id for e in envs}) == 3
+    # The transition ledger rides the same journal records — durable, and
+    # continuing the sequence a later frame-less event must see.
+    transitions = [r["transition"] for r in journal.recover()
+                   if "transition" in r]
+    assert [t["state"] for t in transitions] == ["add", "remove", "add"]
+
+    # At-least-once redelivery of the SAME frame — same session, same s —
+    # keeps the SAME identity: the queue's dedupe suppresses it downstream.
+    await b._record_wire_frame(
+        {"t": "MESSAGE_REACTION_ADD", "s": 21, "d": dict(d)})
+    await b._capture_touch("reaction_add", reaction())
+    envs = [Envelope.from_fields(r["envelope"])
+            for r in journal.recover() if "envelope" in r]
+    assert len(envs) == 4
+    assert envs[3].event_id == envs[0].event_id
+
+    # A frame-less parsed event whose observation DISAGREES with the
+    # recorded state is the reconnect-replay ambiguity (design 02 §wire):
+    # nothing can prove it isn't a delayed old transition, so it is
+    # retained as journal evidence — never published under a minted seq.
+    b._frames.clear()
+    await b._capture_touch("reaction_remove", reaction())
+    envs = [Envelope.from_fields(r["envelope"])
+            for r in journal.recover() if "envelope" in r]
+    assert len(envs) == 4                     # nothing new published
+    ambiguous = [r["ambiguous"] for r in journal.recover()
+                 if "ambiguous" in r]
+    assert len(ambiguous) == 1 and ambiguous[0]["state"] == "remove"
+
+    # A frame-less SAME-state callback is an identical redelivery: it
+    # resolves to the upstream identity its transition committed under —
+    # here the s=21 redelivery's `g:` (the ledger's latest for this state).
+    await b._capture_touch("reaction_add", reaction())
+    envs = [Envelope.from_fields(r["envelope"])
+            for r in journal.recover() if "envelope" in r]
+    assert len(envs) == 5
+    assert envs[4].event_id == envs[3].event_id   # the s=21 g: identity
+
+    # A delete names the message it removes — the durable identity is the
+    # target, and a second delete of a DIFFERENT message never collides.
+    for mid in (target, target + 1):
+        await b._capture_touch("delete", SimpleNamespace(
+            guild_id=int(GUILD), message_id=mid,
+            channel_id=int(TEXT_CHANNEL)))
+    envs = [Envelope.from_fields(r["envelope"])
+            for r in journal.recover() if "envelope" in r]
+    assert len(envs) == 7
+    deletes = [e for e in envs if e.kind == "delete"]
+    assert deletes[0].event_id != deletes[1].event_id

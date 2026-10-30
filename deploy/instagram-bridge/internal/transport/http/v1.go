@@ -26,6 +26,11 @@ import (
 	"instagram-bridge/internal/app"
 	"instagram-bridge/internal/bridge"
 	"instagram-bridge/internal/domain"
+	"instagram-bridge/internal/observability"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // ActionStore is the slice of bridge.ActionStore the facade needs (an
@@ -160,6 +165,22 @@ var errActionUsage = errors.New("invalid action request")
 
 // handleActions is POST /v1/actions.
 func (v *V1) handleActions(w http.ResponseWriter, r *http.Request) {
+	// The action deliver span is a bounded ROOT — never a child of the
+	// otelhttp server span — holding a link to the caller's W3C context
+	// when one rides the request headers (design 04 §delivery). An absent
+	// or invalid traceparent simply carries no link.
+	remote := trace.SpanContextFromContext(
+		propagation.TraceContext{}.Extract(context.Background(),
+			propagation.HeaderCarrier(r.Header)))
+	var links []trace.Link
+	if remote.IsValid() {
+		links = []trace.Link{{SpanContext: remote}}
+	}
+	_, span := observability.Tracer().Start(context.Background(), "queue.deliver",
+		trace.WithSpanKind(trace.SpanKindProducer),
+		trace.WithLinks(links...),
+		trace.WithAttributes(attribute.String("nora.trace_kind", "queue")))
+	defer span.End()
 	if v.Store == nil {
 		writeErrorEnvelope(w, http.StatusServiceUnavailable, "action_store", "action store is not configured")
 		return
@@ -167,6 +188,9 @@ func (v *V1) handleActions(w http.ResponseWriter, r *http.Request) {
 	var req ActionRequest
 	if _, ok := readJSON(w, r, maxJSONBody, &req); !ok {
 		return
+	}
+	if len(req.Op) <= 64 {
+		span.SetAttributes(attribute.String("bridge.op", req.Op))
 	}
 	if req.ActionID == "" || req.Op == "" || len(req.Request) == 0 {
 		invalidRequest(w, "action_id, op and request are required")

@@ -24,7 +24,7 @@ import os
 import sys
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -33,8 +33,11 @@ import redis.asyncio as aioredis
 from aiohttp import web
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from nora.domain.actions import ActionOwner
 from nora.domain.models import ConversationTarget
 from nora.infra.sql.bridge_store import SqlBridgeStore
+from nora.obs.metrics import Metrics
+from nora.platform.bridge import telemetry as bt
 from nora.platform.bridge.envelope import (
     Envelope,
     canonical_source_key,
@@ -55,7 +58,6 @@ from nora.platform.bridge.service import (
     receipt_intent_ids,
     receipt_via,
 )
-from nora.domain.actions import ActionOwner
 from nora.platform.signal.parser import parse_event
 from nora.platform.signal.react import SignalReactor
 from nora.platform.signal.send import SignalSender
@@ -162,8 +164,8 @@ class _SignalExecutor:
                     remove=bool(r.get("remove", False)), request_id=aid)
                 return ActionReply("confirmed" if res.ok else "uncertain")
             return ActionReply("rejected", kind="unsupported", message=op)
-        except Exception as exc:
-            log.exception("effect error for %s", aid)
+        except Exception as exc:  # noqa: BLE001 — effect boundary; logged by type, outcome stays honest
+            log.error("effect error for %s: %s", aid, type(exc).__name__)
             return ActionReply(
                 "uncertain", kind="transport", message=type(exc).__name__)
 
@@ -186,6 +188,7 @@ class Bridge:
         rpc_client: Callable[..., Any] | None = None,
         redis_client: Any | None = None,
         store: SqlBridgeStore | None = None,
+        metrics: Metrics | None = None,
     ) -> None:
         _valid_account_key(cfg)
         self.cfg = cfg
@@ -210,15 +213,16 @@ class Bridge:
             journal=self.journal, producer=self.producer,
             on_enqueued=self._receipt_step,
             retry_pending=self._retry_pending_receipts,
-            has_pending=lambda: bool(self._pending_receipts))
+            has_pending=lambda: bool(self._pending_receipts),
+            metrics=metrics)
         self._sink = JournalCaptureSink(
             journal=self.journal, publisher=self._publisher,
-            intent_for=self._capture_intent)
+            intent_for=self._capture_intent, metrics=metrics)
         self._actions = DurableActionService(
             store=self.store, platform=PLATFORM,
             account_key=self.cfg.account_key, execute=self._executor,
             receipt_intents=self._receipt_intent_ids,
-            ops=frozenset({"send", "react"}))
+            ops=frozenset({"send", "react"}), metrics=metrics)
         # Kept as the object tests poke (`bridge._dirty.set()` is "_handle
         # appended"): it IS the publisher's wake flag.
         self._dirty = self._publisher._dirty
@@ -282,34 +286,48 @@ class Bridge:
         if not _admitted(proj, msg.conversation_id, msg.sender_id,
                          msg.conversation_type):
             return  # denied room: no body, no attachment bytes, no capture
-        attachments = await self._custody(msg)
-        now = int(time.time() * 1000)
-        upstream = msg.timestamp or None
         kind = ("message" if msg.edit_of is None and msg.touch is None
                 else ("edit" if msg.edit_of else msg.touch.kind))
-        sk = canonical_source_key(
-            PLATFORM, self.cfg.account_key, msg.conversation_id, kind,
-            msg.message_id or f"{msg.sender_id}:{msg.timestamp}")
-        env = Envelope(
-            platform=PLATFORM, account_key=self.cfg.account_key, kind=kind,
-            source_key=sk,
-            event_id=event_id(sk, key=self.cfg.correlation_key,
-                              key_version=self.cfg.key_version),
-            conversation_id=msg.conversation_id,
-            conversation_type=msg.conversation_type, sender_id=msg.sender_id,
-            sender_name=msg.sender_name, sent_ms=upstream, received_ms=now,
-            queued_ms=now,
-            time_quality="upstream" if upstream else "bridge_local",
-            message=message_to_dict(msg), attachments=tuple(attachments),
-            trace={},
-            admission_rev=int(proj.get("revision") or 0),
-        )
-        # Journal FIRST — the durable spool precedes any queue call. The
-        # sink freezes the receipt INTENT into the envelope at capture (never
-        # re-derived on replay), appends the record, and wakes the publisher
-        # loop — the ONE writer to Redis, so a recovered head can never be
-        # outrun by a new event.
-        await self._sink.capture(env)
+        # The ONE short producer root for this capture — its context is
+        # frozen onto the envelope BEFORE the journal append inside
+        # `_sink.capture` (design 04 §producer).
+        with bt.producer_span(PLATFORM, kind=kind) as carrier:
+            if msg.media:
+                with bt.operation_span(
+                        "custody", platform=PLATFORM,
+                        links=bt.carrier_links(carrier)):
+                    msg, attachments = await self._custody(msg)
+            else:
+                attachments = []
+            now = int(time.time() * 1000)
+            upstream = msg.timestamp or None
+            sk = canonical_source_key(
+                PLATFORM, self.cfg.account_key, msg.conversation_id, kind,
+                msg.message_id or f"{msg.sender_id}:{msg.timestamp}")
+            env = Envelope(
+                platform=PLATFORM, account_key=self.cfg.account_key,
+                kind=kind,
+                source_key=sk,
+                event_id=event_id(sk, key=self.cfg.correlation_key,
+                                  key_version=self.cfg.key_version),
+                conversation_id=msg.conversation_id,
+                conversation_type=msg.conversation_type,
+                sender_id=msg.sender_id,
+                sender_name=msg.sender_name, sent_ms=upstream,
+                received_ms=now,
+                queued_ms=now,
+                time_quality="upstream" if upstream else "bridge_local",
+                message=message_to_dict(msg),
+                attachments=tuple(attachments),
+                trace=dict(carrier),
+                admission_rev=int(proj.get("revision") or 0),
+            )
+            # Journal FIRST — the durable spool precedes any queue call. The
+            # sink freezes the receipt INTENT into the envelope at capture
+            # (never re-derived on replay), appends the record, and wakes
+            # the publisher loop — the ONE writer to Redis, so a recovered
+            # head can never be outrun by a new event.
+            await self._sink.capture(env)
         self._received.set()
 
     def _capture_intent(self, env: Envelope) -> dict[str, str] | None:
@@ -329,21 +347,38 @@ class Bridge:
             return None
         return {"emoji": str(proj["receipt_emoji"])}
 
-    async def _custody(self, msg: Any) -> list[dict[str, Any]]:
+    async def _custody(self, msg: Any) -> tuple[Any, list[dict[str, Any]]]:
+        """Download each attachment into custody AND rebind the serialized
+        `MediaRef.platform_id` to the custody key — the app's
+        `BridgeMediaSource` fetches `GET /v1/attachments/{platform_id}`, so
+        the rehydrated reference must name the key bytes answer to, never
+        the upstream handle that no byte answers to (same binding the
+        WhatsApp bridge makes: `ref.platform_id = key`).
+
+        Index-stable: `refs[i]` is the custody-bound twin of `msg.media[i]`,
+        so a failed one keeps its upstream handle (custody absent — the
+        app's fetch is an honest `unavailable`, not a key that never
+        existed) and a custody-free ref passes through untouched."""
         out: list[dict[str, Any]] = []
+        refs = []
         for ref in msg.media:
             if not ref.platform_id:
+                refs.append(ref)
                 continue
             try:
                 data = await self._rpc("getAttachment", {"id": ref.platform_id})
                 raw = base64.b64decode(data["data"]) if isinstance(data, dict) else b""
                 key = hashlib.sha256(raw).hexdigest()[:32]
                 (self.cfg.attach_dir / key).write_bytes(raw)
-                out.append({"key": key, "media_type": ref.media_type,
-                            "file_name": ref.filename, "size": len(raw)})
-            except Exception:
-                log.exception("attachment %s custody failed", ref.platform_id)
-        return out
+            except Exception as exc:  # noqa: BLE001 — custody boundary; logged by type
+                log.error("attachment custody failed: %s",
+                          type(exc).__name__)
+                refs.append(ref)
+                continue
+            refs.append(replace(ref, platform_id=key))
+            out.append({"key": key, "media_type": ref.media_type,
+                        "file_name": ref.filename, "size": len(raw)})
+        return replace(msg, media=tuple(refs)), out
 
     # ---- queued receipt (durable, one per canonical event) -----------------
 
@@ -352,17 +387,22 @@ class Bridge:
         # resolve to this SAME id, so no second action ever exists.
         return f"receipt:{canonical_id}"
 
-    async def _receipt(self, canonical_id: str, msg: Any, emoji: str) -> str:
+    async def _receipt(self, canonical_id: str, msg: Any, emoji: str,
+                       *, env: Envelope) -> str:
         """Queued-receipt with durable intent: reserve → effect → terminal —
         the shared `run_owned` lane bound to the canonical event id, so a
         rotation replay resolves to the SAME action and never double-fires.
         Returns the typed phase: "unavailable" (ledger unreachable — retry;
-        nothing was started), a persisted terminal, "started"/"conflict"."""
+        nothing was started), a persisted terminal, "started"/"conflict".
+
+        The outbound effect is a bounded root LINKED to the envelope's
+        frozen producer context — the same lineage an attempt carries."""
         target = msg.target()
         return await self._actions.run_owned(
             action_id=self._receipt_action_id(canonical_id),
             owner=ActionOwner(kind="event_receipt", id=canonical_id),
             op="react",
+            links=bt.carrier_links(env.trace),
             request={
                 "target": {"platform": target.platform,
                            "id": target.conversation_id,
@@ -382,7 +422,8 @@ class Bridge:
         msg = message_from_dict(env.message)
         if not _receipt_eligible(proj, msg, self.cfg.signal_account):
             return  # revoked since capture — suppressed, no effect
-        state = await self._receipt(canonical_id, msg, env.receipt["emoji"])
+        state = await self._receipt(
+            canonical_id, msg, env.receipt["emoji"], env=env)
         if state == "unavailable":
             self._pending_receipts[canonical_id] = env
 
@@ -394,7 +435,7 @@ class Bridge:
                 del self._pending_receipts[canonical_id]
                 continue  # revoked while pending — dropped, never sent
             state = await self._receipt(
-                canonical_id, msg, env.receipt["emoji"])
+                canonical_id, msg, env.receipt["emoji"], env=env)
             if state != "unavailable":
                 del self._pending_receipts[canonical_id]
 
@@ -438,7 +479,9 @@ class Bridge:
             body = await req.json()
         except (json.JSONDecodeError, UnicodeDecodeError):
             return web.json_response({"error": "body must be JSON"}, status=400)
-        reply = await self._actions.run(body)
+        reply = await self._actions.run(body, links=bt.carrier_links({
+            "traceparent": req.headers.get("traceparent") or "",
+            "tracestate": req.headers.get("tracestate") or ""}))
         return web.json_response(
             action_response(str(body.get("action_id") or ""), reply),
             status=action_http_status(reply))
@@ -527,13 +570,58 @@ def _receipt_eligible(proj: dict[str, Any], msg: Any, own_account: str) -> bool:
         body=msg.body or "", self_ids={own_account}))
 
 
+def _bootstrap_secrets() -> list[str]:
+    """The values the log redactor must catch — the bridge's own token and
+    the correlation key, the only secrets it holds."""
+    try:
+        cfg = BridgeConfig.from_env()
+    except Exception:  # noqa: BLE001 — logging must still come up on a bad env
+        return []
+    return [s for s in (cfg.token, cfg.correlation_key.hex()) if s]
+
+
+def _setup_tracing() -> None:
+    """Env-driven equivalent of `__main__`'s `[obs.tracing]` wiring — the
+    signal-bridge has no config.toml, so the same knobs ride the process
+    env (`NORA_TRACING_ENABLED`/`_EXPORTER`/`_ENDPOINT`/`_HEADERS_ENV`).
+    Tracing is never load-bearing: a bad endpoint or an unreachable
+    collector warns and the bridge still captures."""
+    if os.environ.get("NORA_TRACING_ENABLED", "").lower() not in (
+            "1", "true", "yes", "on"):
+        return
+    try:
+        from nora.agent.telemetry import setup_agent_tracing
+        from nora.infra.version import VersionManifest
+        from nora.obs.tracing import build_sampler
+
+        # service.version rides OTEL_RESOURCE_ATTRIBUTES — `Resource.create`
+        # merges it over the explicit service.name. Only what the baked
+        # manifest proves: a dev checkout exports no version claim.
+        ans = VersionManifest().current()
+        ver = ans.entry.version if ans.status == "ok" and ans.entry else ""
+        existing = os.environ.get("OTEL_RESOURCE_ATTRIBUTES", "")
+        if ver and "service.version" not in existing:
+            os.environ["OTEL_RESOURCE_ATTRIBUTES"] = (
+                f"{existing},service.version={ver}"
+                if existing else f"service.version={ver}")
+        setup_agent_tracing(
+            sampler=build_sampler(), service_name="signal-bridge",
+            exporter=os.environ.get("NORA_TRACING_EXPORTER", "otlp_http"),
+            endpoint=os.environ.get("NORA_TRACING_ENDPOINT", ""),
+            headers_env=os.environ.get("NORA_TRACING_HEADERS_ENV", ""),
+            credentials=dict(os.environ))
+    except Exception as exc:  # noqa: BLE001 — tracing is never load-bearing
+        log.warning("tracing setup failed; continuing without tracing: %s",
+                    type(exc).__name__)
+
+
 async def supervise() -> None:
     cfg = BridgeConfig.from_env()
     journal = Journal(cfg.journal_path)
     # Preflight BEFORE the child may receive a byte — every restart, not once.
     journal.probe()
     cfg.attach_dir.mkdir(parents=True, exist_ok=True)
-    bridge = Bridge(cfg)
+    bridge = Bridge(cfg, metrics=Metrics())
     replay_task = asyncio.ensure_future(bridge.replay_journal())
     child = await asyncio.create_subprocess_exec(
         # signal-cli's raw JSON-RPC binds LOOPBACK only: co-networked
@@ -547,8 +635,9 @@ async def supervise() -> None:
         await runner.setup()
         await web.TCPSite(runner, "0.0.0.0", cfg.port).start()  # noqa: S104 — private nora network, token-authed
         await bridge.capture()
-    except (JournalError, OSError):
-        log.exception("capture journal broken — stopping upstream")
+    except (JournalError, OSError) as exc:
+        log.error("capture journal broken — stopping upstream: %s",
+                  type(exc).__name__)
     finally:
         bridge.stop_replay()
         replay_task.cancel()
@@ -561,6 +650,9 @@ async def supervise() -> None:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    from nora.obs.logging import setup_logging
+
+    setup_logging(level=os.environ.get("NORA_LOG_LEVEL", "INFO"),
+                  format="json", secrets=_bootstrap_secrets())
+    _setup_tracing()
     asyncio.run(supervise())

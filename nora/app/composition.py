@@ -4086,14 +4086,28 @@ async def build_dependencies(
         bridge_store = SqlBridgeStore(engine)
         bridge_redis = aioredis.from_url(redis_url)
         bridge_locks = DbSpeakingLocks(bridge_store)
+        if participation_trigger is not None:
+            # The durable window close lives in the same work ledger as every
+            # other obligation: watermark + candidate folds + fire row in ONE
+            # commit, so a force-recreate never finds a judged window whose
+            # turn nobody owns.
+            participation_trigger.set_close_handoff(
+                bridge_store.close_participation_window)
         bridge_runner = WorkRunner(
             store=bridge_store, redis=bridge_redis, ingest=ingest,
             engagement=engagement, slots=slots, db_locks=bridge_locks,
             adapters=dict(registry.adapters), gate=policy, metrics=metrics,
             participation=participation_trigger,
-            memory_feed={"memory": memory, "absorbed": True},
+            # Absorption is a PER-MESSAGE admission fact, never a wiring
+            # constant: each obligation carries the value canonical policy
+            # computed at ingest, and the deferred executor rechecks the
+            # allowlist as it stands when the work actually runs.
+            memory_feed={"memory": memory},
             stimulus=stimulus_wiring,
             lease_seconds=cfg.bridges.lease_seconds,
+            allowlist=allowlist, persons=persons,
+            fire_speak=fire_path.speak if fire_path else None,
+            participation_state=SqlParticipationStateStore(engine),
         )
         # The inspector reads the REAL redis client + engine the runtime
         # runs on — a second connection would measure a different world.

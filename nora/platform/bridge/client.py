@@ -18,6 +18,9 @@ from dataclasses import dataclass
 from typing import Any
 
 import aiohttp
+from opentelemetry.trace.propagation.tracecontext import (
+    TraceContextTextMapPropagator,
+)
 
 from nora.domain.actions import ActionOwner
 from nora.domain.identity import PlatformIdentity
@@ -97,16 +100,26 @@ class BridgeAdapter:
             await self._session.close()
 
     async def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
+        # The ambient span's W3C context rides the POST headers — the
+        # bridge's deliver span links to it instead of opening an orphan
+        # root. Standard OTel propagation only: headers, never the body, so
+        # the request hash and idempotence never see it.
+        carrier: dict[str, str] = {}
+        try:
+            TraceContextTextMapPropagator().inject(carrier)
+        except Exception:  # noqa: BLE001 — tracing is never load-bearing
+            carrier = {}
         try:
             session = await self._client()
             async with session.post(
                     f"{self._endpoint.base_url}{path}", json=body,
+                    headers=carrier or None,
                     timeout=aiohttp.ClientTimeout(total=30)) as resp:
                 if resp.status != 200:
                     raise BridgeUnavailableError(f"{path} -> {resp.status}")
                 return await resp.json()
         except (TimeoutError, aiohttp.ClientError) as exc:
-            raise BridgeUnavailableError(f"{path}: {exc}") from exc
+            raise BridgeUnavailableError(f"{path}: {type(exc).__name__}") from exc
 
     async def _get(self, path: str) -> dict[str, Any]:
         try:
@@ -118,7 +131,7 @@ class BridgeAdapter:
                     raise BridgeUnavailableError(f"{path} -> {resp.status}")
                 return await resp.json()
         except (TimeoutError, aiohttp.ClientError) as exc:
-            raise BridgeUnavailableError(f"{path}: {exc}") from exc
+            raise BridgeUnavailableError(f"{path}: {type(exc).__name__}") from exc
 
     async def _put_bytes(self, path: str, data: bytes) -> None:
         try:
@@ -129,7 +142,7 @@ class BridgeAdapter:
                 if resp.status not in (200, 201):
                     raise BridgeUnavailableError(f"{path} -> {resp.status}")
         except (TimeoutError, aiohttp.ClientError) as exc:
-            raise BridgeUnavailableError(f"{path}: {exc}") from exc
+            raise BridgeUnavailableError(f"{path}: {type(exc).__name__}") from exc
 
     async def _action(self, op: str, request: dict[str, Any],
                       action_id: str) -> dict[str, Any]:

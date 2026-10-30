@@ -31,13 +31,19 @@ from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from .schema import BRIDGE_ACTION, BRIDGE_EVENT, BRIDGE_EVENT_ALIAS, BRIDGE_WORK
+from .schema import (
+    BRIDGE_ACTION,
+    BRIDGE_EVENT,
+    BRIDGE_EVENT_ALIAS,
+    BRIDGE_WORK,
+    PARTICIPATION_WINDOW_STATE,
+)
 
 log = logging.getLogger("nora.infra.sql.bridge_store")
 
 WORK_KINDS = frozenset({
     "ingest", "stimulus", "memory_feed", "turn",
-    "participation", "receipt", "trace_debrief",
+    "participation", "participation_fire", "receipt", "trace_debrief",
 })
 
 #: The advisory-lock namespace `DbSpeakingLocks`
@@ -410,6 +416,138 @@ class SqlBridgeStore:
             BRIDGE_WORK.c.id == int(work_id)))).one_or_none()
         return row[0] if row else None
 
+    # ---- participation candidates -------------------------------------------
+
+    async def mark_candidate(self, work_id: int, *, noted_ms: int) -> str:
+        """Stamp `result.candidate.noted_ms` on a participation work row and
+        report where the membership stands: `"fresh"` (this call committed
+        the mark), `"noted"` (already marked, not yet judged) or `"folded"`
+        (a window close already claimed the membership — counting it again
+        would seat one candidate in two windows)."""
+        async with self._engine.begin() as conn:
+            res = await conn.execute(sa.text(
+                "UPDATE bridge_work SET result = COALESCE(result, '{}'::jsonb)"
+                " || jsonb_build_object('candidate',"
+                "   COALESCE(result->'candidate', '{}'::jsonb)"
+                "   || jsonb_build_object('noted_ms', CAST(:noted AS bigint))),"
+                " updated_at = now()"
+                " WHERE id = :id"
+                " AND NOT COALESCE(jsonb_exists("
+                "   result->'candidate', 'noted_ms'), false)"),
+                {"id": work_id, "noted": noted_ms})
+            if res.rowcount == 1:
+                return "fresh"
+            folded = (await conn.execute(sa.text(
+                "SELECT COALESCE(jsonb_exists("
+                "   result->'candidate', 'folded_ms'), false)"
+                " FROM bridge_work WHERE id = :id"),
+                {"id": work_id})).scalar_one()
+            return "folded" if folded else "noted"
+
+    async def mark_effect_started(self, work_id: int, generation: int, *,
+                                  kind: str, at_ms: int) -> bool:
+        """Commit "the non-idempotent effect starts now" BEFORE the effect —
+        fenced by `generation` so a stale claimant can never open an effect
+        it no longer owns, and idempotent on the kind so a same-generation
+        retry writes once. A False answer means the row's generation moved:
+        ownership was lost and the caller must NOT run the effect."""
+        async with self._engine.begin() as conn:
+            res = await conn.execute(sa.text(
+                "UPDATE bridge_work SET result ="
+                " COALESCE(result, '{}'::jsonb)"
+                " || jsonb_build_object('effect',"
+                "   COALESCE(result->'effect', '{}'::jsonb)"
+                "   || jsonb_build_object(:kind,"
+                "     jsonb_build_object('started_ms', CAST(:at AS bigint)))),"
+                " updated_at = now()"
+                " WHERE id = :id AND generation = :gen"
+                " AND NOT COALESCE(jsonb_exists("
+                "   result->'effect', :kind), false)"),
+                {"id": work_id, "gen": generation,
+                 "kind": kind, "at": at_ms})
+            return res.rowcount == 1
+
+    async def close_participation_window(
+        self, platform: str, conversation_id: str, window_end_ms: int,
+        conversation_type: str,
+    ) -> None:
+        """The durable window close, ONE commit: the room's watermark, every
+        noted candidate folded into this window's identity, and the
+        `participation_fire` obligation that owns the turn. A crash before it
+        rolls all three back together — a window can never persist 'judged'
+        while its turn is unowned, and a candidate can never be judged-out
+        while its membership is unread."""
+        async with self._engine.begin() as conn:
+            stmt = pg_insert(PARTICIPATION_WINDOW_STATE).values(
+                platform=platform, conversation_id=conversation_id,
+                last_window_end_at=window_end_ms,
+            )
+            await conn.execute(stmt.on_conflict_do_update(
+                index_elements=[
+                    PARTICIPATION_WINDOW_STATE.c.platform,
+                    PARTICIPATION_WINDOW_STATE.c.conversation_id,
+                ],
+                set_={
+                    "last_window_end_at": stmt.excluded.last_window_end_at,
+                    "updated_at": sa.func.now(),
+                },
+            ))
+            # Membership is committed truth the moment `noted_ms` lands — a
+            # work row still finishing its bookkeeping is still a member, so
+            # the fold cannot filter on `state`. Serialised on the same rows,
+            # a second concurrent close folds only what the first missed: the
+            # fold is the fence that keeps one candidate in one window.
+            folded = (await conn.execute(sa.text(
+                "UPDATE bridge_work SET result = jsonb_set(result,"
+                " '{candidate,folded_ms}', to_jsonb(CAST(:end AS bigint))),"
+                " updated_at = now()"
+                " WHERE kind = 'participation' AND platform = :p"
+                " AND conversation_id = :c"
+                " AND COALESCE(jsonb_exists("
+                "   result->'candidate', 'noted_ms'), false)"
+                " AND NOT COALESCE(jsonb_exists("
+                "   result->'candidate', 'folded_ms'), false)"
+                " RETURNING account_key"),
+                {"end": window_end_ms, "p": platform,
+                 "c": conversation_id})).mappings().all()
+            if not folded:
+                # No committed membership, no owned turn: the watermark still
+                # commits (the window is spent) but a fire obligation with no
+                # candidate and no account would fabricate a turn for a room
+                # whose ledger recorded nothing to judge.
+                return
+            await self.enqueue_work(
+                conn, event_id=None, kind="participation_fire", ordinal=1,
+                platform=platform, account_key=folded[0]["account_key"],
+                conversation_id=conversation_id,
+                payload={
+                    "conversation_type": conversation_type,
+                    "window_end_ms": window_end_ms,
+                    "folded": len(folded),
+                })
+
+    async def send_cursor_upsert(
+        self, conn: AsyncConnection, *, platform: str, conversation_id: str,
+        at_ms: int,
+    ) -> None:
+        """`SqlParticipationStateStore.record_send` inside the caller's
+        transaction — a fire work finishes 'sent' and stamps the cooldown in
+        the same commit so neither outlives the other."""
+        stmt = pg_insert(PARTICIPATION_WINDOW_STATE).values(
+            platform=platform, conversation_id=conversation_id,
+            last_window_end_at=at_ms, last_send_at=at_ms,
+        )
+        await conn.execute(stmt.on_conflict_do_update(
+            index_elements=[
+                PARTICIPATION_WINDOW_STATE.c.platform,
+                PARTICIPATION_WINDOW_STATE.c.conversation_id,
+            ],
+            set_={
+                "last_send_at": stmt.excluded.last_send_at,
+                "updated_at": sa.func.now(),
+            },
+        ))
+
     # ---- advisory locks --------------------------------------------------
 
     @asynccontextmanager
@@ -423,10 +561,17 @@ class SqlBridgeStore:
                 "SELECT pg_try_advisory_lock("
                 "hashtext(:ns), hashtext(:k))"),
                 {"ns": namespace, "k": ":".join(key_parts)})).scalar_one()
-            yield bool(acquired)
-            if acquired:
-                await conn.execute(sa.text(
-                    "SELECT pg_advisory_unlock(hashtext(:ns), hashtext(:k))"),
-                    {"ns": namespace, "k": ":".join(key_parts)})
+            try:
+                yield bool(acquired)
+            finally:
+                # Session-scoped locks survive the connection's return to the
+                # pool: an exception inside the yield must still unlock, or
+                # the pooled backend holds the lock forever and every later
+                # `pg_try_advisory_lock` reparks permanently.
+                if acquired:
+                    await conn.execute(sa.text(
+                        "SELECT pg_advisory_unlock("
+                        "hashtext(:ns), hashtext(:k))"),
+                        {"ns": namespace, "k": ":".join(key_parts)})
         finally:
             await conn.close()

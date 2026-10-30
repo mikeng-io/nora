@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from typing import Any
 
 from aiohttp import web
 from aiohttp.test_utils import TestServer
@@ -33,6 +35,12 @@ class SinkSender:
         self.events: list[dict] = []
         self._succeed = succeed
         self._account = account
+        # The durable owner a `bind_owner` copy carries — `Deliverer` reads
+        # `action_owner` on the adapter, exactly like `BridgeAdapter`.
+        self._action_owner: Any = None
+        # One entry per `send`: the owner that send was signed under (None
+        # on the unbound adapter itself).
+        self.sent_owners: list[Any] = []
         # The platform's OWN sent-timestamp, which real signal-cli returns and
         # a reply's `quote.id` points at. `None` — the default
         # — is the shape of a daemon that answered without one.
@@ -69,10 +77,32 @@ class SinkSender:
         self.sent_mentions.append(tuple(mentions))
         self.sent_styles.append(tuple(styles))
         self.sent_attachments.append(tuple(attachments))
+        self.sent_owners.append(self._action_owner)
         return SendResult(ok=self._succeed, timestamp=self._timestamp)
 
     async def health(self) -> AdapterHealth:
         return AdapterHealth(platform=self.platform, connected=True, last_event_age_seconds=0.0)
+
+    @property
+    def action_owner(self) -> Any:
+        """The bound durable owner, or None when unbound — `BridgeAdapter`'s
+        property mirrored so `Deliverer` treats a bound copy identically."""
+        return self._action_owner
+
+    def bind_owner(self, owner: Any) -> SinkSender:
+        """A facade carrying the durable owner into its sends. The recorded
+        `sent` lists are the endpoint-equivalent: shared with the parent,
+        like `BridgeAdapter` shares the bridge endpoint."""
+        clone = SinkSender(
+            succeed=self._succeed, account=self._account,
+            timestamp=self._timestamp)
+        clone.sent = self.sent
+        clone.sent_mentions = self.sent_mentions
+        clone.sent_styles = self.sent_styles
+        clone.sent_attachments = self.sent_attachments
+        clone.sent_owners = self.sent_owners
+        clone._action_owner = owner
+        return clone
 
     @property
     def texts(self) -> list[str]:
@@ -165,6 +195,13 @@ class FakeHoncho:
         self.defer_session_deletes = False
         self._delete_queue: list[tuple[str, str]] = []
         self.fail_messages_after: int | None = None
+        # `hold_message_response` holds a message POST's RESPONSE open after
+        # the write is recorded — the "accepted, response lost" window a
+        # non-idempotent caller dies inside. `_message_posts` still counts
+        # the landed write; `release_message_response` lets the handler
+        # finish (nothing may still be listening).
+        self.hold_message_response = False
+        self.release_message_response = asyncio.Event()
         # (workspace, scope, session) for every `scope_backfill` Honcho would
         # enqueue — each one an omni dream per touched collection, i.e. model
         # spend — and a switch that makes the scope-member list unreadable.
@@ -348,6 +385,8 @@ class FakeHoncho:
                     "metadata": m.get("metadata") or {},
                     "created_at": m.get("created_at") or datetime.now(UTC).isoformat(),
                 })
+            if self.hold_message_response:
+                await self.release_message_response.wait()
             return web.json_response(held[-len((body or {}).get("messages", [])):] or [])
         if (
             len(rest) == 4 and rest[0] == "sessions" and rest[2:] == ["messages", "list"]

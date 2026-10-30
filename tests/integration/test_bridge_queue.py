@@ -190,7 +190,7 @@ async def test_audit_hook_rolls_back_atomically(bridge, redis_client, harness):
 
     real_run = harness.handler._dispatcher._ingest.run
 
-    async def exploding_hook(conn, row_id):
+    async def exploding_hook(conn, row_id, context):
         raise RuntimeError("hook fault")
 
     class ExplodingIngest:
@@ -232,7 +232,7 @@ async def test_audit_failure_is_retryable_not_silence(
 
     real_run = harness.handler._dispatcher._ingest.run
 
-    async def exploding_hook(conn, row_id):
+    async def exploding_hook(conn, row_id, context):
         raise RuntimeError("hook fault")
 
     class ExplodingIngest:

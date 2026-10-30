@@ -88,7 +88,7 @@ _STATE_EVENT: dict[str, bt.LifecycleEvent] = {
 _COMPREHEND_KINDS = frozenset({
     "ingest", "stimulus", "memory_feed", "participation", "receipt",
 })
-_SPEAK_KINDS = frozenset({"turn", "trace_debrief"})
+_SPEAK_KINDS = frozenset({"turn", "trace_debrief", "participation_fire"})
 
 #: (kinds, workers): two of each — one suspended turn can occupy at most one
 #: speak worker, and one slow ingest at most one comprehend worker.
@@ -100,6 +100,30 @@ _LANES: tuple[tuple[frozenset[str], int], ...] = (
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
+
+
+def _person_dict(person: Any) -> dict[str, Any] | None:
+    """The handoff shape for a resolved sender — the field set a `PersonRef`
+    is rebuilt from on the far side of a work row or an event snapshot."""
+    if person is None:
+        return None
+    return {"person_id": person.person_id, "name": person.name,
+            "honcho_peer_id": person.honcho_peer_id,
+            "first_name": person.first_name, "last_name": person.last_name,
+            "aliases": list(person.aliases)}
+
+
+def _decision_dict(decision: Any) -> dict[str, Any] | None:
+    """The admitted-facts shape for an `EngageDecision` — what a turn
+    payload and the ingest handoff snapshot both persist."""
+    if decision is None:
+        return None
+    return {"engage": decision.engage, "reason": decision.reason,
+            "rationale": decision.rationale,
+            "confidence": decision.confidence,
+            "threshold": decision.threshold,
+            "allow_episode": decision.allow_episode,
+            "relevance_gate": decision.relevance_gate}
 
 
 def _payload_trace(payload: dict[str, Any]) -> dict[str, Any]:
@@ -417,7 +441,9 @@ class WorkRunner:
                  adapters: dict[str, Any], gate: Any = None, metrics: Any = None,
                  participation: Any = None, memory_feed: Any = None,
                  stimulus: Any = None, debrief: Any = None,
-                 instance: str | None = None, lease_seconds: int = 300) -> None:
+                 instance: str | None = None, lease_seconds: int = 300,
+                 allowlist: Any = None, persons: Any = None,
+                 fire_speak: Any = None, participation_state: Any = None) -> None:
         self._store = store
         self._redis = redis
         self._ingest = ingest
@@ -431,6 +457,13 @@ class WorkRunner:
         self._memory_feed = memory_feed      # memory_feed stage deps bundle | None
         self._stimulus = stimulus            # stimulus_stage.Wiring | None
         self._debrief = debrief              # Callable(trace_payload) | None
+        # The CURRENT policy + identity truth, consulted by deferred effects:
+        # an obligation enqueued under a policy that has since moved must fail
+        # closed, never run under the snapshot's stale permission alone.
+        self._allowlist = allowlist        # Policy | None
+        self._persons = persons            # Persons | None
+        self._fire_speak = fire_speak      # FirePath.speak bound method | None
+        self._participation_state = participation_state  # cursor store | None
         self._owner = instance or f"nora-{uuid.uuid4().hex[:8]}"
         self._lease = lease_seconds
         self._stop = asyncio.Event()
@@ -625,6 +658,8 @@ class WorkRunner:
                 self._slots.release_and_dispatch(key)
         elif work.kind == "participation":
             await self._run_participation(work)
+        elif work.kind == "participation_fire":
+            await self._run_participation_fire(work)
         elif work.kind == "memory_feed":
             await self._run_memory_feed(work)
         elif work.kind == "stimulus":
@@ -655,7 +690,7 @@ class WorkRunner:
             await asyncio.sleep(interval)
             if not await self._renew_lease(work):
                 raise _LeaseLostError(work.id)
-            if (work.kind == "turn"
+            if (work.kind in ("turn", "participation_fire")
                     and not await self._db_locks.lock_alive(key)):
                 raise _LeaseLostError(work.id)
 
@@ -774,8 +809,9 @@ class WorkRunner:
     # ---- ingest ---------------------------------------------------------
 
     async def _run_ingest(self, work: Any) -> None:
+        from nora.domain.models import PersonRef
+
         envelope = Envelope.from_fields(work.payload["envelope"])
-        message = message_from_dict(envelope.message)
         async with self._store.advisory_lock(
                 INGEST_NS, work.platform, work.account_key,
                 work.conversation_id) as held:
@@ -783,32 +819,54 @@ class WorkRunner:
                 await self._repark(work, seconds=1)
                 return
             event = await self._store.event(envelope.event_id)
-            committed_row = (event["payload"].get("message_row_id")
-                             if event else None)
-            if committed_row is not None:
-                # Crash-window replay: the audit commit already landed (the
-                # tx_hook proves it). Do NOT re-ingest — that would double the
-                # message row. Re-derive only the gate decision, which the
-                # interrupted run never persisted.
-                if self._gate is None:
-                    if await self._finish(work, "failed_retained",
-                                          {"reason": "replay needs gate"}):
+            payload = event["payload"] if event is not None else {}
+            if payload.get("message_row_id") is not None:
+                # Crash-window replay: the audit commit already landed and the
+                # handoff snapshot committed WITH it — resume entirely from
+                # committed truth. No re-ingest (a second message row), no
+                # gate call (a second admission), no re-parse (the snapshot
+                # carries the custody-enriched message).
+                handoff = payload.get("handoff") or {}
+                if "decision" not in handoff:
+                    # A row committed before the snapshot shape existed: the
+                    # identity of what was decided is unrecoverable truth —
+                    # retain it, never guess or re-admit.
+                    if await self._finish(
+                            work, "failed_retained",
+                            {"reason": "committed row predates handoff snapshot"}):
                         await self._ack(work)
                     return
-                from nora.ingest.stages import gate as gate_stage
-                decision = await gate_stage.run(
-                    message=message, policy=self._gate,
-                    metrics=self._metrics)
-                result_message = message
+                decision = EngageDecision(**handoff["decision"])
+                result_message = message_from_dict(handoff["message"])
+                person = (PersonRef(**handoff["person"])
+                          if handoff.get("person") else None)
+                absorbed = bool(handoff.get("absorbed", True))
+                unit = handoff.get("unit")
+                row_id = handoff["row_id"]
             else:
-                async def hook(conn: Any, row_id: int) -> None:
-                    # Source mapping + audit row + extraction/projection writes
-                    # are ONE commit: stamp the event payload with the row that
-                    # proves the audit landed.
+                message = message_from_dict(envelope.message)
+
+                async def hook(conn: Any, row_id: int, context: Any) -> None:
+                    # The COMPLETE canonical handoff, committed inside the
+                    # audit row's own transaction: the custody-enriched
+                    # message, its row id, the resolved person, the
+                    # admission-time absorption fact and the gate decision
+                    # (under `durable` the pipeline gates before the audit for
+                    # exactly this). A kill after this commit resumes from
+                    # this snapshot alone.
+                    handoff = {
+                        "message": message_to_dict(context["message"]),
+                        "row_id": row_id,
+                        "person": _person_dict(context["person"]),
+                        "absorbed": context["absorbed"],
+                        "decision": _decision_dict(context["decision"]),
+                        "unit": context.get("unit"),
+                    }
                     await conn.execute(sa.text(
                         "UPDATE bridge_event SET payload = payload || :patch,"
                         " updated_at = now() WHERE id = :eid"),
-                        {"patch": json.dumps({"message_row_id": row_id}),
+                        {"patch": json.dumps(
+                            {"message_row_id": row_id, "handoff": handoff}),
                          "eid": envelope.event_id})
                 result = await self._ingest.run(message=message, tx_hook=hook,
                                                 durable=True)
@@ -842,6 +900,10 @@ class WorkRunner:
                     return
                 decision = result.decision
                 result_message = result.message
+                person = result.person
+                absorbed = result.absorbed
+                unit = result.unit
+                row_id = result.row_id
             # Obligations commit in ONE transaction, then XACK — durable
             # downstream ownership precedes the ACK, per the approved baseline.
             handed_on = _now_ms()
@@ -892,8 +954,7 @@ class WorkRunner:
                         payload={"note_message": message_to_dict(result_message),
                                  **downstream})
                     ordinal += 1
-                if self._memory_feed is not None and result.person is not None:
-                    p = result.person
+                if self._memory_feed is not None and person is not None:
                     await self._store.enqueue_work(
                         conn, event_id=envelope.event_id,
                         kind="memory_feed", ordinal=ordinal,
@@ -901,15 +962,11 @@ class WorkRunner:
                         account_key=work.account_key,
                         conversation_id=work.conversation_id,
                         payload={"message": message_to_dict(result_message),
-                                 "person": {"person_id": p.person_id,
-                                            "name": p.name,
-                                            "honcho_peer_id": p.honcho_peer_id,
-                                            "first_name": p.first_name,
-                                            "last_name": p.last_name,
-                                            "aliases": list(p.aliases)},
+                                 "person": _person_dict(person),
+                                 "absorbed": absorbed, "unit": unit,
                                  **downstream})
                     ordinal += 1
-                if self._stimulus is not None and result.row_id is not None:
+                if self._stimulus is not None and row_id is not None:
                     await self._store.enqueue_work(
                         conn, event_id=envelope.event_id,
                         kind="stimulus", ordinal=ordinal,
@@ -917,9 +974,10 @@ class WorkRunner:
                         account_key=work.account_key,
                         conversation_id=work.conversation_id,
                         payload={"message": message_to_dict(result_message),
-                                 "row_id": result.row_id,
-                                 "person_id": result.person.person_id
-                                 if result.person else None,
+                                 "row_id": row_id,
+                                 "person_id": person.person_id
+                                 if person else None,
+                                 "absorbed": absorbed, "unit": unit,
                                  **downstream})
                     ordinal += 1
                 # The queued receipt is BRIDGE-owned: the producer emits it
@@ -1009,15 +1067,43 @@ class WorkRunner:
     # ---- deferred kinds -----------------------------------------------------
 
     async def _run_participation(self, work: Any) -> None:
-        """A persisted participation candidate: note it on the trigger so the
-        quiescence window can close on durable traffic, not only in-memory."""
+        """A persisted participation candidate: the durable mark first, then
+        the in-memory note, so a kill between them replays as already-counted
+        rather than as a phantom second member."""
         if self._participation is None:
             await self._finish(work, "intentional_skip",
                                {"reason": "participation off"})
             return
-        self._participation.note_message(
-            message_from_dict(work.payload["note_message"]))
-        await self._finish(work, "done", {"noted": True})
+        mark = await self._store.mark_candidate(work.id, noted_ms=_now_ms())
+        if mark != "folded":
+            # A candidate a window already folded must not count again —
+            # membership in two windows is the double-turn the mark guards.
+            # ponytail: a close committing between this read and the count
+            # can still race one in; only during app-replacement overlap, and
+            # the harm is one extra gate evaluation, never a lost candidate.
+            self._participation.note_candidate(
+                work.id, message_from_dict(work.payload["note_message"]))
+        await self._finish(work, "done", {"noted": True, "mark": mark})
+
+    def _current_room(self, work: Any, absorbed: bool) -> tuple[Any, str | None]:
+        """The deferred-effect permission recheck: `(room, None)` when the
+        effect may still run, else `(None, reason)`. The message must have
+        been absorbed at admission AND the room must still be admitted,
+        absorbed and bound to the SAME unit under the allowlist as it stands
+        NOW — any stale or unknown answer refuses, never grants. A moved unit
+        is refused, not rerouted: the obligation's scope was pinned at
+        admission, and old content landing in a new unit is a disclosure,
+        not a delay."""
+        if not absorbed or self._allowlist is None:
+            return None, "room not absorbed"
+        room = self._allowlist.conversation(work.platform, work.conversation_id)
+        if room is None:
+            return None, "room not listed"
+        if not room.absorbed:
+            return None, "room not absorbed"
+        if room.unit != work.payload.get("unit"):
+            return None, "unit binding moved"
+        return room, None
 
     async def _run_memory_feed(self, work: Any) -> None:
         if self._memory_feed is None:
@@ -1027,6 +1113,45 @@ class WorkRunner:
         from nora.domain.models import PersonRef
         from nora.ingest.stages import memory_feed as memory_feed_stage
         wiring = self._memory_feed
+        person = PersonRef(**work.payload["person"])
+        # A committed start mark answers BEFORE permission does: once a POST
+        # may already have landed, the open question is the effect, not
+        # current policy — `feed` has no idempotency key, so the honest
+        # terminal is uncertain, never a blind repost or a clean skip.
+        if ((work.result or {}).get("effect", {}).get("feed", {})
+                .get("started_ms") is not None):
+            await self._finish(
+                work, "uncertain",
+                {"reason": "feed started before owner lost the work"})
+            return
+        # CURRENT permission, minutes after enqueue: the room must still be
+        # absorbed under the SAME unit binding, and the sender must still
+        # resolve to the same Honcho peer — a revoked mapping or a moved
+        # scope can never be fed under the stale snapshot.
+        room, refuse = self._current_room(
+            work, bool(work.payload.get("absorbed", True)))
+        if room is None:
+            await self._finish(work, "intentional_skip", {"reason": refuse})
+            return
+        current = (self._persons.resolve(
+            work.platform, work.payload["message"].get("sender_id", ""))
+                   if self._persons is not None else None)
+        if (current is None or current.person_id != person.person_id
+                or current.honcho_peer_id != person.honcho_peer_id):
+            await self._finish(work, "intentional_skip",
+                               {"reason": "sender unmapped or changed"})
+            return
+        started = False
+
+        async def _mark_started() -> None:
+            # The fenced pre-POST commit: generation-checked, so a stale
+            # claimant raises out of `_feed` before the request exists.
+            nonlocal started
+            if not await self._store.mark_effect_started(
+                    work.id, work.generation, kind="feed", at_ms=_now_ms()):
+                raise _LeaseLostError(work.id)
+            started = True
+
         # Durable completion, not fire-and-forget: collect the stage's
         # scheduled coroutines and AWAIT each before finishing the work —
         # a create_task here would let the obligation report done while the
@@ -1034,13 +1159,43 @@ class WorkRunner:
         pending: list[Any] = []
         await memory_feed_stage.run(
             message=message_from_dict(work.payload["message"]),
-            person=PersonRef(**work.payload["person"]),
+            person=person,
             memory=wiring["memory"], metrics=self._metrics,
-            spawn=lambda coro: pending.append(coro),
-            absorbed=wiring.get("absorbed", True))
-        for coro in pending:
-            await coro
-        await self._finish(work, "done", {})
+            spawn=lambda coro: pending.append(coro), absorbed=True,
+            on_effect_start=_mark_started)
+        if not pending:
+            # The stage declined on its own terms (self-authored, unmapped) —
+            # a legitimate non-effect, not a swallowed failure.
+            await self._finish(work, "intentional_skip",
+                               {"reason": "stage declined"})
+            return
+        try:
+            outcomes = [await coro for coro in pending]
+        except _LeaseLostError:
+            # The generation fence moved mid-attempt — the row's new owner
+            # resolves it; finishing here would write under a dead lease.
+            return
+        except Exception:  # noqa: BLE001 — the fault classifies on whether the POST boundary was crossed, not on its type
+            if started:
+                # The mark committed, then something raised — the POST may
+                # have landed. Retain, never replay.
+                await self._finish(work, "failed_retained",
+                                   {"reason": "feed started"})
+                return
+            # A raise before the POST boundary (ensure_peer, the mark
+            # itself) is pre-effect: retry while attempts remain.
+            state = ("failed_retained" if work.attempts >= 5
+                     else "retryable_failure")
+            await self._finish(work, state, {"reason": "feed raised"})
+            return
+        if all(o == "fed" for o in outcomes):
+            await self._finish(work, "done", {"fed": len(outcomes)})
+            return
+        # `feed` POSTs without an idempotent key: a False may mean the post
+        # landed and the response was lost. Blind replay could double-feed,
+        # so the honest terminal is retained-uncertain, not retry.
+        await self._finish(work, "failed_retained",
+                           {"reason": "feed unconfirmed"})
 
     async def _run_stimulus(self, work: Any) -> None:
         if self._stimulus is None:
@@ -1048,12 +1203,139 @@ class WorkRunner:
                                {"reason": "stimulus off"})
             return
         from nora.ingest.stages import stimulus as stimulus_stage
-        await stimulus_stage.run(
+        room, refuse = self._current_room(
+            work, bool(work.payload.get("absorbed", True)))
+        if room is None:
+            await self._finish(work, "intentional_skip", {"reason": refuse})
+            return
+        outcome, sid, reason = await stimulus_stage.run_typed(
             message=message_from_dict(work.payload["message"]),
             item="message", row_id=work.payload.get("row_id"),
             person_id=work.payload.get("person_id"),
-            wiring=self._stimulus, metrics=self._metrics)
-        await self._finish(work, "done", {})
+            wiring=self._stimulus, metrics=self._metrics,
+            recorded_at_ms=work.payload.get("enqueued_ms"),
+            dedupe=True)
+        if outcome == "written":
+            await self._finish(work, "done", {"stimulus_id": sid})
+        elif outcome == "skipped":
+            await self._finish(work, "intentional_skip", {"reason": reason})
+        else:
+            state = ("failed_retained" if work.attempts >= 5
+                     else "retryable_failure")
+            await self._finish(work, state, {"reason": reason or "failed"})
+
+    async def _run_participation_fire(self, work: Any) -> None:
+        """The claimed window turn: persisted admission first, then the same
+        slot/lock/cooldown/speak sequence the live trigger runs — owned by the
+        work's generation so a kill can never orphan it."""
+        from nora.app.fire import participation_occasion
+
+        if self._participation is None or self._fire_speak is None:
+            await self._finish(work, "failed_retained",
+                               {"reason": "fire collaborator missing"})
+            return
+        key = (work.platform, work.conversation_id)
+        owner = ActionOwner(kind="work", id=f"w-{work.id}",
+                            generation=work.generation)
+        prior = await self._store.owner_actions("work", f"w-{work.id}")
+        if any(a["state"] in ("started", "confirmed", "uncertain")
+               for a in prior):
+            if await self._finish(
+                    work, "uncertain",
+                    {"reason": "prior attempt started an action"}):
+                await self._ack(work)
+            return
+        persisted = (work.result or {}).get("admission")
+        if persisted is None:
+            # The gate runs ONCE and its verdict is committed before any
+            # effect: a kill between admission and speak resumes with the
+            # same answer, never a second model call.
+            admitted, score, verdict = await self._participation.admitted(
+                work.platform, work.conversation_id)
+            async with self._store._engine.begin() as conn:
+                await self._store.record_admission(
+                    conn, work.id, generation=work.generation,
+                    admission={"admitted": admitted, "score": score,
+                               "verdict": verdict})
+            persisted = {"admitted": admitted, "score": score,
+                         "verdict": verdict}
+        admitted = bool(persisted.get("admitted"))
+        score = persisted.get("score")
+        verdict = persisted.get("verdict")
+        if not admitted:
+            # NO-GO or the gate's fail-closed answer: the window was judged,
+            # the turn is legitimately not owed.
+            if await self._finish(work, "intentional_skip",
+                                  {"admission": "no_go"}):
+                await self._ack(work)
+            return
+        if await self._participation.shadow_verdict(
+                platform=work.platform, conversation_id=work.conversation_id,
+                score=score):
+            if await self._finish(work, "done", {"outcome": "shadowed"}):
+                await self._ack(work)
+            return
+        # A tag never waits: busy is an intentional skip (the window is
+        # spent), exactly the live trigger's semantics — not a repark.
+        if not self._slots.try_acquire(key):
+            await self._finish(work, "intentional_skip",
+                               {"reason": "speaking_slot_busy"})
+            return
+        if not await self._db_locks.try_acquire(key):
+            self._slots.release_and_dispatch(key)
+            await self._finish(work, "intentional_skip",
+                               {"reason": "speaking_lock_busy"})
+            return
+        try:
+            if not await self._db_locks.lock_alive(key):
+                raise RuntimeError("speaking lock lost before fire")
+            last_send = (
+                await self._participation_state.last_send_at(
+                    platform=work.platform, conversation_id=work.conversation_id)
+                if self._participation_state is not None else None)
+            now_s = _now_ms() / 1000.0
+            send_permitted = (
+                last_send is None
+                or now_s - last_send / 1000.0
+                >= self._participation.cooldown_seconds)
+            adapter = self._adapters.get(work.platform)
+            bound = (adapter.bind_owner(owner)
+                     if adapter is not None and hasattr(adapter, "bind_owner")
+                     else adapter)
+            outcome = await self._fire_speak(
+                participation_occasion(
+                    platform=work.platform, conversation_id=work.conversation_id,
+                    conversation_type=work.payload.get("conversation_type",
+                                                       "group"),
+                    relevance_score=score,
+                ),
+                send_permitted=send_permitted,
+                gate_verdict=verdict, gate_score=score,
+                adapter=bound)
+            if outcome == "sent":
+                # The send and the cooldown cursor retire together; the in-
+                # memory mirror follows the committed write.
+                async with self._store._engine.begin() as conn:
+                    await self._store.send_cursor_upsert(
+                        conn, platform=work.platform,
+                        conversation_id=work.conversation_id,
+                        at_ms=_now_ms())
+                    ok = await self._store.finish_work(
+                        conn, work.id, generation=work.generation,
+                        state="done", result=self._attempt_patch(
+                            work, "done", {"outcome": "sent"}))
+                if ok:
+                    self._participation.mark_sent(key)
+                    self._emit_terminal(work, "done")
+                    await self._ack(work)
+            else:
+                # Held, silent or failed: the room heard nothing, no cooldown
+                # is spent — the same reading the live trigger makes.
+                if await self._finish(work, "done", {"outcome": outcome}):
+                    await self._ack(work)
+        finally:
+            await self._db_locks.release(key)
+            self._slots.release_and_dispatch(key)
 
     async def _run_receipt(self, work: Any) -> None:
         """Legacy obligation rows only — the queued receipt is BRIDGE-owned

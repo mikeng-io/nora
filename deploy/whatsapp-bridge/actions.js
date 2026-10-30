@@ -277,7 +277,10 @@ export function createV1(deps) {
           }
           const out = await runAction({ store: deps.store, ctx: deps.ctx,
             actionId, owner: { kind: owner.kind, id: owner.id, generation: owner.generation ?? null },
-            op, request, metrics: deps.metrics, tracer: deps.tracer });
+            op, request, metrics: deps.metrics, tracer: deps.tracer,
+            // The caller's W3C context — a span link, never a parent, and
+            // absent/invalid headers simply carry no link.
+            traceLinks: req.headers?.['traceparent'] ? [String(req.headers['traceparent'])] : [] });
           return sendJson(res, out._status || 200, out);
         }
         case req.method === 'GET' && url.pathname.startsWith('/v1/actions/'): {

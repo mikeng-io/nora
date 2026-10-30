@@ -58,6 +58,7 @@ from nora.infra.sql.music_queue import SqlMusicQueueStore
 from nora.infra.sql.music_session import SqlMusicSessionStore
 from nora.infra.voice.http_controller import VoiceControllerClient
 from nora.infra.voice.hub import VoiceControllerHub
+from nora.obs.metrics import Metrics
 from nora.platform.bridge.journal import Journal
 from nora.platform.bridge.queue import StreamProducer
 from nora.platform.bridge.service import (
@@ -131,7 +132,10 @@ def _client() -> Any:
     intents.message_content = True
     intents.members = True          # privileged; the roster/member reads need it
     intents.presences = True        # privileged; member_presence needs it
-    return discord.Client(intents=intents)
+    # `socket_raw_receive` — the boundary where the Gateway dispatch
+    # sequence (`s`) is still attached; the bridge reads it for the
+    # clockless reaction identities Discord's parsed events drop.
+    return discord.Client(intents=intents, enable_debug_events=True)
 
 
 def _voice_graph(
@@ -192,6 +196,7 @@ async def main() -> None:
     voice_guild_ids = hub.guild_ids if hub is not None else frozenset()
 
     redis = aioredis.from_url(os.environ["NORA_REDIS_URL"])
+    metrics = Metrics()
     # The shared durable halves (nora.platform.bridge.service) — the same
     # collaborators Signal runs: the ONE journal→stream publisher (capture
     # never enqueues directly; the head blocks on a Redis failure and
@@ -201,14 +206,17 @@ async def main() -> None:
     # the REAL Discord REST path — SDK send/react/edit/typing semantics
     # stay behind `DiscordRestActionService`, never reimplemented.
     publisher = JournalPublisher(
-        journal=JOURNAL, producer=StreamProducer(redis, STREAM))
+        journal=JOURNAL, producer=StreamProducer(redis, STREAM),
+        metrics=metrics)
     bridge = DiscordBridge(
         api_token=TOKEN, account_key=ACCOUNT_KEY,
         client_factory=_client,
         bot_token=BOT_TOKEN,
         api_base=API_BASE,
-        capture=JournalCaptureSink(journal=JOURNAL, publisher=publisher),
+        capture=JournalCaptureSink(
+            journal=JOURNAL, publisher=publisher, metrics=metrics),
         publisher=publisher,
+        journal=JOURNAL,
         correlation_key=CORRELATION_KEY, key_version=KEY_VERSION,
         custody_dir=CUSTODY_DIR,
         projection=load_projection,
@@ -221,7 +229,8 @@ async def main() -> None:
         account_key=ACCOUNT_KEY,
         execute=DiscordRestActionService(bridge).run,
         receipt_intents=lambda: receipt_intent_ids(JOURNAL),
-        ops=frozenset({"send", "react", "edit", "typing"})))
+        ops=frozenset({"send", "react", "edit", "typing"}),
+        metrics=metrics))
 
     app = bridge.routes()
     runner = web.AppRunner(app)
@@ -239,9 +248,10 @@ async def main() -> None:
             await bridge.start()
         except asyncio.CancelledError:
             raise
-        except Exception:
-            log.exception(
-                "discord gateway listener failed; retrying in %.0fs", backoff)
+        except Exception as exc:  # noqa: BLE001 — supervisor boundary; logged by type
+            log.error(
+                "discord gateway listener failed (%s); retrying in %.0fs",
+                type(exc).__name__, backoff)
         else:
             log.warning("discord gateway listener returned; reconnecting")
             backoff = 1.0
@@ -254,7 +264,44 @@ async def main() -> None:
         backoff = min(backoff * 2, 60.0)
 
 
+def _bootstrap_obs(config_path: str) -> None:
+    """The same observability bootstrap `nora/__main__.py` runs — structured
+    JSON logging with the deployment's own redaction values, then tracing
+    when `[obs.tracing].enabled`. The bridge reads the SAME config.toml the
+    app does, so its lifecycle lines and spans land in the same pipeline.
+
+    Tracing is never load-bearing (`nora.obs.tracing.span`'s own rule): a
+    bad endpoint or an unreachable collector warns and the bridge still
+    captures."""
+    try:
+        cfg = config.load(Path(config_path), require_secrets=False)
+    except Exception:  # noqa: BLE001 — logging must still come up on a bad config
+        cfg = None
+    from nora.obs.logging import setup_logging
+
+    if cfg is not None:
+        setup_logging(level=cfg.obs.logging.level,
+                      format=cfg.obs.logging.format,
+                      secrets=cfg.redaction_values())
+    else:
+        setup_logging(level="INFO", format="json", secrets=[])
+    if cfg is None or not cfg.obs.tracing.enabled:
+        return
+    try:
+        from nora.agent.telemetry import setup_agent_tracing
+        from nora.obs.tracing import build_sampler
+
+        setup_agent_tracing(
+            sampler=build_sampler(), service_name="discord-bridge",
+            exporter=cfg.obs.tracing.exporter,
+            endpoint=cfg.obs.tracing.endpoint,
+            headers_env=cfg.obs.tracing.headers_env,
+            credentials=cfg.credentials)
+    except Exception as exc:  # noqa: BLE001 — tracing is never load-bearing
+        log.warning("tracing setup failed; continuing without tracing: %s",
+                    type(exc).__name__)
+
+
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    _bootstrap_obs(_parse_args().config)
     asyncio.run(main())

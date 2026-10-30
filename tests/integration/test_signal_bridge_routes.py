@@ -10,6 +10,7 @@ constructor collaborators — never monkeypatched production instances.
 
 import asyncio
 import contextlib
+import hashlib
 import importlib.util
 import json
 import sys
@@ -467,6 +468,58 @@ async def test_media_custody_roundtrips_through_the_app_source(bridge_app):
     assert got.available is True and got.data == b"payload-bytes"
     absent = await source.fetch(ref=MediaRef(platform_id="nope1"))
     assert absent.available is False and absent.reason == "absent"
+
+
+async def test_capture_binds_custody_handles_before_the_journal_handoff(
+        pg_url, redis_client, tmp_path):
+    """Finding 3 at the real boundary: an attachment event captured through
+    the REAL SSE daemon path lands in the journal with
+    `MediaRef.platform_id` already rebound to the custody hash key — and
+    the app-side `BridgeMediaSource`, built on the live /v1 server, fetches
+    the SAME bytes by that key. Nothing is preseeded: the only bytes under
+    the key are the ones `_custody` wrote during capture."""
+    from nora.domain.media import MediaRef
+    from nora.platform.bridge.client import BridgeEndpoint, BridgeMediaSource
+
+    payload = b"real-attachment-bytes"
+    daemon = FakeSignalDaemon(attachments={"upstream-att-1": payload})
+    daemon_client = TestClient(TestServer(daemon.app()))
+    await daemon_client.start_server()
+    daemon.url = str(daemon_client.make_url("")).rstrip("/")
+    _projection(tmp_path)
+    cfg = _cfg(tmp_path, signal_http=daemon.url,
+               redis_url=_redis_url(redis_client), database_url=pg_url)
+    # `supervise`'s own order — the custody dir exists before capture.
+    cfg.attach_dir.mkdir(parents=True, exist_ok=True)
+    bridge, publisher, client = await _spawn(cfg)
+    try:
+        event = {"envelope": {
+            "source": SENDER, "sourceNumber": SENDER, "timestamp": 7001,
+            "dataMessage": {
+                "message": "with-attachment", "timestamp": 7001,
+                "groupInfo": {"groupId": ROOM},
+                "attachments": [{"id": "upstream-att-1",
+                                 "contentType": "image/png",
+                                 "filename": "p.png"}]}}}
+        await _captured(bridge, daemon, [event])
+        rec = next(r for r in bridge.journal.recover() if "envelope" in r)
+        env = wrapper.Envelope.from_fields(rec["envelope"])
+        key = hashlib.sha256(payload).hexdigest()[:32]
+        # The serialized reference IS the custody handle — the app never
+        # sees the upstream id the daemon answered getAttachment with.
+        assert env.message["media"][0]["platform_id"] == key
+        assert env.attachments[0]["key"] == key
+        source = BridgeMediaSource("signal", BridgeEndpoint(
+            base_url=str(client.make_url("")).rstrip("/"),
+            token="test-token"))  # noqa: S106 — fixture secret
+        got = await source.fetch(ref=MediaRef(platform_id=key))
+        assert got.available is True and got.data == payload
+        # The upstream handle answers nothing — it was never a custody key.
+        stale = await source.fetch(ref=MediaRef(platform_id="upstream-att-1"))
+        assert stale.available is False
+    finally:
+        await _teardown(bridge, publisher, client)
+        await daemon_client.close()
 
 
 # ---- capture → journal → sole publisher --------------------------------------
@@ -1085,3 +1138,70 @@ def _envelope(sk: str, receipt: dict | None):
                  "sender_name": "Peer", "timestamp": 1000,
                  "body": "x", "raw": {}, "message_id": ""},
         attachments=(), trace={}, receipt=receipt, admission_rev=0)
+
+
+# ---- app-initiated action trace links (W3C, standard headers) -----------------
+
+
+async def test_action_post_links_the_deliver_span_to_the_caller(
+        bridge_app, exported_spans):
+    """The ENTIRE action path proves its lineage: `BridgeAdapter._post`
+    injects the ambient span's `traceparent`, the shared `/v1/actions`
+    boundary parses it into an OTel `Link`, and the bridge's `queue.deliver`
+    bounded ROOT carries it — a real authenticated POST, no fabricated
+    context (design 04 §delivery)."""
+    bridge, client, daemon = bridge_app
+    owner = await _work_owner(bridge, generation=3)
+
+    from opentelemetry import trace
+
+    from nora.platform.bridge.client import BridgeAdapter, BridgeEndpoint
+
+    adapter = BridgeAdapter(
+        "signal",
+        BridgeEndpoint(base_url=str(client.make_url("")).rstrip("/"),
+                       token="test-token"),  # noqa: S106 — fixture secret
+        owner=None)
+    tracer = trace.get_tracer("test.action.attempt")
+    with tracer.start_as_current_span("test.attempt") as attempt:
+        out = await adapter._post("/v1/actions", _send("a-link", owner))
+    await adapter.close()
+    assert out["state"] == "confirmed"
+    assert len(daemon.sent) == 1
+
+    attempt_ctx = attempt.get_span_context()
+    deliver = next(
+        s for s in exported_spans.get_finished_spans()
+        if s.name == "queue.deliver")
+    assert deliver.parent is None or not deliver.parent.is_valid
+    link = next(
+        (lnk for lnk in deliver.links
+         if lnk.context.trace_id == attempt_ctx.trace_id
+         and lnk.context.span_id == attempt_ctx.span_id), None)
+    assert link is not None
+
+
+async def test_an_invalid_or_absent_action_context_never_blocks(
+        bridge_app, exported_spans):
+    """A garbage or missing `traceparent` is parsed to NOTHING — the action
+    still executes and the deliver span carries no fabricated link."""
+    bridge, client, daemon = bridge_app
+    owner = await _work_owner(bridge, generation=3)
+
+    for i, tp in enumerate(
+            ["not-a-traceparent",
+             "00-00000000000000000000000000000000-0000000000000000-01"]):
+        r = await client.post(
+            "/v1/actions", json=_send(f"bad-{i}", owner),
+            headers={**AUTH, "traceparent": tp})
+        assert (await r.json())["state"] == "confirmed", tp
+    # And a request with no headers at all still executes.
+    r = await client.post("/v1/actions", json=_send("none", owner),
+                          headers=AUTH)
+    assert (await r.json())["state"] == "confirmed"
+    assert len(daemon.sent) == 3
+
+    delivers = [s for s in exported_spans.get_finished_spans()
+                if s.name == "queue.deliver"]
+    assert len(delivers) == 3
+    assert all(not s.links for s in delivers)

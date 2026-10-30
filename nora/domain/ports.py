@@ -939,6 +939,14 @@ class StimulusStore(Protocol):
         often it finds it, without counting any of them twice."""
         ...
 
+    async def existing_id(self, *, unit: str, kind: str, ref: str) -> int | None:
+        """The id of a stimulus already on record for `(unit, kind, ref)`, or
+        None. `kind='message'` stimuli carry no unique index, so a durable
+        caller whose append attempt may already have committed uses this to
+        prove whether the effect exists instead of blind-retrying a second
+        row in."""
+        ...
+
     async def view(
         self, *, unit: str, mode: str, now_ms: int, limit: int,
         stale_before_ms: int | None = None,

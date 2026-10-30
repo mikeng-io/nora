@@ -168,6 +168,16 @@ class IngestResult:
     # (stimulus/memory_feed run as durable work instead of inline awaits).
     row_id: int | None = None
     person: PersonRef | None = None
+    # The admission-time absorption fact (Conversation.absorbed as the canonical
+    # allowlist read it at ingest). A durable caller defers memory/stimulus by
+    # minutes; the fact must travel with the message so a later recheck can
+    # tell a room that was never absorbed from one whose policy moved.
+    absorbed: bool = True
+    # The room's unit at admission (`Conversation.unit`). Absorption is not
+    # the only fact a config replacement can move: if the room's unit binding
+    # changed while the obligation waited, the deferred write must refuse —
+    # routing old content into a new unit is a disclosure, not a delay.
+    unit: str | None = None
 
 
 class IngestPipeline:
@@ -397,10 +407,21 @@ class IngestPipeline:
             message = await quote_target_stage.run(
                 message=message, audit=self._audit, metrics=m,
             )
+        decision: EngageDecision | None = None
+        if durable:
+            # Under `durable` the gate runs BEFORE the audit: the caller's
+            # `tx_hook` writes its handoff snapshot inside the row's own
+            # commit, and the snapshot must carry the admission decision —
+            # otherwise a crash between audit and handoff could only resume by
+            # re-deciding (a second model admission). The gate is a pure
+            # function of the message and policy — nothing it reads exists
+            # only after the row — so the order is interchangeable here.
+            decision = await self._decide(message=message, person=person, m=m)
         with span("ingest.audit"):
             row_id = await audit_stage.run(
                 message=message, audit=self._audit, metrics=m, person=person,
-                tx_hook=tx_hook,
+                tx_hook=tx_hook, absorbed=absorbed, decision=decision,
+                unit=room.unit if room is not None else None,
             )
         if row_id is None:
             _outcome(m, message, "audit_refused")
@@ -427,6 +448,18 @@ class IngestPipeline:
                     metrics=m, spawn=self._spawn, absorbed=absorbed,
                 )
 
+            decision = await self._decide(message=message, person=person, m=m)
+        if decision is None:
+            raise AssertionError("gate did not run before the outcome")
+        return IngestResult(message=message, decision=decision,
+                            outcome="engaged" if decision.engage else "recorded",
+                            row_id=row_id, person=person, absorbed=absorbed,
+                            unit=room.unit if room is not None else None)
+
+    async def _decide(self, *, message: NormalizedMessage,
+                      person: PersonRef | None, m: Any) -> EngageDecision:
+        """The gate plus the SENDER gate — one decision, called once per run
+        whether it sits before the audit (durable) or after it (inline)."""
         with span("ingest.gate"):
             decision = await gate_stage.run(
                 message=message, policy=self._policy, metrics=m
@@ -464,10 +497,7 @@ class IngestPipeline:
             # The ambient majority ends `recorded`, so a message that passed
             # cleanly still says how it ended.
             _outcome(m, message, "engaged" if decision.engage else "recorded")
-
-        return IngestResult(message=message, decision=decision,
-                            outcome="engaged" if decision.engage else "recorded",
-                            row_id=row_id, person=person)
+        return decision
 
     async def _run_edit(
         self, *, message: NormalizedMessage, original: EditedMessage,

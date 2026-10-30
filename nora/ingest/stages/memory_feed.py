@@ -39,16 +39,21 @@ async def run(
     person: PersonRef | None,
     memory: MemoryStore,
     metrics: Any,
-    spawn: Callable[[Coroutine[Any, Any, None]], None],
+    spawn: Callable[[Coroutine[Any, Any, Any]], None],
     edited: EditedMessage | None = None,
     absorbed: bool = True,
+    on_effect_start: Callable[[], Any] | None = None,
 ) -> None:
     """Schedule the feed; never await it here. `person is None` means the
     sender is unmapped (D6) — the message is never fed to the semantic store.
 
     `edited` is the message `message` edits, when it is an edit: the text is
     then framed as a correction and the metadata points at the original's
-    `ts`."""
+    `ts`.
+
+    The scheduled coroutine returns a typed outcome (`_FEED_*`) so a durable
+    caller awaiting it can tell a landed feed from an uncertain POST; a
+    listener spawn drops the value exactly as it dropped None."""
     if person is None:
         return
     if not absorbed:
@@ -65,15 +70,22 @@ async def run(
         metadata["edit_of_ts"] = edited.ts
     spawn(_feed(
         memory=memory, peer_id=person.honcho_peer_id, text=text,
-        conversation_id=message.conversation_id, metadata=metadata, metrics=metrics,
+        conversation_id=message.conversation_id, metadata=metadata,
+        metrics=metrics, on_effect_start=on_effect_start,
     ))
 
 
 async def _feed(
     *, memory: MemoryStore, peer_id: str, text: str, conversation_id: str,
     metadata: dict[str, object], metrics: Any,
-) -> None:
+    on_effect_start: Callable[[], Any] | None = None,
+) -> str:
     await memory.ensure_peer(peer_id=peer_id, conversation_id=conversation_id)
+    # `ensure_peer` is idempotent — the durable caller's effect-start commit
+    # sits between it and the one call Honcho cannot dedupe: `feed` itself.
+    # Everything before the hook is safe to retry; nothing after it is.
+    if on_effect_start is not None:
+        await on_effect_start()
     # Fed under the SPEAKER'S peer into the CONVERSATION's session (Honcho v2).
     # `ts` rides as metadata so the deriver has structure.
     ok = await memory.feed(
@@ -81,3 +93,6 @@ async def _feed(
         metadata=metadata,
     )
     metrics.inc("honcho_feed_success" if ok else "honcho_feed_failure")
+    # `feed` POSTs; a False may mean the post landed and the response was
+    # lost — an UNCONFIRMED effect a durable caller must not blindly replay.
+    return "fed" if ok else "feed_unconfirmed"

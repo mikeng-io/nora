@@ -106,6 +106,18 @@ services:
       - DATABASE_URL=postgresql+asyncpg://nora:${POSTGRES_PASSWORD:?}@db:5432/nora
       - NORA_BRIDGE_ATTACH_DIR=/data/bridge/attachments
       - NORA_BRIDGE_PORT=18090
+      # Tracing — the wrapper's env contract (deploy/signal-bridge/wrapper.py
+      # `_setup_tracing`): the bridge has no config.toml, so the same knobs
+      # the app's [obs.tracing] exposes ride the process env. Every value
+      # optional: unset exports nothing rather than refusing to boot.
+      # ENDPOINT is the same collector the app's [obs.tracing] writes to;
+      # HEADERS_ENV NAMES the env var carrying OTLP auth headers — the
+      # secret itself stays in .env, never in compose (DEC-8).
+      - NORA_TRACING_ENABLED=${NORA_TRACING_ENABLED:-}
+      - NORA_TRACING_ENDPOINT=${NORA_TRACING_ENDPOINT:-}
+      - NORA_TRACING_EXPORTER=${NORA_TRACING_EXPORTER:-otlp_http}
+      - NORA_TRACING_HEADERS_ENV=${NORA_TRACING_HEADERS_ENV:-}
+      - LANGFUSE_OTLP_HEADERS=${LANGFUSE_OTLP_HEADERS:-}
     healthcheck:
       # /v1/health reports gateway-side readiness; the app's depends_on waits on it.
       test: ["CMD-SHELL", "printf 'Authorization: Bearer %s\\n' \"$$NORA_BRIDGE_API_TOKEN\" | curl -fsS -m 5 -H @- http://127.0.0.1:18090/v1/health || exit 1"]
@@ -220,6 +232,11 @@ services:
       - NORA_BRIDGE_JOURNAL=/data/bridge/journal/whatsapp.jsonl
       - NORA_BRIDGE_PROJECTION_DIR=/bridge-projection
       - DATABASE_URL=postgresql+asyncpg://nora:${POSTGRES_PASSWORD:?}@db:5432/nora
+      # Tracing (deploy/whatsapp-bridge/tracing.js `otlpEndpoint`): the same
+      # collector the app's [obs.tracing] writes to. Unset traces nothing —
+      # initTracing returns the null surface and capture never notices.
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-}
+      - OTEL_SERVICE_NAME=whatsapp-bridge
     depends_on: [redis]
     command: ["node", "bridge.js", "--port", "18081", "--session", "/app/session"]
     healthcheck:

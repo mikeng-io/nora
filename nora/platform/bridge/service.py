@@ -40,6 +40,7 @@ from typing import Any, Protocol
 
 from nora.domain.actions import ActionOwner
 from nora.infra.sql.bridge_store import SqlBridgeStore
+from nora.platform.bridge import telemetry as bt
 from nora.platform.bridge.actions import stored_request, validate_owner
 from nora.platform.bridge.envelope import Envelope, canonical_digest
 from nora.platform.bridge.journal import Journal
@@ -50,6 +51,51 @@ log = logging.getLogger("nora.bridge.service")
 #: Blocked-head and parked-receipt cadence — short enough that a recovered
 #: outage drains promptly, long enough not to spin (Signal's REPLAY_RETRY).
 REPLAY_RETRY_SECONDS = 2.0
+
+
+def resolve_clockless_transition(
+    journal: Journal, key: str, state: str,
+) -> tuple[str | None, None]:
+    """The ledger answer for a clockless observation that carries NO upstream
+    revision — frame lost, buffer overflow, or a delayed callback after a
+    restart (design 02 §wire semantics: "a reconnect replay without a source
+    revision that can distinguish an old transition from a new one is
+    ambiguous, retained for diagnosis without fabricating a new
+    transition").
+
+    - a repeated SAME-state observation resolves to the identity the
+      recorded transition committed under — the identical redelivery
+      dedupes downstream against the event it replays;
+    - a differing or unrecorded state resolves `(None, None)` — ambiguous:
+      nothing here can tell a new transition from a replayed old one, so
+      the caller retains the event without publishing.
+
+    A ledger that cannot be read raises `JournalError` out of
+    `journal.transitions()` — never a guessed sequence.
+    """
+    last = journal.transitions().get(key)
+    if last is not None and last[0] == state and last[1] > 0:
+        upstream = last[2] if last[2] else f"l:{key}:{state}:{last[1]}"
+        return upstream, None
+    return None, None
+
+
+def commit_transition(
+    journal: Journal, key: str, state: str, upstream: str,
+) -> dict[str, Any]:
+    """The ledger step for a transition whose upstream revision IS proven
+    (`g:{session}:{s}` from the dispatch frame). The record rides ON the
+    event's journal line: the ledger advance and the event commit in one
+    fsync, and the committed `upstream` is what a later frameless
+    same-state redelivery resolves to. Sequence semantics are unchanged —
+    same-state replays the recorded seq, a state change increments it —
+    so `add/remove/add` stays three distinct events and the seq remains a
+    stable fingerprint of the state path, never a fabricated identity.
+    """
+    last = journal.transitions().get(key)
+    last_state, last_seq = (last[0], last[1]) if last is not None else ("", 0)
+    seq = last_seq if last_state == state and last_seq > 0 else last_seq + 1
+    return {"key": key, "state": state, "seq": seq, "upstream": upstream}
 
 
 class ActionReply:
@@ -215,12 +261,14 @@ class JournalPublisher:
         on_enqueued: Callable[[Envelope, str], Awaitable[None]] | None = None,
         retry_pending: Callable[[], Awaitable[None]] | None = None,
         has_pending: Callable[[], bool] = lambda: False,
+        metrics: Any | None = None,
     ) -> None:
         self._journal = journal
         self._producer = producer
         self._on_enqueued = on_enqueued
         self._retry_pending = retry_pending
         self._has_pending = has_pending
+        self._metrics = metrics
         self._offset = 0
         self._stop = asyncio.Event()
         self._dirty = asyncio.Event()
@@ -251,7 +299,22 @@ class JournalPublisher:
                     continue
                 env = Envelope.from_fields(rec["envelope"])
                 try:
-                    _sid, canonical_id = await self._producer.enqueue(env)
+                    # A journaled envelope's publication is a NEW bounded
+                    # root — never ambient — LINKED to the producer context
+                    # the envelope froze at capture (design 04 §producer).
+                    with bt.producer_span(
+                        env.platform,
+                        links=bt.carrier_links(env.trace),
+                        event_id=env.event_id, kind=env.kind,
+                        queued_ms=env.queued_ms,
+                    ):
+                        _sid, canonical_id = await self._producer.enqueue(env)
+                    bt.lifecycle(
+                        self._metrics,
+                        "enqueued" if canonical_id == env.event_id
+                        else "duplicate_suppressed",
+                        platform=env.platform, event_id=env.event_id,
+                        stream_id=_sid, queued_ms=env.queued_ms)
                 except Exception:  # noqa: BLE001 — any enqueue failure stops the head
                     blocked = True
                     break
@@ -288,10 +351,12 @@ class JournalCaptureSink:
     def __init__(
         self, *, journal: Journal, publisher: JournalPublisher,
         intent_for: Callable[[Envelope], dict[str, str] | None] | None = None,
+        metrics: Any | None = None,
     ) -> None:
         self._journal = journal
         self._publisher = publisher
         self._intent_for = intent_for
+        self._metrics = metrics
 
     def preflight(self) -> None:
         """Prove append+fsync works BEFORE upstream starts receiving —
@@ -299,14 +364,32 @@ class JournalCaptureSink:
         rather than capturing events it cannot spool."""
         self._journal.probe()
 
-    async def capture(self, envelope: Envelope) -> bool:
+    async def capture(self, envelope: Envelope, *,
+                      transition: dict[str, Any] | None = None) -> bool:
         if self._intent_for is not None:
             # Envelope is frozen — the frozen intent rides a replacement.
             envelope = replace(
                 envelope, receipt=self._intent_for(envelope))
-        self._journal.append({"envelope": envelope.to_fields()})
+        record = {"envelope": envelope.to_fields()}
+        # The clockless-transition ledger step commits ON the event's own
+        # record — one append+fsync, never a separate row.
+        if transition is not None:
+            record["transition"] = transition
+        self._journal.append(record)
+        bt.lifecycle(self._metrics, "captured", platform=envelope.platform,
+                     event_id=envelope.event_id, kind=envelope.kind,
+                     queued_ms=envelope.queued_ms)
         self._publisher.wake()
         return True
+
+    def note_ambiguous(self, record: dict[str, Any]) -> None:
+        """A clockless event whose identity could NOT be established is
+        retained as diagnostic evidence in the same journal — never
+        guessed an identity, never silently dropped (design 00: "the bridge
+        either identifies it durably or retains it as ambiguous evidence").
+        """
+        self._journal.append({"ambiguous": record})
+        log.warning("bridge capture retained an ambiguous event")
 
 
 class DurableActionService:
@@ -325,6 +408,7 @@ class DurableActionService:
         execute: _Executor,
         receipt_intents: Callable[[], frozenset[str]],
         ops: frozenset[str] | None = None,
+        metrics: Any | None = None,
     ) -> None:
         self._store = store
         self._platform = platform
@@ -332,10 +416,16 @@ class DurableActionService:
         self._execute = execute
         self._receipt_intents = receipt_intents
         self._ops = ops
+        self._metrics = metrics
 
     # ---- HTTP path ---------------------------------------------------------
 
-    async def run(self, action: Mapping[str, Any]) -> ActionReply:
+    async def run(self, action: Mapping[str, Any], *,
+                  links: list[Any] | None = None) -> ActionReply:
+        """`links` are the OTel `Link`s the deliver span holds to the
+        caller's lineage — the W3C `traceparent`/`tracestate` headers the
+        action POST carried, parsed through `bt.carrier_links`. Absent or
+        invalid context means no link, never a fabricated one."""
         aid = str(action.get("action_id") or "")
         op = str(action.get("op") or "")
         r = action.get("request")
@@ -373,8 +463,8 @@ class DurableActionService:
                     owner_generation=owner.generation, op=op, request=r,
                     message_id=verdict_owner.message_id,
                     request_stored=stored_request(owner, r))
-        except Exception:
-            log.exception("action store unavailable")
+        except Exception as exc:  # noqa: BLE001 — boundary catch; logged by type, outcome stays honest
+            log.error("action store unavailable: %s", type(exc).__name__)
             return ActionReply(
                 "unavailable", kind="store", message="db unreachable")
         if verdict == "replay":
@@ -384,12 +474,21 @@ class DurableActionService:
         if verdict == "conflict":
             return ActionReply(
                 "conflict", kind="id_reused", message="action id spent")
-        reply = await self._execute(action)
-        final = await self._terminal(
-            aid, reply.state, platform_ref=reply.platform_ref,
-            platform_ms=reply.platform_ms,
-            error=({"kind": reply.kind, "message": reply.message}
-                   if reply.kind else None))
+        # The outbound effect is its own bounded root — never a child of an
+        # ambient span (design 04 §delivery): it links to the producer
+        # context only when the caller carries one (the receipt lane).
+        bt.lifecycle(self._metrics, "delivery_started",
+                     platform=self._platform, action_id=aid)
+        with bt.operation_span("deliver", platform=self._platform,
+                               links=list(links or []),
+                               action_id=aid):
+            reply = await self._execute(action)
+            final = await self._terminal(
+                aid, reply.state, platform_ref=reply.platform_ref,
+                platform_ms=reply.platform_ms,
+                error=({"kind": reply.kind, "message": reply.message}
+                       if reply.kind else None))
+        self._delivery_outcome(aid, op, final)
         if final is None:
             # The effect ran but the outcome was NOT persisted — report the
             # retained ambiguity, never a terminal the ledger doesn't hold.
@@ -415,13 +514,19 @@ class DurableActionService:
     async def run_owned(
         self, *, action_id: str, owner: ActionOwner, op: str,
         request: dict[str, Any],
+        links: list[Any] | None = None,
     ) -> str:
         """Reserve → execute → terminal for a bridge-initiated action whose
         authority is the bridge's own durable evidence (a journaled receipt
         intent), not an HTTP body — the client-facing gate stays closed to
         internal owners minted here. Returns the persisted phase:
         `confirmed`/`uncertain`/`rejected`/`conflict`/`unavailable` — the
-        last means the ledger was unreachable and the caller must retry."""
+        last means the ledger was unreachable and the caller must retry.
+
+        `links` are the OTel `Link`s this bounded root holds to the
+        producer lineage (the envelope's frozen trace via
+        `bt.carrier_links`) — the bridge passes the carrier's links, never
+        an ambient parent."""
         try:
             async with self._store._engine.begin() as conn:
                 verdict, prior = await self._store.reserve_action(
@@ -430,19 +535,26 @@ class DurableActionService:
                     owner_kind=owner.kind, owner_id=owner.id,
                     owner_generation=owner.generation, op=op,
                     request=request)
-        except Exception:
-            log.exception("action store unavailable for %s", action_id)
+        except Exception as exc:  # noqa: BLE001 — boundary catch; logged by type
+            log.error("action store unavailable for %s: %s",
+                      action_id, type(exc).__name__)
             return "unavailable"
         if verdict == "execute":
-            reply = await self._execute({
-                "action_id": action_id, "op": op, "request": request,
-                "owner": {"kind": owner.kind, "id": owner.id,
-                          "generation": owner.generation}})
-            final = await self._terminal(
-                action_id, reply.state, platform_ref=reply.platform_ref,
-                platform_ms=reply.platform_ms,
-                error=({"kind": reply.kind, "message": reply.message}
-                       if reply.kind else None))
+            bt.lifecycle(self._metrics, "delivery_started",
+                         platform=self._platform, action_id=action_id)
+            with bt.operation_span(
+                    "deliver", platform=self._platform, links=links,
+                    action_id=action_id):
+                reply = await self._execute({
+                    "action_id": action_id, "op": op, "request": request,
+                    "owner": {"kind": owner.kind, "id": owner.id,
+                              "generation": owner.generation}})
+                final = await self._terminal(
+                    action_id, reply.state, platform_ref=reply.platform_ref,
+                    platform_ms=reply.platform_ms,
+                    error=({"kind": reply.kind, "message": reply.message}
+                           if reply.kind else None))
+            self._delivery_outcome(action_id, op, final)
             return final or "unavailable"
         if verdict == "replay" and prior is not None:
             if prior["state"] == "started":
@@ -455,6 +567,27 @@ class DurableActionService:
                 return final or "unavailable"
             return str(prior["state"])
         return verdict  # 'conflict' | 'unavailable'
+
+    def _delivery_outcome(
+            self, action_id: str, op: str, final: str | None) -> None:
+        """The closed vocabulary of persisted outcomes — logged and counted
+        at the durable result boundary, never before it lands."""
+        if final == "confirmed":
+            bt.lifecycle(self._metrics, "delivery_confirmed",
+                         platform=self._platform, action_id=action_id)
+        elif final != "rejected":
+            # `None` (terminal write failed) and `uncertain` BOTH mean the
+            # outcome is not provably delivered — the same WARNING event.
+            # A persisted `rejected` IS provable: the counter carries it.
+            bt.lifecycle(self._metrics, "delivery_uncertain",
+                         platform=self._platform, action_id=action_id,
+                         reason=final or "terminal_write_failed")
+        # `unavailable`/`conflict` persisted terminals and a failed write
+        # all mean "not provably delivered" — the counter's vocabulary is
+        # the narrower one, so they land on `uncertain`, never a raise.
+        bt.action_metrics(
+            self._metrics, platform=self._platform, op=op,
+            outcome=final if final in bt.ACTION_OUTCOMES else "uncertain")
 
     # ---- shared terminal CAS -------------------------------------------------
 
@@ -472,8 +605,9 @@ class DurableActionService:
                 return await self._store.action_state(
                     conn, action_id, state, platform_ref=platform_ref,
                     platform_ms=platform_ms, error=error)
-        except Exception:
-            log.exception("terminal write failed for %s", action_id)
+        except Exception as exc:  # noqa: BLE001 — boundary catch; logged by type
+            log.error("terminal write failed for %s: %s",
+                      action_id, type(exc).__name__)
             return None
 
 

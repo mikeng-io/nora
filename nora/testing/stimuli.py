@@ -101,6 +101,14 @@ class InMemoryStimulusStore:
         self.stimuli.append(row)
         return row.id
 
+    async def existing_id(self, *, unit: str, kind: str, ref: str) -> int | None:
+        self._check("existing_id")
+        return next(
+            (s.id for s in self.stimuli
+             if s.unit == unit and s.kind == kind and s.ref == ref),
+            None,
+        )
+
     def _state(self, wake: WakeRow, stale_before_ms: int | None) -> Any:
         row = self.outcomes.get(wake.id)
         return wake_state(

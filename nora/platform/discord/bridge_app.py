@@ -65,11 +65,13 @@ from nora.domain.ports import (
 )
 from nora.infra.voice.http_controller import VoiceControllerError
 from nora.infra.voice.hub import VoiceControllerHub
+from nora.platform.bridge import telemetry as bt
 from nora.platform.bridge.envelope import (
     Envelope,
     canonical_source_key,
     event_id,
 )
+from nora.platform.bridge.journal import Journal
 from nora.platform.bridge.rehydrate import message_to_dict
 from nora.platform.bridge.service import (
     ActionReply,
@@ -77,6 +79,8 @@ from nora.platform.bridge.service import (
     _reply_from_row,
     action_http_status,
     action_response,
+    commit_transition,
+    resolve_clockless_transition,
 )
 
 from . import music_messages as m
@@ -112,6 +116,39 @@ MAX_SPEECH_BYTES = 24 * 1024 * 1024
 # Inbound attachment custody: anything bigger than the capture pipeline would
 # accept anyway is not journaled bytes here.
 MAX_ATTACHMENT_BYTES = 32 * 1024 * 1024
+
+#: Cap on the wire-provenance fingerprint table — beyond it the buffer is
+#: cleared wholesale (provenance falls to the durable ledger) rather than
+#: grown without bound.
+_MAX_FRAME_FINGERPRINTS = 4096
+
+
+def _emoji_key(e: Any) -> str:
+    """A raw `d["emoji"]` dict OR a parsed `PartialEmoji` → the same key:
+    `name:id` for a custom emoji, `name` for a unicode one — the shape
+    `str(PartialEmoji)` produces on both sides."""
+    if e is None:
+        return ""
+    if isinstance(e, Mapping):
+        name, eid = str(e.get("name") or ""), e.get("id")
+    else:
+        name, eid = str(getattr(e, "name", "") or ""), getattr(e, "id", None)
+    return f"{name}:{eid}" if eid else name
+
+
+def _reaction_frame_key(t: str, d: Mapping[str, Any]) -> tuple[str, ...] | None:
+    """The FIFO join key between a raw Gateway frame and the parsed
+    `RawReactionActionEvent` it dispatched — exactly the fields that make
+    two reaction dispatches differ."""
+    channel_id = str(d.get("channel_id") or "")
+    message_id = str(d.get("message_id") or "")
+    user_id = str(d.get("user_id") or "")
+    emoji = _emoji_key(d.get("emoji"))
+    if not (channel_id and message_id and user_id and emoji):
+        return None
+    rtype = d.get("type")
+    return (t, channel_id, message_id, user_id, emoji,
+            str(rtype if rtype is not None else 0))
 
 
 def disabled_projection() -> dict[str, Any]:
@@ -168,7 +205,10 @@ class CaptureSink(Protocol):
 
     def preflight(self) -> None: ...
 
-    async def capture(self, envelope: Envelope) -> bool: ...
+    async def capture(self, envelope: Envelope, *,
+                      transition: dict[str, Any] | None = None) -> bool: ...
+
+    def note_ambiguous(self, record: dict[str, Any]) -> None: ...
 
 
 class _ClientHolder:
@@ -209,6 +249,7 @@ class DiscordBridge:
         actions: ActionService | None = None,
         capture: CaptureSink | None = None,
         publisher: JournalPublisher | None = None,
+        journal: Journal | None = None,
     ) -> None:
         if client is None and client_factory is None:
             raise ValueError("a client or a client_factory is required")
@@ -246,7 +287,16 @@ class DiscordBridge:
         self._actions = actions
         self._capture_sink = capture
         self._publisher = publisher
+        # The durable transition ledger — read through the Journal's own
+        # records, never a second store. `None` means clockless upstream
+        # events (reactions) cannot establish durable identity here and
+        # are retained `ambiguous` rather than given a guessed one.
+        self._journal = journal
         self._publisher_task: asyncio.Task | None = None
+        # Gateway wire provenance for clockless dispatches: fingerprint →
+        # FIFO of `(session_id, s)` captured by `_record_wire_frame`.
+        # Bounded — a provenance buffer that grows without bound is a leak.
+        self._frames: dict[tuple[str, ...], Any] = {}
         # Outbound sends/reacts go through the SAME REST implementations the
         # adapter used — mention resolution, allowed_mentions, rate-limit and
         # thread semantics are theirs, not reimplemented here.
@@ -256,7 +306,11 @@ class DiscordBridge:
         self.self_id = ""
         self.connected_at_ms = 0
         self._listener: DiscordListener | None = None
-        self._channel_locks: dict[str, asyncio.Lock] = {}
+        # ONE sequencer for the whole account: a frame's provenance join and
+        # the transition ledger step must be ordered across channels AND any
+        # custody await — a per-channel lock would let two callbacks observe
+        # the same ledger state concurrently.
+        self._capture_lock = asyncio.Lock()
 
         # The read surfaces — the SAME implementations the app used, driven
         # off this bridge's client getter (see _ClientHolder).
@@ -284,6 +338,7 @@ class DiscordBridge:
         self, *, actions: ActionService | None = None,
         capture: CaptureSink | None = None,
         publisher: JournalPublisher | None = None,
+        journal: Journal | None = None,
     ) -> None:
         """Post-construction collaborator wiring — the action service's
         executor needs the BUILT bridge (its `current_client` getter,
@@ -294,6 +349,8 @@ class DiscordBridge:
             self._capture_sink = capture
         if publisher is not None:
             self._publisher = publisher
+        if journal is not None:
+            self._journal = journal
 
     # ---- admission: room + requester, read off the CURRENT projection --------
 
@@ -419,6 +476,15 @@ class DiscordBridge:
                 raise RuntimeError("client is closed and cannot be restarted")
             client = self._client_factory()
             self._client = client
+        # The wire-provenance hook — dispatches BEFORE the parsed handlers,
+        # where `s` (the Gateway dispatch sequence) is still attached. It
+        # fires only on a client built `enable_debug_events=True`
+        # (`entry.py`); without it the frame buffer stays empty and
+        # clockless events resolve through the durable transition ledger.
+        async def on_socket_raw_receive(payload: Any) -> None:
+            await self._record_wire_frame(payload)
+
+        client.event(on_socket_raw_receive)
         self._listener = DiscordListener(
             client, token or self._bot_token,
             on_ready_extra=self.on_gateway_ready,
@@ -440,6 +506,10 @@ class DiscordBridge:
         if user is not None:
             self.self_id = str(user.id)
         self.connected_at_ms = int(time.time() * 1000)
+        # A READY is a NEW session: dispatch `s` resets and any frames a
+        # previous session queued name sequence numbers that mean nothing
+        # now — provenance must reset with the session it describes.
+        self._frames.clear()
         log.info("discord gateway connected as %s", self.self_id)
         if self._manager is not None and client is not None:
             await register_music_commands(
@@ -467,7 +537,7 @@ class DiscordBridge:
             return
         exc = task.exception()
         if exc is not None:
-            log.error("journal publisher died: %r", exc)
+            log.error("journal publisher died: %s", type(exc).__name__)
 
     async def close(self) -> None:
         client = self._client
@@ -485,21 +555,18 @@ class DiscordBridge:
 
     # ---- inbound capture (durable queue — core worker's wire, unchanged) ----
 
-    def _lock_for(self, key: str) -> asyncio.Lock:
-        return self._channel_locks.setdefault(key, asyncio.Lock())
-
     async def _capture_message(self, raw: Any) -> None:
         msg = parse_discord_message(raw, own_id=self.self_id)
         if msg is None:
             return
-        async with self._lock_for(str(getattr(raw.channel, "id", ""))):
+        async with self._capture_lock:
             await self._journal_and_enqueue(msg, raw)
 
     async def _capture_edit(self, raw_message: Any) -> None:
         msg = parse_discord_edit(raw_message, own_id=self.self_id)
         if msg is None:
             return
-        async with self._lock_for(str(getattr(raw_message.channel, "id", ""))):
+        async with self._capture_lock:
             await self._journal_and_enqueue(msg, raw_message)
 
     async def _capture_touch(self, kind: str, payload: Any) -> None:
@@ -516,8 +583,142 @@ class DiscordBridge:
             return
         if msg is None:
             return
-        async with self._lock_for(channel_id):
+        async with self._capture_lock:
             await self._journal_and_enqueue(msg, payload)
+
+    # ---- Gateway wire provenance (`on_socket_raw_receive`) -------------------
+
+    async def _record_wire_frame(self, payload: Any) -> None:
+        """The raw Gateway dispatch BEFORE the parsed handlers, where `s`
+        (the per-session dispatch sequence) is still attached. Only the
+        clockless reaction dispatches need it — the fingerprint joins each
+        parsed `RawReactionActionEvent` to the frame that produced it, FIFO."""
+        if isinstance(payload, (str, bytes)):
+            try:
+                payload = json.loads(payload)
+            except (ValueError, TypeError):
+                return
+        if not isinstance(payload, Mapping):
+            return
+        t = payload.get("t")
+        if t not in ("MESSAGE_REACTION_ADD", "MESSAGE_REACTION_REMOVE"):
+            return
+        d = payload.get("d")
+        s = payload.get("s")
+        ws = getattr(self._client, "ws", None)
+        session = str(getattr(ws, "session_id", "") or "") if ws is not None else ""
+        if not isinstance(d, Mapping) or not isinstance(s, int) or not session:
+            return
+        fp = _reaction_frame_key(t, d)
+        if fp is None:
+            return
+        if len(self._frames) >= _MAX_FRAME_FINGERPRINTS:
+            # Losing provenance under a storm is honest — the events fall to
+            # the durable ledger; growing this dict without bound is not.
+            self._frames.clear()
+        self._frames.setdefault(fp, []).append((session, s))
+
+    def _wire_identity(self, kind: str, payload: Any) -> str | None:
+        """The `g:{session}:{s}` identity for a parsed reaction event, from
+        the frame that dispatched it — the upstream sequence Discord DOES
+        send, captured at the socket boundary. `None` means no frame was
+        recorded for this event (debug events off, or a synthetic caller):
+        the durable transition ledger answers instead."""
+        d = {
+            "channel_id": getattr(payload, "channel_id", None),
+            "message_id": getattr(payload, "message_id", None),
+            "user_id": getattr(payload, "user_id", None),
+            "emoji": getattr(payload, "emoji", None),
+            "type": getattr(getattr(payload, "type", 0), "value",
+                            getattr(payload, "type", 0)),
+        }
+        fp = _reaction_frame_key(
+            "MESSAGE_REACTION_REMOVE" if kind == "reaction_remove"
+            else "MESSAGE_REACTION_ADD", d)
+        if fp is None:
+            return None
+        queue = self._frames.get(fp)
+        if not queue:
+            return None
+        session, s = queue.pop(0)
+        if not queue:
+            self._frames.pop(fp, None)
+        return f"g:{session}:{s}"
+
+    # ---- upstream transition identity (design 00 §upstream identity) ---------
+
+    def _reaction_ledger_key(self, msg: Any, raw: Any) -> str | None:
+        """The durable per-(conversation,target,reactor,emoji,type) ledger
+        key. `None` when the fields it needs are absent — a key built from
+        half an identity is worse than none: the event is retained
+        `ambiguous` instead of risking a false dedupe."""
+        target = str(getattr(msg.touch.target, "message_id", "") or "")
+        emoji = str(getattr(msg.touch, "emoji", "") or "")
+        if not (target and emoji and msg.sender_id and msg.conversation_id):
+            return None
+        rtype = getattr(raw, "type", 0)
+        rtype = getattr(rtype, "value", rtype)
+        return (f"r:{msg.conversation_id}:{target}:{msg.sender_id}"
+                f":{emoji}:{rtype}")
+
+    def _upstream_identity(
+        self, kind: str, msg: Any, raw: Any,
+    ) -> tuple[str | None, dict[str, Any] | None]:
+        """`(upstream, transition_record)` — the PROVEN upstream revision
+        where one exists, the durable transition ledger's sequence where
+        Discord sends none. `(None, ambiguous_record)` when neither can
+        establish identity: the event is retained as diagnostic evidence,
+        never deduplicated under a guessed key (design 00)."""
+        if msg.touch is not None:
+            if msg.touch.kind == "delete":
+                # A delete names the message it removes — the target IS the
+                # transition identity (it cannot fire twice legitimately).
+                return f"d:{msg.touch.target.message_id}", None
+            # A reaction carries no revision and no clock. Prefer the
+            # Gateway `s` the wire captured; fall back to the journal's
+            # durable transition ledger — a restart replays the same
+            # answer the process had when it journaled.
+            state = "remove" if msg.touch.removed else "add"
+            wire = self._wire_identity(
+                "reaction_remove" if msg.touch.removed else "reaction_add",
+                raw)
+            ledger_key = self._reaction_ledger_key(msg, raw)
+            if wire is not None:
+                if ledger_key is not None and self._journal is not None:
+                    # The wire revision IS the upstream identity; the ledger
+                    # records it so a later frame-less same-state callback
+                    # resolves to the identity this event committed under.
+                    return wire, commit_transition(
+                        self._journal, ledger_key, state, wire)
+                return wire, None
+            # No wire revision: a state change here is INDISTINGUISHABLE
+            # from a delayed replay of an old transition (design 02 §wire
+            # semantics) — only the recorded same-state redelivery may
+            # re-resolve, under the identity it originally committed.
+            if ledger_key is not None and self._journal is not None:
+                identity, transition = resolve_clockless_transition(
+                    self._journal, ledger_key, state)
+                if identity is not None:
+                    return identity, transition
+                reason = ("no upstream sequence; cannot distinguish a new"
+                          " transition from reconnect replay")
+            else:
+                reason = ("no upstream sequence and no durable transition"
+                          " ledger")
+            return None, {
+                "kind": kind, "platform": PLATFORM,
+                "conversation_id": msg.conversation_id,
+                "target": str(getattr(
+                    msg.touch.target, "message_id", "") or ""),
+                "state": state, "received_ms": int(time.time() * 1000),
+                "reason": reason,
+            }
+        if msg.edit_of is not None:
+            # `parse_discord_edit` proves `edited_at` exists (it drops
+            # updates that carry none) — target + upstream edit timestamp
+            # is a real revision identity.
+            return f"e:{msg.edit_of.message_id}:{msg.timestamp}", None
+        return msg.message_id or f"{msg.sender_id}:{msg.timestamp}", None
 
     async def _journal_and_enqueue(self, msg: Any, raw: Any) -> None:
         """Admission → custody → the injected `CaptureSink`. The room gate
@@ -533,31 +734,58 @@ class DiscordBridge:
             return
         if self._capture_sink is None:
             return
-        if self._custody_dir is not None:
-            await self._capture_attachments(msg, raw)
-        now = int(time.time() * 1000)
         kind = (
             "message" if msg.edit_of is None and msg.touch is None
             else ("edit" if msg.edit_of is not None else msg.touch.kind)
         )
-        sk = canonical_source_key(
-            PLATFORM, self._account_key, msg.conversation_id, kind,
-            msg.message_id or f"{msg.sender_id}:{msg.timestamp}",
-        )
-        env = Envelope(
-            platform=PLATFORM, account_key=self._account_key, kind=kind,
-            source_key=sk,
-            event_id=event_id(
-                sk, key=self._correlation_key, key_version=self._key_version),
-            conversation_id=msg.conversation_id,
-            conversation_type=msg.conversation_type, sender_id=msg.sender_id,
-            sender_name=msg.sender_name, sent_ms=msg.timestamp or None,
-            received_ms=now, queued_ms=now,
-            time_quality="upstream" if msg.timestamp else "bridge_local",
-            message=message_to_dict(msg), attachments=(),
-            trace={}, admission_rev=_admission_rev(proj),
-        )
-        if not await self._capture_sink.capture(env):
+        # The ONE short producer root for this capture — created at the
+        # boundary, its context frozen onto the envelope BEFORE the
+        # journal append inside `capture` (design 04 §producer).
+        with bt.producer_span(PLATFORM, kind=kind) as carrier:
+            if self._custody_dir is not None:
+                # Custody is a bounded op LINKED to this capture — never a
+                # child of whatever ambient context happens to exist.
+                with bt.operation_span(
+                        "custody", platform=PLATFORM,
+                        links=bt.carrier_links(carrier)):
+                    await self._capture_attachments(msg, raw)
+            upstream, transition = self._upstream_identity(kind, msg, raw)
+            if upstream is None:
+                note = getattr(self._capture_sink, "note_ambiguous", None)
+                if note is not None:
+                    note(transition or {})
+                else:
+                    log.warning(
+                        "capture sink cannot retain an ambiguous event"
+                        " (kind=%s)", kind)
+                return
+            now = int(time.time() * 1000)
+            sk = canonical_source_key(
+                PLATFORM, self._account_key, msg.conversation_id, kind,
+                upstream,
+            )
+            env = Envelope(
+                platform=PLATFORM, account_key=self._account_key, kind=kind,
+                source_key=sk,
+                event_id=event_id(
+                    sk, key=self._correlation_key,
+                    key_version=self._key_version),
+                conversation_id=msg.conversation_id,
+                conversation_type=msg.conversation_type,
+                sender_id=msg.sender_id,
+                sender_name=msg.sender_name,
+                sent_ms=msg.timestamp or None,
+                received_ms=now, queued_ms=now,
+                time_quality="upstream" if msg.timestamp else "bridge_local",
+                message=message_to_dict(msg), attachments=(),
+                trace=dict(carrier),
+                admission_rev=_admission_rev(proj),
+            )
+            # The transition ledger step commits ON this event's record.
+            ok = (await self._capture_sink.capture(
+                env, transition=transition) if transition is not None
+                else await self._capture_sink.capture(env))
+        if not ok:
             log.warning("capture sink refused an admitted event (kind=%s)", kind)
 
     async def _capture_attachments(self, msg: Any, raw: Any) -> None:
@@ -673,7 +901,9 @@ class DiscordBridge:
                 "unavailable", kind="unavailable",
                 message="no action service")
         else:
-            reply = await self._actions.run(body)
+            reply = await self._actions.run(body, links=bt.carrier_links({
+                "traceparent": req.headers.get("traceparent") or "",
+                "tracestate": req.headers.get("tracestate") or ""}))
         return web.json_response(
             action_response(aid, reply), status=action_http_status(reply))
 
@@ -839,8 +1069,8 @@ class DiscordBridge:
                 return reply(
                     members is not None, value,
                     None if members is not None else "cache_unavailable")
-        except Exception:
-            log.exception("read op %s failed", op)
+        except Exception as exc:  # noqa: BLE001 — read boundary; logged by type
+            log.error("read op %s failed: %s", op, type(exc).__name__)
             return reply(False, None, "read_failed")
         return web.json_response({"error": "unknown op"}, status=400)
 
@@ -929,8 +1159,8 @@ class DiscordBridge:
                     percent=int(body.get("percent") or 0))
             else:
                 return web.json_response({"error": "unknown op"}, status=400)
-        except Exception:
-            log.exception("music op %s failed for guild %s", op, conversation_id)
+        except Exception as exc:  # noqa: BLE001 — music boundary; logged by type
+            log.error("music op %s failed: %s", op, type(exc).__name__)
             outcome = MusicToolOutcome(status="unavailable")
         return web.json_response({"outcome": dataclasses.asdict(outcome)})
 
@@ -946,8 +1176,8 @@ class DiscordBridge:
             return web.json_response({"error": "channel_id required"}, status=400)
         try:
             await self._hub.join(guild_id, channel_id)
-        except VoiceControllerError:
-            log.exception("voice join failed for guild %s", guild_id)
+        except VoiceControllerError as exc:
+            log.error("voice join failed: %s", type(exc).__name__)
             return web.json_response({"error": "controller_unavailable"}, status=503)
         return web.json_response({"ok": True, "channel_id": channel_id})
 
@@ -957,8 +1187,8 @@ class DiscordBridge:
             if self._manager is not None:
                 await self._manager.leave_voice(guild_id)
             left = await self._hub.exit(guild_id) if self._hub is not None else False
-        except VoiceControllerError:
-            log.exception("voice leave failed for guild %s", guild_id)
+        except VoiceControllerError as exc:
+            log.error("voice leave failed: %s", type(exc).__name__)
             return web.json_response({"error": "controller_unavailable"}, status=503)
         return web.json_response({"ok": True, "left": bool(left)})
 

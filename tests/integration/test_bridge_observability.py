@@ -1117,3 +1117,140 @@ class TestCollectorOutage:
         otlp.force_flush()
         s = _jaeger_trace(_trace_id_of(sp))["spans"][0]
         assert s["operationName"] == "queue.ack"
+
+
+# ---------------------------------------------------------------------------
+# Review finding 6's REAL seam: capture → journal → publish at the bridge,
+# with the production producer and client — not the lifecycle primitives.
+# ---------------------------------------------------------------------------
+
+_GID, _CID, _MID, _UID = 91111, 92222, 93333, 94444
+CONV_ROOM = f"{_GID}/{_CID}"
+
+
+def _obs_client():
+    """The `discord.Client` call shape the capture seam uses — session for
+    wire provenance, channel lookup miss, open."""
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        get_channel=lambda channel_id: None,
+        is_closed=lambda: False,
+        ws=SimpleNamespace(session_id="obs-sess"))
+
+
+def _obs_message():
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        id=_MID, content="obs hello", attachments=[], stickers=[],
+        mentions=[], reference=None, poll=None, message_snapshots=None,
+        embeds=[], edited_at=None,
+        author=SimpleNamespace(id=_UID, display_name="Obs Alice"),
+        channel=SimpleNamespace(id=_CID, parent_id=None),
+        guild=SimpleNamespace(id=_GID))
+
+
+def _jaeger_operation(operation: str, want: int,
+                      timeout: float = 20.0) -> list[dict]:
+    """Poll Jaeger's operation index until `want` traces carrying it."""
+    import urllib.parse
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            data = json.loads(_http(
+                f"{JAEGER}/api/traces?service={urllib.parse.quote(SERVICE)}"
+                f"&operation={operation}&limit=100"))["data"]
+            if len(data) >= want:
+                return data
+        except (OSError, ValueError, KeyError):
+            pass
+        if time.monotonic() > deadline:
+            raise AssertionError(
+                f"want {want} {operation} traces, got {len(data)}")
+        time.sleep(0.4)
+
+
+class TestRealCaptureBoundary:
+    async def test_capture_freezes_context_then_publishes_linked(
+            self, otlp, redis_server, tmp_path):
+        """`DiscordBridge._capture_message` → `JournalCaptureSink` →
+        `Journal` → `JournalPublisher` → `StreamProducer` on a REAL
+        `redis.asyncio` client. Jaeger proves: the envelope's traceparent IS
+        the exported capture root (frozen before fsync), and the publish
+        root is a separate trace FOLLOWS_FROM it — never an ambient child."""
+        import redis.asyncio as aioredis
+
+        from nora.platform.bridge.envelope import Envelope
+        from nora.platform.bridge.journal import Journal
+        from nora.platform.bridge.queue import StreamProducer
+        from nora.platform.bridge.service import JournalCaptureSink, JournalPublisher
+        from nora.platform.discord.bridge_app import DiscordBridge
+
+        host, port = redis_server
+        client = aioredis.Redis(host=host, port=port)
+        stream = f"{STREAM}:real-boundary"
+        journal = Journal(tmp_path / "journal.jsonl")
+        metrics = Metrics()
+        producer = StreamProducer(client, stream)
+        publisher = JournalPublisher(
+            journal=journal, producer=producer, metrics=metrics)
+        sink = JournalCaptureSink(
+            journal=journal, publisher=publisher, metrics=metrics)
+        bridge = DiscordBridge(
+            api_token="t",  # noqa: S106 — fixture secret
+            account_key="obs-acct", client=_obs_client(),
+            correlation_key=b"\x55" * 32, key_version=1,
+            projection=lambda: {"revision": 1, "enabled": True,
+                                "rooms": [CONV_ROOM]},
+            capture=sink, publisher=publisher, journal=journal)
+
+        task = asyncio.ensure_future(publisher.run())
+        try:
+            await bridge._capture_message(_obs_message())
+            for _ in range(80):
+                if await client.xlen(stream):
+                    break
+                await asyncio.sleep(0.25)
+            entries = await client.xrange(stream, "-", "+")
+        finally:
+            publisher.stop()
+            await asyncio.wait_for(task, timeout=10)
+            await client.aclose()
+
+        assert len(entries) == 1
+        _entry_id, fields = entries[0]
+        env_back = Envelope.from_fields(json.loads(fields[b"e"]))
+        carrier = env_back.trace
+        cap_trace_id, cap_span_id = carrier["traceparent"].split("-")[1:3]
+
+        otlp.force_flush()
+
+        # The capture root, read back from the backend by the carrier the
+        # JOURNALED envelope froze — context existed before fsync, not minted
+        # at publish.
+        cap = _jaeger_trace(cap_trace_id)["spans"][0]
+        assert cap["operationName"] == "queue.enqueue"
+        assert cap["references"] == []
+        assert cap["spanID"] == cap_span_id
+        cap_tags = {t["key"]: t["value"] for t in cap["tags"]}
+        assert cap_tags["nora.trace_kind"] == "queue"
+        assert cap_tags["nora.bridge.kind"] == "message"
+        assert "obs hello" not in cap_tags.values()
+
+        # The publish root — same operation name, a DIFFERENT trace — linked
+        # back to the capture by the envelope's carrier.
+        pubs = [
+            doc for doc in _jaeger_operation("queue.enqueue", 2)
+            if doc["traceID"] != cap_trace_id]
+        pub = next(
+            doc for doc in pubs
+            for s in doc["spans"]
+            if (("FOLLOWS_FROM", cap_trace_id, cap["spanID"])
+                in {(r["refType"], r["traceID"], r["spanID"])
+                    for r in s["references"]}))
+        assert len(pub["spans"]) == 1
+
+        # The wired metrics answer at the same boundary.
+        assert metrics.get("nora_bridge_queue_events_total",
+                           platform="discord", event="captured") == 1
+        assert metrics.get("nora_bridge_queue_events_total",
+                           platform="discord", event="enqueued") == 1
