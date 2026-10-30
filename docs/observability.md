@@ -280,7 +280,13 @@ backend must never block an app release — so the SigNoz wiring is an OVERLAY,
 
 1. Build and start the backend: `SIGNOZ_JOURNAL_GID=$(getent group
    systemd-journal | cut -d: -f3)` beside the compose `.env`, then
-   `docker compose -f deploy/signoz/deployment/compose.yaml up -d --build`.
+   set independent random hexadecimal `SIGNOZ_CLICKHOUSE_PASSWORD` and
+   `SIGNOZ_POSTGRES_PASSWORD` (at least 32 characters each) in private
+   `secret.toml`, then run `uv run python -m scripts.signoz_compose up -d --build`.
+   This uses the existing secret loader without printing credentials. Use the
+   same helper for subsequent backend Compose operations. On an existing
+   Postgres volume, changing its environment does not rotate the stored role
+   password: rotate that role privately before changing the configured value.
    This creates the external `signoz-network` and the collector that reads the
    journal as uid 10001 inside the host's journal group.
 2. Install the merged `scripts/secret_delivery.py` in both installed helper

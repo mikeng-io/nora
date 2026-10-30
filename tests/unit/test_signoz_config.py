@@ -193,3 +193,17 @@ def test_the_compose_mount_and_overlay_match_the_journald_source():
     }
     for name in tagged:
         assert OVERLAY["services"][name]["logging"]["options"]["tag"] == name
+
+
+def test_clickhouse_authentication_requires_the_private_password():
+    path = ROOT / "deploy/signoz/deployment/telemetrystore/clickhouse/config-0-0.yaml"
+    config = yaml.safe_load(path.read_text())
+    assert config["users"]["default"]["password"] == {"@from_env": "SIGNOZ_CLICKHOUSE_PASSWORD"}
+    for name in ("ingester", "signoz-signoz-0", "signoz-telemetrystore-migrator",
+                 "signoz-telemetrystore-clickhouse-0-0"):
+        environment = COMPOSE["services"][name]["environment"]
+        assert any("${SIGNOZ_CLICKHOUSE_PASSWORD:?" in entry for entry in environment)
+    for exporter in ("clickhouselogsexporter", "clickhousetraces", "metadataexporter",
+                     "signozclickhousemeter", "signozclickhousemetrics"):
+        assert any("${env:SIGNOZ_CLICKHOUSE_PASSWORD}" in str(value)
+                   for value in INGESTER["exporters"][exporter].values())

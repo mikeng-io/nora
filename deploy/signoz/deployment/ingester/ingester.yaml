@@ -16,7 +16,7 @@ extensions:
     timeout: 5s
 exporters:
   clickhouselogsexporter:
-    dsn: tcp://signoz-telemetrystore-clickhouse-0-0:9000/signoz_logs
+    dsn: tcp://default:${env:SIGNOZ_CLICKHOUSE_PASSWORD}@signoz-telemetrystore-clickhouse-0-0:9000/signoz_logs
     timeout: 45s
     use_new_schema: true
     sending_queue:
@@ -26,7 +26,7 @@ exporters:
     retry_on_failure:
       enabled: true
   clickhousetraces:
-    datasource: tcp://signoz-telemetrystore-clickhouse-0-0:9000/signoz_traces
+    datasource: tcp://default:${env:SIGNOZ_CLICKHOUSE_PASSWORD}@signoz-telemetrystore-clickhouse-0-0:9000/signoz_traces
     low_cardinal_exception_grouping: ${env:LOW_CARDINAL_EXCEPTION_GROUPING}
     timeout: 45s
     use_new_schema: true
@@ -39,14 +39,14 @@ exporters:
   metadataexporter:
     cache:
       provider: in_memory
-    dsn: tcp://signoz-telemetrystore-clickhouse-0-0:9000/signoz_metadata
+    dsn: tcp://default:${env:SIGNOZ_CLICKHOUSE_PASSWORD}@signoz-telemetrystore-clickhouse-0-0:9000/signoz_metadata
     enabled: true
     timeout: 45s
   signozclickhousemeter:
-    dsn: tcp://signoz-telemetrystore-clickhouse-0-0:9000/signoz_meter
+    dsn: tcp://default:${env:SIGNOZ_CLICKHOUSE_PASSWORD}@signoz-telemetrystore-clickhouse-0-0:9000/signoz_meter
     timeout: 45s
   signozclickhousemetrics:
-    dsn: tcp://signoz-telemetrystore-clickhouse-0-0:9000/signoz_metrics
+    dsn: tcp://default:${env:SIGNOZ_CLICKHOUSE_PASSWORD}@signoz-telemetrystore-clickhouse-0-0:9000/signoz_metrics
     timeout: 45s
     sending_queue:
       enabled: true

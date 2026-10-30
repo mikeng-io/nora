@@ -83,7 +83,8 @@ users:
     named_collection_control: 1
     networks:
       ip: ::/0
-    password: ""
+    password:
+      "@from_env": SIGNOZ_CLICKHOUSE_PASSWORD
     profile: default
     quota: default
     show_named_collection: 1

@@ -20,8 +20,9 @@ services:
     entrypoint:
     - /bin/sh
     environment:
-    - SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_DSN=tcp://signoz-telemetrystore-clickhouse-0-0:9000
+    - SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_DSN=tcp://default:${SIGNOZ_CLICKHOUSE_PASSWORD:?set SIGNOZ_CLICKHOUSE_PASSWORD}@signoz-telemetrystore-clickhouse-0-0:9000
     - SIGNOZ_OTEL_COLLECTOR_TIMEOUT=10m
+    - SIGNOZ_CLICKHOUSE_PASSWORD=${SIGNOZ_CLICKHOUSE_PASSWORD:?set SIGNOZ_CLICKHOUSE_PASSWORD}
     group_add:
     # The collector runs uid 10001; host journal files are root:systemd-journal
     # 0640, so it joins the host's journal-read group. The GID is host
@@ -76,7 +77,7 @@ services:
     container_name: signoz-metastore-postgres-0
     environment:
     - POSTGRES_DB=signoz
-    - POSTGRES_PASSWORD=signoz
+    - POSTGRES_PASSWORD=${SIGNOZ_POSTGRES_PASSWORD:?set SIGNOZ_POSTGRES_PASSWORD}
     - POSTGRES_USER=signoz
     healthcheck:
       interval: 30s
@@ -95,9 +96,9 @@ services:
   signoz-signoz-0:
     container_name: signoz-signoz-0
     environment:
-    - SIGNOZ_SQLSTORE_POSTGRES_DSN=postgres://signoz:signoz@signoz-metastore-postgres-0:5432/signoz?sslmode=disable
+    - SIGNOZ_SQLSTORE_POSTGRES_DSN=postgres://signoz:${SIGNOZ_POSTGRES_PASSWORD:?set SIGNOZ_POSTGRES_PASSWORD}@signoz-metastore-postgres-0:5432/signoz?sslmode=disable
     - SIGNOZ_SQLSTORE_PROVIDER=postgres
-    - SIGNOZ_TELEMETRYSTORE_CLICKHOUSE_DSN=tcp://signoz-telemetrystore-clickhouse-0-0:9000
+    - SIGNOZ_TELEMETRYSTORE_CLICKHOUSE_DSN=tcp://default:${SIGNOZ_CLICKHOUSE_PASSWORD:?set SIGNOZ_CLICKHOUSE_PASSWORD}@signoz-telemetrystore-clickhouse-0-0:9000
     - SIGNOZ_TELEMETRYSTORE_PROVIDER=clickhouse
     healthcheck:
       interval: 30s
@@ -150,6 +151,7 @@ services:
       signoz-telemetrystore-clickhouse-user-scripts:
         condition: service_completed_successfully
     environment:
+    - SIGNOZ_CLICKHOUSE_PASSWORD=${SIGNOZ_CLICKHOUSE_PASSWORD:?set SIGNOZ_CLICKHOUSE_PASSWORD}
     - CLICKHOUSE_SKIP_USER_SETUP=1
     - CLICKHOUSE_CONFIG=/etc/clickhouse-server/config-0-0.yaml
     healthcheck:
@@ -204,8 +206,9 @@ services:
     entrypoint:
     - /bin/sh
     environment:
-    - SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_DSN=tcp://signoz-telemetrystore-clickhouse-0-0:9000
+    - SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_DSN=tcp://default:${SIGNOZ_CLICKHOUSE_PASSWORD:?set SIGNOZ_CLICKHOUSE_PASSWORD}@signoz-telemetrystore-clickhouse-0-0:9000
     - SIGNOZ_OTEL_COLLECTOR_TIMEOUT=10m
+    - SIGNOZ_CLICKHOUSE_PASSWORD=${SIGNOZ_CLICKHOUSE_PASSWORD:?set SIGNOZ_CLICKHOUSE_PASSWORD}
     image: signoz/signoz-otel-collector:v0.144.15
     networks:
     - signoz-network
