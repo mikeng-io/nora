@@ -1260,13 +1260,13 @@ async def _project_profile_line(conn: AsyncConnection, source_id: str) -> None:
         # Readable only where a room lists the person.
         persons = [str(person)]
         about = ("person", str(person))
-    from nora.infra.sql.profile import _line
+    from nora.infra.sql.profile import row_to_line
 
     await _upsert_node(
         conn, kind="profile_line", source_id=source_id,
         unit=None if form == "room" else row.unit, origin_room=room,
         persons=persons, exclude_persons=row.exclude_persons,
-        text=format_line(_line(row)),
+        text=format_line(row_to_line(row)),
         at_ms=row.as_of if row.as_of is not None else row.written_at,
         state=("superseded" if successor is not None
                else "live" if row.state in ("current", "disputed") else "retired"),

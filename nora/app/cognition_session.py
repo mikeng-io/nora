@@ -791,10 +791,12 @@ class CognitionSessionRunner:
 
     async def on_wake(
         self, *, unit: str, view: UnitView, now_ms: int, wake_id: int,
-        replay: bool = False, historical: bool = False,
-    ) -> CognitionSessionOutcome | None:
+        replay: bool = False, historical: bool = False, inspect_only: bool = False,
+    ) -> CognitionSessionOutcome | dict[str, str] | None:
         """Called by the wake evaluator's hook on every wake it
-        records (`WakeHook`). Returns `None` on every path that makes no model
+        records (`WakeHook`). `inspect_only` returns the assembled model input
+        before the model call; use it only in a disposable replay sandbox.
+        Returns `None` on every ordinary path that makes no model
         call; RAISES, after recording the wake's outcome, on every path that
         did not close. Every path writes the wake's outcome (or, if that write
         fails, leaves the wake OPEN until it expires): nothing here returns
@@ -893,6 +895,18 @@ class CognitionSessionRunner:
             # stimuli stay pending: a session never runs on bare counts it
             # cannot judge from.
             grounding = await self._grounder(unit, situation.agenda.items, pending)
+            if inspect_only:
+                # BEFORE ANYTHING IS RECORDED: an inspection returns what a
+                # session would be run on and persists nothing — no session
+                # row, no outcome write, no stimulus consumption. The live
+                # path below records first and the replay path shares it.
+                _, _, system, agenda = await self._session_input(
+                    unit=unit, view=view, situation=situation, session_id=0,
+                    wake_id=0, now_ms=now_ms, doctrine_text=doctrine_text,
+                    skill_text=skill_text, grounding=grounding,
+                    historical=historical,
+                )
+                return {"system": system, "agenda": agenda}
             session = NewCognitionSession(
                 unit=unit, mode="live", started_at_ms=now_ms,
                 from_stimulus_id=min(s.id for s in view.pending),
@@ -951,6 +965,13 @@ class CognitionSessionRunner:
         """Run the recorded batch through live assembly, using sandbox collaborators."""
         return await self.on_wake(unit=view.unit, view=view, now_ms=now_ms,
                                   wake_id=0, replay=True, historical=historical)
+
+    async def inspect(self, *, view: UnitView, now_ms: int) -> dict[str, str] | None:
+        """The model input a session over `view` would be run on, through the same
+        assembly, stopping before the model call. For a disposable replay sandbox."""
+        result = await self.on_wake(unit=view.unit, view=view, now_ms=now_ms,
+                                    wake_id=0, replay=True, inspect_only=True)
+        return result if isinstance(result, dict) else None
 
     async def probe(
         self, *, unit: str, summary: str, now_ms: int, room: Room | None = None,
@@ -1075,12 +1096,16 @@ class CognitionSessionRunner:
             self._inc("nora_cognition_session_ended_total", outcome=recorded.outcome)
         return recorded
 
-    async def _run_session(
+    async def _session_input(
         self, *, unit: str, view: UnitView, situation: Situation, session_id: int,
         wake_id: int, now_ms: int, doctrine_text: str, skill_text: str,
-        grounding: Grounding, spend: TokenSpend, retained: Sequence[int] = (),
-        replay: bool = False, historical: bool = False,
-    ) -> CognitionSessionOutcome:
+        grounding: Grounding, historical: bool = False,
+    ) -> tuple[_RunState, list[Any], str, str]:
+        """Everything a session assembles before the model call: the run
+        state, the tools, the system prompt and the agenda text. A live
+        session and an inspection share exactly this and diverge after it:
+        one runs the model and records outcomes, the other returns what it
+        built and persists nothing."""
         items = situation.agenda.items
         state = _RunState(
             session_id=session_id, wake_id=wake_id, unit=unit, now_ms=now_ms,
@@ -1098,7 +1123,6 @@ class CognitionSessionRunner:
         tools = await self._build_tools(
             unit=unit, state=state, now_ms=now_ms, labels=grounding.room_labels,
         )
-        kinds = sorted({item.kind for item in items})
         from nora.language.comprehend_render import SESSION_INSTRUCTION
         system_prompt = doctrine_text + skill_text
         if self._memory is not None:
@@ -1108,6 +1132,21 @@ class CognitionSessionRunner:
             reads_note=state.reads_note, now_ms=now_ms,
             last_session_ms=situation.last_session_ms, tz=self._tz,
             budget=self._render_budget, graph=state.graph_text,
+        )
+        return state, tools, system_prompt, prompt
+
+    async def _run_session(
+        self, *, unit: str, view: UnitView, situation: Situation, session_id: int,
+        wake_id: int, now_ms: int, doctrine_text: str, skill_text: str,
+        grounding: Grounding, spend: TokenSpend, retained: Sequence[int] = (),
+        replay: bool = False, historical: bool = False,
+    ) -> CognitionSessionOutcome:
+        items = situation.agenda.items
+        kinds = sorted({item.kind for item in items})
+        state, tools, system_prompt, prompt = await self._session_input(
+            unit=unit, view=view, situation=situation, session_id=session_id,
+            wake_id=wake_id, now_ms=now_ms, doctrine_text=doctrine_text,
+            skill_text=skill_text, grounding=grounding, historical=historical,
         )
         token = SESSION_TOKENS.set(spend)
         result: CognitionRunResult | None = None

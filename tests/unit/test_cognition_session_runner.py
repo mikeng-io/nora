@@ -445,3 +445,51 @@ async def test_stays_and_plays_join_the_same_proposal_coverage():
     answer = await memory.propose(state, items=[0], payload={k: v for k, v in proposal().items()
                                                             if k != "items"})
     assert answer["admitted"] == [0]
+
+
+async def test_inspection_renders_real_wake_clock_room_and_open_items_without_model():
+    from nora.domain.cognition_ground import EventLine, Grounding, NoteLine, RecordItem
+    from nora.testing.cognition_grounding import StaticGrounder
+
+    grounding = Grounding(
+        records={"messages:1": RecordItem(ref="messages:1", kind="message", message_id=1,
+            room=HOME, author="Generated speaker", at_ms=NOW, text="I arrived")},
+        notes=(NoteLine(id="generated-note", title="Hand over generated gifts",
+                        description="Generated open handover"),),
+        events=(EventLine(id="generated-event", room=HOME, title="Generated dinner",
+                         when_ms=NOW, venue="Generated venue", status="proposed"),),
+        room_labels={"signal:home-room": "Generated room"})
+    runner, _, agent = _runner(grounder=StaticGrounder(grounding))
+    inspection = await runner.inspect(view=UnitView(
+        unit="unit-1", pending=_pending("unit-1"), last_activity_ms=None, last_wake=None),
+        now_ms=NOW)
+    assert set(inspection) == {"system", "agenda"}
+    assert "DOCTRINE" in inspection["system"]
+    for value in ("Generated room", "I arrived", "Hand over generated gifts", "Generated dinner"):
+        assert value in inspection["agenda"]
+    assert "clock" in inspection["agenda"] and "2027" in inspection["agenda"]
+    assert agent.calls == 0
+
+
+async def test_an_inspection_records_no_session_outcome_or_carry():
+    """An inspection is a read of what a session would be run on: it must
+    leave the shared wake sandbox exactly as it found it — no session row,
+    no wake outcome, no carry, and the stimuli still pending."""
+    stimuli = _seeded()
+    runner, store, agent = _runner(stimuli=stimuli)
+    view = UnitView(unit="unit-1", pending=_pending("unit-1"),
+                    last_activity_ms=None, last_wake=None)
+    inspection = await runner.inspect(view=view, now_ms=NOW)
+    assert inspection is not None and set(inspection) == {"system", "agenda"}
+    assert store.sessions == []
+    assert stimuli.outcomes == {}
+    assert stimuli.carries == []
+    assert agent.calls == 0
+
+
+async def test_inspection_of_an_empty_agenda_is_none_and_calls_no_model():
+    runner, _, agent = _runner()
+    assert await runner.inspect(view=UnitView(
+        unit="unit-1", pending=(), last_activity_ms=None, last_wake=None),
+        now_ms=NOW) is None
+    assert agent.calls == 0
