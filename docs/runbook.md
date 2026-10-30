@@ -1139,7 +1139,7 @@ One tree. If it is not under `~/workspace/nora/`, Nora does not own it.
 ~/workspace/nora/
   docker-compose.yml        every service: nora, db, signal-cli, whatsapp-bridge,
                             presence, analytics, rustfs, stt,
-                            prometheus, alertmanager, alert-bridge
+                            the SigNoz cutover overlay lives under deploy/signoz/
   deploy/signal-cli/        Dockerfile + fetch.sh (16K; the 115MB tarball is
                             fetched on demand, never committed)
   config.toml               deploy cadence: ports, models, timeouts

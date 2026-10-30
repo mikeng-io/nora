@@ -34,8 +34,8 @@ Usage:
         [--api http://localhost:8080] [--dry-run]
 
 The channel URL comes from `NORA_ALERT_WEBHOOK` (or the runtime secret
-store): the existing alert-bridge's webhook URL during transition, a Discord
-webhook for native `discord_configs`, or a local sink for tests. Never run
+store): a Discord webhook's `/slack` compatibility URL for native
+`slack_configs`, or a local sink for tests. Never run
 against a real Discord endpoint in tests.
 """
 from __future__ import annotations

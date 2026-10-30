@@ -1,7 +1,7 @@
 # One Discord message per published release: a notice line, then the release notes
 # in a fixed embed. Deliberately not folded into release-images.yml — a notification
 # that shares a failure domain with the build is silent exactly when the build breaks
-# (the rule deploy/alert-bridge/bridge.py states for alerts).
+# (the same independent-notification principle used for alerts).
 #
 # No third-party action: gh and python3 only. scripts/configure_public_github.py
 # allows GitHub-owned actions plus astral-sh/setup-uv and googleapis/release-please-action,
