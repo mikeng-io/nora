@@ -29,7 +29,7 @@ from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from typing import Any, Literal, get_args
 
-from nora.domain.models import EditedMessage, NormalizedMessage, Touch
+from nora.domain.models import EditedMessage, NormalizedMessage, PersonRef, Touch
 from nora.domain.ports import (
     BlobStore,
     EngageDecision,
@@ -159,6 +159,15 @@ def _outcome(metrics: Any, message: NormalizedMessage, value: IngestOutcome) -> 
 class IngestResult:
     message: NormalizedMessage | None
     decision: EngageDecision | None
+    # The stage that ended the run — lets a durable caller tell a legitimate
+    # silence (scope_refused, edit_orphaned) from a swallowed audit FAILURE,
+    # which must never retire as an intentional skip. Empty on pre-bridge
+    # callers that never set it.
+    outcome: str = ""
+    # Set when durable=True so the caller can persist follow-on obligations
+    # (stimulus/memory_feed run as durable work instead of inline awaits).
+    row_id: int | None = None
+    person: PersonRef | None = None
 
 
 class IngestPipeline:
@@ -238,7 +247,8 @@ class IngestPipeline:
         self._language = language
         self._stimulus_wiring = stimulus_wiring
 
-    async def run(self, *, message: NormalizedMessage) -> IngestResult:
+    async def run(self, *, message: NormalizedMessage,
+                  tx_hook: Any = None, durable: bool = False) -> IngestResult:
         """`message` is already normalized — the caller (the adapter's `listen()`
         loop, via `nora.app.dispatch.Dispatcher.on_message`) never hands this a
         `None`. The `nora_messages_total` increment happens here, once per
@@ -279,9 +289,11 @@ class IngestPipeline:
                "nora.conversation_type": message.conversation_type,
                "nora.attachments": len(message.media)},
         ):
-            return await self._run(message=message)
+            return await self._run(message=message, tx_hook=tx_hook,
+                               durable=durable)
 
-    async def _run(self, *, message: NormalizedMessage) -> IngestResult:
+    async def _run(self, *, message: NormalizedMessage,
+                   tx_hook: Any = None, durable: bool = False) -> IngestResult:
         """The body, so the root span in `run` wraps EVERY exit including the
         early returns. Splitting it is what makes `nora.outcome` reachable from
         each `return` without a `try/finally` that would have to re-derive which
@@ -310,7 +322,8 @@ class IngestPipeline:
             # Ends here, and ENDS VISIBLY: without the attribute an unallowlisted
             # room is a trace that simply stops, indistinguishable from a crash.
             _outcome(m, message, "scope_refused")
-            return IngestResult(message=None, decision=None)
+            return IngestResult(message=None, decision=None,
+                                outcome="scope_refused")
         # Whether this room's traffic is absorbed into memory/ambient
         # processing (Honcho feed, stimulus). `Conversation.absorbed` is the
         # one definition — a mention-only server-entry channel answers tags
@@ -329,7 +342,8 @@ class IngestPipeline:
                 )
             if found.ending is not None or found.original is None:
                 _outcome(m, message, found.ending or "edit_orphaned")
-                return IngestResult(message=None, decision=None)
+                return IngestResult(message=None, decision=None,
+                                    outcome=found.ending or "edit_orphaned")
             return await self._run_edit(
                 message=found.message, original=found.original,
             )
@@ -385,26 +399,33 @@ class IngestPipeline:
             )
         with span("ingest.audit"):
             row_id = await audit_stage.run(
-                message=message, audit=self._audit, metrics=m, person=person
+                message=message, audit=self._audit, metrics=m, person=person,
+                tx_hook=tx_hook,
             )
         if row_id is None:
             _outcome(m, message, "audit_refused")
-            return IngestResult(message=None, decision=None)
+            return IngestResult(message=None, decision=None,
+                                outcome="audit_refused")
         # The STIMULUS, right behind the Record row it names. Inside the
         # guard: a span for a stage that cannot run would claim work that never
         # happened.
-        if self._stimulus_wiring is not None and absorbed:
-            with span("ingest.stimulus"):
-                await stimulus_stage.run(
-                    message=message, item="message", row_id=row_id,
-                    person_id=person.person_id if person else None,
-                    wiring=self._stimulus_wiring, metrics=m,
+        # Under `durable` these two stages are NOT run inline: the caller
+        # (bridge WorkRunner) persists them as obligations in the same commit
+        # that retires the ingest work, so the post-audit crash window cannot
+        # silently lose them. Inline stays the non-bridge behaviour.
+        if not durable:
+            if self._stimulus_wiring is not None and absorbed:
+                with span("ingest.stimulus"):
+                    await stimulus_stage.run(
+                        message=message, item="message", row_id=row_id,
+                        person_id=person.person_id if person else None,
+                        wiring=self._stimulus_wiring, metrics=m,
+                    )
+            with span("ingest.memory_feed"):
+                await memory_feed_stage.run(
+                    message=message, person=person, memory=self._memory,
+                    metrics=m, spawn=self._spawn, absorbed=absorbed,
                 )
-        with span("ingest.memory_feed"):
-            await memory_feed_stage.run(
-                message=message, person=person, memory=self._memory, metrics=m,
-                spawn=self._spawn, absorbed=absorbed,
-            )
 
         with span("ingest.gate"):
             decision = await gate_stage.run(
@@ -444,7 +465,9 @@ class IngestPipeline:
             # cleanly still says how it ended.
             _outcome(m, message, "engaged" if decision.engage else "recorded")
 
-        return IngestResult(message=message, decision=decision)
+        return IngestResult(message=message, decision=decision,
+                            outcome="engaged" if decision.engage else "recorded",
+                            row_id=row_id, person=person)
 
     async def _run_edit(
         self, *, message: NormalizedMessage, original: EditedMessage,

@@ -113,6 +113,7 @@ max_bytes = 104857600
 model = "an-image-model"
 [platforms.signal]
 enabled = true
+mode = "bridge"
 [engagement.trigger]
 enabled = false
 [obs.tracing]

@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 from zoneinfo import ZoneInfo
 
 import boto3
+import redis.asyncio as aioredis
 from openai import AsyncOpenAI
 from openai.types.shared.reasoning_effort import ReasoningEffort
 from opentelemetry.util.types import AttributeValue
@@ -63,6 +64,7 @@ from nora.agent.telemetry import timed as telemetry_timed
 from nora.agent.tools import COMPUTER_TOOLS, LOAD_TRANSCRIPT_MAX
 from nora.agent.video_desk import VideoDesk
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
+from nora.app.bridge_queue import BridgeRuntime, DbSpeakingLocks, StreamReader, WorkRunner
 from nora.app.cognition_grounding import (
     build_grounder,
     place_release,
@@ -128,6 +130,7 @@ from nora.domain.media_join import MediaJoin
 from nora.domain.memory_index import IndexState
 from nora.domain.ports import (
     BlobStore,
+    ChannelDirectory,
     ComputeBackend,
     ContextAssembler,
     CultureReader,
@@ -171,6 +174,7 @@ from nora.infra.google.auth import GoogleCredentials
 from nora.infra.honcho import HonchoClient
 from nora.infra.music import YtDlpSource
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
+from nora.infra.sql.bridge_store import WORK_KINDS, SqlBridgeStore
 from nora.infra.sql.character import SqlCharacterEvidence
 from nora.infra.sql.cognition_store import SqlCognitionStore
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
@@ -285,7 +289,28 @@ from nora.language.profile_verdict import (
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
 from nora.persons import DIRECT_PLATFORMS, Persons, PersonsError
+from nora.platform.bridge.client import (
+    BridgeAdapter,
+    BridgeEndpoint,
+    BridgeMediaSource,
+    BridgeRoster,
+)
+from nora.platform.bridge.inspection import (
+    QueueInspector,
+)
+from nora.platform.bridge.inspection import (
+    prime as prime_queue_metrics,
+)
 from nora.platform.discord.adapter import DiscordAdapter
+from nora.platform.discord.bridge_control import (
+    BridgeChannelDirectory,
+    BridgeControlClient,
+    BridgeDiscordAdapter,
+    BridgeDiscordPresence,
+    BridgeDiscordRoster,
+    BridgeMusicTool,
+    BridgeVoicePresence,
+)
 from nora.platform.discord.channels import ClientChannelDirectory
 from nora.platform.discord.media import DiscordMediaSource
 from nora.platform.discord.music_manager import MusicPlayerManager
@@ -417,7 +442,7 @@ def _presence_reader(
     if isinstance(instagram, InstagramAdapter):
         live["instagram"] = instagram.own_handle
     discord_adapter = registry.adapters.get("discord")
-    if isinstance(discord_adapter, DiscordAdapter):
+    if isinstance(discord_adapter, (DiscordAdapter, BridgeDiscordAdapter)):
         live["discord"] = discord_adapter.own_handle
     return PresenceReader(
         policy=allowlist, adapters=dict(registry.adapters),
@@ -1242,6 +1267,9 @@ class Dependencies:
     ingest: IngestPipeline
     engagement: EngagementPipeline
     dispatcher: Dispatcher
+    #: The elected stream readers + work runner when any platform runs
+    #: `mode = "bridge"`; `nora/__main__.py` spawns it like every other loop.
+    bridge_runtime: BridgeRuntime | None
     # The participation occasion's quiescence trigger, None unless
     # `[participation] enabled` AND a fire path was
     # built. `nora/__main__.py` spawns `runtime.participation_loop` on it —
@@ -1278,7 +1306,7 @@ class Dependencies:
     #: Named for the same reason as the entry points above — it decides whether
     #: an act turn happens at all.
     proactive_screen: ProactiveScreen
-    adapter: SignalAdapter
+    adapter: SignalAdapter | BridgeAdapter
     # EVERY built adapter, keyed by platform. `adapter` above stays the concrete
     # Signal one because a handful of call sites are still Signal-specific by
     # construction (`nora_sender_id`, the signal-cli roster); this is what the
@@ -1576,13 +1604,40 @@ async def build_dependencies(
     # then, and whenever there is no Discord adapter, every read answers
     # unknown and a server entry admits nothing rather than guessing.
     discord_box: dict[str, Any] = {}
-    channel_directory = ClientChannelDirectory(
-        lambda: (
-            a.current_client()
-            if isinstance(a := discord_box.get("adapter"), DiscordAdapter)
-            else None
+    # Discord bridge mode: the standalone discord-bridge owns
+    # the Gateway, the music manager, the voice-controller hub and the
+    # controller-event consumer. This process builds ONLY the proxy side —
+    # `BridgeControlClient` + the `BridgeDiscordAdapter` the registry wires
+    # — and never constructs a `discord.Client`, `MusicPlayerManager` or
+    # `VoiceControllerHub` of its own. `discord_control` is the ONE client
+    # every app-side proxy (directory, roster, music tool, presence)
+    # shares; its lazy aiohttp session dies with the process like every
+    # adapter's.
+    _discord_bridge = (
+        cfg.platforms.discord.enabled
+        and getattr(cfg.platforms.discord, "mode", "direct") == "bridge")
+    discord_control: BridgeControlClient | None = (
+        BridgeControlClient(BridgeEndpoint(
+            cfg.platforms.discord.base_url,
+            cfg.credentials.get(cfg.bridges.token_env, "")))
+        if _discord_bridge else None)
+    channel_directory: ChannelDirectory
+    if discord_control is not None:
+        # `guild_ids` reads the LIVE policy each refresh — a reloaded file
+        # that names a new server entry starts enumerating it on the next
+        # pass. `reload_files` binds below; the callable is lazy by design.
+        channel_directory = BridgeChannelDirectory(
+            control=discord_control,
+            guild_ids=lambda: {
+                c.guild for c in reload_files.policy.conversations if c.guild})
+    else:
+        channel_directory = ClientChannelDirectory(
+            lambda: (
+                a.current_client()
+                if isinstance(a := discord_box.get("adapter"), DiscordAdapter)
+                else None
+            )
         )
-    )
     try:
         reload_files = ReloadFiles(
             policy_path=cfg.policy_file, identity_path=cfg.identity_file,
@@ -1903,7 +1958,12 @@ async def build_dependencies(
     # (`playback_probe`, `generation_probe`) and its hub-session drop/exit
     # seams read and mutate the hub from construction.
     voice_hub: VoiceControllerHub | None = None
-    if cfg.speech.tts.sidecars:
+    if cfg.speech.tts.sidecars and not _discord_bridge:
+        # In Discord bridge mode the sidecar mapping belongs to the
+        # standalone bridge (`deploy/discord-bridge/entry.py` reads this
+        # same `[speech.tts] sidecars` through the mounted config.toml) —
+        # the app forwards voice work to the bridge and never owns a
+        # controller session.
         voice_hub = VoiceControllerHub({
             guild_id: VoiceControllerClient(endpoint)
             for guild_id, endpoint in cfg.speech.tts.sidecars_by_guild.items()
@@ -1931,7 +1991,10 @@ async def build_dependencies(
             drop_voice_session=voice_hub.drop if voice_hub is not None else None,
             exit_voice_session=voice_hub.exit if voice_hub is not None else None,
         )
-        if cfg.music.enabled
+        if cfg.music.enabled and not _discord_bridge
+        # Bridge mode: the standalone bridge owns THE manager (`entry.py`
+        # builds it over the same SQL stores); the app's music surface is
+        # the `BridgeMusicTool` proxy, so no second mutation path exists.
         else None
     )
     # A room marked `voice = true` with NO controller for its guild is the one
@@ -1941,7 +2004,10 @@ async def build_dependencies(
     # path or a loud 400 at the first wake.
     _joinable = voice_hub.guild_ids if voice_hub is not None else frozenset()
     for _convo in allowlist.rooms():
-        if not _convo.voice:
+        if not _convo.voice or _discord_bridge:
+            # Bridge mode: the join allow-list lives on the bridge; the
+            # app's read of it is `BridgeDiscordAdapter.send`, and this
+            # warning's premise ("the app has no controller") is false.
             continue
         _guild = _convo.primary_id.partition("/")[0]
         if _guild not in _joinable:
@@ -2017,6 +2083,9 @@ async def build_dependencies(
     voice_event_consumer = (
         VoiceEventConsumer(music_manager, voice_hub)
         if music_manager is not None and voice_hub is not None
+        # Bridge mode: the controller posts to the bridge's
+        # `/v1/voice/event`, whose sink is the bridge's own consumer —
+        # there is no app-side session for an event to reconcile.
         else None
     )
     # Where a guild's music ANNOUNCEMENTS go.
@@ -2033,7 +2102,10 @@ async def build_dependencies(
     # operator who names the channel before wiring the sidecar has written
     # something correct-but-early, not something wrong.
     for convo in allowlist.rooms():
-        if convo.music_channel is None:
+        if convo.music_channel is None or _discord_bridge:
+            # Bridge mode: `[speech.tts] sidecars` maps on the BRIDGE, not
+            # here — `voice_guild_ids` is empty by design and this warning
+            # would announce a dead channel that is not dead.
             continue
         music_guild, _, _ = convo.primary_id.partition("/")
         if music_guild not in voice_guild_ids:
@@ -2061,6 +2133,7 @@ async def build_dependencies(
             voice_guild_ids=voice_guild_ids,
             resolve_music_channel=resolve_music_channel,
             instagram_summons=summons_inbox,
+            bridge_token=cfg.credentials.get(cfg.bridges.token_env, ""),
             # A 1:1 message goes only to somebody in identity.toml; the
             # senders hold this set and refuse the rest.
             dm_recipients={
@@ -2085,7 +2158,7 @@ async def build_dependencies(
     # (nora.app only builds Signal-specific tool wiring around it;
     # see that field's own docstring). An internal invariant violation, not a
     # config error, so it fails loudly rather than via a silent type lie.
-    if not isinstance(signal_adapter, SignalAdapter):
+    if not isinstance(signal_adapter, (SignalAdapter, BridgeAdapter)):
         raise StartupError("internal error: registry's 'signal' entry is not a SignalAdapter")
     adapter = signal_adapter
     # Static conformance proof (DEC-12): `isinstance` against a `runtime_checkable`
@@ -2166,6 +2239,10 @@ async def build_dependencies(
     llm_state = LLMState()
     background = BackgroundTasks()
     background.spawn(reload_files.run())
+    if isinstance(channel_directory, BridgeChannelDirectory):
+        # The bridge-mode directory's TTL snapshot only stays live while
+        # its refresh loop runs — a real registered loop, not lazy reads.
+        background.spawn(channel_directory.run())
     # R-9's rate limiter, with its window persisted so a force-recreate does
     # not empty it (a duplicate tag arriving seconds after a restart would
     # otherwise run a second turn). `spawn` is REQUIRED alongside the store, not
@@ -2252,12 +2329,22 @@ async def build_dependencies(
     # adapter would be a client nothing can use.
     rosters: dict[str, RosterSource] = {}
     if "signal" in registry:
-        rosters["signal"] = SignalRoster(
-            base_url=cfg.platforms.signal.base_url, account=cfg.platforms.signal.account,
-        )
+        rosters["signal"] = (
+            BridgeRoster("signal", BridgeEndpoint(
+                cfg.platforms.signal.base_url,
+                cfg.credentials.get(cfg.bridges.token_env, "")))
+            if cfg.platforms.signal.mode == "bridge"
+            else SignalRoster(
+                base_url=cfg.platforms.signal.base_url,
+                account=cfg.platforms.signal.account))
     if "discord" in registry:
-        from nora.platform.discord.roster import DiscordRoster
-        rosters["discord"] = DiscordRoster(discord_token)
+        if discord_control is not None:
+            # Bridge mode: the roster read crosses the bridge's `/v1/reads`
+            # surface — the app holds no Discord client for a live answer.
+            rosters["discord"] = BridgeDiscordRoster(control=discord_control)
+        else:
+            from nora.platform.discord.roster import DiscordRoster
+            rosters["discord"] = DiscordRoster(discord_token)
     if "instagram" in registry:
         # Built for a DEGRADED adapter too, and that is deliberate: the registry registers
         # an Instagram adapter that could not authenticate rather than refusing
@@ -3117,8 +3204,14 @@ async def build_dependencies(
     # and `"discord" in registry` is the same narrowing `rosters["discord"]`
     # below uses. Shares the SAME `music_manager` and Discord adapter every
     # slash command already uses — never a second mutation path.
-    music_bridge: DiscordMusicToolBridge | None = None
-    if music_manager is not None and "discord" in registry:
+    music_bridge: DiscordMusicToolBridge | BridgeMusicTool | None = None
+    if _discord_bridge and "discord" in registry:
+        # Bridge mode: the app holds NO manager — the deterministic music
+        # surface forwards to the bridge's `/v1/music/{op}`, which executes
+        # against the bridge's own manager and voice cache.
+        if cfg.music.enabled and discord_control is not None:
+            music_bridge = BridgeMusicTool(control=discord_control)
+    elif music_manager is not None and "discord" in registry:
         discord_adapter = registry.get("discord")
         # The same defensive narrowing `signal_adapter` above needs, for the
         # identical reason: `AdapterRegistry.get` returns the port type, and
@@ -3149,7 +3242,12 @@ async def build_dependencies(
     discord_presence: DiscordPresenceSource | None = None
     if "discord" in registry:
         discord_adapter = registry.get("discord")
-        if isinstance(discord_adapter, DiscordAdapter):
+        if _discord_bridge and discord_control is not None:
+            # Bridge mode: both presence reads cross `/v1/reads` — a dead
+            # bridge answers `unavailable`, never a stale live-cache read.
+            voice_presence = BridgeVoicePresence(control=discord_control)
+            discord_presence = BridgeDiscordPresence(control=discord_control)
+        elif isinstance(discord_adapter, DiscordAdapter):
             from nora.platform.discord.discord_presence import DiscordPresence
             from nora.platform.discord.voice_presence import DiscordVoicePresence
             voice_presence = DiscordVoicePresence(adapter=discord_adapter)
@@ -3965,6 +4063,61 @@ async def build_dependencies(
         ingest=ingest, engagement=engagement, background=background,
         participation=participation_trigger,
     )
+
+    # ---- platform bridges (design/platform-bridges) -------------------------
+    # Any platform with `mode = "bridge"` consumes inbound over Redis Streams
+    # instead of its live listener, and its adapter is a BridgeAdapter client
+    # of that bridge's action API. The readers and the work runner are built
+    # here and spawned from `nora/__main__.py` like every other loop; a
+    # missing Redis URL is a StartupError, never a quietly-deaf deployment.
+    bridge_platforms = [
+        p for p in ("signal", "discord", "whatsapp", "instagram")
+        if getattr(cfg.platforms, p).enabled
+        and getattr(cfg.platforms, p).mode == "bridge"
+    ]
+    bridge_runtime: BridgeRuntime | None = None
+    if bridge_platforms:
+        redis_url = cfg.credentials.get(cfg.bridges.redis_url_env, "")
+        if not redis_url:
+            raise StartupError(
+                f"bridge mode is enabled for {bridge_platforms} but "
+                f"${cfg.bridges.redis_url_env} (bridges.redis_url_env) is not "
+                "set — refusing to start deaf")
+        bridge_store = SqlBridgeStore(engine)
+        bridge_redis = aioredis.from_url(redis_url)
+        bridge_locks = DbSpeakingLocks(bridge_store)
+        bridge_runner = WorkRunner(
+            store=bridge_store, redis=bridge_redis, ingest=ingest,
+            engagement=engagement, slots=slots, db_locks=bridge_locks,
+            adapters=dict(registry.adapters), gate=policy, metrics=metrics,
+            participation=participation_trigger,
+            memory_feed={"memory": memory, "absorbed": True},
+            stimulus=stimulus_wiring,
+            lease_seconds=cfg.bridges.lease_seconds,
+        )
+        # The inspector reads the REAL redis client + engine the runtime
+        # runs on — a second connection would measure a different world.
+        queue_inspector = QueueInspector(
+            bridge_redis, engine=engine, metrics=metrics)
+        bridge_runtime = BridgeRuntime(
+            redis=bridge_redis, store=bridge_store,
+            readers=[
+                StreamReader(
+                    platform=p,
+                    account_key=getattr(cfg.platforms, p).account_key,
+                    redis=bridge_redis, store=bridge_store,
+                    metrics=metrics)
+                for p in bridge_platforms
+            ],
+            runner=bridge_runner,
+            inspector=queue_inspector,
+        )
+        # Zero-series for the counters the runtime increments — the REAL
+        # work-kind and action-op tuples, so `increase()` over a series the
+        # first event creates does not lose it.
+        prime_queue_metrics(
+            metrics, bridge_platforms,
+            work_kinds=sorted(WORK_KINDS))
 
     # ---- the Dreamer runtime --------------------
     #
@@ -4883,6 +5036,7 @@ async def build_dependencies(
         room_label=functools.partial(room_label, allowlist),
         blobs=blobs, artifacts=computer_exports,
         dispatcher=dispatcher, adapter=adapter, registry=registry,
+        bridge_runtime=bridge_runtime,
         participation_trigger=participation_trigger,
         relevance_gate=gate,
         fire_path=fire_path,
@@ -5213,16 +5367,21 @@ async def _build_media_custody(
             media.encryption_key_env, exc,
         )
         return None, None
+    bridge_token = cfg.credentials.get(cfg.bridges.token_env, "")
     sources = MediaSourceRegistry([
-        SignalMediaSource(
-            base_url=cfg.platforms.signal.base_url,
-            timeout_seconds=media.timeout_seconds,
-            max_bytes=media.max_bytes,
-        ),
-        DiscordMediaSource(
-            timeout_seconds=media.timeout_seconds,
-            max_bytes=media.max_bytes,
-        ),
+        (BridgeMediaSource(
+            "signal", BridgeEndpoint(cfg.platforms.signal.base_url, bridge_token))
+            if cfg.platforms.signal.mode == "bridge"
+            else SignalMediaSource(
+                base_url=cfg.platforms.signal.base_url,
+                timeout_seconds=media.timeout_seconds,
+                max_bytes=media.max_bytes)),
+        (BridgeMediaSource(
+            "discord", BridgeEndpoint(cfg.platforms.discord.base_url, bridge_token))
+            if cfg.platforms.discord.mode == "bridge"
+            else DiscordMediaSource(
+                timeout_seconds=media.timeout_seconds,
+                max_bytes=media.max_bytes)),
         # Unconditional, like its two siblings and NOT gated on
         # `[platforms.instagram] enabled`: the registry is keyed by platform,
         # so a fetcher for a platform producing no messages costs nothing,

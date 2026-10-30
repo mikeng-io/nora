@@ -20,9 +20,10 @@ REGISTRY = 'ghcr.io/mikeng-io/nora-'
 COHORT = {
     'nora': 'nora', 'presence': 'nora', 'analytics': 'nora',
     'app': 'app', 'site': 'site', 'stt': 'stt', 'voice-wake': 'voice-wake',
-    'voice-sidecar': 'voice-sidecar', 'signal-cli': 'signal-cli',
+    'voice-sidecar': 'voice-sidecar', 'signal-bridge': 'signal-bridge',
+    'discord-bridge': 'discord-bridge',
     'whatsapp-bridge': 'whatsapp-bridge', 'instagram-bridge': 'instagram-bridge',
-    'alert-bridge': 'alert-bridge',
+    'alert-bridge': 'alert-bridge', 'bridge-projection': 'bridge-projection',
 }
 
 
@@ -101,7 +102,8 @@ def reload_services(resolved: dict, images: dict, request: Path) -> list[str]:
                 'config.toml', 'identity.toml', 'policy.toml', 'secret.toml', '.env'}):
         raise ValueError('invalid scoped config reload request')
     if set(files) & {'secret.toml', '.env'}:
-        return [name for name in images if name not in {'site', 'stt', 'signal-cli'}]
+        return [name for name in images if name not in {
+            'site', 'stt', 'signal-bridge', 'discord-bridge'}]
     targets = {'/app/' + f for f in files}
     readers = [name for name in images if any(
         v['target'] in targets for v in resolved['services'][name].get('volumes', []))]

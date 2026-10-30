@@ -2,11 +2,22 @@
 /**
  * Nora WhatsApp Bridge
  *
- * Node 20 daemon that connects to WhatsApp via Baileys and exposes a small
- * HTTP + SSE surface for the Nora Python process. The wire contract is
- * pinned in design/whatsapp-adoption/03-transport-contract.md — every route,
- * every SSE field, the drop-and-count rule, and the health body are defined
- * there, not here.
+ * Node 24 daemon that connects to WhatsApp via Baileys and exposes two
+ * surfaces:
+ *
+ *  - LEGACY (design/whatsapp-adoption/03-transport-contract.md): HTTP + SSE
+ *    for the pre-streams app. Kept byte-compatible while the migration runs;
+ *    it is not the correctness path.
+ *  - DURABLE (design/platform-bridges, frozen nora-bridge-wire v1): every
+ *    inbound transition is normalized once, fsync-journaled, dedupe-
+ *    enqueued to `nq:in:whatsapp:{account_key}` and may earn a queued
+ *    receipt; outbound effects go through the reserved-action API
+ *    `POST /v1/actions` backed by Postgres `bridge_action`.
+ *
+ * Durable mode engages when `NORA_BRIDGE_JOURNAL` is set. It requires
+ * `NORA_REDIS_URL` and `NORA_BRIDGE_CORRELATION_KEY` (+`_VERSION`); without
+ * `DATABASE_URL` the action API answers 503 rather than execute an
+ * unreserved effect.
  *
  * Adapted from Hermes' scripts/whatsapp-bridge/ (MIT). Deliberately NOT
  * copied: express (built-in http instead), qrcode-terminal (pairing-code
@@ -18,10 +29,17 @@
  *   GET  /health      - liveness + drop counter (always 200 while serving)
  *   GET  /events      - SSE stream; replays bounded offline buffer on connect
  *   GET  /self        - the bot's own id forms (503 until socket open)
- *   POST /send        - { jid, text }
- *   POST /send-media  - { jid, media_type, data_base64, filename?, caption? }
- *   POST /edit        - { jid, id, text }
- *   POST /react       - { jid, message_id, emoji, remove? }
+ *   POST /send        - { jid, text }                         (legacy)
+ *   POST /send-media  - { jid, media_type, data_base64, ... } (legacy)
+ *   POST /edit        - { jid, id, text }                     (legacy)
+ *   POST /react       - { jid, message_id, emoji, remove? }   (legacy)
+ *   GET  /metrics     - Prometheus counters (bearer required)
+ *   POST /v1/actions                - reserved durable action
+ *   GET  /v1/actions/{action_id}    - recorded action state (readback)
+ *   GET  /v1/self                   - {platform, primary, aliases[]}
+ *   GET  /v1/health                 - {ok, detail, degraded}
+ *   POST /v1/reads                  - {op:'roster', params:{conversation_id}}
+ *   PUT|GET /v1/attachments/{key}   - custody bytes
  *
  * Usage:
  *   node bridge.js --port 18081 --session /app/session
@@ -31,7 +49,21 @@
 import http from 'node:http';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
-import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, proto } from '@whiskeysockets/baileys';
+import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, proto, downloadMediaMessage } from '@whiskeysockets/baileys';
+import { createClient } from 'redis';
+import pg from 'pg';
+
+import { readBody, sendJson } from './http_util.js';
+import { Journal, JournalError } from './journal.js';
+import { StreamProducer, streamName } from './queue.js';
+import { Projection } from './projection.js';
+import { AttachmentStore } from './media.js';
+import { ActionStore, receiptIntentIds } from './store.js';
+import { createV1, runAction } from './actions.js';
+import { initTracing, otlpEndpoint } from './tracing.js';
+import { createPipeline } from './pipeline.js';
+import { Metrics, jlog } from './obs.js';
+import { conversationIdFor, lidForm, phoneForm, senderForm } from './wa_jid.js';
 
 import {
   authorizedBridgeRequest,
@@ -46,6 +78,7 @@ import {
   getMessageContent,
   decryptSecretEdit,
   invertLidMap,
+  isGroupJid,
   isValidTargetJid,
   jidUserDigits,
   normalizeJid,
@@ -62,19 +95,59 @@ function getArg(name, defaultVal) {
   return idx !== -1 && args[idx + 1] ? args[idx + 1] : defaultVal;
 }
 
-const PORT = parseInt(getArg('port', '18081'), 10);
+const PORT = parseInt(getArg('port', process.env.NORA_BRIDGE_PORT || '18081'), 10);
 const SESSION_DIR = path.resolve(getArg('session', path.join(process.env.HOME || '~', '.nora', 'whatsapp', 'session')));
 const PAIR_MODE = args.includes('--pair');
 const PAIR_PHONE = String(getArg('phone', '')).replace(/\D/g, '');
-const BRIDGE_TOKEN = process.env.NORA_BRIDGE_TOKEN || '';
+// Shared contract name first; the deployed NORA_BRIDGE_TOKEN stays accepted
+// until the root secret projection is renamed with lead coordination.
+const BRIDGE_TOKEN = process.env.NORA_BRIDGE_API_TOKEN || process.env.NORA_BRIDGE_TOKEN || '';
+
+// -- Durable-mode env (frozen nora-bridge-wire v1 §env) ----------------------
+const JOURNAL_PATH = process.env.NORA_BRIDGE_JOURNAL || '';
+const DURABLE = Boolean(JOURNAL_PATH) && !PAIR_MODE;
+const REDIS_URL = process.env.NORA_REDIS_URL || '';
+const CORRELATION_KEY_HEX = process.env.NORA_BRIDGE_CORRELATION_KEY || '';
+const KEY_VERSION = parseInt(process.env.NORA_BRIDGE_CORRELATION_KEY_VERSION || '1', 10) || 1;
+// Required, opaque: the stream/account leg the app's account_key must match.
+// Never derived from a platform id, never a silent 'default' — a bridge that
+// guesses its account leg publishes to a stream nobody consumes.
+const ACCOUNT_KEY = process.env.NORA_BRIDGE_ACCOUNT_KEY || '';
+const PROJECTION_DIR = process.env.NORA_BRIDGE_PROJECTION_DIR || '/bridge-projection';
+const ATTACH_DIR = process.env.NORA_BRIDGE_ATTACH_DIR
+  || (JOURNAL_PATH ? path.join(path.dirname(JOURNAL_PATH), 'attachments') : '');
+// DATABASE_URL is the canonical name (frozen env contract); NORA_DATABASE_URL
+// is the deployed legacy fallback, dropped once root projections rename.
+const DATABASE_URL = process.env.DATABASE_URL || process.env.NORA_DATABASE_URL || '';
 
 if (PAIR_MODE && !PAIR_PHONE) {
   console.error('[bridge] --pair requires --phone <digits> (international format, no +)');
   process.exit(2);
 }
 if (!PAIR_MODE && !BRIDGE_TOKEN) {
-  console.error('[bridge] NORA_BRIDGE_TOKEN is not set; refusing to start an unauthenticated bridge');
+  console.error('[bridge] NORA_BRIDGE_API_TOKEN is not set; refusing to start an unauthenticated bridge');
   process.exit(2);
+}
+if (DURABLE) {
+  // A half-configured durable bridge is a lie about durability — refuse to
+  // boot rather than journal events that can never reach the stream.
+  if (!REDIS_URL) {
+    console.error('[bridge] NORA_BRIDGE_JOURNAL is set but NORA_REDIS_URL is not; refusing to start');
+    process.exit(2);
+  }
+  if (!/^[0-9a-fA-F]+$/.test(CORRELATION_KEY_HEX) || CORRELATION_KEY_HEX.length < 32) {
+    console.error('[bridge] NORA_BRIDGE_CORRELATION_KEY must be a hex HMAC key (>=16 bytes); refusing to start');
+    process.exit(2);
+  }
+  if (!ACCOUNT_KEY) {
+    console.error('[bridge] NORA_BRIDGE_ACCOUNT_KEY is required in durable mode (opaque account leg); refusing to start');
+    process.exit(2);
+  }
+  if (!DATABASE_URL) {
+    console.error('[bridge] WARNING: DATABASE_URL unset — /v1/actions will answer 503 (no durable action reservation)');
+  }
+} else if (!PAIR_MODE) {
+  console.log('[bridge] NORA_BRIDGE_JOURNAL unset — legacy SSE mode (no durable capture)');
 }
 
 function log(line) {
@@ -115,6 +188,59 @@ const buffer = createEventBuffer(500, {
 });
 
 const sseClients = new Set();
+
+// -- Durable capture objects (null in legacy mode) ----------------------------
+
+const metrics = new Metrics();
+let journal = null;
+let projection = null;
+let attachments = null;
+let actionStore = null;
+let pipeline = null;
+let redisClient = null;
+let redisUp = false;
+let pgPool = null;
+// One serial chain for every journal/enqueue/compaction step — a capture's
+// append and a replay drain can never interleave out of order.
+let captureChain = Promise.resolve();
+function onChain(fn) {
+  const task = captureChain.then(fn, fn);
+  captureChain = task.catch(() => {});
+  return task;
+}
+
+function selfForms() {
+  const me = sock?.user || {};
+  const jid = normalizeJid(me.id);
+  const lidJid = normalizeJid(me.lid);
+  return {
+    phone: jid ? jidUserDigits(jid) || null : null,
+    lid: lidJid ? jidUserDigits(lidJid) || null : null,
+  };
+}
+
+function selfAliases() {
+  const s = selfForms();
+  return new Set([s.phone && phoneForm(s.phone), s.lid && lidForm(s.lid)].filter(Boolean));
+}
+
+// OTel producer/attempt/custody spans; null when no exporter endpoint is
+// configured — the callsites then no-op. A batch exporter means an OTLP
+// outage drops spans, never events.
+const tracer = initTracing();
+if (DURABLE && tracer) {
+  console.log(`[bridge] otel spans → ${otlpEndpoint().replace(/\/v1\/traces.*$/, '/v1/traces')}`);
+}
+
+// The executor context shared by /v1/actions and the queued-receipt step.
+const actionCtx = {
+  get sock() { return sock; },
+  connected: () => Boolean(sock && connected),
+  sendWithTimeout,
+  attachments: null,          // filled by initDurable
+  recentMessages,
+  get selfAliases() { return selfAliases(); },
+};
 
 // -- SSE fan-out + buffering (contract §dropped) ------------------------------
 
@@ -273,12 +399,15 @@ async function startSocket() {
         }
         if (!opened.msg) {
           log(`secret edit not decrypted id=${msg.key.id} chat=${redactJid(msg.key.remoteJid)} reason=${opened.reason}${opened.shape ? ` shape=[${opened.shape}]` : ''}`);
+          if (pipeline) {
+            onChain(() => pipeline.noteAmbiguous(ambiguousFor(msg, opened))).catch(captureDied);
+          }
           continue;
         }
         log(`secret edit decrypted id=${msg.key.id} chat=${redactJid(msg.key.remoteJid)} shape=[${opened.shape}]`);
         source = opened.msg;
       }
-      const event = extractMessageEvent(source, { lidToPhone, phoneToLid, recentCache: recentMessages });
+      const event = extractMessageEvent(source, { lidToPhone, phoneToLid, recentCache: recentMessages, self: selfForms() });
       if (!event) {
         // WHAT WAS DROPPED, by SHAPE only — the message's own keys and the
         // unwrapped content's, never a value. A phone's edit produced no event
@@ -291,41 +420,141 @@ async function startSocket() {
         continue;
       }
       log(`message id=${event.id || '?'} chat=${redactJid(event.chat_jid)} from=${redactJid(event.sender_jid)} group=${event.is_group} from_me=${event.from_me} edit=${!!event.edit_of} type=${event.type} media=${(event.media || []).length} buffered=${sseClients.size === 0}`);
-      emitEvent(event);
+      if (pipeline) {
+        // The durable path owns admission → custody → journal → enqueue →
+        // receipt and emits the legacy SSE event inside, for compat.
+        onChain(() => pipeline.capture(event, source)).catch(captureDied);
+      } else {
+        emitEvent(event);
+      }
     }
   });
+}
+
+/**
+ * Identity fields for an undecryptable secret edit, resolved from the OUTER
+ * stanza (the only thing readable) into the same normalized forms a captured
+ * event would carry — the admission check and the ambiguous record need them.
+ */
+function ambiguousFor(msg, opened) {
+  const chatJid = normalizeJid(msg.key.remoteJid) || msg.key.remoteJid;
+  const group = isGroupJid(chatJid);
+  const senderJid = normalizeJid(group && msg.key.participant ? msg.key.participant : msg.key.remoteJid) || '';
+  const id = resolveIdentity(senderJid, lidToPhone, phoneToLid);
+  return {
+    conversationId: conversationIdFor(chatJid, id.phone),
+    conversationType: group ? 'group' : 'dm',
+    senderId: senderForm(senderJid, id.phone, id.lid),
+    stanzaId: msg.key.id || null,
+    targetId: getMessageContent(msg)?.secretEncryptedMessage?.targetMessageKey?.id || null,
+    reason: opened?.reason || 'undecryptable',
+  };
+}
+
+/**
+ * A JournalError anywhere in the capture path means durable capture is
+ * broken: stop upstream (close the socket) and exit — the supervisor's
+ * restart re-runs the journal preflight, which keeps the bridge down while
+ * the volume stays broken. Never drop the oldest, never keep receiving.
+ */
+function captureDied(err) {
+  if (err instanceof JournalError) {
+    log(`CAPTURE JOURNAL BROKEN — stopping upstream and exiting: ${err.message}`);
+    jlog('capture.halt', { reason: 'journal_broken' });
+    try { sock?.end(); } catch { try { sock?.ws?.close(); } catch { /* already gone */ } }
+    setTimeout(() => process.exit(1), 300).unref();
+    return;
+  }
+  log(`capture pipeline error: ${err?.message || err}`);
+}
+
+// -- Durable bootstrap ---------------------------------------------------------
+
+async function initDurable() {
+  // Journal preflight BEFORE upstream receive — the contract's first step,
+  // on every restart, not once.
+  journal = new Journal(JOURNAL_PATH);
+  try {
+    journal.probe();
+  } catch (err) {
+    console.error(`[bridge] journal preflight failed (${err?.message || err}); refusing upstream`);
+    process.exit(2);
+  }
+  attachments = new AttachmentStore(ATTACH_DIR);
+  actionCtx.attachments = attachments;
+  projection = new Projection(PROJECTION_DIR, 'whatsapp', { log });
+  projection.start();
+
+  pgPool = DATABASE_URL ? new pg.Pool({ connectionString: DATABASE_URL, max: 4 }) : null;
+  actionStore = pgPool ? new ActionStore(pgPool, {
+    platform: 'whatsapp', accountKey: ACCOUNT_KEY,
+    // The producer evidence an `event_receipt` owner must name — recomputed
+    // per call so intents captured after boot count (never a stale snapshot).
+    receiptIntents: () => receiptIntentIds(journal, {
+      correlationKey: Buffer.from(CORRELATION_KEY_HEX, 'hex'),
+      keyVersion: KEY_VERSION,
+    }),
+  }) : null;
+
+  redisClient = createClient({
+    url: REDIS_URL,
+    socket: { reconnectStrategy: (retries) => Math.min(1000 * 2 ** Math.min(retries, 5), 30000) },
+    // Offline commands reject immediately — a queued XADD that flushes later
+    // would sit ahead of newer captures on the chain; the journal + dedupe
+    // make rejection the cheaper, idempotent path.
+    disableOfflineQueue: true,
+  });
+  redisClient.on('ready', () => {
+    redisUp = true;
+    log('redis connected — draining journal');
+    if (pipeline) pipeline.pump()?.catch(captureDied);
+  });
+  redisClient.on('end', () => { redisUp = false; });
+  redisClient.on('error', (err) => { redisUp = false; log(`redis error: ${err?.message || err}`); });
+  try {
+    await redisClient.connect();
+  } catch (err) {
+    redisUp = false;
+    log(`redis unavailable at boot (${err?.message || err}) — capture journals until it returns`);
+  }
+
+  const producer = new StreamProducer(redisClient, streamName('whatsapp', ACCOUNT_KEY));
+  pipeline = createPipeline({
+    platform: 'whatsapp', accountKey: ACCOUNT_KEY,
+    correlationKey: Buffer.from(CORRELATION_KEY_HEX, 'hex'), keyVersion: KEY_VERSION,
+    journal, producer, projection, attachments,
+    downloadMedia: async (rawMsg) => {
+      if (!sock || !connected) throw new Error('not_connected');
+      return downloadMediaMessage(rawMsg, 'buffer', {},
+        { logger: baileysLogger, reuploadRequest: sock.updateMediaMessage });
+    },
+    runReceipt: async ({ event_id, request, traceLinks }) => runAction({
+      store: actionStore, ctx: actionCtx,
+      actionId: `${event_id}:react:0`,
+      owner: { kind: 'event_receipt', id: event_id, generation: null },
+      op: 'react', request, metrics, tracer, traceLinks,
+    }),
+    emitLegacy: emitEvent,
+    metrics, jlog, tracer,
+  });
+
+  if (redisUp) {
+    await onChain(() => pipeline.replay());
+  }
+  // Periodic drain — a Redis flap or a mid-run outage leaves the journal
+  // pending; the head-first drain publishes it back in order.
+  const drainTimer = setInterval(() => {
+    if (redisUp && pipeline) pipeline.pump()?.catch(captureDied);
+  }, 60000);
+  drainTimer.unref();
 }
 
 // -- HTTP surface -------------------------------------------------------------
 
 const MAX_BODY_BYTES = 100 * 1024 * 1024;
 
-function sendJson(res, status, obj) {
-  const body = JSON.stringify(obj);
-  res.writeHead(status, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) });
-  res.end(body);
-}
-
-function readBody(req) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    let size = 0;
-    req.on('data', (chunk) => {
-      size += chunk.length;
-      if (size > MAX_BODY_BYTES) {
-        reject(new Error('body too large'));
-        req.destroy();
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on('end', () => resolve(Buffer.concat(chunks)));
-    req.on('error', reject);
-  });
-}
-
 async function readJsonBody(req) {
-  const raw = await readBody(req);
+  const raw = await readBody(req, MAX_BODY_BYTES);
   if (raw.length === 0) return {};
   return JSON.parse(raw.toString('utf8'));
 }
@@ -361,13 +590,13 @@ function enqueueSend(fn) {
 }
 
 const SEND_TIMEOUT_MS = 60000;
-function sendWithTimeout(jid, payload) {
+function sendWithTimeout(jid, payload, opts = {}) {
   let timer;
   const timeout = new Promise((_, reject) => {
     timer = setTimeout(() => reject(new Error('sendMessage timed out after 60s')), SEND_TIMEOUT_MS);
   });
   return enqueueSend(() =>
-    Promise.race([sock.sendMessage(jid, payload), timeout]).finally(() => clearTimeout(timer))
+    Promise.race([sock.sendMessage(jid, payload, opts), timeout]).finally(() => clearTimeout(timer))
   );
 }
 
@@ -530,6 +759,43 @@ async function handleReact(req, res) {
   }
 }
 
+function healthV1() {
+  const journalBroken = Boolean(pipeline?.broken);
+  const projMissing = projection ? !projection.valid : false;
+  const projStale = Boolean(projection?.stale);
+  const degraded = Boolean(!redisUp || projMissing || projStale || journalBroken);
+  const ok = Boolean(sock && connected && paired && !loggedOut) && !journalBroken;
+  const detail = journalBroken ? 'journal_broken'
+    : !redisUp ? 'redis_down'
+    : projMissing ? 'projection_missing'
+    : projStale ? 'projection_stale' : null;
+  return { ok, detail, degraded, connected, paired };
+}
+
+const handleV1 = createV1({
+  get store() { return actionStore; },
+  ctx: actionCtx,
+  tracer,
+  get attachments() { return attachments; },
+  get sock() { return sock; },
+  self: () => {
+    if (!sock || !connected) return null;
+    const s = selfForms();
+    const aliases = [s.phone && phoneForm(s.phone), s.lid && lidForm(s.lid)].filter(Boolean);
+    return {
+      platform: 'whatsapp',
+      primary: aliases[0] || null,
+      aliases,
+      phone: s.phone,
+      lid: s.lid,
+      jid: normalizeJid(sock.user?.id) || null,
+      lid_jid: normalizeJid(sock.user?.lid) || null,
+    };
+  },
+  health: healthV1,
+  metrics,
+});
+
 const server = http.createServer(async (req, res) => {
   let route = `${req.method} ${req.url}`;
   try {
@@ -542,10 +808,15 @@ const server = http.createServer(async (req, res) => {
     )) {
       return sendJson(res, 401, { error: 'unauthorized' });
     }
+    if (DURABLE && url.pathname.startsWith('/v1/') && await handleV1(req, res, url)) return;
     switch (route) {
       case 'GET /health': return handleHealth(req, res);
       case 'GET /events': return handleEvents(req, res);
       case 'GET /self': return handleSelf(req, res);
+      case 'GET /metrics': {
+        res.writeHead(200, { 'content-type': 'text/plain; version=0.0.4' });
+        return res.end(metrics.text());
+      }
       case 'POST /send': return await handleSend(req, res);
       case 'POST /send-media': return await handleSendMedia(req, res);
       case 'POST /edit': return await handleEdit(req, res);
@@ -572,6 +843,12 @@ server.listen(PORT, '0.0.0.0', () => {
     log('NOT PAIRED — no creds.json in session dir. HTTP surface is up; pair with: node bridge.js --pair --phone <digits>');
   }
 });
+
+// Durable bootstrap BEFORE upstream receive: journal probe → custody dir →
+// projection → Redis → journal replay, all ahead of the first stanza.
+if (DURABLE) {
+  await initDurable();
+}
 
 if (PAIR_MODE) {
   log(`pairing mode for +${PAIR_PHONE}`);

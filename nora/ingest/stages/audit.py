@@ -22,6 +22,7 @@ async def run(
     audit: RecordStore,
     metrics: Any,
     person: PersonRef | None = None,
+    tx_hook: Any = None,
 ) -> int | None:
     """Return the recorded row's id, or None when the message was dropped and
     ingest should stop. The id is what the stimulus stage names the Record
@@ -33,7 +34,8 @@ async def run(
     """
     try:
         return await audit.append(
-            message=message, person_id=person.person_id if person else None
+            message=message, person_id=person.person_id if person else None,
+            tx_hook=tx_hook,
         )
     except Exception:
         log.exception("audit append failed; dropping message")

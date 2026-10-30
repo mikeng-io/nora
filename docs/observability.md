@@ -764,6 +764,28 @@ Sentry rather than instead of it — see "what counts as an error" below.
 | `OAuthRefreshRefused` | a lane's refresh token was refused, or its state dir is unwritable | neither heals by retrying: it needs a new login, so it fires at once instead of waiting for the staleness window |
 | `PrometheusNotIngesting` | it stops scraping itself | a monitoring stack's own failure mode is to go quiet and leave everything green |
 
+### The admission-projection surfaces
+
+`bridge-projection` answers three endpoints on `8091` (private `nora`
+network, no published port): `/live` is process liveness — the Compose
+healthcheck uses it, so a stale projection never causes a restart loop.
+`/health` is authorization truth: 200 only when every publisher's file is
+fresh, 503 with a per-platform body (`stale`, `files`, `self_stale`,
+`write_stale`, `key_mismatch`, `directory`) naming the cause. `/metrics`
+renders the shared registry — the same one the `ReloadFiles` watchers
+write to, so policy/identity reload outcomes are visible in one place.
+
+The alert-relevant signals are the same two absences as everywhere else in
+this section: `up` for the 8091 scrape (publisher dead — bridges are
+enforcing stale or deny state) and a `stale`/`ok:false` `/health` body
+persisting past a tick (sources fixed but not landing, a failed write, a
+mismatched account leg, or a bridge directory that stopped answering).
+Both are absence conditions, not error rates — a publisher that keeps
+serving while its sources rot is exactly the silent case this alerting
+exists for. The artifacts themselves carry `generated_ms` (write time)
+and `revision` (content hash), so "file says X, is it current?" reads off
+the JSON, never off the process's word.
+
 **What this pipeline cannot say, stated rather than discovered.** There is **no
 dead-man switch**: if Prometheus, Alertmanager or the bridge stops, nothing says so
 (`PrometheusNotIngesting` is evaluated BY Prometheus, so it cannot report its own

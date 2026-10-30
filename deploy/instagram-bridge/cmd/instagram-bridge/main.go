@@ -63,10 +63,13 @@ import (
 
 func main() {
 	var (
-		port       = flag.Int("port", envInt("IG_BRIDGE_PORT", 18082), "HTTP port (private nora network only)")
+		port       = flag.Int("port", envInt("NORA_BRIDGE_PORT", envInt("IG_BRIDGE_PORT", 18082)), "HTTP port (private nora network only)")
 		sessionDir = flag.String("session", envStr("IG_SESSION_DIR", "/session"), "directory holding cookies + reconnection state")
 		verbose    = flag.Bool("v", false, "log the protocol client's own output")
-		token      = envStr("NORA_BRIDGE_TOKEN", "")
+		// The shared facade token is NORA_BRIDGE_API_TOKEN; NORA_BRIDGE_TOKEN
+		// stays honoured until the root secret projection migrates every
+		// deployed name over (coordinated with lead/root, not unilateral).
+		token = envStr("NORA_BRIDGE_API_TOKEN", envStr("NORA_BRIDGE_TOKEN", ""))
 	)
 	flag.Parse()
 	observability.SetupLogging(*verbose)
@@ -99,13 +102,36 @@ func main() {
 	// learns which read will answer 501.
 	slog.Info("graphql documents", "story_configured", docs.Story != "",
 		"timeline_configured", docs.Timeline != "")
-	gw, handler := wire(gateway.Options{
+	// Durable mode is explicitly requested by NORA_BRIDGE_DURABLE=1 or by any
+	// of its required envs being set; a partially configured deployment is a
+	// fatal misconfiguration, never a silent fall back to legacy SSE.
+	durableWanted := envStr("NORA_BRIDGE_DURABLE", "") == "1" ||
+		envStr("NORA_BRIDGE_JOURNAL", "") != "" ||
+		envStr("NORA_REDIS_URL", "") != ""
+	d, err := durableFromEnv(
+		envStr("NORA_BRIDGE_JOURNAL", ""),
+		envStr("NORA_REDIS_URL", ""),
+		envStr("DATABASE_URL", ""),
+		envStr("NORA_BRIDGE_PROJECTION_DIR", "/bridge-projection"),
+		envStr("NORA_BRIDGE_ACCOUNT_KEY", ""),
+		envStr("NORA_BRIDGE_CORRELATION_KEY", ""),
+		envInt("NORA_BRIDGE_CORRELATION_KEY_VERSION", 1),
+		durableWanted,
+	)
+	if err != nil {
+		slog.Error("durable bridge wiring failed", "error", err)
+		os.Exit(2)
+	}
+	if d == nil {
+		slog.Warn("no durable bridge config: running compatibility SSE mode only")
+	}
+	gw, handler, sink := wire(gateway.Options{
 		Store:  store,
 		State:  domain.StateLoggedOut,
 		Detail: "starting",
 		Self:   self,
 		Docs:   docs,
-	}, stream.NewHub(), time.Now(), commentPolicy)
+	}, stream.NewHub(), time.Now(), commentPolicy, d)
 
 	// instameow's own log output, as JSON on the same stream and with slog's
 	// field names, so an operator reads one format.
@@ -139,6 +165,35 @@ func main() {
 	}
 
 	var wg sync.WaitGroup
+	// DURABLE CAPTURE PREFLIGHT, BEFORE UPSTREAM RECEIVE (frozen contract):
+	// probe the journal, recover its records and replay pending enqueues.
+	// Only when that succeeds may the socket open; the upstream gate keeps
+	// it closed otherwise.
+	if sink != nil {
+		if d.projection != nil {
+			d.projection.Poll(ctx)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				tick := time.NewTicker(2 * time.Second)
+				defer tick.Stop()
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-tick.C:
+						d.projection.Poll(ctx)
+					}
+				}
+			}()
+		}
+		if err := sink.Start(ctx); err != nil {
+			// Not fatal to the process — the gate simply never opens, and
+			// /v1/health reports capture as not_capturing. Compat routes
+			// (reads, writes, health) keep serving.
+			slog.Error("durable capture preflight failed; upstream receive stays closed", "error", err)
+		}
+	}
 	// The supervisor runs even with no credential on disk. It is what READS
 	// the session directory, so starting it unconditionally is what lets an
 	// operator drop a `Copy as cURL` paste into the volume and have the bridge

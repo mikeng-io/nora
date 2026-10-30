@@ -99,7 +99,7 @@ file says `connected`. There is no env fallback channel: a process serving sever
 | `PUMP_PORT` | `4599` | wake-gate seam port (frame format: `TRANSPORT.md`) |
 | `HOST` | `127.0.0.1` | HTTP bind |
 | `PORT` | `4600` | HTTP port |
-| `NORA_EVENT_URL` | `http://nora:9100/app/v1/voice/event` | where controller → nora events are POSTed |
+| `NORA_EVENT_URL` | `http://discord-bridge:18093/v1/voice/event` | where controller events are POSTed — in bridge mode the bridge owns the `VoiceEventConsumer`; bearer-authed like every `/v1` route there |
 | `STATE_DIR` | `/var/lib/audio-controller` | durable desired-state DIRECTORY, one `<guild_id>.json` per guild (atomic writes). A file whose name is not a guild snowflake is skipped at boot. |
 
 The token is read from the environment only — it is never logged, never

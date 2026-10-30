@@ -24,7 +24,9 @@ and a thread whose `.parent_id` names its room.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import Any
+from typing import Any, TypeGuard
+
+import discord
 
 # discord.py `ChannelType` values a server entry expands into: text,
 # announcement and forum/media channels — the channels that can hold an
@@ -39,6 +41,18 @@ def _type_value(channel: Any) -> int | None:
     t = getattr(channel, "type", None)
     value = getattr(t, "value", t)
     return value if isinstance(value, int) else None
+
+
+def is_voice_channel(channel: Any) -> TypeGuard[discord.VoiceChannel]:
+    """A Discord voice channel — `isinstance` first, `ChannelType.voice`'s
+    value (2) as the structural fallback for a client-shaped object that is
+    not discord.py's (the bridge's injected cache, a test double). Stage
+    channels (13) stay excluded, exactly as `isinstance` made them. A
+    `TypeGuard`: the structural fallback promises the `.id`/`.name`/
+    `.members` surface every caller reads."""
+    if isinstance(channel, discord.VoiceChannel):
+        return True
+    return _type_value(channel) == 2
 
 
 class ClientChannelDirectory:

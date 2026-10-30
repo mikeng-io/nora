@@ -200,13 +200,24 @@ def test_the_subagent_doctrine_is_data_declared_as_package_data():
 def test_signal_cli_runs_as_the_account_the_deployment_states_in_env():
     """The account is the deployment's own number: it comes from `.env`
     (`SIGNAL_ACCOUNT`), never a literal in git. A committed literal would be
-    scrubbed to a pseudonym and signal-cli would come up unregistered."""
+    scrubbed to a pseudonym and signal-cli would come up unregistered.
+
+    The standalone bridge owns the daemon now (`deploy/signal-bridge`), so the
+    assertion lands on its service: the same env-fed account, the same
+    bind-mounted registration store, the same GPG-verified signal-cli on a
+    Java 25 runtime, still uid 1000 so the mounted store stays writable."""
     import yaml
 
     compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
-    command = compose["services"]["signal-cli"]["command"]
-    account = command[command.index("--account") + 1]
-    assert account.startswith("${SIGNAL_ACCOUNT:?"), account
+    service = compose["services"]["signal-bridge"]
+    env = {e.split("=", 1)[0]: e.split("=", 1)[1] for e in service["environment"]}
+    assert env["SIGNAL_ACCOUNT"].startswith("${SIGNAL_ACCOUNT:?")
+    assert "./state/signal-cli:/data/signal-cli" in service["volumes"]
+
+    dockerfile = (DEPLOY / "signal-bridge" / "Dockerfile").read_text(encoding="utf-8")
+    assert "eclipse-temurin:25-jre-noble" in dockerfile
+    assert "gpg --batch --verify" in dockerfile
+    assert "USER 1000:1000" in dockerfile
 
 
 def test_nora_is_handed_the_pulse_base_it_reads():

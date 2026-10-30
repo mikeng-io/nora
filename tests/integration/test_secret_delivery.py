@@ -28,6 +28,15 @@ def test_native_compose_consumes_projection_without_shared_secret_mount(tmp_path
         "DISCORD_CLIENT_SECRET", "AUTH_SECRET", "RUSTFS_ROOT_USER", "RUSTFS_ROOT_PASSWORD",
         "CUSTOM_ENDPOINT_KEY", "CUSTOM_OTP", "CUSTOM_DISCORD", "CUSTOM_LIFE360", "CUSTOM_MAPS",
     ], "synthetic-canary")
+    # Every name compose refuses to interpolate without must be DELIVERED —
+    # reading the set off the file keeps the proof honest as services grow.
+    import re
+
+    required = re.findall(
+        r"\$\{([A-Z][A-Z0-9_]*):\?",
+        (root / "docker-compose.yml").read_text(encoding="utf-8"))
+    for name in required:
+        synthetic.setdefault(name, "synthetic-canary")
     synthetic["AUTH_URL"] = "https://example.invalid"
     synthetic["CUSTOM_ENDPOINT_KEY"] = "synthetic-dollar$literal"
     (tmp_path / "secret.toml").write_text(

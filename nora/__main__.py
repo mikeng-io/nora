@@ -32,6 +32,7 @@ from .obs.health import build_health_app, serve
 from .obs.logging import heartbeat, setup_logging
 from .obs.tracing import build_sampler
 from .web.api import register_web_routes
+from .web.bridge import register_bridge_routes
 from .web.otp import register_otp_routes
 from .web.voice import register_voice
 
@@ -185,6 +186,12 @@ class App:
                 if deps.voice_event_consumer is not None else None
             ),
         )
+        # The queue readout lives on the same authenticated health app —
+        # a deployment observer reads depth through the shared bearer,
+        # exactly like the voice routes above. Registered BEFORE `serve`:
+        # aiohttp freezes the router once the runner is set up.
+        if deps.bridge_runtime is not None:
+            register_bridge_routes(health_app, runtime=deps.bridge_runtime)
         self._health_runner = await serve(health_app, self.cfg.obs.metrics.port)
 
         deps.background.spawn(heartbeat(deps.metrics))
@@ -379,6 +386,17 @@ class App:
         # `listen()` called would be present in `/health` yet deaf. Each
         # platform gets its own supervised task, so one wedged Gateway cannot
         # take Signal down with it.
+        # The platform-bridge runtime: one elected reader per Redis stream +
+        # the work runner. Spawned beside the adapter supervisors — under
+        # `mode = "bridge"` a platform's SupervisedAdapter.listen() only idles
+        # (inbound is the reader's), so there is no dual listener.
+        if deps.bridge_runtime is not None:
+            deps.background.spawn(deps.bridge_runtime.run())
+            # The periodic inspection loop is a second task, not an extra
+            # awaited coroutine inside run(): `run()` owns reader+runner
+            # lifetime; this ticks beside it and stops on the same _stop.
+            deps.background.spawn(deps.bridge_runtime.inspect_forever())
+
         adapter_tasks = runtime.start_adapters(
             deps.background,
             [
@@ -465,6 +483,18 @@ class App:
             await self.deps.subagent_backend.shutdown()
         if self._health_runner is not None:
             await self._health_runner.cleanup()
+        # Bridge-mode collaborators: stop the runtime (readers + lanes +
+        # inspector loop share its _stop), then close its Redis client and
+        # every adapter's bridge control/session clients. `close()` is
+        # present on the bridge adapters and absent on direct-mode ones, so
+        # getattr-guarded rather than asserted.
+        if self.deps.bridge_runtime is not None:
+            self.deps.bridge_runtime.stop()
+            await self.deps.bridge_runtime.redis.aclose()
+        for adapter in self.deps.registry.adapters.values():
+            close = getattr(adapter, "close", None)
+            if close is not None:
+                await close()
         await self.deps.client.close()
         for client in self.deps.model_clients:
             await client.close()

@@ -50,7 +50,14 @@ log = logging.getLogger("nora.tracing")
 #:   whole point is that it leaves a trace SAYING it was refused).
 #: * `plumbing` — deterministic stage sequencing with no model call anywhere
 #:   under it. Never exported. Its signal belongs on a counter.
-TraceKind = Literal["generation", "plumbing"]
+#: * `queue` — a bounded platform-bridge queue operation (enqueue, claim,
+#:   attempt, deliver, ACK). The one operator-requested exception to the
+#:   deterministic-root rule (design/platform-bridges/04): each root is a
+#:   short single-operation span linked to its producer/previous attempt,
+#:   never held open over a queue wait or a deploy. Kept at 100% at this
+#:   installation's volume; the collector routes it to Jaeger and away from
+#:   Langfuse, so it must never carry a model call or message content.
+TraceKind = Literal["generation", "plumbing", "queue"]
 
 #: The attribute name itself, `nora.` prefixed like every other attribute this
 #: module's callers set.
@@ -169,9 +176,39 @@ def span(name: str, **attributes: object) -> Iterator[None]:
     render rather than raising) so that a broken attribute still costs only
     that attribute — never the span, and never the body.
     """
+    with _opened_span(name, links=(), parent=None, attributes=attributes):
+        yield
+
+
+@contextmanager
+def root_span(name: str, *, links: Sequence[Link] = (),
+              parent: Context | None = None,
+              **attributes: object) -> Iterator[None]:
+    """A fresh trace root — the same guards as `span`, with the parent and
+    links a root needs spelled out because ambient context is WRONG here.
+
+    The queue/generation seam is why this exists: a `queue.attempt` or the
+    `engagement` generation root must NOT inherit whichever span happens to be
+    current in the consumer's task (a claim span parenting a model trace is
+    exactly the nesting design 04 forbids). `parent=None` means an EMPTY
+    context — a true root — not ambient; a caller that wants ambient context
+    uses `span`. `links` are the W3C `Link`s stamped at start, the only
+    relationship a fresh root can hold to a context that is not its parent.
+    """
+    with _opened_span(name, links=links,
+                      parent=parent if parent is not None else Context(),
+                      attributes=attributes):
+        yield
+
+
+@contextmanager
+def _opened_span(name: str, *, links: Sequence[Link],
+                 parent: Context | None,
+                 attributes: dict[str, object]) -> Iterator[None]:
     try:
         cm = trace.get_tracer("nora").start_as_current_span(
-            name, attributes=_safe_attributes(attributes),
+            name, context=parent, links=list(links),
+            attributes=_safe_attributes(attributes),
         )
         sp = cm.__enter__()
     except Exception:

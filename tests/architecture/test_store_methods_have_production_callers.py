@@ -193,6 +193,18 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         "read_back_affordance",
         "Revision-by-id read-back; no consumer designed.",
     ),
+    ("bridge_store.py", "nonterminal_work"): _Pin(
+        "read_back_affordance",
+        "Non-terminal work listing for the operator and the contract suite. "
+        "The runner's own recovery is `expire_leases` (boot and idle sweep), "
+        "which re-parks fenced rows directly rather than reading them first.",
+    ),
+    ("bridge_store.py", "work_generation"): _Pin(
+        "read_back_affordance",
+        "In-transaction generation read-back for the contract suite; the "
+        "production fences carry the generation inline in their UPDATE "
+        "predicates, so no production caller needs the row first.",
+    ),
     ("gatherings.py", "revisions_for"): _Pin(
         "read_back_affordance",
         "An event's full revision chain (10-tiers.md §3/§8; migration "
@@ -277,8 +289,8 @@ _AMBIGUOUS: frozenset[str] = frozenset(
 # other files and define no public methods, so they are simply not here.
 _STORE_MODULES: frozenset[str] = frozenset(
     {
-        "assess.py", "audit.py", "cognition_store.py", "comprehend.py", "lessons.py",
-        "tension.py", "entries.py",
+        "assess.py", "audit.py", "bridge_store.py", "cognition_store.py",
+        "comprehend.py", "lessons.py", "tension.py", "entries.py",
         "compute_jobs.py", "computer_events.py", "computer_exports.py",
         "computer_sessions.py",
         "character.py", "culture.py", "decision_log.py", "documents.py", "dream_schedule.py",

@@ -1,0 +1,91 @@
+# Disposable bridge-queue observability fixture — the smallest collector
+# that implements the routing the approved design
+# (design/platform-bridges/04, docs/observability.md) REQUIRES:
+#
+#   app sampler            this collector                       stores
+#   ───────────            ──────────────                       ──────
+#   build_sampler() ──▶ OTLP/HTTP ──▶ filter/langfuse_queue ──▶ tail_sampling
+#   plumbing roots         :4318/     (every queue-kind span      ──▶ sink
+#   drop; queue and        v1/traces   gone FIRST), then the        (the
+#   generation keep                  generation tail policy       synthetic
+#                                    — whole trace iff a          Langfuse)
+#                                    gen_ai chat/invoke_agent
+#                                    span is in it)
+#                             ──▶ filter/jaeger (drops only
+#                                 chat spans) ──────────────────▶ Jaeger
+#
+# The queue ⇒ Langfuse exclusion is EXPLICIT and ordered BEFORE the
+# generation tail policy: a queue-kind span that somehow carries a
+# gen_ai.operation.name attribute still cannot reach the Langfuse leg — the
+# tail sampler never sees it. An implicit "a queue trace has no chat span"
+# exclusion would not survive a mis-attributed queue root.
+#
+# This is the PROPOSED routing the design mandates. Whether the DEPLOYED
+# collector on the nora host already excludes queue-kind spans before its
+# Langfuse policy is a separate prerequisite the parent owns; no host
+# readback is claimed by this fixture.
+#
+# `decision_wait` is 2s where production holds 90s: the disposable fixture
+# trades the production hold-off for test latency; the POLICY is the same.
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 200ms
+  # Ordered before tail_sampling in the langfuse pipeline: queue-kind spans
+  # are removed before the tail policy can evaluate them.
+  filter/langfuse_queue:
+    error_mode: ignore
+    spans:
+      exclude:
+        match_type: strict
+        attributes:
+          - key: nora.trace_kind
+            value: queue
+  tail_sampling:
+    decision_wait: 2s
+    num_traces: 1000
+    policies:
+      - name: generation-traces-only
+        type: string_attribute
+        string_attribute:
+          key: gen_ai.operation.name
+          values: [chat, invoke_agent]
+  filter/jaeger:
+    error_mode: ignore
+    spans:
+      exclude:
+        match_type: strict
+        attributes:
+          - key: gen_ai.operation.name
+            value: chat
+
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+  # The synthetic Langfuse. JSON encoding so the sink needs no protobuf —
+  # the OTLP/JSON schema is stable and the sink reads names/ids/attributes.
+  otlphttp/langfuse:
+    endpoint: http://langfuse-sink:4318
+    encoding: json
+    compression: none
+    sending_queue:
+      queue_size: 100
+
+service:
+  pipelines:
+    traces/jaeger:
+      receivers: [otlp]
+      processors: [batch, filter/jaeger]
+      exporters: [otlp/jaeger]
+    traces/langfuse:
+      receivers: [otlp]
+      processors: [filter/langfuse_queue, batch, tail_sampling]
+      exporters: [otlphttp/langfuse]

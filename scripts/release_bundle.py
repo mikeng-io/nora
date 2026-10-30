@@ -26,10 +26,12 @@ BUILDS = {
     'stt': ('deploy/stt', 'deploy/stt/Dockerfile'),
     'voice-sidecar': ('deploy/voice-sidecar', 'deploy/voice-sidecar/Dockerfile'),
     'voice-wake': ('deploy/voice-wake', 'deploy/voice-wake/Dockerfile'),
-    'signal-cli': ('deploy/signal-cli', 'deploy/signal-cli/Dockerfile'),
+    'signal-bridge': ('.', 'deploy/signal-bridge/Dockerfile'),
+    'discord-bridge': ('.', 'deploy/discord-bridge/Dockerfile'),
     'whatsapp-bridge': ('deploy/whatsapp-bridge', 'deploy/whatsapp-bridge/Dockerfile'),
     'instagram-bridge': ('deploy/instagram-bridge', 'deploy/instagram-bridge/Dockerfile'),
     'alert-bridge': ('deploy/alert-bridge', 'deploy/alert-bridge/Dockerfile'),
+    'bridge-projection': ('.', 'deploy/bridge-projection/Dockerfile'),
 }
 # Reviewed recipes: pinned external images, locked language dependencies, no
 # inputs outside their context. A changed recipe builds until reviewed here.
@@ -39,11 +41,29 @@ REUSE_RECIPES = {
     'stt': '0f909a02fd4c8d484501ecf6f5ce85dd2b5ffed5481065fcec75dbb638c53ad0',
     'voice-sidecar': '69f0ecc9a3efc00732f6c4c364c6441014dba5355667f8b57fe60f39a71f8ba5',
     'voice-wake': 'fd5ee73065eab7b09c4bf08805c21573bce5296cc1bbdf7b7bf5b1218fe9449b',
-    'signal-cli': 'cdaa57b8438964a2a72ea56187f3e72d81477655eec011ae959284de0226656c',
-    'whatsapp-bridge': '71ae929c8dab80bf43ac27df9e390d1770933a1028d2c592e3ff041c93d7cdab',
+    'signal-bridge': 'ae18043c4c190b4e4214488bfdce245bb2351981686f488f83666e846e17af38',
+    'discord-bridge': '26bb19f47cbb265e8126873623f41e321db54f2729ff1a687bcc6627a52ee9f7',
+    'whatsapp-bridge': '3e4b665c72b2b969107fa67caa5680b666b6e6a8940cc25237385634b7c22d4c',
     'instagram-bridge': '92a0e637d9c9a699f903bb745fdc753d366badb9186ed19d41e5a312dcf923c7',
     'alert-bridge': '722d580bb9a573afcfefc3b86adee214d097fd481ae1e14d20dcc84f0517ad65',
+    'bridge-projection': 'a462cc260c45ee373a39d1af772daa24da76b030463a79217dba5bada41a2c85',
 }
+
+# Python entrypoints whose images COPY the whole nora tree but execute only a
+# transitive local-import closure. Their build input is that closure (plus the
+# files beside reached modules a package may read at runtime), NOT the whole
+# repo tree — an app-only change must keep these images' digests, which is
+# what lets an app-only release leave the bridge fleet and its containers
+# untouched (design/platform-bridges §05).
+PYTHON_ENTRIES = {
+    'signal-bridge': 'deploy/signal-bridge/wrapper.py',
+    'discord-bridge': 'deploy/discord-bridge/entry.py',
+    'bridge-projection': 'deploy/bridge-projection/entry.py',
+}
+# Package roots an entrypoint may reach into. An import under a local root
+# that resolves to nothing is a missing dependency — the fingerprint refuses
+# rather than silently hashing a smaller set.
+_LOCAL_ROOTS = ('nora', 'deploy')
 
 REGISTRY = 'ghcr.io/mikeng-io/nora-'
 TAG = re.compile(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)')
@@ -240,13 +260,116 @@ def previous_manifest(repo: str, ref: str) -> dict:
     return manifest
 
 
+def _module_names(source: str, current: str) -> tuple[set[str], set[str]]:
+    """(required, speculative) module names a file imports.
+
+    Required: every `import a.b.c` target and every `from a.b import …`
+    module — Python fails the import if these do not resolve. Speculative:
+    `from a.b import c` may bind the submodule `a.b.c`, or `c` may be an
+    attribute — resolve it if it exists, never require it. Relative imports
+    resolve against the file's package.
+    """
+    import ast
+    tree = ast.parse(source, filename=current)
+    required, speculative = set(), set()
+    package = current.rsplit('/', 1)[0].replace('/', '.') if '/' in current else ''
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            required.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level:
+                parts = package.split('.')
+                base = '.'.join(parts[:len(parts) - node.level + 1])
+            else:
+                base = ''
+            module = '.'.join(p for p in (base, node.module or '') if p)
+            if module:
+                required.add(module)
+            speculative.update(
+                '.'.join(p for p in (module or base, a.name) if p)
+                for a in node.names if a.name != '*')
+    return required, speculative
+
+
+def _closure_fingerprint(commit: str, entry: str) -> str:
+    """Content digest of an entrypoint's transitive local-import closure.
+
+    Walks `git show` sources through `nora/` and `deploy/`; every reached file
+    contributes its blob sha. Importing a.b.c executes the ancestor
+    __init__.py files, so they join the walk too. Non-code inputs are bound
+    to their mechanism, not swept by proximity: a file is an input only when
+    a reached module resolves it relative to `__file__` (the pattern
+    migrations_runner uses for its alembic dir), when it sits in the
+    entrypoint's own deploy dir, or when it is the dependency lock pair
+    `uv sync` reads — an injected-path corpus like nora/doctrine's is data
+    the app hands its loader, not package data these processes read, so it
+    is correctly absent. A local-rooted import that resolves to nothing
+    fails closed: refusing to fingerprint is how a missing dependency
+    becomes a build refusal instead of a silently stale bridge.
+    """
+    tracked = set(run('git', 'ls-tree', '-r', '--name-only', commit,
+                      '--', *_LOCAL_ROOTS, 'pyproject.toml', 'uv.lock'
+                      ).splitlines())
+    entry_dir = entry.rsplit('/', 1)[0]
+    reached = set()
+    data_dirs = {entry_dir}
+    queue = [entry]
+    while queue:
+        path = queue.pop()
+        if path in reached or path not in tracked:
+            continue
+        reached.add(path)
+        text = run('git', 'show', f'{commit}:{path}')
+        # Path(__file__).resolve().parent / "migrations"-style bindings: the
+        # one mechanism by which a package reads data beside its code.
+        own_dir = path.rsplit('/', 1)[0] if '/' in path else ''
+        for match in re.finditer(r'Path\(__file__\)([^\n]*)', text):
+            tail = match.group(1)
+            ups = tail.count('.parent')
+            base = own_dir.split('/')
+            base = base[:max(1, len(base) - max(0, ups - 1))]
+            segments = re.findall(r'/\s*[\'"]([^\'"]+)[\'"]', tail)
+            data_dirs.add('/'.join([*base, *segments]) if segments
+                          else '/'.join(base))
+        required, speculative = _module_names(text, path)
+        for module in required | speculative:
+            base = module.replace('.', '/')
+            parts = base.split('/')
+            # The module itself plus every ancestor __init__.py — importing
+            # a.b.c executes a/__init__.py and a/b/__init__.py on the way.
+            leaf = [c for c in (f'{base}.py', f'{base}/__init__.py')
+                    if c in tracked]
+            if len(parts) == 1:
+                # A flat script may import a sibling file in its own dir.
+                leaf += [f'{entry_dir}/{base}.py'] * (
+                    f'{entry_dir}/{base}.py' in tracked)
+            ancestors = [c for c in (
+                '/'.join(parts[:i]) + '/__init__.py'
+                for i in range(1, len(parts))) if c in tracked]
+            if not leaf and module in required and parts[0] in _LOCAL_ROOTS:
+                raise ValueError(
+                    f'unresolved local import {module!r} from {path}')
+            queue.extend(leaf + ancestors)
+    reached |= {'pyproject.toml', 'uv.lock'} & tracked
+    reached |= {p for p in tracked
+                if any(p == d or p.startswith(d + '/') for d in data_dirs)}
+    blob = '\n'.join(
+        f'{p}:{run("git", "rev-parse", f"{commit}:{p}")}' for p in sorted(reached))
+    return 'closure:' + hashlib.sha256(blob.encode()).hexdigest()
+
+
 def build_inputs(name: str, commit: str, external: dict | None = None) -> dict:
-    """Conservative complete Git context, never a hand-maintained COPY path filter.
+    """Complete build-input evidence, scoped to what the image actually consumes.
 
     Builds consume an archive of this tree, not the dependency-populated checkout.
-    Ignored files count too: false rebuilds are preferable to false reuse. Remote
-    apt indexes are not a freshness trigger; reuse selects the previously built
-    output of the same reviewed recipe, not a claim of bit-reproducible rebuilding.
+    Whole-context components fingerprint the context tree: ignored files count
+    too, false rebuilds are preferable to false reuse. PYTHON_ENTRIES components
+    fingerprint their transitive local-import closure instead — the only nora/
+    bytes their runtime can execute — so an app-only change keeps bridge and
+    publisher digests and leaves their containers running (§05). Remote apt
+    indexes are not a freshness trigger; reuse selects the previously built
+    output of the same reviewed recipe, not a claim of bit-reproducible
+    rebuilding.
     """
     context, dockerfile = BUILDS[name]
     # Hash exact bytes (run strips trailing whitespace, unsuitable for this proof).
@@ -255,7 +378,10 @@ def build_inputs(name: str, commit: str, external: dict | None = None) -> dict:
     if not SHA.fullmatch(workflow_ref):
         raise ValueError('invalid publisher workflow revision')
     workflow = run('git', 'rev-parse', f'{workflow_ref}:.github/workflows/release-images.yml')
-    tree = run('git', 'rev-parse', f'{commit}:' + ('' if context == '.' else context))
+    if name in PYTHON_ENTRIES:
+        tree = _closure_fingerprint(commit, PYTHON_ENTRIES[name])
+    else:
+        tree = run('git', 'rev-parse', f'{commit}:' + ('' if context == '.' else context))
     return {'context': tree, 'dockerfile': hashlib.sha256(recipe_bytes).hexdigest(),
             'publisher': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             'workflow': workflow, 'platform': 'linux/amd64',
@@ -272,12 +398,12 @@ def validate_artifact(name: str, artifact: dict, image: str) -> None:
     if not isinstance(inputs, dict):
         raise ValueError('artifact has no build input evidence')
     external = inputs['external']
-    if not isinstance(external, dict) or (external and name != 'signal-cli'):
+    if not isinstance(external, dict) or (external and name != 'signal-bridge'):
         raise ValueError('unexpected external build inputs')
     archives = [f for f in external if f.endswith('.tar.gz')]
-    if name == 'signal-cli' and (len(archives) != 1 or set(external) != {
+    if name == 'signal-bridge' and (len(archives) != 1 or set(external) != {
             archives[0], archives[0] + '.asc'} or not all(
-            re.fullmatch(r'signal-cli-[0-9.]+\.tar\.gz(?:\.asc)?', f)
+            re.fullmatch(r'deploy/signal-cli/signal-cli-[0-9.]+\.tar\.gz(?:\.asc)?', f)
             and re.fullmatch(r'[0-9a-f]{64}', digest) for f, digest in external.items())):
         raise ValueError('missing verified Signal input evidence')
 
@@ -323,14 +449,17 @@ def publish_image(args, commit: str, previous: dict) -> None:
     name = args.image
     validate_builds(yaml.safe_load(run('git', 'show', f'{commit}:docker-compose.yml')))
     external = {}
-    if name == 'signal-cli':
+    if name == 'signal-bridge':
         run('bash', 'deploy/signal-cli/fetch.sh')
         # The fetch script and Dockerfile both verify the signature. Include the
         # fetched bytes as well, so a replaced signed upstream asset invalidates reuse.
         files = sorted(Path('deploy/signal-cli').glob('signal-cli-*.tar.gz*'))
         if len(files) != 2 or not any(f.name.endswith('.asc') for f in files):
             raise ValueError('expected exactly the verified Signal archive/signature')
-        external = {f.name: hashlib.sha256(f.read_bytes()).hexdigest() for f in files}
+        # Keys stay repo-relative so the bytes land where the recipe COPYs them
+        # and the receipt names where each verified input went.
+        external = {f.as_posix(): hashlib.sha256(f.read_bytes()).hexdigest()
+                    for f in files}
     inputs = build_inputs(name, commit, external)
     artifact = reusable_artifact(name, inputs, previous)
     if artifact is None:

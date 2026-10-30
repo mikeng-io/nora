@@ -30,9 +30,13 @@ updates:
   - /
   - /app
   - /deploy/alert-bridge
+  - /deploy/bridge-projection
   - /deploy/computer
+  - /deploy/discord-bridge
   - /deploy/instagram-bridge
   - /deploy/komodo
+  - /deploy/otel-queue-fixture/langfuse-sink
+  - /deploy/signal-bridge
   - /deploy/signal-cli
   - /deploy/stt
   - /deploy/voice-sidecar

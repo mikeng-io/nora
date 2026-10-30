@@ -554,17 +554,29 @@ async def test_the_app_stops_the_cognition_sessions_before_it_closes_the_client_
 
         aclose = close
 
+    class _BridgeRuntime:
+        def __init__(self) -> None:
+            self.redis = _Closable("bridge_redis")
+
+        def stop(self) -> None:
+            order.append("bridge_stop")
+
     deps = SimpleNamespace(
         cognition_shutdown=_Stop(), subagent_backend=None,
+        bridge_runtime=_BridgeRuntime(),
+        registry=SimpleNamespace(
+            adapters={"signal": _Closable("adapter")}),
         client=_Closable("client"), model_clients=[], audit=_Closable("audit"),
     )
     app = App(cfg=None, deps=deps)              # type: ignore[arg-type]
     await app.shutdown()
-    assert order == ["cognition", "client", "audit"]
+    assert order == [
+        "cognition", "bridge_stop", "bridge_redis", "adapter", "client", "audit",
+    ]
     deps.cognition_shutdown = None              # sessions off: nothing to stop, nothing breaks
     order.clear()
     await app.shutdown()
-    assert order == ["client", "audit"]
+    assert order == ["bridge_stop", "bridge_redis", "adapter", "client", "audit"]
 
 
 # ---- the eval seam: `tool_selection_cognition` runs through `probe` -----------
