@@ -613,6 +613,13 @@ def setup_process_tracing(
     provider = TracerProvider(
         resource=Resource.create(resource_attrs), sampler=sampler)
     provider.add_span_processor(TraceIdentityProcessor())
+    # Same bridge as setup_agent_tracing: Sentry events carry THIS provider's
+    # trace/span ids. nora.obs sibling, optional dependency, never load-bearing.
+    from .errors import otel_span_processor
+
+    _sentry_bridge = otel_span_processor()
+    if _sentry_bridge is not None:
+        provider.add_span_processor(_sentry_bridge)
     if exporter in ("console", "file"):
         import sys as _sys
         from typing import IO

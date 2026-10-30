@@ -1,0 +1,67 @@
+# SigNoz cutover overlay for the app compose (ADR 0034, issue #440).
+#
+# Apply ONLY after the SigNoz backend is running on the host — plain
+# docker-compose.yml stays deployable on its own, so the Komodo release
+# pipeline is never gated on an optional stack existing. The steps are in
+# docs/observability.md "Cutover and acceptance"; in short:
+#
+#   1. Deploy the backend (creates the external network):
+#        SIGNOZ_JOURNAL_GID=$(getent group systemd-journal | cut -d: -f3) \
+#        docker compose -f deploy/signoz/deployment/compose.yaml up -d
+#   2. Point the app's [obs.tracing] at the ingester alias (config.toml:
+#        exporter = "otlp_http", endpoint = "http://signoz-ingester:4318/v1/traces")
+#   3. Recreate the instrumented services WITH THIS OVERLAY:
+#        docker compose -f docker-compose.yml \
+#                       -f deploy/signoz/docker-compose.signoz.yaml \
+#                       up -d nora presence analytics instagram-bridge
+#
+# What the overlay does, per service:
+#
+# * logging driver journald with tag <service> — the durable log source the
+#   ingester's journald receiver selects on (CONTAINER_TAG). json-file has no
+#   `tag` option and journald rejects max-size/max-file, so the driver cannot
+#   be an env var on the base file; the overlay IS the switch. Tag-less
+#   journald configs would land as CONTAINER_TAG=<container_id>: keep the tag.
+# * networks +signoz — the external network the backend project owns; gives
+#   the OTLP alias (signoz-ingester:4318) and lets the ingester's prometheus
+#   receiver scrape nora:9100 / presence:9101 / analytics:9103 by name.
+# * instagram-bridge's OTLP endpoint moves off host.docker.internal:4318 —
+#   that host-gateway address reaches the LEGACY collector's port, not the
+#   ingester, which publishes loopback-only on 14317/14318. The in-network
+#   alias is the correct target once the bridge joins signoz-network.
+#
+# Rollback: redeploy without the -f overlay (json-file + old networks), the
+# host journal keeps the durable history either way.
+services:
+  nora:
+    networks:
+    - signoz
+    logging:
+      driver: journald
+      options:
+        tag: nora
+  presence:
+    networks:
+    - signoz
+    logging:
+      driver: journald
+      options:
+        tag: presence
+  analytics:
+    networks:
+    - signoz
+    logging:
+      driver: journald
+      options:
+        tag: analytics
+  instagram-bridge:
+    networks:
+    - signoz
+    environment:
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://signoz-ingester:4318/v1/traces
+networks:
+  # Created by the SigNoz stack's own compose project; external here so
+  # either stack can come down without taking the other.
+  signoz:
+    external: true
+    name: signoz-network

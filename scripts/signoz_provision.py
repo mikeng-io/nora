@@ -103,6 +103,56 @@ def _req(api: str, key: str, method: str, path: str,
 
 
 def _rule_payload(name: str, rule: dict, defaults: dict, channel: str) -> dict:
+    if rule.get("signal") == "logs":
+        for key in ("query", "op", "target", "match", "window", "severity"):
+            if key not in rule:
+                raise SystemExit(f"rule {name}: missing required key {key!r}")
+        if rule["op"] not in _OPS:
+            raise SystemExit(f"rule {name}: op {rule['op']!r} not in {sorted(_OPS)}")
+        if rule["match"] not in _MATCHES:
+            raise SystemExit(f"rule {name}: match {rule['match']!r} not in {sorted(_MATCHES)}")
+        annotations: dict[str, str] = {"summary": rule.get("summary", name)}
+        if rule.get("description"):
+            annotations["description"] = rule["description"]
+        return {
+            "alert": name,
+            "alertType": "LOGS_BASED_ALERT",
+            "ruleType": "threshold_rule",
+            "version": "v5",
+            "schemaVersion": "v2alpha1",
+            "condition": {
+                "compositeQuery": {
+                    "queryType": "clickhouse_sql",
+                    "panelType": "graph",
+                    "queries": [{
+                        "type": "clickhouse_sql",
+                        "spec": {"name": "A", "query": rule["query"],
+                                 "disabled": False},
+                    }],
+                },
+                "selectedQueryName": "A",
+                "thresholds": {
+                    "kind": "basic",
+                    "spec": [{
+                        "name": rule["severity"],
+                        "op": rule["op"],
+                        "matchType": rule["match"],
+                        "target": rule["target"],
+                        "channels": [channel],
+                    }],
+                },
+            },
+            "evaluation": {
+                "kind": "rolling",
+                "spec": {
+                    "evalWindow": rule["window"],
+                    "frequency": defaults.get("frequency", "1m"),
+                },
+            },
+            "notificationSettings": {"usePolicy": False},
+            "labels": {"alertname": name, "severity": rule["severity"]},
+            "annotations": annotations,
+        }
     for key in ("query", "op", "target", "match", "window", "severity"):
         if key not in rule:
             raise SystemExit(f"rule {name}: missing required key {key!r}")
@@ -153,7 +203,24 @@ def _rule_payload(name: str, rule: dict, defaults: dict, channel: str) -> dict:
     }
 
 
-def _channel_payload(name: str, webhook: str) -> dict:
+def _channel_payload(name: str, webhook: str, kind: str) -> dict:
+    """The channel body. `discord` means a real Discord webhook through the
+    backend's NATIVE slack receiver: `discord_configs` does not exist in the
+    pinned community API (v0.148.1 channel kinds: slack, webhook, pagerduty,
+    opsgenie, msteams, googlechat, jira, jsmops, incidentio, telegram, email —
+    verified live, `channel_unsupported_kind` on discord_configs), and Discord
+    itself consumes the Slack message format at a webhook URL suffixed
+    `/slack`. So `slack_configs` + the operator's
+    `https://discord.com/api/webhooks/.../slack` URL IS the native path —
+    no bridge, no intermediate service. `webhook` is the generic
+    Alertmanager JSON sink, kept as the explicit TEST channel for a local
+    recording endpoint — it is not a Discord integration and is never
+    documented as one."""
+    if kind == "discord":
+        return {"name": name,
+                "slack_configs": [{"api_url": webhook,
+                                   "channel": "#nora-alerts",
+                                   "send_resolved": True}]}
     return {"name": name,
             "webhook_configs": [{"url": webhook, "send_resolved": True}]}
 
@@ -164,6 +231,9 @@ def main() -> int:
     ap.add_argument("--rules", default="deploy/signoz/alerts/rules.yaml")
     ap.add_argument("--channel-name", default=None,
                     help="receiver display name (default: defaults.channel)")
+    ap.add_argument("--channel-kind", choices=("discord", "webhook"),
+                    default="discord",
+                    help="'webhook' is the explicit local-test sink, not Discord")
     ap.add_argument("--webhook-env", default="NORA_ALERT_WEBHOOK")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
@@ -199,7 +269,7 @@ def main() -> int:
             print(f"{args.webhook_env} required to create channel {channel}",
                   file=sys.stderr)
             return 2
-        body = _channel_payload(channel, webhook)
+        body = _channel_payload(channel, webhook, args.channel_kind)
         if channel in existing:
             channel_id = existing[channel]["id"]
             code, _ = _req(args.api, key, "PUT",
@@ -213,13 +283,18 @@ def main() -> int:
         print(f"channel {channel}: {channel_id}")
 
     # --- rule upserts ---
+    # FAIL CLOSED: if the existing rules cannot be listed, POSTing blind would
+    # create a second copy of every rule under a new id. A failed list is a
+    # stop, never a "no rules exist" assumption (the R-27 shape).
     code, rules_resp = _req(args.api, key, "GET", "/api/v2/rules")
+    if code != 200:
+        print(f"list rules: HTTP {code}", file=sys.stderr)
+        return 2
     existing_rules: dict[str, str] = {}
-    if code == 200:
-        rows = rules_resp.get("data") or {}
-        for r in (rows.get("rules") if isinstance(rows, dict) else rows) or []:
-            if isinstance(r, dict) and r.get("alert") and r.get("id"):
-                existing_rules[r["alert"]] = r["id"]
+    rows = rules_resp.get("data") or {}
+    for r in (rows.get("rules") if isinstance(rows, dict) else rows) or []:
+        if isinstance(r, dict) and r.get("alert") and r.get("id"):
+            existing_rules[r["alert"]] = r["id"]
     ok, failed = 0, []
     for r in rules:
         payload = _rule_payload(r["name"], r, defaults, channel)

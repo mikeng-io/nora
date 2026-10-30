@@ -132,6 +132,13 @@ def setup_agent_tracing(
     # on the provider itself, so it reaches the Strands spans and Nora's own
     # alike (tests/unit/test_trace_identity.py reads it through the registered one).
     provider.add_span_processor(TraceIdentityProcessor())
+    # The Sentry bridge rides the SAME provider, so an error event carries the
+    # trace/span ids this process exports — never a second provider or sampler.
+    from ..obs.errors import otel_span_processor
+
+    _sentry_bridge = otel_span_processor()
+    if _sentry_bridge is not None:
+        provider.add_span_processor(_sentry_bridge)
     telemetry = StrandsTelemetry(tracer_provider=provider)
     if exporter == "console":
         telemetry.setup_console_exporter()

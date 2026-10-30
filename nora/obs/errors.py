@@ -31,10 +31,45 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from nora.secret import resolve
 
+if TYPE_CHECKING:
+    from opentelemetry.sdk.trace import SpanProcessor
+
 log = logging.getLogger("nora.errors")
+
+
+def otel_span_processor() -> "SpanProcessor | None":
+    """The OTel↔Sentry bridge, for the process's `TracerProvider` to attach.
+
+    `instrumenter="otel"` alone does NOT correlate: without the SDK's span
+    processor, an error event invents its own trace id (measured on
+    sentry-sdk 2.44.0 — an exception inside a live OTel span carried an
+    unrelated `contexts.trace.trace_id`). Attached to OUR provider, the
+    processor registers each OTel span with Sentry's scope machinery, so the
+    event carries the SAME `trace_id`/`span_id` the span exported — one id
+    space, one provider, no second sampler (`traces_sample_rate` stays 0;
+    the processor links ids, it does not mint transactions).
+
+    `None` when the SDK is absent, uninitialised, or not otel-instrumented —
+    the caller just does not attach it. Optional dependency, never
+    load-bearing.
+    """
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.opentelemetry import SentrySpanProcessor
+    except ImportError:
+        return None
+    try:
+        options = getattr(sentry_sdk.get_client(), "options", None) or {}
+        if options.get("instrumenter") != "otel":
+            return None
+        return SentrySpanProcessor()
+    except Exception:
+        log.debug("sentry: otel span processor not attached", exc_info=True)
+        return None
 
 
 def setup_errors(

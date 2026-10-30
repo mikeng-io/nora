@@ -48,9 +48,9 @@ rules:
     match: all_the_times
     window: "3m"
     severity: critical
-    summary: "{{ $labels.service.name }} is not answering its metrics endpoint"
+    summary: '{{ index $labels "service.name" }} is not answering its metrics endpoint'
     description: >-
-      The scrape target {{ $labels.service.instance.id }} has not answered for 3 minutes.
+      The scrape target {{ index $labels "service.instance.id" }} has not answered for 3 minutes.
       Either the process is down or its port is unreachable.
   - name: HeartbeatStalled
     port: "nora_heartbeat_last_tick_age_seconds > 300 for 2m"
@@ -116,7 +116,7 @@ rules:
       switch to token mode (LIFE360_AUTH_TOKEN, docs/runbook.md §4c).
   - name: Life360TokenRejected
     port: "sum by (job) (increase(nora_presence_auth_alarms_total{reason=\"token_rejected\"}[2h])) > 0 for 0m"
-    query: 'sum by (service.name) (increase(nora_presence_auth_alarms_total{reason="token_rejected"}[2h]))'
+    query: 'sum by ("service.name") (increase(nora_presence_auth_alarms_total{reason="token_rejected"}[2h]))'
     op: above
     target: 0
     match: at_least_once
@@ -133,13 +133,13 @@ rules:
   # ---- nora-r27 (2) ----
   - name: UnavailableOutcomes
     port: "sum by (job, __name__) (increase({__name__=~\".+_total\", __name__!=\"nora_computer_calls_total\", status=\"unavailable\"}[15m])) > 0 for 5m"
-    query: 'sum by (service.name, __name__) (increase({__name__=~".+_total", __name__!="nora_computer_calls_total", status="unavailable"}[15m]))'
+    query: 'sum by ("service.name", __name__) (increase({__name__=~".+_total", __name__!="nora_computer_calls_total", status="unavailable"}[15m]))'
     op: above
     target: 0
     match: all_the_times
     window: "5m"
     severity: warning
-    summary: "a counter is reporting unavailable ({{ $labels.service.name }})"
+    summary: 'a counter is reporting unavailable ({{ index $labels "service.name" }})'
     description: >-
       Something could not be checked at all — a wiring gap or a dead
       dependency, not an empty answer. This is the state that replaces an
@@ -206,7 +206,7 @@ rules:
       not hold; deploy/computer/README.md "Rotating the token" is the fix.
   - name: ComputerCallsFailing
     port: "sum by (job) (increase(nora_computer_calls_total{status=\"unavailable\"}[15m])) >= 5 for 0m"
-    query: 'sum by (service.name) (increase(nora_computer_calls_total{status="unavailable"}[15m]))'
+    query: 'sum by ("service.name") (increase(nora_computer_calls_total{status="unavailable"}[15m]))'
     op: above_or_equal
     target: 5
     match: at_least_once
@@ -220,7 +220,7 @@ rules:
       journal (`journalctl --user -u nora-computer -n 100`).
   - name: ComputerAuditFailing
     port: "sum by (job, stage) (increase(nora_computer_audit_failures_total[1h])) > 0 for 0m"
-    query: 'sum by (service.name, stage) (increase(nora_computer_audit_failures_total[1h]))'
+    query: 'sum by ("service.name", stage) (increase(nora_computer_audit_failures_total[1h]))'
     op: above
     target: 0
     match: at_least_once
@@ -277,10 +277,37 @@ rules:
       nora; the keepalive retries once per interval until then. No other
       checkout may hold the same token: a second holder spending one
       rotating token revokes the chain.
+  # ---- session probe (1, logs-based) ----
+  # The probe is a host systemd user unit, not a metric: its page is the
+  # LogSink JSON line {alert, network, summary} that the journald receiver
+  # carries under container.name=nora-session-probe (SyslogIdentifier in the
+  # unit). LOGS_BASED_ALERT on a clickhouse_sql count — any alert line in the
+  # window pages; 15m covers a 10-minute probe interval without re-paging
+  # forever (send_resolved gives the recovery).
+  - name: SessionProbeAlert
+    signal: logs
+    port: "replaces the retired alert-bridge webhook path (the probe's LogSink line)"
+    query: >-
+      SELECT toStartOfInterval(fromUnixTimestamp64Nano(timestamp), INTERVAL 1 MINUTE) AS ts, count(*) AS v
+      FROM signoz_logs.distributed_logs_v2
+      WHERE timestamp > toUnixTimestamp64Nano(now64() - INTERVAL 15 MINUTE)
+      AND attributes_string['container.name'] = 'nora-session-probe'
+      AND has(attributes_string, 'alert')
+      GROUP BY ts ORDER BY ts
+    op: above
+    target: 0
+    match: at_least_once
+    window: "15m"
+    severity: critical
+    summary: "session probe raised an alert ({{ $value }} lines in 15m)"
+    description: >-
+      A social session or its bridge follower needs a human — the probe's
+      alert line names the network and reason. Read the line in SigNoz logs:
+      attributes container.name = nora-session-probe.
   # ---- monitoring-itself (1) ----
   - name: IngestionSilent
     port: "replaces absent(up{job=\"prometheus\"} == 1) for 5m"
-    query: absent(up{service.name="/signoz-otel-collector"})
+    query: absent(up{"service.name"="/signoz-otel-collector"})
     op: above
     target: 0
     match: all_the_times

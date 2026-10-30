@@ -26,8 +26,8 @@ two copies drift and the one that drifts is the one you did not read
 
 ## Accepted direction: self-hosted SigNoz
 
-**Decision accepted 2026-10-30; implemented and proven locally, not yet
-deployed.** [ADR 0034](adr/0034-self-hosted-signoz-unifies-application-and-llm-observability.md)
+**Decision accepted 2026-10-30; implemented, proven locally end-to-end, not
+yet deployed.** [ADR 0034](adr/0034-self-hosted-signoz-unifies-application-and-llm-observability.md)
 records why. [Issue #440](https://github.com/mikeng-io/nora/issues/440) tracks
 implementation and its evidence. This section owns the target design and
 acceptance; the sections below describe the existing Langfuse/Jaeger deployment
@@ -35,26 +35,54 @@ until the replacement is deployed on the host — a read-back backend is not a
 running one until then.
 
 **Local acceptance record (synthetic, Docker Desktop, `signoz:v0.148.1` +
-collector `v0.144.15`):** the repository's own ingester config runs the local
-stack (custom image `deploy/signoz/collector/Dockerfile` adding `journalctl`);
-synthetic generation/plumbing/error/undeclared traces exercise the tail
-policies; the filelog pipeline delivers docker-json lines with `trace_id`/
-`span_id` promoted for log↔trace correlation; all 19 alert rules provision via
-`scripts/signoz_provision.py` and evaluate — `TargetDown` fired and
-`IngestionSilent` resolved into a webhook sink end-to-end; the SigNoz MCP
-server answers trace/log/metric queries. What remains unproven is only what
-locality cannot prove: Linux journald (Docker Desktop has no journal — the
-receiver retries every 2s against an empty mount, as expected), a real Discord
-delivery, and the host's own volumes/capacity.
+custom ingester `nora-signoz-ingester:v0.144.15`):** the repo's own
+`deploy/signoz/deployment/compose.yaml` builds and runs the stack (the
+collector image is BUILT from `deploy/signoz/collector/Dockerfile`, not the
+stock image, because the journald receiver shells out to `journalctl`).
+Verified on that stack:
+
+- a real Strands multi-call agent with a tool plus the vision client's raw
+  span path reach the backend through the repo's OTLP pipeline;
+- the journald receiver selects on `CONTAINER_TAG` (the compose `tag:` option)
+  and the probe's `SyslogIdentifier` — a REAL journal produced by
+  `systemd-journal-remote` shows nora/presence/analytics and probe lines
+  delivered while `random-svc`/plain entries are dropped (the previous
+  stanza `filter` dropped the wanted lines: filter drops on TRUE);
+- durable delivery measured: entries written while the ingester was DOWN
+  arrive exactly once after restart; container recreation keeps the cursor
+  with zero duplicates; a bounded ClickHouse outage replays through the
+  file-storage queue with no loss (journal source via `journal-remote`
+  `/upload`, counting rows in `signoz_logs.distributed_logs_v2`);
+- all 19 metric rules provision and EVALUATE cleanly — quoted-label syntax
+  is required (`sum by ("service.name")`, `up{"service.name"="..."}`);
+  unquoted dots are a promql parse error and the rule silently never fires.
+  `{{ $labels.service.name }}` renders blank in annotations; the working
+  form is `{{ index $labels "service.name" }}`;
+- the log-based `SessionProbeAlert` (LOGS_BASED_ALERT, clickhouse_sql) fires
+  on a probe alert line and notifies — the probe's page path is restored;
+- the notification channel is Slack-format `slack_configs` pointed at a
+  Discord `/slack` webhook URL: `discord_configs` does NOT exist in the
+  pinned community API (verified `channel_unsupported_kind`), and Discord
+  natively consumes Slack-format posts — the recorded payloads are
+  Slack `attachments` with `[FIRING:n]` titles, firing AND resolved.
+
+What local proof does not cover: the host's own journald group/permissions
+(the `SIGNOZ_JOURNAL_GID` mechanism is documented, not exercised), a real
+Discord delivery (the URL is validated but the endpoint is a local mock), the
+evaluators' Langfuse sessions (span format is UNCHANGED — no SDK flag flip —
+so there is nothing to re-prove; content readability in the AI Explorer is
+normalization-limited as noted below), and host capacity.
 
 ### Scope and ownership
 
 Use **SigNoz Community** for application APM, LLM/agent traces and centralized
 logs. Retain Sentry for grouped error reporting, linked to the same OTel trace.
 The standalone Prometheus, Alertmanager and alert-bridge services are RETIRED in
-this change — `deploy/signoz/alerts/rules.yaml` ports all 19 rules 1:1 (verified
-against `deploy/prometheus/rules/nora.yml` in git history) and the SigNoz
-webhook channel reaches Discord directly; `prometheus-client` and each service's
+this change — `deploy/signoz/alerts/rules.yaml` ports the 19 metric rules 1:1
+(verified against `deploy/prometheus/rules/nora.yml` in git history) plus the
+probe's `SessionProbeAlert`, and the SigNoz channel delivers to Discord in the
+Slack message format Discord natively accepts (see Alerting below);
+`prometheus-client` and each service's
 `/metrics` endpoint stay (the ingester's prometheus receiver scrapes them).
 Sentry errors alone do not replace detection of a stopped collector, stale work
 or an absent target.
@@ -239,6 +267,32 @@ into fixtures and no paid model calls required for the ingestion proof.
    replacement or remain supported. Retire Jaeger and old collector filters only
    after trace acceptance. Alertmanager and alert-bridge are retired in this
    change — the 19-rule port and webhook delivery are verified locally above.
+
+**Deploy sequence (the mechanism, ordered):** the base `docker-compose.yml`
+must stay deployable alone — Komodo's release bundle owns it and a missing
+backend must never block an app release — so the SigNoz wiring is an OVERLAY,
+`deploy/signoz/docker-compose.signoz.yaml`, applied at cutover, not merged in:
+
+1. Build and start the backend: `SIGNOZ_JOURNAL_GID=$(getent group
+   systemd-journal | cut -d: -f3)` beside the compose `.env`, then
+   `docker compose -f deploy/signoz/deployment/compose.yaml up -d --build`.
+   This creates the external `signoz-network` and the collector that reads the
+   journal as uid 10001 inside the host's journal group.
+2. Point the app's `[obs.tracing]` at the in-network endpoint
+   `http://signoz-ingester:4318/v1/traces` (the loopback publishes
+   `127.0.0.1:14317/14318` are for the operator's own OTLP reads over
+   Tailscale, matching every other loopback admin surface — nothing binds a
+   broad interface).
+3. Recreate the instrumented services WITH the overlay:
+   `docker compose -f docker-compose.yml -f
+   deploy/signoz/docker-compose.signoz.yaml up -d nora presence analytics
+   instagram-bridge` — journald logging with the service `tag`, the `signoz`
+   network join, and the bridge's OTLP endpoint move off the host-gateway
+   (which otherwise still reaches the LEGACY collector's port).
+4. Only after acceptance below: retire the old collector/alert stack and
+   `host.docker.internal` OTLP references. Rollback is redeploying without
+   the `-f` overlay; the journal keeps history either way, so no parallel
+   alert stack ever runs permanently.
 
 Rollback before retirement selects the previous backend routing and application
 configuration; it does not erase the new data. Do not assume SDK-dropped or
@@ -727,21 +781,30 @@ conventioned; the editorial judgement is not.
 Three stores and no reader was the state until 2026-09-09; the reader is now
 the SigNoz backend itself. The ingester's prometheus receiver scrapes the
 same three endpoints, `deploy/signoz/alerts/rules.yaml` carries the same 19
-rules (`scripts/signoz_provision.py` applies them to the backend), and a
+metric rules plus the probe's log-based rule
+(`scripts/signoz_provision.py` applies them to the backend), and a
 SigNoz notification channel POSTs the alert to its sink — a Discord webhook
-in deployment, an HTTP endpoint in test.
+in deployment, an HTTP recording endpoint in test.
 
 ```
 nora:9100  ─┐
 presence:  ─┼─▶ signoz-ingester ──▶ ClickHouse ──▶ SigNoz rules ──▶ Discord
-  9101      │   (scrape 30s,       (series)        (every 1m,       (webhook
-analytics: ─┘    prometheus        store)          per-rule)       receiver)
-  9103          receiver)
+  9101      │   (scrape 30s,       (series)        (every 1m,       (Slack-format
+analytics: ─┘    prometheus        store)          per-rule)        post to a
+  9103          receiver)                                        /slack webhook)
+probe journal ──▶ journald ───────▶ logs_v2 ──────▶ SessionProbeAlert ──▶ (same)
 ```
 
 **It lands in the same Discord channel the participation mirror posts to**, so
 an alert arrives beside the determinations it is about rather than in a second
-place to remember.
+place to remember. The channel is `slack_configs` pointed at a Discord webhook
+URL with the `/slack` suffix: Discord documents that endpoint as consuming the
+Slack message format, which is what the pinned backend emits. `discord_configs`
+does NOT exist in the community API at `v0.148.1` (the kind registry is
+slack/webhook/pagerduty/opsgenie/msteams/googlechat/jira/jsmops/incidentio/
+telegram/email — provisioning `discord_configs` answers
+`channel_unsupported_kind`, verified against the running stack), so the Slack
+receiver is the native path, not a stand-in for one.
 
 **The rule semantics ported intact** — every expression, `for` window, severity
 and annotation of the old `deploy/prometheus/rules/nora.yml` (in git history)
@@ -749,8 +812,14 @@ carries across. Two changes the port required, both recorded at the top of
 `rules.yaml`: scrape `job`/`instance` labels do not survive the OTel prometheus
 receiver — queries and annotations use `service.name`/`service.instance.id`
 instead — and `PrometheusNotIngesting` is replaced by `IngestionSilent`, which
-measures the ingestion path's own scrape (`absent(up{service.name=
-"/signoz-otel-collector"})`), not the old Prometheus self-scrape.
+measures the ingestion path's own scrape (`absent(up{"service.name"=
+"/signoz-otel-collector"})`), not the old Prometheus self-scrape. Measured on
+the running backend: dotted label names need QuOTED PromQL (`sum by
+("service.name")`, `{"service.name"="nora"}` — unquoted dots are a parse
+error and the rule evaluates nothing forever), and annotation templates need
+`{{ index $labels "service.name" }}` (`{{ $labels.service.name }}` renders
+empty). `scripts/signoz_provision.py` fails closed if existing rules cannot
+be listed — a 500 is a stop, not "no rules exist".
 
 **An alert path that shares a failure domain with what it watches is
 decoration**, so the delivery chain is still outside Nora's process: the
@@ -783,6 +852,7 @@ Sentry rather than instead of it — see "what counts as an error" below.
 | `OAuthAccessTokenExpired` | a lane's access token is past its expiry for 30m | xAI's token lives ~6h, so waiting for the 48h staleness window would leave a lane stuck on a transient failure broken for most of two days |
 | `OAuthRefreshRefused` | a lane's refresh token was refused, or its state dir is unwritable | neither heals by retrying: it needs a new login, so it fires at once instead of waiting for the staleness window |
 | `IngestionSilent` | the ingester's own scrape produces no `up` for 5m | a monitoring stack's own failure mode is to go quiet and leave everything green |
+| `SessionProbeAlert` | a probe alert line (`container.name=nora-session-probe`, `alert` attr set) in 15m | the probe's page path survives the alert-bridge retirement: the unit's `SyslogIdentifier` puts the line in the journal, the rule counts it |
 
 **What this pipeline cannot say, stated rather than discovered.** There is **no
 dead-man switch**: `IngestionSilent` is evaluated BY the SigNoz backend, so a
@@ -844,27 +914,30 @@ sixteen days. Sentry would have shown green through both.
 Sentry is errors **only** — `traces_sample_rate` is 0. A second tracing
 pipeline would write a second, incompatible trace id for the same turn, and a
 trace that exists twice differently cannot be re-derived from either copy.
-Tracing stays with `nora.obs.tracing` and lands in Langfuse.
+`instrumenter="otel"` alone does not make the link either — measured on
+sentry-sdk 2.44.0, an event raised inside a live span still invents its own
+trace id — so `otel_span_processor()` attaches the SDK's `SentrySpanProcessor`
+to the SAME `TracerProvider` at every entry point, and the event then carries
+the span's own trace/span id. Proven in-memory in
+`tests/unit/test_sentry_otel_correlation.py`; tracing stays with
+`nora.obs.tracing` and lands in Langfuse today, SigNoz at cutover.
 
 ## Known gaps
 
 Recorded here so they are findings rather than surprises.
 
-- **The main startup does not pass a release to Sentry.** Images now carry
-  source/release provenance, but that does not automatically populate error
-  events or the OTel resource. The target design wires the installed identity
-  into both; a historical statement that images are deliberately unstamped is
-  not the current reason for this gap.
+- **Vision spans now carry usage** — resolved per the bullet above (was:
+  "exports as a generation costing zero tokens").
 - **WARNING-versus-ERROR is still per-author**, as is which fields an event
   must carry. The transport and the field set are conventioned now; the
   editorial judgement is not.
-- **A vision read exports as a generation costing zero tokens.** `nora.infra`
-  may not import `nora.obs`, so the vision client cannot annotate its own span;
-  the counts would have to travel out to a caller that can — `MediaDescription.
-  provenance` already travels that way. It is a port-shape decision, weighed
-  against the rule that usage belongs on the span and never in a return type.
-  Recorded next to the exemption it justifies in
-  `test_raw_model_calls_carry_their_own_machinery.py`.
+- **A vision read now exports real usage** through an injected
+  `VisionSpanRecorder` (`nora/agent/telemetry.RawSpanRecorder` in deployment)
+  — the layer-boundary problem resolved by a constructor seam, not an import.
+  Verified in the local acceptance record above: the fake-provider call's span
+  carries `gen_ai.usage.{input,output,total}_tokens` and provider/model
+  attributes. What remains unsettled is video: a comprehension is still one
+  span over sequential chunk calls (next bullet).
 - **A video comprehension is one span covering several sequential model calls.**
   The per-chunk calls are not individually visible; the caveat about what the
   read did not see rides in `provenance` instead.

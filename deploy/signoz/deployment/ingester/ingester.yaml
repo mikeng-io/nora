@@ -220,12 +220,30 @@ receivers:
     directory: /var/log/journal
     start_at: end
     storage: file_storage/collector
+    # Selection at the journalctl level, not a stanza `filter` operator:
+    # `filter` DROPS entries its expression is true for, so the previous
+    # "match our containers" expression dropped exactly the wanted logs.
+    # Each list item is OR'd (journalctl `+` semantics). CONTAINER_TAG is the
+    # compose `logging.options.tag` the app services declare (the journald
+    # driver writes it as CONTAINER_TAG/SYSLOG_IDENTIFIER, not CONTAINER_NAME);
+    # the session probe is a systemd user unit, matched on the
+    # SyslogIdentifier= its unit file declares. `journalctl -D` recurses the
+    # host's /var/log/journal/<machine-id>/ layout, user journals included
+    # (verified on journalctl 252, the image's build).
+    matches:
+    - CONTAINER_TAG: nora
+    - CONTAINER_TAG: presence
+    - CONTAINER_TAG: analytics
+    - SYSLOG_IDENTIFIER: nora-session-probe
     operators:
-    - type: filter
-      expr: body.CONTAINER_NAME != nil and body.CONTAINER_NAME matches "^(nora|presence|analytics|instagram-bridge|signal-bridge|discord-bridge|whatsapp-bridge)$"
-    - type: copy
-      from: body.CONTAINER_NAME
-      to: attributes["container.name"]
+    - type: add
+      field: attributes["container.name"]
+      value: EXPR(body.CONTAINER_TAG)
+      if: body.CONTAINER_TAG != nil
+    - type: add
+      field: attributes["container.name"]
+      value: EXPR(body.SYSLOG_IDENTIFIER)
+      if: body.SYSLOG_IDENTIFIER != nil and body.CONTAINER_TAG == nil
     - type: move
       from: body.MESSAGE
       to: body
@@ -235,10 +253,10 @@ receivers:
     - type: trace_parser
       trace_id:
         parse_from: attributes.trace_id
-      span_id:
-        parse_from: attributes.span_id
-      trace_flags:
-        parse_from: attributes.trace_flags
+        span_id:
+          parse_from: attributes.span_id
+        trace_flags:
+          parse_from: attributes.trace_flags
 service:
   extensions:
   - signoz_health_check

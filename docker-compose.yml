@@ -256,15 +256,10 @@ services:
     #
     # `embedder` (design/unified-memory/65-build-step-3-vectors.md V1): the
     # internal network that holds the embedding server and this one service.
-    networks: [nora, honcho, embedder, signoz]
-    # Structured stdout is the one log source (docs/observability.md).
-    # The journald driver lands it in the host journal, which survives
-    # container recreation; the SigNoz ingester reads it from there.
-    # json-file remains the fallback for a dev host without journald.
+    networks: [nora, honcho, embedder]
     logging:
-      driver: journald
-      options:
-        tag: nora
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
     extra_hosts: ["host.docker.internal:host-gateway"]
     # :9100 on loopback so deploy/watchdog.sh (host) still reads /health; the
     # in-container healthcheck below hits the container's own 127.0.0.1:9100.
@@ -546,15 +541,7 @@ services:
     # collector must override the entrypoint itself, not the command.
     entrypoint: ["uv", "run", "--no-sync", "python", "-m", "nora.presence"]
     command: ["--config", "config.toml"]
-    networks: [nora, signoz]
-    # Structured stdout is the one log source (docs/observability.md).
-    # The journald driver lands it in the host journal, which survives
-    # container recreation; the SigNoz ingester reads it from there.
-    # json-file remains the fallback for a dev host without journald.
-    logging:
-      driver: journald
-      options:
-        tag: presence
+    networks: [nora]
     # :9101 on loopback so deploy/watchdog.sh (host) can read the collector's
     # own /metrics + /health (§4: liveness lives in the daemon).
     ports: ["127.0.0.1:9101:9101"]
@@ -604,15 +591,7 @@ services:
     # it rather than append a command.
     entrypoint: ["uv", "run", "--no-sync", "python", "-m", "nora.analytics"]
     command: ["--config", "config.toml"]
-    networks: [nora, signoz]
-    # Structured stdout is the one log source (docs/observability.md).
-    # The journald driver lands it in the host journal, which survives
-    # container recreation; the SigNoz ingester reads it from there.
-    # json-file remains the fallback for a dev host without journald.
-    logging:
-      driver: journald
-      options:
-        tag: analytics
+    networks: [nora]
     # :9103, next free port after nora's own :9100, and presence's :9101 (:9102 was the retired `drop`).
     ports: ["127.0.0.1:9103:9103"]
     depends_on:
@@ -1038,16 +1017,10 @@ networks:
   embedder_host:
     driver_opts:
       com.docker.network.bridge.enable_ip_masquerade: "false"
-  # The SigNoz backend (deploy/signoz, its own compose project) and the three
-  # instrumented services, and nothing else. EXTERNAL like `honcho`: created by
-  # the SigNoz stack ("docker compose -f deploy/signoz/deployment/compose.yaml
-  # up"), marked external here so either stack can come down without taking the
-  # other. It is what lets `http://signoz-ingester:4318` resolve from nora —
-  # the OTLP endpoint config.toml's [obs.tracing] names — and lets the
-  # ingester's prometheus receiver scrape nora/presence/analytics by name.
-  signoz:
-    external: true
-    name: signoz-network
+  # The SigNoz wiring (journald logging, the external signoz-network, the
+  # bridge's OTLP endpoint) lives in deploy/signoz/docker-compose.signoz.yaml
+  # and is applied AT CUTOVER, after the backend exists — this file stays
+  # deployable alone so a release never depends on an optional stack.
   # SearXNG + Firecrawl network joins REMOVED (DEC-73, 2026-08-08): web_search is
   # Tavily (a public API reached over the default network), web_fetch is gone, so
   # Nora no longer calls the co-located SearXNG/Firecrawl containers.

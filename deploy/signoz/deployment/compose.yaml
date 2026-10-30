@@ -4,6 +4,12 @@ networks:
     name: signoz-network
 services:
   ingester:
+    build:
+      # ../collector/Dockerfile — stock collector + journalctl (the journald
+      # receiver shells out to it) + the uid-10001 storage dir. network: host
+      # matches every build in the app compose (release_bundle.py requires it).
+      context: ../collector
+      network: host
     command:
     - -c
     - |
@@ -16,14 +22,27 @@ services:
     environment:
     - SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_DSN=tcp://signoz-telemetrystore-clickhouse-0-0:9000
     - SIGNOZ_OTEL_COLLECTOR_TIMEOUT=10m
-    image: signoz/signoz-otel-collector:v0.144.15
+    group_add:
+    # The collector runs uid 10001; host journal files are root:systemd-journal
+    # 0640, so it joins the host's journal-read group. The GID is host
+    # configuration, not a repo constant:
+    #   SIGNOZ_JOURNAL_GID=$(getent group systemd-journal | cut -d: -f3)
+    # goes in .env beside this file on the deploy host. Local proof fixtures
+    # make the journal dir world-readable and set 0.
+    - ${SIGNOZ_JOURNAL_GID:?set SIGNOZ_JOURNAL_GID in .env (getent group systemd-journal)}
+    image: nora-signoz-ingester:v0.144.15
     networks:
       signoz-network:
         aliases:
         - signoz-ingester
     ports:
-    - 4317:4317
-    - 4318:4318
+    # Loopback only, like every other admin surface in the app compose; the
+    # non-standard host ports keep the legacy OTLP collector's 4317/4318 free
+    # during acceptance. App containers never use these — they reach
+    # signoz-ingester:4318 over the network. Host-side reads via Tailscale
+    # serve; see docs/observability.md "Cutover and acceptance".
+    - "127.0.0.1:14317:4317"
+    - "127.0.0.1:14318:4318"
     restart: unless-stopped
     volumes:
     - ./ingester/ingester.yaml:/etc/otel-collector-config.yaml:ro
@@ -37,7 +56,6 @@ services:
     - /var/lib/docker/containers:/var/log/containers:ro
     - /var/log/journal:/var/log/journal:ro
     - /run/log/journal:/run/log/journal:ro
-    - /etc/machine-id:/etc/machine-id:ro
   mcp:
     deploy:
       replicas: 1
@@ -51,7 +69,7 @@ services:
         aliases:
         - signoz-mcp
     ports:
-    - 8000:8000
+    - "127.0.0.1:8000:8000"
     restart: unless-stopped
   signoz-metastore-postgres-0:
     container_name: signoz-metastore-postgres-0
@@ -95,7 +113,7 @@ services:
     networks:
     - signoz-network
     ports:
-    - 8080:8080
+    - "127.0.0.1:8080:8080"
     restart: unless-stopped
   signoz-telemetrykeeper-clickhousekeeper-0:
     container_name: signoz-telemetrykeeper-clickhousekeeper-0

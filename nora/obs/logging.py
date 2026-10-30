@@ -157,15 +157,12 @@ def _trace_ids(_logger: Any, _method_name: str, event_dict: dict[str, Any]) -> d
     must also survive a process that never set up a provider (it reads the
     current span, which is then simply absent).
     """
-    try:
-        from nora.obs.tracing import current_span_ids
+    from nora.obs.tracing import current_span_ids
 
-        trace_id, span_id = current_span_ids()
-        if trace_id:
-            event_dict["trace_id"] = trace_id
-            event_dict["span_id"] = span_id
-    except Exception:
-        pass
+    trace_id, span_id = current_span_ids()
+    if trace_id:
+        event_dict["trace_id"] = trace_id
+        event_dict["span_id"] = span_id
     return event_dict
 
 
