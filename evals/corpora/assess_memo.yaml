@@ -328,7 +328,7 @@ cases:
     kept: BBQ-2231
     cites:
     - 1
-    also: note_retire settled
+    also: note_set_status settled
 - name: memo_positive_20_house_rule
   category: positive
   input:

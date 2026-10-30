@@ -1,5 +1,5 @@
 """The Cognition session's memo verbs (DEC-306):
-`memo_write`, `memo_revise`, `memo_withdraw`. Each holds the body to the memo
+`memo_create`, `memo_revise`, `memo_set_status`. Each holds the body to the memo
 schema with the note body's line grammar, screens everything but the `## Kept`
 lines (D5, DEC-230), commits through the memo store stamped `cognition:<unit>`, and
 answers a refusal to the model. Over in-memory stores with a scripted agent
@@ -46,11 +46,11 @@ async def _one(call: str, runner_kwargs: Any = None, stores: Stores | None = Non
     return stores, answers[0]
 
 
-async def test_memo_write_keeps_a_memo_with_cognition_provenance_and_backs_a_written_close():
+async def test_memo_create_keeps_a_memo_with_cognition_provenance_and_backs_a_written_close():
     answers: list[Any] = []
 
     async def behave(by: dict[str, Any], tools: list[Any]) -> None:
-        answers.append(await by["memo_write"](title="wifi", body=KEPT))
+        answers.append(await by["memo_create"](title="wifi", body=KEPT))
         answers.append(await by["close"](item_index=0, reason="written"))
 
     stores, outcome = await session(behave)
@@ -66,7 +66,7 @@ async def test_memo_write_keeps_a_memo_with_cognition_provenance_and_backs_a_wri
 async def test_a_kept_line_holds_a_key_and_a_phone_verbatim():
     """D5: the room said it, so the memo keeps it as said."""
     body = f"## Kept\n- the router key is {KEY} [101]\n- the landlord is {PHONE} [102]\n"
-    stores, answer = await _one("memo_write", title="router", body=body)
+    stores, answer = await _one("memo_create", title="router", body=body)
     assert answer["status"] == "ok"
     (memo,) = await stores.memos.kept(unit="u")
     assert KEY in memo.head.body and PHONE in memo.head.body
@@ -75,12 +75,12 @@ async def test_a_kept_line_holds_a_key_and_a_phone_verbatim():
 async def test_the_screen_still_reads_the_title_and_the_conditions():
     """DEC-230's falsifier: the exemption reaches the `## Kept` lines and nothing
     else, so the same value in a title or a condition is refused."""
-    _, in_title = await _one("memo_write", title=f"call {PHONE}", body=KEPT)
+    _, in_title = await _one("memo_create", title=f"call {PHONE}", body=KEPT)
     _, in_conditions = await _one(
-        "memo_write", title="wifi", body=KEPT + f"## Conditions\n- ask {PHONE} first [101]\n",
+        "memo_create", title="wifi", body=KEPT + f"## Conditions\n- ask {PHONE} first [101]\n",
     )
     _, a_key_in_conditions = await _one(
-        "memo_write", title="wifi", body=KEPT + f"## Conditions\n- unless {KEY} [101]\n",
+        "memo_create", title="wifi", body=KEPT + f"## Conditions\n- unless {KEY} [101]\n",
     )
     for answer in (in_title, in_conditions, a_key_in_conditions):
         assert answer["status"] == "refused" and answer["reason"] == "identifier"
@@ -96,15 +96,15 @@ async def test_the_screen_still_reads_the_title_and_the_conditions():
 
 async def test_a_model_written_superseded_section_is_refused():
     _, answer = await _one(
-        "memo_write", title="wifi", body=KEPT + "## Superseded\n- old password [101]\n",
+        "memo_create", title="wifi", body=KEPT + "## Superseded\n- old password [101]\n",
     )
     assert answer["status"] == "refused" and answer["reason"] == "code_written"
 
 
 async def test_a_memo_with_nothing_kept_or_citing_an_unshown_message_is_refused():
-    _, empty = await _one("memo_write", title="wifi", body="## Conditions\n- weekdays [101]\n")
-    _, unshown = await _one("memo_write", title="wifi", body=KEPT.replace("[101]", "[999]"))
-    _, uncited = await _one("memo_write", title="wifi", body="## Kept\n- the password\n")
+    _, empty = await _one("memo_create", title="wifi", body="## Conditions\n- weekdays [101]\n")
+    _, unshown = await _one("memo_create", title="wifi", body=KEPT.replace("[101]", "[999]"))
+    _, uncited = await _one("memo_create", title="wifi", body="## Kept\n- the password\n")
     assert (empty["reason"], unshown["reason"], uncited["reason"]) == (
         "missing_section", "unknown_id", "uncited")
 
@@ -112,7 +112,7 @@ async def test_a_memo_with_nothing_kept_or_citing_an_unshown_message_is_refused(
 async def test_a_memo_may_cite_noras_own_send_and_a_note_still_may_not():
     """«記低» keeps what she found, as she found it; a note stays the group's."""
     body = "## Kept\n- the code is on the router [101, 103]\n"
-    stores, memo = await _one("memo_write", runner_kwargs=WITH_OWN, title="code", body=body)
+    stores, memo = await _one("memo_create", runner_kwargs=WITH_OWN, title="code", body=body)
     assert memo["status"] == "ok"
     (kept,) = await stores.memos.kept(unit="u")
     assert kept.head.citations == ("101", "103")
@@ -126,7 +126,7 @@ async def test_a_memo_may_cite_noras_own_send_and_a_note_still_may_not():
 async def test_a_second_memo_under_a_kept_title_is_refused_naming_the_first():
     stores = Stores()
     memo = await _seed(stores)
-    _, answer = await _one("memo_write", stores=stores, title="WiFi", body=KEPT)
+    _, answer = await _one("memo_create", stores=stores, title="WiFi", body=KEPT)
     assert answer["reason"] == "duplicate" and memo.id in answer["detail"]
     assert len(await stores.memos.kept(unit="u")) == 1
 
@@ -151,16 +151,16 @@ async def test_memo_revise_appends_and_a_stale_base_is_refused():
     assert head.established_by == PROVENANCE and head.citations == ("101", "102")
 
 
-async def test_memo_withdraw_needs_a_cited_message_and_leaves_the_memo_unrevisable():
+async def test_memo_set_status_needs_a_cited_message_and_leaves_the_memo_unrevisable():
     stores = Stores()
     memo = await _seed(stores)
     answers: list[Any] = []
 
     async def behave(by: dict[str, Any], tools: list[Any]) -> None:
-        answers.append(await by["memo_withdraw"](
+        answers.append(await by["memo_set_status"](
             memo_id=memo.id, base_revision_id=memo.head.id, cited_ids=[],
         ))
-        answers.append(await by["memo_withdraw"](
+        answers.append(await by["memo_set_status"](
             memo_id=memo.id, base_revision_id=memo.head.id, cited_ids=["102"],
         ))
         answers.append(await by["memo_revise"](
@@ -183,7 +183,7 @@ async def test_another_units_memo_cannot_be_revised_or_withdrawn():
         body=KEPT,
     )
     _, withdrawn = await _one(
-        "memo_withdraw", stores=stores, memo_id=other.id, base_revision_id=other.head.id,
+        "memo_set_status", stores=stores, memo_id=other.id, base_revision_id=other.head.id,
         cited_ids=["101"],
     )
     assert revised["reason"] == withdrawn["reason"] == "not_found"
@@ -192,7 +192,7 @@ async def test_another_units_memo_cannot_be_revised_or_withdrawn():
 
 async def test_without_a_memo_store_every_memo_verb_is_unavailable():
     _, answer = await _one(
-        "memo_write", runner_kwargs={"memos": None}, title="wifi", body=KEPT,
+        "memo_create", runner_kwargs={"memos": None}, title="wifi", body=KEPT,
     )
     assert answer["status"] == "unavailable"
 
@@ -202,12 +202,12 @@ async def test_a_title_carrying_the_kept_value_is_refused_and_a_title_naming_the
     the thing and never the value a Kept line keeps."""
     body = "## Kept\n- the wifi password is hunter2pass [101]\n- the door code is 4721# [102]\n"
     for title in ("wifi: hunter2pass", "door code 4721#"):
-        _, answer = await _one("memo_write", title=title, body=body)
+        _, answer = await _one("memo_create", title=title, body=body)
         assert answer["status"] == "refused" and answer["reason"] == "title_carries_value"
     for title in ("Wifi password", "Door code"):
-        _, answer = await _one("memo_write", title=title, body=body)
+        _, answer = await _one("memo_create", title=title, body=body)
         assert answer["status"] == "ok", (title, answer)
     _, deposit = await _one(
-        "memo_write", title="Deposit", body="## Kept\n- the deposit is $500, split four [101]\n",
+        "memo_create", title="Deposit", body="## Kept\n- the deposit is $500, split four [101]\n",
     )
     assert deposit["status"] == "ok"

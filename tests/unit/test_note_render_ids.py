@@ -1,6 +1,6 @@
 """The shared note index's opt-in to carry a note's REAL id as `n`.
 
-The Cognition session's `note_update` takes the note's own id, so the id it is
+The Cognition session's `note_revise` takes the note's own id, so the id it is
 shown must BE that id (`ids=True`); the tag turn keeps its positional `1..N`
 (`resolve_positions` remaps it), which `test_tag_notes_block_is_unchanged_by_
 step3b.py` pins byte for byte. These pin the opt-in itself: what it changes,

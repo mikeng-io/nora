@@ -8,8 +8,8 @@ language: only the headings and the fixed tokens (`->`, `:`, `(as of …)`,
 `(folded …)`, `no reason given`, `no date given`, `when`, the weekday
 abbreviation) are keys, and code parses keys.
 
-**Writers that call `parse_note_body`**: the tag path's `note_create`/`note_update`
-and the Cognition session's `note_create`/`note_update`/`note_merge`
+**Writers that call `parse_note_body`**: the tag path's `note_create`/`note_revise`
+and the Cognition session's `note_create`/`note_revise`/`note_merge`
 (`nora.app.cognition_session`). It is called by each WRITER and never by
 `NoteRevision.__post_init__`: a stored body that predates the schema must still
 read back.

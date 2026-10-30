@@ -363,7 +363,7 @@ def note_revision_lineage(
     `message:<room>`. The FIRST revision also rests on the room the note was
     raised in: `origin` is its bare `established_in`, `origin_key` that room's
     key when the Record names its platform. A revision written from a known
-    room (the tag path's `note_update`) rests on that room key too. A cited id
+    room (the tag path's `note_revise`) rests on that room key too. A cited id
     no longer on record, a first revision whose room has no platform on
     record, or a later revision citing nothing from no known room, is
     `unresolved` at the origin: shown only there.

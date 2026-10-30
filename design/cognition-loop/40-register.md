@@ -54,7 +54,7 @@ Notebook holds what the unit's affairs, its people and Nora add up to:
 From the cut-over the tag path writes none of the three kinds above; a
 «記低» about the unit and a date, time or RSVP are strong cues that wake
 Cognition, which writes the note, memo or event ([05](05-data-model.md) §7).
-The mentions below of a tag-path `memo_write` and tag-path event writes
+The mentions below of a tag-path `memo_create` and tag-path event writes
 describe the design before that ruling.
 
 ## 2. Memo
@@ -62,7 +62,7 @@ describe the design before that ruling.
 Title, body (the [12](12-schemas.md) §3 memo schema, restated whole on
 revision as DEC-213 does for a note body), cited Record ids, origin room,
 unit. No anchor, no closing condition, no revisit. Withdrawn
-(`memo_withdraw`) only when the unit's people say it no longer holds.
+(`memo_set_status`) only when the unit's people say it no longer holds.
 
 Anything the room settled may be kept, a password included (operator
 2026-09-28: it is in the transcript and memory already). A memo body is
@@ -70,7 +70,7 @@ exempt from `dream_screen`'s key-shape check and renders normally wherever its
 lineage passes: anything said in a group is already shared with that group.
 No special redaction.
 
-Written on the tag path by `memo_write` («記低» about anything but the
+Written on the tag path by `memo_create` («記低» about anything but the
 speaker; about the speaker it stays `remember`) and by cognition. Read as a
 `<memos>` index plus `memo_read`. The «記低» routing change is tool text under
 ADR 0015, measured with `tool_selection` before and after.

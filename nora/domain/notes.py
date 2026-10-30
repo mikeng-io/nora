@@ -172,7 +172,7 @@ def note_handle(title: str) -> str:
     chat»). This function is what makes that handle comparable.
 
     **It lives in the DOMAIN because several readers must agree exactly**:
-    `nora.agent.tools`' `note_read`/`note_update` resolve a title against the
+    `nora.agent.tools`' `note_read`/`note_revise` resolve a title against the
     standing set, `ReplyGuard`'s R-55 latch keys on the very same string, and
     the debrief's note-read latch reads it back. `nora.language` sits BELOW
     `nora.agent` in the layered import contract, so the only alternative to
@@ -490,7 +490,7 @@ def tag_path_progressed_since_wake(
     wake. Judging by the head would charge a strike and leave the watermark at
     R5, so the same R6 could never count later, and a note the room is actively
     working would march to the strike ceiling. Background passes and a
-    Cognition-session `note_update` append such revisions.
+    Cognition-session `note_revise` append such revisions.
 
     A `last_wake_revision_id` of `None` is a note that has never been woken, so
     the whole chain is unseen and any tag-path revision in it counts.
@@ -714,7 +714,7 @@ class StaleNoteHeadError(Exception):
 
     A plain `Exception` rather than `nora.domain.errors.NoraError`: `NoraError`
     carries a `FailureClass`, and how a refused write is *surfaced to the room*
-    is the tool layer's decision (`note_update` reports `unavailable`), not this
+    is the tool layer's decision (`note_revise` reports `unavailable`), not this
     type's. Baking INFRASTRUCTURE in here would default the refusal to silence.
     """
 

@@ -19,7 +19,7 @@ Design detail lives in `design/dreamer-agent-loop/33-note-dreamer-schedule.md` (
 | Layer | State |
 |---|---|
 | **Spec** | `2026-08-21-note-tier-design.md` (accepted) — a note is `(anchor, uncertainty, closing condition, body)`, unit-scoped, index injected on every tag |
-| **Tools** | `note_create` / `note_update` / `note_read` / `note_search` exist on the tag path, gated by R-55 (read-before-write latch) |
+| **Tools** | `note_create` / `note_revise` / `note_read` / `note_search` exist on the tag path, gated by R-55 (read-before-write latch) |
 | **Cold start** | Measured 2026-08-27: **one** note-tool call in the tier's life (a `note_search` miss). Zero creates, zero updates, ever. The create path is not broken — it has never been called |
 | **Curator** | Built 2026-08-28 — merge + retire only. "You are NOT writing anything." |
 | **Revisitor** | Built 2026-08-28 — retirement half only. Reaches a person only via `schedule_reminder` |

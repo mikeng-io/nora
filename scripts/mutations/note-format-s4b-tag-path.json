@@ -14,18 +14,18 @@
     "target": "tests/test_note_tools.py::test_note_create_maps_positions_to_row_ids_and_stores_the_normalised_body"
   },
   {
-    "name": "note_update holds its body to the schema",
+    "name": "note_revise holds its body to the schema",
     "file": "nora/agent/tools.py",
-    "old": "        held = _held_to_schema(\n            \"note_update\", body,\n",
-    "new": "        held = body if True else _held_to_schema(\n            \"note_update\", body,\n",
-    "target": "tests/test_note_tools.py::test_note_update_may_keep_a_bare_id_the_head_already_cites"
+    "old": "        held = _held_to_schema(\n            \"note_revise\", body,\n",
+    "new": "        held = body if True else _held_to_schema(\n            \"note_revise\", body,\n",
+    "target": "tests/test_note_tools.py::test_note_revise_may_keep_a_bare_id_the_head_already_cites"
   },
   {
-    "name": "note_update carries the head's own ids",
+    "name": "note_revise carries the head's own ids",
     "file": "nora/agent/tools.py",
     "old": "            carried=cited_ids_in(current[1].body) if current is not None else frozenset(),\n",
     "new": "            carried=frozenset(),\n",
-    "target": "tests/test_note_tools.py::test_note_update_may_keep_a_bare_id_the_head_already_cites"
+    "target": "tests/test_note_tools.py::test_note_revise_may_keep_a_bare_id_the_head_already_cites"
   },
   {
     "name": "positions are mapped to row ids",

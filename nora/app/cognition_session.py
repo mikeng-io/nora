@@ -180,8 +180,8 @@ COGNITION_PATH_PREFIX = "cognition:"
 #: The verbs a session holds itself. A read tool may not share one of these
 #: names: it would shadow (or be shadowed by) a session verb.
 SESSION_VERB_NAMES: frozenset[str] = frozenset({
-    "close", "note_create", "note_update", "note_retire", "note_merge",
-    "memo_write", "memo_revise", "memo_withdraw", "event_propose", "event_revise",
+    "close", "note_create", "note_revise", "note_set_status", "note_merge",
+    "memo_create", "memo_revise", "memo_set_status", "event_propose", "event_revise",
     "event_set_status", "standing_revise",
     "wake_at", "wake_move", "wake_cancel", "remind", "remind_move", "remind_cancel",
 })
@@ -1651,7 +1651,7 @@ class CognitionSessionRunner:
                     return _refused("invalid_note", str(exc))
             return wrote(platform, conversation_id, item, note_id=note.id)
 
-        async def note_update(
+        async def note_revise(
             note_id: str, body: str, parent_revision_id: str,
             room: str = "", item: int | None = None,
         ) -> dict[str, object]:
@@ -1703,7 +1703,7 @@ class CognitionSessionRunner:
                 return _refused("invalid_revision", str(exc))
             return wrote(platform, conversation_id, item, revision_id=revision.id)
 
-        async def note_retire(
+        async def note_set_status(
             note_id: str, reason: Literal["settled", "anchor_passed"],
             base_revision_id: str = "", room: str = "", item: int | None = None,
         ) -> dict[str, object]:
@@ -1712,7 +1712,7 @@ class CognitionSessionRunner:
             nothing is left open about it. A retired note leaves the index; its
             revisions are kept.
 
-            If the group will need the answer again, keep it with memo_write
+            If the group will need the answer again, keep it with memo_create
             first, then retire the note.
 
             Returns `status`: ok, refused or unavailable, with a `reason` and
@@ -1726,7 +1726,7 @@ class CognitionSessionRunner:
                 base_revision_id: Optional. The note's head revision id your
                     last read of it showed; a note changed since is not retired.
                 room: Optional when the agenda is one room, required when it
-                    spans several, as for note_update.
+                    spans several, as for note_revise.
                 item: Optional. The agenda item this write is for, by its number.
             """
             resolved = _write_target(room, item, state)
@@ -1776,7 +1776,7 @@ class CognitionSessionRunner:
                     not folded in. Every line ends in the ids it rests on, which
                     may be any id either note already cites.
                 room: Optional when the agenda is one room, required when it
-                    spans several, as for note_update.
+                    spans several, as for note_revise.
                 item: Optional. The agenda item this write is for, by its number.
             """
             resolved = _write_target(room, item, state)
@@ -1891,7 +1891,7 @@ class CognitionSessionRunner:
                     return kept  # type: ignore[no-any-return]
             return None
 
-        async def memo_write(
+        async def memo_create(
             title: str, body: str, mode: Literal["told", "deduced", "abduced"] = "told",
             room: str = "", item: int | None = None,
         ) -> dict[str, object]:
@@ -1934,7 +1934,7 @@ class CognitionSessionRunner:
             if isinstance(resolved, dict):
                 return resolved
             (platform, conversation_id), item = resolved
-            checked = await _memo_body("memo_write", title, body, platform, conversation_id)
+            checked = await _memo_body("memo_create", title, body, platform, conversation_id)
             if isinstance(checked, dict):
                 return checked
             parsed, citations = checked
@@ -1979,12 +1979,12 @@ class CognitionSessionRunner:
             Args:
                 memo_id: The memo's id, as <memos> shows it.
                 base_revision_id: The `revision_id` memo_read last showed.
-                body: The whole memo after your change, in memo_write's
+                body: The whole memo after your change, in memo_create's
                     sections, every line ending in the ids it rests on.
                 title: Optional. A new title; left out, the title stays.
                 mode: How you reached the change: `told`, `deduced` or `abduced`.
                 room: Optional when the agenda is one room, required when it
-                    spans several, as for memo_write.
+                    spans several, as for memo_create.
                 item: Optional. The agenda item this write is for, by its number.
             """
             if self._memos is None:
@@ -2027,7 +2027,7 @@ class CognitionSessionRunner:
                     return _refused("withdrawn", "that memo was withdrawn; nothing moves it now")
             return wrote(platform, conversation_id, item, revision_id=revision.id)
 
-        async def memo_withdraw(
+        async def memo_set_status(
             memo_id: str, base_revision_id: str, cited_ids: list[str],
             room: str = "", item: int | None = None,
         ) -> dict[str, object]:
@@ -2044,7 +2044,7 @@ class CognitionSessionRunner:
                 cited_ids: The ids of the messages saying it no longer holds, at
                     least one, each one you were shown or read.
                 room: Optional when the agenda is one room, required when it
-                    spans several, as for memo_write.
+                    spans several, as for memo_create.
                 item: Optional. The agenda item this write is for, by its number.
             """
             if self._memos is None:
@@ -2060,7 +2060,7 @@ class CognitionSessionRunner:
             if isinstance(shown, dict):
                 return shown
             try:
-                ids, keys = check_citations(cited_ids, shown, what="memo_withdraw")
+                ids, keys = check_citations(cited_ids, shown, what="memo_set_status")
             except NoteBodyError as exc:
                 return _refused(exc.rule, str(exc))
             try:
@@ -2654,7 +2654,7 @@ class CognitionSessionRunner:
                     return _refused("proposal_required", "admit a proposal covering the item first")
                 key = None
                 if self._memory is not None and verb.__name__ in (
-                        "note_create", "memo_write", "event_propose"):
+                        "note_create", "memo_create", "event_propose"):
                     key = await self._memory.act_key(state, verb.__name__,
                         inspect.signature(verb).bind(*args, **kwargs).arguments)
                     existing = await self._memory.records.act_result(key, state.session_id)
@@ -2721,8 +2721,8 @@ class CognitionSessionRunner:
 
         verbs = (
             close, *(acting(v) for v in (
-                note_create, note_update, note_retire, note_merge, memo_write,
-                memo_revise, memo_withdraw, event_propose, event_revise, event_set_status,
+                note_create, note_revise, note_set_status, note_merge, memo_create,
+                memo_revise, memo_set_status, event_propose, event_revise, event_set_status,
                 standing_revise, wake_at, wake_move, wake_cancel, remind, remind_move,
                 remind_cancel,
             )),
@@ -2731,11 +2731,6 @@ class CognitionSessionRunner:
             verbs = (memory_propose, profile_revise, *verbs)
         if state.historical:
             verbs = (memory_propose, profile_revise, close)
-        if self._memory is not None:
-            names = {"note_update": "note_revise", "note_retire": "note_set_status",
-                     "memo_write": "memo_create", "memo_withdraw": "memo_set_status"}
-            for verb in verbs:
-                verb.__name__ = names.get(verb.__name__, verb.__name__)
         return [*read_tools, *(self._counted(v.__name__, v) for v in verbs)]
 
     # `created_by_session_id=None` on every pace move and cancel above, on

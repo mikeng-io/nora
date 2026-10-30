@@ -282,7 +282,7 @@ RULE_TESTS = {
     # R-55: a note revision is VETOED unless `note_read` succeeded for that note
     # in the same turn. The injected index carries title + description only —
     # enough to know a note exists, nowhere near enough to revise one — and
-    # `note_update` replaces the note's rendered body, so a revision written
+    # `note_revise` replaces the note's rendered body, so a revision written
     # blind destroys the arrangement the tier exists to hold. The named test
     # asserts through `ReplyGuard.evaluate`'s refusal rather than by reading the
     # latch set: the set is invisible to the model, the veto is where a miss

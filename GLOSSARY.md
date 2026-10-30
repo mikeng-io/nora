@@ -220,10 +220,10 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   the 12th, venue open», with a **title**, a **description**, a **body** (the arrangement as
   it stands), an **anchor** (the date it is about) and a **closing
   condition**. Scoped to a **unit**, not a room. Written by people on
-  the tag path (`note_create`/`note_update`) and by the Cognition session; read
+  the tag path (`note_create`/`note_revise`) and by the Cognition session; read
   everywhere as the `<notes>` index plus `note_read`. A note has a
   `revisit_at` and **strikes** — how many times it was raised with nobody
-  answering — and the Cognition session retires it (`note_retire`) when the
+  answering — and the Cognition session retires it (`note_set_status`) when the
   room settles it or its moment passes. A note that duplicates an older one is
   folded into it by `note_merge` and retired `retired-merged`; anything that looks it up after
   that follows `replaced_by` to the note it went into. **Nothing Nora says can create, revise or close a note**:

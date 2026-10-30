@@ -1,5 +1,22 @@
 # Changelog
 
+## [7.11.46](https://github.com/mikeng-io/nora/compare/v7.11.45...v7.11.46) (2026-10-30)
+
+
+### Maintenance
+
+* **bridges:** clarify receive preflight and reader election scope ([b0ea7ff](https://github.com/mikeng-io/nora/commit/b0ea7fff57a7e0da962386e9ecf240ccb2acbe7f))
+* **bridges:** resolve ingress and recovery review gaps ([3740cb8](https://github.com/mikeng-io/nora/commit/3740cb85624fac81795c4a03f0a55c730d195050))
+* **bridges:** specify durable platform handoff across app releases ([c8824d8](https://github.com/mikeng-io/nora/commit/c8824d8c48e67ae467677d820340660d22e5bff8))
+
+## [7.11.45](https://github.com/mikeng-io/nora/compare/v7.11.44...v7.11.45) (2026-10-30)
+
+
+### Maintenance
+
+* **memory:** use one vocabulary for registered notebook tools ([2da875d](https://github.com/mikeng-io/nora/commit/2da875d1bfed16403682fd0988ec91cee2986856))
+* restore the note retirements metric name ([7855ed3](https://github.com/mikeng-io/nora/commit/7855ed317f8d288d38aa8bce0a02ddf563109b48))
+
 ## [7.11.44](https://github.com/mikeng-io/nora/compare/v7.11.43...v7.11.44) (2026-10-30)
 
 

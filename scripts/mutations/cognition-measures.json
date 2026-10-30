@@ -70,7 +70,7 @@
   "target": "tests/unit/test_cognition_session_failures.py -k two_standing_revisions"
  },
  {
-  "name": "R3-4: note_update's description omits unavailable",
+  "name": "R3-4: note_revise's description omits unavailable",
   "file": "nora/app/cognition_session.py",
   "old": "            revision is kept.\n\n            Returns `status`: ok, refused or unavailable, with a `reason` and\n            `detail` when it is not ok.",
   "new": "            revision is kept.\n\n            Returns `status`: ok or refused, with a `reason` when refused.",

@@ -238,7 +238,7 @@ the launching room holds, scoped to that room and its disclosure rules:
 |---|---|
 | yes | the computer (`computer_export` `keep` only); `document_publish`, `document_read`; `web_search`, `web_fetch`, `media_fetch`; `skills`; the room's read-only lookups (`note_read`, `note_search`, `record_query`, `place_info`, `route`, `transit`, `weather`, …) |
 | never | `send_reply`, `send_to`, `send_gif`, `media_send`, every other send path; `computer_export` to a link or chat |
-| not now | memory writes: `note_create`, `note_update`, event writes, `remind`, `remember`. Hers to make in a turn; the worker reports, she decides |
+| not now | memory writes: `note_create`, `note_revise`, event writes, `remind`, `remember`. Hers to make in a turn; the worker reports, she decides |
 
 ## 4d. The checkpoint: a job keeps its place (operator, 2026-10-05; DEC-285)
 

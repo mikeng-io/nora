@@ -44,13 +44,13 @@ EXPECTED: dict[str, tuple[dict[str, tuple[str, Any]], set[str]]] = {
          "item": ("integer", None)},
         {"title", "description", "uncertainty", "closing_condition", "body"},
     ),
-    "note_update": (
+    "note_revise": (
         {"note_id": ("string", None), "body": ("string", None),
          "parent_revision_id": ("string", None), "room": ("string", None),
          "item": ("integer", None)},
         {"note_id", "body", "parent_revision_id"},
     ),
-    "note_retire": (
+    "note_set_status": (
         {"note_id": ("string", None),
          "reason": ("string", ["settled", "anchor_passed"]),
          "base_revision_id": ("string", None), "room": ("string", None),
@@ -62,7 +62,7 @@ EXPECTED: dict[str, tuple[dict[str, tuple[str, Any]], set[str]]] = {
          "body": ("string", None), "room": ("string", None), "item": ("integer", None)},
         {"survivor_id", "duplicate_id", "body"},
     ),
-    "memo_write": (
+    "memo_create": (
         {"title": ("string", None), "body": ("string", None),
          "mode": ("string", ["told", "deduced", "abduced"]), "room": ("string", None),
          "item": ("integer", None)},
@@ -75,7 +75,7 @@ EXPECTED: dict[str, tuple[dict[str, tuple[str, Any]], set[str]]] = {
          "item": ("integer", None)},
         {"memo_id", "base_revision_id", "body"},
     ),
-    "memo_withdraw": (
+    "memo_set_status": (
         {"memo_id": ("string", None), "base_revision_id": ("string", None),
          "cited_ids": ("array", {"type": "string"}), "room": ("string", None),
          "item": ("integer", None)},
