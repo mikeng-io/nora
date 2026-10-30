@@ -13,7 +13,6 @@ import random
 import re
 import statistics
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
@@ -23,7 +22,6 @@ import sqlalchemy as sa
 from sqlalchemy.engine import make_url
 
 from evals.rebuilt.judge import criterion_verdict, parse_json_response
-from nora.agent.ports import ToolSpec, adapt
 from nora.agent.structured import ask_text, build_structured_model
 from nora.app.graph_project import graph_project, projection_context
 from nora.config import load
@@ -31,7 +29,7 @@ from nora.domain.blocks import BlockKey, ContextBlock, assemble, restamp
 from nora.domain.memory_graph import Walk
 from nora.domain.prompt import escape
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.memory_graph import WALK_SQL, walk_parameters, work_row
+from nora.infra.sql.memory_graph import WALK_SQL, walk_parameters
 from nora.infra.sql.schema import METADATA
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
@@ -123,31 +121,6 @@ def rate(
     return {"status": status, "counts": counts, "rate": value}
 
 
-def invariants(
-    before: dict[str, Any],
-    after: dict[str, Any],
-    states: list[str],
-    expected: int,
-    egress_hits: int,
-) -> dict[str, Any]:
-    acts = sum(max(0, after[k] - v) for k, v in before.items())
-    lost = max(0, expected - len(states)) + sum(s not in {"settled", "failed"} for s in states)
-    return {
-        "acts": {"status": "FAIL" if acts else "PASS", "count": acts},
-        "lost": {"status": "FAIL" if lost else "PASS", "count": lost},
-        "egress": {"status": "FAIL" if egress_hits else "PASS", "count": egress_hits},
-        "failed": {
-            "status": "INSUFFICIENT"
-            if not expected
-            else "PASS"
-            if states.count("failed") / expected < 0.05
-            else "FAIL",
-            "count": states.count("failed"),
-            "total": expected,
-        },
-    }
-
-
 def percentile(values: list[float], fraction: float) -> float | None:
     if not values:
         return None
@@ -161,54 +134,48 @@ async def rows(engine: Any, sql: str, params: dict[str, Any] | None = None) -> l
         return [dict(r) for r in (await conn.execute(sa.text(sql), params or {})).mappings()]
 
 
+ACT_TABLES = (
+    "note",
+    "note_revision",
+    "note_merge_decision",
+    "memo",
+    "memo_revision",
+    "events",
+    "event_revision",
+    "standing",
+    "standing_revision",
+    "reminders",
+    "cognition_self_wake",
+)
+
+
 async def acts(engine: Any) -> dict[str, Any]:
-    # The dedicated snapshot has no concurrent writers or transport collaborators.
-    names = ("note", "memo", "reminders", "cognition_self_wake", "event_entry")
+    # ponytail: full table fingerprints on an isolated snapshot; no concurrent writers.
     result = {}
-    for name in names:
-        if name in METADATA.tables:
-            result[name] = (await rows(engine, f'SELECT count(*) AS n FROM "{name}"'))[0]["n"]  # noqa: S608 - fixed table allowlist
+    for name in ACT_TABLES:
+        METADATA.tables[name]  # Fail closed on a stale allowlist.
+        result[name] = (
+            await rows(
+                engine,
+                "SELECT md5(coalesce(string_agg(body, ',' ORDER BY body), '')) AS digest "  # noqa: S608 - fixed allowlist
+                f'FROM (SELECT to_jsonb(t)::text AS body FROM "{name}" t) held',
+            )
+        )[0]["digest"]
     result["sends"] = (await rows(engine, "SELECT count(*) AS n FROM messages WHERE is_nora=1"))[0][
         "n"
     ]
     return result
 
 
-class SpikeReads:
-    """Only outbound public web reads. Local graph reads are supplied by the runner."""
-
-    def __init__(self, provider: Any, log: list[dict[str, Any]]) -> None:
-        self.provider, self.log = provider, log
-
-    def build(self, **kwargs: Any) -> list[Any]:
-        async def web_search(query: str) -> dict[str, Any]:
-            """Search public pages for this item. Returns grounded public search results."""
-            self.log.append({"tool": "web_search", "query": query})
-            return (
-                await self.provider.search(query=query)
-                if self.provider
-                else {"status": "unavailable"}
-            )
-
-        async def web_fetch(url: str) -> dict[str, Any]:
-            """Fetch a public page for this item. Returns its bounded extracted text."""
-            self.log.append({"tool": "web_fetch", "query": url})
-            return (
-                await self.provider.fetch(url=url) if self.provider else {"status": "unavailable"}
-            )
-
-        return [
-            adapt(ToolSpec(name=f.__name__, description="", schema={}, call=f, budget=3))
-            for f in (web_search, web_fetch)
-        ]
-
-
 class Judges:
     def __init__(self, cfg: Any, models: list[str]) -> None:
         self.cfg, self.models = cfg, models
+        self.effective_models = [cfg.endpoint("eval_judge", m)[2] for m in models]
 
     async def call(self, model_id: str, instruction: str, payload: Any) -> str:
         url, key, selected_model = self.cfg.endpoint("eval_judge", model_id)
+        if selected_model != model_id:
+            raise ValueError("effective judge model differs from requested judge")
         model = build_structured_model(
             base_url=url,
             api_key=key,
@@ -246,41 +213,14 @@ class Judges:
         return out
 
 
-async def candidates(engine: Any, records: Any) -> list[dict[str, Any]]:
-    works = await rows(engine, "SELECT * FROM memory_work_item ORDER BY as_of,id")
-    result: list[dict[str, Any]] = []
-    for row in works:
-        work = replace(work_row(row), historical=True)
-        item = await records.load(work)
-        text = "\n".join(s.text for s in item.sources)
-        strata = []
-        if work.source[0].startswith("social"):
-            strata.append("social")
-        elif work.source[0] in {"message", "message_batch"}:
-            if any(x in text for x in ("https://", "http://")):
-                strata.append("link")
-            # The snapshot's message rows carry no media column; attachments are sources.
-            if any(s.key[0] == "media" for s in item.sources):
-                strata.append("attachment")
-            if not strata:
-                strata.append("text")
-        # Multi-signal events require multiple distinct source kinds, not just a long batch.
-        if len({s.key[0] for s in item.sources}) > 1 and any(
-            s.key[0] in {"episode", "event_entry"} for s in item.sources
-        ):
-            strata.append("multi_signal")
-        if strata:
-            result.append({"work": asdict(work), "input": asdict(item), "strata": strata})
-    unique = {(r["work"]["unit"], tuple(r["work"]["source"])): r for r in result}
-    return list(unique.values())
-
-
 async def sql_answer(
     engine: Any, question: dict[str, Any], relations: list[str] | None = None
 ) -> list[str]:
     query = Walk(
         unit=question["unit"],
         persons=frozenset(question["persons"]),
+        # Both arms exclude record edges, including the seed's depth-0 edges.
+        layers=("rollup", "notebook"),
         depth=3,
         nodes=1000,
         fan_out=100,
@@ -488,159 +428,6 @@ async def age_comparison(
     return result
 
 
-async def quality(
-    engine: Any,
-    selected: dict[str, Any],
-    receipts: list[dict[str, Any]],
-    judges: Judges,
-    output: Path,
-    minimum: int,
-) -> dict[str, Any]:
-    scored: dict[str, list[list[str]]] = {
-        k: [[], []]
-        for k in (
-            "reading_precision",
-            "reading_recall",
-            "relation_precision",
-            "wrong_merges",
-            "enrichment_support",
-            "enrichment_entity",
-        )
-    }
-    audit = []
-    timing: dict[str, Any] = {}
-
-    async def score(measure: str, proposition: Any, evidence: Any) -> None:
-        verdicts = await judges.score(
-            {"proposition": proposition, "evidence": evidence, "source_timing": timing}
-        )
-        for i, verdict in enumerate(verdicts):
-            scored[measure][i].append(verdict)
-        audit.append(
-            {
-                "measure": measure,
-                "proposition": proposition,
-                "evidence": evidence,
-                "verdicts": verdicts,
-                "source_timing": timing,
-            }
-        )
-
-    for wid, candidate in selected.items():
-        snapshot = candidate["input"].get("snapshot", {})
-        timing = {
-            "work_as_of": candidate.get("work", {}).get("as_of"),
-            "source_keys": snapshot.get("source_keys", {}),
-            "rows": [
-                {"id": r["id"], "ts": r.get("ts")}
-                for r in [*snapshot.get("messages", ()), *snapshot.get("context", ())]
-            ],
-        }
-        # asdict() keeps the item's tuples, so build a list rather than concatenate.
-        source = [*candidate["input"]["sources"]] + [
-            s
-            for r in receipts
-            if r["work_id"] == wid and r["part"] == "shown_sources"
-            for s in r["payload"]["sources"]
-        ]
-        claims = await rows(
-            engine,
-            "SELECT content FROM extraction_claim WHERE"
-            " content->>'writer'='cognition:comprehend' AND content->>'session_id'=ANY(:sessions)",
-            {
-                "sessions": [
-                    str(r["session_id"])
-                    for r in receipts
-                    if r["work_id"] == wid and r["part"] == "readings"
-                ]
-            },
-        )
-        for claim in claims:
-            content = claim["content"]
-            keys = {
-                tuple(content["source_keys"][str(slot)])
-                for slot in content["source_ids"]
-                if str(slot) in content.get("source_keys", {})
-            }
-            await score(
-                "reading_precision", content, [s for s in source if tuple(s["key"]) in keys]
-            )
-        # Recall denominator is source rows, including stored attachment/page text;
-        # judges decide whether every storable statement was represented.
-        for item_source in source:
-            await score(
-                "reading_recall",
-                {"all_storable_statements_covered": True, "readings": claims},
-                [item_source],
-            )
-        for receipt in receipts:
-            if receipt["work_id"] != wid or receipt["part"] != "graph":
-                continue
-            payload = receipt["payload"]
-            for relation in payload["relations"]:
-                evidence = [
-                    e for e in payload["evidence"] if e.get("relation_id") == relation["id"]
-                ]
-                cited = {tuple(e["source"]) for e in evidence}
-                supporting = [s for s in source if tuple(s["key"]) in cited]
-                await score(
-                    "relation_precision", relation, {"citations": evidence, "sources": supporting}
-                )
-                if relation["rel"] == "same_as":
-                    await score(
-                        "wrong_merges",
-                        {"different_entities": relation},
-                        {
-                            "citations": evidence,
-                            "sources": supporting,
-                            "entities": await rows(
-                                engine,
-                                "SELECT * FROM entity WHERE id=ANY(:ids)",
-                                {"ids": [relation["src"][1], relation["dst"][1]]},
-                            ),
-                        },
-                    )
-            for entity in payload["entities"]:
-                for attr, value in entity.get("attributes", {}).items():
-                    citations = [
-                        e
-                        for e in payload["evidence"]
-                        if e.get("entity_id") == entity["id"] and e.get("attribute") == attr
-                    ]
-                    pages = []
-                    for e in citations:
-                        if e["source"][0] == "web_page":
-                            pages.extend(
-                                await rows(
-                                    engine,
-                                    "SELECT url,text,fetched_at FROM comprehend_web_page"
-                                    " WHERE id=:id",
-                                    {"id": e["source"][1]},
-                                )
-                            )
-                    if pages:
-                        await score("enrichment_support", {attr: value}, pages)
-                        await score("enrichment_entity", {"page_is_about": entity["name"]}, pages)
-    freeze(output / "judgements.json", audit)
-    thresholds = {
-        "reading_precision": 0.95,
-        "reading_recall": 0.8,
-        "relation_precision": 0.9,
-        "wrong_merges": 0.02,
-        "enrichment_support": 0.95,
-        "enrichment_entity": 0.9,
-    }
-    report = {}
-    for name, values in scored.items():
-        both = [rate(v, minimum, thresholds[name], maximum=name == "wrong_merges") for v in values]
-        statuses = {v["status"] for v in both}
-        status = next(s for s in ("ERROR", "INSUFFICIENT", "FAIL", "PASS") if s in statuses)
-        report[name] = {"status": status, "judges": both}
-    return report
-
-
-# Fixed before the run: explicit empty understanding is valid; productivity is
-# a quality measurement, not a smoke admission threshold.
 SMOKE_MARKS = {
     "sample": 5,
     "completion_rate": 1.0,
@@ -674,13 +461,17 @@ def session_smoke(samples: Sequence[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def check_acts(before: Mapping[str, int], after: Mapping[str, int]) -> int:
+def check_acts(before: Mapping[str, Any], after: Mapping[str, Any]) -> int:
     """Measure any change, including deletion; the snapshot has no other writers."""
-    return sum(abs(after.get(k, 0) - before.get(k, 0)) for k in set(before) | set(after))
+    return sum(after.get(k) != before.get(k) for k in set(before) | set(after))
 
 
 def compare_reports(before: dict[str, Any], after: dict[str, Any]) -> str:
     """Print every leaf, including added/retired rows and status changes."""
+
+    for key in ("sample_sha256", "seed", "judges", "effective_judges", "strata"):
+        if key not in before or key not in after or before[key] != after[key]:
+            raise ValueError(f"incomparable reports: {key} differs or is missing")
 
     def flatten(value: Any, prefix: str = "") -> dict[str, Any]:
         if isinstance(value, dict):
@@ -804,38 +595,6 @@ async def session_quality(
     return scored
 
 
-def cost_row(
-    step: str,
-    selected: Sequence[str],
-    receipts: Sequence[dict[str, Any]],
-    sessions: Sequence[dict[str, Any]],
-) -> dict[str, Any]:
-    """Tokens and sessions per work item for one step; money is tokens times the route's price."""
-    steps = {s["id"]: s["situation"]["step"] for s in sessions}
-    tokens = dict[str, int].fromkeys(selected, 0)
-    missing = 0
-    for r in receipts:
-        if r["part"] == "model" and steps.get(r["session_id"]) == step:
-            used = r["payload"].get("total_tokens")
-            if used is None:
-                missing += 1
-            else:
-                tokens[r["work_id"]] += used
-    ran = sum(
-        1
-        for s in sessions
-        if s["situation"]["step"] == step and s["situation"].get("work_item") in tokens
-    )
-    return {
-        # ponytail: total tokens only; no input/output split or failed-call usage in receipts
-        "status": "ERROR" if missing or not selected else "REPORTED",
-        "token_median": percentile(list(tokens.values()), 0.5),
-        "token_p95": percentile(list(tokens.values()), 0.95),
-        "sessions_per_item": ran / len(selected) if selected else None,
-        "missing_usage": missing,
-    }
-
-
 async def project(engine: Any, scope: Any, rate: float) -> None:
     await graph_project(engine, scope=scope, apply=True, rows_per_second=rate)
     from nora.infra.sql.graph_projection import form_batch, project_source
@@ -926,7 +685,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                 if len(selected) >= SMOKE_MARKS["sample"]:
                     break
                 selected.setdefault(wake["id"], wake)
-        freeze(output / "sample.json", list(selected.values()))
+        sample_sha256 = freeze(output / "sample.json", list(selected.values()))
         results: list[dict[str, Any]] = []
         scores: dict[str, list[list[str]]] = {}
         age_results = []
@@ -937,6 +696,8 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             room = next((c for c in policy.rooms() if c.unit == view.unit), None)
             if room is None:
                 raise ValueError("wake has no policy room")
+            # ponytail: recorded_wake has no last_session or carry; each wake replays
+            # as the unit's first session. Restore session continuity if that is measured.
             measured: dict[str, Any] = {"status": "ERROR", "tokens": None}
             async with sandbox_as_of(args.database_url, at) as (url, _):
                 with TemporaryDirectory(prefix="nora-spike-") as workdir:
@@ -1048,6 +809,12 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         health = session_smoke(results)
         report = {
             "driver": "cognition_session",
+            "sample_sha256": sample_sha256,
+            "seed": args.seed,
+            "effective_judges": judges.effective_models,
+            "judge_selection": {
+                "status": "PASS" if judges.models == judges.effective_models else "ERROR"
+            },
             "judges": [args.judge_a, args.judge_b],
             "smoke": health,
             "strata": {s: len(v) for s, v in sample.items()},
@@ -1064,10 +831,14 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                 "token_p95": percentile(
                     [s["tokens"] for s in results if s["tokens"] is not None], 0.95
                 ),
-                "batches": results,
+                "batches": {
+                    hashlib.sha256(str(wid).encode()).hexdigest(): result
+                    for wid, result in zip(selected, results, strict=True)
+                },
                 "budget_unit": "tokens per wake; billing split unavailable",
             },
             "retired": {
+                "monetary_cost": "Billing split unavailable; tokens remain reported.",
                 "step_1_step_2_cost_and_sessions": "One session per wake replaces both stages.",
                 "work_item_retry_and_lost": (
                     "Per-item worker retired; measure completion and refused consumption."
@@ -1075,7 +846,6 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             },
         }
         if not args.smoke:
-            report["monetary_cost"] = {"status": "ERROR", "reason": "billing split unavailable"}
             thresholds = {
                 "reading_precision": 0.95,
                 "reading_recall": 0.8,
@@ -1157,7 +927,11 @@ def main() -> int:
         print('{"status":"ERROR","reason":"spike failed; inspect private host state"}')
         return 2
     if args.compare:
-        print(compare_reports(json.loads(args.compare.read_text()), report))
+        try:
+            print(compare_reports(json.loads(args.compare.read_text()), report))
+        except ValueError:
+            print('{"status":"ERROR","reason":"comparison populations differ or are missing"}')
+            return 2
     else:
         print(json.dumps(report, sort_keys=True))
     return report_exit(report)

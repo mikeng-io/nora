@@ -30,19 +30,6 @@ def test_refuses_unacknowledged_or_production_url(ack, url):
     )
 
 
-def test_acts_fail():
-    clean = spike.invariants({"notes": 2}, {"notes": 2}, ["settled"], 1, 0)
-    assert clean["acts"]["status"] == "PASS"
-    dirty = spike.invariants({"notes": 2}, {"notes": 3}, ["settled"], 1, 0)
-    assert dirty["acts"] == {"status": "FAIL", "count": 1}
-
-
-def test_lost_work_fails():
-    assert spike.invariants({}, {}, ["settled", "failed"], 2, 0)["lost"]["count"] == 0
-    assert spike.invariants({}, {}, ["settled"], 2, 0)["lost"]["status"] == "FAIL"
-    assert spike.invariants({}, {}, ["pending"], 1, 0)["lost"]["status"] == "FAIL"
-
-
 def test_judge_error_never_passes():
     assert spike.rate(["supported", "ERROR"], 1, 0.5)["status"] == "ERROR"
     assert spike.rate([], 1, 0.5)["status"] == "INSUFFICIENT"
@@ -50,7 +37,10 @@ def test_judge_error_never_passes():
 
 
 async def test_judge_malformed_is_error(monkeypatch):
-    judges = spike.Judges(SimpleNamespace(), ["generated-a", "generated-b"])
+    judges = spike.Judges(
+        SimpleNamespace(endpoint=lambda purpose, model: ("", "", model)),
+        ["generated-a", "generated-b"],
+    )
     monkeypatch.setattr(
         judges,
         "call",
@@ -66,7 +56,6 @@ async def test_judge_malformed_is_error(monkeypatch):
 
 def test_egress_uses_existing_screen():
     assert egress_reason("Generated Private Person", ("Generated Private Person",))
-    assert spike.invariants({}, {}, ["settled"], 1, 1)["egress"]["status"] == "FAIL"
     assert egress_reason("public venue programme", ()) is None
 
 
@@ -117,39 +106,6 @@ def test_age_scope_and_query_grammar_cannot_read_foreign_unit():
         spike.scoped_cypher("MATCH (n) RETURN n; CREATE (n)")
 
 
-async def test_relation_judge_sees_only_cited_sources(monkeypatch, tmp_path):
-    source = {"key": ["message", "generated-one"], "text": "Generated cited evidence"}
-    unrelated = {"key": ["message", "generated-two"], "text": "Generated uncited evidence"}
-    # Shaped like candidates(): asdict() of the item keeps its tuples.
-    candidate = {"input": {"sources": (source, unrelated), "snapshot": {"messages": ()}}}
-    shown = {"work_id": "generated-work", "part": "shown_sources", "payload": {"sources": []}}
-    receipt = {
-        "work_id": "generated-work",
-        "part": "graph",
-        "payload": {
-            "relations": [{"id": "generated-relation", "rel": "concerns"}],
-            "entities": [],
-            "evidence": [{"relation_id": "generated-relation", "source": source["key"]}],
-        },
-    }
-
-    async def judge(payload):
-        if payload["proposition"].get("id") == "generated-relation":
-            assert payload["evidence"]["sources"] == [source]
-        return ["supported", "supported"]
-
-    monkeypatch.setattr(spike, "rows", AsyncMock(return_value=[]))
-    report = await spike.quality(
-        None,
-        {"generated-work": candidate},
-        [shown, receipt],
-        SimpleNamespace(score=judge),
-        tmp_path,
-        1,
-    )
-    assert report["relation_precision"]["status"] == "PASS"
-
-
 def test_operator_script_is_a_declared_assembled_occasion():
     import ast
     from pathlib import Path
@@ -175,31 +131,6 @@ def test_cost_diagnostic_median_and_p95():
     assert spike.percentile([], 0.5) is None
 
 
-def test_cost_row_counts_sessions_and_tokens_per_step():
-    sessions = [
-        {"id": "s1", "situation": {"step": "comprehend", "work_item": "w1"}},
-        {"id": "s2", "situation": {"step": "reshape", "work_item": "w1"}},
-        {"id": "s3", "situation": {"step": "reshape", "work_item": "w1"}},
-        {"id": "s4", "situation": {"step": "comprehend", "work_item": "w2"}},
-    ]
-    receipts = [
-        {"part": "model", "session_id": "s1", "work_id": "w1", "payload": {"total_tokens": 100}},
-        {"part": "model", "session_id": "s2", "work_id": "w1", "payload": {"total_tokens": 40}},
-        {"part": "model", "session_id": "s4", "work_id": "w2", "payload": {"total_tokens": 300}},
-    ]
-    reshape = spike.cost_row("reshape", ["w1", "w2"], receipts, sessions)
-    assert reshape["sessions_per_item"] == 1.0
-    assert reshape["status"] == "REPORTED"
-    comprehend = spike.cost_row("comprehend", ["w1", "w2"], receipts, sessions)
-    assert comprehend["token_median"] == 200
-
-
-def test_cost_row_without_usage_is_error():
-    sessions = [{"id": "s1", "situation": {"step": "comprehend", "work_item": "w1"}}]
-    receipts = [{"part": "model", "session_id": "s1", "work_id": "w1", "payload": {}}]
-    assert spike.cost_row("comprehend", ["w1"], receipts, sessions)["status"] == "ERROR"
-
-
 @pytest.mark.parametrize("provider", ["exa", "tavily"])
 def test_search_provider_builds_from_the_template(example_config, monkeypatch, provider):
     """The spike's step one gets the production search backend, not a hand-built one."""
@@ -207,37 +138,6 @@ def test_search_provider_builds_from_the_template(example_config, monkeypatch, p
     cfg = example_config.model_copy(update={"search": search})
     monkeypatch.setenv(cfg.search.api_key_env, "generated-key")
     assert search_provider(cfg) is not None
-
-
-async def test_an_item_with_a_media_source_is_in_the_attachment_stratum(monkeypatch):
-    from dataclasses import dataclass
-
-    from nora.domain.memory_graph import WorkItem
-
-    @dataclass(frozen=True)
-    class Source:
-        key: tuple[str, str]
-        text: str
-
-    @dataclass(frozen=True)
-    class Item:
-        sources: tuple[Source, ...]
-        snapshot: dict
-
-    # Shaped like the snapshot's message rows: no media column on them.
-    item = Item(
-        (
-            Source(("message", "generated-1"), "Generated text"),
-            Source(("media", "generated-2"), "Generated reading"),
-        ),
-        {"messages": ({"id": "generated-1", "body": "Generated text"},)},
-    )
-    work = WorkItem("generated-work", ("message", "generated-1"), "generated-unit", "h", 0)
-    monkeypatch.setattr(spike, "rows", AsyncMock(return_value=[{}]))
-    monkeypatch.setattr(spike, "work_row", lambda row: work)
-    records = SimpleNamespace(load=AsyncMock(return_value=item))
-    [candidate] = await spike.candidates(None, records)
-    assert "attachment" in candidate["strata"]
 
 
 def test_session_smoke_marks():
@@ -272,9 +172,16 @@ def test_session_acts_invariant_counts_deletions_and_creations():
 
 
 def test_compare_reports_prints_each_row_and_delta():
+    identity = {
+        "sample_sha256": "generated",
+        "seed": 17,
+        "judges": ["a", "b"],
+        "effective_judges": ["a", "b"],
+        "strata": {"text": 1},
+    }
     out = spike.compare_reports(
-        {"precision": {"status": "FAIL", "rate": 0.5}},
-        {"precision": {"status": "PASS", "rate": 0.75}},
+        {**identity, "precision": {"status": "FAIL", "rate": 0.5}},
+        {**identity, "precision": {"status": "PASS", "rate": 0.75}},
     )
     assert 'precision.status: "FAIL" -> "PASS"' in out
     assert "precision.rate: 0.5 -> 0.75 (delta +0.25)" in out
@@ -345,3 +252,46 @@ def test_report_error_exit_is_distinct_from_fail():
     assert spike.report_exit({"row": {"status": "PASS"}}) == 0
     assert spike.report_exit({"row": {"status": "FAIL"}}) == 1
     assert spike.report_exit({"row": {"status": "REPORTED", "usage": {"status": "ERROR"}}}) == 2
+
+
+@pytest.mark.parametrize("key", ["sample_sha256", "seed", "judges", "effective_judges", "strata"])
+def test_compare_refuses_mismatched_population(key):
+    report = {
+        "sample_sha256": "generated",
+        "seed": 17,
+        "judges": ["a", "b"],
+        "effective_judges": ["a", "b"],
+        "strata": {"text": 1},
+    }
+    with pytest.raises(ValueError, match="incomparable reports"):
+        spike.compare_reports(report, {**report, key: "different"})
+    with pytest.raises(ValueError, match="incomparable reports"):
+        spike.compare_reports({}, {})
+
+
+def test_every_act_table_exists():
+    from nora.infra.sql.schema import METADATA
+
+    assert set(spike.ACT_TABLES) <= METADATA.tables.keys()
+    assert {
+        "events",
+        "event_revision",
+        "standing",
+        "standing_revision",
+        "note_revision",
+        "memo_revision",
+        "reminders",
+        "cognition_self_wake",
+    } <= set(spike.ACT_TABLES)
+
+
+async def test_judge_refuses_effective_model_override(monkeypatch):
+    cfg = SimpleNamespace(endpoint=lambda purpose, model: ("generated-url", "", "pinned"))
+    judges = spike.Judges(cfg, ["requested-a", "requested-b"])
+    assert judges.effective_models == ["pinned", "pinned"]
+    build = AsyncMock(side_effect=AssertionError("must refuse before model call"))
+    monkeypatch.setattr(spike, "build_structured_model", build)
+    assert await judges.score({}) == ["ERROR", "ERROR"]
+    with pytest.raises(ValueError, match="effective judge"):
+        await judges.call("requested-a", "generated", {})
+    build.assert_not_called()

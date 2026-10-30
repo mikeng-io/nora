@@ -1,12 +1,5 @@
 [
   {
-    "name": "acts are a hard failure",
-    "file": "scripts/memory_graph_spike.py",
-    "old": "\"status\": \"FAIL\" if acts else \"PASS\"",
-    "new": "\"status\": \"PASS\" if acts else \"PASS\"",
-    "target": "tests/unit/test_memory_graph_spike.py::test_acts_fail"
-  },
-  {
     "name": "judge error cannot pass",
     "file": "scripts/memory_graph_spike.py",
     "old": "\"ERROR\"\n        if counts[\"ERROR\"]",
