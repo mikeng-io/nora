@@ -1,0 +1,141 @@
+# Declarative SigNoz alert rules — provisioned by scripts/signoz_provision.py.
+# 1:1 semantic port of deploy/prometheus/rules/nora.yml (19 rules) onto the
+# metrics the ingester's prometheus receiver scrapes (job names preserved).
+# Notifications go to channels created by the same script; the receiver is a
+# local webhook endpoint, never a real Discord post in tests.
+#
+# Kinds:
+#   threshold: query result > value for `for_seconds`
+#   absent:    series absent/stale for `for_seconds` (SigNoz alertOnAbsent —
+#              replaces Prometheus's absent/for semantics and the old
+#              PrometheusNotIngesting self-monitor)
+defaults:
+  eval_window: "5m0s"
+  eval_delay: "30s"
+  group_by: ["alertname"]
+  send_resolved: true
+rules:
+  # ---- liveness (7) ----
+  - name: NoraDown
+    kind: threshold
+    query: 'up{job="nora"} == 0'
+    for_seconds: 120
+    severity: critical
+    summary: Nora container stopped or /metrics unreachable
+  - name: PresenceDown
+    kind: threshold
+    query: 'up{job="presence"} == 0'
+    for_seconds: 120
+    severity: critical
+    summary: Presence process down
+  - name: AnalyticsDown
+    kind: threshold
+    query: 'up{job="analytics"} == 0'
+    for_seconds: 120
+    severity: critical
+    summary: Analytics process down
+  - name: NoraHeartbeatStale
+    kind: threshold
+    query: 'time() - nora_heartbeat_timestamp_seconds > 300'
+    for_seconds: 60
+    severity: critical
+    summary: Nora alive but main loop stalled
+  - name: PresenceRefreshesStale
+    kind: absent
+    query: 'nora_presence_refresh_timestamp_seconds'
+    for_seconds: 900
+    severity: warning
+    summary: Presence collector stopped refreshing
+  - name: AnalyticsRunsStale
+    kind: absent
+    query: 'nora_analytics_run_timestamp_seconds'
+    for_seconds: 172800
+    severity: warning
+    summary: Analytics rollup stopped running
+  - name: IngestionSilent
+    kind: absent
+    query: 'otelcol_receiver_accepted_spans'
+    for_seconds: 300
+    severity: critical
+    summary: >
+      The SigNoz ingestion path itself stopped producing series — replaces
+      PrometheusNotIngesting; fires when spans/metrics stop being accepted
+      (collector dead, exporter wedged, or OTLP unreachable), so the monitor
+      cannot fail silently.
+  # ---- R-27 / three-state (2) ----
+  - name: NoraUnavailableResultsSpike
+    kind: threshold
+    query: 'rate(nora_tool_results_total{result="unavailable"}[15m]) * 60 > 3'
+    for_seconds: 300
+    severity: warning
+    summary: Tool results reporting unavailable above baseline
+  - name: NoraPermissionErrors
+    kind: threshold
+    query: 'increase(nora_errors_total{kind="permission"}[15m]) > 0'
+    for_seconds: 0
+    severity: warning
+    summary: Permission errors observed — a guard tripped
+  # ---- music (3) ----
+  - name: NoraMusicPlaysFailing
+    kind: threshold
+    query: 'increase(nora_music_plays_total{result="failed"}[30m]) > 0'
+    for_seconds: 0
+    severity: warning
+    summary: Music play failures observed
+  - name: NoraMusicSearchesStale
+    kind: absent
+    query: 'nora_music_searches_timestamp_seconds'
+    for_seconds: 86400
+    severity: info
+    summary: Music search path unused or dead for a day
+  - name: NoraMusicQueueStuck
+    kind: threshold
+    query: 'nora_music_queue_depth > 20'
+    for_seconds: 600
+    severity: warning
+    summary: Music queue depth sustained high
+  # ---- computer (3) ----
+  - name: NoraComputerCallsFailing
+    kind: threshold
+    query: 'increase(nora_computer_calls_total{result="failed"}[30m]) > 0'
+    for_seconds: 0
+    severity: warning
+    summary: Computer tool call failures observed
+  - name: NoraComputerIdleStale
+    kind: absent
+    query: 'nora_computer_calls_timestamp_seconds'
+    for_seconds: 86400
+    severity: info
+    summary: Computer path unused or dead for a day
+  - name: NoraComputerLatencyHigh
+    kind: threshold
+    query: 'histogram_quantile(0.95, rate(nora_computer_call_seconds_bucket[15m])) > 120'
+    for_seconds: 600
+    severity: warning
+    summary: p95 computer call latency above 2 minutes
+  # ---- oauth (3) ----
+  - name: NoraOauthTokenRefreshFailing
+    kind: threshold
+    query: 'increase(nora_oauth_refresh_total{result="failed"}[30m]) > 0'
+    for_seconds: 0
+    severity: critical
+    summary: OAuth token refresh failures — platform calls will start failing
+  - name: NoraOauthTokenExpiringSoon
+    kind: threshold
+    query: 'time() - nora_oauth_expiry_timestamp_seconds > -3600'
+    for_seconds: 300
+    severity: warning
+    summary: An OAuth token expires within the hour
+  - name: NoraOauthRefreshesStale
+    kind: absent
+    query: 'nora_oauth_refresh_timestamp_seconds'
+    for_seconds: 86400
+    severity: info
+    summary: OAuth refresh path quiet for a day
+  # ---- self-monitor (1) ----
+  - name: SignozIngesterDown
+    kind: threshold
+    query: 'up{job="signoz-ingester"} == 0'
+    for_seconds: 120
+    severity: critical
+    summary: The ingester stopped answering scrapes
