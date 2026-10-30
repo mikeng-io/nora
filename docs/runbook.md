@@ -1527,8 +1527,10 @@ is the minimal rollback if the problem is a caller of the old port.
 
 ## Typed Profile historical recovery
 
-Keep `[memory.profile] read = false` until source coverage and the reply gates are
-accepted. The typed migration is nullable and retains every legacy row; a
+Keep `[memory.profile] read = false` until the operator accepts the
+[bounded cutover evidence](../design/unified-memory/31-build-one-session.md#6-bounded-cutover-acceptance-2026-10-31)
+and authorizes the concrete switch. The earlier fixed coverage/reply gates are
+historical, superseded by that acceptance owner. The typed migration is nullable and retains every legacy row; a
 successful old shadow session is not historical coverage. The person adaptor
 now walks bounded oldest-first pages through a frozen Record boundary using
 its existing schedule and budget, independently of recent-message updates.
