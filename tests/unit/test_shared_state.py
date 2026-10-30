@@ -446,13 +446,27 @@ async def test_a_filtered_fact_walk_finds_unresolved_past_irrelevant_turns():
     assert ("turns", "ok") in view.sources
 
 
-async def test_capped_relevant_history_reports_partial_not_nothing():
-    """R2-5: with more relevant turns than the scan bound, coverage is
-    `partial` — never `nothing_found` reading as «no facts»."""
+async def test_closed_history_does_not_poison_the_fact_read():
+    """R2-5: a long tail of `ok` results is CLOSED history — it cannot force
+    `partial` or hide an older still-open fact."""
     from nora.domain.tag_trace import TagTrace
     from nora.testing.tag_traces import FakeTagTraceStore
 
     store = FakeTagTraceStore()
+    await store.save(TagTrace(
+        tag_id="t-open", conversation_id="room-a", messages=(
+            {"role": "assistant", "content": [
+                {"toolUse": {"toolUseId": "r1", "name": "remind", "input": {
+                    "intent": "ask", "text": "ask when",
+                    "subject": "note:gone", "action": "ask-time",
+                    "subject_rows": ["1"], "at": "2026-01-01T20:00:00Z"}}}]},
+            {"role": "user", "content": [
+                {"toolResult": {"toolUseId": "r1", "status": "success",
+                                "content": [{"json": {
+                                    "status": "unresolved",
+                                    "reason": "subject_unresolved"}}]}}]},
+        ), transcript=(), outcome="send_reply", created_at=T0_MS - 9_000_000,
+        unit="u1", occasion="cognition"))
     for i in range(205):
         await store.save(TagTrace(
             tag_id=f"t-c-{i}", conversation_id="room-a", messages=(
@@ -467,10 +481,9 @@ async def test_capped_relevant_history_reports_partial_not_nothing():
 
     view = await read_shared(
         unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=T0_MS, traces=store)
-    assert view.status == "partial"
-    assert ("turns", "partial") in view.sources
-
-
+    assert view.status == "ok"
+    assert view.unresolved and "note:gone" in view.unresolved[0]
+    assert ("turns", "ok") in view.sources
 async def test_an_expired_finding_and_an_excluded_position_stay_out():
     """R2-1: the 48h TTL and the section gate run on the shared read too —
     a 72h finding and an excluded position/finding are not presented."""

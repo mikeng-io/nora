@@ -50,16 +50,19 @@ class FakeTagTraceStore:
 
     async def recent_unit_turns(
         self, *, unit: str, tool_names: Sequence[str], limit: int,
-        offset: int = 0,
+        offset: int = 0, markers: Sequence[str] = (), after_ms: int = 0,
     ) -> tuple[TagTrace, ...]:
         if limit <= 0 or not tool_names:
             return ()
         names = tuple(tool_names)
+        marks = tuple(markers)
         rows = sorted(
             (t for t in self._rows
              if t.unit == unit
+             and (not after_ms or t.created_at > after_ms)
              and any(f'"{name}"' in json.dumps(t.messages)
-                     for name in names)),
+                     for name in names)
+             and all(m in json.dumps(t.messages) for m in marks)),
             key=lambda t: (t.created_at, t.tag_id), reverse=True,
         )
         return tuple(rows[offset:offset + limit])

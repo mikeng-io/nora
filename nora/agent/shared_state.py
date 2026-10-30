@@ -45,12 +45,15 @@ _SEND_LOOKBACK_MS = 24 * 3600_000
 _HISTORY_LOOKBACK_MS = 7 * 24 * 3600_000
 
 #: The tool names whose toolUse/toolResult pairs the view reads as facts —
-#: producer conclusions and act attempts. Server-side filtered, so the scan
-#: bound counts RELEVANT turns, never the unit's chatter.
+#: producer conclusions and act attempts.
 _TURN_FACT_TOOLS = ("remind", "decision_conclude")
-#: How many relevant turns the fact read may walk before it reports coverage
-#: unproven (`partial`). Five 40-row pages; a busier unit still answers, just
-#: honestly marked.
+#: Server-side status markers: only an OPEN result can still be a fact —
+#: «ok» history never competes for the walk's pages.
+_OPEN_RESULT_MARKERS = ('"unresolved"', '"refused"', '"unavailable"')
+_ACCEPTED_RESULT_MARKERS = ('"ok"',)
+#: How many OPEN-result turns the fact walk may read before coverage is
+#: honestly unproven. Bound by scarcity, not history: a unit with more than
+#: this many still-open act results is a pathology worth surfacing.
 _TURN_FACT_SCAN_LIMIT = 200
 
 
@@ -386,39 +389,57 @@ async def read_shared(
             # first. An unresolved act is discharged only by a NEWER `ok`
             # result for the same (subject, action): the record retains the
             # attempt until something valid resolved it.
+            # The FACT read is a RARE-FACT projection, not a lifetime scan:
+            # unresolved/refused results are the only rows that can still be
+            # open facts, they are prefILTERed server-side on the recorded
+            # status marker (so history volume is irrelevant), each paged
+            # walk is bounded, and every still-open key is discharged by a
+            # targeted «newer ok for this (subject,action)» probe — never by
+            # reading the unit's whole record.
             unit_traces: list[Any] = []
-            # The FACT read is a filtered, paginated walk — server-side on
-            # the tool names the view consumes — so a long tail of turns
-            # with no `remind`/`decision_conclude` cannot crowd a still-open
-            # fact past the page, and a remainder is read as «coverage
-            # unproven», never as «absent».
-            offset = 0
-            exhausted = True
-            while len(unit_traces) < _TURN_FACT_SCAN_LIMIT:
-                page = await traces.recent_unit_turns(
-                    unit=unit, tool_names=_TURN_FACT_TOOLS,
-                    limit=trace_limit, offset=offset,
-                )
-                unit_traces.extend(page)
-                if len(page) < trace_limit:
-                    break
-                offset += trace_limit
-            else:
-                exhausted = False
-            if not exhausted:
+            incomplete = False
+            for marker in _OPEN_RESULT_MARKERS:
+                offset = 0
+                while len(unit_traces) < _TURN_FACT_SCAN_LIMIT:
+                    page = await traces.recent_unit_turns(
+                        unit=unit, tool_names=_TURN_FACT_TOOLS,
+                        limit=trace_limit, offset=offset,
+                        markers=(marker,),
+                    )
+                    unit_traces.extend(page)
+                    if len(page) < trace_limit:
+                        break
+                    offset += trace_limit
+                else:
+                    incomplete = True
+            if incomplete:
                 partial = True
                 sources.append(("turns", "partial"))
             else:
                 sources.append(("turns", "ok"))
-            resolved: set[tuple[str, str]] = set()
-            for trace in unit_traces:
+            # A separately declared, display-only bound: the newest
+            # conclusions. Its remainder is fine — «recent» means recent.
+            conclusion_traces = await traces.recent_unit_turns(
+                unit=unit, tool_names=("decision_conclude",),
+                markers=_ACCEPTED_RESULT_MARKERS, limit=20,
+            )
+            seen_items: set[tuple[str, str]] = set()
+            for trace in tuple(unit_traces) + tuple(conclusion_traces):
                 provenance = f"{trace.occasion}:{trace.tag_id}"
                 for item in turn_items(trace.messages, trace.requirements):
+                    # A trace can match both the open-result walk and the
+                    # conclusion display — each item is processed once.
+                    item_key = (trace.tag_id, item.call_id)
+                    if item_key in seen_items:
+                        continue
+                    seen_items.add(item_key)
                     allowed = (
                         room is None
                         or (permit_req is not None
                             and permit_req(item.requirements))
                     )
+                    if not allowed:
+                        continue
                     if item.name == "remind":
                         args = item.arguments
                         key = (
@@ -426,19 +447,26 @@ async def read_shared(
                             str(args.get("action") or ""),
                         )
                         payload = _result_payload(item.result)
-                        if payload.get("status") == "ok":
-                            resolved.add(key)
-                        elif (
-                            payload.get("status") == "unresolved"
-                            and key not in resolved and key != ("", "")
-                            and allowed
-                        ):
-                            unresolved_lines.append(
-                                f"remind {str(args.get('text'))[:80]!r} for "
-                                f"{args.get('room') or 'the room'}: "
-                                f"{key[0]!r} unresolved"
+                        if payload.get("status") == "unresolved" and key != ("", ""):
+                            # Discharged only by a NEWER `ok` for the same
+                            # (subject,action): a targeted probe, not a scan.
+                            discharged = await traces.recent_unit_turns(
+                                unit=unit, tool_names=("remind",),
+                                limit=1, after_ms=trace.created_at,
+                                markers=(
+                                    str(args.get("subject") or ""),
+                                    str(args.get("action") or ""),
+                                    '"ok"',
+                                ),
                             )
-                    elif item.name == "decision_conclude":
+                            if not discharged:
+                                unresolved_lines.append(
+                                    f"remind {str(args.get('text'))[:80]!r} for "
+                                    f"{args.get('room') or 'the room'}: "
+                                    f"{key[0]!r} unresolved"
+                                )
+                        continue
+                    if item.name == "decision_conclude":
                         args = item.arguments
                         conclusion = _result_payload(item.result)
                         if conclusion.get("status") != "ok":
@@ -447,7 +475,7 @@ async def read_shared(
                             # nothing. It stays visible as unresolved for the
                             # next session to address — and only where its
                             # own disclosure permits the read.
-                            if conclusion.get("status") != "unresolved" and allowed:
+                            if conclusion.get("status") != "unresolved":
                                 unresolved_lines.append(
                                     f"decision_conclude "
                                     f"{str(args.get('subject') or '?')[:80]!r}: "
