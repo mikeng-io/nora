@@ -135,7 +135,8 @@ EXPECTED: dict[str, tuple[dict[str, tuple[str, Any]], set[str]]] = {
     "remind": (
         {"intent": ("string", ["tell", "ask"]), "text": ("string", None),
          "subject_rows": ("array", {"type": "string"}), "at": ("string", None),
-         "room": ("string", None)},
+         "room": ("string", None),
+         "also_rooms": ("array", {"type": "string"})},
         {"intent", "text", "subject_rows", "at"},
     ),
     "remind_move": (

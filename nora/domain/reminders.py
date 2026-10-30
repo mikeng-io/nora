@@ -130,6 +130,47 @@ class DuplicateProactiveNoteError(NoraError):
         self.note_id = note_id
 
 
+def open_proactive_subject(row: Reminder) -> tuple[str, str, str] | None:
+    """The resolved (subject_kind, subject_id, action) an open proactive row
+    holds, or `None`.
+
+    ONE OPEN PROACTIVE ROW PER (SUBJECT, ACTION, DESTINATION) — the resolved
+    shared-object reference, never a citation set or a prose match (DEC
+    pending; `design/notebook-memory-types/20-shared-cognitive-state.md`).
+    Same shape `open_proactive_note` established: both stores hold it at
+    insert (`uq_reminders_proactive_open_subject`,
+    `DuplicateProactiveSubjectError`). A row carrying no resolved subject has
+    no subject key at all — it cannot be conflict-matched, and the writer is
+    expected to have surfaced `unresolved` before reaching here."""
+    if row.kind != PROACTIVE_KIND or row.state.value not in OPEN_STATES:
+        return None
+    payload = row.payload or {}
+    kind = payload.get("subject_kind")
+    sid = payload.get("subject_id")
+    if not isinstance(kind, str) or not kind or not isinstance(sid, str) or not sid:
+        return None
+    action = payload.get("action")
+    return (kind, sid, action if isinstance(action, str) else "")
+
+
+class DuplicateProactiveSubjectError(NoraError):
+    """`create()` was handed a proactive row for a (subject, action,
+    destination) that already has an open one (`open_proactive_subject`).
+    Postgres enforces it with `uq_reminders_proactive_open_subject`; the
+    in-memory store with the same check, no `await` between it and the
+    write."""
+
+    def __init__(
+        self, subject: tuple[str, str, str], platform: str, conversation_id: str
+    ) -> None:
+        kind, sid, action = subject
+        super().__init__(
+            f"{kind}:{sid} already has an open proactive "
+            f"{action or 'act'} for {platform}:{conversation_id}"
+        )
+        self.subject = subject
+
+
 class UnknownRecurrenceZoneError(ValueError):
     """A recurrence names a timezone this host's tz database does not have.
 

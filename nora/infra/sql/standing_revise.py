@@ -27,7 +27,7 @@ is the write.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from nora.domain.ports import StandingStore
 from nora.domain.standing import Standing, WorkingSetItem
@@ -156,6 +156,13 @@ async def standing_revise(
             standing=prior,
             refusal=Refusal(reason="invalid_standing", detail=str(exc)),
         )
+    # NO-CHANGE IS IDEMPOTENT (design/notebook-memory-types/20 §6): a revise
+    # whose produced row IS the head — content AND fold bookkeeping alike —
+    # writes nothing. Comparing the constructed row rather than the inputs is
+    # what makes a `fold_count`/`last_folded_row_id` advance still a real
+    # revision while a verbatim re-assert is not.
+    if prior is not None and revised == replace(prior, updated_at=revised.updated_at):
+        return Revision(committed=True, standing=prior, refusal=None)
     # `source` stays each store's own default (`SqlStandingStore.write`'s
     # `"fold"`) unless the caller passes one. Calling through the protocol type
     # (`nora.domain.ports.StandingStore`), not the concrete SQL class, keeps

@@ -14,7 +14,7 @@ so a shared helper in the same package needs no new edge in the import graph.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
 
 from nora.agent.lineage import LineagePolicy
@@ -32,6 +32,7 @@ from nora.domain.ports import (
     StandingStore,
 )
 from nora.domain.quote_window import QuoteWindow
+from nora.domain.shared_state import SharedView
 from nora.domain.standing_ledger import StandingLedger
 from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.context import (
@@ -81,6 +82,7 @@ def build_assembler(
     subagents: SubagentsContextReader | None = None,
     memos: MemoStore | None = None,
     memory_search: MemorySearch | None = None,
+    shared: Callable[..., Awaitable[SharedView]] | None = None,
     clock: Callable[[], datetime] | None = None,
     profile: ProfileHeads | None = None,
     rosters: Mapping[str, RosterSource] | None = None,
@@ -102,6 +104,9 @@ def build_assembler(
         notes=notes, policy=policy,
         memos=memos,
         standing=standing, ledger=ledger,
+        # The unit's shared cognitive state (design/notebook-memory-types/20):
+        # ONE reader bound at the composition root; `None` renders no block.
+        shared=shared,
         # The media join: the transcript's `[image a3f2c1]`
         # placeholders gain their stored comprehension here, in the assembler,
         # so `nora/agent/prefill.py` stays a pure renderer over `TagContext`.

@@ -356,6 +356,36 @@ class HeartbeatLoop:
             raise
         if not firing:
             return
+        # The screen ran before `claim`; those rows are OWNED now and a claimed
+        # due row is not proof the act is still needed — the room's flag or the
+        # note it named may have moved while this coroutine awaited its turn.
+        # Rechecking here is the fire-time boundary a screen seconds ago cannot
+        # be. A screen that cannot check is `failed_error`, never a send on an
+        # unverified premise.
+        if self._proactive is not None:
+            still: list[Reminder] = []
+            for row in firing:
+                if row.kind != PROACTIVE_KIND:
+                    still.append(row)
+                    continue
+                try:
+                    refusal = await self._proactive.refusal(row)
+                except Exception:
+                    log.exception(
+                        "proactive screen recheck failed for %s", row.id,
+                    )
+                    refusal = (ReminderState.FAILED, "failed_error")
+                if refusal is None:
+                    still.append(row)
+                    continue
+                state, outcome = refusal
+                log.info(
+                    "proactive reminder %s resolved after claim: %s", row.id, outcome,
+                )
+                await self._resolve_all([row], state, outcome=outcome, now=now)
+            firing = still
+        if not firing:
+            return
         try:
             outcome = await self._fire(firing)
         except Exception:

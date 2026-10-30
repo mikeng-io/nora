@@ -52,6 +52,7 @@ from nora.agent.registry import ToolRegistry
 from nora.agent.relay import Relay
 from nora.agent.room import Room
 from nora.agent.security import looks_like_coordinate
+from nora.agent.shared_state import shared_reader
 from nora.agent.structured import ask_text, build_structured_model
 from nora.agent.subagent_desk import SubagentDesk
 from nora.agent.telemetry import (
@@ -2370,6 +2371,21 @@ async def build_dependencies(
         )
         if cfg.memory.index.read else None
     )
+    # The unit's shared cognitive state (design/notebook-memory-types/20):
+    # ONE reader over the canonical stores, held by the tag assembler, the
+    # fire path and the cognition session — a second copy per path would be
+    # the second store the design rules out. `unit → rooms` comes from the
+    # same `allowlist` `home_rooms` is derived from, live-reloaded with it.
+    unit_rooms = LiveMapping(lambda: {
+        unit: [(c.platform, c.primary_id) for c in allowlist.conversations
+               if c.unit == unit]
+        for unit in {c.unit for c in allowlist.conversations if c.unit}
+    })
+    shared = shared_reader(
+        notes=note_store, ledger=ledger_store, reminders=reminders,
+        record_query=SqlRecordQuery(engine), ai_peer=cfg.honcho.ai_peer,
+        rooms_of_unit=lambda unit: unit_rooms.get(unit, ()),
+    )
     assembler = build_assembler(
         cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
         memory_search=memory_search, clock=clock,
@@ -2396,6 +2412,7 @@ async def build_dependencies(
         # objects for one row is how that stops being structurally true.
         standing=standing_store if cfg.standing.enabled else None,
         ledger=ledger_store,
+        shared=shared,
         # The media join. The same instance every other
         # transcript builder holds — the comprehension a spawned job wrote is
         # the one the transcript renders, the one the note tier reads and the
@@ -3525,6 +3542,7 @@ async def build_dependencies(
             tag_trace_store=tag_trace_store,
             persons=persons, records=audit, memory=memory,
             lineage=lineage,
+            shared=shared,
             self_ids=registry.self_aliases(),
             media_join=media_join,
             # The shared quote-window resolver (DEC-195). The SAME instance
@@ -4785,6 +4803,7 @@ async def build_dependencies(
                     notes=note_store, events=events, standing=standing_store,
                     memos=memo_store,
                     reminders=reminders, ai_peer=cfg.honcho.ai_peer,
+                    ledger=ledger_store, shared=shared,
                     reminder_caps=reminder_caps,
                     room_proactive=lambda platform, conversation_id: allowlist.proactive_allowed(
                         platform=platform, conversation_id=conversation_id,

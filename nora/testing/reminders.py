@@ -34,6 +34,7 @@ from uuid import UUID
 
 from nora.domain.reminders import (
     DuplicateProactiveNoteError,
+    DuplicateProactiveSubjectError,
     DuplicateReminderError,
     Reminder,
     ReminderState,
@@ -41,6 +42,7 @@ from nora.domain.reminders import (
     ensure_utc,
     normalise_reminder,
     open_proactive_note,
+    open_proactive_subject,
     plan_successor,
 )
 
@@ -74,6 +76,18 @@ class FakeReminderStore:
             open_proactive_note(r) == note_id for r in self._rows.values()
         ):
             raise DuplicateProactiveNoteError(note_id)
+        # `uq_reminders_proactive_open_subject`, spelled out the same way:
+        # one open row per (subject, action, destination).
+        subject = open_proactive_subject(reminder)
+        if subject is not None and any(
+            open_proactive_subject(r) == subject
+            and r.platform == reminder.platform
+            and r.conversation_id == reminder.conversation_id
+            for r in self._rows.values()
+        ):
+            raise DuplicateProactiveSubjectError(
+                subject, reminder.platform, reminder.conversation_id,
+            )
         self._put(reminder)
 
     async def get(self, reminder_id: UUID) -> Reminder | None:

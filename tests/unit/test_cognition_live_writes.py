@@ -192,12 +192,17 @@ async def test_remind_writes_the_proactive_row_the_fire_path_fires_and_can_move_
     answers: list[Any] = []
 
     async def behave(by: dict[str, Any], tools: list[Any]) -> None:
+        # The act's subject must resolve to an open entry: `remind` refuses
+        # bare message ids now (unresolved), so the fixture names a real note.
+        note = await by["note_create"](body=GOOD_BODY, **NOTE)
         answers.append(await by["remind"](
-            intent="ask", text="ask where dinner is", subject_rows=["101"],
+            intent="ask", text="ask where dinner is",
+            subject_rows=[f"note:{note['note_id']}"],
             at=iso(NOW + 3_600_000),
         ))
         answers.append(await by["remind"](
-            intent="ask", text="again", subject_rows=["101"], at=iso(NOW + 3_600_000),
+            intent="ask", text="again", subject_rows=[f"note:{note['note_id']}"],
+            at=iso(NOW + 3_600_000),
         ))
         answers.append(await by["remind_move"](
             reminder_id=answers[0]["reminder_id"], at=iso(NOW + 7_200_000), why="later",

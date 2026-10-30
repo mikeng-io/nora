@@ -25,6 +25,11 @@ class PendingRemind:
     platform: str
     conversation_id: str
     subject_rows: tuple[str, ...]
+    #: The resolved shared-object `(kind, id)` the row was written against, and
+    #: the action it named. `None`/"" for rows written before subject stamping:
+    #: an unsubjected row can never conflict-match a resolved one.
+    subject: tuple[str, str] | None = None
+    action: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,12 +97,25 @@ def check_remind_time(ctx: RemindContext) -> RemindRefusal | None:
 def check_remind(
     *, subject_rows: Sequence[str], intent: str, platform: str, conversation_id: str,
     pending: Sequence[PendingRemind], context: RemindContext | None = None,
+    subject: tuple[str, str] | None = None,
+    extra_destinations: Sequence[tuple[str, str]] = (),
 ) -> RemindRefusal | None:
     """`remind(at, room, brief)`. `brief` is `(intent, subject_rows)` — never
     prose. The refusal reasons are `no_citations`,
     `bad_intent`, `room_not_proactive`, `abduced_must_ask`, `past`, `too_soon`,
-    `too_far`, `duplicate_pending` and `pending_ceiling`; none of the details
-    states a number (a model told of a cap declines the work)."""
+    `too_far`, `duplicate_pending`, `conflict_other_room` and
+    `pending_ceiling`; none of the details states a number (a model told of a
+    cap declines the work).
+
+    The dedupe rule when `subject` resolves is **same subject and same
+    action**, independent of room and of the citation set — a pending row for
+    this act at a destination the call does not cover is
+    `conflict_other_room`, never silently a second row; a call that names it
+    in `extra_destinations` has declared the multi-destination intent. A call
+    whose every covered destination is already pending this act is
+    `duplicate_pending`. An unresolved `subject` falls back to the older
+    same-room citation-set rule (the only key such rows have); the caller is
+    expected to have surfaced `unresolved` first."""
     if not subject_rows:
         return RemindRefusal("no_citations", "a reminder must cite at least one row")
     if intent not in INTENTS:
@@ -116,15 +134,36 @@ def check_remind(
     timing = check_remind_time(ctx)
     if timing is not None:
         return timing
-    duplicate = any(
-        p.platform == platform and p.conversation_id == conversation_id
-        and set(p.subject_rows) == set(subject_rows)
-        for p in pending
-    )
-    if duplicate:
-        return RemindRefusal(
-            "duplicate_pending", "an identical reminder is already pending for this room",
+    covered = {(platform, conversation_id), *extra_destinations}
+    if subject is not None:
+        conflicts = [
+            p for p in pending
+            if p.subject == subject and p.action == intent
+        ]
+        pending_dests = {(p.platform, p.conversation_id) for p in conflicts}
+        uncovered = pending_dests - covered
+        if uncovered:
+            return RemindRefusal(
+                "conflict_other_room",
+                "the same act is already pending for "
+                + ", ".join(sorted(f"{p}:{c}" for p, c in uncovered))
+                + "; name that room too if you mean both, or move or cancel that one",
+            )
+        if pending_dests and covered <= pending_dests:
+            return RemindRefusal(
+                "duplicate_pending",
+                "the same act is already pending for every room you named",
+            )
+    else:
+        duplicate = any(
+            p.platform == platform and p.conversation_id == conversation_id
+            and set(p.subject_rows) == set(subject_rows)
+            for p in pending
         )
+        if duplicate:
+            return RemindRefusal(
+                "duplicate_pending", "an identical reminder is already pending for this room",
+            )
     if ctx.max_pending is not None and ctx.live_pending >= ctx.max_pending:
         return RemindRefusal(
             "pending_ceiling",

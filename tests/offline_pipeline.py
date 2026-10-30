@@ -142,6 +142,10 @@ def build_offline_pipeline(
         cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
         policy=permissive_policy(),
         notes=notes, standing=standing, ledger=ledger,
+        # The unit's shared cognitive state (design/notebook-memory-types/20):
+        # `None` in the harness — an eval exercising the block wires a reader
+        # over its own store doubles, exactly like `notes`/`standing` here.
+        shared=None,
         # The media join. `None` renders the bare handles a row actually carries; an eval
         # that wants `[image a3f2c1: …]` in its prompt builds a `MediaJoin` over
         # `nora.testing.FakeMediaObjectStore`, exactly as it passes its own doubles for
@@ -260,6 +264,11 @@ def build_offline_pipeline(
         fire_path = FirePath(
             tag_trace_store=None,
             persons=persons, records=audit, memory=memory,
+            # The shared-state reader (design/notebook-memory-types/20):
+            # `None` in the harness, the assembler's reason above — which
+            # also means an eval's proactive occasion never withholds on an
+            # `unavailable` view it never had.
+            shared=None,
             # The SAME join the tag assembler above is given, so an eval's fire
             # prompt shows what an eval's tag prompt shows (the parity gate
             # `tests/architecture/test_assembler_parity.py` enforces).

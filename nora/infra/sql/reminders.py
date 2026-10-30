@@ -52,7 +52,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.reminders import (
+    OPEN_STATES,
+    PROACTIVE_KIND,
     DuplicateProactiveNoteError,
+    DuplicateProactiveSubjectError,
     DuplicateReminderError,
     Recurrence,
     RecurrenceRule,
@@ -63,25 +66,16 @@ from nora.domain.reminders import (
     ensure_utc,
     normalise_reminder,
     open_proactive_note,
+    open_proactive_subject,
     plan_successor,
 )
-from nora.infra.sql.schema import REMINDERS, UQ_REMINDERS_PROACTIVE_OPEN_NOTE_WHERE
+from nora.infra.sql.schema import REMINDERS
 
 # PostgreSQL SQLSTATE 23505, unique_violation. Matched EXACTLY rather than
 # treating every `IntegrityError` as a duplicate: this table also carries
 # `ck_reminders_state`, and a bad state value arrives as an `IntegrityError`
 # too — reporting that as "duplicate id" would name the wrong defect.
 _PG_UNIQUE_VIOLATION = "23505"
-
-# The conflict target of a proactive insert: `uq_reminders_proactive_open_note`'s
-# expression and predicate, so the inferred arbiter is that index and nothing
-# wider. The expression is TEXT, not `schema.py`'s column expression: that one
-# compiles `->>` with a BOUND `'note_id'`, and a parameter in an ON CONFLICT
-# target does not match the index's constant, so Postgres refuses to infer
-# (42P10) — the reason `SqlNoteStore`'s candidate upsert spells its key the
-# same way.
-_OPEN_NOTE_KEY = sa.text("(payload ->> 'note_id')")
-_OPEN_NOTE_WHERE = UQ_REMINDERS_PROACTIVE_OPEN_NOTE_WHERE
 
 
 log = logging.getLogger("nora.infra.sql.reminders")
@@ -192,42 +186,70 @@ class SqlReminderStore:
         to `DuplicateReminderError` so the in-memory store can be held to the
         same observable behaviour.
 
-        A proactive row on a note is inserted `ON CONFLICT DO NOTHING` against
-        `uq_reminders_proactive_open_note`: the statement decides,
+        A proactive row on a note or a resolved (subject, action, destination)
+        is inserted `ON CONFLICT DO NOTHING`: the statement decides,
         so two decisions racing for one note cannot both land, and a row that
-        did not land is `DuplicateProactiveNoteError`, never a silent no-op.
-        The conflict target names that index alone, so a primary-key collision
-        still raises and translates as a duplicate id."""
+        did not land is `DuplicateProactiveNoteError` or
+        `DuplicateProactiveSubjectError`, never a silent no-op.
+
+        The clause is UNTARGETED: Postgres admits one `ON CONFLICT` per INSERT
+        and a row may carry a note AND a subject, so neither partial index can
+        be the sole named arbiter. Skipping on ANY unique conflict is what the
+        bare clause does; the post-checks below name which constraint held the
+        row out — the id first (the more basic fault, and the one the in-memory
+        store names), then the note, then the subject."""
         row = normalise_reminder(reminder)
         note_id = open_proactive_note(row)
+        subject = open_proactive_subject(row)
         stmt = pg_insert(REMINDERS).values(**_insert_values(row))
-        if note_id is not None:
-            stmt = stmt.on_conflict_do_nothing(
-                index_elements=[_OPEN_NOTE_KEY], index_where=_OPEN_NOTE_WHERE,
-            )
+        if note_id is not None or subject is not None:
+            stmt = stmt.on_conflict_do_nothing()
         try:
             async with self._engine.begin() as conn:
                 result = await conn.execute(stmt)
                 if result.rowcount:
                     from nora.infra.sql.graph_projection import register_arrival
                     await register_arrival(conn,"reminder",row.id)
-                # Nothing landed. Postgres checks the ARBITER first, so a row
-                # whose id AND note both collide is skipped here rather than
-                # raising on the primary key; the id is the more basic fault
-                # and the one the in-memory store names, so it is asked first.
-                taken = note_id is not None and not result.rowcount and (
+                    return
+                if (
                     await conn.execute(
                         sa.select(REMINDERS.c.id).where(REMINDERS.c.id == row.id),
                     )
-                ).first() is not None
+                ).first() is not None:
+                    raise DuplicateReminderError(row.id)
+                if note_id is not None and (
+                    await conn.execute(
+                        sa.select(REMINDERS.c.id).where(
+                            REMINDERS.c.kind == PROACTIVE_KIND,
+                            REMINDERS.c.state.in_(OPEN_STATES),
+                            REMINDERS.c.payload["note_id"].astext == note_id,
+                        )
+                    )
+                ).first() is not None:
+                    raise DuplicateProactiveNoteError(note_id)
+                if subject is not None and (
+                    await conn.execute(
+                        sa.select(REMINDERS.c.id).where(
+                            REMINDERS.c.kind == PROACTIVE_KIND,
+                            REMINDERS.c.state.in_(OPEN_STATES),
+                            REMINDERS.c.payload["subject_kind"].astext == subject[0],
+                            REMINDERS.c.payload["subject_id"].astext == subject[1],
+                            sa.func.coalesce(
+                                REMINDERS.c.payload["action"].astext, ""
+                            ) == subject[2],
+                            REMINDERS.c.platform == row.platform,
+                            REMINDERS.c.conversation_id == row.conversation_id,
+                        )
+                    )
+                ).first() is not None:
+                    raise DuplicateProactiveSubjectError(
+                        subject, row.platform, row.conversation_id,
+                    )
+                raise DuplicateReminderError(row.id)
         except IntegrityError as exc:
             if getattr(exc.orig, "sqlstate", None) != _PG_UNIQUE_VIOLATION:
                 raise
             raise DuplicateReminderError(row.id) from exc
-        if taken:
-            raise DuplicateReminderError(row.id)
-        if note_id is not None and not result.rowcount:
-            raise DuplicateProactiveNoteError(note_id)
 
     async def get(self, reminder_id: UUID) -> Reminder | None:
         stmt = sa.select(REMINDERS).where(REMINDERS.c.id == reminder_id)

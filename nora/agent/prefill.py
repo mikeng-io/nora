@@ -51,6 +51,7 @@ from ..language.memo_render import render_memos
 from ..language.note_render import render_notes
 from ..language.presence_render import render_presence
 from ..language.profile_render import render_profile, render_profile_people
+from ..language.shared_render import render_shared_state
 from ..language.standing_render import render_standing, render_standing_working_set
 from ..language.subagents_render import render_subagents
 from ..obs.tracing import annotate, span
@@ -206,6 +207,11 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     # `standing`'s own key: this block is keyed off the same
     # `(platform, conversation_id)` row.
     ("standing_working_set", 65, "room"),
+    # THE UNIT'S SHARED COGNITIVE STATE (design/notebook-memory-types/20):
+    # open judgements, pending acts and what she already did — read from the
+    # canonical stores, unit-wide like `notes`, and last of the state blocks
+    # so the transcript follows «where everything stands».
+    ("shared_cognitive_state", 66, "unit"),
     ("group_transcript", 70, "room"),
     # HOW THIS TURN REACHED HER, AND HOW HER REPLY WILL. Renders only when the
     # message she is answering was spoken in a voice channel
@@ -1054,6 +1060,7 @@ def build_prefill(
                                    rooms=ctx.lineage_room.rooms if ctx.lineage_room else ())),
             _restamp(_standing_block(ctx, view)),
             _restamp(_standing_working_set_block(ctx, now=clock, view=view)),
+            _restamp(render_shared_state(ctx.shared, now_ms=int(clock.timestamp() * 1000))),
             _transcript_block(ctx, display_name, clock, context_window),
             _spoken_turn_block(ctx),
             _recalled_block(ctx),

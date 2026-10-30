@@ -10,6 +10,7 @@ import pytest
 
 from nora.domain.reminders import (
     DuplicateProactiveNoteError,
+    DuplicateProactiveSubjectError,
     DuplicateReminderError,
     NaiveDatetimeError,
     Recurrence,
@@ -843,6 +844,77 @@ async def test_a_claimed_row_still_holds_its_note(store):
 
     with pytest.raises(DuplicateProactiveNoteError):
         await store.create(_proactive())
+
+
+# -- one open proactive row per (subject, action, destination) -------------
+
+
+def _subject(
+    subject_id: str = "dec-1", action: str = "tell", **kw,
+) -> Reminder:
+    payload = {
+        "subject_kind": "decision", "subject_id": subject_id,
+        "action": action, "intent": action,
+    }
+    return _row(
+        requester_person_id="nora", kind="proactive", payload=payload, **kw,
+    )
+
+
+async def test_a_second_open_proactive_row_on_a_subject_is_refused(store):
+    """Same resolved subject, same action, same destination: whichever store
+    holds it, the second create is refused and writes nothing — the row the
+    unit lock could not see is exactly what the index exists for."""
+    first = _subject()
+    await store.create(first)
+
+    with pytest.raises(DuplicateProactiveSubjectError) as caught:
+        await store.create(_subject())
+
+    assert caught.value.subject == ("decision", "dec-1", "tell")
+    assert len(await store.pending_of("nora")) == 1
+
+
+async def test_the_same_subject_in_another_room_is_writable(store):
+    """The destination is part of the key: one act per ROOM, never per unit —
+    the cross-room conflict is `check_remind`'s to surface, not the index's."""
+    await store.create(_subject())
+
+    again = _subject(conversation_id="conv-2")
+    await store.create(again)
+
+    assert await store.get(again.id) is not None
+
+
+async def test_a_different_action_on_a_subject_is_writable(store):
+    """An ask and a tell on the same subject are two acts, not one."""
+    await store.create(_subject(action="tell"))
+
+    await store.create(_subject(action="ask"))
+
+    assert len(await store.pending_of("nora")) == 2
+
+
+async def test_a_row_that_went_off_holds_its_subject_no_longer(store):
+    """Only an OPEN row holds the subject — a delivered or failed one frees
+    the act to be raised again."""
+    await store.create(_subject(state=ReminderState.DONE))
+
+    again = _subject()
+    await store.create(again)
+
+    assert await store.get(again.id) is not None
+
+
+async def test_an_unsubjected_row_never_conflicts_on_subject(store):
+    """A row written before subject stamping carries no key at all and can
+    neither block nor be blocked by a resolved one."""
+    await store.create(_proactive("note-1"))
+    await store.create(_proactive(None))
+
+    await store.create(_subject())
+
+    assert len(await store.pending_of("nora")) == 3
 
 
 async def test_pending_of_is_one_requesters_pending_rows_in_due_order(store):

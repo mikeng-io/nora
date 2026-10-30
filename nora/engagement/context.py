@@ -20,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Any, NamedTuple, Protocol
 
@@ -34,7 +34,7 @@ from nora.agent.memory_search import (
     room_label,
 )
 from nora.agent.room import Room
-from nora.agent.standing_ledger import read_ledger
+from nora.agent.standing_ledger import ledger_permits, ledger_target, read_ledger
 from nora.domain.computer_context import ComputerView
 from nora.domain.culture import (
     CultureRevision,
@@ -66,6 +66,7 @@ from nora.domain.profile import ProfileView
 from nora.domain.quote_window import QuoteWindow
 from nora.domain.rollup import room_key
 from nora.domain.self_presence import Presence, platform_name
+from nora.domain.shared_state import SharedView
 from nora.domain.standing import Standing
 from nora.domain.standing_ledger import LedgerEntry, StandingLedger
 from nora.domain.subagents_context import SubagentsView
@@ -161,6 +162,7 @@ class TranscriptInjection:
         subagents: SubagentsContextReader | None = None,
         memos: MemoStore | None = None,
         memory_search: MemorySearch | None = None,
+        shared: Callable[..., Awaitable[SharedView]] | None = None,
         clock: Callable[[], datetime] | None = None,
         profile: ProfileHeads | None = None,
         rosters: Mapping[str, RosterSource] | None = None,
@@ -181,6 +183,11 @@ class TranscriptInjection:
         # `<memos>` (DEC-306): the unit's kept memos, unit-wide like `notes`.
         # `None` renders no block.
         self._memos_store = memos
+        # The unit's shared cognitive state reader (design/notebook-memory-types/
+        # 20-shared-cognitive-state.md): one callable bound at the composition
+        # root over the canonical stores, `None` in every harness that wires
+        # none — which renders no `<shared_cognitive_state>` block.
+        self._shared_reader = shared
         self._memory = memory
         self._persons = persons
         self._context_window = context_window
@@ -290,7 +297,7 @@ class TranscriptInjection:
         # `<presence>` is on the front of the turn like the rest because adapter
         # health must be read now, not remembered.
         (
-            ((transcript, character, profiles), card, tagger_card, standing, notes, ledger),
+            ((transcript, character, profiles), card, tagger_card, standing, notes, ledger, shared),
             presence,
             culture,
             (unit_culture, self_account, lessons),
@@ -303,6 +310,7 @@ class TranscriptInjection:
                 self._standing(msg),
                 self._notes(msg),
                 self._ledger(msg, ref),
+                self._shared(msg, ref),
             ),
             self._presence(msg),
             self._culture(msg),
@@ -354,6 +362,7 @@ class TranscriptInjection:
             memos=memos,
             standing=standing,
             ledger=ledger,
+            shared=shared,
             presence=presence,
             culture=culture,
             character=character,
@@ -949,6 +958,69 @@ class TranscriptInjection:
             log.exception("ledger context read failed")
             self._metrics.inc("nora_errors_total", stage="standing_ledger", platform=msg.platform)
             return ()
+
+    async def _shared(
+        self, msg: NormalizedMessage, ref: PersonRef | None,
+    ) -> SharedView | None:
+        """The unit's shared cognitive state, projected for THIS destination.
+
+        Unit-scoped like `_notes`, with the ledger read's own destination
+        predicate applied to each entry so a room sees every entry it may and
+        `permitted=False` on the rest — never an absence that reads as
+        nothing there. Fail-soft like every sibling read; a reader that
+        raises returns `None`, which renders no block — the tag turn has no
+        premise to withhold on, unlike a proactive fire turn (which is why
+        `FirePath` holds the hard rule, not this read).
+        """
+        if self._shared_reader is None:
+            return None
+        convo = (
+            self._policy.conversation(msg.platform, msg.conversation_id)
+            if self._policy is not None
+            else None
+        )
+        if convo is None:
+            log.warning(
+                "no policy conversation for %s/%s — the shared state cannot "
+                "be scoped to a unit; continuing without it",
+                msg.platform, msg.conversation_id,
+            )
+            self._metrics.inc(
+                "nora_errors_total", stage="shared_state", platform=msg.platform)
+            return None
+        permit = None
+        if self._lineage is not None:
+            room = Room(
+                platform=msg.platform, conversation_id=msg.conversation_id,
+                roster_source=self._rosters.get(msg.platform),
+                persons=self._persons, tagger=ref, self_ids=self._self_ids,
+            )
+            target = self._lineage.render_room(
+                platform=msg.platform, conversation_id=msg.conversation_id)
+            try:
+                narrowed = await ledger_target(target, room)
+            except Exception:
+                # A permit that cannot be built must not filter: withholding
+                # nothing is the legible failure for a READ, and the view's
+                # coverage still says what the stores answered.
+                log.exception(
+                    "shared-state permit build failed for %s:%s",
+                    msg.platform, msg.conversation_id,
+                )
+                narrowed = None
+            if narrowed is not None:
+                def permit(entry: LedgerEntry) -> bool:
+                    return ledger_permits(entry, narrowed)
+        try:
+            return await self._shared_reader(
+                unit=convo.unit, permit=permit,
+                now_ms=int(self._clock().timestamp() * 1000),
+            )
+        except Exception:
+            log.exception("shared-state read failed; continuing without it")
+            self._metrics.inc(
+                "nora_errors_total", stage="shared_state", platform=msg.platform)
+            return None
 
     async def _standing(self, msg: NormalizedMessage) -> Standing | None:
         """Her own position in THIS conversation, or `None`
