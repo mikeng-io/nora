@@ -471,6 +471,22 @@ async def test_inspection_renders_real_wake_clock_room_and_open_items_without_mo
     assert agent.calls == 0
 
 
+async def test_an_inspection_records_no_session_outcome_or_carry():
+    """An inspection is a read of what a session would be run on: it must
+    leave the shared wake sandbox exactly as it found it — no session row,
+    no wake outcome, no carry, and the stimuli still pending."""
+    stimuli = _seeded()
+    runner, store, agent = _runner(stimuli=stimuli)
+    view = UnitView(unit="unit-1", pending=_pending("unit-1"),
+                    last_activity_ms=None, last_wake=None)
+    inspection = await runner.inspect(view=view, now_ms=NOW)
+    assert inspection is not None and set(inspection) == {"system", "agenda"}
+    assert store.sessions == []
+    assert stimuli.outcomes == {}
+    assert stimuli.carries == []
+    assert agent.calls == 0
+
+
 async def test_inspection_of_an_empty_agenda_is_none_and_calls_no_model():
     runner, _, agent = _runner()
     assert await runner.inspect(view=UnitView(
