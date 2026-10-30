@@ -784,5 +784,3 @@ def test_config_reads_the_opencli_profile_and_refuses_a_blank_one():
     assert config_from_env({"OPENCLI_PROFILE": "nora-alt"}).opencli_profile == "nora-alt"
     with pytest.raises(ValueError):
         config_from_env({"OPENCLI_PROFILE": "  "})
-
-

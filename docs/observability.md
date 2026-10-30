@@ -64,7 +64,10 @@ Verified on that stack:
   Discord `/slack` webhook URL: `discord_configs` does NOT exist in the
   pinned community API (verified `channel_unsupported_kind`), and Discord
   natively consumes Slack-format posts — the recorded payloads are
-  Slack `attachments` with `[FIRING:n]` titles, firing AND resolved.
+  Slack `attachments` with `[FIRING:n]` titles. Slack-format resolved
+  delivery remains unverified: the synthetic condition returned inactive,
+  but no resolved attachment was recorded. Earlier generic-webhook recovery
+  does not prove this channel's recovery path.
 
 What local proof does not cover: the host's own journald group/permissions
 (the `SIGNOZ_JOURNAL_GID` mechanism is documented, not exercised), a real
