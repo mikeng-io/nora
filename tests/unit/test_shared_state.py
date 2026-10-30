@@ -615,7 +615,7 @@ async def test_an_unresolved_only_view_is_rendered():
     traces = FakeTagTraceStore()
     await traces.save(TagTrace(
         tag_id="generated-open", conversation_id="room-a", unit="u1",
-        transcript=(), outcome="silent", created_at=T0_MS,
+        transcript=(), outcome="silent", created_at=T0_MS - 3_600_000,
         messages=(
             {"role": "assistant", "content": [{"toolUse": {
                 "toolUseId": "generated-call", "name": "remind", "input": {
@@ -632,6 +632,9 @@ async def test_an_unresolved_only_view_is_rendered():
     block = render_shared_state(view, now_ms=T0_MS)
     assert view.status == "ok"
     assert block is not None and "note:missing" in block.body
+
+    assert "turn(t1)" in block.body and "action=ask" in block.body
+    assert datetime.fromtimestamp((T0_MS - 3_600_000) / 1000, UTC).isoformat() in block.body
 
 
 async def test_shared_notes_keep_the_existing_destination_exclusion():
@@ -670,3 +673,49 @@ async def test_shared_notes_keep_the_existing_destination_exclusion():
                              notes=notes)
     rendered = render_shared_state(unit, now_ms=T0_MS)
     assert rendered is not None and note.title in rendered.body
+
+
+def test_delivery_facts_expose_action_identity_and_legacy_uncertainty():
+    from nora.domain.shared_state import SharedEntry, SharedView
+
+    block = render_shared_state(SharedView(
+        unit="u1", status="ok", as_of_ms=T0_MS, entries=(
+            SharedEntry(kind="act", id="generated-sent", scope="unit", status="sent",
+                        subject="generated question", subject_ref="note:generated-plan",
+                        action="generated-ask-date", delivery="sent"),
+            SharedEntry(kind="act", id="generated-legacy", scope="unit", status="pending"),
+            SharedEntry(kind="finding", id="generated-finding", scope="unit", status="open",
+                        subject="generated option", detail="generated source"),
+        ),
+    ), now_ms=T0_MS)
+    assert block is not None
+    assert "note:generated-plan" in block.body and "generated-ask-date" in block.body
+    assert "subject unresolved" in block.body
+    assert "mapping unresolved" in block.body
+
+
+def test_renderer_keeps_all_facts_selected_by_the_bounded_reader():
+    from nora.domain.shared_state import SharedEntry, SharedView
+
+    entries = []
+    for kind, count in (("act", 13), ("send", 9), ("finding", 9), ("conclusion", 9)):
+        entries.extend(SharedEntry(
+            kind=kind, id=f"generated-{kind}-{i}", subject=f"generated-{kind}-{i}",
+            scope="unit", status="sent" if kind == "act" else "open",
+        ) for i in range(count))
+    block = render_shared_state(SharedView(
+        unit="u1", status="ok", as_of_ms=T0_MS, entries=tuple(entries),
+    ), now_ms=T0_MS)
+    assert block is not None
+    for subject in ("generated-act-12", "generated-send-8", "generated-finding-8",
+                    "generated-conclusion-8"):
+        assert subject in block.body
+
+
+async def test_a_delivered_message_without_text_is_still_a_delivery_fact():
+    view = await read_shared(unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=T0_MS,
+                             record_query=_Sends([_send(9, T0_MS - 1000, "")]))
+    assert view.status == "ok"
+    block = render_shared_state(view, now_ms=T0_MS)
+    assert block is not None and "send 9" in block.body
+    assert "message without text" in block.body

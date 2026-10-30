@@ -85,14 +85,13 @@ def render_shared_state(
             head = f"- {e.kind} {e.id}"
             if e.kind == "act":
                 head += f" · {e.destination} · {e.action or 'remind'}"
-                if e.subject_ref:
-                    head += f" · {e.subject_ref}"
+                head += f" · {e.subject_ref or 'subject unresolved'}"
             if when:
                 head += f" · {when}"
             lines.append(f"{head} · {e.subject}" if e.subject else head)
     if recent:
         lines.append("## Recent")
-        for e in recent[:12]:
+        for e in recent:
             if not e.permitted:
                 lines.append("- an act in another room · withheld")
                 continue
@@ -102,20 +101,21 @@ def render_shared_state(
                 else "may have sent" if e.delivery == "unknown"
                 else "no send" if e.delivery == "none" else e.status
             )
+            identity = f"{e.subject_ref or 'subject unresolved'} · {e.action or 'remind'}"
             lines.append(
-                f"- {e.kind} {e.id} · {e.destination} · {e.status} "
+                f"- {e.kind} {e.id} · {e.destination} · {identity} · {e.status} "
                 f"({delivery}){ago} · {e.subject}")
     if said:
         lines.append("## Said lately")
-        for e in said[:8]:
+        for e in said:
             if not e.permitted:
                 lines.append("- said something in another room · withheld")
                 continue
             ago = f" · {age(e.at_ms, now)} ago" if e.at_ms else ""
-            lines.append(f"- {e.scope}{ago} · {e.subject}")
+            lines.append(f"- send {e.id} · {e.scope}{ago} · excerpt: {e.subject}")
     if concluded:
         lines.append("## Record conclusions (not consolidated)")
-        for e in concluded[:8]:
+        for e in concluded:
             if not e.permitted:
                 lines.append("- a conclusion in another room · withheld")
                 continue
@@ -128,12 +128,12 @@ def render_shared_state(
                 lines.append(f"    sources: {evidence}")
     for item in view.unresolved:
         lines.append(f"- unresolved · {item}")
-    for e in findings[:8]:
+    for e in findings:
         if not e.permitted:
             lines.append("- a finding in another room · withheld")
             continue
         ago = f" · {age(e.at_ms, now)} ago" if e.at_ms else ""
-        lines.append(f"- found{ago} · {e.subject}")
+        lines.append(f"- found{ago} · {e.subject} · mapping unresolved")
         if e.detail:
             lines.append(f"    {e.detail}")
     return ContextBlock(

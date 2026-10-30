@@ -569,3 +569,27 @@ async def test_one_room_agenda_can_schedule_an_explicit_two_room_unit_plan():
     rows = await stores.reminders.pending_of("nora")
     assert {r.conversation_id for r in rows} == {"room-a", "room-b"}
     assert len({r.payload["plan_id"] for r in rows}) == 1
+
+
+async def test_multi_room_agenda_keeps_explicit_destination_and_unit_boundary():
+    from tests.unit.cognition_rig import B
+
+    answers = []
+
+    async def behave(by, tools):
+        answers.append(await by["standing_revise"](where_it_stands="generated ambiguous target"))
+        answers.append(await by["standing_revise"](
+            where_it_stands="generated foreign target", room="signal:foreign"))
+        answers.append(await by["standing_revise"](
+            where_it_stands="generated explicit target", room="signal:room-b"))
+
+    stores, _ = await session(behave, rooms=(A, B), runner_kwargs={
+        "rooms_of_unit": lambda unit: ((A.platform, A.conversation_id),
+                                        (B.platform, B.conversation_id)),
+    })
+    assert answers[0]["status"] == "refused" and answers[0]["reason"] == "room_required"
+    assert answers[1]["status"] == "refused" and answers[1]["reason"] == "unknown_room"
+    assert answers[2]["status"] == "ok"
+    assert await stores.standing.read(platform="signal", conversation_id="room-a") is None
+    assert (await stores.standing.read(platform="signal", conversation_id="room-b")).body == \
+        "generated explicit target"

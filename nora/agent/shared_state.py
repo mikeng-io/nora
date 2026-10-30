@@ -184,7 +184,8 @@ async def read_shared(
                     entries.append(SharedEntry(
                         kind="send", id=str(h.row.id), scope=scope,
                         status="sent",
-                        subject=str(h.row.body or "").splitlines()[0][:140],
+                        subject=" ".join(str(h.row.body or "").split())[:140]
+                        or "message without text",
                         at_ms=h.row.ts, provenance="nora",
                         permitted=scoped(scope, (platform, conversation_id)),
                     ))
@@ -404,11 +405,16 @@ async def read_shared(
                     continue
                 args = item.arguments
                 provenance = f"{item.occasion}:{item.tag_id}"
+                record_ref = f"turn({item.handle})" if item.handle else provenance
+                recorded_at = datetime.fromtimestamp(item.created_at / 1000, UTC).isoformat()
+                evidence = f"source={record_ref}; recorded={recorded_at}"
                 if item.name == "remind":
                     unresolved_lines.append(
                         f"remind {str(args.get('text'))[:80]!r} for "
                         f"{args.get('room') or 'the room'}: "
-                        f"{str(args.get('subject') or '')[:80]!r} unresolved"
+                        f"{str(args.get('subject') or '')[:80]!r} unresolved; "
+                        f"action={args.get('action') or '?'}; "
+                        f"requested_at={args.get('at') or '?'}; {evidence}"
                     )
                     continue
                 result_status = tool_result_status(item.result)
@@ -416,7 +422,7 @@ async def read_shared(
                     unresolved_lines.append(
                         f"decision_conclude "
                         f"{str(args.get('subject') or '?')[:80]!r}: "
-                        f"{result_status}"
+                        f"{result_status}; {evidence}"
                     )
                     continue
                 detail = " · ".join(
