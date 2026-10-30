@@ -804,7 +804,7 @@ def _notes_block(
     note there is, because a note missing from the index is invisible to her
     and invisible is indistinguishable from absent. The budget is held in
     `nora.domain.notes`' per-entry caps and by closed notes being retired
-    (the Cognition session's `note_retire`); see `render_notes`'s own
+    (the Cognition session's `note_set_status`); see `render_notes`'s own
     docstring.
     """
     # WITH TODAY: the block's own hedge says a listed note «may already have

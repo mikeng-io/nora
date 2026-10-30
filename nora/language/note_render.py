@@ -18,7 +18,7 @@ relevance-scored subset has the same defect with extra machinery on top. The
 prompt-budget answer is paid in two other places: `TITLE_MAX_CHARS` /
 `DESCRIPTION_MAX_CHARS` in `nora.domain.notes`, enforced in the CONSTRUCTOR so
 an over-long entry is unrepresentable rather than silently truncated here; and
-retirement (`note_retire`), which makes the index track live uncertainty rather
+retirement (`note_set_status`), which makes the index track live uncertainty rather
 than history. `test_the_index_is_uncapped_and_every_standing_note_appears` is
 the guard, because "just show the top ten" is a decision, not a tweak.
 
@@ -156,7 +156,7 @@ def render_note_rows(
     row, and the tag turn remaps it (`resolve_positions`).
 
     **`ids=True` is the one opt-in, and it is for a pass whose model writes a
-    verb that takes the note's own id** (the Cognition session's `note_update`):
+    verb that takes the note's own id** (the Cognition session's `note_revise`):
     `n` is then the note's real `id`, so what the model reads is what the verb
     requires. It is a flag and not a second renderer because the row is the same
     row; the default keeps the tag path's bytes (pinned by

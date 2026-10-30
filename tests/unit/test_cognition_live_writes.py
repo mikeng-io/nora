@@ -62,7 +62,7 @@ async def test_a_body_citing_a_message_the_session_was_not_shown_is_refused_and_
     assert await stores.notes.standing(unit="u") == ()
 
 
-async def test_note_update_appends_and_a_stale_parent_is_unavailable():
+async def test_note_revise_appends_and_a_stale_parent_is_unavailable():
     stores = Stores()
     note = await _seed_note(stores)
     answers: list[Any] = []
@@ -70,7 +70,7 @@ async def test_note_update_appends_and_a_stale_parent_is_unavailable():
 
     async def behave(by: dict[str, Any], tools: list[Any]) -> None:
         for _ in range(2):
-            answers.append(await by["note_update"](
+            answers.append(await by["note_revise"](
                 note_id=note.id, body=body, parent_revision_id=note.head_revision_id,
             ))
 
@@ -81,14 +81,14 @@ async def test_note_update_appends_and_a_stale_parent_is_unavailable():
     assert head.body.endswith("[102]") and head.established_by == PROVENANCE
 
 
-async def test_note_retire_closes_a_settled_note():
+async def test_note_set_status_closes_a_settled_note():
     stores = Stores()
     note = await _seed_note(stores)
     answers: list[Any] = []
 
     async def behave(by: dict[str, Any], tools: list[Any]) -> None:
-        answers.append(await by["note_retire"](note_id=note.id, reason="settled"))
-        answers.append(await by["note_retire"](note_id=note.id, reason="settled"))
+        answers.append(await by["note_set_status"](note_id=note.id, reason="settled"))
+        answers.append(await by["note_set_status"](note_id=note.id, reason="settled"))
 
     await session(behave, stores=stores)
     assert [a["status"] for a in answers] == ["ok", "refused"]
@@ -237,7 +237,7 @@ async def test_a_note_linked_remind_carries_the_note_and_follows_a_merge_and_a_r
             survivor_id=survivor.id, duplicate_id=duplicate.id, body=GOOD_BODY,
         ))
         assert row.state is ReminderState.PENDING
-        answers.append(await by["note_retire"](note_id=survivor.id, reason="settled"))
+        answers.append(await by["note_set_status"](note_id=survivor.id, reason="settled"))
 
     await session(behave, stores=stores)
     assert [a["status"] for a in answers] == ["ok", "ok", "ok"]
@@ -265,7 +265,7 @@ async def test_a_remind_citing_a_note_by_its_bare_shown_id_links_it_and_dies_wit
             intent="ask", text="ask the headcount again",
             subject_rows=[note.id, "102"], at=iso(NOW + 7_200_000),
         ))
-        answers.append(await by["note_retire"](note_id=note.id, reason="settled"))
+        answers.append(await by["note_set_status"](note_id=note.id, reason="settled"))
 
     await session(behave, stores=stores)
     assert [a["status"] for a in answers] == ["ok", "refused", "ok"]

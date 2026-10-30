@@ -36,7 +36,7 @@ replied, reflecting — a different call, seeing the whole turn including its ow
 outcome. The argument is **impartiality, not cost**: a model asked to judge its
 reply mid-turn is judging under social pressure, with the reply still to write.
 
-**It is why Nora's own tools cannot do this.** `note_create`/`note_update` are
+**It is why Nora's own tools cannot do this.** `note_create`/`note_revise` are
 in-turn tools, and the reply guard cancels the next model call once the terminal
 budget is spent — **nothing in her own loop runs after the reply.** Standing has
 an after-the-reply path by construction; that is why the note tier's proposals

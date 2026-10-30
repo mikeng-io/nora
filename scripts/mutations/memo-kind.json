@@ -88,7 +88,7 @@
   "file": "nora/app/cognition_session.py",
   "old": "            if not memo.is_kept:",
   "new": "            if False:",
-  "target": "tests/unit/test_cognition_memo_writes.py::test_memo_withdraw_needs_a_cited_message_and_leaves_the_memo_unrevisable"
+  "target": "tests/unit/test_cognition_memo_writes.py::test_memo_set_status_needs_a_cited_message_and_leaves_the_memo_unrevisable"
  },
  {
   "name": "<memos> pushes what a memo keeps",

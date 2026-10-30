@@ -49,7 +49,7 @@ cases:
     - event_propose
     - event_revise
     - event_set_status
-    - lesson_create
+    - lesson_write
     - topic_create
     - wake_at
     - wake_move
@@ -59,11 +59,11 @@ cases:
     - remind_cancel
     - send_reply
     - send_to
-    - note_update
-    - note_retire
-    - memo_write
+    - note_revise
+    - note_set_status
+    - memo_create
     - memo_revise
-    - memo_withdraw
+    - memo_set_status
     - lesson_write
     - lesson_retire
     - standing_revise
@@ -99,7 +99,7 @@ cases:
     - event_propose
     - event_revise
     - event_set_status
-    - lesson_create
+    - lesson_write
     - topic_create
     - wake_at
     - wake_move
@@ -109,11 +109,11 @@ cases:
     - remind_cancel
     - send_reply
     - send_to
-    - note_update
-    - note_retire
-    - memo_write
+    - note_revise
+    - note_set_status
+    - memo_create
     - memo_revise
-    - memo_withdraw
+    - memo_set_status
     - lesson_write
     - lesson_retire
     - standing_revise
@@ -143,11 +143,11 @@ cases:
     not_tools:
     - event_propose
     - note_create
-    - note_update
-    - note_retire
-    - memo_write
+    - note_revise
+    - note_set_status
+    - memo_create
     - memo_revise
-    - memo_withdraw
+    - memo_set_status
     - lesson_write
     - lesson_retire
     - standing_revise
@@ -204,7 +204,7 @@ cases:
     - event_propose
     - event_revise
     - event_set_status
-    - lesson_create
+    - lesson_write
     - topic_create
     - wake_at
     - wake_move
@@ -214,11 +214,11 @@ cases:
     - remind_cancel
     - send_reply
     - send_to
-    - note_update
-    - note_retire
-    - memo_write
+    - note_revise
+    - note_set_status
+    - memo_create
     - memo_revise
-    - memo_withdraw
+    - memo_set_status
     - lesson_write
     - lesson_retire
     - standing_revise
@@ -253,7 +253,7 @@ cases:
     - event_propose
     - event_revise
     - event_set_status
-    - lesson_create
+    - lesson_write
     - topic_create
     - wake_at
     - wake_move
@@ -263,11 +263,11 @@ cases:
     - remind_cancel
     - send_reply
     - send_to
-    - note_update
-    - note_retire
-    - memo_write
+    - note_revise
+    - note_set_status
+    - memo_create
     - memo_revise
-    - memo_withdraw
+    - memo_set_status
     - lesson_write
     - lesson_retire
     - standing_revise
@@ -296,7 +296,7 @@ cases:
     - event_propose
     - event_revise
     - event_set_status
-    - lesson_create
+    - lesson_write
     - topic_create
     - wake_at
     - wake_move
@@ -306,11 +306,11 @@ cases:
     - remind_cancel
     - send_reply
     - send_to
-    - note_update
-    - note_retire
-    - memo_write
+    - note_revise
+    - note_set_status
+    - memo_create
     - memo_revise
-    - memo_withdraw
+    - memo_set_status
     - lesson_write
     - lesson_retire
     - standing_revise
@@ -341,7 +341,7 @@ cases:
     - event_propose
     - event_revise
     - event_set_status
-    - lesson_create
+    - lesson_write
     - topic_create
     - wake_at
     - wake_move
@@ -351,11 +351,11 @@ cases:
     - remind_cancel
     - send_reply
     - send_to
-    - note_update
-    - note_retire
-    - memo_write
+    - note_revise
+    - note_set_status
+    - memo_create
     - memo_revise
-    - memo_withdraw
+    - memo_set_status
     - lesson_write
     - lesson_retire
     - standing_revise
@@ -386,11 +386,11 @@ cases:
     required_tools: []
     not_tools:
     - profile_revise
-    - note_update
-    - note_retire
-    - memo_write
+    - note_revise
+    - note_set_status
+    - memo_create
     - memo_revise
-    - memo_withdraw
+    - memo_set_status
     - lesson_write
     - lesson_retire
     - standing_revise

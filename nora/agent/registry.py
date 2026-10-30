@@ -712,10 +712,10 @@ class ToolRegistry:
         load-bearing.
 
         Without `read_only` the set would swallow the write verbs, which also
-        declare `three_state` (`note_update`, `remind`, the events family, the
+        declare `three_state` (`note_revise`, `remind`, the events family, the
         music verbs; see `NativeTool.output_contract`). A failed WRITE is a
         different fact from an empty READ, and counting one as the other would
-        let a `note_update` that came back `unavailable` silence a reply she
+        let a `note_revise` that came back `unavailable` silence a reply she
         had every reason to send.
 
         Without `output_contract` it would swallow `load_transcript`, the one

@@ -122,13 +122,13 @@ def test_the_four_note_tools_carry_the_budgets_the_spec_sizes_them_at():
     assert NATIVE_TOOLS["note_read"].budget == 3
     assert NATIVE_TOOLS["note_search"].budget == 2
     assert NATIVE_TOOLS["note_create"].budget == 1
-    assert NATIVE_TOOLS["note_update"].budget == 2
+    assert NATIVE_TOOLS["note_revise"].budget == 2
 
 
 def test_no_note_tool_ends_the_turn():
     """None terminal — she still owes the room a reply. A terminal note
     verb would write the row and go silent, which is R-23's shape."""
-    for name in ("note_read", "note_search", "note_create", "note_update"):
+    for name in ("note_read", "note_search", "note_create", "note_revise"):
         assert NATIVE_TOOLS[name].terminal is False
 
 
@@ -143,7 +143,7 @@ async def test_every_note_tool_answers_unavailable_when_no_store_is_wired():
             "title": "T", "description": "d", "uncertainty": "u",
             "closing_condition": "c", "body": _b("b"), "anchor_date": 20261011,
         }),
-        ("note_update", {"title": "Dinner", "body": _b("b")}),
+        ("note_revise", {"title": "Dinner", "body": _b("b")}),
     )
     for name, kwargs in calls:
         assert (await tools[name](**kwargs))["status"] == "unavailable", name
@@ -171,7 +171,7 @@ async def test_note_read_resolves_the_title_the_index_shows_and_returns_the_body
     assert out["body"] == "Nobody has booked yet."
     assert out["title"] == "Dinner, 9 Sept"
     # The head revision id rides back so the compare-and-swap has something
-    # to compare, even though the model never has to hand it to `note_update`.
+    # to compare, even though the model never has to hand it to `note_revise`.
     assert out["revision_id"] == note.head_revision_id
 
 
@@ -347,15 +347,15 @@ async def test_note_create_refuses_when_it_does_not_know_who_is_asking():
     assert out["status"] == "refused"
 
 
-# ── note_update: the CAS and the tool-layer backstop ─────────────────────────
+# ── note_revise: the CAS and the tool-layer backstop ─────────────────────────
 
-async def test_note_update_appends_a_revision_and_moves_the_head():
+async def test_note_revise_appends_a_revision_and_moves_the_head():
     store = InMemoryNoteStore()
     note = await _seed(store, title="Dinner, 9 Sept", body="Nobody has booked.")
     tools = _tools(notes=store)
     await tools["note_read"](title="Dinner, 9 Sept")
 
-    out = await tools["note_update"](
+    out = await tools["note_revise"](
         title="Dinner, 9 Sept", body=_b("Nobody has booked. Ada says 8pm."),
     )
 
@@ -368,7 +368,7 @@ async def test_note_update_appends_a_revision_and_moves_the_head():
     assert store.revisions[note.head_revision_id].body == "Nobody has booked."
 
 
-async def test_note_update_refuses_when_this_turn_never_read_that_note():
+async def test_note_revise_refuses_when_this_turn_never_read_that_note():
     """The tool-layer half of the latch. `ReplyGuard` vetoes this call before it
     runs; this is the backstop for the one case the guard cannot see — a title
     that resolved to a DIFFERENT note between the read and the write."""
@@ -376,7 +376,7 @@ async def test_note_update_refuses_when_this_turn_never_read_that_note():
     await _seed(store, title="Dinner, 9 Sept", body="Nobody has booked.")
     tools = _tools(notes=store)
 
-    out = await tools["note_update"](title="Dinner, 9 Sept", body=_b("Ada says 8pm."))
+    out = await tools["note_revise"](title="Dinner, 9 Sept", body=_b("Ada says 8pm."))
 
     assert out["status"] == "refused"
     assert "note_read" in out["note"]
@@ -399,7 +399,7 @@ async def test_a_head_that_moved_under_her_is_unavailable_never_applied_on_top()
         now_ms=NOW + 1,
     )
 
-    out = await tools["note_update"](title="Dinner, 9 Sept", body=_b("Nobody has booked."))
+    out = await tools["note_revise"](title="Dinner, 9 Sept", body=_b("Nobody has booked."))
 
     assert out["status"] == "unavailable"
     assert "read it again" in out["note"]
@@ -414,9 +414,9 @@ async def test_a_second_update_in_one_turn_writes_against_what_she_just_wrote():
     note = await _seed(store, title="Dinner, 9 Sept", body="Nobody has booked.")
     tools = _tools(notes=store)
     await tools["note_read"](title="Dinner, 9 Sept")
-    await tools["note_update"](title="Dinner, 9 Sept", body=_b("Ada says 8pm."))
+    await tools["note_revise"](title="Dinner, 9 Sept", body=_b("Ada says 8pm."))
 
-    out = await tools["note_update"](
+    out = await tools["note_revise"](
         title="Dinner, 9 Sept", body=_b("Ada says 8pm, Sai Kung."),
     )
 
@@ -433,11 +433,11 @@ async def test_a_read_that_found_nothing_licenses_no_revision_at_the_tool_layer(
     read = await tools["note_read"](title="Grant's wedding")
     assert read["status"] == "nothing_found"
 
-    out = await tools["note_update"](title="Dinner, 9 Sept", body=_b("Ada says 8pm."))
+    out = await tools["note_revise"](title="Dinner, 9 Sept", body=_b("Ada says 8pm."))
     assert out["status"] == "refused"
 
 
-# ── nora_note_update_refused_total: three reasons, two diagnoses ────────────
+# ── nora_note_revise_refused_total: three reasons, two diagnoses ────────────
 #
 # `not_read` is a reading about the MODEL — it tried to rewrite a body it had
 # not seen. `title_moved` and `stale_head` are readings about CONTENTION — the
@@ -458,15 +458,15 @@ async def test_a_stale_head_is_counted_as_a_refusal_with_its_own_reason():
         now_ms=NOW + 1,
     )
 
-    out = await tools["note_update"](title="Dinner, 9 Sept", body=_b("Nobody has booked."))
+    out = await tools["note_revise"](title="Dinner, 9 Sept", body=_b("Nobody has booked."))
 
     assert out["status"] == "unavailable"
-    assert metrics.get("nora_note_update_refused_total", reason="stale_head") == 1
+    assert metrics.get("nora_note_revise_refused_total", reason="stale_head") == 1
     # Not filed under either of the other two: a CAS loss is a curator racing
     # the tag path, and reading it as a model that skipped its read would send
     # somebody to fix the wrong thing.
-    assert metrics.get("nora_note_update_refused_total", reason="not_read") == 0
-    assert metrics.get("nora_note_update_refused_total", reason="title_moved") == 0
+    assert metrics.get("nora_note_revise_refused_total", reason="not_read") == 0
+    assert metrics.get("nora_note_revise_refused_total", reason="title_moved") == 0
 
 
 async def test_a_title_that_resolved_to_another_note_is_counted_as_title_moved():
@@ -479,11 +479,11 @@ async def test_a_title_that_resolved_to_another_note_is_counted_as_title_moved()
     tools = _tools(notes=store, metrics=metrics)
     assert (await tools["note_read"](title="Grant's wedding"))["status"] == "nothing_found"
 
-    out = await tools["note_update"](title="Dinner, 9 Sept", body=_b("Ada says 8pm."))
+    out = await tools["note_revise"](title="Dinner, 9 Sept", body=_b("Ada says 8pm."))
 
     assert out["status"] == "refused"
-    assert metrics.get("nora_note_update_refused_total", reason="title_moved") == 1
-    assert metrics.get("nora_note_update_refused_total", reason="stale_head") == 0
+    assert metrics.get("nora_note_revise_refused_total", reason="title_moved") == 1
+    assert metrics.get("nora_note_revise_refused_total", reason="stale_head") == 0
 
 
 async def test_an_update_that_lands_counts_no_refusal():
@@ -493,10 +493,10 @@ async def test_an_update_that_lands_counts_no_refusal():
     tools = _tools(notes=store, metrics=metrics)
     await tools["note_read"](title="Dinner, 9 Sept")
 
-    out = await tools["note_update"](title="Dinner, 9 Sept", body=_b("Ada says 8pm."))
+    out = await tools["note_revise"](title="Dinner, 9 Sept", body=_b("Ada says 8pm."))
 
     assert out["status"] == "ok"
-    assert metrics.get("nora_note_update_refused_total") == 0
+    assert metrics.get("nora_note_revise_refused_total") == 0
 
 
 # ── R-55: the latch, measured through the veto ───────────────────────────────
@@ -537,7 +537,7 @@ def _read_happened(guard, title, **kw):
 
 def test_r55_a_revision_is_vetoed_when_this_turn_never_read_the_note():
     guard = _guard()
-    veto = guard.evaluate("note_update", {"title": "Dinner, 9 Sept", "body": "x"})
+    veto = guard.evaluate("note_revise", {"title": "Dinner, 9 Sept", "body": "x"})
     assert veto is not None
     assert "note_read" in veto
 
@@ -545,20 +545,20 @@ def test_r55_a_revision_is_vetoed_when_this_turn_never_read_the_note():
 def test_r55_a_revision_is_allowed_once_the_read_succeeded():
     guard = _guard()
     _read_happened(guard, "Dinner, 9 Sept")
-    assert guard.evaluate("note_update", {"title": "Dinner, 9 Sept", "body": "x"}) is None
+    assert guard.evaluate("note_revise", {"title": "Dinner, 9 Sept", "body": "x"}) is None
 
 
 def test_r55_the_veto_is_counted_under_its_own_reason_as_well_as_its_rule():
     """Two series, two questions. `nora_guard_vetoes_total{rule}` answers «which
-    rule fired» across every guard; `nora_note_update_refused_total{reason}`
-    answers «why did a note_update not land», and its other two reasons live in
+    rule fired» across every guard; `nora_note_revise_refused_total{reason}`
+    answers «why did a note_revise not land», and its other two reasons live in
     the tool and never reach a veto at all."""
     metrics = Metrics()
     guard = _guard(metrics)
 
-    assert guard.evaluate("note_update", {"title": "Dinner, 9 Sept", "body": "x"})
+    assert guard.evaluate("note_revise", {"title": "Dinner, 9 Sept", "body": "x"})
 
-    assert metrics.get("nora_note_update_refused_total", reason="not_read") == 1
+    assert metrics.get("nora_note_revise_refused_total", reason="not_read") == 1
     assert metrics.get("nora_guard_vetoes_total", rule="R-55") == 1
 
 
@@ -567,15 +567,15 @@ def test_r55_an_allowed_revision_counts_no_refusal():
     guard = _guard(metrics)
     _read_happened(guard, "Dinner, 9 Sept")
 
-    assert guard.evaluate("note_update", {"title": "Dinner, 9 Sept", "body": "x"}) is None
+    assert guard.evaluate("note_revise", {"title": "Dinner, 9 Sept", "body": "x"}) is None
 
-    assert metrics.get("nora_note_update_refused_total") == 0
+    assert metrics.get("nora_note_revise_refused_total") == 0
 
 
 def test_r55_reading_one_note_does_not_license_revising_another():
     guard = _guard()
     _read_happened(guard, "Dinner, 9 Sept")
-    veto = guard.evaluate("note_update", {"title": "Grant's wedding", "body": "x"})
+    veto = guard.evaluate("note_revise", {"title": "Grant's wedding", "body": "x"})
     assert veto is not None
 
 
@@ -588,7 +588,7 @@ def test_r55_a_read_that_raised_licenses_nothing():
     guard = _guard()
     _read_happened(guard, "Dinner, 9 Sept", exception=RuntimeError("boom"))
     assert guard.evaluate(
-        "note_update", {"title": "Dinner, 9 Sept", "body": "x"},
+        "note_revise", {"title": "Dinner, 9 Sept", "body": "x"},
     ) is not None
 
 
@@ -598,7 +598,7 @@ def test_r55_a_read_the_guard_cancelled_licenses_nothing():
         guard, "Dinner, 9 Sept", cancel_message="You already called note_read.",
     )
     assert guard.evaluate(
-        "note_update", {"title": "Dinner, 9 Sept", "body": "x"},
+        "note_revise", {"title": "Dinner, 9 Sept", "body": "x"},
     ) is not None
 
 
@@ -612,7 +612,7 @@ def test_r55_a_read_that_found_no_such_note_licenses_nothing():
         tool_input={"title": "Dinner, 9 Sept"},
     ))
     assert guard.evaluate(
-        "note_update", {"title": "Dinner, 9 Sept", "body": "x"},
+        "note_revise", {"title": "Dinner, 9 Sept", "body": "x"},
     ) is not None
 
 
@@ -622,7 +622,7 @@ def test_r55_an_ambiguous_read_licenses_nothing():
         "note_read", {"status": "refused", "candidates": ["Wedding", "wedding"]},
         tool_input={"title": "Wedding"},
     ))
-    assert guard.evaluate("note_update", {"title": "Wedding", "body": "x"}) is not None
+    assert guard.evaluate("note_revise", {"title": "Wedding", "body": "x"}) is not None
 
 
 def test_r55_does_not_apply_to_note_create():
@@ -639,16 +639,16 @@ def test_a_vetoed_revision_does_not_spend_its_budget():
     first, then revise — is not refused by R-7 for a call that never ran."""
     guard = _guard()
     event = type("E", (), {})()
-    event.tool_use = {"name": "note_update", "input": {"title": "D", "body": "x"}}
+    event.tool_use = {"name": "note_revise", "input": {"title": "D", "body": "x"}}
     event.invocation_state = {"conversation_id": GROUP}
     event.cancel_tool = None
     guard._before_tool(event)
     assert event.cancel_tool is not None
     guard._after_tool(_AfterEvent(
-        "note_update", {"status": "refused"}, cancel_message=event.cancel_tool,
+        "note_revise", {"status": "refused"}, cancel_message=event.cancel_tool,
     ))
     _read_happened(guard, "D")
-    assert guard.evaluate("note_update", {"title": "D", "body": "x"}) is None
+    assert guard.evaluate("note_revise", {"title": "D", "body": "x"}) is None
 
 
 async def test_two_rooms_in_different_units_see_different_notebooks():
@@ -658,7 +658,7 @@ async def test_two_rooms_in_different_units_see_different_notebooks():
     `policy.toml` puts the operator's own rooms in `ridgeline` and the group in
     `friends`, deliberately never paired (DEC-105/R-49 — a unit is the
     boundary `send_to` may not cross). A process-wide unit string hands
-    one room the OTHER's notebook: `note_read` answers from it, `note_update`
+    one room the OTHER's notebook: `note_read` answers from it, `note_revise`
     writes into it, past the unit boundary.
 
     Both calls below go through the SAME resolver and the same store; only the
@@ -740,16 +740,16 @@ async def test_every_non_ok_note_status_carries_a_note():
             tools["note_create"], {**create, "anchor_date": None},
         ),
         "refused/update_no_tagger": (
-            _tools(notes=store, tagger=None)["note_update"],
+            _tools(notes=store, tagger=None)["note_revise"],
             {"title": "Dinner, 9 Sept", "body": _b("b")},
         ),
         "refused/update_not_read": (
-            tools["note_update"], {"title": "Dinner, 9 Sept", "body": _b("b")},
+            tools["note_revise"], {"title": "Dinner, 9 Sept", "body": _b("b")},
         ),
-        "refused/update_ambiguous": (tools["note_update"], {"title": "Wedding", "body": _b("b")}),
-        "nothing_found/update": (tools["note_update"], {"title": "Nope", "body": _b("b")}),
+        "refused/update_ambiguous": (tools["note_revise"], {"title": "Wedding", "body": _b("b")}),
+        "nothing_found/update": (tools["note_revise"], {"title": "Nope", "body": _b("b")}),
         "unavailable/update_stale": (
-            stale_tools["note_update"], {"title": "Dinner, 9 Sept", "body": _b("b")},
+            stale_tools["note_revise"], {"title": "Dinner, 9 Sept", "body": _b("b")},
         ),
     }
     exempt = {"refused/create_domain"}
@@ -823,7 +823,7 @@ async def test_note_create_refuses_a_body_out_of_form_and_names_the_rule(rule, b
     assert await store.standing(unit=UNIT) == ()
 
 
-async def test_note_update_may_keep_a_bare_id_the_head_already_cites():
+async def test_note_revise_may_keep_a_bare_id_the_head_already_cites():
     """A restatement carries the head's own ids forward as bare ids; any
     other bare id is one she could only have invented."""
     store = InMemoryNoteStore()
@@ -831,7 +831,7 @@ async def test_note_update_may_keep_a_bare_id_the_head_already_cites():
     tools = _tools(notes=store)
     await tools["note_read"](title="Dinner, 9 Sept")
 
-    kept = await tools["note_update"](
+    kept = await tools["note_revise"](
         title="Dinner, 9 Sept",
         body="## Decided\n- Miles booked it (Miles Novak) [#1, 777]\n## Open",
     )
@@ -841,7 +841,7 @@ async def test_note_update_may_keep_a_bare_id_the_head_already_cites():
         "## Decided\n- Miles booked it (Miles Novak) [501, 777]\n## Open"
     )
 
-    invented = await tools["note_update"](
+    invented = await tools["note_revise"](
         title="Dinner, 9 Sept", body="## Decided\n- booked (Miles Novak) [#1, 778]\n## Open",
     )
     assert invented["status"] == "refused" and "unknown_id" in invented["note"]
@@ -853,7 +853,7 @@ def test_the_body_argument_names_the_grammar():
     and from the refusal; nothing else teaches it on the tag path."""
     tools = _tools(notes=InMemoryNoteStore())
     create = tools["note_create"].__doc__ or ""
-    update = tools["note_update"].__doc__ or ""
+    update = tools["note_revise"].__doc__ or ""
     create_body = create[create.index("    body:"):]
     assert "## Decided and ## Open" in create_body and "[#n]" in create_body
     assert "[#n]" in update[update.index("    body:"):]
