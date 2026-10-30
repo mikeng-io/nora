@@ -1,5 +1,8 @@
 # Typed Identity and complete historical recovery
 
+> **2026-10-31:** answerability/reply and coverage acceptance quoted below is
+> historical; [31 §6](31-build-one-session.md#6-bounded-cutover-acceptance-2026-10-31) owns current bounded cutover acceptance.
+
 > 2026-10-21 (18 / ADR 0026): the status and contract below describe the earlier implementation. [18](18-extraction.md) places source statements in Record extraction and restores Character entries as bounded profile, traits and hypotheses cards; [10 §6](10-honcho-audit.md#6-honchos-architecture-mapped) maps Honcho into the layers. Answerability and the reply replay, rather than Character-line fact coverage, gate the switch.
 
 Status: implemented locally; independent review and live acceptance pending, 2026-10-19. This amends
