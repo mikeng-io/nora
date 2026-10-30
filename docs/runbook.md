@@ -657,6 +657,12 @@ writing `/bridge-projection/{platform}.json` into the named volume all four
 bridges mount read-only. It has no `depends_on` on `nora` — it keeps
 publishing while the app is stopped, by design.
 
+App-only releases reuse the bridge and publisher image digests. Their build
+fingerprints exclude generated application version stamps in `nora/__init__.py`,
+`pyproject.toml` and the editable Nora package in `uv.lock`; code, dependencies
+and build recipes still invalidate them. Reused images retain their original
+build version and provenance.
+
 **Two health surfaces, deliberately split.** `/live` (what the Compose
 healthcheck polls) only says the process is up; `/health` says the
 published files reflect current authorization truth — it reports 503 while

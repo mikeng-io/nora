@@ -15,6 +15,7 @@ import re
 import subprocess
 import tarfile
 import tempfile
+import tomllib
 from pathlib import Path
 
 import yaml
@@ -291,12 +292,36 @@ def _module_names(source: str, current: str) -> tuple[set[str], set[str]]:
     return required, speculative
 
 
+def _bridge_input_blob(commit: str, path: str) -> str:
+    """Exclude generated app versions, retaining code and dependency inputs."""
+    if path not in {'nora/__init__.py', 'pyproject.toml', 'uv.lock'}:
+        return run('git', 'rev-parse', f'{commit}:{path}')
+    text = run('git', 'show', f'{commit}:{path}')
+    if path == 'nora/__init__.py':
+        content = re.sub(r'(?m)^(__version__ = )"[^"\n]+"$',
+                         r'\1"<app-release>"', text, count=1)
+    else:
+        data = tomllib.loads(text)
+        if path == 'pyproject.toml':
+            project = data.get('project', {})
+            if project.get('name') == 'nora':
+                project.pop('version', None)
+        else:
+            for package in data.get('package', []):
+                if (package.get('name') == 'nora'
+                        and package.get('source') == {'editable': '.'}):
+                    package.pop('version', None)
+        content = json.dumps(data, sort_keys=True, separators=(',', ':'))
+    return hashlib.sha256(content.encode()).hexdigest()
+
+
 def _closure_fingerprint(commit: str, entry: str) -> str:
     """Content digest of an entrypoint's transitive local-import closure.
 
     Walks `git show` sources through `nora/` and `deploy/`; every reached file
-    contributes its blob sha. Importing a.b.c executes the ancestor
-    __init__.py files, so they join the walk too. Non-code inputs are bound
+    contributes its content hash. Generated application versions are excluded;
+    code and dependency changes still invalidate the image. Importing a.b.c
+    executes the ancestor __init__.py files, so they join the walk too. Non-code inputs are bound
     to their mechanism, not swept by proximity: a file is an input only when
     a reached module resolves it relative to `__file__` (the pattern
     migrations_runner uses for its alembic dir), when it sits in the
@@ -354,7 +379,7 @@ def _closure_fingerprint(commit: str, entry: str) -> str:
     reached |= {p for p in tracked
                 if any(p == d or p.startswith(d + '/') for d in data_dirs)}
     blob = '\n'.join(
-        f'{p}:{run("git", "rev-parse", f"{commit}:{p}")}' for p in sorted(reached))
+        f'{p}:{_bridge_input_blob(commit, p)}' for p in sorted(reached))
     return 'closure:' + hashlib.sha256(blob.encode()).hexdigest()
 
 

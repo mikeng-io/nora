@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import importlib.util
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -518,6 +519,8 @@ def publisher_source(tmp_path, monkeypatch):
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(ROOT / dockerfile, target)
     (repo / 'app/package-lock.json').write_text('{"generated": true}')
+    for name in ('pyproject.toml', 'uv.lock'):
+        shutil.copy(ROOT / name, repo / name)
     shutil.copy(ROOT / 'docker-compose.yml', repo)
     shutil.copy(ROOT / 'scripts/gen_version_manifest.py', repo / 'scripts')
 
@@ -1161,6 +1164,41 @@ def test_selection_pins_previous_manifest_by_immutable_commit(publisher_source, 
     assert selected['previous'] == deployment_commit
     assert reads == ['contents/release.json?ref=' + deployment_commit]
     assert bundle.previous_manifest('mikeng-io/nora', selected['previous']) == previous
+
+
+def test_python_bridge_inputs_ignore_app_version_stamps(publisher_source):
+    bundle, state, git = publisher_source
+    before = {name: bundle.build_inputs(name, state['current'])
+              for name in bundle.PYTHON_ENTRIES}
+    app_before = bundle.build_inputs('nora', state['current'])
+    for name, pattern in (
+        ('nora/__init__.py', r'(?m)^(__version__ = ")[^"]+"'),
+        ('pyproject.toml', r'(?m)^(version = ")[^"]+"'),
+        ('uv.lock', r'(\[\[package\]\]\nname = "nora"\nversion = ")[^"]+"'),
+    ):
+        path = Path(name)
+        text = path.read_text()
+        changed, count = re.subn(pattern, lambda m: m[1] + '99.0.0' + '"', text, count=1)
+        assert count == 1 and changed != text
+        path.write_text(changed)
+    git('add', '.')
+    git('commit', '-qm', 'chore: generated app release stamps')
+    commit = git('rev-parse', 'HEAD')
+    assert bundle.build_inputs('nora', commit) != app_before
+    assert all(bundle.build_inputs(name, commit) == inputs
+               for name, inputs in before.items())
+
+    lock = Path('uv.lock')
+    changed, count = re.subn(
+        r'(\[\[package\]\]\nname = "aiohttp"\nversion = ")[^"]+"',
+        lambda m: m[1] + '0.0.0"', lock.read_text(), count=1)
+    assert count == 1
+    lock.write_text(changed)
+    git('add', '.')
+    git('commit', '-qm', 'fix: generated dependency lock change')
+    dependency_commit = git('rev-parse', 'HEAD')
+    assert all(bundle.build_inputs(name, dependency_commit) != inputs
+               for name, inputs in before.items())
 
 
 def test_python_bridge_inputs_follow_the_import_closure(publisher_source):

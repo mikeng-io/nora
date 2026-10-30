@@ -1,0 +1,9 @@
+[
+  {
+    "name": "generated app version stamps preserve bridge image inputs",
+    "file": "scripts/release_bundle.py",
+    "old": "        f'{p}:{_bridge_input_blob(commit, p)}' for p in sorted(reached))",
+    "new": "        f'{p}:{run(\"git\", \"rev-parse\", f\"{commit}:{p}\")}' for p in sorted(reached))",
+    "target": "tests/unit/test_release_deployment.py::test_python_bridge_inputs_ignore_app_version_stamps"
+  }
+]
