@@ -84,6 +84,7 @@ members:
   - 25-rollup.md
   - 30-cognition.md
   - 35-the-proactive-turn-reviews-the-situation.md
+  - 36-unit-owned-commitments.md
   - 40-register.md
   - 50-character-and-standing.md
   - 55-self.md
@@ -121,3 +122,5 @@ edges:
   - {src: 30-cognition, dst: ../dreamer-agent-loop/43-note-dreamers-are-research-loops.md, rel: extends, provenance: asserted}
   - {src: 30-cognition, dst: ../dreamer-agent-loop/39-proactive-ooda-loop.md, rel: supersedes, provenance: asserted}
   - {src: 30-cognition, dst: ../unified-memory/27-the-memory-is-a-graph.md, rel: depends_on, provenance: asserted}
+  - {src: 36-unit-owned-commitments, dst: 30-cognition, rel: amends, provenance: asserted}
+  - {src: 36-unit-owned-commitments, dst: 35-the-proactive-turn-reviews-the-situation, rel: amends, provenance: asserted}

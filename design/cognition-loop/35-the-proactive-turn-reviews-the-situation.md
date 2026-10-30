@@ -13,6 +13,8 @@ edges:
 
 ## 1. The shape, and it stays this simple
 
+> 2026-10-30 amendment: [36](36-unit-owned-commitments.md) §4–§5 replaces the no-dedupe/no-screen position below after a verified cross-room repeat. Unit subject ownership, pending uniqueness and fire-time premise/prior-send checks are now specified. The three pieces and the conscious turn’s final judgement remain. §4 below describes this node’s original scope only.
+
 There are three pieces and only three:
 
 1. **Cognition notices.** It wakes, reads what changed, and when something

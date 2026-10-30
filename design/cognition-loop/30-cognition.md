@@ -65,6 +65,8 @@ amended in place where the ruling changed it.
 
 ## 1. What code hands it
 
+> 2026-10-30 design amendment: [36](36-unit-owned-commitments.md) §2–§3 makes reminder and stimulus composition unit-wide and adds the complete pending-commitments block. The linked, agenda-room-only reminder view described below is the prior behaviour. General read-tool bindings remain Job 2 (§9 there).
+
 Built once per session, in code, before any model call:
 
 - **Step ①'s reading of each item** (2026-10-28, 27 §7 rule 1): every agenda
@@ -168,6 +170,8 @@ versions injected, the config revision in force, and the model id and route
 ([10](10-tiers.md) §8), that is enough to run it again.
 
 ## 2. What it holds
+
+> Reminder scope amendment: [36](36-unit-owned-commitments.md) §4 replaces agenda-bound `remind` delivery and reminder ownership checks with unit ownership and a delivery address. Its default is the subject evidence room, else home. Other verb bindings below are unchanged pending Job 2.
 
 | class | verbs | leaves the session how |
 |---|---|---|
@@ -302,6 +306,8 @@ it can rewrite, and counted by rule; never silently dropped.
 (their subject rows resolve to ids shown or fetched) and 10 (provenance and
 history), plus the self-wake guards of [20](20-observe.md) §3. They carry no
 schema, mode or lineage: they write a stimulus, not a tier.
+
+> Dedupe and fire amendment: [36](36-unit-owned-commitments.md) §4–§5 replaces the subject-rows/addressee key below with a mandatory resolved subject per unit, atomic supersede and a fire-time prior-send check. Unlinked legacy rows no longer fire on the flag alone. These are design requirements, not implemented claims.
 
 **Enforced by code on every act** — the general guards, and the only ones:
 
