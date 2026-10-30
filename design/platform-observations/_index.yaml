@@ -11,6 +11,7 @@ members:
   - 02-observation-contract.md
   - 03-model-projections.md
   - 04-build-and-acceptance.md
+  - 05-occasion-map.md
 open_questions:
   - id: Q1
     question: Exact pinned bridge dependency versions and recorded fixtures for native poll/reaction transitions
@@ -25,6 +26,7 @@ open_questions:
     question: Existing retention and deletion policy mapped to new observation stores at implementation time
     status: open
 edges:
+  - {src: 05-occasion-map, dst: 03-model-projections, rel: details, provenance: operator-requested}
   - {src: 00-overview, dst: ../unified-memory/32-platform-observations.md, rel: supersedes, provenance: operator-requested}
   - {src: 01-coverage, dst: 00-overview, rel: grounds, provenance: inspected-source}
   - {src: 02-observation-contract, dst: ../platform-bridges/02-wire-and-platforms.md, rel: amends, provenance: proposed}
