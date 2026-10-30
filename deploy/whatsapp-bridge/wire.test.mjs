@@ -9,6 +9,8 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { mkdtempSync, rmSync, writeFileSync, appendFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -251,6 +253,32 @@ test('enqueue falls back to EVAL on NOSCRIPT', async () => {
 // -- journal contract -----------------------------------------------------------
 
 function tmpDir() { return mkdtempSync(path.join(tmpdir(), 'journal-')); }
+
+test('journal capacity is checked on the file actually opened for append', (t) => {
+  const dir = tmpDir();
+  const file = path.join(dir, 'capture');
+  const nativeOpen = fs.openSync;
+  let replaced = false;
+  try {
+    writeFileSync(file, '');
+    t.mock.method(fs, 'openSync', (name, flags, ...args) => {
+      if (name === file && flags === 'a' && !replaced) {
+        replaced = true;
+        writeFileSync(`${file}.replacement`, Buffer.alloc(65));
+        fs.renameSync(`${file}.replacement`, file);
+      }
+      return nativeOpen(name, flags, ...args);
+    });
+    syncBuiltinESMExports();
+    assert.throws(() => new Journal(file, { maxBytes: 64 }).append({ probe: true }), /capacity/);
+    assert.equal(replaced, true);
+    assert.equal(readFileSync(file).length, 65);
+  } finally {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test('journal lines match the frozen <len> <crc32> <json> format', () => {
   const dir = tmpDir();

@@ -674,7 +674,7 @@ async function handleSend(req, res) {
     log(`send ok jid=${redactJid(jid)} id=${sent?.key?.id || '?'}`);
     sendJson(res, 200, sentResult(sent));
   } catch (err) {
-    sendJson(res, 500, { error: String(err?.message || err) });
+    sendJson(res, 500, { error: 'bridge operation failed' });
   }
 }
 
@@ -711,7 +711,7 @@ async function handleSendMedia(req, res) {
     log(`send-media ok jid=${redactJid(jid)} kind=${mediaType} bytes=${bufferData.length} id=${sent?.key?.id || '?'}`);
     sendJson(res, 200, sentResult(sent));
   } catch (err) {
-    sendJson(res, 500, { error: String(err?.message || err) });
+    sendJson(res, 500, { error: 'bridge operation failed' });
   }
 }
 
@@ -731,7 +731,7 @@ async function handleEdit(req, res) {
     log(`edit ok jid=${redactJid(jid)} id=${id}`);
     sendJson(res, 200, { ok: true });
   } catch (err) {
-    sendJson(res, 500, { error: String(err?.message || err) });
+    sendJson(res, 500, { error: 'bridge operation failed' });
   }
 }
 
@@ -755,7 +755,7 @@ async function handleReact(req, res) {
     log(`react ok jid=${redactJid(jid)} id=${messageId} remove=${!!remove}`);
     sendJson(res, 200, { ok: true });
   } catch (err) {
-    sendJson(res, 500, { error: String(err?.message || err) });
+    sendJson(res, 500, { error: 'bridge operation failed' });
   }
 }
 
@@ -825,10 +825,11 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 404, { error: 'not_found' });
     }
   } catch (err) {
-    log(`request error ${route}: ${err?.message || err}`);
+    log('request failed');
     if (!res.headersSent) {
       const status = err instanceof SyntaxError ? 400 : (err?.message === 'body too large' ? 413 : 500);
-      sendJson(res, status, { error: status === 400 ? 'invalid json body' : String(err?.message || err) });
+      sendJson(res, status, { error: status === 400 ? 'invalid json body'
+        : status === 413 ? 'body too large' : 'bridge operation failed' });
     } else {
       res.end();
     }

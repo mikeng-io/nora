@@ -514,6 +514,40 @@ func TestCustodyPutGetHash(t *testing.T) {
 	}
 }
 
+func TestCustodyRefusesEscapingReads(t *testing.T) {
+	root := t.TempDir()
+	c, err := NewCustody(filepath.Join(root, "custody"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := []byte("generated sibling bytes")
+	sum := sha256.Sum256(data)
+	meta, err := json.Marshal(CustodyRecord{Key: "outside", SHA256: hex.EncodeToString(sum[:])})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string][]byte{"outside.bin": data, "outside.json": meta} {
+		if err := os.WriteFile(filepath.Join(root, name), body, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, ok := c.Get("../outside"); ok {
+		t.Fatal("custody read escaped its directory")
+	}
+	if _, ok := c.Stat("../outside"); ok {
+		t.Fatal("custody stat escaped its directory")
+	}
+	if _, err := c.Put("inside", strings.NewReader("inside bytes"), "text/plain", "", "e"); err != nil {
+		t.Fatal(err)
+	}
+	if _, body, ok := c.Get("inside"); !ok || string(body) != "inside bytes" {
+		t.Fatal("valid custody key must remain readable")
+	}
+	if _, _, ok := c.Get("../inside"); ok {
+		t.Fatal("invalid key must not alias a valid custody key")
+	}
+}
+
 // --- capture pipeline ---------------------------------------------------------
 
 // fakeQueue models the frozen Lua's dedupe faithfully — a fake that answers
@@ -1709,9 +1743,9 @@ func TestLegacyEnvelopeNoTraceNoPanic(t *testing.T) {
 func TestCanonicalDSNStripsDialect(t *testing.T) {
 	cases := map[string]string{
 		"postgresql+asyncpg://u:p@h:5432/db": "postgresql://u:p@h:5432/db",
-		"postgres+asyncpg://u:p@h/db":       "postgres://u:p@h/db",
-		"postgresql://u:p@h/db":             "postgresql://u:p@h/db",
-		"host=h port=5432 user=u":           "host=h port=5432 user=u",
+		"postgres+asyncpg://u:p@h/db":        "postgres://u:p@h/db",
+		"postgresql://u:p@h/db":              "postgresql://u:p@h/db",
+		"host=h port=5432 user=u":            "host=h port=5432 user=u",
 	}
 	for in, want := range cases {
 		if got := canonicalDSN(in); got != want {

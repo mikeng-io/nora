@@ -18,12 +18,9 @@ export class ActionRejected extends Error {
   constructor(kind, message) { super(message); this.kind = kind; }
 }
 
-/** Strip anything that looks like a platform id or number from an error. */
-export function sanitizeError(err, kind = 'transport') {
-  let msg = String(err?.message || err || 'error').slice(0, 200);
-  msg = msg.replace(/[0-9]+(:[0-9]+)?@[a-z.]+/g, '<jid>')
-    .replace(/\+?\d{7,15}/g, '<num>');
-  return { kind, message: msg };
+/** External error details never enter action results or HTTP responses. */
+export function sanitizeError(_err, kind = 'transport') {
+  return { kind, message: 'bridge operation failed' };
 }
 
 function targetJid(request) {
@@ -303,7 +300,7 @@ export function createV1(deps) {
           } catch (err) {
             const bad = /over bound|invalid/.test(String(err?.message || ''));
             return sendJson(res, bad ? (String(err.message).includes('bound') ? 413 : 400) : 500,
-              { error: String(err?.message || 'attachment store failed') });
+              { error: bad ? 'invalid attachment or size' : 'attachment store failed' });
           }
         }
         case req.method === 'GET' && url.pathname.startsWith('/v1/attachments/'): {
@@ -347,7 +344,8 @@ export function createV1(deps) {
     } catch (err) {
       if (!res.headersSent) {
         const status = err instanceof SyntaxError ? 400 : (err?.message === 'body too large' ? 413 : 500);
-        return sendJson(res, status, { error: String(err?.message || 'v1 error').slice(0, 160) });
+        return sendJson(res, status, { error: status === 400 ? 'invalid json body'
+          : status === 413 ? 'body too large' : 'bridge operation failed' });
       }
       res.end();
       return true;

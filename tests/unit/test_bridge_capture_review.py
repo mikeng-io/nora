@@ -790,6 +790,39 @@ class _FakeStore:
 
 
 class TestQueueErrorLogging:
+    @pytest.mark.parametrize("boundary", ["reserve", "terminal", "signal"])
+    async def test_action_ids_cannot_inject_error_log_lines(
+            self, boundary, tmp_path, caplog):
+        hostile_id = "generated-action\nFORGED log entry"
+        secret = "generated-private-error-detail"  # noqa: S105 — planted fixture
+        svc = DurableActionService(
+            store=_BoomStore(secret), platform="signal", account_key="a",
+            execute=_unused_execute, receipt_intents=lambda: frozenset())
+        with caplog.at_level(logging.ERROR):
+            if boundary == "reserve":
+                state = await svc.run_owned(
+                    action_id=hostile_id,
+                    owner=ActionOwner("event_receipt", "e1"),
+                    op="send", request={})
+                assert state == "unavailable"
+            elif boundary == "terminal":
+                assert await svc._terminal(hostile_id, "confirmed") is None
+            else:
+                from unittest.mock import AsyncMock
+
+                mod, _, _ = TestSignalCustodyBinding()._wrapper(tmp_path)
+                executor = mod._SignalExecutor(
+                    SimpleNamespace(send=AsyncMock(side_effect=RuntimeError(secret))),
+                    SimpleNamespace())
+                reply = await executor({"action_id": hostile_id, "op": "send"})
+                assert reply.state == "uncertain"
+        emitted = "\n".join(r.getMessage() for r in caplog.records)
+        assert "RuntimeError" in emitted
+        assert hostile_id not in emitted
+        assert "FORGED" not in emitted
+        assert secret not in emitted
+        assert all(r.exc_info is None for r in caplog.records)
+
     async def test_a_credential_bearing_failure_logs_the_type_only(
             self, caplog):
         """`log.exception` used to export the SDK exception BODY. Now the

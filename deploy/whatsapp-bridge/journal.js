@@ -38,7 +38,7 @@
  * restart. A JournalError anywhere is a broken durable capture: the bridge
  * halts upstream and exits, it never drops the oldest.
  */
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, statSync, truncateSync, writeSync } from 'node:fs';
+import { closeSync, existsSync, fstatSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, truncateSync, writeSync } from 'node:fs';
 import path from 'node:path';
 import { crc32 } from 'node:zlib';
 
@@ -72,12 +72,11 @@ export class Journal {
   append(record) {
     const line = encodeRecord(record);
     try {
-      const stat = existsSync(this.path) ? statSync(this.path) : null;
-      if (stat && stat.size + line.length > this.maxBytes) {
-        throw new JournalError(`journal ${this.path} over capacity ${this.maxBytes}`);
-      }
       const fd = openSync(this.path, 'a');
       try {
+        if (fstatSync(fd).size + line.length > this.maxBytes) {
+          throw new JournalError(`journal ${this.path} over capacity ${this.maxBytes}`);
+        }
         writeSync(fd, line);
         fsyncSync(fd);
       } finally {

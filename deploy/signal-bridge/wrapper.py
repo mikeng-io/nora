@@ -165,7 +165,7 @@ class _SignalExecutor:
                 return ActionReply("confirmed" if res.ok else "uncertain")
             return ActionReply("rejected", kind="unsupported", message=op)
         except Exception as exc:  # noqa: BLE001 — effect boundary; logged by type, outcome stays honest
-            log.error("effect error for %s: %s", aid, type(exc).__name__)
+            log.error("effect error: %s", type(exc).__name__)
             return ActionReply(
                 "uncertain", kind="transport", message=type(exc).__name__)
 

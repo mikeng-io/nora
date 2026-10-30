@@ -239,6 +239,9 @@ func (c *Custody) FetchURL(ctx context.Context, hc *http.Client, rawURL, key, pi
 // Get returns the record and opens the object. It is an error (nil, false)
 // for an unknown key — never a fabricated empty file.
 func (c *Custody) Get(key string) (*CustodyRecord, []byte, bool) {
+	if !ValidKey(key) {
+		return nil, nil, false
+	}
 	rec, err := c.load(key)
 	if err != nil {
 		return nil, nil, false
@@ -267,8 +270,10 @@ func (c *Custody) Stat(key string) (*CustodyRecord, bool) {
 	return rec, true
 }
 
-func (c *Custody) binPath(key string) string  { return filepath.Join(c.dir, key+".bin") }
-func (c *Custody) metaPath(key string) string { return filepath.Join(c.dir, key+".json") }
+func (c *Custody) binPath(key string) string { return filepath.Join(c.dir, filepath.Base(key)+".bin") }
+func (c *Custody) metaPath(key string) string {
+	return filepath.Join(c.dir, filepath.Base(key)+".json")
+}
 
 func (c *Custody) load(key string) (*CustodyRecord, error) {
 	raw, err := os.ReadFile(c.metaPath(key))

@@ -16,7 +16,8 @@ import { spawn } from 'node:child_process';
 import { createCipheriv } from 'node:crypto';
 import { once } from 'node:events';
 import http from 'node:http';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -44,6 +45,43 @@ import {
   SECRET_ENC_MESSAGE_EDIT,
 } from './bridge_helpers.js';
 import { proto } from '@whiskeysockets/baileys';
+import { sendJson } from './http_util.js';
+
+test('legacy HTTP errors never expose SDK or request exception details', async () => {
+  const source = readFileSync(new URL('./bridge.js', import.meta.url), 'utf8');
+  const effects = source.slice(source.indexOf('async function handleSend('), source.indexOf('function healthV1()'));
+  const httpHandler = source.slice(source.indexOf('const server = http.createServer('), source.indexOf('// -- Boot'));
+  const detail = 'generated-private-detail\n at sdk (/private/generated/file.js:10)';
+  let calls = 0;
+  const handler = runInNewContext(`${effects}\n${httpHandler}\nserver`, {
+    http: { createServer: (callback) => callback }, URL, Buffer, SyntaxError,
+    DURABLE: false, BRIDGE_TOKEN: 'test-bearer', authorizedBridgeRequest, sendJson,
+    requireSocket: () => true, validJidOr400: (_res, jid) => isValidTargetJid(jid),
+    readJsonBody: async (req) => {
+      if (req.failRead) throw new Error(detail);
+      return req.body;
+    },
+    buildMediaPayload, recentMessages: { get: () => ({ key: { id: 'cached' } }) },
+    sendWithTimeout: async () => { calls++; throw new Error(detail); }, log: () => {},
+  });
+  for (const route of ['/send', '/send-media', '/edit', '/react', '/send']) {
+    const failRead = calls === 4;
+    const req = { method: 'POST', url: route, headers: { authorization: 'Bearer test-bearer' },
+      failRead, body: { jid: '85290000100@s.whatsapp.net', text: 'hello', id: 'm1',
+        media_type: 'image', data_base64: 'eA==', message_id: 'cached', emoji: '👀' } };
+    const res = {
+      status: null, headersSent: false, body: '',
+      writeHead(status) { this.status = status; this.headersSent = true; },
+      end(body) { this.body = body; },
+    };
+    await handler(req, res);
+    assert.equal(res.status, 500);
+    assert.ok(JSON.parse(res.body).error);
+    assert.equal(res.body.includes('generated-private-detail'), false);
+    assert.equal(res.body.includes('/private/generated'), false);
+  }
+  assert.equal(calls, 4);
+});
 
 // -- JID parsing --------------------------------------------------------------
 

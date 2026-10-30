@@ -536,8 +536,7 @@ class DurableActionService:
                     owner_generation=owner.generation, op=op,
                     request=request)
         except Exception as exc:  # noqa: BLE001 — boundary catch; logged by type
-            log.error("action store unavailable for %s: %s",
-                      action_id, type(exc).__name__)
+            log.error("action store unavailable: %s", type(exc).__name__)
             return "unavailable"
         if verdict == "execute":
             bt.lifecycle(self._metrics, "delivery_started",
@@ -606,8 +605,7 @@ class DurableActionService:
                     conn, action_id, state, platform_ref=platform_ref,
                     platform_ms=platform_ms, error=error)
         except Exception as exc:  # noqa: BLE001 — boundary catch; logged by type
-            log.error("terminal write failed for %s: %s",
-                      action_id, type(exc).__name__)
+            log.error("terminal write failed: %s", type(exc).__name__)
             return None
 
 

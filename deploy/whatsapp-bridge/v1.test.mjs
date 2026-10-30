@@ -471,7 +471,8 @@ test('a started row is NEVER blindly retried — the replay answers uncertain', 
   const store = new ActionStore(pg, { platform: 'whatsapp', accountKey: 'a' });
   const ctx = fakeCtx();
   pg.works.set('1', workRow(1));
-  ctx.sendWithTimeout = async () => { throw new Error('socket timeout'); };
+  let effects = 0;
+  ctx.sendWithTimeout = async () => { effects++; throw new Error('generated-private-sdk-detail'); };
 
   const first = await runAction({ store, ctx, actionId: 'a4',
     owner: { kind: 'work', id: 'w-1', generation: 1 }, op: 'send', request: REQ });
@@ -482,6 +483,8 @@ test('a started row is NEVER blindly retried — the replay answers uncertain', 
     owner: { kind: 'work', id: 'w-1', generation: 1 }, op: 'send', request: REQ });
   assert.equal(second.state, 'uncertain');     // recorded state replayed
   assert.equal(second.outcome, 'uncertain');
+  assert.equal(JSON.stringify([first, second]).includes('generated-private-sdk-detail'), false);
+  assert.equal(effects, 1);
 });
 
 test('same id + different request conflicts without an upstream call', async () => {
@@ -765,6 +768,32 @@ function fakeRes() {
     get headersSent() { return this.status !== null; },
   };
 }
+
+test('HTTP errors retain outcomes without exposing exception details', async () => {
+  const privateDetail = 'generated-private-detail\n at sdk (/private/generated/file.js:10)';
+  const broken = () => { throw new Error(privateDetail); };
+  const deps = {
+    store: { reserve: broken, get: broken }, ctx: fakeCtx(),
+    attachments: { put: broken }, health: () => ({}), self: () => null,
+  };
+  const v1 = createV1(deps);
+  const cases = [
+    ['POST', '/v1/actions', { action_id: 'error-case', owner: { kind: 'live_invocation', id: 'i1' },
+      op: 'send', request: REQ }, 503],
+    ['GET', '/v1/actions/error-case', null, 500],
+    ['PUT', '/v1/attachments/key', Buffer.from('body'), 500],
+    ['POST', '/v1/actions', Buffer.from('{"generated-private-detail":'), 400],
+  ];
+  for (const [method, pathname, body, status] of cases) {
+    const res = fakeRes();
+    await v1(fakeReq(method, pathname, body), res, new URL(`http://b${pathname}`));
+    assert.equal(res.status, status);
+    assert.ok(res.json.error);
+    assert.equal(res.body.includes('generated-private-detail'), false);
+    assert.equal(res.body.includes('/private/generated'), false);
+    if (status === 503) assert.equal(res.json.state, 'unavailable');
+  }
+});
 
 test('POST /v1/actions validates owner kinds before touching the store', async () => {
   const pg = fakePg();
