@@ -376,6 +376,20 @@ async def read_shared(
                             )
                     elif item.name == "conclude":
                         args = item.arguments
+                        conclusion = _result_payload(item.result)
+                        if conclusion.get("status") != "ok":
+                            # A `conclude` whose result is not `ok` is not a
+                            # recorded conclusion — the toolUse alone proves
+                            # nothing. It stays visible as unresolved for the
+                            # next session to address, never presented as
+                            # accepted state.
+                            if conclusion.get("status") != "unresolved":
+                                unresolved_lines.append(
+                                    f"conclude "
+                                    f"{str(args.get('subject') or '?')[:80]!r}: "
+                                    f"{conclusion.get('status') or 'no result'}"
+                                )
+                            continue
                         detail = " · ".join(
                             part for part in (
                                 f"options: {args['options']}"

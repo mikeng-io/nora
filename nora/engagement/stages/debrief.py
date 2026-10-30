@@ -458,6 +458,28 @@ class Wiring:
     working_set_max_chars: int = DEFAULT_WORKING_SET_MAX_CHARS
 
 
+def _tool_result_status(result: Any) -> str:
+    """The verb's `status` out of a Strands `toolResult`, or `""` when the
+    result carries no parseable payload — an empty string is never `ok`, so
+    a malformed or absent result applies nothing."""
+    if not isinstance(result, dict):
+        return ""
+    for block in result.get("content") or ():
+        if isinstance(block, dict):
+            payload = block.get("json")
+            if isinstance(payload, dict):
+                return str(payload.get("status") or "")
+            text = block.get("text")
+            if isinstance(text, str):
+                try:
+                    parsed = json.loads(text)
+                except (ValueError, TypeError):
+                    continue
+                if isinstance(parsed, dict):
+                    return str(parsed.get("status") or "")
+    return ""
+
+
 async def run(
     *,
     trace: TagTrace,
@@ -535,6 +557,11 @@ async def run(
                 if item.name != "conclude":
                     continue
                 delta = item.arguments
+                if _tool_result_status(item.result) != "ok":
+                    # A `conclude` that did not succeed is not an accepted
+                    # conclusion — a toolUse with a failed or missing result
+                    # applies nothing.
+                    continue
                 body = delta.get("standing_body")
                 at_room = delta.get("standing_room") or room_ref
                 if not body or at_room != room_ref:
