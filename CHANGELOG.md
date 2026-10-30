@@ -1,5 +1,17 @@
 # Changelog
 
+## [7.11.44](https://github.com/mikeng-io/nora/compare/v7.11.43...v7.11.44) (2026-10-30)
+
+
+### Bug Fixes
+
+* **cognition:** close the review's gaps in the one session ([27b1bef](https://github.com/mikeng-io/nora/commit/27b1bef6387e11dbde96b32069ffdd4e2937e8f4))
+* **cognition:** include message-owned evidence in wake comprehension ([377d51d](https://github.com/mikeng-io/nora/commit/377d51d134ad459ebaebee7e32f3fd912f9ff456))
+* **cognition:** preserve the disabled surface and expose operator requeue ([8d2fb29](https://github.com/mikeng-io/nora/commit/8d2fb29808e9a28cdb0b9571a53b63b52cc77a13))
+* **cognition:** replay social batches and relink committed Register rows ([27396cb](https://github.com/mikeng-io/nora/commit/27396cb201f41bfb2bc54922592867641b143134))
+* **cognition:** respect the eval boundary and return local admission refusals ([660119f](https://github.com/mikeng-io/nora/commit/660119fc0cec3f3d535d3279dbfe8d3e8bed8fdf))
+* **cognition:** run a wake whose message is not projected yet ([a22b628](https://github.com/mikeng-io/nora/commit/a22b6287c3b40126702130fcf3d02e5b3df81b23))
+
 ## [7.11.43](https://github.com/mikeng-io/nora/compare/v7.11.42...v7.11.43) (2026-10-30)
 
 
