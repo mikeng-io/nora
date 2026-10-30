@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.11.45](https://github.com/mikeng-io/nora/compare/v7.11.44...v7.11.45) (2026-10-30)
+
+
+### Maintenance
+
+* **memory:** use one vocabulary for registered notebook tools ([2da875d](https://github.com/mikeng-io/nora/commit/2da875d1bfed16403682fd0988ec91cee2986856))
+* restore the note retirements metric name ([7855ed3](https://github.com/mikeng-io/nora/commit/7855ed317f8d288d38aa8bce0a02ddf563109b48))
+
 ## [7.11.44](https://github.com/mikeng-io/nora/compare/v7.11.43...v7.11.44) (2026-10-30)
 
 
