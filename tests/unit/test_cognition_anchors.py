@@ -14,7 +14,7 @@ def test_candidate_shapes_emit_only_explicit_room_alias_time_scenario_counts():
     found = candidates(rows, {"generated-private-room": "room_generated"})
     assert any(r["scenario"] == 2 and r["before_ms"] == 1001 for r in found)
     assert any(r["scenario"] == 3 and r["before_ms"] == 3001 for r in found)
-    assert all(set(r) == {"room", "before_ms", "scenario", "counts"} for r in found)
+    assert all(set(r) == {"room", "before_ms", "scenario", "counts", "message_id"} for r in found)
     encoded = json.dumps(found)
     for private in ("generated-private-room", "generated-author", "Dinner", "ticket"):
         assert private not in encoded
@@ -65,3 +65,34 @@ def test_corpus_uses_existing_trajectory_grader_fail_closed():
                                   EnvironmentState(name=NORA_ERROR, state=None),
                               ])
         assert ToolRouteGrader().evaluate(data)[0].label == "FAIL"
+
+
+def test_candidates_are_recorded_batches_not_time_proxies():
+    from nora.domain.stimuli import Stimulus, UnitView
+    from scripts.find_cognition_anchors import wake_candidates
+
+    def view(ref):
+        return UnitView(unit="generated", pending=(Stimulus(
+            id=1, unit="generated", kind="message", item="message", ref=ref,
+            at_ms=3000, recorded_at_ms=3000, platform="signal",
+            conversation_id="generated-room"),), last_activity_ms=None, last_wake=None)
+
+    matches = [{"room": "room_generated", "message_id": 12,
+                "scenario": 1, "counts": {"strength": 3}}]
+    found = wake_candidates(matches, {8: view("messages:11"), 9: view("messages:12")},
+                            {"generated-room": "room_generated"})
+    assert found == [{"room": "room_generated", "scenario": 1, "wake": 9, "strength": 3}]
+
+
+def test_writer_unparks_only_confirmed_wakes():
+    from scripts.write_cognition_anchors import anchored
+
+    corpus = {"cases": [{"metadata": {"scenario": n}, "parked": {"reason": "generated"}}
+                        for n in (1, 2)]}
+    assert anchored(corpus, [{"room": "room_generated", "scenario": 1,
+                              "wake": 9, "result": "match"}],
+                    {"room_generated": "signal"}) == 1
+    assert corpus["cases"][0] == {"metadata": {"scenario": 1, "wake": 9},
+                                  "snapshot": {"platform": "signal",
+                                               "conversation_id": "room_generated"}}
+    assert "parked" in corpus["cases"][1]

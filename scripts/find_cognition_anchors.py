@@ -120,7 +120,8 @@ def _scores(row: Moment, prior: list[Moment], history: list[Moment],
     }
 
 
-def candidates(rows: Iterable[Moment], aliases: Mapping[str, str]) -> list[dict[str, object]]:
+def candidates(rows: Iterable[Moment], aliases: Mapping[str, str], *,
+               limit: bool = True) -> list[dict[str, object]]:
     rooms: dict[str, list[Moment]] = defaultdict(list)
     for row in rows:
         if row.room in aliases and re.fullmatch(r"room_[a-z][a-z0-9_]*", aliases[row.room]):
@@ -138,7 +139,7 @@ def candidates(rows: Iterable[Moment], aliases: Mapping[str, str]) -> list[dict[
             for scenario, strength in _scores(row, prior, messages[:i], messages[i + 1:]).items():
                 if strength:
                     ranked[scenario].append((strength, {
-                        "room": aliases[room], "before_ms": row.at_ms + 1,
+                        "room": aliases[room], "before_ms": row.at_ms + 1, "message_id": row.id,
                         "scenario": scenario, "counts": {
                             "prior": len(prior),
                             "questions": sum(bool(re.search(r"[?\uFF1F]", m.body)) for m in prior),
@@ -149,8 +150,30 @@ def candidates(rows: Iterable[Moment], aliases: Mapping[str, str]) -> list[dict[
         for scenario in sorted(ranked):
             output.extend(item for _, item in sorted(
                 ranked[scenario], key=lambda pair: (-pair[0], int(str(pair[1]["before_ms"]))))
-                          [:MAX_CANDIDATES])
+                          [:MAX_CANDIDATES if limit else None])
     return output
+
+
+def wake_candidates(matches: list[dict[str, object]], wakes: Mapping[int, object],
+                    aliases: Mapping[str, str]) -> list[dict[str, object]]:
+    """Join heuristic moments to the recorded batch, never a timestamp proxy."""
+    from nora.domain.cognition_ground import record_ref
+    ranked: dict[tuple[str, int], dict[int, int]] = defaultdict(dict)
+    for wake_id, view in wakes.items():
+        for stimulus in view.pending:
+            ref = record_ref(stimulus)
+            alias = aliases.get(stimulus.conversation_id)
+            if ref is None or ref[0] != "messages" or alias is None:
+                continue
+            for match in matches:
+                if match["room"] == alias and match["message_id"] == ref[1]:
+                    key = (alias, int(match["scenario"]))
+                    strength = int(match["counts"]["strength"])
+                    ranked[key][wake_id] = max(ranked[key].get(wake_id, 0), strength)
+    return [{"room": room, "scenario": scenario, "wake": wake, "strength": strength}
+            for (room, scenario), scores in sorted(ranked.items())
+            for wake, strength in sorted(
+                scores.items(), key=lambda x: (-x[1], x[0]))[:MAX_CANDIDATES]]
 
 
 async def scan(source_url: str) -> list[dict[str, object]]:
@@ -169,9 +192,18 @@ async def scan(source_url: str) -> list[dict[str, object]]:
                 "SELECT conversation_id, ts, sender_id, coalesce(body, '') AS body, is_nora, id "
                 "FROM messages ORDER BY conversation_id, ts, id"
             ))
-            return candidates((Moment(str(r[0]), int(r[1]), str(r[2]), str(r[3]),
+            matches = candidates((Moment(str(r[0]), int(r[1]), str(r[2]), str(r[3]),
                                       bool(r[4]), int(r[5]))
-                               for r in result), aliases)
+                               for r in result), aliases, limit=False)
+            wake_ids = list(await conn.scalars(text("SELECT id FROM cognition_wake ORDER BY id")))
+        from nora.infra.sql.cognition_replay import recorded_wake
+        wakes = {}
+        for wake_id in wake_ids:
+            try:
+                _, wakes[wake_id] = await recorded_wake(engine, wake_id)
+            except ValueError:
+                continue  # incomplete recorded batch cannot be replayed
+        return wake_candidates(matches, wakes, aliases)
     finally:
         await engine.dispose()
 

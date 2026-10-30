@@ -791,10 +791,12 @@ class CognitionSessionRunner:
 
     async def on_wake(
         self, *, unit: str, view: UnitView, now_ms: int, wake_id: int,
-        replay: bool = False, historical: bool = False,
-    ) -> CognitionSessionOutcome | None:
+        replay: bool = False, historical: bool = False, inspect_only: bool = False,
+    ) -> CognitionSessionOutcome | str | None:
         """Called by the wake evaluator's hook on every wake it
-        records (`WakeHook`). Returns `None` on every path that makes no model
+        records (`WakeHook`). `inspect_only` returns the assembled agenda before
+        the model call; use it only in a disposable replay sandbox.
+        Returns `None` on every ordinary path that makes no model
         call; RAISES, after recording the wake's outcome, on every path that
         did not close. Every path writes the wake's outcome (or, if that write
         fails, leaves the wake OPEN until it expires): nothing here returns
@@ -916,7 +918,7 @@ class CognitionSessionRunner:
                 unit=unit, view=view, situation=situation, session_id=session_id,
                 wake_id=wake_id, now_ms=now_ms, doctrine_text=doctrine_text,
                 skill_text=skill_text, grounding=grounding, retained=sorted(retained),
-                spend=spend, replay=replay, historical=historical,
+                spend=spend, replay=replay, historical=historical, inspect_only=inspect_only,
             )
         except asyncio.CancelledError:
             # Only a process shutdown cancels a session (`shutdown`,
@@ -1079,8 +1081,8 @@ class CognitionSessionRunner:
         self, *, unit: str, view: UnitView, situation: Situation, session_id: int,
         wake_id: int, now_ms: int, doctrine_text: str, skill_text: str,
         grounding: Grounding, spend: TokenSpend, retained: Sequence[int] = (),
-        replay: bool = False, historical: bool = False,
-    ) -> CognitionSessionOutcome:
+        replay: bool = False, historical: bool = False, inspect_only: bool = False,
+    ) -> CognitionSessionOutcome | str:
         items = situation.agenda.items
         state = _RunState(
             session_id=session_id, wake_id=wake_id, unit=unit, now_ms=now_ms,
@@ -1109,6 +1111,8 @@ class CognitionSessionRunner:
             last_session_ms=situation.last_session_ms, tz=self._tz,
             budget=self._render_budget, graph=state.graph_text,
         )
+        if inspect_only:
+            return prompt
         token = SESSION_TOKENS.set(spend)
         result: CognitionRunResult | None = None
         trace_outcome = "llm_error"

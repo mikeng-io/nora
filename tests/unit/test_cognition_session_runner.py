@@ -445,3 +445,26 @@ async def test_stays_and_plays_join_the_same_proposal_coverage():
     answer = await memory.propose(state, items=[0], payload={k: v for k, v in proposal().items()
                                                             if k != "items"})
     assert answer["admitted"] == [0]
+
+
+async def test_inspection_renders_real_wake_clock_room_and_open_items_without_model():
+    from nora.domain.cognition_ground import EventLine, Grounding, NoteLine, RecordItem
+    from nora.testing.cognition_grounding import StaticGrounder
+
+    grounding = Grounding(
+        records={"messages:1": RecordItem(ref="messages:1", kind="message", message_id=1,
+            room=HOME, author="Generated speaker", at_ms=NOW, text="I arrived")},
+        notes=(NoteLine(id="generated-note", title="Hand over generated gifts",
+                        description="Generated open handover"),),
+        events=(EventLine(id="generated-event", room=HOME, title="Generated dinner",
+                         when_ms=NOW, venue="Generated venue", status="proposed"),),
+        room_labels={"signal:home-room": "Generated room"})
+    runner, _, agent = _runner(grounder=StaticGrounder(grounding))
+    prompt = await runner.on_wake(unit="unit-1", view=UnitView(
+        unit="unit-1", pending=_pending("unit-1"), last_activity_ms=None, last_wake=None),
+        now_ms=NOW, wake_id=0, replay=True, inspect_only=True)
+    assert isinstance(prompt, str)
+    for value in ("Generated room", "I arrived", "Hand over generated gifts", "Generated dinner"):
+        assert value in prompt
+    assert "clock" in prompt and "2027" in prompt
+    assert agent.calls == 0

@@ -69,69 +69,59 @@ uv run python -m evals injections identity_grounding --judge
 
 ## Anchoring the Cognition session corpus
 
-`cognition_session` starts with 11 parked cases, including three held-out cases.
-No baseline is claimed before anchoring. On the deploy host's eval checkout,
-run `uv run python -m scripts.find_cognition_anchors --source-url "$EVAL_SOURCE_URL"`.
-The URL must name a `*_eval` clone; the transaction is read-only. The private
-pseudonym map must contain explicit `room_*==>real` aliases. Output contains
-only those room pseudonyms, `before_ms`, scenario numbers and counts.
+The thirteen scenarios include two code guarantees and eleven parked model cases
+(three held out). The committed corpus stays parked. Anchors are materialised
+only in the deploy host's eval checkout, never committed or copied off-host.
+No live data or host access is needed to build or test these scripts.
 
-The finder searches scenarios 1-6 and 11-13 with one message-shape rule each
-(arrival, acknowledgement, plan, cancellation, ticket, options, topic, "what
-does X like"), at most 20 per room and scenario, strongest first; `counts`
-carries the rule's `strength` (visit or topic days for 5 and 12). It does not
-emit 8 or 10: a refused proposal is session output and "nothing open" is
-memory state, so those anchors are authored privately and still judged by the
-confirmer. It does not establish meaning, an open note, attendance or a
-private preference. Save the finder JSONL privately on the host,
-then confirm with the production model configured by the deployment's `[llm]`:
+Run the following **on the host**, from its eval checkout at the PR head, with
+the deployment environment loaded privately. Hold the existing eval lock for
+this sequence; do not refresh the snapshot between finding and replaying.
 
 ```bash
+exec 9>/tmp/nora-eval.lock
+flock -w 900 9 || exit 75
+umask 077
+export NORA_EVAL_PSEUDONYM_MAP=~/.config/nora/eval-pseudonyms.txt
+uv run python -m scripts.find_cognition_anchors \
+  --source-url "$EVAL_SOURCE_URL" > /tmp/cognition-candidates.jsonl
 uv run python -m scripts.confirm_cognition_anchors \
-  --source-url "$EVAL_SOURCE_URL" --config /path/to/deployment/config.toml \
-  --candidates /private/path/to/candidates.jsonl
+  --source-url "$EVAL_SOURCE_URL" --config ~/workspace/nora/config.toml \
+  --candidates /tmp/cognition-candidates.jsonl > /tmp/cognition-confirmed.jsonl
+uv run python -m scripts.write_cognition_anchors \
+  --source-url "$EVAL_SOURCE_URL" --confirmed /tmp/cognition-confirmed.jsonl
+uv run python -m evals cognition_session --sample 3 \
+  > /tmp/cognition-eval.log 2>&1
+echo "RC=$?" > /tmp/cognition-eval.rc
 ```
 
-The API key is read from the environment variable named by `llm.api_key_env`;
-load that environment privately on the host. The same clone/routing refusals
-and read-only transaction apply. Each candidate reads only its mapped room's
-messages strictly before `before_ms`, ordered by time and id. Every message
-sent to the model has epoch-millisecond time and a stable local speaker label;
-the scenario description and must/must-not come from the build brief's table.
-The configured production model returns a strict boolean; errors, timeouts,
-refusals, truncated and wrong-shape answers become `unavailable`, never
-`no_match`. No retries are made. Output is only room pseudonym, `before_ms`,
-scenario and `match` / `no_match` / `unavailable`; diagnostics are generic.
-Claude and Codex must never read message content, raw model responses or private
-logs. Run this command on the host, not through an agent session capturing input.
+Use the host-reachable model endpoints and the existing generated eval config
+setup above. The production route gets one plain POST at temperature zero,
+without `response_format` and without retries. Never show agents the model
+inputs, raw responses or private logs.
 
-A `match` confirms the message situation, not the later tool trajectory.
-This step reads messages only: it cannot establish stored open notes, admission
-refusals or preferences shared elsewhere. Keep such cases parked until that
-state is grounded privately on the host; do not infer it from a match. An empty
-result means no heuristic candidate, not that no real instance exists.
+The finder joins message-shape matches to `recorded_wake` stimulus batches,
+skipping incomplete batches. It emits only wake ids, explicit `room_*` aliases,
+scenario numbers and strength counts, at most twenty wakes per room/scenario.
+It has no heuristic for scenarios 8 and 10; those stay parked unless the
+operator supplies a real wake candidate privately in the same JSONL shape.
+An empty result means no heuristic candidate, never proof of no instance.
 
-On the host, the private `NORA_EVAL_PSEUDONYM_MAP` maps the emitted room token
-back to the conversation for replay. Keep this map and candidate files off GitHub.
-Use only the confirmed room token and cutoff in the committed anchor; register
-any further evidence pseudonyms in that private map without exposing their values.
-After confirmation, replace `parked` with a pseudonymised `snapshot` (platform,
-conversation_id and before_ms), and specialise the existing ToolRouteGrader
-argument checks to that anchor's shown evidence, note references, options and
-local/private preferences. The prose expectation explains the target; scoring
-uses `tools`, `required_tools`, `not_tools`, `before`, `args_include` and
-`args_exclude`, never that prose alone. Empty proposals must name empty readings,
-entities, relations, evidence and corrections. Bind all three visit references
-for the profile case and the local answer/excluded private preference for the
-scope case. Keep cases parked until those checks are grounded. Do not copy
-real message text or identifiers into the corpus. Use existing pseudonyms.
+The confirmer restores every store at the wake's `at_ms`, composes the real
+session, and stops after its normal context assembly, before its model call.
+It judges that rendered agenda/grounding plus open notes (including their
+then-current bodies), open events/plans (staged, proposed and confirmed) and current/disputed profile lines
+from the restored unit, with the wake time and room explicit. Today's state
+is never substituted. `match` confirms the input situation, not a successful
+session trajectory. Errors, missing state, refusals and truncated/wrong-shape
+answers are `unavailable`, never `no_match`.
 
-Then run the baseline against today's system with
-`uv run python -m evals cognition_session --sample 3`, reporting the census,
-PASS/FAIL/ERROR/UNSTABLE and draw counts. Missing session tools fail routing;
-a disabled session or timeout is ERROR. Record the baseline before changing
-the session. Cases with `metadata.held_out: true` must never be quoted in an
-instruction or used as worked examples; retain them for before/after scoring.
+The writer refuses outside the Linux deploy-host layout, revalidates each
+confirmed wake/room, then replaces `parked` with top-level `snapshot` and
+`metadata.wake` in **that checkout only**. Unmatched scenarios remain parked.
+Review anchor-specific argument checks privately before treating the replay as
+acceptance evidence: the existing generic checks do not establish all semantic
+properties. No baseline or confirmed anchor is claimed by this PR.
 
 ## Cloud development and private evaluation
 
