@@ -512,23 +512,23 @@ def test_the_doctrine_loads_beside_constraints_and_never_states_a_limit():
         assert must in text, must
 
 
-def test_the_workers_model_is_built_with_the_configured_reasoning_effort(tmp_path):
+def test_the_workers_model_is_built_with_the_configured_reasoning_effort(
+    tmp_path, example_config_path,
+):
     """`[subagent] reasoning_effort` (default low) reaches the model the
     worker's loop talks to, through the same `ModelSource` the Dreamer's model is built by."""
     from types import SimpleNamespace
 
     from nora.app.subagent_wiring import build_subagent_backend
-    from nora.config import SubagentConfig
+    from nora.config import SubagentConfig, load
 
     assert SubagentConfig().reasoning_effort == "low"
     rig = _Rig(tmp_path)
-    cfg = SimpleNamespace(
-        doctrine=SimpleNamespace(dir=ROOT / "nora" / "doctrine"),
-        dreamer=SimpleNamespace(budget_for=lambda name: SimpleNamespace(
-            turns=5, total_tokens=1000, output_tokens=100, timeout_seconds=5.0)),
-        dreamer_model=lambda: "m", dreamer_max_tokens=lambda: 100,
-        analytics=SimpleNamespace(tz_name="Asia/Hong_Kong"),
-    )
+    cfg = load(example_config_path, require_secrets=False)
+    cfg = cfg.model_copy(update={
+        "doctrine": cfg.doctrine.model_copy(update={"dir": ROOT / "nora" / "doctrine"}),
+        "dreamer": cfg.dreamer.model_copy(update={"model": "m", "max_tokens": 100}),
+    })
     for effort in ("low", "high"):
         backend = build_subagent_backend(
             cfg=cfg, client=object(), tier=SimpleNamespace(temperature=0.0, timeout_seconds=30),

@@ -32,7 +32,8 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
     """Same type, same builder, same field count as `nora/__main__.py` gets."""
     subject = await obtain(spec)
     assert isinstance(subject.deps, Dependencies)
-    assert len(dataclasses.fields(Dependencies)) == 77, (
+    assert len(dataclasses.fields(Dependencies)) == 78, (
+        "77 -> 78: additional endpoint client lifecycle. "
         "76 -> 77: optional graph comprehension runner. "
         "75 -> 76: the optional graph arrival batch producer. "
         "74 -> 75: the identity/policy reload lifecycle and loaded snapshot health. "

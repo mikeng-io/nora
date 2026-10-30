@@ -44,7 +44,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
-import os
 import re
 import sys
 from datetime import UTC, datetime
@@ -52,6 +51,7 @@ from pathlib import Path
 
 from nora.domain.media import MediaObject
 from nora.domain.ports import BlobStore, MediaObjectStore
+from nora.secret import credentials
 
 #: The marker the resolver's exemption reads. Only `role` is load-bearing (an
 #: exact string match); the other two say where it came from.
@@ -131,11 +131,11 @@ async def _main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
 
     cfg = load(args.config, require_secrets=False)
-    key_b64 = os.environ.get(cfg.media.encryption_key_env or "", "")
+    key_b64 = credentials().get(cfg.media.encryption_key_env or "", "")
     if not key_b64:
         print("media encryption key is not set; custody is off", file=sys.stderr)
         return 2
-    database_url = os.environ.get(cfg.store.database_url_env, "")
+    database_url = credentials().get(cfg.store.database_url_env, "")
     if not database_url:
         print(f"{cfg.store.database_url_env} is not set", file=sys.stderr)
         return 2

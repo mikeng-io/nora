@@ -154,3 +154,10 @@ ssh nora-host 'cd ~/workspace/nora && docker compose exec -T nora /app/.venv/bin
 
 - Claude Code with the rtk hook: `curl` piped into a parser returns a schema
   summary instead of JSON. Use `-o <file>` (as above) or `rtk proxy curl`.
+
+## Credential-source amendment
+
+Use [the configuration migration procedure](../../../docs/configuration.md) for
+secret.toml, installed helper delivery and scoped recreation. Older .env-only
+examples above remain legacy compatibility instructions. Do not print values or
+copy rotating OAuth state into the bootstrap source.

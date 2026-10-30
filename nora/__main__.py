@@ -13,7 +13,6 @@ import argparse
 import asyncio
 import functools
 import logging
-import os
 import signal
 import sys
 import time
@@ -66,11 +65,10 @@ async def build_app(config_path: Path) -> App:
     except ConfigError as exc:
         raise StartupError(str(exc)) from exc
 
-    key = os.environ.get(cfg.llm.api_key_env, "")
     setup_logging(
         level=cfg.obs.logging.level,
         format=cfg.obs.logging.format,
-        secrets=[key] if key else [],
+        secrets=cfg.redaction_values(),
     )
     # BEFORE `setup_tracing` and before anything that can fail: the whole point
     # is to capture a startup crash, and a reporter wired after the code that
@@ -78,7 +76,7 @@ async def build_app(config_path: Path) -> App:
     # rides that logger's records.
     setup_errors(
         enabled=cfg.obs.errors.enabled,
-        dsn_env=cfg.obs.errors.dsn_env,
+        dsn_env=cfg.obs.errors.dsn_env, credentials=cfg.credentials,
         environment=cfg.obs.errors.environment,
         # No release is passed, so Sentry groups by environment alone and "is this
         # new since the last deploy" is not answerable from an issue. Wiring the
@@ -91,7 +89,7 @@ async def build_app(config_path: Path) -> App:
                 sampler=build_sampler(), service_name="nora",
                 exporter=cfg.obs.tracing.exporter,
                 endpoint=cfg.obs.tracing.endpoint,
-                headers_env=cfg.obs.tracing.headers_env,
+                headers_env=cfg.obs.tracing.headers_env, credentials=cfg.credentials,
             )
         except Exception:
             # Tracing is never load-bearing (nora.obs.tracing.span's own rule): a bad
@@ -470,6 +468,8 @@ class App:
         if self._health_runner is not None:
             await self._health_runner.cleanup()
         await self.deps.client.close()
+        for client in self.deps.model_clients:
+            await client.close()
         await self.deps.audit.aclose()
 
 

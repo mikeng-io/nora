@@ -38,6 +38,7 @@ def render_default_prefill():
     return build_prefill(ctx, display_name="Nora", context_window=10, now=NOW)
 
 
-def test_default_prefill_is_byte_identical_before_and_after_rename():
+def test_default_prefill_is_byte_identical_before_and_after_rename(monkeypatch):
+    monkeypatch.setattr("nora.agent.clock.local_zone", lambda: None)
     baseline = Path(__file__).parents[1] / "fixtures/profile-vocabulary/prefill-before.json"
     assert render_default_prefill() == json.loads(baseline.read_text())

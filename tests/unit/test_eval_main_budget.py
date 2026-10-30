@@ -52,6 +52,34 @@ def test_spend_keeps_missing_usage_unmeasured(capsys):
     assert "usage UNMEASURED for 1 call(s)" in capsys.readouterr().out
 
 
+def test_config_option_reaches_the_judge_endpoint(monkeypatch, tmp_path, example_config_path):
+    runs: list[str] = []
+    _stub(monkeypatch, tmp_path, runs)
+    config = tmp_path / "config.toml"
+    config.write_text(example_config_path.read_text() + '''
+[providers.judge]
+base_url = "https://judge.invalid/v1"
+api_key_env = "CUSTOM_JUDGE_KEY"
+[model_routes.eval_judge]
+provider = "judge"
+model = "routed-judge"
+''')
+    monkeypatch.setenv("CUSTOM_JUDGE_KEY", "synthetic-judge-key")
+    endpoints = []
+
+    def run_one(*args, **kwargs):
+        endpoints.append(kwargs["judge"]._endpoint())
+        return True
+
+    monkeypatch.setattr(m, "_run_one", run_one)
+    monkeypatch.setattr("sys.argv", [
+        "python -m evals", "tool_selection", "--case", "route_where_is_now",
+        "--judge", "--config", str(config),
+    ])
+    assert m.main() == 0
+    assert endpoints == [("https://judge.invalid/v1", "synthetic-judge-key", "routed-judge")]
+
+
 def _stub(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, runs: list[str]) -> None:
     monkeypatch.setattr(m, "source_url_for", lambda *a, **k: "URL")
     monkeypatch.setattr(m, "refuse_if_source_diverges_from_head", lambda url: None)

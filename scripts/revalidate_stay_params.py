@@ -14,10 +14,11 @@ Run deliberately, read-only, writes nothing:
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
 from itertools import pairwise
 from pathlib import Path
+
+from nora.secret import credentials
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -123,7 +124,7 @@ async def _subjects(engine) -> list[str]:
 
 
 async def main() -> None:
-    database_url = os.environ.get("NORA_DATABASE_URL", os.environ.get("DATABASE_URL", ""))
+    database_url = credentials().get("NORA_DATABASE_URL", credentials().get("DATABASE_URL", ""))
     if not database_url:
         print("NORA_DATABASE_URL or DATABASE_URL must be set", file=sys.stderr)
         sys.exit(1)

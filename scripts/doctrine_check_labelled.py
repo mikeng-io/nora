@@ -15,9 +15,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
 import sys
 from pathlib import Path
+
+from nora.secret import credentials
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -41,15 +42,20 @@ def _body(path: Path) -> str:
 async def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="nora")
+    ap.add_argument("--config", type=Path, help="use configured provider and purpose route")
     ap.add_argument("--base-url", default="http://127.0.0.1:20128/v1")
     ap.add_argument("--effort", default="low")
     ap.add_argument("--samples", type=int, default=3)
     ap.add_argument("--extra", type=Path, help="a file of more lessons, one per line, "
                     "expected consistent (e.g. live ones; never commit it)")
     args = ap.parse_args()
-    key = os.environ.get("OMNIROUTE_API_KEY", "")
+    key = credentials().get("OMNIROUTE_API_KEY", "")
+    if args.config is not None:
+        from nora.config import load
+        cfg = load(args.config, require_secrets=False)
+        args.base_url, key, args.model = cfg.endpoint("lesson_check", args.model)
     if not key:
-        print("OMNIROUTE_API_KEY is not set", file=sys.stderr)
+        print("selected model credential is missing or empty", file=sys.stderr)
         return 2
     store = DoctrineStore(ROOT / "nora" / "doctrine", metrics=Metrics())
     check = DoctrineCheck(

@@ -176,7 +176,8 @@ values or private hashes. For example, for a validated `config.toml` edit:
 ```
 
 Release the lock, then run native `DeployStack` on `nora-releases`. Supported names
-are `config.toml`, `identity.toml`, `policy.toml`; combine them in `files` when needed.
+are `config.toml`, `identity.toml`, `policy.toml`, `secret.toml` and `.env`; combine
+them in `files` when needed. Secret/env requests recreate owned credential readers.
 The wrapper derives readers from the resolved owned-service mounts, reconciles the
 normal cohort, then force-recreates only those readers. Infrastructure stays excluded.
 With the current Compose file, config selects Nora/presence/analytics/STT/voice-wake/voice-sidecar;
@@ -348,3 +349,16 @@ comparison; it is not proof the previous version is still running after failure.
 - [Komodo scheduled Procedures](https://komo.do/docs/automate/procedures)
 - [Komodo 2.3.3 wrapper and post-hook semantics](https://github.com/moghtech/komodo/blob/v2.3.3/bin/periphery/src/api/compose.rs)
 - [Docker Compose config privacy flags](https://docs.docker.com/reference/cli/docker/compose/config/)
+
+## Private secret source
+
+Install sibling `secret_delivery.py` together with `komodo_deploy.py` before
+promoting this release. Follow the [migration and functional readback](../../docs/configuration.md);
+the installed wrapper is outside the fetched clone. Its existing control directory
+(normally `/etc/komodo/nora-deploy`) must be writable and shared at the same path
+on the host and in Periphery. The wrapper writes private `compose.env` and
+`compose.json` into its `.secret-delivery/` child (0700 directory, 0600 files),
+so the source runtime and credentials can remain mounted read-only. Direct
+`secret_delivery.prepare` calls still default to `<runtime>/.secret-delivery/`
+unless given `output_directory`. No new shared secret mounts are needed.
+Candidate validation remains network-disabled and also validates required model credentials using only the Nora service environment projection.

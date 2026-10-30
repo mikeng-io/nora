@@ -30,7 +30,9 @@ and nothing else.
 from __future__ import annotations
 
 import logging
-import os
+from pathlib import Path
+
+from nora.secret import resolve
 
 log = logging.getLogger("nora.errors")
 
@@ -41,6 +43,7 @@ def setup_errors(
     dsn_env: str,
     environment: str = "",
     release: str = "",
+    credentials: dict[str, str] | None = None,
 ) -> bool:
     """Wire Sentry for error capture. Returns whether it is ON.
 
@@ -53,7 +56,8 @@ def setup_errors(
     """
     if not enabled:
         return False
-    dsn = os.environ.get(dsn_env, "").strip()
+    values = resolve(Path("secret.toml")) if credentials is None else credentials
+    dsn = values.get(dsn_env, "").strip()
     if not dsn:
         log.info("sentry: %s is unset; error reporting is off", dsn_env)
         return False

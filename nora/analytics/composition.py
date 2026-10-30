@@ -12,7 +12,6 @@ should stop cleanly, as in `nora.presence.composition`.
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -171,7 +170,7 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
     subjects = LiveSequence(lambda: _subjects_from_identity(persons))
     units = LiveSequence(lambda: _units_from_policy(policy, persons))
 
-    database_url = os.environ.get(cfg.store.database_url_env, "")
+    database_url = cfg.credentials.get(cfg.store.database_url_env, "")
     if not database_url:
         raise AnalyticsStartupError(
             f"environment variable {cfg.store.database_url_env} is not set — "
