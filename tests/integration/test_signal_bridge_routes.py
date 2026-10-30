@@ -705,13 +705,14 @@ async def test_receipt_reserve_failure_retries_without_restart(
         await _captured(bridge, daemon, [
             sig_event(SENDER, "￼ hey", 1601, mention_own=True)])
         await _wait_for(lambda: _drained(bridge))
-        await asyncio.sleep(0.3)
+        await _wait_for(lambda: bool(bridge._pending_receipts))
         assert len(daemon.reactions) == 0  # enqueued; receipt still pending
-        assert bridge._pending_receipts     # parked, not dropped
+        canonical_id = next(iter(bridge._pending_receipts))
         gated.down = False
-        await _wait_for(lambda: len(daemon.reactions) >= 1)
+        await _wait_for(lambda: not bridge._pending_receipts)
         assert len(daemon.reactions) == 1
-        assert not bridge._pending_receipts
+        action = await bridge.store.action(bridge._receipt_action_id(canonical_id))
+        assert action["state"] == "confirmed"
     finally:
         await _teardown(bridge, publisher, client)
 

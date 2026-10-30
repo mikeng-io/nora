@@ -596,9 +596,12 @@ class TestProducerTelemetry:
         for r in caplog.records:
             assert "sekrit-abc" not in str(r.__dict__)
 
-    async def test_tracing_off_freezes_no_phantom_context(self, tmp_path):
+    async def test_tracing_off_freezes_no_phantom_context(self, tmp_path, monkeypatch):
         """No provider → the envelope's `trace` is exactly `{}` — the rule
         is no minted context, not an invented one."""
+        from opentelemetry import trace
+
+        monkeypatch.setattr(trace, "get_tracer", trace.NoOpTracerProvider().get_tracer)
         bridge, journal, _, _ = _bridge(tmp_path)
         await bridge._capture_message(_message())
         assert _envelopes(journal)[0].trace == {}
