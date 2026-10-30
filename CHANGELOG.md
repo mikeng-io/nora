@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.11.57](https://github.com/mikeng-io/nora/compare/v7.11.56...v7.11.57) (2026-10-30)
+
+
+### Bug Fixes
+
+* **memory:** inject graph context before automatic decisions ([6bec06d](https://github.com/mikeng-io/nora/commit/6bec06d5addd17d34aca3e8cd4f4053d05923964))
+* **memory:** preserve agenda scope and overlap safe graph prefetch ([5c32748](https://github.com/mikeng-io/nora/commit/5c327485d630787a11f3566ef4058b1edc2beb47))
+
 ## [7.11.56](https://github.com/mikeng-io/nora/compare/v7.11.55...v7.11.56) (2026-10-30)
 
 
