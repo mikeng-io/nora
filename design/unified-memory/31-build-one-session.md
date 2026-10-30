@@ -94,3 +94,32 @@ largely PR 2. Profile cards from the session (phase 7) and the switch, the
 **This holds unless** PR 1's anchoring finds most scenarios have no real
 instance in the clone; then the suite is too thin to gate the build, and the
 operator decides whether to wait for live data or accept parked scenarios.
+
+
+## 5. Source-audited acceptance amendments (2026-10-30)
+
+The operator requested that the investigation be carried in the design itself.
+[27 §17](27-the-memory-is-a-graph.md#17-implementation-findings-and-longitudinal-understanding-2026-10-30)
+contains the source baseline, reproduced gaps and evidence limits. Incorporate
+its F1–F6 acceptance into this build; this is not a second implementation track.
+
+- **Session input:** preserve sender/mention/reply/source anchors; a current implicit
+  reply must reach existing relevant context without spelling out its name. Inspect
+  the actual assembled graph block, with scope/caps intact and a positive control.
+- **Retrieval:** automatic prefetch and explicit tools must reach a new-graph-only
+  semantic connection under equivalent scope, without transcript duplication or
+  hiding partial/unavailable results.
+- **Register:** a supported association to an existing matter survives creation and
+  retry even when its literal name is absent. Retry re-links the same row.
+- **Profiles:** shadow proposals remain shadow until the authorized surface switch.
+  At that phase, read back both the live account and its appearance in a later turn;
+  retain the existing separate adaptors until their planned replacement is proved.
+- **Semantics:** assess the account and later answer across histories and new
+  counterevidence, not merely successful admission or a tool name. Preserve §2's
+  recorded-wake anchors, held-out cases and fail-closed scoring; generated code
+  fixtures do not substitute for missing model-eval anchors.
+
+[32](32-platform-observations.md) extends the source coverage design: collection,
+projection and model exposure are distinct deliverables. Its contract journeys
+belong in the eventual observation implementation; this amendment enables no
+collector, profile promotion, extra model spending or deployment.
