@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, tzinfo
 
-from nora.domain.blocks import ContextBlock, escape
-from nora.domain.prompt import age
+from nora.domain.blocks import ContextBlock
+from nora.domain.prompt import age, escape
 from nora.domain.shared_state import SharedView
 
 

@@ -108,7 +108,7 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import tzinfo
 from typing import Any, Protocol
@@ -484,6 +484,7 @@ async def run(
     working_set_max_items: int = DEFAULT_WORKING_SET_MAX_ITEMS,
     working_set_max_chars: int = DEFAULT_WORKING_SET_MAX_CHARS,
     content_checks: bool = True,
+    conclusions: Sequence[Any] | None = None,
 ) -> None:
     """Fold this finished turn into the conversation's position. **Never
     raises, and never returns anything** — a stage that runs after delivery has
@@ -520,6 +521,51 @@ async def run(
             "nora_debrief_prior_total",
             prior="read" if prior is not None else "absent",
         )
+
+        if conclusions is not None:
+            # THE WIRED ROUTE IS FAITHFUL APPLICATION, NOT SYNTHESIS: the
+            # producer's `conclude` records are the only source of a new
+            # position. A recorded `standing` delta for THIS room applies
+            # verbatim through the same CAS revise the fold used; no
+            # recorded delta means the prior stands — the stage never
+            # derives a position from narration.
+            outcome = "no_conclusions"
+            room_ref = f"{platform}:{trace.conversation_id}"
+            for item in conclusions:
+                if item.name != "conclude":
+                    continue
+                delta = item.arguments
+                body = delta.get("standing_body")
+                at_room = delta.get("standing_room") or room_ref
+                if not body or at_room != room_ref:
+                    continue
+                try:
+                    await asyncio.wait_for(
+                        standing_revise(
+                            store=store, prior=prior,
+                            platform=platform,
+                            conversation_id=trace.conversation_id,
+                            where_it_stands=str(body),
+                            hold_open=str(delta["hold_open"])
+                            if delta.get("hold_open") else None,
+                            i_owe=str(delta["i_owe"])
+                            if delta.get("i_owe") else None,
+                            last_folded_row_id=(
+                                prior.last_folded_row_id
+                                if prior is not None else None
+                            ),
+                            now_ms=now_ms,
+                        ),
+                        timeout=store_timeout_seconds,
+                    )
+                    outcome = "applied"
+                except Exception:
+                    log.exception(
+                        "debrief: recorded standing delta failed (tag=%s)",
+                        trace.tag_id,
+                    )
+                    outcome = "unavailable"
+            return
 
         # THE WATERMARK BATCH READ. The fold reads the NEXT `fold_batch` rows
         # since the last fold's row-id watermark — including Nora's own rows,

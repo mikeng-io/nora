@@ -3,12 +3,14 @@ gains a second implementation — including a test fake — without a shared
 contract suite both pass."""
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
 from nora.domain.reminders import (
+    ConflictingProactiveActError,
     DuplicateProactiveNoteError,
     DuplicateProactiveSubjectError,
     DuplicateReminderError,
@@ -928,3 +930,53 @@ async def test_pending_of_is_one_requesters_pending_rows_in_due_order(store):
     rows = await store.pending_of("nora")
 
     assert [r.id for r in rows] == [early.id, late.id]
+
+
+async def test_a_deliberate_two_room_batch_lands(store):
+    """One plan, two destinations, explicitly covered: `create_many` takes
+    both under the same advisory scope — the legitimate multi-room act the
+    cross-room arbiter must NOT refuse."""
+    a = _subject(platform="signal", conversation_id="room-a",
+                 subject_id="dec-1", action="ask-time")
+    b = _subject(platform="signal", conversation_id="room-b",
+                 subject_id="dec-1", action="ask-time")
+    await store.create_many(
+        [a, b], arbitration_key="proactive:u1",
+        arbitration_rooms=[("signal", "room-a"), ("signal", "room-b")],
+    )
+    rows = await store.pending_of("nora")
+    assert {(r.platform, r.conversation_id) for r in rows} == {
+        ("signal", "room-a"), ("signal", "room-b")}
+
+
+@pytest.mark.parametrize("_unused", [0])
+async def test_concurrent_two_process_creates_cannot_split_the_act(
+    pg_url, _unused,
+):
+    """Two writers, two processes' worth of connections, each prechecking an
+    empty store: the advisory lock serialises them and the SECOND writer's
+    in-lock conflict check must see the first's committed row — the act can
+    never be silently split across rooms by a race."""
+    run_migrations(pg_url)
+    store_a = SqlReminderStore(create_sql_engine(pg_url))
+    store_b = SqlReminderStore(create_sql_engine(pg_url))
+    rooms = [("signal", "room-a"), ("signal", "room-b")]
+    row_a = _subject(platform="signal", conversation_id="room-a",
+                     subject_id="dec-1", action="ask-time")
+    row_b = _subject(platform="signal", conversation_id="room-b",
+                     subject_id="dec-1", action="ask-time")
+    outcomes = await asyncio.gather(
+        store_a.create_many(
+            [row_a], arbitration_key="proactive:u1", arbitration_rooms=rooms,
+        ),
+        store_b.create_many(
+            [row_b], arbitration_key="proactive:u1", arbitration_rooms=rooms,
+        ),
+        return_exceptions=True,
+    )
+    errors = [o for o in outcomes if isinstance(o, Exception)]
+    oks = [o for o in outcomes if o is None]
+    assert len(oks) == 1 and len(errors) == 1
+    assert isinstance(errors[0], ConflictingProactiveActError)
+    rows = await store_a.pending_of("nora")
+    assert len(list(rows)) == 1

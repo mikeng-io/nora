@@ -110,6 +110,25 @@ class SqlTagTraceStore:
             rows = (await conn.execute(stmt)).all()
         return tuple(self._trace(r) for r in rows)
 
+    async def recent_unit(
+        self, *, unit: str, limit: int,
+    ) -> tuple[TagTrace, ...]:
+        """Newest-first across the whole UNIT — every occasion (tag, fire,
+        cognition session), every room — the unit-scoped read a shared view
+        of producer conclusions needs; `recent` is one room only. Same
+        never-negative-`LIMIT` clamp."""
+        if limit <= 0:
+            return ()
+        stmt = (
+            sa.select(TAG_TRACE)
+            .where(TAG_TRACE.c.unit == unit)
+            .order_by(TAG_TRACE.c.created_at.desc())
+            .limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return tuple(self._trace(r) for r in rows)
+
     @staticmethod
     def _trace(r: Any) -> TagTrace:
         return TagTrace(

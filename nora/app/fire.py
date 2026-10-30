@@ -72,7 +72,12 @@ from datetime import datetime
 from typing import Any
 
 from nora.agent.guards import ReplyGuard
-from nora.agent.lineage import LineagePolicy, profile_lines_for
+from nora.agent.lineage import (
+    LineagePolicy,
+    excluded,
+    profile_lines_for,
+    section_permits,
+)
 from nora.agent.outbound import OutboundComposer
 from nora.agent.prefill import (
     build_prefill,
@@ -153,7 +158,11 @@ from nora.domain.standing_ledger import LedgerEntry, StandingLedger
 from nora.domain.subagent import written_title
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.domain.turn_deadline import turn_deadline
-from nora.domain.turn_record import TurnCapture, capture_turn
+from nora.domain.turn_record import (
+    DisclosureRequirement,
+    TurnCapture,
+    capture_turn,
+)
 from nora.engagement.character_who import fire_character_people
 from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.context import StandingNotesReader
@@ -1639,11 +1648,23 @@ class FirePath:
             if narrowed is not None:
                 def permit(entry: LedgerEntry) -> bool:
                     return ledger_permits(entry, narrowed)
+
+                def permit_req(requirements: tuple[DisclosureRequirement, ...]) -> bool:
+                    # Turn-record items carry their own per-item disclosure;
+                    # the same lineage predicates decide it for this room.
+                    return all(
+                        req.known
+                        and not excluded(req.exclude_persons, narrowed)
+                        and section_permits(
+                            req.entries, narrowed, origin=req.origin)
+                        for req in requirements
+                    )
         try:
             return await self._shared_reader(
                 unit=unit,
                 room=(occasion.platform, occasion.conversation_id),
-                permit=permit, now_ms=int(time.time() * 1000),
+                permit=permit, permit_req=permit_req,
+                now_ms=int(time.time() * 1000),
             )
         except Exception:
             log.exception("fire shared-state read failed")

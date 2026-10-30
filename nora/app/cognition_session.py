@@ -691,14 +691,6 @@ class CognitionSessionRunner:
         self._reminders = reminders
         self._ledger = ledger
         self._shared = shared
-        #: Unresolved act candidates per unit, carried for the next session
-        #: to see (`SharedView.unresolved`) — the turn-evidence retention for
-        #: an act that could not be grounded. Bounded per unit.
-        self._unresolved: dict[str, list[str]] = {}
-        #: Write-verb outcomes the session concluded this run, carried so the
-        #: NEXT session's shared view shows them as conclusions before any
-        #: Cognition consolidation exists.
-        self._concluded: dict[str, list[str]] = {}
         self._ai_peer = ai_peer
         self._stimuli = stimulus_store
         self._agent_runner = agent_runner
@@ -770,12 +762,6 @@ class CognitionSessionRunner:
         except Exception:
             log.exception("could not count %s", name)
 
-    _WRITE_VERBS = frozenset({
-        "remind", "remind_move", "remind_cancel", "wake_after", "wake_cancel",
-        "note_create", "note_update", "note_merge", "note_set_status",
-        "decision", "commitment", "thread", "ledger_apply", "event", "memo",
-    })
-
     def _counted(self, unit: str, verb: str, call: Any) -> Any:
         """A verb whose every refusal is counted by rule
         (`nora_cognition_refused_total{verb,rule}`): one place, so no verb and
@@ -806,15 +792,6 @@ class CognitionSessionRunner:
                 )
                 if status == "refused" and verb in _PACE_VERBS:
                     self._inc("nora_self_wake_total", outcome="refused")
-            elif status == "ok" and verb in self._WRITE_VERBS:
-                # The turn's own concluded writes, immediately visible in the
-                # shared view the next session reads — before any Cognition
-                # consolidation has run, and distinct from Notebook judgments.
-                line = f"{verb} concluded"
-                carried = self._concluded.setdefault(unit, [])
-                if line not in carried:
-                    carried.append(line)
-                    del carried[:-8]
             return result
         return counted
 
@@ -1168,8 +1145,6 @@ class CognitionSessionRunner:
                 shared_view = await self._shared(
                     unit=unit, now_ms=now_ms,
                     wakes=await self._pending(unit, now_ms),
-                    conclusions=self._concluded.get(unit, ()),
-                    unresolved=self._unresolved.get(unit, ()),
                 )
             except Exception:
                 # A shared read that fails must not take the session down —
@@ -2545,11 +2520,48 @@ class CognitionSessionRunner:
                 self._inc("nora_self_wake_total", outcome="cancelled")
             return _answer(answer)
 
+        async def conclude(
+            subject: str, decision: str, options: str = "", leaning: str = "",
+            conditions: str = "", sources: list[str] | None = None,
+            standing_room: str = "", standing_body: str = "",
+            hold_open: str = "", i_owe: str = "",
+        ) -> dict[str, object]:
+            """Record what this turn concluded, explicitly. Call this when you
+            settled something this turn: what you decided, what the options
+            were, which way you lean, what would close it, and the rows or
+            entries it rests on. The call itself IS the record: it lands in
+            this turn's trace as a toolUse, and the shared view shows it to
+            the next turn and the next session before any consolidation runs.
+            It writes no Notebook row: a conclusion here is recorded, not a
+            judged entry; Cognition still authorizes what becomes one.
+
+            Returns `status`: ok, refused or unavailable, with a `reason`
+            and `detail` when it is not ok.
+
+            Args:
+                subject: The `kind:id` of the open entry this conclusion is
+                    about, or a short name when none applies.
+                decision: The conclusion in one sentence.
+                options: Optional. The options you weighed.
+                leaning: Optional. Which way you lean, and why.
+                conditions: Optional. What would settle or close this.
+                sources: Optional. The row/entry ids this rests on.
+                standing_room: Optional. `platform:conversation_id` — set it
+                    with `standing_body` when the conclusion is a position
+                    update for that room; the debrief applies it verbatim.
+                standing_body: Optional. The new position, verbatim.
+                hold_open: Optional. What you are deliberately keeping open.
+                i_owe: Optional. What you owe that room.
+            """
+            if not decision.strip():
+                return _refused("no_decision", "say what you concluded")
+            return {"status": "ok"}
+
         async def remind(
             intent: Literal["tell", "ask"], text: str, subject: str, action: str,
             subject_rows: list[str], at: str,
             room: str = "", also_rooms: list[str] | None = None,
-            new_action: bool = False,
+            new_action: str = "",
         ) -> dict[str, object]:
             """Reach a room at a time: when the moment comes you get a turn in
             that room to say something to it or ask it something, and you may
@@ -2589,10 +2601,11 @@ class CognitionSessionRunner:
                     reach, each as `platform:conversation_id`. An act the unit
                     already has pending somewhere else is refused unless you
                     name that room here or in `room`.
-                new_action: Optional. True only when this is a DIFFERENT act
-                    on a subject an `intent` act already waits on: a pending
-                    act's action key is the stable name of what is pending, so
-                    a second act needs your say-so, not a fresh spelling.
+                new_action: Optional. Required, a short why, only when this is
+                    a DIFFERENT act on a subject an `intent` act already
+                    waits on: a pending act's action key is the stable name
+                    of what is pending, so a second act needs a recorded
+                    reason, not a fresh spelling. The why is kept on the row.
             """
             resolved = _room_of(room, state)
             if isinstance(resolved, dict):
@@ -2620,14 +2633,9 @@ class CognitionSessionRunner:
                     unit, state, subject,
                 )
                 if resolved_subject is None:
-                    line = (
-                        f"remind {text[:80]!r} for "
-                        f"{platform}:{conversation_id}: {subject!r} unresolved"
-                    )
-                    carried = self._unresolved.setdefault(unit, [])
-                    if line not in carried:
-                        carried.append(line)
-                        del carried[:-8]
+                    # The `unresolved` toolResult in this session's trace is
+                    # the durable evidence — the shared view reads it back
+                    # through the turn Record, across restarts and processes.
                     return {
                         "status": "unresolved",
                         "reason": "subject_unresolved",
@@ -2658,13 +2666,13 @@ class CognitionSessionRunner:
                     if p.subject == resolved_subject
                     and p.intent == intent
                 } - {action_key}
-                if same_intent and not new_action:
+                if same_intent and not new_action.strip():
                     return _refused(
                         "conflict_same_subject",
                         f"an {intent!r} act is already pending on that subject "
                         f"as {sorted(same_intent)[0]!r}: schedule under the same "
-                        "action if it is the same act, or pass new_action=True "
-                        "if this is a different question",
+                        "action if it is the same act, or pass new_action with "
+                        "why this is a different question",
                     )
                 # Every destination validated BEFORE a row exists: proactive
                 # policy and the requester cap apply per room, so a batch
@@ -2679,6 +2687,8 @@ class CognitionSessionRunner:
                             "unasked",
                         )
                 link: dict[str, str] = {"plan_id": str(uuid.uuid4())}
+                if new_action.strip():
+                    link["new_action_reason"] = new_action.strip()[:200]
                 if subject_kind == "note":
                     shown_note = await self._notes.read(
                         unit=unit, note_id=subject_id)
@@ -2923,7 +2933,7 @@ class CognitionSessionRunner:
                 note_create, note_revise, note_set_status, note_merge, memo_create,
                 memo_revise, memo_set_status, event_propose, event_revise, event_set_status,
                 standing_revise, wake_at, wake_move, wake_cancel, remind, remind_move,
-                remind_cancel,
+                remind_cancel, conclude,
             )),
         )
         if self._memory is not None:

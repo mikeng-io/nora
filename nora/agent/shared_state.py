@@ -24,12 +24,14 @@ unavailable one — the coverage line names only the sources that ran.
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
-from nora.domain.shared_state import SharedEntry, SharedView
+from nora.domain.shared_state import SharedEntry, SharedView, ViewStatus
+from nora.domain.turn_record import turn_items
 
 log = logging.getLogger("nora.agent.shared_state")
 
@@ -58,12 +60,13 @@ async def read_shared(
     reminders: Any = None,
     record_query: Any = None,
     standing: Any = None,
+    traces: Any = None,
     wakes: Sequence[Any] | None = None,
-    conclusions: Sequence[str] = (),
-    unresolved: Sequence[str] = (),
     permit: Callable[[Any], bool] | None = None,
+    permit_req: Callable[[Any], bool] | None = None,
     send_limit: int = 6,
     history_limit: int = 50,
+    trace_limit: int = 40,
 ) -> SharedView:
     """One view, assembled per source so a failed read is named, not absent.
 
@@ -182,6 +185,13 @@ async def read_shared(
         try:
             findings = 0
             for platform, conversation_id in rooms:
+                # Standing is ROOM-scoped state, not unit knowledge: a
+                # destination read takes only its own room's position and
+                # working set — another room's is not even listed (the
+                # legacy blocks never showed it either). The unit read
+                # takes every room, unchanged.
+                if room is not None and (platform, conversation_id) != room:
+                    continue
                 position = await standing.read(
                     platform=platform, conversation_id=conversation_id)
                 scope = f"{platform}:{conversation_id}"
@@ -320,15 +330,86 @@ async def read_shared(
                 provenance="nora",
             ))
 
-    if conclusions:
-        sources.append(("conclusions", "ok"))
-        for i, line in enumerate(conclusions):
-            entries.append(SharedEntry(
-                kind="conclusion", id=f"c{i}", scope="unit", status="recent",
-                subject=line[:140], provenance="cognition",
-            ))
+    unresolved_lines: list[str] = []
+    if traces is not None:
+        try:
+            # The turn Record is the carrier: `conclude` toolUses are the
+            # producer's explicit conclusions, and a `remind` result that
+            # answered `unresolved` is the durable unresolved evidence —
+            # both read back across restarts and across processes, newest
+            # first. An unresolved act is discharged only by a NEWER `ok`
+            # result for the same (subject, action): the record retains the
+            # attempt until something valid resolved it.
+            unit_traces = await traces.recent_unit(
+                unit=unit, limit=trace_limit)
+            if len(unit_traces) >= trace_limit:
+                partial = True
+                sources.append(("turns", "partial"))
+            else:
+                sources.append(("turns", "ok"))
+            resolved: set[tuple[str, str]] = set()
+            for trace in unit_traces:
+                provenance = f"{trace.occasion}:{trace.tag_id}"
+                for item in turn_items(trace.messages, trace.requirements):
+                    allowed = (
+                        room is None
+                        or (permit_req is not None
+                            and permit_req(item.requirements))
+                    )
+                    if item.name == "remind":
+                        args = item.arguments
+                        key = (
+                            str(args.get("subject") or ""),
+                            str(args.get("action") or ""),
+                        )
+                        payload = _result_payload(item.result)
+                        if payload.get("status") == "ok":
+                            resolved.add(key)
+                        elif (
+                            payload.get("status") == "unresolved"
+                            and key not in resolved and key != ("", "")
+                        ):
+                            unresolved_lines.append(
+                                f"remind {str(args.get('text'))[:80]!r} for "
+                                f"{args.get('room') or 'the room'}: "
+                                f"{key[0]!r} unresolved"
+                            )
+                    elif item.name == "conclude":
+                        args = item.arguments
+                        detail = " · ".join(
+                            part for part in (
+                                f"options: {args['options']}"
+                                if args.get("options") else "",
+                                f"leaning: {args['leaning']}"
+                                if args.get("leaning") else "",
+                                f"closes when: {args['conditions']}"
+                                if args.get("conditions") else "",
+                            ) if part
+                        )
+                        sources_part = tuple(
+                            str(s) for s in args.get("sources") or ()
+                        )
+                        entries.append(SharedEntry(
+                            kind="conclusion",
+                            id=f"{trace.tag_id}:{item.call_id}",
+                            scope="unit",
+                            status="recent",
+                            subject=str(args.get("subject") or "")[:140],
+                            detail=(
+                                f"{args.get('decision') or ''}"
+                                + (f" — {detail}" if detail else "")
+                            )[:300],
+                            refs=sources_part,
+                            at_ms=trace.created_at,
+                            provenance=provenance,
+                            permitted=allowed,
+                        ))
+        except Exception:
+            log.exception("shared view: turn records read failed for %s", unit)
+            sources.append(("turns", "unavailable"))
 
     statuses = [s for _, s in sources]
+    status: ViewStatus
     if "unavailable" in statuses:
         status = "unavailable"
     elif not entries:
@@ -340,8 +421,30 @@ async def read_shared(
     return SharedView(
         unit=unit, status=status, as_of_ms=now_ms,
         entries=tuple(entries), sources=tuple(sources),
-        unresolved=tuple(unresolved),
+        unresolved=tuple(unresolved_lines),
     )
+
+
+def _result_payload(result: Any) -> dict[str, Any]:
+    """The verb's own dict out of a Strands `toolResult`: `{content:
+    [{json: {...}}]}` for dict returns, `{text}` carrying JSON for older
+    shapes. `{}` when nothing parses — read as «not recorded», never a guess."""
+    if not isinstance(result, dict):
+        return {}
+    for block in result.get("content") or ():
+        if isinstance(block, dict):
+            payload = block.get("json")
+            if isinstance(payload, dict):
+                return payload
+            text = block.get("text")
+            if isinstance(text, str):
+                try:
+                    parsed = json.loads(text)
+                except (ValueError, TypeError):
+                    continue
+                if isinstance(parsed, dict):
+                    return parsed
+    return {}
 
 
 def shared_reader(
@@ -351,6 +454,7 @@ def shared_reader(
     reminders: Any = None,
     record_query: Any = None,
     standing: Any = None,
+    traces: Any = None,
     ai_peer: str,
     rooms_of_unit: Callable[[str], Sequence[tuple[str, str]]],
 ) -> Callable[..., Awaitable[SharedView]]:
@@ -363,16 +467,15 @@ def shared_reader(
         *, unit: str, now_ms: int,
         room: tuple[str, str] | None = None,
         permit: Callable[[Any], bool] | None = None,
+        permit_req: Callable[[Any], bool] | None = None,
         wakes: Sequence[Any] | None = None,
-        conclusions: Sequence[str] = (),
-        unresolved: Sequence[str] = (),
     ) -> SharedView:
         return await read_shared(
             unit=unit, rooms=rooms_of_unit(unit), ai_peer=ai_peer,
             now_ms=now_ms, room=room, notes=notes, ledger=ledger,
             reminders=reminders, record_query=record_query,
-            standing=standing, wakes=wakes, conclusions=conclusions,
-            unresolved=unresolved, permit=permit,
+            standing=standing, traces=traces, wakes=wakes,
+            permit=permit, permit_req=permit_req,
         )
 
     return read

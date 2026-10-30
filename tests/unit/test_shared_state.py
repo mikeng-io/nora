@@ -314,3 +314,69 @@ async def test_a_unit_read_sees_every_room():
         record_query=_Sends([_send(10, T0_MS - 30_000), room_b_send]),
     )
     assert all(e.permitted for e in view.entries)
+
+
+async def test_trace_conclusions_and_unresolved_are_read_back():
+    """The Record is the carrier: a `conclude` toolUse shows its options,
+    leaning and sources to the next read; an `unresolved` remind result
+    persists until a NEWER `ok` for the same (subject, action) discharges
+    it — across processes, because the trace store is the authority."""
+    from nora.domain.tag_trace import TagTrace
+    from nora.testing.tag_traces import FakeTagTraceStore
+
+    store = FakeTagTraceStore()
+    messages = (
+        {"role": "assistant", "content": [
+            {"toolUse": {"toolUseId": "c1", "name": "conclude", "input": {
+                "subject": "decision:d1", "decision": "the pier wins",
+                "options": "pier, cove", "leaning": "pier",
+                "sources": ["d1", "101"]}}}]},
+        {"role": "user", "content": [
+            {"toolResult": {"toolUseId": "c1", "status": "success",
+                            "content": [{"json": {"status": "ok"}}]}}]},
+        {"role": "assistant", "content": [
+            {"toolUse": {"toolUseId": "r1", "name": "remind", "input": {
+                "intent": "ask", "text": "ask when it is",
+                "subject": "note:not-there", "action": "ask-time",
+                "subject_rows": ["101"], "at": "2026-01-01T20:00:00Z"}}}]},
+        {"role": "user", "content": [
+            {"toolResult": {"toolUseId": "r1", "status": "success",
+                            "content": [{"json": {
+                                "status": "unresolved",
+                                "reason": "subject_unresolved"}}]}}]},
+    )
+    await store.save(TagTrace(
+        tag_id="t1", conversation_id="room-a", messages=messages,
+        transcript=(), outcome="send_reply", created_at=T0_MS - 1000,
+        unit="u1", occasion="cognition",
+    ))
+    view = await read_shared(
+        unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=T0_MS, traces=store,
+    )
+    concl = [e for e in view.entries if e.kind == "conclusion"]
+    assert len(concl) == 1
+    assert "pier" in concl[0].detail and "leaning" in concl[0].detail
+    assert concl[0].refs == ("d1", "101")
+    assert concl[0].provenance == "cognition:t1"
+    assert len(view.unresolved) == 1 and "note:not-there" in view.unresolved[0]
+
+    resolved_messages = (
+        {"role": "assistant", "content": [
+            {"toolUse": {"toolUseId": "r2", "name": "remind", "input": {
+                "intent": "ask", "text": "ask when it is",
+                "subject": "note:not-there", "action": "ask-time",
+                "subject_rows": ["101"], "at": "2026-01-01T20:00:00Z"}}}]},
+        {"role": "user", "content": [
+            {"toolResult": {"toolUseId": "r2", "status": "success",
+                            "content": [{"json": {"status": "ok",
+                                                  "reminder_id": "x"}}]}}]},
+    )
+    await store.save(TagTrace(
+        tag_id="t2", conversation_id="room-a", messages=resolved_messages,
+        transcript=(), outcome="send_reply", created_at=T0_MS - 500,
+        unit="u1", occasion="cognition",
+    ))
+    view2 = await read_shared(
+        unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=T0_MS, traces=store,
+    )
+    assert view2.unresolved == ()

@@ -429,11 +429,16 @@ class HeartbeatLoop:
                 policy.conversation(row.platform, row.conversation_id)
                 if policy is not None else None
             )
+            if convo is None:
+                # The unit's room set cannot be established, so the whole-
+                # unit delivered check cannot run: a same-room-only read
+                # would masquerade as the unit check it is not.
+                return ReminderState.FAILED, "failed_error"
             unit_rooms = [
                 (c.platform, c.primary_id)
                 for c in getattr(policy, "conversations", ()) or ()
-                if convo is not None and c.unit == convo.unit
-            ] or [(row.platform, row.conversation_id)]
+                if c.unit == convo.unit
+            ]
             plan = (row.payload or {}).get("plan_id")
             hits = await self._store.recent_in(
                 unit_rooms,

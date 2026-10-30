@@ -2385,6 +2385,7 @@ async def build_dependencies(
         notes=note_store, ledger=ledger_store, reminders=reminders,
         record_query=SqlRecordQuery(engine),
         standing=standing_store if cfg.standing.enabled else None,
+        traces=tag_trace_store,
         ai_peer=cfg.honcho.ai_peer,
         rooms_of_unit=lambda unit: unit_rooms.get(unit, ()),
     )

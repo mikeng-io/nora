@@ -74,6 +74,7 @@ each guarded on acquisition AND on exit for exactly this call site.
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import logging
 import time
@@ -104,6 +105,7 @@ from nora.domain.ports import (
 from nora.domain.profile import ProfileView
 from nora.domain.tag_trace import VALID_OUTCOMES, TagTrace
 from nora.domain.tool_call_log import ToolCallLogStore
+from nora.domain.turn_record import turn_items
 from nora.obs.logging import bind_tag_id, clear_tag_id
 from nora.obs.tracing import TRACE_KIND, TraceCarrier, annotate, attached, capture_context, span
 from nora.persons import Persons
@@ -1211,7 +1213,9 @@ class EngagementPipeline:
                 await self._debrief(
                     trace=trace, platform=msg.platform, culture=culture,
                     profile_room=next(
-                        (v for v in profiles if v.entity == "room"), None))
+                        (v for v in profiles if v.entity == "room"), None),
+                    conclusions=turn_items(
+                        trace.messages, trace.requirements),)
             except BaseException:
                 # ABSORBED, not re-raised, and `BaseException` rather than
                 # `Exception` for `debrief.run`'s own reason one level down:
@@ -1265,9 +1269,7 @@ class EngagementPipeline:
                     bound_rooms=(source,),
                     sent_message_ids=handle.deliverer.sent_message_ids if handle else (),
                 )
-                self._spawn(self._tag_trace_store.save(trace))
-                # Counted HERE — beside the spawn, not inside the store —
-                # for the same reason the spawn itself is not awaited: what
+                # Counted HERE — beside the persistence below — because what
                 # this series answers is «did the recording layer get handed a
                 # trace for this turn», whose denominator is
                 # `nora_tag_latency_seconds`' own count (one per admitted tag),
@@ -1344,5 +1346,21 @@ class EngagementPipeline:
                     )
                     self._metrics.inc(
                         "nora_partial_replies_total", reason=reason, platform=msg.platform,
+                    )
+            if trace is not None and self._tag_trace_store is not None:
+                # Awaited at the TAIL of the turn — after `release_and_dispatch`
+                # and every latency observation above, so it delays nothing the
+                # turn owed anyone — and bounded, so a slow or down store still
+                # cannot take the turn down. What it buys: the NEXT turn's
+                # shared-state read in this process sees this turn's Record
+                # (conclusions, unresolved acts) rather than racing a spawned
+                # write.
+                try:
+                    await asyncio.wait_for(
+                        self._tag_trace_store.save(trace), timeout=10,
+                    )
+                except Exception:
+                    log.exception(
+                        "tag trace save failed (tag=%s)", request.tag_id,
                     )
             clear_tag_id()
