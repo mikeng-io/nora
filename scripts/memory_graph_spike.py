@@ -35,6 +35,12 @@ from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.policy import load_policy
 from nora.secret import credentials
+from nora.subject.sandbox_index import (
+    EMBEDDER_FROM_HOST,
+    SandboxIndex,
+    check_served_model,
+    index_sandbox,
+)
 
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (("cited_sources", 10, "turn"),)
 _ROW = {n: (o, k) for n, o, k in _BLOCKS}
@@ -595,6 +601,24 @@ async def session_quality(
     return scored
 
 
+async def index_replay_sandbox(subject: Any, *, source_url: str) -> SandboxIndex:
+    """The replay sandbox's memory index, built before inspect or replay:
+    `sandbox_as_of` restores no `memory_*` table
+    (`nora.infra.sql.history.NOT_RESTORED`), and a `social` or `play`
+    stimulus's `records.load` reads a `memory_node` row that does not exist
+    until the index is projected. The same preparation a graph-surface eval
+    draw gets between seeding and the drive (`evals.backbone`,
+    `nora.subject.sandbox_index`): production's `rebuild` on the restored
+    rows, the source's vectors adopted where the input is identical, and the
+    coverage read back fail-closed — never an empty index, never a model
+    call to fill it."""
+    return await index_sandbox(
+        subject.database_url,
+        source_url=source_url,
+        model_id=subject.cfg.memory.index.embedder_model,
+    )
+
+
 async def project(engine: Any, scope: Any, rate: float) -> None:
     await graph_project(engine, scope=scope, apply=True, rows_per_second=rate)
     from nora.infra.sql.graph_projection import form_batch, project_source
@@ -690,6 +714,13 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         scores: dict[str, list[list[str]]] = {}
         age_results = []
         judges = Judges(cfg, [args.judge_a, args.judge_b])
+        if cfg.memory.index.read and cfg.memory.index.embed:
+            # The subject's query embedder is the host-published one. Refuse
+            # before the first wake rather than let every dense search answer
+            # a partial that measured a name that cannot resolve.
+            await check_served_model(
+                EMBEDDER_FROM_HOST, cfg.memory.index.embedder_model
+            )
         for wake in selected.values():
             replay_ms, view = await recorded_wake(engine, wake["id"])
             at = datetime.fromtimestamp(replay_ms / 1000, UTC)
@@ -713,6 +744,11 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                                 "cognition.enabled": True,
                                 "memory.graph.enabled": True,
                                 "memory.graph.comprehend.enabled": True,
+                                # The deployment's embedder name resolves only
+                                # on the compose network; the spike runs on the
+                                # host, where compose publishes it on loopback
+                                # (`evals.scenarios.MEMORY_INDEX_OVERRIDES`).
+                                "memory.index.embedder_url": EMBEDDER_FROM_HOST,
                                 "llm": cfg.llm.model_dump(),
                                 "providers": {k: v.model_dump() for k, v in cfg.providers.items()},
                                 "model_routes": {
@@ -728,6 +764,11 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                         runner = subject.deps.cognition_runner
                         if runner is None:
                             raise ValueError("snapshot session unavailable")
+                        measured["index"] = (
+                            await index_replay_sandbox(
+                                subject, source_url=args.database_url
+                            )
+                        ).line()
                         inspection = await runner.inspect(view=view, now_ms=replay_ms)
                         tokens_before = subject.deps.metrics.get("nora_cognition_unit_tokens_total")
                         outcome = await runner.replay(

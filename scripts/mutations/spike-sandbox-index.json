@@ -1,0 +1,9 @@
+[
+  {
+    "name": "replay sandboxes are indexed before inspect",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "    return await index_sandbox(\n        subject.database_url,\n        source_url=source_url,\n        model_id=subject.cfg.memory.index.embedder_model,\n    )",
+    "new": "    return None",
+    "target": "tests/integration/test_spike_sandbox_index.py::test_the_replay_preparation_indexes_the_restored_sandbox"
+  }
+]
