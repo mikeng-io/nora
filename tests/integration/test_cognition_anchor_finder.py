@@ -84,9 +84,22 @@ async def test_finder_reads_generated_eval_clone(
                 conn.execute("INSERT INTO note VALUES ('n1', 'generated-unit', 'r1', NULL)")
                 conn.execute("CREATE TABLE events (unit_id text, status text, title text)")
                 conn.execute("INSERT INTO events VALUES ('generated-unit', 'proposed', 'dinner')")
-                conn.execute("CREATE TABLE profile_line (unit text, state text, text text)")
-                conn.execute("INSERT INTO profile_line "
-                             "VALUES ('generated-unit', 'current', 'prior')")
+                from sqlalchemy.dialects import postgresql
+
+                from nora.infra.sql.schema import PROFILE_LINE
+
+                # The generated clone carries the store's real column set: the
+                # chain-heads read maps every column through row_to_line.
+                columns = ", ".join(
+                    f"{c.name} {c.type.compile(dialect=postgresql.dialect())}"
+                    for c in PROFILE_LINE.c)
+                conn.execute(f"CREATE TABLE profile_line ({columns})")
+                conn.execute("INSERT INTO profile_line (id, profile_key, part, kind, text, "
+                             "mode, state, unit, written_at, written_by_session, citations, "
+                             "draws_on, exclude_persons, source_medium) VALUES "
+                             "('00000000-0000-0000-0000-0000000000aa', 'pk', 'facts', "
+                             "'fact', 'prior', 'told', 'current', 'generated-unit', 1, "
+                             "'gen', '{}', '{}', '{}', '{}')")
             import evals.backbone
             import evals.subject_config
             import nora.subject.sandbox
@@ -105,7 +118,11 @@ async def test_finder_reads_generated_eval_clone(
             for mode in ("match", "no_match", "wrong_shape", "timeout", "error"):
                 def serve(request, mode=mode):
                     payload = json.loads(request.content)
-                    moment = json.loads(payload["messages"][1]["content"])
+                    # The moment arrives as ONE typed evidence block.
+                    from xml.sax.saxutils import unescape
+                    user = payload["messages"][1]["content"]
+                    moment = json.loads(unescape(
+                        user.split(">\n", 1)[1].rsplit("\n</wake_moment>", 1)[0]))
                     assert moment["at_ms"] == 1500
                     assert moment["room"] == "generated-room"
                     assert moment["system"] == "generated system"
