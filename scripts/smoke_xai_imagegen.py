@@ -10,9 +10,10 @@ Usage:  uv run python scripts/smoke_xai_imagegen.py
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
 from pathlib import Path
+
+from nora.secret import credentials
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -22,7 +23,7 @@ from nora.infra.image_gen.xai_oauth import XaiOAuth
 
 
 async def main() -> int:
-    refresh = os.environ.get("XAI_OAUTH_REFRESH_TOKEN", "")
+    refresh = credentials().get("XAI_OAUTH_REFRESH_TOKEN", "")
     if not refresh:
         print("XAI_OAUTH_REFRESH_TOKEN env var is empty")
         return 2

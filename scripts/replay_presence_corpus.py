@@ -29,13 +29,14 @@ from __future__ import annotations
 import argparse
 import asyncio
 import math
-import os
 import sys
 import time
 from collections import defaultdict
 from itertools import pairwise
 from pathlib import Path
 from typing import Any
+
+from nora.secret import credentials
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -118,7 +119,7 @@ async def main() -> None:
         fields["stay_wander_radius_m"] = None if args.wander == "none" else float(args.wander)
     cfg = RollupConfig(**fields)
 
-    database_url = os.environ.get("NORA_DATABASE_URL", os.environ.get("DATABASE_URL", ""))
+    database_url = credentials().get("NORA_DATABASE_URL", credentials().get("DATABASE_URL", ""))
     if not database_url:
         print("NORA_DATABASE_URL or DATABASE_URL must be set", file=sys.stderr)
         raise SystemExit(2)

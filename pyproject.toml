@@ -1,6 +1,6 @@
 [project]
 name = "nora"
-version = "7.11.37"
+version = "7.11.39"
 description = "A self-hosted, sessionless social AI agent with memory and background cognition"
 requires-python = ">=3.11"
 dependencies = [
@@ -304,7 +304,7 @@ forbidden_modules = [
     "nora.ingest", "nora.instructions", "nora.language", "nora.obs", "nora.persons",
     "nora.persons_file", "nora.platform",
     "nora.policy", "nora.presence", "nora.skills", "nora.subagent", "nora.subject", "nora.tag",
-    "nora.testing", "nora.web", "nora.config_reload", "nora.memory_routing",
+    "nora.testing", "nora.web", "nora.config_reload", "nora.memory_routing", "nora.secret",
 ]
 allow_indirect_imports = "True"
 

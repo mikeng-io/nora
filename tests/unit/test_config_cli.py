@@ -136,11 +136,10 @@ def test_set_quoted_string_stays_string(cfg_path: Path):
 def test_set_preserves_comments(cfg_path: Path):
     run_cli("config", "set", "llm.budgets.web_fetch", "8", "--config", str(cfg_path))
     text = cfg_path.read_text(encoding="utf-8")
-    # The load-bearing rationale comments must survive the write — a comment
-    # kill in a 75KB config would be the silent loss this CLI exists to stop.
-    assert "empty means the table unchanged" in text
+    # Local descriptions survive a settings edit; rationale lives in maintained docs.
+    assert "credentials and endpoint examples: docs/configuration.md" in text
     assert "empty = derive from the signal-cli daemon" in text
-    assert "# name or a value below 1 is a startup failure." in text
+
 
 
 def test_set_wrong_type_fails_closed(cfg_path: Path, capsys):

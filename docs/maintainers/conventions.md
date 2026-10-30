@@ -298,3 +298,12 @@ git push origin --delete <branch>
 Before deleting, check for a live session on that branch as well as a worktree.
 A branch carrying uncommitted changes from minutes ago is not dead work — it is
 somebody else's turn in progress.
+
+## Local comments and configuration sources
+
+Keep comments short and descriptive. Maintained docs own architecture, rationale
+and decisions. The [configuration contract](../configuration.md) amends the old
+environment-only credential-source guidance; `*_env` references retain their names.
+Private `secret.toml` and generated delivery files never enter Git. Config and
+secret changes require validated controlled recreation; identity/policy retain
+their existing validated reload.

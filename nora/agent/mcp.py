@@ -13,6 +13,7 @@ the same shape `ReminderCaps` already uses (see `nora.agent.registry`).
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -44,7 +45,9 @@ class McpToolGroup:
     tools: tuple[Any, ...]
 
 
-def build_mcp_tools(mounts: dict[str, McpMount]) -> dict[str, McpToolGroup]:
+def build_mcp_tools(
+    mounts: dict[str, McpMount], *, credentials: Mapping[str, str] | None = None,
+) -> dict[str, McpToolGroup]:
     """Connect to every mount, discover its tools, return only what succeeded.
 
     A server absent from the returned dict means "not configured, or
@@ -84,7 +87,9 @@ def build_mcp_tools(mounts: dict[str, McpMount]) -> dict[str, McpToolGroup]:
         server_config = {
             mount.name: {
                 "url": mount.base_url,
-                "headers": {"Authorization": f"Bearer ${{env:{mount.token_env}}}"},
+                "headers": {"Authorization": (f"Bearer {credentials.get(mount.token_env, '')}"
+                                               if credentials is not None else
+                                               f"Bearer ${{env:{mount.token_env}}}")},
             }
         }
         try:

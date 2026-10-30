@@ -119,7 +119,7 @@ async def _run(config_path: Path, *, rebuild: bool = False) -> None:
     cfg = config.load(config_path, require_secrets=False)
     setup_logging(
         level=cfg.obs.logging.level,
-        format=cfg.obs.logging.format, secrets=[],
+        format=cfg.obs.logging.format, secrets=cfg.redaction_values(),
     )
     deps = build_rollup(cfg)
     if rebuild:

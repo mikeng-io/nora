@@ -39,7 +39,7 @@ async def test_boolean_model_contract(content, finish, expected, monkeypatch):
             "base_url": "https://generated.invalid/v1", "api_key_env": "GENERATED_MODEL_KEY",
             "model": "generated-production-model", "max_tokens": 2000, "temperature": 0.7,
         }, confirm.scenarios()[2], {"messages": [
-            {"at_ms": 1000, "speaker": "speaker_1", "text": "k"}]})
+            {"at_ms": 1000, "speaker": "speaker_1", "text": "k"}]}, "generated-model-key")
     assert result == expected
 
 

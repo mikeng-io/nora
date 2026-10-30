@@ -995,18 +995,28 @@ def test_expansion_is_time_boxed(monkeypatch):
 
 
 def test_a_2mb_line_of_encoded_segments_scans_in_linear_time():
-    """A 2 MB line of layered encoded segments scans in bounded time."""
+    """Four times the encoded input costs at most six times the CPU."""
     import base64
     import time
 
     segs = [
         base64.b64encode(f"plain words number {i:06d} %41 &amp; \\u0041".encode()).decode()
-        for i in range(20000)
+        for i in range(30000)
     ]
     line = ("x = '" + " %41 &amp; \\u0041 ".join(segs) + "'")[:2_000_000]
-    t0 = time.monotonic()
-    _scanner().scan_text(line + "\n", "f.py")
-    assert time.monotonic() - t0 < 2.0
+    assert len(line) == 2_000_000
+
+    def cpu_seconds(size):
+        scanner = _scanner()
+        t0 = time.process_time()
+        result = scanner.scan_text(line[:size] + "\n" + NAME + "\n", "f.py")
+        elapsed = time.process_time() - t0
+        assert any(f.rule == "denylist:text" for f in result.findings)
+        return elapsed
+
+    small = cpu_seconds(500_000)
+    large = cpu_seconds(2_000_000)
+    assert large < 6 * small, (small, large)
 
 
 def test_extra_commit_headers_are_read_and_signatures_skipped():

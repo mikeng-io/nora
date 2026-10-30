@@ -57,7 +57,8 @@ def build_subagent_backend(
     models = factory.ModelSource(
         client=client,
         spec=factory.ModelSpec(
-            model=cfg.dreamer_model(), max_tokens=cfg.dreamer_max_tokens(),
+            model=cfg.endpoint("subagent", cfg.dreamer_model())[2],
+            max_tokens=cfg.dreamer_max_tokens(),
             temperature=tier.temperature, reasoning_effort=reasoning_effort,
             tool_choice=tool_choice.AFTER_SPEAKING,
         ),

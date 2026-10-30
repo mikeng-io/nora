@@ -271,11 +271,13 @@ async def read_session_observations(*, host: str, headers_env: str,
                                     since: int | None, until: int | None
                                     ) -> list[dict[str, Any]] | None:
     """Read the existing trace store, on the operator's machine; credentials stay local."""
-    import os
+    from pathlib import Path
     from urllib.parse import unquote
 
     import httpx
-    raw = os.environ.get(headers_env, "")
+
+    from nora.secret import resolve
+    raw = resolve(Path("secret.toml")).get(headers_env, "")
     headers = {k: unquote(v) for part in raw.split(",")
                if (sep := part.partition("="))[1] for k, v in [(sep[0], sep[2])]}
     if not host or not headers:

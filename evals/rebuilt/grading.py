@@ -25,11 +25,13 @@ Two properties it does not get to lose:
 from __future__ import annotations
 
 import asyncio
-import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 from openai import AsyncOpenAI
+
+from nora.subject.obtain import resolve_credentials
 
 from .judge import (
     POSITION_CRITERION,
@@ -103,11 +105,20 @@ class Judge:
     model: str = DEFAULT_JUDGE_MODEL
     samples: int = DEFAULT_SAMPLES
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
+    config_path: Path | None = None
+
+    def _endpoint(self) -> tuple[str, str, str]:
+        if self.config_path is not None:
+            from nora.subject.obtain import model_endpoint
+            return model_endpoint(self.config_path, "eval_judge", self.model)
+        return (self.base_url, resolve_credentials(Path("secret.toml")).get(self.api_key_env, ""),
+                self.model)
 
     def _client(self) -> AsyncOpenAI:
+        url, key, _ = self._endpoint()
         return AsyncOpenAI(
-            base_url=self.base_url,
-            api_key=os.environ.get(self.api_key_env, ""),
+            base_url=url,
+            api_key=key,
             timeout=self.timeout_seconds,
             max_retries=0,
         )
@@ -143,9 +154,9 @@ class Judge:
                 trace_name,
             ) as span:
                 batch_trace = format(span.get_span_context().trace_id, "032x")
-                span.set_attribute("gen_ai.request.model", self.model)
+                span.set_attribute("gen_ai.request.model", self._endpoint()[2])
                 answer = await asyncio.wait_for(client.chat.completions.create(
-                    model=self.model, messages=[{"role": "user", "content": prompt}],
+                    model=self._endpoint()[2], messages=[{"role": "user", "content": prompt}],
                     temperature=0, max_tokens=COVERAGE_MAX_TOKENS,
                     reasoning_effort=COVERAGE_REASONING_EFFORT,
                 ), self.timeout_seconds)
@@ -299,7 +310,7 @@ class Judge:
             # instrument, never a verdict about her.
             answer = await asyncio.wait_for(
                 client.chat.completions.create(
-                    model=self.model,
+                    model=self._endpoint()[2],
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0,
                 ),

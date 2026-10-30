@@ -16,7 +16,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-import os
 import sys
 import time
 from pathlib import Path
@@ -122,14 +121,14 @@ async def _run(config_path: Path) -> None:
         secrets=[
             value
             for value in (
-                os.environ.get(cfg.presence.client_credential_env, ""),
-                os.environ.get(cfg.presence.username_env, ""),
-                os.environ.get(cfg.presence.password_env, ""),
-                os.environ.get(cfg.presence.auth_token_env, ""),
-                os.environ.get(cfg.presence.geocode_api_key_env, ""),
+                cfg.credentials.get(cfg.presence.client_credential_env, ""),
+                cfg.credentials.get(cfg.presence.username_env, ""),
+                cfg.credentials.get(cfg.presence.password_env, ""),
+                cfg.credentials.get(cfg.presence.auth_token_env, ""),
+                cfg.credentials.get(cfg.presence.geocode_api_key_env, ""),
                 # The HK-gov token rides the query string (the leakiest position),
                 # so the scrub safety net must cover it too.
-                os.environ.get(cfg.presence.hkgov_token_env, ""),
+                cfg.credentials.get(cfg.presence.hkgov_token_env, ""),
             )
             if value
         ],

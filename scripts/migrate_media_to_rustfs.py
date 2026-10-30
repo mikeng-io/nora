@@ -29,7 +29,6 @@ wrong directory or seal under the wrong key.
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -39,6 +38,7 @@ import boto3
 from nora.config import load
 from nora.infra.blobs import FilesystemBlobStore, RustfsBlobStore
 from nora.infra.blobs.cipher import BlobCipher
+from nora.secret import credentials
 
 CONFIG_PATH = Path("/app/config.toml")
 
@@ -61,10 +61,10 @@ def _iter_keys(media_root: Path) -> Iterator[str]:
 
 
 async def main() -> int:
-    endpoint = os.environ.get("RUSTFS_ENDPOINT", "")
-    bucket = os.environ.get("RUSTFS_BUCKET", "nora-media")
-    access_key = os.environ.get("RUSTFS_ROOT_USER", "")
-    secret_key = os.environ.get("RUSTFS_ROOT_PASSWORD", "")
+    endpoint = credentials().get("RUSTFS_ENDPOINT", "")
+    bucket = credentials().get("RUSTFS_BUCKET", "nora-media")
+    access_key = credentials().get("RUSTFS_ROOT_USER", "")
+    secret_key = credentials().get("RUSTFS_ROOT_PASSWORD", "")
     if not endpoint or not access_key or not secret_key:
         print(
             "RUSTFS_ENDPOINT, RUSTFS_ROOT_USER and RUSTFS_ROOT_PASSWORD are all "
@@ -77,7 +77,7 @@ async def main() -> int:
     if not cfg.media.encryption_key_env:
         print("media.encryption_key_env is unset in config.toml", file=sys.stderr)
         return 2
-    key_b64 = os.environ.get(cfg.media.encryption_key_env, "")
+    key_b64 = credentials().get(cfg.media.encryption_key_env, "")
     if not key_b64:
         print(f"{cfg.media.encryption_key_env} is not set", file=sys.stderr)
         return 2

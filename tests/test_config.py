@@ -5,6 +5,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
+import tomlkit
 from pydantic import ValidationError
 
 from nora.config import (
@@ -42,6 +43,17 @@ def _set_key(text: str, key: str, value: str) -> str:
     new, n = _re.subn(rf"(?m)^{_re.escape(key)} = .*$", f"{key} = {value}", text)
     assert n == 1, f"{key} not found exactly once in the config ({n} matches)"
     return new
+
+
+def _section_end(text: str, start: int) -> int:
+    """Find a table subtree's end independently of template ordering."""
+    header = re.match(r"\n\[([^]]+)\]", text[start:])
+    assert header is not None
+    name = header.group(1)
+    for following in re.finditer(r"\n\[([^]]+)\]", text[start + header.end():]):
+        if not following.group(1).startswith(name + "."):
+            return start + header.end() + following.start()
+    return len(text)
 
 
 @pytest.fixture
@@ -157,13 +169,10 @@ def test_trigger_enabled_defaults_to_true_when_absent_from_the_toml(toml_path):
     # matching "enabled = true\ntext = ..." assumes the two sit next to each other, and
     # a comment between them turns the replace into a silent no-op that leaves
     # `enabled` in place and proves nothing about the default.
-    head, rest = toml_path.read_text().split("[engagement.trigger]", 1)
-    section, tail = rest.split("[store]", 1)
-    stripped = "\n".join(ln for ln in section.splitlines()
-                         if not ln.strip().startswith("enabled"))
-    text = f"{head}[engagement.trigger]{stripped}\n[store]{tail}"
-    assert "enabled" not in text.split("[engagement.trigger]")[1].split("[store]")[0]
-    toml_path.write_text(text)
+    document = tomlkit.parse(toml_path.read_text())
+    del document["engagement"]["trigger"]["enabled"]
+    assert "enabled" not in document["engagement"]["trigger"]
+    toml_path.write_text(tomlkit.dumps(document))
 
     cfg = load(toml_path)
 
@@ -893,11 +902,10 @@ def test_a_config_written_before_the_split_still_describes_images(toml_path):
     # string: the `[media]` comment block names `[media.describe.image]` in
     # prose, and partitioning on that mention would truncate the file above
     # `[doctrine]`.
-    head, sep, _ = toml_path.read_text().partition("\n[media.describe.image]\n")
-    assert sep, "config.example.toml no longer declares [media.describe.image]"
-    toml_path.write_text(re.sub(
-        r'^vision_model = ".*"$', 'vision_model = "legacy/only-model"',
-        head, count=1, flags=re.MULTILINE))
+    document = tomlkit.parse(toml_path.read_text())
+    del document["media"]["describe"]
+    document["media"]["vision_model"] = "legacy/only-model"
+    toml_path.write_text(tomlkit.dumps(document))
     media = load(toml_path).media
     assert media.describer_for("image").model == "legacy/only-model"
     assert media.describer_for("image").enabled is True
@@ -938,7 +946,7 @@ def test_a_config_written_before_the_dreamer_section_existed_still_loads(toml_pa
     the class defaults, so this fails if one silently changes."""
     text = toml_path.read_text()
     start = text.index("\n[dreamer]")
-    end = text.index("\n[obs.logging]")
+    end = _section_end(text, start)
     toml_path.write_text(text[:start] + text[end:])
     cfg = load(toml_path)
     assert cfg.dreamer.reload == "mtime"
@@ -1128,7 +1136,7 @@ def test_the_participation_section_is_optional_and_ships_inert(toml_path):
     independent on purpose."""
     text = toml_path.read_text()
     start = text.index("\n[participation]")
-    toml_path.write_text(text[:start] + text[text.index("\n[engagement]"):])
+    toml_path.write_text(text[:start] + text[_section_end(text, start):])
     cfg = load(toml_path)
     assert cfg.participation.enabled is False
     assert cfg.participation.settle_seconds == 10
@@ -1146,7 +1154,7 @@ def test_shadow_mode_requires_a_channel(toml_path):
     forbids. Refused at load."""
     text = toml_path.read_text()
     start = text.index("\n[participation]")
-    end = text.index("\n[engagement]")
+    end = _section_end(text, start)
     toml_path.write_text(
         text[:start]
         + '\n[participation]\nenabled = true\nshadow = true\n'
@@ -1172,7 +1180,7 @@ def test_a_discord_shadow_channel_needs_its_guild_half(toml_path):
     """
     text = toml_path.read_text()
     start = text.index("\n[participation]")
-    end = text.index("\n[engagement]")
+    end = _section_end(text, start)
 
     def _with(channel: str) -> str:
         return (
@@ -1197,7 +1205,7 @@ def test_a_shadow_channel_on_a_platform_without_guilds_is_not_shape_checked(toml
     there would refuse the very ids that platform issues."""
     text = toml_path.read_text()
     start = text.index("\n[participation]")
-    end = text.index("\n[engagement]")
+    end = _section_end(text, start)
     toml_path.write_text(
         text[:start]
         + "\n[participation]\nenabled = true\nshadow = true\n"
@@ -1232,7 +1240,7 @@ def test_the_gate_shadow_requires_a_channel_once_the_gate_is_on(toml_path):
     refuse at import time."""
     text = toml_path.read_text()
     start = text.index("\n[relevance_gate]")
-    end = text.index("\n[engagement]")
+    end = _section_end(text, start)
     toml_path.write_text(
         text[:start]
         + "\n[relevance_gate]\nenabled = true\nshadow = true\n"
@@ -1251,7 +1259,7 @@ def test_the_gate_review_channel_needs_its_guild_half_too(toml_path):
     contradiction."""
     text = toml_path.read_text()
     start = text.index("\n[relevance_gate]")
-    end = text.index("\n[engagement]")
+    end = _section_end(text, start)
     head = text[:start] + "\n[relevance_gate]\nshadow = true\n"
     tail = 'shadow_channel = "100000000000000207"\nshadow_platform = "discord"\n'
 
@@ -1272,7 +1280,7 @@ def test_the_gate_refuses_to_start_with_no_turn_behind_it(toml_path):
     correctly declining."""
     text = toml_path.read_text()
     start = text.index("\n[relevance_gate]")
-    end = text.index("\n[engagement]")
+    end = _section_end(text, start)
     toml_path.write_text(
         text[:start]
         + '\n[relevance_gate]\nenabled = true\nshadow = false\n'
@@ -1683,7 +1691,7 @@ def test_cognition_config_bare_default_is_1800():
 def test_the_cognition_section_is_optional(toml_path):
     text = toml_path.read_text()
     start = text.index("\n[cognition]\n")
-    end = text.index("\n[obs.logging]")
+    end = _section_end(text, start)
     toml_path.write_text(text[:start] + text[end:])
     assert load(toml_path).cognition.enabled is False
 
