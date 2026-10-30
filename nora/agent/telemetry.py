@@ -353,9 +353,13 @@ class RawSpanRecorder:
             response_model=response_model, provider=provider,
         )
 
-    def fail(self, span: Any, *, error: Exception) -> None:
+    def fail(self, span: Any, *, error: BaseException) -> None:
+        # `CancelledError` arrives here on outer wait_for timeouts; it is a
+        # BaseException, so the span carries its NAME — the strands error
+        # payload only takes an Exception.
         end_raw_model_span_with_error(
-            span=span, error_message=type(error).__name__, exception=error,
+            span=span, error_message=type(error).__name__,
+            exception=error if isinstance(error, Exception) else None,
         )
 
 

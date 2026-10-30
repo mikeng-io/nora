@@ -8,22 +8,36 @@
 # this file stays an index, not a second copy.
 #
 # How Prometheus semantics map onto the SigNoz v2alpha1 rule schema
-# (verified against signoz:v0.148.1, pkg/types/ruletypes):
+# (verified against signoz:v0.148.1, pkg/types/ruletypes +
+# pkg/query-service/rules/threshold.go):
 #   query    the PromQL expression, minus the outermost comparison when it is
 #            `expr OP constant` — SigNoz's threshold applies that comparison.
-#            Compound conditions (`unless`, `and`, `absent`, series-vs-series)
-#            stay in the query whole; the threshold then checks "result > 0".
+#            A query that contains its own comparison (`>`, `==`, `and`,
+#            `unless`, `absent`) produces a FILTERED series: it emits points
+#            only while the condition holds, so one bad point fires
+#            immediately under all_the_times and the LAST bad point keeps
+#            firing after recovery — no hold at all. Those expressions are
+#            rewritten to emit an UNFILTERED 0/1 series instead (`bool`
+#            comparisons, `or vector(0)`, `a - b or a` for `unless`), and the
+#            threshold then checks "result > 0" at every point in the window.
 #   op/target  the comparison the Prometheus expr carried.
 #   match    `for: Nm` maps to matchType all_the_times over evalWindow Nm —
-#            every point in the window must hold, the same sustained-condition
-#            meaning Prometheus's `for` has. `for: 0m`/absent maps to
-#            at_least_once over a 1m window.
+#            every point in the window must hold — PLUS `min_points` so a
+#            series that has not existed for the whole window cannot fire
+#            early (the hold Prometheus's `for` enforces by time). `for: 0m`
+#            maps to `last` over a 1m window: only the CURRENT point counts,
+#            so recovery resolves at the next evaluation instead of lingering
+#            on a stale point inside the window.
+#   min_points  condition.requireMinPoints + requiredNumPoints in the API:
+#            points a series must carry in the window to be evaluated at all
+#            (window-seconds/60 + 1 — SigNoz evaluates on a 60s step).
 #   window   the rolling evalWindow; frequency is always 1m.
 #
 # NO `absentFor`: the SigNoz API accepts it but multiplies it by MINUTES
 # (pkg/query-service/rules/base_rule.go), which silently inflates a seconds-
 # based intent 60x. Absence is expressed as `absent(...)` inside the query
-# instead, where the unit is seconds-accurate by construction.
+# instead, where the unit is seconds-accurate by construction — and wrapped
+# `or vector(0)` so the series stays unfiltered (see `query` above).
 #
 # Channels carry the DISPLAY NAME of a /api/v1/channels receiver; the script
 # creates `nora-alerts` as a webhook receiver pointing at the configured sink.
@@ -47,6 +61,7 @@ rules:
     target: 0
     match: all_the_times
     window: "3m"
+    min_points: 4
     severity: critical
     summary: '{{ index $labels "service.name" }} is not answering its metrics endpoint'
     description: >-
@@ -59,6 +74,7 @@ rules:
     target: 300
     match: all_the_times
     window: "2m"
+    min_points: 3
     severity: critical
     summary: "Nora's heartbeat has not ticked for {{ $value }}s"
   - name: PlatformSilent
@@ -68,6 +84,7 @@ rules:
     target: 900
     match: all_the_times
     window: "5m"
+    min_points: 6
     severity: warning
     summary: "no {{ $labels.platform }} event for {{ $value }}s"
     description: >-
@@ -80,6 +97,7 @@ rules:
     target: 1800
     match: all_the_times
     window: "10m"
+    min_points: 11
     severity: critical
     summary: "presence has not collected circle {{ $labels.circle }} for {{ $value }}s"
     description: >-
@@ -88,11 +106,12 @@ rules:
       `life360 auth failed` / `banned/refused` before restarting it.
   - name: PresenceNotRecording
     port: "(sum(increase(nora_presence_fixes_total[2h])) or vector(0)) == 0 for 15m"
-    query: (sum(increase(nora_presence_fixes_total[2h])) or vector(0))
-    op: equal
+    query: (sum(increase(nora_presence_fixes_total[2h])) or vector(0)) == bool 0
+    op: above
     target: 0
     match: all_the_times
     window: "15m"
+    min_points: 16
     severity: critical
     summary: "presence has written no location fix for anyone in 2 hours"
     description: >-
@@ -107,6 +126,7 @@ rules:
     target: 0
     match: all_the_times
     window: "5m"
+    min_points: 6
     severity: warning
     summary: "Life360 is refusing the presence collector ({{ $labels.reason }})"
     description: >-
@@ -119,7 +139,7 @@ rules:
     query: 'sum by ("service.name") (increase(nora_presence_auth_alarms_total{reason="token_rejected"}[2h]))'
     op: above
     target: 0
-    match: at_least_once
+    match: last
     window: "1m"
     severity: critical
     summary: "Life360 rejected LIFE360_AUTH_TOKEN — no locations are being recorded"
@@ -138,6 +158,7 @@ rules:
     target: 0
     match: all_the_times
     window: "5m"
+    min_points: 6
     severity: warning
     summary: 'a counter is reporting unavailable ({{ index $labels "service.name" }})'
     description: >-
@@ -150,18 +171,24 @@ rules:
     query: 'increase(nora_media_custody_total{status="not_configured"}[1h])'
     op: above
     target: 0
-    match: at_least_once
+    match: last
     window: "1m"
     severity: warning
     summary: "attachments are arriving with media custody switched off"
   # ---- music (3) ----
   - name: MusicWedged
     port: "(nora_music_expected_playing == 1) unless (nora_music_controller_playing == 1) for 2m"
-    query: (nora_music_expected_playing == 1) unless (nora_music_controller_playing == 1)
+    # `a unless b` == `a - b or a`: (expected=1 AND controller=1) -> 0,
+    # (expected=1 AND controller=0/absent) -> 1, expected=0 -> 0. An
+    # unfiltered 0/1 per guild; bare `unless` would emit only the bad points.
+    query: >-
+      (nora_music_expected_playing == bool 1) - (nora_music_controller_playing == bool 1)
+      or (nora_music_expected_playing == bool 1)
     op: above
     target: 0
     match: all_the_times
     window: "2m"
+    min_points: 3
     severity: critical
     summary: "guild {{ $labels.guild_id }}: nora thinks music is playing, the controller disagrees"
     description: >-
@@ -175,7 +202,7 @@ rules:
     query: 'increase(nora_music_liveness_total{verdict="unknown"}[10m])'
     op: above_or_equal
     target: 5
-    match: at_least_once
+    match: last
     window: "1m"
     severity: warning
     summary: "guild {{ $labels.guild_id }}: the audio controller could not be read for 10 minutes"
@@ -184,7 +211,7 @@ rules:
     query: 'increase(nora_music_stream_failed_total[15m])'
     op: above_or_equal
     target: 3
-    match: at_least_once
+    match: last
     window: "1m"
     severity: warning
     summary: "guild {{ $labels.guild_id }}: 3+ music streams failed in 15 minutes (reason {{ $labels.reason }})"
@@ -196,6 +223,7 @@ rules:
     target: 0
     match: all_the_times
     window: "5m"
+    min_points: 6
     severity: critical
     summary: "Nora's computer has not answered for 5 minutes"
     description: >-
@@ -209,7 +237,7 @@ rules:
     query: 'sum by ("service.name") (increase(nora_computer_calls_total{status="unavailable"}[15m]))'
     op: above_or_equal
     target: 5
-    match: at_least_once
+    match: last
     window: "1m"
     severity: warning
     summary: "{{ $value }} computer calls answered unavailable in 15 minutes"
@@ -223,7 +251,7 @@ rules:
     query: 'sum by ("service.name", stage) (increase(nora_computer_audit_failures_total[1h]))'
     op: above
     target: 0
-    match: at_least_once
+    match: last
     window: "1m"
     severity: warning
     summary: "computer audit writes are failing (stage {{ $labels.stage }})"
@@ -234,11 +262,15 @@ rules:
   # ---- oauth (3) ----
   - name: OAuthRefreshStale
     port: "time() - nora_oauth_last_refresh_timestamp_seconds > 2 * nora_oauth_refresh_interval_seconds for 15m"
-    query: time() - nora_oauth_last_refresh_timestamp_seconds > 2 * nora_oauth_refresh_interval_seconds
+    # `> bool` keeps the series unfiltered: every eval point gets a 0/1, so
+    # all_the_times over 15m is a real hold, and a healthy refresh resolves
+    # instead of lingering on the last bad point.
+    query: (time() - nora_oauth_last_refresh_timestamp_seconds) > bool (2 * nora_oauth_refresh_interval_seconds)
     op: above
     target: 0
     match: all_the_times
     window: "15m"
+    min_points: 16
     severity: critical
     summary: "the {{ $labels.lane }} login has not refreshed for over twice its interval"
     description: >-
@@ -249,11 +281,16 @@ rules:
       openai_codex), then recreate nora.
   - name: OAuthAccessTokenExpired
     port: "nora_oauth_access_expiry_timestamp_seconds > 0 and nora_oauth_access_expiry_timestamp_seconds < time() for 30m"
-    query: nora_oauth_access_expiry_timestamp_seconds > 0 and nora_oauth_access_expiry_timestamp_seconds < time()
+    # `x > 0 and x < time()` filtered the series to bad-only points; the two
+    # `bool` comparisons multiplied keep one unfiltered 0/1 per point.
+    query: >-
+      (nora_oauth_access_expiry_timestamp_seconds > bool 0)
+      * (nora_oauth_access_expiry_timestamp_seconds < bool time())
     op: above
     target: 0
     match: all_the_times
     window: "30m"
+    min_points: 31
     severity: critical
     summary: "the {{ $labels.lane }} access token has expired and was not refreshed"
     description: >-
@@ -266,7 +303,7 @@ rules:
     query: nora_oauth_refresh_refused
     op: equal
     target: 1
-    match: at_least_once
+    match: last
     window: "1m"
     severity: critical
     summary: "the {{ $labels.lane }} login was refused and needs the operator"
@@ -307,11 +344,15 @@ rules:
   # ---- monitoring-itself (1) ----
   - name: IngestionSilent
     port: "replaces absent(up{job=\"prometheus\"} == 1) for 5m"
-    query: absent(up{"service.name"="/signoz-otel-collector"})
+    # `absent()` alone emits a point only while the series is missing; the
+    # `or vector(0)` keeps one unfiltered 0/1 point per eval so all_the_times
+    # is a real 5-minute hold and recovery resolves on the next tick.
+    query: absent(up{"service.name"="/signoz-otel-collector"}) or vector(0)
     op: above
     target: 0
     match: all_the_times
     window: "5m"
+    min_points: 6
     severity: critical
     summary: "the SigNoz ingestion path is not reporting — the monitor may be dead"
     description: >-

@@ -13,7 +13,8 @@
 #   3. Recreate the instrumented services WITH THIS OVERLAY:
 #        docker compose -f docker-compose.yml \
 #                       -f deploy/signoz/docker-compose.signoz.yaml \
-#                       up -d nora presence analytics instagram-bridge
+#                       up -d nora presence analytics instagram-bridge \
+#                           whatsapp-bridge signal-cli
 #
 # What the overlay does, per service:
 #
@@ -22,6 +23,10 @@
 #   `tag` option and journald rejects max-size/max-file, so the driver cannot
 #   be an env var on the base file; the overlay IS the switch. Tag-less
 #   journald configs would land as CONTAINER_TAG=<container_id>: keep the tag.
+#   The three platform bridges join this set because they are the owned
+#   producers the retired json-file reader was for; sidecars (embedder, stt,
+#   voice-*) stay on json-file — their failures surface through nora's own
+#   logs and metrics.
 # * networks +signoz — the external network the backend project owns; gives
 #   the OTLP alias (signoz-ingester:4318) and lets the ingester's prometheus
 #   receiver scrape nora:9100 / presence:9101 / analytics:9103 by name.
@@ -59,6 +64,20 @@ services:
     - signoz
     environment:
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://signoz-ingester:4318/v1/traces
+    logging:
+      driver: journald
+      options:
+        tag: instagram-bridge
+  whatsapp-bridge:
+    logging:
+      driver: journald
+      options:
+        tag: whatsapp-bridge
+  signal-cli:
+    logging:
+      driver: journald
+      options:
+        tag: signal-cli
 networks:
   # Created by the SigNoz stack's own compose project; external here so
   # either stack can come down without taking the other.

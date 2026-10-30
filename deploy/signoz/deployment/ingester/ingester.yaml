@@ -97,6 +97,8 @@ processors:
         where attributes["gen_ai.operation.name"] == "invoke_agent"
       - set(attributes["gen_ai.agent.usage.cache_creation_input_tokens"], attributes["gen_ai.usage.cache_creation_input_tokens"])
         where attributes["gen_ai.operation.name"] == "invoke_agent"
+      - set(attributes["gen_ai.agent.usage.cache_write_input_tokens"], attributes["gen_ai.usage.cache_write_input_tokens"])
+        where attributes["gen_ai.operation.name"] == "invoke_agent"
       - delete_key(attributes, "gen_ai.usage.input_tokens") where attributes["gen_ai.operation.name"]
         == "invoke_agent"
       - delete_key(attributes, "gen_ai.usage.output_tokens") where attributes["gen_ai.operation.name"]
@@ -111,6 +113,23 @@ processors:
         == "invoke_agent"
       - delete_key(attributes, "gen_ai.usage.cache_creation_input_tokens") where attributes["gen_ai.operation.name"]
         == "invoke_agent"
+      - delete_key(attributes, "gen_ai.usage.cache_write_input_tokens") where attributes["gen_ai.operation.name"]
+        == "invoke_agent"
+      # Model-leaf normalization: the SDK spells cache usage FLAT
+      # (`gen_ai.usage.cache_read_input_tokens` / `...cache_write_input_tokens`)
+      # while the SigNoz UI and `signozllmpricing` read the DOTTED keys
+      # (`cache_read.input_tokens` / `cache_creation.input_tokens`,
+      # `aiobservabilitytypes` in the pinned backend). Aliasing preserves the
+      # raw SDK keys beside the normalized ones — absent stays absent (an
+      # unset key is never a fabricated zero). The invoke_agent guard keeps
+      # the agent parent's aggregate OUT of model usage/cost totals: the leaf
+      # is the charge, the parent is the summary.
+      - set(attributes["gen_ai.usage.cache_read.input_tokens"], attributes["gen_ai.usage.cache_read_input_tokens"])
+        where attributes["gen_ai.operation.name"] != "invoke_agent" and attributes["gen_ai.usage.cache_read_input_tokens"]
+          != nil
+      - set(attributes["gen_ai.usage.cache_creation.input_tokens"], attributes["gen_ai.usage.cache_write_input_tokens"])
+        where attributes["gen_ai.operation.name"] != "invoke_agent" and attributes["gen_ai.usage.cache_write_input_tokens"]
+          != nil
   signozspanmetrics/delta:
     aggregation_temporality: AGGREGATION_TEMPORALITY_DELTA
     dimensions:
@@ -196,26 +215,13 @@ receivers:
         static_configs:
         - targets:
           - localhost:8888
-  filelog/containers:
-    include:
-    - /var/log/containers/*-json.log
-    start_at: end
-    storage: file_storage/collector
-    operators:
-    - type: json_parser
-    - type: move
-      from: attributes.log
-      to: body
-    - type: json_parser
-      parse_to: attributes
-      if: body matches "^{"
-    - type: trace_parser
-      trace_id:
-        parse_from: attributes.trace_id
-      span_id:
-        parse_from: attributes.span_id
-      trace_flags:
-        parse_from: attributes.trace_flags
+  # No filelog receiver: Docker's json-file records carry no container NAME —
+  # only `<id>/<id>-json.log` paths — so a glob could never scope collection
+  # to Nora's services without ingesting every co-hosted project's logs, and
+  # the flat glob it had could not even match the native nested layout. The
+  # journald receiver below is the one canonical log source: the journald
+  # driver stamps CONTAINER_TAG from the compose `logging.options.tag`, and
+  # `matches` selects exactly the owned producers.
   journald/nora:
     directory: /var/log/journal
     start_at: end
@@ -234,6 +240,9 @@ receivers:
     - CONTAINER_TAG: nora
     - CONTAINER_TAG: presence
     - CONTAINER_TAG: analytics
+    - CONTAINER_TAG: signal-cli
+    - CONTAINER_TAG: whatsapp-bridge
+    - CONTAINER_TAG: instagram-bridge
     - SYSLOG_IDENTIFIER: nora-session-probe
     operators:
     - type: add
@@ -291,7 +300,6 @@ service:
       - memory_limiter
       - batch
       receivers:
-      - filelog/containers
       - journald/nora
     metrics:
       exporters:

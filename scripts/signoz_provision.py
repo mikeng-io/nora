@@ -13,11 +13,16 @@ one the pinned backend actually serves (verified against signoz:v0.148.1):
   `schemaVersion: v2alpha1` PostableRule — promql query in
   `condition.compositeQuery.queries`, the comparison as a `basic` threshold
   (op + target + matchType), and the hold window as a `rolling` evaluation.
-* `for: Nm` ⇒ matchType `all_the_times` + evalWindow Nm; `for: 0m` ⇒
-  `at_least_once` + evalWindow 1m. There is no seconds-granularity
-  `absentFor` — the API field exists but the backend multiplies it by
-  MINUTES, so this script refuses to write it; absence is `absent()` in the
-  query itself.
+* `for: Nm` ⇒ matchType `all_the_times` + evalWindow Nm + `min_points`
+  (condition.requireMinPoints/requiredNumPoints — a series that has not
+  existed for the whole window is skipped, so the hold cannot fire early);
+  `for: 0m` ⇒ matchType `last` + evalWindow 1m, so recovery resolves on the
+  current point instead of a stale one inside the window. Queries that carry
+  their own comparison emit an UNFILTERED 0/1 series (`bool`, `or vector(0)`,
+  `a - b or a`) — a filtered series would fire on one bad point and linger
+  after recovery. There is no seconds-granularity `absentFor` — the API
+  field exists but the backend multiplies it by MINUTES, so this script
+  refuses to write it; absence is `absent()` in the query itself.
 
 Access is a SigNoz API key from the environment or the runtime secret store
 (`SIGNOZ_API_KEY` / `NORA_SIGNOZ_API_KEY`; secret.toml-style, a name never a
@@ -57,8 +62,10 @@ except Exception:  # noqa: BLE001 — resolve() absent or the store locked, eith
 #: this closed set so a typo fails here, not as a silent default downstream.
 _OPS = {"above", "below", "equal", "not_equal", "above_or_equal",
         "below_or_equal", "outside_bounds"}
+#: The five matchTypes the pinned backend's threshold evaluator implements
+#: (pkg/types/ruletypes MatchType) — `min`/`max` are not among them.
 _MATCHES = {"at_least_once", "all_the_times", "on_average", "in_total",
-            "last", "min", "max"}
+            "last"}
 
 
 def _secret(name: str) -> str:
@@ -189,6 +196,7 @@ def _rule_payload(name: str, rule: dict, defaults: dict, channel: str) -> dict:
                     "channels": [channel],
                 }],
             },
+            **_min_points(rule),
         },
         "evaluation": {
             "kind": "rolling",
@@ -201,6 +209,22 @@ def _rule_payload(name: str, rule: dict, defaults: dict, channel: str) -> dict:
         "labels": {"alertname": name, "severity": rule["severity"]},
         "annotations": annotations,
     }
+
+
+def _min_points(rule: dict) -> dict:
+    """`min_points` -> condition.requireMinPoints/requiredNumPoints.
+
+    The hold half of `for: Nm`: all_the_times alone fires as soon as every
+    EXISTING point satisfies the threshold, so a series that has only
+    existed for part of the window would fire early. Requiring the full
+    window's point count (60s step) is what Prometheus's `for` enforces by
+    time. Only metric rules carry it — the log rule's at_least_once page
+    does not want it.
+    """
+    points = rule.get("min_points")
+    if not points:
+        return {}
+    return {"requireMinPoints": True, "requiredNumPoints": int(points)}
 
 
 def _channel_payload(name: str, webhook: str, kind: str) -> dict:

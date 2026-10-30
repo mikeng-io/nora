@@ -47,13 +47,14 @@ services:
     volumes:
     - ./ingester/ingester.yaml:/etc/otel-collector-config.yaml:ro
     - ./ingester/opamp.yaml:/etc/opamp-config.yaml:ro
-    # Durable queue + filelog/journald cursors (issue #440): survives restart
+    # Durable queue + journald cursor (issue #440): survives restart
     # AND recreation — the volume is the state, not the container.
     - signoz-collector-storage:/var/lib/otelcol
-    # Container-log read paths. Local Docker Desktop: JSON files via a bind of
-    # the Docker log dir (or a synthetic dir for proofs). Linux deploy host:
-    # journald directories for the journald receiver.
-    - /var/lib/docker/containers:/var/log/containers:ro
+    # The one container-log read path: host journald directories for the
+    # journald receiver. There is deliberately no /var/lib/docker/containers
+    # bind — Docker's json-file layout carries no container name, so it could
+    # never be scoped to Nora's producers; the journald CONTAINER_TAG match
+    # can. See the receiver comment in ingester.yaml.
     - /var/log/journal:/var/log/journal:ro
     - /run/log/journal:/run/log/journal:ro
   mcp:

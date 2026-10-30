@@ -324,15 +324,30 @@ def instrument_aiohttp_app(app: object) -> None:
 
     Never load-bearing, like everything in this module: a missing contrib
     package or a middleware that will not install costs the spans, not the
-    app. Installed as a thin wrapper rather than `instrument()`, because the
-    contrib exclusion mechanism is a process-wide env var and these paths are
-    per-app.
+    app. The package's module state (`_excluded_urls`, meters, the default
+    tracer) exists only after `AioHttpServerInstrumentor.instrument()` runs —
+    calling its exported `middleware` bare raises AttributeError on the first
+    request — so this goes through the supported lifecycle on the shared
+    provider, then `create_aiohttp_middleware` for the per-app middleware.
+    `is_instrumented_by_opentelemetry` keeps repeated app lifecycles a no-op.
+    The contrib exclusion mechanism is a process-wide env var and these paths
+    are per-app, so the path filter stays our thin wrapper.
     """
     excluded_paths = frozenset({"/health", "/metrics"})
     try:
 
         from aiohttp import web
-        from opentelemetry.instrumentation.aiohttp_server import middleware as _otel_mw
+        from opentelemetry.instrumentation.aiohttp_server import (
+            AioHttpServerInstrumentor,
+            create_aiohttp_middleware,
+        )
+
+        instrumentor = AioHttpServerInstrumentor()
+        if not instrumentor.is_instrumented_by_opentelemetry:
+            instrumentor.instrument(
+                tracer_provider=trace.get_tracer_provider())
+        otel_middleware = create_aiohttp_middleware(
+            tracer_provider=trace.get_tracer_provider())
 
         @web.middleware
         async def _nora_middleware(
@@ -341,7 +356,7 @@ def instrument_aiohttp_app(app: object) -> None:
         ):
             if request.path in excluded_paths:
                 return await handler(request)
-            return await _otel_mw(request, handler)
+            return await otel_middleware(request, handler)
 
         app.middlewares.append(_nora_middleware)  # type: ignore[attr-defined]
     except Exception:

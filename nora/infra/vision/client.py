@@ -69,7 +69,7 @@ class VisionSpanRecorder(Protocol):
                input_tokens: int | None = None, output_tokens: int | None = None,
                total_tokens: int | None = None, latency_seconds: float | None = None,
                response_model: str = "", provider: str = "") -> None: ...
-    def fail(self, span: object, *, error: Exception) -> None: ...
+    def fail(self, span: object, *, error: BaseException) -> None: ...
 
 # How much of the loop's own timeout one vision call may spend. A fraction < 1
 # is what MAKES the derived ceiling provably shorter than the loop's
@@ -535,16 +535,20 @@ class VisionClient:
                 ),
                 timeout=self._call_timeout(None),
             )
-        except Exception as exc:
+            content = _checked(response, what="the text-only vision call")
+        except BaseException as exc:
+            # BaseException, not Exception: `wait_for` cancels this await with
+            # CancelledError and a malformed `choices` raises IndexError —
+            # neither reaches `except Exception`, and the span would leak.
             self._span_fail(span, exc)
             raise
         self._span_finish(
             span, response=response,
-            content=(response.choices[0].message.content or "").strip(),
+            content=content,
             provider="omniroute",
             latency_seconds=asyncio.get_running_loop().time() - started,
         )
-        return _checked(response, what="the text-only vision call")
+        return content
 
     def _span_start(
         self, *, messages: list[dict[str, object]], model_id: str, provider: str,
@@ -590,7 +594,7 @@ class VisionClient:
         except Exception:
             log.debug("vision span not closed; call already answered", exc_info=True)
 
-    def _span_fail(self, span: object | None, exc: Exception) -> None:
+    def _span_fail(self, span: object | None, exc: BaseException) -> None:
         if span is None or self._span_recorder is None:
             return
         try:
@@ -672,13 +676,17 @@ class VisionClient:
                 # signature — the gateway reads the JSON, not the Python stub.
                 extra_body={"reasoning_effort": self._reasoning_effort},
             )
-        except Exception as exc:
+            content = _checked(response, what="the vision read")
+        except BaseException as exc:
+            # BaseException, not Exception: an outer `wait_for` cancellation is
+            # CancelledError and an empty/malformed `choices` is IndexError —
+            # both bypass `except Exception` and would leak the opened span.
             self._span_fail(span, exc)
             raise
         self._span_finish(
             span, response=response,
-            content=(response.choices[0].message.content or "").strip(),
+            content=content,
             provider=provider,
             latency_seconds=asyncio.get_running_loop().time() - started,
         )
-        return _checked(response, what="the vision read")
+        return content
