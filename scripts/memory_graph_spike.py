@@ -691,8 +691,8 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         age_results = []
         judges = Judges(cfg, [args.judge_a, args.judge_b])
         for wake in selected.values():
-            at = datetime.fromtimestamp(wake["at_ms"] / 1000, UTC)
-            _, view = await recorded_wake(engine, wake["id"])
+            replay_ms, view = await recorded_wake(engine, wake["id"])
+            at = datetime.fromtimestamp(replay_ms / 1000, UTC)
             room = next((c for c in policy.rooms() if c.unit == view.unit), None)
             if room is None:
                 raise ValueError("wake has no policy room")
@@ -714,6 +714,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                                 "memory.graph.enabled": True,
                                 "memory.graph.comprehend.enabled": True,
                                 "llm": cfg.llm.model_dump(),
+                                "providers": {k: v.model_dump() for k, v in cfg.providers.items()},
                                 "model_routes": {
                                     k: v.model_dump() for k, v in cfg.model_routes.items()
                                 },
@@ -727,10 +728,10 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                         runner = subject.deps.cognition_runner
                         if runner is None:
                             raise ValueError("snapshot session unavailable")
-                        inspection = await runner.inspect(view=view, now_ms=wake["at_ms"])
+                        inspection = await runner.inspect(view=view, now_ms=replay_ms)
                         tokens_before = subject.deps.metrics.get("nora_cognition_unit_tokens_total")
                         outcome = await runner.replay(
-                            view=view, now_ms=wake["at_ms"], historical=True
+                            view=view, now_ms=replay_ms, historical=True
                         )
                         if outcome is None:
                             raise ValueError("empty session")
