@@ -9,6 +9,15 @@ status: open-decision
 
 # Trace content and redaction
 
+> **Historical SDK/content investigation (2026-08-06), retained as evidence.**
+> The selected backend and current migration design live in
+> [Observability](../docs/observability.md#accepted-direction-self-hosted-signoz)
+> and [ADR 0034](../docs/adr/0034-self-hosted-signoz-unifies-application-and-llm-observability.md).
+> Their acceptance includes readable content with the pinned SDK/backend; this
+> does not select a new field-level redaction policy or authorize cloud export.
+> The endpoint, storage and missing-collector statements below are historical,
+> not an inventory of the current deployment.
+
 **Status: this document does not describe a change. It describes a decision the
 operator has to make**, and records the investigation so it is not repeated.
 Everything below was verified against the installed `strands-agents==1.50.2`

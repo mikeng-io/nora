@@ -40,13 +40,30 @@ Current `nora/obs/tracing.py` only admits generation and plumbing; plumbing root
 
 Producer creates one short `queue.enqueue` span for capture/publication; its validated W3C context rides the envelope and durable receipt. If the producer retries later, new bounded span links to the original context. Consumer creates a fresh root per attempt with **SpanKind.CONSUMER**, explicit empty parent and links to producer plus previous attempt when known. The span covers one active phase only, never the queue wait or an entire deferred lifetime. Claim/reclaim/ACK and bridge send attempts are bounded queue operations linking the same event/action; no span stays open over a deployment. Use existing capture/attach helpers extended to expose safe link/parent support, and reset contextvars in finally. A linked remote parent is not installed as an unrelated active context.
 
-When model work starts, its existing engagement/fire generation root stays a **separate trace**, linked to the relevant consumer attempt and carrying safe event/attempt identity and queue timing. Do not make it a child of a queue trace: ParentBased would blur the routing boundary and could send plumbing to Langfuse. Model stages remain children of their existing turn root with current doctrine/tag provenance; queue attempt and turn trace cross-reference IDs. The queue attempt need not span the whole model turn: close handoff and open a linked completion operation when the turn ends.
+When model work starts, its existing engagement/fire generation root stays a **separate trace**, linked to the relevant consumer attempt and carrying safe event/attempt identity and queue timing. Do not make it a child of a queue trace: a queue attempt and a model turn have distinct lifetimes. Under the existing deployment, ParentBased would also blur the Langfuse routing boundary; the accepted SigNoz target below removes that backend split, not the lifetime distinction. Model stages remain children of their existing turn root with current doctrine/tag provenance; queue attempt and turn trace cross-reference IDs. The queue attempt need not span the whole model turn: close handoff and open a linked completion operation when the turn ends.
 
 Python producer/consumer uses OTel SDK through the existing provider setup; Go/Node producers need minimal OTLP SDK initialization/export and the same resource/kind/field contract. Export queue OTLP/HTTP to the existing collector, with bridge service.name reflecting service names. No hand-written GenAI attributes and no Strands wrapper around bridge operations. The queue span helper records only allowlisted error type/reason/status, not the existing generic helper’s automatic exception message/stack capture; exceptions still propagate unchanged to the work seam. Test this with a synthetic secret-bearing SDK error. Export setup/timeout/failure remains best effort.
 
-**Installed collector prerequisite:** current documentation describes a Langfuse tail policy keeping generation traces and Jaeger dropping chat spans; the installed config is outside this repository and was not inspected. Before claiming support, parent must arrange a reviewed config amendment in that owning installation: route queue-kind traces to Jaeger, explicitly exclude queue-kind traces from Langfuse; keep generation policy and Jaeger's chat filtering unchanged. Prefer a resource/trace-kind route before the Langfuse tail sampler, with missing/unknown kinds following current policy. Queue and model traces being separate makes this deterministic. No new collector or second model tracing pipeline is needed. Repository sampler change without installed routing readback is incomplete acceptance.
+**Collector contract amended 2026-10-30:** the accepted
+[SigNoz design](../../docs/observability.md#accepted-direction-self-hosted-signoz)
+owns backend selection and whole-trace retention. Queue operations and complete
+model traces target SigNoz, with their separate roots and links retained. The
+queue root kind remains a semantic classification; it must not prescribe Jaeger
+as a permanent destination. If bridges ship before the SigNoz cutover, the
+transitional route sends queue traces to Jaeger and excludes queue-only traces
+from Langfuse. Apply that route before Langfuse's selector; do not carry Jaeger's
+chat filter into the SigNoz path. Record which pipeline the acceptance measured.
+Installed collector configuration/readback remains a separately owned prerequisite.
 
-Synthetic readback must inspect exported span documents in Jaeger and lifecycle JSON, not merely local exporter counts. Verify links, actual attempt IDs, timing, terminal failed-retained versus silence, absence of sensitive fields, and no queue-only traces in Langfuse. Collector outage must leave delivery behavior identical; inspection of that outage is unavailable, never “zero traces proves none ran.”
+Synthetic readback must inspect exported span documents in the selected backend
+and lifecycle JSON, not merely local exporter counts. Verify links, actual attempt
+IDs, queue timing, terminal failed-retained versus silence and absence of sensitive
+fields. For the transitional pipeline verify queue traces in Jaeger and no
+queue-only Langfuse exports; for the target verify queue traces and complete
+model traces in SigNoz. Collector outage must leave delivery behavior identical;
+inspection during outage is unavailable, never “zero traces proves none ran.”
+Use the observability design's durable log path once installed; container log
+capture alone does not prove retention after recreation.
 
 ## Rename and lifecycle cutover
 

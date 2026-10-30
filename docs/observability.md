@@ -1,6 +1,7 @@
 # Observability
 
-**How Nora is instrumented, and where to look when something is missing.**
+**The accepted observability design, the deployed instrumentation baseline, and
+how to tell them apart when something is missing.**
 
 `AGENTS.md` carries the terse rules and `docs/maintainers/conventions-rationale.md` the war-stories
 behind them; neither says how the pieces fit together, which is the gap this
@@ -11,6 +12,7 @@ their reasoning stays in `docs/maintainers/conventions-rationale.md` and is link
 two copies drift and the one that drifts is the one you did not read
 (`docs/adr/0010-agents-md-is-the-entry-point.md`).
 
+- [Accepted direction: self-hosted SigNoz](#accepted-direction-self-hosted-signoz)
 - [The three signals, and the boundary between them](#the-three-signals)
 - [How a span reaches a collector](#how-a-span-reaches-a-collector)
 - [Instrumenting a model call](#instrumenting-a-model-call)
@@ -19,6 +21,213 @@ two copies drift and the one that drifts is the one you did not read
 - [When a span is missing: the five places it can die](#when-a-span-is-missing)
 - [Logs](#logs)
 - [Known gaps](#known-gaps)
+
+---
+
+## Accepted direction: self-hosted SigNoz
+
+**Decision accepted 2026-10-30; implementation and runtime acceptance pending.**
+[ADR 0034](adr/0034-self-hosted-signoz-unifies-application-and-llm-observability.md)
+records why. [Issue #440](https://github.com/mikeng-io/nora/issues/440) tracks
+implementation and its evidence. This section owns the target design and
+acceptance; the sections below describe the existing Langfuse/Jaeger deployment
+until the replacement is read back. A merged design is not a deployed backend.
+
+### Scope and ownership
+
+Use **SigNoz Community** for application APM, LLM/agent traces and centralized
+logs. Retain Sentry for grouped error reporting, linked to the same OTel trace.
+Keep Prometheus scraping/storage and the existing absence-alert delivery until
+replacement rules and delivery have been measured. Sentry errors alone do not
+replace detection of a stopped collector, stale work or an absent target.
+
+The dedicated AI Observability experience shipped in
+[SigNoz v0.143.0](https://github.com/SigNoz/signoz/releases/tag/v0.143.0).
+The [Community server](https://github.com/SigNoz/signoz/blob/v0.143.0/cmd/community/server.go)
+uses the shared core, whose
+[modules](https://github.com/SigNoz/signoz/blob/v0.143.0/pkg/signoz/module.go)
+include pricing and span mapping. Pin a supported Community release and matching
+collector; verify that exact build without a paid license. Do not reuse the
+historical Trustless chart merely because it already runs SigNoz.
+
+Use the supported [Foundry Docker deployment](https://signoz.io/docs/install/docker/)
+to render inspectable Compose configuration; retain the repository's existing
+GitOps/deployment ownership. Version the non-secret declaration, rendered pipeline
+and version pins with their deployment inputs; keep actual host settings and
+credentials private. The generated backend is not a second owner of Nora's
+application releases. Its local data volumes need persistent storage and backup.
+Do not share Langfuse's existing ClickHouse data directory or schemas with SigNoz.
+
+No additional Loki, Grafana or Quickwit stack is part of this decision. No prompt
+management/evaluation platform or replacement for the eval runner is introduced.
+
+Related bundles keep their own responsibilities: [platform bridge operations](../design/platform-bridges/04-operations.md#short-linked-otel-operations-and-routing-amendment)
+carry queue lifetimes/links and the transitional route; [evaluation SDK compatibility](../design/evaluation/08-the-sdk-surface.md#7-observability-migration-compatibility--2026-10-30)
+requires populated Sessions after any span-format change. Neither duplicates the
+backend/cutover contract here.
+
+### One instrumentation path
+
+Keep one `TracerProvider` per process. Application/domain spans use OTel; Strands
+owns agent/model/tool spans. Raw model clients use the shared SDK span boundary,
+without moving a raw request onto an agent loop to obtain telemetry. Preserve
+import-layer boundaries: composition roots wire collaborators, and an infra
+module does not import a higher layer for a tracer. An Agent call gets no second
+model wrapper and no overlapping OpenAI auto-instrumentor.
+
+Reuse the existing bootstrap functions at every actual process entry point.
+Main Nora's startup cannot initialize presence, analytics or a bridge process.
+Cover application HTTP routes and measured DB/client gaps with standard OTel
+instrumentation where appropriate; retain domain spans for outcomes a successful
+HTTP/SQL call cannot describe. Routine health/metrics polling remains noise.
+
+Every entry point has one execution root with child stages. Preserve W3C context
+propagation and the captured context for queued work; independent background work
+starts its own root. A conversation/session identifier joins related executions,
+not one indefinitely open trace. Stamp service name, deployed source/version and
+environment consistently; use the actual installed release, never a guessed SHA.
+Cognition uses its session identity rather than borrowing a room's identity.
+
+### LLM contents, usage and cost
+
+The [AI Explorer](https://signoz.io/docs/ai-observability-explorer/) must show one
+complete application trace, its individual model/tool calls, input/output tokens
+and trace totals. Captured input/output must be readable, not merely present on
+the ingestion wire. Capture policy and field format are separate decisions.
+
+Keep Strands as the model instrumentation library. An isolated synthetic probe of
+installed Strands 1.50.2 verified that
+`OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental,gen_ai_span_attributes_only`
+emits input/output message attributes while preserving input/output token counts.
+This is an SDK-format result, not proof of SigNoz UI compatibility or a changed
+runtime setting. Check system messages, tool arguments/results, cache fields,
+errors and multi-call agents against the pinned collector/backend before enabling
+it. Existing content authorization and secret redaction remain; changing the
+backend does not decide the open field-level redaction questions in
+[the content investigation](../design/13-trace-content-and-redaction.md).
+No cloud export or additional content capture is implied.
+
+Use the [documented GenAI attributes](https://signoz.io/docs/ai-observability-telemetry-requirements/)
+and one shared SDK/collector normalization boundary. The stock contrib collector
+is not assumed to contain SigNoz's `signozspanmapper` or `signozllmpricing`:
+configure the matching SigNoz collector pipeline explicitly where required.
+Keep requested gateway alias, served model and provider distinguishable. Configure
+[model prices](https://signoz.io/docs/ai-observability-model-pricing/) explicitly,
+including provider-specific cached-token accounting. Report estimated cost,
+not an authoritative invoice; an unpriced model is unknown, not free.
+
+**Only actual model invocations contribute to call/token/cost totals.** Strands
+can attach a model and aggregate usage to an agent parent as well as its child
+model spans. Read back classification and totals to prevent double counting;
+retain the parent as an agent span. Unknown usage stays unknown, not fabricated
+zero. Raw vision calls need their own model span and per-call usage, including
+individual video windows; an outer comprehension span is not that measurement.
+
+### Recording, content and retention are separate
+
+Replace the Langfuse-oriented assumption that non-LLM roots can be discarded
+before the backend sees their eventual failure. This amends the target of R-76
+and DEC-143; their current sampler/tests remain active until the implementation
+changes them together. Preserve their no-noise intent, one-root context model,
+and counters for routine outcomes.
+
+The SigNoz path branches from incoming OTLP **before** the old Jaeger `chat`
+filter and Langfuse has-model selector. Retain complete selected traces, including
+user-visible failures before any model call. Dropping a span at SDK head sampling
+cannot be undone by a collector after an error occurs.
+
+Select whole traces using actual entry-point outcomes, not one global latency
+threshold for HTTP requests and long agent turns. Tail-sampling decisions need a
+window/capacity appropriate to Nora's measured durations and late spans; do not
+copy Trustless's window or threshold. If there are multiple sampling collectors,
+route all spans of a trace to the same sampler. Compute rate metrics from the
+unsampled stream when deriving them from spans.
+
+Selecting a trace and retaining its content are independent. Outcome-dependent
+content capture needs buffering or another proven mechanism; a stock tail sampler
+does not automatically retain skeletons of all traces and full contents of some.
+At the observed LLM volume there is no demonstrated need to drop healthy AI traces
+just to imitate high-volume API sampling. Start with complete AI traces; set
+broader application retention from measured ingestion, queries and disk growth.
+
+### Durable logs and correlated errors
+
+Keep structured stdout as the single application log source. Include active
+trace/span IDs when available, alongside existing severity, exception fields and
+turn provenance; a line outside a span has no invented correlation ID. Sentry
+continues error capture, with the same active OTel trace and deployed release,
+without creating a second tracing owner.
+
+Persist logs outside the lifetime of a container. Use persistent host journald
+with Docker's journald driver and a compatible reader, then forward to SigNoz.
+The currently deployed collector image does not include `journalctl`; a journald
+receiver declaration alone cannot read the journal. Verify a compatible reader
+image/runtime and host mounts before switching the driver. Keep journal size/time
+retention explicit. A durable source survives container recreation; it does not
+reconstruct logs already deleted with an old container.
+
+Persist reader cursors and exporter queues where supported, and measure replay,
+rotation and downstream-outage recovery. Cursor persistence alone is not a durable
+export queue. Bound batches/queues and configure `memory_limiter`/backpressure;
+state what happens after buffers fill. Delivery is not claimed exactly once:
+verify one canonical ingestion path and quantify any retry/replay duplicates.
+Do not also send the same records through an application OTLP logging bridge.
+
+### Capacity and failure boundaries
+
+Trustless's historical incidents establish reachable costs, not Nora's required
+resource sizes: ClickHouse ran out of merge/TTL scratch space; write stalls grew
+collector memory; percentile queries hit query memory limits; duplicate log
+paths inflated storage. Its Longhorn expansion incident was a storage-layer
+failure that this Compose deployment does not inherit.
+
+Measure ingest bytes, retained storage growth, query load and peak memory under
+Nora's intended retention. Leave disk headroom for ClickHouse merges/cleanup;
+TTL is not a storage quota. Verify the chosen release's reserve/backpressure
+settings rather than blindly copying old ClickHouse configuration. A 4 GB Docker
+prerequisite is not a measured steady-state footprint. Missing ingestion must
+be distinguishable from a genuine zero-error/zero-usage interval.
+
+### Cutover and acceptance
+
+One integrated implementation follows this design; these are evidence boundaries,
+not parallel task lists. Use generated data, with no production messages copied
+into fixtures and no paid model calls required for the ingestion proof.
+
+1. **Application/SDK:** export a multi-call agent with a tool, a raw vision call,
+   and a failure before any model call. Check parentage, session/service/release
+   identity, explicit outcomes, missing-usage behavior and leaf-model totals.
+2. **Collector/Community UI:** send those spans through the pinned real pipeline.
+   Read full traces and input/output in the license-free Community UI; match
+   per-call and trace token/cache/cost values to the generated source. Confirm
+   parent summaries add no second charge. No HTTP 200-only acceptance.
+3. **Logs/errors:** emit an identifiable synthetic exception under a span. Query
+   the line via SigNoz, follow matching trace IDs from Sentry, then recreate the
+   source container and restart the reader/backend. Verify retained history and
+   replay after a bounded backend outage, including any duplicates or losses.
+4. **Debug access:** use official SigNoz MCP with read-only investigative access
+   to find the synthetic log, trace and usage. Reuse Sentry MCP for error issues;
+   do not add Nora runtime tools for operating the observability backend.
+5. **Capacity and operations:** measure representative queries and storage growth;
+   prove missing-ingestion visibility and absence-alert delivery before retiring
+   the old scrape/alert path. An alert evaluated by a stopped backend cannot
+   report that backend's death; the existing lack of an external dead-man path
+   is a known ceiling, not solved by consolidation.
+6. **Retirement:** migrate every producer before stopping shared services.
+   Langfuse also serves Cortex; moving Nora alone cannot retire its stack.
+   Keep historical data/backups accessible under existing access/retention
+   controls; no bulk import into SigNoz is assumed and no data deletion is
+   authorized here. Verify Langfuse-dependent eval/readback consumers have a
+   replacement or remain supported. Retire Jaeger and old collector filters only
+   after trace acceptance; retire Alertmanager/bridge only after required
+   absence rules and notification delivery have a verified replacement.
+
+Rollback before retirement selects the previous backend routing and application
+configuration; it does not erase the new data. Do not assume SDK-dropped or
+expired data can be recovered by changing the exporter. Deployment and retirement
+follow the existing deploy/readback skills, with the operator notified before a
+live deploy. SDK proof, backend proof, merged code and deployed acceptance remain
+separate states.
 
 ---
 
@@ -624,10 +833,11 @@ Tracing stays with `nora.obs.tracing` and lands in Langfuse.
 
 Recorded here so they are findings rather than surprises.
 
-- **No release is attached to a Sentry issue.** `scripts/build-image.sh` builds
-  UNSTAMPED on purpose ("deployments are not releases"), so the container has
-  neither `NORA_VERSION` nor `version.json` and "is this new since the last
-  deploy" is not answerable from an issue.
+- **The main startup does not pass a release to Sentry.** Images now carry
+  source/release provenance, but that does not automatically populate error
+  events or the OTel resource. The target design wires the installed identity
+  into both; a historical statement that images are deliberately unstamped is
+  not the current reason for this gap.
 - **WARNING-versus-ERROR is still per-author**, as is which fields an event
   must carry. The transport and the field set are conventioned now; the
   editorial judgement is not.
