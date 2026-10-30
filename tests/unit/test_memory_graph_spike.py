@@ -159,6 +159,54 @@ def test_age_scope_and_query_grammar_cannot_read_foreign_unit():
         spike.scoped_cypher("MATCH (n) RETURN n; CREATE (n)")
 
 
+async def test_cypher_embedded_labels_are_not_binds():
+    """Cypher's ':label' inside the dollar-quoted literal must not read as a
+    bind, and the agtype JSON result must decode.
+
+    The conn fake stands in for the REAL asyncpg boundary: it compiles the
+    clause cypher() built with the asyncpg dialect — construct_params is what
+    raises 'A value is required for bind parameter N' in production — and
+    answers with the agtype wire serialization the driver delivers.
+    """
+    from sqlalchemy.dialects import postgresql
+
+    dialect = postgresql.asyncpg.dialect()
+    sent = []
+
+    class Conn:
+        async def execute(self, clause):
+            compiled = clause.compile(dialect=dialect)
+            sent.append(str(compiled))
+            assert compiled.construct_params() == {}
+            wire = ['"person:p1"', '"event:e1"'] if "RETURN DISTINCT b.key" in str(compiled) else []
+            return SimpleNamespace(scalars=lambda: iter(wire))
+
+    cases = [
+        ('CREATE (:N {key: "generated:key"})', "$$"),
+        (
+            'MATCH (a:N), (b:N) WHERE a.key="person:p1" AND b.key="event:e1" '
+            "CREATE (a)-[:attended]->(b)",
+            "$$",
+        ),
+        (
+            'MATCH (a:N)-[:attended|concerns*0..3]-(b:N) WHERE a.key="person:p1" '
+            "RETURN DISTINCT b.key",
+            "$$",
+        ),
+        ("CREATE (:N {key: \"it's:quoted\"})", "$$"),
+        ('CREATE (:N {key: "pct%50\\\\:backslash"})', "$$"),
+        # A '$$' inside the value forces a tag the value cannot close.
+        ('CREATE (:N {key: "has$$tag:1"})', "$aa$"),
+    ]
+    for query, _ in cases:
+        expected = ["person:p1", "event:e1"] if query.startswith("MATCH (a:N)-[") else []
+        assert await spike.cypher(Conn(), "generated_graph", query) == expected
+    for (query, tag), compiled in zip(cases, sent, strict=True):
+        assert compiled.startswith("SELECT value FROM ag_catalog.cypher($$generated_graph$$, ")
+        assert f"{tag}{query}{tag})" in compiled
+        assert query in compiled
+
+
 def test_operator_script_is_a_declared_assembled_occasion():
     import ast
     from pathlib import Path
@@ -275,30 +323,80 @@ def test_tool_exchanges_pairs_admission_and_refusal():
 
 
 async def test_session_quality_uses_shown_input_and_only_committed_relations():
-    judge = SimpleNamespace(score=AsyncMock(return_value=["supported", "unsupported"]))
+    """Score the serialized Relation nested in each committed GraphEdge."""
+    from dataclasses import asdict
+    from datetime import UTC, datetime
+
+    from nora.domain.memory_graph import GraphEdge, Relation, Subgraph
+
+    def relation(relation_id: str, rel: str) -> Relation:
+        return Relation(
+            id=relation_id,
+            src=("event", "generated-source"),
+            rel=rel,
+            dst=("topic", "generated-topic"),
+            layer="notebook",
+            unit="generated-unit",
+            asserted_at=datetime(2026, 10, 1, tzinfo=UTC),
+        )
+
+    def serialized(value):
+        # The exact expression memory_propose returns as `connected`.
+        return json.loads(json.dumps(asdict(value), default=str))
+
+    committed, merge, existing = (
+        relation("generated-committed", "concerns"),
+        relation("generated-merge", "same_as"),
+        relation("generated-existing", "concerns"),
+    )
+    connected = serialized(
+        Subgraph(
+            status="ok",
+            relations=tuple(
+                GraphEdge(relation=r, evidence_count=1) for r in (committed, merge, existing)
+            ),
+        )
+    )
+    seen = []
+
+    async def judge(payload):
+        proposition = payload["proposition"]
+        seen.append((proposition, payload["evidence"]))
+        verdict = "supported" if proposition.get("rel") == "concerns" else "unsupported"
+        return [verdict, verdict]
+
+    read = {"name": "memory_read", "input": {"key": "generated"}, "result": {"status": "ok"}}
     result = await spike.session_quality(
-        judge,
+        SimpleNamespace(score=judge),
         {"prompt": "Generated source"},
         [
+            read,
+            {"name": "profile_revise", "input": {}, "result": {"status": "ok"}},
             {
                 "name": "memory_propose",
                 "input": {"readings": [{"text": "Generated claim"}]},
                 "result": {
                     "admitted": [0],
-                    "committed": ["generated-committed"],
-                    "connected": {
-                        "relations": [
-                            {"id": "generated-committed", "rel": "concerns"},
-                            {"id": "generated-existing", "rel": "concerns"},
-                        ]
-                    },
+                    "committed": ["generated-committed", "generated-merge"],
+                    "connected": connected,
                 },
-            }
+            },
         ],
     )
-    assert result["relation_precision"] == [["supported"], ["unsupported"]]
-    assert result["reading_precision"] == [["supported"], ["unsupported"]]
-    assert judge.score.call_args.args[0]["evidence"]["input"] == {"prompt": "Generated source"}
+    # The judge scored the nested serialized Relations, never the GraphEdge
+    # wrappers, and only committed ids — `generated-existing` stays unscored.
+    relations = [
+        p for p, _ in seen if isinstance(p, dict) and str(p.get("id", "")).startswith("generated-")
+    ]
+    assert relations == [serialized(committed), serialized(merge)]
+    assert result["relation_precision"] == [["supported", "unsupported"]] * 2
+    assert [p for p, _ in seen if "different_entities" in p] == [
+        {"different_entities": serialized(merge)}
+    ]
+    assert result["wrong_merges"] == [["unsupported"]] * 2
+    assert result["reading_precision"] == [["unsupported"]] * 2
+    expected_evidence = {"input": {"prompt": "Generated source"}, "reads": [read]}
+    assert seen and all(e == expected_evidence for _, e in seen)
 
 
 def test_report_error_exit_is_distinct_from_fail():
