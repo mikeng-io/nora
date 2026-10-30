@@ -1,0 +1,33 @@
+---
+type: design_index
+title: Platform observations — capture to social understanding
+status: proposed
+implementation_status: not-built
+governance: operator-directed
+timestamp: '2026-10-30'
+members:
+  - 00-overview.md
+  - 01-coverage.md
+  - 02-observation-contract.md
+  - 03-model-projections.md
+  - 04-build-and-acceptance.md
+open_questions:
+  - id: Q1
+    question: Exact pinned bridge dependency versions and recorded fixtures for native poll/reaction transitions
+    status: open
+  - id: Q2
+    question: Instagram private transport poll and room-change coverage; no official Business API equivalence assumed
+    status: open
+  - id: Q3
+    question: Telegram adoption mode and account permissions
+    status: open
+  - id: Q4
+    question: Existing retention and deletion policy mapped to new observation stores at implementation time
+    status: open
+edges:
+  - {src: 00-overview, dst: ../unified-memory/32-platform-observations.md, rel: supersedes, provenance: operator-requested}
+  - {src: 01-coverage, dst: 00-overview, rel: grounds, provenance: inspected-source}
+  - {src: 02-observation-contract, dst: ../platform-bridges/02-wire-and-platforms.md, rel: amends, provenance: proposed}
+  - {src: 03-model-projections, dst: ../unified-memory/27-the-memory-is-a-graph.md, rel: extends, provenance: proposed}
+  - {src: 04-build-and-acceptance, dst: 02-observation-contract, rel: verifies, provenance: proposed}
+---
