@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.11.51](https://github.com/mikeng-io/nora/compare/v7.11.50...v7.11.51) (2026-10-30)
+
+
+### Maintenance
+
+* **observability:** align dependent design bundles with SigNoz ([590e5b1](https://github.com/mikeng-io/nora/commit/590e5b1fd7e806e62b262a8daf21aa1eab6bad72))
+* **observability:** record the SigNoz migration design ([396c7a6](https://github.com/mikeng-io/nora/commit/396c7a68ed317fca400946de5e1373f0e28c5cd9))
+
 ## [7.11.50](https://github.com/mikeng-io/nora/compare/v7.11.49...v7.11.50) (2026-10-30)
 
 
