@@ -1,0 +1,30 @@
+[
+  {
+    "name": "cypher literals mask colons from sa.text",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "value.replace(\":\", \"\\\\:\")",
+    "new": "value",
+    "target": "tests/unit/test_memory_graph_spike.py::test_cypher_embedded_labels_are_not_binds"
+  },
+  {
+    "name": "cypher args are dollar-quoted constants",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "    return tag + value.replace(\":\", \"\\\\:\") + tag",
+    "new": "    return \"'\" + value.replace(\"'\", \"''\").replace(\":\", \"\\\\:\") + \"'\"",
+    "target": "tests/unit/test_memory_graph_spike.py::test_cypher_embedded_labels_are_not_binds"
+  },
+  {
+    "name": "the agtype column is selected, not its decoded cast",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "\"SELECT value FROM ag_catalog.cypher(\"",
+    "new": "\"SELECT value::text FROM ag_catalog.cypher(\"",
+    "target": "tests/unit/test_memory_graph_spike.py::test_cypher_embedded_labels_are_not_binds"
+  },
+  {
+    "name": "agtype results decode through json.loads",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "    return [json.loads(v) for v in result.scalars()]",
+    "new": "    return list(result.scalars())",
+    "target": "tests/unit/test_memory_graph_spike.py::test_cypher_embedded_labels_are_not_binds"
+  }
+]
