@@ -1,0 +1,30 @@
+kind: design_index
+bundle: platform-bridges
+title: Durable platform handoff across application releases
+description: Independent messaging bridges, Redis Streams, recoverable app ownership and one outbound wire contract.
+status: proposed
+implementation_status: not-built
+timestamp: '2026-10-30'
+governance: operator-directed
+origin: https://github.com/mikeng-io/nora/issues/422
+revision: 'Source base 14e89fc7af04584fc9dab69a13039f5d0be22cc7; includes per-message tracing clarification.'
+docs:
+  - 00-contract.md
+  - 01-source-map.md
+  - 02-wire-and-platforms.md
+  - 03-ownership-and-recovery.md
+  - 04-operations.md
+  - 05-build-and-acceptance.md
+open_questions:
+  - 'Per-platform transition identity lacking an upstream revision must be proved with synthetic protocol fixtures; unavailable identity retains a failure, never guesses dedupe.'
+  - 'Installed collector configuration is outside this checkout: queue routing must be validated before claiming trace visibility.'
+  - 'Installed wrapper compatibility and exact private mount inode/ownership require operator-authorized cutover readback; no host inspected here.'
+edges:
+  - {src: 01-source-map, dst: 00-contract, rel: grounds, provenance: inspected-source}
+  - {src: 02-wire-and-platforms, dst: ../discord-integration/01-listener-and-resilience.md, rel: amends, provenance: proposed}
+  - {src: 02-wire-and-platforms, dst: ../discord-music/02-control-surface.md, rel: amends, provenance: proposed}
+  - {src: 02-wire-and-platforms, dst: ../whatsapp-adoption/03-transport-contract.md, rel: amends, provenance: proposed}
+  - {src: 02-wire-and-platforms, dst: ../instagram-adoption/03-transport-contract.md, rel: amends, provenance: proposed}
+  - {src: 03-ownership-and-recovery, dst: ../standing-ledger/30-turn-records.md, rel: extends, provenance: proposed}
+  - {src: 04-operations, dst: ../../docs/observability.md, rel: amends, provenance: operator-requested-proposal}
+  - {src: 05-build-and-acceptance, dst: 03-ownership-and-recovery, rel: verifies, provenance: proposed}
