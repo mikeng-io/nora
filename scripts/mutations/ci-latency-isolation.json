@@ -1,0 +1,16 @@
+[
+  {
+    "name": "latency guard excluded from competing pytest workers",
+    "file": ".github/workflows/ci.yml",
+    "old": "              subprocess.run(['pytest', '-q', '-n', '8',\n                              '--ignore=tests/integration/test_latency.py'], check=True)",
+    "new": "              subprocess.run(['pytest', '-q', '-n', '8'], check=True)",
+    "target": "tests/architecture/test_ci_plan.py::test_latency_budget_runs_without_competing_pytest_workers"
+  },
+  {
+    "name": "latency guard still executes and failures fail CI",
+    "file": ".github/workflows/ci.yml",
+    "old": "              subprocess.run(['pytest', '-q', 'tests/integration/test_latency.py'], check=True)\n",
+    "new": "",
+    "target": "tests/architecture/test_ci_plan.py::test_latency_budget_runs_without_competing_pytest_workers"
+  }
+]

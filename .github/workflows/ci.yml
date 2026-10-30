@@ -100,7 +100,9 @@ jobs:
           import json, os, subprocess
           targets = json.loads(os.environ['READERS'])
           if targets == 'ALL':
-              subprocess.run(['pytest', '-q', '-n', '8'], check=True)
+              subprocess.run(['pytest', '-q', '-n', '8',
+                              '--ignore=tests/integration/test_latency.py'], check=True)
+              subprocess.run(['pytest', '-q', 'tests/integration/test_latency.py'], check=True)
           elif targets:
               subprocess.run(['pytest', '-q', *targets], check=True)
           PYTEST

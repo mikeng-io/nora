@@ -193,6 +193,37 @@ def test_shared_document_reader_keeps_full_suite_fallback(tmp_path, monkeypatch)
     assert not any(selected for name, selected in plan.items() if name.startswith("codeql-"))
 
 
+@pytest.mark.parametrize("targets", ["ALL", ["tests/integration/test_latency.py"], []])
+@pytest.mark.parametrize("failure", [None, 0, 1])
+def test_latency_budget_runs_without_competing_pytest_workers(monkeypatch, targets, failure):
+    root = Path(__file__).resolve().parents[2]
+    workflow = yaml.safe_load((root / ".github/workflows/ci.yml").read_text())
+    step = next(s for s in workflow["jobs"]["contracts"]["steps"]
+                if s.get("name") == "Document readers selected by the existing selector")
+    source = step["run"].split("<<'PYTEST'\n", 1)[1].rsplit("PYTEST", 1)[0]
+    latency = "tests/integration/test_latency.py"
+    expected = ([["pytest", "-q", "-n", "8", f"--ignore={latency}"],
+                 ["pytest", "-q", latency]] if targets == "ALL"
+                else [["pytest", "-q", *targets]] if targets else [])
+    calls = []
+
+    def run(command, *, check):
+        assert check is True
+        calls.append(command)
+        if len(calls) - 1 == failure:
+            raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setenv("READERS", json.dumps(targets))
+    monkeypatch.setattr(subprocess, "run", run)
+    if failure is not None and failure < len(expected):
+        with pytest.raises(subprocess.CalledProcessError):
+            exec(compile(source, ".github/workflows/ci.yml", "exec"), {})  # noqa: S102 — trusted repo workflow
+        assert calls == expected[:failure + 1]
+    else:
+        exec(compile(source, ".github/workflows/ci.yml", "exec"), {})  # noqa: S102 — trusted repo workflow
+        assert calls == expected
+
+
 @pytest.mark.parametrize(
     ("severity", "line", "level", "expected"),
     [("7.0", 2, "warning", 1), ("9.9", 1, "warning", 0),
