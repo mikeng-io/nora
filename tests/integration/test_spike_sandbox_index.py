@@ -182,6 +182,10 @@ async def test_the_replay_preparation_indexes_the_restored_sandbox(pg_url, pg_te
                             index=SimpleNamespace(embedder_model=MODEL_ID))),
                 )
                 built = await spike.index_replay_sandbox(subject, source_url=pg_url)
+                async with sandbox.connect() as conn:
+                    assert await conn.scalar(sa.select(sa.func.count()).select_from(
+                        MEMORY_NODE).where(MEMORY_NODE.c.kind == "social")) == 2, (
+                        "replay preparation must project the as-of social sources")
                 assert built.source.ratio == 1.0
                 # The two nodes a vector cannot be adopted for: one source no
                 # longer holds (item-2), one whose input moved (the edit).
