@@ -135,7 +135,7 @@
           "max-file": "3"
         }
       },
-      "image": "ghcr.io/mikeng-io/nora-nora@sha256:e98a33d6fd1c3e2fb88966c6d8c80f0e9e4d5bd199d382f72c86aad56f3c9362",
+      "image": "ghcr.io/mikeng-io/nora-nora@sha256:5a896e684f665b8afc45679170d4db04aa5cbe8781dc7bc880396966aec66f8d",
       "container_name": "nora",
       "restart": "unless-stopped",
       "stop_grace_period": "75s",
@@ -243,7 +243,7 @@
       ]
     },
     "site": {
-      "image": "ghcr.io/mikeng-io/nora-site@sha256:e15596095eee1372972ae09b10b3ced620579f00a41c49eaf30e46db84b54a04",
+      "image": "ghcr.io/mikeng-io/nora-site@sha256:115c9525da8cc095477fd5a50e69a6f299ea9ae99cfdff707101186b646d3a8c",
       "container_name": "nora-site",
       "profiles": [
         "site"
@@ -254,7 +254,7 @@
       ]
     },
     "presence": {
-      "image": "ghcr.io/mikeng-io/nora-nora@sha256:e98a33d6fd1c3e2fb88966c6d8c80f0e9e4d5bd199d382f72c86aad56f3c9362",
+      "image": "ghcr.io/mikeng-io/nora-nora@sha256:5a896e684f665b8afc45679170d4db04aa5cbe8781dc7bc880396966aec66f8d",
       "container_name": "presence",
       "restart": "unless-stopped",
       "entrypoint": [
@@ -306,7 +306,7 @@
       }
     },
     "analytics": {
-      "image": "ghcr.io/mikeng-io/nora-nora@sha256:e98a33d6fd1c3e2fb88966c6d8c80f0e9e4d5bd199d382f72c86aad56f3c9362",
+      "image": "ghcr.io/mikeng-io/nora-nora@sha256:5a896e684f665b8afc45679170d4db04aa5cbe8781dc7bc880396966aec66f8d",
       "container_name": "analytics",
       "restart": "unless-stopped",
       "entrypoint": [
