@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.11.52](https://github.com/mikeng-io/nora/compare/v7.11.51...v7.11.52) (2026-10-30)
+
+
+### Maintenance
+
+* **memory:** bound Honcho cutover acceptance to available evidence ([242e295](https://github.com/mikeng-io/nora/commit/242e29598fc1e30ef7f0ecf58c8cad97b4473670))
+* **memory:** qualify remaining historical cutover formulas ([8d32ab7](https://github.com/mikeng-io/nora/commit/8d32ab7ac2a41338b07d8ae562bc94025c31623e))
+
 ## [7.11.51](https://github.com/mikeng-io/nora/compare/v7.11.50...v7.11.51) (2026-10-30)
 
 
