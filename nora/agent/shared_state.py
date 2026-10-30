@@ -223,7 +223,11 @@ async def read_shared(
                     if room is not None and standing_permits is not None
                     else _ALL_SECTIONS
                 )
-                if allowed_sections[BODY]:
+                sections_present = (
+                    position.hold_open and allowed_sections[HOLD_OPEN],
+                    position.i_owe and allowed_sections[I_OWE],
+                )
+                if allowed_sections[BODY] or any(sections_present):
                     detail = " · ".join(
                         part for part in (
                             position.hold_open and allowed_sections[HOLD_OPEN]
@@ -234,7 +238,14 @@ async def read_shared(
                     )
                     entries.append(SharedEntry(
                         kind="standing", id=f"pos#{scope}", scope=scope,
-                        status="open", subject=position.body,
+                        status="open",
+                        # A withheld BODY never swallows permitted sibling
+                        # sections — each renders on its own gate, exactly as
+                        # `render_standing` dropped them section-wise.
+                        subject=(
+                            position.body if allowed_sections[BODY]
+                            else "a position is held, body withheld"
+                        ),
                         detail=detail, at_ms=position.updated_at,
                         provenance="fold",
                     ))
@@ -420,6 +431,7 @@ async def read_shared(
                         elif (
                             payload.get("status") == "unresolved"
                             and key not in resolved and key != ("", "")
+                            and allowed
                         ):
                             unresolved_lines.append(
                                 f"remind {str(args.get('text'))[:80]!r} for "
@@ -433,9 +445,9 @@ async def read_shared(
                             # A `conclude` whose result is not `ok` is not a
                             # recorded conclusion — the toolUse alone proves
                             # nothing. It stays visible as unresolved for the
-                            # next session to address, never presented as
-                            # accepted state.
-                            if conclusion.get("status") != "unresolved":
+                            # next session to address — and only where its
+                            # own disclosure permits the read.
+                            if conclusion.get("status") != "unresolved" and allowed:
                                 unresolved_lines.append(
                                     f"decision_conclude "
                                     f"{str(args.get('subject') or '?')[:80]!r}: "
@@ -450,10 +462,23 @@ async def read_shared(
                                 if args.get("leaning") else "",
                                 f"closes when: {args['conditions']}"
                                 if args.get("conditions") else "",
+                                # A recorded position proposal stays readable
+                                # as a Record — never applied, never dropped.
+                                f"proposes position for {args['standing_room']}"
+                                if args.get("standing_room") else "",
+                                f"position: {args['standing_body']}"
+                                if args.get("standing_body") else "",
+                                f"holds open: {args['hold_open']}"
+                                if args.get("hold_open") else "",
+                                f"owes: {args['i_owe']}"
+                                if args.get("i_owe") else "",
                             ) if part
                         )
                         sources_part = tuple(
                             str(s) for s in args.get("sources") or ()
+                        ) + (
+                            (f"turn({trace.turn_id})",)
+                            if trace.turn_id is not None else ()
                         )
                         entries.append(SharedEntry(
                             kind="conclusion",
@@ -464,7 +489,7 @@ async def read_shared(
                             detail=(
                                 f"{args.get('decision') or ''}"
                                 + (f" — {detail}" if detail else "")
-                            )[:300],
+                            ),
                             refs=sources_part,
                             at_ms=trace.created_at,
                             provenance=provenance,

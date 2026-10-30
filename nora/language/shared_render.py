@@ -134,6 +134,8 @@ def render_shared_state(
             continue
         ago = f" · {age(e.at_ms, now)} ago" if e.at_ms else ""
         lines.append(f"- found{ago} · {e.subject}")
+        if e.detail:
+            lines.append(f"    {e.detail}")
     return ContextBlock(
         name="shared_cognitive_state", body=escape("\n".join(lines)),
     )

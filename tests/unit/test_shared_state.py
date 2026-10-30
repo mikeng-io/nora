@@ -356,7 +356,8 @@ async def test_trace_conclusions_and_unresolved_are_read_back():
     concl = [e for e in view.entries if e.kind == "conclusion"]
     assert len(concl) == 1
     assert "pier" in concl[0].detail and "leaning" in concl[0].detail
-    assert concl[0].refs == ("d1", "101")
+    assert concl[0].refs[:2] == ("d1", "101")
+    assert concl[0].refs[-1].startswith("turn(")
     assert concl[0].provenance == "cognition:t1"
     assert len(view.unresolved) == 1 and "note:not-there" in view.unresolved[0]
 

@@ -2550,7 +2550,7 @@ class CognitionSessionRunner:
                 sources: Optional. The row/entry ids this rests on.
                 standing_room: Optional. `platform:conversation_id` — set it
                     with `standing_body` when the conclusion is a position
-                    update for that room; the debrief applies it verbatim.
+                    update for that room; the Record keeps it; Cognition authorizes.
                 standing_body: Optional. The new position, verbatim.
                 hold_open: Optional. What you are deliberately keeping open.
                 i_owe: Optional. What you owe that room.
@@ -2731,11 +2731,30 @@ class CognitionSessionRunner:
                     (p.platform, p.conversation_id) for p in pending
                     if p.subject == resolved_subject and p.action == action_key
                 }
-                since = datetime.fromtimestamp(
-                    (self._now_ms() - 7 * 24 * 3600_000) / 1000, UTC)
+                unit_rooms = (
+                    list(self._rooms_of_unit(unit))
+                    if self._rooms_of_unit is not None
+                    # Unwired harnesses have no canonical scope: the agenda's
+                    # own rooms are all the scope there is (the same parity
+                    # the unwired debrief keeps).
+                    else [tuple(k.split(":", 1)) for k in state.rooms]
+                )
+                if not unit_rooms:
+                    # The conflict arbiter needs the CANONICAL unit, not this
+                    # agenda's room list: an act pending in a unit room the
+                    # agenda did not name is exactly the race the lock exists
+                    # to stop, so a scope we cannot establish refuses the
+                    # write rather than narrowing it.
+                    return {"status": "unavailable",
+                            "reason": "unit_scope_unavailable",
+                            "detail": "the unit's room set could not be read"}
                 recent = await self._reminders.recent_in(
-                    destinations, requester_person_id=self._ai_peer,
-                    since=since, limit=50,
+                    unit_rooms, requester_person_id=self._ai_peer,
+                    # Delivered evidence is not bounded by when THIS row was
+                    # created: the act it repeats may have been scheduled and
+                    # delivered long before. The unit-scope read is bounded by
+                    # the cap, which fails closed on an unproven remainder.
+                    since=datetime.fromtimestamp(0, UTC), limit=50,
                 )
                 if len(recent) >= 50:
                     # The read cut off: an earlier delivered act could sit
@@ -2774,23 +2793,6 @@ class CognitionSessionRunner:
                         "duplicate_pending",
                         "the same act is already pending for the room(s) named",
                     )
-                unit_rooms = (
-                    list(self._rooms_of_unit(unit))
-                    if self._rooms_of_unit is not None
-                    # Unwired harnesses have no canonical scope: the agenda's
-                    # own rooms are all the scope there is (the same parity
-                    # the unwired debrief keeps).
-                    else [tuple(k.split(":", 1)) for k in state.rooms]
-                )
-                if not unit_rooms:
-                    # The conflict arbiter needs the CANONICAL unit, not this
-                    # agenda's room list: an act pending in a unit room the
-                    # agenda did not name is exactly the race the lock exists
-                    # to stop, so a scope we cannot establish refuses the
-                    # write rather than narrowing it.
-                    return {"status": "unavailable",
-                            "reason": "unit_scope_unavailable",
-                            "detail": "the unit's room set could not be read"}
                 try:
                     # ONE transaction, advisory-locked on the unit with the
                     # cross-room conflict check INSIDE it: every destination
